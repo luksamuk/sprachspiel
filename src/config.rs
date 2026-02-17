@@ -230,6 +230,7 @@ impl ModelConfig {
     }
 
     /// Get the default model configuration (lfm)
+    #[allow(dead_code)]
     pub fn get_default() -> ModelConfig {
         CONFIGS.get(DEFAULT_MODEL).cloned().unwrap()
     }
@@ -272,7 +273,7 @@ mod tests {
     #[test]
     fn test_all_models_exist() {
         let names = ModelConfig::list_names();
-        assert_eq!(names.len(), 10);
+        assert_eq!(names.len(), 13);
 
         for name in names {
             assert!(ModelConfig::is_valid(name), "Model {} should exist", name);
@@ -303,16 +304,16 @@ mod tests {
     fn test_gpt_oss_parameters() {
         let gpt = ModelConfig::get("gpt-oss").unwrap();
         assert_eq!(gpt.num_ctx, 65535);
-        assert_eq!(gpt.temperature, 1.0);
-        assert_eq!(gpt.top_k, 0);
-        assert_eq!(gpt.top_p, 1.0);
+        assert_eq!(gpt.temperature, 0.2);
+        assert_eq!(gpt.top_k, 40);
+        assert_eq!(gpt.top_p, 0.9);
     }
 
     #[test]
     fn test_qwen3_coder_parameters() {
         let qwen = ModelConfig::get("qwen3-coder").unwrap();
         assert_eq!(qwen.num_ctx, 65536);
-        assert_eq!(qwen.temperature, 0.7);
+        assert_eq!(qwen.temperature, 0.3);
         assert_eq!(qwen.top_k, 20);
         assert_eq!(qwen.top_p, 0.80);
         assert_eq!(qwen.repeat_penalty, 1.05);

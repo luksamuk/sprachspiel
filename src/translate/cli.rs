@@ -5,6 +5,9 @@
 
 use clap::{Args, Subcommand};
 
+use crate::ocr::OcrArgs;
+use crate::summarize::SummarizeArgs;
+
 /// Commands for the ask-ollama CLI
 #[derive(Subcommand, Debug)]
 pub enum Commands {
@@ -15,6 +18,14 @@ pub enum Commands {
     /// Query an Ollama LLM model
     #[command(visible_alias = "q")]
     Query(QueryArgs),
+
+    /// Extract text from images using GLM-OCR
+    #[command(visible_alias = "o")]
+    Ocr(OcrArgs),
+
+    /// Summarize text using AI
+    #[command(visible_alias = "sum")]
+    Summarize(SummarizeArgs),
 }
 
 /// Arguments for the translate subcommand
@@ -132,11 +143,13 @@ impl Default for QueryArgs {
 
 impl TranslateArgs {
     /// Check if this is a list-only operation
+    #[allow(dead_code)]
     pub fn is_list_only(&self) -> bool {
         self.list.is_some() && self.language.is_none()
     }
 
     /// Get the list filter if provided
+    #[allow(dead_code)]
     pub fn list_filter(&self) -> Option<&str> {
         self.list
             .as_ref()

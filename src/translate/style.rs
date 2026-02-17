@@ -4,9 +4,10 @@
 //! and custom style instructions.
 
 /// Translation style enum with predefined options and custom support
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum TranslationStyle {
     /// Formal, professional language with proper etiquette
+    #[default]
     Formal,
     /// Informal, conversational language with colloquialisms
     Casual,
@@ -59,6 +60,7 @@ impl TranslationStyle {
     }
 
     /// Get display name
+    #[allow(dead_code)]
     pub fn display_name(&self) -> String {
         match self {
             Self::Formal => "Formal".to_string(),
@@ -70,22 +72,18 @@ impl TranslationStyle {
     }
 
     /// Check if this is a custom style
+    #[allow(dead_code)]
     pub fn is_custom(&self) -> bool {
         matches!(self, Self::Custom(_))
     }
 
     /// Get the raw custom string if custom, None otherwise
+    #[allow(dead_code)]
     pub fn custom_instruction(&self) -> Option<&str> {
         match self {
             Self::Custom(s) => Some(s),
             _ => None,
         }
-    }
-}
-
-impl Default for TranslationStyle {
-    fn default() -> Self {
-        Self::Formal
     }
 }
 

@@ -102,6 +102,7 @@ dependencies = [
 name = "ask-ollama"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "clap 4.5.59",
  "futures",
  "indicatif",

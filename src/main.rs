@@ -6,8 +6,10 @@
 
 mod capabilities;
 mod config;
+mod ocr;
 mod prompts;
 mod spinner;
+mod summarize;
 mod tools;
 mod translate;
 
@@ -23,6 +25,8 @@ use crate::config::ModelConfig;
 use crate::prompts::get_prompt;
 use crate::spinner::create_spinner;
 use crate::tools::*;
+use crate::ocr::{OcrArgs, OcrProcessor, print_results};
+use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::translate::{
     Commands, LanguageMapper, TranslateArgs, QueryArgs,
     build_translation_prompt, TranslationStyle, parse_language_pair,
@@ -87,6 +91,8 @@ async fn main() -> AppResult<()> {
         match command {
             Commands::Translate(args) => return handle_translate(args).await,
             Commands::Query(args) => return handle_query(args).await,
+            Commands::Ocr(args) => return handle_ocr(args).await,
+            Commands::Summarize(args) => return handle_summarize(args).await,
         }
     }
 
@@ -617,6 +623,54 @@ fn print_debug_info(
     println!("Query: {}", query);
     println!("==========================");
     println!("Dry-run complete. No request was made to Ollama.");
+}
+
+/// Handle OCR subcommand
+async fn handle_ocr(args: OcrArgs) -> AppResult<()> {
+    // Validate arguments
+    if let Err(e) = args.validate() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+
+    let processor = OcrProcessor::new();
+
+    // Process files
+    let results = match processor.process_batch(&args).await {
+        Ok(results) => results,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Print results
+    print_results(&results, args.json);
+
+    Ok(())
+}
+
+/// Handle summarize subcommand
+async fn handle_summarize(args: SummarizeArgs) -> AppResult<()> {
+    // Validate arguments
+    if let Err(e) = args.validate() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+
+    let processor = SummarizeProcessor::new();
+
+    // Process summarization
+    match processor.summarize(&args).await {
+        Ok(summary) => {
+            println!("{}", summary);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Strip thinking tags from model output

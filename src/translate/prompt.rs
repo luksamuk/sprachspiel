@@ -77,6 +77,7 @@ pub fn build_translation_prompt(
 
 /// Build a simple translation prompt without all the ceremony
 /// Used for internal testing or simpler use cases
+#[allow(dead_code)]
 pub fn build_simple_prompt(source: Option<&str>, target: &str, text: &str) -> String {
     let mut prompt = String::new();
 
@@ -97,7 +98,7 @@ pub fn build_simple_prompt(source: Option<&str>, target: &str, text: &str) -> St
 
 #[cfg(test)]
 mod tests {
-    use super::super::language::{LanguageCode, LanguageMapper};
+    use super::super::language::LanguageMapper;
     use super::*;
 
     #[test]

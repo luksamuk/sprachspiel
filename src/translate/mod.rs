@@ -11,15 +11,17 @@ pub mod style;
 
 // Re-export commonly used items
 pub use cli::{Commands, QueryArgs, TranslateArgs};
-pub use language::{parse_language_pair, LanguageCode, LanguageError, LanguageMapper};
+pub use language::{parse_language_pair, LanguageError, LanguageMapper};
 pub use prompt::build_translation_prompt;
 pub use style::TranslationStyle;
 
 /// Type alias for translation results
+#[allow(dead_code)]
 pub type TranslationResult<T> = Result<T, TranslationError>;
 
 /// Error type for translation operations
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum TranslationError {
     Language(LanguageError),
     NoTextProvided,

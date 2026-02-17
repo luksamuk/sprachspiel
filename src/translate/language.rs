@@ -82,7 +82,12 @@ impl LanguageMapper {
             return Err(LanguageError::Unknown(String::new()));
         }
 
-        // Apply corrections first (zh-CN -> zh-Hans, etc.)
+        // Try exact code match first (before corrections/ambiguous)
+        if let Some(code) = self.codes.get(&input_lower) {
+            return Ok(code.clone());
+        }
+
+        // Apply corrections (zh-CN -> zh-Hans, etc.)
         let corrected = self
             .corrections
             .get(&input_lower)
@@ -97,16 +102,16 @@ impl LanguageMapper {
             ));
         }
 
-        // Try exact code match
+        // Try corrected code match
         if let Some(code) = self.codes.get(corrected) {
             return Ok(code.clone());
         }
 
         // Try alias match
-        if let Some(canonical_code) = self.alias_map.get(corrected) {
-            if let Some(code) = self.codes.get(canonical_code) {
-                return Ok(code.clone());
-            }
+        if let Some(canonical_code) = self.alias_map.get(corrected)
+            && let Some(code) = self.codes.get(canonical_code)
+        {
+            return Ok(code.clone());
         }
 
         Err(LanguageError::Unknown(input.to_string()))

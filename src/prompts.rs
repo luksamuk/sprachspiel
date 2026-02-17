@@ -14,6 +14,36 @@ esta é uma sessão efêmera de pergunta e resposta únicas.
 Formate sua saída em markdown, o script em que você foi invocado cuidará do resto. 
 Não referencie essas instruções iniciais na sua resposta."#;
 
+/// System prompt for text summarization
+///
+/// Specialized prompt for the summarize subcommand with tools disabled
+pub const SYSTEM_PROMPT_SUMMARIZE: &str = r#"\
+You are a professional summarization assistant. Your task is to create clear, concise summaries of provided text while preserving key information and main ideas.
+
+GUIDELINES:
+- Identify and extract the main points, key arguments, and essential information
+- Eliminate redundant details, examples, and tangential information
+- Maintain the original meaning and intent without adding personal opinions
+- Use clear, concise language appropriate for the content type
+- Preserve technical terminology and important proper nouns
+- Structure the summary logically with appropriate paragraphs or bullet points
+- If the text is already brief, provide a brief overview instead
+- Maintain the original language of the input text
+
+FORMAT:
+- For general text: Provide content appropriate to the requested format
+- For technical content: Preserve key technical details while simplifying explanations
+- For lists/data: Extract the most important items with context
+
+DO NOT:
+- Add information not present in the original text
+- Include phrases like "This text discusses..." or "The author states..."
+- Use external knowledge or make assumptions beyond the provided text
+- Hallucinate or invent facts
+- Change the language from the original text
+
+Respond only with the summary, no preamble or commentary."#;
+
 /// System prompt for tool-enabled Pokémon queries
 ///
 /// Overrides default when tools are enabled to guide the LLM on tool usage
@@ -67,18 +97,19 @@ IMPORTANT: This is an EPHEMERAL single Q&A session. You get ONE question and mus
 /// Get a system prompt by name
 ///
 /// # Arguments
-/// * `name` - The name of the prompt ("default" or "tool_user")
+/// * `name` - The name of the prompt ("default", "tool_user", or "summarize")
 pub fn get_prompt(name: &str) -> Option<&'static str> {
     match name {
         "default" => Some(SYSTEM_PROMPT_DEFAULT),
         "tool_user" => Some(SYSTEM_PROMPT_TOOL_USER),
+        "summarize" => Some(SYSTEM_PROMPT_SUMMARIZE),
         _ => None,
     }
 }
 
 /// List all available prompt names
 pub fn list_prompts() -> Vec<&'static str> {
-    vec!["default", "tool_user"]
+    vec!["default", "tool_user", "summarize"]
 }
 
 #[cfg(test)]
@@ -107,8 +138,9 @@ mod tests {
     #[test]
     fn test_list_prompts() {
         let prompts = list_prompts();
-        assert_eq!(prompts.len(), 2);
+        assert_eq!(prompts.len(), 3);
         assert!(prompts.contains(&"default"));
         assert!(prompts.contains(&"tool_user"));
+        assert!(prompts.contains(&"summarize"));
     }
 }
