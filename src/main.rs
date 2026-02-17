@@ -120,11 +120,11 @@ async fn main() -> AppResult<()> {
     // Handle subcommands if present
     if let Some(command) = cli.command {
         match command {
-            Commands::Translate(args) => return handle_translate(args).await,
+            Commands::Translate(args) => return handle_translate(args, &settings).await,
             Commands::Query(args) => return handle_query(args, &settings).await,
-            Commands::Ocr(args) => return handle_ocr(args).await,
-            Commands::Summarize(args) => return handle_summarize(args).await,
-            Commands::Completion(args) => return handle_completion(args),
+            Commands::Ocr(args) => return handle_ocr(args, &settings).await,
+            Commands::Summarize(args) => return handle_summarize(args, &settings).await,
+            Commands::Completion(args) => return handle_completion(args, &settings),
         }
     }
 
@@ -133,7 +133,7 @@ async fn main() -> AppResult<()> {
 }
 
 /// Handle translate subcommand
-async fn handle_translate(args: TranslateArgs) -> AppResult<()> {
+async fn handle_translate(args: TranslateArgs, _settings: &Settings) -> AppResult<()> {
     // Validate arguments
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
@@ -934,7 +934,7 @@ fn print_debug_info(
 }
 
 /// Handle OCR subcommand
-async fn handle_ocr(args: OcrArgs) -> AppResult<()> {
+async fn handle_ocr(args: OcrArgs, _settings: &Settings) -> AppResult<()> {
     // Validate arguments
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
@@ -973,7 +973,7 @@ async fn handle_ocr(args: OcrArgs) -> AppResult<()> {
 }
 
 /// Handle summarize subcommand
-async fn handle_summarize(args: SummarizeArgs) -> AppResult<()> {
+async fn handle_summarize(args: SummarizeArgs, settings: &Settings) -> AppResult<()> {
     // Handle debug mode
     if args.debug {
         enable_debug();
@@ -1047,7 +1047,7 @@ fn strip_thinking_tags(content: &str) -> String {
 }
 
 /// Handle completion subcommand
-fn handle_completion(args: CompletionArgs) -> AppResult<()> {
+fn handle_completion(args: CompletionArgs, _settings: &Settings) -> AppResult<()> {
     use clap::CommandFactory;
     use std::io::stdout;
 
