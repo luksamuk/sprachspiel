@@ -199,6 +199,77 @@ Key crates:
 - `reqwest`: HTTP client
 - `futures`: Async utilities
 
+## Tool Development Guidelines
+
+When creating or modifying tools, follow these principles:
+
+### Error Handling Philosophy
+
+**Tools must never crash the application.** Instead, return informative error messages as strings that help the LLM understand what went wrong and recover.
+
+```rust
+// ❌ BAD - Crashes on error
+if !canonical_path.exists() {
+    return Err(format!("File not found: {}", path).into());
+}
+
+// ✅ GOOD - Returns helpful error message
+if !canonical_path.exists() {
+    let err_msg = format!(
+        "Error: File not found: {}. Please check if the file exists or try a different file name.",
+        path
+    );
+    log_tool_result("read_file", &err_msg);
+    return Ok(err_msg);
+}
+```
+
+### Tool Error Categories
+
+1. **User input errors** - File not found, invalid regex, invalid parameters
+   - Return helpful message with suggestions
+   - Include examples of correct usage when possible
+
+2. **API/Network errors** - Timeout, rate limit, service unavailable
+   - Return error with "try again later" message
+   - Don't retry automatically in tool code
+
+3. **System errors** - Permission denied, out of memory
+   - Return error with context
+   - These are rare but should still be handled gracefully
+
+### Logging Debug Output
+
+Always log tool calls and results for debug mode:
+
+```rust
+use crate::debug_tools::{log_tool_call, log_tool_result};
+
+pub async fn my_tool(param: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("my_tool", &[("param".to_string(), param.clone())]);
+    
+    // ... do work ...
+    
+    let result = "...";
+    log_tool_result("my_tool", &result);
+    Ok(result)
+}
+```
+
+### Optional Parameters
+
+Show "all" or default values in debug output, not empty strings:
+
+```rust
+log_tool_call(
+    "read_file",
+    &[
+        ("path".to_string(), path.clone()),
+        ("max_lines".to_string(), max_lines.map(|l| l.to_string()).unwrap_or_else(|| "all".to_string())),
+    ],
+);
+```
+
 ## Notes
 
 - The project is a CLI tool for interacting with local Ollama models

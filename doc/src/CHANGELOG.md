@@ -10,6 +10,8 @@ All notable changes to Ask-AI will be documented in this file.
 - Man page for terminal reference
 - Development documentation (architecture, roadmap, contributing)
 - Mermaid diagram support
+- New `read_file_segment` tool for reading specific line ranges from files
+- Tool error handling guidelines in documentation
 
 ### Fixed
 
@@ -17,6 +19,12 @@ All notable changes to Ask-AI will be documented in this file.
 - Code mode now respects `[model.code]` config properly
 - Translate subcommand now respects `--plain` flag
 - Per-subcommand configuration system (query, summarize, code)
+- `read_file` debug output now shows "all" instead of empty when max_lines not specified
+
+### Changed
+
+- Tools now return informative error messages to help LLM recover from mistakes
+- Documentation updated with tool error handling philosophy
 
 ## [0.1.0] - 2026-02-17
 

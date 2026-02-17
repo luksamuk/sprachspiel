@@ -9,7 +9,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Pokémon | 8 | PokéAPI | ✅ Working | ❌ Disabled* |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
 | Web Search | 3 | DuckDuckGo | ⚠️ Currently blocked | ✅ Enabled |
-| File Operations | 3 | Local filesystem | ✅ Working | ✅ Enabled |
+| File Operations | 4 | Local filesystem | ✅ Working | ✅ Enabled |
 
 \* **Pokémon tools are disabled by default** to avoid polluting the context window with specialized tool descriptions when not needed. See [Compilation Features](#compilation-features) to enable them.
 
@@ -31,7 +31,7 @@ The default build includes:
 | `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_move_details |
 | `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast |
 | `web-search-tools` | Web search via DuckDuckGo | web_search, web_search_news, web_instant_answer |
-| `file-tools` | Local file operations | read_file, list_directory, search_files |
+| `file-tools` | Local file operations | read_file, read_file_segment, list_directory, search_files |
 | `all-tools` | Enable all tool categories | All of the above |
 
 ### Why Pokémon Tools Are Disabled by Default
@@ -245,7 +245,7 @@ Args: query (string)
 Example: web_instant_answer(query: "What is photosynthesis?")
 ```
 
-## File Operation Tools (3)
+## File Operation Tools (4)
 
 Perform local filesystem operations. **Sandboxed by default** to current working directory for security.
 
@@ -264,6 +264,30 @@ Example: read_file(path: "README.md", max_lines: 50)
 - Sandbox restricts access to current directory
 - Supports relative and absolute paths
 - Auto-resolves symlinks
+
+### read_file_segment
+
+Read a specific segment of a file (useful for large files).
+
+```
+Function: read_file_segment
+Args: path (string), start_line (integer), num_lines (integer), sandbox (optional boolean, default: true)
+Example: read_file_segment(path: "src/main.rs", start_line: 100, num_lines: 50)
+```
+
+**Features:**
+- Line numbers are 1-based
+- Output includes line numbers for easy reference
+- Useful for reading specific functions or sections without loading entire large files
+- Helps keep context window small
+
+**Output format:**
+```
+Lines 100-150 of 500:
+----------------------------------------
+   100 | fn my_function() {
+   101 |     println!("Hello");
+```
 
 ### list_directory
 
@@ -530,6 +554,42 @@ ask-ai -d "Tell me about Pikachu"
 6. **Keep file sandbox enabled** - For security
 7. **Use relative paths** - When working with files
 8. **Limit search scope** - Use file patterns to narrow searches
+9. **Use read_file_segment** - For large files, read only what you need
+
+## Tool Error Handling
+
+Tools are designed to handle errors gracefully and provide helpful feedback to the LLM:
+
+### Error Philosophy
+
+**Tools never crash the application.** Instead, they return informative error messages that help the LLM understand what went wrong and how to fix it.
+
+Examples:
+
+| Situation | Error Message |
+|-----------|---------------|
+| File not found | `Error: File not found: README.md. Please check if the file exists or try a different file name (e.g., README.org instead of README.md).` |
+| Invalid line number | `Error: Invalid start_line 500. File has 100 lines. Line numbers start at 1.` |
+| Search pattern error | `Error: Invalid regex pattern '[a-z'. Please check your regex syntax.` |
+| API error | `Weather API error: 429. Please try again later.` |
+
+### How the LLM Uses Errors
+
+When a tool returns an error:
+
+1. The error is returned as a string result (not an exception)
+2. The LLM sees the error in the tool result
+3. The LLM can try a different approach (e.g., try `README.org` if `README.md` not found)
+4. The LLM can inform the user about the issue
+
+### When Tools Fail
+
+Only critical/unrecoverable errors cause failures:
+- Network timeouts (after retries)
+- System-level errors (out of memory)
+- Invalid configuration
+
+All other errors return helpful messages so the LLM can adapt.
 
 ## Security Considerations
 
