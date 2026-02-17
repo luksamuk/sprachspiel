@@ -73,6 +73,24 @@ ask-ai -m qwen3-coder "Write a Python function"
 - [Ollama](https://ollama.ai) running locally
 - Required models: `lfm2.5-thinking`, `translategemma`, `glm-ocr`, `llama3.2`
 
+## Installing Models
+
+Ask-AI uses **modelfiles** that must be **built** with custom parameters. Simply pulling models directly won't work.
+
+```bash
+cd modelfiles
+
+# Install essential models (builds with custom config)
+make models-essential
+
+# Install optional recommended models
+make models-optional
+```
+
+**Important:** Models must be built via the Makefile to apply custom configurations (context window, temperature, etc.). Direct `ollama pull` won't work correctly.
+
+See `modelfiles/README.md` for details.
+
 ## AI-Assisted Development
 
 Developed with assistance from:

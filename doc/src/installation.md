@@ -48,7 +48,7 @@ The easiest way to install Ask-AI is using the provided Makefile:
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/luksamuk/ask-ollama-rs.git
 cd ask-ollama-rs
 
 # Build and install (default: /usr/local)
@@ -70,7 +70,7 @@ Build from source manually:
 
 ```bash
 # Clone and enter repository
-git clone <your-repo-url>
+git clone https://github.com/luksamuk/ask-ollama-rs.git
 cd ask-ollama-rs
 
 # Build release binary
@@ -98,6 +98,124 @@ cargo build
 ./target/debug/ask-ollama "Your query"
 ```
 
+## Installing Models
+
+⚠️ **Important:** Ask-AI models **must be built** using the provided modelfiles. Simply pulling models directly from Ollama won't work because our models require custom parameters (context window, temperature, etc.) that are configured in the modelfiles.
+
+### How Model Building Works
+
+Each modelfile:
+1. Pulls the base model from Ollama or Hugging Face
+2. Creates a new model with **custom parameters** optimized for Ask-AI
+3. Names it with the exact ID that Ask-AI expects
+
+**Always use the Makefile targets** - never use `ollama pull` directly.
+
+### Quick Install (Essential Models Only)
+
+Install the four models required for basic functionality:
+
+```bash
+# Navigate to modelfiles directory
+cd modelfiles
+
+# Build and install all essential models
+make models-essential
+```
+
+This builds and installs:
+- **lfm2.5-thinking:1.2b-32k** - Default for general queries (32K context)
+- **translategemma:12b-32k** - For translation command
+- **llama3.2:3b-32k** - For summarization command  
+- **glm-ocr:bf16** - For OCR/text extraction
+
+### Installing Optional Models
+
+For enhanced functionality with tools and specialized tasks:
+
+```bash
+cd modelfiles
+
+# Build and install recommended optional models
+make models-optional
+```
+
+This builds and installs:
+- **mistral-small3.2:24b-32k** - Tool-capable model (32K context)
+- **gpt-oss:20b-64k** - Tool calling model (64K context)
+- **qwen3-coder:30b-64k** - Code generation (64K context)
+- **pepe:8b-64k** - Character model with personality (64K context)
+
+### Installing All Local Models
+
+To build and install all local models (both essential and optional):
+
+```bash
+cd modelfiles
+make models-all
+```
+
+### Installing Cloud Models
+
+Cloud models are pulled directly (no build needed) from remote APIs:
+
+```bash
+cd modelfiles
+make models-cloud
+```
+
+This pulls cloud-based models with large context windows (198K-256K tokens).
+
+### Installing Individual Models
+
+Build individual models as needed:
+
+```bash
+cd modelfiles
+
+# Essential models (must have)
+make lfm                 # Build LFM 2.5 Thinking (default)
+make translategemma      # Build Translation model
+make llama3.2            # Build Summarization model
+make glm-ocr             # Pull OCR model
+
+# Optional models
+make mistral-small       # Build tool-capable model
+make gpt-oss            # Build tool calling model
+make qwen3-coder        # Build code generation model
+make pepe               # Build character model
+
+# See all available targets
+make help
+```
+
+### About Modelfiles
+
+The `modelfiles/` directory contains `.modelfile` definitions that:
+- Specify the base model to pull from Ollama or Hugging Face
+- Configure context window sizes (32K, 64K, etc.)
+- Set optimized parameters (temperature, top_k, top_p, etc.)
+- Define stop tokens and other model-specific settings
+
+Each modelfile creates a customized model with the correct name and configuration for Ask-AI.
+
+### Manual Model Installation (Not Recommended)
+
+**⚠️ Warning:** Direct `ollama pull` will NOT work correctly. Models must be built with custom parameters.
+
+If you attempt manual installation, models will have wrong configuration:
+- Wrong context window sizes
+- Wrong temperature settings
+- Missing stop tokens
+
+The application will fail or behave unexpectedly.
+
+**Always use the Makefile:**
+```bash
+cd modelfiles
+make models-essential
+```
+
 ## Verifying Installation
 
 After installation, verify Ask-AI is working:
@@ -112,52 +230,13 @@ ask-ai --help
 # List available models
 ask-ai --list
 
-# Test with a simple query
+# Test with a simple query (requires lfm model)
 ask-ai "Hello, are you working?"
 ```
 
-## Installing Required Models
-
-Ask-AI uses several Ollama models for different tasks. Install the ones you need:
-
-### Default Query Model (LFM)
-
-```bash
-ollama pull lfm2.5-thinking:1.2b-32k
-```
-
-### Translation Model
-
-```bash
-ollama pull translategemma:12b-32k
-```
-
-### OCR Model
-
-```bash
-ollama pull glm-ocr:bf16
-```
-
-### Summarization Model (optional)
-
-```bash
-ollama pull llama3.2:3b-32k
-```
-
-### Other Useful Models
-
-```bash
-# For tool calling
-ollama pull mistral-small3.2:24b-32k
-
-# For coding
-ollama pull qwen3-coder:30b-64k
-
-# For general use
-ollama pull pepe:8b-64k
-```
-
 ## Uninstallation
+
+### Uninstall Ask-AI Binary
 
 If you installed with Make:
 
@@ -173,6 +252,28 @@ If you installed manually:
 ```bash
 sudo rm /usr/local/bin/ask-ai
 sudo rm /usr/local/share/man/man1/ask-ai.1
+```
+
+### Remove Installed Models
+
+To remove models installed via modelfiles:
+
+```bash
+# List installed models
+ollama list
+
+# Remove specific models
+ollama rm lfm2.5-thinking:1.2b-32k
+ollama rm translategemma:12b-32k
+ollama rm llama3.2:3b-32k
+ollama rm glm-ocr:bf16
+ollama rm mistral-small3.2:24b-32k
+ollama rm gpt-oss:20b-64k
+ollama rm qwen3-coder:30b-64k
+ollama rm pepe:8b-64k
+
+# Or remove all models at once
+ollama rm $(ollama list | awk 'NR>1 {print $1}')
 ```
 
 ## Post-Installation
@@ -247,6 +348,35 @@ curl http://localhost:11434/api/tags
 
 # Start Ollama if not running
 ollama serve
+```
+
+### "Model not found" Error
+
+If you get "Model not found" errors:
+
+```bash
+# Check if Ollama has the model
+ollama list | grep lfm2.5
+
+# Install missing models
+cd modelfiles
+make models-essential
+```
+
+### Model Installation Fails
+
+If model installation via modelfiles fails:
+
+```bash
+# Check Ollama is running
+ollama serve
+
+# Try installing the base model manually first
+ollama pull lfm2.5-thinking:1.2b
+
+# Then retry the modelfile installation
+cd modelfiles
+make lfm
 ```
 
 ## Next Steps

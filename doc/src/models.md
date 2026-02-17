@@ -255,7 +255,29 @@ ask-ai -m glm-5 -t "Deep reasoning"  # Cloud model
 
 ## Installation
 
-Before using a model, pull it with Ollama:
+We provide modelfiles for easy model installation with optimized parameters.
+
+### Using Modelfiles (Recommended)
+
+```bash
+cd modelfiles
+
+# Install all essential models
+make models-essential
+
+# Install optional models
+make models-optional
+
+# Install all local models
+make models-all
+
+# Install cloud models
+make models-cloud
+```
+
+### Manual Installation
+
+Pull models directly from Ollama:
 
 ```bash
 # Essential models
@@ -270,6 +292,8 @@ ollama pull qwen3-coder:30b-64k
 ollama pull pepe:8b-64k
 # ... etc
 ```
+
+**Note:** Manual installation uses default parameters. Modelfiles provide optimized configurations (temperature, context window, etc.) tailored for Ask-AI.
 
 ## Model Commands
 
