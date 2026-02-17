@@ -197,7 +197,7 @@ Examples:
     }
 
     // File tools section
-    let file_tools = ["read_file", "list_directory", "search_files"];
+    let file_tools = ["read_file", "read_file_segment", "list_directory", "search_files"];
     
     let file_enabled: Vec<_> = file_tools
         .iter()
@@ -212,6 +212,7 @@ Examples:
 Use these tools to read, list, and search files in the local filesystem.
 Examples:
 - "Read the README.md file" → CALL read_file
+- "Read lines 10-20 of main.rs" → CALL read_file_segment
 - "Show me the project structure" → CALL list_directory
 - "Find all TODO comments" → CALL search_files
 
@@ -292,6 +293,7 @@ Available tools:
         for tool in &file_enabled {
             let description = match *tool {
                 "read_file" => "Read contents of a file",
+                "read_file_segment" => "Read a specific segment of a file (start_line, num_lines)",
                 "list_directory" => "List files and directories",
                 "search_files" => "Search file contents with regex pattern",
                 _ => "Tool",
@@ -339,6 +341,7 @@ ABSOLUTE RULES:
 TOOL USAGE GUIDELINES:
 - Use list_directory to understand project structure
 - Use read_file to inspect configuration files
+- Use read_file_segment to read specific parts of large files
 - Use search_files to find relevant code patterns
 - Call tools BEFORE generating final code if needed
 
@@ -350,7 +353,12 @@ Available file operation tools:
     );
 
     // Add file tool descriptions if not blacklisted
-    let file_tools = [("read_file", "Read file contents"), ("list_directory", "List files and directories"), ("search_files", "Search file contents with regex")];
+    let file_tools = [
+        ("read_file", "Read file contents"),
+        ("read_file_segment", "Read a specific segment of a file (start_line, num_lines)"),
+        ("list_directory", "List files and directories"),
+        ("search_files", "Search file contents with regex"),
+    ];
     
     for (tool, description) in file_tools {
         if !blacklist.contains(tool) {

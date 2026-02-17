@@ -18,7 +18,7 @@ pub async fn read_file(
             ("path".to_string(), path.clone()),
             (
                 "max_lines".to_string(),
-                max_lines.map(|l| l.to_string()).unwrap_or_default(),
+                max_lines.map(|l| l.to_string()).unwrap_or_else(|| "all".to_string()),
             ),
         ],
     );
@@ -76,6 +76,101 @@ pub async fn read_file(
     };
 
     log_tool_result("read_file", &result);
+    Ok(result)
+}
+
+/// Read a specific segment of a file (from start_line for num_lines).
+/// Useful for reading parts of large files without loading the entire file.
+#[ollama_rs::function]
+pub async fn read_file_segment(
+    path: String,
+    start_line: u32,
+    num_lines: u32,
+    sandbox: Option<bool>,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call(
+        "read_file_segment",
+        &[
+            ("path".to_string(), path.clone()),
+            ("start_line".to_string(), start_line.to_string()),
+            ("num_lines".to_string(), num_lines.to_string()),
+        ],
+    );
+
+    // Validate and canonicalize path
+    let path_buf = PathBuf::from(&path);
+    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+        Ok(p) => p,
+        Err(e) => {
+            let err_msg = format!("Error: {}", e);
+            log_tool_result("read_file_segment", &err_msg);
+            return Ok(err_msg);
+        }
+    };
+
+    // Check if file exists and is readable
+    if !canonical_path.exists() {
+        let err_msg = format!("Error: File not found: {}. Please check if the file exists.", path);
+        log_tool_result("read_file_segment", &err_msg);
+        return Ok(err_msg);
+    }
+
+    if !canonical_path.is_file() {
+        let err_msg = format!("Error: Path is not a file: {}", path);
+        log_tool_result("read_file_segment", &err_msg);
+        return Ok(err_msg);
+    }
+
+    // Check file size
+    let metadata = std::fs::metadata(&canonical_path)?;
+    if metadata.len() > MAX_FILE_SIZE as u64 {
+        let err_msg = format!(
+            "Error: File too large ({} bytes, max: {} bytes): {}",
+            metadata.len(),
+            MAX_FILE_SIZE,
+            path
+        );
+        log_tool_result("read_file_segment", &err_msg);
+        return Ok(err_msg);
+    }
+
+    // Read file content
+    let content = std::fs::read_to_string(&canonical_path)?;
+
+    // Extract segment
+    let start = start_line as usize;
+    let count = num_lines as usize;
+    
+    let lines: Vec<&str> = content.lines().collect();
+    let total_lines = lines.len();
+
+    if start == 0 || start > total_lines {
+        let err_msg = format!(
+            "Error: Invalid start_line {}. File has {} lines. Line numbers start at 1.",
+            start_line, total_lines
+        );
+        log_tool_result("read_file_segment", &err_msg);
+        return Ok(err_msg);
+    }
+
+    let start_idx = start - 1; // Convert to 0-based index
+    let end_idx = std::cmp::min(start_idx + count, total_lines);
+    let segment_lines: Vec<&str> = lines[start_idx..end_idx].to_vec();
+
+    let result = if segment_lines.is_empty() {
+        format!("File has {} lines. No lines to read from line {}.", total_lines, start_line)
+    } else {
+        let mut output = Vec::new();
+        let end_line = start_line as usize + segment_lines.len() - 1;
+        output.push(format!("Lines {}-{} of {}:", start_line, end_line, total_lines));
+        output.push("-".repeat(40));
+        for (i, line) in segment_lines.iter().enumerate() {
+            output.push(format!("{:>6} | {}", start as usize + i, line));
+        }
+        output.join("\n")
+    };
+
+    log_tool_result("read_file_segment", &result);
     Ok(result)
 }
 
