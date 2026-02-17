@@ -1,14 +1,22 @@
 //! System prompts for different use cases
 
-/// Concise system prompt for general queries
-pub const SYSTEM_PROMPT_CONCISE: &str = r#"\
-You are a helpful agent invoked through a command-line script on Arch Linux.
-Be extremely concise. Show only the requested code when possible, unless a discursive response is necessary or explicitly requested.
-If you can answer with just code even when a discursive response seems expected, do so.
-Always respond in the same language the user uses.
-Do not end your responses with conversation hooks; this is an ephemeral single Q&A session."#;
+/// Default system prompt for general queries (Portuguese)
+///
+/// Based on ask-ai.py's default system prompt
+pub const SYSTEM_PROMPT_DEFAULT: &str = r#"\
+INSTRUÇÕES: Você é um agente útil que foi invocado através de um script de linha de comando, 
+no sistema operacional Arch Linux, para que possa responder. 
+Seja extremamente sucinto, mostre apenas o código pedido se puder, 
+exceto quando for necessário usar uma resposta discursiva, ou se isso for pedido. 
+Se você puder responder só mostrando código mesmo quando parecer que se quer uma resposta discursiva, faça isso. 
+Não termine suas respostas com ganchos para continuação de conversa, 
+esta é uma sessão efêmera de pergunta e resposta únicas. 
+Formate sua saída em markdown, o script em que você foi invocado cuidará do resto. 
+Não referencie essas instruções iniciais na sua resposta."#;
 
 /// System prompt for tool-enabled Pokémon queries
+///
+/// Overrides default when tools are enabled to guide the LLM on tool usage
 pub const SYSTEM_PROMPT_TOOL_USER: &str = r#"\
 You are a helpful agent invoked through a command-line script on Arch Linux.
 You have access to tools that can fetch real-time data about Pokémon from the PokéAPI.
@@ -57,9 +65,12 @@ IMPORTANT: This is an EPHEMERAL single Q&A session. You get ONE question and mus
 - Provide a complete, final answer and stop."#;
 
 /// Get a system prompt by name
+///
+/// # Arguments
+/// * `name` - The name of the prompt ("default" or "tool_user")
 pub fn get_prompt(name: &str) -> Option<&'static str> {
     match name {
-        "concise" => Some(SYSTEM_PROMPT_CONCISE),
+        "default" => Some(SYSTEM_PROMPT_DEFAULT),
         "tool_user" => Some(SYSTEM_PROMPT_TOOL_USER),
         _ => None,
     }
@@ -67,5 +78,37 @@ pub fn get_prompt(name: &str) -> Option<&'static str> {
 
 /// List all available prompt names
 pub fn list_prompts() -> Vec<&'static str> {
-    vec!["concise", "tool_user"]
+    vec!["default", "tool_user"]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_prompt_exists() {
+        let prompt = get_prompt("default");
+        assert!(prompt.is_some());
+        assert!(prompt.unwrap().contains("INSTRUÇÕES"));
+    }
+
+    #[test]
+    fn test_tool_user_prompt_exists() {
+        let prompt = get_prompt("tool_user");
+        assert!(prompt.is_some());
+        assert!(prompt.unwrap().contains("Pokémon"));
+    }
+
+    #[test]
+    fn test_invalid_prompt() {
+        assert!(get_prompt("invalid").is_none());
+    }
+
+    #[test]
+    fn test_list_prompts() {
+        let prompts = list_prompts();
+        assert_eq!(prompts.len(), 2);
+        assert!(prompts.contains(&"default"));
+        assert!(prompts.contains(&"tool_user"));
+    }
 }
