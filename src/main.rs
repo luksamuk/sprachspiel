@@ -974,12 +974,36 @@ async fn handle_ocr(args: OcrArgs, _settings: &Settings) -> AppResult<()> {
 
 /// Handle summarize subcommand
 async fn handle_summarize(args: SummarizeArgs, settings: &Settings) -> AppResult<()> {
+    // Get subcommand configuration from settings
+    let (subcommand_model, _subcommand_thinking, _subcommand_tools) = 
+        settings.get_subcommand_config("summarize");
+    
+    // Determine model to use following precedence:
+    // 1. CLI argument (if not default)
+    // 2. Subcommand-specific config from settings
+    // 3. Global default from settings
+    // 4. Hardcoded default (llama3.2)
+    let model_id = if args.model != "llama3.2" {
+        // User specified model via CLI
+        args.model.clone()
+    } else if subcommand_model != "lfm" && !subcommand_model.is_empty() {
+        // Use subcommand-specific model from config
+        subcommand_model
+    } else if settings.model.default != "lfm" {
+        // Use global default from settings
+        settings.model.default.clone()
+    } else {
+        // Hardcoded default
+        "llama3.2".to_string()
+    };
+
     // Handle debug mode
     if args.debug {
         enable_debug();
         eprintln!("Debug Mode - Summarize Configuration:");
         eprintln!("==========================");
-        eprintln!("Model ID:          {}", args.model);
+        eprintln!("Model ID (CLI):    {}", args.model);
+        eprintln!("Model ID (Config): {}", model_id);
         eprintln!("Max Length:        {} words", args.max_length);
         eprintln!("Format:            {:?}", args.format);
         eprintln!("Style:             {:?}", args.style);
@@ -1015,8 +1039,8 @@ async fn handle_summarize(args: SummarizeArgs, settings: &Settings) -> AppResult
 
     let processor = SummarizeProcessor::new();
 
-    // Process summarization with the text already loaded
-    match processor.summarize(&args, &text).await {
+    // Process summarization with the text already loaded, passing the determined model_id
+    match processor.summarize(&args, &text, &model_id).await {
         Ok(summary) => {
             // Render output with markdown if not --plain
             if args.plain {

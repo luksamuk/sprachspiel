@@ -28,13 +28,13 @@ impl SummarizeProcessor {
         &self,
         args: &SummarizeArgs,
         text: &str,
+        model_id: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         if text.is_empty() {
             return Err("No text provided for summarization".into());
         }
 
-        // Get model config from args (with fallback chain)
-        let model_id = &args.model;
+        // Get model config (with fallback chain)
         let model_config = ModelConfig::get(model_id).unwrap_or_else(|| {
             ModelConfig::get("llama3.2").unwrap_or_else(|| {
                 ModelConfig::get("mistral-small")
