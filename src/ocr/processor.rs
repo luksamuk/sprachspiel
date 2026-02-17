@@ -5,8 +5,10 @@
 
 use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
+use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 use std::path::Path;
+use base64::Engine;
 
 use crate::spinner::create_spinner;
 
@@ -32,15 +34,22 @@ impl OcrProcessor {
         // Validate file
         self.validate_file(path)?;
 
-        // Get absolute path for the prompt
-        let abs_path = std::fs::canonicalize(path)
+        // Read the image file bytes
+        let image_bytes = tokio::fs::read(path)
+            .await
             .map_err(|e| OcrError::ReadFailed {
                 file: path.to_string_lossy().to_string(),
                 error: e.to_string(),
             })?;
 
-        // Build prompt with image path (format: "Mode: /path/to/image.png")
-        let prompt = format!("{} {}", mode.into_prompt(), abs_path.display());
+        // Base64 encode the image bytes - REQUIRED!
+        let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
+        
+        // Create the Image object from base64
+        let image = Image::from_base64(base64_image);
+
+        // Build prompt (just the mode prompt, no file path needed)
+        let prompt = mode.into_prompt();
 
         // Initialize Ollama
         let ollama = Ollama::default();
@@ -49,9 +58,10 @@ impl OcrProcessor {
         let model_options = ModelOptions::default()
             .temperature(0.0); // GLM-OCR uses temperature 0
 
-        // Create generation request for /api/generate endpoint
+        // Create generation request with the image attached
         let request = GenerationRequest::new("glm-ocr:bf16".to_string(), prompt)
-            .options(model_options);
+            .options(model_options)
+            .add_image(image); // <-- Actually sends the image data
 
         // Show spinner
         let spinner = create_spinner(&format!("Extracting {} from {}...", mode.description(), path.display()));
