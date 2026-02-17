@@ -682,7 +682,12 @@ async fn handle_summarize(args: SummarizeArgs) -> AppResult<()> {
     // Process summarization with the text already loaded
     match processor.summarize(&args, &text).await {
         Ok(summary) => {
-            println!("{}", summary);
+            // Render output with markdown if not --plain
+            if args.plain {
+                println!("{}", summary);
+            } else {
+                print_text(&summary);
+            }
             Ok(())
         }
         Err(e) => {
