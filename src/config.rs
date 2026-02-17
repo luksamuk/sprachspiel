@@ -115,17 +115,66 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
         },
     );
 
-    // glm-4.7-flash: 4.7B parameters, 64K context
-    // Source: glm-4.7-flash:q4_K_M (GLM-4 variant)
-    // Tool-optimized: Lower temperature for reliable tool use
+    // glm-5: 744B total parameters (40B active), 198K context
+    // Source: glm-5:cloud (Z.ai GLM-5 model)
+    // Cloud model optimized for complex reasoning, coding, and agentic tasks
+    // Supports tools, thinking, and long context (198K)
     configs.insert(
-        "glm-4.7-flash",
+        "glm-5",
         ModelConfig {
-            model_id: "glm-4.7-flash:q4_K_M-64k".to_string(),
-            num_ctx: 65536,
-            temperature: 0.3, // Lowered for tool reliability (was 0.7)
+            model_id: "glm-5:cloud".to_string(),
+            num_ctx: 197632,  // 198K context window (197,632 tokens)
+            temperature: 0.7, // Optimized for agentic tasks per Z.ai benchmarks
             top_k: 40,
-            top_p: 0.9, // Narrowed for structured output (was 1.0)
+            top_p: 0.95, // As per SWE-bench and Terminal-Bench 2.0 evaluation settings
+            repeat_penalty: 1.0,
+        },
+    );
+
+    // kimi-k2.5: Native multimodal agentic model, 256K context
+    // Source: kimi-k2.5:cloud (Moonshot AI)
+    // Cloud model with vision, tools, thinking capabilities
+    // Supports text and image inputs
+    configs.insert(
+        "kimi-k2.5",
+        ModelConfig {
+            model_id: "kimi-k2.5:cloud".to_string(),
+            num_ctx: 262144, // 256K context window
+            temperature: 0.7,
+            top_k: 40,
+            top_p: 0.95,
+            repeat_penalty: 1.0,
+        },
+    );
+
+    // minimax-m2.5: State-of-the-art LLM for coding and agentic tasks, 198K context
+    // Source: minimax-m2.5:cloud (MiniMax)
+    // Cloud model with tools and thinking capabilities
+    // Trained with large-scale RL for real-world productivity
+    configs.insert(
+        "minimax-m2.5",
+        ModelConfig {
+            model_id: "minimax-m2.5:cloud".to_string(),
+            num_ctx: 197632, // 198K context window
+            temperature: 0.7,
+            top_k: 40,
+            top_p: 0.95,
+            repeat_penalty: 1.0,
+        },
+    );
+
+    // qwen3.5: 397B-A17B vision-language model, 256K context
+    // Source: qwen3.5:cloud (Alibaba Qwen)
+    // Cloud model with vision, tools, thinking capabilities
+    // Hybrid architecture with linear attention and sparse MoE
+    configs.insert(
+        "qwen3.5",
+        ModelConfig {
+            model_id: "qwen3.5:cloud".to_string(),
+            num_ctx: 262144, // 256K context window
+            temperature: 0.7,
+            top_k: 40,
+            top_p: 0.95,
             repeat_penalty: 1.0,
         },
     );
@@ -195,7 +244,10 @@ impl ModelConfig {
             "sead",             // SEAD 14B
             "qwen3-coder",      // Qwen3 Coder 30B
             "devstral-small-2", // Devstral 24B
-            "glm-4.7-flash",    // GLM 4.7 Flash
+            "glm-5",            // GLM-5 744B cloud model
+            "kimi-k2.5",        // Kimi K2.5 256K cloud model
+            "minimax-m2.5",     // MiniMax M2.5 198K cloud model
+            "qwen3.5",          // Qwen3.5 397B 256K cloud model
             "translate",        // TranslateGemma 12B
             "pepe",             // Assistant Pepe 8B
         ]
