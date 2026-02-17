@@ -1,0 +1,42 @@
+[book]
+authors = ["Lucas S. Vieira"]
+language = "pt-BR"
+src = "src"
+title = "Ask-AI Documentation"
+description = "Complete user guide for the Ask-AI CLI tool"
+
+[output.html]
+default-theme = "ayu"
+preferred-dark-theme = "ayu"
+mathjax-support = false
+additional-css = ["custom.css"]
+
+[output.html.print]
+enable = true
+
+[output.html.search]
+enable = true
+limit-results = 20
+teaser-word-count = 30
+use-boolean-and = true
+boost-title = 2
+boost-hierarchy = 1
+boost-paragraph = 1
+expand = true
+heading-split-level = 3
+
+[preprocessor]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[preprocessor.index]
+
+[preprocessor.links]
+
+[output.markdown]
+
+[output.html.redirect]
+
+[rust]
+edition = "2021"

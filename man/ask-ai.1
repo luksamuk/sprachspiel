@@ -1,0 +1,305 @@
+.TH ASK-AI 1 "February 2026" "ask-ai" "User Commands"
+.SH NAME
+ask-ai \- A powerful CLI for interacting with Ollama LLM models
+.SH SYNOPSIS
+.B ask-ai
+.RI [ OPTIONS ] [ QUERY ]
+.br
+.B ask-ai query
+.RI [ OPTIONS ] [ QUERY ]
+.br
+.B ask-ai translate
+.RI [ OPTIONS ] LANGUAGE [ TEXT ]
+.br
+.B ask-ai ocr
+.RI [ OPTIONS ] FILE ...
+.br
+.B ask-ai summarize
+.RI [ OPTIONS ] [ TEXT ]
+.SH DESCRIPTION
+.B ask-ai
+is a Rust CLI tool for interacting with local Ollama LLM models, featuring markdown rendering, tool-assisted queries, translation, OCR, and text summarization.
+.PP
+When invoked without a subcommand, it defaults to query mode. The application reads from stdin if no QUERY or TEXT is provided, making it suitable for piping.
+.SH COMMANDS
+.TP
+.B query, q
+Execute a query with the default or specified model. This is the default mode when no subcommand is given.
+.TP
+.B translate, t
+Translate text between 50+ languages using TranslateGemma model.
+.TP
+.B ocr, o
+Extract text from images using GLM-OCR. Supports text, tables, figures, and formulas.
+.TP
+.B summarize, sum
+Create concise summaries of text with customizable styles.
+.SH GLOBAL OPTIONS
+.TP
+.BR \-m ", " \-\-model " " \fIMODEL\fR
+Select model preset (default: lfm). See MODELS section.
+.TP
+.BR \-p ", " \-\-prompt " " \fIMODE\fR
+Set system prompt mode: default, tool_user, code, code_with_tools.
+.TP
+.BR \-t ", " \-\-think
+Enable think mode for models that support reasoning.
+.TP
+.BR \-\-plain
+Output plain text without markdown formatting.
+.TP
+.BR \-d ", " \-\-debug
+Enable debug mode with detailed logging to stderr.
+.TP
+.BR \-l ", " \-\-list
+List available models and prompt modes, then exit.
+.TP
+.BR \-\-tools
+Force enable tools even if model doesn't advertise support.
+.TP
+.BR \-c ", " \-\-code
+Code mode: optimize response for code output.
+.TP
+.BR \-h ", " \-\-help
+Show help message and exit.
+.TP
+.BR \-V ", " \-\-version
+Show version information and exit.
+.SH QUERY OPTIONS
+.TP
+.BR \-m ", " \-\-model " " \fIMODEL\fR
+Model preset (default: lfm).
+.TP
+.BR \-p ", " \-\-prompt " " \fIMODE\fR
+Prompt mode: default, tool_user, code, code_with_tools.
+.TP
+.BR \-t ", " \-\-think
+Enable think mode.
+.TP
+.BR \-\-plain
+Plain text output.
+.TP
+.BR \-d ", " \-\-debug
+Debug mode.
+.TP
+.BR \-\-tools
+Force tools.
+.TP
+.BR \-c ", " \-\-code
+Code mode.
+.SH TRANSLATE OPTIONS
+.TP
+.BR \-p ", " \-\-prompt " " \fISTYLE\fR
+Translation style: formal, casual, technical, literary.
+.TP
+.BR \-\-list " [" \fIFILTER\fR "]"
+List supported languages, optionally filter by substring.
+.TP
+.BR \-\-plain
+Plain text output.
+.TP
+.BR \-d ", " \-\-debug
+Debug mode.
+.TP
+.B LANGUAGE
+Language pair in format [source:]target (e.g., en:pt, :pt for auto-detect).
+.SH OCR OPTIONS
+.TP
+.BR \-m ", " \-\-mode " " \fIMODE\fR
+Extraction mode: text (default), table, figure, formula.
+.TP
+.BR \-\-json
+Output as JSON (one object per line for batch).
+.TP
+.BR \-\-max\-tokens " " \fINUM\fR
+Maximum tokens per image (default: 8192).
+.TP
+.BR \-d ", " \-\-debug
+Debug mode.
+.TP
+.B FILE
+One or more image files: PNG, JPG, JPEG, WebP, GIF.
+.SH SUMMARIZE OPTIONS
+.TP
+.BR \-l ", " \-\-max\-length " " \fIWORDS\fR
+Maximum summary length in words (default: 300).
+.TP
+.BR \-f ", " \-\-format " " \fIFORMAT\fR
+Output format: paragraph, bullets, both (default).
+.TP
+.BR \-\-style " " \fISTYLE\fR
+Focus style: general (default), technical, academic, business.
+.TP
+.BR \-\-plain
+Plain text output.
+.TP
+.BR \-m ", " \-\-model " " \fIMODEL\fR
+Model to use (default: llama3.2).
+.TP
+.BR \-d ", " \-\-debug
+Debug mode.
+.SH MODELS
+Available model presets (use with -m/--model):
+.PP
+.TS
+tab(|);
+l l l l.
+Preset|Model|Context|Best For
+_
+lfm|lfm2.5-thinking:1.2b-32k|32K|General queries with reasoning (default)
+gpt-oss|gpt-oss:20b-64k|64K|Tool calling
+mistral-small|mistral-small3.2:24b-32k|32K|Agentic tasks
+smollm3|smollm3:Q8_0-64k|64K|Edge deployment
+sead|sead:14b-32k|32K|General purpose
+qwen3-coder|qwen3-coder:30b-64k|64K|Code generation
+devstral-small-2|devstral-small-2:24b-64k|64K|Coding with min_p
+llama3.2|llama3.2:3b-32k|32K|Summarization (default for summarize)
+glm-5|glm-5:cloud|198K|Cloud complex reasoning
+kimi-k2.5|kimi-k2.5:cloud|256K|Multimodal agentic
+minimax-m2.5|minimax-m2.5:cloud|198K|Coding and agentic
+qwen3.5|qwen3.5:cloud|256K|Vision-language
+translate|translategemma:12b-32k|32K|Translation tasks
+pepe|pepe:8b-64k|64K|Sarcastic assistant
+.TE
+.SH EXAMPLES
+Basic query:
+.PP
+.nf
+.RS
+ask-ai "What is Rust?"
+.RE
+.fi
+.PP
+Use specific model:
+.PP
+.nf
+.RS
+ask-ai -m mistral-small "Explain quantum computing"
+.RE
+.fi
+.PP
+Enable think mode:
+.PP
+.nf
+.RS
+ask-ai -t "Solve this step by step"
+.RE
+.fi
+.PP
+Translate text:
+.PP
+.nf
+.RS
+ask-ai translate en:pt "Hello world"
+ask-ai translate :pt "Auto-detect source"
+.RE
+.fi
+.PP
+Extract text from image:
+.PP
+.nf
+.RS
+ask-ai ocr document.png
+ask-ai ocr --mode table spreadsheet.png
+.RE
+.fi
+.PP
+Summarize text:
+.PP
+.nf
+.RS
+ask-ai summarize "Long text here..."
+echo "Long text" | ask-ai summarize --style technical
+.RE
+.fi
+.PP
+Pipe from stdin:
+.PP
+.nf
+.RS
+cat file.txt | ask-ai summarize
+cat article.pdf | pdftotext - - | ask-ai summarize
+.RE
+.fi
+.PP
+Chain commands:
+.PP
+.nf
+.RS
+ask-ai ocr document.png | ask-ai summarize
+ask-ai ocr japanese.png | ask-ai translate ja:pt
+ask-ai ocr report.png | ask-ai summarize | ask-ai translate :pt
+.RE
+.fi
+.PP
+List available models:
+.PP
+.nf
+.RS
+ask-ai --list
+.RE
+.fi
+.SH LANGUAGE CODES
+Supported translation language codes include:
+.PP
+pt, pt-BR (br, brazil), en (english), es (spanish), fr (french), de (german),
+it (italian), ja (japanese), zh-Hans (zh-cn), zh-Hant (zh-tw), he (hebrew),
+ko (korean), ru (russian), ar (arabic), hi (hindi), and 40+ more.
+.PP
+Use Bask-ai translate --listR to see all supported languages.
+.SH PROMPT MODES
+.TP
+.B default
+General purpose queries with markdown formatting.
+.TP
+.B tool_user
+Enhanced prompt for tool usage (Pokémon, Weather, Web Search).
+.TP
+.B code
+Code-focused responses, minimal explanations.
+.TP
+.B code_with_tools
+Code mode with web search tools enabled.
+.TP
+.B summarize
+Professional summarization guidelines.
+.TP
+.B pepe
+Sarcastic personality (activated for pepe model).
+.SH ENVIRONMENT
+.TP
+.B OLLAMA_HOST
+Override the default Ollama server host (default: localhost:11434).
+.SH FILES
+.TP
+.I src/config.rs
+Built-in model configurations.
+.TP
+.I src/prompts.rs
+System prompt definitions.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+General error.
+.TP
+.B 2
+Invalid arguments or usage.
+.TP
+.B 3
+Model error or Ollama connection failure.
+.SH SEE ALSO
+.BR ollama (1),
+.BR pdftotext (1)
+.PP
+Full documentation: https://github.com/luksamuk/ask-ollama-rs/docs
+.SH AUTHOR
+Lucas S. Vieira <lucasvieira@protonmail.com>
+.SH COPYRIGHT
+Copyright (c) 2026 Lucas S. Vieira.
+License: MIT
+.PP
+This is free software; you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.

@@ -122,3 +122,92 @@ Key crates:
 - The project is a CLI tool for interacting with local Ollama models
 - Model capabilities (tools, vision, ocr) are detected at runtime
 - Supports custom tools defined via `#[ollama_rs::function]` macro
+
+## Documentation Guidelines
+
+When implementing new features or modifying behavior, always update the documentation:
+
+### User Documentation (doc/src/)
+
+1. **New Commands**: Add a new page in `doc/src/commands/`
+   - Follow the structure of existing command docs
+   - Include synopsis, description, options, and examples
+   - Add entry to `doc/src/SUMMARY.md`
+
+2. **New Options/Flags**: Update the relevant command documentation
+   - Add option to the options table
+   - Include example usage
+   - Update the man page if applicable
+
+3. **New Models**: Update `doc/src/models.md`
+   - Add to model table
+   - Include configuration details
+   - Document best use cases
+
+4. **New Tools**: Update `doc/src/tools.md`
+   - Document the tool function and arguments
+   - Include usage examples
+   - Note any limitations or known issues
+
+5. **Behavior Changes**: Update relevant documentation
+   - Change descriptions if behavior differs
+   - Update examples to reflect new behavior
+   - Add migration notes if breaking change
+
+### Man Page (man/ask-ai.1)
+
+Update when CLI interface changes:
+- New commands
+- New flags/options
+- New models
+- New examples
+
+### Development Documentation
+
+Update when architecture changes:
+- `doc/src/development/architecture.md` - Design decisions
+- `doc/src/development/roadmap.md` - Planned features
+- `doc/src/CHANGELOG.md` - Version history
+
+### Documentation Checklist
+
+Before committing changes:
+
+- [ ] Updated relevant doc pages in `doc/src/`
+- [ ] Updated man page (if CLI changed)
+- [ ] Updated CHANGELOG.md
+- [ ] Ran `mdbook serve` and verified rendering
+- [ ] All internal links work
+- [ ] Examples tested and working
+
+### Building Documentation
+
+```bash
+# Navigate to doc directory
+cd doc
+
+# Serve locally for testing
+mdbook serve
+
+# Build static site
+mdbook build
+
+# Output will be in doc/book/
+```
+
+### Writing Guidelines
+
+- **User-facing docs**: Focus on functionality, not implementation
+- **Keep it concise**: Clear and to the point
+- **Include examples**: Show, don't just tell
+- **Use Mermaid**: For diagrams and flows
+- **Test examples**: Ensure they actually work
+
+### Documentation Philosophy
+
+Documentation should:
+- Be **functional** (what it does, not how it works internally)
+- Be **discoverable** (clear organization)
+- Be **complete** (cover all features)
+- Be **maintained** (updated with code changes)
+- Include **examples** (practical usage)

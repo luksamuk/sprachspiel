@@ -1,0 +1,4080 @@
+<!DOCTYPE HTML>
+<html lang="pt-BR" class="ayu sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Ask-AI Documentation</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Complete user guide for the Ask-AI CLI tool">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="custom-06604afb.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "ayu";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-eb6877d6.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-6d09043b.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('ayu')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Ask-AI Documentation</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="ask-ai-documentation"><a class="header" href="#ask-ai-documentation">Ask-AI Documentation</a></h1>
+<p>Welcome to the Ask-AI documentation! This is a comprehensive guide for the Ask-AI command-line tool - a powerful Rust CLI for interacting with Ollama LLM models.</p>
+<h2 id="what-is-ask-ai"><a class="header" href="#what-is-ask-ai">What is Ask-AI?</a></h2>
+<p>Ask-AI is a feature-rich command-line interface that brings the power of Large Language Models (LLMs) to your terminal. Whether you need to:</p>
+<ul>
+<li><strong>Get quick answers</strong> to questions</li>
+<li><strong>Translate text</strong> between 50+ languages</li>
+<li><strong>Extract text from images</strong> (OCR)</li>
+<li><strong>Summarize long documents</strong></li>
+<li><strong>Chain commands</strong> for complex workflows</li>
+</ul>
+<p>Ask-AI provides an elegant, markdown-rendered interface that makes working with AI models feel natural and efficient.</p>
+<h2 id="key-features"><a class="header" href="#key-features">Key Features</a></h2>
+<ul>
+<li><strong>🚀 Multiple Models</strong>: Support for 14+ model presets including LFM, Mistral, GPT-OSS, Llama, and cloud models</li>
+<li><strong>🛠️ Tool Integration</strong>: Automatic capability detection with Pokémon, Weather, and Web Search tools</li>
+<li><strong>📝 Markdown Rendering</strong>: Beautiful terminal output via termimad</li>
+<li><strong>🌐 Translation</strong>: Translate between 50+ languages using TranslateGemma</li>
+<li><strong>🖼️ OCR</strong>: Extract text, tables, formulas, and figures from images</li>
+<li><strong>📄 Summarization</strong>: Create concise summaries with customizable styles</li>
+<li><strong>🔗 Pipelines</strong>: Chain commands with stdin/pipe support</li>
+<li><strong>🧠 Think Mode</strong>: Support for reasoning models</li>
+<li><strong>🐛 Debug Mode</strong>: Detailed logging for troubleshooting</li>
+</ul>
+<h2 id="quick-example"><a class="header" href="#quick-example">Quick Example</a></h2>
+<pre><code class="language-bash"># Ask a question
+ask-ai "What is the capital of France?"
+
+# Translate text
+ask-ai translate en:pt "Hello, how are you?"
+
+# Extract text from an image
+ask-ai ocr document.png
+
+# Summarize a document
+cat long-article.txt | ask-ai summarize --style academic
+
+# Chain commands for powerful workflows
+ask-ai ocr japanese-document.png | ask-ai translate ja:pt | ask-ai summarize
+</code></pre>
+<h2 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h2>
+<p>New to Ask-AI? Start here:</p>
+<ol>
+<li><strong><a href="#installation-guide">Installation</a></strong> - Install Ask-AI on your system</li>
+<li><strong><a href="#quick-start-guide">Quick Start</a></strong> - Get up and running in 5 minutes</li>
+<li><strong><a href="commands/README.html">Commands</a></strong> - Learn about all available commands</li>
+</ol>
+<h2 id="documentation-structure"><a class="header" href="#documentation-structure">Documentation Structure</a></h2>
+<p>This documentation is organized into sections:</p>
+<ul>
+<li>
+<p><strong>User Guide</strong>: Complete reference for using Ask-AI</p>
+<ul>
+<li>Commands and subcommands</li>
+<li>Available models and their capabilities</li>
+<li>Tools and integrations</li>
+<li>Pipelines and workflows</li>
+</ul>
+</li>
+<li>
+<p><strong>Development</strong>: Information for contributors</p>
+<ul>
+<li>Architecture and design decisions</li>
+<li>Roadmap and planned features</li>
+<li>Contributing guidelines</li>
+</ul>
+</li>
+</ul>
+<h2 id="terminal-man-page"><a class="header" href="#terminal-man-page">Terminal Man Page</a></h2>
+<p>For quick reference while working in the terminal, consult the man page:</p>
+<pre><code class="language-bash">man ask-ai
+</code></pre>
+<p>Or use the built-in help:</p>
+<pre><code class="language-bash">ask-ai --help
+ask-ai query --help
+ask-ai translate --help
+</code></pre>
+<h2 id="requirements"><a class="header" href="#requirements">Requirements</a></h2>
+<ul>
+<li><strong>Ollama</strong>: Must be running locally or accessible remotely</li>
+<li><strong>Rust</strong>: Built with Rust for performance and reliability</li>
+<li><strong>Terminal</strong>: Any modern terminal with UTF-8 support</li>
+</ul>
+<h2 id="support"><a class="header" href="#support">Support</a></h2>
+<ul>
+<li><strong>Issues</strong>: <a href="https://github.com/luksamuk/ask-ollama-rs/issues">GitHub Issues</a></li>
+<li><strong>Documentation</strong>: You’re reading it! 📖</li>
+</ul>
+<h2 id="license"><a class="header" href="#license">License</a></h2>
+<p>Ask-AI is licensed under the MIT License. See the <a href="../LICENSE.txt">LICENSE</a> file for details.</p>
+<p>Copyright (c) 2026 Lucas S. Vieira</p>
+<hr>
+<p>Ready to dive in? Start with the <a href="#installation-guide">Installation Guide</a> or jump to the <a href="#quick-start-guide">Quick Start</a>!</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>Ask-AI is a powerful command-line interface for interacting with Large Language Models (LLMs) through Ollama. Built in Rust for performance and reliability, it brings AI capabilities directly to your terminal with an elegant, markdown-rendered output.</p>
+<h2 id="why-ask-ai"><a class="header" href="#why-ask-ai">Why Ask-AI?</a></h2>
+<p>In a world of web-based AI interfaces, Ask-AI stands out by:</p>
+<ul>
+<li><strong>Keeping you in the terminal</strong> - No context switching, no browser tabs</li>
+<li><strong>Working offline</strong> - Uses local Ollama models when available</li>
+<li><strong>Being scriptable</strong> - Pipe content in, pipe results out</li>
+<li><strong>Rendering beautifully</strong> - Markdown formatting in the terminal via termimad</li>
+<li><strong>Supporting tools</strong> - Automatically uses Pokémon, Weather, and Web Search data</li>
+</ul>
+<h2 id="what-can-you-do"><a class="header" href="#what-can-you-do">What Can You Do?</a></h2>
+<h3 id="1-ask-questions"><a class="header" href="#1-ask-questions">1. Ask Questions</a></h3>
+<p>Get answers from AI models with beautiful markdown formatting:</p>
+<pre><code class="language-bash">ask-ai "Explain quantum computing in simple terms"
+ask-ai -m mistral-small "Generate a Python function for Fibonacci"
+ask-ai -t "Solve this step by step"  # Think mode
+</code></pre>
+<h3 id="2-translate-text"><a class="header" href="#2-translate-text">2. Translate Text</a></h3>
+<p>Translate between 50+ languages with the TranslateGemma model:</p>
+<pre><code class="language-bash">ask-ai translate en:pt "Hello world"
+ask-ai translate :pt "Auto-detected source language"
+cat document.txt | ask-ai translate :es
+</code></pre>
+<h3 id="3-extract-text-from-images-ocr"><a class="header" href="#3-extract-text-from-images-ocr">3. Extract Text from Images (OCR)</a></h3>
+<p>Use GLM-OCR to extract text, tables, formulas, and figures:</p>
+<pre><code class="language-bash">ask-ai ocr document.png
+ask-ai ocr --mode table spreadsheet.png
+ask-ai ocr --formula equation.png
+</code></pre>
+<h3 id="4-summarize-documents"><a class="header" href="#4-summarize-documents">4. Summarize Documents</a></h3>
+<p>Create concise summaries with customizable styles:</p>
+<pre><code class="language-bash">ask-ai summarize "Long text here..."
+ask-ai summarize --style academic research-paper.txt
+ask-ai summarize --format bullets --max-length 200
+</code></pre>
+<h3 id="5-chain-commands"><a class="header" href="#5-chain-commands">5. Chain Commands</a></h3>
+<p>Build powerful pipelines by combining commands:</p>
+<pre><code class="language-bash"># OCR → Translate
+ask-ai ocr japanese.png | ask-ai translate ja:pt
+
+# OCR → Summarize
+ask-ai ocr report.png | ask-ai summarize --style technical
+
+# OCR → Summarize → Translate
+ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+</code></pre>
+<h2 id="target-users"><a class="header" href="#target-users">Target Users</a></h2>
+<p>Ask-AI is designed for:</p>
+<ul>
+<li><strong>Developers</strong> who live in the terminal and want AI assistance without leaving it</li>
+<li><strong>Researchers</strong> who need to process documents, extract text, and summarize papers</li>
+<li><strong>Translators</strong> who need quick translations between multiple languages</li>
+<li><strong>System administrators</strong> who need to extract information from images or documents</li>
+<li><strong>Power users</strong> who value efficiency and prefer command-line interfaces</li>
+<li><strong>Anyone</strong> who works with text and wants AI assistance integrated into their workflow</li>
+</ul>
+<h2 id="design-philosophy"><a class="header" href="#design-philosophy">Design Philosophy</a></h2>
+<p>Ask-AI follows these principles:</p>
+<ol>
+<li><strong>Terminal-First</strong>: Everything should work beautifully in a terminal</li>
+<li><strong>Unix Philosophy</strong>: Do one thing well, compose with pipes</li>
+<li><strong>Markdown Everywhere</strong>: Beautiful formatting without GUI overhead</li>
+<li><strong>Zero Configuration</strong>: Works out of the box with sensible defaults</li>
+<li><strong>Extensible</strong>: Easy to add new models, tools, and commands</li>
+</ol>
+<h2 id="how-it-works"><a class="header" href="#how-it-works">How It Works</a></h2>
+<p>Ask-AI communicates with Ollama, a local LLM server. When you run a command:</p>
+<ol>
+<li><strong>Input is collected</strong> - From arguments or stdin</li>
+<li><strong>Model is selected</strong> - Based on flags or defaults</li>
+<li><strong>Capabilities are detected</strong> - Tools enabled if model supports them</li>
+<li><strong>Request is sent</strong> - To your Ollama instance</li>
+<li><strong>Response is rendered</strong> - Beautiful markdown in the terminal</li>
+</ol>
+<pre class="mermaid">graph LR
+    A[User Input] --&gt; B[CLI Parser]
+    B --&gt; C[Model Selection]
+    C --&gt; D[Capability Detection]
+    D --&gt; E[Send to Ollama]
+    E --&gt; F[Receive Response]
+    F --&gt; G[Markdown Rendering]
+    G --&gt; H[Terminal Output]
+</pre>
+
+<h2 id="getting-help"><a class="header" href="#getting-help">Getting Help</a></h2>
+<ul>
+<li>Use <code>ask-ai --help</code> for quick reference</li>
+<li>Use <code>man ask-ai</code> for detailed man page</li>
+<li>Check this documentation for comprehensive guides</li>
+<li>Enable debug mode with <code>-d</code> flag for troubleshooting</li>
+</ul>
+<h2 id="next-steps"><a class="header" href="#next-steps">Next Steps</a></h2>
+<ul>
+<li><strong><a href="#installation-guide">Install Ask-AI</a></strong> - Get it running on your system</li>
+<li><strong><a href="#quick-start-guide">Quick Start Guide</a></strong> - Your first 5 minutes with Ask-AI</li>
+<li><strong><a href="commands/README.html">Commands Reference</a></strong> - Detailed command documentation</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="installation-guide"><a class="header" href="#installation-guide">Installation Guide</a></h1>
+<p>This guide covers all the ways to install Ask-AI on your system.</p>
+<h2 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h2>
+<p>Before installing Ask-AI, ensure you have:</p>
+<ol>
+<li><strong>Ollama</strong> - The LLM server that Ask-AI communicates with</li>
+<li><strong>Rust toolchain</strong> - Only needed if building from source</li>
+<li><strong>Git</strong> - For cloning the repository</li>
+</ol>
+<h3 id="installing-ollama"><a class="header" href="#installing-ollama">Installing Ollama</a></h3>
+<p>Ask-AI requires Ollama to be running. Install it from <a href="https://ollama.ai">ollama.ai</a>:</p>
+<pre><code class="language-bash"># Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# macOS
+brew install ollama
+
+# Windows
+# Download from https://ollama.ai/download
+</code></pre>
+<p>After installing, start the Ollama service:</p>
+<pre><code class="language-bash">ollama serve
+</code></pre>
+<h3 id="installing-rust-for-building-from-source"><a class="header" href="#installing-rust-for-building-from-source">Installing Rust (for building from source)</a></h3>
+<p>If you don’t have Rust installed:</p>
+<pre><code class="language-bash">curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+</code></pre>
+<h2 id="installation-methods"><a class="header" href="#installation-methods">Installation Methods</a></h2>
+<h3 id="method-1-using-make-recommended"><a class="header" href="#method-1-using-make-recommended">Method 1: Using Make (Recommended)</a></h3>
+<p>The easiest way to install Ask-AI is using the provided Makefile:</p>
+<pre><code class="language-bash"># Clone the repository
+git clone &lt;your-repo-url&gt;
+cd ask-ollama-rs
+
+# Build and install (default: /usr/local)
+make install
+
+# Or install to a custom location
+make install PREFIX=/usr
+make install PREFIX=$HOME/.local
+</code></pre>
+<p>This will:</p>
+<ol>
+<li>Build the release binary</li>
+<li>Install it to <code>/usr/local/bin/ask-ai</code> (or your chosen prefix)</li>
+<li>Install the man page to <code>/usr/local/share/man/man1/</code></li>
+</ol>
+<h3 id="method-2-manual-installation"><a class="header" href="#method-2-manual-installation">Method 2: Manual Installation</a></h3>
+<p>Build from source manually:</p>
+<pre><code class="language-bash"># Clone and enter repository
+git clone &lt;your-repo-url&gt;
+cd ask-ollama-rs
+
+# Build release binary
+cargo build --release
+
+# Copy to your PATH
+sudo cp target/release/ask-ollama /usr/local/bin/ask-ai
+
+# Optional: Install man page
+sudo cp man/ask-ai.1 /usr/local/share/man/man1/
+</code></pre>
+<h3 id="method-3-development-build"><a class="header" href="#method-3-development-build">Method 3: Development Build</a></h3>
+<p>For development or testing:</p>
+<pre><code class="language-bash"># Run directly without installing
+cargo run -- "Your query here"
+
+# Or build debug version
+cargo build
+
+# Run debug binary
+./target/debug/ask-ollama "Your query"
+</code></pre>
+<h2 id="verifying-installation"><a class="header" href="#verifying-installation">Verifying Installation</a></h2>
+<p>After installation, verify Ask-AI is working:</p>
+<pre><code class="language-bash"># Check version
+ask-ai --version
+
+# Show help
+ask-ai --help
+
+# List available models
+ask-ai --list
+
+# Test with a simple query
+ask-ai "Hello, are you working?"
+</code></pre>
+<h2 id="installing-required-models"><a class="header" href="#installing-required-models">Installing Required Models</a></h2>
+<p>Ask-AI uses several Ollama models for different tasks. Install the ones you need:</p>
+<h3 id="default-query-model-lfm"><a class="header" href="#default-query-model-lfm">Default Query Model (LFM)</a></h3>
+<pre><code class="language-bash">ollama pull lfm2.5-thinking:1.2b-32k
+</code></pre>
+<h3 id="translation-model"><a class="header" href="#translation-model">Translation Model</a></h3>
+<pre><code class="language-bash">ollama pull translategemma:12b-32k
+</code></pre>
+<h3 id="ocr-model"><a class="header" href="#ocr-model">OCR Model</a></h3>
+<pre><code class="language-bash">ollama pull glm-ocr:bf16
+</code></pre>
+<h3 id="summarization-model-optional"><a class="header" href="#summarization-model-optional">Summarization Model (optional)</a></h3>
+<pre><code class="language-bash">ollama pull llama3.2:3b-32k
+</code></pre>
+<h3 id="other-useful-models"><a class="header" href="#other-useful-models">Other Useful Models</a></h3>
+<pre><code class="language-bash"># For tool calling
+ollama pull mistral-small3.2:24b-32k
+
+# For coding
+ollama pull qwen3-coder:30b-64k
+
+# For general use
+ollama pull pepe:8b-64k
+</code></pre>
+<h2 id="uninstallation"><a class="header" href="#uninstallation">Uninstallation</a></h2>
+<p>If you installed with Make:</p>
+<pre><code class="language-bash">make uninstall
+
+# Or with custom prefix
+make uninstall PREFIX=/usr
+</code></pre>
+<p>If you installed manually:</p>
+<pre><code class="language-bash">sudo rm /usr/local/bin/ask-ai
+sudo rm /usr/local/share/man/man1/ask-ai.1
+</code></pre>
+<h2 id="post-installation"><a class="header" href="#post-installation">Post-Installation</a></h2>
+<h3 id="shell-completion-optional"><a class="header" href="#shell-completion-optional">Shell Completion (Optional)</a></h3>
+<p>Add shell completions for your shell:</p>
+<pre><code class="language-bash"># Bash
+ask-ai --generate-completion bash &gt; /etc/bash_completion.d/ask-ai
+
+# Zsh
+ask-ai --generate-completion zsh &gt; /usr/local/share/zsh/site-functions/_ask-ai
+
+# Fish
+ask-ai --generate-completion fish &gt; ~/.config/fish/completions/ask-ai.fish
+</code></pre>
+<h3 id="environment-variables"><a class="header" href="#environment-variables">Environment Variables</a></h3>
+<p>You can configure Ask-AI with environment variables:</p>
+<pre><code class="language-bash"># Ollama server location (default: localhost:11434)
+export OLLAMA_HOST="localhost:11434"
+
+# Add to your shell config (.bashrc, .zshrc, etc.)
+echo 'export OLLAMA_HOST="localhost:11434"' &gt;&gt; ~/.bashrc
+</code></pre>
+<h2 id="troubleshooting-installation"><a class="header" href="#troubleshooting-installation">Troubleshooting Installation</a></h2>
+<h3 id="command-not-found-ask-ai"><a class="header" href="#command-not-found-ask-ai">“command not found: ask-ai”</a></h3>
+<p>The binary is not in your PATH. Check:</p>
+<pre><code class="language-bash"># Find where it was installed
+which ask-ai
+
+# If not found, check installation prefix
+ls /usr/local/bin/ask-ai
+
+# Add to PATH if needed
+export PATH="/usr/local/bin:$PATH"
+</code></pre>
+<h3 id="cargo-command-not-found"><a class="header" href="#cargo-command-not-found">“cargo: command not found”</a></h3>
+<p>Rust is not installed. Install it first:</p>
+<pre><code class="language-bash">curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+</code></pre>
+<h3 id="build-errors"><a class="header" href="#build-errors">Build Errors</a></h3>
+<p>Ensure you have the latest Rust:</p>
+<pre><code class="language-bash">rustup update
+</code></pre>
+<h3 id="ollama-connection-failed"><a class="header" href="#ollama-connection-failed">Ollama Connection Failed</a></h3>
+<p>Make sure Ollama is running:</p>
+<pre><code class="language-bash"># Check if Ollama is running
+curl http://localhost:11434/api/tags
+
+# Start Ollama if not running
+ollama serve
+</code></pre>
+<h2 id="next-steps-1"><a class="header" href="#next-steps-1">Next Steps</a></h2>
+<p>Now that Ask-AI is installed:</p>
+<ol>
+<li><strong><a href="#quick-start-guide">Quick Start</a></strong> - Learn the basics in 5 minutes</li>
+<li><strong><a href="commands/README.html">Commands</a></strong> - Explore all available commands</li>
+<li><strong><a href="#available-models">Models</a></strong> - Understand available models</li>
+</ol>
+<p>Happy querying! 🚀</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="quick-start-guide"><a class="header" href="#quick-start-guide">Quick Start Guide</a></h1>
+<p>Get up and running with Ask-AI in just 5 minutes. This guide covers the essential commands you’ll use every day.</p>
+<h2 id="prerequisites-1"><a class="header" href="#prerequisites-1">Prerequisites</a></h2>
+<p>Before starting, ensure:</p>
+<ul>
+<li>Ask-AI is installed (see <a href="#installation-guide">Installation</a>)</li>
+<li>Ollama is running (<code>ollama serve</code>)</li>
+<li>Default model is pulled (<code>ollama pull lfm2.5-thinking:1.2b-32k</code>)</li>
+</ul>
+<h2 id="your-first-query"><a class="header" href="#your-first-query">Your First Query</a></h2>
+<p>Let’s start with a simple question:</p>
+<pre><code class="language-bash">ask-ai "What is the capital of France?"
+</code></pre>
+<p>You should see a nicely formatted markdown response. That’s it - Ask-AI is working!</p>
+<h2 id="essential-commands"><a class="header" href="#essential-commands">Essential Commands</a></h2>
+<h3 id="1-query-mode-default"><a class="header" href="#1-query-mode-default">1. Query Mode (Default)</a></h3>
+<p>The default mode when you don’t specify a subcommand:</p>
+<pre><code class="language-bash"># Basic query
+ask-ai "Explain quantum computing"
+
+# With think mode (for reasoning models)
+ask-ai -t "Solve this step by step"
+
+# With specific model
+ask-ai -m mistral-small "Generate a Python function"
+
+# Plain text (no markdown)
+ask-ai --plain "List Rust keywords"
+</code></pre>
+<h3 id="2-translation"><a class="header" href="#2-translation">2. Translation</a></h3>
+<p>Translate text between languages:</p>
+<pre><code class="language-bash"># English to Portuguese
+ask-ai translate en:pt "Hello world"
+
+# Auto-detect source
+ask-ai translate :pt "Hello world"
+
+# From stdin
+echo "Hello" | ask-ai translate :es
+</code></pre>
+<h3 id="3-ocr-text-extraction"><a class="header" href="#3-ocr-text-extraction">3. OCR (Text Extraction)</a></h3>
+<p>Extract text from images:</p>
+<pre><code class="language-bash"># Extract text from image
+ask-ai ocr document.png
+
+# Extract tables
+ask-ai ocr --mode table spreadsheet.png
+
+# Extract formulas (LaTeX output)
+ask-ai ocr --mode formula equation.png
+</code></pre>
+<h3 id="4-summarization"><a class="header" href="#4-summarization">4. Summarization</a></h3>
+<p>Summarize long text:</p>
+<pre><code class="language-bash"># Summarize text directly
+ask-ai summarize "Long text here..."
+
+# From file
+cat article.txt | ask-ai summarize
+
+# With style
+ask-ai summarize --style academic "Research paper text..."
+</code></pre>
+<h2 id="working-with-pipes"><a class="header" href="#working-with-pipes">Working with Pipes</a></h2>
+<p>Ask-AI shines when combined with pipes:</p>
+<pre><code class="language-bash"># OCR then summarize
+ask-ai ocr document.png | ask-ai summarize
+
+# OCR then translate
+ask-ai ocr japanese.png | ask-ai translate ja:pt
+
+# Full pipeline
+ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+</code></pre>
+<h2 id="useful-flags"><a class="header" href="#useful-flags">Useful Flags</a></h2>
+<p>Here are flags you’ll use often:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Description</th><th>Example</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-m</code></td><td>Select model</td><td><code>ask-ai -m mistral-small "query"</code></td></tr>
+<tr><td><code>-t</code></td><td>Think mode</td><td><code>ask-ai -t "complex question"</code></td></tr>
+<tr><td><code>--plain</code></td><td>No markdown</td><td><code>ask-ai --plain "text"</code></td></tr>
+<tr><td><code>-d</code></td><td>Debug mode</td><td><code>ask-ai -d "query"</code></td></tr>
+<tr><td><code>--help</code></td><td>Show help</td><td><code>ask-ai --help</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="list-available-resources"><a class="header" href="#list-available-resources">List Available Resources</a></h2>
+<pre><code class="language-bash"># List all models
+ask-ai --list
+
+# List supported languages
+ask-ai translate --list
+
+# Filter languages
+ask-ai translate --list pt
+</code></pre>
+<h2 id="common-workflows"><a class="header" href="#common-workflows">Common Workflows</a></h2>
+<h3 id="document-processing-pipeline"><a class="header" href="#document-processing-pipeline">Document Processing Pipeline</a></h3>
+<p>Process a scanned document end-to-end:</p>
+<pre><code class="language-bash"># 1. OCR the scanned document
+ask-ai ocr scanned-document.png &gt; extracted.txt
+
+# 2. Summarize the content
+cat extracted.txt | ask-ai summarize --style technical &gt; summary.txt
+
+# 3. Translate if needed
+cat summary.txt | ask-ai translate :pt &gt; summary-pt.txt
+</code></pre>
+<h3 id="code-generation"><a class="header" href="#code-generation">Code Generation</a></h3>
+<p>Generate code with the right model:</p>
+<pre><code class="language-bash"># Use code mode for better code output
+ask-ai -m qwen3-coder -c "Write a Rust function to parse JSON"
+
+# Or code_with_tools for web research + code
+ask-ai -p code_with_tools "Latest Rust async patterns with examples"
+</code></pre>
+<h3 id="translation-batch"><a class="header" href="#translation-batch">Translation Batch</a></h3>
+<p>Translate multiple lines:</p>
+<pre><code class="language-bash"># Create a file with text to translate
+cat &gt; to-translate.txt &lt;&lt; 'EOF'
+Hello
+How are you?
+Thank you
+Goodbye
+EOF
+
+# Translate each line
+cat to-translate.txt | ask-ai translate :pt
+</code></pre>
+<h2 id="quick-tips"><a class="header" href="#quick-tips">Quick Tips</a></h2>
+<ol>
+<li>
+<p><strong>Use <code>-d</code> for troubleshooting</strong>: If something isn’t working, add <code>-d</code> to see what’s happening</p>
+</li>
+<li>
+<p><strong>Pipe-friendly</strong>: Most commands accept input from stdin, making them perfect for scripts</p>
+</li>
+<li>
+<p><strong>Markdown by default</strong>: Output is formatted with markdown. Use <code>--plain</code> for raw text</p>
+</li>
+<li>
+<p><strong>Model selection</strong>: Different tasks benefit from different models:</p>
+<ul>
+<li>General queries: <code>lfm</code> (default)</li>
+<li>Coding: <code>qwen3-coder</code> or <code>devstral-small-2</code></li>
+<li>Tools: <code>mistral-small</code></li>
+<li>Summarization: <code>llama3.2</code></li>
+</ul>
+</li>
+<li>
+<p><strong>Chaining</strong>: Combine commands for powerful workflows. The output of one command becomes the input of the next</p>
+</li>
+</ol>
+<h2 id="next-steps-2"><a class="header" href="#next-steps-2">Next Steps</a></h2>
+<p>Now that you know the basics:</p>
+<ul>
+<li><strong><a href="commands/README.html">Commands Reference</a></strong> - Detailed documentation for each command</li>
+<li><strong><a href="#available-models">Models</a></strong> - Learn about available models and when to use them</li>
+<li><strong><a href="#pipeline-examples">Pipelines</a></strong> - Advanced piping and scripting examples</li>
+</ul>
+<p>Happy querying! 🎉</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="commands-reference"><a class="header" href="#commands-reference">Commands Reference</a></h1>
+<p>Ask-AI provides four main commands for different tasks. Each command is designed to be composable with pipes for building powerful workflows.</p>
+<h2 id="command-overview"><a class="header" href="#command-overview">Command Overview</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Command</th><th>Alias</th><th>Purpose</th><th>Default Model</th></tr>
+</thead>
+<tbody>
+<tr><td><code>query</code></td><td><code>q</code></td><td>General LLM queries</td><td>lfm</td></tr>
+<tr><td><code>translate</code></td><td><code>t</code></td><td>Language translation</td><td>translate</td></tr>
+<tr><td><code>ocr</code></td><td><code>o</code></td><td>Image text extraction</td><td>glm-ocr</td></tr>
+<tr><td><code>summarize</code></td><td><code>sum</code></td><td>Text summarization</td><td>llama3.2</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="default-mode"><a class="header" href="#default-mode">Default Mode</a></h2>
+<p>When no subcommand is specified, Ask-AI defaults to <code>query</code> mode:</p>
+<pre><code class="language-bash"># These are equivalent:
+ask-ai "What is Rust?"
+ask-ai query "What is Rust?"
+ask-ai q "What is Rust?"
+</code></pre>
+<h2 id="common-patterns"><a class="header" href="#common-patterns">Common Patterns</a></h2>
+<p>All commands share these patterns:</p>
+<h3 id="input-sources"><a class="header" href="#input-sources">Input Sources</a></h3>
+<p>Commands accept input from arguments <strong>or</strong> stdin:</p>
+<pre><code class="language-bash"># From argument
+ask-ai summarize "Text to summarize"
+
+# From stdin
+echo "Text to summarize" | ask-ai summarize
+cat file.txt | ask-ai summarize
+</code></pre>
+<h3 id="global-options"><a class="header" href="#global-options">Global Options</a></h3>
+<p>Most commands support these options:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>-m, --model</code></td><td>Select model preset</td></tr>
+<tr><td><code>--plain</code></td><td>Plain text output (no markdown)</td></tr>
+<tr><td><code>-d, --debug</code></td><td>Debug mode with logging</td></tr>
+<tr><td><code>-h, --help</code></td><td>Show command help</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="output-redirection"><a class="header" href="#output-redirection">Output Redirection</a></h3>
+<p>All commands output to stdout, making them pipe-friendly:</p>
+<pre><code class="language-bash"># Save to file
+ask-ai "Query" &gt; output.txt
+
+# Pipe to another command
+ask-ai ocr image.png | ask-ai summarize
+
+# Chain multiple commands
+ask-ai ocr doc.png | ask-ai summarize | ask-ai translate :pt
+</code></pre>
+<h2 id="command-comparison"><a class="header" href="#command-comparison">Command Comparison</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Feature</th><th>query</th><th>translate</th><th>ocr</th><th>summarize</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Input</strong></td><td>Text query</td><td>Text + language codes</td><td>Image files</td><td>Text</td></tr>
+<tr><td><strong>Output</strong></td><td>AI response</td><td>Translated text</td><td>Extracted text</td><td>Summary</td></tr>
+<tr><td><strong>Model</strong></td><td>Configurable</td><td>translate (fixed)</td><td>glm-ocr (fixed)</td><td>Configurable</td></tr>
+<tr><td><strong>Tools</strong></td><td>Yes (auto)</td><td>No</td><td>No</td><td>No</td></tr>
+<tr><td><strong>Stdin</strong></td><td>Yes</td><td>Yes</td><td>No</td><td>Yes</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="detailed-documentation"><a class="header" href="#detailed-documentation">Detailed Documentation</a></h2>
+<p>For complete documentation on each command:</p>
+<ul>
+<li><strong><a href="#query-command">query</a></strong> - General purpose queries with tool support</li>
+<li><strong><a href="#translate-command">translate</a></strong> - Language translation with 50+ languages</li>
+<li><strong><a href="#ocr-command">ocr</a></strong> - Image text, table, formula, and figure extraction</li>
+<li><strong><a href="#summarize-command">summarize</a></strong> - Text summarization with multiple styles</li>
+</ul>
+<h2 id="workflow-examples"><a class="header" href="#workflow-examples">Workflow Examples</a></h2>
+<h3 id="research-workflow"><a class="header" href="#research-workflow">Research Workflow</a></h3>
+<p>Extract and summarize research papers:</p>
+<pre><code class="language-bash"># OCR a scanned paper, summarize in academic style
+ask-ai ocr paper.png | ask-ai summarize --style academic
+
+# Then translate to another language
+ask-ai ocr paper.png | ask-ai summarize --style academic | ask-ai translate :pt
+</code></pre>
+<h3 id="document-processing"><a class="header" href="#document-processing">Document Processing</a></h3>
+<p>Process documents end-to-end:</p>
+<pre><code class="language-bash"># Extract text, summarize, translate
+cat document.pdf | pdftotext - - | \
+    ask-ai summarize --style technical | \
+    ask-ai translate :es
+</code></pre>
+<h3 id="batch-processing"><a class="header" href="#batch-processing">Batch Processing</a></h3>
+<p>Process multiple files:</p>
+<pre><code class="language-bash"># OCR multiple images
+for img in *.png; do
+    ask-ai ocr "$img" &gt; "${img%.png}.txt"
+done
+
+# Translate all extracted text
+for txt in *.txt; do
+    ask-ai translate :pt &lt; "$txt" &gt; "${txt%.txt}-pt.txt"
+done
+</code></pre>
+<h2 id="getting-help-1"><a class="header" href="#getting-help-1">Getting Help</a></h2>
+<p>Get help for any command:</p>
+<pre><code class="language-bash"># General help
+ask-ai --help
+
+# Command-specific help
+ask-ai query --help
+ask-ai translate --help
+ask-ai ocr --help
+ask-ai summarize --help
+
+# Man page
+man ask-ai
+</code></pre>
+<h2 id="next-steps-3"><a class="header" href="#next-steps-3">Next Steps</a></h2>
+<ul>
+<li>Learn about available <strong><a href="#available-models">Models</a></strong></li>
+<li>Explore <strong><a href="#available-tools">Tools</a></strong> that enhance queries</li>
+<li>See <strong><a href="#pipeline-examples">Pipelines</a></strong> for advanced workflows</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="query-command"><a class="header" href="#query-command">query Command</a></h1>
+<p>The <code>query</code> command is the default mode of Ask-AI. It sends your question or prompt to an LLM and returns a formatted response.</p>
+<h2 id="synopsis"><a class="header" href="#synopsis">Synopsis</a></h2>
+<pre><code class="language-bash">ask-ai query [OPTIONS] [QUERY]
+ask-ai [OPTIONS] [QUERY]
+ask-ai q [OPTIONS] [QUERY]
+</code></pre>
+<h2 id="description"><a class="header" href="#description">Description</a></h2>
+<p>The query command is the most flexible way to interact with LLMs through Ask-AI. It supports:</p>
+<ul>
+<li><strong>Multiple models</strong> - Switch between different LLMs</li>
+<li><strong>Tool integration</strong> - Automatic use of Pokémon, Weather, and Web Search tools</li>
+<li><strong>Think mode</strong> - Enable reasoning for complex questions</li>
+<li><strong>Code mode</strong> - Optimize responses for code output</li>
+<li><strong>Markdown rendering</strong> - Beautiful terminal output</li>
+</ul>
+<h2 id="arguments"><a class="header" href="#arguments">Arguments</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>QUERY</code></td><td>The question or prompt. Reads from stdin if not provided.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="options"><a class="header" href="#options">Options</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Short</th><th>Description</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--model</code></td><td><code>-m</code></td><td>Model preset to use</td><td><code>lfm</code></td></tr>
+<tr><td><code>--prompt</code></td><td><code>-p</code></td><td>System prompt mode</td><td><code>default</code></td></tr>
+<tr><td><code>--think</code></td><td><code>-t</code></td><td>Enable think mode</td><td>disabled</td></tr>
+<tr><td><code>--plain</code></td><td></td><td>Output plain text (no markdown)</td><td>disabled</td></tr>
+<tr><td><code>--debug</code></td><td><code>-d</code></td><td>Enable debug logging</td><td>disabled</td></tr>
+<tr><td><code>--tools</code></td><td></td><td>Force enable tools</td><td>auto-detect</td></tr>
+<tr><td><code>--code</code></td><td><code>-c</code></td><td>Code mode</td><td>disabled</td></tr>
+<tr><td><code>--help</code></td><td><code>-h</code></td><td>Show help</td><td>-</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="prompt-modes"><a class="header" href="#prompt-modes">Prompt Modes</a></h2>
+<p>The <code>-p</code> flag selects different system prompts:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mode</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>default</code></td><td>General purpose queries</td></tr>
+<tr><td><code>tool_user</code></td><td>Enhanced for tool usage</td></tr>
+<tr><td><code>code</code></td><td>Code-focused responses</td></tr>
+<tr><td><code>code_with_tools</code></td><td>Code mode with web search</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="examples"><a class="header" href="#examples">Examples</a></h2>
+<h3 id="basic-usage"><a class="header" href="#basic-usage">Basic Usage</a></h3>
+<pre><code class="language-bash"># Simple question
+ask-ai "What is the capital of France?"
+
+# Equivalent explicit forms
+ask-ai query "What is the capital of France?"
+ask-ai q "What is the capital of France?"
+</code></pre>
+<h3 id="model-selection"><a class="header" href="#model-selection">Model Selection</a></h3>
+<pre><code class="language-bash"># Use a different model
+ask-ai -m mistral-small "Generate a Python function"
+
+# Code-focused model
+ask-ai -m qwen3-coder "Write a Rust struct for users"
+
+# Smaller model for quick answers
+ask-ai -m smollm3 "What is 2+2?"
+</code></pre>
+<h3 id="think-mode"><a class="header" href="#think-mode">Think Mode</a></h3>
+<p>Think mode enables reasoning models to show their thought process:</p>
+<pre><code class="language-bash"># Enable thinking
+ask-ai -t "Explain step by step how to solve x^2 + 5x + 6 = 0"
+
+# Combine with specific model
+ask-ai -m lfm -t "What are the ethical implications of AI?"
+</code></pre>
+<h3 id="code-mode"><a class="header" href="#code-mode">Code Mode</a></h3>
+<p>Code mode optimizes responses for code output:</p>
+<pre><code class="language-bash"># Basic code mode
+ask-ai -c "Write a Python function to sort a list"
+
+# Code with web search
+ask-ai -p code_with_tools "Latest Rust async patterns"
+
+# With specific model
+ask-ai -m qwen3-coder -c "Implement a thread pool in Rust"
+</code></pre>
+<h3 id="debug-mode"><a class="header" href="#debug-mode">Debug Mode</a></h3>
+<p>Debug mode shows what’s happening under the hood:</p>
+<pre><code class="language-bash"># See model configuration
+ask-ai -d "Test query"
+
+# Shows:
+# - Model being used
+# - Capabilities detected
+# - Tools enabled
+# - Temperature and options
+# - Tool calls and results
+</code></pre>
+<h3 id="pipe-from-stdin"><a class="header" href="#pipe-from-stdin">Pipe from Stdin</a></h3>
+<pre><code class="language-bash"># Read from stdin
+echo "What is this?" | ask-ai
+
+# Process file content
+cat code.rs | ask-ai "Review this code"
+
+# Chain commands
+cat error.log | ask-ai "Explain this error"
+</code></pre>
+<h3 id="tool-usage"><a class="header" href="#tool-usage">Tool Usage</a></h3>
+<p>Tools are automatically enabled for capable models:</p>
+<pre><code class="language-bash"># Pokémon tool (auto-enabled)
+ask-ai "Tell me about Pikachu"
+
+# Weather tool (auto-enabled)
+ask-ai "What's the weather in Tokyo?"
+
+# Web search tool (auto-enabled)
+ask-ai "Latest news about Rust programming"
+
+# Force tools on any model
+ask-ai --tools "Tell me about Charizard"
+</code></pre>
+<h2 id="tool-integration"><a class="header" href="#tool-integration">Tool Integration</a></h2>
+<p>When tools are enabled, the model can access:</p>
+<h3 id="pokémon-tools-8-total"><a class="header" href="#pokémon-tools-8-total">Pokémon Tools (8 total)</a></h3>
+<ul>
+<li><code>fetch_pokemon</code> - Comprehensive Pokémon data</li>
+<li><code>fetch_pokemon_basic</code> - Basic info</li>
+<li><code>fetch_pokemon_stats</code> - Base stats</li>
+<li><code>fetch_pokemon_moves</code> - Learnable moves</li>
+<li><code>fetch_pokemon_evolution</code> - Evolution chain</li>
+<li><code>fetch_ability_details</code> - Ability descriptions</li>
+<li><code>fetch_type_effectiveness</code> - Type matchups</li>
+<li><code>fetch_move_details</code> - Move information</li>
+</ul>
+<h3 id="weather-tools-3-total"><a class="header" href="#weather-tools-3-total">Weather Tools (3 total)</a></h3>
+<ul>
+<li><code>get_weather</code> - Current + 3-day forecast</li>
+<li><code>get_current_weather</code> - Current conditions</li>
+<li><code>get_weather_forecast</code> - 7-day forecast</li>
+</ul>
+<h3 id="web-search-tools-3-total"><a class="header" href="#web-search-tools-3-total">Web Search Tools (3 total)</a></h3>
+<ul>
+<li><code>web_search</code> - General web search</li>
+<li><code>web_search_news</code> - News search</li>
+<li><code>web_instant_answer</code> - Quick facts</li>
+</ul>
+<h2 id="output-formats"><a class="header" href="#output-formats">Output Formats</a></h2>
+<h3 id="markdown-default"><a class="header" href="#markdown-default">Markdown (Default)</a></h3>
+<p>Responses are formatted with markdown:</p>
+<pre><code class="language-bash">ask-ai "Create a simple table"
+# Output:
+# | Column 1 | Column 2 |
+# |----------|----------|
+# | Data     | Data     |
+</code></pre>
+<h3 id="plain-text"><a class="header" href="#plain-text">Plain Text</a></h3>
+<p>For piping to other programs:</p>
+<pre><code class="language-bash">ask-ai --plain "List files" | wc -w
+</code></pre>
+<h2 id="common-patterns-1"><a class="header" href="#common-patterns-1">Common Patterns</a></h2>
+<h3 id="combining-options"><a class="header" href="#combining-options">Combining Options</a></h3>
+<pre><code class="language-bash"># Think + specific model
+ask-ai -m glm-5 -t "Complex reasoning task"
+
+# Code + debug
+ask-ai -c -d "Debug this function"
+
+# Tools + plain
+ask-ai --tools --plain "Get weather" | grep temperature
+</code></pre>
+<h3 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h3>
+<p>If a model doesn’t support a feature:</p>
+<pre><code class="language-bash"># Warning if think mode not supported
+ask-ai -m llama3.2 -t "Question"
+# Output: Warning: llama3.2 does not support think mode. Ignoring -t.
+</code></pre>
+<h2 id="best-practices"><a class="header" href="#best-practices">Best Practices</a></h2>
+<ol>
+<li><strong>Start simple</strong> - Default model works for most queries</li>
+<li><strong>Use think mode</strong> - For complex reasoning or math problems</li>
+<li><strong>Code mode</strong> - When you want code without explanations</li>
+<li><strong>Pipe when needed</strong> - For processing or saving responses</li>
+<li><strong>Debug for issues</strong> - Use <code>-d</code> to troubleshoot problems</li>
+</ol>
+<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<ul>
+<li><a href="#translate-command">translate</a> - Language translation</li>
+<li><a href="#ocr-command">ocr</a> - Image text extraction</li>
+<li><a href="#summarize-command">summarize</a> - Text summarization</li>
+<li><a href="#available-models">Models</a> - Available models</li>
+<li><a href="#available-tools">Tools</a> - Available tools</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="translate-command"><a class="header" href="#translate-command">translate Command</a></h1>
+<p>The <code>translate</code> command translates text between 50+ languages using the TranslateGemma model.</p>
+<h2 id="synopsis-1"><a class="header" href="#synopsis-1">Synopsis</a></h2>
+<pre><code class="language-bash">ask-ai translate [OPTIONS] &lt;LANGUAGE&gt; [TEXT]
+ask-ai t [OPTIONS] &lt;LANGUAGE&gt; [TEXT]
+</code></pre>
+<h2 id="description-1"><a class="header" href="#description-1">Description</a></h2>
+<p>Translate text between languages with automatic source language detection. The command uses the TranslateGemma model (12B parameters) optimized for translation tasks.</p>
+<h2 id="arguments-1"><a class="header" href="#arguments-1">Arguments</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>LANGUAGE</code></td><td>Language pair in format <code>[source:]target</code> or just <code>target</code> for auto-detect</td></tr>
+<tr><td><code>TEXT</code></td><td>Text to translate. Reads from stdin if not provided.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="options-1"><a class="header" href="#options-1">Options</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Short</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--prompt</code></td><td><code>-p</code></td><td>Translation style: formal, casual, technical, literary</td></tr>
+<tr><td><code>--list</code></td><td></td><td>List supported languages (optionally filter)</td></tr>
+<tr><td><code>--plain</code></td><td></td><td>Plain text output (no markdown)</td></tr>
+<tr><td><code>--debug</code></td><td><code>-d</code></td><td>Enable debug mode</td></tr>
+<tr><td><code>--help</code></td><td><code>-h</code></td><td>Show help</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="language-codes"><a class="header" href="#language-codes">Language Codes</a></h2>
+<h3 id="common-codes"><a class="header" href="#common-codes">Common Codes</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Code</th><th>Language</th></tr>
+</thead>
+<tbody>
+<tr><td><code>pt</code></td><td>Portuguese</td></tr>
+<tr><td><code>pt-BR</code> / <code>br</code> / <code>brazil</code></td><td>Portuguese (Brazil)</td></tr>
+<tr><td><code>en</code> / <code>english</code></td><td>English</td></tr>
+<tr><td><code>es</code> / <code>spanish</code></td><td>Spanish</td></tr>
+<tr><td><code>fr</code> / <code>french</code></td><td>French</td></tr>
+<tr><td><code>de</code> / <code>german</code></td><td>German</td></tr>
+<tr><td><code>it</code> / <code>italian</code></td><td>Italian</td></tr>
+<tr><td><code>ja</code> / <code>japanese</code></td><td>Japanese</td></tr>
+<tr><td><code>zh-Hans</code> / <code>zh-cn</code></td><td>Chinese Simplified</td></tr>
+<tr><td><code>zh-Hant</code> / <code>zh-tw</code></td><td>Chinese Traditional</td></tr>
+<tr><td><code>ko</code> / <code>korean</code></td><td>Korean</td></tr>
+<tr><td><code>ru</code> / <code>russian</code></td><td>Russian</td></tr>
+<tr><td><code>ar</code> / <code>arabic</code></td><td>Arabic</td></tr>
+<tr><td><code>hi</code> / <code>hindi</code></td><td>Hindi</td></tr>
+<tr><td><code>he</code> / <code>hebrew</code></td><td>Hebrew</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="supported-formats"><a class="header" href="#supported-formats">Supported Formats</a></h3>
+<pre><code class="language-bash"># Explicit source and target
+ask-ai translate en:pt "Hello"
+
+# Auto-detect source (colon required)
+ask-ai translate :pt "Hello"
+
+# Just target language (auto-detect implied)
+ask-ai translate pt "Hello"
+</code></pre>
+<h2 id="examples-1"><a class="header" href="#examples-1">Examples</a></h2>
+<h3 id="basic-translation"><a class="header" href="#basic-translation">Basic Translation</a></h3>
+<pre><code class="language-bash"># English to Portuguese
+ask-ai translate en:pt "Hello world"
+# Output: Olá mundo
+
+# Spanish to English
+ask-ai translate es:en "Hola mundo"
+# Output: Hello world
+
+# French to Portuguese
+ask-ai translate fr:pt "Bonjour le monde"
+# Output: Olá mundo
+</code></pre>
+<h3 id="auto-detect-source"><a class="header" href="#auto-detect-source">Auto-Detect Source</a></h3>
+<pre><code class="language-bash"># Auto-detect to Portuguese
+ask-ai translate :pt "Hello world"
+ask-ai translate pt "Hello world"
+
+# Works with any language
+ask-ai translate :en "こんにちは"
+ask-ai translate :pt "שלום"
+</code></pre>
+<h3 id="from-stdin"><a class="header" href="#from-stdin">From Stdin</a></h3>
+<pre><code class="language-bash"># Translate file content
+cat document.txt | ask-ai translate :pt
+
+# Translate command output
+echo "Hello world" | ask-ai translate :es
+
+# Chain with OCR
+ask-ai ocr japanese.png | ask-ai translate ja:pt
+</code></pre>
+<h3 id="translation-styles"><a class="header" href="#translation-styles">Translation Styles</a></h3>
+<p>Use <code>-p</code> or <code>--prompt</code> for different styles:</p>
+<pre><code class="language-bash"># Formal style
+ask-ai translate en:pt -p formal "Hey, what's up?"
+
+# Casual style
+ask-ai translate en:pt -p casual "Greetings and salutations"
+
+# Technical style
+ask-ai translate en:pt -p technical "API endpoint response"
+
+# Literary style
+ask-ai translate en:pt -p literary "It was the best of times"
+</code></pre>
+<h3 id="list-languages"><a class="header" href="#list-languages">List Languages</a></h3>
+<pre><code class="language-bash"># List all supported languages
+ask-ai translate --list
+
+# Filter by substring
+ask-ai translate --list portuguese
+ask-ai translate --list pt
+ask-ai translate --list spanish
+</code></pre>
+<h3 id="plain-text-output"><a class="header" href="#plain-text-output">Plain Text Output</a></h3>
+<pre><code class="language-bash"># No markdown formatting
+ask-ai translate :pt --plain "Hello **world**"
+# Output: Olá **mundo**
+</code></pre>
+<h3 id="debug-mode-1"><a class="header" href="#debug-mode-1">Debug Mode</a></h3>
+<pre><code class="language-bash"># See translation process
+ask-ai translate en:pt -d "Test"
+# Shows model configuration and processing
+</code></pre>
+<h2 id="language-pairs"><a class="header" href="#language-pairs">Language Pairs</a></h2>
+<p>Common translation pairs:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>From</th><th>To</th><th>Example</th></tr>
+</thead>
+<tbody>
+<tr><td>English</td><td>Portuguese</td><td><code>en:pt</code></td></tr>
+<tr><td>English</td><td>Spanish</td><td><code>en:es</code></td></tr>
+<tr><td>Portuguese</td><td>English</td><td><code>pt:en</code></td></tr>
+<tr><td>Spanish</td><td>Portuguese</td><td><code>es:pt</code></td></tr>
+<tr><td>Japanese</td><td>English</td><td><code>ja:en</code></td></tr>
+<tr><td>Hebrew</td><td>Portuguese</td><td><code>he:pt</code></td></tr>
+<tr><td>Chinese</td><td>Portuguese</td><td><code>zh-Hans:pt</code></td></tr>
+<tr><td>Arabic</td><td>English</td><td><code>ar:en</code></td></tr>
+<tr><td>Hindi</td><td>English</td><td><code>hi:en</code></td></tr>
+<tr><td>Russian</td><td>Portuguese</td><td><code>ru:pt</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="pipelines"><a class="header" href="#pipelines">Pipelines</a></h2>
+<p>Translation works great in pipelines:</p>
+<pre><code class="language-bash"># OCR → Translate
+ask-ai ocr japanese.png | ask-ai translate ja:pt
+
+# OCR → Summarize → Translate
+ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+
+# File → Translate → Save
+cat english.txt | ask-ai translate :pt &gt; portuguese.txt
+</code></pre>
+<h2 id="best-practices-1"><a class="header" href="#best-practices-1">Best Practices</a></h2>
+<ol>
+<li><strong>Use auto-detect when unsure</strong> - The model is good at detecting languages</li>
+<li><strong>Specify style for context</strong> - Technical texts translate differently than casual</li>
+<li><strong>Chain with OCR</strong> - Great for processing scanned documents</li>
+<li><strong>Check with –list</strong> - Verify your language code is supported</li>
+</ol>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<ul>
+<li>Requires <code>translategemma:12b-32k</code> model</li>
+<li>Best for single sentences or short paragraphs</li>
+<li>Very long texts may be truncated</li>
+</ul>
+<h2 id="see-also-1"><a class="header" href="#see-also-1">See Also</a></h2>
+<ul>
+<li><a href="#query-command">query</a> - General LLM queries</li>
+<li><a href="#ocr-command">ocr</a> - Image text extraction</li>
+<li><a href="#summarize-command">summarize</a> - Text summarization</li>
+<li><a href="#pipeline-examples">Pipelines</a> - Advanced workflows</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="ocr-command"><a class="header" href="#ocr-command">ocr Command</a></h1>
+<p>The <code>ocr</code> command extracts text from images using the GLM-OCR model. It supports text recognition, table extraction, formula extraction (LaTeX), and figure/diagram recognition.</p>
+<h2 id="synopsis-2"><a class="header" href="#synopsis-2">Synopsis</a></h2>
+<pre><code class="language-bash">ask-ai ocr [OPTIONS] &lt;FILE&gt;...
+ask-ai o [OPTIONS] &lt;FILE&gt;...
+</code></pre>
+<h2 id="description-2"><a class="header" href="#description-2">Description</a></h2>
+<p>OCR (Optical Character Recognition) extracts text from images. GLM-OCR is a multimodal model capable of understanding:</p>
+<ul>
+<li><strong>Text</strong> - General document text</li>
+<li><strong>Tables</strong> - Structured tabular data</li>
+<li><strong>Formulas</strong> - Mathematical equations (outputs LaTeX)</li>
+<li><strong>Figures</strong> - Diagrams, charts, and illustrations</li>
+</ul>
+<h2 id="arguments-2"><a class="header" href="#arguments-2">Arguments</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>FILE</code></td><td>One or more image files to process</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="options-2"><a class="header" href="#options-2">Options</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Short</th><th>Description</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--mode</code></td><td><code>-m</code></td><td>Extraction mode: text, table, figure, formula</td><td><code>text</code></td></tr>
+<tr><td><code>--json</code></td><td></td><td>Output as JSON (one object per line)</td><td>disabled</td></tr>
+<tr><td><code>--max-tokens</code></td><td></td><td>Maximum tokens per image</td><td><code>8192</code></td></tr>
+<tr><td><code>--debug</code></td><td><code>-d</code></td><td>Enable debug mode</td><td>disabled</td></tr>
+<tr><td><code>--help</code></td><td><code>-h</code></td><td>Show help</td><td>-</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="extraction-modes"><a class="header" href="#extraction-modes">Extraction Modes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mode</th><th>Description</th><th>Best For</th></tr>
+</thead>
+<tbody>
+<tr><td><code>text</code></td><td>General text recognition</td><td>Documents, articles, letters</td></tr>
+<tr><td><code>table</code></td><td>Table structure extraction</td><td>Spreadsheets, invoices, data tables</td></tr>
+<tr><td><code>figure</code></td><td>Figure and diagram recognition</td><td>Charts, graphs, diagrams</td></tr>
+<tr><td><code>formula</code></td><td>Mathematical formula extraction</td><td>Equations, formulas (outputs LaTeX)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="supported-image-formats"><a class="header" href="#supported-image-formats">Supported Image Formats</a></h2>
+<ul>
+<li><strong>PNG</strong> (<code>.png</code>) - Recommended for best quality</li>
+<li><strong>JPEG/JPG</strong> (<code>.jpg</code>, <code>.jpeg</code>)</li>
+<li><strong>WebP</strong> (<code>.webp</code>)</li>
+<li><strong>GIF</strong> (<code>.gif</code>) - First frame only</li>
+</ul>
+<h2 id="examples-2"><a class="header" href="#examples-2">Examples</a></h2>
+<h3 id="basic-text-extraction"><a class="header" href="#basic-text-extraction">Basic Text Extraction</a></h3>
+<pre><code class="language-bash"># Extract text from document
+ask-ai ocr document.png
+
+# Extract from multiple files
+ask-ai ocr page1.png page2.png page3.png
+
+# Using alias
+ask-ai o letter.jpg
+</code></pre>
+<h3 id="table-extraction"><a class="header" href="#table-extraction">Table Extraction</a></h3>
+<pre><code class="language-bash"># Extract table structure
+ask-ai ocr --mode table spreadsheet.png
+
+# The output preserves table formatting:
+# | Column 1 | Column 2 | Column 3 |
+# |----------|----------|----------|
+# | Data 1   | Data 2   | Data 3   |
+</code></pre>
+<h3 id="formula-extraction"><a class="header" href="#formula-extraction">Formula Extraction</a></h3>
+<pre><code class="language-bash"># Extract mathematical formulas
+ask-ai ocr --mode formula equation.png
+
+# Output in LaTeX format:
+# $$E = mc^2$$
+# $$\int_{a}^{b} f(x) dx$$
+</code></pre>
+<h3 id="figurediagram-recognition"><a class="header" href="#figurediagram-recognition">Figure/Diagram Recognition</a></h3>
+<pre><code class="language-bash"># Extract text from diagrams
+ask-ai ocr --mode figure chart.png
+ask-ai ocr --mode figure diagram.jpg
+</code></pre>
+<h3 id="json-output"><a class="header" href="#json-output">JSON Output</a></h3>
+<pre><code class="language-bash"># Output as JSON for programmatic use
+ask-ai ocr --json document.png
+
+# Example output:
+# {"text": "Extracted content...", "mode": "text"}
+
+# Batch processing with JSON
+ask-ai ocr --json *.png &gt; output.jsonl
+</code></pre>
+<h3 id="custom-token-limit"><a class="header" href="#custom-token-limit">Custom Token Limit</a></h3>
+<pre><code class="language-bash"># Increase token limit for complex images
+ask-ai ocr --max-tokens 16384 large-document.png
+
+# Decrease for quick extraction
+ask-ai ocr --max-tokens 4096 simple.png
+</code></pre>
+<h3 id="debug-mode-2"><a class="header" href="#debug-mode-2">Debug Mode</a></h3>
+<pre><code class="language-bash"># See processing details
+ask-ai ocr -d document.png
+
+# Shows:
+# - Model being used
+# - Image processing info
+# - Token usage
+</code></pre>
+<h2 id="pipelines-1"><a class="header" href="#pipelines-1">Pipelines</a></h2>
+<p>OCR works great in pipelines:</p>
+<pre><code class="language-bash"># OCR → Translate
+ask-ai ocr japanese.png | ask-ai translate ja:pt
+
+# OCR → Summarize
+ask-ai ocr report.png | ask-ai summarize --style technical
+
+# OCR → Summarize → Translate
+ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+
+# OCR → Save to file
+ask-ai ocr scanned-document.png &gt; extracted.txt
+</code></pre>
+<h3 id="batch-processing-1"><a class="header" href="#batch-processing-1">Batch Processing</a></h3>
+<pre><code class="language-bash"># Process multiple images
+for img in *.png; do
+    echo "Processing $img..."
+    ask-ai ocr "$img" &gt; "${img%.png}.txt"
+done
+
+# With JSON output
+for img in scans/*.png; do
+    ask-ai ocr --json "$img" &gt;&gt; output.jsonl
+done
+</code></pre>
+<h2 id="use-cases"><a class="header" href="#use-cases">Use Cases</a></h2>
+<h3 id="1-document-digitization"><a class="header" href="#1-document-digitization">1. Document Digitization</a></h3>
+<p>Convert scanned documents to text:</p>
+<pre><code class="language-bash">ask-ai ocr scanned-contract.png &gt; contract.txt
+</code></pre>
+<h3 id="2-data-extraction"><a class="header" href="#2-data-extraction">2. Data Extraction</a></h3>
+<p>Extract tables from invoices or reports:</p>
+<pre><code class="language-bash">ask-ai ocr --mode table invoice.png | tee invoice-data.txt
+</code></pre>
+<h3 id="3-formula-collection"><a class="header" href="#3-formula-collection">3. Formula Collection</a></h3>
+<p>Extract math equations for LaTeX documents:</p>
+<pre><code class="language-bash">ask-ai ocr --mode formula math-problems.png &gt; formulas.tex
+</code></pre>
+<h3 id="4-multilingual-documents"><a class="header" href="#4-multilingual-documents">4. Multilingual Documents</a></h3>
+<p>Process documents in any language:</p>
+<pre><code class="language-bash"># Japanese document
+ask-ai ocr japanese-paper.png | ask-ai translate ja:en
+
+# Hebrew text
+ask-ai ocr hebrew-document.png | ask-ai translate he:pt
+</code></pre>
+<h3 id="5-research-paper-processing"><a class="header" href="#5-research-paper-processing">5. Research Paper Processing</a></h3>
+<p>Extract and analyze research papers:</p>
+<pre><code class="language-bash">ask-ai ocr research-paper.png | ask-ai summarize --style academic
+</code></pre>
+<h2 id="best-practices-2"><a class="header" href="#best-practices-2">Best Practices</a></h2>
+<ol>
+<li><strong>Choose the right mode</strong> - Use <code>--mode table</code> for structured data</li>
+<li><strong>High resolution images</strong> - Better quality = better results</li>
+<li><strong>Good lighting</strong> - Avoid shadows and glare</li>
+<li><strong>Straight alignment</strong> - Deskew images if possible</li>
+<li><strong>Clear text</strong> - Avoid handwritten or heavily stylized fonts</li>
+</ol>
+<h2 id="tips-for-better-results"><a class="header" href="#tips-for-better-results">Tips for Better Results</a></h2>
+<h3 id="image-quality"><a class="header" href="#image-quality">Image Quality</a></h3>
+<ul>
+<li>Use PNG format when possible (lossless)</li>
+<li>Ensure minimum 150 DPI for documents</li>
+<li>Crop to remove unnecessary borders</li>
+<li>Convert color images to grayscale if text is hard to read</li>
+</ul>
+<h3 id="mode-selection"><a class="header" href="#mode-selection">Mode Selection</a></h3>
+<pre><code class="language-bash"># Documents with mixed content
+ask-ai ocr document.png  # Default text mode
+
+# Structured data (spreadsheets, tables)
+ask-ai ocr --mode table data.png
+
+# Scientific papers
+ask-ai ocr --mode formula equations.png
+
+# Charts and diagrams
+ask-ai ocr --mode figure diagram.png
+</code></pre>
+<h2 id="limitations-1"><a class="header" href="#limitations-1">Limitations</a></h2>
+<ul>
+<li>Requires <code>glm-ocr:bf16</code> model</li>
+<li>Handwriting recognition may be limited</li>
+<li>Very small text might not be recognized</li>
+<li>Complex layouts may need multiple passes</li>
+<li>Maximum image size depends on available memory</li>
+</ul>
+<h2 id="error-handling-1"><a class="header" href="#error-handling-1">Error Handling</a></h2>
+<p>Common errors and solutions:</p>
+<pre><code class="language-bash"># Model not found
+ollama pull glm-ocr:bf16
+
+# File not found
+ask-ai ocr /path/to/exists.png
+
+# Unsupported format
+# Convert to PNG first: convert image.bmp image.png
+</code></pre>
+<h2 id="see-also-2"><a class="header" href="#see-also-2">See Also</a></h2>
+<ul>
+<li><a href="#query-command">query</a> - General LLM queries</li>
+<li><a href="#translate-command">translate</a> - Language translation</li>
+<li><a href="#summarize-command">summarize</a> - Text summarization</li>
+<li><a href="#pipeline-examples">Pipelines</a> - Advanced workflows</li>
+<li><a href="#available-tools">Tools</a> - Available tools</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="summarize-command"><a class="header" href="#summarize-command">summarize Command</a></h1>
+<p>The <code>summarize</code> command creates concise summaries of text with customizable styles and formats.</p>
+<h2 id="synopsis-3"><a class="header" href="#synopsis-3">Synopsis</a></h2>
+<pre><code class="language-bash">ask-ai summarize [OPTIONS] [TEXT]
+ask-ai sum [OPTIONS] [TEXT]
+</code></pre>
+<h2 id="description-3"><a class="header" href="#description-3">Description</a></h2>
+<p>Create summaries of long documents, articles, or any text. The summarize command:</p>
+<ul>
+<li>Uses the Llama 3.2 model by default (optimized for summarization)</li>
+<li>Supports multiple output formats (paragraph, bullets, both)</li>
+<li>Offers style presets for different contexts</li>
+<li>Accepts input from arguments or stdin</li>
+<li>Does not use tools (ensures focused summarization)</li>
+</ul>
+<h2 id="arguments-3"><a class="header" href="#arguments-3">Arguments</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Argument</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>TEXT</code></td><td>Text to summarize. Reads from stdin if not provided.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="options-3"><a class="header" href="#options-3">Options</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Short</th><th>Description</th><th>Default</th></tr>
+</thead>
+<tbody>
+<tr><td><code>--max-length</code></td><td><code>-l</code></td><td>Maximum words in summary</td><td><code>300</code></td></tr>
+<tr><td><code>--format</code></td><td><code>-f</code></td><td>Output format: paragraph, bullets, both</td><td><code>both</code></td></tr>
+<tr><td><code>--style</code></td><td></td><td>Focus style: general, technical, academic, business</td><td><code>general</code></td></tr>
+<tr><td><code>--model</code></td><td><code>-m</code></td><td>Model to use</td><td><code>llama3.2</code></td></tr>
+<tr><td><code>--plain</code></td><td></td><td>Plain text output (no markdown)</td><td>disabled</td></tr>
+<tr><td><code>--debug</code></td><td><code>-d</code></td><td>Enable debug mode</td><td>disabled</td></tr>
+<tr><td><code>--help</code></td><td><code>-h</code></td><td>Show help</td><td>-</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="output-formats-1"><a class="header" href="#output-formats-1">Output Formats</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Format</th><th>Description</th><th>Example Use</th></tr>
+</thead>
+<tbody>
+<tr><td><code>paragraph</code></td><td>Single paragraph</td><td>Quick overviews</td></tr>
+<tr><td><code>bullets</code></td><td>Bullet points</td><td>Presentations, notes</td></tr>
+<tr><td><code>both</code></td><td>Paragraph + bullets</td><td>Complete summaries</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="style-presets"><a class="header" href="#style-presets">Style Presets</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Style</th><th>Best For</th><th>Tone</th></tr>
+</thead>
+<tbody>
+<tr><td><code>general</code></td><td>Any content</td><td>Balanced, accessible</td></tr>
+<tr><td><code>technical</code></td><td>Documentation, code</td><td>Precise, detailed</td></tr>
+<tr><td><code>academic</code></td><td>Research papers</td><td>Formal, analytical</td></tr>
+<tr><td><code>business</code></td><td>Reports, emails</td><td>Professional, actionable</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="examples-3"><a class="header" href="#examples-3">Examples</a></h2>
+<h3 id="basic-summarization"><a class="header" href="#basic-summarization">Basic Summarization</a></h3>
+<pre><code class="language-bash"># Summarize text directly
+ask-ai summarize "Long text to summarize..."
+
+# Using alias
+ask-ai sum "Long text to summarize..."
+
+# From stdin
+echo "Long text..." | ask-ai summarize
+</code></pre>
+<h3 id="length-control"><a class="header" href="#length-control">Length Control</a></h3>
+<pre><code class="language-bash"># Short summary (100 words)
+ask-ai summarize --max-length 100 "Very long text..."
+ask-ai summarize -l 100 "Very long text..."
+
+# Long summary (500 words)
+ask-ai summarize -l 500 "Detailed document..."
+</code></pre>
+<h3 id="format-options"><a class="header" href="#format-options">Format Options</a></h3>
+<pre><code class="language-bash"># Paragraph only
+ask-ai summarize --format paragraph "Text..."
+ask-ai summarize -f paragraph "Text..."
+
+# Bullets only
+ask-ai summarize --format bullets "Text..."
+ask-ai summarize -f bullets "Text..."
+
+# Both (default)
+ask-ai summarize --format both "Text..."
+</code></pre>
+<h3 id="style-presets-1"><a class="header" href="#style-presets-1">Style Presets</a></h3>
+<pre><code class="language-bash"># Technical documentation
+ask-ai summarize --style technical "API documentation..."
+
+# Academic paper
+ask-ai summarize --style academic "Research findings..."
+
+# Business report
+ask-ai summarize --style business "Quarterly results..."
+
+# General (default)
+ask-ai summarize --style general "Article..."
+</code></pre>
+<h3 id="combining-options-1"><a class="header" href="#combining-options-1">Combining Options</a></h3>
+<pre><code class="language-bash"># Technical style, bullets, 150 words
+ask-ai summarize --style technical --format bullets --max-length 150 "Code docs..."
+
+# Academic, paragraph only, 200 words
+ask-ai summarize --style academic -f paragraph -l 200 "Research paper..."
+</code></pre>
+<h3 id="model-selection-1"><a class="header" href="#model-selection-1">Model Selection</a></h3>
+<pre><code class="language-bash"># Use default (llama3.2)
+ask-ai summarize "Text..."
+
+# Use specific model
+ask-ai summarize -m mistral-small "Text..."
+
+# Use smaller model
+ask-ai summarize -m smollm3 "Text..."
+</code></pre>
+<h3 id="from-files"><a class="header" href="#from-files">From Files</a></h3>
+<pre><code class="language-bash"># Summarize file content
+cat article.txt | ask-ai summarize
+
+# With options
+cat documentation.md | ask-ai summarize --style technical -l 200
+
+# Summarize code
+head -100 src/main.rs | ask-ai summarize --style technical
+</code></pre>
+<h3 id="pipelines-2"><a class="header" href="#pipelines-2">Pipelines</a></h3>
+<pre><code class="language-bash"># OCR → Summarize
+ask-ai ocr document.png | ask-ai summarize
+
+# OCR → Summarize → Translate
+ask-ai ocr japanese.png | ask-ai summarize | ask-ai translate ja:pt
+
+# File → Summarize → Save
+cat long-article.txt | ask-ai summarize --style academic &gt; summary.txt
+</code></pre>
+<h2 id="use-cases-1"><a class="header" href="#use-cases-1">Use Cases</a></h2>
+<h3 id="1-document-review"><a class="header" href="#1-document-review">1. Document Review</a></h3>
+<pre><code class="language-bash"># Quickly understand a long document
+cat contract.txt | ask-ai summarize -l 150
+
+# Technical documentation review
+cat api-docs.md | ask-ai summarize --style technical
+</code></pre>
+<h3 id="2-research-papers"><a class="header" href="#2-research-papers">2. Research Papers</a></h3>
+<pre><code class="language-bash"># Academic paper summary
+ask-ai ocr paper.png | ask-ai summarize --style academic
+
+# Multiple papers
+for paper in *.pdf; do
+    pdftotext "$paper" - | ask-ai summarize --style academic
+done
+</code></pre>
+<h3 id="3-meeting-notes"><a class="header" href="#3-meeting-notes">3. Meeting Notes</a></h3>
+<pre><code class="language-bash"># Summarize meeting transcript
+cat meeting-transcript.txt | ask-ai summarize --style business -f bullets
+</code></pre>
+<h3 id="4-email-digest"><a class="header" href="#4-email-digest">4. Email Digest</a></h3>
+<pre><code class="language-bash"># Summarize long email
+cat long-email.txt | ask-ai summarize -l 100 --format paragraph
+</code></pre>
+<h3 id="5-news-articles"><a class="header" href="#5-news-articles">5. News Articles</a></h3>
+<pre><code class="language-bash"># News summary
+ask-ai summarize --style general -l 200 "Article text..."
+</code></pre>
+<h2 id="best-practices-3"><a class="header" href="#best-practices-3">Best Practices</a></h2>
+<ol>
+<li><strong>Match style to content</strong> - Use <code>technical</code> for code, <code>academic</code> for papers</li>
+<li><strong>Adjust length</strong> - 150-200 words for quick reads, 300-500 for details</li>
+<li><strong>Use bullets for presentations</strong> - Easy to convert to slides</li>
+<li><strong>Combine with OCR</strong> - Process scanned documents</li>
+<li><strong>Chain with translate</strong> - Summarize then translate</li>
+</ol>
+<h2 id="comparison-of-styles"><a class="header" href="#comparison-of-styles">Comparison of Styles</a></h2>
+<p>Given the same input:</p>
+<pre><code class="language-bash"># General - balanced
+ask-ai summarize --style general "API documentation..."
+
+# Technical - focuses on implementation details
+ask-ai summarize --style technical "API documentation..."
+
+# Academic - focuses on methodology and findings
+ask-ai summarize --style academic "Research paper..."
+
+# Business - focuses on action items and implications
+ask-ai summarize --style business "Quarterly report..."
+</code></pre>
+<h2 id="output-examples"><a class="header" href="#output-examples">Output Examples</a></h2>
+<h3 id="paragraph-format"><a class="header" href="#paragraph-format">Paragraph Format</a></h3>
+<pre><code>This document describes the API endpoints for the user management system. 
+It covers authentication, user creation, profile updates, and deletion. 
+The API uses REST conventions with JSON responses and requires an 
+authentication token for all endpoints except registration.
+</code></pre>
+<h3 id="bullets-format"><a class="header" href="#bullets-format">Bullets Format</a></h3>
+<pre><code>- User authentication via JWT tokens
+- REST API with JSON responses
+- Endpoints: create, read, update, delete users
+- Token required for all operations except registration
+- Rate limiting: 100 requests per minute
+</code></pre>
+<h3 id="both-format-default"><a class="header" href="#both-format-default">Both Format (Default)</a></h3>
+<pre><code>This document describes the API endpoints for the user management system.
+
+Key points:
+- User authentication via JWT tokens
+- REST API with JSON responses
+- Endpoints: create, read, update, delete users
+- Token required for all operations except registration
+</code></pre>
+<h2 id="tips"><a class="header" href="#tips">Tips</a></h2>
+<h3 id="processing-multiple-files"><a class="header" href="#processing-multiple-files">Processing Multiple Files</a></h3>
+<pre><code class="language-bash"># Summarize all text files in directory
+for file in *.txt; do
+    echo "=== $file ==="
+    ask-ai summarize --style general -l 100 &lt; "$file"
+    echo
+done
+</code></pre>
+<h3 id="creating-reading-lists"><a class="header" href="#creating-reading-lists">Creating Reading Lists</a></h3>
+<pre><code class="language-bash"># Create summaries of multiple articles
+for article in articles/*.txt; do
+    echo "# $(basename "$article" .txt)"
+    cat "$article" | ask-ai summarize -l 50 -f bullets
+    echo
+done &gt; reading-list.md
+</code></pre>
+<h3 id="code-documentation"><a class="header" href="#code-documentation">Code Documentation</a></h3>
+<pre><code class="language-bash"># Summarize function documentation
+grep -A 20 "^///" src/*.rs | ask-ai summarize --style technical
+</code></pre>
+<h2 id="limitations-2"><a class="header" href="#limitations-2">Limitations</a></h2>
+<ul>
+<li>Uses <code>llama3.2:3b-32k</code> model by default</li>
+<li>Requires model to be pulled: <code>ollama pull llama3.2:3b-32k</code></li>
+<li>Very long texts may be truncated</li>
+<li>Does not use tools (by design)</li>
+<li>Pepe model does not get sarcastic personality (professional mode)</li>
+</ul>
+<h2 id="error-handling-2"><a class="header" href="#error-handling-2">Error Handling</a></h2>
+<pre><code class="language-bash"># Model not found
+ollama pull llama3.2:3b-32k
+
+# Empty input
+# Ensure text is provided or piped correctly
+</code></pre>
+<h2 id="see-also-3"><a class="header" href="#see-also-3">See Also</a></h2>
+<ul>
+<li><a href="#query-command">query</a> - General LLM queries</li>
+<li><a href="#translate-command">translate</a> - Language translation</li>
+<li><a href="#ocr-command">ocr</a> - Image text extraction</li>
+<li><a href="#pipeline-examples">Pipelines</a> - Advanced workflows</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="available-models"><a class="header" href="#available-models">Available Models</a></h1>
+<p>Ask-AI supports multiple model presets optimized for different tasks. Each preset configures the appropriate model, temperature, context window, and sampling parameters.</p>
+<h2 id="model-list"><a class="header" href="#model-list">Model List</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Preset</th><th>Model ID</th><th>Context</th><th>Best For</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>lfm</strong></td><td>lfm2.5-thinking:1.2b-32k</td><td>32K</td><td>General queries (default)</td></tr>
+<tr><td>gpt-oss</td><td>gpt-oss:20b-64k</td><td>64K</td><td>Tool calling</td></tr>
+<tr><td>mistral-small</td><td>mistral-small3.2:24b-32k</td><td>32K</td><td>Agentic tasks</td></tr>
+<tr><td>smollm3</td><td>smollm3:Q8_0-64k</td><td>64K</td><td>Edge deployment</td></tr>
+<tr><td>sead</td><td>sead:14b-32k</td><td>32K</td><td>General purpose</td></tr>
+<tr><td>qwen3-coder</td><td>qwen3-coder:30b-64k</td><td>64K</td><td>Code generation</td></tr>
+<tr><td>devstral-small-2</td><td>devstral-small-2:24b-64k</td><td>64K</td><td>Coding with min_p</td></tr>
+<tr><td>llama3.2</td><td>llama3.2:3b-32k</td><td>32K</td><td>Summarization</td></tr>
+<tr><td>glm-5</td><td>glm-5:cloud</td><td>198K</td><td>Cloud reasoning</td></tr>
+<tr><td>kimi-k2.5</td><td>kimi-k2.5:cloud</td><td>256K</td><td>Multimodal agentic</td></tr>
+<tr><td>minimax-m2.5</td><td>minimax-m2.5:cloud</td><td>198K</td><td>Coding and agentic</td></tr>
+<tr><td>qwen3.5</td><td>qwen3.5:cloud</td><td>256K</td><td>Vision-language</td></tr>
+<tr><td>translate</td><td>translategemma:12b-32k</td><td>32K</td><td>Translation (fixed)</td></tr>
+<tr><td>pepe</td><td>pepe:8b-64k</td><td>64K</td><td>Sarcastic personality</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="model-categories"><a class="header" href="#model-categories">Model Categories</a></h2>
+<h3 id="general-purpose"><a class="header" href="#general-purpose">General Purpose</a></h3>
+<p>These models work well for everyday queries:</p>
+<h4 id="lfm-default"><a class="header" href="#lfm-default">lfm (Default)</a></h4>
+<pre><code class="language-bash">ask-ai -m lfm "Your question"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: lfm2.5-thinking:1.2b-32k</li>
+<li><strong>Context</strong>: 32K tokens</li>
+<li><strong>Temperature</strong>: 0.3</li>
+<li><strong>Best for</strong>: General questions, reasoning, explanations</li>
+<li><strong>Think mode</strong>: Supported</li>
+</ul>
+<h4 id="sead"><a class="header" href="#sead">sead</a></h4>
+<pre><code class="language-bash">ask-ai -m sead "Your question"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: sead:14b-32k</li>
+<li><strong>Context</strong>: 32K tokens</li>
+<li><strong>Temperature</strong>: 0.7</li>
+<li><strong>Best for</strong>: General purpose tasks</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h4 id="pepe-easter-egg"><a class="header" href="#pepe-easter-egg">pepe (Easter Egg)</a></h4>
+<pre><code class="language-bash">ask-ai -m pepe "Your question"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: pepe:8b-64k</li>
+<li><strong>Context</strong>: 64K tokens</li>
+<li><strong>Temperature</strong>: 0.7</li>
+<li><strong>Best for</strong>: General queries with sarcastic personality</li>
+<li><strong>Special</strong>: Injects sarcastic personality into responses</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h3 id="code-focused"><a class="header" href="#code-focused">Code-Focused</a></h3>
+<p>Optimized for programming tasks:</p>
+<h4 id="qwen3-coder"><a class="header" href="#qwen3-coder">qwen3-coder</a></h4>
+<pre><code class="language-bash">ask-ai -m qwen3-coder "Write a function"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: qwen3-coder:30b-64k</li>
+<li><strong>Context</strong>: 64K tokens</li>
+<li><strong>Temperature</strong>: 0.1</li>
+<li><strong>Best for</strong>: Code generation, debugging, code review</li>
+<li><strong>Think mode</strong>: Not supported</li>
+<li><strong>Tools</strong>: Yes</li>
+</ul>
+<h4 id="devstral-small-2"><a class="header" href="#devstral-small-2">devstral-small-2</a></h4>
+<pre><code class="language-bash">ask-ai -m devstral-small-2 "Implement algorithm"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: devstral-small-2:24b-64k</li>
+<li><strong>Context</strong>: 64K tokens</li>
+<li><strong>Temperature</strong>: 0.1</li>
+<li><strong>Best for</strong>: Coding with min_p sampling</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h3 id="tool-capable"><a class="header" href="#tool-capable">Tool-Capable</a></h3>
+<p>Models that support tool calling:</p>
+<h4 id="mistral-small"><a class="header" href="#mistral-small">mistral-small</a></h4>
+<pre><code class="language-bash">ask-ai -m mistral-small "What's the weather?"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: mistral-small3.2:24b-32k</li>
+<li><strong>Context</strong>: 32K tokens</li>
+<li><strong>Temperature</strong>: 0.2</li>
+<li><strong>Best for</strong>: Agentic tasks with tools</li>
+<li><strong>Tools</strong>: Full support</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h4 id="gpt-oss"><a class="header" href="#gpt-oss">gpt-oss</a></h4>
+<pre><code class="language-bash">ask-ai -m gpt-oss "Tell me about Pikachu"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: gpt-oss:20b-64k</li>
+<li><strong>Context</strong>: 64K tokens</li>
+<li><strong>Temperature</strong>: 0.2</li>
+<li><strong>Best for</strong>: Tool calling (note: may have issues with some tool calls)</li>
+<li><strong>Tools</strong>: Full support</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h3 id="specialized"><a class="header" href="#specialized">Specialized</a></h3>
+<p>Models for specific tasks:</p>
+<h4 id="llama32-summarization"><a class="header" href="#llama32-summarization">llama3.2 (Summarization)</a></h4>
+<pre><code class="language-bash">ask-ai summarize -m llama3.2 "Text..."
+</code></pre>
+<ul>
+<li><strong>Model</strong>: llama3.2:3b-32k</li>
+<li><strong>Context</strong>: 32K tokens</li>
+<li><strong>Temperature</strong>: 0.1</li>
+<li><strong>Best for</strong>: Summarization (default for summarize command)</li>
+<li><strong>Tools</strong>: No</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h4 id="translate-translation"><a class="header" href="#translate-translation">translate (Translation)</a></h4>
+<pre><code class="language-bash">ask-ai translate en:pt "Text"  # Fixed model
+</code></pre>
+<ul>
+<li><strong>Model</strong>: translategemma:12b-32k</li>
+<li><strong>Context</strong>: 32K tokens</li>
+<li><strong>Temperature</strong>: 0.1</li>
+<li><strong>Best for</strong>: Translation tasks (always used for translate)</li>
+<li><strong>Tools</strong>: No</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h3 id="cloud-models"><a class="header" href="#cloud-models">Cloud Models</a></h3>
+<p>Remote/cloud-based models (requires internet):</p>
+<h4 id="glm-5"><a class="header" href="#glm-5">glm-5</a></h4>
+<pre><code class="language-bash">ask-ai -m glm-5 "Complex reasoning"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: glm-5:cloud</li>
+<li><strong>Context</strong>: 198K tokens</li>
+<li><strong>Temperature</strong>: 0.7</li>
+<li><strong>Best for</strong>: Complex reasoning, large context</li>
+<li><strong>Think mode</strong>: Supported</li>
+</ul>
+<h4 id="kimi-k25"><a class="header" href="#kimi-k25">kimi-k2.5</a></h4>
+<pre><code class="language-bash">ask-ai -m kimi-k2.5 "Multimodal task"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: kimi-k2.5:cloud</li>
+<li><strong>Context</strong>: 256K tokens</li>
+<li><strong>Temperature</strong>: 0.7</li>
+<li><strong>Best for</strong>: Multimodal agentic tasks</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h4 id="minimax-m25"><a class="header" href="#minimax-m25">minimax-m2.5</a></h4>
+<pre><code class="language-bash">ask-ai -m minimax-m2.5 "Coding task"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: minimax-m2.5:cloud</li>
+<li><strong>Context</strong>: 198K tokens</li>
+<li><strong>Temperature</strong>: 0.7</li>
+<li><strong>Best for</strong>: Coding and agentic tasks</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h4 id="qwen35"><a class="header" href="#qwen35">qwen3.5</a></h4>
+<pre><code class="language-bash">ask-ai -m qwen3.5 "Vision task"
+</code></pre>
+<ul>
+<li><strong>Model</strong>: qwen3.5:cloud</li>
+<li><strong>Context</strong>: 256K tokens</li>
+<li><strong>Temperature</strong>: 0.7</li>
+<li><strong>Best for</strong>: Vision-language tasks</li>
+<li><strong>Think mode</strong>: Not supported</li>
+</ul>
+<h2 id="capability-matrix"><a class="header" href="#capability-matrix">Capability Matrix</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Model</th><th>Tools</th><th>Vision</th><th>Think</th><th>Local</th><th>Size</th></tr>
+</thead>
+<tbody>
+<tr><td>lfm</td><td>No</td><td>No</td><td>Yes</td><td>Yes</td><td>1.2B</td></tr>
+<tr><td>mistral-small</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>24B</td></tr>
+<tr><td>gpt-oss</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>20B</td></tr>
+<tr><td>qwen3-coder</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>30B</td></tr>
+<tr><td>sead</td><td>No</td><td>No</td><td>No</td><td>Yes</td><td>14B</td></tr>
+<tr><td>smollm3</td><td>No</td><td>No</td><td>No</td><td>Yes</td><td>3B</td></tr>
+<tr><td>devstral-small-2</td><td>No</td><td>No</td><td>No</td><td>Yes</td><td>24B</td></tr>
+<tr><td>llama3.2</td><td>No</td><td>No</td><td>No</td><td>Yes</td><td>3B</td></tr>
+<tr><td>pepe</td><td>No</td><td>No</td><td>No</td><td>Yes</td><td>8B</td></tr>
+<tr><td>glm-5</td><td>No</td><td>No</td><td>Yes</td><td>No</td><td>Cloud</td></tr>
+<tr><td>kimi-k2.5</td><td>No</td><td>No</td><td>No</td><td>No</td><td>Cloud</td></tr>
+<tr><td>minimax-m2.5</td><td>No</td><td>No</td><td>No</td><td>No</td><td>Cloud</td></tr>
+<tr><td>qwen3.5</td><td>No</td><td>No</td><td>No</td><td>No</td><td>Cloud</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="configuration-details"><a class="header" href="#configuration-details">Configuration Details</a></h2>
+<p>Each model preset includes:</p>
+<h3 id="temperature"><a class="header" href="#temperature">Temperature</a></h3>
+<ul>
+<li><strong>Low (0.1-0.2)</strong>: More deterministic, good for code and technical tasks</li>
+<li><strong>Medium (0.3-0.7)</strong>: Balanced, good for general queries</li>
+</ul>
+<h3 id="context-window"><a class="header" href="#context-window">Context Window</a></h3>
+<ul>
+<li><strong>32K</strong>: Standard size for most tasks</li>
+<li><strong>64K</strong>: Large documents, codebases</li>
+<li><strong>198K-256K</strong>: Cloud models for very large contexts</li>
+</ul>
+<h3 id="sampling-parameters"><a class="header" href="#sampling-parameters">Sampling Parameters</a></h3>
+<ul>
+<li><strong>Top K</strong>: 20-50</li>
+<li><strong>Top P</strong>: 0.1-0.95</li>
+<li><strong>Repeat Penalty</strong>: 1.0-1.1</li>
+</ul>
+<h2 id="choosing-a-model"><a class="header" href="#choosing-a-model">Choosing a Model</a></h2>
+<h3 id="for-general-queries"><a class="header" href="#for-general-queries">For General Queries</a></h3>
+<pre><code class="language-bash">ask-ai -m lfm "Your question"  # Default, good reasoning
+ask-ai -m sead "Your question"  # General purpose
+</code></pre>
+<h3 id="for-coding"><a class="header" href="#for-coding">For Coding</a></h3>
+<pre><code class="language-bash">ask-ai -m qwen3-coder "Write a Rust function"
+ask-ai -m devstral-small-2 "Implement algorithm"
+ask-ai -p code "Optimize this code"
+</code></pre>
+<h3 id="for-tool-usage"><a class="header" href="#for-tool-usage">For Tool Usage</a></h3>
+<pre><code class="language-bash">ask-ai -m mistral-small "Get weather in Tokyo"
+ask-ai --tools "Tell me about Pikachu"  # Force tools
+</code></pre>
+<h3 id="for-summarization"><a class="header" href="#for-summarization">For Summarization</a></h3>
+<pre><code class="language-bash">ask-ai summarize "Text..."  # Uses llama3.2 by default
+ask-ai summarize -m smollm3 "Text..."  # Faster
+</code></pre>
+<h3 id="for-translation"><a class="header" href="#for-translation">For Translation</a></h3>
+<pre><code class="language-bash">ask-ai translate en:pt "Text"  # Fixed: translategemma
+</code></pre>
+<h3 id="for-reasoning"><a class="header" href="#for-reasoning">For Reasoning</a></h3>
+<pre><code class="language-bash">ask-ai -m lfm -t "Complex problem"  # Think mode
+ask-ai -m glm-5 -t "Deep reasoning"  # Cloud model
+</code></pre>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<p>Before using a model, pull it with Ollama:</p>
+<pre><code class="language-bash"># Essential models
+ollama pull lfm2.5-thinking:1.2b-32k
+ollama pull translategemma:12b-32k
+ollama pull glm-ocr:bf16
+ollama pull llama3.2:3b-32k
+
+# Optional models
+ollama pull mistral-small3.2:24b-32k
+ollama pull qwen3-coder:30b-64k
+ollama pull pepe:8b-64k
+# ... etc
+</code></pre>
+<h2 id="model-commands"><a class="header" href="#model-commands">Model Commands</a></h2>
+<h3 id="list-available-models"><a class="header" href="#list-available-models">List Available Models</a></h3>
+<pre><code class="language-bash">ask-ai --list
+</code></pre>
+<p>Shows:</p>
+<ul>
+<li>All model presets</li>
+<li>Model IDs</li>
+<li>Context sizes</li>
+<li>Available prompt modes</li>
+</ul>
+<h3 id="check-model-status"><a class="header" href="#check-model-status">Check Model Status</a></h3>
+<pre><code class="language-bash"># See installed models
+ollama list
+
+# Check if specific model exists
+ollama show lfm2.5-thinking:1.2b-32k
+</code></pre>
+<h2 id="best-practices-4"><a class="header" href="#best-practices-4">Best Practices</a></h2>
+<ol>
+<li><strong>Use default for most tasks</strong> - <code>lfm</code> works well for general queries</li>
+<li><strong>Match model to task</strong> - Use code models for coding, etc.</li>
+<li><strong>Consider context size</strong> - Large documents need large context</li>
+<li><strong>Local vs Cloud</strong> - Local models are faster and work offline</li>
+<li><strong>Tool support</strong> - Only certain models support tool calling</li>
+</ol>
+<h2 id="see-also-4"><a class="header" href="#see-also-4">See Also</a></h2>
+<ul>
+<li><a href="#query-command">query</a> - Using models for queries</li>
+<li><a href="#summarize-command">summarize</a> - Summarization command</li>
+<li><a href="#configuration-guide">Configuration</a> - Customizing defaults</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="prompt-modes-1"><a class="header" href="#prompt-modes-1">Prompt Modes</a></h1>
+<p>Prompt modes are system prompts that guide how the model responds. Different modes optimize the model for specific tasks.</p>
+<h2 id="available-modes"><a class="header" href="#available-modes">Available Modes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mode</th><th>Purpose</th><th>Best For</th></tr>
+</thead>
+<tbody>
+<tr><td><code>default</code></td><td>General queries</td><td>Everyday questions</td></tr>
+<tr><td><code>tool_user</code></td><td>Tool usage</td><td>Queries with Pokémon/Weather/Web tools</td></tr>
+<tr><td><code>code</code></td><td>Code output</td><td>Programming tasks</td></tr>
+<tr><td><code>code_with_tools</code></td><td>Code + research</td><td>Programming with web search</td></tr>
+<tr><td><code>summarize</code></td><td>Summarization</td><td>Document summaries</td></tr>
+<tr><td><code>pepe</code></td><td>Personality</td><td>Easter egg sarcastic responses</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="mode-details"><a class="header" href="#mode-details">Mode Details</a></h2>
+<h3 id="default"><a class="header" href="#default">default</a></h3>
+<p>The standard prompt for general purpose queries.</p>
+<pre><code class="language-bash">ask-ai -p default "Your question"
+</code></pre>
+<p><strong>Characteristics:</strong></p>
+<ul>
+<li>Sucinct responses</li>
+<li>Code when appropriate</li>
+<li>Markdown formatting</li>
+<li>No unnecessary conversation</li>
+</ul>
+<p><strong>When to use:</strong></p>
+<ul>
+<li>General questions</li>
+<li>Quick answers</li>
+<li>When you don’t need special behavior</li>
+</ul>
+<h3 id="tool_user"><a class="header" href="#tool_user">tool_user</a></h3>
+<p>Enhanced prompt for models with tool access.</p>
+<pre><code class="language-bash">ask-ai -p tool_user "What's the weather in Tokyo?"
+</code></pre>
+<p><strong>Characteristics:</strong></p>
+<ul>
+<li>Proactive tool usage guidance</li>
+<li>Clear tool selection rules:
+<ul>
+<li>Pokémon tools → ONLY for Pokémon content</li>
+<li>Weather tools → ONLY for weather queries</li>
+<li>Web Search → for general knowledge</li>
+</ul>
+</li>
+<li>Structured thinking about tool selection</li>
+</ul>
+<p><strong>When to use:</strong></p>
+<ul>
+<li>When using tool-capable models</li>
+<li>For complex queries that might need tools</li>
+<li>To encourage proactive web search</li>
+</ul>
+<h3 id="code"><a class="header" href="#code">code</a></h3>
+<p>Optimized for code generation with minimal explanations.</p>
+<pre><code class="language-bash">ask-ai -p code "Write a Rust function to parse JSON"
+</code></pre>
+<p><strong>Characteristics:</strong></p>
+<ul>
+<li>Returns only code</li>
+<li>No “Here’s the code” introductions</li>
+<li>No “Hope this helps” conclusions</li>
+<li>Minimal comments (docstrings only if essential)</li>
+<li>Proper syntax highlighting</li>
+</ul>
+<p><strong>When to use:</strong></p>
+<ul>
+<li>You want just the code</li>
+<li>Scripting and automation</li>
+<li>Code snippets for documentation</li>
+</ul>
+<h3 id="code_with_tools"><a class="header" href="#code_with_tools">code_with_tools</a></h3>
+<p>Code mode with web search tools enabled.</p>
+<pre><code class="language-bash">ask-ai -p code_with_tools "Latest Rust async patterns"
+</code></pre>
+<p><strong>Characteristics:</strong></p>
+<ul>
+<li>All code mode features</li>
+<li>Web search tools available</li>
+<li>Can research before coding</li>
+<li>Up-to-date code examples</li>
+</ul>
+<p><strong>When to use:</strong></p>
+<ul>
+<li>Need current best practices</li>
+<li>Researching new APIs or libraries</li>
+<li>Want examples from latest documentation</li>
+</ul>
+<h3 id="summarize"><a class="header" href="#summarize">summarize</a></h3>
+<p>Professional summarization guidelines.</p>
+<pre><code class="language-bash">ask-ai summarize --style academic "Text..."
+</code></pre>
+<p><strong>Characteristics:</strong></p>
+<ul>
+<li>Objective tone</li>
+<li>Key points highlighted</li>
+<li>No personal opinions</li>
+<li>Structured output</li>
+</ul>
+<p><strong>When to use:</strong></p>
+<ul>
+<li>Summarization command (automatic)</li>
+<li>Professional contexts</li>
+<li>Academic or business documents</li>
+</ul>
+<h3 id="pepe"><a class="header" href="#pepe">pepe</a></h3>
+<p>Sarcastic personality mode (Easter egg).</p>
+<pre><code class="language-bash">ask-ai -m pepe "Your question"
+</code></pre>
+<p><strong>Characteristics:</strong></p>
+<ul>
+<li>Sarcastic personality</li>
+<li>Makes fun of the user</li>
+<li>Still provides helpful answers</li>
+<li>Activated automatically for pepe model</li>
+</ul>
+<p><strong>When to use:</strong></p>
+<ul>
+<li>When using pepe model</li>
+<li>For entertainment</li>
+<li>Not for professional contexts</li>
+</ul>
+<h2 id="usage-examples"><a class="header" href="#usage-examples">Usage Examples</a></h2>
+<h3 id="basic-usage-1"><a class="header" href="#basic-usage-1">Basic Usage</a></h3>
+<pre><code class="language-bash"># Default mode (no -p needed)
+ask-ai "What is Rust?"
+
+# Explicit mode selection
+ask-ai -p tool_user "Complex query"
+
+# Code mode
+ask-ai -p code "Write a function"
+</code></pre>
+<h3 id="with-models"><a class="header" href="#with-models">With Models</a></h3>
+<pre><code class="language-bash"># Tool user with capable model
+ask-ai -m mistral-small -p tool_user "Tell me about Pikachu"
+
+# Code mode with code model
+ask-ai -m qwen3-coder -p code "Implement sort"
+
+# Default with any model
+ask-ai -m lfm -p default "Question"
+</code></pre>
+<h3 id="combining-options-2"><a class="header" href="#combining-options-2">Combining Options</a></h3>
+<pre><code class="language-bash"># Code mode with think
+ask-ai -p code -t "Complex algorithm"
+
+# Tool user with debug
+ask-ai -p tool_user -d "Debug this"
+
+# Code with specific model and debug
+ask-ai -m qwen3-coder -p code -d "Debug code generation"
+</code></pre>
+<h2 id="mode-selection-guide"><a class="header" href="#mode-selection-guide">Mode Selection Guide</a></h2>
+<pre class="mermaid">graph TD
+    A[What do you need?] --&gt; B{Code?}
+    B --&gt;|Yes&gt; C{Research needed?}
+    C --&gt;|Yes&gt; D[code_with_tools]
+    C --&gt;|No&gt; E[code]
+    B --&gt;|No&gt; F{Tools?}
+    F --&gt;|Yes&gt; G[tool_user]
+    F --&gt;|No&gt; H{Pepe model?}
+    H --&gt;|Yes&gt; I[pepe]
+    H --&gt;|No&gt; J[default]
+</pre>
+
+<h2 id="best-practices-5"><a class="header" href="#best-practices-5">Best Practices</a></h2>
+<ol>
+<li><strong>Start with default</strong> - Works for most queries</li>
+<li><strong>Use code for scripts</strong> - Clean output for automation</li>
+<li><strong>Tool user for capabilities</strong> - When using Pokémon/Weather/Web</li>
+<li><strong>Match to task</strong> - Code mode for coding, etc.</li>
+</ol>
+<h2 id="listing-modes"><a class="header" href="#listing-modes">Listing Modes</a></h2>
+<p>See available modes:</p>
+<pre><code class="language-bash">ask-ai --list
+</code></pre>
+<p>Shows all prompt modes with descriptions.</p>
+<h2 id="see-also-5"><a class="header" href="#see-also-5">See Also</a></h2>
+<ul>
+<li><a href="#query-command">query</a> - Using prompt modes</li>
+<li><a href="#available-models">Models</a> - Available models</li>
+<li><a href="#available-tools">Tools</a> - Available tools</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="available-tools"><a class="header" href="#available-tools">Available Tools</a></h1>
+<p>Ask-AI provides 14 tools that enhance queries with real-time data from external sources. Tools are automatically enabled for capable models.</p>
+<h2 id="tool-overview"><a class="header" href="#tool-overview">Tool Overview</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Category</th><th>Count</th><th>Source</th><th>Status</th></tr>
+</thead>
+<tbody>
+<tr><td>Pokémon</td><td>8</td><td>PokéAPI</td><td>✅ Working</td></tr>
+<tr><td>Weather</td><td>3</td><td>Open-Meteo</td><td>✅ Working</td></tr>
+<tr><td>Web Search</td><td>3</td><td>DuckDuckGo</td><td>⚠️ Currently blocked</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="pokémon-tools-8"><a class="header" href="#pokémon-tools-8">Pokémon Tools (8)</a></h2>
+<p>Powered by <a href="https://pokeapi.co/">PokéAPI</a>.</p>
+<h3 id="fetch_pokemon"><a class="header" href="#fetch_pokemon">fetch_pokemon</a></h3>
+<p>Get comprehensive Pokémon data including stats, abilities, moves, and evolution chain.</p>
+<pre><code>Function: fetch_pokemon
+Args: name (string)
+Example: fetch_pokemon(name: "pikachu")
+</code></pre>
+<h3 id="fetch_pokemon_basic"><a class="header" href="#fetch_pokemon_basic">fetch_pokemon_basic</a></h3>
+<p>Get basic Pokémon information (types, height, weight, abilities).</p>
+<pre><code>Function: fetch_pokemon_basic
+Args: name (string)
+Example: fetch_pokemon_basic(name: "charizard")
+</code></pre>
+<h3 id="fetch_pokemon_stats"><a class="header" href="#fetch_pokemon_stats">fetch_pokemon_stats</a></h3>
+<p>Get base stats (HP, Attack, Defense, etc.).</p>
+<pre><code>Function: fetch_pokemon_stats
+Args: name (string)
+Example: fetch_pokemon_stats(name: "mewtwo")
+</code></pre>
+<h3 id="fetch_pokemon_moves"><a class="header" href="#fetch_pokemon_moves">fetch_pokemon_moves</a></h3>
+<p>Get learnable moves with optional limit.</p>
+<pre><code>Function: fetch_pokemon_moves
+Args: name (string), limit (optional integer)
+Example: fetch_pokemon_moves(name: "pikachu", limit: 10)
+</code></pre>
+<h3 id="fetch_pokemon_evolution"><a class="header" href="#fetch_pokemon_evolution">fetch_pokemon_evolution</a></h3>
+<p>Get evolution chain information.</p>
+<pre><code>Function: fetch_pokemon_evolution
+Args: name (string)
+Example: fetch_pokemon_evolution(name: "eevee")
+</code></pre>
+<h3 id="fetch_ability_details"><a class="header" href="#fetch_ability_details">fetch_ability_details</a></h3>
+<p>Get ability descriptions and which Pokémon have it.</p>
+<pre><code>Function: fetch_ability_details
+Args: ability (string)
+Example: fetch_ability_details(ability: "lightning-rod")
+</code></pre>
+<h3 id="fetch_type_effectiveness"><a class="header" href="#fetch_type_effectiveness">fetch_type_effectiveness</a></h3>
+<p>Get type weaknesses, resistances, and immunities.</p>
+<pre><code>Function: fetch_type_effectiveness
+Args: type_name (string)
+Example: fetch_type_effectiveness(type_name: "electric")
+</code></pre>
+<h3 id="fetch_move_details"><a class="header" href="#fetch_move_details">fetch_move_details</a></h3>
+<p>Get move information (power, accuracy, type, effect).</p>
+<pre><code>Function: fetch_move_details
+Args: move (string)
+Example: fetch_move_details(move: "thunderbolt")
+</code></pre>
+<h2 id="weather-tools-3"><a class="header" href="#weather-tools-3">Weather Tools (3)</a></h2>
+<p>Powered by <a href="https://open-meteo.com/">Open-Meteo</a> (free, no API key required).</p>
+<h3 id="get_weather"><a class="header" href="#get_weather">get_weather</a></h3>
+<p>Get current weather conditions and 3-day forecast.</p>
+<pre><code>Function: get_weather
+Args: city (string), country (optional string)
+Example: get_weather(city: "Tokyo", country: "Japan")
+</code></pre>
+<h3 id="get_current_weather"><a class="header" href="#get_current_weather">get_current_weather</a></h3>
+<p>Get current conditions only (simpler response).</p>
+<pre><code>Function: get_current_weather
+Args: city (string), country (optional string)
+Example: get_current_weather(city: "London")
+</code></pre>
+<h3 id="get_weather_forecast"><a class="header" href="#get_weather_forecast">get_weather_forecast</a></h3>
+<p>Get extended 7-day forecast.</p>
+<pre><code>Function: get_weather_forecast
+Args: city (string), country (optional string), days (optional integer)
+Example: get_weather_forecast(city: "Paris", days: 7)
+</code></pre>
+<h2 id="web-search-tools-3"><a class="header" href="#web-search-tools-3">Web Search Tools (3)</a></h2>
+<p>⚠️ <strong>Currently blocked by DuckDuckGo CAPTCHA</strong>. Alternative needed.</p>
+<p>Powered by DuckDuckGo Lite.</p>
+<h3 id="web_search"><a class="header" href="#web_search">web_search</a></h3>
+<p>General web search with results.</p>
+<pre><code>Function: web_search
+Args: query (string), max_results (optional integer)
+Example: web_search(query: "Rust programming language", max_results: 5)
+</code></pre>
+<h3 id="web_search_news"><a class="header" href="#web_search_news">web_search_news</a></h3>
+<p>News-specific search.</p>
+<pre><code>Function: web_search_news
+Args: query (string), max_results (optional integer)
+Example: web_search_news(query: "technology", max_results: 5)
+</code></pre>
+<h3 id="web_instant_answer"><a class="header" href="#web_instant_answer">web_instant_answer</a></h3>
+<p>Quick facts and definitions.</p>
+<pre><code>Function: web_instant_answer
+Args: query (string)
+Example: web_instant_answer(query: "What is photosynthesis?")
+</code></pre>
+<h2 id="using-tools"><a class="header" href="#using-tools">Using Tools</a></h2>
+<h3 id="automatic-tool-detection"><a class="header" href="#automatic-tool-detection">Automatic Tool Detection</a></h3>
+<p>Tools are automatically enabled for capable models:</p>
+<pre><code class="language-bash"># Tools auto-enabled for mistral-small
+ask-ai -m mistral-small "Tell me about Pikachu"
+
+# Tools auto-enabled for gpt-oss
+ask-ai -m gpt-oss "What's the weather in Tokyo?"
+</code></pre>
+<h3 id="force-enable-tools"><a class="header" href="#force-enable-tools">Force Enable Tools</a></h3>
+<p>Force tools on any model:</p>
+<pre><code class="language-bash">ask-ai --tools "Tell me about Pikachu"
+</code></pre>
+<h3 id="tool-user-prompt"><a class="header" href="#tool-user-prompt">Tool User Prompt</a></h3>
+<p>Use enhanced prompt for better tool selection:</p>
+<pre><code class="language-bash">ask-ai -p tool_user "What's the weather?"
+</code></pre>
+<h2 id="tool-examples"><a class="header" href="#tool-examples">Tool Examples</a></h2>
+<h3 id="pokémon-queries"><a class="header" href="#pokémon-queries">Pokémon Queries</a></h3>
+<pre><code class="language-bash"># Comprehensive data
+ask-ai "Tell me everything about Charizard"
+
+# Specific information
+ask-ai "What are Pikachu's stats?"
+ask-ai "Show me Eevee's evolution chain"
+ask-ai "What type is super effective against Water?"
+
+# Compare Pokémon
+ask-ai "Compare Blastoise and Charizard stats"
+
+# Move information
+ask-ai "Tell me about Thunderbolt"
+ask-ai "What moves can Pikachu learn?"
+</code></pre>
+<h3 id="weather-queries"><a class="header" href="#weather-queries">Weather Queries</a></h3>
+<pre><code class="language-bash"># Current weather
+ask-ai "What's the weather in Tokyo?"
+
+# Forecast
+ask-ai "Weather forecast for Paris"
+
+# Specific queries
+ask-ai "Is it raining in London?"
+ask-ai "What's the temperature in New York?"
+
+# With country
+ask-ai "Weather in Sydney, Australia"
+</code></pre>
+<h3 id="web-search-currently-blocked"><a class="header" href="#web-search-currently-blocked">Web Search (Currently Blocked)</a></h3>
+<pre><code class="language-bash"># Note: Web search is currently blocked by DuckDuckGo CAPTCHA
+
+# General search
+ask-ai "Search for Rust async patterns"
+
+# News
+ask-ai "Latest technology news"
+
+# Quick facts
+ask-ai "What is quantum computing?"
+</code></pre>
+<h2 id="tool-selection"><a class="header" href="#tool-selection">Tool Selection</a></h2>
+<p>The model automatically selects appropriate tools based on your query:</p>
+<pre class="mermaid">graph TD
+    A[User Query] --&gt; B{Contains Pokémon?}
+    B --&gt;|Yes&gt; C[Use Pokémon tools]
+    B --&gt;|No&gt; D{Contains Weather?}
+    D --&gt;|Yes&gt; E[Use Weather tools]
+    D --&gt;|No&gt; F{Needs Web Search?}
+    F --&gt;|Yes&gt; G[Use Web Search tools]
+    F --&gt;|No&gt; H[Answer directly]
+</pre>
+
+<h2 id="known-issues"><a class="header" href="#known-issues">Known Issues</a></h2>
+<h3 id="duckduckgo-web-search-blocked"><a class="header" href="#duckduckgo-web-search-blocked">DuckDuckGo Web Search Blocked</a></h3>
+<p><strong>Status</strong>: ⚠️ Currently blocked</p>
+<p><strong>Problem</strong>: DuckDuckGo Lite endpoint blocks automated requests with CAPTCHA</p>
+<p><strong>Error</strong>: “Unfortunately, bots use DuckDuckGo too”</p>
+<p><strong>Workaround</strong>: None currently</p>
+<p><strong>Solution</strong>: Alternative search provider needed</p>
+<ul>
+<li>SerpAPI (paid)</li>
+<li>Bing API (paid)</li>
+<li>Searx (self-hosted)</li>
+<li>Local LLM web search</li>
+</ul>
+<h3 id="gpt-oss-tool-calling"><a class="header" href="#gpt-oss-tool-calling">GPT-OSS Tool Calling</a></h3>
+<p><strong>Status</strong>: ⚠️ Under investigation</p>
+<p><strong>Problem</strong>: Models like <code>gpt-oss:120b</code> may fail with <code>invalid character '&lt;'</code> error</p>
+<p><strong>Cause</strong>: Likely HTML entity encoding issue</p>
+<p><strong>Workaround</strong>: Use other models for tool calls:</p>
+<ul>
+<li><code>mistral-small</code></li>
+<li><code>pepe</code></li>
+<li><code>lfm</code></li>
+</ul>
+<h2 id="tool-capable-models"><a class="header" href="#tool-capable-models">Tool Capable Models</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Model</th><th>Tools</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td>mistral-small</td><td>✅</td><td>Best for tools</td></tr>
+<tr><td>gpt-oss</td><td>⚠️</td><td>May have issues</td></tr>
+<tr><td>qwen3-coder</td><td>✅</td><td>Code + tools</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="debug-mode-3"><a class="header" href="#debug-mode-3">Debug Mode</a></h2>
+<p>See tool calls in debug mode:</p>
+<pre><code class="language-bash">ask-ai -d "Tell me about Pikachu"
+
+# Output includes:
+# - Tool calls with arguments
+# - Tool results
+# - Model configuration
+</code></pre>
+<h2 id="best-practices-6"><a class="header" href="#best-practices-6">Best Practices</a></h2>
+<ol>
+<li><strong>Use capable models</strong> - mistral-small works best</li>
+<li><strong>Be specific</strong> - “Pikachu stats” vs “Tell me about Pikachu”</li>
+<li><strong>Use tool_user prompt</strong> - For complex queries</li>
+<li><strong>Check debug mode</strong> - If tools aren’t working</li>
+<li><strong>Weather doesn’t need API key</strong> - Always available</li>
+</ol>
+<h2 id="future-tools"><a class="header" href="#future-tools">Future Tools</a></h2>
+<p>Planned additions:</p>
+<ul>
+<li><strong>File Operations</strong>: Read files, list directories</li>
+<li><strong>System Tools</strong>: Execute commands (configurable whitelist)</li>
+<li><strong>Web Scraping</strong>: Extract content from URLs</li>
+</ul>
+<h2 id="see-also-6"><a class="header" href="#see-also-6">See Also</a></h2>
+<ul>
+<li><a href="#query-command">query</a> - Using tools with queries</li>
+<li><a href="#available-models">Models</a> - Tool-capable models</li>
+<li><a href="#prompt-modes-1">Prompts</a> - Tool user prompt mode</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="pipeline-examples"><a class="header" href="#pipeline-examples">Pipeline Examples</a></h1>
+<p>Ask-AI commands can be chained together using pipes to create powerful workflows. This page showcases practical pipeline examples.</p>
+<h2 id="basic-pipe-concept"><a class="header" href="#basic-pipe-concept">Basic Pipe Concept</a></h2>
+<p>Ask-AI commands read from stdin when no argument is provided:</p>
+<pre><code class="language-bash"># Output of first command becomes input of second
+cat file.txt | ask-ai summarize
+</code></pre>
+<h2 id="ocr--summarize"><a class="header" href="#ocr--summarize">OCR → Summarize</a></h2>
+<p>Extract text from an image and create a summary:</p>
+<pre><code class="language-bash">ask-ai ocr document.png | ask-ai summarize
+</code></pre>
+<p><strong>With options:</strong></p>
+<pre><code class="language-bash"># OCR → Academic summary
+ask-ai ocr research-paper.png | ask-ai summarize --style academic
+
+# OCR → Technical summary with length limit
+ask-ai ocr manual.png | ask-ai summarize --style technical -l 150
+
+# OCR → Bullet summary
+ask-ai ocr report.png | ask-ai summarize -f bullets
+</code></pre>
+<h2 id="ocr--translate"><a class="header" href="#ocr--translate">OCR → Translate</a></h2>
+<p>Extract text from an image and translate it:</p>
+<pre><code class="language-bash"># Japanese document to Portuguese
+ask-ai ocr japanese.png | ask-ai translate ja:pt
+
+# Chinese to English
+ask-ai ocr chinese.png | ask-ai translate zh-Hans:en
+
+# Auto-detect to Portuguese
+ask-ai ocr document.png | ask-ai translate :pt
+</code></pre>
+<h2 id="ocr--summarize--translate"><a class="header" href="#ocr--summarize--translate">OCR → Summarize → Translate</a></h2>
+<p>Full document processing pipeline:</p>
+<pre><code class="language-bash">ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+</code></pre>
+<p><strong>Breakdown:</strong></p>
+<ol>
+<li>Extract text from image</li>
+<li>Create summary</li>
+<li>Translate summary to Portuguese</li>
+</ol>
+<p><strong>With specific styles:</strong></p>
+<pre><code class="language-bash"># Research paper pipeline
+ask-ai ocr paper.png | ask-ai summarize --style academic | ask-ai translate :pt
+
+# Technical manual pipeline
+ask-ai ocr manual.png | ask-ai summarize --style technical | ask-ai translate :es
+
+# Business report pipeline
+ask-ai ocr report.png | ask-ai summarize --style business | ask-ai translate :fr
+</code></pre>
+<h2 id="file--summarize"><a class="header" href="#file--summarize">File → Summarize</a></h2>
+<p>Process text files:</p>
+<pre><code class="language-bash"># Summarize text file
+cat article.txt | ask-ai summarize
+
+# With specific style
+cat documentation.md | ask-ai summarize --style technical
+
+# Academic paper
+pdftotext paper.pdf - | ask-ai summarize --style academic
+</code></pre>
+<h2 id="file--summarize--translate"><a class="header" href="#file--summarize--translate">File → Summarize → Translate</a></h2>
+<p>Process files in other languages:</p>
+<pre><code class="language-bash"># English to Portuguese
+cat report.txt | ask-ai summarize | ask-ai translate :pt
+
+# Technical docs to Spanish
+cat api-docs.md | ask-ai summarize --style technical | ask-ai translate :es
+</code></pre>
+<h2 id="pdf-processing"><a class="header" href="#pdf-processing">PDF Processing</a></h2>
+<p>Process PDF documents (requires <code>pdftotext</code>):</p>
+<pre><code class="language-bash"># PDF → Summary
+pdftotext document.pdf - | ask-ai summarize
+
+# PDF → Summary → Translate
+pdftotext document.pdf - | ask-ai summarize | ask-ai translate :pt
+
+# PDF → OCR → Summary
+pdftotext scanned.pdf - | ask-ai summarize --style academic
+</code></pre>
+<h2 id="batch-processing-2"><a class="header" href="#batch-processing-2">Batch Processing</a></h2>
+<p>Process multiple files:</p>
+<pre><code class="language-bash"># OCR all images and summarize
+for img in *.png; do
+    echo "=== $img ==="
+    ask-ai ocr "$img" | ask-ai summarize
+    echo
+done
+
+# OCR → Translate all images
+for img in scans/*.png; do
+    out="${img%.png}-pt.txt"
+    ask-ai ocr "$img" | ask-ai translate :pt &gt; "$out"
+    echo "Created $out"
+done
+</code></pre>
+<h2 id="advanced-workflows"><a class="header" href="#advanced-workflows">Advanced Workflows</a></h2>
+<h3 id="document-translation"><a class="header" href="#document-translation">Document Translation</a></h3>
+<p>Translate documents while preserving structure:</p>
+<pre><code class="language-bash"># Complete workflow for scanned documents
+ask-ai ocr scanned-ja.png | \
+    ask-ai translate ja:pt | \
+    ask-ai summarize -l 200 | \
+    tee translated-summary.txt
+</code></pre>
+<h3 id="research-paper-analysis"><a class="header" href="#research-paper-analysis">Research Paper Analysis</a></h3>
+<pre><code class="language-bash"># Extract and analyze research
+ask-ai ocr paper.png | \
+    ask-ai summarize --style academic -l 300 | \
+    ask-ai translate :pt | \
+    tee analysis-pt.txt
+</code></pre>
+<h3 id="code-documentation-1"><a class="header" href="#code-documentation-1">Code Documentation</a></h3>
+<pre><code class="language-bash"># Generate documentation from code
+head -50 src/main.rs | \
+    ask-ai summarize --style technical | \
+    ask-ai translate :pt
+</code></pre>
+<h3 id="multi-document-processing"><a class="header" href="#multi-document-processing">Multi-Document Processing</a></h3>
+<pre><code class="language-bash"># Combine multiple documents
+for doc in chapter*.txt; do
+    cat "$doc" | ask-ai summarize -l 100
+done | ask-ai summarize -l 300 &gt; book-summary.txt
+</code></pre>
+<h2 id="common-patterns-2"><a class="header" href="#common-patterns-2">Common Patterns</a></h2>
+<h3 id="1-ocr--process--save"><a class="header" href="#1-ocr--process--save">1. OCR → Process → Save</a></h3>
+<pre><code class="language-bash">ask-ai ocr document.png | ask-ai summarize &gt; output.txt
+</code></pre>
+<h3 id="2-file--translate--save"><a class="header" href="#2-file--translate--save">2. File → Translate → Save</a></h3>
+<pre><code class="language-bash">cat document.txt | ask-ai translate :pt &gt; translated.txt
+</code></pre>
+<h3 id="3-query--process--query"><a class="header" href="#3-query--process--query">3. Query → Process → Query</a></h3>
+<pre><code class="language-bash">ask-ai "Find information" | ask-ai summarize | ask-ai "Analyze this"
+</code></pre>
+<h3 id="4-chain-with-unix-tools"><a class="header" href="#4-chain-with-unix-tools">4. Chain with Unix Tools</a></h3>
+<pre><code class="language-bash"># Sort results
+ask-ai ocr doc.png | sort | ask-ai summarize
+
+# Filter content
+ask-ai ocr doc.png | grep "important" | ask-ai translate :pt
+
+# Word count
+ask-ai summarize text.txt | wc -w
+</code></pre>
+<h2 id="error-handling-3"><a class="header" href="#error-handling-3">Error Handling</a></h2>
+<p>Handle errors in pipelines:</p>
+<pre><code class="language-bash"># Continue on error
+for img in *.png; do
+    ask-ai ocr "$img" 2&gt;/dev/null | ask-ai summarize || echo "Failed: $img"
+done
+
+# Stop on first error
+set -e
+ask-ai ocr doc.png | ask-ai summarize
+</code></pre>
+<h2 id="performance-tips"><a class="header" href="#performance-tips">Performance Tips</a></h2>
+<ol>
+<li><strong>Process in batches</strong> - Group similar operations</li>
+<li><strong>Use specific models</strong> - Match model to task</li>
+<li><strong>Limit token usage</strong> - Use <code>--max-tokens</code> for OCR</li>
+<li><strong>Save intermediate results</strong> - Use <code>tee</code> for debugging</li>
+</ol>
+<pre><code class="language-bash"># Save intermediate results
+ask-ai ocr doc.png | tee extracted.txt | ask-ai summarize | tee summary.txt | ask-ai translate :pt
+</code></pre>
+<h2 id="debugging-pipelines"><a class="header" href="#debugging-pipelines">Debugging Pipelines</a></h2>
+<p>Add debug output:</p>
+<pre><code class="language-bash"># Show each step
+ask-ai ocr doc.png | tee /dev/tty | ask-ai summarize
+
+# Debug with timing
+time ask-ai ocr doc.png | time ask-ai summarize
+
+# Full debug
+ask-ai ocr -d doc.png 2&gt; debug.log | ask-ai summarize -d 2&gt; summary.log
+</code></pre>
+<h2 id="creating-scripts"><a class="header" href="#creating-scripts">Creating Scripts</a></h2>
+<p>Save common pipelines as scripts:</p>
+<pre><code class="language-bash">#!/bin/bash
+# process-document.sh - OCR → Summarize → Translate
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 &lt;image&gt; &lt;target-lang&gt;"
+    exit 1
+fi
+
+IMAGE=$1
+LANG=$2
+
+ask-ai ocr "$IMAGE" | \
+    ask-ai summarize | \
+    ask-ai translate ":$LANG"
+</code></pre>
+<p>Usage:</p>
+<pre><code class="language-bash">chmod +x process-document.sh
+./process-document.sh document.png pt
+</code></pre>
+<h2 id="pipeline-visualization"><a class="header" href="#pipeline-visualization">Pipeline Visualization</a></h2>
+<pre class="mermaid">graph LR
+    A[Image] --&gt; B[OCR]
+    B --&gt; C[Text]
+    C --&gt; D[Summarize]
+    D --&gt; E[Summary]
+    E --&gt; F[Translate]
+    F --&gt; G[Translated Summary]
+</pre>
+
+<h2 id="tips-1"><a class="header" href="#tips-1">Tips</a></h2>
+<ol>
+<li><strong>Start simple</strong> - Test each step individually</li>
+<li><strong>Add tee</strong> - Save intermediate results</li>
+<li><strong>Check errors</strong> - Handle failures gracefully</li>
+<li><strong>Document</strong> - Comment complex pipelines</li>
+<li><strong>Optimize</strong> - Profile and improve speed</li>
+</ol>
+<h2 id="see-also-7"><a class="header" href="#see-also-7">See Also</a></h2>
+<ul>
+<li><a href="#ocr-command">ocr</a> - Image text extraction</li>
+<li><a href="#translate-command">translate</a> - Language translation</li>
+<li><a href="#summarize-command">summarize</a> - Text summarization</li>
+<li><a href="#query-command">query</a> - General queries</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configuration-guide"><a class="header" href="#configuration-guide">Configuration Guide</a></h1>
+<p>This guide covers how to configure Ask-AI for your specific needs.</p>
+<h2 id="environment-variables-1"><a class="header" href="#environment-variables-1">Environment Variables</a></h2>
+<h3 id="ollama_host"><a class="header" href="#ollama_host">OLLAMA_HOST</a></h3>
+<p>Configure the Ollama server location:</p>
+<pre><code class="language-bash"># Default (local)
+export OLLAMA_HOST="localhost:11434"
+
+# Remote server
+export OLLAMA_HOST="192.168.1.100:11434"
+
+# Add to shell config
+echo 'export OLLAMA_HOST="localhost:11434"' &gt;&gt; ~/.bashrc
+</code></pre>
+<h2 id="model-configuration"><a class="header" href="#model-configuration">Model Configuration</a></h2>
+<p>Models are configured in <code>src/config.rs</code>. Each preset includes:</p>
+<ul>
+<li>Model ID</li>
+<li>Temperature</li>
+<li>Context window</li>
+<li>Sampling parameters</li>
+</ul>
+<h3 id="default-model"><a class="header" href="#default-model">Default Model</a></h3>
+<p>Change the default model in code:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In src/main.rs or src/config.rs
+const DEFAULT_MODEL: &amp;str = "lfm";
+<span class="boring">}</span></code></pre>
+<h3 id="custom-models"><a class="header" href="#custom-models">Custom Models</a></h3>
+<p>Add new model presets:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// In src/config.rs
+pub fn get(model: &amp;str) -&gt; AppResult&lt;ModelConfig&gt; {
+    match model {
+        // ... existing models ...
+        "my-custom" =&gt; Ok(ModelConfig {
+            model_id: "custom-model".to_string(),
+            temperature: 0.5,
+            // ... other options ...
+        }),
+        _ =&gt; Err(format!("Unknown model: {}", model).into()),
+    }
+}
+<span class="boring">}</span></code></pre>
+<h2 id="prompt-configuration"><a class="header" href="#prompt-configuration">Prompt Configuration</a></h2>
+<p>System prompts are defined in <code>src/prompts.rs</code>:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Custom prompt
+pub const SYSTEM_PROMPT_CUSTOM: &amp;str = r#"\
+Your custom instructions here..."#;
+<span class="boring">}</span></code></pre>
+<h2 id="debug-configuration"><a class="header" href="#debug-configuration">Debug Configuration</a></h2>
+<h3 id="enable-debug-logging"><a class="header" href="#enable-debug-logging">Enable Debug Logging</a></h3>
+<p>Set the <code>ASK_AI_DEBUG</code> environment variable:</p>
+<pre><code class="language-bash">export ASK_AI_DEBUG=1
+</code></pre>
+<h3 id="debug-output"><a class="header" href="#debug-output">Debug Output</a></h3>
+<p>Debug mode shows:</p>
+<ul>
+<li>Model configuration</li>
+<li>Tool calls and results</li>
+<li>Timing information</li>
+<li>Raw responses</li>
+</ul>
+<h2 id="installation-paths"><a class="header" href="#installation-paths">Installation Paths</a></h2>
+<h3 id="default-paths"><a class="header" href="#default-paths">Default Paths</a></h3>
+<ul>
+<li>Binary: <code>/usr/local/bin/ask-ai</code></li>
+<li>Man page: <code>/usr/local/share/man/man1/ask-ai.1</code></li>
+</ul>
+<h3 id="custom-prefix"><a class="header" href="#custom-prefix">Custom Prefix</a></h3>
+<pre><code class="language-bash">make install PREFIX=$HOME/.local
+# Installs to:
+# - $HOME/.local/bin/ask-ai
+# - $HOME/.local/share/man/man1/ask-ai.1
+</code></pre>
+<h2 id="shell-completion"><a class="header" href="#shell-completion">Shell Completion</a></h2>
+<h3 id="bash"><a class="header" href="#bash">Bash</a></h3>
+<pre><code class="language-bash">ask-ai --generate-completion bash &gt; /etc/bash_completion.d/ask-ai
+</code></pre>
+<h3 id="zsh"><a class="header" href="#zsh">Zsh</a></h3>
+<pre><code class="language-bash">ask-ai --generate-completion zsh &gt; /usr/local/share/zsh/site-functions/_ask-ai
+</code></pre>
+<h3 id="fish"><a class="header" href="#fish">Fish</a></h3>
+<pre><code class="language-bash">ask-ai --generate-completion fish &gt; ~/.config/fish/completions/ask-ai.fish
+</code></pre>
+<h2 id="performance-tuning"><a class="header" href="#performance-tuning">Performance Tuning</a></h2>
+<h3 id="model-parameters"><a class="header" href="#model-parameters">Model Parameters</a></h3>
+<p>Adjust in <code>src/config.rs</code>:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>ModelConfig {
+    temperature: 0.1,  // Lower = more deterministic
+    top_k: 20,         // Token sampling
+    top_p: 0.9,        // Nucleus sampling
+    repeat_penalty: 1.1, // Reduce repetition
+}
+<span class="boring">}</span></code></pre>
+<h3 id="timeout-settings"><a class="header" href="#timeout-settings">Timeout Settings</a></h3>
+<p>Set Ollama timeout:</p>
+<pre><code class="language-bash">export OLLAMA_TIMEOUT=120  # seconds
+</code></pre>
+<h2 id="tips-2"><a class="header" href="#tips-2">Tips</a></h2>
+<ol>
+<li><strong>Keep models local</strong> for offline use</li>
+<li><strong>Use appropriate models</strong> for tasks</li>
+<li><strong>Monitor token usage</strong> with debug mode</li>
+<li><strong>Adjust temperature</strong> for creativity vs determinism</li>
+</ol>
+<h2 id="see-also-8"><a class="header" href="#see-also-8">See Also</a></h2>
+<ul>
+<li><a href="#available-models">Models</a> - Available models</li>
+<li><a href="#prompt-modes-1">Prompts</a> - Prompt modes</li>
+<li><a href="#installation-guide">Installation</a> - Setup guide</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h1>
+<p>Common issues and their solutions.</p>
+<h2 id="installation-issues"><a class="header" href="#installation-issues">Installation Issues</a></h2>
+<h3 id="command-not-found-ask-ai-1"><a class="header" href="#command-not-found-ask-ai-1">“command not found: ask-ai”</a></h3>
+<p><strong>Problem:</strong> Binary not in PATH</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Check installation
+which ask-ai
+
+# If not found, check location
+ls /usr/local/bin/ask-ai
+
+# Add to PATH
+export PATH="/usr/local/bin:$PATH"
+
+# Or reinstall
+make install PREFIX=$HOME/.local
+export PATH="$HOME/.local/bin:$PATH"
+</code></pre>
+<h3 id="cargo-command-not-found-1"><a class="header" href="#cargo-command-not-found-1">“cargo: command not found”</a></h3>
+<p><strong>Problem:</strong> Rust not installed</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash">curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+</code></pre>
+<h2 id="ollama-connection-issues"><a class="header" href="#ollama-connection-issues">Ollama Connection Issues</a></h2>
+<h3 id="failed-to-connect-to-ollama"><a class="header" href="#failed-to-connect-to-ollama">“Failed to connect to Ollama”</a></h3>
+<p><strong>Problem:</strong> Ollama not running</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Check if running
+curl http://localhost:11434/api/tags
+
+# Start Ollama
+ollama serve
+
+# Or start as service
+sudo systemctl start ollama
+</code></pre>
+<h3 id="model-not-found"><a class="header" href="#model-not-found">“Model not found”</a></h3>
+<p><strong>Problem:</strong> Model not pulled</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Pull required models
+ollama pull lfm2.5-thinking:1.2b-32k
+ollama pull translategemma:12b-32k
+ollama pull glm-ocr:bf16
+ollama pull llama3.2:3b-32k
+</code></pre>
+<h2 id="model-issues"><a class="header" href="#model-issues">Model Issues</a></h2>
+<h3 id="model-doesnt-support-think-mode"><a class="header" href="#model-doesnt-support-think-mode">“Model doesn’t support think mode”</a></h3>
+<p><strong>Problem:</strong> Trying to use think mode on incompatible model</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Use think-capable model
+ask-ai -m lfm -t "Question"
+
+# Check capabilities
+ask-ai -d "Test query"
+</code></pre>
+<h3 id="tools-not-working"><a class="header" href="#tools-not-working">“Tools not working”</a></h3>
+<p><strong>Problem:</strong> Model doesn’t support tools or tools not enabled</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Use tool-capable model
+ask-ai -m mistral-small "Tell me about Pikachu"
+
+# Force enable tools
+ask-ai --tools "Tell me about Pikachu"
+
+# Check debug output
+ask-ai -d "Query"
+</code></pre>
+<h3 id="gpt-oss-tool-errors"><a class="header" href="#gpt-oss-tool-errors">GPT-OSS Tool Errors</a></h3>
+<p><strong>Problem:</strong> <code>invalid character '\u003c'</code> error</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Use alternative model
+ask-ai -m mistral-small "Query"
+ask-ai -m pepe "Query"
+</code></pre>
+<h2 id="web-search-issues"><a class="header" href="#web-search-issues">Web Search Issues</a></h2>
+<h3 id="duckduckgo-captcha-block"><a class="header" href="#duckduckgo-captcha-block">“DuckDuckGo CAPTCHA Block”</a></h3>
+<p><strong>Problem:</strong> Web search blocked</p>
+<p><strong>Status:</strong> Currently blocked</p>
+<p><strong>Workaround:</strong></p>
+<pre><code class="language-bash"># Use query without web search
+ask-ai "Question using model knowledge only"
+
+# Try code_with_tools for web research
+ask-ai -p code_with_tools "Latest Rust patterns"
+</code></pre>
+<h2 id="translation-issues"><a class="header" href="#translation-issues">Translation Issues</a></h2>
+<h3 id="language-not-found"><a class="header" href="#language-not-found">“Language not found”</a></h3>
+<p><strong>Problem:</strong> Invalid language code</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># List available languages
+ask-ai translate --list
+
+# Check specific language
+ask-ai translate --list pt
+</code></pre>
+<h3 id="translation-failed"><a class="header" href="#translation-failed">“Translation failed”</a></h3>
+<p><strong>Problem:</strong> Model issue or timeout</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Try with specific model
+ask-ai translate --model smollm3 en:pt "Text"
+
+# Debug mode
+ask-ai translate -d en:pt "Text"
+</code></pre>
+<h2 id="ocr-issues"><a class="header" href="#ocr-issues">OCR Issues</a></h2>
+<h3 id="image-not-found"><a class="header" href="#image-not-found">“Image not found”</a></h3>
+<p><strong>Problem:</strong> File doesn’t exist or wrong path</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Verify file exists
+ls -la image.png
+
+# Check supported formats
+ask-ai ocr --help
+</code></pre>
+<h3 id="ocr-failed"><a class="header" href="#ocr-failed">“OCR failed”</a></h3>
+<p><strong>Problem:</strong> Image quality or model issue</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Pull required model
+ollama pull glm-ocr:bf16
+
+# Try with higher quality image
+# Ensure text is clear and well-lit
+</code></pre>
+<h2 id="performance-issues"><a class="header" href="#performance-issues">Performance Issues</a></h2>
+<h3 id="slow-responses"><a class="header" href="#slow-responses">“Slow responses”</a></h3>
+<p><strong>Problem:</strong> Large model or complex query</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Use smaller model
+ask-ai -m smollm3 "Question"
+
+# Reduce context
+ask-ai summarize --max-length 100 "Text"
+</code></pre>
+<h3 id="out-of-memory"><a class="header" href="#out-of-memory">“Out of memory”</a></h3>
+<p><strong>Problem:</strong> Model too large for available RAM</p>
+<p><strong>Solution:</strong></p>
+<pre><code class="language-bash"># Use smaller model
+ask-ai -m llama3.2 "Question"  # 3B model
+ask-ai -m smollm3 "Question"   # 3B model
+</code></pre>
+<h2 id="debug-mode-4"><a class="header" href="#debug-mode-4">Debug Mode</a></h2>
+<p>Use debug mode to diagnose issues:</p>
+<pre><code class="language-bash"># Enable debug
+ask-ai -d "Query"
+ask-ai translate -d en:pt "Text"
+ask-ai ocr -d image.png
+ask-ai summarize -d "Text"
+</code></pre>
+<h2 id="getting-help-2"><a class="header" href="#getting-help-2">Getting Help</a></h2>
+<h3 id="github-issues"><a class="header" href="#github-issues">GitHub Issues</a></h3>
+<p>Report bugs at: https://github.com/luksamuk/ask-ollama-rs/issues</p>
+<h3 id="debug-information"><a class="header" href="#debug-information">Debug Information</a></h3>
+<p>When reporting issues, include:</p>
+<pre><code class="language-bash"># Version
+ask-ai --version
+
+# List command
+ask-ai --list
+
+# Debug output
+ask-ai -d "Test query" 2&gt; debug.log
+cat debug.log
+</code></pre>
+<h2 id="known-limitations"><a class="header" href="#known-limitations">Known Limitations</a></h2>
+<ol>
+<li><strong>Web search</strong>: Currently blocked by DuckDuckGo CAPTCHA</li>
+<li><strong>GPT-OSS tools</strong>: May fail with encoding errors</li>
+<li><strong>Large images</strong>: OCR may fail with memory constraints</li>
+<li><strong>Cloud models</strong>: Require internet connection</li>
+</ol>
+<h2 id="see-also-9"><a class="header" href="#see-also-9">See Also</a></h2>
+<ul>
+<li><a href="#installation-guide">Installation</a> - Setup guide</li>
+<li><a href="#configuration-guide">Configuration</a> - Configuration options</li>
+<li><a href="#available-models">Models</a> - Model reference</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="development-documentation"><a class="header" href="#development-documentation">Development Documentation</a></h1>
+<p>Welcome to the Ask-AI development documentation. This section contains technical information for contributors and developers.</p>
+<h2 id="contents"><a class="header" href="#contents">Contents</a></h2>
+<ul>
+<li><a href="#architecture">Architecture</a> - Design decisions and patterns</li>
+<li><a href="#roadmap">Roadmap</a> - Future plans and roadmap</li>
+<li><a href="#contributing-to-ask-ai">Contributing</a> - How to contribute</li>
+</ul>
+<h2 id="project-structure"><a class="header" href="#project-structure">Project Structure</a></h2>
+<pre><code>ask-ollama-rs/
+├── Cargo.toml              # Dependencies
+├── Makefile                # Build automation
+├── man/
+│   └── ask-ai.1           # Man page
+├── doc/
+│   ├── book.toml          # mdBook configuration
+│   └── src/               # Documentation source
+│       ├── README.md
+│       ├── introduction.md
+│       ├── installation.md
+│       └── ...
+├── src/
+│   ├── main.rs            # Entry point
+│   ├── config.rs          # Model configurations
+│   ├── prompts.rs         # System prompts
+│   ├── capabilities.rs    # Model capability detection
+│   ├── spinner.rs         # Progress spinners
+│   ├── debug_tools.rs     # Debug utilities
+│   ├── tools/
+│   │   ├── mod.rs
+│   │   ├── pokemon.rs
+│   │   ├── weather.rs
+│   │   └── search.rs
+│   ├── ocr/
+│   │   ├── cli.rs
+│   │   ├── processor.rs
+│   │   └── ...
+│   ├── summarize/
+│   │   ├── cli.rs
+│   │   ├── processor.rs
+│   │   └── ...
+│   └── translate/
+│       ├── cli.rs
+│       └── ...
+├── AGENTS.md              # Development guidelines
+├── IMPLEMENTATION.md        # Implementation details
+├── README.md               # Project readme
+└── LICENSE.txt            # MIT License
+</code></pre>
+<h2 id="architecture-overview"><a class="header" href="#architecture-overview">Architecture Overview</a></h2>
+<p>Ask-AI is built with:</p>
+<ul>
+<li><strong>Rust</strong> - Systems programming language</li>
+<li><strong>Tokio</strong> - Async runtime</li>
+<li><strong>ollama-rs</strong> - Ollama API client</li>
+<li><strong>clap</strong> - CLI argument parsing</li>
+<li><strong>termimad</strong> - Markdown terminal rendering</li>
+</ul>
+<pre class="mermaid">graph TD
+    A[CLI Args] --&gt; B[Subcommand Router]
+    B --&gt; C[Query Handler]
+    B --&gt; D[Translate Handler]
+    B --&gt; E[OCR Handler]
+    B --&gt; F[Summarize Handler]
+    C --&gt; G[Ollama API]
+    D --&gt; G
+    E --&gt; G
+    F --&gt; G
+    G --&gt; H[Model Response]
+    H --&gt; I[Markdown Render]
+    I --&gt; J[Terminal Output]
+</pre>
+
+<h2 id="development-setup"><a class="header" href="#development-setup">Development Setup</a></h2>
+<pre><code class="language-bash"># Clone repository
+git clone &lt;repo-url&gt;
+cd ask-ollama-rs
+
+# Install dependencies
+cargo build
+
+# Run tests
+cargo test
+
+# Run with debug
+cargo run -- "Query"
+</code></pre>
+<h2 id="build-commands"><a class="header" href="#build-commands">Build Commands</a></h2>
+<p>See <a href="../AGENTS.html">AGENTS.md</a> for detailed build commands.</p>
+<p>Quick reference:</p>
+<pre><code class="language-bash"># Build
+cargo build
+
+# Build release
+cargo build --release
+
+# Run
+cargo run -- "Query"
+
+# Test
+cargo test
+
+# Format
+cargo fmt
+
+# Lint
+cargo clippy -- -D warnings
+</code></pre>
+<h2 id="documentation"><a class="header" href="#documentation">Documentation</a></h2>
+<p>Build documentation:</p>
+<pre><code class="language-bash">cd doc
+mdbook serve          # Development server
+mdbook build          # Build static site
+mdbook-mermaid install # Install mermaid support
+</code></pre>
+<h2 id="contributing"><a class="header" href="#contributing">Contributing</a></h2>
+<p>See <a href="#contributing-to-ask-ai">Contributing Guide</a>.</p>
+<h2 id="license-1"><a class="header" href="#license-1">License</a></h2>
+<p>MIT License - See <a href="../LICENSE.txt">LICENSE</a></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="architecture"><a class="header" href="#architecture">Architecture</a></h1>
+<p>This document describes the architecture and design decisions of Ask-AI.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>Ask-AI is a Rust CLI tool that provides an interface to Ollama LLM models. It follows a modular architecture with clear separation of concerns.</p>
+<h2 id="system-architecture"><a class="header" href="#system-architecture">System Architecture</a></h2>
+<pre class="mermaid">graph TB
+    subgraph CLI["CLI Layer"]
+        A[clap Parser] --&gt; B[Subcommand Router]
+    end
+
+    subgraph Handlers["Command Handlers"]
+        B --&gt; C[Query Handler]
+        B --&gt; D[Translate Handler]
+        B --&gt; E[OCR Handler]
+        B --&gt; F[Summarize Handler]
+    end
+
+    subgraph Core["Core Services"]
+        C --&gt; G[Config]
+        D --&gt; G
+        E --&gt; G
+        F --&gt; G
+        C --&gt; H[Capabilities]
+        C --&gt; I[Prompts]
+        C --&gt; J[Spinner]
+    end
+
+    subgraph External["External"]
+        C --&gt; K[Ollama API]
+        D --&gt; K
+        E --&gt; K
+        F --&gt; K
+        C --&gt; L[Tools]
+    end
+
+    subgraph Output["Output"]
+        K --&gt; M[termimad]
+        M --&gt; N[Terminal]
+    end
+</pre>
+
+<h2 id="component-details"><a class="header" href="#component-details">Component Details</a></h2>
+<h3 id="1-cli-layer"><a class="header" href="#1-cli-layer">1. CLI Layer</a></h3>
+<p>Uses <code>clap</code> with derive macros for type-safe argument parsing.</p>
+<p><strong>File:</strong> <code>src/main.rs</code></p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Parser)]
+#[command(name = "ask-ai")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option&lt;Commands&gt;,
+    // ... global options
+}
+<span class="boring">}</span></code></pre>
+<h3 id="2-command-handlers"><a class="header" href="#2-command-handlers">2. Command Handlers</a></h3>
+<p>Each subcommand has its own module:</p>
+<ul>
+<li><strong>Query</strong>: <code>src/main.rs</code> (default mode)</li>
+<li><strong>Translate</strong>: <code>src/translate/</code></li>
+<li><strong>OCR</strong>: <code>src/ocr/</code></li>
+<li><strong>Summarize</strong>: <code>src/summarize/</code></li>
+</ul>
+<h3 id="3-core-services"><a class="header" href="#3-core-services">3. Core Services</a></h3>
+<h4 id="config-srcconfigrs"><a class="header" href="#config-srcconfigrs">Config (<code>src/config.rs</code>)</a></h4>
+<p>Model configuration management:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct ModelConfig {
+    pub model_id: String,
+    pub temperature: f32,
+    pub top_k: i32,
+    pub top_p: f32,
+    pub num_ctx: i32,
+    pub repeat_penalty: f32,
+}
+<span class="boring">}</span></code></pre>
+<h4 id="capabilities-srccapabilitiesrs"><a class="header" href="#capabilities-srccapabilitiesrs">Capabilities (<code>src/capabilities.rs</code>)</a></h4>
+<p>Runtime model capability detection:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct ModelCapabilities {
+    pub tools: bool,
+    pub vision: bool,
+    pub completion: bool,
+    pub thinking: bool,
+}
+<span class="boring">}</span></code></pre>
+<h4 id="prompts-srcpromptsrs"><a class="header" href="#prompts-srcpromptsrs">Prompts (<code>src/prompts.rs</code>)</a></h4>
+<p>System prompt definitions for different modes.</p>
+<h4 id="spinner-srcspinnerrs"><a class="header" href="#spinner-srcspinnerrs">Spinner (<code>src/spinner.rs</code>)</a></h4>
+<p>UX feedback during requests.</p>
+<h3 id="4-tools-srctools"><a class="header" href="#4-tools-srctools">4. Tools (<code>src/tools/</code>)</a></h3>
+<p>Tool implementations using the <code>ollama-rs</code> macro:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[ollama_rs::function]
+pub async fn fetch_pokemon(name: String) -&gt; Result&lt;String, Error&gt; {
+    // Implementation
+}
+<span class="boring">}</span></code></pre>
+<h3 id="5-external-integration"><a class="header" href="#5-external-integration">5. External Integration</a></h3>
+<h4 id="ollama-api-ollama-rs"><a class="header" href="#ollama-api-ollama-rs">Ollama API (<code>ollama-rs</code>)</a></h4>
+<p>Uses the Coordinator pattern for chat sessions:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>let coordinator = Coordinator::new(ollama, model_id, vec![])
+    .options(model_options)
+    .think(use_think);
+<span class="boring">}</span></code></pre>
+<h2 id="design-decisions"><a class="header" href="#design-decisions">Design Decisions</a></h2>
+<h3 id="1-markdown-rendering-strategy"><a class="header" href="#1-markdown-rendering-strategy">1. Markdown Rendering Strategy</a></h3>
+<p><strong>Decision:</strong> Batch rendering (not streaming)</p>
+<p><strong>Rationale:</strong></p>
+<ul>
+<li>Markdown is contextually dependent</li>
+<li>Tables, code blocks need complete content</li>
+<li><code>termimad</code> requires full documents</li>
+</ul>
+<p><strong>Trade-offs:</strong></p>
+<ul>
+<li>✅ Perfect formatting</li>
+<li>✅ Simple implementation</li>
+<li>❌ No live token feedback</li>
+</ul>
+<h3 id="2-capability-detection"><a class="header" href="#2-capability-detection">2. Capability Detection</a></h3>
+<p><strong>Decision:</strong> Runtime detection via Ollama API</p>
+<p><strong>Rationale:</strong></p>
+<ul>
+<li><code>ollama.show_model_info()</code> provides capability data</li>
+<li>More accurate than hardcoding</li>
+<li>Handles custom models</li>
+</ul>
+<h3 id="3-tool-enablement"><a class="header" href="#3-tool-enablement">3. Tool Enablement</a></h3>
+<p><strong>Decision:</strong> Auto-enable for capable models, with <code>--tools</code> override</p>
+<p><strong>Rationale:</strong></p>
+<ul>
+<li>Seamless UX for capable models</li>
+<li><code>--tools</code> allows forcing tools</li>
+<li>No overhead for non-tool models</li>
+</ul>
+<h3 id="4-modular-architecture"><a class="header" href="#4-modular-architecture">4. Modular Architecture</a></h3>
+<p>Each command is self-contained:</p>
+<pre><code>src/
+├── main.rs           # Entry + query command
+├── translate/        # Translation module
+├── ocr/             # OCR module
+├── summarize/       # Summarize module
+└── tools/           # Shared tools
+</code></pre>
+<h3 id="5-error-handling"><a class="header" href="#5-error-handling">5. Error Handling</a></h3>
+<p>Uses <code>AppResult&lt;T&gt;</code> type alias:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>type AppResult&lt;T&gt; = Result&lt;T, Box&lt;dyn std::error::Error + Sync + Send&gt;&gt;;
+<span class="boring">}</span></code></pre>
+<h2 id="data-flow"><a class="header" href="#data-flow">Data Flow</a></h2>
+<h3 id="query-flow"><a class="header" href="#query-flow">Query Flow</a></h3>
+<pre class="mermaid">sequenceDiagram
+    participant User
+    participant CLI
+    participant Config
+    participant Ollama
+    participant Tools
+    participant Render
+
+    User-&gt;&gt;CLI: ask-ai "Query"
+    CLI-&gt;&gt;Config: Load model config
+    CLI-&gt;&gt;Ollama: Detect capabilities
+    alt Tools enabled
+        CLI-&gt;&gt;Tools: Register tools
+    end
+    CLI-&gt;&gt;Ollama: Send request
+    Ollama-&gt;&gt;Ollama: Process (with tools if needed)
+    Ollama-&gt;&gt;CLI: Return response
+    CLI-&gt;&gt;Render: Format markdown
+    Render-&gt;&gt;User: Display output
+</pre>
+
+<h3 id="ocr-flow"><a class="header" href="#ocr-flow">OCR Flow</a></h3>
+<pre class="mermaid">sequenceDiagram
+    participant User
+    participant OCR
+    participant Ollama
+    participant Render
+
+    User-&gt;&gt;OCR: ask-ai ocr image.png
+    OCR-&gt;&gt;OCR: Encode image to base64
+    OCR-&gt;&gt;Ollama: Send with glm-ocr model
+    Ollama-&gt;&gt;OCR: Return extracted text
+    OCR-&gt;&gt;Render: Format output
+    Render-&gt;&gt;User: Display text
+</pre>
+
+<h2 id="async-architecture"><a class="header" href="#async-architecture">Async Architecture</a></h2>
+<p>Uses Tokio for async runtime:</p>
+<pre class="playground"><code class="language-rust edition2021">#[tokio::main]
+async fn main() -&gt; AppResult&lt;()&gt; {
+    // Async code
+}</code></pre>
+<p>All I/O operations are async:</p>
+<ul>
+<li>Ollama API calls</li>
+<li>Tool HTTP requests</li>
+<li>File operations</li>
+</ul>
+<h2 id="dependencies"><a class="header" href="#dependencies">Dependencies</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Crate</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ollama-rs</code></td><td>Ollama API client</td></tr>
+<tr><td><code>clap</code></td><td>CLI parsing</td></tr>
+<tr><td><code>termimad</code></td><td>Markdown rendering</td></tr>
+<tr><td><code>indicatif</code></td><td>Progress spinners</td></tr>
+<tr><td><code>tokio</code></td><td>Async runtime</td></tr>
+<tr><td><code>reqwest</code></td><td>HTTP client</td></tr>
+<tr><td><code>serde</code></td><td>Serialization</td></tr>
+<tr><td><code>base64</code></td><td>Image encoding</td></tr>
+<tr><td><code>regex</code></td><td>Pattern matching</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="testing-strategy"><a class="header" href="#testing-strategy">Testing Strategy</a></h2>
+<h3 id="unit-tests"><a class="header" href="#unit-tests">Unit Tests</a></h3>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_something() {
+        // Test code
+    }
+}
+<span class="boring">}</span></code></pre>
+<h3 id="integration-tests"><a class="header" href="#integration-tests">Integration Tests</a></h3>
+<pre><code class="language-bash"># Run specific test
+cargo test --test test_name
+
+# Run all tests
+cargo test
+</code></pre>
+<h2 id="performance-considerations"><a class="header" href="#performance-considerations">Performance Considerations</a></h2>
+<h3 id="model-loading"><a class="header" href="#model-loading">Model Loading</a></h3>
+<ul>
+<li>Models are loaded by Ollama</li>
+<li>First request after pull may be slow</li>
+<li>Subsequent requests use cached model</li>
+</ul>
+<h3 id="memory-usage"><a class="header" href="#memory-usage">Memory Usage</a></h3>
+<ul>
+<li>Large models (30B+) need significant RAM</li>
+<li>Use smaller models (3B-8B) for constrained systems</li>
+<li>Consider <code>smollm3</code> or <code>llama3.2</code> for edge</li>
+</ul>
+<h3 id="network"><a class="header" href="#network">Network</a></h3>
+<ul>
+<li>Cloud models require internet</li>
+<li>Local models work offline</li>
+<li>Tools may need HTTP requests</li>
+</ul>
+<h2 id="security"><a class="header" href="#security">Security</a></h2>
+<h3 id="input-validation"><a class="header" href="#input-validation">Input Validation</a></h3>
+<ul>
+<li>CLI args validated by clap</li>
+<li>File paths checked for existence</li>
+<li>Language codes validated</li>
+</ul>
+<h3 id="tool-safety"><a class="header" href="#tool-safety">Tool Safety</a></h3>
+<ul>
+<li>Tools use external APIs (PokéAPI, Open-Meteo)</li>
+<li>No local file system access from tools</li>
+<li>Web search blocked (CAPTCHA protection)</li>
+</ul>
+<h2 id="future-architecture"><a class="header" href="#future-architecture">Future Architecture</a></h2>
+<h3 id="planned-improvements"><a class="header" href="#planned-improvements">Planned Improvements</a></h3>
+<ol>
+<li>
+<p><strong>Configuration file support</strong></p>
+<ul>
+<li><code>~/.config/ask-ai/config.toml</code></li>
+<li>User-defined models</li>
+<li>Default preferences</li>
+</ul>
+</li>
+<li>
+<p><strong>Plugin system</strong></p>
+<ul>
+<li>Custom tools</li>
+<li>User extensions</li>
+</ul>
+</li>
+<li>
+<p><strong>Streaming output</strong></p>
+<ul>
+<li>Line-buffered rendering</li>
+<li>Progressive display</li>
+</ul>
+</li>
+<li>
+<p><strong>Caching</strong></p>
+<ul>
+<li>Response caching</li>
+<li>Tool result caching</li>
+</ul>
+</li>
+</ol>
+<h2 id="see-also-10"><a class="header" href="#see-also-10">See Also</a></h2>
+<ul>
+<li><a href="#roadmap">Roadmap</a> - Future plans</li>
+<li><a href="#contributing-to-ask-ai">Contributing</a> - How to contribute</li>
+<li>AGENTS.md - Development guidelines</li>
+<li>IMPLEMENTATION.md - Implementation details</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="roadmap"><a class="header" href="#roadmap">Roadmap</a></h1>
+<p>This document outlines planned features and the current state of Ask-AI.</p>
+<h2 id="current-state"><a class="header" href="#current-state">Current State</a></h2>
+<p>✅ <strong>Implemented:</strong></p>
+<ul>
+<li>Core CLI with 4 subcommands (query, translate, ocr, summarize)</li>
+<li>14 tools (8 Pokémon, 3 Weather, 3 Web Search)</li>
+<li>14+ model presets</li>
+<li>Markdown rendering via termimad</li>
+<li>Model capability detection</li>
+<li>Tool integration with auto-detection</li>
+<li>Translation (50+ languages)</li>
+<li>OCR (text, tables, formulas, figures)</li>
+<li>Summarization (multiple styles)</li>
+<li>Pipe support for all commands</li>
+<li>Debug mode</li>
+<li>Think mode</li>
+<li>Code mode</li>
+<li>Man page</li>
+<li>mdBook documentation</li>
+</ul>
+<h2 id="known-issues-1"><a class="header" href="#known-issues-1">Known Issues</a></h2>
+<p>⚠️ <strong>Active Issues:</strong></p>
+<ol>
+<li>
+<p><strong>DuckDuckGo Web Search Blocked</strong></p>
+<ul>
+<li>Status: CAPTCHA blocking automated requests</li>
+<li>Impact: Web search tools non-functional</li>
+<li>Priority: High</li>
+<li>Solution: Alternative search provider needed</li>
+</ul>
+</li>
+<li>
+<p><strong>GPT-OSS Tool Calling</strong></p>
+<ul>
+<li>Status: Encoding errors with some tool calls</li>
+<li>Impact: Tool calls fail with <code>invalid character '\u003c'</code></li>
+<li>Priority: Medium</li>
+<li>Workaround: Use mistral-small or pepe models</li>
+</ul>
+</li>
+</ol>
+<h2 id="planned-features"><a class="header" href="#planned-features">Planned Features</a></h2>
+<h3 id="phase-1-core-stability"><a class="header" href="#phase-1-core-stability">Phase 1: Core Stability</a></h3>
+<h4 id="configuration-file-support"><a class="header" href="#configuration-file-support">Configuration File Support</a></h4>
+<p><strong>Priority:</strong> High</p>
+<p>Add support for user configuration files:</p>
+<pre><code class="language-toml"># ~/.config/ask-ai/config.toml
+[model]
+default = "lfm"
+
+[tools]
+blacklist = ["web_search"]
+
+[output]
+plain_default = false
+
+[display]
+skin = "dark"
+</code></pre>
+<h4 id="shell-completions"><a class="header" href="#shell-completions">Shell Completions</a></h4>
+<p><strong>Priority:</strong> Medium</p>
+<p>Generate shell completions for bash, zsh, fish:</p>
+<pre><code class="language-bash">ask-ai --generate-completion bash
+</code></pre>
+<h3 id="phase-2-enhanced-tools"><a class="header" href="#phase-2-enhanced-tools">Phase 2: Enhanced Tools</a></h3>
+<h4 id="file-operations-tools"><a class="header" href="#file-operations-tools">File Operations Tools</a></h4>
+<p><strong>Priority:</strong> High</p>
+<p>Add tools for file system operations:</p>
+<ul>
+<li><code>read_file</code> - Read file contents</li>
+<li><code>list_directory</code> - List files</li>
+<li><code>search_files</code> - Search file contents</li>
+</ul>
+<h4 id="system-tools"><a class="header" href="#system-tools">System Tools</a></h4>
+<p><strong>Priority:</strong> Medium</p>
+<ul>
+<li><code>run_command</code> - Execute commands (configurable whitelist)</li>
+<li><code>get_system_info</code> - System information</li>
+</ul>
+<h4 id="web-scraping-tools"><a class="header" href="#web-scraping-tools">Web Scraping Tools</a></h4>
+<p><strong>Priority:</strong> Medium</p>
+<ul>
+<li><code>fetch_page</code> - Extract text from URLs</li>
+<li><code>extract_articles</code> - Extract article content</li>
+</ul>
+<h3 id="phase-3-advanced-features"><a class="header" href="#phase-3-advanced-features">Phase 3: Advanced Features</a></h3>
+<h4 id="streaming-output"><a class="header" href="#streaming-output">Streaming Output</a></h4>
+<p><strong>Priority:</strong> Low</p>
+<p>Research streaming markdown rendering:</p>
+<p><strong>Challenges:</strong></p>
+<ul>
+<li>Markdown context dependency</li>
+<li>Tables require full content</li>
+<li>Cross-line formatting</li>
+</ul>
+<p><strong>Potential Solutions:</strong></p>
+<ol>
+<li>Line-buffered rendering</li>
+<li>Block-buffered rendering</li>
+<li>Plain text streaming</li>
+</ol>
+<h4 id="multi-line-chat-mode"><a class="header" href="#multi-line-chat-mode">Multi-Line Chat Mode</a></h4>
+<p><strong>Priority:</strong> Low</p>
+<p>Interactive chat mode:</p>
+<pre><code class="language-bash">ask-ai --chat
+&gt; First message
+&gt; Second message
+&gt; /quit
+</code></pre>
+<h4 id="configuration-management"><a class="header" href="#configuration-management">Configuration Management</a></h4>
+<p><strong>Priority:</strong> Medium</p>
+<ul>
+<li>Model presets from config file</li>
+<li>Custom tool configurations</li>
+<li>User-defined shortcuts</li>
+</ul>
+<h3 id="phase-4-tool-ecosystem"><a class="header" href="#phase-4-tool-ecosystem">Phase 4: Tool Ecosystem</a></h3>
+<h4 id="compilation-features"><a class="header" href="#compilation-features">Compilation Features</a></h4>
+<p><strong>Priority:</strong> Medium</p>
+<p>Conditional tool compilation:</p>
+<pre><code class="language-toml">[features]
+default = ["pokemon-tools"]
+pokemon-tools = []
+weather-tools = []
+web-search-tools = []
+all-tools = ["pokemon-tools", "weather-tools", "web-search-tools"]
+</code></pre>
+<p>Usage:</p>
+<pre><code class="language-bash">cargo build --no-default-features --features weather-tools
+</code></pre>
+<h4 id="plugin-system"><a class="header" href="#plugin-system">Plugin System</a></h4>
+<p><strong>Priority:</strong> Low</p>
+<p>Support for custom tools via plugins:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Custom tool defined by user
+#[ollama_rs::function]
+pub async fn my_custom_tool(arg: String) -&gt; Result&lt;String&gt; {
+    // Implementation
+}
+<span class="boring">}</span></code></pre>
+<h2 id="future-tools-1"><a class="header" href="#future-tools-1">Future Tools</a></h2>
+<h3 id="document-processing-1"><a class="header" href="#document-processing-1">Document Processing</a></h3>
+<ul>
+<li>PDF text extraction</li>
+<li>Document format conversion</li>
+<li>Batch processing</li>
+</ul>
+<h3 id="data-analysis"><a class="header" href="#data-analysis">Data Analysis</a></h3>
+<ul>
+<li>CSV/JSON analysis</li>
+<li>Statistical tools</li>
+<li>Visualization (ASCII charts)</li>
+</ul>
+<h3 id="code-tools"><a class="header" href="#code-tools">Code Tools</a></h3>
+<ul>
+<li>Repository analysis</li>
+<li>Code quality checks</li>
+<li>Documentation generation</li>
+</ul>
+<h2 id="web-search-alternatives"><a class="header" href="#web-search-alternatives">Web Search Alternatives</a></h2>
+<h3 id="option-1-serpapi-paid"><a class="header" href="#option-1-serpapi-paid">Option 1: SerpAPI (Paid)</a></h3>
+<p>Pros:</p>
+<ul>
+<li>Reliable</li>
+<li>Structured results</li>
+</ul>
+<p>Cons:</p>
+<ul>
+<li>Requires API key</li>
+<li>Paid service</li>
+</ul>
+<h3 id="option-2-bing-api-paid"><a class="header" href="#option-2-bing-api-paid">Option 2: Bing API (Paid)</a></h3>
+<p>Pros:</p>
+<ul>
+<li>Microsoft integration</li>
+<li>Good results</li>
+</ul>
+<p>Cons:</p>
+<ul>
+<li>Requires API key</li>
+<li>Rate limits</li>
+</ul>
+<h3 id="option-3-searx-self-hosted"><a class="header" href="#option-3-searx-self-hosted">Option 3: Searx (Self-Hosted)</a></h3>
+<p>Pros:</p>
+<ul>
+<li>Free</li>
+<li>Privacy-focused</li>
+<li>Self-hosted</li>
+</ul>
+<p>Cons:</p>
+<ul>
+<li>Requires server</li>
+<li>Setup complexity</li>
+</ul>
+<h3 id="option-4-local-llm-web-search"><a class="header" href="#option-4-local-llm-web-search">Option 4: Local LLM Web Search</a></h3>
+<p>Pros:</p>
+<ul>
+<li>Privacy</li>
+<li>No API keys</li>
+</ul>
+<p>Cons:</p>
+<ul>
+<li>Slower</li>
+<li>Less accurate</li>
+</ul>
+<p><strong>Decision:</strong> TBD - Community feedback needed</p>
+<h2 id="testing-improvements"><a class="header" href="#testing-improvements">Testing Improvements</a></h2>
+<h3 id="test-coverage"><a class="header" href="#test-coverage">Test Coverage</a></h3>
+<ul>
+<li><input disabled="" type="checkbox"> Unit tests for all commands</li>
+<li><input disabled="" type="checkbox"> Integration tests with mock Ollama</li>
+<li><input disabled="" type="checkbox"> Tool testing</li>
+<li><input disabled="" type="checkbox"> OCR testing</li>
+<li><input disabled="" type="checkbox"> Translation testing</li>
+</ul>
+<h3 id="cicd"><a class="header" href="#cicd">CI/CD</a></h3>
+<ul>
+<li><input disabled="" type="checkbox"> GitHub Actions</li>
+<li><input disabled="" type="checkbox"> Automated testing</li>
+<li><input disabled="" type="checkbox"> Release automation</li>
+<li><input disabled="" type="checkbox"> Documentation deployment</li>
+</ul>
+<h2 id="documentation-1"><a class="header" href="#documentation-1">Documentation</a></h2>
+<h3 id="current-status"><a class="header" href="#current-status">Current Status</a></h3>
+<p>✅ Complete:</p>
+<ul>
+<li>User documentation (mdBook)</li>
+<li>Man page</li>
+<li>Development documentation</li>
+</ul>
+<h3 id="planned"><a class="header" href="#planned">Planned</a></h3>
+<ul>
+<li><input disabled="" type="checkbox"> API documentation (if we add library interface)</li>
+<li><input disabled="" type="checkbox"> Plugin development guide</li>
+<li><input disabled="" type="checkbox"> Video tutorials</li>
+<li><input disabled="" type="checkbox"> Example scripts</li>
+</ul>
+<h2 id="release-schedule"><a class="header" href="#release-schedule">Release Schedule</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Version</th><th>Focus</th><th>ETA</th></tr>
+</thead>
+<tbody>
+<tr><td>0.1.0</td><td>Initial release</td><td>✅ Done</td></tr>
+<tr><td>0.2.0</td><td>Configuration files</td><td>Q1 2026</td></tr>
+<tr><td>0.3.0</td><td>New tools</td><td>Q2 2026</td></tr>
+<tr><td>0.4.0</td><td>Streaming</td><td>Q3 2026</td></tr>
+<tr><td>1.0.0</td><td>Stable release</td><td>Q4 2026</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="contributing-1"><a class="header" href="#contributing-1">Contributing</a></h2>
+<p>See something you want to work on?</p>
+<ol>
+<li>Check <a href="https://github.com/luksamuk/ask-ollama-rs/issues">GitHub Issues</a></li>
+<li>Comment on the issue</li>
+<li>Submit a pull request</li>
+</ol>
+<h2 id="feedback"><a class="header" href="#feedback">Feedback</a></h2>
+<p>Your feedback shapes the roadmap!</p>
+<ul>
+<li>Open an issue for feature requests</li>
+<li>Vote on existing issues</li>
+<li>Join discussions</li>
+</ul>
+<h2 id="see-also-11"><a class="header" href="#see-also-11">See Also</a></h2>
+<ul>
+<li><a href="#architecture">Architecture</a> - Technical architecture</li>
+<li><a href="#contributing-to-ask-ai">Contributing</a> - How to contribute</li>
+<li>GitHub Issues - Current issues and requests</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="contributing-to-ask-ai"><a class="header" href="#contributing-to-ask-ai">Contributing to Ask-AI</a></h1>
+<p>Thank you for your interest in contributing to Ask-AI! This guide will help you get started.</p>
+<h2 id="getting-started-1"><a class="header" href="#getting-started-1">Getting Started</a></h2>
+<h3 id="prerequisites-2"><a class="header" href="#prerequisites-2">Prerequisites</a></h3>
+<ul>
+<li>Rust toolchain (latest stable)</li>
+<li>Git</li>
+<li>Ollama (for testing)</li>
+<li>mdbook and mdbook-mermaid (for documentation)</li>
+</ul>
+<h3 id="setup"><a class="header" href="#setup">Setup</a></h3>
+<pre><code class="language-bash"># Clone the repository
+git clone &lt;your-repo-url&gt;
+cd ask-ollama-rs
+
+# Install dependencies
+cargo build
+
+# Run tests
+cargo test
+
+# Install documentation tools
+cargo install mdbook
+cargo install mdbook-mermaid
+</code></pre>
+<h2 id="development-workflow"><a class="header" href="#development-workflow">Development Workflow</a></h2>
+<h3 id="1-create-a-branch"><a class="header" href="#1-create-a-branch">1. Create a Branch</a></h3>
+<pre><code class="language-bash">git checkout -b feature/my-feature
+</code></pre>
+<h3 id="2-make-changes"><a class="header" href="#2-make-changes">2. Make Changes</a></h3>
+<ul>
+<li>Follow the code style guidelines (see AGENTS.md)</li>
+<li>Write tests for new features</li>
+<li>Update documentation</li>
+</ul>
+<h3 id="3-test"><a class="header" href="#3-test">3. Test</a></h3>
+<pre><code class="language-bash"># Run all tests
+cargo test
+
+# Run clippy
+cargo clippy -- -D warnings
+
+# Format code
+cargo fmt
+
+# Build
+cargo build --release
+</code></pre>
+<h3 id="4-update-documentation"><a class="header" href="#4-update-documentation">4. Update Documentation</a></h3>
+<p>When adding features, update:</p>
+<ol>
+<li>
+<p><strong>User documentation</strong> in <code>doc/src/</code></p>
+<ul>
+<li>Relevant command documentation</li>
+<li>Examples and use cases</li>
+<li>Troubleshooting if applicable</li>
+</ul>
+</li>
+<li>
+<p><strong>Man page</strong> in <code>man/ask-ai.1</code></p>
+<ul>
+<li>New flags/options</li>
+<li>New commands</li>
+<li>Examples</li>
+</ul>
+</li>
+<li>
+<p><strong>Development docs</strong> in <code>doc/src/development/</code></p>
+<ul>
+<li>Architecture changes</li>
+<li>Roadmap updates</li>
+</ul>
+</li>
+</ol>
+<h3 id="5-commit"><a class="header" href="#5-commit">5. Commit</a></h3>
+<pre><code class="language-bash">git add .
+git commit -m "feat: add new feature"
+</code></pre>
+<p>Follow conventional commits:</p>
+<ul>
+<li><code>feat:</code> New feature</li>
+<li><code>fix:</code> Bug fix</li>
+<li><code>docs:</code> Documentation</li>
+<li><code>refactor:</code> Code refactoring</li>
+<li><code>test:</code> Tests</li>
+<li><code>chore:</code> Maintenance</li>
+</ul>
+<h3 id="6-push-and-create-pr"><a class="header" href="#6-push-and-create-pr">6. Push and Create PR</a></h3>
+<pre><code class="language-bash">git push origin feature/my-feature
+</code></pre>
+<p>Then create a Pull Request on GitHub.</p>
+<h2 id="code-style"><a class="header" href="#code-style">Code Style</a></h2>
+<p>See <a href="../AGENTS.html">AGENTS.md</a> for detailed guidelines.</p>
+<p>Quick reference:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// Naming
+const MAX_SIZE: usize = 100;
+fn process_data(input: String) -&gt; AppResult&lt;String&gt; {
+    let result = transform(input)?;
+    Ok(result)
+}
+
+// Error handling
+use_tool().await?;
+
+// Async
+async fn fetch_data() -&gt; AppResult&lt;Data&gt; {
+    // async code
+}
+<span class="boring">}</span></code></pre>
+<h2 id="documentation-guidelines"><a class="header" href="#documentation-guidelines">Documentation Guidelines</a></h2>
+<h3 id="user-documentation"><a class="header" href="#user-documentation">User Documentation</a></h3>
+<ul>
+<li>Keep it functional, not technical</li>
+<li>Include examples</li>
+<li>Use clear, concise language</li>
+<li>Add diagrams where helpful (Mermaid)</li>
+</ul>
+<h3 id="development-documentation-1"><a class="header" href="#development-documentation-1">Development Documentation</a></h3>
+<ul>
+<li>Explain architecture decisions</li>
+<li>Document APIs</li>
+<li>Add troubleshooting for developers</li>
+</ul>
+<h3 id="when-to-update"><a class="header" href="#when-to-update">When to Update</a></h3>
+<p>Update documentation when:</p>
+<ul>
+<li>Adding new commands</li>
+<li>Adding new flags/options</li>
+<li>Changing behavior</li>
+<li>Adding new models</li>
+<li>Adding new tools</li>
+</ul>
+<h2 id="testing"><a class="header" href="#testing">Testing</a></h2>
+<h3 id="unit-tests-1"><a class="header" href="#unit-tests-1">Unit Tests</a></h3>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_something() {
+        assert_eq!(2 + 2, 4);
+    }
+}
+<span class="boring">}</span></code></pre>
+<h3 id="integration-tests-1"><a class="header" href="#integration-tests-1">Integration Tests</a></h3>
+<pre><code class="language-bash"># Test specific command
+cargo test query
+cargo test translate
+
+# Test all
+cargo test
+</code></pre>
+<h3 id="manual-testing"><a class="header" href="#manual-testing">Manual Testing</a></h3>
+<pre><code class="language-bash"># Build and run
+cargo build --release
+./target/release/ask-ollama "Test query"
+
+# Test subcommands
+./target/release/ask-ollama translate en:pt "Hello"
+./target/release/ask-ollama ocr image.png
+./target/release/ask-ollama summarize "Text"
+</code></pre>
+<h2 id="adding-a-new-command"><a class="header" href="#adding-a-new-command">Adding a New Command</a></h2>
+<ol>
+<li>Create module in <code>src/</code></li>
+<li>Add CLI struct with <code>clap</code></li>
+<li>Implement handler</li>
+<li>Add to main router</li>
+<li>Write tests</li>
+<li>Update documentation</li>
+<li>Update man page</li>
+</ol>
+<p>Example structure:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/mycommand/cli.rs
+use clap::Args;
+
+#[derive(Args, Debug)]
+pub struct MyCommandArgs {
+    #[arg(short, long)]
+    pub option: String,
+}
+
+// src/mycommand/mod.rs
+pub mod cli;
+pub mod processor;
+
+// src/mycommand/processor.rs
+use crate::AppResult;
+
+pub async fn process(args: cli::MyCommandArgs) -&gt; AppResult&lt;()&gt; {
+    // Implementation
+    Ok(())
+}
+<span class="boring">}</span></code></pre>
+<h2 id="adding-a-new-tool"><a class="header" href="#adding-a-new-tool">Adding a New Tool</a></h2>
+<ol>
+<li>Define function in <code>src/tools/</code></li>
+<li>Use <code>#[ollama_rs::function]</code> macro</li>
+<li>Add to coordinator in <code>main.rs</code></li>
+<li>Update tools documentation</li>
+<li>Test with capable model</li>
+</ol>
+<p>Example:</p>
+<pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// src/tools/my_tool.rs
+use ollama_rs::function;
+
+#[function]
+pub async fn my_tool(param: String) -&gt; Result&lt;String, Error&gt; {
+    // Implementation
+    Ok(result)
+}
+<span class="boring">}</span></code></pre>
+<h2 id="adding-a-new-model"><a class="header" href="#adding-a-new-model">Adding a New Model</a></h2>
+<ol>
+<li>Add to <code>src/config.rs</code></li>
+<li>Update <code>ask-ai --list</code> output</li>
+<li>Document in <code>doc/src/models.md</code></li>
+<li>Update man page</li>
+</ol>
+<h2 id="documentation-checklist"><a class="header" href="#documentation-checklist">Documentation Checklist</a></h2>
+<p>Before submitting PR:</p>
+<ul>
+<li><input disabled="" type="checkbox"> Updated relevant doc pages in <code>doc/src/</code></li>
+<li><input disabled="" type="checkbox"> Updated man page if CLI changed</li>
+<li><input disabled="" type="checkbox"> Updated README.md if needed</li>
+<li><input disabled="" type="checkbox"> Added examples to documentation</li>
+<li><input disabled="" type="checkbox"> Tested with <code>mdbook serve</code></li>
+<li><input disabled="" type="checkbox"> All links work</li>
+</ul>
+<h2 id="pull-request-checklist"><a class="header" href="#pull-request-checklist">Pull Request Checklist</a></h2>
+<ul>
+<li><input disabled="" type="checkbox"> Code builds without warnings</li>
+<li><input disabled="" type="checkbox"> Tests pass</li>
+<li><input disabled="" type="checkbox"> Clippy clean</li>
+<li><input disabled="" type="checkbox"> Code formatted</li>
+<li><input disabled="" type="checkbox"> Documentation updated</li>
+<li><input disabled="" type="checkbox"> Man page updated (if needed)</li>
+<li><input disabled="" type="checkbox"> Commit messages follow conventions</li>
+</ul>
+<h2 id="getting-help-3"><a class="header" href="#getting-help-3">Getting Help</a></h2>
+<ul>
+<li>GitHub Issues: Bug reports, feature requests</li>
+<li>Discussions: General questions</li>
+<li>Documentation: Check <code>doc/src/development/</code></li>
+</ul>
+<h2 id="license-2"><a class="header" href="#license-2">License</a></h2>
+<p>By contributing, you agree that your contributions will be licensed under the MIT License.</p>
+<h2 id="acknowledgments"><a class="header" href="#acknowledgments">Acknowledgments</a></h2>
+<p>Thank you to all contributors who make Ask-AI better!</p>
+<h2 id="see-also-12"><a class="header" href="#see-also-12">See Also</a></h2>
+<ul>
+<li><a href="#architecture">Architecture</a> - Technical details</li>
+<li><a href="#roadmap">Roadmap</a> - Future plans</li>
+<li>AGENTS.md - Development guidelines</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="changelog"><a class="header" href="#changelog">Changelog</a></h1>
+<p>All notable changes to Ask-AI will be documented in this file.</p>
+<h2 id="unreleased"><a class="header" href="#unreleased">[Unreleased]</a></h2>
+<h3 id="added"><a class="header" href="#added">Added</a></h3>
+<ul>
+<li>Complete documentation with mdBook</li>
+<li>Man page for terminal reference</li>
+<li>Development documentation (architecture, roadmap, contributing)</li>
+<li>Mermaid diagram support</li>
+</ul>
+<h2 id="010---2026-02-17"><a class="header" href="#010---2026-02-17">[0.1.0] - 2026-02-17</a></h2>
+<h3 id="added-1"><a class="header" href="#added-1">Added</a></h3>
+<ul>
+<li>Initial release</li>
+<li>Core CLI with 4 subcommands:
+<ul>
+<li><code>query</code> - General LLM queries</li>
+<li><code>translate</code> - Language translation (50+ languages)</li>
+<li><code>ocr</code> - Image text extraction</li>
+<li><code>summarize</code> - Text summarization</li>
+</ul>
+</li>
+<li>14 tools:
+<ul>
+<li>8 Pokémon tools via PokéAPI</li>
+<li>3 Weather tools via Open-Meteo</li>
+<li>3 Web Search tools via DuckDuckGo (currently blocked)</li>
+</ul>
+</li>
+<li>14+ model presets with capability detection</li>
+<li>Markdown rendering via termimad</li>
+<li>Tool integration with auto-detection</li>
+<li>Pipe support for all commands</li>
+<li>Debug mode</li>
+<li>Think mode for reasoning models</li>
+<li>Code mode for code-focused responses</li>
+<li>Model capability detection</li>
+<li>Spinner for UX feedback</li>
+<li>Stdin support</li>
+<li>Plain text output option</li>
+<li>Pepe Easter Egg personality</li>
+</ul>
+<h3 id="known-issues-2"><a class="header" href="#known-issues-2">Known Issues</a></h3>
+<ul>
+<li>DuckDuckGo web search blocked by CAPTCHA</li>
+<li>GPT-OSS tool calling may fail with encoding errors</li>
+</ul>
+<h2 id="categories"><a class="header" href="#categories">Categories</a></h2>
+<ul>
+<li><code>Added</code> - New features</li>
+<li><code>Changed</code> - Changes to existing functionality</li>
+<li><code>Deprecated</code> - Soon-to-be removed features</li>
+<li><code>Removed</code> - Removed features</li>
+<li><code>Fixed</code> - Bug fixes</li>
+<li><code>Security</code> - Security fixes</li>
+</ul>
+<h2 id="versioning"><a class="header" href="#versioning">Versioning</a></h2>
+<p>We follow <a href="https://semver.org/">Semantic Versioning</a>:</p>
+<ul>
+<li>MAJOR: Incompatible API changes</li>
+<li>MINOR: Backward-compatible functionality</li>
+<li>PATCH: Backward-compatible bug fixes</li>
+</ul>
+<h2 id="format"><a class="header" href="#format">Format</a></h2>
+<p>Based on <a href="https://keepachangelog.com/en/1.0.0/">Keep a Changelog</a>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>

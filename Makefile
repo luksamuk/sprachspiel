@@ -3,10 +3,14 @@
 # Default installation prefix
 PREFIX ?= /usr/local
 BINDIR = $(PREFIX)/bin
+MANDIR = $(PREFIX)/share/man/man1
 
 # Binary name
 BINARY = ask-ollama
 TARGET = ask-ai
+
+# Man page
+MANPAGE = man/ask-ai.1
 
 # Build configuration
 CARGO_FLAGS = --release
@@ -21,20 +25,26 @@ all: build
 build:
 	cargo build $(CARGO_FLAGS)
 
-# Install binary to PREFIX/bin
+# Install binary and man page to PREFIX
 install: build
 	@echo "Installing $(TARGET) to $(BINDIR)..."
 	@mkdir -p $(BINDIR)
 	@cp $(BUILD_DIR)/$(BINARY) $(BINDIR)/$(TARGET)
 	@chmod +x $(BINDIR)/$(TARGET)
+	@echo "Installing man page to $(MANDIR)..."
+	@mkdir -p $(MANDIR)
+	@cp $(MANPAGE) $(MANDIR)/
 	@echo "Installation complete!"
 	@echo "Binary installed at: $(BINDIR)/$(TARGET)"
+	@echo "Man page installed at: $(MANDIR)/ask-ai.1"
 	@echo "Make sure $(BINDIR) is in your PATH"
 
-# Uninstall binary from PREFIX/bin
+# Uninstall binary and man page from PREFIX
 uninstall:
 	@echo "Removing $(TARGET) from $(BINDIR)..."
 	@rm -f $(BINDIR)/$(TARGET)
+	@echo "Removing man page from $(MANDIR)..."
+	@rm -f $(MANDIR)/ask-ai.1
 	@echo "Uninstallation complete!"
 
 # Clean build artifacts
