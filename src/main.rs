@@ -13,6 +13,7 @@ mod settings;
 mod spinner;
 mod summarize;
 mod tools;
+mod tool_robustness;
 mod translate;
 
 use clap::Parser;
@@ -30,6 +31,7 @@ use crate::prompts::get_prompt_with_blacklist;
 use crate::settings::Settings;
 use crate::spinner::create_spinner;
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
+use crate::tool_robustness::format_tool_error;
 use crate::tools::*;
 use crate::translate::{
     Commands, CompletionArgs, LanguageMapper, QueryArgs, TranslateArgs, TranslationStyle, build_translation_prompt,
@@ -506,12 +508,22 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     let spinner = create_spinner("Waiting for response...");
 
     // Send request
-    let response = coordinator
+    let result = coordinator
         .chat(vec![system_message, user_message])
-        .await
-        .map_err(|e| format!("Failed to get response from Ollama: {}", e))?;
+        .await;
 
     // Clear spinner
+    spinner.finish_and_clear();
+
+    // Handle result with better error messages
+    let response = match result {
+        Ok(resp) => resp,
+        Err(e) => {
+            let error_msg = format_tool_error(&e.to_string());
+            eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+            std::process::exit(1);
+        }
+    };
     spinner.finish_and_clear();
 
     // Strip thinking tags
@@ -788,13 +800,22 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let spinner = create_spinner("Waiting for response...");
 
     // Send request
-    let response = coordinator
+    let result = coordinator
         .chat(vec![system_message, user_message])
-        .await
-        .map_err(|e| format!("Failed to get response from Ollama: {}", e))?;
+        .await;
 
     // Clear spinner
     spinner.finish_and_clear();
+
+    // Handle result with better error messages
+    let response = match result {
+        Ok(resp) => resp,
+        Err(e) => {
+            let error_msg = format_tool_error(&e.to_string());
+            eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+            std::process::exit(1);
+        }
+    };
 
     // Strip thinking tags
     let content = strip_thinking_tags(&response.message.content);

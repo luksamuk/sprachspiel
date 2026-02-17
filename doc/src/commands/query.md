@@ -90,17 +90,49 @@ ask-ai -m lfm -t "What are the ethical implications of AI?"
 
 ### Code Mode
 
-Code mode optimizes responses for code output:
+Code mode optimizes responses for code output. Use the `-c` flag or `--code`:
 
 ```bash
-# Basic code mode
+# Basic code mode (uses [model.code] config)
 ask-ai -c "Write a Python function to sort a list"
 
-# Code with web search
-ask-ai -p code_with_tools "Latest Rust async patterns"
+# Code with tools (file operations)
+ask-ai -c --tools "Read my config.rs and suggest improvements"
 
-# With specific model
-ask-ai -m qwen3-coder -c "Implement a thread pool in Rust"
+# Explicit model selection
+ask-ai -m deepseek-coder-v2 -c "Implement a thread pool in Rust"
+```
+
+#### Code Mode Configuration
+
+Code mode uses settings from `[model.code]` in your config file:
+
+```toml
+# ~/.config/ask-ai/config.toml
+[model.code]
+model = "deepseek-coder-v2"  # Recommended: fast and accurate
+thinking = false
+tools = true  # Enable file operations for context-aware code
+```
+
+With tools enabled, the model can read your files before generating code:
+
+```bash
+# Model reads your project files first, then generates code
+ask-ai -c "Add error handling to my API handlers"
+```
+
+#### Code Mode Examples
+
+```bash
+# Generate code only (minimal explanation)
+ask-ai -c "Rust function to parse JSON"
+
+# With file context (if tools enabled in config)
+ask-ai -c "Convert this function to async"
+
+# Debug with code mode
+ask-ai -c -d "Why does this code panic?"
 ```
 
 ### Debug Mode

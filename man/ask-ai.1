@@ -151,6 +151,7 @@ gpt-oss|gpt-oss:20b-64k|64K|Tool calling
 mistral-small|mistral-small3.2:24b-32k|32K|Agentic tasks
 smollm3|smollm3:Q8_0-64k|64K|Edge deployment
 sead|sead:14b-32k|32K|General purpose
+deepseek-coder-v2|deepseek-coder-v2:16b-32k|32K|Code generation (recommended)
 qwen3-coder|qwen3-coder:30b-64k|64K|Code generation
 devstral-small-2|devstral-small-2:24b-64k|64K|Coding with min_p
 llama3.2|llama3.2:3b-32k|32K|Summarization (default for summarize)
@@ -183,6 +184,15 @@ Enable think mode:
 .nf
 .RS
 ask-ai -t "Solve this step by step"
+.RE
+.fi
+.PP
+Code mode (for programming):
+.PP
+.nf
+.RS
+ask-ai -c "Write a Rust function"
+ask-ai -c -m deepseek-coder-v2 "Implement a thread pool"
 .RE
 .fi
 .PP
