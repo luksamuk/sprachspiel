@@ -70,7 +70,7 @@ pub async fn get_weather(
     let response = client.get(&url).send().await?;
 
     if !response.status().is_success() {
-        return Err(format!("Weather API error: {}", response.status()).into());
+        return Err(format!("Geocoding API error: {}", response.status()).into());
     }
 
     let weather: WeatherResponse = response.json().await?;
@@ -155,7 +155,9 @@ pub async fn get_current_weather(
     let response = client.get(&url).send().await?;
 
     if !response.status().is_success() {
-        return Err(format!("Weather API error: {}", response.status()).into());
+        let err = format!("Weather API error: {}. Please try again later.", response.status());
+        log_tool_result("get_current_weather", &err);
+        return Ok(err);
     }
 
     let weather: WeatherResponse = response.json().await?;
@@ -220,7 +222,9 @@ pub async fn get_weather_forecast(
     let response = client.get(&url).send().await?;
 
     if !response.status().is_success() {
-        return Err(format!("Weather API error: {}", response.status()).into());
+        let err = format!("Weather API error: {}. Please try again later.", response.status());
+        log_tool_result("get_weather_forecast", &err);
+        return Ok(err);
     }
 
     let weather: WeatherResponse = response.json().await?;

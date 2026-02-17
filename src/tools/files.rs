@@ -25,27 +25,39 @@ pub async fn read_file(
 
     // Validate and canonicalize path
     let path_buf = PathBuf::from(&path);
-    let canonical_path = validate_path(&path_buf, sandbox.unwrap_or(true))?;
+    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+        Ok(p) => p,
+        Err(e) => {
+            let err_msg = format!("Error: {}", e);
+            log_tool_result("read_file", &err_msg);
+            return Ok(err_msg);
+        }
+    };
 
     // Check if file exists and is readable
     if !canonical_path.exists() {
-        return Err(format!("File not found: {}", path).into());
+        let err_msg = format!("Error: File not found: {}. Please check if the file exists or try a different file name (e.g., README.org instead of README.md).", path);
+        log_tool_result("read_file", &err_msg);
+        return Ok(err_msg);
     }
 
     if !canonical_path.is_file() {
-        return Err(format!("Path is not a file: {}", path).into());
+        let err_msg = format!("Error: Path is not a file: {}", path);
+        log_tool_result("read_file", &err_msg);
+        return Ok(err_msg);
     }
 
     // Check file size
     let metadata = std::fs::metadata(&canonical_path)?;
     if metadata.len() > MAX_FILE_SIZE as u64 {
-        return Err(format!(
-            "File too large ({} bytes, max: {} bytes): {}",
+        let err_msg = format!(
+            "Error: File too large ({} bytes, max: {} bytes): {}",
             metadata.len(),
             MAX_FILE_SIZE,
             path
-        )
-        .into());
+        );
+        log_tool_result("read_file", &err_msg);
+        return Ok(err_msg);
     }
 
     // Read file content
@@ -87,15 +99,26 @@ pub async fn list_directory(
 
     // Validate and canonicalize path
     let path_buf = PathBuf::from(&path);
-    let canonical_path = validate_path(&path_buf, sandbox.unwrap_or(true))?;
+    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+        Ok(p) => p,
+        Err(e) => {
+            let err_msg = format!("Error: {}", e);
+            log_tool_result("list_directory", &err_msg);
+            return Ok(err_msg);
+        }
+    };
 
     // Check if directory exists
     if !canonical_path.exists() {
-        return Err(format!("Directory not found: {}", path).into());
+        let err_msg = format!("Error: Directory not found: {}", path);
+        log_tool_result("list_directory", &err_msg);
+        return Ok(err_msg);
     }
 
     if !canonical_path.is_dir() {
-        return Err(format!("Path is not a directory: {}", path).into());
+        let err_msg = format!("Error: Path is not a directory: {}", path);
+        log_tool_result("list_directory", &err_msg);
+        return Ok(err_msg);
     }
 
     // List directory contents
@@ -213,22 +236,44 @@ pub async fn search_files(
     );
 
     // Compile regex pattern
-    let regex = Regex::new(&pattern)
-        .map_err(|e| format!("Invalid regex pattern '{}': {}", pattern, e))?;
+    let regex = match Regex::new(&pattern) {
+        Ok(r) => r,
+        Err(e) => {
+            let err_msg = format!("Error: Invalid regex pattern '{}': {}. Please check your regex syntax.", pattern, e);
+            log_tool_result("search_files", &err_msg);
+            return Ok(err_msg);
+        }
+    };
 
     // Validate path
     let path_buf = PathBuf::from(&path);
-    let canonical_path = validate_path(&path_buf, sandbox.unwrap_or(true))?;
+    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+        Ok(p) => p,
+        Err(e) => {
+            let err_msg = format!("Error: {}", e);
+            log_tool_result("search_files", &err_msg);
+            return Ok(err_msg);
+        }
+    };
 
     if !canonical_path.exists() {
-        return Err(format!("Path not found: {}", path).into());
+        let err_msg = format!("Error: Path not found: {}", path);
+        log_tool_result("search_files", &err_msg);
+        return Ok(err_msg);
     }
 
     // Determine search scope
     let files_to_search = if canonical_path.is_file() {
         vec![canonical_path.clone()]
     } else {
-        collect_files(&canonical_path, file_pattern.as_deref(), MAX_RESULTS)?
+        match collect_files(&canonical_path, file_pattern.as_deref(), MAX_RESULTS) {
+            Ok(f) => f,
+            Err(e) => {
+                let err_msg = format!("Error: {}", e);
+                log_tool_result("search_files", &err_msg);
+                return Ok(err_msg);
+            }
+        }
     };
 
     // Search for pattern
