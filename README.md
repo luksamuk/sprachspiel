@@ -115,6 +115,27 @@ ask summarize --max-length 200 "Text..."
 ask summarize --format bullets --style technical code.md
 ```
 
+### Chained Commands (Pipes)
+
+Combine subcommands for powerful workflows:
+
+```bash
+# Extract text from image and summarize it
+ask ocr document.png | ask summarize --style academic
+
+# Translate OCR output from English to Portuguese
+ask ocr english-text.png | ask translate :pt
+
+# OCR a screenshot, summarize, then translate
+ask ocr screenshot.png | ask summarize --format bullets | ask translate :pt
+
+# Extract table from image and get a technical summary
+ask ocr --mode table data.png | ask summarize --style technical
+
+# Chain with external tools
+cat article.pdf | pdftotext - - | ask summarize --max-length 100
+```
+
 ## Documentation
 
 - `AGENTS.md` - Development guidelines and code style
