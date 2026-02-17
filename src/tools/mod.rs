@@ -1,8 +1,12 @@
 use serde::Deserialize;
 
 pub mod pokemon;
+pub mod search;
+pub mod weather;
 
 pub use pokemon::*;
+pub use search::*;
+pub use weather::*;
 
 /// Common response structure for PokeAPI
 #[derive(Debug, Deserialize)]

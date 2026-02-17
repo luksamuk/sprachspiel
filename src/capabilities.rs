@@ -37,7 +37,6 @@ impl ModelCapabilities {
             thinking: info.capabilities.contains(&"thinking".to_string()),
         })
     }
-
 }
 
 #[cfg(test)]

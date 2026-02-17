@@ -80,6 +80,10 @@ pub struct TranslateArgs {
     /// Output plain text without formatting
     #[arg(long)]
     pub plain: bool,
+
+    /// Enable debug mode with detailed logging
+    #[arg(short, long)]
+    pub debug: bool,
 }
 
 /// Arguments for the query subcommand (original CLI behavior)
@@ -125,6 +129,10 @@ pub struct QueryArgs {
     /// Force enable tools even if model doesn't advertise tool support
     #[arg(long)]
     pub tools: bool,
+
+    /// Code mode: optimize response for code output
+    #[arg(short, long)]
+    pub code: bool,
 }
 
 impl Default for QueryArgs {
@@ -137,6 +145,7 @@ impl Default for QueryArgs {
             plain: false,
             debug: false,
             tools: false,
+            code: false,
         }
     }
 }
@@ -197,6 +206,7 @@ mod tests {
             prompt: None,
             list: Some(None),
             plain: false,
+            debug: false,
         };
         assert!(args.is_list_only());
 
@@ -206,6 +216,7 @@ mod tests {
             prompt: None,
             list: Some(None),
             plain: false,
+            debug: false,
         };
         assert!(!args2.is_list_only());
     }
@@ -218,6 +229,7 @@ mod tests {
             prompt: None,
             list: Some(Some("port".to_string())),
             plain: false,
+            debug: false,
         };
         assert_eq!(args.list_filter(), Some("port"));
 
@@ -227,6 +239,7 @@ mod tests {
             prompt: None,
             list: Some(None),
             plain: false,
+            debug: false,
         };
         assert_eq!(args2.list_filter(), None);
     }
@@ -239,6 +252,7 @@ mod tests {
             prompt: None,
             list: None,
             plain: false,
+            debug: false,
         };
         assert!(args.validate().is_ok());
 
@@ -248,6 +262,7 @@ mod tests {
             prompt: None,
             list: None,
             plain: false,
+            debug: false,
         };
         assert!(args2.validate().is_err());
 
@@ -257,6 +272,7 @@ mod tests {
             prompt: None,
             list: Some(None),
             plain: false,
+            debug: false,
         };
         assert!(args3.validate().is_ok());
     }

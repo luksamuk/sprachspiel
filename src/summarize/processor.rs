@@ -9,7 +9,7 @@ use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 
 use crate::config::ModelConfig;
-use crate::prompts::{get_prompt, SYSTEM_PROMPT_SUMMARIZE};
+use crate::prompts::{SYSTEM_PROMPT_SUMMARIZE, get_prompt};
 use crate::spinner::create_spinner;
 
 use super::cli::SummarizeArgs;
@@ -24,14 +24,23 @@ impl SummarizeProcessor {
     }
 
     /// Process summarization request
-    pub async fn summarize(&self, args: &SummarizeArgs, text: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn summarize(
+        &self,
+        args: &SummarizeArgs,
+        text: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         if text.is_empty() {
             return Err("No text provided for summarization".into());
         }
 
-        // Get llama3.2 model config (default for summarization)
-        let model_config = ModelConfig::get("llama3.2")
-            .unwrap_or_else(|| ModelConfig::get("mistral-small").unwrap_or_else(|| ModelConfig::get("lfm").expect("Default model should exist")));
+        // Get model config from args (with fallback chain)
+        let model_id = &args.model;
+        let model_config = ModelConfig::get(model_id).unwrap_or_else(|| {
+            ModelConfig::get("llama3.2").unwrap_or_else(|| {
+                ModelConfig::get("mistral-small")
+                    .unwrap_or_else(|| ModelConfig::get("lfm").expect("Default model should exist"))
+            })
+        });
 
         // Initialize Ollama
         let ollama = Ollama::default();
@@ -45,8 +54,8 @@ impl SummarizeProcessor {
             .repeat_penalty(model_config.repeat_penalty);
 
         // Build coordinator WITHOUT tools (security requirement)
-        let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
-            .options(model_options);
+        let mut coordinator =
+            Coordinator::new(ollama, model_config.model_id.clone(), vec![]).options(model_options);
         // Note: No .add_tool() calls - tools are disabled
 
         // Build system prompt (no Pepe personality for summarize - keep it professional)

@@ -3,12 +3,12 @@
 //! Handles the actual OCR processing using the GLM-OCR model via Ollama.
 //! Uses /api/generate endpoint as recommended by GLM-OCR documentation.
 
+use base64::Engine;
 use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 use std::path::Path;
-use base64::Engine;
 
 use crate::spinner::create_spinner;
 
@@ -26,11 +26,7 @@ impl OcrProcessor {
     }
 
     /// Process a single image file
-    pub async fn process_file(
-        &self,
-        path: &Path,
-        mode: OcrMode,
-    ) -> OcrResult<OcrOutput> {
+    pub async fn process_file(&self, path: &Path, mode: OcrMode) -> OcrResult<OcrOutput> {
         // Validate file
         self.validate_file(path)?;
 
@@ -44,7 +40,7 @@ impl OcrProcessor {
 
         // Base64 encode the image bytes - REQUIRED!
         let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
-        
+
         // Create the Image object from base64
         let image = Image::from_base64(base64_image);
 
@@ -55,8 +51,7 @@ impl OcrProcessor {
         let ollama = Ollama::default();
 
         // Build model options (fixed parameters for glm-ocr)
-        let model_options = ModelOptions::default()
-            .temperature(0.0); // GLM-OCR uses temperature 0
+        let model_options = ModelOptions::default().temperature(0.0); // GLM-OCR uses temperature 0
 
         // Create generation request with the image attached
         let request = GenerationRequest::new("glm-ocr:bf16".to_string(), prompt)
@@ -64,7 +59,11 @@ impl OcrProcessor {
             .add_image(image); // <-- Actually sends the image data
 
         // Show spinner
-        let spinner = create_spinner(&format!("Extracting {} from {}...", mode.description(), path.display()));
+        let spinner = create_spinner(&format!(
+            "Extracting {} from {}...",
+            mode.description(),
+            path.display()
+        ));
 
         // Send request to /api/generate
         let response = ollama
@@ -87,10 +86,7 @@ impl OcrProcessor {
     }
 
     /// Process multiple files
-    pub async fn process_batch(
-        &self,
-        args: &OcrArgs,
-    ) -> OcrResult<Vec<OcrOutput>> {
+    pub async fn process_batch(&self, args: &OcrArgs) -> OcrResult<Vec<OcrOutput>> {
         let mut results = Vec::new();
 
         for file in &args.files {
@@ -144,7 +140,6 @@ impl OcrProcessor {
             None => Err(OcrError::InvalidExtension("unknown".to_string())),
         }
     }
-
 }
 
 impl Default for OcrProcessor {

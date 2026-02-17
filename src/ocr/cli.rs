@@ -62,6 +62,10 @@ pub struct OcrArgs {
     /// Maximum tokens per image (default: 8192)
     #[arg(long, default_value = "8192")]
     pub max_tokens: u32,
+
+    /// Enable debug mode with detailed logging
+    #[arg(short, long)]
+    pub debug: bool,
 }
 
 /// Output format for OCR results
@@ -115,6 +119,7 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
+            debug: false,
         };
         assert!(args.validate().is_ok());
 
@@ -123,6 +128,7 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
+            debug: false,
         };
         assert!(args_empty.validate().is_err());
     }
@@ -134,6 +140,7 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
+            debug: false,
         };
         assert!(!single.is_batch());
 
@@ -142,6 +149,7 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
+            debug: false,
         };
         assert!(batch.is_batch());
     }

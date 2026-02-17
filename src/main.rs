@@ -6,6 +6,7 @@
 
 mod capabilities;
 mod config;
+mod debug_tools;
 mod ocr;
 mod prompts;
 mod spinner;
@@ -22,14 +23,15 @@ use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
+use crate::debug_tools::{enable_debug, log_debug};
+use crate::ocr::{OcrArgs, OcrProcessor, print_results};
 use crate::prompts::get_prompt;
 use crate::spinner::create_spinner;
-use crate::tools::*;
-use crate::ocr::{OcrArgs, OcrProcessor, print_results};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
+use crate::tools::*;
 use crate::translate::{
-    Commands, LanguageMapper, TranslateArgs, QueryArgs,
-    build_translation_prompt, TranslationStyle, parse_language_pair,
+    Commands, LanguageMapper, QueryArgs, TranslateArgs, TranslationStyle, build_translation_prompt,
+    parse_language_pair,
 };
 
 /// Type alias for common Result type
@@ -42,12 +44,12 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
     about = "CLI tool for querying Ollama LLM models and translating text",
     version,
     subcommand_required = false,
-    arg_required_else_help = false,
+    arg_required_else_help = false
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    
+
     // Legacy args for backward compatibility when no subcommand is used
     /// The query to send to the model (used when no subcommand specified)
     #[arg(value_name = "QUERY")]
@@ -80,6 +82,10 @@ struct Cli {
     /// Force enable tools even if model doesn't advertise tool support
     #[arg(long)]
     tools: bool,
+
+    /// Code mode: optimize response for code output (minimal explanations)
+    #[arg(short, long)]
+    code: bool,
 }
 
 #[tokio::main]
@@ -171,8 +177,8 @@ async fn handle_translate(args: TranslateArgs) -> AppResult<()> {
         .repeat_penalty(model_config.repeat_penalty);
 
     // Build coordinator - no tools for translation
-    let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
-        .options(model_options);
+    let mut coordinator =
+        Coordinator::new(ollama, model_config.model_id.clone(), vec![]).options(model_options);
 
     // Create messages - use system prompt for translation instructions
     let system_message = ChatMessage::system(prompt);
@@ -202,7 +208,7 @@ async fn handle_translate(args: TranslateArgs) -> AppResult<()> {
 /// Handle query subcommand
 async fn handle_query(args: QueryArgs) -> AppResult<()> {
     let query = args.get_query()?;
-    
+
     if query.is_empty() {
         eprintln!("Error: No query provided. Use positional argument or pipe input.");
         std::process::exit(1);
@@ -254,7 +260,12 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
     };
 
     // Get system prompt
-    let prompt_name = if use_tools && args.prompt == "default" {
+    // Default is now tool_user, code mode can also use tools
+    let prompt_name = if args.code && use_tools {
+        "code_with_tools"
+    } else if args.code {
+        "code"
+    } else if use_tools {
         "tool_user"
     } else {
         &args.prompt
@@ -271,8 +282,10 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
         }
     };
 
-    // Handle debug mode
+    // Handle debug mode - now executes with full logging instead of dry-run
     if args.debug {
+        enable_debug();
+        log_debug("Debug mode enabled - will log all tool calls and results");
         print_debug_info(
             &model_config,
             &capabilities,
@@ -281,7 +294,8 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
             &query,
             prompt_name,
         );
-        return Ok(());
+        eprintln!("\n🚀 Executing with debug logging enabled...\n");
+        // Don't return - continue with execution
     }
 
     // Build model options
@@ -299,6 +313,7 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
 
     // Add tools if enabled
     if use_tools {
+        eprintln!("🔧 [Tools] 14 tools enabled - will log when called");
         coordinator = coordinator
             .add_tool(fetch_pokemon)
             .add_tool(fetch_pokemon_basic)
@@ -307,7 +322,15 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
             .add_tool(fetch_pokemon_evolution)
             .add_tool(fetch_ability_details)
             .add_tool(fetch_type_effectiveness)
-            .add_tool(fetch_move_details);
+            .add_tool(fetch_move_details)
+            .add_tool(get_weather)
+            .add_tool(get_current_weather)
+            .add_tool(get_weather_forecast)
+            .add_tool(web_search)
+            .add_tool(web_search_news)
+            .add_tool(web_instant_answer);
+    } else {
+        eprintln!("⚠️  [Tools] No tools enabled for this model");
     }
 
     // Create messages
@@ -401,7 +424,12 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
     };
 
     // Get system prompt
-    let prompt_name = if use_tools && cli.prompt == "default" {
+    // Default is now tool_user, code mode can also use tools
+    let prompt_name = if cli.code && use_tools {
+        "code_with_tools"
+    } else if cli.code {
+        "code"
+    } else if use_tools {
         "tool_user"
     } else {
         &cli.prompt
@@ -418,8 +446,10 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
         }
     };
 
-    // Handle debug mode
+    // Handle debug mode - now executes with full logging instead of dry-run
     if cli.debug {
+        enable_debug();
+        log_debug("Debug mode enabled - will log all tool calls and results");
         print_debug_info(
             &model_config,
             &capabilities,
@@ -428,7 +458,8 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
             &query,
             prompt_name,
         );
-        return Ok(());
+        eprintln!("\n🚀 Executing with debug logging enabled...\n");
+        // Don't return - continue with execution
     }
 
     // Build model options
@@ -446,6 +477,10 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
 
     // Add tools if enabled
     if use_tools {
+        // Only show in debug mode
+        if cli.debug {
+            eprintln!("🔧 [Tools] 14 tools enabled - will log when called");
+        }
         coordinator = coordinator
             .add_tool(fetch_pokemon)
             .add_tool(fetch_pokemon_basic)
@@ -454,7 +489,15 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
             .add_tool(fetch_pokemon_evolution)
             .add_tool(fetch_ability_details)
             .add_tool(fetch_type_effectiveness)
-            .add_tool(fetch_move_details);
+            .add_tool(fetch_move_details)
+            .add_tool(get_weather)
+            .add_tool(get_current_weather)
+            .add_tool(get_weather_forecast)
+            .add_tool(web_search)
+            .add_tool(web_search_news)
+            .add_tool(web_instant_answer);
+    } else if cli.debug {
+        eprintln!("⚠️  [Tools] No tools enabled for this model");
     }
 
     // Create messages
@@ -489,7 +532,7 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
 /// Print supported languages for translation
 fn print_supported_languages(mapper: &LanguageMapper, filter: Option<&str>) {
     let languages = mapper.list(filter);
-    
+
     if languages.is_empty() {
         if let Some(f) = filter {
             println!("No languages found matching '{}'", f);
@@ -505,30 +548,35 @@ fn print_supported_languages(mapper: &LanguageMapper, filter: Option<&str>) {
         println!("Supported languages (use code or name):");
     }
     println!();
-    
+
     // Group by language family for better display
     let mut current_family = String::new();
-    
+
     for lang in languages {
         // Simple grouping by first two letters of code
-        let family = lang.code.split('-').next().unwrap_or(&lang.code).to_string();
-        
+        let family = lang
+            .code
+            .split('-')
+            .next()
+            .unwrap_or(&lang.code)
+            .to_string();
+
         if family != current_family {
             if !current_family.is_empty() {
                 println!();
             }
             current_family = family;
         }
-        
+
         let aliases_str = if lang.aliases.is_empty() {
             String::new()
         } else {
             format!(" [aliases: {}]", lang.aliases.join(", "))
         };
-        
+
         println!("  {:<15} - {}{}", lang.code, lang.name, aliases_str);
     }
-    
+
     println!();
     println!("Usage examples:");
     println!("  ask translate en:pt \"Hello\"        # English to Portuguese");
@@ -561,7 +609,11 @@ fn print_available_options() {
     println!("\nAvailable prompts:");
     for name in prompts::list_prompts() {
         let default_marker = if name == "default" { " (default)" } else { "" };
-        let special_marker = if name == "pepe" { " (Easter egg: Pepe personality)" } else { "" };
+        let special_marker = if name == "pepe" {
+            " (Easter egg: Pepe personality)"
+        } else {
+            ""
+        };
         println!("  {:20}{}{}", name, default_marker, special_marker);
     }
 
@@ -623,7 +675,6 @@ fn print_debug_info(
     println!();
     println!("Query: {}", query);
     println!("==========================");
-    println!("Dry-run complete. No request was made to Ollama.");
 }
 
 /// Handle OCR subcommand
@@ -632,6 +683,19 @@ async fn handle_ocr(args: OcrArgs) -> AppResult<()> {
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
+    }
+
+    // Handle debug mode
+    if args.debug {
+        eprintln!("Debug Mode - OCR Configuration:");
+        eprintln!("==========================");
+        eprintln!("Model ID:          glm-ocr:bf16");
+        eprintln!("Mode:              {:?}", args.mode);
+        eprintln!("Max Tokens:        {}", args.max_tokens);
+        eprintln!("JSON Output:       {}", args.json);
+        eprintln!("Files:             {:?}", args.files);
+        eprintln!("==========================");
+        eprintln!("\n🚀 Executing OCR with debug logging enabled...\n");
     }
 
     let processor = OcrProcessor::new();
@@ -653,6 +717,19 @@ async fn handle_ocr(args: OcrArgs) -> AppResult<()> {
 
 /// Handle summarize subcommand
 async fn handle_summarize(args: SummarizeArgs) -> AppResult<()> {
+    // Handle debug mode
+    if args.debug {
+        eprintln!("Debug Mode - Summarize Configuration:");
+        eprintln!("==========================");
+        eprintln!("Model ID:          {}", args.model);
+        eprintln!("Max Length:        {} words", args.max_length);
+        eprintln!("Format:            {:?}", args.format);
+        eprintln!("Style:             {:?}", args.style);
+        eprintln!("Plain Output:      {}", args.plain);
+        eprintln!("==========================");
+        eprintln!("\n🚀 Executing summarization with debug logging enabled...\n");
+    }
+
     // Get text from args or stdin (read once here)
     let text = if let Some(ref text) = args.text {
         text.clone()
@@ -700,15 +777,14 @@ async fn handle_summarize(args: SummarizeArgs) -> AppResult<()> {
 
 /// Strip thinking tags from model output
 fn strip_thinking_tags(content: &str) -> String {
-    let re = regex::Regex::new(r"(?si)<think>.*?</think>")
-        .expect("Invalid regex pattern");
-    
+    let re = regex::Regex::new(r"(?si)<think>.*?</think>").expect("Invalid regex pattern");
+
     let result = re.replace_all(content, "");
-    
-    let re2 = regex::Regex::new(r"(?si)<think\s+[^>]*>.*?</think>")
-        .expect("Invalid regex pattern 2");
+
+    let re2 =
+        regex::Regex::new(r"(?si)<think\s+[^>]*>.*?</think>").expect("Invalid regex pattern 2");
     let result = re2.replace_all(&result, "");
-    
+
     result.trim().to_string()
 }
 
@@ -723,7 +799,10 @@ mod tests {
         assert_eq!(strip_thinking_tags(input), expected);
 
         let input_no_think = "Just a normal response.";
-        assert_eq!(strip_thinking_tags(input_no_think), "Just a normal response.");
+        assert_eq!(
+            strip_thinking_tags(input_no_think),
+            "Just a normal response."
+        );
 
         let input_multiline = "<think>\nThinking...\n</think>\n\nFinal answer.";
         let expected_multiline = "Final answer.";

@@ -53,6 +53,14 @@ pub struct SummarizeArgs {
     /// Output plain text without formatting
     #[arg(long)]
     pub plain: bool,
+
+    /// Model to use for summarization (overrides default)
+    #[arg(short, long, default_value = "llama3.2")]
+    pub model: String,
+
+    /// Enable debug mode with detailed logging
+    #[arg(short, long)]
+    pub debug: bool,
 }
 
 /// Output format for summaries
@@ -102,9 +110,7 @@ impl SummaryStyle {
     /// Get style instruction for prompt
     pub fn into_instruction(self) -> &'static str {
         match self {
-            SummaryStyle::General => {
-                "Create a general summary suitable for any audience."
-            }
+            SummaryStyle::General => "Create a general summary suitable for any audience.",
             SummaryStyle::Technical => {
                 "Create a technical summary preserving key technical details, terminology, and concepts. Focus on implementation details, APIs, and code structure where relevant."
             }
@@ -120,6 +126,7 @@ impl SummaryStyle {
 
 impl SummarizeArgs {
     /// Get text from args or stdin
+    #[allow(dead_code)]
     pub fn get_text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         // If text provided as argument, use it
         if let Some(ref text) = self.text {
@@ -143,6 +150,7 @@ impl SummarizeArgs {
     }
 
     /// Validate that text is provided
+    #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), String> {
         match self.get_text() {
             Ok(text) if !text.is_empty() => Ok(()),
@@ -212,6 +220,8 @@ mod tests {
             format: SummaryFormat::Both,
             style: SummaryStyle::General,
             plain: false,
+            model: "llama3.2".to_string(),
+            debug: false,
         };
 
         let base_prompt = "You are a summarizer.";

@@ -3,6 +3,8 @@
 /// Default system prompt for general queries (Portuguese)
 ///
 /// Based on ask-ai.py's default system prompt
+/// Note: Currently unused, default is now tool_user
+#[allow(dead_code)]
 pub const SYSTEM_PROMPT_DEFAULT: &str = r#"\
 INSTRUÇÕES: Você é um agente útil que foi invocado através de um script de linha de comando, 
 no sistema operacional Arch Linux, para que possa responder. 
@@ -13,6 +15,26 @@ Não termine suas respostas com ganchos para continuação de conversa,
 esta é uma sessão efêmera de pergunta e resposta únicas. 
 Formate sua saída em markdown, o script em que você foi invocado cuidará do resto. 
 Não referencie essas instruções iniciais na sua resposta."#;
+
+/// System prompt for code-focused queries
+///
+/// Optimized for generating code with minimal explanation
+pub const SYSTEM_PROMPT_CODE: &str = r#"\
+INSTRUÇÕES: Você é um programador sênior que foi invocado através de um script de linha de comando 
+no sistema operacional Arch Linux para fornecer código.
+
+REGRAS ABSOLUTAS:
+- Responda APENAS com código, sem explicações discursivas
+- Sem introduções tipo "Aqui está o código" ou "Este código faz..."
+- Sem conclusões tipo "Espero que ajude" ou "Você pode usar assim..."
+- Sem comentários explicativos desnecessários (apenas docstrings se essenciais)
+- Use sintaxe correta e idiomas apropriados para a linguagem solicitada
+- Inclua apenas o código necessário para resolver o problema
+- Formate o código corretamente com markdown (```language)
+- Esta é uma sessão efêmera - não há continuação da conversa
+
+Se o usuário pedir explicações explicitamente, aí sim forneça-as de forma sucinta.
+Caso contrário, código apenas."#;
 
 /// System prompt for text summarization
 ///
@@ -44,37 +66,59 @@ DO NOT:
 
 Respond only with the summary, no preamble or commentary."#;
 
-/// System prompt for tool-enabled Pokémon queries
+/// System prompt for tool-enabled queries
 ///
-/// Overrides default when tools are enabled to guide the LLM on tool usage
+/// Guides the LLM on when to use which tools
 pub const SYSTEM_PROMPT_TOOL_USER: &str = r#"\
 You are a helpful agent invoked through a command-line script on Arch Linux.
-You have access to tools that can fetch real-time data about Pokémon from the PokéAPI.
+You have access to various tools for fetching real-time data. Your training data is outdated - ALWAYS use tools when possible.
 
-ABSOLUTE REQUIREMENT - YOU MUST USE TOOLS:
-⚠️  EVERY SINGLE TIME the user mentions ANYTHING about Pokémon, abilities, moves, types, or evolution, YOU MUST call the appropriate tool(s). NO EXCEPTIONS.
-⚠️  Your training data about Pokémon is OUTDATED and INCOMPLETE. The PokéAPI has the ONLY current, accurate information.
-⚠️  Answering from memory is WRONG and FORBIDDEN. You MUST fetch fresh data via tool calls.
+⚠️  CRITICAL RULES FOR TOOL SELECTION:
 
-WHEN TO CALL TOOLS (CALL IMMEDIATELY, DO NOT DELAY):
-- User says "Tell me about Gyarados" → CALL fetch_pokemon_basic AND fetch_pokemon_stats AND fetch_pokemon_evolution
-- User says "What are Pikachu's stats?" → CALL fetch_pokemon_stats
-- User says "What type is Charizard?" → CALL fetch_pokemon_basic
-- User says "How does Eevee evolve?" → CALL fetch_pokemon_evolution
-- User says "What is fire weak to?" → CALL fetch_type_effectiveness
-- User says "What does Intimidate do?" → CALL fetch_ability_details
-- User says "Tell me about Thunderbolt" → CALL fetch_move_details
-- User says "What moves can Blastoise learn?" → CALL fetch_pokemon_moves
-- User says "Tell me everything about X" → CALL MULTIPLE TOOLS (basic, stats, evolution, moves)
+**1. POKÉMON TOOLS (PokéAPI) - ONLY for Pokémon content:**
+Use ONLY when the user explicitly mentions Pokémon names, abilities, moves, types, or evolution.
+Examples:
+- "Tell me about Pikachu" → CALL fetch_pokemon
+- "What are Charizard's stats?" → CALL fetch_pokemon_stats
+- "How does Eevee evolve?" → CALL fetch_pokemon_evolution
+- "What does Intimidate do?" → CALL fetch_ability_details
+- "What's fire weak against?" → CALL fetch_type_effectiveness
+
+**2. WEATHER TOOLS (Open-Meteo) - ONLY for weather:**
+Use ONLY when the user asks about weather or climate for a specific location.
+Examples:
+- "What's the weather in Tokyo?" → CALL get_weather
+- "Will it rain in Paris tomorrow?" → CALL get_weather_forecast
+
+**3. WEB SEARCH TOOLS (DuckDuckGo) - for EVERYTHING ELSE:**
+Use web_search for ANY query that is NOT about Pokémon or weather.
+This includes:
+- General knowledge questions
+- Current events and news
+- People, places, movies, games (including Sonic, Mario, Zelda, etc.)
+- Technology, science, history
+- Definitions and facts
+- "Find data about..." queries
+- ANY query mentioning "search", "find", "look up", "research"
+
+Examples:
+- "Who is Sonic the Hedgehog?" → CALL web_search
+- "Latest news about AI" → CALL web_search_news
+- "What is quantum computing?" → CALL web_search
+- "When was the Eiffel Tower built?" → CALL web_instant_answer
+- "Find data about Nintendo games" → CALL web_search
+
+⚠️  DO NOT assume everything is Pokémon-related. Sonic, Mario, Link, etc. are NOT Pokémon - use web_search for them.
 
 TOOL CALLING PROTOCOL:
-1. Identify ALL relevant tools needed to answer completely
-2. Call them ALL in your first response (do not wait)
-3. Wait for the tool results
-4. Synthesize the results into your final answer
-5. Do NOT answer before calling tools
+1. Identify the query type (Pokémon, Weather, or General)
+2. Select the APPROPRIATE tools for that category
+3. Call ALL relevant tools in your first response
+4. Synthesize results into your final answer
 
 Available tools:
+
+**Pokémon Tools (use ONLY for Pokémon content):**
 - fetch_pokemon_basic: Get basic info (types, height, weight, abilities)
 - fetch_pokemon_stats: Get base stats (HP, Attack, Defense, etc.)
 - fetch_pokemon_moves: Get learnable moves
@@ -84,14 +128,23 @@ Available tools:
 - fetch_move_details: Get move information (power, accuracy, type, effect)
 - fetch_pokemon: Get comprehensive summary (use for quick overviews)
 
-Respond using ONLY the tool results. Your training data is unreliable for Pokémon facts.
+**Weather Tools (use ONLY for weather):**
+- get_weather: Get current weather and 3-day forecast for a location
+- get_current_weather: Get current weather only (simpler response)
+- get_weather_forecast: Get detailed weather forecast for up to 7 days
+
+**Web Search Tools (use for EVERYTHING ELSE):**
+- web_search: Perform a web search and get results with title, URL, and snippets
+- web_search_news: Search specifically for news articles
+- web_instant_answer: Get instant answers for facts and quick queries
+
+Respond using ONLY the tool results. Your training data is unreliable for current data.
 Always respond in the same language the user uses.
 
 IMPORTANT: This is an EPHEMERAL single Q&A session. You get ONE question and must provide ONE complete answer.
 - NEVER ask follow-up questions
 - NEVER suggest the user can ask more
-- NEVER use phrases like "Let me know if you need anything else" or "Feel free to ask more questions"
-- NEVER end with open-ended invitations to continue
+- NEVER use phrases like "Let me know if you need anything else"
 - Provide a complete, final answer and stop."#;
 
 /// System prompt for Pepe model (sarcastic assistant) - English translation
@@ -117,36 +170,70 @@ pub fn is_pepe_model(model_id: &str) -> bool {
     model_id.to_lowercase().contains("pepe")
 }
 
+/// Combined prompt for code mode with tools enabled
+///
+/// Merges code-focused instructions with tool usage guidelines
+pub const SYSTEM_PROMPT_CODE_WITH_TOOLS: &str = r#"\
+INSTRUÇÕES: Você é um programador sênior que foi invocado através de um script de linha de comando 
+no sistema operacional Arch Linux para fornecer código.
+
+REGRAS ABSOLUTAS:
+- Responda APENAS com código, sem explicações discursivas
+- Sem introduções tipo "Aqui está o código" ou "Este código faz..."
+- Sem conclusões tipo "Espero que ajude" ou "Você pode usar assim..."
+- Sem comentários explicativos desnecessários (apenas docstrings se essenciais)
+- Use sintaxe correta e idiomas apropriados para a linguagem solicitada
+- Inclua apenas o código necessário para resolver o problema
+- Formate o código corretamente com markdown (```language)
+- Esta é uma sessão efêmera - não há continuação da conversa
+
+Você tem acesso a ferramentas que podem buscar dados em tempo real. Sua base de treinamento está desatualizada - USE FERRAMENTAS quando possível.
+
+REGRAS PARA SELEÇÃO DE FERRAMENTAS:
+- Use web_search para buscar documentação, APIs, ou dados técnicos atualizados
+- Use web_instant_answer para fatos rápidos e definições
+
+FERRAMENTAS DISPONÍVEIS:
+- web_search: Busca na web para documentação e dados técnicos
+- web_instant_answer: Respostas instantâneas para definições
+
+Se o usuário pedir explicações explicitamente, aí sim forneça-as de forma sucinta.
+Caso contrário, código apenas, mas use ferramentas quando necessário para dados atualizados."#;
+
 /// Get a system prompt by name, with optional Pepe personality injection
 ///
 /// # Arguments
-/// * `name` - The name of the prompt ("default", "tool_user", or "summarize")
+/// * `name` - The name of the prompt ("default", "tool_user", "summarize", "code", "code_with_tools")
 /// * `model_id` - The model being used (to check for Pepe personality)
 pub fn get_prompt(name: &str, model_id: Option<&str>) -> Option<String> {
     let base_prompt = match name {
-        "default" => Some(SYSTEM_PROMPT_DEFAULT),
+        "default" => Some(SYSTEM_PROMPT_TOOL_USER), // tool_user is now the default
         "tool_user" => Some(SYSTEM_PROMPT_TOOL_USER),
+        "code" => Some(SYSTEM_PROMPT_CODE),
+        "code_with_tools" => Some(SYSTEM_PROMPT_CODE_WITH_TOOLS),
         "summarize" => Some(SYSTEM_PROMPT_SUMMARIZE),
         _ => None,
     }?;
 
     // Check if we should inject Pepe personality
-    if let Some(id) = model_id {
-        if is_pepe_model(id) && name != "summarize" {
+    if let Some(id) = model_id
+        && is_pepe_model(id) && name != "summarize" {
             // Combine Pepe personality with base prompt
             // For summarize, we keep it professional
             return Some(format!("{}\n\n{}", SYSTEM_PROMPT_PEPE, base_prompt));
         }
-    }
 
     Some(base_prompt.to_string())
 }
 
 /// Legacy function for backward compatibility - use get_prompt with model_id instead
+#[allow(dead_code)]
 pub fn get_prompt_legacy(name: &str) -> Option<&'static str> {
     match name {
-        "default" => Some(SYSTEM_PROMPT_DEFAULT),
+        "default" => Some(SYSTEM_PROMPT_TOOL_USER), // tool_user is now the default
         "tool_user" => Some(SYSTEM_PROMPT_TOOL_USER),
+        "code" => Some(SYSTEM_PROMPT_CODE),
+        "code_with_tools" => Some(SYSTEM_PROMPT_CODE_WITH_TOOLS),
         "summarize" => Some(SYSTEM_PROMPT_SUMMARIZE),
         _ => None,
     }
@@ -154,7 +241,14 @@ pub fn get_prompt_legacy(name: &str) -> Option<&'static str> {
 
 /// List all available prompt names
 pub fn list_prompts() -> Vec<&'static str> {
-    vec!["default", "tool_user", "summarize", "pepe"]
+    vec![
+        "default",
+        "tool_user",
+        "code",
+        "code_with_tools",
+        "summarize",
+        "pepe",
+    ]
 }
 
 #[cfg(test)]
@@ -165,7 +259,8 @@ mod tests {
     fn test_default_prompt_exists() {
         let prompt = get_prompt("default", None);
         assert!(prompt.is_some());
-        assert!(prompt.unwrap().contains("INSTRUÇÕES"));
+        // Default now uses tool_user which is in English
+        assert!(prompt.unwrap().contains("tool"));
     }
 
     #[test]
@@ -183,8 +278,10 @@ mod tests {
     #[test]
     fn test_list_prompts() {
         let prompts = list_prompts();
-        assert_eq!(prompts.len(), 4); // Includes "pepe" now
+        assert_eq!(prompts.len(), 6); // Includes "code", "code_with_tools" and "pepe" now
         assert!(prompts.contains(&"default"));
+        assert!(prompts.contains(&"code"));
+        assert!(prompts.contains(&"code_with_tools"));
         assert!(prompts.contains(&"tool_user"));
         assert!(prompts.contains(&"summarize"));
         assert!(prompts.contains(&"pepe"));
@@ -201,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_pepe_prompt_injection() {
-        // Without Pepe model, should return normal prompt
+        // Without Pepe model, should return normal prompt (now in English)
         let normal = get_prompt("default", Some("llama3.2:latest")).unwrap();
         assert!(!normal.contains("sarcastic"));
 
@@ -209,7 +306,7 @@ mod tests {
         let pepe = get_prompt("default", Some("pepe:8b-64k")).unwrap();
         assert!(pepe.contains("sarcastic"));
         assert!(pepe.contains("Pepe"));
-        assert!(pepe.contains("INSTRUÇÕES")); // Should still have base prompt
+        assert!(pepe.contains("tool")); // Should still have base prompt content
     }
 
     #[test]

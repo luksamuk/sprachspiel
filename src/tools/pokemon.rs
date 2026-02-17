@@ -1,3 +1,4 @@
+use crate::debug_tools::{log_tool_call, log_tool_result};
 use super::*;
 
 /// Fetch basic information about a Pokémon (name, types, height, weight, abilities).
@@ -5,7 +6,8 @@ use super::*;
 /// * pokemon_name - The name of the Pokémon in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
-
+    log_tool_call("fetch_pokemon_basic", &[("pokemon_name".to_string(), pokemon_name.clone())]);
+    
     let url = format!(
         "https://pokeapi.co/api/v2/pokemon/{}/",
         pokemon_name.to_lowercase()
@@ -13,7 +15,9 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
     let response = reqwest::get(&url).await?;
 
     if !response.status().is_success() {
-        return Ok(format!("Error: HTTP {}", response.status()));
+        let err = format!("Error: HTTP {}", response.status());
+        log_tool_result("fetch_pokemon_basic", &err);
+        return Ok(err);
     }
 
     let data: PokemonData = response.json().await?;
@@ -31,14 +35,16 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
     let height = data.height as f32 / 10.0; // decimeters to meters
     let weight = data.weight as f32 / 10.0; // hectograms to kg
 
-    Ok(format!(
+    let result = format!(
         "Name: {}\nTypes: {}\nHeight: {:.1}m\nWeight: {:.1}kg\nAbilities: {}",
         name,
         types.join(", "),
         height,
         weight,
         abilities.join(", ")
-    ))
+    );
+    log_tool_result("fetch_pokemon_basic", &result);
+    Ok(result)
 }
 
 /// Fetch base stats of a Pokémon (HP, Attack, Defense, etc.).
@@ -46,7 +52,8 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
 /// * pokemon_name - The name of the Pokémon in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
-
+    log_tool_call("fetch_pokemon_stats", &[("pokemon_name".to_string(), pokemon_name.clone())]);
+    
     let url = format!(
         "https://pokeapi.co/api/v2/pokemon/{}/",
         pokemon_name.to_lowercase()
@@ -67,7 +74,7 @@ pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
 
     let total: u32 = stats.values().sum();
 
-    Ok(format!(
+    let result = format!(
         "{} Base Stats:\nHP: {}\nAttack: {}\nDefense: {}\nSpecial Attack: {}\nSpecial Defense: {}\nSpeed: {}\nTotal: {}",
         name,
         stats.get("hp").unwrap_or(&0),
@@ -77,7 +84,9 @@ pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
         stats.get("special-defense").unwrap_or(&0),
         stats.get("speed").unwrap_or(&0),
         total
-    ))
+    );
+    log_tool_result("fetch_pokemon_stats", &result);
+    Ok(result)
 }
 
 /// Fetch moves that a Pokémon can learn.
@@ -86,7 +95,8 @@ pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
 /// * limit - Maximum number of moves to return (default 20).
 #[ollama_rs::function]
 pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult<String> {
-
+    log_tool_call("fetch_pokemon_moves", &[("pokemon_name".to_string(), pokemon_name.clone()), ("limit".to_string(), limit.to_string())]);
+    
     let url = format!(
         "https://pokeapi.co/api/v2/pokemon/{}/",
         pokemon_name.to_lowercase()
@@ -125,7 +135,6 @@ pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult
 /// * pokemon_name - The name of the Pokémon species in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String> {
-
     let species_url = format!(
         "https://pokeapi.co/api/v2/pokemon-species/{}/",
         pokemon_name.to_lowercase()
@@ -159,7 +168,6 @@ pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String>
 /// * ability_name - The name of the ability in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
-
     let url = format!(
         "https://pokeapi.co/api/v2/ability/{}/",
         ability_name.to_lowercase()
@@ -206,7 +214,6 @@ pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
 /// * type_name - The name of the type in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
-
     let url = format!(
         "https://pokeapi.co/api/v2/type/{}/",
         type_name.to_lowercase()
@@ -256,7 +263,6 @@ pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
 /// * move_name - The name of the move in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
-
     let url = format!(
         "https://pokeapi.co/api/v2/move/{}/",
         move_name.to_lowercase()
@@ -311,7 +317,6 @@ pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
 /// * pokemon_name - The name of the Pokémon in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_pokemon(pokemon_name: String) -> ToolResult<String> {
-
     let url = format!(
         "https://pokeapi.co/api/v2/pokemon/{}/",
         pokemon_name.to_lowercase()
