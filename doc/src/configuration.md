@@ -27,66 +27,144 @@ Ask-AI looks for the config file in this order:
 
 ```toml
 # Ask-AI Configuration File
-# Located at ~/.config/ask-ai/config.toml
+# Location: ~/.config/ask-ai/config.toml
+# 
+# This is a complete example configuration showing all available options.
+# Lines starting with '#' are comments and are ignored.
+# Remove the '#' to enable an option, or modify values as needed.
+# 
+# After editing, the configuration takes effect immediately on the next run.
+
+# =============================================================================
+# MODEL CONFIGURATION
+# =============================================================================
+# Configure which AI models to use for different tasks.
 
 [model]
-# Default model preset to use when none is specified
-# See available models with: ask-ai --list-models
+
+# The default model preset to use for general queries.
+# See all available models with: ask-ai --list-models
+# Default: "lfm"
 default = "lfm"
 
-# Ollama server connection settings
-# Default: localhost on port 11434
+# Ollama server connection settings.
+# Change these if your Ollama server is not running on the default localhost.
+# Default: "127.0.0.1"
 ollama_host = "127.0.0.1"
+# Default: 11434
 ollama_port = 11434
 
-# Per-subcommand model configuration (optional)
-# These override the default model for specific subcommands
-# Remove the section entirely to use the global default
+# -----------------------------------------------------------------------------
+# PER-SUBCOMMAND MODEL OVERRIDES (Optional)
+# -----------------------------------------------------------------------------
+# You can use different models for different subcommands.
+# This allows you to use lightweight models for simple tasks and 
+# powerful models for complex ones, optimizing for speed and cost.
 
+# --- QUERY SUBCOMMAND ---
 [model.query]
-# Model for 'ask query' subcommand
-model = "lfm"
-thinking = true
-tools = true
+# The model to use for 'ask query' or 'ask q'.
+# If not specified, falls back to the global [model] default.
+# model = "lfm"
 
+# Enable thinking mode for queries. Some models show their reasoning process.
+# If not specified, defaults to: true for query
+# thinking = true
+
+# Enable tool calling for queries (weather, file operations, etc.).
+# If not specified, defaults to: true for query
+# tools = true
+
+# --- SUMMARIZE SUBCOMMAND ---
 [model.summarize]
-# Model for 'ask summarize' subcommand
-model = "llama3.2"
-thinking = false
-tools = false
+# The model to use for 'ask summarize'.
+# Recommended: a lightweight model like llama3.2 for speed.
+# If not specified, falls back to the global [model] default.
+# model = "llama3.2"
 
+# Summarization typically doesn't need thinking mode.
+# If not specified, defaults to: false for summarize
+# thinking = false
+
+# Summarization doesn't use external tools.
+# If not specified, defaults to: false for summarize
+# tools = false
+
+# --- CODE MODE ---
 [model.code]
-# Model for code mode (-c flag or 'ask code')
-model = "deepseek-coder-v2"
-thinking = false
-tools = true
+# The model to use when the code flag (-c) is active.
+# Recommended: a code-optimized model like deepseek-coder-v2 or qwen3-coder.
+# If not specified, falls back to the global [model] default.
+# model = "deepseek-coder-v2"
+
+# Code generation typically doesn't need thinking mode.
+# If not specified, defaults to: false for code
+# thinking = false
+
+# Enable tool calling in code mode. This allows the model to inspect 
+# your project files (read_file, list_directory, search_files) before 
+# generating code, leading to more accurate suggestions.
+# If not specified, defaults to: true for code
+# tools = true
+
+# =============================================================================
+# TOOLS CONFIGURATION
+# =============================================================================
+# Control which AI tools are available and how they behave.
 
 [tools]
-# Tools to disable (blacklist)
-# Available tools: web_search, web_search_news, web_instant_answer,
-#   get_weather, get_current_weather, get_weather_forecast,
-#   fetch_pokemon, fetch_pokemon_basic, fetch_pokemon_stats,
-#   fetch_pokemon_moves, fetch_pokemon_evolution, fetch_ability_details,
-#   fetch_type_effectiveness, fetch_move_details,
-#   read_file, list_directory, search_files
-blacklist = ["web_search", "web_instant_answer"]
 
-# Sandboxing for file operations tools
-# When enabled, file tools can only access files in the current directory
-# and its subdirectories. Disable only if you understand the risks.
+# A list of tools to disable (blacklist).
+# Blacklisted tools won't be available to the AI, saving context window space.
+#
+# Available tools include:
+#   - web_search, web_search_news, web_instant_answer (Web search - BROKEN)
+#   - get_weather, get_current_weather, get_weather_forecast (Weather)
+#   - read_file, list_directory, search_files (File operations)
+#   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
+#
+# ⚠️  IMPORTANT: Web search tools are DISABLED BY DEFAULT ⚠️
+# They are currently blocked by DuckDuckGo CAPTCHA and do not work reliably.
+# Remove them from this list to experiment, but expect failures.
+# Default: ["web_search", "web_search_news", "web_instant_answer"]
+blacklist = ["web_search", "web_search_news", "web_instant_answer"]
+
+# Enable file operation sandboxing for security.
+# When true, file tools (read_file, list_directory, search_files) can only 
+# access files within the current working directory and its subdirectories.
+# This prevents the AI from accessing sensitive system files.
+# WARNING: Disable only if you fully trust the AI and understand the risks.
+# Default: true
 file_sandbox = true
 
+# =============================================================================
+# OUTPUT CONFIGURATION
+# =============================================================================
+# Control how responses are displayed.
+
 [output]
-# Use plain text output by default (no markdown rendering)
+
+# Use plain text output by default, disabling markdown rendering.
+# If true, responses will be plain text instead of formatted markdown.
+# Default: false
 plain_default = false
 
-# Enable debug output by default
-# Shows all tool calls, model parameters, and raw responses
+# Enable debug output by default.
+# If true, shows detailed logs including tool calls, model parameters,
+# and raw responses. Useful for troubleshooting.
+# Default: false
 debug_default = false
 
+# =============================================================================
+# DISPLAY CONFIGURATION
+# =============================================================================
+# Customize the terminal appearance.
+
 [display]
-# Terminal skin for markdown rendering
-# Options: dark, light, or mono
+
+# The color theme for markdown rendering.
+# Options: "dark", "light", or "mono" (for terminals without color)
+# Default: "dark"
 skin = "dark"
 ```
 
