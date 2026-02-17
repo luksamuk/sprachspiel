@@ -25,16 +25,17 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
 
     // gpt-oss: 20B parameters, 64K context
     // Source: hf.co/unsloth/gpt-oss-20b-GGUF:Q4_K_M
-    // Optimized for: General reasoning with high temperature for creativity
+    // Tool-optimized: Lower temperature for reliable JSON/tool output
+    // Note: GPT-OSS has reasoning effort (low/medium/high) separate from temperature
     configs.insert(
         "gpt-oss",
         ModelConfig {
             model_id: "gpt-oss:20b-64k".to_string(),
             num_ctx: 65535,
-            temperature: 1.0,    // High temp for creative reasoning
-            top_k: 0,            // Disabled (0 means off)
-            top_p: 1.0,          // Full sampling
-            repeat_penalty: 1.0, // Default
+            temperature: 0.2, // Lowered for tool reliability (was 1.0)
+            top_k: 40,        // Re-enabled for tool precision (was 0)
+            top_p: 0.9,       // Narrowed for structured output (was 1.0)
+            repeat_penalty: 1.0,
         },
     );
 
@@ -85,15 +86,16 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
 
     // qwen3-coder: 30B parameters (3.3B active), 64K context
     // Source: ollama.com/library/qwen3-coder
-    // Optimized for: Code generation and agentic coding tasks
+    // Tool-optimized: Lower temperature for reliable tool use (0.3 vs 0.7 for pure coding)
+    // Note: Qwen team recommends 0.7 for coding, 0.3 for agentic tool workflows
     configs.insert(
         "qwen3-coder",
         ModelConfig {
             model_id: "qwen3-coder:30b-64k".to_string(),
             num_ctx: 65536,
-            temperature: 0.7,
-            top_k: 20,   // Lower top_k for code precision
-            top_p: 0.80, // Narrow sampling for code
+            temperature: 0.3, // Lowered for tool reliability (was 0.7)
+            top_k: 20,        // Good for precision
+            top_p: 0.80,
             repeat_penalty: 1.05,
         },
     );
@@ -115,15 +117,15 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
 
     // glm-4.7-flash: 4.7B parameters, 64K context
     // Source: glm-4.7-flash:q4_K_M (GLM-4 variant)
-    // Optimized for: Fast inference with high temperature
+    // Tool-optimized: Lower temperature for reliable tool use
     configs.insert(
         "glm-4.7-flash",
         ModelConfig {
             model_id: "glm-4.7-flash:q4_K_M-64k".to_string(),
             num_ctx: 65536,
-            temperature: 0.7,
+            temperature: 0.3, // Lowered for tool reliability (was 0.7)
             top_k: 40,
-            top_p: 1.0, // Full top_p for diverse responses
+            top_p: 0.9, // Narrowed for structured output (was 1.0)
             repeat_penalty: 1.0,
         },
     );
