@@ -36,10 +36,10 @@ impl OcrMode {
     /// Get a description of this mode
     pub fn description(&self) -> &'static str {
         match self {
-            OcrMode::Text => "Extract general text content",
-            OcrMode::Table => "Extract tables preserving structure",
-            OcrMode::Figure => "Extract text from figures and diagrams",
-            OcrMode::Formula => "Extract mathematical formulas in LaTeX",
+            OcrMode::Text => "text",
+            OcrMode::Table => "tables",
+            OcrMode::Figure => "figures",
+            OcrMode::Formula => "formulas",
         }
     }
 }
