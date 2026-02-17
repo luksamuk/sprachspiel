@@ -41,6 +41,196 @@ This document outlines planned features and the current state of Ask-AI.
    - Priority: Medium
    - Workaround: Use mistral-small or pepe models
 
+---
+
+## Pre-Phase Research & Configuration Improvements
+
+### 1. Enhanced Configuration System
+
+**Priority:** High
+
+**Problem:** Current configuration only supports a single default model. Users need per-subcommand model configuration.
+
+**Research needed:**
+- Design config structure for per-subcommand defaults
+- Model settings per subcommand (query, summarize, ocr, translate)
+- Per-subcommand thinking mode toggle
+- Per-subcommand tool enable/disable
+
+**Proposed config structure:**
+```toml
+[model]
+# Global default (used by query subcommand)
+default = "lfm"
+
+[model.query]
+default = "lfm"
+thinking = true
+
+[model.summarize]
+default = "llama3.2"
+thinking = false
+
+[model.ocr]
+# Fixed to glm-ocr - not configurable
+# (ocr uses vision model with specific requirements)
+
+[model.translate]
+# Fixed to translategemma - not configurable
+# (translate uses specialized translation model)
+
+[model.code]
+default = "devstral-small"
+thinking = false
+tools = false  # Code mode usually doesn't need tools
+
+[ollama]
+host = "127.0.0.1"
+port = 11434
+```
+
+**Tasks:**
+- [ ] Design enhanced config schema
+- [ ] Update Settings struct to support per-subcommand configs
+- [ ] Update each subcommand handler to use respective config
+- [ ] Document new configuration options
+- [ ] Test backward compatibility
+
+### 2. Code Mode Improvements
+
+**Priority:** High
+
+**Problem:** Developers need quick, code-focused responses for command-line tasks.
+
+**Current state:**
+- `-c` / `--code` flag exists
+- Uses "code" or "code_with_tools" prompt
+- No dedicated code-optimized model default
+
+**Research needed:**
+- Evaluate `devstral-small` as default code model
+- Analyze current code prompt effectiveness
+- Compare with `qwen3-coder` model
+- Test code mode with/without tools
+
+**Reference usage (from ask-ai.py):**
+```bash
+ask-ai -m devstral-small-2 "Como eu faço para mostrar a saída do comando 'ollama list', porém ignorando a primeira linha e pegando todos os dados da primeira coluna, e depois repassar cada um dos nomes de modelos recuperados para 'ollama show'?"
+```
+
+Expected output: Just the code, minimal explanation.
+
+**Tasks:**
+- [ ] Research: List available models for code tasks
+- [ ] Research: Run `llm-checker recommend` for code model suggestions
+- [ ] Research: Test `devstral-small` for code queries
+- [ ] Research: Test `qwen3-coder` for code queries
+- [ ] Design: Optimized code mode prompt
+- [ ] Implement: Code mode as proper subcommand or enhanced flag
+- [ ] Implement: Per-session model selection for code
+- [ ] Document: Code mode usage and best practices
+
+### 3. Model Research for Code Tasks
+
+**Models to evaluate:**
+
+| Model | Purpose | Notes |
+|-------|---------|-------|
+| `devstral-small` | Code generation | Primary candidate for code mode default |
+| `devstral-small-2` | Code generation | Newer version, user's favorite |
+| `qwen3-coder` | Code generation | Alternative code model |
+
+**Research tasks:**
+- [ ] Run `llm-checker recommend` for code model suggestions
+- [ ] Run `ollama list` to see installed models
+- [ ] Test each model with code queries
+- [ ] Measure response quality and speed
+- [ ] Determine best default for code mode
+- [ ] Add recommended model to modelfiles/ if not present
+
+### 4. Implementation Order
+
+```
+1. Research Phase
+   ├── List available models (ollama list, llm-checker recommend)
+   ├── Test code models (devstral-small, qwen3-coder)
+   ├── Evaluate current code prompt
+   └── Design config schema
+
+2. Configuration Phase
+   ├── Implement enhanced Settings struct
+   ├── Add per-subcommand model config
+   ├── Update subcommand handlers
+   └── Test configuration loading
+
+3. Code Mode Phase
+   ├── Implement code subcommand (or enhance flag)
+   ├── Set devstral-small as default (if research confirms)
+   ├── Optimize code prompt
+   └── Test code-only workflows
+
+4. Documentation Phase
+   ├── Update configuration.md
+   ├── Update tools.md (if code mode behavior changes)
+   ├── Add code mode examples
+   └── Update man page
+```
+
+---
+
+## Phase 0: Code Mode Enhancement ✅ RESEARCH COMPLETE
+
+**Status:** Research completed, ready for implementation  
+**Priority:** High  
+**Document:** [code_mode_research.md](./code_mode_research.md)
+
+### Summary
+
+Completed comprehensive research on code mode improvements, including model evaluation, system prompt optimization, and tool integration strategy.
+
+### Key Findings
+
+**Winner:** deepseek-coder-v2:16b-32k
+- **7.5x faster** than devstral-small-2:24b-64k (2.6s vs 19.6s)
+- MoE architecture (16B total, 2.4B active params)
+- Superior code generation quality
+- Recommended as default for code mode
+
+### Implementation Tasks
+
+**Phase 0.1: Configuration System Enhancement**
+- [ ] Extend Settings struct for per-subcommand model config
+- [ ] Add `[model.code]` section to config
+- [ ] Set deepseek-coder-v2:16b-32k as default for code mode
+- [ ] Support tool enable/disable per subcommand
+
+**Phase 0.2: Model Integration**
+- [ ] Add deepseek-coder-v2:16b-32k to src/config.rs
+- [ ] Create optimized modelfile (✅ Already done)
+- [ ] Add to modelfiles/Makefile (✅ Already done)
+- [ ] Test with and without tools
+
+**Phase 0.3: Tool-Enhanced Code Mode**
+- [ ] Implement SYSTEM_PROMPT_CODE_WITH_TOOLS
+- [ ] Dynamic prompt injection based on blacklist
+- [ ] File operations integration (list_directory, read_file, search_files)
+- [ ] Automatic fallback when tools are blacklisted
+
+**Phase 0.4: Documentation**
+- [ ] Update doc/src/configuration.md
+- [ ] Update doc/src/models.md
+- [ ] Add code mode examples
+- [ ] Update man page
+
+### Notes
+
+- System prompts must respect blacklist - blacklisted tools don't appear in prompts
+- Code mode with tools uses file operations for context-aware code generation
+- Configuration schema designed for backward compatibility
+- See full research document for detailed findings
+
+---
+
 ## Planned Features
 
 ### Phase 1: Core Stability

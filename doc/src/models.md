@@ -11,6 +11,7 @@ Ask-AI supports multiple model presets optimized for different tasks. Each prese
 | mistral-small | mistral-small3.2:24b-32k | 32K | Agentic tasks |
 | smollm3 | smollm3:Q8_0-64k | 64K | Edge deployment |
 | sead | sead:14b-32k | 32K | General purpose |
+| **deepseek-coder-v2** | deepseek-coder-v2:16b-32k | 32K | **Code generation (recommended)** |
 | qwen3-coder | qwen3-coder:30b-64k | 64K | Code generation |
 | devstral-small-2 | devstral-small-2:24b-64k | 64K | Coding with min_p |
 | llama3.2 | llama3.2:3b-32k | 32K | Summarization |

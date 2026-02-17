@@ -115,6 +115,23 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
         },
     );
 
+    // deepseek-coder-v2: 16B parameters, 32K context
+    // Source: deepseek-coder-v2:16b (MoE architecture)
+    // Optimized for: Code generation with minimal explanation
+    // MoE: 16B total, 2.4B active params per token
+    // 7.5x faster than devstral-small-2 for code queries
+    configs.insert(
+        "deepseek-coder-v2",
+        ModelConfig {
+            model_id: "deepseek-coder-v2:16b-32k".to_string(),
+            num_ctx: 32768,
+            temperature: 0.15, // Low for deterministic code
+            top_k: 40,
+            top_p: 0.85,
+            repeat_penalty: 1.05,
+        },
+    );
+
     // llama3.2: 3B parameters, 32K context (DEFAULT for summarization)
     // Source: llama3.2:3b with 32K context via modelfile
     // Optimized for: Fast summarization and general tasks with tool support
@@ -254,20 +271,21 @@ impl ModelConfig {
     /// List all available model names
     pub fn list_names() -> Vec<&'static str> {
         vec![
-            "lfm",              // Default - LFM 2.5 Thinking
-            "gpt-oss",          // GPT-OSS 20B
-            "mistral-small",    // Mistral Small 3.2 24B
-            "smollm3",          // SmolLM3 3B Q8_0
-            "sead",             // SEAD 14B
-            "qwen3-coder",      // Qwen3 Coder 30B
-            "devstral-small-2", // Devstral 24B
-            "llama3.2",         // Llama 3.2 3B (default for summarization)
-            "glm-5",            // GLM-5 744B cloud model
-            "kimi-k2.5",        // Kimi K2.5 256K cloud model
-            "minimax-m2.5",     // MiniMax M2.5 198K cloud model
-            "qwen3.5",          // Qwen3.5 397B 256K cloud model
-            "translate",        // TranslateGemma 12B
-            "pepe",             // Assistant Pepe 8B
+            "lfm",               // Default - LFM 2.5 Thinking
+            "gpt-oss",           // GPT-OSS 20B
+            "mistral-small",     // Mistral Small 3.2 24B
+            "smollm3",           // SmolLM3 3B Q8_0
+            "sead",              // SEAD 14B
+            "qwen3-coder",       // Qwen3 Coder 30B
+            "devstral-small-2",  // Devstral 24B
+            "deepseek-coder-v2", // DeepSeek Coder V2 16B (MoE, default for code)
+            "llama3.2",          // Llama 3.2 3B (default for summarization)
+            "glm-5",             // GLM-5 744B cloud model
+            "kimi-k2.5",         // Kimi K2.5 256K cloud model
+            "minimax-m2.5",      // MiniMax M2.5 198K cloud model
+            "qwen3.5",           // Qwen3.5 397B 256K cloud model
+            "translate",         // TranslateGemma 12B
+            "pepe",              // Assistant Pepe 8B
         ]
     }
 

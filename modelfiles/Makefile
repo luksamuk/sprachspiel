@@ -2,7 +2,7 @@
         lfm translategemma llama3.2 glm-ocr \
         mistral-small gpt-oss qwen3-coder pepe \
         devstral-small-2 smollm3 sead zephyr llava \
-        glm-4.7-flash qwen3-coder-next \
+        glm-4.7-flash qwen3-coder-next deepseek-coder-v2 \
         cloud-glm-5 cloud-kimi cloud-minimax cloud-qwen35
 
 # Default target - show help
@@ -30,6 +30,7 @@ help:
 	@echo "  make qwen3-coder         - Qwen3 Coder 30B (code generation)"
 	@echo "  make pepe                - Assistant Pepe 8B (character)"
 	@echo "  make devstral-small-2    - Devstral 24B (coding)"
+	@echo "  make deepseek-coder-v2   - DeepSeek Coder V2 16B (MoE code model)"
 	@echo "  make smollm3             - SmolLM3 3B (lightweight)"
 	@echo "  make sead                - SEAD 14B (general purpose)"
 	@echo "  make zephyr              - Zephyr 7B (general)"
@@ -141,6 +142,10 @@ pepe:
 # Devstral Small 2 - Coding with min_p
 devstral-small-2:
 	$(call BUILD,devstral-small-2:24b-64k,devstral-small-2.modelfile)
+
+# DeepSeek Coder V2 - MoE code model (16B total, 2.4B active)
+deepseek-coder-v2:
+	$(call BUILD,deepseek-coder-v2:16b-32k,deepseek-coder-v2.modelfile)
 
 # SmolLM3 - Lightweight model
 smollm3:
