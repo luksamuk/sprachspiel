@@ -1,5 +1,8 @@
 /target
 
+# mdBook generated files
+doc/book/
+
 # Vim temporary files
 *~
 .*.swp
