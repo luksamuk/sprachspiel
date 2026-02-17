@@ -26,6 +26,10 @@ pub enum Commands {
     /// Summarize text using AI
     #[command(visible_alias = "sum")]
     Summarize(SummarizeArgs),
+
+    /// Generate shell completions
+    #[command(about = "Generate shell completions for ask-ai")]
+    Completion(CompletionArgs),
 }
 
 /// Arguments for the translate subcommand
@@ -177,6 +181,27 @@ impl TranslateArgs {
 
         Ok(())
     }
+}
+
+use clap::ValueEnum;
+
+/// Shell types for completion generation
+#[derive(ValueEnum, Clone, Debug)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+    PowerShell,
+    Elvish,
+}
+
+/// Arguments for shell completion generation
+#[derive(Args, Debug)]
+#[command(about = "Generate shell completions")]
+pub struct CompletionArgs {
+    /// Shell to generate completions for
+    #[arg(value_enum)]
+    pub shell: Shell,
 }
 
 impl QueryArgs {

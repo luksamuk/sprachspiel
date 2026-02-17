@@ -30,8 +30,8 @@ use crate::spinner::create_spinner;
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::tools::*;
 use crate::translate::{
-    Commands, LanguageMapper, QueryArgs, TranslateArgs, TranslationStyle, build_translation_prompt,
-    parse_language_pair,
+    Commands, CompletionArgs, LanguageMapper, QueryArgs, TranslateArgs, TranslationStyle, build_translation_prompt,
+    parse_language_pair, Shell,
 };
 
 /// Type alias for common Result type
@@ -99,6 +99,7 @@ async fn main() -> AppResult<()> {
             Commands::Query(args) => return handle_query(args).await,
             Commands::Ocr(args) => return handle_ocr(args).await,
             Commands::Summarize(args) => return handle_summarize(args).await,
+            Commands::Completion(args) => return handle_completion(args),
         }
     }
 
@@ -786,6 +787,35 @@ fn strip_thinking_tags(content: &str) -> String {
     let result = re2.replace_all(&result, "");
 
     result.trim().to_string()
+}
+
+/// Handle completion subcommand
+fn handle_completion(args: CompletionArgs) -> AppResult<()> {
+    use clap::CommandFactory;
+    use std::io::stdout;
+
+    let cmd = Cli::command();
+    let name = cmd.get_name().to_string();
+
+    match args.shell {
+        Shell::Bash => {
+            clap_complete::generate(clap_complete::Shell::Bash, &mut cmd.clone(), &name, &mut stdout())
+        }
+        Shell::Zsh => {
+            clap_complete::generate(clap_complete::Shell::Zsh, &mut cmd.clone(), &name, &mut stdout())
+        }
+        Shell::Fish => {
+            clap_complete::generate(clap_complete::Shell::Fish, &mut cmd.clone(), &name, &mut stdout())
+        }
+        Shell::PowerShell => {
+            clap_complete::generate(clap_complete::Shell::PowerShell, &mut cmd.clone(), &name, &mut stdout())
+        }
+        Shell::Elvish => {
+            clap_complete::generate(clap_complete::Shell::Elvish, &mut cmd.clone(), &name, &mut stdout())
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

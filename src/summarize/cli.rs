@@ -55,7 +55,7 @@ pub struct SummarizeArgs {
     pub plain: bool,
 
     /// Model to use for summarization (overrides default)
-    #[arg(short, long, default_value = "llama3.2")]
+    #[arg(short = 'M', long, default_value = "llama3.2")]
     pub model: String,
 
     /// Enable debug mode with detailed logging

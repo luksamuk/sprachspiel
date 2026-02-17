@@ -280,18 +280,26 @@ ollama rm $(ollama list | awk 'NR>1 {print $1}')
 
 ### Shell Completion (Optional)
 
-Add shell completions for your shell:
+Generate shell completions using the built-in `completion` subcommand:
 
 ```bash
 # Bash
-ask-ai --generate-completion bash > /etc/bash_completion.d/ask-ai
+ask-ai completion bash > /etc/bash_completion.d/ask-ai
 
 # Zsh
-ask-ai --generate-completion zsh > /usr/local/share/zsh/site-functions/_ask-ai
+ask-ai completion zsh > /usr/local/share/zsh/site-functions/_ask-ai
 
 # Fish
-ask-ai --generate-completion fish > ~/.config/fish/completions/ask-ai.fish
+ask-ai completion fish > ~/.config/fish/completions/ask-ai.fish
+
+# PowerShell
+ask-ai completion powershell
+
+# Elvish
+ask-ai completion elvish
 ```
+
+Supported shells: `bash`, `zsh`, `fish`, `powershell`, `elvish`
 
 ### Environment Variables
 
