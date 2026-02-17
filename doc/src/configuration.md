@@ -39,6 +39,28 @@ default = "lfm"
 ollama_host = "127.0.0.1"
 ollama_port = 11434
 
+# Per-subcommand model configuration (optional)
+# These override the default model for specific subcommands
+# Remove the section entirely to use the global default
+
+[model.query]
+# Model for 'ask query' subcommand
+model = "lfm"
+thinking = true
+tools = true
+
+[model.summarize]
+# Model for 'ask summarize' subcommand
+model = "llama3.2"
+thinking = false
+tools = false
+
+[model.code]
+# Model for code mode (-c flag or 'ask code')
+model = "deepseek-coder-v2"
+thinking = false
+tools = true
+
 [tools]
 # Tools to disable (blacklist)
 # Available tools: web_search, web_search_news, web_instant_answer,
@@ -93,6 +115,63 @@ Or use environment variables:
 ```bash
 export OLLAMA_HOST="192.168.1.100:11434"
 ```
+
+## Per-Subcommand Configuration
+
+You can configure different models for different subcommands. This allows you to use lightweight models for simple tasks and powerful models for complex ones.
+
+### Available Subcommand Sections
+
+- `[model.query]` - Configuration for `ask query` (or `ask q`)
+- `[model.summarize]` - Configuration for `ask summarize`
+- `[model.code]` - Configuration for code mode (`ask query -c`)
+
+### Example Configuration
+
+```toml
+[model]
+# Global default (fallback)
+default = "lfm"
+
+[model.query]
+# Use LFM for general queries
+model = "lfm"
+thinking = true
+tools = true
+
+[model.summarize]
+# Use lightweight model for summarization
+model = "llama3.2"
+thinking = false
+tools = false
+
+[model.code]
+# Use code-optimized model for programming tasks
+model = "deepseek-coder-v2"
+thinking = false
+tools = true
+```
+
+### Configuration Precedence
+
+For subcommands, the priority is:
+
+1. **Command-line arguments** - e.g., `-m gpt-oss` overrides everything
+2. **Subcommand-specific config** - e.g., `[model.code]` settings
+3. **Global default** - from `[model]` section
+
+Example: If you run `ask query -c "function"` with the above config:
+- It will use `deepseek-coder-v2` (from `[model.code]`)
+- Not `lfm` (global default)
+- Unless you explicitly use `-m gpt-oss` (CLI argument)
+
+### Options
+
+Each subcommand section supports:
+
+- `model` - Model preset name (optional, uses global default if not set)
+- `thinking` - Enable think mode (optional, defaults: true for query, false for others)
+- `tools` - Enable tools (optional, defaults: true for query/code, false for summarize)
 
 ## Tool Configuration
 

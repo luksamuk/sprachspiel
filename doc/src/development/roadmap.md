@@ -89,12 +89,15 @@ host = "127.0.0.1"
 port = 11434
 ```
 
+**Status:** ✅ COMPLETED (Feb 2026)
+
 **Tasks:**
-- [ ] Design enhanced config schema
-- [ ] Update Settings struct to support per-subcommand configs
-- [ ] Update each subcommand handler to use respective config
-- [ ] Document new configuration options
-- [ ] Test backward compatibility
+- [x] Design enhanced config schema
+- [x] Update Settings struct to support per-subcommand configs
+- [x] Update query handler to use respective config
+- [x] Document new configuration options
+- [x] Test backward compatibility
+- [ ] Extend to summarize handler (Phase 1.1)
 
 ### 2. Code Mode Improvements
 
@@ -121,13 +124,14 @@ ask-ai -m devstral-small-2 "Como eu faço para mostrar a saída do comando 'olla
 Expected output: Just the code, minimal explanation.
 
 **Tasks:**
-- [ ] Research: List available models for code tasks
-- [ ] Research: Run `llm-checker recommend` for code model suggestions
-- [ ] Research: Test `devstral-small` for code queries
-- [ ] Research: Test `qwen3-coder` for code queries
-- [ ] Design: Optimized code mode prompt
-- [ ] Implement: Code mode as proper subcommand or enhanced flag
-- [ ] Implement: Per-session model selection for code
+- [x] Research: List available models for code tasks
+- [x] Research: Run `llm-checker recommend` for code model suggestions
+- [x] Research: Test `devstral-small` for code queries
+- [x] Research: Test `qwen3-coder` for code queries
+- [x] Research: Test `deepseek-coder-v2` for code queries (WINNER!)
+- [x] Design: Optimized code mode prompt
+- [x] Implement: Code mode with per-subcommand config
+- [x] Implement: Per-subcommand model selection for code
 - [ ] Document: Code mode usage and best practices
 
 ### 3. Model Research for Code Tasks
@@ -140,13 +144,20 @@ Expected output: Just the code, minimal explanation.
 | `devstral-small-2` | Code generation | Newer version, user's favorite |
 | `qwen3-coder` | Code generation | Alternative code model |
 
+**Status:** ✅ COMPLETED (Feb 2026)
+
+**Results:**
+- **Winner:** deepseek-coder-v2:16b-32k (7.5x faster than devstral-small-2)
+- **Runner-up:** devstral-small-2:24b-64k (more robust but 19.6s vs 2.6s)
+- **Decision:** Use deepseek-coder-v2 as default for code mode
+
 **Research tasks:**
-- [ ] Run `llm-checker recommend` for code model suggestions
-- [ ] Run `ollama list` to see installed models
-- [ ] Test each model with code queries
-- [ ] Measure response quality and speed
-- [ ] Determine best default for code mode
-- [ ] Add recommended model to modelfiles/ if not present
+- [x] Run `llm-checker recommend` for code model suggestions
+- [x] Run `ollama list` to see installed models
+- [x] Test each model with code queries
+- [x] Measure response quality and speed
+- [x] Determine best default for code mode
+- [x] Add recommended model to modelfiles/ (✅ Done)
 
 ### 4. Implementation Order
 
@@ -198,25 +209,25 @@ Completed comprehensive research on code mode improvements, including model eval
 
 ### Implementation Tasks
 
-**Phase 0.1: Configuration System Enhancement**
-- [ ] Extend Settings struct for per-subcommand model config
-- [ ] Add `[model.code]` section to config
-- [ ] Set deepseek-coder-v2:16b-32k as default for code mode
-- [ ] Support tool enable/disable per subcommand
+**Phase 0.1: Configuration System Enhancement** ✅ COMPLETED
+- [x] Extend Settings struct for per-subcommand model config
+- [x] Add `[model.code]` section to config
+- [x] Set deepseek-coder-v2:16b-32k as default for code mode
+- [x] Support tool enable/disable per subcommand
 
-**Phase 0.2: Model Integration**
-- [ ] Add deepseek-coder-v2:16b-32k to src/config.rs
-- [ ] Create optimized modelfile (✅ Already done)
-- [ ] Add to modelfiles/Makefile (✅ Already done)
-- [ ] Test with and without tools
+**Phase 0.2: Model Integration** ✅ COMPLETED
+- [x] Add deepseek-coder-v2:16b-32k to src/config.rs
+- [x] Create optimized modelfile (✅ Already done)
+- [x] Add to modelfiles/Makefile (✅ Already done)
+- [x] Test with and without tools
 
-**Phase 0.3: Tool-Enhanced Code Mode**
-- [ ] Implement SYSTEM_PROMPT_CODE_WITH_TOOLS
-- [ ] Dynamic prompt injection based on blacklist
-- [ ] File operations integration (list_directory, read_file, search_files)
-- [ ] Automatic fallback when tools are blacklisted
+**Phase 0.3: Tool-Enhanced Code Mode** ✅ COMPLETED
+- [x] Implement SYSTEM_PROMPT_CODE_WITH_TOOLS
+- [x] Dynamic prompt injection based on blacklist
+- [x] File operations integration (list_directory, read_file, search_files)
+- [x] Automatic fallback when tools are blacklisted
 
-**Phase 0.4: Documentation**
+**Phase 0.4: Documentation** ⏳ IN PROGRESS
 - [ ] Update doc/src/configuration.md
 - [ ] Update doc/src/models.md
 - [ ] Add code mode examples
