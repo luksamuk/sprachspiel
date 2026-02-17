@@ -1,0 +1,10 @@
+/target
+
+# Vim temporary files
+*~
+.*.swp
+.*.swo
+
+# Emacs temporary files
+\#*\#
+.#*
