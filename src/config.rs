@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn test_all_models_exist() {
         let names = ModelConfig::list_names();
-        assert_eq!(names.len(), 14);
+        assert_eq!(names.len(), 15); // Updated from 14 to 15 (added deepseek-coder-v2)
 
         for name in names {
             assert!(ModelConfig::is_valid(name), "Model {} should exist", name);

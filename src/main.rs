@@ -260,9 +260,19 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         std::process::exit(1);
     }
 
-    // Get model configuration - use from args or default from settings
-    let model_name = if args.model == "lfm" && settings.model.default != "lfm" {
-        // User didn't specify a model explicitly, use settings default
+    // Get subcommand configuration from settings
+    let (subcommand_model, subcommand_thinking, subcommand_tools) = 
+        settings.get_subcommand_config("query");
+    
+    // Get model configuration - CLI arg overrides subcommand config
+    let model_name = if args.model != "lfm" {
+        // User specified model via CLI
+        args.model.clone()
+    } else if !subcommand_model.is_empty() && subcommand_model != "lfm" {
+        // Use subcommand-specific model from config
+        subcommand_model
+    } else if settings.model.default != "lfm" {
+        // Use global default from settings
         settings.model.default.clone()
     } else {
         args.model.clone()
@@ -304,19 +314,23 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     };
 
     // Determine if tools should be enabled
-    let use_tools = args.tools || capabilities.tools;
+    // CLI flag overrides subcommand config
+    let use_tools = args.tools || (subcommand_tools && capabilities.tools);
 
     // Determine if think mode should be enabled
-    let use_think = if args.think && capabilities.thinking {
-        true
-    } else if args.think && !capabilities.thinking {
-        eprintln!(
-            "Warning: Model '{}' does not support think mode. Ignoring -t flag.",
-            model_config.model_id
-        );
-        false
+    // CLI flag overrides subcommand config
+    let use_think = if args.think {
+        if capabilities.thinking {
+            true
+        } else {
+            eprintln!(
+                "Warning: Model '{}' does not support think mode. Ignoring -t flag.",
+                model_config.model_id
+            );
+            false
+        }
     } else {
-        false
+        subcommand_thinking && capabilities.thinking
     };
 
     // Get system prompt with blacklist filtering

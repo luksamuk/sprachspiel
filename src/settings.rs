@@ -28,10 +28,10 @@ pub struct Settings {
     pub display: DisplaySettings,
 }
 
-/// Model-related settings
+/// Model-related settings with per-subcommand configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelSettings {
-    /// Default model preset name
+    /// Default model preset name (used by query subcommand if not specified)
     #[serde(default = "default_model")]
     pub default: String,
     /// Ollama host address
@@ -40,6 +40,37 @@ pub struct ModelSettings {
     /// Ollama port
     #[serde(default = "default_ollama_port")]
     pub ollama_port: u16,
+    /// Per-subcommand model configurations
+    #[serde(default)]
+    pub query: SubcommandModelConfig,
+    #[serde(default)]
+    pub summarize: SubcommandModelConfig,
+    #[serde(default)]
+    pub code: SubcommandModelConfig,
+}
+
+/// Model configuration for a specific subcommand
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubcommandModelConfig {
+    /// Model preset name for this subcommand
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Enable thinking mode for this subcommand
+    #[serde(default)]
+    pub thinking: Option<bool>,
+    /// Enable tools for this subcommand
+    #[serde(default)]
+    pub tools: Option<bool>,
+}
+
+impl Default for SubcommandModelConfig {
+    fn default() -> Self {
+        SubcommandModelConfig {
+            model: None,
+            thinking: None,
+            tools: None,
+        }
+    }
 }
 
 /// Tool-related settings
@@ -87,6 +118,9 @@ impl Default for ModelSettings {
             default: default_model(),
             ollama_host: default_ollama_host(),
             ollama_port: default_ollama_port(),
+            query: SubcommandModelConfig::default(),
+            summarize: SubcommandModelConfig::default(),
+            code: SubcommandModelConfig::default(),
         }
     }
 }
@@ -193,6 +227,43 @@ impl Settings {
         self.tools.blacklist.iter().any(|b| b == tool_name)
     }
 
+    /// Get model configuration for a specific subcommand
+    /// Returns (model_name, thinking_enabled, tools_enabled)
+    pub fn get_subcommand_config(&self, subcommand: &str) -> (String, bool, bool) {
+        let subcommand_config = match subcommand {
+            "query" => &self.model.query,
+            "summarize" => &self.model.summarize,
+            "code" => &self.model.code,
+            _ => &SubcommandModelConfig::default(),
+        };
+
+        // Get model: subcommand specific -> global default
+        let model = subcommand_config
+            .model
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| self.model.default.clone());
+
+        // Get thinking: subcommand specific -> default (true for query, false for others)
+        let default_thinking = match subcommand {
+            "query" => true,
+            "code" => false,
+            _ => false,
+        };
+        let thinking = subcommand_config.thinking.unwrap_or(default_thinking);
+
+        // Get tools: subcommand specific -> default (true for query/code with tools, false for summarize)
+        let default_tools = match subcommand {
+            "query" => true,
+            "code" => true,
+            "summarize" => false,
+            _ => true,
+        };
+        let tools = subcommand_config.tools.unwrap_or(default_tools);
+
+        (model, thinking, tools)
+    }
+
     /// Create a sample config file if it doesn't exist
     pub fn create_sample_config() -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
         let config_dir = Self::config_dir().ok_or("Could not determine config directory")?;
@@ -214,6 +285,30 @@ default = "lfm"
 # Ollama server connection
 ollama_host = "127.0.0.1"
 ollama_port = 11434
+
+# Per-subcommand model configuration (optional)
+# These override the default model for specific subcommands
+
+[model.query]
+# Model for 'ask query' subcommand
+# Uses global default if not specified
+model = "lfm"
+thinking = true
+tools = true
+
+[model.summarize]
+# Model for 'ask summarize' subcommand
+# Uses llama3.2 by default (lightweight, good for summarization)
+model = "llama3.2"
+thinking = false
+tools = false
+
+[model.code]
+# Model for code mode (-c flag)
+# Uses deepseek-coder-v2 by default (fast, code-optimized)
+model = "deepseek-coder-v2"
+thinking = false
+tools = true
 
 [tools]
 # Tools to disable (blacklist)

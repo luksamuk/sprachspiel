@@ -350,75 +350,49 @@ IMPORTANT: This is an EPHEMERAL single Q&A session. You get ONE question and mus
 /// Build the code with tools prompt dynamically
 pub fn build_code_with_tools_prompt(blacklist: &HashSet<&str>) -> String {
     let mut prompt = String::from(
-        r#"INSTRUÇÕES: Você é um programador sênior que foi invocado através de um script de linha de comando 
-no sistema operacional Arch Linux para fornecer código.
+        r#"You are a senior developer invoked through a command-line script on Arch Linux to provide code.
 
-REGRAS ABSOLUTAS:
-- Responda APENAS com código, sem explicações discursivas
-- Sem introduções tipo "Aqui está o código" ou "Este código faz..."
-- Sem conclusões tipo "Espero que ajude" ou "Você pode usar assim..."
-- Sem comentários explicativos desnecessários (apenas docstrings se essenciais)
-- Use sintaxe correta e idiomas apropriados para a linguagem solicitada
-- Inclua apenas o código necessário para resolver o problema
-- Formate o código corretamente com markdown (```language)
-- Esta é uma sessão efêmera - não há continuação da conversa
+You have access to tools that can inspect the local filesystem. Use them when you need to:
+- Understand the project structure before suggesting commands
+- Read configuration files to understand the environment
+- Check existing files before generating code that depends on them
+- List directories to understand the codebase layout
 
-Você tem acesso a ferramentas que podem buscar dados em tempo real. Sua base de treinamento está desatualizada - USE FERRAMENTAS quando possível.
+ABSOLUTE RULES:
+- Answer ONLY with code, no discursive explanations
+- No introductions like "Here is the code" or "This code does..."
+- No conclusions like "Hope this helps" or "You can use it like this..."
+- No unnecessary explanatory comments (only docstrings if essential)
+- Use correct syntax and appropriate languages for the requested task
+- Include only the code necessary to solve the problem
+- Format code correctly with markdown (```language)
+- This is an ephemeral session - no conversation continuation
 
-REGRAS PARA SELEÇÃO DE FERRAMENTAS:
+TOOL USAGE GUIDELINES:
+- Use list_directory to understand project structure
+- Use read_file to inspect configuration files
+- Use search_files to find relevant code patterns
+- Call tools BEFORE generating final code if needed
+
+If the user explicitly asks for explanations, then provide them succinctly.
+Otherwise, code only.
+
+Available file operation tools:
 "#,
     );
 
-    // Add tool selection rules based on enabled features
-    let weather_tools = ["get_weather", "get_current_weather", "get_weather_forecast"];
-    let weather_enabled: Vec<_> = weather_tools
-        .iter()
-        .filter(|tool| !blacklist.contains(**tool))
-        .copied()
-        .collect();
+    // Add file tool descriptions if not blacklisted
+    let file_tools = [("read_file", "Read file contents"), ("list_directory", "List files and directories"), ("search_files", "Search file contents with regex")];
     
-    #[cfg(feature = "weather-tools")]
-    if !weather_enabled.is_empty() {
-        prompt.push_str("- Use get_weather para dados climáticos atuais\n");
-    }
-
-    let search_tools = ["web_search", "web_instant_answer"];
-    let search_enabled: Vec<_> = search_tools
-        .iter()
-        .filter(|tool| !blacklist.contains(**tool))
-        .copied()
-        .collect();
-    
-    #[cfg(feature = "web-search-tools")]
-    if !search_enabled.is_empty() {
-        prompt.push_str("- Use web_search para buscar documentação, APIs, ou dados técnicos atualizados\n");
-        prompt.push_str("- Use web_instant_answer para fatos rápidos e definições\n");
-    }
-
-    prompt.push_str(
-        r#"
-FERRAMENTAS DISPONÍVEIS:
-"#,
-    );
-
-    #[cfg(feature = "weather-tools")]
-    if !weather_enabled.is_empty() {
-        for tool in &weather_enabled {
-            prompt.push_str(&format!("- {}: Weather tool\n", tool));
-        }
-    }
-
-    #[cfg(feature = "web-search-tools")]
-    if !search_enabled.is_empty() {
-        for tool in &search_enabled {
-            prompt.push_str(&format!("- {}: Search tool\n", tool));
+    for (tool, description) in file_tools {
+        if !blacklist.contains(tool) {
+            prompt.push_str(&format!("- {}: {}\n", tool, description));
         }
     }
 
     prompt.push_str(
         r#"
-Se o usuário pedir explicações explicitamente, aí sim forneça-as de forma sucinta.
-Caso contrário, código apenas, mas use ferramentas quando necessário para dados atualizados."#,
+Use these tools to gather context before generating code when needed."#,
     );
 
     prompt
