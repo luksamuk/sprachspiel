@@ -191,6 +191,7 @@ pub enum Shell {
     Bash,
     Zsh,
     Fish,
+    #[allow(clippy::enum_variant_names)]
     PowerShell,
     Elvish,
 }

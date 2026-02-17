@@ -26,11 +26,14 @@ This document outlines planned features and the current state of Ask-AI.
 
 ⚠️ **Active Issues:**
 
-1. **DuckDuckGo Web Search Blocked**
+1. **DuckDuckGo Web Search Blocked** ⚠️
    - Status: CAPTCHA blocking automated requests
    - Impact: Web search tools non-functional
+   - **Action Taken:** Web search tools are now blacklisted by default (Feb 2026)
+   - **Note:** Tools can be enabled via config, but expect failures
    - Priority: High
    - Solution: Alternative search provider needed
+   - **TODO:** When fixed, remove from default blacklist
 
 2. **GPT-OSS Tool Calling**
    - Status: Encoding errors with some tool calls

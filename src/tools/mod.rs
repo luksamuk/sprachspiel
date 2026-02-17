@@ -1,14 +1,21 @@
+// Pokemon data structures only available when pokemon-tools feature is enabled
+#[cfg(feature = "pokemon-tools")]
 use serde::Deserialize;
 
+pub mod files;
+#[cfg(feature = "pokemon-tools")]
 pub mod pokemon;
 pub mod search;
 pub mod weather;
 
+pub use files::*;
+#[cfg(feature = "pokemon-tools")]
 pub use pokemon::*;
 pub use search::*;
 pub use weather::*;
 
 /// Common response structure for PokeAPI
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct NamedApiResource {
     pub name: String,
@@ -16,45 +23,53 @@ pub struct NamedApiResource {
     pub url: String,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct NameEntry {
     pub name: String,
     pub language: NamedApiResource,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct EffectEntry {
     pub short_effect: String,
     pub language: NamedApiResource,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct PokemonSlot {
     pub pokemon: NamedApiResource,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct StatEntry {
     pub base_stat: u32,
     pub stat: NamedApiResource,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct TypeSlot {
     #[serde(rename = "type")]
     pub type_info: NamedApiResource,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct AbilitySlot {
     pub ability: NamedApiResource,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct MoveSlot {
     pub r#move: NamedApiResource,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct PokemonData {
     pub name: String,
@@ -66,6 +81,7 @@ pub struct PokemonData {
     pub moves: Vec<MoveSlot>,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct AbilityData {
     pub names: Vec<NameEntry>,
@@ -73,12 +89,14 @@ pub struct AbilityData {
     pub pokemon: Vec<PokemonSlot>,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct TypeData {
     #[serde(rename = "damage_relations")]
     pub damage_relations: DamageRelations,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct DamageRelations {
     pub double_damage_from: Vec<NamedApiResource>,
@@ -88,6 +106,7 @@ pub struct DamageRelations {
     pub half_damage_to: Vec<NamedApiResource>,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct MoveData {
     pub names: Vec<NameEntry>,
@@ -101,22 +120,26 @@ pub struct MoveData {
     pub priority: i32,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct SpeciesData {
     #[serde(rename = "evolution_chain")]
     pub evolution_chain: EvolutionChainUrl,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct EvolutionChainUrl {
     pub url: String,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct EvolutionChain {
     pub chain: EvolutionLink,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct EvolutionLink {
     pub species: NamedApiResource,
@@ -126,6 +149,7 @@ pub struct EvolutionLink {
     pub evolves_to: Vec<EvolutionLink>,
 }
 
+#[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
 pub struct EvolutionDetail {
     pub min_level: Option<u32>,

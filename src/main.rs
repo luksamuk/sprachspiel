@@ -9,6 +9,7 @@ mod config;
 mod debug_tools;
 mod ocr;
 mod prompts;
+mod settings;
 mod spinner;
 mod summarize;
 mod tools;
@@ -25,7 +26,8 @@ use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::ocr::{OcrArgs, OcrProcessor, print_results};
-use crate::prompts::get_prompt;
+use crate::prompts::get_prompt_with_blacklist;
+use crate::settings::Settings;
 use crate::spinner::create_spinner;
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::tools::*;
@@ -87,17 +89,39 @@ struct Cli {
     /// Code mode: optimize response for code output (minimal explanations)
     #[arg(short, long)]
     code: bool,
+
+    /// Initialize/create sample configuration file
+    #[arg(long)]
+    init_config: bool,
 }
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
     let cli = Cli::parse();
 
+    // Handle --init-config before anything else
+    if cli.init_config {
+        match Settings::create_sample_config() {
+            Ok(path) => {
+                println!("Configuration file created at: {}", path.display());
+                println!("\nEdit this file to customize your Ask-AI settings.");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Error creating configuration file: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Load settings from config file
+    let settings = Settings::load();
+
     // Handle subcommands if present
     if let Some(command) = cli.command {
         match command {
             Commands::Translate(args) => return handle_translate(args).await,
-            Commands::Query(args) => return handle_query(args).await,
+            Commands::Query(args) => return handle_query(args, &settings).await,
             Commands::Ocr(args) => return handle_ocr(args).await,
             Commands::Summarize(args) => return handle_summarize(args).await,
             Commands::Completion(args) => return handle_completion(args),
@@ -105,7 +129,7 @@ async fn main() -> AppResult<()> {
     }
 
     // No subcommand - handle as legacy query mode for backward compatibility
-    handle_legacy_query(cli).await
+    handle_legacy_query(cli, &settings).await
 }
 
 /// Handle translate subcommand
@@ -114,6 +138,26 @@ async fn handle_translate(args: TranslateArgs) -> AppResult<()> {
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
+    }
+
+    // Handle debug mode
+    if args.debug {
+        enable_debug();
+        eprintln!("Debug Mode - Translation Configuration:");
+        eprintln!("==========================");
+        if let Some(lang) = &args.language {
+            eprintln!("Language:          {}", lang);
+        }
+        if let Some(text) = &args.text {
+            let preview = if text.len() > 50 {
+                format!("{}...", &text[..50])
+            } else {
+                text.clone()
+            };
+            eprintln!("Text:              {}", preview);
+        }
+        eprintln!("==========================");
+        eprintln!("\n🚀 Executing translation with debug logging enabled...\n");
     }
 
     let mapper = LanguageMapper::new();
@@ -208,7 +252,7 @@ async fn handle_translate(args: TranslateArgs) -> AppResult<()> {
 }
 
 /// Handle query subcommand
-async fn handle_query(args: QueryArgs) -> AppResult<()> {
+async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     let query = args.get_query()?;
 
     if query.is_empty() {
@@ -216,19 +260,33 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
         std::process::exit(1);
     }
 
-    // Get model configuration
-    let model_config = if ModelConfig::is_valid(&args.model) {
-        ModelConfig::get(&args.model).unwrap()
+    // Get model configuration - use from args or default from settings
+    let model_name = if args.model == "lfm" && settings.model.default != "lfm" {
+        // User didn't specify a model explicitly, use settings default
+        settings.model.default.clone()
+    } else {
+        args.model.clone()
+    };
+
+    let model_config = if ModelConfig::is_valid(&model_name) {
+        ModelConfig::get(&model_name).unwrap()
     } else {
         eprintln!(
             "Error: Unknown model '{}'. Use --list to see available models.",
-            args.model
+            model_name
         );
         std::process::exit(1);
     };
 
-    // Initialize Ollama client
-    let ollama = Ollama::default();
+    // Initialize Ollama client with settings
+    let ollama = if settings.model.ollama_host != "127.0.0.1" || settings.model.ollama_port != 11434 {
+        Ollama::new(
+            settings.model.ollama_host.clone(),
+            settings.model.ollama_port,
+        )
+    } else {
+        Ollama::default()
+    };
 
     // Detect model capabilities
     let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
@@ -261,7 +319,7 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
         false
     };
 
-    // Get system prompt
+    // Get system prompt with blacklist filtering
     // Default is now tool_user, code mode can also use tools
     let prompt_name = if args.code && use_tools {
         "code_with_tools"
@@ -273,7 +331,10 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
         &args.prompt
     };
 
-    let system_prompt = match get_prompt(prompt_name, Some(&model_config.model_id)) {
+    // Get the blacklist set to filter tools from the prompt
+    let blacklist_set = settings.blacklist_set();
+
+    let system_prompt = match get_prompt_with_blacklist(prompt_name, Some(&model_config.model_id), Some(&blacklist_set)) {
         Some(prompt) => prompt,
         None => {
             eprintln!(
@@ -315,22 +376,103 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
 
     // Add tools if enabled
     if use_tools {
-        eprintln!("🔧 [Tools] 14 tools enabled - will log when called");
-        coordinator = coordinator
-            .add_tool(fetch_pokemon)
-            .add_tool(fetch_pokemon_basic)
-            .add_tool(fetch_pokemon_stats)
-            .add_tool(fetch_pokemon_moves)
-            .add_tool(fetch_pokemon_evolution)
-            .add_tool(fetch_ability_details)
-            .add_tool(fetch_type_effectiveness)
-            .add_tool(fetch_move_details)
-            .add_tool(get_weather)
-            .add_tool(get_current_weather)
-            .add_tool(get_weather_forecast)
-            .add_tool(web_search)
-            .add_tool(web_search_news)
-            .add_tool(web_instant_answer);
+        eprintln!("🔧 [Tools] Tools enabled - will log when called");
+        
+        // Helper to check if tool is not blacklisted
+        let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
+        let mut tool_count = 0;
+        
+        // Pokemon tools (only if feature enabled)
+        #[cfg(feature = "pokemon-tools")]
+        {
+            if is_tool_allowed("fetch_pokemon") {
+                coordinator = coordinator.add_tool(fetch_pokemon);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_basic") {
+                coordinator = coordinator.add_tool(fetch_pokemon_basic);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_stats") {
+                coordinator = coordinator.add_tool(fetch_pokemon_stats);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_moves") {
+                coordinator = coordinator.add_tool(fetch_pokemon_moves);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_evolution") {
+                coordinator = coordinator.add_tool(fetch_pokemon_evolution);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_ability_details") {
+                coordinator = coordinator.add_tool(fetch_ability_details);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_type_effectiveness") {
+                coordinator = coordinator.add_tool(fetch_type_effectiveness);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_move_details") {
+                coordinator = coordinator.add_tool(fetch_move_details);
+                tool_count += 1;
+            }
+        }
+        
+        // Weather tools (only if feature enabled)
+        #[cfg(feature = "weather-tools")]
+        {
+            if is_tool_allowed("get_weather") {
+                coordinator = coordinator.add_tool(get_weather);
+                tool_count += 1;
+            }
+            if is_tool_allowed("get_current_weather") {
+                coordinator = coordinator.add_tool(get_current_weather);
+                tool_count += 1;
+            }
+            if is_tool_allowed("get_weather_forecast") {
+                coordinator = coordinator.add_tool(get_weather_forecast);
+                tool_count += 1;
+            }
+        }
+        
+        // Search tools (only if feature enabled)
+        #[cfg(feature = "web-search-tools")]
+        {
+            if is_tool_allowed("web_search") {
+                coordinator = coordinator.add_tool(web_search);
+                tool_count += 1;
+            }
+            if is_tool_allowed("web_search_news") {
+                coordinator = coordinator.add_tool(web_search_news);
+                tool_count += 1;
+            }
+            if is_tool_allowed("web_instant_answer") {
+                coordinator = coordinator.add_tool(web_instant_answer);
+                tool_count += 1;
+            }
+        }
+        
+        // File tools (only if feature enabled)
+        #[cfg(feature = "file-tools")]
+        {
+            if is_tool_allowed("read_file") {
+                coordinator = coordinator.add_tool(read_file);
+                tool_count += 1;
+            }
+            if is_tool_allowed("list_directory") {
+                coordinator = coordinator.add_tool(list_directory);
+                tool_count += 1;
+            }
+            if is_tool_allowed("search_files") {
+                coordinator = coordinator.add_tool(search_files);
+                tool_count += 1;
+            }
+        }
+        
+        if args.debug {
+            eprintln!("   -> {} tools active", tool_count);
+        }
     } else {
         eprintln!("⚠️  [Tools] No tools enabled for this model");
     }
@@ -365,7 +507,7 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
 }
 
 /// Handle legacy query mode (backward compatibility)
-async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
+async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     // Handle --list flag
     if cli.list {
         print_available_options();
@@ -380,19 +522,33 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
         std::process::exit(1);
     }
 
-    // Get model configuration
-    let model_config = if ModelConfig::is_valid(&cli.model) {
-        ModelConfig::get(&cli.model).unwrap()
+    // Get model configuration - use from CLI or default from settings
+    let model_name = if cli.model == "lfm" && settings.model.default != "lfm" {
+        // User didn't specify a model explicitly, use settings default
+        settings.model.default.clone()
+    } else {
+        cli.model.clone()
+    };
+
+    let model_config = if ModelConfig::is_valid(&model_name) {
+        ModelConfig::get(&model_name).unwrap()
     } else {
         eprintln!(
             "Error: Unknown model '{}'. Use --list to see available models.",
-            cli.model
+            model_name
         );
         std::process::exit(1);
     };
 
-    // Initialize Ollama client
-    let ollama = Ollama::default();
+    // Initialize Ollama client with settings
+    let ollama = if settings.model.ollama_host != "127.0.0.1" || settings.model.ollama_port != 11434 {
+        Ollama::new(
+            settings.model.ollama_host.clone(),
+            settings.model.ollama_port,
+        )
+    } else {
+        Ollama::default()
+    };
 
     // Detect model capabilities
     let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
@@ -425,7 +581,7 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
         false
     };
 
-    // Get system prompt
+    // Get system prompt with blacklist filtering
     // Default is now tool_user, code mode can also use tools
     let prompt_name = if cli.code && use_tools {
         "code_with_tools"
@@ -437,7 +593,10 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
         &cli.prompt
     };
 
-    let system_prompt = match get_prompt(prompt_name, Some(&model_config.model_id)) {
+    // Get the blacklist set to filter tools from the prompt
+    let blacklist_set = settings.blacklist_set();
+
+    let system_prompt = match get_prompt_with_blacklist(prompt_name, Some(&model_config.model_id), Some(&blacklist_set)) {
         Some(prompt) => prompt,
         None => {
             eprintln!(
@@ -481,23 +640,104 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
     if use_tools {
         // Only show in debug mode
         if cli.debug {
-            eprintln!("🔧 [Tools] 14 tools enabled - will log when called");
+            eprintln!("🔧 [Tools] Tools enabled - will log when called");
         }
-        coordinator = coordinator
-            .add_tool(fetch_pokemon)
-            .add_tool(fetch_pokemon_basic)
-            .add_tool(fetch_pokemon_stats)
-            .add_tool(fetch_pokemon_moves)
-            .add_tool(fetch_pokemon_evolution)
-            .add_tool(fetch_ability_details)
-            .add_tool(fetch_type_effectiveness)
-            .add_tool(fetch_move_details)
-            .add_tool(get_weather)
-            .add_tool(get_current_weather)
-            .add_tool(get_weather_forecast)
-            .add_tool(web_search)
-            .add_tool(web_search_news)
-            .add_tool(web_instant_answer);
+        
+        // Helper to check if tool is not blacklisted
+        let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
+        let mut tool_count = 0;
+        
+        // Pokemon tools (only if feature enabled)
+        #[cfg(feature = "pokemon-tools")]
+        {
+            if is_tool_allowed("fetch_pokemon") {
+                coordinator = coordinator.add_tool(fetch_pokemon);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_basic") {
+                coordinator = coordinator.add_tool(fetch_pokemon_basic);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_stats") {
+                coordinator = coordinator.add_tool(fetch_pokemon_stats);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_moves") {
+                coordinator = coordinator.add_tool(fetch_pokemon_moves);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_evolution") {
+                coordinator = coordinator.add_tool(fetch_pokemon_evolution);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_ability_details") {
+                coordinator = coordinator.add_tool(fetch_ability_details);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_type_effectiveness") {
+                coordinator = coordinator.add_tool(fetch_type_effectiveness);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_move_details") {
+                coordinator = coordinator.add_tool(fetch_move_details);
+                tool_count += 1;
+            }
+        }
+        
+        // Weather tools (only if feature enabled)
+        #[cfg(feature = "weather-tools")]
+        {
+            if is_tool_allowed("get_weather") {
+                coordinator = coordinator.add_tool(get_weather);
+                tool_count += 1;
+            }
+            if is_tool_allowed("get_current_weather") {
+                coordinator = coordinator.add_tool(get_current_weather);
+                tool_count += 1;
+            }
+            if is_tool_allowed("get_weather_forecast") {
+                coordinator = coordinator.add_tool(get_weather_forecast);
+                tool_count += 1;
+            }
+        }
+        
+        // Search tools (only if feature enabled)
+        #[cfg(feature = "web-search-tools")]
+        {
+            if is_tool_allowed("web_search") {
+                coordinator = coordinator.add_tool(web_search);
+                tool_count += 1;
+            }
+            if is_tool_allowed("web_search_news") {
+                coordinator = coordinator.add_tool(web_search_news);
+                tool_count += 1;
+            }
+            if is_tool_allowed("web_instant_answer") {
+                coordinator = coordinator.add_tool(web_instant_answer);
+                tool_count += 1;
+            }
+        }
+        
+        // File tools (only if feature enabled)
+        #[cfg(feature = "file-tools")]
+        {
+            if is_tool_allowed("read_file") {
+                coordinator = coordinator.add_tool(read_file);
+                tool_count += 1;
+            }
+            if is_tool_allowed("list_directory") {
+                coordinator = coordinator.add_tool(list_directory);
+                tool_count += 1;
+            }
+            if is_tool_allowed("search_files") {
+                coordinator = coordinator.add_tool(search_files);
+                tool_count += 1;
+            }
+        }
+        
+        if cli.debug {
+            eprintln!("   -> {} tools active", tool_count);
+        }
     } else if cli.debug {
         eprintln!("⚠️  [Tools] No tools enabled for this model");
     }
@@ -689,6 +929,7 @@ async fn handle_ocr(args: OcrArgs) -> AppResult<()> {
 
     // Handle debug mode
     if args.debug {
+        enable_debug();
         eprintln!("Debug Mode - OCR Configuration:");
         eprintln!("==========================");
         eprintln!("Model ID:          glm-ocr:bf16");
@@ -721,6 +962,7 @@ async fn handle_ocr(args: OcrArgs) -> AppResult<()> {
 async fn handle_summarize(args: SummarizeArgs) -> AppResult<()> {
     // Handle debug mode
     if args.debug {
+        enable_debug();
         eprintln!("Debug Mode - Summarize Configuration:");
         eprintln!("==========================");
         eprintln!("Model ID:          {}", args.model);

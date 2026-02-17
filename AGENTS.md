@@ -13,6 +13,10 @@ cargo build
 # Build release
 cargo build --release
 
+# Build with specific features (see Features section)
+cargo build --release --features pokemon-tools
+cargo build --release --features all-tools
+
 # Run the application
 cargo run
 
@@ -31,6 +35,84 @@ cargo fmt
 
 # Lint with Clippy
 cargo clippy -- -D warnings
+```
+
+## Compilation Features
+
+Tools are organized into feature flags for modular compilation:
+
+### Default Features
+- `weather-tools` - Weather lookup (enabled by default)
+- `web-search-tools` - Web search (enabled by default, currently broken)
+- `file-tools` - File operations (enabled by default)
+
+### Optional Features
+- `pokemon-tools` - Pokémon data tools (disabled by default to save context)
+- `all-tools` - Enable all tool categories
+
+### Why Pokémon Tools Are Optional
+
+Pokémon tools consume significant context window space with 8 specialized tool definitions. They're disabled by default because:
+1. They pollute the context window when not needed
+2. They increase token usage without benefit for general queries
+3. Only users specifically querying Pokémon data need them
+
+### Feature Usage in Code
+
+When adding new tools, wrap them with feature flags:
+
+```rust
+// In src/tools/mod.rs
+#[cfg(feature = "my-tools")]
+pub mod my_tool;
+
+#[cfg(feature = "my-tools")]
+pub use my_tool::*;
+
+// In src/tools/my_tool.rs
+#[cfg(feature = "my-tools")]
+#[ollama_rs::function]
+pub async fn my_tool() -> Result<String, ...> {
+    // implementation
+}
+
+// In src/main.rs when registering tools
+#[cfg(feature = "my-tools")]
+{
+    if is_tool_allowed("my_tool") {
+        coordinator = coordinator.add_tool(my_tool);
+        tool_count += 1;
+    }
+}
+```
+
+### Feature Flags in Prompts
+
+Prompts dynamically include only available tools:
+
+```rust
+// In src/prompts.rs
+#[cfg(feature = "pokemon-tools")]
+if !pokemon_enabled.is_empty() {
+    prompt.push_str("Pokémon Tools section...");
+}
+```
+
+This ensures the model only sees tools that are:
+1. Compiled in (feature flag enabled)
+2. Not blacklisted at runtime
+
+### Testing with Features
+
+```bash
+# Test with all features
+cargo test --features all-tools
+
+# Test without optional features (default build)
+cargo test
+
+# Test specific feature combination
+cargo test --features "weather-tools,file-tools"
 ```
 
 ## Code Style Guidelines

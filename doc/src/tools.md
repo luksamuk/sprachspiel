@@ -1,14 +1,95 @@
 # Available Tools
 
-Ask-AI provides 14 tools that enhance queries with real-time data from external sources. Tools are automatically enabled for capable models.
+Ask-AI provides tools that enhance queries with real-time data from external sources. Tools are automatically enabled for capable models.
 
 ## Tool Overview
 
-| Category | Count | Source | Status |
-|----------|-------|--------|--------|
-| Pokémon | 8 | PokéAPI | ✅ Working |
-| Weather | 3 | Open-Meteo | ✅ Working |
-| Web Search | 3 | DuckDuckGo | ⚠️ Currently blocked |
+| Category | Count | Source | Status | Default |
+|----------|-------|--------|--------|---------|
+| Pokémon | 8 | PokéAPI | ✅ Working | ❌ Disabled* |
+| Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
+| Web Search | 3 | DuckDuckGo | ⚠️ Currently blocked | ✅ Enabled |
+| File Operations | 3 | Local filesystem | ✅ Working | ✅ Enabled |
+
+\* **Pokémon tools are disabled by default** to avoid polluting the context window with specialized tool descriptions when not needed. See [Compilation Features](#compilation-features) to enable them.
+
+## Compilation Features
+
+Tools are organized into feature flags that can be enabled or disabled at compile time. This allows you to build a leaner binary with only the tools you need.
+
+### Default Features
+
+The default build includes:
+- `weather-tools` - Weather lookup tools
+- `web-search-tools` - Web search tools (note: currently blocked by CAPTCHA)
+- `file-tools` - File system operations
+
+### Available Features
+
+| Feature | Description | Tools Included |
+|---------|-------------|----------------|
+| `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_move_details |
+| `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast |
+| `web-search-tools` | Web search via DuckDuckGo | web_search, web_search_news, web_instant_answer |
+| `file-tools` | Local file operations | read_file, list_directory, search_files |
+| `all-tools` | Enable all tool categories | All of the above |
+
+### Why Pokémon Tools Are Disabled by Default
+
+Pokémon tools require 8 specialized tool definitions that consume significant context window space. For general-purpose usage, these tools often provide no value and can:
+- **Pollute the context window** with unnecessary tool descriptions
+- **Distract the model** from more relevant tools
+- **Increase token usage** without benefit
+
+Only enable Pokémon tools if you specifically need Pokémon data queries.
+
+### Building with Custom Features
+
+**Default build (no Pokémon tools):**
+```bash
+cargo build --release
+```
+
+**Enable Pokémon tools:**
+```bash
+cargo build --release --features pokemon-tools
+```
+
+**Enable all tools:**
+```bash
+cargo build --release --features all-tools
+```
+
+**Minimal build (only file tools):**
+```bash
+cargo build --release --no-default-features --features file-tools
+```
+
+**Build without web search (currently broken):**
+```bash
+cargo build --release --no-default-features --features "weather-tools,file-tools"
+```
+
+### Runtime Filtering
+
+Even when tools are compiled in, you can disable specific tools at runtime using the [blacklist configuration](./configuration.md#tool-configuration):
+
+```toml
+# ~/.config/ask-ai/config.toml
+[tools]
+blacklist = ["fetch_pokemon", "web_search"]
+```
+
+When a tool is blacklisted, it won't be registered with the coordinator AND won't appear in the system prompt's tool descriptions. The model won't even know the tool exists.
+
+### Feature Matrix
+
+| Feature | Default | Binary Size Impact | Context Impact |
+|---------|---------|-------------------|----------------|
+| pokemon-tools | No | ~50KB | High (8 tools) |
+| weather-tools | Yes | ~30KB | Low (3 tools) |
+| web-search-tools | Yes | ~40KB | Medium (3 tools) |
+| file-tools | Yes | ~35KB | Low (3 tools) |
 
 ## Pokémon Tools (8)
 
@@ -164,6 +245,84 @@ Args: query (string)
 Example: web_instant_answer(query: "What is photosynthesis?")
 ```
 
+## File Operation Tools (3)
+
+Perform local filesystem operations. **Sandboxed by default** to current working directory for security.
+
+### read_file
+
+Read contents of a file. Files larger than 1MB are rejected.
+
+```
+Function: read_file
+Args: path (string), max_lines (optional integer), sandbox (optional boolean, default: true)
+Example: read_file(path: "README.md", max_lines: 50)
+```
+
+**Features:**
+- Limit output to N lines with `max_lines`
+- Sandbox restricts access to current directory
+- Supports relative and absolute paths
+- Auto-resolves symlinks
+
+### list_directory
+
+List files and directories. Shows file types and sizes.
+
+```
+Function: list_directory
+Args: path (string), recursive (optional boolean), sandbox (optional boolean, default: true)
+Example: list_directory(path: "src", recursive: true)
+```
+
+**Features:**
+- Non-recursive by default (current level only)
+- Recursive mode with `recursive: true` (max depth 10)
+- Shows file types: [file], [dir], [symlink]
+- Displays file sizes for files
+
+### search_files
+
+Search file contents with regex pattern.
+
+```
+Function: search_files
+Args: pattern (string), path (string), file_pattern (optional string), sandbox (optional boolean, default: true)
+Example: search_files(pattern: "TODO|FIXME", path: "src", file_pattern: "*.rs")
+```
+
+**Features:**
+- Regex pattern matching (full Rust regex syntax)
+- File pattern filtering with glob syntax (`*.rs`, `*.txt`)
+- Returns matching lines with file path and line number
+- Limited to 100 results and 1MB files
+- Searches files within 5 directory levels
+
+### File Tool Security
+
+File tools are sandboxed by default:
+
+```toml
+# ~/.config/ask-ai/config.toml
+[tools]
+file_sandbox = true  # Only allow access to CWD and subdirectories
+```
+
+**Sandbox behavior:**
+- ✅ Allowed: Files in current directory and subdirectories
+- ❌ Blocked: Files outside working directory
+- ❌ Blocked: System directories (`/etc`, `/usr`, etc.)
+- ❌ Blocked: Symlinks pointing outside sandbox
+
+**Disabling sandbox** (not recommended):
+
+```toml
+[tools]
+file_sandbox = false
+```
+
+**Warning:** Disabling the sandbox allows the AI to access any file your user account can read. Only disable if you fully trust the AI and understand the security implications.
+
 ## Using Tools
 
 ### Automatic Tool Detection
@@ -192,6 +351,16 @@ Use enhanced prompt for better tool selection:
 
 ```bash
 ask-ai -p tool_user "What's the weather?"
+```
+
+### Disable Specific Tools
+
+Blacklist tools via configuration:
+
+```toml
+# ~/.config/ask-ai/config.toml
+[tools]
+blacklist = ["web_search", "web_instant_answer"]
 ```
 
 ## Tool Examples
@@ -247,19 +416,56 @@ ask-ai "Latest technology news"
 ask-ai "What is quantum computing?"
 ```
 
+### File Operations
+
+```bash
+# Read a file
+ask-ai "Read the README.md file"
+
+# List directory contents
+ask-ai "Show me the files in the src directory"
+
+# Search for code patterns
+ask-ai "Find all TODO comments in the codebase"
+
+# Analyze project structure
+ask-ai "List all Rust files recursively and tell me what each module does"
+
+# Search and analyze
+ask-ai "Search for all functions named 'handle_' in the src directory"
+
+# Multi-file analysis
+ask-ai "Read Cargo.toml and tell me what dependencies this project has"
+```
+
+**Complex file operations:**
+
+```bash
+# Count lines of code
+ask-ai "List all .rs files recursively, then count total lines of code"
+
+# Find largest files
+ask-ai "List the src directory recursively and identify the 5 largest files"
+
+# Pattern analysis
+ask-ai "Search for all 'async fn' declarations in src and summarize the async functions"
+```
+
 ## Tool Selection
 
 The model automatically selects appropriate tools based on your query:
 
 ```mermaid
 graph TD
-    A[User Query] --> B{Contains Pokémon?}
-    B -->|Yes> C[Use Pokémon tools]
-    B -->|No> D{Contains Weather?}
-    D -->|Yes> E[Use Weather tools]
-    D -->|No> F{Needs Web Search?}
-    F -->|Yes> G[Use Web Search tools]
-    F -->|No> H[Answer directly]
+    A[User Query] --> B{File operation?}
+    B -->|Yes> C[Use File tools]
+    B -->|No> D{Contains Pokémon?}
+    D -->|Yes> E[Use Pokémon tools]
+    D -->|No> F{Contains Weather?}
+    F -->|Yes> G[Use Weather tools]
+    F -->|No> H{Needs Web Search?}
+    H -->|Yes> I[Use Web Search tools]
+    H -->|No> J[Answer directly]
 ```
 
 ## Known Issues
@@ -321,17 +527,43 @@ ask-ai -d "Tell me about Pikachu"
 3. **Use tool_user prompt** - For complex queries
 4. **Check debug mode** - If tools aren't working
 5. **Weather doesn't need API key** - Always available
+6. **Keep file sandbox enabled** - For security
+7. **Use relative paths** - When working with files
+8. **Limit search scope** - Use file patterns to narrow searches
+
+## Security Considerations
+
+### File Tool Security
+
+File tools are sandboxed to prevent unauthorized access:
+
+- ✅ Can read files in current project
+- ❌ Cannot access `/etc/passwd`, `/home/otheruser`, etc.
+- ❌ Cannot follow symlinks outside sandbox
+- ❌ Cannot read files > 1MB (DoS protection)
+
+### Tool Blacklisting
+
+Disable potentially problematic tools:
+
+```toml
+# ~/.config/ask-ai/config.toml
+[tools]
+# Disable web search (currently broken)
+blacklist = ["web_search", "web_search_news", "web_instant_answer"]
+```
 
 ## Future Tools
 
 Planned additions:
 
-- **File Operations**: Read files, list directories
 - **System Tools**: Execute commands (configurable whitelist)
 - **Web Scraping**: Extract content from URLs
+- **Database Tools**: Query local databases
 
 ## See Also
 
+- [Configuration](./configuration.md) - Tool configuration and blacklisting
 - [query](./commands/query.md) - Using tools with queries
 - [Models](./models.md) - Tool-capable models
 - [Prompts](./prompts.md) - Tool user prompt mode
