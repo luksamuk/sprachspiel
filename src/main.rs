@@ -245,8 +245,12 @@ async fn handle_translate(args: TranslateArgs, _settings: &Settings) -> AppResul
     // Get translated text
     let translated = response.message.content.trim();
 
-    // Output - always plain for translation
-    println!("{}", translated);
+    // Output - respect --plain flag for markdown rendering
+    if args.plain {
+        println!("{}", translated);
+    } else {
+        print_text(&translated);
+    }
 
     Ok(())
 }
