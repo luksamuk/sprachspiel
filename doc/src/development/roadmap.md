@@ -227,11 +227,17 @@ Completed comprehensive research on code mode improvements, including model eval
 - [x] File operations integration (list_directory, read_file, search_files)
 - [x] Automatic fallback when tools are blacklisted
 
-**Phase 0.4: Documentation** ⏳ IN PROGRESS
-- [ ] Update doc/src/configuration.md
-- [ ] Update doc/src/models.md
-- [ ] Add code mode examples
-- [ ] Update man page
+**Phase 0.4: Documentation** ✅ COMPLETED
+- [x] Update doc/src/configuration.md
+- [x] Update doc/src/models.md
+- [x] Add code mode examples
+- [x] Update man page
+
+**Phase 1.1: Tool Call Robustness** ✅ COMPLETED
+- [x] Tools return friendly error messages instead of crashing
+- [x] File not found errors suggest alternatives (e.g., README.org vs README.md)
+- [x] API errors return friendly messages with suggestions
+- [x] Invalid regex patterns return helpful error messages
 
 ### Notes
 

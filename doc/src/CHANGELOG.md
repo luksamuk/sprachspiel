@@ -11,6 +11,13 @@ All notable changes to Ask-AI will be documented in this file.
 - Development documentation (architecture, roadmap, contributing)
 - Mermaid diagram support
 
+### Fixed
+
+- Tool call errors now return friendly messages instead of crashing
+- Code mode now respects `[model.code]` config properly
+- Translate subcommand now respects `--plain` flag
+- Per-subcommand configuration system (query, summarize, code)
+
 ## [0.1.0] - 2026-02-17
 
 ### Added
