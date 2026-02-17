@@ -88,11 +88,73 @@ Add tools for file system operations:
 - `list_directory` - List files
 - `search_files` - Search file contents
 
+#### Tool Call Robustness
+
+**Priority:** High
+
+**Problem:** LLMs frequently fail when calling tools, even with capable models. Errors include:
+- Invalid JSON formatting in tool calls
+- Missing required parameters
+- Hallucinated parameter values
+- Encoding errors (e.g., `invalid character '<'`)
+
+**Research needed:**
+1. Investigate `ollama-rs` crate for tool call handling mechanisms
+2. Implement retry logic with detailed error feedback to LLM
+3. Add validation layer for tool call parameters before execution
+4. Improve error messages sent back to model for retry attempts
+
+**Proposed Solution:**
+```rust
+// Enhanced tool execution with retry logic
+async fn execute_tool_with_retry(
+    coordinator: &mut Coordinator,
+    tool_call: ToolCall,
+    max_retries: u32,
+) -> Result<String, ToolError> {
+    // Validate parameters first
+    if let Err(e) = validate_tool_call(&tool_call) {
+        return Err(ToolError::InvalidParameters {
+            error: e.to_string(),
+            suggestion: format!("Please fix: {}", e),
+        });
+    }
+    
+    // Execute with error feedback
+    match execute_tool(coordinator, tool_call).await {
+        Ok(result) => Ok(result),
+        Err(e) if max_retries > 0 => {
+            // Send detailed error back to model with explicit retry request
+            let error_feedback = format!(
+                "Tool execution failed: {}\n\n\
+                Please correct the tool call and try again. \
+                Ensure all parameters are valid and properly formatted.",
+                e
+            );
+            retry_with_feedback(coordinator, tool_call, error_feedback, max_retries - 1).await
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+```
+
+**Success Criteria:**
+- Reduce tool call failure rate from ~30% to <5%
+- Provide actionable error feedback to model
+- Support automatic retry with corrections
+- Log detailed error patterns for analysis
+
+**Note:** This is a prerequisite for `run_command` tool, which requires higher reliability due to security implications.
+
 #### System Tools
 
 **Priority:** Medium
 
+**⚠️ BLOCKED:** Waiting for Tool Call Robustness implementation
+
 - `run_command` - Execute commands (configurable whitelist)
+  - **Requires:** Robust tool call validation and error handling
+  - **Security:** Command whitelist, timeout, sandboxing
 - `get_system_info` - System information
 
 #### Web Scraping Tools
