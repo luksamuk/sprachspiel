@@ -37,10 +37,11 @@ use crate::translate::{
 /// Type alias for common Result type
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// CLI for ask-ollama
+/// CLI for ask-ai
 #[derive(Parser, Debug)]
 #[command(
-    name = "ask-ollama",
+    name = "ask-ai",
+    bin_name = "ask-ai",
     about = "CLI tool for querying Ollama LLM models and translating text",
     version,
     subcommand_required = false,
