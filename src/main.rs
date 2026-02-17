@@ -211,11 +211,14 @@ async fn main() -> AppResult<()> {
     // Clear spinner
     spinner.finish_and_clear();
 
+    // Strip thinking tags from response (for models like LFM 2.5, DeepSeek-R1, etc.)
+    let content = strip_thinking_tags(&response.message.content);
+
     // Render output
     if cli.plain {
-        println!("{}", response.message.content);
+        println!("{}", content);
     } else {
-        print_text(&response.message.content);
+        print_text(&content);
     }
 
     Ok(())
@@ -298,9 +301,41 @@ fn print_debug_info(
     println!("Dry-run complete. No request was made to Ollama.");
 }
 
+/// Strip thinking tags from model output
+/// 
+/// Models like LFM 2.5, DeepSeek-R1, and Qwen3 output thinking between <think> and </think> tags.
+/// Ollama strips these for some models automatically, but not all. We handle it here to ensure
+/// clean output regardless of the model.
+fn strip_thinking_tags(content: &str) -> String {
+    // Use regex to remove content between <think> and </think> tags (including the tags)
+    // The (?s) flag makes . match newlines as well
+    let re = regex::Regex::new(r"<think>.*?</think>")
+        .expect("Invalid regex pattern");
+    
+    // Replace the thinking blocks with empty string
+    let result = re.replace_all(content, "");
+    
+    // Trim any leading/trailing whitespace that might be left
+    result.trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_thinking_tags() {
+        let input = "<think>This is the model thinking...</think>This is the actual response.";
+        let expected = "This is the actual response.";
+        assert_eq!(strip_thinking_tags(input), expected);
+
+        let input_no_think = "Just a normal response.";
+        assert_eq!(strip_thinking_tags(input_no_think), "Just a normal response.");
+
+        let input_multiline = "<think>\nThinking...\nMore thinking...\n</think>\nResponse here.";
+        let expected_multiline = "Response here.";
+        assert_eq!(strip_thinking_tags(input_multiline), expected_multiline);
+    }
 
     #[test]
     fn test_cli_parsing() {
@@ -312,7 +347,7 @@ mod tests {
     #[test]
     fn test_default_values() {
         let cli = Cli::parse_from(["ask-ollama", "test query"]);
-        assert_eq!(cli.model, "pepe");
+        assert_eq!(cli.model, "lfm");  // Changed from "pepe" to "lfm"
         assert_eq!(cli.prompt, "default");
         assert!(!cli.think);
         assert!(!cli.plain);
