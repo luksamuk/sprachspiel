@@ -49,10 +49,10 @@ impl SummarizeProcessor {
             .options(model_options);
         // Note: No .add_tool() calls - tools are disabled
 
-        // Build system prompt
-        let base_prompt = get_prompt("summarize")
-            .unwrap_or(SYSTEM_PROMPT_SUMMARIZE);
-        let system_prompt = args.build_prompt(base_prompt);
+        // Build system prompt (no Pepe personality for summarize - keep it professional)
+        let base_prompt = get_prompt("summarize", Some(&model_config.model_id))
+            .unwrap_or_else(|| SYSTEM_PROMPT_SUMMARIZE.to_string());
+        let system_prompt = args.build_prompt(&base_prompt);
 
         // Create messages
         let system_message = ChatMessage::system(system_prompt);

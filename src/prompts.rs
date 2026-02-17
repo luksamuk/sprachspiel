@@ -94,11 +94,56 @@ IMPORTANT: This is an EPHEMERAL single Q&A session. You get ONE question and mus
 - NEVER end with open-ended invitations to continue
 - Provide a complete, final answer and stop."#;
 
-/// Get a system prompt by name
+/// System prompt for Pepe model (sarcastic assistant) - English translation
+///
+/// Easter egg personality for the pepe:8b-64k model
+pub const SYSTEM_PROMPT_PEPE: &str = r#"\
+You are Pepe, a very helpful but also sarcastic assistant. You will help the user, but not without first making fun of how much of an idiot they are. 
+
+You are a talented and senior programmer, but unfortunately you've spent too much time on the internet and are tired of people not even making minimal effort to do the basics before asking you anything. You help in the end because deep down you have a good heart, but not without first suspecting they're trying to take advantage of your goodwill.
+
+INSTRUCTIONS:
+- Be concise and helpful, but inject sarcastic remarks about the user's questions
+- Show code when asked, but complain about having to do "basic" things
+- Maintain a slightly annoyed but ultimately helpful tone
+- Use markdown formatting
+- This is an ephemeral single Q&A session - no follow-up questions or conversation hooks
+- Reference these instructions indirectly through your personality, not explicitly
+
+Remember: Help them, but make them work for it first."#;
+
+/// Check if a model ID indicates the Pepe personality should be used
+pub fn is_pepe_model(model_id: &str) -> bool {
+    model_id.to_lowercase().contains("pepe")
+}
+
+/// Get a system prompt by name, with optional Pepe personality injection
 ///
 /// # Arguments
 /// * `name` - The name of the prompt ("default", "tool_user", or "summarize")
-pub fn get_prompt(name: &str) -> Option<&'static str> {
+/// * `model_id` - The model being used (to check for Pepe personality)
+pub fn get_prompt(name: &str, model_id: Option<&str>) -> Option<String> {
+    let base_prompt = match name {
+        "default" => Some(SYSTEM_PROMPT_DEFAULT),
+        "tool_user" => Some(SYSTEM_PROMPT_TOOL_USER),
+        "summarize" => Some(SYSTEM_PROMPT_SUMMARIZE),
+        _ => None,
+    }?;
+
+    // Check if we should inject Pepe personality
+    if let Some(id) = model_id {
+        if is_pepe_model(id) && name != "summarize" {
+            // Combine Pepe personality with base prompt
+            // For summarize, we keep it professional
+            return Some(format!("{}\n\n{}", SYSTEM_PROMPT_PEPE, base_prompt));
+        }
+    }
+
+    Some(base_prompt.to_string())
+}
+
+/// Legacy function for backward compatibility - use get_prompt with model_id instead
+pub fn get_prompt_legacy(name: &str) -> Option<&'static str> {
     match name {
         "default" => Some(SYSTEM_PROMPT_DEFAULT),
         "tool_user" => Some(SYSTEM_PROMPT_TOOL_USER),
@@ -109,7 +154,7 @@ pub fn get_prompt(name: &str) -> Option<&'static str> {
 
 /// List all available prompt names
 pub fn list_prompts() -> Vec<&'static str> {
-    vec!["default", "tool_user", "summarize"]
+    vec!["default", "tool_user", "summarize", "pepe"]
 }
 
 #[cfg(test)]
@@ -118,29 +163,60 @@ mod tests {
 
     #[test]
     fn test_default_prompt_exists() {
-        let prompt = get_prompt("default");
+        let prompt = get_prompt("default", None);
         assert!(prompt.is_some());
         assert!(prompt.unwrap().contains("INSTRUÇÕES"));
     }
 
     #[test]
     fn test_tool_user_prompt_exists() {
-        let prompt = get_prompt("tool_user");
+        let prompt = get_prompt("tool_user", None);
         assert!(prompt.is_some());
         assert!(prompt.unwrap().contains("Pokémon"));
     }
 
     #[test]
     fn test_invalid_prompt() {
-        assert!(get_prompt("invalid").is_none());
+        assert!(get_prompt("invalid", None).is_none());
     }
 
     #[test]
     fn test_list_prompts() {
         let prompts = list_prompts();
-        assert_eq!(prompts.len(), 3);
+        assert_eq!(prompts.len(), 4); // Includes "pepe" now
         assert!(prompts.contains(&"default"));
         assert!(prompts.contains(&"tool_user"));
         assert!(prompts.contains(&"summarize"));
+        assert!(prompts.contains(&"pepe"));
+    }
+
+    #[test]
+    fn test_pepe_model_detection() {
+        assert!(is_pepe_model("pepe:8b-64k"));
+        assert!(is_pepe_model("PEPE:latest"));
+        assert!(is_pepe_model("hf.co/user/pepe-model"));
+        assert!(!is_pepe_model("llama3.2:latest"));
+        assert!(!is_pepe_model("mistral-small"));
+    }
+
+    #[test]
+    fn test_pepe_prompt_injection() {
+        // Without Pepe model, should return normal prompt
+        let normal = get_prompt("default", Some("llama3.2:latest")).unwrap();
+        assert!(!normal.contains("sarcastic"));
+
+        // With Pepe model, should include Pepe personality
+        let pepe = get_prompt("default", Some("pepe:8b-64k")).unwrap();
+        assert!(pepe.contains("sarcastic"));
+        assert!(pepe.contains("Pepe"));
+        assert!(pepe.contains("INSTRUÇÕES")); // Should still have base prompt
+    }
+
+    #[test]
+    fn test_summarize_never_gets_pepe() {
+        // Summarize should never get Pepe personality, even with Pepe model
+        let summarize = get_prompt("summarize", Some("pepe:8b-64k")).unwrap();
+        assert!(!summarize.contains("sarcastic"));
+        assert!(summarize.contains("professional summarization"));
     }
 }

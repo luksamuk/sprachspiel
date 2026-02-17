@@ -260,7 +260,7 @@ async fn handle_query(args: QueryArgs) -> AppResult<()> {
         &args.prompt
     };
 
-    let system_prompt = match get_prompt(prompt_name) {
+    let system_prompt = match get_prompt(prompt_name, Some(&model_config.model_id)) {
         Some(prompt) => prompt,
         None => {
             eprintln!(
@@ -407,7 +407,7 @@ async fn handle_legacy_query(cli: Cli) -> AppResult<()> {
         &cli.prompt
     };
 
-    let system_prompt = match get_prompt(prompt_name) {
+    let system_prompt = match get_prompt(prompt_name, Some(&model_config.model_id)) {
         Some(prompt) => prompt,
         None => {
             eprintln!(
@@ -561,7 +561,8 @@ fn print_available_options() {
     println!("\nAvailable prompts:");
     for name in prompts::list_prompts() {
         let default_marker = if name == "default" { " (default)" } else { "" };
-        println!("  {:20}{}", name, default_marker);
+        let special_marker = if name == "pepe" { " (Easter egg: Pepe personality)" } else { "" };
+        println!("  {:20}{}{}", name, default_marker, special_marker);
     }
 
     println!("\nSubcommands:");
