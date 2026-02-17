@@ -282,24 +282,85 @@ ollama rm $(ollama list | awk 'NR>1 {print $1}')
 
 Generate shell completions using the built-in `completion` subcommand:
 
+#### Quick Setup (User-local)
+
 ```bash
-# Bash
-ask-ai completion bash > /etc/bash_completion.d/ask-ai
+# Bash (current session only - add to ~/.bashrc for persistence)
+eval "$(ask-ai completion bash)"
 
-# Zsh
-ask-ai completion zsh > /usr/local/share/zsh/site-functions/_ask-ai
+# Bash (permanent, user-local)
+ask-ai completion bash >> ~/.bash_completion
 
-# Fish
+# Zsh (user-local)
+ask-ai completion zsh > ~/.zsh_completions/_ask-ai
+
+# Fish (user-local)
 ask-ai completion fish > ~/.config/fish/completions/ask-ai.fish
-
-# PowerShell
-ask-ai completion powershell
-
-# Elvish
-ask-ai completion elvish
 ```
 
-Supported shells: `bash`, `zsh`, `fish`, `powershell`, `elvish`
+#### System-wide Setup (requires root)
+
+```bash
+# Bash - system-wide
+sudo ask-ai completion bash > /etc/bash_completion.d/ask-ai
+
+# Zsh - system-wide (verify your zsh site-functions location)
+sudo ask-ai completion zsh > /usr/local/share/zsh/site-functions/_ask-ai
+# OR
+sudo ask-ai completion zsh > /usr/share/zsh/site-functions/_ask-ai
+
+# Fish - system-wide
+sudo ask-ai completion fish > /usr/share/fish/vendor_completions.d/ask-ai.fish
+```
+
+#### Supported Shells
+
+- `bash` - Bourne Again Shell
+- `zsh` - Z Shell
+- `fish` - Friendly Interactive Shell
+- `powershell` - PowerShell
+- `elvish` - Elvish Shell
+
+#### Troubleshooting Completions
+
+**Bash**: If completions don't work, ensure bash-completion is installed:
+```bash
+# Arch Linux
+sudo pacman -S bash-completion
+
+# Debian/Ubuntu
+sudo apt-get install bash-completion
+
+# Fedora
+sudo dnf install bash-completion
+```
+
+Then reload your shell:
+```bash
+source ~/.bashrc
+```
+
+**Zsh**: Ensure the completions directory is in your `$fpath`. Add to `~/.zshrc`:
+```bash
+# Create directory if needed
+mkdir -p ~/.zsh_completions
+
+# Add to fpath (before compinit)
+fpath+=(~/.zsh_completions)
+autoload -Uz compinit && compinit
+```
+
+**Fish**: Completions should work immediately after placing in `~/.config/fish/completions/`. If not:
+```bash
+exec fish
+```
+
+**Test completions are working**:
+```bash
+ask-ai <TAB>          # Should show subcommands
+ask-ai --<TAB>        # Should show options
+ask-ai translate <TAB> # Should show translate options
+```
 
 ### Environment Variables
 
