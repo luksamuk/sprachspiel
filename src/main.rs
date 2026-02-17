@@ -652,16 +652,35 @@ async fn handle_ocr(args: OcrArgs) -> AppResult<()> {
 
 /// Handle summarize subcommand
 async fn handle_summarize(args: SummarizeArgs) -> AppResult<()> {
-    // Validate arguments
-    if let Err(e) = args.validate() {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
-    }
+    // Get text from args or stdin (read once here)
+    let text = if let Some(ref text) = args.text {
+        text.clone()
+    } else {
+        // Read from stdin
+        use std::io::{self, Read};
+        let mut input = String::new();
+        match io::stdin().read_to_string(&mut input) {
+            Ok(_) => {
+                let trimmed = input.trim().to_string();
+                if trimmed.is_empty() {
+                    eprintln!("Error: No text provided for summarization.");
+                    eprintln!("Usage: ask summarize [OPTIONS] <TEXT>");
+                    eprintln!("   or: echo \"text\" | ask summarize");
+                    std::process::exit(1);
+                }
+                trimmed
+            }
+            Err(e) => {
+                eprintln!("Error: Failed to read from stdin: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
 
     let processor = SummarizeProcessor::new();
 
-    // Process summarization
-    match processor.summarize(&args).await {
+    // Process summarization with the text already loaded
+    match processor.summarize(&args, &text).await {
         Ok(summary) => {
             println!("{}", summary);
             Ok(())

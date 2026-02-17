@@ -24,17 +24,14 @@ impl SummarizeProcessor {
     }
 
     /// Process summarization request
-    pub async fn summarize(&self, args: &SummarizeArgs) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        // Get text
-        let text = args.get_text()?;
-        
+    pub async fn summarize(&self, args: &SummarizeArgs, text: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         if text.is_empty() {
             return Err("No text provided for summarization".into());
         }
 
-        // Get mistral-small model config
-        let model_config = ModelConfig::get("mistral-small")
-            .unwrap_or_else(|| ModelConfig::get("lfm").expect("Default model should exist"));
+        // Get llama3.2 model config (default for summarization)
+        let model_config = ModelConfig::get("llama3.2")
+            .unwrap_or_else(|| ModelConfig::get("mistral-small").unwrap_or_else(|| ModelConfig::get("lfm").expect("Default model should exist")));
 
         // Initialize Ollama
         let ollama = Ollama::default();
@@ -59,7 +56,7 @@ impl SummarizeProcessor {
 
         // Create messages
         let system_message = ChatMessage::system(system_prompt);
-        let user_message = ChatMessage::user(text);
+        let user_message = ChatMessage::user(text.to_string());
 
         // Show spinner
         let spinner = create_spinner("Summarizing...");

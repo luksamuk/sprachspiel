@@ -115,6 +115,22 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
         },
     );
 
+    // llama3.2: 3B parameters, 32K context (DEFAULT for summarization)
+    // Source: llama3.2:3b with 32K context via modelfile
+    // Optimized for: Fast summarization and general tasks with tool support
+    // From: ~/git/ai-dotfiles/modelfiles/llama3.2.modelfile
+    configs.insert(
+        "llama3.2",
+        ModelConfig {
+            model_id: "llama3.2:3b-32k".to_string(),
+            num_ctx: 32768,
+            temperature: 0.2, // Lower for reliable output
+            top_k: 40,
+            top_p: 0.9,
+            repeat_penalty: 1.1,
+        },
+    );
+
     // glm-5: 744B total parameters (40B active), 198K context
     // Source: glm-5:cloud (Z.ai GLM-5 model)
     // Cloud model optimized for complex reasoning, coding, and agentic tasks
@@ -245,6 +261,7 @@ impl ModelConfig {
             "sead",             // SEAD 14B
             "qwen3-coder",      // Qwen3 Coder 30B
             "devstral-small-2", // Devstral 24B
+            "llama3.2",         // Llama 3.2 3B (default for summarization)
             "glm-5",            // GLM-5 744B cloud model
             "kimi-k2.5",        // Kimi K2.5 256K cloud model
             "minimax-m2.5",     // MiniMax M2.5 198K cloud model
@@ -273,7 +290,7 @@ mod tests {
     #[test]
     fn test_all_models_exist() {
         let names = ModelConfig::list_names();
-        assert_eq!(names.len(), 13);
+        assert_eq!(names.len(), 14);
 
         for name in names {
             assert!(ModelConfig::is_valid(name), "Model {} should exist", name);

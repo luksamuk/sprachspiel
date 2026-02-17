@@ -121,6 +121,7 @@ impl SummaryStyle {
 impl SummarizeArgs {
     /// Get text from args or stdin
     pub fn get_text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        // If text provided as argument, use it
         if let Some(ref text) = self.text {
             return Ok(text.trim().to_string());
         }
@@ -128,8 +129,17 @@ impl SummarizeArgs {
         // Read from stdin
         use std::io::{self, Read};
         let mut input = String::new();
-        io::stdin().read_to_string(&mut input)?;
-        Ok(input.trim().to_string())
+        match io::stdin().read_to_string(&mut input) {
+            Ok(_) => {
+                let trimmed = input.trim();
+                if trimmed.is_empty() {
+                    Err("Input from stdin is empty.".into())
+                } else {
+                    Ok(trimmed.to_string())
+                }
+            }
+            Err(e) => Err(format!("Failed to read from stdin: {}", e).into()),
+        }
     }
 
     /// Validate that text is provided
