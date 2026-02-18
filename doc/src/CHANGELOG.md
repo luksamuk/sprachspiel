@@ -2,6 +2,34 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Termux/Android support** - Cross-compilation for Android devices
+  - New Makefile targets: `termux`, `termux-all-tools`, `tarball-termux`, `tarball-termux-all-tools`
+  - Cross.toml configuration for `aarch64-linux-android` target
+  - Documentation for Termux installation
+- **rustls TLS backend** - Replaced OpenSSL with rustls for better cross-platform support
+  - Enables cross-compilation without OpenSSL dependencies
+  - Binary size optimized (12MB default, 16MB all tools)
+
+### Fixed
+
+- **ollama_host configuration** - Now accepts IP addresses without `http://` prefix
+  - Previously: `ollama_host = "192.168.1.100"` would panic
+  - Now: Automatically prepends `http://` if scheme is missing
+  - Works with: `"192.168.1.100"`, `"http://192.168.1.100"`, `"https://myserver.local"`
+
+### Changed
+
+- **Dependency optimization**:
+  - Aligned `reqwest` version with `ollama-rs` (v0.12) to avoid duplication
+  - Removed redundant explicit dependencies (`html2md`, `scraper`) - already provided by `ollama-rs`
+- **Documentation updates**:
+  - Fixed incorrect web search documentation (serper-tools is working, search-tools is optional)
+  - Updated feature flags table in README and AGENTS.md
+
 ## [0.10.0] - 2026-02-18
 
 ### Added

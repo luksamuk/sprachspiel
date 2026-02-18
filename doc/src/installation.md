@@ -64,7 +64,82 @@ This will:
 2. Install it to `/usr/local/bin/ask-ai` (or your chosen prefix)
 3. Install the man page to `/usr/local/share/man/man1/`
 
-### Method 2: Manual Installation
+### Method 2: Termux (Android)
+
+Ask-AI can run on Android via Termux. Since Ollama doesn't run on Android, you'll need a remote Ollama server.
+
+**Prerequisites:**
+1. Install Termux from F-Droid (not Play Store - Play Store version is outdated)
+2. Install Docker or Podman on your development machine
+3. Install `cross` for cross-compilation:
+   ```bash
+   cargo install cross --git https://github.com/cross-rs/cross
+   ```
+
+**Build for Android:**
+
+```bash
+# On your development machine
+git clone https://github.com/luksamuk/ask-ai-rs.git
+cd ask-ai-rs
+
+# Build for Termux (aarch64)
+make termux
+
+# Or build with all tools
+make termux-all-tools
+
+# Create distribution tarball
+make tarball-termux
+```
+
+**Install on Termux:**
+
+```bash
+# In Termux (on your Android device)
+pkg install wget
+
+# Download the tarball from GitHub releases or transfer via scp
+wget https://github.com/luksamuk/ask-ai-rs/releases/download/vX.Y.Z/ask-ai-X.Y.Z-termux-aarch64-linux-android.tar.gz
+
+# Extract and install
+tar -xzf ask-ai-*.tar.gz
+chmod +x ask-ai
+mv ask-ai $PREFIX/bin/
+
+# Verify
+ask-ai --version
+```
+
+**Configure Remote Ollama:**
+
+Create the config file in Termux:
+
+```bash
+mkdir -p ~/.config/ask-ai
+cat > ~/.config/ask-ai/config.toml << EOF
+[model]
+# IP address of your Ollama server (desktop/laptop)
+ollama_host = "192.168.1.100"
+ollama_port = 11434
+EOF
+```
+
+Replace `192.168.1.100` with your Ollama server's IP address. The host can be specified as:
+- IP address: `192.168.1.100`
+- With scheme: `http://192.168.1.100`
+- Hostname: `myserver.local`
+
+**Available Make Targets:**
+
+| Target | Description |
+|--------|-------------|
+| `make termux` | Build for Termux (default features) |
+| `make termux-all-tools` | Build for Termux with all tools |
+| `make tarball-termux` | Create tarball for distribution |
+| `make tarball-termux-all-tools` | Create tarball with all tools |
+
+### Method 3: Manual Installation
 
 Build from source manually:
 

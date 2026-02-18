@@ -171,11 +171,11 @@ $ ask-ai --version
 - [x] Research: Verify dependency compatibility (DONE - see table above)
 - [x] Implement: Create `Cross.toml` configuration (DONE)
 - [x] Implement: Add Makefile targets for Termux builds (DONE)
-- [ ] Test: Build locally with `cross`
-- [ ] Test: Run binary on actual Termux device
-- [ ] Implement: CI workflow for Termux builds (GitHub Actions)
-- [ ] Test: Verify all features work on Android
-- [ ] Document: Installation instructions for Termux
+- [x] Implement: Use rustls instead of OpenSSL for cross-compilation (DONE)
+- [x] Implement: Fix ollama_host URL handling for Termux (DONE)
+- [x] Test: Build locally with `cross` (DONE)
+- [x] Test: Run binary on actual Termux device (DONE)
+- [x] Document: Installation instructions for Termux (DONE)
 - [ ] Release: Add Android binaries to GitHub releases
 
 ---

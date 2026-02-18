@@ -184,9 +184,16 @@ To connect to a remote Ollama instance:
 
 ```toml
 [model]
+# Both formats work - with or without http://
 ollama_host = "192.168.1.100"
+# Or explicitly: ollama_host = "http://192.168.1.100"
 ollama_port = 11434
 ```
+
+This is useful for:
+- **Termux/Android** - Connect to Ollama running on your desktop
+- **Remote servers** - Connect to Ollama on a different machine
+- **Docker/containers** - Connect to Ollama in a container
 
 Or use environment variables:
 
