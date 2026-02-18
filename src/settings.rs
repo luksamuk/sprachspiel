@@ -283,6 +283,7 @@ default = "lfm"
 
 # Ollama server connection settings.
 # Change these if your Ollama server is not running on the default localhost.
+# The host can be an IP address (e.g., "192.168.1.100") or a URL (e.g., "http://192.168.1.100").
 # Default: "127.0.0.1"
 ollama_host = "127.0.0.1"
 # Default: 11434

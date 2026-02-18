@@ -28,6 +28,17 @@ use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::ocr::{OcrArgs, OcrProcessor, print_results};
+
+/// Normalize host string to ensure it has a scheme (http:// or https://)
+/// This handles cases where users configure just an IP address like "192.168.1.100"
+fn normalize_host(host: &str) -> String {
+    let trimmed = host.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{}", trimmed)
+    }
+}
 use crate::prompts::get_prompt_with_blacklist;
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -305,14 +316,14 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     // Initialize Ollama client with settings
     let ollama = if settings.model.ollama_host != "127.0.0.1" || settings.model.ollama_port != 11434 {
         Ollama::new(
-            settings.model.ollama_host.clone(),
+            normalize_host(&settings.model.ollama_host),
             settings.model.ollama_port,
         )
     } else {
         Ollama::default()
     };
 
-    // Detect model capabilities
+    // Detect model capabilities (query command)
     let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
         Ok(caps) => caps,
         Err(e) => {
@@ -693,14 +704,14 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     // Initialize Ollama client with settings
     let ollama = if settings.model.ollama_host != "127.0.0.1" || settings.model.ollama_port != 11434 {
         Ollama::new(
-            settings.model.ollama_host.clone(),
+            normalize_host(&settings.model.ollama_host),
             settings.model.ollama_port,
         )
     } else {
         Ollama::default()
     };
 
-    // Detect model capabilities
+    // Detect model capabilities (code/summarize commands)
     let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
         Ok(caps) => caps,
         Err(e) => {
