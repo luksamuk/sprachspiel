@@ -517,6 +517,55 @@ mdbook build
 - **Use Mermaid**: For diagrams and flows
 - **Test examples**: Ensure they actually work
 
+## Release Process
+
+### Creating a Release
+
+1. **Update version** in:
+   - `Cargo.toml` - `version` field
+   - `man/ask-ai.1` - `.TH` line (version number)
+   - `doc/src/CHANGELOG.md` - Add new version section
+
+2. **Update CHANGELOG** with all changes since last release
+
+3. **Commit and push**:
+   ```bash
+   git add Cargo.toml Cargo.lock man/ask-ai.1 doc/src/CHANGELOG.md
+   git commit -m "chore: bump version to X.Y.Z"
+   git push origin master
+   ```
+
+4. **Create tarballs**:
+   ```bash
+   make all-tarballs
+   ```
+   
+   This creates:
+   - `dist/ask-ai-X.Y.Z-linux-x86_64.tar.gz` - Default features
+   - `dist/ask-ai-X.Y.Z-linux-x86_64-all-tools.tar.gz` - All features
+   - `dist/ask-ai-X.Y.Z-termux-aarch64-linux-android.tar.gz` - Termux default
+   - `dist/ask-ai-X.Y.Z-termux-aarch64-linux-android-all-tools.tar.gz` - Termux all tools
+
+5. **Create tag and release**:
+   ```bash
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin vX.Y.Z
+   
+   gh release create vX.Y.Z \
+     --title "vX.Y.Z" \
+     --notes "## Changes..." \
+     dist/ask-ai-X.Y.Z-linux-x86_64.tar.gz \
+     dist/ask-ai-X.Y.Z-linux-x86_64-all-tools.tar.gz \
+     dist/ask-ai-X.Y.Z-termux-aarch64-linux-android.tar.gz \
+     dist/ask-ai-X.Y.Z-termux-aarch64-linux-android-all-tools.tar.gz
+   ```
+
+### Release Tarball Contents
+
+Each tarball includes:
+- **Linux**: Binary, man page (`ask-ai.1`), `README.md`, `LICENSE.txt`
+- **Termux**: Binary, `README-TERMUX.txt` with installation instructions
+
 ### Documentation Philosophy
 
 Documentation should:

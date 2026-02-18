@@ -31,7 +31,7 @@ DIST_DIR = dist
 TARBALL_NAME = $(BINARY)-$(VERSION)
 TARBALL_NAME_TERMUX = $(BINARY)-$(VERSION)-termux-$(TERMUX_TARGET)
 
-.PHONY: all build install uninstall clean test check build-pokemon build-all-tools install-pokemon install-all-tools install-local-pokemon install-local-all-tools test-all termux termux-all-tools tarball tarball-termux tarball-linux help
+.PHONY: all build install uninstall clean test check build-pokemon build-all-tools install-pokemon install-all-tools install-local-pokemon install-local-all-tools test-all termux termux-all-tools tarball tarball-linux tarball-linux-all-tools tarball-termux tarball-termux-all-tools all-tarballs help
 
 # Default target
 all: build
@@ -169,9 +169,11 @@ help:
 	@echo "  make termux             - Build for Termux (aarch64-linux-android)"
 	@echo "  make termux-all-tools   - Build for Termux with all tools"
 	@echo "  make tarball            - Create release tarball for current platform"
-	@echo "  make tarball-linux      - Create x86_64 Linux tarball"
-	@echo "  make tarball-termux     - Create Termux tarball (default features)"
-	@echo "  make tarball-termux-all-tools - Create Termux tarball (all features)"
+	@echo "  make tarball-linux      - Create Linux x86_64 tarball"
+	@echo "  make tarball-linux-all-tools - Create Linux x86_64 tarball (all tools)"
+	@echo "  make tarball-termux     - Create Termux tarball"
+	@echo "  make tarball-termux-all-tools - Create Termux tarball (all tools)"
+	@echo "  make all-tarballs       - Create all distribution tarballs"
 	@echo ""
 	@echo "Development targets:"
 	@echo "  make clean              - Clean build artifacts"
@@ -239,6 +241,13 @@ tarball-linux: build
 	cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz $(BINARY) -C $(CURDIR) man/ask-ai.1 README.md LICENSE.txt
 	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz"
 
+# Create tarball for Linux x86_64 with all tools
+tarball-linux-all-tools: build-all-tools
+	@echo "Creating Linux x86_64 tarball (all tools)..."
+	@mkdir -p $(DIST_DIR)
+	cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64-all-tools.tar.gz $(BINARY) -C $(CURDIR) man/ask-ai.1 README.md LICENSE.txt
+	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64-all-tools.tar.gz"
+
 # Create tarball for Termux (Android aarch64)
 tarball-termux: termux
 	@echo "Creating Termux tarball..."
@@ -294,6 +303,12 @@ tarball-termux-all-tools: termux-all-tools
 	cd $(TERMUX_BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz $(BINARY) -C $(CURDIR)/$(DIST_DIR) README-TERMUX.txt
 	@rm $(DIST_DIR)/README-TERMUX.txt
 	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz"
+
+# Create all distribution tarballs
+all-tarballs: tarball-linux tarball-linux-all-tools tarball-termux tarball-termux-all-tools
+	@echo ""
+	@echo "All tarballs created in $(DIST_DIR)/:"
+	@ls -lh $(DIST_DIR)/*.tar.gz
 
 # Clean distribution directory
 clean-dist:
