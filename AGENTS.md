@@ -205,24 +205,55 @@ When creating or modifying tools, follow these principles:
 
 ### Error Handling Philosophy
 
-**Tools must never crash the application.** Instead, return informative error messages as strings that help the LLM understand what went wrong and recover.
+**Tools must NEVER crash the application.** Instead, return informative error messages as strings that help the LLM understand what went wrong and recover.
+
+### CRITICAL: No `?` operator or `Err()` returns in tools
+
+The `?` operator and `Err()` returns will propagate errors and crash the entire tool execution. **This must NEVER happen.**
 
 ```rust
-// ❌ BAD - Crashes on error
-if !canonical_path.exists() {
-    return Err(format!("File not found: {}", path).into());
-}
+// ❌ NEVER DO THIS - Will crash on error
+let metadata = std::fs::metadata(&path)?;
+let content = std::fs::read_to_string(&path)?;
+let parsed = some_str.parse::<u32>()?;
 
-// ✅ GOOD - Returns helpful error message
-if !canonical_path.exists() {
-    let err_msg = format!(
-        "Error: File not found: {}. Please check if the file exists or try a different file name.",
-        path
-    );
-    log_tool_result("read_file", &err_msg);
-    return Ok(err_msg);
-}
+// ✅ ALWAYS DO THIS - Returns helpful error to LLM
+let metadata = match std::fs::metadata(&path) {
+    Ok(m) => m,
+    Err(e) => {
+        let err_msg = format!("Error: Cannot read file metadata: {}", e);
+        log_tool_result("my_tool", &err_msg);
+        return Ok(err_msg);
+    }
+};
+
+let content = match std::fs::read_to_string(&path) {
+    Ok(c) => c,
+    Err(e) => {
+        let err_msg = format!("Error: Cannot read file: {}", e);
+        log_tool_result("my_tool", &err_msg);
+        return Ok(err_msg);
+    }
+};
+
+let parsed = match some_str.parse::<u32>() {
+    Ok(n) => n,
+    Err(_) => {
+        let err_msg = format!("Error: '{}' is not a valid number.", some_str);
+        log_tool_result("my_tool", &err_msg);
+        return Ok(err_msg);
+    }
+};
 ```
+
+### When can errors crash?
+
+Only truly catastrophic errors that should stop the ENTIRE APPLICATION (not just the tool) should use `?` or `Err()`. Examples:
+- Application startup failures
+- Configuration loading errors
+- Database connection failures in the main app
+
+**Tools are NOT the place for catastrophic error handling.** Tools should ALWAYS return `Ok(String)` with either success or error message.
 
 ### Tool Error Categories
 
@@ -237,6 +268,25 @@ if !canonical_path.exists() {
 3. **System errors** - Permission denied, out of memory
    - Return error with context
    - These are rare but should still be handled gracefully
+
+### Error Example
+
+```rust
+// ❌ BAD - Crashes on error
+if !canonical_path.exists() {
+    return Err(format!("File not found: {}", path).into());
+}
+
+// ✅ GOOD - Returns helpful error message
+if !canonical_path.exists() {
+    let err_msg = format!(
+        "Error: File not found: {}. Please check if the file exists or try a different file name (e.g., README.org instead of README.md).",
+        path
+    );
+    log_tool_result("read_file", &err_msg);
+    return Ok(err_msg);
+}
+```
 
 ### Logging Debug Output
 

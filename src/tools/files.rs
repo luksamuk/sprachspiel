@@ -69,7 +69,14 @@ pub async fn read_file(
     }
 
     // Check file size
-    let metadata = std::fs::metadata(&canonical_path)?;
+    let metadata = match std::fs::metadata(&canonical_path) {
+        Ok(m) => m,
+        Err(e) => {
+            let err_msg = format!("Error: Cannot read file metadata: {}", e);
+            log_tool_result("read_file", &err_msg);
+            return Ok(err_msg);
+        }
+    };
     if metadata.len() > MAX_FILE_SIZE as u64 {
         let err_msg = format!(
             "Error: File too large ({:.1} MB). Use count_lines to check file size, then read_file_segment to read in chunks.",
@@ -80,7 +87,14 @@ pub async fn read_file(
     }
 
     // Read file content
-    let content = std::fs::read_to_string(&canonical_path)?;
+    let content = match std::fs::read_to_string(&canonical_path) {
+        Ok(c) => c,
+        Err(e) => {
+            let err_msg = format!("Error: Cannot read file: {}", e);
+            log_tool_result("read_file", &err_msg);
+            return Ok(err_msg);
+        }
+    };
 
     // Apply max_lines limit if specified
     let result = if let Some(lines) = max_lines_parsed {
@@ -108,10 +122,22 @@ pub async fn read_file_segment(
     num_lines: String,
     sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let start_line_parsed = parse_u32(Some(start_line.clone()), None)
-        .ok_or_else(|| format!("Error: Invalid start_line '{}'. Must be a positive number.", start_line))?;
-    let num_lines_parsed = parse_u32(Some(num_lines.clone()), None)
-        .ok_or_else(|| format!("Error: Invalid num_lines '{}'. Must be a positive number.", num_lines))?;
+    let start_line_parsed = match parse_u32(Some(start_line.clone()), None) {
+        Some(n) => n,
+        None => {
+            let err_msg = format!("Error: Invalid start_line '{}'. Must be a positive number.", start_line);
+            log_tool_result("read_file_segment", &err_msg);
+            return Ok(err_msg);
+        }
+    };
+    let num_lines_parsed = match parse_u32(Some(num_lines.clone()), None) {
+        Some(n) => n,
+        None => {
+            let err_msg = format!("Error: Invalid num_lines '{}'. Must be a positive number.", num_lines);
+            log_tool_result("read_file_segment", &err_msg);
+            return Ok(err_msg);
+        }
+    };
     let sandbox_parsed = parse_bool(sandbox, true);
     
     if start_line_parsed == 0 {
@@ -160,7 +186,14 @@ pub async fn read_file_segment(
     }
 
     // Check file size
-    let metadata = std::fs::metadata(&canonical_path)?;
+    let metadata = match std::fs::metadata(&canonical_path) {
+        Ok(m) => m,
+        Err(e) => {
+            let err_msg = format!("Error: Cannot read file metadata: {}", e);
+            log_tool_result("read_file_segment", &err_msg);
+            return Ok(err_msg);
+        }
+    };
     if metadata.len() > MAX_FILE_SIZE as u64 {
         let err_msg = format!(
             "Error: File too large ({:.1} MB). Use count_lines to check file size, then read_file_segment to read in chunks.",
@@ -171,7 +204,14 @@ pub async fn read_file_segment(
     }
 
     // Read file content
-    let content = std::fs::read_to_string(&canonical_path)?;
+    let content = match std::fs::read_to_string(&canonical_path) {
+        Ok(c) => c,
+        Err(e) => {
+            let err_msg = format!("Error: Cannot read file: {}", e);
+            log_tool_result("read_file_segment", &err_msg);
+            return Ok(err_msg);
+        }
+    };
 
     // Extract segment
     let start = start_line_parsed as usize;
@@ -317,11 +357,31 @@ pub async fn list_directory(
     let mut entries = Vec::new();
 
     if recursive_parsed {
-        collect_entries_recursive(&canonical_path, &canonical_path, &mut entries, 0, 10)?;
+        if let Err(e) = collect_entries_recursive(&canonical_path, &canonical_path, &mut entries, 0, 10) {
+            let err_msg = format!("Error: Failed to list directory recursively: {}", e);
+            log_tool_result("list_directory", &err_msg);
+            return Ok(err_msg);
+        }
     } else {
-        for entry in std::fs::read_dir(&canonical_path)? {
-            let entry = entry?;
-            let metadata = entry.metadata()?;
+        let read_dir = match std::fs::read_dir(&canonical_path) {
+            Ok(rd) => rd,
+            Err(e) => {
+                let err_msg = format!("Error: Cannot read directory: {}", e);
+                log_tool_result("list_directory", &err_msg);
+                return Ok(err_msg);
+            }
+        };
+        for entry in read_dir {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => {
+                    continue; // Skip entries that fail
+                }
+            };
+            let metadata = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue, // Skip entries without metadata
+            };
             let name = entry.file_name().to_string_lossy().to_string();
             let entry_type = if metadata.is_dir() {
                 "dir"
@@ -371,10 +431,20 @@ fn collect_entries_recursive(
         return Ok(());
     }
 
-    for entry in std::fs::read_dir(current_path)? {
-        let entry = entry?;
-        let metadata = entry.metadata()?;
-        let _name = entry.file_name().to_string_lossy().to_string();
+    let read_dir = match std::fs::read_dir(current_path) {
+        Ok(rd) => rd,
+        Err(_) => return Ok(()), // Skip directories we can't read
+    };
+
+    for entry in read_dir {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue, // Skip failed entries
+        };
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue, // Skip entries without metadata
+        };
 
         // Calculate relative path from base
         let full_path = entry.path();
@@ -410,7 +480,7 @@ fn collect_entries_recursive(
 
         // Recurse into subdirectories
         if metadata.is_dir() {
-            collect_entries_recursive(base_path, &full_path, entries, depth + 1, max_depth)?;
+            let _ = collect_entries_recursive(base_path, &full_path, entries, depth + 1, max_depth);
         }
     }
 
