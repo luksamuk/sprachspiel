@@ -9,7 +9,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Pokémon | 8 | PokéAPI | ✅ Working | ❌ Disabled* |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
 | Web Search | 3 | DuckDuckGo | ⚠️ Currently blocked | ✅ Enabled |
-| File Operations | 4 | Local filesystem | ✅ Working | ✅ Enabled |
+| File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
 
 \* **Pokémon tools are disabled by default** to avoid polluting the context window with specialized tool descriptions when not needed. See [Compilation Features](#compilation-features) to enable them.
 
@@ -31,7 +31,7 @@ The default build includes:
 | `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_move_details |
 | `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast |
 | `web-search-tools` | Web search via DuckDuckGo | web_search, web_search_news, web_instant_answer |
-| `file-tools` | Local file operations | read_file, read_file_segment, list_directory, search_files |
+| `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files |
 | `all-tools` | Enable all tool categories | All of the above |
 
 ### Why Pokémon Tools Are Disabled by Default
@@ -245,9 +245,11 @@ Args: query (string)
 Example: web_instant_answer(query: "What is photosynthesis?")
 ```
 
-## File Operation Tools (4)
+## File Operation Tools (5)
 
 Perform local filesystem operations. **Sandboxed by default** to current working directory for security.
+
+**Important:** For large files, use `count_lines` first to check size, then `read_file_segment` to read only what you need. Avoid polluting context with entire large files.
 
 ### read_file
 
@@ -287,6 +289,25 @@ Lines 100-150 of 500:
 ----------------------------------------
    100 | fn my_function() {
    101 |     println!("Hello");
+```
+
+### count_lines
+
+Count lines in a file. **Use this before reading large files** to avoid polluting context.
+
+```
+Function: count_lines
+Args: path (string), sandbox (optional boolean, default: true)
+Example: count_lines(path: "src/main.rs")
+```
+
+**Output includes suggestion for large files:**
+```
+File: src/main.rs
+Lines: 1500
+Bytes: 45000
+
+Tip: This file has 1500 lines. Use read_file_segment(path, start_line, num_lines) to read specific sections and avoid polluting the context window.
 ```
 
 ### list_directory
@@ -539,9 +560,31 @@ See tool calls in debug mode:
 ask-ai -d "Tell me about Pikachu"
 
 # Output includes:
-# - Tool calls with arguments
+# - Tool calls with arguments (detailed format)
 # - Tool results
 # - Model configuration
+```
+
+### Tool Call Visibility
+
+**Tool calls are always visible**, even without debug mode. This is intentional - users have the right to see what tools are being executed on their system.
+
+**Without debug mode:**
+```
+🔧 Calling: read_file(path=README.md, max_lines=50)
+```
+
+**With debug mode (`-d`):**
+```
+═══════════════════════════════════════════════════════════════
+🔧 TOOL CALL: read_file
+───────────────────────────────────────────────────────────────
+  path: README.md
+  max_lines: 50
+───────────────────────────────────────────────────────────────
+📤 TOOL RESULT for read_file:
+[content...]
+═══════════════════════════════════════════════════════════════
 ```
 
 ## Best Practices
@@ -554,7 +597,8 @@ ask-ai -d "Tell me about Pikachu"
 6. **Keep file sandbox enabled** - For security
 7. **Use relative paths** - When working with files
 8. **Limit search scope** - Use file patterns to narrow searches
-9. **Use read_file_segment** - For large files, read only what you need
+9. **Count before reading** - Use `count_lines` before reading large files
+10. **Read in segments** - Use `read_file_segment` for large files
 
 ## Tool Error Handling
 

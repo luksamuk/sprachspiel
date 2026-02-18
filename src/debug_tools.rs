@@ -1,6 +1,8 @@
 //! Debug utilities for tool execution logging
 //!
-//! Provides functions to log tool calls and their results when debug mode is enabled.
+//! Provides functions to log tool calls and their results.
+//! Tool calls are ALWAYS logged (user has right to know what's being executed).
+//! Detailed results are only shown in debug mode.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,26 +18,40 @@ pub fn is_debug_enabled() -> bool {
     DEBUG_MODE.load(Ordering::SeqCst)
 }
 
-/// Log a tool call with its arguments (only in debug mode)
+/// Log a tool call with its arguments
+/// ALWAYS logs (user has right to see what's being executed on their system)
 pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
-    if !is_debug_enabled() {
-        return;
-    }
+    if is_debug_enabled() {
+        // Detailed format for debug mode
+        eprintln!();
+        eprintln!("═══════════════════════════════════════════════════════════════");
+        eprintln!("🔧 TOOL CALL: {}", tool_name);
+        eprintln!("───────────────────────────────────────────────────────────────");
 
-    eprintln!();
-    eprintln!("═══════════════════════════════════════════════════════════════");
-    eprintln!("🔧 TOOL CALL: {}", tool_name);
-    eprintln!("───────────────────────────────────────────────────────────────");
-
-    for (key, value) in args {
-        let display_value = if value.len() > 80 {
-            format!("{}...", &value[..77])
-        } else {
-            value.clone()
-        };
-        eprintln!("  {}: {}", key, display_value);
+        for (key, value) in args {
+            let display_value = if value.len() > 80 {
+                format!("{}...", &value[..77])
+            } else {
+                value.clone()
+            };
+            eprintln!("  {}: {}", key, display_value);
+        }
+        eprintln!("───────────────────────────────────────────────────────────────");
+    } else {
+        // Compact format for normal mode - always show what tool is being called
+        let args_str: Vec<String> = args
+            .iter()
+            .map(|(k, v)| {
+                let v_display = if v.len() > 40 {
+                    format!("{}...", &v[..37])
+                } else {
+                    v.clone()
+                };
+                format!("{}={}", k, v_display)
+            })
+            .collect();
+        eprintln!("🔧 Calling: {}({})", tool_name, args_str.join(", "));
     }
-    eprintln!("───────────────────────────────────────────────────────────────");
 }
 
 /// Log tool result (only in debug mode)

@@ -174,6 +174,67 @@ pub async fn read_file_segment(
     Ok(result)
 }
 
+/// Count lines in a file. Use this before reading large files to avoid polluting context.
+#[ollama_rs::function]
+pub async fn count_lines(path: String, sandbox: Option<bool>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("count_lines", &[("path".to_string(), path.clone())]);
+
+    // Validate and canonicalize path
+    let path_buf = PathBuf::from(&path);
+    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+        Ok(p) => p,
+        Err(e) => {
+            let err_msg = format!("Error: {}", e);
+            log_tool_result("count_lines", &err_msg);
+            return Ok(err_msg);
+        }
+    };
+
+    // Check if file exists
+    if !canonical_path.exists() {
+        let err_msg = format!("Error: File not found: {}", path);
+        log_tool_result("count_lines", &err_msg);
+        return Ok(err_msg);
+    }
+
+    if !canonical_path.is_file() {
+        let err_msg = format!("Error: Path is not a file: {}", path);
+        log_tool_result("count_lines", &err_msg);
+        return Ok(err_msg);
+    }
+
+    // Read and count lines
+    let content = match std::fs::read_to_string(&canonical_path) {
+        Ok(c) => c,
+        Err(e) => {
+            let err_msg = format!("Error: Cannot read file: {}", e);
+            log_tool_result("count_lines", &err_msg);
+            return Ok(err_msg);
+        }
+    };
+
+    let line_count = content.lines().count();
+    let byte_count = content.len();
+
+    // Suggest using read_file_segment for large files
+    let suggestion = if line_count > 100 {
+        format!(
+            "\n\nTip: This file has {} lines. Use read_file_segment(path, start_line, num_lines) to read specific sections and avoid polluting the context window.",
+            line_count
+        )
+    } else {
+        String::new()
+    };
+
+    let result = format!(
+        "File: {}\nLines: {}\nBytes: {}{}",
+        path, line_count, byte_count, suggestion
+    );
+
+    log_tool_result("count_lines", &result);
+    Ok(result)
+}
+
 /// List contents of a directory
 #[ollama_rs::function]
 pub async fn list_directory(
@@ -187,7 +248,7 @@ pub async fn list_directory(
             ("path".to_string(), path.clone()),
             (
                 "recursive".to_string(),
-                recursive.map(|r| r.to_string()).unwrap_or_default(),
+                recursive.map(|r| r.to_string()).unwrap_or_else(|| "false".to_string()),
             ),
         ],
     );

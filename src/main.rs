@@ -487,6 +487,10 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
                 coordinator = coordinator.add_tool(read_file_segment);
                 tool_count += 1;
             }
+            if is_tool_allowed("count_lines") {
+                coordinator = coordinator.add_tool(count_lines);
+                tool_count += 1;
+            }
             if is_tool_allowed("list_directory") {
                 coordinator = coordinator.add_tool(list_directory);
                 tool_count += 1;
@@ -781,6 +785,10 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
             }
             if is_tool_allowed("read_file_segment") {
                 coordinator = coordinator.add_tool(read_file_segment);
+                tool_count += 1;
+            }
+            if is_tool_allowed("count_lines") {
+                coordinator = coordinator.add_tool(count_lines);
                 tool_count += 1;
             }
             if is_tool_allowed("list_directory") {
