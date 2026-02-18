@@ -44,27 +44,19 @@ pub async fn read_file(
         ],
     );
 
-    // Validate and canonicalize path
+    // Validate and canonicalize path (also checks if exists)
     let path_buf = PathBuf::from(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
-            let err_msg = format!("Error: {}", e);
+            // validate_path already returns a complete error message
+            let err_msg = e.to_string();
             log_tool_result("read_file", &err_msg);
             return Ok(err_msg);
         }
     };
 
-    // Check if file exists and is readable
-    if !canonical_path.exists() {
-        let err_msg = format!(
-            "Error: FILE NOT FOUND: '{}'. The file does not exist. DO NOT try to read this file again. Use list_directory to find the correct filename.",
-            path
-        );
-        log_tool_result("read_file", &err_msg);
-        return Ok(err_msg);
-    }
-
+    // Check if it's a file (validate_path already confirmed it exists)
     if !canonical_path.is_file() {
         let err_msg = format!(
             "Error: NOT A FILE: '{}'. The path exists but is not a file (it may be a directory). Use list_directory to see contents.",
@@ -167,27 +159,19 @@ pub async fn read_file_segment(
         ],
     );
 
-    // Validate and canonicalize path
+    // Validate and canonicalize path (also checks if exists)
     let path_buf = PathBuf::from(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
-            let err_msg = format!("Error: {}", e);
+            // validate_path already returns a complete error message
+            let err_msg = e.to_string();
             log_tool_result("read_file_segment", &err_msg);
             return Ok(err_msg);
         }
     };
 
-    // Check if file exists and is readable
-    if !canonical_path.exists() {
-        let err_msg = format!(
-            "Error: FILE NOT FOUND: '{}'. The file does not exist. DO NOT try to read this file again. Use list_directory to find the correct filename.",
-            path
-        );
-        log_tool_result("read_file_segment", &err_msg);
-        return Ok(err_msg);
-    }
-
+    // Check if it's a file (validate_path already confirmed it exists)
     if !canonical_path.is_file() {
         let err_msg = format!(
             "Error: NOT A FILE: '{}'. The path exists but is not a file (it may be a directory). Use list_directory to see contents.",
@@ -269,27 +253,19 @@ pub async fn count_lines(path: String, sandbox: Option<String>) -> Result<String
     
     log_tool_call("count_lines", &[("path".to_string(), path.clone())]);
 
-    // Validate and canonicalize path
+    // Validate and canonicalize path (also checks if exists)
     let path_buf = PathBuf::from(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
-            let err_msg = format!("Error: {}", e);
+            // validate_path already returns a complete error message
+            let err_msg = e.to_string();
             log_tool_result("count_lines", &err_msg);
             return Ok(err_msg);
         }
     };
 
-    // Check if file exists
-    if !canonical_path.exists() {
-        let err_msg = format!(
-            "Error: FILE NOT FOUND: '{}'. The file does not exist. DO NOT try to read this file. Check the correct filename using list_directory.",
-            path
-        );
-        log_tool_result("count_lines", &err_msg);
-        return Ok(err_msg);
-    }
-
+    // Check if it's a file (validate_path already confirmed it exists)
     if !canonical_path.is_file() {
         let err_msg = format!(
             "Error: NOT A FILE: '{}'. The path exists but is not a file (it may be a directory). Use list_directory to see contents.",
@@ -347,26 +323,24 @@ pub async fn list_directory(
         ],
     );
 
-    // Validate and canonicalize path
+    // Validate and canonicalize path (also checks if exists)
     let path_buf = PathBuf::from(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
-            let err_msg = format!("Error: {}", e);
+            // validate_path already returns a complete error message
+            let err_msg = e.to_string();
             log_tool_result("list_directory", &err_msg);
             return Ok(err_msg);
         }
     };
 
-    // Check if directory exists
-    if !canonical_path.exists() {
-        let err_msg = format!("Error: Directory not found: {}", path);
-        log_tool_result("list_directory", &err_msg);
-        return Ok(err_msg);
-    }
-
+    // Check if it's a directory (validate_path already confirmed it exists)
     if !canonical_path.is_dir() {
-        let err_msg = format!("Error: Path is not a directory: {}", path);
+        let err_msg = format!(
+            "Error: NOT A DIRECTORY: '{}'. The path exists but is not a directory (it may be a file).",
+            path
+        );
         log_tool_result("list_directory", &err_msg);
         return Ok(err_msg);
     }
@@ -537,22 +511,17 @@ pub async fn search_files(
         }
     };
 
-    // Validate path
+    // Validate path (also checks if exists)
     let path_buf = PathBuf::from(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
-            let err_msg = format!("Error: {}", e);
+            // validate_path already returns a complete error message
+            let err_msg = e.to_string();
             log_tool_result("search_files", &err_msg);
             return Ok(err_msg);
         }
     };
-
-    if !canonical_path.exists() {
-        let err_msg = format!("Error: Path not found: {}", path);
-        log_tool_result("search_files", &err_msg);
-        return Ok(err_msg);
-    }
 
     // Determine search scope
     let files_to_search = if canonical_path.is_file() {
@@ -702,17 +671,28 @@ fn validate_path(
     let abs_path = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()?.join(path)
+        std::env::current_dir()
+            .map_err(|_| "Could not determine current directory")?
+            .join(path)
     };
+
+    // Check if path exists before canonicalizing
+    if !abs_path.exists() {
+        return Err(format!(
+            "FILE NOT FOUND: '{}'. The file or directory does not exist. Use list_directory to see available files.",
+            path.display()
+        ).into());
+    }
 
     // Canonicalize to resolve symlinks and normalize
     let canonical_path = abs_path
         .canonicalize()
-        .map_err(|_| format!("Invalid path: {}", path.display()))?;
+        .map_err(|e| format!("Cannot access path '{}': {}", path.display(), e))?;
 
     if sandbox {
         // Get current working directory
-        let cwd = std::env::current_dir()?;
+        let cwd = std::env::current_dir()
+            .map_err(|_| "Could not determine current directory")?;
         let canonical_cwd = cwd
             .canonicalize()
             .map_err(|_| "Could not determine current directory")?;
