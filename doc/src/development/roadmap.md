@@ -4,157 +4,125 @@ This document outlines planned features and the current state of Ask-AI.
 
 ## Current State
 
-✅ **Implemented:**
+### Implemented Features
 
-- Core CLI with 4 subcommands (query, translate, ocr, summarize)
-- 16 tools (9 Pokémon, 3 Weather, 3 Web Search, 5 File operations)
+**Core CLI:**
+- 4 subcommands (query, translate, ocr, summarize)
 - 14+ model presets
 - Markdown rendering via termimad
-- Model capability detection
-- Tool integration with auto-detection
-- Translation (50+ languages)
-- OCR (text, tables, formulas, figures)
-- Summarization (multiple styles)
+- Model capability detection (tools, vision, ocr)
 - Pipe support for all commands
-- Debug mode
-- Think mode
-- Code mode
+- Debug mode, Think mode, Code mode
+- Configuration file support (`~/.config/ask-ai/config.toml`)
+- Per-subcommand model configuration
+- AGENTS.md context injection with security sanitization
+- Shell argument handling
+
+**Tools (26 total):**
+
+| Category | Count | Feature Flag | Default |
+|----------|-------|--------------|---------|
+| Pokémon | 9 | `pokemon-tools` | ✅ Enabled |
+| Weather | 3 | `weather-tools` | ✅ Enabled |
+| File Operations | 5 | `file-tools` | ✅ Enabled |
+| Calculator | 1 | `calc-tools` | ✅ Enabled |
+| Web Search (Serper) | 2 | `serper-tools` | ✅ Enabled |
+| Web Search (DDG) | 3 | `search-tools` | ❌ Disabled |
+| Finance | 1 | `finance-tools` | ❌ Disabled |
+| System | 2 | `system-tools` | ✅ Enabled |
+
+**System Tools:**
+- `get_current_datetime` - Date, time, timezone, ISO 8601, Unix timestamp
+- `get_project_context` - Languages, git info, stack detection, key files
+
+**Translation:**
+- 50+ languages via translategemma model
+
+**OCR:**
+- Text, tables, formulas, figures via glm-ocr model
+
+**Documentation:**
 - Man page
 - mdBook documentation
-- AGENTS.md context injection
+- AGENTS.md integration
+
+---
 
 ## Known Issues
 
-⚠️ **Active Issues:**
+### GPT-OSS Tool Calling
 
-1. **DuckDuckGo Web Search Blocked** ⚠️
-   - Status: CAPTCHA blocking automated requests
-   - Impact: Web search tools non-functional
-   - **Action Taken:** Web search tools disabled via feature flag (not compiled by default in v0.9.0)
-   - **Note:** Can be enabled with `--features web-search-tools` but expect failures
-   - Priority: High
-   - Solution: Alternative search provider needed
-
-2. **GPT-OSS Tool Calling**
-   - Status: Encoding errors with some tool calls
-   - Impact: Tool calls fail with `invalid character '\u003c'`
-   - Priority: Medium
-   - Workaround: Use mistral-small, qwen3-coder, or pepe models
+**Status:** Active  
+**Priority:** Medium  
+**Impact:** Tool calls fail with `invalid character '<'` encoding errors  
+**Workaround:** Use mistral-small, qwen3-coder, or pepe models instead
 
 ---
 
-## High Priority: Custom Model Support
+## High Priority
 
-### Custom Model Configuration System
+### Multi-Line Chat Mode
 
-**Priority:** HIGH
+**Priority:** HIGH  
+**Status:** Ready to implement  
+**Derived from:** Query mode
 
-**Problem:** Users want to use local models with custom parameters that aren't pre-configured in Ask-AI. Currently, only predefined model presets are supported.
+**Problem:** Users need interactive chat sessions with conversation history for desktop use.
 
-**Research needed:**
-- How to allow users to define custom models in config
-- Parameter inference from model metadata vs explicit configuration
-- Which parameters can be auto-detected (context window, tool support, vision)
-- Which parameters must be user-specified (temperature, top_p, etc.)
-- Backward compatibility with existing preset system
+**Implementation:**
+- New `chat` subcommand (or `--chat` flag for query)
+- Conversation history maintained in memory
+- Interactive REPL with commands
 
-**Key questions to explore:**
-1. Should we try to detect model capabilities from Ollama API?
-2. What's the minimum configuration users need for a new model?
-3. How to handle models without tool support?
-4. How to handle thinking models vs non-thinking?
-
-**Proposed research phases:**
-
-1. **Discovery Phase:**
-   - Survey Ollama API for model metadata availability
-   - Test with popular local models (Llama 3.x, Mistral, Qwen variants)
-   - Document which parameters can be inferred
-   - Identify edge cases (models with partial capability support)
-
-2. **Design Phase:**
-   - Design config schema for custom models
-   - Decide on inference vs explicit config balance
-   - Plan fallback strategies for unknown models
-
-3. **Implementation Phase:**
-   - Implement custom model registration
-   - Implement capability detection/inference
-   - Update model selection logic
-   - Add validation for custom model configs
-
-**Example config (hypothetical):**
-```toml
-[model.default]
-# Use a model not in presets
-name = "llama3.2:3b"
-context_window = 128000  # optional, try to detect if missing
-temperature = 0.7
-tools = true
-vision = false
-
-[model.custom."my-custom-model"]
-ollama_name = "my-finetune:latest"
-context_window = 32768
-tools = false
-temperature = 0.5
+**Usage:**
+```bash
+ask-ai chat
+> What is Rust?
+[Rust is a systems programming language...]
+> What about its memory safety?
+[The model has context from previous message]
+> /quit
 ```
 
-**Tasks:**
-- [ ] Research: Ollama API model metadata endpoints
-- [ ] Research: Test capability detection with various models
-- [ ] Research: Document parameter inference possibilities
-- [ ] Discuss: Config schema design options
-- [ ] Design: Decide on approach (inference vs explicit)
-- [ ] Plan: Implementation roadmap
-- [ ] Implement: Custom model support
-- [ ] Document: How to add custom models
+**Commands:**
+- `/quit` or `/exit` - End chat session
+- `/clear` - Clear conversation history
+- `/model <name>` - Switch model mid-chat
+- `/help` - Show available commands
 
-**Note:** This is a significant feature that requires careful planning. The goal is to balance ease-of-use (auto-detection) with flexibility (explicit configuration).
+**Tasks:**
+- [ ] Design: Chat state management architecture
+- [ ] Implement: Interactive REPL with readline support
+- [ ] Implement: Conversation history (in-memory)
+- [ ] Implement: Chat commands (/quit, /clear, /model, /help)
+- [ ] Implement: System prompt for chat mode
+- [ ] Test: Multi-turn conversations with context
+- [ ] Document: Chat mode usage
 
 ---
 
-## High Priority: Termux Builds
+### Termux Builds
 
-### Android/Termux Support
+**Priority:** HIGH  
+**Status:** Research needed
 
-**Priority:** HIGH
+**Problem:** User needs ask-ai on Android devices via Termux for daily use.
 
-**Problem:** Users want to run ask-ai on Android devices via Termux. Cross-compilation and binary distribution needed.
-
-**Approaches to explore:**
-
-1. **Cross-compilation:**
-   - Target: `aarch64-linux-android`
-   - Toolchain: NDK or cargo-ndk
-   - Challenges: OpenSSL, native dependencies
-
-2. **Pre-built binaries:**
-   - Release assets for Android
-   - CI/CD pipeline for automated builds
-   - Architecture: aarch64 (most common)
-
-3. **Termux-specific packaging:**
-   - Package for Termux package manager
-   - Handle dependency differences
-   - Documentation for installation
-
-**Research needed:**
-- Test cross-compilation with `cargo-ndk`
-- Verify all dependencies compile for Android
-- Test on actual Termux installation
-- Check size and performance impact
+**Approaches:**
+1. **Cross-compilation:** Target `aarch64-linux-android` with cargo-ndk
+2. **Pre-built binaries:** Release assets for Android in GitHub releases
+3. **Termux packaging:** Package for Termux package manager
 
 **Tasks:**
 - [ ] Research: Cross-compilation setup for Android
-- [ ] Research: Test build with cargo-ndk or similar
-- [ ] Research: Verify dependency compatibility
-- [ ] Implement: CI workflow for Termux builds
-- [ ] Test: Run tests on Termux environment
-- [ ] Document: Installation instructions for Termux
+- [ ] Research: Test build with `cargo-ndk` or `cross`
+- [ ] Research: Verify dependency compatibility (reqwest, tokio, etc.)
+- [ ] Implement: CI workflow for Termux builds (GitHub Actions)
+- [ ] Test: Run on actual Termux installation
 - [ ] Release: Add Android binaries to GitHub releases
+- [ ] Document: Installation instructions for Termux
 
-**Example build command (research needed):**
+**Example build:**
 ```bash
 # Potential approach with cargo-ndk
 cargo ndk -t arm64-v8a -o ./dist build --release
@@ -162,310 +130,66 @@ cargo ndk -t arm64-v8a -o ./dist build --release
 
 ---
 
-## High Priority: ollama-rs Built-in Tools Integration
+### Custom Model Support
 
-### Overview
+**Priority:** HIGH  
+**Status:** Research needed
 
-The `ollama-rs` library provides built-in tools under `ollama_rs::generation::tools::implementations`:
-- **DDGSearcher** - DuckDuckGo web search ✅ IMPLEMENTED
-- **Scraper** - Website content extraction (HTML to Markdown) ✅ IMPLEMENTED
-- **Calculator** - Mathematical expression evaluation ✅ IMPLEMENTED
-- **StockScraper** - Google Finance stock quotes ✅ IMPLEMENTED
+**Problem:** Users want to use local models that aren't pre-configured in Ask-AI. Currently, only predefined model presets are supported.
 
-### Implementation Status
+**Questions to explore:**
+1. How to detect model capabilities from Ollama API?
+2. What's the minimum config users need for a new model?
+3. How to handle models without tool support?
+4. How to handle thinking models vs non-thinking?
 
-✅ **Phase 1: Calculator** - COMPLETED (Feb 2026)
-- Created `src/tools/calc.rs` with wrapper
-- Feature flag `calc-tools` (enabled by default)
-- Tested with mathematical expressions
-
-✅ **Phase 2: DDGSearcher + Scraper** - COMPLETED (Feb 2026)
-- Tested DDGSearcher standalone (NO CAPTCHA issues!)
-- Created `src/tools/search_builtin.rs` with wrappers
-- State management with `once_cell` singleton
-- Feature flag `search-tools` (enabled by default)
-- Tools: `web_search`, `web_search_news`, `web_scrape`
-
-✅ **Phase 3: StockScraper** - COMPLETED (Feb 2026)
-- Created `src/tools/finance.rs` with wrapper
-- Feature flag `finance-tools` (disabled by default)
-- Tool: `get_stock_quote(exchange, ticker)`
-
-### Architecture Decision: Wrapper Pattern
-
-Built-in tools use `?` operator for error propagation, which crashes the tool chain. We use wrappers that:
-1. Catch errors and convert to `Ok(String)` with error message
-2. Add `log_tool_call` / `log_tool_result` for debug visibility
-3. Format output consistently (English, standard format)
-4. **Use `Option<String>` for all numeric/optional parameters** (LLMs send strings!)
-
-```rust
-// CORRECT: Use String for all parameters
-pub async fn web_search(
-    query: String,
-    num_results: Option<String>,  // NOT Option<u8>!
-) -> Result<String, ...> {
-    let num = parse_num_results(num_results, 5, 10);  // Parse with default
-}
-
-// Parse helper
-fn parse_num_results(s: Option<String>, default: usize, max: usize) -> usize {
-    match s {
-        Some(ref val) if !val.trim().is_empty() => {
-            val.trim().parse::<usize>().unwrap_or(default).min(max)
-        }
-        _ => default,
-    }
-}
-```
-
-### Feature Flags
-
+**Proposed config:**
 ```toml
-[features]
-default = ["weather-tools", "file-tools", "pokemon-tools", "calc-tools", "search-tools"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools"]
-
-calc-tools = []                    # Calculator (enabled)
-search-tools = ["dep:html2md"]     # DDGSearcher + Scraper (enabled)
-finance-tools = ["dep:scraper"]    # Stock quotes (disabled)
+[model.custom."my-model"]
+ollama_name = "my-finetune:latest"
+context_window = 32768
+tools = true
+vision = false
+temperature = 0.7
 ```
-
----
-
-## Pre-Phase Research & Configuration Improvements
-
-### 1. Enhanced Configuration System
-
-**Priority:** High
-
-**Problem:** Current configuration only supports a single default model. Users need per-subcommand model configuration.
-
-**Research needed:**
-- Design config structure for per-subcommand defaults
-- Model settings per subcommand (query, summarize, ocr, translate)
-- Per-subcommand thinking mode toggle
-- Per-subcommand tool enable/disable
-
-**Proposed config structure:**
-```toml
-[model]
-# Global default (used by query subcommand)
-default = "lfm"
-
-[model.query]
-default = "lfm"
-thinking = true
-
-[model.summarize]
-default = "llama3.2"
-thinking = false
-
-[model.ocr]
-# Fixed to glm-ocr - not configurable
-# (ocr uses vision model with specific requirements)
-
-[model.translate]
-# Fixed to translategemma - not configurable
-# (translate uses specialized translation model)
-
-[model.code]
-default = "devstral-small"
-thinking = false
-tools = false  # Code mode usually doesn't need tools
-
-[ollama]
-host = "127.0.0.1"
-port = 11434
-```
-
-**Status:** ✅ COMPLETED (Feb 2026)
 
 **Tasks:**
-- [x] Design enhanced config schema
-- [x] Update Settings struct to support per-subcommand configs
-- [x] Update query handler to use respective config
-- [x] Document new configuration options
-- [x] Test backward compatibility
-- [ ] Extend to summarize handler (Phase 1.1)
+- [ ] Research: Ollama API model metadata endpoints
+- [ ] Research: Test capability detection with various models
+- [ ] Design: Config schema for custom models
+- [ ] Implement: Custom model registration
+- [ ] Implement: Capability detection/inference
+- [ ] Document: How to add custom models
 
-### 2. Code Mode Improvements
+---
 
-**Priority:** High
+### Termux Builds
 
-**Problem:** Developers need quick, code-focused responses for command-line tasks.
+**Priority:** HIGH  
+**Status:** Research needed
 
-**Current state:**
-- `-c` / `--code` flag exists
-- Uses "code" or "code_with_tools" prompt
-- No dedicated code-optimized model default
+**Problem:** Users want to run ask-ai on Android devices via Termux.
 
-**Research needed:**
-- Evaluate `devstral-small` as default code model
-- Analyze current code prompt effectiveness
-- Compare with `qwen3-coder` model
-- Test code mode with/without tools
-
-**Reference usage (from ask-ai.py):**
-```bash
-ask-ai -m devstral-small-2 "Como eu faço para mostrar a saída do comando 'ollama list', porém ignorando a primeira linha e pegando todos os dados da primeira coluna, e depois repassar cada um dos nomes de modelos recuperados para 'ollama show'?"
-```
-
-Expected output: Just the code, minimal explanation.
+**Approaches:**
+1. **Cross-compilation:** Target `aarch64-linux-android` with cargo-ndk
+2. **Pre-built binaries:** Release assets for Android in GitHub releases
+3. **Termux packaging:** Package for Termux package manager
 
 **Tasks:**
-- [x] Research: List available models for code tasks
-- [x] Research: Run `llm-checker recommend` for code model suggestions
-- [x] Research: Test `devstral-small` for code queries
-- [x] Research: Test `qwen3-coder` for code queries
-- [x] Research: Test `deepseek-coder-v2` for code queries (WINNER!)
-- [x] Design: Optimized code mode prompt
-- [x] Implement: Code mode with per-subcommand config
-- [x] Implement: Per-subcommand model selection for code
-- [ ] Document: Code mode usage and best practices
-
-### 3. Model Research for Code Tasks
-
-**Models to evaluate:**
-
-| Model | Purpose | Notes |
-|-------|---------|-------|
-| `devstral-small` | Code generation | Primary candidate for code mode default |
-| `devstral-small-2` | Code generation | Newer version, user's favorite |
-| `qwen3-coder` | Code generation | Alternative code model |
-
-**Status:** ✅ COMPLETED (Feb 2026)
-
-**Results:**
-- **Winner:** deepseek-coder-v2:16b-32k (7.5x faster than devstral-small-2)
-- **Runner-up:** devstral-small-2:24b-64k (more robust but 19.6s vs 2.6s)
-- **Decision:** Use deepseek-coder-v2 as default for code mode
-
-**Research tasks:**
-- [x] Run `llm-checker recommend` for code model suggestions
-- [x] Run `ollama list` to see installed models
-- [x] Test each model with code queries
-- [x] Measure response quality and speed
-- [x] Determine best default for code mode
-- [x] Add recommended model to modelfiles/ (✅ Done)
-
-### 4. Implementation Order
-
-```
-1. Research Phase
-   ├── List available models (ollama list, llm-checker recommend)
-   ├── Test code models (devstral-small, qwen3-coder)
-   ├── Evaluate current code prompt
-   └── Design config schema
-
-2. Configuration Phase
-   ├── Implement enhanced Settings struct
-   ├── Add per-subcommand model config
-   ├── Update subcommand handlers
-   └── Test configuration loading
-
-3. Code Mode Phase
-   ├── Implement code subcommand (or enhance flag)
-   ├── Set devstral-small as default (if research confirms)
-   ├── Optimize code prompt
-   └── Test code-only workflows
-
-4. Documentation Phase
-   ├── Update configuration.md
-   ├── Update tools.md (if code mode behavior changes)
-   ├── Add code mode examples
-   └── Update man page
-```
+- [ ] Research: Cross-compilation setup for Android
+- [ ] Research: Verify dependency compatibility
+- [ ] Implement: CI workflow for Termux builds
+- [ ] Test: Run on actual Termux installation
+- [ ] Document: Installation instructions
 
 ---
 
-## Phase 0: Code Mode Enhancement ✅ RESEARCH COMPLETE
+## Medium Priority
 
-**Status:** Research completed, ready for implementation  
-**Priority:** High  
-**Document:** [code_mode_research.md](./code_mode_research.md)
+### Shell Completions
 
-### Summary
-
-Completed comprehensive research on code mode improvements, including model evaluation, system prompt optimization, and tool integration strategy.
-
-### Key Findings
-
-**Winner:** deepseek-coder-v2:16b-32k
-- **7.5x faster** than devstral-small-2:24b-64k (2.6s vs 19.6s)
-- MoE architecture (16B total, 2.4B active params)
-- Superior code generation quality
-- Recommended as default for code mode
-
-### Implementation Tasks
-
-**Phase 0.1: Configuration System Enhancement** ✅ COMPLETED
-- [x] Extend Settings struct for per-subcommand model config
-- [x] Add `[model.code]` section to config
-- [x] Set deepseek-coder-v2:16b-32k as default for code mode
-- [x] Support tool enable/disable per subcommand
-
-**Phase 0.2: Model Integration** ✅ COMPLETED
-- [x] Add deepseek-coder-v2:16b-32k to src/config.rs
-- [x] Create optimized modelfile (✅ Already done)
-- [x] Add to modelfiles/Makefile (✅ Already done)
-- [x] Test with and without tools
-
-**Phase 0.3: Tool-Enhanced Code Mode** ✅ COMPLETED
-- [x] Implement SYSTEM_PROMPT_CODE_WITH_TOOLS
-- [x] Dynamic prompt injection based on blacklist
-- [x] File operations integration (list_directory, read_file, search_files)
-- [x] Automatic fallback when tools are blacklisted
-
-**Phase 0.4: Documentation** ✅ COMPLETED
-- [x] Update doc/src/configuration.md
-- [x] Update doc/src/models.md
-- [x] Add code mode examples
-- [x] Update man page
-
-**Phase 1.1: Tool Call Robustness** ✅ COMPLETED
-- [x] Tools return friendly error messages instead of crashing
-- [x] File not found errors suggest alternatives (e.g., README.org vs README.md)
-- [x] API errors return friendly messages with suggestions
-- [x] Invalid regex patterns return helpful error messages
-
-### Notes
-
-- System prompts must respect blacklist - blacklisted tools don't appear in prompts
-- Code mode with tools uses file operations for context-aware code generation
-- Configuration schema designed for backward compatibility
-- See full research document for detailed findings
-
----
-
-## Planned Features
-
-### Phase 1: Core Stability
-
-#### Configuration File Support
-
-**Priority:** High
-
-Add support for user configuration files:
-
-```toml
-# ~/.config/ask-ai/config.toml
-[model]
-default = "lfm"
-
-[tools]
-blacklist = ["web_search"]
-
-[output]
-plain_default = false
-
-[display]
-skin = "dark"
-```
-
-#### Shell Completions
-
-**Priority:** Medium
+**Priority:** Medium  
+**Status:** Not started
 
 Generate shell completions for bash, zsh, fish:
 
@@ -473,117 +197,80 @@ Generate shell completions for bash, zsh, fish:
 ask-ai --generate-completion bash
 ```
 
-### Phase 2: Enhanced Tools
+**Tasks:**
+- [ ] Implement: Completion generation using clap
+- [ ] Document: How to enable completions
 
-#### File Operations Tools
+---
 
-**Priority:** High
+### Plugin System
 
-Add tools for file system operations:
+**Priority:** Medium  
+**Status:** Not started
 
-- `read_file` - Read file contents
-- `list_directory` - List files
-- `search_files` - Search file contents
+Support for custom tools via plugins:
 
-#### Tool Call Robustness
-
-**Priority:** High
-
-**Problem:** LLMs frequently fail when calling tools, even with capable models. Errors include:
-- Invalid JSON formatting in tool calls
-- Missing required parameters
-- Hallucinated parameter values
-- Encoding errors (e.g., `invalid character '<'`)
-
-**Research needed:**
-1. Investigate `ollama-rs` crate for tool call handling mechanisms
-2. Implement retry logic with detailed error feedback to LLM
-3. Add validation layer for tool call parameters before execution
-4. Improve error messages sent back to model for retry attempts
-
-**Proposed Solution:**
 ```rust
-// Enhanced tool execution with retry logic
-async fn execute_tool_with_retry(
-    coordinator: &mut Coordinator,
-    tool_call: ToolCall,
-    max_retries: u32,
-) -> Result<String, ToolError> {
-    // Validate parameters first
-    if let Err(e) = validate_tool_call(&tool_call) {
-        return Err(ToolError::InvalidParameters {
-            error: e.to_string(),
-            suggestion: format!("Please fix: {}", e),
-        });
-    }
-    
-    // Execute with error feedback
-    match execute_tool(coordinator, tool_call).await {
-        Ok(result) => Ok(result),
-        Err(e) if max_retries > 0 => {
-            // Send detailed error back to model with explicit retry request
-            let error_feedback = format!(
-                "Tool execution failed: {}\n\n\
-                Please correct the tool call and try again. \
-                Ensure all parameters are valid and properly formatted.",
-                e
-            );
-            retry_with_feedback(coordinator, tool_call, error_feedback, max_retries - 1).await
-        }
-        Err(e) => Err(e.into()),
-    }
+// User-defined tool
+#[ollama_rs::function]
+pub async fn my_custom_tool(arg: String) -> Result<String> {
+    // Implementation
 }
 ```
 
-**Success Criteria:**
-- Reduce tool call failure rate from ~30% to <5%
-- Provide actionable error feedback to model
-- Support automatic retry with corrections
-- Log detailed error patterns for analysis
+**Tasks:**
+- [ ] Research: Dynamic loading vs compile-time plugins
+- [ ] Design: Plugin interface
+- [ ] Implement: Plugin loading mechanism
+- [ ] Document: Plugin development guide
 
-**Note:** This is a prerequisite for `run_command` tool, which requires higher reliability due to security implications.
+---
 
-#### System Tools
+### System Tools
 
-**Priority:** Medium
+**Priority:** Medium  
+**Status:** Blocked by tool call reliability
 
-**⚠️ BLOCKED:** Waiting for Tool Call Robustness implementation
-
-- `run_command` - Execute commands (configurable whitelist)
-  - **Requires:** Robust tool call validation and error handling
+- `run_command` - Execute commands with configurable whitelist
+  - **Requires:** Robust error handling and validation
   - **Security:** Command whitelist, timeout, sandboxing
-- `get_system_info` - System information
 
-#### Web Scraping Tools
+**Tasks:**
+- [ ] Research: Secure command execution patterns
+- [ ] Design: Whitelist configuration
+- [ ] Implement: `run_command` with security constraints
 
-**Priority:** Medium
+---
 
-- `fetch_page` - Extract text from URLs
-- `extract_articles` - Extract article content
+## Low Priority
 
-### Phase 3: Advanced Features
+### Streaming Output
 
-#### Streaming Output
-
-**Priority:** Low
-
-Research streaming markdown rendering:
+**Priority:** Low  
+**Status:** Research needed
 
 **Challenges:**
 - Markdown context dependency
 - Tables require full content
 - Cross-line formatting
 
-**Potential Solutions:**
+**Potential solutions:**
 1. Line-buffered rendering
 2. Block-buffered rendering
 3. Plain text streaming
 
-#### Multi-Line Chat Mode
+**Tasks:**
+- [ ] Research: Streaming markdown rendering approaches
+- [ ] Prototype: Basic streaming with termimad
 
-**Priority:** Low
+---
 
-Interactive chat mode:
+### Multi-Line Chat Mode
+
+**Priority:** Low  
+**Status:** Not started
+
+Interactive chat mode with conversation history:
 
 ```bash
 ask-ai --chat
@@ -592,180 +279,59 @@ ask-ai --chat
 > /quit
 ```
 
-#### Configuration Management
+**Tasks:**
+- [ ] Design: Chat state management
+- [ ] Implement: Interactive REPL
+- [ ] Implement: Conversation history
 
-**Priority:** Medium
+---
 
-- Model presets from config file
-- Custom tool configurations
-- User-defined shortcuts
+### Multilingual Injection Detection
 
-### Phase 4: Tool Ecosystem
+**Priority:** Low  
+**Status:** Not started
 
-#### Compilation Features
+**Problem:** AGENTS.md sanitization only detects English injection patterns.
 
-**Priority:** Medium
+**Tasks:**
+- [ ] Research: Injection patterns in non-English languages
+- [ ] Implement: Multilingual pattern detection
 
-Conditional tool compilation:
-
-```toml
-[features]
-default = ["pokemon-tools"]
-pokemon-tools = []
-weather-tools = []
-web-search-tools = []
-all-tools = ["pokemon-tools", "weather-tools", "web-search-tools"]
-```
-
-Usage:
-
-```bash
-cargo build --no-default-features --features weather-tools
-```
-
-#### Plugin System
-
-**Priority:** Low
-
-Support for custom tools via plugins:
-
-```rust
-// Custom tool defined by user
-#[ollama_rs::function]
-pub async fn my_custom_tool(arg: String) -> Result<String> {
-    // Implementation
-}
-```
+---
 
 ## Future Tools
 
 ### Document Processing
-
 - PDF text extraction
 - Document format conversion
 - Batch processing
 
 ### Data Analysis
-
 - CSV/JSON analysis
 - Statistical tools
-- Visualization (ASCII charts)
+- ASCII visualization
 
 ### Code Tools
-
 - Repository analysis
 - Code quality checks
 - Documentation generation
 
-## Web Search Alternatives
+---
 
-### Current Status (Feb 2026)
-
-✅ **DDGSearcher (ollama-rs built-in)** - WORKING
-- Uses different implementation than custom search
-- No CAPTCHA issues
-- Free, no API key required
-- Feature flag: `search-tools` (enabled by default)
-
-### Future Possibility: Serper Search Tool
-
-**Status:** NOT SCHEDULED - Documented for future reference only
-
-Google Search via Serper.dev API.
-
-**Pros:**
-- Google search results (more comprehensive than DDG)
-- Free tier available (2,500 searches/month)
-- Structured JSON responses
-- News and Scholar search modes
-
-**Cons:**
-- Requires API key (account creation needed)
-- Rate limits on free tier
-- External dependency
-
-**If implemented in the future:**
-```rust
-// Feature flag: serper-search (disabled by default)
-// Requires: SERPER_API_KEY environment variable
-// Graceful failure if key missing
-```
-
-## Testing Improvements
+## Testing
 
 ### Test Coverage
-
 - [ ] Unit tests for all commands
 - [ ] Integration tests with mock Ollama
-- [ ] Tool testing
-- [ ] OCR testing
-- [ ] Translation testing
+- [ ] Tool testing framework
+- [ ] OCR/Translation testing
 
 ### CI/CD
-
-- [ ] GitHub Actions
-- [ ] Automated testing
+- [ ] GitHub Actions for testing
 - [ ] Release automation
 - [ ] Documentation deployment
 
-## Documentation
-
-### Current Status
-
-✅ Complete:
-- User documentation (mdBook)
-- Man page
-- Development documentation
-
-### Planned
-
-- [ ] API documentation (if we add library interface)
-- [ ] Plugin development guide
-- [ ] Video tutorials
-- [ ] Example scripts
-
 ---
-
-## Future Enhancements
-
-### Multilingual Injection Pattern Detection
-
-**Priority:** Low
-
-**Problem:** Current AGENTS.md sanitization only detects English prompt injection patterns. Sophisticated attacks could use patterns in other languages.
-
-**Research needed:**
-- Survey common injection patterns in major languages (Spanish, Portuguese, Chinese, Russian, etc.)
-- Evaluate regex patterns vs ML-based detection
-- Consider performance impact of extended pattern matching
-
-**Proposed approach:**
-```rust
-// Current: English-only patterns
-r"ignore\s+(all\s+)?previous\s*instruction"
-
-// Future: Multilingual patterns
-r"(?i)(ignore|ignora|ignorer|忽略|игнорировать)\s+(all\s+)?(previous|anteriores|précédentes|之前|предыдущие)\s*(instruction|instrucción|instruction|指令|инструкция)"
-```
-
-**Tasks:**
-- [ ] Research injection patterns in non-English languages
-- [ ] Compile multilingual pattern list
-- [ ] Implement with locale-aware detection
-- [ ] Add tests for multilingual injection attempts
-- [ ] Document security considerations
-
-**Note:** Current English-only detection is sufficient for most use cases. This is a defense-in-depth improvement.
-
-## Release Schedule
-
-| Version | Focus | ETA |
-|---------|-------|-----|
-| 0.1.0 | Initial release | ✅ Done |
-| 0.2.0 | Configuration files | Q1 2026 |
-| 0.3.0 | New tools | Q2 2026 |
-| 0.4.0 | Streaming | Q3 2026 |
-| 1.0.0 | Stable release | Q4 2026 |
 
 ## Contributing
 
@@ -787,4 +353,4 @@ Your feedback shapes the roadmap!
 
 - [Architecture](./architecture.md) - Technical architecture
 - [Contributing](./contributing.md) - How to contribute
-- GitHub Issues - Current issues and requests
+- [CHANGELOG](../CHANGELOG.md) - Version history
