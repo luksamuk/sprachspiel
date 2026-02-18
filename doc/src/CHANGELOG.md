@@ -42,12 +42,17 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Planned
 
-- **Calculator tool** - Mathematical expression evaluation via ollama-rs built-in
 - **Improved web search** - Integration with ollama-rs DDGSearcher (CAPTCHA testing)
 - **Website scraper** - HTML to Markdown extraction via ollama-rs Scraper
 
 ### Added
 
+- **New tool: `calculate`** - Mathematical expression evaluation
+  - Basic arithmetic: +, -, *, /
+  - Exponents: ** or ^
+  - Percentages: "15% of 850"
+  - Functions: sqrt(), sin(), cos(), tan(), log(), etc.
+  - Feature flag: `calc-tools` (enabled by default)
 - Complete documentation with mdBook
 - Man page for terminal reference
 - Development documentation (architecture, roadmap, contributing)
