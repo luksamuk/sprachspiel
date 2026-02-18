@@ -2,7 +2,7 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [Unreleased]
+## [0.11.0] - 2026-02-18
 
 ### Added
 
