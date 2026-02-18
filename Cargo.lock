@@ -99,7 +99,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ask-ollama"
+name = "ask-ai"
 version = "0.9.0"
 dependencies = [
  "base64",

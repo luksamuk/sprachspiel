@@ -1,4 +1,4 @@
-# Implementation Plan for ask-ollama
+# Implementation Plan for ask-ai
 
 **Note**: This document has been reorganized. Detailed technical documentation is now in `doc/src/development/`.
 

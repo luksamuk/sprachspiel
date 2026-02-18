@@ -587,7 +587,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let query = get_query_legacy(&cli)?;
     if query.is_empty() {
         eprintln!("Error: No query provided. Use positional argument or pipe input.");
-        eprintln!("Try 'ask-ollama --help' for usage information.");
+        eprintln!("Try 'ask-ai --help' for usage information.");
         std::process::exit(1);
     }
 

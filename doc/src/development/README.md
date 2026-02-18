@@ -11,7 +11,7 @@ Welcome to the Ask-AI development documentation. This section contains technical
 ## Project Structure
 
 ```
-ask-ollama-rs/
+ask-ai/
 ├── Cargo.toml              # Dependencies
 ├── Makefile                # Build automation
 ├── man/
@@ -83,7 +83,7 @@ graph TD
 ```bash
 # Clone repository
 git clone <repo-url>
-cd ask-ollama-rs
+cd ask-ai
 
 # Install dependencies
 cargo build

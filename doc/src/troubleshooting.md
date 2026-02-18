@@ -236,7 +236,7 @@ ask-ai summarize -d "Text"
 
 ### GitHub Issues
 
-Report bugs at: https://github.com/luksamuk/ask-ollama-rs/issues
+Report bugs at: https://github.com/luksamuk/ask-ai-rs/issues
 
 ### Debug Information
 

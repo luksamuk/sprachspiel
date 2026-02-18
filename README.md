@@ -33,7 +33,7 @@ ask-ai --list
 ```bash
 # Clone and build
 git clone <repository>
-cd ask-ollama-rs
+cd ask-ai
 make install
 
 # Or with custom prefix

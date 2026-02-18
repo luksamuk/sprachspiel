@@ -16,7 +16,7 @@ Thank you for your interest in contributing to Ask-AI! This guide will help you 
 ```bash
 # Clone the repository
 git clone <your-repo-url>
-cd ask-ollama-rs
+cd ask-ai
 
 # Install dependencies
 cargo build
@@ -212,12 +212,12 @@ cargo test
 ```bash
 # Build and run
 cargo build --release
-./target/release/ask-ollama "Test query"
+./target/release/ask-ai "Test query"
 
 # Test subcommands
-./target/release/ask-ollama translate en:pt "Hello"
-./target/release/ask-ollama ocr image.png
-./target/release/ask-ollama summarize "Text"
+./target/release/ask-ai translate en:pt "Hello"
+./target/release/ask-ai ocr image.png
+./target/release/ask-ai summarize "Text"
 ```
 
 ## Adding a New Command

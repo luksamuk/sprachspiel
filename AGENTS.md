@@ -1,4 +1,4 @@
-# Agent Guidelines for ask-ollama-rs
+# Agent Guidelines for ask-ai
 
 This is a Rust project that uses the ollama-rs library to interact with Ollama LLM models.
 
@@ -184,7 +184,7 @@ cargo test --features "weather-tools,file-tools"
 ## Project Structure
 
 ```
-ask-ollama-rs/
+ask-ai/
 ├── Cargo.toml      # Dependencies and package info
 ├── src/
 │   └── main.rs     # Application entry point

@@ -92,7 +92,7 @@ ask-ai translate --help
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/luksamuk/ask-ollama-rs/issues)
+- **Issues**: [GitHub Issues](https://github.com/luksamuk/ask-ai-rs/issues)
 - **Documentation**: You're reading it! 📖
 
 ## License

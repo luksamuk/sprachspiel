@@ -48,8 +48,8 @@ The easiest way to install Ask-AI is using the provided Makefile:
 
 ```bash
 # Clone the repository
-git clone https://github.com/luksamuk/ask-ollama-rs.git
-cd ask-ollama-rs
+git clone https://github.com/luksamuk/ask-ai-rs.git
+cd ask-ai
 
 # Build and install (default: /usr/local)
 make install
@@ -70,14 +70,14 @@ Build from source manually:
 
 ```bash
 # Clone and enter repository
-git clone https://github.com/luksamuk/ask-ollama-rs.git
-cd ask-ollama-rs
+git clone https://github.com/luksamuk/ask-ai-rs.git
+cd ask-ai
 
 # Build release binary
 cargo build --release
 
 # Copy to your PATH
-sudo cp target/release/ask-ollama /usr/local/bin/ask-ai
+sudo cp target/release/ask-ai /usr/local/bin/ask-ai
 
 # Optional: Install man page
 sudo cp man/ask-ai.1 /usr/local/share/man/man1/
@@ -95,7 +95,7 @@ cargo run -- "Your query here"
 cargo build
 
 # Run debug binary
-./target/debug/ask-ollama "Your query"
+./target/debug/ask-ai "Your query"
 ```
 
 ## Installing Models

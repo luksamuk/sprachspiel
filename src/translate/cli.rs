@@ -8,7 +8,7 @@ use clap::{Args, Subcommand};
 use crate::ocr::OcrArgs;
 use crate::summarize::SummarizeArgs;
 
-/// Commands for the ask-ollama CLI
+/// Commands for the ask-ai CLI
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Translate text between languages using TranslateGemma

@@ -663,7 +663,7 @@ r"(?i)(ignore|ignora|ignorer|忽略|игнорировать)\s+(all\s+)?(previo
 
 See something you want to work on?
 
-1. Check [GitHub Issues](https://github.com/luksamuk/ask-ollama-rs/issues)
+1. Check [GitHub Issues](https://github.com/luksamuk/ask-ai-rs/issues)
 2. Comment on the issue
 3. Submit a pull request
 

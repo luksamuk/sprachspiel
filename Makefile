@@ -1,4 +1,4 @@
-# Makefile for ask-ai (ask-ollama-rs)
+# Makefile for ask-ai
 
 # Default installation prefix
 PREFIX ?= /usr/local
@@ -6,7 +6,7 @@ BINDIR = $(PREFIX)/bin
 MANDIR = $(PREFIX)/share/man/man1
 
 # Binary name
-BINARY = ask-ollama
+BINARY = ask-ai
 TARGET = ask-ai
 
 # Man page
