@@ -17,6 +17,12 @@ All notable changes to Ask-AI will be documented in this file.
 - **AGENTS.md context injection** - Automatically load project context from current directory
 - **`--ignore-agents` flag** - Disable AGENTS.md context loading
 - Security sanitization for AGENTS.md content (injection patterns, executable code blocks)
+- **Makefile targets for feature builds**:
+  - `make build-pokemon` - Build with Pokémon tools
+  - `make build-all-tools` - Build with all tools
+  - `make install-local-pokemon` - Local install with Pokémon tools
+  - `make install-local-all-tools` - Local install with all tools
+  - `make test-all` - Run tests with all features
 
 ### Fixed
 
@@ -26,6 +32,11 @@ All notable changes to Ask-AI will be documented in this file.
 - Per-subcommand configuration system (query, summarize, code)
 - `read_file` debug output now shows "all" instead of empty when max_lines not specified
 - `list_directory` debug output now shows "false" instead of empty when recursive not specified
+- **Weather tools fixed** - API response structs now use optional fields
+- **All tools now have proper error handling** - No more crashes from network/API errors
+- **Raw errors shown with pretty printing in debug mode** - Use `{:#?}` for readable error output
+- **Pokémon tools fixed** - All 8 tools now have proper logging and error handling
+- **Web search tools fixed** - All 3 tools now have proper logging and error handling
 
 ### Changed
 

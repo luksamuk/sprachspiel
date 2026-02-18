@@ -45,6 +45,24 @@ Only enable Pokémon tools if you specifically need Pokémon data queries.
 
 ### Building with Custom Features
 
+**Using Makefile (recommended):**
+
+```bash
+# Default build (weather, file-tools, web-search)
+make build
+
+# Build with Pokémon tools
+make build-pokemon
+
+# Build with all tools
+make build-all-tools
+
+# Install to ~/.local/bin with all tools
+make install-local-all-tools
+```
+
+**Using Cargo directly:**
+
 **Default build (no Pokémon tools):**
 ```bash
 cargo build --release
@@ -572,6 +590,7 @@ ask-ai -d "Tell me about Pikachu"
 # - Tool calls with arguments (detailed format)
 # - Tool results
 # - Model configuration
+# - Raw errors with pretty printing (when errors occur)
 ```
 
 ### Tool Call Visibility
@@ -595,6 +614,30 @@ ask-ai -d "Tell me about Pikachu"
 [content...]
 ═══════════════════════════════════════════════════════════════
 ```
+
+### Error Display in Debug Mode
+
+When errors occur, debug mode shows the raw error with pretty printing:
+
+**Without debug mode:**
+```
+❌ Tool execution failed: Error calling tool
+```
+
+**With debug mode (`-d`):**
+```
+❌ Tool execution failed (RAW):
+ToolCallError(
+    InternalToolError(
+        reqwest::Error {
+            kind: Decode,
+            source: Error("missing field `daily`", line: 1, column: 633)
+        }
+    )
+)
+```
+
+This helps developers debug API issues and tool failures.
 
 ## Best Practices
 

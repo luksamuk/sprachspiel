@@ -21,6 +21,8 @@ ask-ai \- A powerful CLI for interacting with Ollama LLM models
 is a Rust CLI tool for interacting with local Ollama LLM models, featuring markdown rendering, tool-assisted queries, translation, OCR, and text summarization.
 .PP
 When invoked without a subcommand, it defaults to query mode. The application reads from stdin if no QUERY or TEXT is provided, making it suitable for piping.
+.PP
+If an AGENTS.md file exists in the current directory, it is automatically loaded and injected into the system prompt to provide project-specific context.
 .SH COMMANDS
 .TP
 .B query, q
@@ -60,6 +62,9 @@ Force enable tools even if model doesn't advertise support.
 .BR \-c ", " \-\-code
 Code mode: optimize response for code output.
 .TP
+.BR \-\-ignore\-agents
+Ignore AGENTS.md file in current directory (disable context injection).
+.TP
 .BR \-h ", " \-\-help
 Show help message and exit.
 .TP
@@ -87,6 +92,9 @@ Force tools.
 .TP
 .BR \-c ", " \-\-code
 Code mode.
+.TP
+.BR \-\-ignore\-agents
+Ignore AGENTS.md context injection.
 .SH TRANSLATE OPTIONS
 .TP
 .BR \-p ", " \-\-prompt " " \fISTYLE\fR
@@ -232,6 +240,21 @@ cat article.pdf | pdftotext - - | ask-ai summarize
 .RE
 .fi
 .PP
+Use project context from AGENTS.md:
+.PP
+.nf
+.RS
+# With AGENTS.md in current directory
+ask-ai "Explain the project structure"
+ask-ai "How do I run the tests?"
+
+# Ignore AGENTS.md for general queries
+ask-ai --ignore-agents "What is machine learning?"
+.RE
+.fi
+.RE
+.fi
+.PP
 Chain commands:
 .PP
 .nf
@@ -281,6 +304,12 @@ Sarcastic personality (activated for pepe model).
 .B OLLAMA_HOST
 Override the default Ollama server host (default: localhost:11434).
 .SH FILES
+.TP
+.I ~/.config/ask-ai/config.toml
+User configuration file (model presets, tool settings, output preferences).
+.TP
+.I ./AGENTS.md
+Project context file automatically loaded when present in current directory. Provides project-specific instructions and context to the model. Can be disabled with --ignore-agents flag.
 .TP
 .I src/config.rs
 Built-in model configurations.

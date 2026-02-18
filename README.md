@@ -91,6 +91,45 @@ make models-optional
 
 See `modelfiles/README.md` for details.
 
+## Project Context (AGENTS.md)
+
+Ask-AI automatically loads `AGENTS.md` from the current directory to provide project-specific context:
+
+```bash
+# If AGENTS.md exists, context is automatically injected
+ask-ai "Explain the project structure"
+
+# Disable with --ignore-agents
+ask-ai --ignore-agents "General question"
+```
+
+Content is sanitized for security (injection patterns, executable code blocks removed).
+
+## Build Features
+
+Tools are organized into compile-time features:
+
+```bash
+# Default build (weather, file, web-search tools)
+make build
+
+# With Pokémon tools (8 additional tools)
+make build-pokemon
+
+# With all tools
+make build-all-tools
+
+# Install locally with all tools
+make install-local-all-tools
+```
+
+| Feature | Tools | Default |
+|---------|-------|---------|
+| `weather-tools` | Weather lookup | ✅ |
+| `file-tools` | File operations | ✅ |
+| `web-search-tools` | Web search | ✅ |
+| `pokemon-tools` | Pokémon data | ❌ |
+
 ## AI-Assisted Development
 
 Developed with assistance from:

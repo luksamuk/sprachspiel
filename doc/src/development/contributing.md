@@ -49,15 +49,46 @@ git checkout -b feature/my-feature
 # Run all tests
 cargo test
 
+# Run tests with all features
+make test-all
+
 # Run clippy
 cargo clippy -- -D warnings
 
 # Format code
 cargo fmt
 
-# Build
-cargo build --release
+# Build (default features)
+make build
+
+# Build with all tools
+make build-all-tools
 ```
+
+### 4. Build Features
+
+Ask-AI uses compile-time feature flags for tools:
+
+```bash
+# Default build (weather, file, web-search)
+make build
+
+# With Pokémon tools
+make build-pokemon
+
+# With all tools
+make build-all-tools
+
+# Minimal build (only file tools)
+cargo build --release --no-default-features --features file-tools
+```
+
+Available features:
+- `weather-tools` - Weather lookup (default)
+- `file-tools` - File operations (default)
+- `web-search-tools` - Web search (default, currently broken)
+- `pokemon-tools` - Pokémon data (disabled by default)
+- `all-tools` - Enable all categories
 
 ### 4. Update Documentation
 
