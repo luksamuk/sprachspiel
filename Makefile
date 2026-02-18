@@ -266,9 +266,7 @@ tarball-termux: termux
 	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
 	@echo "Note: Ollama must run on a separate machine (desktop/server)." >> $(DIST_DIR)/README-TERMUX.txt
 	@echo "Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml" >> $(DIST_DIR)/README-TERMUX.txt
-	tar -czvf $(DIST_DIR)/$(TARBALL_NAME_TERMUX).tar.gz \
-		-C $(TERMUX_BUILD_DIR) $(BINARY) \
-		-C ../$(DIST_DIR) README-TERMUX.txt
+	cd $(TERMUX_BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME_TERMUX).tar.gz $(BINARY) -C $(CURDIR)/$(DIST_DIR) README-TERMUX.txt
 	@rm $(DIST_DIR)/README-TERMUX.txt
 	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME_TERMUX).tar.gz"
 	@echo ""
@@ -299,9 +297,7 @@ tarball-termux-all-tools: termux-all-tools
 	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
 	@echo "Note: Ollama must run on a separate machine (desktop/server)." >> $(DIST_DIR)/README-TERMUX.txt
 	@echo "Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml" >> $(DIST_DIR)/README-TERMUX.txt
-	tar -czvf $(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz \
-		-C $(TERMUX_BUILD_DIR) $(BINARY) \
-		-C ../$(DIST_DIR) README-TERMUX.txt
+	cd $(TERMUX_BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz $(BINARY) -C $(CURDIR)/$(DIST_DIR) README-TERMUX.txt
 	@rm $(DIST_DIR)/README-TERMUX.txt
 	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz"
 
