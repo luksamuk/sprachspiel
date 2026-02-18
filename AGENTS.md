@@ -46,16 +46,17 @@ Tools are organized into feature flags for modular compilation:
 - `web-search-tools` - Web search (enabled by default, currently broken)
 - `file-tools` - File operations (enabled by default)
 
+### Default Features
+- `pokemon-tools` - Pokémon data tools (9 tools)
+- `weather-tools` - Weather lookup tools
+- `file-tools` - File system operations
+- `calc-tools` - Mathematical calculator
+
 ### Optional Features
-- `pokemon-tools` - Pokémon data tools (disabled by default to save context)
+- `web-search-tools` - DuckDuckGo web search (currently blocked by CAPTCHA)
+- `search-tools` - ollama-rs built-in DDGSearcher + Scraper (planned)
+- `finance-tools` - Stock quotes (planned)
 - `all-tools` - Enable all tool categories
-
-### Why Pokémon Tools Are Optional
-
-Pokémon tools consume significant context window space with 8 specialized tool definitions. They're disabled by default because:
-1. They pollute the context window when not needed
-2. They increase token usage without benefit for general queries
-3. Only users specifically querying Pokémon data need them
 
 ### Feature Usage in Code
 

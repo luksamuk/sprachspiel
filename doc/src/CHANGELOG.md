@@ -40,6 +40,12 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Planned
+
+- **Calculator tool** - Mathematical expression evaluation via ollama-rs built-in
+- **Improved web search** - Integration with ollama-rs DDGSearcher (CAPTCHA testing)
+- **Website scraper** - HTML to Markdown extraction via ollama-rs Scraper
+
 ### Added
 
 - Complete documentation with mdBook

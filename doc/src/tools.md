@@ -8,8 +8,10 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 |----------|-------|--------|--------|---------|
 | Pokémon | 9 | PokéAPI | ✅ Working | ✅ Enabled |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
+| Calculator | 1 | ollama-rs built-in | ✅ Working | ✅ Enabled |
 | Web Search | 3 | DuckDuckGo | ⚠️ Currently blocked | ❌ Disabled* |
 | File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
+| Website Scraper | 1 | ollama-rs built-in | 🔜 Planned | - |
 
 \* **Web search tools are disabled by default** because DuckDuckGo blocks automated requests with CAPTCHA. They can be enabled at compile time with `--features web-search-tools` but will likely fail.
 
@@ -23,6 +25,7 @@ The default build includes:
 - `pokemon-tools` - Pokémon data tools (9 tools)
 - `weather-tools` - Weather lookup tools
 - `file-tools` - File system operations
+- `calc-tools` - Mathematical calculator
 
 **Note:** Web search tools are NOT included by default due to DuckDuckGo CAPTCHA issues.
 
@@ -32,9 +35,18 @@ The default build includes:
 |---------|-------------|----------------|---------|
 | `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ✅ Yes |
 | `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast | ✅ Yes |
+| `calc-tools` | Mathematical calculations | calculate | ✅ Yes |
 | `web-search-tools` | Web search via DuckDuckGo | web_search, web_search_news, web_instant_answer | ❌ No |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files | ✅ Yes |
 | `all-tools` | Enable all tool categories | All of the above | - |
+
+### Planned Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| `search-tools` | DDGSearcher + Scraper from ollama-rs | 🔜 In Progress |
+| `finance-tools` | Stock quotes via Google Finance | 📋 Backlog |
+| `serper-search` | Google search via Serper API | 📋 Backlog |
 
 ### Why Web Search Tools Are Disabled by Default
 
@@ -42,7 +54,7 @@ DuckDuckGo blocks automated requests with CAPTCHA, making web search tools non-f
 
 ### Building with Custom Features
 
-**Default build (includes Pokémon, Weather, File tools):**
+**Default build (includes Pokémon, Weather, Calculator, File tools):**
 ```bash
 cargo build --release
 ```
@@ -244,6 +256,34 @@ Example: get_weather_forecast(location: "Paris", days: "7")
 ```
 
 **Note:** `days` accepts strings like "3", "5", "7".
+
+## Calculator Tool (1)
+
+Built-in mathematical expression evaluator from ollama-rs.
+
+### calculate
+
+Evaluate mathematical expressions.
+
+```
+Function: calculate
+Args: expression (string)
+Example: calculate(expression: "15% of 850")
+Example: calculate(expression: "sqrt(144) + 2**8")
+Example: calculate(expression: "(100 + 50) * 0.2")
+```
+
+**Supported operations:**
+- Basic arithmetic: `+`, `-`, `*`, `/`
+- Exponents: `**` or `^`
+- Percentages: `15% of 850`
+- Functions: `sqrt()`, `sin()`, `cos()`, etc.
+- Parentheses for grouping
+
+**Example queries:**
+- "What is 15% of 850?"
+- "Calculate sqrt(144)"
+- "What's 2 to the power of 8?"
 
 ## Web Search Tools (3)
 
