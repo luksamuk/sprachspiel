@@ -72,10 +72,8 @@ pub async fn read_file(
     let metadata = std::fs::metadata(&canonical_path)?;
     if metadata.len() > MAX_FILE_SIZE as u64 {
         let err_msg = format!(
-            "Error: File too large ({} bytes, max: {} bytes): {}",
-            metadata.len(),
-            MAX_FILE_SIZE,
-            path
+            "Error: File too large ({:.1} MB). Use count_lines to check file size, then read_file_segment to read in chunks.",
+            metadata.len() as f64 / 1_000_000.0
         );
         log_tool_result("read_file", &err_msg);
         return Ok(err_msg);
@@ -102,6 +100,7 @@ pub async fn read_file(
 
 /// Read a specific segment of a file (from start_line for num_lines).
 /// Useful for reading parts of large files without loading the entire file.
+/// Both start_line and num_lines are required.
 #[ollama_rs::function]
 pub async fn read_file_segment(
     path: String,
@@ -109,11 +108,23 @@ pub async fn read_file_segment(
     num_lines: String,
     sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let start_line_parsed = parse_u32(Some(start_line.clone()), Some(1))
-        .ok_or_else(|| format!("Error: Invalid start_line '{}'. Must be a number.", start_line))?;
-    let num_lines_parsed = parse_u32(Some(num_lines.clone()), Some(10))
-        .ok_or_else(|| format!("Error: Invalid num_lines '{}'. Must be a number.", num_lines))?;
+    let start_line_parsed = parse_u32(Some(start_line.clone()), None)
+        .ok_or_else(|| format!("Error: Invalid start_line '{}'. Must be a positive number.", start_line))?;
+    let num_lines_parsed = parse_u32(Some(num_lines.clone()), None)
+        .ok_or_else(|| format!("Error: Invalid num_lines '{}'. Must be a positive number.", num_lines))?;
     let sandbox_parsed = parse_bool(sandbox, true);
+    
+    if start_line_parsed == 0 {
+        let err_msg = "Error: start_line must be 1 or greater. Line numbers start at 1.".to_string();
+        log_tool_result("read_file_segment", &err_msg);
+        return Ok(err_msg);
+    }
+    
+    if num_lines_parsed == 0 {
+        let err_msg = "Error: num_lines must be 1 or greater.".to_string();
+        log_tool_result("read_file_segment", &err_msg);
+        return Ok(err_msg);
+    }
     
     log_tool_call(
         "read_file_segment",
@@ -152,10 +163,8 @@ pub async fn read_file_segment(
     let metadata = std::fs::metadata(&canonical_path)?;
     if metadata.len() > MAX_FILE_SIZE as u64 {
         let err_msg = format!(
-            "Error: File too large ({} bytes, max: {} bytes): {}",
-            metadata.len(),
-            MAX_FILE_SIZE,
-            path
+            "Error: File too large ({:.1} MB). Use count_lines to check file size, then read_file_segment to read in chunks.",
+            metadata.len() as f64 / 1_000_000.0
         );
         log_tool_result("read_file_segment", &err_msg);
         return Ok(err_msg);
@@ -243,21 +252,19 @@ pub async fn count_lines(path: String, sandbox: Option<String>) -> Result<String
     };
 
     let line_count = content.lines().count();
-    let byte_count = content.len();
 
     // Suggest using read_file_segment for large files
     let suggestion = if line_count > 100 {
         format!(
-            "\n\nTip: This file has {} lines. Use read_file_segment(path, start_line, num_lines) to read specific sections and avoid polluting the context window.",
-            line_count
+            "\n\nTip: Use read_file_segment(path, start_line, num_lines) to read specific sections and avoid polluting the context window."
         )
     } else {
         String::new()
     };
 
     let result = format!(
-        "File: {}\nLines: {}\nBytes: {}{}",
-        path, line_count, byte_count, suggestion
+        "File: {}\nLines: {}{}",
+        path, line_count, suggestion
     );
 
     log_tool_result("count_lines", &result);
@@ -326,7 +333,12 @@ pub async fn list_directory(
                 "other"
             };
             let size = if metadata.is_file() {
-                format!(" ({} bytes)", metadata.len())
+                let kb = metadata.len() as f64 / 1024.0;
+                if kb >= 1024.0 {
+                    format!(" ({:.1} MB)", kb / 1024.0)
+                } else {
+                    format!(" ({:.0} KB)", kb)
+                }
             } else {
                 String::new()
             };
@@ -384,7 +396,12 @@ fn collect_entries_recursive(
         };
 
         let size_info = if metadata.is_file() {
-            format!(" ({} bytes)", metadata.len())
+            let kb = metadata.len() as f64 / 1024.0;
+            if kb >= 1024.0 {
+                format!(" ({:.1} MB)", kb / 1024.0)
+            } else {
+                format!(" ({:.0} KB)", kb)
+            }
         } else {
             String::new()
         };
