@@ -9,11 +9,13 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Pokémon | 9 | PokéAPI | ✅ Working | ✅ Enabled |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
 | Calculator | 1 | ollama-rs built-in | ✅ Working | ✅ Enabled |
-| Web Search | 3 | DuckDuckGo | ⚠️ Currently blocked | ❌ Disabled* |
+| Web Search | 2 | Google via Serper | ✅ Working | ✅ Enabled* |
+| Web Scraper | 1 | html2md | ✅ Working | ❌ Disabled |
+| Finance | 1 | Google Finance | ✅ Working | ❌ Disabled |
+| System | 2 | Local system | ✅ Working | ✅ Enabled |
 | File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
-| Website Scraper | 1 | ollama-rs built-in | 🔜 Planned | - |
 
-\* **Web search tools are disabled by default** because DuckDuckGo blocks automated requests with CAPTCHA. They can be enabled at compile time with `--features web-search-tools` but will likely fail.
+\* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
 
 ## Compilation Features
 
@@ -24,10 +26,10 @@ Tools are organized into feature flags that can be enabled or disabled at compil
 The default build includes:
 - `pokemon-tools` - Pokémon data tools (9 tools)
 - `weather-tools` - Weather lookup tools
-- `file-tools` - File system operations
 - `calc-tools` - Mathematical calculator
-
-**Note:** Web search tools are NOT included by default due to DuckDuckGo CAPTCHA issues.
+- `serper-tools` - Google Search via Serper (requires API key)
+- `system-tools` - Date/time and project context
+- `file-tools` - File system operations
 
 ### Available Features
 
@@ -36,32 +38,42 @@ The default build includes:
 | `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ✅ Yes |
 | `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast | ✅ Yes |
 | `calc-tools` | Mathematical calculations | calculate | ✅ Yes |
-| `web-search-tools` | Web search via DuckDuckGo | web_search, web_search_news, web_instant_answer | ❌ No |
+| `serper-tools` | Google Search via Serper API | web_search, web_search_news | ✅ Yes |
+| `search-tools` | DuckDuckGo + Web scraper | web_search, web_search_news, web_scrape | ❌ No |
+| `finance-tools` | Stock quotes | get_stock_quote | ❌ No |
+| `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files | ✅ Yes |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
-### Planned Features
+### Web Search Configuration
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| `search-tools` | DDGSearcher + Scraper from ollama-rs | 🔜 In Progress |
-| `finance-tools` | Stock quotes via Google Finance | 📋 Backlog |
-| `serper-search` | Google search via Serper API | 📋 Backlog |
+**Option 1: Serper (Recommended)** - Google Search results
+```bash
+# Set environment variable
+export SERPER_API_KEY="your-api-key-here"
 
-### Why Web Search Tools Are Disabled by Default
+# Build with serper-tools (default)
+cargo build --release
+```
 
-DuckDuckGo blocks automated requests with CAPTCHA, making web search tools non-functional. They can be enabled at compile time but will likely fail during use.
+Get your free API key at [serper.dev](https://serper.dev) (2,500 free searches/month).
+
+**Option 2: DuckDuckGo** - Free but may be blocked
+```bash
+# Build with search-tools instead
+cargo build --release --no-default-features --features "pokemon-tools,weather-tools,calc-tools,search-tools,file-tools"
+```
 
 ### Building with Custom Features
 
-**Default build (includes Pokémon, Weather, Calculator, File tools):**
+**Default build (includes Serper tools):**
 ```bash
 cargo build --release
 ```
 
-**Enable web search tools (currently broken):**
+**Enable finance tools:**
 ```bash
-cargo build --release --features web-search-tools
+cargo build --release --features finance-tools
 ```
 
 **Enable all tools:**
@@ -76,34 +88,7 @@ cargo build --release --no-default-features --features file-tools
 
 **Build without Pokémon tools:**
 ```bash
-cargo build --release --no-default-features --features "weather-tools,file-tools"
-```
-
-**Using Cargo directly:**
-
-**Default build (no Pokémon tools):**
-```bash
-cargo build --release
-```
-
-**Enable Pokémon tools:**
-```bash
-cargo build --release --features pokemon-tools
-```
-
-**Enable all tools:**
-```bash
-cargo build --release --features all-tools
-```
-
-**Minimal build (only file tools):**
-```bash
-cargo build --release --no-default-features --features file-tools
-```
-
-**Build without web search (currently broken):**
-```bash
-cargo build --release --no-default-features --features "weather-tools,file-tools"
+cargo build --release --no-default-features --features "weather-tools,file-tools,search-tools,calc-tools"
 ```
 
 ### Runtime Filtering
@@ -117,15 +102,6 @@ blacklist = ["fetch_pokemon", "web_search"]
 ```
 
 When a tool is blacklisted, it won't be registered with the coordinator AND won't appear in the system prompt's tool descriptions. The model won't even know the tool exists.
-
-### Feature Matrix
-
-| Feature | Default | Binary Size Impact | Context Impact |
-|---------|---------|-------------------|----------------|
-| pokemon-tools | No | ~50KB | High (8 tools) |
-| weather-tools | Yes | ~30KB | Low (3 tools) |
-| web-search-tools | Yes | ~40KB | Medium (3 tools) |
-| file-tools | Yes | ~35KB | Low (3 tools) |
 
 ## Pokémon Tools (9)
 
@@ -167,8 +143,8 @@ Get learnable moves with optional limit.
 
 ```
 Function: fetch_pokemon_moves
-Args: name (string), limit (optional integer)
-Example: fetch_pokemon_moves(name: "pikachu", limit: 10)
+Args: name (string), limit (optional string)
+Example: fetch_pokemon_moves(name: "pikachu", limit: "10")
 ```
 
 ### fetch_pokemon_evolution
@@ -207,8 +183,8 @@ List all Pokémon of a specific type.
 
 ```
 Function: fetch_pokemon_by_type
-Args: type_name (string), limit (optional integer, default 20, max 100)
-Example: fetch_pokemon_by_type(type_name: "water", limit: 50)
+Args: type_name (string), limit (optional string, default "20", max "100")
+Example: fetch_pokemon_by_type(type_name: "water", limit: "50")
 ```
 
 ### fetch_move_details
@@ -287,39 +263,136 @@ Example: calculate(expression: "(100 + 50) * 0.2")
 
 ## Web Search Tools (3)
 
-⚠️ **Currently blocked by DuckDuckGo CAPTCHA**. Alternative needed.
-
-Powered by DuckDuckGo Lite.
+Powered by DuckDuckGo via ollama-rs built-in DDGSearcher. Works without CAPTCHA issues.
 
 ### web_search
 
-General web search with results.
+Search the web and get results with titles, URLs, and snippets.
 
 ```
 Function: web_search
-Args: query (string), max_results (optional integer)
-Example: web_search(query: "Rust programming language", max_results: 5)
+Args: query (string), num_results (optional string, default "5", max "10")
+Example: web_search(query: "Rust programming language", num_results: "5")
 ```
+
+**Note:** `num_results` accepts strings like "3", "5", "10".
 
 ### web_search_news
 
-News-specific search.
+Search specifically for news articles.
 
 ```
 Function: web_search_news
-Args: query (string), max_results (optional integer)
-Example: web_search_news(query: "technology", max_results: 5)
+Args: query (string), num_results (optional string, default "3", max "10")
+Example: web_search_news(query: "technology", num_results: "5")
 ```
 
-### web_instant_answer
+### web_scrape
 
-Quick facts and definitions.
+Extract content from a webpage URL as Markdown.
 
 ```
-Function: web_instant_answer
-Args: query (string)
-Example: web_instant_answer(query: "What is photosynthesis?")
+Function: web_scrape
+Args: url (string)
+Example: web_scrape(url: "https://www.rust-lang.org")
 ```
+
+**Use cases:**
+- Get detailed content from a URL found via web_search
+- Extract article content
+- Read documentation pages
+
+**Example workflow:**
+1. Use `web_search` to find relevant URLs
+2. Use `web_scrape` to get full content from promising results
+
+## Finance Tool (1)
+
+Powered by Google Finance web scraping.
+
+### get_stock_quote
+
+Get stock quote information from Google Finance.
+
+```
+Function: get_stock_quote
+Args: exchange (string), ticker (string)
+Example: get_stock_quote(exchange: "NASDAQ", ticker: "AAPL")
+Example: get_stock_quote(exchange: "BVMF", ticker: "PETR4")
+```
+
+**Common exchange codes:**
+- `NASDAQ` - NASDAQ (US)
+- `NYSE` - New York Stock Exchange (US)
+- `BVMF` - B3 (Brazil)
+- `LON` - London Stock Exchange (UK)
+- `TPE` - Tokyo Stock Exchange (Japan)
+
+**Note:** Not enabled by default. Build with `--features finance-tools` to enable.
+
+## System Tools (2)
+
+Tools for getting system and project context information.
+
+### get_current_datetime
+
+Get current date, time, timezone, and related information.
+
+```
+Function: get_current_datetime
+Args: (none)
+Example: get_current_datetime()
+```
+
+**Output includes:**
+- Date (day of week, month, day, year)
+- Time with timezone offset
+- Timezone name
+- Day of week
+- Week of year
+- ISO 8601 format
+- Unix timestamp
+
+**Example queries:**
+- "What time is it?"
+- "What day of the week is today?"
+- "What's the current timezone?"
+
+### get_project_context
+
+Get information about the current project (languages, stack, git).
+
+```
+Function: get_project_context
+Args: (none)
+Example: get_project_context()
+```
+
+**Output includes:**
+- Current directory
+- Git branch and remote
+- Languages detected (file counts and percentages)
+- Stack detection (Rust, Node.js, Python, etc.)
+- Key files (README, Cargo.toml, package.json, etc.)
+
+**Important:** This tool is **blacklisted by default** because it returns extensive information. Use only when you need detailed project analysis.
+
+**Relationship with AGENTS.md:**
+- AGENTS.md contains **guidelines and conventions** (HOW to work on the project)
+- get_project_context provides **current state** (WHAT the project is)
+- Always follow AGENTS.md for conventions
+- Use get_project_context for current state information
+
+**Example queries:**
+- "Analyze this project's structure"
+- "What languages are used in this project?"
+- "What's the current git branch?"
+
+**Security:**
+- No shell commands executed
+- No environment variables exposed
+- Ignores `.env` files and secrets
+- Scoped to max 3 directory levels
 
 ## File Operation Tools (5)
 
@@ -461,8 +534,8 @@ Tools are automatically enabled for capable models:
 # Tools auto-enabled for mistral-small
 ask-ai -m mistral-small "Tell me about Pikachu"
 
-# Tools auto-enabled for gpt-oss
-ask-ai -m gpt-oss "What's the weather in Tokyo?"
+# Tools auto-enabled for qwen3-coder
+ask-ai -m qwen3-coder "What's the weather in Tokyo?"
 ```
 
 ### Force Enable Tools
@@ -488,7 +561,7 @@ Blacklist tools via configuration:
 ```toml
 # ~/.config/ask-ai/config.toml
 [tools]
-blacklist = ["web_search", "web_instant_answer"]
+blacklist = ["web_search", "fetch_pokemon"]
 ```
 
 ## Tool Examples
@@ -529,11 +602,9 @@ ask-ai "What's the temperature in New York?"
 ask-ai "Weather in Sydney, Australia"
 ```
 
-### Web Search (Currently Blocked)
+### Web Search Queries
 
 ```bash
-# Note: Web search is currently blocked by DuckDuckGo CAPTCHA
-
 # General search
 ask-ai "Search for Rust async patterns"
 
@@ -542,6 +613,21 @@ ask-ai "Latest technology news"
 
 # Quick facts
 ask-ai "What is quantum computing?"
+
+# Follow up with scraping
+ask-ai "Find information about the Rust programming language, then scrape the official website"
+```
+
+### Stock Quotes
+
+```bash
+# US stocks
+ask-ai "Get the stock quote for Apple"
+ask-ai "What's Google's stock price?"
+
+# Brazilian stocks
+ask-ai "Cotação da Petrobras"
+ask-ai "Preço das ações da Vale"
 ```
 
 ### File Operations
@@ -591,28 +677,12 @@ graph TD
     D -->|Yes> E[Use Pokémon tools]
     D -->|No> F{Contains Weather?}
     F -->|Yes> G[Use Weather tools]
-    F -->|No> H{Needs Web Search?}
-    H -->|Yes> I[Use Web Search tools]
-    H -->|No> J[Answer directly]
+    F -->|No> H{Contains Stock ticker?}
+    H -->|Yes> I[Use Finance tools]
+    H -->|No> J[Use Web Search]
 ```
 
 ## Known Issues
-
-### DuckDuckGo Web Search Blocked
-
-**Status**: ⚠️ Currently blocked
-
-**Problem**: DuckDuckGo Lite endpoint blocks automated requests with CAPTCHA
-
-**Error**: "Unfortunately, bots use DuckDuckGo too"
-
-**Workaround**: None currently
-
-**Solution**: Alternative search provider needed
-- SerpAPI (paid)
-- Bing API (paid)
-- Searx (self-hosted)
-- Local LLM web search
 
 ### GPT-OSS Tool Calling
 
@@ -624,16 +694,17 @@ graph TD
 
 **Workaround**: Use other models for tool calls:
 - `mistral-small`
-- `pepe`
-- `lfm`
+- `qwen3-coder`
+- `llama3.2`
 
 ## Tool Capable Models
 
 | Model | Tools | Notes |
 |-------|-------|-------|
 | mistral-small | ✅ | Best for tools |
-| gpt-oss | ⚠️ | May have issues |
 | qwen3-coder | ✅ | Code + tools |
+| llama3.2 | ✅ | General purpose |
+| gpt-oss | ⚠️ | May have issues |
 
 ## Debug Mode
 
@@ -716,6 +787,28 @@ Tools are designed to handle errors gracefully and provide helpful feedback to t
 
 **Tools never crash the application.** Instead, they return informative error messages that help the LLM understand what went wrong and how to fix it.
 
+**CRITICAL: All numeric/optional parameters must use `Option<String>` type.** LLMs frequently pass strings like `"5"` instead of integers. The tool must parse these internally:
+
+```rust
+// CORRECT: Accept strings, parse internally
+pub async fn web_search(
+    query: String,
+    num_results: Option<String>,  // NOT Option<u8>!
+) -> Result<String, ...> {
+    let num = parse_num_results(num_results, 5, 10);
+    // ...
+}
+
+fn parse_num_results(s: Option<String>, default: usize, max: usize) -> usize {
+    match s {
+        Some(ref val) if !val.trim().is_empty() => {
+            val.trim().parse::<usize>().unwrap_or(default).min(max)
+        }
+        _ => default,
+    }
+}
+```
+
 Examples:
 
 | Situation | Error Message |
@@ -763,17 +856,9 @@ Disable potentially problematic tools:
 ```toml
 # ~/.config/ask-ai/config.toml
 [tools]
-# Disable web search (currently broken)
-blacklist = ["web_search", "web_search_news", "web_instant_answer"]
+# Disable tools you don't want
+blacklist = ["web_search"]
 ```
-
-## Future Tools
-
-Planned additions:
-
-- **System Tools**: Execute commands (configurable whitelist)
-- **Web Scraping**: Extract content from URLs
-- **Database Tools**: Query local databases
 
 ## See Also
 

@@ -5,19 +5,29 @@ use serde::Deserialize;
 pub mod files;
 #[cfg(feature = "calc-tools")]
 pub mod calc;
+#[cfg(feature = "finance-tools")]
+pub mod finance;
 #[cfg(feature = "pokemon-tools")]
 pub mod pokemon;
-#[cfg(feature = "web-search-tools")]
-pub mod search;
+#[cfg(feature = "search-tools")]
+pub mod search_builtin;
+#[cfg(feature = "serper-tools")]
+pub mod serper;
+#[cfg(feature = "system-tools")]
+pub mod system;
 pub mod weather;
 
 pub use files::*;
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
+#[cfg(feature = "finance-tools")]
+pub use finance::*;
 #[cfg(feature = "pokemon-tools")]
 pub use pokemon::*;
-#[cfg(feature = "web-search-tools")]
-pub use search::*;
+#[cfg(feature = "search-tools")]
+pub use search_builtin::*;
+#[cfg(feature = "system-tools")]
+pub use system::*;
 pub use weather::*;
 
 /// Common response structure for PokeAPI

@@ -140,9 +140,8 @@ fn default_skin() -> String {
 }
 
 fn default_blacklist() -> Vec<String> {
-    // Web search tools are disabled via feature flag (not compiled in by default)
-    // No tools are blacklisted by default
-    vec![]
+    // Web search tools are broken (blocked by DDG CAPTCHA)
+    Vec::new()
 }
 
 fn default_true() -> bool {
@@ -354,16 +353,15 @@ ollama_port = 11434
 # Blacklisted tools won't be available to the AI, saving context window space.
 #
 # Available tools include:
-#   - web_search, web_search_news, web_instant_answer (Web search - BROKEN)
+#   - get_current_datetime, get_project_context (System information)
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
 #   - read_file, list_directory, search_files (File operations)
 #   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
+#   - web_search, web_search_news, web_instant_answer (Web search - BROKEN)
 #
-# ⚠️  IMPORTANT: Web search tools are DISABLED BY DEFAULT ⚠️
-# They are currently blocked by DuckDuckGo CAPTCHA and do not work reliably.
-# Remove them from this list to experiment, but expect failures.
-# Default: ["web_search", "web_search_news", "web_instant_answer"]
-blacklist = ["web_search", "web_search_news", "web_instant_answer"]
+# Note: Web search tools are blocked by DuckDuckGo CAPTCHA and may not work.
+# Default: [] (all tools enabled)
+blacklist = []
 
 # Enable file operation sandboxing for security.
 # When true, file tools (read_file, list_directory, search_files) can only 

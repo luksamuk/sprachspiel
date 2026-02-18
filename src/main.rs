@@ -493,8 +493,49 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
             }
         }
         
-        // Search tools (only if feature enabled)
-        #[cfg(feature = "web-search-tools")]
+        // Web search tools - prefer Serper over DDG
+        // Serper: Google Search via API (requires SERPER_API_KEY)
+        // DDG: DuckDuckGo (free but may be blocked by CAPTCHA)
+        #[cfg(feature = "serper-tools")]
+        {
+            if crate::tools::serper::is_serper_available() {
+                if args.debug {
+                    eprintln!("🔑 [Serper] API key found - enabling Google Search via Serper");
+                }
+                if is_tool_allowed("web_search") {
+                    coordinator = coordinator.add_tool(crate::tools::serper::web_search);
+                    tool_count += 1;
+                }
+                if is_tool_allowed("web_search_news") {
+                    coordinator = coordinator.add_tool(crate::tools::serper::web_search_news);
+                    tool_count += 1;
+                }
+            } else {
+                #[cfg(feature = "search-tools")]
+                {
+                    if args.debug {
+                        eprintln!("ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)");
+                    }
+                    if is_tool_allowed("web_search") {
+                        coordinator = coordinator.add_tool(web_search);
+                        tool_count += 1;
+                    }
+                    if is_tool_allowed("web_search_news") {
+                        coordinator = coordinator.add_tool(web_search_news);
+                        tool_count += 1;
+                    }
+                }
+                #[cfg(not(feature = "search-tools"))]
+                {
+                    if args.debug {
+                        eprintln!("⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature");
+                    }
+                }
+            }
+        }
+        
+        // DDG fallback when serper-tools not enabled but search-tools is
+        #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
         {
             if is_tool_allowed("web_search") {
                 coordinator = coordinator.add_tool(web_search);
@@ -504,8 +545,26 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
                 coordinator = coordinator.add_tool(web_search_news);
                 tool_count += 1;
             }
-            if is_tool_allowed("web_instant_answer") {
-                coordinator = coordinator.add_tool(web_instant_answer);
+        }
+        
+        // Web scraper - always available with search tools
+        #[cfg(feature = "search-tools")]
+        {
+            if is_tool_allowed("web_scrape") {
+                coordinator = coordinator.add_tool(web_scrape);
+                tool_count += 1;
+            }
+        }
+        
+        // System tools (only if feature enabled)
+        #[cfg(feature = "system-tools")]
+        {
+            if is_tool_allowed("get_current_datetime") {
+                coordinator = coordinator.add_tool(get_current_datetime);
+                tool_count += 1;
+            }
+            if is_tool_allowed("get_project_context") {
+                coordinator = coordinator.add_tool(get_project_context);
                 tool_count += 1;
             }
         }
@@ -825,8 +884,49 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
             }
         }
         
-        // Search tools (only if feature enabled)
-        #[cfg(feature = "web-search-tools")]
+        // Web search tools - prefer Serper over DDG
+        // Serper: Google Search via API (requires SERPER_API_KEY)
+        // DDG: DuckDuckGo (free but may be blocked by CAPTCHA)
+        #[cfg(feature = "serper-tools")]
+        {
+            if crate::tools::serper::is_serper_available() {
+                if cli.debug {
+                    eprintln!("🔑 [Serper] API key found - enabling Google Search via Serper");
+                }
+                if is_tool_allowed("web_search") {
+                    coordinator = coordinator.add_tool(crate::tools::serper::web_search);
+                    tool_count += 1;
+                }
+                if is_tool_allowed("web_search_news") {
+                    coordinator = coordinator.add_tool(crate::tools::serper::web_search_news);
+                    tool_count += 1;
+                }
+            } else {
+                #[cfg(feature = "search-tools")]
+                {
+                    if cli.debug {
+                        eprintln!("ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)");
+                    }
+                    if is_tool_allowed("web_search") {
+                        coordinator = coordinator.add_tool(web_search);
+                        tool_count += 1;
+                    }
+                    if is_tool_allowed("web_search_news") {
+                        coordinator = coordinator.add_tool(web_search_news);
+                        tool_count += 1;
+                    }
+                }
+                #[cfg(not(feature = "search-tools"))]
+                {
+                    if cli.debug {
+                        eprintln!("⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature");
+                    }
+                }
+            }
+        }
+        
+        // DDG fallback when serper-tools not enabled but search-tools is
+        #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
         {
             if is_tool_allowed("web_search") {
                 coordinator = coordinator.add_tool(web_search);
@@ -836,8 +936,35 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 coordinator = coordinator.add_tool(web_search_news);
                 tool_count += 1;
             }
-            if is_tool_allowed("web_instant_answer") {
-                coordinator = coordinator.add_tool(web_instant_answer);
+        }
+        
+        // Web scraper - always available with search tools
+        #[cfg(feature = "search-tools")]
+        {
+            if is_tool_allowed("web_scrape") {
+                coordinator = coordinator.add_tool(web_scrape);
+                tool_count += 1;
+            }
+        }
+        
+        // Finance tools (only if feature enabled)
+        #[cfg(feature = "finance-tools")]
+        {
+            if is_tool_allowed("get_stock_quote") {
+                coordinator = coordinator.add_tool(get_stock_quote);
+                tool_count += 1;
+            }
+        }
+        
+        // System tools (only if feature enabled)
+        #[cfg(feature = "system-tools")]
+        {
+            if is_tool_allowed("get_current_datetime") {
+                coordinator = coordinator.add_tool(get_current_datetime);
+                tool_count += 1;
+            }
+            if is_tool_allowed("get_project_context") {
+                coordinator = coordinator.add_tool(get_project_context);
                 tool_count += 1;
             }
         }

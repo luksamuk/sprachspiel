@@ -96,7 +96,17 @@ pub fn build_tool_user_prompt(blacklist: &HashSet<&str>) -> String {
         r#"You are a helpful agent invoked through a command-line script on Arch Linux.
 You have access to various tools for fetching real-time data. Your training data is outdated - ALWAYS use tools when possible.
 
-⚠️  CRITICAL RULES FOR TOOL SELECTION:
+"#,
+    );
+    
+    // Inject system context (date, CWD, git branch)
+    let system_context = crate::context::get_system_context();
+    if !system_context.is_empty() {
+        prompt.push_str(&format!("Current context:\n{}\n\n", system_context));
+    }
+    
+    prompt.push_str(
+        r#"⚠️  CRITICAL RULES FOR TOOL SELECTION:
 
 "#,
     );
@@ -169,10 +179,47 @@ Examples:
         );
     }
 
-    // Web search tools section - combined into single cfg block
-    #[cfg(feature = "web-search-tools")]
+    // Web search tools section
+    #[cfg(feature = "serper-tools")]
     {
-        let search_tools = ["web_search", "web_search_news", "web_instant_answer"];
+        let search_tools = ["web_search", "web_search_news"];
+        let search_enabled: Vec<_> = search_tools
+            .iter()
+            .filter(|tool| !blacklist.contains(**tool))
+            .copied()
+            .collect();
+        
+        if !search_enabled.is_empty() {
+            prompt.push_str(
+                r#"**3. WEB SEARCH TOOLS (Google via Serper) - for EVERYTHING ELSE:**
+Use web_search for ANY query that is NOT about Pokémon or weather.
+This includes:
+- General knowledge questions
+- Current events and news
+- People, places, movies, games (including Sonic, Mario, Zelda, etc.)
+- Technology, science, history
+- Definitions and facts
+- "Find data about..." queries
+- ANY query mentioning "search", "find", "look up", "research"
+
+Examples:
+- "Who is Sonic the Hedgehog?" → CALL web_search
+- "Latest news about AI" → CALL web_search_news
+- "What is quantum computing?" → CALL web_search
+- "When was the Eiffel Tower built?" → CALL web_search
+- "Find data about Nintendo games" → CALL web_search
+
+⚠️  DO NOT assume everything is Pokémon-related. Sonic, Mario, Link, etc. are NOT Pokémon - use web_search for them.
+
+"#,
+            );
+        }
+    }
+
+    // Web search tools section (DDG fallback)
+    #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
+    {
+        let search_tools = ["web_search", "web_search_news", "web_scrape"];
         let search_enabled: Vec<_> = search_tools
             .iter()
             .filter(|tool| !blacklist.contains(**tool))
@@ -196,8 +243,9 @@ Examples:
 - "Who is Sonic the Hedgehog?" → CALL web_search
 - "Latest news about AI" → CALL web_search_news
 - "What is quantum computing?" → CALL web_search
-- "When was the Eiffel Tower built?" → CALL web_instant_answer
+- "When was the Eiffel Tower built?" → CALL web_search
 - "Find data about Nintendo games" → CALL web_search
+- "Read more about this: https://..." → CALL web_scrape
 
 ⚠️  DO NOT assume everything is Pokémon-related. Sonic, Mario, Link, etc. are NOT Pokémon - use web_search for them.
 
@@ -280,6 +328,67 @@ Available tools:
         prompt.push('\n');
     }
 
+    // Add available Search tools (Serper preferred)
+    #[cfg(feature = "serper-tools")]
+    {
+        if !blacklist.contains("web_search") {
+            prompt.push_str("**Web Search Tools (use for general queries):**\n");
+            prompt.push_str("- web_search: Search the web using Google (via Serper)\n");
+            if !blacklist.contains("web_search_news") {
+                prompt.push_str("- web_search_news: Search for news articles\n");
+            }
+            prompt.push('\n');
+        }
+    }
+
+    // Add available Search tools (DDG fallback)
+    #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
+    {
+        let search_tools = ["web_search", "web_search_news", "web_scrape"];
+        let search_enabled: Vec<_> = search_tools
+            .iter()
+            .filter(|tool| !blacklist.contains(**tool))
+            .copied()
+            .collect();
+        
+        if !search_enabled.is_empty() {
+            prompt.push_str("**Web Search Tools (use for general queries):**\n");
+            for tool in &search_enabled {
+                let description = match *tool {
+                    "web_search" => "Search the web using DuckDuckGo",
+                    "web_search_news" => "Search for news articles",
+                    "web_scrape" => "Extract content from a webpage URL",
+                    _ => "Tool",
+                };
+                prompt.push_str(&format!("- {}: {}\n", tool, description));
+            }
+            prompt.push('\n');
+        }
+    }
+
+    // Add available Finance tools
+    #[cfg(feature = "finance-tools")]
+    {
+        if !blacklist.contains("get_stock_quote") {
+            prompt.push_str("**Finance Tools:**\n");
+            prompt.push_str("- get_stock_quote: Get stock quote from Google Finance (exchange, ticker)\n");
+            prompt.push('\n');
+        }
+    }
+
+    // Add available System tools
+    #[cfg(feature = "system-tools")]
+    {
+        if !blacklist.contains("get_current_datetime") {
+            prompt.push_str("**System Tools:**\n");
+            prompt.push_str("- get_current_datetime: Get current date, time, and timezone\n");
+            if !blacklist.contains("get_project_context") {
+                prompt.push_str("- get_project_context: Get project state (languages, git, key files)\n");
+            }
+            prompt.push('\n');
+        }
+    }
+
     // Add available File tools
     #[cfg(feature = "file-tools")]
     if !file_enabled.is_empty() {
@@ -299,7 +408,12 @@ Available tools:
     }
 
     prompt.push_str(
-        r#"Respond using ONLY the tool results. Your training data is unreliable for current data.
+        r#"**Project Context Sources:**
+- AGENTS.md contains GUIDELINES and CONVENTIONS (always follow for HOW to work)
+- get_project_context provides CURRENT STATE (git, files, stack - use for WHAT exists)
+- Priority: AGENTS.md for conventions, get_project_context for current state
+
+Respond using ONLY the tool results. Your training data is unreliable for current data.
 Always respond in the same language the user uses.
 
 IMPORTANT: This is an EPHEMERAL single Q&A session. You get ONE question and must provide ONE complete answer.

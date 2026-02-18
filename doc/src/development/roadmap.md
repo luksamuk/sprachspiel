@@ -167,113 +167,69 @@ cargo ndk -t arm64-v8a -o ./dist build --release
 ### Overview
 
 The `ollama-rs` library provides built-in tools under `ollama_rs::generation::tools::implementations`:
-- **DDGSearcher** - DuckDuckGo web search
-- **Scraper** - Website content extraction (HTML to Markdown)
-- **Calculator** - Mathematical expression evaluation
-- **StockScraper** - Google Finance stock quotes
-- **SerperSearchTool** - Google search via Serper.dev API
-- **Browserless** - Headless browser scraping (requires external service)
+- **DDGSearcher** - DuckDuckGo web search ✅ IMPLEMENTED
+- **Scraper** - Website content extraction (HTML to Markdown) ✅ IMPLEMENTED
+- **Calculator** - Mathematical expression evaluation ✅ IMPLEMENTED
+- **StockScraper** - Google Finance stock quotes ✅ IMPLEMENTED
 
-### Problem
+### Implementation Status
 
-Our current web search implementation (`src/tools/search.rs`) is blocked by DuckDuckGo CAPTCHA. The built-in `DDGSearcher` may have a different implementation that works.
+✅ **Phase 1: Calculator** - COMPLETED (Feb 2026)
+- Created `src/tools/calc.rs` with wrapper
+- Feature flag `calc-tools` (enabled by default)
+- Tested with mathematical expressions
+
+✅ **Phase 2: DDGSearcher + Scraper** - COMPLETED (Feb 2026)
+- Tested DDGSearcher standalone (NO CAPTCHA issues!)
+- Created `src/tools/search_builtin.rs` with wrappers
+- State management with `once_cell` singleton
+- Feature flag `search-tools` (enabled by default)
+- Tools: `web_search`, `web_search_news`, `web_scrape`
+
+✅ **Phase 3: StockScraper** - COMPLETED (Feb 2026)
+- Created `src/tools/finance.rs` with wrapper
+- Feature flag `finance-tools` (disabled by default)
+- Tool: `get_stock_quote(exchange, ticker)`
 
 ### Architecture Decision: Wrapper Pattern
 
-Built-in tools use `?` operator for error propagation, which crashes the tool chain. We need wrappers that:
+Built-in tools use `?` operator for error propagation, which crashes the tool chain. We use wrappers that:
 1. Catch errors and convert to `Ok(String)` with error message
 2. Add `log_tool_call` / `log_tool_result` for debug visibility
 3. Format output consistently (English, standard format)
+4. **Use `Option<String>` for all numeric/optional parameters** (LLMs send strings!)
 
 ```rust
-// Wrapper pattern example
-pub async fn calculate(expression: String) -> Result<String, ...> {
-    log_tool_call("calculate", &[("expression".to_string(), expression.clone())]);
-    let result = match Calculator.call(params).await {
-        Ok(r) => r,
-        Err(e) => format!("Calculation error: {}", e),
-    };
-    log_tool_result("calculate", &result);
-    Ok(result)
+// CORRECT: Use String for all parameters
+pub async fn web_search(
+    query: String,
+    num_results: Option<String>,  // NOT Option<u8>!
+) -> Result<String, ...> {
+    let num = parse_num_results(num_results, 5, 10);  // Parse with default
+}
+
+// Parse helper
+fn parse_num_results(s: Option<String>, default: usize, max: usize) -> usize {
+    match s {
+        Some(ref val) if !val.trim().is_empty() => {
+            val.trim().parse::<usize>().unwrap_or(default).min(max)
+        }
+        _ => default,
+    }
 }
 ```
-
-### Tool Composition: Separate vs Composite
-
-**Research completed (Feb 2026):**
-
-Industry consensus is **separate tools with LLM orchestration**:
-- LangChain, AutoGPT, OpenAI Assistants, Claude - all use separate tools
-- Modern LLMs reliably chain tools with clear descriptions
-- Separate tools are more flexible, reusable, and easier to debug
-
-**Decision:** Keep `web_search_ddg` and `scrape_website` as separate tools. LLM will chain them naturally when needed.
-
-### Implementation Phases
-
-#### Phase 1: Calculator (Priority: HIGH)
-**Status:** Ready to implement
-
-Simplest integration - validates wrapper architecture.
-
-**Tasks:**
-- [ ] Create `src/tools/calc.rs` with wrapper
-- [ ] Add feature flag `calc-tools` (enabled by default)
-- [ ] Register tool in `main.rs`
-- [ ] Update `prompts.rs` with tool description
-- [ ] Test with mathematical expressions
-
-**Example usage:**
-```
-User: "What is 15% of 850?"
-→ LLM calls calculate(expression: "850 * 0.15")
-→ Returns: "127.5"
-```
-
-#### Phase 2: DDGSearcher + Scraper (Priority: HIGH)
-**Status:** Ready after Phase 1
-
-**Tasks:**
-- [ ] Test DDGSearcher standalone (CAPTCHA verification)
-- [ ] Create `src/tools/search_builtin.rs` with wrappers
-- [ ] State management for DDGSearcher (singleton with `once_cell`)
-- [ ] Add feature flag `search-tools` (replaces old `web-search-tools`)
-- [ ] Remove old `src/tools/search.rs`
-- [ ] Update `prompts.rs`
-- [ ] Test search → scrape chaining
-
-**Tool descriptions:**
-```
-- web_search_ddg(query): Search the web, returns URLs and snippets
-- scrape_website(url): Extract content from a URL as Markdown
-```
-
-#### Phase 3: StockScraper (Priority: LOW)
-**Status:** Backlog
-
-**Tasks:**
-- [ ] Create wrapper with error handling
-- [ ] Add feature flag `finance-tools` (disabled by default)
-- [ ] Document usage examples
 
 ### Feature Flags
 
 ```toml
 [features]
-default = ["weather-tools", "file-tools", "pokemon-tools", "calc-tools"]
+default = ["weather-tools", "file-tools", "pokemon-tools", "calc-tools", "search-tools"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools"]
 
-calc-tools = []                    # Calculator (NEW - enabled)
-search-tools = ["dep:scraper"]     # DDGSearcher + Scraper (CHANGED)
-finance-tools = []                 # Stock quotes (NEW - disabled)
-serper-search = []                 # Google via Serper (NEW - disabled)
-
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", 
-             "file-tools", "calc-tools", "finance-tools"]
+calc-tools = []                    # Calculator (enabled)
+search-tools = ["dep:html2md"]     # DDGSearcher + Scraper (enabled)
+finance-tools = ["dep:scraper"]    # Stock quotes (disabled)
 ```
-
-### Dependencies
-
-DDGSearcher requires `scraper` crate (HTML parsing). Already a transitive dependency of `ollama-rs` via `tool-implementations` feature.
 
 ---
 
@@ -705,15 +661,15 @@ pub async fn my_custom_tool(arg: String) -> Result<String> {
 
 ### Current Status (Feb 2026)
 
-**DDGSearcher (ollama-rs built-in)** - Testing in progress
-- Uses different implementation than our custom search
-- May avoid CAPTCHA issues
+✅ **DDGSearcher (ollama-rs built-in)** - WORKING
+- Uses different implementation than custom search
+- No CAPTCHA issues
 - Free, no API key required
+- Feature flag: `search-tools` (enabled by default)
 
-### Backlog: Serper Search Tool
+### Future Possibility: Serper Search Tool
 
-**Priority:** LOW
-**Status:** Backlog (not scheduled)
+**Status:** NOT SCHEDULED - Documented for future reference only
 
 Google Search via Serper.dev API.
 
@@ -728,61 +684,12 @@ Google Search via Serper.dev API.
 - Rate limits on free tier
 - External dependency
 
-**Implementation:**
+**If implemented in the future:**
 ```rust
 // Feature flag: serper-search (disabled by default)
 // Requires: SERPER_API_KEY environment variable
 // Graceful failure if key missing
 ```
-
-**Tasks:**
-- [ ] Document how to obtain Serper API key
-- [ ] Implement wrapper with graceful missing-key handling
-- [ ] Add to `all-tools` feature
-- [ ] Test with real queries
-
-### Option 2: Bing API (Paid)
-
-Pros:
-- Reliable
-- Structured results
-
-Cons:
-- Requires API key
-- Paid service
-
-### Option 2: Bing API (Paid)
-
-Pros:
-- Microsoft integration
-- Good results
-
-Cons:
-- Requires API key
-- Rate limits
-
-### Option 3: Searx (Self-Hosted)
-
-Pros:
-- Free
-- Privacy-focused
-- Self-hosted
-
-Cons:
-- Requires server
-- Setup complexity
-
-### Option 4: Local LLM Web Search
-
-Pros:
-- Privacy
-- No API keys
-
-Cons:
-- Slower
-- Less accurate
-
-**Decision:** TBD - Community feedback needed
 
 ## Testing Improvements
 

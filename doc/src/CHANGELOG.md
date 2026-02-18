@@ -2,11 +2,53 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.10.0] - 2026-02-18
+
+### Added
+
+- **System context injection** - Minimal context (~20 tokens) injected into every prompt
+  - Current date (day of week, date)
+  - Current working directory
+  - Git branch (if in repo)
+- **New tool: `get_current_datetime`** - Current date, time, and timezone
+  - Feature flag: `system-tools` (enabled by default)
+  - Returns: date, time, timezone, day of week, week of year, ISO 8601, Unix timestamp
+- **New tool: `get_project_context`** - Project state (languages, git, stack)
+  - Feature flag: `system-tools` (enabled by default)
+  - Provides: directory, git branch/remote, language detection, stack detection, key files
+  - **Relationship with AGENTS.md**: AGENTS.md contains conventions (HOW), get_project_context provides state (WHAT)
+
+### Changed
+
+- **Default feature flags reorganized**:
+  - `system-tools` is now enabled by default
+  - All tools enabled by default (empty blacklist)
+- **Code cleanup** - Fixed all clippy warnings
+
+### Removed
+
+- **Legacy web-search-tools removed** - Replaced by serper-tools
+
 ## [0.9.0] - 2026-02-18
 
 ### Added
 
 - **New tool: `fetch_pokemon_by_type`** - List all Pokémon of a specific type (limit 100)
+- **New tool: `calculate`** - Mathematical expression evaluation
+  - Basic arithmetic: +, -, *, /
+  - Exponents: ** or ^
+  - Percentages: "15% of 850"
+  - Functions: sqrt(), sin(), cos(), tan(), log(), etc.
+  - Feature flag: `calc-tools` (enabled by default)
+- **New tool: `get_stock_quote`** - Stock quotes from Google Finance
+  - Feature flag: `finance-tools` (disabled by default)
+  - Usage: `get_stock_quote(exchange: "NASDAQ", ticker: "AAPL")`
+- **New tool: Web search via Serper** - Google Search results via Serper.dev API
+  - Feature flag: `serper-tools` (enabled by default)
+  - Requires `SERPER_API_KEY` environment variable
+  - Tools: `web_search`, `web_search_news`
+  - Automatic fallback to DuckDuckGo if API key not set
+  - Debug mode shows: "🔑 [Serper] API key found - enabling Google Search via Serper"
 - **All tools now output in English** - Consistent English output across all tools
 - **Pokémon tools enabled by default** - No longer need `--features pokemon-tools`
 - **Makefile targets for feature builds**:
@@ -18,10 +60,15 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Changed
 
-- **BREAKING: Web search tools disabled by default** - DuckDuckGo CAPTCHA issues, enable with `--features web-search-tools`
 - **BREAKING: Tool output language changed to English** - All tool responses now in English
-- **Empty default blacklist** - No tools blacklisted by default anymore
-- **Version bumped to 0.9.0** - Reflecting significant changes
+- **Web search now prefers Serper over DuckDuckGo** - Serper uses Google Search with no CAPTCHA issues
+- **Feature flag reorganization**:
+  - `serper-tools` - Google Search via Serper API (enabled by default)
+  - `system-tools` - Date/time and project context (enabled by default)
+  - `search-tools` - DuckDuckGo + Web scraper (disabled, used as fallback)
+  - `finance-tools` - Stock quotes via Google Finance (disabled by default)
+  - `all-tools` now includes all tool categories
+- **All numeric/optional tool parameters now accept strings** - LLMs frequently pass `"5"` instead of `5`, tools now handle this gracefully
 
 ### Fixed
 
@@ -29,30 +76,27 @@ All notable changes to Ask-AI will be documented in this file.
 - All tools have proper error handling - No more crashes from network/API errors
 - Raw errors shown with pretty printing in debug mode - Use `{:#?}` for readable output
 - Pokémon tools fixed - All 9 tools have proper logging and error handling
+- **Web search CAPTCHA issue resolved** - Using Serper for Google Search (no CAPTCHA)
+- **Tool parameter parsing fixed** - All tools now accept strings for numeric parameters
 
 ### Documentation
 
-- Updated tools.md with new defaults and features
+- Updated tools.md with Serper configuration, system tools, and usage examples
 - Updated CHANGELOG.md with all changes
 - Updated README.md with AGENTS.md context and build features
 - Updated contributing.md with feature flags and Makefile commands
 - Updated man page with --ignore-agents flag
+- Updated roadmap.md with ollama-rs integration status
 
 ## [Unreleased]
 
 ### Planned
 
-- **Improved web search** - Integration with ollama-rs DDGSearcher (CAPTCHA testing)
-- **Website scraper** - HTML to Markdown extraction via ollama-rs Scraper
+- Custom model support - Allow users to define custom models in config
+- Termux builds - Android/Termux support
 
 ### Added
 
-- **New tool: `calculate`** - Mathematical expression evaluation
-  - Basic arithmetic: +, -, *, /
-  - Exponents: ** or ^
-  - Percentages: "15% of 850"
-  - Functions: sqrt(), sin(), cos(), tan(), log(), etc.
-  - Feature flag: `calc-tools` (enabled by default)
 - Complete documentation with mdBook
 - Man page for terminal reference
 - Development documentation (architecture, roadmap, contributing)
@@ -64,12 +108,6 @@ All notable changes to Ask-AI will be documented in this file.
 - **AGENTS.md context injection** - Automatically load project context from current directory
 - **`--ignore-agents` flag** - Disable AGENTS.md context loading
 - Security sanitization for AGENTS.md content (injection patterns, executable code blocks)
-- **Makefile targets for feature builds**:
-  - `make build-pokemon` - Build with Pokémon tools
-  - `make build-all-tools` - Build with all tools
-  - `make install-local-pokemon` - Local install with Pokémon tools
-  - `make install-local-all-tools` - Local install with all tools
-  - `make test-all` - Run tests with all features
 
 ### Fixed
 
@@ -82,8 +120,7 @@ All notable changes to Ask-AI will be documented in this file.
 - **Weather tools fixed** - API response structs now use optional fields
 - **All tools now have proper error handling** - No more crashes from network/API errors
 - **Raw errors shown with pretty printing in debug mode** - Use `{:#?}` for readable error output
-- **Pokémon tools fixed** - All 8 tools now have proper logging and error handling
-- **Web search tools fixed** - All 3 tools now have proper logging and error handling
+- **Pokémon tools fixed** - All 9 tools now have proper logging and error handling
 
 ### Changed
 
@@ -99,13 +136,6 @@ All notable changes to Ask-AI will be documented in this file.
 - **`count_lines`** now shows only line count (removed byte count - LLMs think in lines)
 - **`read_file_segment`** now requires both `start_line` and `num_lines` (no defaults)
 - Spinner now suspends during tool output (no more frozen spinner text)
-
-## [Unreleased]
-
-### Added
-
-- **Custom Model Support** (planned) - Allow users to define custom models with their own parameters
-- **Multilingual Injection Pattern Detection** (low priority) - Security improvement for AGENTS.md
 
 ## [0.1.0] - 2026-02-17
 
