@@ -114,6 +114,54 @@ temperature = 0.5
 
 ---
 
+## High Priority: Termux Builds
+
+### Android/Termux Support
+
+**Priority:** HIGH
+
+**Problem:** Users want to run ask-ai on Android devices via Termux. Cross-compilation and binary distribution needed.
+
+**Approaches to explore:**
+
+1. **Cross-compilation:**
+   - Target: `aarch64-linux-android`
+   - Toolchain: NDK or cargo-ndk
+   - Challenges: OpenSSL, native dependencies
+
+2. **Pre-built binaries:**
+   - Release assets for Android
+   - CI/CD pipeline for automated builds
+   - Architecture: aarch64 (most common)
+
+3. **Termux-specific packaging:**
+   - Package for Termux package manager
+   - Handle dependency differences
+   - Documentation for installation
+
+**Research needed:**
+- Test cross-compilation with `cargo-ndk`
+- Verify all dependencies compile for Android
+- Test on actual Termux installation
+- Check size and performance impact
+
+**Tasks:**
+- [ ] Research: Cross-compilation setup for Android
+- [ ] Research: Test build with cargo-ndk or similar
+- [ ] Research: Verify dependency compatibility
+- [ ] Implement: CI workflow for Termux builds
+- [ ] Test: Run tests on Termux environment
+- [ ] Document: Installation instructions for Termux
+- [ ] Release: Add Android binaries to GitHub releases
+
+**Example build command (research needed):**
+```bash
+# Potential approach with cargo-ndk
+cargo ndk -t arm64-v8a -o ./dist build --release
+```
+
+---
+
 ## Pre-Phase Research & Configuration Improvements
 
 ### 1. Enhanced Configuration System
