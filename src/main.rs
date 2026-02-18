@@ -484,6 +484,15 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
             }
         }
         
+        // Calculator tool (only if feature enabled)
+        #[cfg(feature = "calc-tools")]
+        {
+            if is_tool_allowed("calculate") {
+                coordinator = coordinator.add_tool(calculate);
+                tool_count += 1;
+            }
+        }
+        
         // Search tools (only if feature enabled)
         #[cfg(feature = "web-search-tools")]
         {
@@ -803,6 +812,15 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
             }
             if is_tool_allowed("get_weather_forecast") {
                 coordinator = coordinator.add_tool(get_weather_forecast);
+                tool_count += 1;
+            }
+        }
+        
+        // Calculator tool (only if feature enabled)
+        #[cfg(feature = "calc-tools")]
+        {
+            if is_tool_allowed("calculate") {
+                coordinator = coordinator.add_tool(calculate);
                 tool_count += 1;
             }
         }

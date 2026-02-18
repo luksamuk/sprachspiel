@@ -272,45 +272,12 @@ Available tools:
         prompt.push('\n');
     }
 
-    // Add available Weather tools
-    #[cfg(feature = "weather-tools")]
-    if !weather_enabled.is_empty() {
-        prompt.push_str("**Weather Tools (use ONLY for weather):**\n");
-        for tool in &weather_enabled {
-            let description = match *tool {
-                "get_weather" => "Get current weather and 3-day forecast for a location",
-                "get_current_weather" => "Get current weather only (simpler response)",
-                "get_weather_forecast" => "Get detailed weather forecast for up to 7 days",
-                _ => "Tool",
-            };
-            prompt.push_str(&format!("- {}: {}\n", tool, description));
-        }
-        prompt.push('\n');
-    }
-
-    // Add available Web Search tools (must be inside same cfg block)
-    #[cfg(feature = "web-search-tools")]
+    // Add available Calculator tool
+    #[cfg(feature = "calc-tools")]
     {
-        let search_tools = ["web_search", "web_search_news", "web_instant_answer"];
-        let search_enabled: Vec<_> = search_tools
-            .iter()
-            .filter(|tool| !blacklist.contains(**tool))
-            .copied()
-            .collect();
-        
-        if !search_enabled.is_empty() {
-            prompt.push_str("**Web Search Tools (use for EVERYTHING ELSE):**\n");
-            for tool in &search_enabled {
-                let description = match *tool {
-                    "web_search" => "Perform a web search and get results with title, URL, and snippets",
-                    "web_search_news" => "Search specifically for news articles",
-                    "web_instant_answer" => "Get instant answers for facts and quick queries",
-                    _ => "Tool",
-                };
-                prompt.push_str(&format!("- {}: {}\n", tool, description));
-            }
-            prompt.push('\n');
-        }
+        prompt.push_str("**Calculator Tool:**\n");
+        prompt.push_str("- calculate: Evaluate mathematical expressions (arithmetic, percentages, functions)\n");
+        prompt.push('\n');
     }
 
     // Add available File tools

@@ -3,6 +3,8 @@
 use serde::Deserialize;
 
 pub mod files;
+#[cfg(feature = "calc-tools")]
+pub mod calc;
 #[cfg(feature = "pokemon-tools")]
 pub mod pokemon;
 #[cfg(feature = "web-search-tools")]
@@ -10,6 +12,8 @@ pub mod search;
 pub mod weather;
 
 pub use files::*;
+#[cfg(feature = "calc-tools")]
+pub use calc::*;
 #[cfg(feature = "pokemon-tools")]
 pub use pokemon::*;
 #[cfg(feature = "web-search-tools")]
