@@ -57,13 +57,19 @@ pub async fn read_file(
 
     // Check if file exists and is readable
     if !canonical_path.exists() {
-        let err_msg = format!("Error: File not found: {}. Please check if the file exists or try a different file name (e.g., README.org instead of README.md).", path);
+        let err_msg = format!(
+            "Error: FILE NOT FOUND: '{}'. The file does not exist. DO NOT try to read this file again. Use list_directory to find the correct filename.",
+            path
+        );
         log_tool_result("read_file", &err_msg);
         return Ok(err_msg);
     }
 
     if !canonical_path.is_file() {
-        let err_msg = format!("Error: Path is not a file: {}", path);
+        let err_msg = format!(
+            "Error: NOT A FILE: '{}'. The path exists but is not a file (it may be a directory). Use list_directory to see contents.",
+            path
+        );
         log_tool_result("read_file", &err_msg);
         return Ok(err_msg);
     }
@@ -174,13 +180,19 @@ pub async fn read_file_segment(
 
     // Check if file exists and is readable
     if !canonical_path.exists() {
-        let err_msg = format!("Error: File not found: {}. Please check if the file exists.", path);
+        let err_msg = format!(
+            "Error: FILE NOT FOUND: '{}'. The file does not exist. DO NOT try to read this file again. Use list_directory to find the correct filename.",
+            path
+        );
         log_tool_result("read_file_segment", &err_msg);
         return Ok(err_msg);
     }
 
     if !canonical_path.is_file() {
-        let err_msg = format!("Error: Path is not a file: {}", path);
+        let err_msg = format!(
+            "Error: NOT A FILE: '{}'. The path exists but is not a file (it may be a directory). Use list_directory to see contents.",
+            path
+        );
         log_tool_result("read_file_segment", &err_msg);
         return Ok(err_msg);
     }
