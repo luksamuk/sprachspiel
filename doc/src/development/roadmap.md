@@ -176,7 +176,6 @@ $ ask-ai --version
 - [x] Test: Build locally with `cross` (DONE)
 - [x] Test: Run binary on actual Termux device (DONE)
 - [x] Document: Installation instructions for Termux (DONE)
-- [ ] Release: Add Android binaries to GitHub releases
 
 ---
 
