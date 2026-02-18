@@ -5,12 +5,14 @@ use serde::Deserialize;
 pub mod files;
 #[cfg(feature = "pokemon-tools")]
 pub mod pokemon;
+#[cfg(feature = "web-search-tools")]
 pub mod search;
 pub mod weather;
 
 pub use files::*;
 #[cfg(feature = "pokemon-tools")]
 pub use pokemon::*;
+#[cfg(feature = "web-search-tools")]
 pub use search::*;
 pub use weather::*;
 
@@ -94,6 +96,13 @@ pub struct AbilityData {
 pub struct TypeData {
     #[serde(rename = "damage_relations")]
     pub damage_relations: DamageRelations,
+    pub pokemon: Vec<TypePokemonSlot>,
+}
+
+#[cfg(feature = "pokemon-tools")]
+#[derive(Debug, Deserialize)]
+pub struct TypePokemonSlot {
+    pub pokemon: NamedApiResource,
 }
 
 #[cfg(feature = "pokemon-tools")]

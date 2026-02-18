@@ -457,6 +457,10 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
                 coordinator = coordinator.add_tool(fetch_type_effectiveness);
                 tool_count += 1;
             }
+            if is_tool_allowed("fetch_pokemon_by_type") {
+                coordinator = coordinator.add_tool(fetch_pokemon_by_type);
+                tool_count += 1;
+            }
             if is_tool_allowed("fetch_move_details") {
                 coordinator = coordinator.add_tool(fetch_move_details);
                 tool_count += 1;
@@ -774,6 +778,10 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
             }
             if is_tool_allowed("fetch_type_effectiveness") {
                 coordinator = coordinator.add_tool(fetch_type_effectiveness);
+                tool_count += 1;
+            }
+            if is_tool_allowed("fetch_pokemon_by_type") {
+                coordinator = coordinator.add_tool(fetch_pokemon_by_type);
                 tool_count += 1;
             }
             if is_tool_allowed("fetch_move_details") {

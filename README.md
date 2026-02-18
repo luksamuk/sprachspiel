@@ -9,7 +9,7 @@ Ask-AI provides a comprehensive command-line interface to local and cloud-based 
 ## Quick Start
 
 ```bash
-# Install
+# Install (default includes Pokémon, Weather, File tools)
 make install
 
 # Basic query
@@ -110,13 +110,10 @@ Content is sanitized for security (injection patterns, executable code blocks re
 Tools are organized into compile-time features:
 
 ```bash
-# Default build (weather, file, web-search tools)
+# Default build (Pokémon, Weather, File tools)
 make build
 
-# With Pokémon tools (8 additional tools)
-make build-pokemon
-
-# With all tools
+# With all tools (includes Web Search - currently broken)
 make build-all-tools
 
 # Install locally with all tools
@@ -125,10 +122,10 @@ make install-local-all-tools
 
 | Feature | Tools | Default |
 |---------|-------|---------|
-| `weather-tools` | Weather lookup | ✅ |
-| `file-tools` | File operations | ✅ |
-| `web-search-tools` | Web search | ✅ |
-| `pokemon-tools` | Pokémon data | ❌ |
+| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes |
+| `weather-tools` | Weather lookup | ✅ Yes |
+| `file-tools` | File operations | ✅ Yes |
+| `web-search-tools` | Web search (blocked) | ❌ No |
 
 ## AI-Assisted Development
 

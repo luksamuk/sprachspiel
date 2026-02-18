@@ -7,7 +7,7 @@ This document outlines planned features and the current state of Ask-AI.
 ✅ **Implemented:**
 
 - Core CLI with 4 subcommands (query, translate, ocr, summarize)
-- 14 tools (8 Pokémon, 3 Weather, 3 Web Search)
+- 16 tools (9 Pokémon, 3 Weather, 3 Web Search, 5 File operations)
 - 14+ model presets
 - Markdown rendering via termimad
 - Model capability detection
@@ -21,6 +21,7 @@ This document outlines planned features and the current state of Ask-AI.
 - Code mode
 - Man page
 - mdBook documentation
+- AGENTS.md context injection
 
 ## Known Issues
 
@@ -29,17 +30,87 @@ This document outlines planned features and the current state of Ask-AI.
 1. **DuckDuckGo Web Search Blocked** ⚠️
    - Status: CAPTCHA blocking automated requests
    - Impact: Web search tools non-functional
-   - **Action Taken:** Web search tools are now blacklisted by default (Feb 2026)
-   - **Note:** Tools can be enabled via config, but expect failures
+   - **Action Taken:** Web search tools disabled via feature flag (not compiled by default in v0.9.0)
+   - **Note:** Can be enabled with `--features web-search-tools` but expect failures
    - Priority: High
    - Solution: Alternative search provider needed
-   - **TODO:** When fixed, remove from default blacklist
 
 2. **GPT-OSS Tool Calling**
    - Status: Encoding errors with some tool calls
    - Impact: Tool calls fail with `invalid character '\u003c'`
    - Priority: Medium
-   - Workaround: Use mistral-small or pepe models
+   - Workaround: Use mistral-small, qwen3-coder, or pepe models
+
+---
+
+## High Priority: Custom Model Support
+
+### Custom Model Configuration System
+
+**Priority:** HIGH
+
+**Problem:** Users want to use local models with custom parameters that aren't pre-configured in Ask-AI. Currently, only predefined model presets are supported.
+
+**Research needed:**
+- How to allow users to define custom models in config
+- Parameter inference from model metadata vs explicit configuration
+- Which parameters can be auto-detected (context window, tool support, vision)
+- Which parameters must be user-specified (temperature, top_p, etc.)
+- Backward compatibility with existing preset system
+
+**Key questions to explore:**
+1. Should we try to detect model capabilities from Ollama API?
+2. What's the minimum configuration users need for a new model?
+3. How to handle models without tool support?
+4. How to handle thinking models vs non-thinking?
+
+**Proposed research phases:**
+
+1. **Discovery Phase:**
+   - Survey Ollama API for model metadata availability
+   - Test with popular local models (Llama 3.x, Mistral, Qwen variants)
+   - Document which parameters can be inferred
+   - Identify edge cases (models with partial capability support)
+
+2. **Design Phase:**
+   - Design config schema for custom models
+   - Decide on inference vs explicit config balance
+   - Plan fallback strategies for unknown models
+
+3. **Implementation Phase:**
+   - Implement custom model registration
+   - Implement capability detection/inference
+   - Update model selection logic
+   - Add validation for custom model configs
+
+**Example config (hypothetical):**
+```toml
+[model.default]
+# Use a model not in presets
+name = "llama3.2:3b"
+context_window = 128000  # optional, try to detect if missing
+temperature = 0.7
+tools = true
+vision = false
+
+[model.custom."my-custom-model"]
+ollama_name = "my-finetune:latest"
+context_window = 32768
+tools = false
+temperature = 0.5
+```
+
+**Tasks:**
+- [ ] Research: Ollama API model metadata endpoints
+- [ ] Research: Test capability detection with various models
+- [ ] Research: Document parameter inference possibilities
+- [ ] Discuss: Config schema design options
+- [ ] Design: Decide on approach (inference vs explicit)
+- [ ] Plan: Implementation roadmap
+- [ ] Implement: Custom model support
+- [ ] Document: How to add custom models
+
+**Note:** This is a significant feature that requires careful planning. The goal is to balance ease-of-use (auto-detection) with flexibility (explicit configuration).
 
 ---
 

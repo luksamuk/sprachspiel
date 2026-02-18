@@ -390,6 +390,73 @@ pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
     Ok(result)
 }
 
+/// List all Pokémon of a specific type.
+///
+/// * type_name - The name of the type in lowercase (e.g., "water", "fire", "electric").
+/// * limit - Maximum number of Pokémon to return (default 20, max 100).
+#[ollama_rs::function]
+pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> ToolResult<String> {
+    let limit_num = limit
+        .and_then(|l| l.parse::<usize>().ok())
+        .unwrap_or(20)
+        .min(100);
+    
+    log_tool_call("fetch_pokemon_by_type", &[
+        ("type_name".to_string(), type_name.clone()),
+        ("limit".to_string(), limit_num.to_string()),
+    ]);
+    
+    let url = format!(
+        "https://pokeapi.co/api/v2/type/{}/",
+        type_name.to_lowercase()
+    );
+    
+    let response = match reqwest::get(&url).await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error while fetching type: {}. Please try again later.", e);
+            log_tool_result("fetch_pokemon_by_type", &err);
+            return Ok(err);
+        }
+    };
+
+    if !response.status().is_success() {
+        let err = format!("Error: Type '{}' not found. HTTP {}", type_name, response.status());
+        log_tool_result("fetch_pokemon_by_type", &err);
+        return Ok(err);
+    }
+
+    let data: TypeData = match response.json().await {
+        Ok(d) => d,
+        Err(e) => {
+            let err = format!("Error parsing type data: {}. Please try again later.", e);
+            log_tool_result("fetch_pokemon_by_type", &err);
+            return Ok(err);
+        }
+    };
+    
+    let total = data.pokemon.len();
+    let pokemon_list: Vec<String> = data
+        .pokemon
+        .iter()
+        .take(limit_num)
+        .map(|p| {
+            let name = p.pokemon.name.replace('-', " ");
+            capitalize(&name)
+        })
+        .collect();
+
+    let result = format!(
+        "**{} Type Pokémon** (showing {} of {}):\n\n{}",
+        capitalize(&type_name),
+        pokemon_list.len(),
+        total,
+        pokemon_list.join(", ")
+    );
+    log_tool_result("fetch_pokemon_by_type", &result);
+    Ok(result)
+}
+
 /// Fetch detailed information about a Pokémon move.
 ///
 /// * move_name - The name of the move in lowercase.

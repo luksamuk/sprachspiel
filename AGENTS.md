@@ -418,6 +418,18 @@ When reviewing or creating tools, check for these common issues:
 7. **Missing error handling** for JSON parsing
 8. **Missing error handling** for file operations
 
+### Tool Output Language
+
+**All tool output must be in English.** This ensures consistency with the rest of the application and makes the LLM's job easier. Error messages, result formatting, and descriptions should all be in English.
+
+```rust
+// ✅ GOOD - English output
+let result = format!("**Weather in {}**\nTemperature: {}°C", location_name, temp);
+
+// ❌ BAD - Localized output
+let result = format!("**Clima em {}**\nTemperatura: {}°C", location_name, temp);
+```
+
 ## Notes
 
 - The project is a CLI tool for interacting with local Ollama models

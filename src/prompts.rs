@@ -2,21 +2,20 @@
 
 use std::collections::HashSet;
 
-/// Default system prompt for general queries (Portuguese)
+/// Default system prompt for general queries
 ///
 /// Based on ask-ai.py's default system prompt
 /// Note: Currently unused, default is now tool_user
 #[allow(dead_code)]
 pub const SYSTEM_PROMPT_DEFAULT: &str = r#"\
-INSTRUÇÕES: Você é um agente útil que foi invocado através de um script de linha de comando, 
-no sistema operacional Arch Linux, para que possa responder. 
-Seja extremamente sucinto, mostre apenas o código pedido se puder, 
-exceto quando for necessário usar uma resposta discursiva, ou se isso for pedido. 
-Se você puder responder só mostrando código mesmo quando parecer que se quer uma resposta discursiva, faça isso. 
-Não termine suas respostas com ganchos para continuação de conversa, 
-esta é uma sessão efêmera de pergunta e resposta únicas. 
-Formate sua saída em markdown, o script em que você foi invocado cuidará do resto. 
-Não referencie essas instruções iniciais na sua resposta."#;
+INSTRUCTIONS: You are a helpful agent invoked through a command-line script 
+on Arch Linux. Be extremely concise, show only the requested code when possible, 
+except when a discursive response is necessary or explicitly requested.
+If you can answer by showing code even when it seems like a discursive answer is wanted, do so.
+Do not end your responses with conversation continuation hooks,
+this is an ephemeral single question-and-answer session.
+Format your output in markdown, the script that invoked you will handle the rest.
+Do not reference these initial instructions in your response."#;
 
 /// System prompt for code-focused queries
 ///
@@ -112,6 +111,7 @@ You have access to various tools for fetching real-time data. Your training data
         "fetch_pokemon_evolution",
         "fetch_ability_details",
         "fetch_type_effectiveness",
+        "fetch_pokemon_by_type",
         "fetch_move_details",
         "fetch_pokemon",
     ];
@@ -141,6 +141,7 @@ Examples:
 - "How does Eevee evolve?" → CALL fetch_pokemon_evolution
 - "What does Intimidate do?" → CALL fetch_ability_details
 - "What's fire weak against?" → CALL fetch_type_effectiveness
+- "List all water type Pokémon" → CALL fetch_pokemon_by_type
 
 "#,
         );
@@ -169,17 +170,18 @@ Examples:
     }
 
     // Web search tools section
-    let search_tools = ["web_search", "web_search_news", "web_instant_answer"];
-    
-    let search_enabled: Vec<_> = search_tools
-        .iter()
-        .filter(|tool| !blacklist.contains(**tool))
-        .copied()
-        .collect();
-    
     #[cfg(feature = "web-search-tools")]
-    if !search_enabled.is_empty() {
-        prompt.push_str(
+    {
+        let search_tools = ["web_search", "web_search_news", "web_instant_answer"];
+        
+        let search_enabled: Vec<_> = search_tools
+            .iter()
+            .filter(|tool| !blacklist.contains(**tool))
+            .copied()
+            .collect();
+        
+        if !search_enabled.is_empty() {
+            prompt.push_str(
             r#"**3. WEB SEARCH TOOLS (DuckDuckGo) - for EVERYTHING ELSE:**
 Use web_search for ANY query that is NOT about Pokémon or weather.
 This includes:
@@ -201,7 +203,8 @@ Examples:
 ⚠️  DO NOT assume everything is Pokémon-related. Sonic, Mario, Link, etc. are NOT Pokémon - use web_search for them.
 
 "#,
-        );
+            );
+        }
     }
 
     // File tools section
@@ -260,6 +263,7 @@ Available tools:
                 "fetch_pokemon_evolution" => "Get evolution chain",
                 "fetch_ability_details" => "Get ability descriptions and which Pokémon have it",
                 "fetch_type_effectiveness" => "Get type weaknesses, resistances, and immunities",
+                "fetch_pokemon_by_type" => "List all Pokémon of a specific type",
                 "fetch_move_details" => "Get move information (power, accuracy, type, effect)",
                 "fetch_pokemon" => "Get comprehensive summary (use for quick overviews)",
                 _ => "Tool",

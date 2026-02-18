@@ -17,7 +17,7 @@ async fn get_coordinates(
     location: &str,
 ) -> Result<(f64, f64), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
-        "{}?name={}&count=1&language=pt&format=json",
+        "{}?name={}&count=1&language=en&format=json",
         GEOCODING_BASE,
         urlencoding::encode(location)
     );
@@ -110,7 +110,7 @@ pub async fn get_weather(
 
     let mut forecast = String::new();
     if !daily.time.is_empty() {
-        forecast.push_str("\n**Previsão para os próximos dias:**\n");
+        forecast.push_str("\n**Forecast for the next days:**\n");
         for i in 0..daily.time.len().min(3) {
             let date = &daily.time[i];
             let max_temp = daily.temperature_2m_max[i];
@@ -118,24 +118,24 @@ pub async fn get_weather(
             let precip_prob = daily.precipitation_probability_max[i];
 
             forecast.push_str(&format!(
-                "- {}: Máx {}°C, Mín {}°C, Chuva {}%\n",
+                "- {}: High {}°C, Low {}°C, Rain {}%\n",
                 date, max_temp, min_temp, precip_prob
             ));
         }
     }
 
     let result = format!(
-        r#"**Clima em {}**
+        r#"**Weather in {}**
 
-**Agora:**
-- Temperatura: {}°C (sensação térmica: {}°C)
-- Condição: {}
-- Umidade: {}%
-- Vento: {} km/h {}
-- Precipitação: {} mm
+**Now:**
+- Temperature: {}°C (feels like {}°C)
+- Condition: {}
+- Humidity: {}%
+- Wind: {} km/h {}
+- Precipitation: {} mm
 
 {}
-Fonte: Open-Meteo"#,
+Source: Open-Meteo"#,
         location_name,
         current.temperature_2m,
         current.apparent_temperature,
@@ -212,17 +212,17 @@ pub async fn get_current_weather(
     let weather_desc = get_weather_description(current.weather_code);
     let wind_dir = get_wind_direction(current.wind_direction_10m as u16);
 
-    Ok(format!(
-        r#"**Clima em {}**
+    let result = format!(
+        r#"**Weather in {}**
 
-**Agora:**
-- Temperatura: {}°C (sensação térmica: {}°C)
-- Condição: {}
-- Umidade: {}%
-- Vento: {} km/h {}
-- Precipitação: {} mm
+**Now:**
+- Temperature: {}°C (feels like {}°C)
+- Condition: {}
+- Humidity: {}%
+- Wind: {} km/h {}
+- Precipitation: {} mm
 
-Fonte: Open-Meteo"#,
+Source: Open-Meteo"#,
         location_name,
         current.temperature_2m,
         current.apparent_temperature,
@@ -231,7 +231,9 @@ Fonte: Open-Meteo"#,
         current.wind_speed_10m,
         wind_dir,
         current.precipitation
-    ))
+    );
+    log_tool_result("get_current_weather", &result);
+    Ok(result)
 }
 
 /// Get weather forecast for a location
@@ -309,7 +311,7 @@ pub async fn get_weather_forecast(
     );
 
     let mut forecast_lines = vec![format!(
-        "**Previsão do tempo para {} (próximos {} dias):**\n",
+        "**Weather Forecast for {} (next {} days):**\n",
         location_name, days
     )];
 
@@ -322,41 +324,43 @@ pub async fn get_weather_forecast(
         let condition = get_weather_description(weather_code as i32);
 
         forecast_lines.push(format!(
-            "**{}**: Máx {}°C | Mín {}°C | {} | Chuva {}%",
+            "**{}**: High {}°C | Low {}°C | {} | Rain {}%",
             date, max_temp, min_temp, condition, precip_prob
         ));
     }
 
-    forecast_lines.push("\nFonte: Open-Meteo".to_string());
+    forecast_lines.push("\nSource: Open-Meteo".to_string());
 
-    Ok(forecast_lines.join("\n"))
+    let result = forecast_lines.join("\n");
+    log_tool_result("get_weather_forecast", &result);
+    Ok(result)
 }
 
-// Weather code to description mapping
+// Weather code to description mapping (English)
 fn get_weather_description(code: i32) -> &'static str {
     match code {
-        0 => "Céu limpo",
-        1 => "Principalmente limpo",
-        2 => "Parcialmente nublado",
-        3 => "Nublado",
-        45..=48 => "Nevoeiro",
-        51 | 53 | 55 => "Garoa",
-        56..=57 => "Garoa congelante",
-        61 | 63 | 65 => "Chuva",
-        66..=67 => "Chuva congelante",
-        71 | 73 | 75 => "Neve",
-        77 => "Grãos de neve",
-        80..=82 => "Chuva forte",
-        85..=86 => "Neve forte",
-        95 => "Trovoada",
-        96 | 99 => "Trovoada com granizo",
-        _ => "Desconhecido",
+        0 => "Clear sky",
+        1 => "Mainly clear",
+        2 => "Partly cloudy",
+        3 => "Overcast",
+        45..=48 => "Fog",
+        51 | 53 | 55 => "Drizzle",
+        56..=57 => "Freezing drizzle",
+        61 | 63 | 65 => "Rain",
+        66..=67 => "Freezing rain",
+        71 | 73 | 75 => "Snow",
+        77 => "Snow grains",
+        80..=82 => "Heavy rain",
+        85..=86 => "Heavy snow",
+        95 => "Thunderstorm",
+        96 | 99 => "Thunderstorm with hail",
+        _ => "Unknown",
     }
 }
 
 // Convert wind direction degrees to cardinal direction
 fn get_wind_direction(degrees: u16) -> &'static str {
-    let directions = ["N", "NE", "L", "SE", "S", "SO", "O", "NO"];
+    let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
     let index = ((degrees as f64 + 22.5) / 45.0) as usize % 8;
     directions[index]
 }
@@ -431,16 +435,16 @@ mod tests {
 
     #[test]
     fn test_weather_descriptions() {
-        assert_eq!(get_weather_description(0), "Céu limpo");
-        assert_eq!(get_weather_description(61), "Chuva");
-        assert_eq!(get_weather_description(95), "Trovoada");
+        assert_eq!(get_weather_description(0), "Clear sky");
+        assert_eq!(get_weather_description(61), "Rain");
+        assert_eq!(get_weather_description(95), "Thunderstorm");
     }
 
     #[test]
     fn test_wind_directions() {
         assert_eq!(get_wind_direction(0), "N");
-        assert_eq!(get_wind_direction(90), "L");
+        assert_eq!(get_wind_direction(90), "E");
         assert_eq!(get_wind_direction(180), "S");
-        assert_eq!(get_wind_direction(270), "O");
+        assert_eq!(get_wind_direction(270), "W");
     }
 }

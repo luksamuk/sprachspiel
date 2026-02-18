@@ -1,10 +1,10 @@
 [package]
 name = "ask-ollama"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2024"
 
 [features]
-default = ["weather-tools", "web-search-tools", "file-tools"]
+default = ["weather-tools", "file-tools", "pokemon-tools"]
 all-tools = ["pokemon-tools", "weather-tools", "web-search-tools", "file-tools"]
 pokemon-tools = []
 weather-tools = []

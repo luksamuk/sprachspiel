@@ -140,11 +140,9 @@ fn default_skin() -> String {
 }
 
 fn default_blacklist() -> Vec<String> {
-    vec![
-        "web_search".to_string(),
-        "web_search_news".to_string(),
-        "web_instant_answer".to_string(),
-    ]
+    // Web search tools are disabled via feature flag (not compiled in by default)
+    // No tools are blacklisted by default
+    vec![]
 }
 
 fn default_true() -> bool {

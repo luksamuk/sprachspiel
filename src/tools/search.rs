@@ -69,11 +69,11 @@ pub async fn web_search(
        html.contains("anomaly-modal__title") ||
        html.contains("anomaly-modal__description") {
         let result = 
-            "⚠️ **Aviso: DuckDuckGo bloqueou a requisição**\n\n\
-            O DuckDuckGo detectou que esta é uma requisição automatizada e exigiu verificação CAPTCHA. \
-            Infelizmente, não é possível completar a pesquisa no momento.\n\n\
-            **Sugestão:** Tente usar outros modelos que possam responder baseados em seu conhecimento, \
-            ou espere que implementemos uma alternativa de busca.".to_string();
+            "Warning: DuckDuckGo has blocked this request.\n\n\
+            DuckDuckGo detected this as an automated request and requires CAPTCHA verification. \
+            Unfortunately, the search cannot be completed at this time.\n\n\
+            Suggestion: Try using models that can answer from their training data, \
+            or wait for an alternative search provider to be implemented.".to_string();
         log_tool_result("web_search", &result);
         return Ok(result);
     }
@@ -82,13 +82,13 @@ pub async fn web_search(
     let results = parse_search_results(&html, num_results);
 
     if results.is_empty() {
-        let result = format!("Nenhum resultado encontrado para '{}'", query);
+        let result = format!("No results found for '{}'", query);
         log_tool_result("web_search", &result);
         return Ok(result);
     }
 
     // Format results
-    let mut output = vec![format!("**Resultados da busca por '{}'**\n", query)];
+    let mut output = vec![format!("**Search results for '{}'**\n", query)];
 
     for (i, result) in results.iter().enumerate() {
         output.push(format!("\n**{}. {}**\n{}", i + 1, result.title, result.url,));
@@ -97,7 +97,7 @@ pub async fn web_search(
         }
     }
 
-    output.push("\n\n_Fonte: DuckDuckGo_".to_string());
+    output.push("\n\n_Source: DuckDuckGo_".to_string());
 
     let result = output.join("\n");
     log_tool_result("web_search", &result);
@@ -162,12 +162,12 @@ pub async fn web_search_news(
     let results = parse_search_results(&html, num_results);
 
     if results.is_empty() {
-        let result = format!("Nenhuma notícia encontrada para '{}'", query);
+        let result = format!("No news found for '{}'", query);
         log_tool_result("web_search_news", &result);
         return Ok(result);
     }
 
-    let mut output = vec![format!("**Notícias sobre '{}'**\n", query)];
+    let mut output = vec![format!("**News about '{}'**\n", query)];
 
     for (i, result) in results.iter().enumerate() {
         output.push(format!("\n**{}. {}**\n{}", i + 1, result.title, result.url,));
@@ -176,7 +176,7 @@ pub async fn web_search_news(
         }
     }
 
-    output.push("\n\n_Fonte: DuckDuckGo News_".to_string());
+    output.push("\n\n_Source: DuckDuckGo News_".to_string());
 
     let result = output.join("\n");
     log_tool_result("web_search_news", &result);
@@ -234,7 +234,7 @@ pub async fn web_instant_answer(
     // Try to extract instant answer (Zero-Click Info)
     if let Some(answer) = extract_instant_answer(&html) {
         let result = format!(
-            "**{}**\n\n{}\n\n_Fonte: DuckDuckGo_",
+            "**{}**\n\n{}\n\n_Source: DuckDuckGo_",
             query, answer
         );
         log_tool_result("web_instant_answer", &result);
@@ -245,13 +245,13 @@ pub async fn web_instant_answer(
     let results = parse_search_results(&html, 3);
 
     if results.is_empty() {
-        let result = format!("Nenhum resultado encontrado para '{}'", query);
+        let result = format!("No results found for '{}'", query);
         log_tool_result("web_instant_answer", &result);
         return Ok(result);
     }
 
     // Format results
-    let mut output = vec![format!("**Resultados da busca por '{}'**\n", query)];
+    let mut output = vec![format!("**Search results for '{}'**\n", query)];
 
     for (i, result) in results.iter().enumerate() {
         output.push(format!("\n**{}. {}**\n{}", i + 1, result.title, result.url,));
@@ -260,7 +260,7 @@ pub async fn web_instant_answer(
         }
     }
 
-    output.push("\n\n_Fonte: DuckDuckGo_".to_string());
+    output.push("\n\n_Source: DuckDuckGo_".to_string());
 
     let result = output.join("\n");
     log_tool_result("web_instant_answer", &result);

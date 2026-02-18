@@ -2,6 +2,42 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.9.0] - 2026-02-18
+
+### Added
+
+- **New tool: `fetch_pokemon_by_type`** - List all Pokémon of a specific type (limit 100)
+- **All tools now output in English** - Consistent English output across all tools
+- **Pokémon tools enabled by default** - No longer need `--features pokemon-tools`
+- **Makefile targets for feature builds**:
+  - `make build-pokemon` - Build with Pokémon tools
+  - `make build-all-tools` - Build with all tools
+  - `make install-local-pokemon` - Local install with Pokémon tools
+  - `make install-local-all-tools` - Local install with all tools
+  - `make test-all` - Run tests with all features
+
+### Changed
+
+- **BREAKING: Web search tools disabled by default** - DuckDuckGo CAPTCHA issues, enable with `--features web-search-tools`
+- **BREAKING: Tool output language changed to English** - All tool responses now in English
+- **Empty default blacklist** - No tools blacklisted by default anymore
+- **Version bumped to 0.9.0** - Reflecting significant changes
+
+### Fixed
+
+- Weather tools fixed - API response structs now use optional fields
+- All tools have proper error handling - No more crashes from network/API errors
+- Raw errors shown with pretty printing in debug mode - Use `{:#?}` for readable output
+- Pokémon tools fixed - All 9 tools have proper logging and error handling
+
+### Documentation
+
+- Updated tools.md with new defaults and features
+- Updated CHANGELOG.md with all changes
+- Updated README.md with AGENTS.md context and build features
+- Updated contributing.md with feature flags and Makefile commands
+- Updated man page with --ignore-agents flag
+
 ## [Unreleased]
 
 ### Added
@@ -52,6 +88,13 @@ All notable changes to Ask-AI will be documented in this file.
 - **`count_lines`** now shows only line count (removed byte count - LLMs think in lines)
 - **`read_file_segment`** now requires both `start_line` and `num_lines` (no defaults)
 - Spinner now suspends during tool output (no more frozen spinner text)
+
+## [Unreleased]
+
+### Added
+
+- **Custom Model Support** (planned) - Allow users to define custom models with their own parameters
+- **Multilingual Injection Pattern Detection** (low priority) - Security improvement for AGENTS.md
 
 ## [0.1.0] - 2026-02-17
 

@@ -6,12 +6,12 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 
 | Category | Count | Source | Status | Default |
 |----------|-------|--------|--------|---------|
-| Pokémon | 8 | PokéAPI | ✅ Working | ❌ Disabled* |
+| Pokémon | 9 | PokéAPI | ✅ Working | ✅ Enabled |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
-| Web Search | 3 | DuckDuckGo | ⚠️ Currently blocked | ✅ Enabled |
+| Web Search | 3 | DuckDuckGo | ⚠️ Currently blocked | ❌ Disabled* |
 | File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
 
-\* **Pokémon tools are disabled by default** to avoid polluting the context window with specialized tool descriptions when not needed. See [Compilation Features](#compilation-features) to enable them.
+\* **Web search tools are disabled by default** because DuckDuckGo blocks automated requests with CAPTCHA. They can be enabled at compile time with `--features web-search-tools` but will likely fail.
 
 ## Compilation Features
 
@@ -20,45 +20,51 @@ Tools are organized into feature flags that can be enabled or disabled at compil
 ### Default Features
 
 The default build includes:
+- `pokemon-tools` - Pokémon data tools (9 tools)
 - `weather-tools` - Weather lookup tools
-- `web-search-tools` - Web search tools (note: currently blocked by CAPTCHA)
 - `file-tools` - File system operations
+
+**Note:** Web search tools are NOT included by default due to DuckDuckGo CAPTCHA issues.
 
 ### Available Features
 
-| Feature | Description | Tools Included |
-|---------|-------------|----------------|
-| `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_move_details |
-| `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast |
-| `web-search-tools` | Web search via DuckDuckGo | web_search, web_search_news, web_instant_answer |
-| `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files |
-| `all-tools` | Enable all tool categories | All of the above |
+| Feature | Description | Tools Included | Default |
+|---------|-------------|----------------|---------|
+| `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ✅ Yes |
+| `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast | ✅ Yes |
+| `web-search-tools` | Web search via DuckDuckGo | web_search, web_search_news, web_instant_answer | ❌ No |
+| `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files | ✅ Yes |
+| `all-tools` | Enable all tool categories | All of the above | - |
 
-### Why Pokémon Tools Are Disabled by Default
+### Why Web Search Tools Are Disabled by Default
 
-Pokémon tools require 8 specialized tool definitions that consume significant context window space. For general-purpose usage, these tools often provide no value and can:
-- **Pollute the context window** with unnecessary tool descriptions
-- **Distract the model** from more relevant tools
-- **Increase token usage** without benefit
-
-Only enable Pokémon tools if you specifically need Pokémon data queries.
+DuckDuckGo blocks automated requests with CAPTCHA, making web search tools non-functional. They can be enabled at compile time but will likely fail during use.
 
 ### Building with Custom Features
 
-**Using Makefile (recommended):**
-
+**Default build (includes Pokémon, Weather, File tools):**
 ```bash
-# Default build (weather, file-tools, web-search)
-make build
+cargo build --release
+```
 
-# Build with Pokémon tools
-make build-pokemon
+**Enable web search tools (currently broken):**
+```bash
+cargo build --release --features web-search-tools
+```
 
-# Build with all tools
-make build-all-tools
+**Enable all tools:**
+```bash
+cargo build --release --features all-tools
+```
 
-# Install to ~/.local/bin with all tools
-make install-local-all-tools
+**Minimal build (only file tools):**
+```bash
+cargo build --release --no-default-features --features file-tools
+```
+
+**Build without Pokémon tools:**
+```bash
+cargo build --release --no-default-features --features "weather-tools,file-tools"
 ```
 
 **Using Cargo directly:**
@@ -109,7 +115,7 @@ When a tool is blacklisted, it won't be registered with the coordinator AND won'
 | web-search-tools | Yes | ~40KB | Medium (3 tools) |
 | file-tools | Yes | ~35KB | Low (3 tools) |
 
-## Pokémon Tools (8)
+## Pokémon Tools (9)
 
 Powered by [PokéAPI](https://pokeapi.co/).
 
@@ -181,6 +187,16 @@ Get type weaknesses, resistances, and immunities.
 Function: fetch_type_effectiveness
 Args: type_name (string)
 Example: fetch_type_effectiveness(type_name: "electric")
+```
+
+### fetch_pokemon_by_type
+
+List all Pokémon of a specific type.
+
+```
+Function: fetch_pokemon_by_type
+Args: type_name (string), limit (optional integer, default 20, max 100)
+Example: fetch_pokemon_by_type(type_name: "water", limit: 50)
 ```
 
 ### fetch_move_details
