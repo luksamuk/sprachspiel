@@ -229,20 +229,14 @@ termux-all-tools:
 tarball: build
 	@echo "Creating distribution tarball..."
 	@mkdir -p $(DIST_DIR)
-	tar -czvf $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz \
-		-C $(BUILD_DIR) $(BINARY) \
-		-C ../man ask-ai.1 \
-		-C ../ README.md LICENSE.txt
+	cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz $(BINARY) -C $(CURDIR) man/ask-ai.1 README.md LICENSE.txt
 	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz"
 
 # Create tarball for Linux x86_64
 tarball-linux: build
 	@echo "Creating Linux x86_64 tarball..."
 	@mkdir -p $(DIST_DIR)
-	tar -czvf $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz \
-		-C $(BUILD_DIR) $(BINARY) \
-		-C ../man ask-ai.1 \
-		-C ../ README.md LICENSE.txt
+	cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz $(BINARY) -C $(CURDIR) man/ask-ai.1 README.md LICENSE.txt
 	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz"
 
 # Create tarball for Termux (Android aarch64)
