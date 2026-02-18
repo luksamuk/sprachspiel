@@ -202,9 +202,12 @@ Fonte: Open-Meteo"#,
 #[function]
 pub async fn get_weather_forecast(
     location: String,
-    days: Option<u8>,
+    days: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let days = days.unwrap_or(5).min(7) as usize;
+    let days = days
+        .and_then(|d| d.parse::<u8>().ok())
+        .unwrap_or(5)
+        .min(7) as usize;
 
     // First, get coordinates for the location
     let (lat, lon) = match get_coordinates(&location).await {

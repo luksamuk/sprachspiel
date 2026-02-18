@@ -205,9 +205,11 @@ Get extended 7-day forecast.
 
 ```
 Function: get_weather_forecast
-Args: city (string), country (optional string), days (optional integer)
-Example: get_weather_forecast(city: "Paris", days: 7)
+Args: location (string), days (string, optional)
+Example: get_weather_forecast(location: "Paris", days: "7")
 ```
+
+**Note:** `days` accepts strings like "3", "5", "7".
 
 ## Web Search Tools (3)
 
@@ -257,9 +259,11 @@ Read contents of a file. Files larger than 1MB are rejected.
 
 ```
 Function: read_file
-Args: path (string), max_lines (optional integer), sandbox (optional boolean, default: true)
-Example: read_file(path: "README.md", max_lines: 50)
+Args: path (string), max_lines (string, optional), sandbox (string, optional)
+Example: read_file(path: "README.md", max_lines: "50")
 ```
+
+**Note:** All arguments are strings for robustness. `max_lines` accepts numbers like "50" or "100". `sandbox` accepts "true", "false", "1", "0".
 
 **Features:**
 - Limit output to N lines with `max_lines`
@@ -273,8 +277,8 @@ Read a specific segment of a file (useful for large files).
 
 ```
 Function: read_file_segment
-Args: path (string), start_line (integer), num_lines (integer), sandbox (optional boolean, default: true)
-Example: read_file_segment(path: "src/main.rs", start_line: 100, num_lines: 50)
+Args: path (string), start_line (string), num_lines (string), sandbox (string, optional)
+Example: read_file_segment(path: "src/main.rs", start_line: "100", num_lines: "50")
 ```
 
 **Features:**
@@ -297,7 +301,7 @@ Count lines in a file. **Use this before reading large files** to avoid pollutin
 
 ```
 Function: count_lines
-Args: path (string), sandbox (optional boolean, default: true)
+Args: path (string), sandbox (string, optional)
 Example: count_lines(path: "src/main.rs")
 ```
 
@@ -316,9 +320,11 @@ List files and directories. Shows file types and sizes.
 
 ```
 Function: list_directory
-Args: path (string), recursive (optional boolean), sandbox (optional boolean, default: true)
-Example: list_directory(path: "src", recursive: true)
+Args: path (string), recursive (string, optional), sandbox (string, optional)
+Example: list_directory(path: "src", recursive: "true")
 ```
+
+**Note:** `recursive` accepts "true", "false", "1", "0".
 
 **Features:**
 - Non-recursive by default (current level only)
@@ -332,9 +338,11 @@ Search file contents with regex pattern.
 
 ```
 Function: search_files
-Args: pattern (string), path (string), file_pattern (optional string), sandbox (optional boolean, default: true)
+Args: pattern (string), path (string), file_pattern (string, optional), sandbox (string, optional)
 Example: search_files(pattern: "TODO|FIXME", path: "src", file_pattern: "*.rs")
 ```
+
+**Note:** `sandbox` accepts "true", "false", "1", "0".
 
 **Features:**
 - Regex pattern matching (full Rust regex syntax)

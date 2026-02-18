@@ -5,27 +5,48 @@ use std::path::{Path, PathBuf};
 const MAX_FILE_SIZE: usize = 1_000_000; // 1MB max file size
 const MAX_RESULTS: usize = 100; // Maximum search results
 
+/// Parse boolean from string (handles "true", "false", "1", "0", empty = default)
+fn parse_bool(value: Option<String>, default: bool) -> bool {
+    match value {
+        None => default,
+        Some(s) if s.is_empty() => default,
+        Some(s) => matches!(s.to_lowercase().as_str(), "true" | "1" | "yes"),
+    }
+}
+
+/// Parse u32 from string (handles numbers, empty = default)
+fn parse_u32(value: Option<String>, default: Option<u32>) -> Option<u32> {
+    match value {
+        None => default,
+        Some(s) if s.is_empty() => default,
+        Some(s) => s.parse::<u32>().ok().or(default),
+    }
+}
+
 /// Read the contents of a file
 #[ollama_rs::function]
 pub async fn read_file(
     path: String,
-    max_lines: Option<u32>,
-    sandbox: Option<bool>,
+    max_lines: Option<String>,
+    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let max_lines_parsed = parse_u32(max_lines, None);
+    let sandbox_parsed = parse_bool(sandbox, true);
+    
     log_tool_call(
         "read_file",
         &[
             ("path".to_string(), path.clone()),
             (
                 "max_lines".to_string(),
-                max_lines.map(|l| l.to_string()).unwrap_or_else(|| "all".to_string()),
+                max_lines_parsed.map(|l| l.to_string()).unwrap_or_else(|| "all".to_string()),
             ),
         ],
     );
 
     // Validate and canonicalize path
     let path_buf = PathBuf::from(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
             let err_msg = format!("Error: {}", e);
@@ -64,7 +85,7 @@ pub async fn read_file(
     let content = std::fs::read_to_string(&canonical_path)?;
 
     // Apply max_lines limit if specified
-    let result = if let Some(lines) = max_lines {
+    let result = if let Some(lines) = max_lines_parsed {
         let lines_to_take = lines as usize;
         content
             .lines()
@@ -84,22 +105,28 @@ pub async fn read_file(
 #[ollama_rs::function]
 pub async fn read_file_segment(
     path: String,
-    start_line: u32,
-    num_lines: u32,
-    sandbox: Option<bool>,
+    start_line: String,
+    num_lines: String,
+    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let start_line_parsed = parse_u32(Some(start_line.clone()), Some(1))
+        .ok_or_else(|| format!("Error: Invalid start_line '{}'. Must be a number.", start_line))?;
+    let num_lines_parsed = parse_u32(Some(num_lines.clone()), Some(10))
+        .ok_or_else(|| format!("Error: Invalid num_lines '{}'. Must be a number.", num_lines))?;
+    let sandbox_parsed = parse_bool(sandbox, true);
+    
     log_tool_call(
         "read_file_segment",
         &[
             ("path".to_string(), path.clone()),
-            ("start_line".to_string(), start_line.to_string()),
-            ("num_lines".to_string(), num_lines.to_string()),
+            ("start_line".to_string(), start_line_parsed.to_string()),
+            ("num_lines".to_string(), num_lines_parsed.to_string()),
         ],
     );
 
     // Validate and canonicalize path
     let path_buf = PathBuf::from(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
             let err_msg = format!("Error: {}", e);
@@ -138,8 +165,8 @@ pub async fn read_file_segment(
     let content = std::fs::read_to_string(&canonical_path)?;
 
     // Extract segment
-    let start = start_line as usize;
-    let count = num_lines as usize;
+    let start = start_line_parsed as usize;
+    let count = num_lines_parsed as usize;
     
     let lines: Vec<&str> = content.lines().collect();
     let total_lines = lines.len();
@@ -147,7 +174,7 @@ pub async fn read_file_segment(
     if start == 0 || start > total_lines {
         let err_msg = format!(
             "Error: Invalid start_line {}. File has {} lines. Line numbers start at 1.",
-            start_line, total_lines
+            start, total_lines
         );
         log_tool_result("read_file_segment", &err_msg);
         return Ok(err_msg);
@@ -158,14 +185,14 @@ pub async fn read_file_segment(
     let segment_lines: Vec<&str> = lines[start_idx..end_idx].to_vec();
 
     let result = if segment_lines.is_empty() {
-        format!("File has {} lines. No lines to read from line {}.", total_lines, start_line)
+        format!("File has {} lines. No lines to read from line {}.", total_lines, start)
     } else {
         let mut output = Vec::new();
-        let end_line = start_line as usize + segment_lines.len() - 1;
-        output.push(format!("Lines {}-{} of {}:", start_line, end_line, total_lines));
+        let end_line = start + segment_lines.len() - 1;
+        output.push(format!("Lines {}-{} of {}:", start, end_line, total_lines));
         output.push("-".repeat(40));
         for (i, line) in segment_lines.iter().enumerate() {
-            output.push(format!("{:>6} | {}", start as usize + i, line));
+            output.push(format!("{:>6} | {}", start + i, line));
         }
         output.join("\n")
     };
@@ -176,12 +203,14 @@ pub async fn read_file_segment(
 
 /// Count lines in a file. Use this before reading large files to avoid polluting context.
 #[ollama_rs::function]
-pub async fn count_lines(path: String, sandbox: Option<bool>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn count_lines(path: String, sandbox: Option<String>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let sandbox_parsed = parse_bool(sandbox, true);
+    
     log_tool_call("count_lines", &[("path".to_string(), path.clone())]);
 
     // Validate and canonicalize path
     let path_buf = PathBuf::from(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
             let err_msg = format!("Error: {}", e);
@@ -239,23 +268,23 @@ pub async fn count_lines(path: String, sandbox: Option<bool>) -> Result<String, 
 #[ollama_rs::function]
 pub async fn list_directory(
     path: String,
-    recursive: Option<bool>,
-    sandbox: Option<bool>,
+    recursive: Option<String>,
+    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let recursive_parsed = parse_bool(recursive, false);
+    let sandbox_parsed = parse_bool(sandbox, true);
+    
     log_tool_call(
         "list_directory",
         &[
             ("path".to_string(), path.clone()),
-            (
-                "recursive".to_string(),
-                recursive.map(|r| r.to_string()).unwrap_or_else(|| "false".to_string()),
-            ),
+            ("recursive".to_string(), recursive_parsed.to_string()),
         ],
     );
 
     // Validate and canonicalize path
     let path_buf = PathBuf::from(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
             let err_msg = format!("Error: {}", e);
@@ -280,7 +309,7 @@ pub async fn list_directory(
     // List directory contents
     let mut entries = Vec::new();
 
-    if recursive.unwrap_or(false) {
+    if recursive_parsed {
         collect_entries_recursive(&canonical_path, &canonical_path, &mut entries, 0, 10)?;
     } else {
         for entry in std::fs::read_dir(&canonical_path)? {
@@ -377,8 +406,10 @@ pub async fn search_files(
     pattern: String,
     path: String,
     file_pattern: Option<String>,
-    sandbox: Option<bool>,
+    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let sandbox_parsed = parse_bool(sandbox, true);
+    
     log_tool_call(
         "search_files",
         &[
@@ -403,7 +434,7 @@ pub async fn search_files(
 
     // Validate path
     let path_buf = PathBuf::from(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox.unwrap_or(true)) {
+    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
             let err_msg = format!("Error: {}", e);

@@ -30,6 +30,10 @@ All notable changes to Ask-AI will be documented in this file.
 - Tool calls always logged to stderr so users can see what's being executed
 - Documentation updated with tool error handling philosophy
 - Prompt updated to encourage using `count_lines` before reading large files
+- **All tool arguments now use String type** for robustness (LLMs generate inconsistent JSON)
+  - Boolean parameters accept: "true", "false", "1", "0", "yes"
+  - Numeric parameters accept: "50", "100", etc.
+  - Empty/unset parameters use sensible defaults
 
 ## [0.1.0] - 2026-02-17
 
