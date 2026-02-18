@@ -29,7 +29,7 @@ use crate::debug_tools::{enable_debug, log_debug};
 use crate::ocr::{OcrArgs, OcrProcessor, print_results};
 use crate::prompts::get_prompt_with_blacklist;
 use crate::settings::Settings;
-use crate::spinner::create_spinner;
+use crate::spinner::{create_spinner, finish_spinner};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::tool_robustness::format_tool_error;
 use crate::tools::*;
@@ -242,7 +242,7 @@ async fn handle_translate(args: TranslateArgs, _settings: &Settings) -> AppResul
         .map_err(|e| format!("Failed to get translation: {}", e))?;
 
     // Clear spinner
-    spinner.finish_and_clear();
+    finish_spinner(spinner);
 
     // Get translated text
     let translated = response.message.content.trim();
@@ -520,19 +520,17 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         .chat(vec![system_message, user_message])
         .await;
 
-    // Clear spinner
-    spinner.finish_and_clear();
-
     // Handle result with better error messages
     let response = match result {
         Ok(resp) => resp,
         Err(e) => {
+            finish_spinner(spinner);
             let error_msg = format_tool_error(&e.to_string());
             eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
             std::process::exit(1);
         }
     };
-    spinner.finish_and_clear();
+    finish_spinner(spinner);
 
     // Strip thinking tags
     let content = strip_thinking_tags(&response.message.content);
@@ -820,18 +818,18 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         .chat(vec![system_message, user_message])
         .await;
 
-    // Clear spinner
-    spinner.finish_and_clear();
-
     // Handle result with better error messages
     let response = match result {
         Ok(resp) => resp,
         Err(e) => {
+            finish_spinner(spinner);
             let error_msg = format_tool_error(&e.to_string());
             eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
             std::process::exit(1);
         }
     };
+
+    finish_spinner(spinner);
 
     // Strip thinking tags
     let content = strip_thinking_tags(&response.message.content);

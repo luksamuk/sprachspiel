@@ -10,7 +10,7 @@ use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 use std::path::Path;
 
-use crate::spinner::create_spinner;
+use crate::spinner::{create_spinner, finish_spinner};
 
 use super::cli::OcrArgs;
 use super::error::{OcrError, OcrResult};
@@ -74,7 +74,7 @@ impl OcrProcessor {
             })?;
 
         // Clear spinner
-        spinner.finish_and_clear();
+        finish_spinner(spinner);
 
         let content = response.response.trim().to_string();
 

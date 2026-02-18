@@ -1,8 +1,12 @@
 //! Spinner/progress indicator for UX feedback
 //!
-//! Provides visual feedback while waiting for Ollama responses
+//! Provides visual feedback while waiting for Ollama responses.
+//! Supports suspend/resume for printing tool calls.
 
 use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::RwLock;
+
+static ACTIVE_SPINNER: RwLock<Option<ProgressBar>> = RwLock::new(None);
 
 /// Create a spinner for indicating that the application is waiting for a response
 ///
@@ -29,7 +33,38 @@ pub fn create_spinner(message: &str) -> ProgressBar {
     );
     pb.set_message(message.to_string());
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
+    // Store as active spinner for suspend/resume
+    if let Ok(mut guard) = ACTIVE_SPINNER.write() {
+        *guard = Some(pb.clone());
+    }
+
     pb
+}
+
+/// Finish and clear the active spinner
+pub fn finish_spinner(spinner: ProgressBar) {
+    spinner.finish_and_clear();
+    // Clear from global state
+    if let Ok(mut guard) = ACTIVE_SPINNER.write() {
+        *guard = None;
+    }
+}
+
+/// Suspend the active spinner to print something to stderr
+/// If no spinner is active, executes the closure directly
+pub fn suspend_for_print<F>(f: F)
+where
+    F: FnOnce(),
+{
+    if let Ok(guard) = ACTIVE_SPINNER.read() {
+        if let Some(spinner) = guard.as_ref() {
+            spinner.suspend(f);
+            return;
+        }
+    }
+    // No active spinner, just execute directly
+    f();
 }
 
 /// Create a spinner with a custom style
@@ -49,6 +84,11 @@ pub fn create_custom_spinner(message: &str, template: &str) -> ProgressBar {
     );
     pb.set_message(message.to_string());
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
+    if let Ok(mut guard) = ACTIVE_SPINNER.write() {
+        *guard = Some(pb.clone());
+    }
+
     pb
 }
 
@@ -60,15 +100,19 @@ mod tests {
     fn test_spinner_creation() {
         let spinner = create_spinner("Testing...");
         assert!(!spinner.is_finished());
-        spinner.finish_and_clear();
-        assert!(spinner.is_finished());
+        finish_spinner(spinner);
+        if let Ok(guard) = ACTIVE_SPINNER.read() {
+            assert!(guard.is_none());
+        }
     }
 
     #[test]
     fn test_custom_spinner() {
         let spinner = create_custom_spinner("Custom...", "{spinner} {msg}");
         assert!(!spinner.is_finished());
-        spinner.finish_and_clear();
-        assert!(spinner.is_finished());
+        finish_spinner(spinner);
+        if let Ok(guard) = ACTIVE_SPINNER.read() {
+            assert!(guard.is_none());
+        }
     }
 }

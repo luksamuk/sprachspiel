@@ -1,10 +1,12 @@
 //! Debug utilities for tool execution logging
 //!
 //! Provides functions to log tool calls and their results.
-//! Tool calls are ALWAYS logged (user has right to know what's being executed).
+//! Tool calls are ALWAYS logged (user has right to see what's being executed).
 //! Detailed results are only shown in debug mode.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::spinner::suspend_for_print;
 
 static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
 
@@ -23,20 +25,22 @@ pub fn is_debug_enabled() -> bool {
 pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
     if is_debug_enabled() {
         // Detailed format for debug mode
-        eprintln!();
-        eprintln!("═══════════════════════════════════════════════════════════════");
-        eprintln!("🔧 TOOL CALL: {}", tool_name);
-        eprintln!("───────────────────────────────────────────────────────────────");
+        suspend_for_print(|| {
+            eprintln!();
+            eprintln!("═══════════════════════════════════════════════════════════════");
+            eprintln!("🔧 TOOL CALL: {}", tool_name);
+            eprintln!("───────────────────────────────────────────────────────────────");
 
-        for (key, value) in args {
-            let display_value = if value.len() > 80 {
-                format!("{}...", &value[..77])
-            } else {
-                value.clone()
-            };
-            eprintln!("  {}: {}", key, display_value);
-        }
-        eprintln!("───────────────────────────────────────────────────────────────");
+            for (key, value) in args {
+                let display_value = if value.len() > 80 {
+                    format!("{}...", &value[..77])
+                } else {
+                    value.clone()
+                };
+                eprintln!("  {}: {}", key, display_value);
+            }
+            eprintln!("───────────────────────────────────────────────────────────────");
+        });
     } else {
         // Compact format for normal mode - always show what tool is being called
         let args_str: Vec<String> = args
@@ -50,7 +54,9 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
                 format!("{}={}", k, v_display)
             })
             .collect();
-        eprintln!("🔧 Calling: {}({})", tool_name, args_str.join(", "));
+        suspend_for_print(|| {
+            eprintln!("🔧 Calling: {}({})", tool_name, args_str.join(", "));
+        });
     }
 }
 
@@ -70,14 +76,18 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
         result.to_string()
     };
 
-    eprintln!("📤 TOOL RESULT for {}:", tool_name);
-    eprintln!("{}", display_result);
-    eprintln!("═══════════════════════════════════════════════════════════════");
+    suspend_for_print(|| {
+        eprintln!("📤 TOOL RESULT for {}:", tool_name);
+        eprintln!("{}", display_result);
+        eprintln!("═══════════════════════════════════════════════════════════════");
+    });
 }
 
 /// Log a debug message (only in debug mode)
 pub fn log_debug(msg: &str) {
     if is_debug_enabled() {
-        eprintln!("[DEBUG] {}", msg);
+        suspend_for_print(|| {
+            eprintln!("[DEBUG] {}", msg);
+        });
     }
 }

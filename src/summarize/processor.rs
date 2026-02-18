@@ -10,7 +10,7 @@ use ollama_rs::models::ModelOptions;
 
 use crate::config::ModelConfig;
 use crate::prompts::{SYSTEM_PROMPT_SUMMARIZE, get_prompt};
-use crate::spinner::create_spinner;
+use crate::spinner::{create_spinner, finish_spinner};
 
 use super::cli::SummarizeArgs;
 
@@ -77,7 +77,7 @@ impl SummarizeProcessor {
             .map_err(|e| format!("Failed to summarize: {}", e))?;
 
         // Clear spinner
-        spinner.finish_and_clear();
+        finish_spinner(spinner);
 
         let content = response.message.content.trim().to_string();
 
