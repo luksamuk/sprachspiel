@@ -61,6 +61,157 @@ This document outlines planned features and the current state of Ask-AI.
 
 ## High Priority
 
+### Termux Builds
+
+**Priority:** HIGH  
+**Status:** Research complete, ready to implement
+
+**Problem:** Users want to run ask-ai on Android devices via Termux for daily use.
+
+**Research Findings:**
+
+**Target Architecture:**
+- **Primary:** `aarch64-linux-android` (arm64-v8a) - for modern Android devices
+- **Secondary:** `armv7-linux-androideabi` - for older Android devices (if needed)
+
+**Cross-Compilation Tools:**
+
+1. **`cross` (Recommended)** - Zero-setup cross compilation
+   - Uses Docker/Podman containers with pre-built toolchains
+   - Most reliable option for Rust projects
+   - Command: `cross build --target aarch64-linux-android --release`
+   - Repository: https://github.com/cross-rs/cross
+
+2. **`cargo-ndk`** - Direct Android NDK integration
+   - Requires Android NDK installation
+   - Command: `cargo ndk -t arm64-v8a -o ./dist build --release`
+   - Repository: https://github.com/bbqsrc/cargo-ndk
+
+**Dependency Compatibility Analysis:**
+
+| Dependency | Status | Notes |
+|------------|--------|-------|
+| `reqwest` | ⚠️ Needs attention | TLS via `ring` crate may need special handling in cross-compilation |
+| `tokio` | ✅ OK | Supports Android natively |
+| `serde/clap` | ✅ OK | Platform-independent |
+| `ollama-rs` | ⚠️ Needs testing | HTTP client compatibility must be verified |
+| `termimad` | ⚠️ Needs testing | Terminal features on Android |
+| `futures` | ✅ OK | Async runtime compatible |
+
+**Known Limitations:**
+
+1. **Ollama Server Dependency:** ask-ai is a client; the Ollama server must run elsewhere (desktop or network-accessible). This is actually an advantage for Termux - no heavy server to run on Android.
+
+2. **TLS/OpenSSL:** The `ring` crate (used by `rustls`) can have issues with cross-compilation. May need to:
+   - Use `native-tls` feature instead of `rustls` for `reqwest`
+   - Or configure `cross` with proper OpenSSL headers
+
+3. **DNS Resolution:** Some networking crates may have issues on Android. Testing required on actual device.
+
+4. **File Paths:** Termux uses `/data/data/com.termux/files/home/` as home directory. Configuration paths should work, but need verification.
+
+**Recommended Implementation:**
+
+**Phase 1: Local Testing with `cross`**
+```bash
+# Install cross
+$ cargo install cross --git https://github.com/cross-rs/cross
+
+# Add Android target
+$ rustup target add aarch64-linux-android
+
+# Build (requires Docker or Podman)
+$ cross build --target aarch64-linux-android --release
+
+# Build with features
+$ cross build --target aarch64-linux-android --release --features "weather-tools,file-tools,calc-tools,system-tools"
+```
+
+**Phase 2: GitHub Actions CI**
+```yaml
+# .github/workflows/termux-build.yml
+# Use cross in GitHub Actions to build Android binaries automatically
+# Publish to GitHub Releases on tags
+```
+
+**Phase 3: Distribution**
+- Pre-built binaries for `aarch64-linux-android` in GitHub Releases
+- Installation script for Termux users
+- Optional: Termux package submission
+
+**Build Configuration:**
+
+Create `Cross.toml` for custom configuration:
+```toml
+[target.aarch64-linux-android]
+# Optional: specify custom image if needed
+# image = "ghcr.io/cross-rs/aarch64-linux-android:main"
+
+# Add environment variables if needed for TLS
+[target.aarch64-linux-android.env]
+# Example: SSL_CERT_FILE if custom certs needed
+```
+
+**Installation for Termux Users:**
+
+```bash
+# In Termux terminal:
+$ pkg install wget
+$ wget https://github.com/luksamuk/ask-ai-rs/releases/download/vX.Y.Z/ask-ai-aarch64-linux-android
+$ chmod +x ask-ai-aarch64-linux-android
+$ mv ask-ai-aarch64-linux-android $PREFIX/bin/ask-ai
+
+# Verify
+$ ask-ai --version
+```
+
+**Tasks:**
+- [x] Research: Cross-compilation setup for Android (DONE)
+- [x] Research: Compare `cross` vs `cargo-ndk` (DONE - `cross` recommended)
+- [x] Research: Verify dependency compatibility (DONE - see table above)
+- [ ] Test: Build locally with `cross`
+- [ ] Test: Run binary on actual Termux device
+- [ ] Implement: CI workflow for Termux builds (GitHub Actions)
+- [ ] Implement: Create `Cross.toml` configuration
+- [ ] Test: Verify all features work on Android
+- [ ] Document: Installation instructions for Termux
+- [ ] Release: Add Android binaries to GitHub releases
+
+---
+
+### Custom Model Support
+
+**Priority:** HIGH  
+**Status:** Research needed
+
+**Problem:** Users want to use local models that aren't pre-configured in Ask-AI. Currently, only predefined model presets are supported.
+
+**Questions to explore:**
+1. How to detect model capabilities from Ollama API?
+2. What's the minimum config users need for a new model?
+3. How to handle models without tool support?
+4. How to handle thinking models vs non-thinking?
+
+**Proposed config:**
+```toml
+[model.custom."my-model"]
+ollama_name = "my-finetune:latest"
+context_window = 32768
+tools = true
+vision = false
+temperature = 0.7
+```
+
+**Tasks:**
+- [ ] Research: Ollama API model metadata endpoints
+- [ ] Research: Test capability detection with various models
+- [ ] Design: Config schema for custom models
+- [ ] Implement: Custom model registration
+- [ ] Implement: Capability detection/inference
+- [ ] Document: How to add custom models
+
+---
+
 ### Multi-Line Chat Mode
 
 **Priority:** HIGH  
@@ -98,89 +249,6 @@ ask-ai chat
 - [ ] Implement: System prompt for chat mode
 - [ ] Test: Multi-turn conversations with context
 - [ ] Document: Chat mode usage
-
----
-
-### Termux Builds
-
-**Priority:** HIGH  
-**Status:** Research needed
-
-**Problem:** User needs ask-ai on Android devices via Termux for daily use.
-
-**Approaches:**
-1. **Cross-compilation:** Target `aarch64-linux-android` with cargo-ndk
-2. **Pre-built binaries:** Release assets for Android in GitHub releases
-3. **Termux packaging:** Package for Termux package manager
-
-**Tasks:**
-- [ ] Research: Cross-compilation setup for Android
-- [ ] Research: Test build with `cargo-ndk` or `cross`
-- [ ] Research: Verify dependency compatibility (reqwest, tokio, etc.)
-- [ ] Implement: CI workflow for Termux builds (GitHub Actions)
-- [ ] Test: Run on actual Termux installation
-- [ ] Release: Add Android binaries to GitHub releases
-- [ ] Document: Installation instructions for Termux
-
-**Example build:**
-```bash
-# Potential approach with cargo-ndk
-cargo ndk -t arm64-v8a -o ./dist build --release
-```
-
----
-
-### Custom Model Support
-
-**Priority:** HIGH  
-**Status:** Research needed
-
-**Problem:** Users want to use local models that aren't pre-configured in Ask-AI. Currently, only predefined model presets are supported.
-
-**Questions to explore:**
-1. How to detect model capabilities from Ollama API?
-2. What's the minimum config users need for a new model?
-3. How to handle models without tool support?
-4. How to handle thinking models vs non-thinking?
-
-**Proposed config:**
-```toml
-[model.custom."my-model"]
-ollama_name = "my-finetune:latest"
-context_window = 32768
-tools = true
-vision = false
-temperature = 0.7
-```
-
-**Tasks:**
-- [ ] Research: Ollama API model metadata endpoints
-- [ ] Research: Test capability detection with various models
-- [ ] Design: Config schema for custom models
-- [ ] Implement: Custom model registration
-- [ ] Implement: Capability detection/inference
-- [ ] Document: How to add custom models
-
----
-
-### Termux Builds
-
-**Priority:** HIGH  
-**Status:** Research needed
-
-**Problem:** Users want to run ask-ai on Android devices via Termux.
-
-**Approaches:**
-1. **Cross-compilation:** Target `aarch64-linux-android` with cargo-ndk
-2. **Pre-built binaries:** Release assets for Android in GitHub releases
-3. **Termux packaging:** Package for Termux package manager
-
-**Tasks:**
-- [ ] Research: Cross-compilation setup for Android
-- [ ] Research: Verify dependency compatibility
-- [ ] Implement: CI workflow for Termux builds
-- [ ] Test: Run on actual Termux installation
-- [ ] Document: Installation instructions
 
 ---
 

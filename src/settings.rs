@@ -140,7 +140,6 @@ fn default_skin() -> String {
 }
 
 fn default_blacklist() -> Vec<String> {
-    // Web search tools are broken (blocked by DDG CAPTCHA)
     Vec::new()
 }
 
@@ -357,9 +356,10 @@ ollama_port = 11434
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
 #   - read_file, list_directory, search_files (File operations)
 #   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
-#   - web_search, web_search_news, web_instant_answer (Web search - BROKEN)
+#   - serper_search, serper_search_news (Serper API web search - requires SERPER_API_KEY)
+#   - web_search, web_search_news, web_instant_answer (DuckDuckGo - may fail due to CAPTCHA)
 #
-# Note: Web search tools are blocked by DuckDuckGo CAPTCHA and may not work.
+# Note: DuckDuckGo tools may be blocked by CAPTCHA. Use Serper tools for reliable web search.
 # Default: [] (all tools enabled)
 blacklist = []
 

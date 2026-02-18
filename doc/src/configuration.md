@@ -118,16 +118,16 @@ ollama_port = 11434
 # Blacklisted tools won't be available to the AI, saving context window space.
 #
 # Available tools include:
-#   - web_search, web_search_news, web_instant_answer (Web search - BROKEN)
+#   - get_current_datetime, get_project_context (System information)
 #   - get_weather, get_current_weather, get_weather_forecast (Weather)
 #   - read_file, list_directory, search_files (File operations)
 #   - fetch_pokemon, fetch_pokemon_stats, etc. (Pokémon data)
+#   - serper_search, serper_search_news (Serper API web search - requires SERPER_API_KEY)
+#   - web_search, web_search_news, web_instant_answer (DuckDuckGo - may fail due to CAPTCHA)
 #
-# ⚠️  IMPORTANT: Web search tools are DISABLED BY DEFAULT ⚠️
-# They are currently blocked by DuckDuckGo CAPTCHA and do not work reliably.
-# Remove them from this list to experiment, but expect failures.
-# Default: ["web_search", "web_search_news", "web_instant_answer"]
-blacklist = ["web_search", "web_search_news", "web_instant_answer"]
+# Note: DuckDuckGo tools may be blocked by CAPTCHA. Use Serper tools for reliable web search.
+# Default: [] (all enabled tools are available)
+blacklist = []
 
 # Enable file operation sandboxing for security.
 # When true, file tools (read_file, list_directory, search_files) can only 
@@ -275,11 +275,13 @@ Some tools may not work in your environment or you may want to disable them:
 
 ```toml
 [tools]
-# Disable web search (currently broken)
-blacklist = ["web_search", "web_search_news", "web_instant_answer"]
+# Disable specific tools
+blacklist = ["fetch_pokemon", "get_pokemon_ability"]
 ```
 
 **Important**: When a tool is blacklisted, it's completely hidden from the model. The system prompt won't mention the tool, and the model won't try to use it. This saves context window space.
+
+**Note**: DuckDuckGo web search tools (`web_search`, `web_search_news`, `web_instant_answer`) may fail due to CAPTCHA. For reliable web search, use Serper tools (`serper_search`, `serper_search_news`) which require the `SERPER_API_KEY` environment variable.
 
 ### Enabling Pokémon Tools
 

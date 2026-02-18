@@ -84,11 +84,15 @@ cargo build --release --no-default-features --features file-tools
 ```
 
 Available features:
-- `weather-tools` - Weather lookup (default)
-- `file-tools` - File operations (default)
-- `web-search-tools` - Web search (default, currently broken)
-- `pokemon-tools` - Pokémon data (disabled by default)
-- `all-tools` - Enable all categories
+- `weather-tools` - Weather lookup tools (default)
+- `file-tools` - File system operations (default)
+- `pokemon-tools` - Pokémon data tools (default)
+- `calc-tools` - Mathematical calculator (default)
+- `serper-tools` - Serper API web search (default, requires `SERPER_API_KEY`)
+- `system-tools` - System information tools (default)
+- `search-tools` - DuckDuckGo web search (disabled by default, may fail due to CAPTCHA)
+- `finance-tools` - Stock quotes (disabled by default, planned)
+- `all-tools` - Enable all feature categories
 
 ### 4. Update Documentation
 

@@ -1,0 +1,41 @@
+# Cross-Compilation Configuration for Android/Termux
+#
+# This file configures the `cross` tool for building ask-ai for Android devices.
+# See: https://github.com/cross-rs/cross
+#
+# Usage:
+#   # Install cross
+#   cargo install cross --git https://github.com/cross-rs/cross
+#   
+#   # Build for Android (requires Docker or Podman)
+#   cross build --target aarch64-linux-android --release
+#   
+#   # Build with specific features
+#   cross build --target aarch64-linux-android --release --features "weather-tools,file-tools,calc-tools,system-tools"
+
+[target.aarch64-linux-android]
+# Use the official cross image for Android
+image = "ghcr.io/cross-rs/aarch64-linux-android:main"
+
+# Optional: If you encounter TLS issues, you may need to configure
+# environment variables or use a custom image with OpenSSL
+# 
+# Example with custom environment:
+# [target.aarch64-linux-android.env]
+# CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "aarch64-linux-android-gcc"
+
+# Alternative target for older Android devices (32-bit ARM)
+# [target.armv7-linux-androideabi]
+# image = "ghcr.io/cross-rs/armv7-linux-androideabi:main"
+
+# Build configuration
+[build]
+# Default target for cross builds
+default-target = "aarch64-linux-android"
+
+# Additional environment variables for all targets
+[build.env]
+passthrough = [
+    "RUST_BACKTRACE",
+    "RUST_LOG",
+]

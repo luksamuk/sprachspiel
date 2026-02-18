@@ -110,22 +110,26 @@ Content is sanitized for security (injection patterns, executable code blocks re
 Tools are organized into compile-time features:
 
 ```bash
-# Default build (Pokémon, Weather, File tools)
+# Default build (includes: Pokémon, Weather, File, Calculator, Serper, System tools)
 make build
 
-# With all tools (includes Web Search - currently broken)
+# With all tools (adds DuckDuckGo search, Finance)
 make build-all-tools
 
 # Install locally with all tools
 make install-local-all-tools
 ```
 
-| Feature | Tools | Default |
-|---------|-------|---------|
-| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes |
-| `weather-tools` | Weather lookup | ✅ Yes |
-| `file-tools` | File operations | ✅ Yes |
-| `web-search-tools` | Web search (blocked) | ❌ No |
+| Feature | Tools | Default | Notes |
+|---------|-------|---------|-------|
+| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes | |
+| `weather-tools` | 3 Weather lookup tools | ✅ Yes | |
+| `file-tools` | 5 File operation tools | ✅ Yes | |
+| `calc-tools` | 1 Calculator tool | ✅ Yes | |
+| `serper-tools` | 2 Web search tools | ✅ Yes | Requires `SERPER_API_KEY` |
+| `system-tools` | 2 System info tools | ✅ Yes | |
+| `search-tools` | 3 DuckDuckGo tools | ❌ No | May fail due to CAPTCHA |
+| `finance-tools` | 1 Stock quote tool | ❌ No | Planned |
 
 ## AI-Assisted Development
 

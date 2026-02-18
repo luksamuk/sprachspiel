@@ -42,20 +42,20 @@ cargo clippy -- -D warnings
 Tools are organized into feature flags for modular compilation:
 
 ### Default Features
-- `weather-tools` - Weather lookup (enabled by default)
-- `web-search-tools` - Web search (enabled by default, currently broken)
-- `file-tools` - File operations (enabled by default)
 
-### Default Features
+The following features are enabled by default:
+
+- `weather-tools` - Weather lookup tools (3 tools)
+- `file-tools` - File system operations (5 tools)
 - `pokemon-tools` - Pokémon data tools (9 tools)
-- `weather-tools` - Weather lookup tools
-- `file-tools` - File system operations
-- `calc-tools` - Mathematical calculator
+- `calc-tools` - Mathematical calculator (1 tool)
+- `serper-tools` - Serper API web search (2 tools, requires `SERPER_API_KEY`)
+- `system-tools` - System information tools (2 tools)
 
 ### Optional Features
-- `web-search-tools` - DuckDuckGo web search (currently blocked by CAPTCHA)
-- `search-tools` - ollama-rs built-in DDGSearcher + Scraper (planned)
-- `finance-tools` - Stock quotes (planned)
+
+- `search-tools` - DuckDuckGo web search (3 tools, disabled by default, may fail due to CAPTCHA)
+- `finance-tools` - Stock quotes (planned, disabled by default)
 - `all-tools` - Enable all tool categories
 
 ### Feature Usage in Code
