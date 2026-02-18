@@ -19,8 +19,19 @@ BUILD_DIR = target/release
 # Feature flags
 FEATURE_POKEMON = --features pokemon-tools
 FEATURE_ALL = --features all-tools
+FEATURE_TERMUX = --features "weather-tools,file-tools,calc-tools,system-tools"
 
-.PHONY: all build install uninstall clean test check build-pokemon build-all-tools install-pokemon install-all-tools install-local-pokemon install-local-all-tools test-all
+# Cross-compilation targets
+TERMUX_TARGET = aarch64-linux-android
+TERMUX_BUILD_DIR = target/$(TERMUX_TARGET)/release
+
+# Distribution
+VERSION ?= $(shell grep '^version =' Cargo.toml | head -1 | cut -d'"' -f2)
+DIST_DIR = dist
+TARBALL_NAME = $(BINARY)-$(VERSION)
+TARBALL_NAME_TERMUX = $(BINARY)-$(VERSION)-termux-$(TERMUX_TARGET)
+
+.PHONY: all build install uninstall clean test check build-pokemon build-all-tools install-pokemon install-all-tools install-local-pokemon install-local-all-tools test-all termux termux-all-tools tarball tarball-termux tarball-linux help
 
 # Default target
 all: build
@@ -154,6 +165,14 @@ help:
 	@echo "  make install-local-all-tools - Install to ~/.local/bin with all tools"
 	@echo "  make uninstall          - Remove from PREFIX"
 	@echo ""
+	@echo "Termux/Android builds:"
+	@echo "  make termux             - Build for Termux (aarch64-linux-android)"
+	@echo "  make termux-all-tools   - Build for Termux with all tools"
+	@echo "  make tarball            - Create release tarball for current platform"
+	@echo "  make tarball-linux      - Create x86_64 Linux tarball"
+	@echo "  make tarball-termux     - Create Termux tarball (default features)"
+	@echo "  make tarball-termux-all-tools - Create Termux tarball (all features)"
+	@echo ""
 	@echo "Development targets:"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make test               - Run tests"
@@ -171,6 +190,7 @@ help:
 	@echo ""
 	@echo "Variables:"
 	@echo "  PREFIX=<path>           - Installation prefix (default: /usr/local)"
+	@echo "  VERSION=<version>       - Version for tarball (default: from Cargo.toml)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make install                           # Install to /usr/local"
@@ -178,3 +198,114 @@ help:
 	@echo "  make install PREFIX=~/.local           # Install to ~/.local"
 	@echo "  make install-local-pokemon             # Install locally with Pokémon tools"
 	@echo "  make install-local-all-tools           # Install locally with all tools"
+	@echo "  make termux                            # Build for Android/Termux"
+	@echo "  make tarball-termux                    # Create Termux distribution tarball"
+
+# =============================================================================
+# Termux/Android Cross-Compilation
+# =============================================================================
+# Requires: cargo install cross --git https://github.com/cross-rs/cross
+# Requires: Docker or Podman running
+# See Cross.toml for configuration
+
+# Build for Termux (Android aarch64) - recommended features only
+termux:
+	@echo "Building for Termux (aarch64-linux-android)..."
+	@echo "Note: Requires 'cross' and Docker/Podman. Run: cargo install cross --git https://github.com/cross-rs/cross"
+	cross build --target $(TERMUX_TARGET) $(CARGO_FLAGS)
+	@echo "Binary: $(TERMUX_BUILD_DIR)/$(BINARY)"
+
+# Build for Termux with all tools
+termux-all-tools:
+	@echo "Building for Termux with all tools..."
+	cross build --target $(TERMUX_TARGET) $(CARGO_FLAGS) $(FEATURE_ALL)
+	@echo "Binary: $(TERMUX_BUILD_DIR)/$(BINARY)"
+
+# =============================================================================
+# Distribution Tarballs
+# =============================================================================
+
+# Create tarball for current platform
+tarball: build
+	@echo "Creating distribution tarball..."
+	@mkdir -p $(DIST_DIR)
+	tar -czvf $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz \
+		-C $(BUILD_DIR) $(BINARY) \
+		-C ../man ask-ai.1 \
+		-C ../ README.md LICENSE.txt
+	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz"
+
+# Create tarball for Linux x86_64
+tarball-linux: build
+	@echo "Creating Linux x86_64 tarball..."
+	@mkdir -p $(DIST_DIR)
+	tar -czvf $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz \
+		-C $(BUILD_DIR) $(BINARY) \
+		-C ../man ask-ai.1 \
+		-C ../ README.md LICENSE.txt
+	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz"
+
+# Create tarball for Termux (Android aarch64)
+tarball-termux: termux
+	@echo "Creating Termux tarball..."
+	@mkdir -p $(DIST_DIR)
+	@echo "Installation instructions for Termux:" > $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "1. Install dependencies:" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   pkg install wget" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "2. Extract the tarball:" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   tar -xzf $(TARBALL_NAME_TERMUX).tar.gz" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "3. Install the binary:" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   chmod +x ask-ai" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   mv ask-ai /data/data/com.termux/files/usr/bin/" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "4. Run:" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   ask-ai --version" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "Note: Ollama must run on a separate machine (desktop/server)." >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml" >> $(DIST_DIR)/README-TERMUX.txt
+	tar -czvf $(DIST_DIR)/$(TARBALL_NAME_TERMUX).tar.gz \
+		-C $(TERMUX_BUILD_DIR) $(BINARY) \
+		-C ../$(DIST_DIR) README-TERMUX.txt
+	@rm $(DIST_DIR)/README-TERMUX.txt
+	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME_TERMUX).tar.gz"
+	@echo ""
+	@echo "To install in Termux:"
+	@echo "  pkg install wget"
+	@echo "  wget <release-url>/$(TARBALL_NAME_TERMUX).tar.gz"
+	@echo "  tar -xzf $(TARBALL_NAME_TERMUX).tar.gz"
+	@echo "  chmod +x ask-ai && mv ask-ai /data/data/com.termux/files/usr/bin/"
+
+# Create tarball for Termux with all tools
+tarball-termux-all-tools: termux-all-tools
+	@echo "Creating Termux tarball (all tools)..."
+	@mkdir -p $(DIST_DIR)
+	@echo "Installation instructions for Termux:" > $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "1. Install dependencies:" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   pkg install wget" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "2. Extract the tarball:" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   tar -xzf $(TARBALL_NAME_TERMUX)-all-tools.tar.gz" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "3. Install the binary:" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   chmod +x ask-ai" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   mv ask-ai /data/data/com.termux/files/usr/bin/" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "4. Run:" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "   ask-ai --version" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "Note: Ollama must run on a separate machine (desktop/server)." >> $(DIST_DIR)/README-TERMUX.txt
+	@echo "Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml" >> $(DIST_DIR)/README-TERMUX.txt
+	tar -czvf $(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz \
+		-C $(TERMUX_BUILD_DIR) $(BINARY) \
+		-C ../$(DIST_DIR) README-TERMUX.txt
+	@rm $(DIST_DIR)/README-TERMUX.txt
+	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz"
+
+# Clean distribution directory
+clean-dist:
+	@rm -rf $(DIST_DIR)
+	@echo "Distribution directory cleaned"

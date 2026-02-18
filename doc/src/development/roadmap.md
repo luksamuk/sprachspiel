@@ -169,10 +169,11 @@ $ ask-ai --version
 - [x] Research: Cross-compilation setup for Android (DONE)
 - [x] Research: Compare `cross` vs `cargo-ndk` (DONE - `cross` recommended)
 - [x] Research: Verify dependency compatibility (DONE - see table above)
+- [x] Implement: Create `Cross.toml` configuration (DONE)
+- [x] Implement: Add Makefile targets for Termux builds (DONE)
 - [ ] Test: Build locally with `cross`
 - [ ] Test: Run binary on actual Termux device
 - [ ] Implement: CI workflow for Termux builds (GitHub Actions)
-- [ ] Implement: Create `Cross.toml` configuration
 - [ ] Test: Verify all features work on Android
 - [ ] Document: Installation instructions for Termux
 - [ ] Release: Add Android binaries to GitHub releases
