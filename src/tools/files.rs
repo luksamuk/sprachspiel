@@ -270,13 +270,19 @@ pub async fn count_lines(path: String, sandbox: Option<String>) -> Result<String
 
     // Check if file exists
     if !canonical_path.exists() {
-        let err_msg = format!("Error: File not found: {}", path);
+        let err_msg = format!(
+            "Error: FILE NOT FOUND: '{}'. The file does not exist. DO NOT try to read this file. Check the correct filename using list_directory.",
+            path
+        );
         log_tool_result("count_lines", &err_msg);
         return Ok(err_msg);
     }
 
     if !canonical_path.is_file() {
-        let err_msg = format!("Error: Path is not a file: {}", path);
+        let err_msg = format!(
+            "Error: NOT A FILE: '{}'. The path exists but is not a file (it may be a directory). Use list_directory to see contents.",
+            path
+        );
         log_tool_result("count_lines", &err_msg);
         return Ok(err_msg);
     }
