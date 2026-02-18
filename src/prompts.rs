@@ -169,11 +169,10 @@ Examples:
         );
     }
 
-    // Web search tools section
+    // Web search tools section - combined into single cfg block
     #[cfg(feature = "web-search-tools")]
     {
         let search_tools = ["web_search", "web_search_news", "web_instant_answer"];
-        
         let search_enabled: Vec<_> = search_tools
             .iter()
             .filter(|tool| !blacklist.contains(**tool))
@@ -182,7 +181,7 @@ Examples:
         
         if !search_enabled.is_empty() {
             prompt.push_str(
-            r#"**3. WEB SEARCH TOOLS (DuckDuckGo) - for EVERYTHING ELSE:**
+                r#"**3. WEB SEARCH TOOLS (DuckDuckGo) - for EVERYTHING ELSE:**
 Use web_search for ANY query that is NOT about Pokémon or weather.
 This includes:
 - General knowledge questions
@@ -289,20 +288,29 @@ Available tools:
         prompt.push('\n');
     }
 
-    // Add available Web Search tools
+    // Add available Web Search tools (must be inside same cfg block)
     #[cfg(feature = "web-search-tools")]
-    if !search_enabled.is_empty() {
-        prompt.push_str("**Web Search Tools (use for EVERYTHING ELSE):**\n");
-        for tool in &search_enabled {
-            let description = match *tool {
-                "web_search" => "Perform a web search and get results with title, URL, and snippets",
-                "web_search_news" => "Search specifically for news articles",
-                "web_instant_answer" => "Get instant answers for facts and quick queries",
-                _ => "Tool",
-            };
-            prompt.push_str(&format!("- {}: {}\n", tool, description));
+    {
+        let search_tools = ["web_search", "web_search_news", "web_instant_answer"];
+        let search_enabled: Vec<_> = search_tools
+            .iter()
+            .filter(|tool| !blacklist.contains(**tool))
+            .copied()
+            .collect();
+        
+        if !search_enabled.is_empty() {
+            prompt.push_str("**Web Search Tools (use for EVERYTHING ELSE):**\n");
+            for tool in &search_enabled {
+                let description = match *tool {
+                    "web_search" => "Perform a web search and get results with title, URL, and snippets",
+                    "web_search_news" => "Search specifically for news articles",
+                    "web_instant_answer" => "Get instant answers for facts and quick queries",
+                    _ => "Tool",
+                };
+                prompt.push_str(&format!("- {}: {}\n", tool, description));
+            }
+            prompt.push('\n');
         }
-        prompt.push('\n');
     }
 
     // Add available File tools
