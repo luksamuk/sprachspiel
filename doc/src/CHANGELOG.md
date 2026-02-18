@@ -34,6 +34,10 @@ All notable changes to Ask-AI will be documented in this file.
   - Boolean parameters accept: "true", "false", "1", "0", "yes"
   - Numeric parameters accept: "50", "100", etc.
   - Empty/unset parameters use sensible defaults
+- **File sizes shown in KB/MB** instead of raw bytes (more intuitive for LLMs)
+- **`count_lines`** now shows only line count (removed byte count - LLMs think in lines)
+- **`read_file_segment`** now requires both `start_line` and `num_lines` (no defaults)
+- Spinner now suspends during tool output (no more frozen spinner text)
 
 ## [0.1.0] - 2026-02-17
 

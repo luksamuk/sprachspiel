@@ -211,11 +211,14 @@ Examples:
             r#"**4. FILE OPERATION TOOLS - for local files:**
 Use these tools to read, list, and search files in the local filesystem.
 
-IMPORTANT: For large files, use count_lines first to check size, then read_file_segment to read only what you need. Avoid polluting context with entire large files.
+IMPORTANT: For large files:
+1. Use count_lines to check file size first
+2. Then use read_file_segment(path, start_line, num_lines) to read only what you need
+3. Both start_line and num_lines are REQUIRED - no defaults
 
 Examples:
 - "Read the README.md file" → CALL read_file
-- "Read lines 10-20 of main.rs" → CALL read_file_segment
+- "Read lines 10-20 of main.rs" → CALL read_file_segment(path: "main.rs", start_line: "10", num_lines: "10")
 - "How many lines in main.rs?" → CALL count_lines
 - "Show me the project structure" → CALL list_directory
 - "Find all TODO comments" → CALL search_files
@@ -297,9 +300,9 @@ Available tools:
         for tool in &file_enabled {
             let description = match *tool {
                 "read_file" => "Read contents of a file",
-                "read_file_segment" => "Read a specific segment of a file (start_line, num_lines)",
+                "read_file_segment" => "Read a specific segment (REQUIRES start_line AND num_lines)",
                 "count_lines" => "Count lines in a file - use before reading large files",
-                "list_directory" => "List files and directories",
+                "list_directory" => "List files and directories (sizes in KB/MB)",
                 "search_files" => "Search file contents with regex pattern",
                 _ => "Tool",
             };
@@ -344,9 +347,10 @@ ABSOLUTE RULES:
 - This is an ephemeral session - no conversation continuation
 
 TOOL USAGE GUIDELINES:
-- Use list_directory to understand project structure
+- Use list_directory to understand project structure (sizes shown in KB/MB)
 - Use count_lines to check file size before reading large files
-- Use read_file_segment to read specific parts of large files
+- Use read_file_segment(path, start_line, num_lines) to read specific parts
+  - Both start_line and num_lines are REQUIRED - always provide both
 - Use read_file to inspect configuration files
 - Use search_files to find relevant code patterns
 - Call tools BEFORE generating final code if needed
@@ -361,9 +365,9 @@ Available file operation tools:
     // Add file tool descriptions if not blacklisted
     let file_tools = [
         ("read_file", "Read file contents"),
-        ("read_file_segment", "Read a specific segment of a file (start_line, num_lines)"),
-        ("count_lines", "Count lines in a file - use before reading large files"),
-        ("list_directory", "List files and directories"),
+        ("read_file_segment", "Read segment (REQUIRES start_line AND num_lines)"),
+        ("count_lines", "Count lines - use before reading large files"),
+        ("list_directory", "List files and directories (sizes in KB/MB)"),
         ("search_files", "Search file contents with regex"),
     ];
     

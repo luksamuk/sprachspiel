@@ -270,6 +270,35 @@ log_tool_call(
 );
 ```
 
+### Required Parameters
+
+For parameters that MUST be provided (like `read_file_segment`'s `start_line` and `num_lines`):
+
+```rust
+// Validate required parameters early
+let start_line_parsed = parse_u32(Some(start_line.clone()), None)
+    .ok_or_else(|| format!("Error: Invalid start_line '{}'. Must be a positive number.", start_line))?;
+
+if start_line_parsed == 0 {
+    let err_msg = "Error: start_line must be 1 or greater. Line numbers start at 1.".to_string();
+    log_tool_result("read_file_segment", &err_msg);
+    return Ok(err_msg);
+}
+```
+
+### File Size Output
+
+Always show file sizes in human-readable format (KB/MB), not raw bytes. LLMs think in lines and file sizes, not byte counts:
+
+```rust
+let kb = metadata.len() as f64 / 1024.0;
+let size_info = if kb >= 1024.0 {
+    format!(" ({:.1} MB)", kb / 1024.0)
+} else {
+    format!(" ({:.0} KB)", kb)
+};
+```
+
 ## Notes
 
 - The project is a CLI tool for interacting with local Ollama models

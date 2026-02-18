@@ -277,9 +277,11 @@ Read a specific segment of a file (useful for large files).
 
 ```
 Function: read_file_segment
-Args: path (string), start_line (string), num_lines (string), sandbox (string, optional)
+Args: path (string), start_line (string, REQUIRED), num_lines (string, REQUIRED), sandbox (string, optional)
 Example: read_file_segment(path: "src/main.rs", start_line: "100", num_lines: "50")
 ```
+
+**Note:** Both `start_line` and `num_lines` are **required**. Line numbers start at 1.
 
 **Features:**
 - Line numbers are 1-based
@@ -305,13 +307,12 @@ Args: path (string), sandbox (string, optional)
 Example: count_lines(path: "src/main.rs")
 ```
 
-**Output includes suggestion for large files:**
+**Output:**
 ```
 File: src/main.rs
 Lines: 1500
-Bytes: 45000
 
-Tip: This file has 1500 lines. Use read_file_segment(path, start_line, num_lines) to read specific sections and avoid polluting the context window.
+Tip: Use read_file_segment(path, start_line, num_lines) to read specific sections and avoid polluting the context window.
 ```
 
 ### list_directory
@@ -330,7 +331,7 @@ Example: list_directory(path: "src", recursive: "true")
 - Non-recursive by default (current level only)
 - Recursive mode with `recursive: true` (max depth 10)
 - Shows file types: [file], [dir], [symlink]
-- Displays file sizes for files
+- Displays file sizes in KB/MB (e.g., "1.5 MB", "42 KB")
 
 ### search_files
 
@@ -606,7 +607,7 @@ ask-ai -d "Tell me about Pikachu"
 7. **Use relative paths** - When working with files
 8. **Limit search scope** - Use file patterns to narrow searches
 9. **Count before reading** - Use `count_lines` before reading large files
-10. **Read in segments** - Use `read_file_segment` for large files
+10. **Read in segments** - Use `read_file_segment` with BOTH `start_line` AND `num_lines` (required)
 
 ## Tool Error Handling
 
@@ -622,6 +623,8 @@ Examples:
 |-----------|---------------|
 | File not found | `Error: File not found: README.md. Please check if the file exists or try a different file name (e.g., README.org instead of README.md).` |
 | Invalid line number | `Error: Invalid start_line 500. File has 100 lines. Line numbers start at 1.` |
+| Missing required arg | `Error: Invalid num_lines ''. Must be a positive number.` |
+| File too large | `Error: File too large (1.5 MB). Use count_lines to check file size, then read_file_segment to read in chunks.` |
 | Search pattern error | `Error: Invalid regex pattern '[a-z'. Please check your regex syntax.` |
 | API error | `Weather API error: 429. Please try again later.` |
 
