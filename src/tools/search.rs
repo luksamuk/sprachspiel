@@ -9,15 +9,17 @@ use ollama_rs::function;
 /// DuckDuckGo Lite base URL
 const DUCKDUCKGO_LITE: &str = "https://html.duckduckgo.com/html/";
 
-/// Internal implementation of web search
-async fn do_web_search(
+/// Perform a web search using DuckDuckGo Lite
+///
+/// Returns search results with title, URL, and snippet for each result
+#[function]
+pub async fn web_search(
     query: String,
     num_results: Option<u8>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    // Log tool call with arguments
     log_tool_call("web_search", &[
         ("query".to_string(), query.clone()),
-        ("num_results".to_string(), format!("{:?}", num_results)),
+        ("num_results".to_string(), num_results.map(|n| n.to_string()).unwrap_or_else(|| "5".to_string())),
     ]);
     
     let num_results = num_results.unwrap_or(5).min(10) as usize;
@@ -26,33 +28,58 @@ async fn do_web_search(
     let encoded_query = urlencoding::encode(&query);
     let url = format!("{}?q={}&kl=wt-wt", DUCKDUCKGO_LITE, encoded_query);
 
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .build()?;
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let err = format!("Error creating HTTP client: {}. Please try again later.", e);
+            log_tool_result("web_search", &err);
+            return Ok(err);
+        }
+    };
 
-    let response = client.get(&url).send().await?;
+    let response = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error during search: {}. Please try again later.", e);
+            log_tool_result("web_search", &err);
+            return Ok(err);
+        }
+    };
 
     if !response.status().is_success() {
-        return Err(format!("DuckDuckGo error: {}", response.status()).into());
+        let err = format!("DuckDuckGo error: HTTP {}. Please try again later.", response.status());
+        log_tool_result("web_search", &err);
+        return Ok(err);
     }
 
-    let html: String = response.text().await?;
+    let html: String = match response.text().await {
+        Ok(h) => h,
+        Err(e) => {
+            let err = format!("Error reading response: {}. Please try again later.", e);
+            log_tool_result("web_search", &err);
+            return Ok(err);
+        }
+    };
 
     // Check if DuckDuckGo is blocking with CAPTCHA
     if html.contains("Unfortunately, bots use DuckDuckGo too") ||
        html.contains("anomaly-modal__title") ||
        html.contains("anomaly-modal__description") {
-        return Ok(
+        let result = 
             "⚠️ **Aviso: DuckDuckGo bloqueou a requisição**\n\n\
             O DuckDuckGo detectou que esta é uma requisição automatizada e exigiu verificação CAPTCHA. \
             Infelizmente, não é possível completar a pesquisa no momento.\n\n\
             **Sugestão:** Tente usar outros modelos que possam responder baseados em seu conhecimento, \
-            ou espere que implementemos uma alternativa de busca.".to_string()
-        );
+            ou espere que implementemos uma alternativa de busca.".to_string();
+        log_tool_result("web_search", &result);
+        return Ok(result);
     }
 
     // Parse search results from HTML
-    let results = parse_search_results(&html, num_results)?;
+    let results = parse_search_results(&html, num_results);
 
     if results.is_empty() {
         let result = format!("Nenhum resultado encontrado para '{}'", query);
@@ -77,43 +104,67 @@ async fn do_web_search(
     Ok(result)
 }
 
-/// Perform a web search using DuckDuckGo Lite
+/// Search for news using DuckDuckGo
 ///
-/// Returns search results with title, URL, and snippet for each result
+/// Searches specifically for news articles
 #[function]
-pub async fn web_search(
+pub async fn web_search_news(
     query: String,
     num_results: Option<u8>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    do_web_search(query, num_results).await
-}
-
-/// Internal implementation of news search
-async fn do_web_search_news(
-    query: String,
-    num_results: Option<u8>,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("web_search_news", &[
+        ("query".to_string(), query.clone()),
+        ("num_results".to_string(), num_results.map(|n| n.to_string()).unwrap_or_else(|| "3".to_string())),
+    ]);
+    
     let num_results = num_results.unwrap_or(3).min(10) as usize;
     let news_query = format!("{} news", query);
 
     let encoded_query = urlencoding::encode(&news_query);
     let url = format!("{}?q={}&kl=wt-wt", DUCKDUCKGO_LITE, encoded_query);
 
-    let client = reqwest::Client::builder()
+    let client = match reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .build()?;
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let err = format!("Error creating HTTP client: {}. Please try again later.", e);
+            log_tool_result("web_search_news", &err);
+            return Ok(err);
+        }
+    };
 
-    let response = client.get(&url).send().await?;
+    let response = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error during news search: {}. Please try again later.", e);
+            log_tool_result("web_search_news", &err);
+            return Ok(err);
+        }
+    };
 
     if !response.status().is_success() {
-        return Err(format!("DuckDuckGo error: {}", response.status()).into());
+        let err = format!("DuckDuckGo error: HTTP {}. Please try again later.", response.status());
+        log_tool_result("web_search_news", &err);
+        return Ok(err);
     }
 
-    let html: String = response.text().await?;
-    let results = parse_search_results(&html, num_results)?;
+    let html: String = match response.text().await {
+        Ok(h) => h,
+        Err(e) => {
+            let err = format!("Error reading response: {}. Please try again later.", e);
+            log_tool_result("web_search_news", &err);
+            return Ok(err);
+        }
+    };
+    
+    let results = parse_search_results(&html, num_results);
 
     if results.is_empty() {
-        return Ok(format!("Nenhuma notícia encontrada para '{}'", query));
+        let result = format!("Nenhuma notícia encontrada para '{}'", query);
+        log_tool_result("web_search_news", &result);
+        return Ok(result);
     }
 
     let mut output = vec![format!("**Notícias sobre '{}'**\n", query)];
@@ -127,49 +178,9 @@ async fn do_web_search_news(
 
     output.push("\n\n_Fonte: DuckDuckGo News_".to_string());
 
-    Ok(output.join("\n"))
-}
-
-/// Search for news using DuckDuckGo
-///
-/// Searches specifically for news articles
-#[function]
-pub async fn web_search_news(
-    query: String,
-    num_results: Option<u8>,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    do_web_search_news(query, num_results).await
-}
-
-/// Internal implementation of instant answer
-async fn do_web_instant_answer(
-    query: String,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let encoded_query = urlencoding::encode(&query);
-    let url = format!("{}?q={}&kl=wt-wt", DUCKDUCKGO_LITE, encoded_query);
-
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .build()?;
-
-    let response = client.get(&url).send().await?;
-
-    if !response.status().is_success() {
-        return Err(format!("DuckDuckGo error: {}", response.status()).into());
-    }
-
-    let html: String = response.text().await?;
-
-    // Try to extract instant answer (Zero-Click Info)
-    if let Some(answer) = extract_instant_answer(&html) {
-        return Ok(format!(
-            "**{}**\n\n{}\n\n_Fonte: DuckDuckGo_",
-            query, answer
-        ));
-    }
-
-    // If no instant answer, fall back to regular search
-    do_web_search(query, Some(3)).await
+    let result = output.join("\n");
+    log_tool_result("web_search_news", &result);
+    Ok(result)
 }
 
 /// Get instant answer for a query (if available)
@@ -179,7 +190,81 @@ async fn do_web_instant_answer(
 pub async fn web_instant_answer(
     query: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    do_web_instant_answer(query).await
+    log_tool_call("web_instant_answer", &[("query".to_string(), query.clone())]);
+    
+    let encoded_query = urlencoding::encode(&query);
+    let url = format!("{}?q={}&kl=wt-wt", DUCKDUCKGO_LITE, encoded_query);
+
+    let client = match reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let err = format!("Error creating HTTP client: {}. Please try again later.", e);
+            log_tool_result("web_instant_answer", &err);
+            return Ok(err);
+        }
+    };
+
+    let response = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error during instant answer search: {}. Please try again later.", e);
+            log_tool_result("web_instant_answer", &err);
+            return Ok(err);
+        }
+    };
+
+    if !response.status().is_success() {
+        let err = format!("DuckDuckGo error: HTTP {}. Please try again later.", response.status());
+        log_tool_result("web_instant_answer", &err);
+        return Ok(err);
+    }
+
+    let html: String = match response.text().await {
+        Ok(h) => h,
+        Err(e) => {
+            let err = format!("Error reading response: {}. Please try again later.", e);
+            log_tool_result("web_instant_answer", &err);
+            return Ok(err);
+        }
+    };
+
+    // Try to extract instant answer (Zero-Click Info)
+    if let Some(answer) = extract_instant_answer(&html) {
+        let result = format!(
+            "**{}**\n\n{}\n\n_Fonte: DuckDuckGo_",
+            query, answer
+        );
+        log_tool_result("web_instant_answer", &result);
+        return Ok(result);
+    }
+
+    // If no instant answer, fall back to regular search - parse results inline
+    let results = parse_search_results(&html, 3);
+
+    if results.is_empty() {
+        let result = format!("Nenhum resultado encontrado para '{}'", query);
+        log_tool_result("web_instant_answer", &result);
+        return Ok(result);
+    }
+
+    // Format results
+    let mut output = vec![format!("**Resultados da busca por '{}'**\n", query)];
+
+    for (i, result) in results.iter().enumerate() {
+        output.push(format!("\n**{}. {}**\n{}", i + 1, result.title, result.url,));
+        if !result.snippet.is_empty() {
+            output.push(format!("\n{}", result.snippet));
+        }
+    }
+
+    output.push("\n\n_Fonte: DuckDuckGo_".to_string());
+
+    let result = output.join("\n");
+    log_tool_result("web_instant_answer", &result);
+    Ok(result)
 }
 
 /// Structure for search result
@@ -191,10 +276,7 @@ struct SearchResult {
 }
 
 /// Parse search results from DuckDuckGo Lite HTML
-fn parse_search_results(
-    html: &str,
-    max_results: usize,
-) -> Result<Vec<SearchResult>, Box<dyn std::error::Error + Send + Sync>> {
+fn parse_search_results(html: &str, max_results: usize) -> Vec<SearchResult> {
     let mut results = Vec::new();
 
     // Split by result class to find each result
@@ -207,7 +289,7 @@ fn parse_search_results(
         }
     }
 
-    Ok(results)
+    results
 }
 
 /// Parse a single result block

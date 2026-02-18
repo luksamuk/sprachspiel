@@ -6,6 +6,7 @@
 
 mod capabilities;
 mod config;
+mod context;
 mod debug_tools;
 mod ocr;
 mod prompts;
@@ -91,6 +92,10 @@ struct Cli {
     /// Code mode: optimize response for code output (minimal explanations)
     #[arg(short, long)]
     code: bool,
+
+    /// Ignore AGENTS.md file if present in current directory
+    #[arg(long)]
+    ignore_agents: bool,
 
     /// Initialize/create sample configuration file
     #[arg(long)]
@@ -251,7 +256,7 @@ async fn handle_translate(args: TranslateArgs, _settings: &Settings) -> AppResul
     if args.plain {
         println!("{}", translated);
     } else {
-        print_text(&translated);
+        print_text(translated);
     }
 
     Ok(())
@@ -342,6 +347,17 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         subcommand_thinking && capabilities.thinking
     };
 
+    // Load AGENTS.md context if available and not ignored
+    let agents_md = if !args.ignore_agents {
+        crate::context::load_agents_md()
+    } else {
+        None
+    };
+
+    if args.debug && agents_md.is_some() {
+        eprintln!("📄 [AGENTS.md] Context injected from current directory");
+    }
+
     // Get system prompt with blacklist filtering
     // Default is now tool_user, code mode can also use tools
     let prompt_name = if args.code && use_tools {
@@ -357,7 +373,12 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     // Get the blacklist set to filter tools from the prompt
     let blacklist_set = settings.blacklist_set();
 
-    let system_prompt = match get_prompt_with_blacklist(prompt_name, Some(&model_config.model_id), Some(&blacklist_set)) {
+    let system_prompt = match get_prompt_with_blacklist(
+        prompt_name,
+        Some(&model_config.model_id),
+        Some(&blacklist_set),
+        agents_md.as_deref(),
+    ) {
         Some(prompt) => prompt,
         None => {
             eprintln!(
@@ -525,8 +546,13 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         Ok(resp) => resp,
         Err(e) => {
             finish_spinner(spinner);
-            let error_msg = format_tool_error(&e.to_string());
-            eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+            // In debug mode, show raw error with pretty printing
+            if crate::debug_tools::is_debug_enabled() {
+                eprintln!("\n❌ Tool execution failed (RAW):\n{:#?}\n", e);
+            } else {
+                let error_msg = format_tool_error(&e.to_string());
+                eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+            }
             std::process::exit(1);
         }
     };
@@ -652,7 +678,23 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     // Get the blacklist set to filter tools from the prompt
     let blacklist_set = settings.blacklist_set();
 
-    let system_prompt = match get_prompt_with_blacklist(prompt_name, Some(&model_config.model_id), Some(&blacklist_set)) {
+    // Load AGENTS.md context if available and not ignored (legacy mode)
+    let agents_md = if !cli.ignore_agents {
+        crate::context::load_agents_md()
+    } else {
+        None
+    };
+
+    if cli.debug && agents_md.is_some() {
+        eprintln!("📄 [AGENTS.md] Context injected from current directory");
+    }
+
+    let system_prompt = match get_prompt_with_blacklist(
+        prompt_name,
+        Some(&model_config.model_id),
+        Some(&blacklist_set),
+        agents_md.as_deref(),
+    ) {
         Some(prompt) => prompt,
         None => {
             eprintln!(
@@ -823,8 +865,13 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         Ok(resp) => resp,
         Err(e) => {
             finish_spinner(spinner);
-            let error_msg = format_tool_error(&e.to_string());
-            eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+            // In debug mode, show raw error with pretty printing
+            if crate::debug_tools::is_debug_enabled() {
+                eprintln!("\n❌ Tool execution failed (RAW):\n{:#?}\n", e);
+            } else {
+                let error_msg = format_tool_error(&e.to_string());
+                eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+            }
             std::process::exit(1);
         }
     };

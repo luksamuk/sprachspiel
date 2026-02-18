@@ -57,11 +57,11 @@ pub fn suspend_for_print<F>(f: F)
 where
     F: FnOnce(),
 {
-    if let Ok(guard) = ACTIVE_SPINNER.read() {
-        if let Some(spinner) = guard.as_ref() {
-            spinner.suspend(f);
-            return;
-        }
+    if let Ok(guard) = ACTIVE_SPINNER.read()
+        && let Some(spinner) = guard.as_ref()
+    {
+        spinner.suspend(f);
+        return;
     }
     // No active spinner, just execute directly
     f();

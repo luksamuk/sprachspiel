@@ -67,13 +67,29 @@ pub async fn get_weather(
 
     // Make the request
     let client = reqwest::Client::new();
-    let response = client.get(&url).send().await?;
+    let response = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error while fetching weather: {}. Please try again later.", e);
+            log_tool_result("get_weather", &err);
+            return Ok(err);
+        }
+    };
 
     if !response.status().is_success() {
-        return Err(format!("Geocoding API error: {}", response.status()).into());
+        let err = format!("Weather API error: {}. Please try again later.", response.status());
+        log_tool_result("get_weather", &err);
+        return Ok(err);
     }
 
-    let weather: WeatherResponse = response.json().await?;
+    let weather: WeatherResponse = match response.json().await {
+        Ok(w) => w,
+        Err(e) => {
+            let err = format!("Error parsing weather data: {}. Please try again later.", e);
+            log_tool_result("get_weather", &err);
+            return Ok(err);
+        }
+    };
 
     // Format the response
     let location_name = format!(
@@ -140,10 +156,16 @@ Fonte: Open-Meteo"#,
 pub async fn get_current_weather(
     location: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("get_current_weather", &[("location".to_string(), location.clone())]);
+
     // Get current weather data directly
     let (lat, lon) = match get_coordinates(&location).await {
         Ok(coords) => coords,
-        Err(e) => return Ok(format!("Could not find location '{}': {}", location, e)),
+        Err(e) => {
+            let err = format!("Could not find location '{}': {}", location, e);
+            log_tool_result("get_current_weather", &err);
+            return Ok(err);
+        }
     };
 
     let url = format!(
@@ -152,7 +174,14 @@ pub async fn get_current_weather(
     );
 
     let client = reqwest::Client::new();
-    let response = client.get(&url).send().await?;
+    let response = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error while fetching weather: {}. Please try again later.", e);
+            log_tool_result("get_current_weather", &err);
+            return Ok(err);
+        }
+    };
 
     if !response.status().is_success() {
         let err = format!("Weather API error: {}. Please try again later.", response.status());
@@ -160,7 +189,14 @@ pub async fn get_current_weather(
         return Ok(err);
     }
 
-    let weather: WeatherResponse = response.json().await?;
+    let weather: WeatherResponse = match response.json().await {
+        Ok(w) => w,
+        Err(e) => {
+            let err = format!("Error parsing weather data: {}. Please try again later.", e);
+            log_tool_result("get_current_weather", &err);
+            return Ok(err);
+        }
+    };
     let current = &weather.current;
 
     let location_name = format!(
@@ -204,6 +240,11 @@ pub async fn get_weather_forecast(
     location: String,
     days: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("get_weather_forecast", &[
+        ("location".to_string(), location.clone()),
+        ("days".to_string(), days.clone().unwrap_or_else(|| "5".to_string())),
+    ]);
+
     let days = days
         .and_then(|d| d.parse::<u8>().ok())
         .unwrap_or(5)
@@ -212,7 +253,11 @@ pub async fn get_weather_forecast(
     // First, get coordinates for the location
     let (lat, lon) = match get_coordinates(&location).await {
         Ok(coords) => coords,
-        Err(e) => return Ok(format!("Could not find location '{}': {}", location, e)),
+        Err(e) => {
+            let err = format!("Could not find location '{}': {}", location, e);
+            log_tool_result("get_weather_forecast", &err);
+            return Ok(err);
+        }
     };
 
     // Build Open-Meteo API URL with extended forecast
@@ -222,7 +267,14 @@ pub async fn get_weather_forecast(
     );
 
     let client = reqwest::Client::new();
-    let response = client.get(&url).send().await?;
+    let response = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error while fetching forecast: {}. Please try again later.", e);
+            log_tool_result("get_weather_forecast", &err);
+            return Ok(err);
+        }
+    };
 
     if !response.status().is_success() {
         let err = format!("Weather API error: {}. Please try again later.", response.status());
@@ -230,8 +282,21 @@ pub async fn get_weather_forecast(
         return Ok(err);
     }
 
-    let weather: WeatherResponse = response.json().await?;
+    let weather: WeatherResponse = match response.json().await {
+        Ok(w) => w,
+        Err(e) => {
+            let err = format!("Error parsing forecast data: {}. Please try again later.", e);
+            log_tool_result("get_weather_forecast", &err);
+            return Ok(err);
+        }
+    };
     let daily = &weather.daily;
+
+    if daily.time.is_empty() {
+        let err = format!("No forecast data available for '{}'. Please try again later.", location);
+        log_tool_result("get_weather_forecast", &err);
+        return Ok(err);
+    }
 
     let location_name = format!(
         "{}, {}",
@@ -319,37 +384,42 @@ struct GeocodingResult {
 #[derive(Debug, Deserialize)]
 struct WeatherResponse {
     timezone: String,
+    #[serde(default)]
     current: CurrentWeather,
+    #[serde(default)]
     daily: DailyForecast,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 struct CurrentWeather {
+    #[serde(default)]
     #[allow(dead_code)]
     time: String,
-    #[serde(rename = "temperature_2m")]
+    #[serde(default, rename = "temperature_2m")]
     temperature_2m: f64,
-    #[serde(rename = "relative_humidity_2m")]
+    #[serde(default, rename = "relative_humidity_2m")]
     relative_humidity_2m: u8,
-    #[serde(rename = "apparent_temperature")]
+    #[serde(default, rename = "apparent_temperature")]
     apparent_temperature: f64,
+    #[serde(default)]
     precipitation: f64,
-    #[serde(rename = "weather_code")]
+    #[serde(default, rename = "weather_code")]
     weather_code: i32,
-    #[serde(rename = "wind_speed_10m")]
+    #[serde(default, rename = "wind_speed_10m")]
     wind_speed_10m: f64,
-    #[serde(rename = "wind_direction_10m")]
+    #[serde(default, rename = "wind_direction_10m")]
     wind_direction_10m: u16,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 struct DailyForecast {
+    #[serde(default)]
     time: Vec<String>,
-    #[serde(rename = "temperature_2m_max")]
+    #[serde(default, rename = "temperature_2m_max")]
     temperature_2m_max: Vec<f64>,
-    #[serde(rename = "temperature_2m_min")]
+    #[serde(default, rename = "temperature_2m_min")]
     temperature_2m_min: Vec<f64>,
-    #[serde(rename = "precipitation_probability_max")]
+    #[serde(default, rename = "precipitation_probability_max")]
     precipitation_probability_max: Vec<u8>,
     #[serde(default)]
     weather_code: Vec<i32>,

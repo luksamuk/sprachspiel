@@ -478,6 +478,56 @@ See [Installation Guide](./installation.md#shell-completions) for more details.
 4. **Monitor token usage** with debug mode enabled
 5. **Adjust temperature** based on whether you need creativity or determinism
 6. **Sandbox file tools** in untrusted environments
+7. **Use AGENTS.md** for project-specific context
+
+## AGENTS.md Context
+
+Ask-AI automatically loads `AGENTS.md` from the current directory to provide project-specific context to the model.
+
+### How It Works
+
+When you run a query from a directory containing `AGENTS.md`:
+
+1. The file is read and sanitized for security
+2. Content is framed as project context
+3. It's injected into the system prompt
+4. The model uses this context for better responses
+
+### Security Measures
+
+Content is sanitized to prevent prompt injection:
+
+- **Size limit:** 1000 lines max (warning at 500+)
+- **Pattern removal:** Injection patterns like "ignore previous instructions"
+- **Tag removal:** Fake system tags like `[SYSTEM]`, `<instruction>`
+- **Code block removal:** Executable blocks (bash, python, javascript, etc.)
+
+### Example AGENTS.md
+
+```markdown
+# Project Guidelines
+
+## Build Commands
+- `cargo build --release` - Build the project
+- `cargo test` - Run tests
+
+## Code Style
+- Use snake_case for functions
+- Maximum line length: 100 characters
+- Run `cargo fmt` before commits
+
+## Notes
+- This project uses Tokio for async runtime
+- All errors should return AppResult<T>
+```
+
+### Disabling Context
+
+Use `--ignore-agents` to skip loading:
+
+```bash
+ask-ai --ignore-agents "General programming question"
+```
 
 ## Troubleshooting
 

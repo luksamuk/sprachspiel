@@ -116,6 +116,14 @@ You have access to various tools for fetching real-time data. Your training data
         "fetch_pokemon",
     ];
     
+    #[cfg(feature = "pokemon-tools")]
+    let pokemon_enabled: Vec<_> = pokemon_tools
+        .iter()
+        .filter(|tool| !blacklist.contains(**tool))
+        .copied()
+        .collect();
+    
+    #[cfg(not(feature = "pokemon-tools"))]
     let _pokemon_enabled: Vec<_> = pokemon_tools
         .iter()
         .filter(|tool| !blacklist.contains(**tool))
@@ -385,16 +393,26 @@ Use these tools to gather context before generating code when needed."#,
     prompt
 }
 
+/// Build system prompt with optional AGENTS.md context injection
+fn build_prompt_with_context(base_prompt: &str, agents_md: Option<&str>) -> String {
+    match agents_md {
+        Some(context) => format!("{}\n\n{}", base_prompt, context),
+        None => base_prompt.to_string(),
+    }
+}
+
 /// Get a system prompt by name, with optional Pepe personality injection and blacklist filtering
 ///
 /// # Arguments
 /// * `name` - The name of the prompt ("default", "tool_user", "summarize", "code", "code_with_tools")
 /// * `model_id` - The model being used (to check for Pepe personality)
 /// * `blacklist` - Optional set of tool names to exclude from the prompt
+/// * `agents_md` - Optional AGENTS.md content to inject as project context
 pub fn get_prompt_with_blacklist(
     name: &str,
     model_id: Option<&str>,
     blacklist: Option<&HashSet<&str>>,
+    agents_md: Option<&str>,
 ) -> Option<String> {
     // Use provided blacklist or empty set
     let empty_set = HashSet::new();
@@ -408,20 +426,23 @@ pub fn get_prompt_with_blacklist(
         _ => None,
     }?;
 
+    // Inject AGENTS.md context after base prompt
+    let prompt_with_context = build_prompt_with_context(&base_prompt, agents_md);
+
     // Check if we should inject Pepe personality
     if let Some(id) = model_id
         && is_pepe_model(id) && name != "summarize" {
             // Combine Pepe personality with base prompt
             // For summarize, we keep it professional
-            return Some(format!("{}\n\n{}", SYSTEM_PROMPT_PEPE, base_prompt));
+            return Some(format!("{}\n\n{}", SYSTEM_PROMPT_PEPE, prompt_with_context));
         }
 
-    Some(base_prompt)
+    Some(prompt_with_context)
 }
 
 /// Legacy function for backward compatibility - use get_prompt_with_blacklist instead
 pub fn get_prompt(name: &str, model_id: Option<&str>) -> Option<String> {
-    get_prompt_with_blacklist(name, model_id, None)
+    get_prompt_with_blacklist(name, model_id, None, None)
 }
 
 /// Legacy function for backward compatibility - use get_prompt with model_id instead
@@ -512,7 +533,7 @@ mod tests {
         let mut blacklist: HashSet<&str> = HashSet::new();
         blacklist.insert("fetch_pokemon");
         
-        let prompt = get_prompt_with_blacklist("tool_user", None, Some(&blacklist));
+        let prompt = get_prompt_with_blacklist("tool_user", None, Some(&blacklist), None);
         assert!(prompt.is_some());
         
         // The prompt should not mention fetch_pokemon in available tools section
@@ -525,7 +546,7 @@ mod tests {
     #[test]
     fn test_pepe_personality_with_blacklist() {
         let blacklist: HashSet<&str> = HashSet::new();
-        let prompt = get_prompt_with_blacklist("tool_user", Some("pepe:8b-64k"), Some(&blacklist));
+        let prompt = get_prompt_with_blacklist("tool_user", Some("pepe:8b-64k"), Some(&blacklist), None);
         
         assert!(prompt.is_some());
         let prompt_str = prompt.unwrap();
@@ -539,5 +560,16 @@ mod tests {
         assert!(prompt.is_some());
         let prompt_str = prompt.unwrap();
         assert!(!prompt_str.contains("Pepe"));
+    }
+
+    #[test]
+    fn test_agents_md_injection() {
+        let agents_md = "--- PROJECT CONTEXT ---\nProject info\n--- END PROJECT CONTEXT ---";
+        let prompt = get_prompt_with_blacklist("code", None, None, Some(agents_md));
+        
+        assert!(prompt.is_some());
+        let prompt_str = prompt.unwrap();
+        assert!(prompt_str.contains("PROJECT CONTEXT"));
+        assert!(prompt_str.contains("Project info"));
     }
 }

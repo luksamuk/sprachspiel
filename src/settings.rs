@@ -50,7 +50,7 @@ pub struct ModelSettings {
 }
 
 /// Model configuration for a specific subcommand
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SubcommandModelConfig {
     /// Model preset name for this subcommand
     #[serde(default)]
@@ -61,16 +61,6 @@ pub struct SubcommandModelConfig {
     /// Enable tools for this subcommand
     #[serde(default)]
     pub tools: Option<bool>,
-}
-
-impl Default for SubcommandModelConfig {
-    fn default() -> Self {
-        SubcommandModelConfig {
-            model: None,
-            thinking: None,
-            tools: None,
-        }
-    }
 }
 
 /// Tool-related settings

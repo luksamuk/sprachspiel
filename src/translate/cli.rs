@@ -137,6 +137,10 @@ pub struct QueryArgs {
     /// Code mode: optimize response for code output
     #[arg(short, long)]
     pub code: bool,
+
+    /// Ignore AGENTS.md file if present in current directory
+    #[arg(long)]
+    pub ignore_agents: bool,
 }
 
 impl Default for QueryArgs {
@@ -150,6 +154,7 @@ impl Default for QueryArgs {
             debug: false,
             tools: false,
             code: false,
+            ignore_agents: false,
         }
     }
 }

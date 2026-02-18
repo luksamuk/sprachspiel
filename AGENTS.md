@@ -349,6 +349,75 @@ let size_info = if kb >= 1024.0 {
 };
 ```
 
+### API Response Structs
+
+When deserializing API responses, ALWAYS make fields optional with `#[serde(default)]`:
+
+```rust
+// ❌ BAD - Will crash if API doesn't return this field
+#[derive(Deserialize)]
+struct ApiResponse {
+    data: Vec<Item>,
+    metadata: Metadata,
+}
+
+// ✅ GOOD - Handles missing fields gracefully
+#[derive(Deserialize, Default)]
+struct ApiResponse {
+    #[serde(default)]
+    data: Vec<Item>,
+    #[serde(default)]
+    metadata: Metadata,
+}
+```
+
+**Why?** Different API endpoints return different fields. For example:
+- `get_current_weather` doesn't return `daily` data
+- `get_weather_forecast` doesn't return `current` data
+- Using a shared struct requires all fields to be optional
+
+### Network Requests in Tools
+
+Always wrap network requests with proper error handling:
+
+```rust
+// ❌ BAD - Will crash on network error
+let response = client.get(&url).send().await?;
+let data: MyStruct = response.json().await?;
+
+// ✅ GOOD - Returns helpful error message
+let response = match client.get(&url).send().await {
+    Ok(r) => r,
+    Err(e) => {
+        let err = format!("Network error: {}. Please try again later.", e);
+        log_tool_result("my_tool", &err);
+        return Ok(err);
+    }
+};
+
+let data: MyStruct = match response.json().await {
+    Ok(d) => d,
+    Err(e) => {
+        let err = format!("Error parsing response: {}. Please try again later.", e);
+        log_tool_result("my_tool", &err);
+        return Ok(err);
+    }
+};
+```
+
+### Common Tool Bugs Checklist
+
+When reviewing or creating tools, check for these common issues:
+
+1. **Missing `log_tool_call`** at the start of the function
+2. **Missing `log_tool_result`** before every return
+3. **Using `?` operator** instead of match for error handling
+4. **Using `Err()` returns** instead of `Ok(error_message)`
+5. **Non-optional struct fields** for API responses
+6. **Missing error handling** for network requests
+7. **Missing error handling** for JSON parsing
+8. **Missing error handling** for file operations
+
 ## Notes
 
 - The project is a CLI tool for interacting with local Ollama models

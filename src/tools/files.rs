@@ -289,9 +289,7 @@ pub async fn count_lines(path: String, sandbox: Option<String>) -> Result<String
 
     // Suggest using read_file_segment for large files
     let suggestion = if line_count > 100 {
-        format!(
-            "\n\nTip: Use read_file_segment(path, start_line, num_lines) to read specific sections and avoid polluting the context window."
-        )
+        "\n\nTip: Use read_file_segment(path, start_line, num_lines) to read specific sections and avoid polluting the context window.".to_string()
     } else {
         String::new()
     };

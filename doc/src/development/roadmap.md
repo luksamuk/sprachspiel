@@ -545,6 +545,39 @@ Cons:
 - [ ] Video tutorials
 - [ ] Example scripts
 
+---
+
+## Future Enhancements
+
+### Multilingual Injection Pattern Detection
+
+**Priority:** Low
+
+**Problem:** Current AGENTS.md sanitization only detects English prompt injection patterns. Sophisticated attacks could use patterns in other languages.
+
+**Research needed:**
+- Survey common injection patterns in major languages (Spanish, Portuguese, Chinese, Russian, etc.)
+- Evaluate regex patterns vs ML-based detection
+- Consider performance impact of extended pattern matching
+
+**Proposed approach:**
+```rust
+// Current: English-only patterns
+r"ignore\s+(all\s+)?previous\s*instruction"
+
+// Future: Multilingual patterns
+r"(?i)(ignore|ignora|ignorer|忽略|игнорировать)\s+(all\s+)?(previous|anteriores|précédentes|之前|предыдущие)\s*(instruction|instrucción|instruction|指令|инструкция)"
+```
+
+**Tasks:**
+- [ ] Research injection patterns in non-English languages
+- [ ] Compile multilingual pattern list
+- [ ] Implement with locale-aware detection
+- [ ] Add tests for multilingual injection attempts
+- [ ] Document security considerations
+
+**Note:** Current English-only detection is sufficient for most use cases. This is a defense-in-depth improvement.
+
 ## Release Schedule
 
 | Version | Focus | ETA |

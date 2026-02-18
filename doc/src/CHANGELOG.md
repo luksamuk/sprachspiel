@@ -14,6 +14,9 @@ All notable changes to Ask-AI will be documented in this file.
 - New `count_lines` tool to check file size before reading
 - Tool error handling guidelines in documentation
 - Tool calls now always visible to user (even without debug mode)
+- **AGENTS.md context injection** - Automatically load project context from current directory
+- **`--ignore-agents` flag** - Disable AGENTS.md context loading
+- Security sanitization for AGENTS.md content (injection patterns, executable code blocks)
 
 ### Fixed
 

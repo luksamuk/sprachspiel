@@ -37,6 +37,7 @@ The query command is the most flexible way to interact with LLMs through Ask-AI.
 | `--debug` | `-d` | Enable debug logging | disabled |
 | `--tools` | | Force enable tools | auto-detect |
 | `--code` | `-c` | Code mode | disabled |
+| `--ignore-agents` | | Ignore AGENTS.md context | disabled |
 | `--help` | `-h` | Show help | - |
 
 ## Prompt Modes
@@ -251,6 +252,35 @@ If a model doesn't support a feature:
 # Warning if think mode not supported
 ask-ai -m llama3.2 -t "Question"
 # Output: Warning: llama3.2 does not support think mode. Ignoring -t.
+```
+
+## AGENTS.md Context
+
+If an `AGENTS.md` file exists in the current directory, it is automatically loaded and injected into the system prompt. This provides project-specific context to the model.
+
+### How It Works
+
+1. The tool looks for `AGENTS.md` in the current working directory
+2. Content is sanitized against prompt injection attacks
+3. Sanitized content is framed and injected into the system prompt
+4. Use `--ignore-agents` to disable this behavior
+
+### Security
+
+Content is sanitized to remove:
+- Instruction override patterns (e.g., "ignore all previous instructions")
+- Fake system tags (e.g., `[SYSTEM]`, `<instruction>`)
+- Executable code blocks (bash, python, javascript, etc.)
+- Lines exceeding 1000 lines are truncated
+
+### Example
+
+```bash
+# If AGENTS.md exists, context is automatically loaded
+ask-ai "Explain the project structure"
+
+# Disable AGENTS.md context
+ask-ai --ignore-agents "General question"
 ```
 
 ## Best Practices
