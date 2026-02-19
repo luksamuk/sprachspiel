@@ -2,6 +2,26 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.11.1] - 2026-02-18
+
+### Fixed
+
+- **Config file ignored by subcommands** - translate, ocr, summarize now respect ollama_host/ollama_port
+  - Previously: These subcommands used `Ollama::default()` (localhost:11434) ignoring config
+  - Now: All subcommands use `Settings::ollama_client()` for consistent config handling
+  - Fixes "Reqwest error" when connecting to remote Ollama server from Termux/Android
+- **CLI parameter precedence** - Fixed bug where CLI flags were not properly respected
+  - Changed `model`, `plain`, `debug` fields from `String`/`bool` to `Option<String>`/`Option<bool>`
+  - Precedence now correctly: CLI arguments > config file > built-in defaults
+
+### Changed
+
+- **CLI flag architecture** - Centralized shared flags at global level
+  - Flags like `-m`, `-d`, `--plain`, `-t`, `--tools`, `-c`, `--ignore-agents` now only exist at global level
+  - Usage: `ask -d query "text"` (flags BEFORE subcommand)
+  - Subcommands retain their specific flags: `translate --list`, `summarize --format bullets`, `ocr --mode table`
+  - Updated documentation and manpage to reflect this change
+
 ## [0.11.0] - 2026-02-18
 
 ### Added
@@ -20,21 +40,9 @@ All notable changes to Ask-AI will be documented in this file.
   - Previously: `ollama_host = "192.168.1.100"` would panic
   - Now: Automatically prepends `http://` if scheme is missing
   - Works with: `"192.168.1.100"`, `"http://192.168.1.100"`, `"https://myserver.local"`
-- **Config file ignored by subcommands** - translate, ocr, summarize now respect ollama_host/ollama_port
-  - Previously: These subcommands used `Ollama::default()` (localhost:11434) ignoring config
-  - Now: All subcommands use `Settings::ollama_client()` for consistent config handling
-  - Fixes "Reqwest error" when connecting to remote Ollama server from Termux/Android
-- **CLI parameter precedence** - Fixed bug where CLI flags were not properly respected
-  - Changed `model`, `plain`, `debug` fields from `String`/`bool` to `Option<String>`/`Option<bool>`
-  - Precedence now correctly: CLI arguments > config file > built-in defaults
 
 ### Changed
 
-- **CLI flag architecture** - Centralized shared flags at global level
-  - Flags like `-m`, `-d`, `--plain`, `-t`, `--tools`, `-c`, `--ignore-agents` now only exist at global level
-  - Usage: `ask -d query "text"` (flags BEFORE subcommand)
-  - Subcommands retain their specific flags: `translate --list`, `summarize --format bullets`, `ocr --mode table`
-  - Updated documentation and manpage to reflect this change
 - **Dependency optimization**:
   - Aligned `reqwest` version with `ollama-rs` (v0.12) to avoid duplication
   - Removed redundant explicit dependencies (`html2md`, `scraper`) - already provided by `ollama-rs`
