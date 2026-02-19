@@ -20,6 +20,10 @@ All notable changes to Ask-AI will be documented in this file.
   - Previously: `ollama_host = "192.168.1.100"` would panic
   - Now: Automatically prepends `http://` if scheme is missing
   - Works with: `"192.168.1.100"`, `"http://192.168.1.100"`, `"https://myserver.local"`
+- **Config file ignored by subcommands** - translate, ocr, summarize now respect ollama_host/ollama_port
+  - Previously: These subcommands used `Ollama::default()` (localhost:11434) ignoring config
+  - Now: All subcommands use `Settings::ollama_client()` for consistent config handling
+  - Fixes "Reqwest error" when connecting to remote Ollama server from Termux/Android
 - **CLI parameter precedence** - Fixed bug where CLI flags were not properly respected
   - Changed `model`, `plain`, `debug` fields from `String`/`bool` to `Option<String>`/`Option<bool>`
   - Precedence now correctly: CLI arguments > config file > built-in defaults
