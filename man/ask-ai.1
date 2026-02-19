@@ -3,19 +3,19 @@
 ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
 .B ask-ai
-.RI [ OPTIONS ] [ QUERY ]
+.RI [ GLOBAL_OPTIONS ] " [ QUERY ]
 .br
-.B ask-ai query
-.RI [ OPTIONS ] [ QUERY ]
+.B ask-ai
+.RI [ GLOBAL_OPTIONS ] " query " [ QUERY ]
 .br
-.B ask-ai translate
-.RI [ OPTIONS ] LANGUAGE [ TEXT ]
+.B ask-ai
+.RI [ GLOBAL_OPTIONS ] " translate " LANGUAGE [ TEXT ]
 .br
-.B ask-ai ocr
-.RI [ OPTIONS ] FILE ...
+.B ask-ai
+.RI [ GLOBAL_OPTIONS ] " ocr " FILE ...
 .br
-.B ask-ai summarize
-.RI [ OPTIONS ] [ TEXT ]
+.B ask-ai
+.RI [ GLOBAL_OPTIONS ] " summarize " [ TEXT ]
 .SH DESCRIPTION
 .B ask-ai
 is a Rust CLI tool for interacting with local Ollama LLM models, featuring markdown rendering, tool-assisted queries, translation, OCR, and text summarization.
@@ -37,6 +37,7 @@ Extract text from images using GLM-OCR. Supports text, tables, figures, and form
 .B summarize, sum
 Create concise summaries of text with customizable styles.
 .SH GLOBAL OPTIONS
+These options must be placed BEFORE the subcommand:
 .TP
 .BR \-m ", " \-\-model " " \fIMODEL\fR
 Select model preset (default: lfm). See MODELS section.
@@ -70,31 +71,6 @@ Show help message and exit.
 .TP
 .BR \-V ", " \-\-version
 Show version information and exit.
-.SH QUERY OPTIONS
-.TP
-.BR \-m ", " \-\-model " " \fIMODEL\fR
-Model preset (default: lfm).
-.TP
-.BR \-p ", " \-\-prompt " " \fIMODE\fR
-Prompt mode: default, tool_user, code, code_with_tools.
-.TP
-.BR \-t ", " \-\-think
-Enable think mode.
-.TP
-.BR \-\-plain
-Plain text output.
-.TP
-.BR \-d ", " \-\-debug
-Debug mode.
-.TP
-.BR \-\-tools
-Force tools.
-.TP
-.BR \-c ", " \-\-code
-Code mode.
-.TP
-.BR \-\-ignore\-agents
-Ignore AGENTS.md context injection.
 .SH TRANSLATE OPTIONS
 .TP
 .BR \-p ", " \-\-prompt " " \fISTYLE\fR
@@ -102,12 +78,6 @@ Translation style: formal, casual, technical, literary.
 .TP
 .BR \-\-list " [" \fIFILTER\fR "]"
 List supported languages, optionally filter by substring.
-.TP
-.BR \-\-plain
-Plain text output.
-.TP
-.BR \-d ", " \-\-debug
-Debug mode.
 .TP
 .B LANGUAGE
 Language pair in format [source:]target (e.g., en:pt, :pt for auto-detect).
@@ -122,9 +92,6 @@ Output as JSON (one object per line for batch).
 .BR \-\-max\-tokens " " \fINUM\fR
 Maximum tokens per image (default: 8192).
 .TP
-.BR \-d ", " \-\-debug
-Debug mode.
-.TP
 .B FILE
 One or more image files: PNG, JPG, JPEG, WebP, GIF.
 .SH SUMMARIZE OPTIONS
@@ -137,15 +104,6 @@ Output format: paragraph, bullets, both (default).
 .TP
 .BR \-\-style " " \fISTYLE\fR
 Focus style: general (default), technical, academic, business.
-.TP
-.BR \-\-plain
-Plain text output.
-.TP
-.BR \-m ", " \-\-model " " \fIMODEL\fR
-Model to use (default: llama3.2).
-.TP
-.BR \-d ", " \-\-debug
-Debug mode.
 .SH MODELS
 Available model presets (use with -m/--model):
 .PP
@@ -183,7 +141,7 @@ Use specific model:
 .PP
 .nf
 .RS
-ask-ai -m mistral-small "Explain quantum computing"
+ask-ai -m mistral-small query "Explain quantum computing"
 .RE
 .fi
 .PP
@@ -191,7 +149,7 @@ Enable think mode:
 .PP
 .nf
 .RS
-ask-ai -t "Solve this step by step"
+ask-ai -t query "Solve this step by step"
 .RE
 .fi
 .PP
@@ -199,8 +157,8 @@ Code mode (for programming):
 .PP
 .nf
 .RS
-ask-ai -c "Write a Rust function"
-ask-ai -c -m deepseek-coder-v2 "Implement a thread pool"
+ask-ai -c query "Write a Rust function"
+ask-ai -c -m deepseek-coder-v2 query "Implement a thread pool"
 .RE
 .fi
 .PP
@@ -209,7 +167,7 @@ Translate text:
 .nf
 .RS
 ask-ai translate en:pt "Hello world"
-ask-ai translate :pt "Auto-detect source"
+ask-ai -d translate :pt "Auto-detect source"
 .RE
 .fi
 .PP
@@ -227,7 +185,17 @@ Summarize text:
 .nf
 .RS
 ask-ai summarize "Long text here..."
+ask-ai -m mistral-small summarize --style technical "Long text"
 echo "Long text" | ask-ai summarize --style technical
+.RE
+.fi
+.PP
+Debug mode:
+.PP
+.nf
+.RS
+ask-ai -d query "Test query"
+ask-ai -d -m lfm query "Debug with specific model"
 .RE
 .fi
 .PP

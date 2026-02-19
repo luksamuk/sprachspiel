@@ -20,9 +20,17 @@ All notable changes to Ask-AI will be documented in this file.
   - Previously: `ollama_host = "192.168.1.100"` would panic
   - Now: Automatically prepends `http://` if scheme is missing
   - Works with: `"192.168.1.100"`, `"http://192.168.1.100"`, `"https://myserver.local"`
+- **CLI parameter precedence** - Fixed bug where CLI flags were not properly respected
+  - Changed `model`, `plain`, `debug` fields from `String`/`bool` to `Option<String>`/`Option<bool>`
+  - Precedence now correctly: CLI arguments > config file > built-in defaults
 
 ### Changed
 
+- **CLI flag architecture** - Centralized shared flags at global level
+  - Flags like `-m`, `-d`, `--plain`, `-t`, `--tools`, `-c`, `--ignore-agents` now only exist at global level
+  - Usage: `ask -d query "text"` (flags BEFORE subcommand)
+  - Subcommands retain their specific flags: `translate --list`, `summarize --format bullets`, `ocr --mode table`
+  - Updated documentation and manpage to reflect this change
 - **Dependency optimization**:
   - Aligned `reqwest` version with `ollama-rs` (v0.12) to avoid duplication
   - Removed redundant explicit dependencies (`html2md`, `scraper`) - already provided by `ollama-rs`

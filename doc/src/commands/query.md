@@ -5,9 +5,9 @@ The `query` command is the default mode of Ask-AI. It sends your question or pro
 ## Synopsis
 
 ```bash
-ask-ai query [OPTIONS] [QUERY]
-ask-ai [OPTIONS] [QUERY]
-ask-ai q [OPTIONS] [QUERY]
+ask-ai [GLOBAL OPTIONS] query [QUERY]
+ask-ai [GLOBAL OPTIONS] [QUERY]
+ask-ai [GLOBAL OPTIONS] q [QUERY]
 ```
 
 ## Description
@@ -26,7 +26,9 @@ The query command is the most flexible way to interact with LLMs through Ask-AI.
 |----------|-------------|
 | `QUERY` | The question or prompt. Reads from stdin if not provided. |
 
-## Options
+## Global Options
+
+These options must be placed **before** the `query` subcommand:
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
@@ -68,13 +70,13 @@ ask-ai q "What is the capital of France?"
 
 ```bash
 # Use a different model
-ask-ai -m mistral-small "Generate a Python function"
+ask-ai -m mistral-small query "Generate a Python function"
 
 # Code-focused model
-ask-ai -m qwen3-coder "Write a Rust struct for users"
+ask-ai -m qwen3-coder query "Write a Rust struct for users"
 
 # Smaller model for quick answers
-ask-ai -m smollm3 "What is 2+2?"
+ask-ai -m smollm3 query "What is 2+2?"
 ```
 
 ### Think Mode
@@ -83,10 +85,10 @@ Think mode enables reasoning models to show their thought process:
 
 ```bash
 # Enable thinking
-ask-ai -t "Explain step by step how to solve x^2 + 5x + 6 = 0"
+ask-ai -t query "Explain step by step how to solve x^2 + 5x + 6 = 0"
 
 # Combine with specific model
-ask-ai -m lfm -t "What are the ethical implications of AI?"
+ask-ai -m lfm -t query "What are the ethical implications of AI?"
 ```
 
 ### Code Mode
@@ -95,13 +97,13 @@ Code mode optimizes responses for code output. Use the `-c` flag or `--code`:
 
 ```bash
 # Basic code mode (uses [model.code] config)
-ask-ai -c "Write a Python function to sort a list"
+ask-ai -c query "Write a Python function to sort a list"
 
 # Code with tools (file operations)
-ask-ai -c --tools "Read my config.rs and suggest improvements"
+ask-ai -c --tools query "Read my config.rs and suggest improvements"
 
 # Explicit model selection
-ask-ai -m deepseek-coder-v2 -c "Implement a thread pool in Rust"
+ask-ai -m deepseek-coder-v2 -c query "Implement a thread pool in Rust"
 ```
 
 #### Code Mode Configuration
@@ -127,13 +129,13 @@ ask-ai -c "Add error handling to my API handlers"
 
 ```bash
 # Generate code only (minimal explanation)
-ask-ai -c "Rust function to parse JSON"
+ask-ai -c query "Rust function to parse JSON"
 
 # With file context (if tools enabled in config)
-ask-ai -c "Convert this function to async"
+ask-ai -c query "Convert this function to async"
 
 # Debug with code mode
-ask-ai -c -d "Why does this code panic?"
+ask-ai -c -d query "Why does this code panic?"
 ```
 
 ### Debug Mode
@@ -142,7 +144,7 @@ Debug mode shows what's happening under the hood:
 
 ```bash
 # See model configuration
-ask-ai -d "Test query"
+ask-ai -d query "Test query"
 
 # Shows:
 # - Model being used
@@ -171,16 +173,16 @@ Tools are automatically enabled for capable models:
 
 ```bash
 # Pokémon tool (auto-enabled)
-ask-ai "Tell me about Pikachu"
+ask-ai query "Tell me about Pikachu"
 
 # Weather tool (auto-enabled)
-ask-ai "What's the weather in Tokyo?"
+ask-ai query "What's the weather in Tokyo?"
 
 # Web search tool (auto-enabled)
-ask-ai "Latest news about Rust programming"
+ask-ai query "Latest news about Rust programming"
 
 # Force tools on any model
-ask-ai --tools "Tell me about Charizard"
+ask-ai --tools query "Tell me about Charizard"
 ```
 
 ## Tool Integration
@@ -226,7 +228,7 @@ ask-ai "Create a simple table"
 For piping to other programs:
 
 ```bash
-ask-ai --plain "List files" | wc -w
+ask-ai --plain query "List files" | wc -w
 ```
 
 ## Common Patterns
@@ -235,13 +237,13 @@ ask-ai --plain "List files" | wc -w
 
 ```bash
 # Think + specific model
-ask-ai -m glm-5 -t "Complex reasoning task"
+ask-ai -m glm-5 -t query "Complex reasoning task"
 
 # Code + debug
-ask-ai -c -d "Debug this function"
+ask-ai -c -d query "Debug this function"
 
 # Tools + plain
-ask-ai --tools --plain "Get weather" | grep temperature
+ask-ai --tools --plain query "Get weather" | grep temperature
 ```
 
 ### Error Handling
@@ -250,7 +252,7 @@ If a model doesn't support a feature:
 
 ```bash
 # Warning if think mode not supported
-ask-ai -m llama3.2 -t "Question"
+ask-ai -m llama3.2 -t query "Question"
 # Output: Warning: llama3.2 does not support think mode. Ignoring -t.
 ```
 

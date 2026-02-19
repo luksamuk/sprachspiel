@@ -5,8 +5,8 @@ The `ocr` command extracts text from images using the GLM-OCR model. It supports
 ## Synopsis
 
 ```bash
-ask-ai ocr [OPTIONS] <FILE>...
-ask-ai o [OPTIONS] <FILE>...
+ask-ai [GLOBAL OPTIONS] ocr <FILE>...
+ask-ai [GLOBAL OPTIONS] o <FILE>...
 ```
 
 ## Description
@@ -24,15 +24,24 @@ OCR (Optical Character Recognition) extracts text from images. GLM-OCR is a mult
 |----------|-------------|
 | `FILE` | One or more image files to process |
 
-## Options
+## Global Options
+
+These options must be placed **before** the `ocr` subcommand:
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--debug` | `-d` | Enable debug mode |
+| `--help` | `-h` | Show help |
+
+## Subcommand Options
+
+These options are specific to the ocr subcommand:
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--mode` | `-m` | Extraction mode: text, table, figure, formula | `text` |
 | `--json` | | Output as JSON (one object per line) | disabled |
 | `--max-tokens` | | Maximum tokens per image | `8192` |
-| `--debug` | `-d` | Enable debug mode | disabled |
-| `--help` | `-h` | Show help | - |
 
 ## Extraction Modes
 

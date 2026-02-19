@@ -5,8 +5,8 @@ The `translate` command translates text between 50+ languages using the Translat
 ## Synopsis
 
 ```bash
-ask-ai translate [OPTIONS] <LANGUAGE> [TEXT]
-ask-ai t [OPTIONS] <LANGUAGE> [TEXT]
+ask-ai [GLOBAL OPTIONS] translate <LANGUAGE> [TEXT]
+ask-ai [GLOBAL OPTIONS] t <LANGUAGE> [TEXT]
 ```
 
 ## Description
@@ -20,15 +20,24 @@ Translate text between languages with automatic source language detection. The c
 | `LANGUAGE` | Language pair in format `[source:]target` or just `target` for auto-detect |
 | `TEXT` | Text to translate. Reads from stdin if not provided. |
 
-## Options
+## Global Options
+
+These options must be placed **before** the `translate` subcommand:
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--plain` | | Plain text output (no markdown) |
+| `--debug` | `-d` | Enable debug mode |
+| `--help` | `-h` | Show help |
+
+## Subcommand Options
+
+These options are specific to the translate subcommand:
 
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--prompt` | `-p` | Translation style: formal, casual, technical, literary |
 | `--list` | | List supported languages (optionally filter) |
-| `--plain` | | Plain text output (no markdown) |
-| `--debug` | `-d` | Enable debug mode |
-| `--help` | `-h` | Show help |
 
 ## Language Codes
 
@@ -142,7 +151,7 @@ ask-ai translate --list spanish
 
 ```bash
 # No markdown formatting
-ask-ai translate :pt --plain "Hello **world**"
+ask-ai --plain translate :pt "Hello **world**"
 # Output: Olá **mundo**
 ```
 
@@ -150,7 +159,7 @@ ask-ai translate :pt --plain "Hello **world**"
 
 ```bash
 # See translation process
-ask-ai translate en:pt -d "Test"
+ask-ai -d translate en:pt "Test"
 # Shows model configuration and processing
 ```
 

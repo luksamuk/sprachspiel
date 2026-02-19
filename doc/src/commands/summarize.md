@@ -5,8 +5,8 @@ The `summarize` command creates concise summaries of text with customizable styl
 ## Synopsis
 
 ```bash
-ask-ai summarize [OPTIONS] [TEXT]
-ask-ai sum [OPTIONS] [TEXT]
+ask-ai [GLOBAL OPTIONS] summarize [TEXT]
+ask-ai [GLOBAL OPTIONS] sum [TEXT]
 ```
 
 ## Description
@@ -25,17 +25,26 @@ Create summaries of long documents, articles, or any text. The summarize command
 |----------|-------------|
 | `TEXT` | Text to summarize. Reads from stdin if not provided. |
 
-## Options
+## Global Options
+
+These options must be placed **before** the `summarize` subcommand:
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--model` | `-m` | Model preset to use |
+| `--plain` | | Plain text output (no markdown) |
+| `--debug` | `-d` | Enable debug mode |
+| `--help` | `-h` | Show help |
+
+## Subcommand Options
+
+These options are specific to the summarize subcommand:
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--max-length` | `-l` | Maximum words in summary | `300` |
 | `--format` | `-f` | Output format: paragraph, bullets, both | `both` |
 | `--style` | | Focus style: general, technical, academic, business | `general` |
-| `--model` | `-m` | Model to use | `llama3.2` |
-| `--plain` | | Plain text output (no markdown) | disabled |
-| `--debug` | `-d` | Enable debug mode | disabled |
-| `--help` | `-h` | Show help | - |
 
 ## Output Formats
 
@@ -128,10 +137,10 @@ ask-ai summarize --style academic -f paragraph -l 200 "Research paper..."
 ask-ai summarize "Text..."
 
 # Use specific model
-ask-ai summarize -m mistral-small "Text..."
+ask-ai -m mistral-small summarize "Text..."
 
 # Use smaller model
-ask-ai summarize -m smollm3 "Text..."
+ask-ai -m smollm3 summarize "Text..."
 ```
 
 ### From Files
