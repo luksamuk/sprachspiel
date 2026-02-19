@@ -310,6 +310,52 @@ pub async fn my_custom_tool(arg: String) -> Result<String> {
 
 ---
 
+### Code Redundancy Refactoring
+
+**Priority:** Medium  
+**Status:** Planning needed
+
+**Problem:** Code has redundancy issues that were identified during bugfix work. The Ollama client configuration was triplicated across three places before being consolidated into `Settings::ollama_client()`. Similar patterns may exist elsewhere.
+
+**Example:**
+- Before fix: `Ollama::default()` was called separately in main.rs, summarize/processor.rs, and ocr/processor.rs
+- After fix: Single `Settings::ollama_client()` function
+
+**Approach:**
+
+This refactoring requires upfront planning before implementation:
+
+**Phase 1: Audit and Documentation**
+- Survey codebase for redundant code patterns
+- Document all instances of:
+  - Duplicated configuration logic
+  - Repeated initialization patterns
+  - Similar error handling blocks
+  - Copy-pasted code across modules
+- Create refactoring proposal with priorities
+
+**Phase 2: Prioritized Refactoring**
+- Start with high-impact, low-risk changes
+- Ensure tests pass after each change
+- Update documentation as needed
+
+**Potential Areas to Investigate:**
+- Model configuration loading
+- Coordinator building patterns
+- System prompt construction
+- Error handling patterns in tools
+- File operations across processors
+
+**Tasks:**
+- [ ] Audit: Survey codebase for redundancy patterns
+- [ ] Audit: Document all instances with locations
+- [ ] Design: Create refactoring plan with priorities
+- [ ] Implement: Refactor high-priority areas
+- [ ] Test: Verify all functionality after refactoring
+- [ ] Document: Update code documentation
+
+---
+
 ## Low Priority
 
 ### Streaming Output
