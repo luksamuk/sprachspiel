@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use super::mode::OcrMode;
 
 /// Arguments for the OCR subcommand
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 #[command(
     about = "Extract text from images using GLM-OCR",
     long_about = r#"Extract text, tables, figures, or formulas from images using the GLM-OCR model.
@@ -62,10 +62,6 @@ pub struct OcrArgs {
     /// Maximum tokens per image (default: 8192)
     #[arg(long, default_value = "8192")]
     pub max_tokens: u32,
-
-    /// Enable debug mode with detailed logging
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    pub debug: Option<bool>,
 }
 
 /// Output format for OCR results
@@ -119,7 +115,6 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
-            debug: None,
         };
         assert!(args.validate().is_ok());
 
@@ -128,7 +123,6 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
-            debug: None,
         };
         assert!(args_empty.validate().is_err());
     }
@@ -140,7 +134,6 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
-            debug: None,
         };
         assert!(!single.is_batch());
 
@@ -149,7 +142,6 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
-            debug: None,
         };
         assert!(batch.is_batch());
     }

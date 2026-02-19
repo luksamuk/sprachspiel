@@ -6,7 +6,7 @@
 use clap::{Args, ValueEnum};
 
 /// Arguments for the summarize subcommand
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 #[command(
     about = "Summarize text using AI",
     long_about = r#"Create concise summaries of provided text while preserving key information.
@@ -49,18 +49,6 @@ pub struct SummarizeArgs {
     /// Focus area: general, technical, academic, business
     #[arg(long, value_enum, default_value = "general")]
     pub style: SummaryStyle,
-
-    /// Output plain text without formatting
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    pub plain: Option<bool>,
-
-    /// Model to use for summarization (overrides default)
-    #[arg(short = 'M', long, value_name = "MODEL")]
-    pub model: Option<String>,
-
-    /// Enable debug mode with detailed logging
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    pub debug: Option<bool>,
 }
 
 /// Output format for summaries
@@ -219,9 +207,6 @@ mod tests {
             max_length: 300,
             format: SummaryFormat::Both,
             style: SummaryStyle::General,
-            plain: None,
-            model: Some("llama3.2".to_string()),
-            debug: None,
         };
 
         let base_prompt = "You are a summarizer.";

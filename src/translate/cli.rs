@@ -9,7 +9,7 @@ use crate::ocr::OcrArgs;
 use crate::summarize::SummarizeArgs;
 
 /// Commands for the ask-ai CLI
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// Translate text between languages using TranslateGemma
     #[command(visible_alias = "t")]
@@ -33,7 +33,7 @@ pub enum Commands {
 }
 
 /// Arguments for the translate subcommand
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 #[command(
     about = "Translate text between languages",
     long_about = r#"
@@ -80,18 +80,10 @@ pub struct TranslateArgs {
     /// Example: --list, --list zh, --list port
     #[arg(long, value_name = "FILTER")]
     pub list: Option<Option<String>>,
-
-    /// Output plain text without formatting
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    pub plain: Option<bool>,
-
-    /// Enable debug mode with detailed logging
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    pub debug: Option<bool>,
 }
 
 /// Arguments for the query subcommand (original CLI behavior)
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 #[command(
     about = "Query an Ollama LLM model",
     long_about = r#"
@@ -100,62 +92,20 @@ Send a query to an Ollama LLM model.
 EXAMPLES:
   ask query "What is Rust?"
   ask q "Explain async/await"
-  ask -m lfm "Hello"
+  ask -m lfm query "Hello"
   echo "text" | ask query
-  ask query -t "Think deeply about this"
+  ask -t query "Think deeply about this"
 "#
 )]
 pub struct QueryArgs {
     /// The query to send to the model (optional, reads from stdin if not provided)
     #[arg(value_name = "QUERY")]
     pub query: Option<String>,
-
-    /// Model preset to use
-    #[arg(short, long, value_name = "MODEL")]
-    pub model: Option<String>,
-
-    /// System prompt mode
-    #[arg(short, long, default_value = "default", value_name = "PROMPT")]
-    pub prompt: String,
-
-    /// Enable think mode for models that support it
-    #[arg(short, long)]
-    pub think: bool,
-
-    /// Output plain text without markdown formatting
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    pub plain: Option<bool>,
-
-    /// Dry-run mode: print config without executing
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    pub debug: Option<bool>,
-
-    /// Force enable tools even if model doesn't advertise tool support
-    #[arg(long)]
-    pub tools: bool,
-
-    /// Code mode: optimize response for code output
-    #[arg(short, long)]
-    pub code: bool,
-
-    /// Ignore AGENTS.md file if present in current directory
-    #[arg(long)]
-    pub ignore_agents: bool,
 }
 
 impl Default for QueryArgs {
     fn default() -> Self {
-        Self {
-            query: None,
-            model: None,
-            prompt: "default".to_string(),
-            think: false,
-            plain: None,
-            debug: None,
-            tools: false,
-            code: false,
-            ignore_agents: false,
-        }
+        Self { query: None }
     }
 }
 
@@ -202,7 +152,7 @@ pub enum Shell {
 }
 
 /// Arguments for shell completion generation
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 #[command(about = "Generate shell completions")]
 pub struct CompletionArgs {
     /// Shell to generate completions for
@@ -236,8 +186,6 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(None),
-            plain: None,
-            debug: None,
         };
         assert!(args.is_list_only());
 
@@ -246,8 +194,6 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(None),
-            plain: None,
-            debug: None,
         };
         assert!(!args2.is_list_only());
     }
@@ -259,8 +205,6 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(Some("port".to_string())),
-            plain: None,
-            debug: None,
         };
         assert_eq!(args.list_filter(), Some("port"));
 
@@ -269,8 +213,6 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(None),
-            plain: None,
-            debug: None,
         };
         assert_eq!(args2.list_filter(), None);
     }
@@ -282,8 +224,6 @@ mod tests {
             text: Some("Hello".to_string()),
             prompt: None,
             list: None,
-            plain: None,
-            debug: None,
         };
         assert!(args.validate().is_ok());
 
@@ -292,8 +232,6 @@ mod tests {
             text: None,
             prompt: None,
             list: None,
-            plain: None,
-            debug: None,
         };
         assert!(args2.validate().is_err());
 
@@ -302,8 +240,6 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(None),
-            plain: None,
-            debug: None,
         };
         assert!(args3.validate().is_ok());
     }

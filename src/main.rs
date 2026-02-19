@@ -136,13 +136,13 @@ async fn main() -> AppResult<()> {
     let settings = Settings::load();
 
     // Handle subcommands if present
-    if let Some(command) = cli.command {
+    if let Some(ref command) = cli.command {
         match command {
-            Commands::Translate(args) => return handle_translate(args, &settings).await,
-            Commands::Query(args) => return handle_query(args, &settings).await,
-            Commands::Ocr(args) => return handle_ocr(args, &settings).await,
-            Commands::Summarize(args) => return handle_summarize(args, &settings).await,
-            Commands::Completion(args) => return handle_completion(args, &settings),
+            Commands::Translate(args) => return handle_translate(args.clone(), &cli, &settings).await,
+            Commands::Query(args) => return handle_query(args.clone(), &cli, &settings).await,
+            Commands::Ocr(args) => return handle_ocr(args.clone(), &cli, &settings).await,
+            Commands::Summarize(args) => return handle_summarize(args.clone(), &cli, &settings).await,
+            Commands::Completion(args) => return handle_completion(args.clone(), &settings),
         }
     }
 
@@ -151,15 +151,17 @@ async fn main() -> AppResult<()> {
 }
 
 /// Handle translate subcommand
-async fn handle_translate(args: TranslateArgs, settings: &Settings) -> AppResult<()> {
+async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     // Validate arguments
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 
-    // Handle debug mode - use CLI if specified, otherwise use config setting
-    let use_debug = args.debug.unwrap_or(settings.output.debug_default);
+    // Use global CLI flags
+    let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
+    let use_plain = cli.plain.unwrap_or(settings.output.plain_default);
+    
     if use_debug {
         enable_debug();
         eprintln!("Debug Mode - Translation Configuration:");
@@ -265,8 +267,6 @@ async fn handle_translate(args: TranslateArgs, settings: &Settings) -> AppResult
     let translated = response.message.content.trim();
 
     // Output - respect --plain flag for markdown rendering
-    // Use CLI if specified, otherwise use config setting
-    let use_plain = args.plain.unwrap_or(settings.output.plain_default);
     if use_plain {
         println!("{}", translated);
     } else {
@@ -277,7 +277,7 @@ async fn handle_translate(args: TranslateArgs, settings: &Settings) -> AppResult
 }
 
 /// Handle query subcommand
-async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
+async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     let query = args.get_query()?;
 
     if query.is_empty() {
@@ -285,16 +285,22 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         std::process::exit(1);
     }
 
+    // Use global CLI flags
+    let code_mode = cli.code;
+    let use_tools = cli.tools;
+    let use_think = cli.think;
+    let ignore_agents = cli.ignore_agents;
+    
     // Determine which subcommand config to use - "code" if --code flag is set
-    let config_name = if args.code { "code" } else { "query" };
+    let config_name = if code_mode { "code" } else { "query" };
 
     // Get subcommand configuration from settings
     let (subcommand_model, subcommand_thinking, subcommand_tools) = 
         settings.get_subcommand_config(config_name);
     
-    // Get model configuration - priority: CLI > subcommand config > global default > built-in
-    let model_name = if let Some(ref m) = args.model {
-        // User specified model via CLI
+    // Get model configuration - priority: global CLI > subcommand config > global default
+    let model_name = if let Some(ref m) = cli.model {
+        // User specified model via global flag
         m.clone()
     } else if !subcommand_model.is_empty() {
         // Use subcommand-specific model from config
@@ -340,12 +346,12 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     };
 
     // Determine if tools should be enabled
-    // CLI flag overrides subcommand config
-    let use_tools = args.tools || (subcommand_tools && capabilities.tools);
+    // CLI flag (global or subcommand) overrides subcommand config
+    let use_tools_final = use_tools || (subcommand_tools && capabilities.tools);
 
     // Determine if think mode should be enabled
-    // CLI flag overrides subcommand config
-    let use_think = if args.think {
+    // CLI flag (global or subcommand) overrides subcommand config
+    let use_think_final = if use_think {
         if capabilities.thinking {
             true
         } else {
@@ -360,15 +366,15 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     };
 
     // Load AGENTS.md context if available and not ignored
-    let agents_md = if !args.ignore_agents {
+    let agents_md = if !ignore_agents {
         crate::context::load_agents_md()
     } else {
         None
     };
 
-    // Use CLI if specified, otherwise use config setting
-    let use_debug = args.debug.unwrap_or(settings.output.debug_default);
-    let use_plain = args.plain.unwrap_or(settings.output.plain_default);
+    // Use global CLI flags
+    let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
+    let use_plain = cli.plain.unwrap_or(settings.output.plain_default);
     
     if use_debug && agents_md.is_some() {
         eprintln!("📄 [AGENTS.md] Context injected from current directory");
@@ -376,14 +382,14 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
 
     // Get system prompt with blacklist filtering
     // Default is now tool_user, code mode can also use tools
-    let prompt_name = if args.code && use_tools {
+    let prompt_name = if code_mode && use_tools_final {
         "code_with_tools"
-    } else if args.code {
+    } else if code_mode {
         "code"
-    } else if use_tools {
+    } else if use_tools_final {
         "tool_user"
     } else {
-        &args.prompt
+        &cli.prompt
     };
 
     // Get the blacklist set to filter tools from the prompt
@@ -399,7 +405,7 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         None => {
             eprintln!(
                 "Error: Unknown prompt '{}'. Use --list to see available prompts.",
-                args.prompt
+                cli.prompt
             );
             std::process::exit(1);
         }
@@ -412,8 +418,8 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         print_debug_info(
             &model_config,
             &capabilities,
-            use_tools,
-            use_think,
+            use_tools_final,
+            use_think_final,
             &query,
             prompt_name,
         );
@@ -432,10 +438,10 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     // Build coordinator
     let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
         .options(model_options)
-        .think(use_think);
+        .think(use_think_final);
 
     // Add tools if enabled
-    if use_tools {
+    if use_tools_final {
         eprintln!("🔧 [Tools] Tools enabled - will log when called");
         
         // Helper to check if tool is not blacklisted
@@ -1211,15 +1217,16 @@ fn print_debug_info(
 }
 
 /// Handle OCR subcommand
-async fn handle_ocr(args: OcrArgs, _settings: &Settings) -> AppResult<()> {
+async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     // Validate arguments
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 
-    // Handle debug mode
-    let use_debug = args.debug.unwrap_or(false);
+    // Use global CLI flags
+    let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
+    
     if use_debug {
         enable_debug();
         eprintln!("Debug Mode - OCR Configuration:");
@@ -1251,18 +1258,17 @@ async fn handle_ocr(args: OcrArgs, _settings: &Settings) -> AppResult<()> {
 }
 
 /// Handle summarize subcommand
-async fn handle_summarize(args: SummarizeArgs, settings: &Settings) -> AppResult<()> {
+async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     // Get subcommand configuration from settings
     let (subcommand_model, _subcommand_thinking, _subcommand_tools) = 
         settings.get_subcommand_config("summarize");
     
     // Determine model to use following precedence:
-    // 1. CLI argument (if not default)
+    // 1. Global CLI argument
     // 2. Subcommand-specific config from settings
     // 3. Global default from settings
-    // 4. Hardcoded default (llama3.2)
-    let model_id = if let Some(ref m) = args.model {
-        // User specified model via CLI
+    let model_id = if let Some(ref m) = cli.model {
+        // User specified model via global flag
         m.clone()
     } else if !subcommand_model.is_empty() {
         // Use subcommand-specific model from config
@@ -1272,9 +1278,9 @@ async fn handle_summarize(args: SummarizeArgs, settings: &Settings) -> AppResult
         settings.model.default.clone()
     };
 
-    // Handle debug mode and plain output with config file precedence
-    let use_debug = args.debug.unwrap_or(settings.output.debug_default);
-    let use_plain = args.plain.unwrap_or(settings.output.plain_default);
+    // Use global CLI flags
+    let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
+    let use_plain = cli.plain.unwrap_or(settings.output.plain_default);
     
     if use_debug {
         enable_debug();
