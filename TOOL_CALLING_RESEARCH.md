@@ -49,22 +49,15 @@ This document contains optimized parameters for tool-calling (function calling) 
 
 ---
 
-### 2. **GPT-OSS 20B** 
-**Status**: ⚠️ Agentic but not native tool | **Best for**: Complex reasoning tasks
+### 2. **~~GPT-OSS 20B~~** (REMOVED)
+**Status**: ❌ Removed in v0.14.0 due to tool calling issues
 
-| Parameter | Current | Tool-Optimized | Rationale |
-|-----------|---------|-----------------|-----------|
-| temperature | 1.0 | **0.2** | 🔴 Too high for tools |
-| top_k | 0 | **40** | 🔴 Disabled is risky |
-| top_p | 1.0 | **0.9** | 🔴 Full sampling bad for JSON |
-| repeat_penalty | 1.0 | 1.0 | ✅ OK |
+GPT-OSS was removed from ask-ai because it outputs special tokens (`<|call|>`, `<|channel|>`, `<|message|>`) after JSON tool calls, breaking the parser. This is a model-level issue that cannot be fixed at the application level.
 
-**Research Notes**:
-- GPT-OSS has "reasoning effort" (low/medium/high) separate from temperature
-- For tool use: Set reasoning=low + temperature=0.2
-- Original modelfile optimized for creativity, not tools
-
-**Recommendation**: Create separate config `gpt-oss-tools` with lower temp
+**Alternatives**:
+- `qwen3-coder` - Excellent tool support
+- `mistral-small` - Native agentic capability
+- `llama3.2` - Reliable tool calling
 
 ---
 
@@ -241,7 +234,6 @@ if model_id.contains("3b") || model_id.contains("1.2b") {
 
 Models with thinking capability:
 - **LFM 2.5**: Always thinks (inherent), use temp=0.1
-- **GPT-OSS**: Use `think="low"` for tools, `think="high"` for reasoning
 - **Qwen3**: Has thinking variants, use lower temp with tools
 
 ### JSON Output Optimization
@@ -260,11 +252,10 @@ When calling tools, output valid JSON only. Example:
 
 ## Implementation Plan
 
-### Phase 1: Immediate Updates (High Priority)
-1. Lower GPT-OSS temperature from 1.0 → 0.2 for tools
-2. Create `gpt-oss-creative` variant with original params
-3. Lower Qwen3 Coder temp from 0.7 → 0.3
-4. Lower GLM Flash temp from 0.7 → 0.3
+### Phase 1: Completed (v0.14.0)
+1. ~~Lower GPT-OSS temperature~~ - Model removed due to tool calling issues
+2. Lower Qwen3 Coder temp from 0.7 → 0.3 ✅
+3. Custom models support via `~/.config/ask-ai/models.toml` ✅
 
 ### Phase 2: Fine-Tuning (Medium Priority)
 1. Add per-model `tool_optimized` boolean flag
@@ -283,10 +274,9 @@ When calling tools, output valid JSON only. Example:
 - Ollama modelfile parameter documentation
 - Mistral AI agentic capabilities documentation
 - Qwen3 technical report (agentic tool use section)
-- GPT-OSS model card (OpenAI)
 - Various GGUF quantization best practices
 
 ---
 
-Last Updated: 2026-02-16
+Last Updated: 2026-02-19 - v0.14.0: GPT-OSS removed, custom models added
 Status: Research Complete - Ready for Implementation

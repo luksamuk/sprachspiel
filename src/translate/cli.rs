@@ -5,6 +5,7 @@
 
 use clap::{Args, Subcommand};
 
+use crate::chat::ChatArgs;
 use crate::ocr::OcrArgs;
 use crate::summarize::SummarizeArgs;
 
@@ -26,6 +27,10 @@ pub enum Commands {
     /// Summarize text using AI
     #[command(visible_alias = "sum")]
     Summarize(SummarizeArgs),
+
+    /// Interactive chat with conversation history
+    #[command(visible_alias = "c")]
+    Chat(ChatArgs),
 
     /// Generate shell completions
     #[command(about = "Generate shell completions for ask-ai")]
@@ -97,16 +102,11 @@ EXAMPLES:
   ask -t query "Think deeply about this"
 "#
 )]
+#[derive(Default)]
 pub struct QueryArgs {
     /// The query to send to the model (optional, reads from stdin if not provided)
     #[arg(value_name = "QUERY")]
     pub query: Option<String>,
-}
-
-impl Default for QueryArgs {
-    fn default() -> Self {
-        Self { query: None }
-    }
 }
 
 impl TranslateArgs {

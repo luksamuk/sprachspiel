@@ -5,6 +5,7 @@
 //! model capability detection, and translation support.
 
 mod capabilities;
+mod chat;
 mod config;
 mod context;
 mod debug_tools;
@@ -13,9 +14,10 @@ mod prompts;
 mod settings;
 mod spinner;
 mod summarize;
-mod tools;
 mod tool_robustness;
+mod tools;
 mod translate;
+mod user_models;
 
 use clap::Parser;
 use ollama_rs::coordinator::Coordinator;
@@ -24,6 +26,7 @@ use ollama_rs::models::ModelOptions;
 use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
+use crate::chat::strip_thinking_tags;
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::ocr::{OcrArgs, OcrProcessor, print_results};
@@ -35,12 +38,33 @@ use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::tool_robustness::format_tool_error;
 use crate::tools::*;
 use crate::translate::{
-    Commands, CompletionArgs, LanguageMapper, QueryArgs, TranslateArgs, TranslationStyle, build_translation_prompt,
-    parse_language_pair, Shell,
+    Commands, CompletionArgs, LanguageMapper, QueryArgs, Shell, TranslateArgs, TranslationStyle,
+    build_translation_prompt, parse_language_pair,
 };
 
 /// Type alias for common Result type
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// Build model options from config, only setting parameters if specified
+fn build_model_options(config: &ModelConfig) -> ModelOptions {
+    let mut opts = ModelOptions::default()
+        .temperature(config.temperature)
+        .repeat_penalty(config.repeat_penalty.unwrap_or(1.1));
+
+    if config.num_ctx > 0 {
+        opts = opts.num_ctx(config.num_ctx as u64);
+    }
+
+    if let Some(top_k) = config.top_k {
+        opts = opts.top_k(top_k);
+    }
+
+    if let Some(top_p) = config.top_p {
+        opts = opts.top_p(top_p);
+    }
+
+    opts
+}
 
 /// CLI for ask-ai
 #[derive(Parser, Debug)]
@@ -127,10 +151,15 @@ async fn main() -> AppResult<()> {
     // Handle subcommands if present
     if let Some(ref command) = cli.command {
         match command {
-            Commands::Translate(args) => return handle_translate(args.clone(), &cli, &settings).await,
+            Commands::Translate(args) => {
+                return handle_translate(args.clone(), &cli, &settings).await;
+            }
             Commands::Query(args) => return handle_query(args.clone(), &cli, &settings).await,
             Commands::Ocr(args) => return handle_ocr(args.clone(), &cli, &settings).await,
-            Commands::Summarize(args) => return handle_summarize(args.clone(), &cli, &settings).await,
+            Commands::Summarize(args) => {
+                return handle_summarize(args.clone(), &cli, &settings).await;
+            }
+            Commands::Chat(args) => return handle_chat(args.clone(), &settings).await,
             Commands::Completion(args) => return handle_completion(args.clone(), &settings),
         }
     }
@@ -150,7 +179,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     // Use global CLI flags
     let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
     let use_plain = cli.plain.unwrap_or(settings.output.plain_default);
-    
+
     if use_debug {
         enable_debug();
         eprintln!("Debug Mode - Translation Configuration:");
@@ -213,7 +242,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let prompt = build_translation_prompt(source.as_ref(), &target, &text, style.as_ref());
 
     // Get translate model config
-    let model_config = match ModelConfig::get("translate") {
+    let model_config = match user_models::get_model_config("translate") {
         Some(cfg) => cfg,
         None => {
             eprintln!("Error: Translate model configuration not found.");
@@ -224,13 +253,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     // Initialize Ollama client with settings
     let ollama = settings.ollama_client();
 
-    // Build model options
-    let model_options = ModelOptions::default()
-        .temperature(model_config.temperature)
-        .top_p(model_config.top_p)
-        .top_k(model_config.top_k)
-        .num_ctx(model_config.num_ctx as u64)
-        .repeat_penalty(model_config.repeat_penalty);
+    let model_options = build_model_options(&model_config);
 
     // Build coordinator - no tools for translation
     let mut coordinator =
@@ -279,14 +302,14 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     let use_tools = cli.tools;
     let use_think = cli.think;
     let ignore_agents = cli.ignore_agents;
-    
+
     // Determine which subcommand config to use - "code" if --code flag is set
     let config_name = if code_mode { "code" } else { "query" };
 
     // Get subcommand configuration from settings
-    let (subcommand_model, subcommand_thinking, subcommand_tools) = 
+    let (subcommand_model, subcommand_thinking, subcommand_tools) =
         settings.get_subcommand_config(config_name);
-    
+
     // Get model configuration - priority: global CLI > subcommand config > global default
     let model_name = if let Some(ref m) = cli.model {
         // User specified model via global flag
@@ -299,8 +322,8 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
         settings.model.default.clone()
     };
 
-    let model_config = if ModelConfig::is_valid(&model_name) {
-        ModelConfig::get(&model_name).unwrap()
+    let model_config = if user_models::is_model_valid(&model_name) {
+        user_models::get_model_config(&model_name).unwrap()
     } else {
         eprintln!(
             "Error: Unknown model '{}'. Use --list to see available models.",
@@ -332,9 +355,11 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     let use_tools_final = use_tools || (subcommand_tools && capabilities.tools);
 
     // Determine if think mode should be enabled
-    // CLI flag (global or subcommand) overrides subcommand config
+    // Priority: CLI flag > model config > subcommand config
+    // For cloud models with thinking=true in config, enable even without detection
+    let model_supports_think = capabilities.thinking || model_config.thinking;
     let use_think_final = if use_think {
-        if capabilities.thinking {
+        if model_supports_think {
             true
         } else {
             eprintln!(
@@ -344,7 +369,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
             false
         }
     } else {
-        subcommand_thinking && capabilities.thinking
+        (subcommand_thinking || model_config.thinking) && model_supports_think
     };
 
     // Load AGENTS.md context if available and not ignored
@@ -357,7 +382,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     // Use global CLI flags
     let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
     let use_plain = cli.plain.unwrap_or(settings.output.plain_default);
-    
+
     if use_debug && agents_md.is_some() {
         eprintln!("📄 [AGENTS.md] Context injected from current directory");
     }
@@ -409,13 +434,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
         // Don't return - continue with execution
     }
 
-    // Build model options
-    let model_options = ModelOptions::default()
-        .temperature(model_config.temperature)
-        .top_p(model_config.top_p)
-        .top_k(model_config.top_k)
-        .num_ctx(model_config.num_ctx as u64)
-        .repeat_penalty(model_config.repeat_penalty);
+    let model_options = build_model_options(&model_config);
 
     // Build coordinator
     let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
@@ -425,11 +444,11 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     // Add tools if enabled
     if use_tools_final {
         eprintln!("🔧 [Tools] Tools enabled - will log when called");
-        
+
         // Helper to check if tool is not blacklisted
         let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
         let mut tool_count = 0;
-        
+
         // Pokemon tools (only if feature enabled)
         #[cfg(feature = "pokemon-tools")]
         {
@@ -470,7 +489,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 tool_count += 1;
             }
         }
-        
+
         // Weather tools (only if feature enabled)
         #[cfg(feature = "weather-tools")]
         {
@@ -487,7 +506,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 tool_count += 1;
             }
         }
-        
+
         // Calculator tool (only if feature enabled)
         #[cfg(feature = "calc-tools")]
         {
@@ -496,7 +515,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 tool_count += 1;
             }
         }
-        
+
         // Web search tools - prefer Serper over DDG
         // Serper: Google Search via API (requires SERPER_API_KEY)
         // DDG: DuckDuckGo (free but may be blocked by CAPTCHA)
@@ -518,7 +537,9 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 #[cfg(feature = "search-tools")]
                 {
                     if use_debug {
-                        eprintln!("ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)");
+                        eprintln!(
+                            "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)"
+                        );
                     }
                     if is_tool_allowed("web_search") {
                         coordinator = coordinator.add_tool(web_search);
@@ -532,12 +553,14 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 #[cfg(not(feature = "search-tools"))]
                 {
                     if use_debug {
-                        eprintln!("⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature");
+                        eprintln!(
+                            "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature"
+                        );
                     }
                 }
             }
         }
-        
+
         // DDG fallback when serper-tools not enabled but search-tools is
         #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
         {
@@ -550,7 +573,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 tool_count += 1;
             }
         }
-        
+
         // Web scraper - always available with search tools
         #[cfg(feature = "search-tools")]
         {
@@ -559,7 +582,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 tool_count += 1;
             }
         }
-        
+
         // System tools (only if feature enabled)
         #[cfg(feature = "system-tools")]
         {
@@ -572,7 +595,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 tool_count += 1;
             }
         }
-        
+
         // File tools (only if feature enabled)
         #[cfg(feature = "file-tools")]
         {
@@ -597,7 +620,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
                 tool_count += 1;
             }
         }
-        
+
         if use_debug {
             eprintln!("   -> {} tools active", tool_count);
         }
@@ -613,9 +636,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     let spinner = create_spinner("Waiting for response...");
 
     // Send request
-    let result = coordinator
-        .chat(vec![system_message, user_message])
-        .await;
+    let result = coordinator.chat(vec![system_message, user_message]).await;
 
     // Handle result with better error messages
     let response = match result {
@@ -667,7 +688,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let config_name = if cli.code { "code" } else { "query" };
 
     // Get subcommand configuration from settings
-    let (subcommand_model, subcommand_thinking, subcommand_tools) = 
+    let (subcommand_model, subcommand_thinking, subcommand_tools) =
         settings.get_subcommand_config(config_name);
 
     // Get model configuration - priority: CLI > subcommand config > global default > built-in
@@ -682,8 +703,8 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         settings.model.default.clone()
     };
 
-    let model_config = if ModelConfig::is_valid(&model_name) {
-        ModelConfig::get(&model_name).unwrap()
+    let model_config = if user_models::is_model_valid(&model_name) {
+        user_models::get_model_config(&model_name).unwrap()
     } else {
         eprintln!(
             "Error: Unknown model '{}'. Use --list to see available models.",
@@ -715,9 +736,11 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let use_tools = cli.tools || (subcommand_tools && capabilities.tools);
 
     // Determine if think mode should be enabled
-    // CLI flag overrides subcommand config
+    // Priority: CLI flag > model config > subcommand config
+    // For cloud models with thinking=true in config, enable even without detection
+    let model_supports_think = capabilities.thinking || model_config.thinking;
     let use_think = if cli.think {
-        if capabilities.thinking {
+        if model_supports_think {
             true
         } else {
             eprintln!(
@@ -727,7 +750,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
             false
         }
     } else {
-        subcommand_thinking && capabilities.thinking
+        (subcommand_thinking || model_config.thinking) && model_supports_think
     };
 
     // Get system prompt with blacklist filtering
@@ -792,13 +815,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         // Don't return - continue with execution
     }
 
-    // Build model options
-    let model_options = ModelOptions::default()
-        .temperature(model_config.temperature)
-        .top_p(model_config.top_p)
-        .top_k(model_config.top_k)
-        .num_ctx(model_config.num_ctx as u64)
-        .repeat_penalty(model_config.repeat_penalty);
+    let model_options = build_model_options(&model_config);
 
     // Build coordinator
     let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
@@ -811,11 +828,11 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         if use_debug {
             eprintln!("🔧 [Tools] Tools enabled - will log when called");
         }
-        
+
         // Helper to check if tool is not blacklisted
         let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
         let mut tool_count = 0;
-        
+
         // Pokemon tools (only if feature enabled)
         #[cfg(feature = "pokemon-tools")]
         {
@@ -856,7 +873,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 tool_count += 1;
             }
         }
-        
+
         // Weather tools (only if feature enabled)
         #[cfg(feature = "weather-tools")]
         {
@@ -873,7 +890,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 tool_count += 1;
             }
         }
-        
+
         // Calculator tool (only if feature enabled)
         #[cfg(feature = "calc-tools")]
         {
@@ -882,7 +899,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 tool_count += 1;
             }
         }
-        
+
         // Web search tools - prefer Serper over DDG
         // Serper: Google Search via API (requires SERPER_API_KEY)
         // DDG: DuckDuckGo (free but may be blocked by CAPTCHA)
@@ -904,7 +921,9 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 #[cfg(feature = "search-tools")]
                 {
                     if use_debug {
-                        eprintln!("ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)");
+                        eprintln!(
+                            "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)"
+                        );
                     }
                     if is_tool_allowed("web_search") {
                         coordinator = coordinator.add_tool(web_search);
@@ -918,12 +937,14 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 #[cfg(not(feature = "search-tools"))]
                 {
                     if use_debug {
-                        eprintln!("⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature");
+                        eprintln!(
+                            "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature"
+                        );
                     }
                 }
             }
         }
-        
+
         // DDG fallback when serper-tools not enabled but search-tools is
         #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
         {
@@ -936,7 +957,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 tool_count += 1;
             }
         }
-        
+
         // Web scraper - always available with search tools
         #[cfg(feature = "search-tools")]
         {
@@ -945,7 +966,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 tool_count += 1;
             }
         }
-        
+
         // Finance tools (only if feature enabled)
         #[cfg(feature = "finance-tools")]
         {
@@ -954,7 +975,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 tool_count += 1;
             }
         }
-        
+
         // System tools (only if feature enabled)
         #[cfg(feature = "system-tools")]
         {
@@ -967,7 +988,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 tool_count += 1;
             }
         }
-        
+
         // File tools (only if feature enabled)
         #[cfg(feature = "file-tools")]
         {
@@ -992,7 +1013,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 tool_count += 1;
             }
         }
-        
+
         if use_debug {
             eprintln!("   -> {} tools active", tool_count);
         }
@@ -1008,9 +1029,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let spinner = create_spinner("Waiting for response...");
 
     // Send request
-    let result = coordinator
-        .chat(vec![system_message, user_message])
-        .await;
+    let result = coordinator.chat(vec![system_message, user_message]).await;
 
     // Handle result with better error messages
     let response = match result {
@@ -1107,15 +1126,21 @@ fn print_supported_languages(mapper: &LanguageMapper, filter: Option<&str>) {
 /// Print available models and prompts
 fn print_available_options() {
     println!("Available models:");
-    for name in ModelConfig::list_names() {
-        if let Some(config) = ModelConfig::get(name) {
-            let default_marker = if name == "lfm" { " (default)" } else { "" };
+    for name in user_models::list_all_model_names() {
+        if let Some(config) = user_models::get_model_config(&name) {
+            let default_marker = if name == "llama3.1" { " (default)" } else { "" };
+            let user_marker = if !ModelConfig::is_builtin_valid(&name) {
+                " [user]"
+            } else {
+                ""
+            };
             println!(
-                "  {:20} - {} ({}K context){}",
+                "  {:20} - {} ({}K context){}{}",
                 name,
                 config.model_id,
                 config.num_ctx / 1024,
-                default_marker
+                default_marker,
+                user_marker
             );
         }
     }
@@ -1170,11 +1195,21 @@ fn print_debug_info(
     println!("Debug Mode - Configuration:");
     println!("==========================");
     println!("Model ID:          {}", model_config.model_id);
-    println!("Context Window:    {}K tokens", model_config.num_ctx / 1024);
+    if model_config.num_ctx > 0 {
+        println!("Context Window:    {}K tokens", model_config.num_ctx / 1024);
+    } else {
+        println!("Context Window:    auto");
+    }
     println!("Temperature:       {}", model_config.temperature);
-    println!("Top K:             {}", model_config.top_k);
-    println!("Top P:             {}", model_config.top_p);
-    println!("Repeat Penalty:    {}", model_config.repeat_penalty);
+    if let Some(top_k) = model_config.top_k {
+        println!("Top K:             {}", top_k);
+    }
+    if let Some(top_p) = model_config.top_p {
+        println!("Top P:             {}", top_p);
+    }
+    if let Some(rp) = model_config.repeat_penalty {
+        println!("Repeat Penalty:    {}", rp);
+    }
     println!();
     println!("Detected Capabilities:");
     println!("  Tools:      {}", capabilities.tools);
@@ -1201,7 +1236,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 
     // Use global CLI flags
     let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
-    
+
     if use_debug {
         enable_debug();
         eprintln!("Debug Mode - OCR Configuration:");
@@ -1232,12 +1267,17 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
     Ok(())
 }
 
+/// Handle chat subcommand
+async fn handle_chat(args: chat::ChatArgs, settings: &Settings) -> AppResult<()> {
+    chat::run_chat_repl(settings, &args).await
+}
+
 /// Handle summarize subcommand
 async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     // Get subcommand configuration from settings
-    let (subcommand_model, _subcommand_thinking, _subcommand_tools) = 
+    let (subcommand_model, _subcommand_thinking, _subcommand_tools) =
         settings.get_subcommand_config("summarize");
-    
+
     // Determine model to use following precedence:
     // 1. Global CLI argument
     // 2. Subcommand-specific config from settings
@@ -1256,7 +1296,7 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
     // Use global CLI flags
     let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
     let use_plain = cli.plain.unwrap_or(settings.output.plain_default);
-    
+
     if use_debug {
         enable_debug();
         eprintln!("Debug Mode - Summarize Configuration:");
@@ -1315,19 +1355,6 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
     }
 }
 
-/// Strip thinking tags from model output
-fn strip_thinking_tags(content: &str) -> String {
-    let re = regex::Regex::new(r"(?si)<think>.*?</think>").expect("Invalid regex pattern");
-
-    let result = re.replace_all(content, "");
-
-    let re2 =
-        regex::Regex::new(r"(?si)<think\s+[^>]*>.*?</think>").expect("Invalid regex pattern 2");
-    let result = re2.replace_all(&result, "");
-
-    result.trim().to_string()
-}
-
 /// Handle completion subcommand
 fn handle_completion(args: CompletionArgs, _settings: &Settings) -> AppResult<()> {
     use clap::CommandFactory;
@@ -1337,21 +1364,36 @@ fn handle_completion(args: CompletionArgs, _settings: &Settings) -> AppResult<()
     let name = cmd.get_name().to_string();
 
     match args.shell {
-        Shell::Bash => {
-            clap_complete::generate(clap_complete::Shell::Bash, &mut cmd.clone(), &name, &mut stdout())
-        }
-        Shell::Zsh => {
-            clap_complete::generate(clap_complete::Shell::Zsh, &mut cmd.clone(), &name, &mut stdout())
-        }
-        Shell::Fish => {
-            clap_complete::generate(clap_complete::Shell::Fish, &mut cmd.clone(), &name, &mut stdout())
-        }
-        Shell::PowerShell => {
-            clap_complete::generate(clap_complete::Shell::PowerShell, &mut cmd.clone(), &name, &mut stdout())
-        }
-        Shell::Elvish => {
-            clap_complete::generate(clap_complete::Shell::Elvish, &mut cmd.clone(), &name, &mut stdout())
-        }
+        Shell::Bash => clap_complete::generate(
+            clap_complete::Shell::Bash,
+            &mut cmd.clone(),
+            &name,
+            &mut stdout(),
+        ),
+        Shell::Zsh => clap_complete::generate(
+            clap_complete::Shell::Zsh,
+            &mut cmd.clone(),
+            &name,
+            &mut stdout(),
+        ),
+        Shell::Fish => clap_complete::generate(
+            clap_complete::Shell::Fish,
+            &mut cmd.clone(),
+            &name,
+            &mut stdout(),
+        ),
+        Shell::PowerShell => clap_complete::generate(
+            clap_complete::Shell::PowerShell,
+            &mut cmd.clone(),
+            &name,
+            &mut stdout(),
+        ),
+        Shell::Elvish => clap_complete::generate(
+            clap_complete::Shell::Elvish,
+            &mut cmd.clone(),
+            &name,
+            &mut stdout(),
+        ),
     }
 
     Ok(())

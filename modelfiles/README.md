@@ -1,6 +1,6 @@
 # Model Files for Ask-AI
 
-This directory contains Ollama modelfiles for all models supported by Ask-AI.
+This directory contains Ollama modelfiles for models supported by Ask-AI.
 
 ## What are Modelfiles?
 
@@ -10,11 +10,13 @@ Modelfiles define how Ollama creates and configures models. They specify:
 - Sampling parameters (temperature, top_k, top_p)
 - Stop tokens and other configurations
 
+**Note**: Since v0.14.0, context window size is configured in `~/.config/ask-ai/models.toml`, not in model tags. This allows Ollama to auto-detect context based on available memory.
+
 ## Quick Start
 
 ### Install Essential Models (Required)
 
-These are the four models required for basic functionality:
+These are the models required for basic functionality:
 
 ```bash
 cd modelfiles
@@ -22,9 +24,8 @@ make models-essential
 ```
 
 This installs:
-- **lfm2.5-thinking:1.2b-32k** - Default for general queries
-- **translategemma:12b-32k** - For translation
-- **llama3.2:3b-32k** - For summarization
+- **llama3.1:8b** - Default for general queries (4K context, auto-detected)
+- **translategemma:12b** - For translation (4K context)
 - **glm-ocr:bf16** - For OCR
 
 ### Install Optional Models (Recommended)
@@ -36,49 +37,42 @@ make models-optional
 ```
 
 This installs:
-- mistral-small3.2:24b-32k (tool-capable)
-- gpt-oss:20b-64k (tool calling)
-- qwen3-coder:30b-64k (code generation)
-- pepe:8b-64k (character model)
+- **lfm2.5-thinking:1.2b** - Reasoning with thinking mode
+- **llama3.2:3b** - Fast summarization with tools
+- **mistral-small3.2:24b** - Tool-capable
+- **qwen3-coder:30b** - Code generation
 
 ### Install All Models
 
 ```bash
 make models-all        # All local models
-make models-cloud      # Cloud-based models
-make models            # Everything (local + cloud)
+make models            # Everything
 ```
 
 ## Available Make Targets
 
 ### Essential Models
-- `lfm` - LFM 2.5 Thinking (default for query)
+- `llama3.1` - Llama 3.1 8B (default for query)
 - `translategemma` - Translation model
-- `llama3.2` - Summarization model
 - `glm-ocr` - OCR model (pull-only)
 
 ### Optional Models
+- `lfm` - LFM 2.5 Thinking (reasoning)
+- `llama3.2` - Llama 3.2 3B (summarization, tools)
 - `mistral-small` - Tool-capable
-- `gpt-oss` - Tool calling
 - `qwen3-coder` - Code generation
 - `pepe` - Character model
 - `devstral-small-2` - Coding focused
 - `smollm3` - Lightweight
 - `sead` - General purpose
-- `zephyr` - General
-- `llava` - Vision
 
 ### Cloud Models
-- `cloud-glm-5` - GLM-5 Cloud (198K)
-- `cloud-kimi` - Kimi K2.5 Cloud (256K)
-- `cloud-minimax` - MiniMax M2.5 Cloud (198K)
-- `cloud-qwen35` - Qwen3.5 Cloud (256K)
+Cloud models are configured in `~/.config/ask-ai/models.toml` and don't require modelfiles.
 
 ### Combined Targets
 - `models-essential` - Essential models only
 - `models-optional` - Recommended optional models
 - `models-all` - All local models
-- `models-cloud` - Cloud models only
 - `models` - Everything
 - `list` - Show installed models
 
@@ -104,7 +98,7 @@ PARAMETER temperature 0.1
 PARAMETER top_k 50
 PARAMETER top_p 0.1
 PARAMETER repeat_penalty 1.05
-PARAMETER stop <|endoftext|>
+PARAMETER stop 
 ```
 
 ## How It Works
@@ -117,16 +111,39 @@ The Makefile:
 
 ## Manual Installation
 
-If you prefer not to use modelfiles:
+If you prefer not to use modelfiles, pull directly:
 
 ```bash
-ollama pull lfm2.5-thinking:1.2b-32k
-ollama pull translategemma:12b-32k
+# Essential models (just pull, no modelfile needed)
+ollama pull llama3.1:8b
+ollama pull translategemma:12b
 ollama pull glm-ocr:bf16
-ollama pull llama3.2:3b-32k
+
+# Optional - some need modelfiles for custom config
+ollama pull lfm2.5-thinking:1.2b
+ollama pull llama3.2:3b
 ```
 
-**Note:** Manual installation uses default parameters. Modelfiles provide optimized configurations.
+**Note:** Models without modelfiles use Ollama's default parameters. For context window sizes, configure in `~/.config/ask-ai/models.toml`.
+
+## Context Window Configuration
+
+Since v0.14.0, context window sizes are defined in `~/.config/ask-ai/models.toml`:
+
+```toml
+[models.llama3.1]
+model_id = "llama3.1:8b"
+# No num_ctx = let Ollama auto-detect based on memory
+
+[models.lfm]
+model_id = "lfm2.5-thinking:1.2b"
+num_ctx = 32768  # 32K context
+```
+
+This approach:
+- Lets Ollama optimize context based on available memory
+- Avoids duplicate models with different context tags
+- Allows easy tuning without rebuilding models
 
 ## Troubleshooting
 
@@ -143,7 +160,7 @@ ollama pull llama3.2:3b-32k
 ollama list
 
 # Install missing model
-make lfm
+make llama3.1
 ```
 
 ### Cleanup
@@ -162,6 +179,6 @@ ollama rm <model-name>
 
 - **Hugging Face**: Many models come from `hf.co/unsloth/`, `hf.co/ggml-org/`, etc.
 - **Ollama Library**: Some models from `ollama.com/library/`
-- **Cloud Models**: Pulled from remote APIs via Ollama
+- **Cloud Models**: Configured in `~/.config/ask-ai/models.toml`
 
 See individual modelfiles for specific source URLs.

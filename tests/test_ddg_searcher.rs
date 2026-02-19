@@ -1,5 +1,5 @@
 //! Test ollama-rs built-in DDGSearcher
-//! 
+//!
 //! Run with: cargo test --package ask-ai --test test_ddg_searcher -- --nocapture
 
 use ollama_rs::generation::tools::implementations::DDGSearcher;
@@ -7,10 +7,10 @@ use ollama_rs::generation::tools::implementations::DDGSearcher;
 #[tokio::test]
 async fn test_ddg_searcher_standalone() {
     let searcher = DDGSearcher::default();
-    
+
     println!("\n=== Testing DDGSearcher from ollama-rs ===");
     println!("Query: 'Rust programming language'");
-    
+
     match searcher.search("Rust programming language").await {
         Ok(results) => {
             println!("SUCCESS! Found {} results", results.len());
@@ -34,10 +34,10 @@ async fn test_ddg_searcher_standalone() {
 #[tokio::test]
 async fn test_ddg_searcher_simple_query() {
     let searcher = DDGSearcher::default();
-    
+
     println!("\n=== Testing simple query ===");
     println!("Query: 'What is the capital of France'");
-    
+
     match searcher.search("What is the capital of France").await {
         Ok(results) => {
             println!("SUCCESS! Found {} results", results.len());

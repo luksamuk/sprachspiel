@@ -2,9 +2,9 @@
 #[cfg(feature = "pokemon-tools")]
 use serde::Deserialize;
 
-pub mod files;
 #[cfg(feature = "calc-tools")]
 pub mod calc;
+pub mod files;
 #[cfg(feature = "finance-tools")]
 pub mod finance;
 #[cfg(feature = "pokemon-tools")]
@@ -17,9 +17,9 @@ pub mod serper;
 pub mod system;
 pub mod weather;
 
-pub use files::*;
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
+pub use files::*;
 #[cfg(feature = "finance-tools")]
 pub use finance::*;
 #[cfg(feature = "pokemon-tools")]

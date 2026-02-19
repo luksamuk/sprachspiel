@@ -109,10 +109,13 @@ pub async fn get_stock_quote(
     exchange: String,
     ticker: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("get_stock_quote", &[
-        ("exchange".to_string(), exchange.clone()),
-        ("ticker".to_string(), ticker.clone()),
-    ]);
+    log_tool_call(
+        "get_stock_quote",
+        &[
+            ("exchange".to_string(), exchange.clone()),
+            ("ticker".to_string(), ticker.clone()),
+        ],
+    );
 
     let scraper = STOCK_SCRAPER.clone();
     let scraper = scraper.lock().await;

@@ -102,8 +102,6 @@ ask-ai --tools "Tell me about Pikachu"
 ask-ai -d "Query"
 ```
 
-### GPT-OSS Tool Errors
-
 **Problem:** `invalid character '\u003c'` error
 
 **Solution:**
@@ -257,10 +255,6 @@ cat debug.log
 ## Known Limitations
 
 1. **Web search**: Currently blocked by DuckDuckGo CAPTCHA
-2. **GPT-OSS tools**: May fail with encoding errors
-3. **Large images**: OCR may fail with memory constraints
-4. **Cloud models**: Require internet connection
-
 ## See Also
 
 - [Installation](./installation.md) - Setup guide

@@ -7,16 +7,32 @@ This document outlines planned features and the current state of Ask-AI.
 ### Implemented Features
 
 **Core CLI:**
-- 4 subcommands (query, translate, ocr, summarize)
-- 14+ model presets
+- 5 subcommands (query, chat, translate, ocr, summarize)
+- 7 built-in model presets + user-defined models via `models.toml`
 - Markdown rendering via termimad
 - Model capability detection (tools, vision, ocr)
 - Pipe support for all commands
 - Debug mode, Think mode, Code mode
 - Configuration file support (`~/.config/ask-ai/config.toml`)
+- Custom models file (`~/.config/ask-ai/models.toml`)
 - Per-subcommand model configuration
 - AGENTS.md context injection with security sanitization
 - Shell argument handling
+
+**Interactive Chat:**
+- Persistent conversation history per project
+- Anonymous sessions (no persistence)
+- Session management (`/save`, `/load`, `/list`)
+- Model switching mid-conversation
+- Export to Markdown/JSON
+- Auto-save after each message
+- `/think` and `/tools` toggle commands
+- `/tools-output` for controlling tool verbosity
+- `/compact` for conversation summarization
+- Tab completion for commands and models
+- Mode indicators in prompt (`[t]`, `[T]`)
+- Token metrics display
+- Thinking output visible when enabled
 
 **Tools (26 total):**
 
@@ -50,12 +66,7 @@ This document outlines planned features and the current state of Ask-AI.
 
 ## Known Issues
 
-### GPT-OSS Tool Calling
-
-**Status:** Active  
-**Priority:** Medium  
-**Impact:** Tool calls fail with `invalid character '<'` encoding errors  
-**Workaround:** Use mistral-small, qwen3-coder, or pepe models instead
+None currently.
 
 ---
 
@@ -212,45 +223,7 @@ temperature = 0.7
 
 ---
 
-### Multi-Line Chat Mode
 
-**Priority:** HIGH  
-**Status:** Ready to implement  
-**Derived from:** Query mode
-
-**Problem:** Users need interactive chat sessions with conversation history for desktop use.
-
-**Implementation:**
-- New `chat` subcommand (or `--chat` flag for query)
-- Conversation history maintained in memory
-- Interactive REPL with commands
-
-**Usage:**
-```bash
-ask-ai chat
-> What is Rust?
-[Rust is a systems programming language...]
-> What about its memory safety?
-[The model has context from previous message]
-> /quit
-```
-
-**Commands:**
-- `/quit` or `/exit` - End chat session
-- `/clear` - Clear conversation history
-- `/model <name>` - Switch model mid-chat
-- `/help` - Show available commands
-
-**Tasks:**
-- [ ] Design: Chat state management architecture
-- [ ] Implement: Interactive REPL with readline support
-- [ ] Implement: Conversation history (in-memory)
-- [ ] Implement: Chat commands (/quit, /clear, /model, /help)
-- [ ] Implement: System prompt for chat mode
-- [ ] Test: Multi-turn conversations with context
-- [ ] Document: Chat mode usage
-
----
 
 ## Medium Priority
 
@@ -356,6 +329,26 @@ This refactoring requires upfront planning before implementation:
 
 ---
 
+### Automatic Conversation Compaction
+
+**Priority:** Low  
+**Status:** Research needed
+
+**Problem:** Manual `/compact` is sufficient, but automatic compaction based on token count would be more convenient.
+
+**Research Needed:**
+- Token counting for conversation history
+- Optimal threshold for compaction
+- Integration with model's context window size
+
+**Tasks:**
+- [ ] Research: Token counting methods (tiktoken, ollama API)
+- [ ] Design: Threshold configuration (messages vs tokens)
+- [ ] Implement: Compact before context exhausted
+- [ ] Test: Verify context maintained after auto-compact
+
+---
+
 ## Low Priority
 
 ### Streaming Output
@@ -376,27 +369,6 @@ This refactoring requires upfront planning before implementation:
 **Tasks:**
 - [ ] Research: Streaming markdown rendering approaches
 - [ ] Prototype: Basic streaming with termimad
-
----
-
-### Multi-Line Chat Mode
-
-**Priority:** Low  
-**Status:** Not started
-
-Interactive chat mode with conversation history:
-
-```bash
-ask-ai --chat
-> First message
-> Second message
-> /quit
-```
-
-**Tasks:**
-- [ ] Design: Chat state management
-- [ ] Implement: Interactive REPL
-- [ ] Implement: Conversation history
 
 ---
 

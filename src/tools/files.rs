@@ -32,14 +32,16 @@ pub async fn read_file(
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let max_lines_parsed = parse_u32(max_lines, None);
     let sandbox_parsed = parse_bool(sandbox, true);
-    
+
     log_tool_call(
         "read_file",
         &[
             ("path".to_string(), path.clone()),
             (
                 "max_lines".to_string(),
-                max_lines_parsed.map(|l| l.to_string()).unwrap_or_else(|| "all".to_string()),
+                max_lines_parsed
+                    .map(|l| l.to_string())
+                    .unwrap_or_else(|| "all".to_string()),
             ),
         ],
     );
@@ -123,7 +125,10 @@ pub async fn read_file_segment(
     let start_line_parsed = match parse_u32(Some(start_line.clone()), None) {
         Some(n) => n,
         None => {
-            let err_msg = format!("Error: Invalid start_line '{}'. Must be a positive number.", start_line);
+            let err_msg = format!(
+                "Error: Invalid start_line '{}'. Must be a positive number.",
+                start_line
+            );
             log_tool_result("read_file_segment", &err_msg);
             return Ok(err_msg);
         }
@@ -131,25 +136,29 @@ pub async fn read_file_segment(
     let num_lines_parsed = match parse_u32(Some(num_lines.clone()), None) {
         Some(n) => n,
         None => {
-            let err_msg = format!("Error: Invalid num_lines '{}'. Must be a positive number.", num_lines);
+            let err_msg = format!(
+                "Error: Invalid num_lines '{}'. Must be a positive number.",
+                num_lines
+            );
             log_tool_result("read_file_segment", &err_msg);
             return Ok(err_msg);
         }
     };
     let sandbox_parsed = parse_bool(sandbox, true);
-    
+
     if start_line_parsed == 0 {
-        let err_msg = "Error: start_line must be 1 or greater. Line numbers start at 1.".to_string();
+        let err_msg =
+            "Error: start_line must be 1 or greater. Line numbers start at 1.".to_string();
         log_tool_result("read_file_segment", &err_msg);
         return Ok(err_msg);
     }
-    
+
     if num_lines_parsed == 0 {
         let err_msg = "Error: num_lines must be 1 or greater.".to_string();
         log_tool_result("read_file_segment", &err_msg);
         return Ok(err_msg);
     }
-    
+
     log_tool_call(
         "read_file_segment",
         &[
@@ -212,7 +221,7 @@ pub async fn read_file_segment(
     // Extract segment
     let start = start_line_parsed as usize;
     let count = num_lines_parsed as usize;
-    
+
     let lines: Vec<&str> = content.lines().collect();
     let total_lines = lines.len();
 
@@ -230,7 +239,10 @@ pub async fn read_file_segment(
     let segment_lines: Vec<&str> = lines[start_idx..end_idx].to_vec();
 
     let result = if segment_lines.is_empty() {
-        format!("File has {} lines. No lines to read from line {}.", total_lines, start)
+        format!(
+            "File has {} lines. No lines to read from line {}.",
+            total_lines, start
+        )
     } else {
         let mut output = Vec::new();
         let end_line = start + segment_lines.len() - 1;
@@ -248,9 +260,12 @@ pub async fn read_file_segment(
 
 /// Count lines in a file. Use this before reading large files to avoid polluting context.
 #[ollama_rs::function]
-pub async fn count_lines(path: String, sandbox: Option<String>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn count_lines(
+    path: String,
+    sandbox: Option<String>,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let sandbox_parsed = parse_bool(sandbox, true);
-    
+
     log_tool_call("count_lines", &[("path".to_string(), path.clone())]);
 
     // Validate and canonicalize path (also checks if exists)
@@ -294,10 +309,7 @@ pub async fn count_lines(path: String, sandbox: Option<String>) -> Result<String
         String::new()
     };
 
-    let result = format!(
-        "File: {}\nLines: {}{}",
-        path, line_count, suggestion
-    );
+    let result = format!("File: {}\nLines: {}{}", path, line_count, suggestion);
 
     log_tool_result("count_lines", &result);
     Ok(result)
@@ -312,7 +324,7 @@ pub async fn list_directory(
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let recursive_parsed = parse_bool(recursive, false);
     let sandbox_parsed = parse_bool(sandbox, true);
-    
+
     log_tool_call(
         "list_directory",
         &[
@@ -347,7 +359,9 @@ pub async fn list_directory(
     let mut entries = Vec::new();
 
     if recursive_parsed {
-        if let Err(e) = collect_entries_recursive(&canonical_path, &canonical_path, &mut entries, 0, 10) {
+        if let Err(e) =
+            collect_entries_recursive(&canonical_path, &canonical_path, &mut entries, 0, 10)
+        {
             let err_msg = format!("Error: Failed to list directory recursively: {}", e);
             log_tool_result("list_directory", &err_msg);
             return Ok(err_msg);
@@ -466,7 +480,10 @@ fn collect_entries_recursive(
             String::new()
         };
 
-        entries.push(format!("{}[{}] {}{}", indent, entry_type, display_path, size_info));
+        entries.push(format!(
+            "{}[{}] {}{}",
+            indent, entry_type, display_path, size_info
+        ));
 
         // Recurse into subdirectories
         if metadata.is_dir() {
@@ -486,7 +503,7 @@ pub async fn search_files(
     sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let sandbox_parsed = parse_bool(sandbox, true);
-    
+
     log_tool_call(
         "search_files",
         &[
@@ -503,7 +520,10 @@ pub async fn search_files(
     let regex = match Regex::new(&pattern) {
         Ok(r) => r,
         Err(e) => {
-            let err_msg = format!("Error: Invalid regex pattern '{}': {}. Please check your regex syntax.", pattern, e);
+            let err_msg = format!(
+                "Error: Invalid regex pattern '{}': {}. Please check your regex syntax.",
+                pattern, e
+            );
             log_tool_result("search_files", &err_msg);
             return Ok(err_msg);
         }
@@ -573,10 +593,7 @@ pub async fn search_files(
                 ));
 
                 if matches.len() >= MAX_RESULTS {
-                    matches.push(format!(
-                        "... (stopped after {} matches)",
-                        MAX_RESULTS
-                    ));
+                    matches.push(format!("... (stopped after {} matches)", MAX_RESULTS));
                     break;
                 }
             }
@@ -612,7 +629,11 @@ fn collect_files(
         .transpose()
         .map_err(|e| format!("Invalid file pattern: {}", e))?;
 
-    for entry in walkdir::WalkDir::new(dir).max_depth(5).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(dir)
+        .max_depth(5)
+        .into_iter()
+        .flatten()
+    {
         if entry.file_type().is_file() {
             let path = entry.path();
 
@@ -689,8 +710,7 @@ fn validate_path(
 
     if sandbox {
         // Get current working directory
-        let cwd = std::env::current_dir()
-            .map_err(|_| "Could not determine current directory")?;
+        let cwd = std::env::current_dir().map_err(|_| "Could not determine current directory")?;
         let canonical_cwd = cwd
             .canonicalize()
             .map_err(|_| "Could not determine current directory")?;

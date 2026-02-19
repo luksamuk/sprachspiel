@@ -84,10 +84,16 @@ pub async fn web_search(
     query: String,
     num_results: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("web_search", &[
-        ("query".to_string(), query.clone()),
-        ("num_results".to_string(), num_results.clone().unwrap_or_else(|| "5".to_string())),
-    ]);
+    log_tool_call(
+        "web_search",
+        &[
+            ("query".to_string(), query.clone()),
+            (
+                "num_results".to_string(),
+                num_results.clone().unwrap_or_else(|| "5".to_string()),
+            ),
+        ],
+    );
 
     let api_key = match get_api_key() {
         Some(k) => k,
@@ -100,9 +106,7 @@ pub async fn web_search(
 
     let num_results = parse_num_results(num_results, 5, 10);
 
-    let client = match reqwest::Client::builder()
-        .build()
-    {
+    let client = match reqwest::Client::builder().build() {
         Ok(c) => c,
         Err(e) => {
             let err = format!("Error creating HTTP client: {}. Please try again later.", e);
@@ -128,7 +132,10 @@ pub async fn web_search(
     };
 
     if !response.status().is_success() {
-        let err = format!("Serper API error: HTTP {}. Please check your API key.", response.status());
+        let err = format!(
+            "Serper API error: HTTP {}. Please check your API key.",
+            response.status()
+        );
         log_tool_result("web_search", &err);
         return Ok(err);
     }
@@ -183,10 +190,16 @@ pub async fn web_search_news(
     query: String,
     num_results: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("web_search_news", &[
-        ("query".to_string(), query.clone()),
-        ("num_results".to_string(), num_results.clone().unwrap_or_else(|| "3".to_string())),
-    ]);
+    log_tool_call(
+        "web_search_news",
+        &[
+            ("query".to_string(), query.clone()),
+            (
+                "num_results".to_string(),
+                num_results.clone().unwrap_or_else(|| "3".to_string()),
+            ),
+        ],
+    );
 
     let api_key = match get_api_key() {
         Some(k) => k,
@@ -199,9 +212,7 @@ pub async fn web_search_news(
 
     let num_results = parse_num_results(num_results, 3, 10);
 
-    let client = match reqwest::Client::builder()
-        .build()
-    {
+    let client = match reqwest::Client::builder().build() {
         Ok(c) => c,
         Err(e) => {
             let err = format!("Error creating HTTP client: {}. Please try again later.", e);
@@ -227,7 +238,10 @@ pub async fn web_search_news(
     };
 
     if !response.status().is_success() {
-        let err = format!("Serper API error: HTTP {}. Please check your API key.", response.status());
+        let err = format!(
+            "Serper API error: HTTP {}. Please check your API key.",
+            response.status()
+        );
         log_tool_result("web_search_news", &err);
         return Ok(err);
     }

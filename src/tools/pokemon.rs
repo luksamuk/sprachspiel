@@ -1,29 +1,39 @@
-use crate::debug_tools::{log_tool_call, log_tool_result};
 use super::*;
+use crate::debug_tools::{log_tool_call, log_tool_result};
 
 /// Fetch basic information about a Pokémon (name, types, height, weight, abilities).
 ///
 /// * pokemon_name - The name of the Pokémon in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
-    log_tool_call("fetch_pokemon_basic", &[("pokemon_name".to_string(), pokemon_name.clone())]);
-    
+    log_tool_call(
+        "fetch_pokemon_basic",
+        &[("pokemon_name".to_string(), pokemon_name.clone())],
+    );
+
     let url = format!(
         "https://pokeapi.co/api/v2/pokemon/{}/",
         pokemon_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching Pokémon: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching Pokémon: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_basic", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Pokémon '{}' not found. HTTP {}", pokemon_name, response.status());
+        let err = format!(
+            "Error: Pokémon '{}' not found. HTTP {}",
+            pokemon_name,
+            response.status()
+        );
         log_tool_result("fetch_pokemon_basic", &err);
         return Ok(err);
     }
@@ -36,7 +46,7 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
             return Ok(err);
         }
     };
-    
+
     let name = capitalize(&data.name);
     let types: Vec<String> = data
         .types
@@ -68,24 +78,34 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
 /// * pokemon_name - The name of the Pokémon in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
-    log_tool_call("fetch_pokemon_stats", &[("pokemon_name".to_string(), pokemon_name.clone())]);
-    
+    log_tool_call(
+        "fetch_pokemon_stats",
+        &[("pokemon_name".to_string(), pokemon_name.clone())],
+    );
+
     let url = format!(
         "https://pokeapi.co/api/v2/pokemon/{}/",
         pokemon_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching Pokémon stats: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching Pokémon stats: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_stats", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Pokémon '{}' not found. HTTP {}", pokemon_name, response.status());
+        let err = format!(
+            "Error: Pokémon '{}' not found. HTTP {}",
+            pokemon_name,
+            response.status()
+        );
         log_tool_result("fetch_pokemon_stats", &err);
         return Ok(err);
     }
@@ -93,12 +113,15 @@ pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
     let data: PokemonData = match response.json().await {
         Ok(d) => d,
         Err(e) => {
-            let err = format!("Error parsing Pokémon stats: {}. Please try again later.", e);
+            let err = format!(
+                "Error parsing Pokémon stats: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_stats", &err);
             return Ok(err);
         }
     };
-    
+
     let name = capitalize(&data.name);
     let stats: std::collections::HashMap<String, u32> = data
         .stats
@@ -129,24 +152,37 @@ pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
 /// * limit - Maximum number of moves to return (default 20).
 #[ollama_rs::function]
 pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult<String> {
-    log_tool_call("fetch_pokemon_moves", &[("pokemon_name".to_string(), pokemon_name.clone()), ("limit".to_string(), limit.to_string())]);
-    
+    log_tool_call(
+        "fetch_pokemon_moves",
+        &[
+            ("pokemon_name".to_string(), pokemon_name.clone()),
+            ("limit".to_string(), limit.to_string()),
+        ],
+    );
+
     let url = format!(
         "https://pokeapi.co/api/v2/pokemon/{}/",
         pokemon_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching Pokémon moves: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching Pokémon moves: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_moves", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Pokémon '{}' not found. HTTP {}", pokemon_name, response.status());
+        let err = format!(
+            "Error: Pokémon '{}' not found. HTTP {}",
+            pokemon_name,
+            response.status()
+        );
         log_tool_result("fetch_pokemon_moves", &err);
         return Ok(err);
     }
@@ -154,12 +190,15 @@ pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult
     let data: PokemonData = match response.json().await {
         Ok(d) => d,
         Err(e) => {
-            let err = format!("Error parsing Pokémon moves: {}. Please try again later.", e);
+            let err = format!(
+                "Error parsing Pokémon moves: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_moves", &err);
             return Ok(err);
         }
     };
-    
+
     let name = capitalize(&data.name);
     let total_moves = data.moves.len();
     let actual_limit = std::cmp::min(limit as usize, data.moves.len());
@@ -189,24 +228,34 @@ pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult
 /// * pokemon_name - The name of the Pokémon species in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String> {
-    log_tool_call("fetch_pokemon_evolution", &[("pokemon_name".to_string(), pokemon_name.clone())]);
-    
+    log_tool_call(
+        "fetch_pokemon_evolution",
+        &[("pokemon_name".to_string(), pokemon_name.clone())],
+    );
+
     let species_url = format!(
         "https://pokeapi.co/api/v2/pokemon-species/{}/",
         pokemon_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&species_url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching Pokémon species: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching Pokémon species: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_evolution", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Pokémon species '{}' not found. HTTP {}", pokemon_name, response.status());
+        let err = format!(
+            "Error: Pokémon species '{}' not found. HTTP {}",
+            pokemon_name,
+            response.status()
+        );
         log_tool_result("fetch_pokemon_evolution", &err);
         return Ok(err);
     }
@@ -219,20 +268,26 @@ pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String>
             return Ok(err);
         }
     };
-    
+
     let evo_url = &species.evolution_chain.url;
 
     let evo_response = match reqwest::get(evo_url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching evolution chain: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching evolution chain: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_evolution", &err);
             return Ok(err);
         }
     };
 
     if !evo_response.status().is_success() {
-        let err = format!("Error fetching evolution chain: HTTP {}", evo_response.status());
+        let err = format!(
+            "Error fetching evolution chain: HTTP {}",
+            evo_response.status()
+        );
         log_tool_result("fetch_pokemon_evolution", &err);
         return Ok(err);
     }
@@ -240,12 +295,15 @@ pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String>
     let chain: EvolutionChain = match evo_response.json().await {
         Ok(c) => c,
         Err(e) => {
-            let err = format!("Error parsing evolution chain: {}. Please try again later.", e);
+            let err = format!(
+                "Error parsing evolution chain: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_evolution", &err);
             return Ok(err);
         }
     };
-    
+
     let formatted = format_evolution_chain(&chain.chain, 0);
     let result = format!("Evolution Chain:\n{}", formatted);
     log_tool_result("fetch_pokemon_evolution", &result);
@@ -257,24 +315,34 @@ pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String>
 /// * ability_name - The name of the ability in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
-    log_tool_call("fetch_ability_details", &[("ability_name".to_string(), ability_name.clone())]);
-    
+    log_tool_call(
+        "fetch_ability_details",
+        &[("ability_name".to_string(), ability_name.clone())],
+    );
+
     let url = format!(
         "https://pokeapi.co/api/v2/ability/{}/",
         ability_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching ability: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching ability: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_ability_details", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Ability '{}' not found. HTTP {}", ability_name, response.status());
+        let err = format!(
+            "Error: Ability '{}' not found. HTTP {}",
+            ability_name,
+            response.status()
+        );
         log_tool_result("fetch_ability_details", &err);
         return Ok(err);
     }
@@ -324,24 +392,34 @@ pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
 /// * type_name - The name of the type in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
-    log_tool_call("fetch_type_effectiveness", &[("type_name".to_string(), type_name.clone())]);
-    
+    log_tool_call(
+        "fetch_type_effectiveness",
+        &[("type_name".to_string(), type_name.clone())],
+    );
+
     let url = format!(
         "https://pokeapi.co/api/v2/type/{}/",
         type_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching type: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching type: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_type_effectiveness", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Type '{}' not found. HTTP {}", type_name, response.status());
+        let err = format!(
+            "Error: Type '{}' not found. HTTP {}",
+            type_name,
+            response.status()
+        );
         log_tool_result("fetch_type_effectiveness", &err);
         return Ok(err);
     }
@@ -354,7 +432,7 @@ pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
             return Ok(err);
         }
     };
-    
+
     let dr = &data.damage_relations;
 
     let double_damage_from: Vec<String> = dr
@@ -400,28 +478,38 @@ pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> 
         .and_then(|l| l.parse::<usize>().ok())
         .unwrap_or(20)
         .min(100);
-    
-    log_tool_call("fetch_pokemon_by_type", &[
-        ("type_name".to_string(), type_name.clone()),
-        ("limit".to_string(), limit_num.to_string()),
-    ]);
-    
+
+    log_tool_call(
+        "fetch_pokemon_by_type",
+        &[
+            ("type_name".to_string(), type_name.clone()),
+            ("limit".to_string(), limit_num.to_string()),
+        ],
+    );
+
     let url = format!(
         "https://pokeapi.co/api/v2/type/{}/",
         type_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching type: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching type: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon_by_type", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Type '{}' not found. HTTP {}", type_name, response.status());
+        let err = format!(
+            "Error: Type '{}' not found. HTTP {}",
+            type_name,
+            response.status()
+        );
         log_tool_result("fetch_pokemon_by_type", &err);
         return Ok(err);
     }
@@ -434,7 +522,7 @@ pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> 
             return Ok(err);
         }
     };
-    
+
     let total = data.pokemon.len();
     let pokemon_list: Vec<String> = data
         .pokemon
@@ -462,24 +550,34 @@ pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> 
 /// * move_name - The name of the move in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
-    log_tool_call("fetch_move_details", &[("move_name".to_string(), move_name.clone())]);
-    
+    log_tool_call(
+        "fetch_move_details",
+        &[("move_name".to_string(), move_name.clone())],
+    );
+
     let url = format!(
         "https://pokeapi.co/api/v2/move/{}/",
         move_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching move: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching move: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_move_details", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Move '{}' not found. HTTP {}", move_name, response.status());
+        let err = format!(
+            "Error: Move '{}' not found. HTTP {}",
+            move_name,
+            response.status()
+        );
         log_tool_result("fetch_move_details", &err);
         return Ok(err);
     }
@@ -537,24 +635,34 @@ pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
 /// * pokemon_name - The name of the Pokémon in lowercase.
 #[ollama_rs::function]
 pub async fn fetch_pokemon(pokemon_name: String) -> ToolResult<String> {
-    log_tool_call("fetch_pokemon", &[("pokemon_name".to_string(), pokemon_name.clone())]);
-    
+    log_tool_call(
+        "fetch_pokemon",
+        &[("pokemon_name".to_string(), pokemon_name.clone())],
+    );
+
     let url = format!(
         "https://pokeapi.co/api/v2/pokemon/{}/",
         pokemon_name.to_lowercase()
     );
-    
+
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching Pokémon: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching Pokémon: {}. Please try again later.",
+                e
+            );
             log_tool_result("fetch_pokemon", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Error: Pokémon '{}' not found. HTTP {}", pokemon_name, response.status());
+        let err = format!(
+            "Error: Pokémon '{}' not found. HTTP {}",
+            pokemon_name,
+            response.status()
+        );
         log_tool_result("fetch_pokemon", &err);
         return Ok(err);
     }
@@ -567,7 +675,7 @@ pub async fn fetch_pokemon(pokemon_name: String) -> ToolResult<String> {
             return Ok(err);
         }
     };
-    
+
     let name = capitalize(&data.name);
     let types: Vec<String> = data
         .types

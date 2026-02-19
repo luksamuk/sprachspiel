@@ -684,18 +684,7 @@ graph TD
 
 ## Known Issues
 
-### GPT-OSS Tool Calling
-
-**Status**: ⚠️ Under investigation
-
-**Problem**: Models like `gpt-oss:120b` may fail with `invalid character '<'` error
-
-**Cause**: Likely HTML entity encoding issue
-
-**Workaround**: Use other models for tool calls:
-- `mistral-small`
-- `qwen3-coder`
-- `llama3.2`
+None currently.
 
 ## Tool Capable Models
 
@@ -704,7 +693,6 @@ graph TD
 | mistral-small | ✅ | Best for tools |
 | qwen3-coder | ✅ | Code + tools |
 | llama3.2 | ✅ | General purpose |
-| gpt-oss | ⚠️ | May have issues |
 
 ## Debug Mode
 

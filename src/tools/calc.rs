@@ -20,14 +20,17 @@ use ollama_rs::function;
 pub async fn calculate(
     expression: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("calculate", &[("expression".to_string(), expression.clone())]);
-    
+    log_tool_call(
+        "calculate",
+        &[("expression".to_string(), expression.clone())],
+    );
+
     // Use the calc crate directly for expression evaluation
     let result = match eval_expression(&expression) {
         Ok(value) => format_number(value),
         Err(e) => format!("Error: {}.", e),
     };
-    
+
     log_tool_result("calculate", &result);
     Ok(result)
 }
@@ -38,7 +41,7 @@ fn eval_expression(expr: &str) -> Result<f64, String> {
     if let Some(result) = parse_percent_of(expr) {
         return Ok(result);
     }
-    
+
     // Use calc crate for evaluation
     let mut ctx = calc::Context::default();
     ctx.evaluate(expr)
@@ -49,13 +52,13 @@ fn eval_expression(expr: &str) -> Result<f64, String> {
 fn parse_percent_of(expr: &str) -> Option<f64> {
     let expr_lower = expr.to_lowercase();
     let parts: Vec<&str> = expr_lower.split("% of ").collect();
-    
+
     if parts.len() == 2 {
         let percent: f64 = parts[0].trim().parse().ok()?;
         let value: f64 = parts[1].trim().parse().ok()?;
         return Some(value * percent / 100.0);
     }
-    
+
     None
 }
 

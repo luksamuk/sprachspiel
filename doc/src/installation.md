@@ -188,7 +188,7 @@ Each modelfile:
 
 ### Quick Install (Essential Models Only)
 
-Install the four models required for basic functionality:
+Install the three models required for basic functionality:
 
 ```bash
 # Navigate to modelfiles directory
@@ -199,36 +199,11 @@ make models-essential
 ```
 
 This builds and installs:
-- **lfm2.5-thinking:1.2b-32k** - Default for general queries (32K context)
-- **translategemma:12b-32k** - For translation command
-- **llama3.2:3b-32k** - For summarization command  
+- **llama3.1:8b** - Default for general queries
+- **translategemma:12b** - For translation command
 - **glm-ocr:bf16** - For OCR/text extraction
 
-### Installing Optional Models
-
-For enhanced functionality with tools and specialized tasks:
-
-```bash
-cd modelfiles
-
-# Build and install recommended optional models
-make models-optional
-```
-
-This builds and installs:
-- **mistral-small3.2:24b-32k** - Tool-capable model (32K context)
-- **gpt-oss:20b-64k** - Tool calling model (64K context)
-- **qwen3-coder:30b-64k** - Code generation (64K context)
-- **pepe:8b-64k** - Character model with personality (64K context)
-
-### Installing All Local Models
-
-To build and install all local models (both essential and optional):
-
-```bash
-cd modelfiles
-make models-all
-```
+Note: Context window sizes are configured in `~/.config/ask-ai/models.toml`, not in model tags.
 
 ### Installing Cloud Models
 
@@ -249,20 +224,25 @@ Build individual models as needed:
 cd modelfiles
 
 # Essential models (must have)
-make lfm                 # Build LFM 2.5 Thinking (default)
+make llama3.1            # Build Llama 3.1 8B (default)
 make translategemma      # Build Translation model
-make llama3.2            # Build Summarization model
 make glm-ocr             # Pull OCR model
 
-# Optional models
-make mistral-small       # Build tool-capable model
-make gpt-oss            # Build tool calling model
-make qwen3-coder        # Build code generation model
-make pepe               # Build character model
+# Optional models for specialized tasks
+make lfm                 # Build LFM 2.5 Thinking (reasoning)
+make llama3.2            # Build Llama 3.2 3B (summarization, tools)
+make mistral-small       # Build Mistral Small (tools)
+make qwen3-coder         # Build Qwen3 Coder (code)
 
 # See all available targets
 make help
 ```
+
+### Additional Models
+
+Additional models (mistral-small, qwen3-coder, deepseek-coder-v2, etc.) are configured via `~/.config/ask-ai/models.toml`. A default configuration file is created automatically with recommended settings.
+
+See [Custom Models](./configuration.md#custom-models) for details.
 
 ### About Modelfiles
 
@@ -338,14 +318,13 @@ To remove models installed via modelfiles:
 ollama list
 
 # Remove specific models
-ollama rm lfm2.5-thinking:1.2b-32k
-ollama rm translategemma:12b-32k
-ollama rm llama3.2:3b-32k
+ollama rm llama3.1:8b
+ollama rm translategemma:12b
 ollama rm glm-ocr:bf16
-ollama rm mistral-small3.2:24b-32k
-ollama rm gpt-oss:20b-64k
-ollama rm qwen3-coder:30b-64k
-ollama rm pepe:8b-64k
+
+# Remove optional models
+ollama rm lfm2.5-thinking:1.2b
+ollama rm llama3.2:3b
 
 # Or remove all models at once
 ollama rm $(ollama list | awk 'NR>1 {print $1}')

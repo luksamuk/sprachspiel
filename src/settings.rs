@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Default model name when not specified in config
-pub const DEFAULT_MODEL: &str = "lfm";
+pub const DEFAULT_MODEL: &str = "llama3.1";
 
 /// Default Ollama host
 pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
@@ -264,7 +264,9 @@ impl Settings {
 
     /// Create an Ollama client using the configured host and port
     pub fn ollama_client(&self) -> Ollama {
-        if self.model.ollama_host != DEFAULT_OLLAMA_HOST || self.model.ollama_port != DEFAULT_OLLAMA_PORT {
+        if self.model.ollama_host != DEFAULT_OLLAMA_HOST
+            || self.model.ollama_port != DEFAULT_OLLAMA_PORT
+        {
             Ollama::new(
                 normalize_host(&self.model.ollama_host),
                 self.model.ollama_port,
@@ -302,8 +304,8 @@ impl Settings {
 
 # The default model preset to use for general queries.
 # See all available models with: ask-ai --list-models
-# Default: "lfm"
-default = "lfm"
+# Default: "llama3.1"
+default = "llama3.1"
 
 # Ollama server connection settings.
 # Change these if your Ollama server is not running on the default localhost.
@@ -324,7 +326,7 @@ ollama_port = 11434
 [model.query]
 # The model to use for 'ask query' or 'ask q'.
 # If not specified, falls back to the global [model] default.
-# model = "lfm"
+# model = "llama3.1"
 
 # Enable thinking mode for queries. Some models show their reasoning process.
 # If not specified, defaults to: true for query
@@ -439,7 +441,7 @@ mod tests {
     #[test]
     fn test_default_settings() {
         let settings = Settings::default();
-        assert_eq!(settings.model.default, "lfm");
+        assert_eq!(settings.model.default, "llama3.1");
         assert_eq!(settings.model.ollama_host, "127.0.0.1");
         assert_eq!(settings.model.ollama_port, 11434);
         assert!(settings.tools.file_sandbox);
@@ -473,7 +475,7 @@ mod tests {
     fn test_parse_sample_config() {
         let sample = r#"
 [model]
-default = "gpt-oss"
+default = "qwen3-coder"
 ollama_host = "192.168.1.100"
 ollama_port = 8080
 
@@ -490,7 +492,7 @@ skin = "light"
 "#;
 
         let settings: Settings = toml::from_str(sample).unwrap();
-        assert_eq!(settings.model.default, "gpt-oss");
+        assert_eq!(settings.model.default, "qwen3-coder");
         assert_eq!(settings.model.ollama_host, "192.168.1.100");
         assert_eq!(settings.model.ollama_port, 8080);
         assert!(settings.is_tool_blacklisted("web_search"));

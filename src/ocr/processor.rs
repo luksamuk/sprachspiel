@@ -91,7 +91,11 @@ impl OcrProcessor {
     }
 
     /// Process multiple files
-    pub async fn process_batch(&self, args: &OcrArgs, settings: &Settings) -> OcrResult<Vec<OcrOutput>> {
+    pub async fn process_batch(
+        &self,
+        args: &OcrArgs,
+        settings: &Settings,
+    ) -> OcrResult<Vec<OcrOutput>> {
         let mut results = Vec::new();
 
         for file in &args.files {

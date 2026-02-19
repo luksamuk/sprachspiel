@@ -9,6 +9,7 @@
 - [Quick Start](./quickstart.md)
 - [Commands](./commands/README.md)
   - [query](./commands/query.md)
+  - [chat](./commands/chat.md)
   - [translate](./commands/translate.md)
   - [ocr](./commands/ocr.md)
   - [summarize](./commands/summarize.md)
@@ -24,6 +25,7 @@
 - [Development](./development/README.md)
   - [Architecture](./development/architecture.md)
   - [Roadmap](./development/roadmap.md)
+  - [Chat Mode Design](./development/chat-mode-design.md)
   - [Contributing](./development/contributing.md)
 
 ---

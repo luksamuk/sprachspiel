@@ -7,12 +7,31 @@ use ollama_rs::coordinator::Coordinator;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 
-use crate::config::ModelConfig;
 use crate::prompts::{SYSTEM_PROMPT_SUMMARIZE, get_prompt};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 
 use super::cli::SummarizeArgs;
+
+fn build_model_options(config: &crate::config::ModelConfig) -> ModelOptions {
+    let mut opts = ModelOptions::default()
+        .temperature(config.temperature)
+        .repeat_penalty(config.repeat_penalty.unwrap_or(1.1));
+
+    if config.num_ctx > 0 {
+        opts = opts.num_ctx(config.num_ctx as u64);
+    }
+
+    if let Some(top_k) = config.top_k {
+        opts = opts.top_k(top_k);
+    }
+
+    if let Some(top_p) = config.top_p {
+        opts = opts.top_p(top_p);
+    }
+
+    opts
+}
 
 /// Summarization processor
 pub struct SummarizeProcessor;
@@ -36,23 +55,15 @@ impl SummarizeProcessor {
         }
 
         // Get model config (with fallback chain)
-        let model_config = ModelConfig::get(model_id).unwrap_or_else(|| {
-            ModelConfig::get("llama3.2").unwrap_or_else(|| {
-                ModelConfig::get("mistral-small")
-                    .unwrap_or_else(|| ModelConfig::get("lfm").expect("Default model should exist"))
-            })
+        let model_config = crate::user_models::get_model_config(model_id).unwrap_or_else(|| {
+            crate::user_models::get_model_config("llama3.1")
+                .expect("Default model should exist")
         });
 
         // Initialize Ollama with settings
         let ollama = settings.ollama_client();
 
-        // Build model options
-        let model_options = ModelOptions::default()
-            .temperature(model_config.temperature)
-            .top_p(model_config.top_p)
-            .top_k(model_config.top_k)
-            .num_ctx(model_config.num_ctx as u64)
-            .repeat_penalty(model_config.repeat_penalty);
+        let model_options = build_model_options(&model_config);
 
         // Build coordinator WITHOUT tools (security requirement)
         let mut coordinator =
@@ -98,7 +109,6 @@ mod tests {
 
     #[test]
     fn test_processor_creation() {
-        let processor = SummarizeProcessor::new();
-        // Just verify it creates successfully
+        let _processor = SummarizeProcessor::new();
     }
 }

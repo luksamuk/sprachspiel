@@ -1,12 +1,13 @@
 # Commands Reference
 
-Ask-AI provides four main commands for different tasks. Each command is designed to be composable with pipes for building powerful workflows.
+Ask-AI provides five main commands for different tasks. Each command is designed to be composable with pipes for building powerful workflows.
 
 ## Command Overview
 
 | Command | Alias | Purpose | Default Model |
 |---------|-------|---------|---------------|
 | `query` | `q` | General LLM queries | lfm |
+| `chat` | `c` | Interactive chat with history | lfm |
 | `translate` | `t` | Language translation | translate |
 | `ocr` | `o` | Image text extraction | glm-ocr |
 | `summarize` | `sum` | Text summarization | llama3.2 |
@@ -67,19 +68,21 @@ ask-ai ocr doc.png | ask-ai summarize | ask-ai translate :pt
 
 ## Command Comparison
 
-| Feature | query | translate | ocr | summarize |
-|---------|-------|-----------|-----|-----------|
-| **Input** | Text query | Text + language codes | Image files | Text |
-| **Output** | AI response | Translated text | Extracted text | Summary |
-| **Model** | Configurable | translate (fixed) | glm-ocr (fixed) | Configurable |
-| **Tools** | Yes (auto) | No | No | No |
-| **Stdin** | Yes | Yes | No | Yes |
+| Feature | query | chat | translate | ocr | summarize |
+|---------|-------|------|-----------|-----|-----------|
+| **Input** | Text query | Interactive | Text + language codes | Image files | Text |
+| **Output** | AI response | Interactive | Translated text | Extracted text | Summary |
+| **Model** | Configurable | Configurable | translate (fixed) | glm-ocr (fixed) | Configurable |
+| **Tools** | Yes (auto) | Yes (auto) | No | No | No |
+| **Stdin** | Yes | No | Yes | No | Yes |
+| **History** | No | Yes | No | No | No |
 
 ## Detailed Documentation
 
 For complete documentation on each command:
 
 - **[query](./query.md)** - General purpose queries with tool support
+- **[chat](./chat.md)** - Interactive chat with conversation history
 - **[translate](./translate.md)** - Language translation with 50+ languages
 - **[ocr](./ocr.md)** - Image text, table, formula, and figure extraction
 - **[summarize](./summarize.md)** - Text summarization with multiple styles

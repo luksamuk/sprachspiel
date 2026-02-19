@@ -98,13 +98,13 @@ You have access to various tools for fetching real-time data. Your training data
 
 "#,
     );
-    
+
     // Inject system context (date, CWD, git branch)
     let system_context = crate::context::get_system_context();
     if !system_context.is_empty() {
         prompt.push_str(&format!("Current context:\n{}\n\n", system_context));
     }
-    
+
     prompt.push_str(
         r#"⚠️  CRITICAL RULES FOR TOOL SELECTION:
 
@@ -112,11 +112,11 @@ You have access to various tools for fetching real-time data. Your training data
     );
 
     // Add section for each tool category based on feature flags and blacklist
-    
+
     // Pokemon tools section
     let pokemon_tools = [
         "fetch_pokemon_basic",
-        "fetch_pokemon_stats", 
+        "fetch_pokemon_stats",
         "fetch_pokemon_moves",
         "fetch_pokemon_evolution",
         "fetch_ability_details",
@@ -125,21 +125,21 @@ You have access to various tools for fetching real-time data. Your training data
         "fetch_move_details",
         "fetch_pokemon",
     ];
-    
+
     #[cfg(feature = "pokemon-tools")]
     let pokemon_enabled: Vec<_> = pokemon_tools
         .iter()
         .filter(|tool| !blacklist.contains(**tool))
         .copied()
         .collect();
-    
+
     #[cfg(not(feature = "pokemon-tools"))]
     let _pokemon_enabled: Vec<_> = pokemon_tools
         .iter()
         .filter(|tool| !blacklist.contains(**tool))
         .copied()
         .collect();
-    
+
     #[cfg(feature = "pokemon-tools")]
     if !pokemon_enabled.is_empty() {
         prompt.push_str(
@@ -159,13 +159,13 @@ Examples:
 
     // Weather tools section
     let weather_tools = ["get_weather", "get_current_weather", "get_weather_forecast"];
-    
+
     let weather_enabled: Vec<_> = weather_tools
         .iter()
         .filter(|tool| !blacklist.contains(**tool))
         .copied()
         .collect();
-    
+
     #[cfg(feature = "weather-tools")]
     if !weather_enabled.is_empty() {
         prompt.push_str(
@@ -188,7 +188,7 @@ Examples:
             .filter(|tool| !blacklist.contains(**tool))
             .copied()
             .collect();
-        
+
         if !search_enabled.is_empty() {
             prompt.push_str(
                 r#"**3. WEB SEARCH TOOLS (Google via Serper) - for EVERYTHING ELSE:**
@@ -225,7 +225,7 @@ Examples:
             .filter(|tool| !blacklist.contains(**tool))
             .copied()
             .collect();
-        
+
         if !search_enabled.is_empty() {
             prompt.push_str(
                 r#"**3. WEB SEARCH TOOLS (DuckDuckGo) - for EVERYTHING ELSE:**
@@ -255,14 +255,20 @@ Examples:
     }
 
     // File tools section
-    let file_tools = ["read_file", "read_file_segment", "count_lines", "list_directory", "search_files"];
-    
+    let file_tools = [
+        "read_file",
+        "read_file_segment",
+        "count_lines",
+        "list_directory",
+        "search_files",
+    ];
+
     let file_enabled: Vec<_> = file_tools
         .iter()
         .filter(|tool| !blacklist.contains(**tool))
         .copied()
         .collect();
-    
+
     #[cfg(feature = "file-tools")]
     if !file_enabled.is_empty() {
         prompt.push_str(
@@ -324,7 +330,9 @@ Available tools:
     #[cfg(feature = "calc-tools")]
     {
         prompt.push_str("**Calculator Tool:**\n");
-        prompt.push_str("- calculate: Evaluate mathematical expressions (arithmetic, percentages, functions)\n");
+        prompt.push_str(
+            "- calculate: Evaluate mathematical expressions (arithmetic, percentages, functions)\n",
+        );
         prompt.push('\n');
     }
 
@@ -350,7 +358,7 @@ Available tools:
             .filter(|tool| !blacklist.contains(**tool))
             .copied()
             .collect();
-        
+
         if !search_enabled.is_empty() {
             prompt.push_str("**Web Search Tools (use for general queries):**\n");
             for tool in &search_enabled {
@@ -371,7 +379,9 @@ Available tools:
     {
         if !blacklist.contains("get_stock_quote") {
             prompt.push_str("**Finance Tools:**\n");
-            prompt.push_str("- get_stock_quote: Get stock quote from Google Finance (exchange, ticker)\n");
+            prompt.push_str(
+                "- get_stock_quote: Get stock quote from Google Finance (exchange, ticker)\n",
+            );
             prompt.push('\n');
         }
     }
@@ -383,7 +393,9 @@ Available tools:
             prompt.push_str("**System Tools:**\n");
             prompt.push_str("- get_current_datetime: Get current date, time, and timezone\n");
             if !blacklist.contains("get_project_context") {
-                prompt.push_str("- get_project_context: Get project state (languages, git, key files)\n");
+                prompt.push_str(
+                    "- get_project_context: Get project state (languages, git, key files)\n",
+                );
             }
             prompt.push('\n');
         }
@@ -396,7 +408,9 @@ Available tools:
         for tool in &file_enabled {
             let description = match *tool {
                 "read_file" => "Read contents of a file",
-                "read_file_segment" => "Read a specific segment (REQUIRES start_line AND num_lines)",
+                "read_file_segment" => {
+                    "Read a specific segment (REQUIRES start_line AND num_lines)"
+                }
                 "count_lines" => "Count lines in a file - use before reading large files",
                 "list_directory" => "List files and directories (sizes in KB/MB)",
                 "search_files" => "Search file contents with regex pattern",
@@ -466,12 +480,21 @@ Available file operation tools:
     // Add file tool descriptions if not blacklisted
     let file_tools = [
         ("read_file", "Read file contents"),
-        ("read_file_segment", "Read segment (REQUIRES start_line AND num_lines)"),
-        ("count_lines", "Count lines - use before reading large files"),
-        ("list_directory", "List files and directories (sizes in KB/MB)"),
+        (
+            "read_file_segment",
+            "Read segment (REQUIRES start_line AND num_lines)",
+        ),
+        (
+            "count_lines",
+            "Count lines - use before reading large files",
+        ),
+        (
+            "list_directory",
+            "List files and directories (sizes in KB/MB)",
+        ),
         ("search_files", "Search file contents with regex"),
     ];
-    
+
     for (tool, description) in file_tools {
         if !blacklist.contains(tool) {
             prompt.push_str(&format!("- {}: {}\n", tool, description));
@@ -510,7 +533,7 @@ pub fn get_prompt_with_blacklist(
     // Use provided blacklist or empty set
     let empty_set = HashSet::new();
     let blacklist = blacklist.unwrap_or(&empty_set);
-    
+
     let base_prompt = match name {
         "default" | "tool_user" => Some(build_tool_user_prompt(blacklist)),
         "code" => Some(SYSTEM_PROMPT_CODE.to_string()),
@@ -524,11 +547,13 @@ pub fn get_prompt_with_blacklist(
 
     // Check if we should inject Pepe personality
     if let Some(id) = model_id
-        && is_pepe_model(id) && name != "summarize" {
-            // Combine Pepe personality with base prompt
-            // For summarize, we keep it professional
-            return Some(format!("{}\n\n{}", SYSTEM_PROMPT_PEPE, prompt_with_context));
-        }
+        && is_pepe_model(id)
+        && name != "summarize"
+    {
+        // Combine Pepe personality with base prompt
+        // For summarize, we keep it professional
+        return Some(format!("{}\n\n{}", SYSTEM_PROMPT_PEPE, prompt_with_context));
+    }
 
     Some(prompt_with_context)
 }
@@ -625,13 +650,13 @@ mod tests {
     fn test_blacklist_filters_tools() {
         let mut blacklist: HashSet<&str> = HashSet::new();
         blacklist.insert("fetch_pokemon");
-        
+
         let prompt = get_prompt_with_blacklist("tool_user", None, Some(&blacklist), None);
         assert!(prompt.is_some());
-        
+
         // The prompt should not mention fetch_pokemon in available tools section
         let prompt_str = prompt.unwrap();
-        
+
         // Just verify the prompt was built successfully
         assert!(!prompt_str.is_empty());
     }
@@ -639,8 +664,9 @@ mod tests {
     #[test]
     fn test_pepe_personality_with_blacklist() {
         let blacklist: HashSet<&str> = HashSet::new();
-        let prompt = get_prompt_with_blacklist("tool_user", Some("pepe:8b-64k"), Some(&blacklist), None);
-        
+        let prompt =
+            get_prompt_with_blacklist("tool_user", Some("pepe:8b-64k"), Some(&blacklist), None);
+
         assert!(prompt.is_some());
         let prompt_str = prompt.unwrap();
         assert!(prompt_str.contains("Pepe"));
@@ -649,7 +675,7 @@ mod tests {
     #[test]
     fn test_summarize_never_gets_pepe() {
         let prompt = get_prompt("summarize", Some("pepe:8b-64k"));
-        
+
         assert!(prompt.is_some());
         let prompt_str = prompt.unwrap();
         assert!(!prompt_str.contains("Pepe"));
@@ -659,7 +685,7 @@ mod tests {
     fn test_agents_md_injection() {
         let agents_md = "--- PROJECT CONTEXT ---\nProject info\n--- END PROJECT CONTEXT ---";
         let prompt = get_prompt_with_blacklist("code", None, None, Some(agents_md));
-        
+
         assert!(prompt.is_some());
         let prompt_str = prompt.unwrap();
         assert!(prompt_str.contains("PROJECT CONTEXT"));

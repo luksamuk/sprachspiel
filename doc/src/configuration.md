@@ -44,8 +44,8 @@ Ask-AI looks for the config file in this order:
 
 # The default model preset to use for general queries.
 # See all available models with: ask-ai --list-models
-# Default: "lfm"
-default = "lfm"
+# Default: "llama3.1"
+default = "llama3.1"
 
 # Ollama server connection settings.
 # Change these if your Ollama server is not running on the default localhost.
@@ -65,7 +65,7 @@ ollama_port = 11434
 [model.query]
 # The model to use for 'ask query' or 'ask q'.
 # If not specified, falls back to the global [model] default.
-# model = "lfm"
+# model = "llama3.1"
 
 # Enable thinking mode for queries. Some models show their reasoning process.
 # If not specified, defaults to: true for query
@@ -176,7 +176,92 @@ Settings are applied in this priority order (highest first):
 2. **Config file** - Persistent user preferences
 3. **Default values** - Built-in defaults
 
-Example: If config file sets `default = "gpt-oss"` but you run `ask-ai -m lfm "query"`, the CLI argument wins.
+## Custom Models
+
+Ask-AI supports user-defined models via a TOML file. This allows you to:
+
+- Add new models not included in the built-in presets
+- Override parameters for existing models (partial override)
+
+### Creating Custom Models
+
+Create `~/.config/ask-ai/models.toml`:
+
+```toml
+# Custom model definitions
+# Location: ~/.config/ask-ai/models.toml
+
+# Add a new model
+[models.my-coder]
+model_id = "phi3:mini-4k"    # Required: Ollama model ID
+num_ctx = 4096                # Optional: context window (default: 4096)
+temperature = 0.3             # Optional: temperature (default: 0.2)
+top_k = 40                    # Optional: top-k sampling (default: 40)
+top_p = 0.9                   # Optional: top-p sampling (default: 0.9)
+repeat_penalty = 1.1          # Optional: repeat penalty (default: 1.0)
+
+# Add another model with minimal config
+[models.simple]
+model_id = "llama3:8b"        # Only model_id required
+
+# Override built-in model (partial override)
+[models.lfm]
+temperature = 0.15            # Only override what you want to change
+```
+
+### Using Custom Models
+
+```bash
+# Use a custom model
+ask-ai -m my-coder "Write a function"
+
+# Use in chat mode
+ask-ai chat -m simple
+
+# Override built-in model parameters
+ask-ai -m lfm "query"  # Uses modified temperature from models.toml
+```
+
+### Model Parameter Defaults
+
+When defining a custom model without all parameters, these defaults are used:
+
+| Parameter    | Default |
+|-------------|---------|
+| `num_ctx`    | 32768 (32K) |
+| `temperature`| 0.8     |
+| `top_k`      | not set (uses Ollama default) |
+| `top_p`      | not set (uses Ollama default) |
+| `repeat_penalty` | 1.1 |
+
+**Note**: If `num_ctx` is not specified, the default is 32K tokens. For cloud models or models where you want Ollama to automatically manage context, you can omit `num_ctx` entirely.
+
+### Enabling Thinking for Cloud Models
+
+Cloud models with `:cloud` tag can have thinking enabled by setting `thinking = true` in the model config:
+
+```toml
+[models.glm-5]
+model_id = "glm-5:cloud"
+thinking = true
+
+[models.kimi-k2.5]
+model_id = "kimi-k2.5:cloud"
+thinking = true
+```
+
+When `thinking = true` is set:
+- The model will use thinking mode by default
+- You can still disable it with `-t false` or via CLI flag
+
+### Listing All Models
+
+```bash
+ask-ai --list
+```
+
+This shows both built-in models and user-defined models (marked with `[user]`).
+
 
 ### Remote Ollama Server
 
@@ -216,11 +301,11 @@ You can configure different models for different subcommands. This allows you to
 ```toml
 [model]
 # Global default (fallback)
-default = "lfm"
+default = "llama3.1"
 
 [model.query]
-# Use LFM for general queries
-model = "lfm"
+# Use llama3.1 for general queries
+model = "llama3.1"
 thinking = true
 tools = true
 
@@ -241,14 +326,12 @@ tools = true
 
 For subcommands, the priority is:
 
-1. **Command-line arguments** - e.g., `-m gpt-oss` overrides everything
 2. **Subcommand-specific config** - e.g., `[model.code]` settings
 3. **Global default** - from `[model]` section
 
 Example: If you run `ask query -c "function"` with the above config:
 - It will use `deepseek-coder-v2` (from `[model.code]`)
 - Not `lfm` (global default)
-- Unless you explicitly use `-m gpt-oss` (CLI argument)
 
 ### Options
 
@@ -351,13 +434,11 @@ Set in config file:
 
 ```toml
 [model]
-default = "gpt-oss"  # Your preferred default
 ```
 
 Or via environment variable (highest priority):
 
 ```bash
-ask-ai -m gpt-oss "your query"
 ```
 
 ### Custom Model Presets

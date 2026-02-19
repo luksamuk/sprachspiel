@@ -2,6 +2,115 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.14.0] - 2026-02-19
+
+### Added
+
+- **Custom Models** - Define your own models or override built-in presets
+  - Create `~/.config/ask-ai/models.toml` to add custom models
+  - Override parameters for built-in models (partial override)
+  - Custom models shown with `[user]` marker in `--list` output
+  - See [Configuration - Custom Models](./configuration.md#custom-models)
+
+- **Thinking Output** - Thinking content now visible in chat mode
+  - When think mode is enabled, thinking content shown in gray/dim text
+  - Supports multiple thinking tag formats: unicode, `<tool_call>`, `<thinking>`
+  - Handles malformed tags (orphan `</thinking>`)
+
+- **Token Metrics** - Response now shows token usage
+  - Displays: `[Tokens: X prompt + Y response = Z total]`
+  - Helps track context window usage
+
+- **Error Formatting** - Improved error messages
+  - JSON errors from Ollama formatted with red status codes
+  - Clear guidance for common error scenarios
+
+### Changed
+
+- **Tool Output Control**:
+  - New `/tools-output <level>` command: compact, full, or hidden
+  - New `--tools-output` startup flag
+  - Compact summary shown after `/compact` command
+
+- **Built-in Models Simplified** - Reduced to essential models only
+  - Built-in: `llama3.1:8b` (default), `translategemma:12b` (translation), `glm-ocr:bf16` (OCR)
+  - All other models moved to `~/.config/ask-ai/models.toml`
+  - Cloud models have no hardcoded parameters (let Ollama decide)
+
+- **Default Context Size** - User models now default to 32K context
+  - Previous: 4K default for user-defined models
+  - Now: 32K default for better compatibility with large context models
+  - Omit `num_ctx` to let Ollama auto-detect based on available memory
+
+- **Model Naming Convention** - Removed context size suffixes from model IDs
+  - Previous: `lfm2.5-thinking:1.2b-32k`, `llama3.2:3b-32k`
+  - Now: `lfm2.5-thinking:1.2b`, `llama3.2:3b`
+  - Context size configured via `num_ctx` in models.toml, not model tag
+
+- **Default Model Changed** - From `lfm` to `llama3.1`
+  - `llama3.1:8b` is more capable and widely available
+  - `lfm` still available as user-defined model
+
+- **GPT-OSS Removed** - Model removed due to persistent tool calling issues
+  - The model output special tokens after JSON, breaking tool parsing
+  - Alternative models: `qwen3-coder`, `mistral-small`, `llama3.1`
+
+### Migration Notes
+
+If upgrading from v0.13.0:
+1. Run `ask-ai --list` to see the new model organization
+2. Default model is now `llama3.1` (update config if you used `lfm`)
+3. Check `~/.config/ask-ai/models.toml` for all available model presets
+4. Cloud models no longer have hardcoded parameters - configure as needed
+
+## [0.13.0] - 2026-02-19
+
+### Added
+
+- **Chat Mode Enhancements**:
+  - `/think` command - Toggle think mode on/off
+  - `/tools` command - Toggle tools on/off
+  - `/compact` command - Summarize conversation history to reduce context
+  - Tab completion for commands and model names
+  - Mode indicators in prompt: `[t]` for think, `[T]` for tools
+  - Warning when tools enabled but model doesn't support them
+
+### Changed
+
+- **Session Format** (Breaking Change):
+  - Added `compacted_summary` field for conversation summarization
+  - Added `messages_sent_to_llm` field to track compacted portion
+  - Old session files may need to be deleted (`~/.local/share/ask-ai/conversations/`)
+
+- **UI Improvements**:
+  - Welcome message only shows available features (think/tools hidden if unsupported)
+  - Prompt shows active modes: `lfm[t][T]>` when think and tools enabled
+  - `/info` shows compacted message count if applicable
+
+### Removed
+
+- `uuid` dependency (session IDs are now simple strings)
+
+## [0.12.0] - 2026-02-19
+
+### Added
+
+- **Interactive Chat Mode** - New `chat` subcommand for multi-turn conversations
+  - Persistent conversation history per project (identified by git remote URL or folder name)
+  - Anonymous sessions with `--anonymous` flag (no persistence)
+  - Session management: `/save`, `/load`, `/list` commands
+  - Model switching mid-conversation: `/model <name>`
+  - Export conversations: `/export md` or `/export json`
+  - Rich REPL with command history and line editing (rustyline)
+  - Auto-saves after each message to `~/.local/share/ask-ai/conversations/`
+  - Commands: `/quit`, `/clear`, `/help`, `/model`, `/system`, `/save`, `/load`, `/export`, `/list`, `/info`
+
+### Changed
+
+- **Dependencies**:
+  - Added `rustyline` for REPL with history
+  - Made `chrono` non-optional (used for session timestamps)
+
 ## [0.11.1] - 2026-02-18
 
 ### Fixed
@@ -215,7 +324,6 @@ All notable changes to Ask-AI will be documented in this file.
 ### Known Issues
 
 - DuckDuckGo web search blocked by CAPTCHA
-- GPT-OSS tool calling may fail with encoding errors
 
 ## Categories
 

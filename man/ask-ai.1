@@ -1,4 +1,4 @@
-.TH ASK-AI 1 "2026-02-18" "ask-ai 0.11.1" "User Commands"
+.TH ASK-AI 1 "2026-02-19" "ask-ai 0.14.0" "User Commands"
 .SH NAME
 ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
@@ -7,6 +7,9 @@ ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .br
 .B ask-ai
 .RI [ GLOBAL_OPTIONS ] " query " [ QUERY ]
+.br
+.B ask-ai
+.RI [ GLOBAL_OPTIONS ] " chat " [ CHAT_OPTIONS ]
 .br
 .B ask-ai
 .RI [ GLOBAL_OPTIONS ] " translate " LANGUAGE [ TEXT ]
@@ -28,6 +31,9 @@ If an AGENTS.md file exists in the current directory, it is automatically loaded
 .B query, q
 Execute a query with the default or specified model. This is the default mode when no subcommand is given.
 .TP
+.B chat, c
+Start interactive chat session with persistent conversation history. Conversations are saved per project.
+.TP
 .B translate, t
 Translate text between 50+ languages using TranslateGemma model.
 .TP
@@ -40,7 +46,7 @@ Create concise summaries of text with customizable styles.
 These options must be placed BEFORE the subcommand:
 .TP
 .BR \-m ", " \-\-model " " \fIMODEL\fR
-Select model preset (default: lfm). See MODELS section.
+Select model preset (default: llama3.1). See MODELS section.
 .TP
 .BR \-p ", " \-\-prompt " " \fIMODE\fR
 Set system prompt mode: default, tool_user, code, code_with_tools.
@@ -71,6 +77,59 @@ Show help message and exit.
 .TP
 .BR \-V ", " \-\-version
 Show version information and exit.
+.SH CHAT OPTIONS
+.TP
+.BR \-a ", " \-\-anonymous
+Start anonymous session (no history persistence).
+.TP
+.BR \-l ", " \-\-load " " \fISESSION\fR
+Load a named session.
+.TP
+.BR \-t ", " \-\-think
+Enable think mode for models that support it.
+.TP
+.BR \-\-tools
+Force enable tools even if model doesn't advertise support.
+.TP
+.BR \-\-ignore\-agents
+Ignore AGENTS.md file in current directory.
+.PP
+Interactive commands available inside chat:
+.in +4
+/quit, /exit \- Exit chat session
+.br
+/clear \- Clear conversation history
+.br
+/help \- Show available commands
+.br
+/model <name> \- Switch model mid-session
+.br
+/system <prompt> \- Change system prompt
+.br
+/think \- Toggle think mode
+.br
+/tools \- Toggle tools
+.br
+/compact \- Compact conversation history
+.br
+/save [name] \- Save current session
+.br
+/load <name> \- Load a saved session
+.br
+/export <format> [file] \- Export conversation (md, json)
+.br
+/list \- List saved sessions for this project
+.br
+/info \- Show current session information
+.in -4
+.PP
+Tab completion available for commands and model names.
+.br
+Prompt shows active modes: [t] for think, [T] for tools.
+.br
+Session storage: ~/.local/share/ask-ai/conversations/<project-id>/default.json
+.br
+Project ID is derived from git remote URL or folder name.
 .SH TRANSLATE OPTIONS
 .TP
 .BR \-p ", " \-\-prompt " " \fISTYLE\fR
@@ -105,29 +164,41 @@ Output format: paragraph, bullets, both (default).
 .BR \-\-style " " \fISTYLE\fR
 Focus style: general (default), technical, academic, business.
 .SH MODELS
-Available model presets (use with -m/--model):
+Built-in model presets (always available):
 .PP
 .TS
 tab(|);
 l l l l.
 Preset|Model|Context|Best For
 _
-lfm|lfm2.5-thinking:1.2b-32k|32K|General queries with reasoning (default)
-gpt-oss|gpt-oss:20b-64k|64K|Tool calling
-mistral-small|mistral-small3.2:24b-32k|32K|Agentic tasks
-smollm3|smollm3:Q8_0-64k|64K|Edge deployment
-sead|sead:14b-32k|32K|General purpose
-deepseek-coder-v2|deepseek-coder-v2:16b-32k|32K|Code generation (recommended)
-qwen3-coder|qwen3-coder:30b-64k|64K|Code generation
-devstral-small-2|devstral-small-2:24b-64k|64K|Coding with min_p
-llama3.2|llama3.2:3b-32k|32K|Summarization (default for summarize)
-glm-5|glm-5:cloud|198K|Cloud complex reasoning
-kimi-k2.5|kimi-k2.5:cloud|256K|Multimodal agentic
-minimax-m2.5|minimax-m2.5:cloud|198K|Coding and agentic
-qwen3.5|qwen3.5:cloud|256K|Vision-language
-translate|translategemma:12b-32k|32K|Translation tasks
-pepe|pepe:8b-64k|64K|Sarcastic assistant
+llama3.1|llama3.1:8b|4K|General queries (default)
+translategemma|translategemma:12b|4K|Translation
+glm-ocr|glm-ocr:bf16|Auto|OCR/image extraction
 .TE
+.PP
+User-defined models (see ~/.config/ask-ai/models.toml):
+.PP
+.TS
+tab(|);
+l l l l.
+Preset|Model|Context|Best For
+_
+lfm|lfm2.5-thinking:1.2b|32K|Reasoning with thinking
+llama3.2|llama3.2:3b|32K|Summarization, tools
+mistral-small|mistral-small3.2:24b|32K|Agentic tasks, tools
+qwen3-coder|qwen3-coder:30b|64K|Code generation, tools
+deepseek-coder-v2|deepseek-coder-v2:16b|32K|Code generation
+devstral-small-2|devstral-small-2:24b|64K|Coding
+sead|sead:14b|32K|General purpose
+smollm3|smollm3:Q8_0|64K|Edge deployment
+pepe|pepe:8b|64K|Sarcastic assistant
+glm-5|glm-5:cloud|Auto|Cloud reasoning
+kimi-k2.5|kimi-k2.5:cloud|Auto|Multimodal agentic
+minimax-m2.5|minimax-m2.5:cloud|Auto|Coding, agentic
+qwen3.5|qwen3.5:cloud|Auto|Vision-language
+.TE
+.PP
+Run 'ask-ai --list' to see all available models including user-defined ones.
 .SH EXAMPLES
 Basic query:
 .PP
@@ -195,7 +266,7 @@ Debug mode:
 .nf
 .RS
 ask-ai -d query "Test query"
-ask-ai -d -m lfm query "Debug with specific model"
+ask-ai -d -m llama3.1 query "Debug with specific model"
 .RE
 .fi
 .PP
@@ -247,7 +318,7 @@ pt, pt-BR (br, brazil), en (english), es (spanish), fr (french), de (german),
 it (italian), ja (japanese), zh-Hans (zh-cn), zh-Hant (zh-tw), he (hebrew),
 ko (korean), ru (russian), ar (arabic), hi (hindi), and 40+ more.
 .PP
-Use Bask-ai translate --listR to see all supported languages.
+Use \fBask-ai translate --list\fR to see all supported languages.
 .SH PROMPT MODES
 .TP
 .B default
@@ -276,11 +347,14 @@ Override the default Ollama server host (default: localhost:11434).
 .I ~/.config/ask-ai/config.toml
 User configuration file (model presets, tool settings, output preferences).
 .TP
+.I ~/.config/ask-ai/models.toml
+User-defined model configurations. Add custom models or override built-in parameters.
+.TP
 .I ./AGENTS.md
 Project context file automatically loaded when present in current directory. Provides project-specific instructions and context to the model. Can be disabled with --ignore-agents flag.
 .TP
 .I src/config.rs
-Built-in model configurations.
+Built-in model configurations (llama3.1, translategemma, glm-ocr).
 .TP
 .I src/prompts.rs
 System prompt definitions.

@@ -48,7 +48,7 @@ pub async fn get_weather(
     location: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("get_weather", &[("location".to_string(), location.clone())]);
-    
+
     // First, get coordinates for the location
     let (lat, lon) = match get_coordinates(&location).await {
         Ok(coords) => coords,
@@ -70,14 +70,20 @@ pub async fn get_weather(
     let response = match client.get(&url).send().await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching weather: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching weather: {}. Please try again later.",
+                e
+            );
             log_tool_result("get_weather", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Weather API error: {}. Please try again later.", response.status());
+        let err = format!(
+            "Weather API error: {}. Please try again later.",
+            response.status()
+        );
         log_tool_result("get_weather", &err);
         return Ok(err);
     }
@@ -146,7 +152,7 @@ Source: Open-Meteo"#,
         current.precipitation,
         forecast
     );
-    
+
     log_tool_result("get_weather", &result);
     Ok(result)
 }
@@ -156,7 +162,10 @@ Source: Open-Meteo"#,
 pub async fn get_current_weather(
     location: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("get_current_weather", &[("location".to_string(), location.clone())]);
+    log_tool_call(
+        "get_current_weather",
+        &[("location".to_string(), location.clone())],
+    );
 
     // Get current weather data directly
     let (lat, lon) = match get_coordinates(&location).await {
@@ -177,14 +186,20 @@ pub async fn get_current_weather(
     let response = match client.get(&url).send().await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching weather: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching weather: {}. Please try again later.",
+                e
+            );
             log_tool_result("get_current_weather", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Weather API error: {}. Please try again later.", response.status());
+        let err = format!(
+            "Weather API error: {}. Please try again later.",
+            response.status()
+        );
         log_tool_result("get_current_weather", &err);
         return Ok(err);
     }
@@ -242,15 +257,18 @@ pub async fn get_weather_forecast(
     location: String,
     days: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("get_weather_forecast", &[
-        ("location".to_string(), location.clone()),
-        ("days".to_string(), days.clone().unwrap_or_else(|| "5".to_string())),
-    ]);
+    log_tool_call(
+        "get_weather_forecast",
+        &[
+            ("location".to_string(), location.clone()),
+            (
+                "days".to_string(),
+                days.clone().unwrap_or_else(|| "5".to_string()),
+            ),
+        ],
+    );
 
-    let days = days
-        .and_then(|d| d.parse::<u8>().ok())
-        .unwrap_or(5)
-        .min(7) as usize;
+    let days = days.and_then(|d| d.parse::<u8>().ok()).unwrap_or(5).min(7) as usize;
 
     // First, get coordinates for the location
     let (lat, lon) = match get_coordinates(&location).await {
@@ -272,14 +290,20 @@ pub async fn get_weather_forecast(
     let response = match client.get(&url).send().await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error while fetching forecast: {}. Please try again later.", e);
+            let err = format!(
+                "Network error while fetching forecast: {}. Please try again later.",
+                e
+            );
             log_tool_result("get_weather_forecast", &err);
             return Ok(err);
         }
     };
 
     if !response.status().is_success() {
-        let err = format!("Weather API error: {}. Please try again later.", response.status());
+        let err = format!(
+            "Weather API error: {}. Please try again later.",
+            response.status()
+        );
         log_tool_result("get_weather_forecast", &err);
         return Ok(err);
     }
@@ -287,7 +311,10 @@ pub async fn get_weather_forecast(
     let weather: WeatherResponse = match response.json().await {
         Ok(w) => w,
         Err(e) => {
-            let err = format!("Error parsing forecast data: {}. Please try again later.", e);
+            let err = format!(
+                "Error parsing forecast data: {}. Please try again later.",
+                e
+            );
             log_tool_result("get_weather_forecast", &err);
             return Ok(err);
         }
@@ -295,7 +322,10 @@ pub async fn get_weather_forecast(
     let daily = &weather.daily;
 
     if daily.time.is_empty() {
-        let err = format!("No forecast data available for '{}'. Please try again later.", location);
+        let err = format!(
+            "No forecast data available for '{}'. Please try again later.",
+            location
+        );
         log_tool_result("get_weather_forecast", &err);
         return Ok(err);
     }

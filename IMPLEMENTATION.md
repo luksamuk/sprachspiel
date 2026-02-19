@@ -13,7 +13,10 @@
 ✅ **Completed:**
 
 - Core CLI with 4 subcommands (query, translate, ocr, summarize)
+- Interactive chat mode with persistent sessions
+- Custom models support via `~/.config/ask-ai/models.toml`
 - 14 tools (8 Pokémon, 3 Weather, 3 Web Search)
+- 14 built-in model presets + user-defined models
 - Dynamic model selection
 - Markdown rendering
 - Model capability detection
@@ -23,8 +26,9 @@
 - Summarization with styles
 - Pipe support
 - Debug mode
-- Think mode
+- Think mode with visible thinking output
 - Code mode
+- Token metrics display
 - Complete documentation with mdBook
 - Man page
 
@@ -58,8 +62,8 @@ The original detailed implementation notes have been moved to:
 
 - `doc/src/development/architecture.md` - Architecture decisions
 - `doc/src/development/roadmap.md` - Future plans
-- `doc/CHANGELOG.md` - Version history
+- `doc/src/CHANGELOG.md` - Version history
 
 ## Last Updated
 
-2026-02-17 - Documentation reorganization complete
+2026-02-19 - v0.14.0: Custom models, thinking output, token metrics

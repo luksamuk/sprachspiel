@@ -16,7 +16,6 @@ Ask-AI provides an elegant, markdown-rendered interface that makes working with 
 
 ## Key Features
 
-- **🚀 Multiple Models**: Support for 14+ model presets including LFM, Mistral, GPT-OSS, Llama, and cloud models
 - **🛠️ Tool Integration**: Automatic capability detection with Pokémon, Weather, and Web Search tools
 - **📝 Markdown Rendering**: Beautiful terminal output via termimad
 - **🌐 Translation**: Translate between 50+ languages using TranslateGemma

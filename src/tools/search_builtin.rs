@@ -41,10 +41,16 @@ pub async fn web_search(
     query: String,
     num_results: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("web_search", &[
-        ("query".to_string(), query.clone()),
-        ("num_results".to_string(), num_results.clone().unwrap_or_else(|| "5".to_string())),
-    ]);
+    log_tool_call(
+        "web_search",
+        &[
+            ("query".to_string(), query.clone()),
+            (
+                "num_results".to_string(),
+                num_results.clone().unwrap_or_else(|| "5".to_string()),
+            ),
+        ],
+    );
 
     let num_results = parse_num_results(num_results, 5, 10);
 
@@ -111,10 +117,16 @@ pub async fn web_search_news(
     query: String,
     num_results: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("web_search_news", &[
-        ("query".to_string(), query.clone()),
-        ("num_results".to_string(), num_results.clone().unwrap_or_else(|| "3".to_string())),
-    ]);
+    log_tool_call(
+        "web_search_news",
+        &[
+            ("query".to_string(), query.clone()),
+            (
+                "num_results".to_string(),
+                num_results.clone().unwrap_or_else(|| "3".to_string()),
+            ),
+        ],
+    );
 
     let num_results = parse_num_results(num_results, 3, 10);
     let news_query = format!("{} news", query);
@@ -178,9 +190,7 @@ pub async fn web_search_news(
 ///
 /// * url - The URL of the webpage to scrape
 #[function]
-pub async fn web_scrape(
-    url: String,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn web_scrape(url: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("web_scrape", &[("url".to_string(), url.clone())]);
 
     let client = match reqwest::Client::builder()
@@ -198,7 +208,10 @@ pub async fn web_scrape(
     let response = match client.get(&url).send().await {
         Ok(r) => r,
         Err(e) => {
-            let err = format!("Network error: {}. Check if the URL is correct and accessible.", e);
+            let err = format!(
+                "Network error: {}. Check if the URL is correct and accessible.",
+                e
+            );
             log_tool_result("web_scrape", &err);
             return Ok(err);
         }

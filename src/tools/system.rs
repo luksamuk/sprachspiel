@@ -12,64 +12,156 @@ use std::path::Path;
 const MAX_DEPTH: usize = 3;
 
 const IGNORED_DIRS: &[&str] = &[
-    "node_modules", "target", "build", "dist", ".git", ".svn", ".hg",
-    "__pycache__", "venv", ".venv", "env", ".env", "vendor", "cache",
-    ".cache", "tmp", "temp", ".idea", ".vscode", "out", "bin", "obj",
-    "Pods", "coverage", ".next", ".nuxt", "bower_components", "jspm_packages",
-    ".serverless", ".fuse_box", ".dynamodb", "dist-server", "dist-client",
-    "dist-build", "logs", "pkg", "site-packages", "eggs", ".eggs", "*.egg-info",
-    "*.egg", "develop-eggs", "downloads", "lib", "lib64", "parts", "sdist",
-    "var", "wheels", "htmlcov", ".tox", ".nox", ".hypothesis", ".pytest_cache",
-    ".mypy_cache", ".dmypy.json", "dmypy.json", "cython_debug",
+    "node_modules",
+    "target",
+    "build",
+    "dist",
+    ".git",
+    ".svn",
+    ".hg",
+    "__pycache__",
+    "venv",
+    ".venv",
+    "env",
+    ".env",
+    "vendor",
+    "cache",
+    ".cache",
+    "tmp",
+    "temp",
+    ".idea",
+    ".vscode",
+    "out",
+    "bin",
+    "obj",
+    "Pods",
+    "coverage",
+    ".next",
+    ".nuxt",
+    "bower_components",
+    "jspm_packages",
+    ".serverless",
+    ".fuse_box",
+    ".dynamodb",
+    "dist-server",
+    "dist-client",
+    "dist-build",
+    "logs",
+    "pkg",
+    "site-packages",
+    "eggs",
+    ".eggs",
+    "*.egg-info",
+    "*.egg",
+    "develop-eggs",
+    "downloads",
+    "lib",
+    "lib64",
+    "parts",
+    "sdist",
+    "var",
+    "wheels",
+    "htmlcov",
+    ".tox",
+    ".nox",
+    ".hypothesis",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".dmypy.json",
+    "dmypy.json",
+    "cython_debug",
 ];
 
 const IGNORED_FILES: &[&str] = &[
-    ".env", ".env.local", ".env.production", ".env.development",
-    ".env.test", ".env.staging", "credentials", "secrets",
-    "secrets.yaml", "secrets.yml", "secrets.json",
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.development",
+    ".env.test",
+    ".env.staging",
+    "credentials",
+    "secrets",
+    "secrets.yaml",
+    "secrets.yml",
+    "secrets.json",
 ];
 
 const LANGUAGE_EXTENSIONS: &[(&str, &str)] = &[
     ("rs", "Rust"),
-    ("js", "JavaScript"), ("jsx", "JavaScript (JSX)"),
-    ("ts", "TypeScript"), ("tsx", "TypeScript (JSX)"),
-    ("mjs", "JavaScript (ESM)"), ("cjs", "JavaScript (CJS)"),
-    ("py", "Python"), ("pyi", "Python (stub)"),
+    ("js", "JavaScript"),
+    ("jsx", "JavaScript (JSX)"),
+    ("ts", "TypeScript"),
+    ("tsx", "TypeScript (JSX)"),
+    ("mjs", "JavaScript (ESM)"),
+    ("cjs", "JavaScript (CJS)"),
+    ("py", "Python"),
+    ("pyi", "Python (stub)"),
     ("go", "Go"),
     ("java", "Java"),
-    ("kt", "Kotlin"), ("kts", "Kotlin Script"),
-    ("c", "C"), ("h", "C/C++ Header"),
-    ("cpp", "C++"), ("hpp", "C++ Header"), ("cc", "C++"), ("cxx", "C++"),
+    ("kt", "Kotlin"),
+    ("kts", "Kotlin Script"),
+    ("c", "C"),
+    ("h", "C/C++ Header"),
+    ("cpp", "C++"),
+    ("hpp", "C++ Header"),
+    ("cc", "C++"),
+    ("cxx", "C++"),
     ("cs", "C#"),
     ("rb", "Ruby"),
     ("php", "PHP"),
     ("swift", "Swift"),
-    ("sh", "Shell"), ("bash", "Bash"), ("zsh", "Zsh"),
-    ("json", "JSON"), ("yaml", "YAML"), ("yml", "YAML"),
-    ("toml", "TOML"), ("xml", "XML"), ("sql", "SQL"),
-    ("html", "HTML"), ("htm", "HTML"),
-    ("css", "CSS"), ("scss", "SCSS"), ("sass", "Sass"), ("less", "Less"),
-    ("vue", "Vue"), ("svelte", "Svelte"),
-    ("md", "Markdown"), ("rst", "reStructuredText"), ("org", "Org"),
-    ("tex", "LaTeX"), ("bib", "BibTeX"),
-    ("r", "R"), ("rmd", "R Markdown"),
+    ("sh", "Shell"),
+    ("bash", "Bash"),
+    ("zsh", "Zsh"),
+    ("json", "JSON"),
+    ("yaml", "YAML"),
+    ("yml", "YAML"),
+    ("toml", "TOML"),
+    ("xml", "XML"),
+    ("sql", "SQL"),
+    ("html", "HTML"),
+    ("htm", "HTML"),
+    ("css", "CSS"),
+    ("scss", "SCSS"),
+    ("sass", "Sass"),
+    ("less", "Less"),
+    ("vue", "Vue"),
+    ("svelte", "Svelte"),
+    ("md", "Markdown"),
+    ("rst", "reStructuredText"),
+    ("org", "Org"),
+    ("tex", "LaTeX"),
+    ("bib", "BibTeX"),
+    ("r", "R"),
+    ("rmd", "R Markdown"),
     ("lua", "Lua"),
     ("jl", "Julia"),
-    ("ex", "Elixir"), ("exs", "Elixir Script"),
-    ("erl", "Erlang"), ("hrl", "Erlang Header"),
-    ("hs", "Haskell"), ("lhs", "Literate Haskell"),
-    ("scala", "Scala"), ("sc", "Scala"),
-    ("clj", "Clojure"), ("cljs", "ClojureScript"), ("cljc", "Clojure CLR"),
+    ("ex", "Elixir"),
+    ("exs", "Elixir Script"),
+    ("erl", "Erlang"),
+    ("hrl", "Erlang Header"),
+    ("hs", "Haskell"),
+    ("lhs", "Literate Haskell"),
+    ("scala", "Scala"),
+    ("sc", "Scala"),
+    ("clj", "Clojure"),
+    ("cljs", "ClojureScript"),
+    ("cljc", "Clojure CLR"),
     ("dart", "Dart"),
     ("scala", "Scala"),
-    ("f90", "Fortran"), ("f95", "Fortran 95"), ("f03", "Fortran 2003"),
-    ("asm", "Assembly"), ("s", "Assembly"),
+    ("f90", "Fortran"),
+    ("f95", "Fortran 95"),
+    ("f03", "Fortran 2003"),
+    ("asm", "Assembly"),
+    ("s", "Assembly"),
     ("zig", "Zig"),
     ("nim", "Nim"),
     ("v", "V"),
-    ("pl", "Perl"), ("pm", "Perl Module"),
+    ("pl", "Perl"),
+    ("pm", "Perl Module"),
     ("tcl", "Tcl"),
-    ("ps1", "PowerShell"), ("psm1", "PowerShell Module"),
+    ("ps1", "PowerShell"),
+    ("psm1", "PowerShell Module"),
     ("dockerfile", "Dockerfile"),
     ("makefile", "Makefile"),
     ("cmake", "CMake"),
@@ -114,9 +206,9 @@ const PROJECT_MARKERS: &[(&str, &str)] = &[
 #[function]
 pub async fn get_current_datetime() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("get_current_datetime", &[]);
-    
+
     let now = chrono::Local::now();
-    
+
     let result = format!(
         "**Current Date & Time**\n\n\
          Date: {}\n\
@@ -135,7 +227,7 @@ pub async fn get_current_datetime() -> Result<String, Box<dyn std::error::Error 
         now.to_rfc3339(),
         now.timestamp()
     );
-    
+
     log_tool_result("get_current_datetime", &result);
     Ok(result)
 }
@@ -148,20 +240,20 @@ pub async fn get_current_datetime() -> Result<String, Box<dyn std::error::Error 
 #[function]
 pub async fn get_project_context() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("get_project_context", &[]);
-    
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("Error getting current directory: {}", e))?;
-    
+
+    let cwd =
+        std::env::current_dir().map_err(|e| format!("Error getting current directory: {}", e))?;
+
     let mut output = vec!["📁 **Project Context**".to_string()];
-    
+
     // Directory
     output.push(format!("\n\nDirectory: {}", cwd.display()));
-    
+
     // Git info
     if let Some(git_info) = get_git_info(&cwd) {
         output.push(git_info);
     }
-    
+
     // Languages (max depth 3)
     let languages = detect_languages(&cwd, MAX_DEPTH);
     if !languages.is_empty() {
@@ -174,7 +266,7 @@ pub async fn get_project_context() -> Result<String, Box<dyn std::error::Error +
             output.push(format!("\n  {}: {} files ({}%)", lang, count, percent));
         }
     }
-    
+
     // Stack detection
     let stack = detect_stack(&cwd);
     if !stack.is_empty() {
@@ -183,7 +275,7 @@ pub async fn get_project_context() -> Result<String, Box<dyn std::error::Error +
             output.push(format!("\n  {}", s));
         }
     }
-    
+
     // Key files
     let key_files = find_key_files(&cwd);
     if !key_files.is_empty() {
@@ -192,7 +284,7 @@ pub async fn get_project_context() -> Result<String, Box<dyn std::error::Error +
             output.push(format!("\n  {}", f));
         }
     }
-    
+
     let result = output.join("");
     log_tool_result("get_project_context", &result);
     Ok(result)
@@ -203,19 +295,19 @@ fn get_git_info(dir: &Path) -> Option<String> {
     if !git_dir.exists() {
         return None;
     }
-    
+
     let mut info = String::new();
-    
+
     // Branch
     if let Some(branch) = get_git_branch_from_dir(dir) {
         info.push_str(&format!("\nGit Branch: {}", branch));
     }
-    
+
     // Remote URL (without credentials)
     if let Some(remote) = get_git_remote(dir) {
         info.push_str(&format!("\nGit Remote: {}", remote));
     }
-    
+
     // Modified files count
     if let Some(modified) = count_modified_files(dir) {
         if modified > 0 {
@@ -224,7 +316,7 @@ fn get_git_info(dir: &Path) -> Option<String> {
             info.push_str("\nGit Status: clean");
         }
     }
-    
+
     Some(info)
 }
 
@@ -232,7 +324,7 @@ fn get_git_branch_from_dir(dir: &Path) -> Option<String> {
     let git_head = dir.join(".git/HEAD");
     let content = fs::read_to_string(git_head).ok()?;
     let content = content.trim();
-    
+
     if content.starts_with("ref: refs/heads/") {
         Some(content.strip_prefix("ref: refs/heads/")?.to_string())
     } else {
@@ -243,7 +335,7 @@ fn get_git_branch_from_dir(dir: &Path) -> Option<String> {
 
 fn get_git_remote(dir: &Path) -> Option<String> {
     let config = fs::read_to_string(dir.join(".git/config")).ok()?;
-    
+
     for line in config.lines() {
         let line_trimmed = line.trim();
         if line_trimmed.starts_with("url = ") {
@@ -279,16 +371,23 @@ fn detect_languages(dir: &Path, max_depth: usize) -> HashMap<String, usize> {
     languages
 }
 
-fn scan_dir_for_languages(dir: &Path, depth: usize, max_depth: usize, languages: &mut HashMap<String, usize>) {
+fn scan_dir_for_languages(
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    languages: &mut HashMap<String, usize>,
+) {
     if depth > max_depth {
         return;
     }
-    
-    let Ok(entries) = fs::read_dir(dir) else { return };
-    
+
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
     for entry in entries.flatten() {
         let path = entry.path();
-        
+
         if path.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str())
                 && (IGNORED_DIRS.contains(&name) || name.starts_with('.'))
@@ -305,7 +404,7 @@ fn scan_dir_for_languages(dir: &Path, depth: usize, max_depth: usize, languages:
             {
                 continue;
             }
-            
+
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 for (pattern, lang) in LANGUAGE_EXTENSIONS {
                     if ext.eq_ignore_ascii_case(pattern) {
@@ -321,34 +420,47 @@ fn scan_dir_for_languages(dir: &Path, depth: usize, max_depth: usize, languages:
 fn detect_stack(dir: &Path) -> Vec<String> {
     let mut stack = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    
+
     for (marker, name) in PROJECT_MARKERS {
         if dir.join(marker).exists() && !seen.contains(name) {
             stack.push(name.to_string());
             seen.insert(name);
         }
     }
-    
+
     stack
 }
 
 fn find_key_files(dir: &Path) -> Vec<String> {
     let key_patterns = [
-        "README", "readme", "Readme",
-        "LICENSE", "license", "License",
-        "Cargo.toml", "package.json", "go.mod", "pyproject.toml",
-        "requirements.txt", "Makefile", "Dockerfile", "docker-compose",
-        ".github", "docs",
+        "README",
+        "readme",
+        "Readme",
+        "LICENSE",
+        "license",
+        "License",
+        "Cargo.toml",
+        "package.json",
+        "go.mod",
+        "pyproject.toml",
+        "requirements.txt",
+        "Makefile",
+        "Dockerfile",
+        "docker-compose",
+        ".github",
+        "docs",
     ];
-    
+
     let mut files = Vec::new();
-    
-    let Ok(entries) = fs::read_dir(dir) else { return files; };
-    
+
+    let Ok(entries) = fs::read_dir(dir) else {
+        return files;
+    };
+
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        
+
         for pattern in &key_patterns {
             if name_str.starts_with(pattern) || name_str.eq_ignore_ascii_case(pattern) {
                 files.push(name_str.to_string());
@@ -356,7 +468,7 @@ fn find_key_files(dir: &Path) -> Vec<String> {
             }
         }
     }
-    
+
     files.sort();
     files
 }
@@ -364,44 +476,44 @@ fn find_key_files(dir: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_get_git_branch_outside_repo() {
         let result = get_git_branch_from_dir(Path::new("/"));
         println!("Git branch outside repo: {:?}", result);
     }
-    
+
     #[test]
     fn test_detect_languages_empty() {
         let languages = detect_languages(Path::new("/nonexistent"), 3);
         assert!(languages.is_empty());
     }
-    
+
     #[test]
     fn test_detect_stack_empty() {
         let stack = detect_stack(Path::new("/nonexistent"));
         assert!(stack.is_empty());
     }
-    
+
     #[test]
     fn test_find_key_files_empty() {
         let files = find_key_files(Path::new("/nonexistent"));
         assert!(files.is_empty());
     }
-    
+
     #[test]
     fn test_ignored_dirs_list() {
         assert!(IGNORED_DIRS.contains(&"node_modules"));
         assert!(IGNORED_DIRS.contains(&"target"));
         assert!(IGNORED_DIRS.contains(&".git"));
     }
-    
+
     #[test]
     fn test_ignored_files_list() {
         assert!(IGNORED_FILES.contains(&".env"));
         assert!(IGNORED_FILES.contains(&"secrets"));
     }
-    
+
     #[test]
     fn test_language_extensions_list() {
         for (ext, lang) in LANGUAGE_EXTENSIONS {
@@ -409,7 +521,7 @@ mod tests {
             assert!(!lang.is_empty());
         }
     }
-    
+
     #[test]
     fn test_project_markers_list() {
         for (marker, name) in PROJECT_MARKERS {

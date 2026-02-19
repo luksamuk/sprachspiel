@@ -71,7 +71,7 @@ ask-ai -m qwen3-coder "Write a Python function"
 ## Requirements
 
 - [Ollama](https://ollama.ai) running locally
-- Required models: `lfm2.5-thinking`, `translategemma`, `glm-ocr`, `llama3.2`
+- Required models: `llama3.1:8b`, `translategemma:12b`, `glm-ocr:bf16`
 
 ## Installing Models
 

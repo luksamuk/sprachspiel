@@ -1,314 +1,303 @@
 # Available Models
 
-Ask-AI supports multiple model presets optimized for different tasks. Each preset configures the appropriate model, temperature, context window, and sampling parameters.
+Ask-AI uses a two-tier model system:
 
-## Model List
+1. **Built-in models** - Essential models included with ask-ai
+2. **User-defined models** - Custom models via `~/.config/ask-ai/models.toml`
+
+## Built-in Models
+
+These models are configured by default and always available:
 
 | Preset | Model ID | Context | Best For |
 |--------|----------|---------|----------|
-| **lfm** | lfm2.5-thinking:1.2b-32k | 32K | General queries (default) |
-| gpt-oss | gpt-oss:20b-64k | 64K | Tool calling |
-| mistral-small | mistral-small3.2:24b-32k | 32K | Agentic tasks |
-| smollm3 | smollm3:Q8_0-64k | 64K | Edge deployment |
-| sead | sead:14b-32k | 32K | General purpose |
-| **deepseek-coder-v2** | deepseek-coder-v2:16b-32k | 32K | **Code generation (recommended)** |
-| qwen3-coder | qwen3-coder:30b-64k | 64K | Code generation |
-| devstral-small-2 | devstral-small-2:24b-64k | 64K | Coding with min_p |
-| llama3.2 | llama3.2:3b-32k | 32K | Summarization |
-| glm-5 | glm-5:cloud | 198K | Cloud reasoning |
-| kimi-k2.5 | kimi-k2.5:cloud | 256K | Multimodal agentic |
-| minimax-m2.5 | minimax-m2.5:cloud | 198K | Coding and agentic |
-| qwen3.5 | qwen3.5:cloud | 256K | Vision-language |
-| translate | translategemma:12b-32k | 32K | Translation (fixed) |
-| pepe | pepe:8b-64k | 64K | Sarcastic personality |
+| **llama3.1** | llama3.1:8b | 4K | General queries (default) |
+| translategemma | translategemma:12b | 4K | Translation |
+| glm-ocr | glm-ocr:bf16 | Auto | OCR/image text extraction |
+
+## User-Defined Models
+
+Additional models are defined in `~/.config/ask-ai/models.toml`. The default file includes:
+
+### General Purpose Models
+
+| Preset | Model ID | Context | Best For |
+|--------|----------|---------|----------|
+| lfm | lfm2.5-thinking:1.2b | 32K | Reasoning with thinking mode |
+| llama3.2 | llama3.2:3b | 32K | Fast summarization, tools |
+| sead | sead:14b | 32K | General purpose |
+| smollm3 | smollm3:Q8_0 | 64K | Edge deployment |
+
+### Tool-Capable Models
+
+| Preset | Model ID | Context | Best For |
+|--------|----------|---------|----------|
+| mistral-small | mistral-small3.2:24b | 32K | Agentic tasks with tools |
+| qwen3-coder | qwen3-coder:30b | 64K | Code generation + tools |
+| nemotron | nemotron-3-nano:30b | 64K | Code + tools |
+
+### Code Models
+
+| Preset | Model ID | Context | Best For |
+|--------|----------|---------|----------|
+| deepseek-coder-v2 | deepseek-coder-v2:16b | 32K | Code generation (MoE) |
+| devstral-small-2 | devstral-small-2:24b | 64K | Coding |
+
+### Cloud Models
+
+| Preset | Model ID | Context | Best For |
+|--------|----------|---------|----------|
+| glm-5 | glm-5:cloud | Auto | Complex reasoning, coding |
+| kimi-k2.5 | kimi-k2.5:cloud | Auto | Multimodal agentic |
+| minimax-m2.5 | minimax-m2.5:cloud | Auto | Coding, agentic |
+| qwen3.5 | qwen3.5:cloud | Auto | Vision-language |
+
+### Character Models
+
+| Preset | Model ID | Context | Best For |
+|--------|----------|---------|----------|
+| pepe | pepe:8b | 64K | Sarcastic entertainment |
+
+User-defined models appear with `[user]` marker in `--list` output.
 
 ## Model Categories
 
 ### General Purpose
 
-These models work well for everyday queries:
+#### llama3.1 (Default)
+```bash
+ask-ai "Your question"
+```
+- **Model**: llama3.1:8b
+- **Context**: 4K tokens (uses Ollama default if not specified)
+- **Temperature**: 0.2
+- **Best for**: General queries, coding, explanations
+- **Tools**: Supported
 
-#### lfm (Default)
+#### lfm (User-defined)
 ```bash
 ask-ai -m lfm "Your question"
 ```
-- **Model**: lfm2.5-thinking:1.2b-32k
+- **Model**: lfm2.5-thinking:1.2b
 - **Context**: 32K tokens
-- **Temperature**: 0.3
-- **Best for**: General questions, reasoning, explanations
+- **Temperature**: 0.1
+- **Best for**: Reasoning with visible thinking
 - **Think mode**: Supported
 
-#### sead
+#### llama3.2 (User-defined)
 ```bash
-ask-ai -m sead "Your question"
+ask-ai -m llama3.2 "Your question"
 ```
-- **Model**: sead:14b-32k
-- **Context**: 32K tokens
-- **Temperature**: 0.7
-- **Best for**: General purpose tasks
-- **Think mode**: Not supported
-
-#### pepe (Easter Egg)
-```bash
-ask-ai -m pepe "Your question"
-```
-- **Model**: pepe:8b-64k
-- **Context**: 64K tokens
-- **Temperature**: 0.7
-- **Best for**: General queries with sarcastic personality
-- **Special**: Injects sarcastic personality into responses
-- **Think mode**: Not supported
-
-### Code-Focused
-
-Optimized for programming tasks:
-
-#### qwen3-coder
-```bash
-ask-ai -m qwen3-coder "Write a function"
-```
-- **Model**: qwen3-coder:30b-64k
-- **Context**: 64K tokens
-- **Temperature**: 0.1
-- **Best for**: Code generation, debugging, code review
-- **Think mode**: Not supported
-- **Tools**: Yes
-
-#### devstral-small-2
-```bash
-ask-ai -m devstral-small-2 "Implement algorithm"
-```
-- **Model**: devstral-small-2:24b-64k
-- **Context**: 64K tokens
-- **Temperature**: 0.1
-- **Best for**: Coding with min_p sampling
-- **Think mode**: Not supported
-
-### Tool-Capable
-
-Models that support tool calling:
-
-#### mistral-small
-```bash
-ask-ai -m mistral-small "What's the weather?"
-```
-- **Model**: mistral-small3.2:24b-32k
+- **Model**: llama3.2:3b
 - **Context**: 32K tokens
 - **Temperature**: 0.2
-- **Best for**: Agentic tasks with tools
-- **Tools**: Full support
-- **Think mode**: Not supported
+- **Best for**: Fast summarization, general tasks
+- **Tools**: Supported
 
-#### gpt-oss
+### Translation
+
+#### translategemma
 ```bash
-ask-ai -m gpt-oss "Tell me about Pikachu"
+ask-ai translate en:pt "Hello world"
 ```
-- **Model**: gpt-oss:20b-64k
-- **Context**: 64K tokens
+- **Model**: translategemma:12b
+- **Context**: 4K tokens
 - **Temperature**: 0.2
-- **Best for**: Tool calling (note: may have issues with some tool calls)
-- **Tools**: Full support
-- **Think mode**: Not supported
-
-### Specialized
-
-Models for specific tasks:
-
-#### llama3.2 (Summarization)
-```bash
-ask-ai summarize -m llama3.2 "Text..."
-```
-- **Model**: llama3.2:3b-32k
-- **Context**: 32K tokens
-- **Temperature**: 0.1
-- **Best for**: Summarization (default for summarize command)
-- **Tools**: No
-- **Think mode**: Not supported
-
-#### translate (Translation)
-```bash
-ask-ai translate en:pt "Text"  # Fixed model
-```
-- **Model**: translategemma:12b-32k
-- **Context**: 32K tokens
-- **Temperature**: 0.1
-- **Best for**: Translation tasks (always used for translate)
-- **Tools**: No
-- **Think mode**: Not supported
+- **Best for**: Translation tasks
 
 ### Cloud Models
 
-Remote/cloud-based models (requires internet):
+High-capability models with large context windows:
 
-#### glm-5
+#### glm-5 (User-defined)
 ```bash
-ask-ai -m glm-5 "Complex reasoning"
+ask-ai -m glm-5 "Complex reasoning task"
 ```
 - **Model**: glm-5:cloud
-- **Context**: 198K tokens
-- **Temperature**: 0.7
-- **Best for**: Complex reasoning, large context
-- **Think mode**: Supported
+- **Best for**: Complex reasoning, coding, agentic tasks
+- **Tools + Think**: Supported
 
-#### kimi-k2.5
+#### kimi-k2.5 (User-defined)
 ```bash
 ask-ai -m kimi-k2.5 "Multimodal task"
 ```
 - **Model**: kimi-k2.5:cloud
-- **Context**: 256K tokens
-- **Temperature**: 0.7
 - **Best for**: Multimodal agentic tasks
-- **Think mode**: Not supported
+- **Tools + Vision + Think**: Supported
 
-#### minimax-m2.5
+#### minimax-m2.5 (User-defined)
 ```bash
 ask-ai -m minimax-m2.5 "Coding task"
 ```
 - **Model**: minimax-m2.5:cloud
-- **Context**: 198K tokens
-- **Temperature**: 0.7
-- **Best for**: Coding and agentic tasks
-- **Think mode**: Not supported
+- **Best for**: Coding, agentic tasks
 
-#### qwen3.5
+#### qwen3.5 (User-defined)
 ```bash
-ask-ai -m qwen3.5 "Vision task"
+ask-ai -m qwen3.5 "Vision-language task"
 ```
 - **Model**: qwen3.5:cloud
-- **Context**: 256K tokens
-- **Temperature**: 0.7
 - **Best for**: Vision-language tasks
-- **Think mode**: Not supported
 
-## Capability Matrix
+### Tool-Capable Models (User-defined)
+
+#### mistral-small
+```bash
+ask-ai -m mistral-small "Search for Rust tutorials"
+```
+- **Model**: mistral-small3.2:24b
+- **Context**: 32K tokens
+- **Temperature**: 0.2
+- **Best for**: Agentic tasks with tools
+- **Tools**: Native support
+
+#### qwen3-coder
+```bash
+ask-ai -m qwen3-coder "Write a Rust function"
+```
+- **Model**: qwen3-coder:30b
+- **Context**: 64K tokens
+- **Temperature**: 0.3
+- **Best for**: Code generation + tools
+- **Tools**: Supported
+
+### Code Models (User-defined)
+
+#### deepseek-coder-v2
+```bash
+ask-ai -m deepseek-coder-v2 "Implement an algorithm"
+```
+- **Model**: deepseek-coder-v2:16b
+- **Context**: 32K tokens
+- **Temperature**: 0.15
+- **Best for**: Fast code generation (MoE: 2.4B active)
+
+#### devstral-small-2
+```bash
+ask-ai -m devstral-small-2 "Write tests"
+```
+- **Model**: devstral-small-2:24b
+- **Context**: 64K tokens
+- **Temperature**: 0.15
+- **Best for**: Coding
+
+### OCR
+
+#### glm-ocr
+```bash
+ask-ai ocr document.png
+```
+- **Model**: glm-ocr:bf16
+- **Best for**: Text extraction from images
+
+### Character Models (User-defined)
+
+#### pepe (Easter Egg)
+```bash
+ask-ai -m pepe "Tell me a joke"
+```
+- **Model**: pepe:8b
+- **Context**: 64K tokens
+- **Temperature**: 1.0
+- **Best for**: Sarcastic entertainment
+- **Note**: Not for serious use!
+
+## Model Capabilities
 
 | Model | Tools | Vision | Think | Local | Size |
 |-------|-------|--------|-------|-------|------|
+| llama3.1 | Yes | No | No | Yes | 8B |
+| translategemma | No | No | No | Yes | 12B |
+| glm-ocr | No | Yes | No | Yes | - |
 | lfm | No | No | Yes | Yes | 1.2B |
+| llama3.2 | Yes | No | No | Yes | 3B |
+| glm-5 | Yes | No | Yes* | No | Cloud |
+| kimi-k2.5 | Yes | Yes | Yes* | No | Cloud |
+| minimax-m2.5 | Yes | No | Yes* | No | Cloud |
+| qwen3.5 | Yes | Yes | Yes* | No | Cloud |
 | mistral-small | Yes | No | No | Yes | 24B |
-| gpt-oss | Yes | No | No | Yes | 20B |
 | qwen3-coder | Yes | No | No | Yes | 30B |
-| sead | No | No | No | Yes | 14B |
-| smollm3 | No | No | No | Yes | 3B |
-| devstral-small-2 | No | No | No | Yes | 24B |
-| llama3.2 | No | No | No | Yes | 3B |
-| pepe | No | No | No | Yes | 8B |
-| glm-5 | No | No | Yes | No | Cloud |
-| kimi-k2.5 | No | No | No | No | Cloud |
-| minimax-m2.5 | No | No | No | No | Cloud |
-| qwen3.5 | No | No | No | No | Cloud |
+| deepseek-coder-v2 | No | No | No | Yes | 16B |
 
-## Configuration Details
-
-Each model preset includes:
-
-### Temperature
-- **Low (0.1-0.2)**: More deterministic, good for code and technical tasks
-- **Medium (0.3-0.7)**: Balanced, good for general queries
-
-### Context Window
-- **32K**: Standard size for most tasks
-- **64K**: Large documents, codebases
-- **198K-256K**: Cloud models for very large contexts
-
-### Sampling Parameters
-- **Top K**: 20-50
-- **Top P**: 0.1-0.95
-- **Repeat Penalty**: 1.0-1.1
+\* Cloud models support thinking via `thinking = true` in `models.toml`
 
 ## Choosing a Model
 
 ### For General Queries
 ```bash
-ask-ai -m lfm "Your question"  # Default, good reasoning
-ask-ai -m sead "Your question"  # General purpose
+ask-ai "Your question"           # Default llama3.1, fast and capable
+ask-ai -m lfm "Complex reasoning" # Thinking model for reasoning
 ```
 
 ### For Coding
 ```bash
-ask-ai -m qwen3-coder "Write a Rust function"
-ask-ai -m devstral-small-2 "Implement algorithm"
-ask-ai -p code "Optimize this code"
+ask-ai -m deepseek-coder-v2 "Write a function"  # Fast, efficient
+ask-ai -m qwen3-coder "Implement feature"        # With tools
+ask-ai -p code "Optimize code"                   # Code prompt mode
 ```
 
 ### For Tool Usage
 ```bash
-ask-ai -m mistral-small "Get weather in Tokyo"
-ask-ai --tools "Tell me about Pikachu"  # Force tools
+ask-ai -m mistral-small "Search for docs"     # Native tool support
+ask-ai -m qwen3-coder "Read file and fix"     # Code + tools
 ```
 
-### For Summarization
+### For Large Context
 ```bash
-ask-ai summarize "Text..."  # Uses llama3.2 by default
-ask-ai summarize -m smollm3 "Text..."  # Faster
+ask-ai -m kimi-k2.5 "Analyze large document"   # Cloud, large context
+ask-ai -m glm-5 "Long reasoning task"          # Cloud, reasoning
 ```
 
-### For Translation
-```bash
-ask-ai translate en:pt "Text"  # Fixed: translategemma
+## Custom Models
+
+Add or override models via `~/.config/ask-ai/models.toml`:
+
+```toml
+# Add a new model
+[models.my-coder]
+model_id = "phi3:mini"    # Required: Ollama model ID
+num_ctx = 32768           # Optional: context window (default: 32K)
+temperature = 0.3         # Optional: temperature (default: 0.8)
+top_k = 40                # Optional: top-k sampling (omit to use Ollama default)
+top_p = 0.9               # Optional: top-p sampling (omit to use Ollama default)
+repeat_penalty = 1.1      # Optional: repeat penalty (default: 1.1)
+thinking = true           # Optional: enable thinking mode by default
+
+# Add another model with minimal config (uses defaults)
+[models.simple]
+model_id = "llama3:8b"    # Only model_id required
+
+# Cloud model - enable thinking
+[models.my-cloud]
+model_id = "my-model:cloud"
+thinking = true           # Enable thinking for cloud models
+
+# Override built-in model (partial override)
+[models.llama3.1]
+temperature = 0.15        # Only override what you want to change
 ```
 
-### For Reasoning
-```bash
-ask-ai -m lfm -t "Complex problem"  # Think mode
-ask-ai -m glm-5 -t "Deep reasoning"  # Cloud model
-```
+### Model Parameter Defaults
 
-## Installation
+When defining a custom model without all parameters, these defaults are used:
 
-We provide modelfiles for easy model installation with optimized parameters.
+| Parameter    | Default |
+|-------------|---------|
+| `num_ctx`    | 32768 (32K) |
+| `temperature`| 0.2     |
+| `top_k`      | 40      |
+| `top_p`      | 0.9     |
+| `repeat_penalty` | 1.0 |
 
-### Using Modelfiles (Recommended)
+**Note**: If `num_ctx` is not specified, the default is 32K tokens. For cloud models, you can omit all parameters to let Ollama handle them automatically.
 
-```bash
-cd modelfiles
-
-# Install all essential models
-make models-essential
-
-# Install optional models
-make models-optional
-
-# Install all local models
-make models-all
-
-# Install cloud models
-make models-cloud
-```
-
-### Manual Installation
-
-Pull models directly from Ollama:
-
-```bash
-# Essential models
-ollama pull lfm2.5-thinking:1.2b-32k
-ollama pull translategemma:12b-32k
-ollama pull glm-ocr:bf16
-ollama pull llama3.2:3b-32k
-
-# Optional models
-ollama pull mistral-small3.2:24b-32k
-ollama pull qwen3-coder:30b-64k
-ollama pull pepe:8b-64k
-# ... etc
-```
-
-**Note:** Manual installation uses default parameters. Modelfiles provide optimized configurations (temperature, context window, etc.) tailored for Ask-AI.
-
-## Model Commands
-
-### List Available Models
+### Listing All Models
 
 ```bash
 ask-ai --list
 ```
 
-Shows:
-- All model presets
-- Model IDs
-- Context sizes
-- Available prompt modes
+This shows both built-in models and user-defined models (marked with `[user]`).
 
 ### Check Model Status
 
@@ -317,12 +306,12 @@ Shows:
 ollama list
 
 # Check if specific model exists
-ollama show lfm2.5-thinking:1.2b-32k
+ollama show llama3.1:8b
 ```
 
 ## Best Practices
 
-1. **Use default for most tasks** - `lfm` works well for general queries
+1. **Use default for most tasks** - `llama3.1` works well for general queries
 2. **Match model to task** - Use code models for coding, etc.
 3. **Consider context size** - Large documents need large context
 4. **Local vs Cloud** - Local models are faster and work offline
@@ -332,4 +321,4 @@ ollama show lfm2.5-thinking:1.2b-32k
 
 - [query](./commands/query.md) - Using models for queries
 - [summarize](./commands/summarize.md) - Summarization command
-- [Configuration](./configuration.md) - Customizing defaults
+- [Configuration](./configuration.md) - Custom models setup
