@@ -85,11 +85,11 @@ struct Cli {
     think: bool,
 
     /// Output plain text without markdown formatting
-    #[arg(long)]
+    #[arg(long, action = clap::ArgAction::SetTrue)]
     plain: Option<bool>,
 
     /// Dry-run mode: print config without executing
-    #[arg(short, long)]
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
     debug: Option<bool>,
 
     /// List available models and prompts

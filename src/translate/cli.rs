@@ -82,11 +82,11 @@ pub struct TranslateArgs {
     pub list: Option<Option<String>>,
 
     /// Output plain text without formatting
-    #[arg(long)]
+    #[arg(long, action = clap::ArgAction::SetTrue)]
     pub plain: Option<bool>,
 
     /// Enable debug mode with detailed logging
-    #[arg(short, long)]
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub debug: Option<bool>,
 }
 
@@ -123,11 +123,11 @@ pub struct QueryArgs {
     pub think: bool,
 
     /// Output plain text without markdown formatting
-    #[arg(long)]
+    #[arg(long, action = clap::ArgAction::SetTrue)]
     pub plain: Option<bool>,
 
     /// Dry-run mode: print config without executing
-    #[arg(short, long)]
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub debug: Option<bool>,
 
     /// Force enable tools even if model doesn't advertise tool support

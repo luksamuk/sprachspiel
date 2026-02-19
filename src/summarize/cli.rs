@@ -51,7 +51,7 @@ pub struct SummarizeArgs {
     pub style: SummaryStyle,
 
     /// Output plain text without formatting
-    #[arg(long)]
+    #[arg(long, action = clap::ArgAction::SetTrue)]
     pub plain: Option<bool>,
 
     /// Model to use for summarization (overrides default)
@@ -59,7 +59,7 @@ pub struct SummarizeArgs {
     pub model: Option<String>,
 
     /// Enable debug mode with detailed logging
-    #[arg(short, long)]
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub debug: Option<bool>,
 }
 

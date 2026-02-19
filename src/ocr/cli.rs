@@ -64,7 +64,7 @@ pub struct OcrArgs {
     pub max_tokens: u32,
 
     /// Enable debug mode with detailed logging
-    #[arg(short, long)]
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub debug: Option<bool>,
 }
 
