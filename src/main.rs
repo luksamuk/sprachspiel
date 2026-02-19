@@ -73,8 +73,8 @@ struct Cli {
     query: Option<String>,
 
     /// Model preset to use (lfm is the default)
-    #[arg(short, long, default_value = "lfm", value_name = "MODEL")]
-    model: String,
+    #[arg(short, long, value_name = "MODEL")]
+    model: Option<String>,
 
     /// System prompt mode (default, tool_user)
     #[arg(short, long, default_value = "default", value_name = "PROMPT")]
@@ -86,11 +86,11 @@ struct Cli {
 
     /// Output plain text without markdown formatting
     #[arg(long)]
-    plain: bool,
+    plain: Option<bool>,
 
     /// Dry-run mode: print config without executing
     #[arg(short, long)]
-    debug: bool,
+    debug: Option<bool>,
 
     /// List available models and prompts
     #[arg(short, long)]
@@ -151,15 +151,16 @@ async fn main() -> AppResult<()> {
 }
 
 /// Handle translate subcommand
-async fn handle_translate(args: TranslateArgs, _settings: &Settings) -> AppResult<()> {
+async fn handle_translate(args: TranslateArgs, settings: &Settings) -> AppResult<()> {
     // Validate arguments
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 
-    // Handle debug mode
-    if args.debug {
+    // Handle debug mode - use CLI if specified, otherwise use config setting
+    let use_debug = args.debug.unwrap_or(settings.output.debug_default);
+    if use_debug {
         enable_debug();
         eprintln!("Debug Mode - Translation Configuration:");
         eprintln!("==========================");
@@ -264,7 +265,9 @@ async fn handle_translate(args: TranslateArgs, _settings: &Settings) -> AppResul
     let translated = response.message.content.trim();
 
     // Output - respect --plain flag for markdown rendering
-    if args.plain {
+    // Use CLI if specified, otherwise use config setting
+    let use_plain = args.plain.unwrap_or(settings.output.plain_default);
+    if use_plain {
         println!("{}", translated);
     } else {
         print_text(translated);
@@ -289,18 +292,16 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     let (subcommand_model, subcommand_thinking, subcommand_tools) = 
         settings.get_subcommand_config(config_name);
     
-    // Get model configuration - CLI arg overrides subcommand config
-    let model_name = if args.model != "lfm" {
+    // Get model configuration - priority: CLI > subcommand config > global default > built-in
+    let model_name = if let Some(ref m) = args.model {
         // User specified model via CLI
-        args.model.clone()
-    } else if !subcommand_model.is_empty() && subcommand_model != "lfm" {
+        m.clone()
+    } else if !subcommand_model.is_empty() {
         // Use subcommand-specific model from config
         subcommand_model
-    } else if settings.model.default != "lfm" {
-        // Use global default from settings
-        settings.model.default.clone()
     } else {
-        args.model.clone()
+        // Use global default from settings (or built-in default)
+        settings.model.default.clone()
     };
 
     let model_config = if ModelConfig::is_valid(&model_name) {
@@ -365,7 +366,11 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         None
     };
 
-    if args.debug && agents_md.is_some() {
+    // Use CLI if specified, otherwise use config setting
+    let use_debug = args.debug.unwrap_or(settings.output.debug_default);
+    let use_plain = args.plain.unwrap_or(settings.output.plain_default);
+    
+    if use_debug && agents_md.is_some() {
         eprintln!("📄 [AGENTS.md] Context injected from current directory");
     }
 
@@ -401,7 +406,7 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     };
 
     // Handle debug mode - now executes with full logging instead of dry-run
-    if args.debug {
+    if use_debug {
         enable_debug();
         log_debug("Debug mode enabled - will log all tool calls and results");
         print_debug_info(
@@ -510,7 +515,7 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
         #[cfg(feature = "serper-tools")]
         {
             if crate::tools::serper::is_serper_available() {
-                if args.debug {
+                if use_debug {
                     eprintln!("🔑 [Serper] API key found - enabling Google Search via Serper");
                 }
                 if is_tool_allowed("web_search") {
@@ -524,7 +529,7 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
             } else {
                 #[cfg(feature = "search-tools")]
                 {
-                    if args.debug {
+                    if use_debug {
                         eprintln!("ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)");
                     }
                     if is_tool_allowed("web_search") {
@@ -538,7 +543,7 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
                 }
                 #[cfg(not(feature = "search-tools"))]
                 {
-                    if args.debug {
+                    if use_debug {
                         eprintln!("⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature");
                     }
                 }
@@ -605,7 +610,7 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
             }
         }
         
-        if args.debug {
+        if use_debug {
             eprintln!("   -> {} tools active", tool_count);
         }
     } else {
@@ -645,7 +650,7 @@ async fn handle_query(args: QueryArgs, settings: &Settings) -> AppResult<()> {
     let content = strip_thinking_tags(&response.message.content);
 
     // Render output
-    if args.plain {
+    if use_plain {
         println!("{}", content);
     } else {
         print_text(&content);
@@ -677,18 +682,16 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let (subcommand_model, subcommand_thinking, subcommand_tools) = 
         settings.get_subcommand_config(config_name);
 
-    // Get model configuration - CLI arg overrides subcommand config
-    let model_name = if cli.model != "lfm" {
+    // Get model configuration - priority: CLI > subcommand config > global default > built-in
+    let model_name = if let Some(ref m) = cli.model {
         // User specified model via CLI
-        cli.model.clone()
-    } else if !subcommand_model.is_empty() && subcommand_model != "lfm" {
+        m.clone()
+    } else if !subcommand_model.is_empty() {
         // Use subcommand-specific model from config
         subcommand_model
-    } else if settings.model.default != "lfm" {
-        // Use global default from settings
-        settings.model.default.clone()
     } else {
-        cli.model.clone()
+        // Use global default from settings (or built-in default)
+        settings.model.default.clone()
     };
 
     let model_config = if ModelConfig::is_valid(&model_name) {
@@ -761,6 +764,10 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     // Get the blacklist set to filter tools from the prompt
     let blacklist_set = settings.blacklist_set();
 
+    // Use CLI if specified, otherwise use config setting
+    let use_debug = cli.debug.unwrap_or(settings.output.debug_default);
+    let use_plain = cli.plain.unwrap_or(settings.output.plain_default);
+
     // Load AGENTS.md context if available and not ignored (legacy mode)
     let agents_md = if !cli.ignore_agents {
         crate::context::load_agents_md()
@@ -768,7 +775,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         None
     };
 
-    if cli.debug && agents_md.is_some() {
+    if use_debug && agents_md.is_some() {
         eprintln!("📄 [AGENTS.md] Context injected from current directory");
     }
 
@@ -789,7 +796,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     };
 
     // Handle debug mode - now executes with full logging instead of dry-run
-    if cli.debug {
+    if use_debug {
         enable_debug();
         log_debug("Debug mode enabled - will log all tool calls and results");
         print_debug_info(
@@ -820,7 +827,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     // Add tools if enabled
     if use_tools {
         // Only show in debug mode
-        if cli.debug {
+        if use_debug {
             eprintln!("🔧 [Tools] Tools enabled - will log when called");
         }
         
@@ -901,7 +908,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         #[cfg(feature = "serper-tools")]
         {
             if crate::tools::serper::is_serper_available() {
-                if cli.debug {
+                if use_debug {
                     eprintln!("🔑 [Serper] API key found - enabling Google Search via Serper");
                 }
                 if is_tool_allowed("web_search") {
@@ -915,7 +922,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
             } else {
                 #[cfg(feature = "search-tools")]
                 {
-                    if cli.debug {
+                    if use_debug {
                         eprintln!("ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)");
                     }
                     if is_tool_allowed("web_search") {
@@ -929,7 +936,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
                 }
                 #[cfg(not(feature = "search-tools"))]
                 {
-                    if cli.debug {
+                    if use_debug {
                         eprintln!("⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature");
                     }
                 }
@@ -1005,10 +1012,10 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
             }
         }
         
-        if cli.debug {
+        if use_debug {
             eprintln!("   -> {} tools active", tool_count);
         }
-    } else if cli.debug {
+    } else if use_debug {
         eprintln!("⚠️  [Tools] No tools enabled for this model");
     }
 
@@ -1046,7 +1053,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let content = strip_thinking_tags(&response.message.content);
 
     // Render output
-    if cli.plain {
+    if use_plain {
         println!("{}", content);
     } else {
         print_text(&content);
@@ -1212,7 +1219,8 @@ async fn handle_ocr(args: OcrArgs, _settings: &Settings) -> AppResult<()> {
     }
 
     // Handle debug mode
-    if args.debug {
+    let use_debug = args.debug.unwrap_or(false);
+    if use_debug {
         enable_debug();
         eprintln!("Debug Mode - OCR Configuration:");
         eprintln!("==========================");
@@ -1253,31 +1261,30 @@ async fn handle_summarize(args: SummarizeArgs, settings: &Settings) -> AppResult
     // 2. Subcommand-specific config from settings
     // 3. Global default from settings
     // 4. Hardcoded default (llama3.2)
-    let model_id = if args.model != "llama3.2" {
+    let model_id = if let Some(ref m) = args.model {
         // User specified model via CLI
-        args.model.clone()
-    } else if subcommand_model != "lfm" && !subcommand_model.is_empty() {
+        m.clone()
+    } else if !subcommand_model.is_empty() {
         // Use subcommand-specific model from config
         subcommand_model
-    } else if settings.model.default != "lfm" {
-        // Use global default from settings
-        settings.model.default.clone()
     } else {
-        // Hardcoded default
-        "llama3.2".to_string()
+        // Use global default from settings (or built-in default)
+        settings.model.default.clone()
     };
 
-    // Handle debug mode
-    if args.debug {
+    // Handle debug mode and plain output with config file precedence
+    let use_debug = args.debug.unwrap_or(settings.output.debug_default);
+    let use_plain = args.plain.unwrap_or(settings.output.plain_default);
+    
+    if use_debug {
         enable_debug();
         eprintln!("Debug Mode - Summarize Configuration:");
         eprintln!("==========================");
-        eprintln!("Model ID (CLI):    {}", args.model);
-        eprintln!("Model ID (Config): {}", model_id);
+        eprintln!("Model ID:          {}", model_id);
         eprintln!("Max Length:        {} words", args.max_length);
         eprintln!("Format:            {:?}", args.format);
         eprintln!("Style:             {:?}", args.style);
-        eprintln!("Plain Output:      {}", args.plain);
+        eprintln!("Plain Output:      {}", use_plain);
         eprintln!("==========================");
         eprintln!("\n🚀 Executing summarization with debug logging enabled...\n");
     }
@@ -1313,7 +1320,7 @@ async fn handle_summarize(args: SummarizeArgs, settings: &Settings) -> AppResult
     match processor.summarize(&args, &text, &model_id).await {
         Ok(summary) => {
             // Render output with markdown if not --plain
-            if args.plain {
+            if use_plain {
                 println!("{}", summary);
             } else {
                 print_text(&summary);

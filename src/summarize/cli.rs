@@ -52,15 +52,15 @@ pub struct SummarizeArgs {
 
     /// Output plain text without formatting
     #[arg(long)]
-    pub plain: bool,
+    pub plain: Option<bool>,
 
     /// Model to use for summarization (overrides default)
-    #[arg(short = 'M', long, default_value = "llama3.2")]
-    pub model: String,
+    #[arg(short = 'M', long, value_name = "MODEL")]
+    pub model: Option<String>,
 
     /// Enable debug mode with detailed logging
     #[arg(short, long)]
-    pub debug: bool,
+    pub debug: Option<bool>,
 }
 
 /// Output format for summaries
@@ -219,9 +219,9 @@ mod tests {
             max_length: 300,
             format: SummaryFormat::Both,
             style: SummaryStyle::General,
-            plain: false,
-            model: "llama3.2".to_string(),
-            debug: false,
+            plain: None,
+            model: Some("llama3.2".to_string()),
+            debug: None,
         };
 
         let base_prompt = "You are a summarizer.";

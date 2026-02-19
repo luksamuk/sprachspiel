@@ -83,11 +83,11 @@ pub struct TranslateArgs {
 
     /// Output plain text without formatting
     #[arg(long)]
-    pub plain: bool,
+    pub plain: Option<bool>,
 
     /// Enable debug mode with detailed logging
     #[arg(short, long)]
-    pub debug: bool,
+    pub debug: Option<bool>,
 }
 
 /// Arguments for the query subcommand (original CLI behavior)
@@ -111,8 +111,8 @@ pub struct QueryArgs {
     pub query: Option<String>,
 
     /// Model preset to use
-    #[arg(short, long, default_value = "lfm", value_name = "MODEL")]
-    pub model: String,
+    #[arg(short, long, value_name = "MODEL")]
+    pub model: Option<String>,
 
     /// System prompt mode
     #[arg(short, long, default_value = "default", value_name = "PROMPT")]
@@ -124,11 +124,11 @@ pub struct QueryArgs {
 
     /// Output plain text without markdown formatting
     #[arg(long)]
-    pub plain: bool,
+    pub plain: Option<bool>,
 
     /// Dry-run mode: print config without executing
     #[arg(short, long)]
-    pub debug: bool,
+    pub debug: Option<bool>,
 
     /// Force enable tools even if model doesn't advertise tool support
     #[arg(long)]
@@ -147,11 +147,11 @@ impl Default for QueryArgs {
     fn default() -> Self {
         Self {
             query: None,
-            model: "lfm".to_string(),
+            model: None,
             prompt: "default".to_string(),
             think: false,
-            plain: false,
-            debug: false,
+            plain: None,
+            debug: None,
             tools: false,
             code: false,
             ignore_agents: false,
@@ -236,8 +236,8 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(None),
-            plain: false,
-            debug: false,
+            plain: None,
+            debug: None,
         };
         assert!(args.is_list_only());
 
@@ -246,8 +246,8 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(None),
-            plain: false,
-            debug: false,
+            plain: None,
+            debug: None,
         };
         assert!(!args2.is_list_only());
     }
@@ -259,8 +259,8 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(Some("port".to_string())),
-            plain: false,
-            debug: false,
+            plain: None,
+            debug: None,
         };
         assert_eq!(args.list_filter(), Some("port"));
 
@@ -269,8 +269,8 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(None),
-            plain: false,
-            debug: false,
+            plain: None,
+            debug: None,
         };
         assert_eq!(args2.list_filter(), None);
     }
@@ -282,8 +282,8 @@ mod tests {
             text: Some("Hello".to_string()),
             prompt: None,
             list: None,
-            plain: false,
-            debug: false,
+            plain: None,
+            debug: None,
         };
         assert!(args.validate().is_ok());
 
@@ -292,8 +292,8 @@ mod tests {
             text: None,
             prompt: None,
             list: None,
-            plain: false,
-            debug: false,
+            plain: None,
+            debug: None,
         };
         assert!(args2.validate().is_err());
 
@@ -302,8 +302,8 @@ mod tests {
             text: None,
             prompt: None,
             list: Some(None),
-            plain: false,
-            debug: false,
+            plain: None,
+            debug: None,
         };
         assert!(args3.validate().is_ok());
     }

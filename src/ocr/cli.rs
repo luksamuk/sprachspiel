@@ -65,7 +65,7 @@ pub struct OcrArgs {
 
     /// Enable debug mode with detailed logging
     #[arg(short, long)]
-    pub debug: bool,
+    pub debug: Option<bool>,
 }
 
 /// Output format for OCR results
@@ -119,7 +119,7 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
-            debug: false,
+            debug: None,
         };
         assert!(args.validate().is_ok());
 
@@ -128,7 +128,7 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
-            debug: false,
+            debug: None,
         };
         assert!(args_empty.validate().is_err());
     }
@@ -140,7 +140,7 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
-            debug: false,
+            debug: None,
         };
         assert!(!single.is_batch());
 
@@ -149,7 +149,7 @@ mod tests {
             mode: OcrMode::Text,
             json: false,
             max_tokens: 8192,
-            debug: false,
+            debug: None,
         };
         assert!(batch.is_batch());
     }

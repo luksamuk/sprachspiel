@@ -1,4 +1,5 @@
 /target
+/dist
 
 # mdBook generated files
 doc/book/
