@@ -676,9 +676,8 @@ async fn send_message(
 
     match result {
         Ok(response) => {
-            let raw_content = response.message.content.clone();
-            let processed = process_thinking(&raw_content);
-
+            let content = response.message.content.clone();
+            
             // Extract token metrics from final_data
             let metrics = if let Some(ref final_data) = response.final_data {
                 TokenMetrics {
@@ -691,16 +690,27 @@ async fn send_message(
             };
 
             // Show thinking content in gray/dim if present and think mode is enabled
-            if think_enabled
-                && let Some(ref thinking) = processed.thinking
-            {
-                eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
-                for line in thinking.lines() {
-                    eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
+            // First check the API-provided thinking field, then fallback to content extraction
+            if think_enabled {
+                let thinking_content = if let Some(ref thinking) = response.message.thinking {
+                    Some(thinking.clone())
+                } else {
+                    // Fallback: extract thinking from content if API didn't provide it
+                    let processed = process_thinking(&content);
+                    processed.thinking.clone()
+                };
+                
+                if let Some(ref thinking) = thinking_content {
+                    eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
+                    for line in thinking.lines() {
+                        eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
+                    }
+                    eprintln!();
                 }
-                eprintln!();
             }
 
+            // Strip thinking tags from content for display
+            let processed = process_thinking(&content);
             print_text(&processed.content);
             Ok((processed.content, metrics))
         }
@@ -813,7 +823,7 @@ fn print_welcome(
     }
 
     println!("|  Project: {:50} |", truncate_str(project, 50));
-    println!("|  Session: {:49} |", truncate_str(session_display, 49));
+    println!("|  Session: {:50} |", truncate_str(session_display, 49));
     println!("+==============================================================+");
     println!("|  Type /help for commands, /quit to exit                      |");
     println!("+==============================================================+");

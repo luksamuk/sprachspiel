@@ -27,6 +27,7 @@ use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
 use crate::chat::strip_thinking_tags;
+use crate::chat::thinking::process_thinking;
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::ocr::{OcrArgs, OcrProcessor, print_results};
@@ -653,9 +654,29 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
             std::process::exit(1);
         }
     };
+
     finish_spinner(spinner);
 
-    // Strip thinking tags
+    // Show thinking if present and think mode is enabled
+    if use_think {
+        // First check the API-provided thinking field, then fallback to content extraction
+        let thinking_content = if let Some(ref thinking) = response.message.thinking {
+            Some(thinking.clone())
+        } else {
+            let processed = process_thinking(&response.message.content);
+            processed.thinking.clone()
+        };
+        
+        if let Some(ref thinking) = thinking_content {
+            eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
+            for line in thinking.lines() {
+                eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
+            }
+            eprintln!();
+        }
+    }
+
+    // Strip thinking tags from content
     let content = strip_thinking_tags(&response.message.content);
 
     // Render output
@@ -1049,7 +1070,26 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
 
     finish_spinner(spinner);
 
-    // Strip thinking tags
+    // Show thinking if present and think mode is enabled
+    if use_think {
+        // First check the API-provided thinking field, then fallback to content extraction
+        let thinking_content = if let Some(ref thinking) = response.message.thinking {
+            Some(thinking.clone())
+        } else {
+            let processed = process_thinking(&response.message.content);
+            processed.thinking.clone()
+        };
+        
+        if let Some(ref thinking) = thinking_content {
+            eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
+            for line in thinking.lines() {
+                eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
+            }
+            eprintln!();
+        }
+    }
+
+    // Strip thinking tags from content
     let content = strip_thinking_tags(&response.message.content);
 
     // Render output
