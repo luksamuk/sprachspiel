@@ -18,7 +18,6 @@ mod tool_robustness;
 mod translate;
 
 use clap::Parser;
-use ollama_rs::Ollama;
 use ollama_rs::coordinator::Coordinator;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
@@ -29,16 +28,6 @@ use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::ocr::{OcrArgs, OcrProcessor, print_results};
 
-/// Normalize host string to ensure it has a scheme (http:// or https://)
-/// This handles cases where users configure just an IP address like "192.168.1.100"
-fn normalize_host(host: &str) -> String {
-    let trimmed = host.trim();
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        trimmed.to_string()
-    } else {
-        format!("http://{}", trimmed)
-    }
-}
 use crate::prompts::get_prompt_with_blacklist;
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -232,8 +221,8 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         }
     };
 
-    // Initialize Ollama client
-    let ollama = Ollama::default();
+    // Initialize Ollama client with settings
+    let ollama = settings.ollama_client();
 
     // Build model options
     let model_options = ModelOptions::default()
@@ -321,14 +310,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     };
 
     // Initialize Ollama client with settings
-    let ollama = if settings.model.ollama_host != "127.0.0.1" || settings.model.ollama_port != 11434 {
-        Ollama::new(
-            normalize_host(&settings.model.ollama_host),
-            settings.model.ollama_port,
-        )
-    } else {
-        Ollama::default()
-    };
+    let ollama = settings.ollama_client();
 
     // Detect model capabilities (query command)
     let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
@@ -711,14 +693,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     };
 
     // Initialize Ollama client with settings
-    let ollama = if settings.model.ollama_host != "127.0.0.1" || settings.model.ollama_port != 11434 {
-        Ollama::new(
-            normalize_host(&settings.model.ollama_host),
-            settings.model.ollama_port,
-        )
-    } else {
-        Ollama::default()
-    };
+    let ollama = settings.ollama_client();
 
     // Detect model capabilities (code/summarize commands)
     let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
@@ -1243,7 +1218,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
     let processor = OcrProcessor::new();
 
     // Process files
-    let results = match processor.process_batch(&args).await {
+    let results = match processor.process_batch(&args, settings).await {
         Ok(results) => results,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -1323,7 +1298,7 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
     let processor = SummarizeProcessor::new();
 
     // Process summarization with the text already loaded, passing the determined model_id
-    match processor.summarize(&args, &text, &model_id).await {
+    match processor.summarize(&args, &text, &model_id, settings).await {
         Ok(summary) => {
             // Render output with markdown if not --plain
             if use_plain {

@@ -1,3 +1,4 @@
+use ollama_rs::Ollama;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -10,6 +11,17 @@ pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
 
 /// Default Ollama port
 pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
+
+/// Normalize host string to ensure it has a scheme (http:// or https://)
+/// This handles cases where users configure just an IP address like "192.168.1.100"
+pub fn normalize_host(host: &str) -> String {
+    let trimmed = host.trim();
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{}", trimmed)
+    }
+}
 
 /// Application settings loaded from config file
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -248,6 +260,18 @@ impl Settings {
         let tools = subcommand_config.tools.unwrap_or(default_tools);
 
         (model, thinking, tools)
+    }
+
+    /// Create an Ollama client using the configured host and port
+    pub fn ollama_client(&self) -> Ollama {
+        if self.model.ollama_host != DEFAULT_OLLAMA_HOST || self.model.ollama_port != DEFAULT_OLLAMA_PORT {
+            Ollama::new(
+                normalize_host(&self.model.ollama_host),
+                self.model.ollama_port,
+            )
+        } else {
+            Ollama::default()
+        }
     }
 
     /// Create a sample config file if it doesn't exist

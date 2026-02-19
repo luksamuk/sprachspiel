@@ -4,12 +4,12 @@
 //! Uses /api/generate endpoint as recommended by GLM-OCR documentation.
 
 use base64::Engine;
-use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 use std::path::Path;
 
+use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 
 use super::cli::OcrArgs;
@@ -26,7 +26,12 @@ impl OcrProcessor {
     }
 
     /// Process a single image file
-    pub async fn process_file(&self, path: &Path, mode: OcrMode) -> OcrResult<OcrOutput> {
+    pub async fn process_file(
+        &self,
+        path: &Path,
+        mode: OcrMode,
+        settings: &Settings,
+    ) -> OcrResult<OcrOutput> {
         // Validate file
         self.validate_file(path)?;
 
@@ -47,8 +52,8 @@ impl OcrProcessor {
         // Build prompt (just the mode prompt, no file path needed)
         let prompt = mode.into_prompt();
 
-        // Initialize Ollama
-        let ollama = Ollama::default();
+        // Initialize Ollama with settings
+        let ollama = settings.ollama_client();
 
         // Build model options (fixed parameters for glm-ocr)
         let model_options = ModelOptions::default().temperature(0.0); // GLM-OCR uses temperature 0
@@ -86,11 +91,11 @@ impl OcrProcessor {
     }
 
     /// Process multiple files
-    pub async fn process_batch(&self, args: &OcrArgs) -> OcrResult<Vec<OcrOutput>> {
+    pub async fn process_batch(&self, args: &OcrArgs, settings: &Settings) -> OcrResult<Vec<OcrOutput>> {
         let mut results = Vec::new();
 
         for file in &args.files {
-            match self.process_file(file, args.mode).await {
+            match self.process_file(file, args.mode, settings).await {
                 Ok(result) => results.push(result),
                 Err(e) => {
                     eprintln!("Error processing {}: {}", file.display(), e);

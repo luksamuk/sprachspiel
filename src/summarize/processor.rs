@@ -3,13 +3,13 @@
 //! Handles text summarization using mistral-small model with tools disabled.
 //! Ensures security and efficiency by not allowing tool calls during summarization.
 
-use ollama_rs::Ollama;
 use ollama_rs::coordinator::Coordinator;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 
 use crate::config::ModelConfig;
 use crate::prompts::{SYSTEM_PROMPT_SUMMARIZE, get_prompt};
+use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 
 use super::cli::SummarizeArgs;
@@ -29,6 +29,7 @@ impl SummarizeProcessor {
         args: &SummarizeArgs,
         text: &str,
         model_id: &str,
+        settings: &Settings,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         if text.is_empty() {
             return Err("No text provided for summarization".into());
@@ -42,8 +43,8 @@ impl SummarizeProcessor {
             })
         });
 
-        // Initialize Ollama
-        let ollama = Ollama::default();
+        // Initialize Ollama with settings
+        let ollama = settings.ollama_client();
 
         // Build model options
         let model_options = ModelOptions::default()
