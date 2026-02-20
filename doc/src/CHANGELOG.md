@@ -2,6 +2,27 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.14.1] - 2026-02-20
+
+### Fixed
+
+- **Thinking Output** - Now uses API-provided `thinking` field from Ollama
+  - Previously only extracted thinking from content via regex
+  - Now checks `response.message.thinking` first, then falls back to regex
+  - Works correctly with cloud models that support thinking
+
+### Changed
+
+- **Model Parameters** - `top_k`, `top_p`, `repeat_penalty` now optional
+  - If not specified in config, uses Ollama's defaults
+  - Updated defaults from docs.ollama.com: `temperature=0.8`, `repeat_penalty=1.1`
+  - Previous defaults were too low (`temperature=0.2`)
+
+- **Cloud Model Thinking** - Enable thinking via config
+  - Add `thinking = true` in `models.toml` for cloud models
+  - Model's `thinking` field checked alongside capability detection
+  - Priority: CLI flag > model config > subcommand config
+
 ## [0.14.0] - 2026-02-19
 
 ### Added
