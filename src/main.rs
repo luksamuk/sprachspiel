@@ -517,6 +517,10 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
             }
         }
 
+        // Misc tools
+        coordinator = coordinator.add_tool(test_tool);
+        tool_count += 1;
+
         // Web search tools - prefer Serper over DDG
         // Serper: Google Search via API (requires SERPER_API_KEY)
         // DDG: DuckDuckGo (free but may be blocked by CAPTCHA)

@@ -21,6 +21,9 @@ use crate::tools::*;
 
 use super::commands::{CommandResult, execute_command, parse_command};
 use super::completion::ChatCompleter;
+use super::coordinator::{
+    classify_error_str, format_recovery_message, is_error_str_recoverable, MAX_RETRIES,
+};
 use super::history::{ConversationStorage, get_project_id};
 use super::session::ChatSession;
 use super::thinking::{process_thinking, strip_thinking_tags};
@@ -47,6 +50,64 @@ fn build_model_options(config: &ModelConfig) -> ModelOptions {
     }
 
     opts
+}
+
+/// Get list of available tool names based on settings blacklist
+fn get_available_tool_names(settings: &Settings) -> Vec<String> {
+    let mut tools = Vec::new();
+    let is_allowed = |name: &str| !settings.is_tool_blacklisted(name);
+    
+    tools.push("test_tool".to_string());
+    
+    #[cfg(feature = "pokemon-tools")]
+    {
+        if is_allowed("fetch_pokemon") { tools.push("fetch_pokemon".to_string()); }
+        if is_allowed("fetch_pokemon_basic") { tools.push("fetch_pokemon_basic".to_string()); }
+        if is_allowed("fetch_pokemon_stats") { tools.push("fetch_pokemon_stats".to_string()); }
+        if is_allowed("fetch_pokemon_moves") { tools.push("fetch_pokemon_moves".to_string()); }
+        if is_allowed("fetch_pokemon_evolution") { tools.push("fetch_pokemon_evolution".to_string()); }
+        if is_allowed("fetch_ability_details") { tools.push("fetch_ability_details".to_string()); }
+        if is_allowed("fetch_type_effectiveness") { tools.push("fetch_type_effectiveness".to_string()); }
+        if is_allowed("fetch_pokemon_by_type") { tools.push("fetch_pokemon_by_type".to_string()); }
+        if is_allowed("fetch_move_details") { tools.push("fetch_move_details".to_string()); }
+    }
+    
+    #[cfg(feature = "weather-tools")]
+    {
+        if is_allowed("get_weather") { tools.push("get_weather".to_string()); }
+        if is_allowed("get_current_weather") { tools.push("get_current_weather".to_string()); }
+        if is_allowed("get_weather_forecast") { tools.push("get_weather_forecast".to_string()); }
+    }
+    
+    #[cfg(feature = "calc-tools")]
+    {
+        if is_allowed("calculate") { tools.push("calculate".to_string()); }
+    }
+    
+    #[cfg(feature = "serper-tools")]
+    {
+        if crate::tools::serper::is_serper_available() {
+            if is_allowed("web_search") { tools.push("web_search".to_string()); }
+            if is_allowed("web_search_news") { tools.push("web_search_news".to_string()); }
+        }
+    }
+    
+    #[cfg(feature = "system-tools")]
+    {
+        if is_allowed("get_current_datetime") { tools.push("get_current_datetime".to_string()); }
+        if is_allowed("get_project_context") { tools.push("get_project_context".to_string()); }
+    }
+    
+    #[cfg(feature = "file-tools")]
+    {
+        if is_allowed("read_file") { tools.push("read_file".to_string()); }
+        if is_allowed("read_file_segment") { tools.push("read_file_segment".to_string()); }
+        if is_allowed("count_lines") { tools.push("count_lines".to_string()); }
+        if is_allowed("list_directory") { tools.push("list_directory".to_string()); }
+        if is_allowed("search_files") { tools.push("search_files".to_string()); }
+    }
+    
+    tools
 }
 
 /// Run the interactive chat REPL
@@ -398,6 +459,10 @@ pub async fn run_chat_repl(settings: &Settings, args: &super::ChatArgs) -> AppRe
                                     println!("Tool output level: {}", level);
                                     continue;
                                 }
+                                CommandResult::DebugToggled(new_state) => {
+                                    println!("Debug mode: {}", new_state);
+                                    continue;
+                                }
                             }
                         }
                         Some(Err(e)) => {
@@ -445,8 +510,9 @@ pub async fn run_chat_repl(settings: &Settings, args: &super::ChatArgs) -> AppRe
                         }
                     }
                     Err(e) => {
-                        let error_msg = format_tool_error(&e.to_string());
-                        eprintln!("\nError: {}", error_msg);
+                        // All recovery attempts exhausted - show error to user
+                        let error_str = e.to_string();
+                        eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
                     }
                 }
             }
@@ -530,6 +596,9 @@ async fn send_message(
     if tools_enabled {
         let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
         let mut tool_count = 0;
+
+        coordinator = coordinator.add_tool(test_tool);
+        tool_count += 1;
 
         #[cfg(feature = "pokemon-tools")]
         {
@@ -669,15 +738,62 @@ async fn send_message(
     // Show spinner
     let spinner = create_spinner("Thinking...");
 
-    // Send request
-    let result = coordinator.chat(messages.clone()).await;
+    // Get available tool names for error messages
+    let tool_names: Vec<String> = if tools_enabled {
+        get_available_tool_names(settings)
+    } else {
+        vec![]
+    };
+
+    // Send request with retry logic for recoverable errors
+    let mut attempts = 0;
+    let mut messages = messages; // Make mutable for retry
+    let result = loop {
+        let current_result = coordinator.chat(messages.clone()).await;
+        
+        match current_result {
+            Ok(response) => break Ok(response),
+            Err(e) => {
+                let error_str = e.to_string();
+                
+                // Check if error is recoverable using string matching
+                if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                    attempts += 1;
+                    
+                    let recovery_err = classify_error_str(&error_str, &tool_names);
+                    let error_msg = format_recovery_message(&recovery_err);
+                    
+                    if use_debug {
+                        log_debug(&format!(
+                            "🔧 [Recovery] Attempt {}/{} - {}",
+                            attempts, MAX_RETRIES, recovery_err.description()
+                        ));
+                    }
+                    
+                    // Add error as tool message and retry
+                    messages.push(ChatMessage::tool(error_msg));
+                    
+                    // Show brief retry indicator
+                    if attempts == 1 {
+                        finish_spinner(spinner.clone());
+                        eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                    }
+                    
+                    continue;
+                } else {
+                    // Max retries or non-recoverable
+                    break Err(error_str);
+                }
+            }
+        }
+    };
 
     finish_spinner(spinner);
 
     match result {
         Ok(response) => {
             let content = response.message.content.clone();
-            
+
             // Extract token metrics from final_data
             let metrics = if let Some(ref final_data) = response.final_data {
                 TokenMetrics {
@@ -699,7 +815,7 @@ async fn send_message(
                     let processed = process_thinking(&content);
                     processed.thinking.clone()
                 };
-                
+
                 if let Some(ref thinking) = thinking_content {
                     eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
                     for line in thinking.lines() {
@@ -715,10 +831,9 @@ async fn send_message(
             Ok((processed.content, metrics))
         }
         Err(e) => {
-            let error_str = e.to_string();
-            let error_msg = format_tool_error(&error_str);
+            let error_msg = format_tool_error(&e);
             eprintln!("\n{}", error_msg);
-            Err(error_str.into())
+            Err(e.into())
         }
     }
 }
@@ -742,6 +857,9 @@ async fn compact_conversation(
                 conversation_text.push_str(&format!("Assistant: {}\n", msg.content));
             }
             super::session::MessageRole::System => {}
+            super::session::MessageRole::Tool => {
+                conversation_text.push_str(&format!("Tool call: {}\n", msg.content));
+            }
         }
     }
 

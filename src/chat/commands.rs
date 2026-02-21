@@ -4,6 +4,7 @@
 
 use super::history::ConversationStorage;
 use super::session::ChatSession;
+use crate::debug_tools::toggle_debug;
 
 /// Result of executing a command
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +23,8 @@ pub enum CommandResult {
     Compact,
     /// Tool output level changed
     ToolOutputChanged(super::session::ToolOutputLevel),
+    /// Toggle debug (returns new state)
+    DebugToggled(bool),
 }
 
 /// Parsed chat command
@@ -60,6 +63,8 @@ pub enum ChatCommand {
     ToolsOutput {
         level: super::session::ToolOutputLevel,
     },
+    /// Enable debug
+    Debug,
 }
 
 /// Export format for /export command
@@ -143,6 +148,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         "list" | "ls" => ChatCommand::List,
         "info" | "i" => ChatCommand::Info,
         "think" | "t" => ChatCommand::Think,
+        "debug" | "d" => ChatCommand::Debug,
         "tools" => ChatCommand::Tools,
         "compact" => ChatCommand::Compact,
         "tools-output" | "to" => {
@@ -299,6 +305,8 @@ pub fn execute_command(
             session.tool_output_level = level;
             CommandResult::ToolOutputChanged(level)
         }
+
+        ChatCommand::Debug => CommandResult::DebugToggled(toggle_debug()),
     }
 }
 
@@ -392,6 +400,9 @@ fn export_markdown(session: &ChatSession) -> String {
             }
             super::session::MessageRole::System => {
                 output.push_str(&format!("**System:** {}\n\n", msg.content));
+            }
+            super::session::MessageRole::Tool => {
+                output.push_str(&format!("**Tool:** {}\n\n", msg.content));
             }
         }
     }

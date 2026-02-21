@@ -14,6 +14,11 @@ static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
 pub fn enable_debug() {
     DEBUG_MODE.store(true, Ordering::SeqCst);
 }
+pub fn toggle_debug() -> bool {
+    let value = !is_debug_enabled();
+    DEBUG_MODE.store(value, Ordering::SeqCst);
+    value
+}
 
 /// Check if debug mode is enabled
 pub fn is_debug_enabled() -> bool {

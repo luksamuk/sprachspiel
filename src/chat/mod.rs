@@ -6,6 +6,7 @@
 pub mod cli;
 pub mod commands;
 pub mod completion;
+pub mod coordinator;
 pub mod history;
 pub mod repl;
 pub mod session;
