@@ -58,6 +58,7 @@ This document outlines planned features and the current state of Ask-AI.
 
 **OCR:**
 - Text, tables, formulas, figures via glm-ocr model
+- Specialized for text extraction (separate from vision module)
 
 **Documentation:**
 - Man page
@@ -82,99 +83,141 @@ None currently.
 ### Vision Module for Image Processing
 
 **Priority:** HIGH  
-**Status:** Planning needed
+**Status:** Planning
 
-**Problem:** Add a dedicated vision module for image processing beyond OCR. Currently, vision-capable models can process images, but there's no structured way to handle image inputs.
+**Problem:** Add a dedicated vision module for image description/analysis. Currently, we have OCR for text extraction, but no way to get general image understanding.
+
+**Design Decisions:**
+- **Separate from OCR** - OCR (glm-ocr) for text extraction, Vision (moondream) for image understanding
+  - OCR: specialized for text/tables/formulas extraction
+  - Vision: general image description and analysis
+  - Two commands, two purposes, two optimized models
+- **Default model:** moondream:1.8b (1.7GB, lightweight, edge-optimized, "runs anywhere")
+- **Focus:** Standalone subcommand first, chat integration later
+
+**Vision Models Comparison (available in Ollama, ≤32B params):**
+
+| Model | Size | Context | Params | Multi-Img | Notes |
+|-------|------|---------|--------|-----------|-------|
+| moondream:1.8b | 1.7 GB | 2K | 1.8B | ❓ | Lightweight, edge devices (DEFAULT) |
+| llava:7b | 4.7 GB | 32K | 7B | ⚠️ | Popular, good OCR, higher resolution |
+| llava:13b | 8.0 GB | 4K | 13B | ⚠️ | More accurate than 7b |
+| minicpm-v:8b | 5.5 GB | 32K | 8B | ✅ | Multi-image leader, strong OCR, beats GPT-4V |
+| llama3.2-vision:11b | 7.8 GB | 128K | 11B | ❓ | Meta official, large context |
+| qwen2.5vl:7b | 6.0 GB | 125K | 7B | ❓ | Qwen vision, large context |
+| qwen2.5vl:32b | 21 GB | 125K | 32B | ❓ | Max size for 32GB RAM |
+
+**Proposed Structure:**
+```
+src/vision/
+├── mod.rs           # Exports
+├── cli.rs           # VisionArgs (clap)
+├── processor.rs     # VisionProcessor (similar to OcrProcessor)
+└── error.rs         # VisionError
+```
+
+**Proposed CLI:**
+```bash
+ask vision image.png                           # Default description
+ask vision --detailed image.png                # Detailed analysis
+ask vision --ocr image.png                     # Light OCR
+ask vision image.png "What objects are here?"  # Custom prompt
+ask vision img1.png img2.png                   # Multiple images
+ask vision --json image.png                    # JSON output
+ask vision -m llava image.png                  # Specific model
+```
+
+**Multi-Image Support:**
+- Ollama API natively supports `images` array
+- Best model for multi-image: minicpm-v:8b (SOTA on benchmarks)
+- Use cases: comparison, before/after, counting across images
+- No automatic fallback: if model performs poorly, user switches model manually
+
+**Research Completed:**
+- [x] Available vision models in Ollama (moondream, llava, minicpm-v, etc.)
+- [x] Model comparison and default selection (moondream:1.8b)
+- [x] Multi-image support: Ollama API supports `images` array; minicpm-v:8b is the leader (SOTA on multi-image benchmarks)
 
 **Research Needed:**
-- Image encoding for Ollama models (base64)
-- Supported image formats (PNG, JPEG, WebP, GIF)
-- Multi-image support
-- Model capability detection for vision
+- [ ] API differences: `/api/generate` vs `/api/chat` for vision
+- [ ] Image size limitations
 
-**Proposed Features:**
-- `ask-ai vision <image>` - Describe/analyze images
-- Image input in chat mode for vision models
-- Integration with vision-capable cloud models (kimi-k2.5, qwen3.5)
+**Modes and Use Cases:**
+
+| Mode | Flag | Default Prompt |
+|------|------|----------------|
+| default | (none) | "Describe this image." |
+| detailed | `--detailed` | "Describe this image in detail, including composition, colors, subjects, and any notable elements." |
+| ocr | `--ocr` | "Extract and transcribe all text visible in this image." |
+
+**Use Cases Covered:**
+- General description (default)
+- Detailed analysis (--detailed)
+- Light OCR (--ocr)
+- Custom prompts (user-provided prompt overrides modes)
+- **Comparison/inventory** (multi-image with custom prompt)
+- **Code/UI analysis** (via custom prompt)
 
 **Tasks:**
-- [ ] Research: Ollama vision API and image encoding
-- [ ] Research: Model vision capability detection
+- [ ] Design: Default prompt for description (brainstorming in progress)
 - [ ] Design: Vision command interface
-- [ ] Implement: Image encoding and processing
+- [ ] Implement: Vision module (cli, processor, error)
 - [ ] Implement: Vision command
+- [ ] Test: Compare vision models (configs added to models.toml)
 - [ ] Document: Vision capabilities
-
----
-
-### Code Redundancy Refactoring
-
-**Priority:** HIGH  
-**Status:** Planning needed
-
-**Problem:** Code has redundancy issues that were identified during bugfix work. The Ollama client configuration was triplicated across three places before being consolidated into `Settings::ollama_client()`. Similar patterns may exist elsewhere.
-
-**Example:**
-- Before fix: `Ollama::default()` was called separately in main.rs, summarize/processor.rs, and ocr/processor.rs
-- After fix: Single `Settings::ollama_client()` function
-
-**Approach:**
-
-This refactoring requires upfront planning before implementation:
-
-**Phase 1: Audit and Documentation**
-- Survey codebase for redundant code patterns
-- Document all instances of:
-  - Duplicated configuration logic
-  - Repeated initialization patterns
-  - Similar error handling blocks
-  - Copy-pasted code across modules
-- Create refactoring proposal with priorities
-
-**Phase 2: Prioritized Refactoring**
-- Start with high-impact, low-risk changes
-- Ensure tests pass after each change
-- Update documentation as needed
-
-**Potential Areas to Investigate:**
-- Model configuration loading
-- Coordinator building patterns
-- System prompt construction
-- Error handling patterns in tools
-- File operations across processors
-
-**Tasks:**
-- [ ] Audit: Survey codebase for redundancy patterns
-- [ ] Audit: Document all instances with locations
-- [ ] Design: Create refactoring plan with priorities
-- [ ] Implement: Refactor high-priority areas
-- [ ] Test: Verify all functionality after refactoring
-- [ ] Document: Update code documentation
 
 ---
 
 ## Medium Priority
 
-### Plugin System
+### Automatic Conversation Compaction
 
 **Priority:** Medium  
-**Status:** Not started
+**Status:** Research needed
 
-Support for custom tools via plugins:
+**Problem:** Manual `/compact` is sufficient, but automatic compaction based on token count would be more convenient.
 
-```rust
-// User-defined tool
-#[ollama_rs::function]
-pub async fn my_custom_tool(arg: String) -> Result<String> {
-    // Implementation
-}
-```
+**Research Needed:**
+- Token counting for conversation history
+- Optimal threshold for compaction
+- Integration with model's context window size
 
 **Tasks:**
-- [ ] Research: Dynamic loading vs compile-time plugins
-- [ ] Design: Plugin interface
-- [ ] Implement: Plugin loading mechanism
-- [ ] Document: Plugin development guide
+- [ ] Research: Token counting methods (tiktoken, ollama API)
+- [ ] Design: Threshold configuration (messages vs tokens)
+- [ ] Implement: Compact before context exhausted
+- [ ] Test: Verify context maintained after auto-compact
+
+---
+
+### Chat Module Integration
+
+**Priority:** Medium  
+**Status:** Planning needed
+
+**Problem:** Allow calling other modules (OCR, Vision, Translate, Summarize) from within chat mode. Currently, users must exit chat to use these features.
+
+**Research Needed:**
+- How to expose module functionality as chat commands
+- Model switching for specialized tasks (e.g., switch to glm-ocr for OCR, then back)
+- State management during module calls
+- User experience design (commands vs tools vs natural language)
+- **Contextualization:** When integrating with chat, think about how to contextualize module outputs. For example, after running OCR, the chat model should understand the extracted text as part of the conversation context, not just raw output. Same for vision descriptions - the model should be able to reason about what it "saw".
+
+**Proposed Features:**
+- `/ocr <image>` - Run OCR from within chat
+- `/translate <lang> <text>` - Translate text in chat
+- `/summarize` - Summarize conversation or pasted text
+- `/vision <image>` - Analyze image (when vision module ready)
+
+**Tasks:**
+- [ ] Research: Best approach for module integration (commands vs tools)
+- [ ] Design: Command interface and UX
+- [ ] Design: Model switching strategy
+- [ ] Implement: OCR command in chat
+- [ ] Implement: Translate command in chat
+- [ ] Implement: Summarize command in chat
+- [ ] Document: Chat module commands
 
 ---
 
@@ -215,6 +258,29 @@ pub async fn my_custom_tool(arg: String) -> Result<String> {
 ---
 
 ## Low Priority
+
+### Plugin System
+
+**Priority:** Low  
+**Status:** Not started
+
+Support for custom tools via plugins:
+
+```rust
+// User-defined tool
+#[ollama_rs::function]
+pub async fn my_custom_tool(arg: String) -> Result<String> {
+    // Implementation
+}
+```
+
+**Tasks:**
+- [ ] Research: Dynamic loading vs compile-time plugins
+- [ ] Design: Plugin interface
+- [ ] Implement: Plugin loading mechanism
+- [ ] Document: Plugin development guide
+
+---
 
 ### Shell Completions
 
@@ -323,6 +389,19 @@ ask-ai --generate-completion bash
 - Model sees tool errors and can react/retry
 - Error classification helpers in `coordinator.rs`
 - Maximum 3 retry attempts for recoverable errors
+
+### Code Redundancy Refactoring ✅
+
+**Completed:** 2026-02-23
+
+- Created `src/query.rs` module with shared query execution logic
+- Unified `handle_query()` and `handle_legacy_query()` into single `run_query()` function
+- Created `ChatContext` builder for coordinator with event callbacks
+- Created `OutputFlags` helper for debug/plain flag resolution
+- Centralized event handling with `handle_chat_event()`
+- Reduced `main.rs` from 1175 to 572 lines (51% reduction)
+- Fixed chat mode CLI flags (`-m`, `-t`, `--tools`, `--ignore-agents`)
+- Total reduction: ~600 lines of duplicated code eliminated
 
 ---
 
