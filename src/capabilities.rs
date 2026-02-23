@@ -15,6 +15,17 @@ pub struct ModelCapabilities {
     pub thinking: bool,
 }
 
+impl Default for ModelCapabilities {
+    fn default() -> Self {
+        Self {
+            tools: false,
+            vision: false,
+            completion: true,
+            thinking: false,
+        }
+    }
+}
+
 impl ModelCapabilities {
     /// Detect model capabilities by querying Ollama API
     ///
@@ -36,6 +47,21 @@ impl ModelCapabilities {
             completion: info.capabilities.contains(&"completion".to_string()),
             thinking: info.capabilities.contains(&"thinking".to_string()),
         })
+    }
+
+    /// Detect model capabilities or return defaults on error
+    ///
+    /// Prints a warning on detection failure and returns default capabilities
+    /// with completion enabled (safe fallback for most operations).
+    pub async fn detect_or_default(ollama: &Ollama, model_name: &str) -> Self {
+        match Self::detect(ollama, model_name).await {
+            Ok(caps) => caps,
+            Err(e) => {
+                eprintln!("Warning: Could not detect model capabilities: {}", e);
+                eprintln!("Continuing without capability detection...");
+                Self::default()
+            }
+        }
     }
 }
 

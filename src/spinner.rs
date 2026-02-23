@@ -8,6 +8,42 @@ use std::sync::RwLock;
 
 static ACTIVE_SPINNER: RwLock<Option<ProgressBar>> = RwLock::new(None);
 
+/// RAII guard that automatically finishes the spinner when dropped
+///
+/// Use this for automatic cleanup in error paths:
+/// ```
+/// use ask_ollama::spinner::SpinnerGuard;
+///
+/// fn operation() -> Result<(), Error> {
+///     let _spinner = SpinnerGuard::new("Working...");
+///     // Do work that might fail...
+///     Ok(()) // Spinner automatically finished here
+/// } // Or finished here on early return
+/// ```
+pub struct SpinnerGuard(Option<ProgressBar>);
+
+impl SpinnerGuard {
+    /// Create a new spinner guard with the given message
+    pub fn new(message: &str) -> Self {
+        Self(Some(create_spinner(message)))
+    }
+
+    /// Manually finish the spinner early (before drop)
+    pub fn finish(&mut self) {
+        if let Some(spinner) = self.0.take() {
+            finish_spinner(spinner);
+        }
+    }
+}
+
+impl Drop for SpinnerGuard {
+    fn drop(&mut self) {
+        if let Some(spinner) = self.0.take() {
+            finish_spinner(spinner);
+        }
+    }
+}
+
 /// Create a spinner for indicating that the application is waiting for a response
 ///
 /// # Arguments
@@ -114,5 +150,30 @@ mod tests {
         if let Ok(guard) = ACTIVE_SPINNER.read() {
             assert!(guard.is_none());
         }
+    }
+
+    #[test]
+    fn test_spinner_guard_auto_finish() {
+        {
+            let _spinner = SpinnerGuard::new("Auto cleanup test");
+            // Spinner active
+            if let Ok(guard) = ACTIVE_SPINNER.read() {
+                assert!(guard.is_some());
+            }
+        } // Drop here
+        if let Ok(guard) = ACTIVE_SPINNER.read() {
+            assert!(guard.is_none());
+        }
+    }
+
+    #[test]
+    fn test_spinner_guard_manual_finish() {
+        let mut spinner = SpinnerGuard::new("Manual finish test");
+        spinner.finish();
+        if let Ok(guard) = ACTIVE_SPINNER.read() {
+            assert!(guard.is_none());
+        }
+        // Drop should not panic
+        drop(spinner);
     }
 }

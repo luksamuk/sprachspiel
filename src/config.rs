@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use ollama_rs::models::ModelOptions;
+
 pub const DEFAULT_MODEL: &str = "llama3.1";
 
 static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| {
@@ -93,6 +95,28 @@ impl ModelConfig {
 
     pub fn is_builtin_valid(name: &str) -> bool {
         CONFIGS.contains_key(name)
+    }
+}
+
+impl ModelConfig {
+    pub fn build_model_options(&self) -> ModelOptions {
+        let mut opts = ModelOptions::default()
+            .temperature(self.temperature)
+            .repeat_penalty(self.repeat_penalty.unwrap_or(1.1));
+
+        if self.num_ctx > 0 {
+            opts = opts.num_ctx(self.num_ctx as u64);
+        }
+
+        if let Some(top_k) = self.top_k {
+            opts = opts.top_k(top_k);
+        }
+
+        if let Some(top_p) = self.top_p {
+            opts = opts.top_p(top_p);
+        }
+
+        opts
     }
 }
 

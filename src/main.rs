@@ -22,22 +22,18 @@ mod user_models;
 use clap::Parser;
 use ollama_rs::coordinator::Coordinator;
 use ollama_rs::generation::chat::ChatMessage;
-use ollama_rs::models::ModelOptions;
 use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
-use crate::chat::strip_thinking_tags;
-use crate::chat::thinking::process_thinking;
+use crate::chat::{display_thinking, strip_thinking_tags};
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::ocr::{OcrArgs, OcrProcessor, print_results};
-
 use crate::prompts::get_prompt_with_blacklist;
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::tool_robustness::format_tool_error;
-use crate::tools::*;
 use crate::translate::{
     Commands, CompletionArgs, LanguageMapper, QueryArgs, Shell, TranslateArgs, TranslationStyle,
     build_translation_prompt, parse_language_pair,
@@ -45,27 +41,6 @@ use crate::translate::{
 
 /// Type alias for common Result type
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-/// Build model options from config, only setting parameters if specified
-fn build_model_options(config: &ModelConfig) -> ModelOptions {
-    let mut opts = ModelOptions::default()
-        .temperature(config.temperature)
-        .repeat_penalty(config.repeat_penalty.unwrap_or(1.1));
-
-    if config.num_ctx > 0 {
-        opts = opts.num_ctx(config.num_ctx as u64);
-    }
-
-    if let Some(top_k) = config.top_k {
-        opts = opts.top_k(top_k);
-    }
-
-    if let Some(top_p) = config.top_p {
-        opts = opts.top_p(top_p);
-    }
-
-    opts
-}
 
 /// CLI for ask-ai
 #[derive(Parser, Debug)]
@@ -254,7 +229,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     // Initialize Ollama client with settings
     let ollama = settings.ollama_client();
 
-    let model_options = build_model_options(&model_config);
+    let model_options = model_config.build_model_options();
 
     // Build coordinator - no tools for translation
     let mut coordinator =
@@ -337,19 +312,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     let ollama = settings.ollama_client();
 
     // Detect model capabilities (query command)
-    let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
-        Ok(caps) => caps,
-        Err(e) => {
-            eprintln!("Warning: Could not detect model capabilities: {}", e);
-            eprintln!("Continuing without capability detection...");
-            ModelCapabilities {
-                tools: false,
-                vision: false,
-                completion: true,
-                thinking: false,
-            }
-        }
-    };
+    let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // Determine if tools should be enabled
     // CLI flag (global or subcommand) overrides subcommand config
@@ -435,7 +398,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
         // Don't return - continue with execution
     }
 
-    let model_options = build_model_options(&model_config);
+    let model_options = model_config.build_model_options();
 
     // Build coordinator
     let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
@@ -445,187 +408,8 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     // Add tools if enabled
     if use_tools_final {
         eprintln!("🔧 [Tools] Tools enabled - will log when called");
-
-        // Helper to check if tool is not blacklisted
-        let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
-        let mut tool_count = 0;
-
-        // Pokemon tools (only if feature enabled)
-        #[cfg(feature = "pokemon-tools")]
-        {
-            if is_tool_allowed("fetch_pokemon") {
-                coordinator = coordinator.add_tool(fetch_pokemon);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_basic") {
-                coordinator = coordinator.add_tool(fetch_pokemon_basic);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_stats") {
-                coordinator = coordinator.add_tool(fetch_pokemon_stats);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_moves") {
-                coordinator = coordinator.add_tool(fetch_pokemon_moves);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_evolution") {
-                coordinator = coordinator.add_tool(fetch_pokemon_evolution);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_ability_details") {
-                coordinator = coordinator.add_tool(fetch_ability_details);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_type_effectiveness") {
-                coordinator = coordinator.add_tool(fetch_type_effectiveness);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_by_type") {
-                coordinator = coordinator.add_tool(fetch_pokemon_by_type);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_move_details") {
-                coordinator = coordinator.add_tool(fetch_move_details);
-                tool_count += 1;
-            }
-        }
-
-        // Weather tools (only if feature enabled)
-        #[cfg(feature = "weather-tools")]
-        {
-            if is_tool_allowed("get_weather") {
-                coordinator = coordinator.add_tool(get_weather);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_current_weather") {
-                coordinator = coordinator.add_tool(get_current_weather);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_weather_forecast") {
-                coordinator = coordinator.add_tool(get_weather_forecast);
-                tool_count += 1;
-            }
-        }
-
-        // Calculator tool (only if feature enabled)
-        #[cfg(feature = "calc-tools")]
-        {
-            if is_tool_allowed("calculate") {
-                coordinator = coordinator.add_tool(calculate);
-                tool_count += 1;
-            }
-        }
-
-        // Misc tools
-        coordinator = coordinator.add_tool(test_tool);
-        tool_count += 1;
-
-        // Web search tools - prefer Serper over DDG
-        // Serper: Google Search via API (requires SERPER_API_KEY)
-        // DDG: DuckDuckGo (free but may be blocked by CAPTCHA)
-        #[cfg(feature = "serper-tools")]
-        {
-            if crate::tools::serper::is_serper_available() {
-                if use_debug {
-                    eprintln!("🔑 [Serper] API key found - enabling Google Search via Serper");
-                }
-                if is_tool_allowed("web_search") {
-                    coordinator = coordinator.add_tool(crate::tools::serper::web_search);
-                    tool_count += 1;
-                }
-                if is_tool_allowed("web_search_news") {
-                    coordinator = coordinator.add_tool(crate::tools::serper::web_search_news);
-                    tool_count += 1;
-                }
-            } else {
-                #[cfg(feature = "search-tools")]
-                {
-                    if use_debug {
-                        eprintln!(
-                            "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)"
-                        );
-                    }
-                    if is_tool_allowed("web_search") {
-                        coordinator = coordinator.add_tool(web_search);
-                        tool_count += 1;
-                    }
-                    if is_tool_allowed("web_search_news") {
-                        coordinator = coordinator.add_tool(web_search_news);
-                        tool_count += 1;
-                    }
-                }
-                #[cfg(not(feature = "search-tools"))]
-                {
-                    if use_debug {
-                        eprintln!(
-                            "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature"
-                        );
-                    }
-                }
-            }
-        }
-
-        // DDG fallback when serper-tools not enabled but search-tools is
-        #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
-        {
-            if is_tool_allowed("web_search") {
-                coordinator = coordinator.add_tool(web_search);
-                tool_count += 1;
-            }
-            if is_tool_allowed("web_search_news") {
-                coordinator = coordinator.add_tool(web_search_news);
-                tool_count += 1;
-            }
-        }
-
-        // Web scraper - always available with search tools
-        #[cfg(feature = "search-tools")]
-        {
-            if is_tool_allowed("web_scrape") {
-                coordinator = coordinator.add_tool(web_scrape);
-                tool_count += 1;
-            }
-        }
-
-        // System tools (only if feature enabled)
-        #[cfg(feature = "system-tools")]
-        {
-            if is_tool_allowed("get_current_datetime") {
-                coordinator = coordinator.add_tool(get_current_datetime);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_project_context") {
-                coordinator = coordinator.add_tool(get_project_context);
-                tool_count += 1;
-            }
-        }
-
-        // File tools (only if feature enabled)
-        #[cfg(feature = "file-tools")]
-        {
-            if is_tool_allowed("read_file") {
-                coordinator = coordinator.add_tool(read_file);
-                tool_count += 1;
-            }
-            if is_tool_allowed("read_file_segment") {
-                coordinator = coordinator.add_tool(read_file_segment);
-                tool_count += 1;
-            }
-            if is_tool_allowed("count_lines") {
-                coordinator = coordinator.add_tool(count_lines);
-                tool_count += 1;
-            }
-            if is_tool_allowed("list_directory") {
-                coordinator = coordinator.add_tool(list_directory);
-                tool_count += 1;
-            }
-            if is_tool_allowed("search_files") {
-                coordinator = coordinator.add_tool(search_files);
-                tool_count += 1;
-            }
-        }
-
+        let (coordinator_new, tool_count) = crate::tools::register_tools(coordinator, settings, use_debug);
+        coordinator = coordinator_new;
         if use_debug {
             eprintln!("   -> {} tools active", tool_count);
         }
@@ -663,21 +447,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
 
     // Show thinking if present and think mode is enabled
     if use_think {
-        // First check the API-provided thinking field, then fallback to content extraction
-        let thinking_content = if let Some(ref thinking) = response.message.thinking {
-            Some(thinking.clone())
-        } else {
-            let processed = process_thinking(&response.message.content);
-            processed.thinking.clone()
-        };
-        
-        if let Some(ref thinking) = thinking_content {
-            eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
-            for line in thinking.lines() {
-                eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
-            }
-            eprintln!();
-        }
+        display_thinking(&response.message.content, response.message.thinking.as_ref());
     }
 
     // Strip thinking tags from content
@@ -742,19 +512,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let ollama = settings.ollama_client();
 
     // Detect model capabilities (code/summarize commands)
-    let capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
-        Ok(caps) => caps,
-        Err(e) => {
-            eprintln!("Warning: Could not detect model capabilities: {}", e);
-            eprintln!("Continuing without capability detection...");
-            ModelCapabilities {
-                tools: false,
-                vision: false,
-                completion: true,
-                thinking: false,
-            }
-        }
-    };
+    let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // Determine if tools should be enabled
     // CLI flag overrides subcommand config
@@ -840,7 +598,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         // Don't return - continue with execution
     }
 
-    let model_options = build_model_options(&model_config);
+    let model_options = model_config.build_model_options();
 
     // Build coordinator
     let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
@@ -853,192 +611,8 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         if use_debug {
             eprintln!("🔧 [Tools] Tools enabled - will log when called");
         }
-
-        // Helper to check if tool is not blacklisted
-        let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
-        let mut tool_count = 0;
-
-        // Pokemon tools (only if feature enabled)
-        #[cfg(feature = "pokemon-tools")]
-        {
-            if is_tool_allowed("fetch_pokemon") {
-                coordinator = coordinator.add_tool(fetch_pokemon);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_basic") {
-                coordinator = coordinator.add_tool(fetch_pokemon_basic);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_stats") {
-                coordinator = coordinator.add_tool(fetch_pokemon_stats);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_moves") {
-                coordinator = coordinator.add_tool(fetch_pokemon_moves);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_evolution") {
-                coordinator = coordinator.add_tool(fetch_pokemon_evolution);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_ability_details") {
-                coordinator = coordinator.add_tool(fetch_ability_details);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_type_effectiveness") {
-                coordinator = coordinator.add_tool(fetch_type_effectiveness);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_by_type") {
-                coordinator = coordinator.add_tool(fetch_pokemon_by_type);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_move_details") {
-                coordinator = coordinator.add_tool(fetch_move_details);
-                tool_count += 1;
-            }
-        }
-
-        // Weather tools (only if feature enabled)
-        #[cfg(feature = "weather-tools")]
-        {
-            if is_tool_allowed("get_weather") {
-                coordinator = coordinator.add_tool(get_weather);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_current_weather") {
-                coordinator = coordinator.add_tool(get_current_weather);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_weather_forecast") {
-                coordinator = coordinator.add_tool(get_weather_forecast);
-                tool_count += 1;
-            }
-        }
-
-        // Calculator tool (only if feature enabled)
-        #[cfg(feature = "calc-tools")]
-        {
-            if is_tool_allowed("calculate") {
-                coordinator = coordinator.add_tool(calculate);
-                tool_count += 1;
-            }
-        }
-
-        // Web search tools - prefer Serper over DDG
-        // Serper: Google Search via API (requires SERPER_API_KEY)
-        // DDG: DuckDuckGo (free but may be blocked by CAPTCHA)
-        #[cfg(feature = "serper-tools")]
-        {
-            if crate::tools::serper::is_serper_available() {
-                if use_debug {
-                    eprintln!("🔑 [Serper] API key found - enabling Google Search via Serper");
-                }
-                if is_tool_allowed("web_search") {
-                    coordinator = coordinator.add_tool(crate::tools::serper::web_search);
-                    tool_count += 1;
-                }
-                if is_tool_allowed("web_search_news") {
-                    coordinator = coordinator.add_tool(crate::tools::serper::web_search_news);
-                    tool_count += 1;
-                }
-            } else {
-                #[cfg(feature = "search-tools")]
-                {
-                    if use_debug {
-                        eprintln!(
-                            "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)"
-                        );
-                    }
-                    if is_tool_allowed("web_search") {
-                        coordinator = coordinator.add_tool(web_search);
-                        tool_count += 1;
-                    }
-                    if is_tool_allowed("web_search_news") {
-                        coordinator = coordinator.add_tool(web_search_news);
-                        tool_count += 1;
-                    }
-                }
-                #[cfg(not(feature = "search-tools"))]
-                {
-                    if use_debug {
-                        eprintln!(
-                            "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature"
-                        );
-                    }
-                }
-            }
-        }
-
-        // DDG fallback when serper-tools not enabled but search-tools is
-        #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
-        {
-            if is_tool_allowed("web_search") {
-                coordinator = coordinator.add_tool(web_search);
-                tool_count += 1;
-            }
-            if is_tool_allowed("web_search_news") {
-                coordinator = coordinator.add_tool(web_search_news);
-                tool_count += 1;
-            }
-        }
-
-        // Web scraper - always available with search tools
-        #[cfg(feature = "search-tools")]
-        {
-            if is_tool_allowed("web_scrape") {
-                coordinator = coordinator.add_tool(web_scrape);
-                tool_count += 1;
-            }
-        }
-
-        // Finance tools (only if feature enabled)
-        #[cfg(feature = "finance-tools")]
-        {
-            if is_tool_allowed("get_stock_quote") {
-                coordinator = coordinator.add_tool(get_stock_quote);
-                tool_count += 1;
-            }
-        }
-
-        // System tools (only if feature enabled)
-        #[cfg(feature = "system-tools")]
-        {
-            if is_tool_allowed("get_current_datetime") {
-                coordinator = coordinator.add_tool(get_current_datetime);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_project_context") {
-                coordinator = coordinator.add_tool(get_project_context);
-                tool_count += 1;
-            }
-        }
-
-        // File tools (only if feature enabled)
-        #[cfg(feature = "file-tools")]
-        {
-            if is_tool_allowed("read_file") {
-                coordinator = coordinator.add_tool(read_file);
-                tool_count += 1;
-            }
-            if is_tool_allowed("read_file_segment") {
-                coordinator = coordinator.add_tool(read_file_segment);
-                tool_count += 1;
-            }
-            if is_tool_allowed("count_lines") {
-                coordinator = coordinator.add_tool(count_lines);
-                tool_count += 1;
-            }
-            if is_tool_allowed("list_directory") {
-                coordinator = coordinator.add_tool(list_directory);
-                tool_count += 1;
-            }
-            if is_tool_allowed("search_files") {
-                coordinator = coordinator.add_tool(search_files);
-                tool_count += 1;
-            }
-        }
-
+        let (coordinator_new, tool_count) = crate::tools::register_tools(coordinator, settings, use_debug);
+        coordinator = coordinator_new;
         if use_debug {
             eprintln!("   -> {} tools active", tool_count);
         }
@@ -1076,21 +650,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
 
     // Show thinking if present and think mode is enabled
     if use_think {
-        // First check the API-provided thinking field, then fallback to content extraction
-        let thinking_content = if let Some(ref thinking) = response.message.thinking {
-            Some(thinking.clone())
-        } else {
-            let processed = process_thinking(&response.message.content);
-            processed.thinking.clone()
-        };
-        
-        if let Some(ref thinking) = thinking_content {
-            eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
-            for line in thinking.lines() {
-                eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
-            }
-            eprintln!();
-        }
+        display_thinking(&response.message.content, response.message.thinking.as_ref());
     }
 
     // Strip thinking tags from content

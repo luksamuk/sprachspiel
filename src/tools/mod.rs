@@ -10,6 +10,7 @@ pub mod finance;
 pub mod misc;
 #[cfg(feature = "pokemon-tools")]
 pub mod pokemon;
+pub mod registry;
 #[cfg(feature = "search-tools")]
 pub mod search_builtin;
 #[cfg(feature = "serper-tools")]
@@ -26,6 +27,7 @@ pub use finance::*;
 pub use misc::*;
 #[cfg(feature = "pokemon-tools")]
 pub use pokemon::*;
+pub use registry::{get_available_tool_names, register_tools};
 #[cfg(feature = "search-tools")]
 pub use search_builtin::*;
 #[cfg(feature = "system-tools")]

@@ -97,6 +97,34 @@ pub fn strip_thinking_tags(content: &str) -> String {
     process_thinking(content).content
 }
 
+/// Display thinking content to stderr in gray/dim style
+///
+/// Checks the API-provided thinking field first, then falls back to
+/// extracting from content.
+///
+/// # Arguments
+/// * `content` - The full response content
+/// * `thinking_field` - Optional thinking field from API response
+///
+/// # Returns
+/// The extracted thinking content (if any), for potential further use
+pub fn display_thinking(content: &str, thinking_field: Option<&String>) -> Option<String> {
+    let thinking_content = thinking_field.map(|t| t.clone()).or_else(|| {
+        let processed = process_thinking(content);
+        processed.thinking
+    });
+
+    if let Some(ref thinking) = thinking_content {
+        eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
+        for line in thinking.lines() {
+            eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
+        }
+        eprintln!();
+    }
+
+    thinking_content
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

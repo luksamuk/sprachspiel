@@ -14,4 +14,4 @@ pub mod thinking;
 
 pub use cli::ChatArgs;
 pub use repl::run_chat_repl;
-pub use thinking::strip_thinking_tags;
+pub use thinking::{display_thinking, strip_thinking_tags};

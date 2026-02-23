@@ -4,7 +4,6 @@
 
 use ollama_rs::coordinator::Coordinator;
 use ollama_rs::generation::chat::ChatMessage;
-use ollama_rs::models::ModelOptions;
 use rustyline::Config;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
@@ -17,7 +16,6 @@ use crate::prompts::get_prompt_with_blacklist;
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::tool_robustness::format_tool_error;
-use crate::tools::*;
 
 use super::commands::{CommandResult, execute_command, parse_command};
 use super::completion::ChatCompleter;
@@ -26,89 +24,10 @@ use super::coordinator::{
 };
 use super::history::{ConversationStorage, get_project_id};
 use super::session::ChatSession;
-use super::thinking::{process_thinking, strip_thinking_tags};
+use super::thinking::{display_thinking, strip_thinking_tags};
 
 /// Type alias for common Result type
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-/// Build model options from config, only setting parameters if specified
-fn build_model_options(config: &ModelConfig) -> ModelOptions {
-    let mut opts = ModelOptions::default()
-        .temperature(config.temperature)
-        .repeat_penalty(config.repeat_penalty.unwrap_or(1.1));
-
-    if config.num_ctx > 0 {
-        opts = opts.num_ctx(config.num_ctx as u64);
-    }
-
-    if let Some(top_k) = config.top_k {
-        opts = opts.top_k(top_k);
-    }
-
-    if let Some(top_p) = config.top_p {
-        opts = opts.top_p(top_p);
-    }
-
-    opts
-}
-
-/// Get list of available tool names based on settings blacklist
-fn get_available_tool_names(settings: &Settings) -> Vec<String> {
-    let mut tools = Vec::new();
-    let is_allowed = |name: &str| !settings.is_tool_blacklisted(name);
-    
-    tools.push("test_tool".to_string());
-    
-    #[cfg(feature = "pokemon-tools")]
-    {
-        if is_allowed("fetch_pokemon") { tools.push("fetch_pokemon".to_string()); }
-        if is_allowed("fetch_pokemon_basic") { tools.push("fetch_pokemon_basic".to_string()); }
-        if is_allowed("fetch_pokemon_stats") { tools.push("fetch_pokemon_stats".to_string()); }
-        if is_allowed("fetch_pokemon_moves") { tools.push("fetch_pokemon_moves".to_string()); }
-        if is_allowed("fetch_pokemon_evolution") { tools.push("fetch_pokemon_evolution".to_string()); }
-        if is_allowed("fetch_ability_details") { tools.push("fetch_ability_details".to_string()); }
-        if is_allowed("fetch_type_effectiveness") { tools.push("fetch_type_effectiveness".to_string()); }
-        if is_allowed("fetch_pokemon_by_type") { tools.push("fetch_pokemon_by_type".to_string()); }
-        if is_allowed("fetch_move_details") { tools.push("fetch_move_details".to_string()); }
-    }
-    
-    #[cfg(feature = "weather-tools")]
-    {
-        if is_allowed("get_weather") { tools.push("get_weather".to_string()); }
-        if is_allowed("get_current_weather") { tools.push("get_current_weather".to_string()); }
-        if is_allowed("get_weather_forecast") { tools.push("get_weather_forecast".to_string()); }
-    }
-    
-    #[cfg(feature = "calc-tools")]
-    {
-        if is_allowed("calculate") { tools.push("calculate".to_string()); }
-    }
-    
-    #[cfg(feature = "serper-tools")]
-    {
-        if crate::tools::serper::is_serper_available() {
-            if is_allowed("web_search") { tools.push("web_search".to_string()); }
-            if is_allowed("web_search_news") { tools.push("web_search_news".to_string()); }
-        }
-    }
-    
-    #[cfg(feature = "system-tools")]
-    {
-        if is_allowed("get_current_datetime") { tools.push("get_current_datetime".to_string()); }
-        if is_allowed("get_project_context") { tools.push("get_project_context".to_string()); }
-    }
-    
-    #[cfg(feature = "file-tools")]
-    {
-        if is_allowed("read_file") { tools.push("read_file".to_string()); }
-        if is_allowed("read_file_segment") { tools.push("read_file_segment".to_string()); }
-        if is_allowed("count_lines") { tools.push("count_lines".to_string()); }
-        if is_allowed("list_directory") { tools.push("list_directory".to_string()); }
-        if is_allowed("search_files") { tools.push("search_files".to_string()); }
-    }
-    
-    tools
-}
 
 /// Run the interactive chat REPL
 pub async fn run_chat_repl(settings: &Settings, args: &super::ChatArgs) -> AppResult<()> {
@@ -217,19 +136,7 @@ pub async fn run_chat_repl(settings: &Settings, args: &super::ChatArgs) -> AppRe
     let ollama = settings.ollama_client();
 
     // Detect model capabilities
-    let mut capabilities = match ModelCapabilities::detect(&ollama, &model_config.model_id).await {
-        Ok(caps) => caps,
-        Err(e) => {
-            eprintln!("Warning: Could not detect model capabilities: {}", e);
-            eprintln!("Continuing without capability detection...");
-            ModelCapabilities {
-                tools: false,
-                vision: false,
-                completion: true,
-                thinking: false,
-            }
-        }
-    };
+    let mut capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // Check think mode compatibility
     if session.think && !capabilities.thinking {
@@ -328,14 +235,14 @@ pub async fn run_chat_repl(settings: &Settings, args: &super::ChatArgs) -> AppRe
                                     }
                                 };
 
-                                // Detect new capabilities
+                                // Detect new capabilities (keep old on failure)
                                 let new_caps =
                                     match ModelCapabilities::detect(&ollama, &new_config.model_id)
                                         .await
                                     {
                                         Ok(c) => c,
                                         Err(_) => {
-                                            eprintln!("Warning: Could not detect capabilities.");
+                                            eprintln!("Warning: Could not detect capabilities, keeping previous.");
                                             capabilities.clone()
                                         }
                                     };
@@ -563,7 +470,7 @@ async fn send_message(
     agents_md: Option<&str>,
     use_debug: bool,
 ) -> AppResult<(String, TokenMetrics)> {
-    let model_options = build_model_options(model_config);
+    let model_options = model_config.build_model_options();
 
     // Get system prompt - AGENTS.md passed from REPL startup
     let prompt_name = if tools_enabled {
@@ -594,126 +501,8 @@ async fn send_message(
 
     // Add tools if enabled
     if tools_enabled {
-        let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
-        let mut tool_count = 0;
-
-        coordinator = coordinator.add_tool(test_tool);
-        tool_count += 1;
-
-        #[cfg(feature = "pokemon-tools")]
-        {
-            if is_tool_allowed("fetch_pokemon") {
-                coordinator = coordinator.add_tool(fetch_pokemon);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_basic") {
-                coordinator = coordinator.add_tool(fetch_pokemon_basic);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_stats") {
-                coordinator = coordinator.add_tool(fetch_pokemon_stats);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_moves") {
-                coordinator = coordinator.add_tool(fetch_pokemon_moves);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_evolution") {
-                coordinator = coordinator.add_tool(fetch_pokemon_evolution);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_ability_details") {
-                coordinator = coordinator.add_tool(fetch_ability_details);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_type_effectiveness") {
-                coordinator = coordinator.add_tool(fetch_type_effectiveness);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_pokemon_by_type") {
-                coordinator = coordinator.add_tool(fetch_pokemon_by_type);
-                tool_count += 1;
-            }
-            if is_tool_allowed("fetch_move_details") {
-                coordinator = coordinator.add_tool(fetch_move_details);
-                tool_count += 1;
-            }
-        }
-
-        #[cfg(feature = "weather-tools")]
-        {
-            if is_tool_allowed("get_weather") {
-                coordinator = coordinator.add_tool(get_weather);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_current_weather") {
-                coordinator = coordinator.add_tool(get_current_weather);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_weather_forecast") {
-                coordinator = coordinator.add_tool(get_weather_forecast);
-                tool_count += 1;
-            }
-        }
-
-        #[cfg(feature = "calc-tools")]
-        {
-            if is_tool_allowed("calculate") {
-                coordinator = coordinator.add_tool(calculate);
-                tool_count += 1;
-            }
-        }
-
-        #[cfg(feature = "serper-tools")]
-        {
-            if crate::tools::serper::is_serper_available() {
-                if is_tool_allowed("web_search") {
-                    coordinator = coordinator.add_tool(crate::tools::serper::web_search);
-                    tool_count += 1;
-                }
-                if is_tool_allowed("web_search_news") {
-                    coordinator = coordinator.add_tool(crate::tools::serper::web_search_news);
-                    tool_count += 1;
-                }
-            }
-        }
-
-        #[cfg(feature = "system-tools")]
-        {
-            if is_tool_allowed("get_current_datetime") {
-                coordinator = coordinator.add_tool(get_current_datetime);
-                tool_count += 1;
-            }
-            if is_tool_allowed("get_project_context") {
-                coordinator = coordinator.add_tool(get_project_context);
-                tool_count += 1;
-            }
-        }
-
-        #[cfg(feature = "file-tools")]
-        {
-            if is_tool_allowed("read_file") {
-                coordinator = coordinator.add_tool(read_file);
-                tool_count += 1;
-            }
-            if is_tool_allowed("read_file_segment") {
-                coordinator = coordinator.add_tool(read_file_segment);
-                tool_count += 1;
-            }
-            if is_tool_allowed("count_lines") {
-                coordinator = coordinator.add_tool(count_lines);
-                tool_count += 1;
-            }
-            if is_tool_allowed("list_directory") {
-                coordinator = coordinator.add_tool(list_directory);
-                tool_count += 1;
-            }
-            if is_tool_allowed("search_files") {
-                coordinator = coordinator.add_tool(search_files);
-                tool_count += 1;
-            }
-        }
-
+        let (coordinator_new, tool_count) = crate::tools::register_tools(coordinator, settings, use_debug);
+        coordinator = coordinator_new;
         if use_debug {
             log_debug(&format!("{} tools active", tool_count));
         }
@@ -740,7 +529,7 @@ async fn send_message(
 
     // Get available tool names for error messages
     let tool_names: Vec<String> = if tools_enabled {
-        get_available_tool_names(settings)
+        crate::tools::get_available_tool_names(settings)
     } else {
         vec![]
     };
@@ -806,29 +595,14 @@ async fn send_message(
             };
 
             // Show thinking content in gray/dim if present and think mode is enabled
-            // First check the API-provided thinking field, then fallback to content extraction
             if think_enabled {
-                let thinking_content = if let Some(ref thinking) = response.message.thinking {
-                    Some(thinking.clone())
-                } else {
-                    // Fallback: extract thinking from content if API didn't provide it
-                    let processed = process_thinking(&content);
-                    processed.thinking.clone()
-                };
-
-                if let Some(ref thinking) = thinking_content {
-                    eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
-                    for line in thinking.lines() {
-                        eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
-                    }
-                    eprintln!();
-                }
+                display_thinking(&content, response.message.thinking.as_ref());
             }
 
             // Strip thinking tags from content for display
-            let processed = process_thinking(&content);
-            print_text(&processed.content);
-            Ok((processed.content, metrics))
+            let display_content = strip_thinking_tags(&content);
+            print_text(&display_content);
+            Ok((display_content, metrics))
         }
         Err(e) => {
             let error_msg = format_tool_error(&e);
@@ -881,7 +655,7 @@ Provide a clear, structured summary that captures the essential context."#,
     let mut model_cfg = model_config.clone();
     model_cfg.temperature = 0.3;
     model_cfg.top_p = Some(0.9);
-    let model_options = build_model_options(&model_cfg);
+    let model_options = model_cfg.build_model_options();
 
     let mut coordinator: Coordinator<Vec<ChatMessage>> =
         Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
