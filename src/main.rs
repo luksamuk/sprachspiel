@@ -288,25 +288,14 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
 
     // Get model configuration - priority: global CLI > subcommand config > global default
     let model_name = if let Some(ref m) = cli.model {
-        // User specified model via global flag
         m.clone()
     } else if !subcommand_model.is_empty() {
-        // Use subcommand-specific model from config
         subcommand_model
     } else {
-        // Use global default from settings (or built-in default)
         settings.model.default.clone()
     };
 
-    let model_config = if user_models::is_model_valid(&model_name) {
-        user_models::get_model_config(&model_name).unwrap()
-    } else {
-        eprintln!(
-            "Error: Unknown model '{}'. Use --list to see available models.",
-            model_name
-        );
-        std::process::exit(1);
-    };
+    let model_config = user_models::resolve_model_config(&model_name);
 
     // Initialize Ollama client with settings
     let ollama = settings.ollama_client();
@@ -315,26 +304,16 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // Determine if tools should be enabled
-    // CLI flag (global or subcommand) overrides subcommand config
     let use_tools_final = use_tools || (subcommand_tools && capabilities.tools);
 
     // Determine if think mode should be enabled
-    // Priority: CLI flag > model config > subcommand config
-    // For cloud models with thinking=true in config, enable even without detection
-    let model_supports_think = capabilities.thinking || model_config.thinking;
-    let use_think_final = if use_think {
-        if model_supports_think {
-            true
-        } else {
-            eprintln!(
-                "Warning: Model '{}' does not support think mode. Ignoring -t flag.",
-                model_config.model_id
-            );
-            false
-        }
-    } else {
-        (subcommand_thinking || model_config.thinking) && model_supports_think
-    };
+    let use_think_final = user_models::resolve_think_mode(
+        use_think,
+        subcommand_thinking,
+        model_config.thinking,
+        &model_config.model_id,
+        capabilities.thinking,
+    );
 
     // Load AGENTS.md context if available and not ignored
     let agents_md = if !ignore_agents {
@@ -488,25 +467,14 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
 
     // Get model configuration - priority: CLI > subcommand config > global default > built-in
     let model_name = if let Some(ref m) = cli.model {
-        // User specified model via CLI
         m.clone()
     } else if !subcommand_model.is_empty() {
-        // Use subcommand-specific model from config
         subcommand_model
     } else {
-        // Use global default from settings (or built-in default)
         settings.model.default.clone()
     };
 
-    let model_config = if user_models::is_model_valid(&model_name) {
-        user_models::get_model_config(&model_name).unwrap()
-    } else {
-        eprintln!(
-            "Error: Unknown model '{}'. Use --list to see available models.",
-            model_name
-        );
-        std::process::exit(1);
-    };
+    let model_config = user_models::resolve_model_config(&model_name);
 
     // Initialize Ollama client with settings
     let ollama = settings.ollama_client();
@@ -515,26 +483,16 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // Determine if tools should be enabled
-    // CLI flag overrides subcommand config
     let use_tools = cli.tools || (subcommand_tools && capabilities.tools);
 
     // Determine if think mode should be enabled
-    // Priority: CLI flag > model config > subcommand config
-    // For cloud models with thinking=true in config, enable even without detection
-    let model_supports_think = capabilities.thinking || model_config.thinking;
-    let use_think = if cli.think {
-        if model_supports_think {
-            true
-        } else {
-            eprintln!(
-                "Warning: Model '{}' does not support think mode. Ignoring -t flag.",
-                model_config.model_id
-            );
-            false
-        }
-    } else {
-        (subcommand_thinking || model_config.thinking) && model_supports_think
-    };
+    let use_think = user_models::resolve_think_mode(
+        cli.think,
+        subcommand_thinking,
+        model_config.thinking,
+        &model_config.model_id,
+        capabilities.thinking,
+    );
 
     // Get system prompt with blacklist filtering
     // Default is now tool_user, code mode can also use tools

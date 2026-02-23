@@ -121,16 +121,7 @@ pub async fn run_chat_repl(settings: &Settings, args: &super::ChatArgs) -> AppRe
 
     // Get initial model configuration - this is the actual state we use
     let mut current_model_name = session.model.clone();
-    let mut model_config = match crate::user_models::get_model_config(&current_model_name) {
-        Some(cfg) => cfg,
-        None => {
-            eprintln!(
-                "Error: Unknown model '{}'. Use --list to see available models.",
-                session.model
-            );
-            return Err(format!("Unknown model: {}", session.model).into());
-        }
-    };
+    let mut model_config = crate::user_models::resolve_model_config(&current_model_name);
 
     // Initialize Ollama client
     let ollama = settings.ollama_client();
@@ -227,13 +218,7 @@ pub async fn run_chat_repl(settings: &Settings, args: &super::ChatArgs) -> AppRe
                                 current_model_name = name.clone();
 
                                 // Load new config
-                                let new_config = match crate::user_models::get_model_config(name) {
-                                    Some(cfg) => cfg,
-                                    None => {
-                                        eprintln!("Error loading model config.");
-                                        continue;
-                                    }
-                                };
+                                let new_config = crate::user_models::resolve_model_config(name);
 
                                 // Detect new capabilities (keep old on failure)
                                 let new_caps =

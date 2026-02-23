@@ -140,6 +140,51 @@ pub fn is_model_valid(name: &str) -> bool {
     ModelConfig::is_builtin_valid(name) || get_user_models().contains_key(name)
 }
 
+/// Resolve model configuration with error handling
+///
+/// Returns the model configuration or prints an error and exits.
+/// Use this instead of the `is_model_valid` + `get_model_config().unwrap()` pattern.
+pub fn resolve_model_config(name: &str) -> ModelConfig {
+    match get_model_config(name) {
+        Some(config) => config,
+        None => {
+            eprintln!(
+                "Error: Unknown model '{}'. Use --list to see available models.",
+                name
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Determine if think mode should be enabled
+///
+/// Priority: CLI flag > model config > subcommand config
+/// Returns the final think mode state and prints warning if model doesn't support it.
+pub fn resolve_think_mode(
+    cli_think: bool,
+    subcommand_thinking: bool,
+    model_config_thinking: bool,
+    model_id: &str,
+    capabilities_thinking: bool,
+) -> bool {
+    let model_supports_think = capabilities_thinking || model_config_thinking;
+
+    if cli_think {
+        if model_supports_think {
+            true
+        } else {
+            eprintln!(
+                "Warning: Model '{}' does not support think mode. Ignoring -t flag.",
+                model_id
+            );
+            false
+        }
+    } else {
+        (subcommand_thinking || model_config_thinking) && model_supports_think
+    }
+}
+
 pub fn list_all_model_names() -> Vec<String> {
     let mut names: Vec<String> = ModelConfig::list_builtin_names()
         .iter()
