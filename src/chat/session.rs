@@ -186,18 +186,6 @@ impl ChatSession {
         self.updated_at = now;
     }
 
-    /// Add a tool message to the session.
-    /// You'll want to use this especially on tool call errors.
-    pub fn add_tool_message(&mut self, content: String) {
-        let now = Utc::now();
-        self.messages.push(SavedMessage {
-            role: MessageRole::Tool,
-            content,
-            timestamp: now,
-        });
-        self.updated_at = now;
-    }
-
     /// Set the system prompt
     pub fn set_system_prompt(&mut self, prompt: String) {
         self.system_prompt = Some(prompt);

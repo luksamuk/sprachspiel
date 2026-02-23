@@ -215,7 +215,6 @@ impl Settings {
     }
 
     /// Get blacklist as a HashSet for efficient lookups
-    #[allow(dead_code)]
     pub fn blacklist_set(&self) -> HashSet<&str> {
         self.tools.blacklist.iter().map(|s| s.as_str()).collect()
     }

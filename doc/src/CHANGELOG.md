@@ -2,6 +2,32 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **Major Code Refactoring** - Eliminated ~400 lines of duplicated code
+  - Created `src/tools/registry.rs` with centralized tool registration
+  - Created `src/utils.rs` with shared utility functions
+  - Moved `build_model_options()` to `ModelConfig` as instance method
+  - Added `detect_or_default()` to `ModelCapabilities`
+  - Added `display_thinking()` helper to `chat/thinking.rs`
+  - Added `resolve_model_config()` and `resolve_think_mode()` to `user_models.rs`
+  - Added `SpinnerGuard` RAII pattern to `spinner.rs`
+
+### Removed
+
+- **Dead Code** - Removed unused code and false-positive `#[allow(dead_code)]`
+  - Removed `OutputFormat` enum and unused methods from `ocr/cli.rs`
+  - Removed false `#[allow(dead_code)]` from `NamedApiResource.url` and `Settings::blacklist_set()`
+
+### Added
+
+- **Code Deduplication Guidelines** - Added to AGENTS.md
+  - Shared utilities documentation
+  - When to create new shared utilities
+  - `#[allow(dead_code)]` policy
+
 ## [0.14.2] - 2026-02-22
 
 ### Fixed

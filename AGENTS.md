@@ -200,6 +200,81 @@ Key crates:
 - `reqwest`: HTTP client
 - `futures`: Async utilities
 
+## Code Deduplication Guidelines
+
+When implementing new features or modifying existing code, always check for duplication:
+
+### Before Adding New Code
+
+1. **Search for existing implementations** - Use `grep` or `rg` to find similar patterns
+2. **Check shared utilities** - Look in `src/utils.rs` for common functions
+3. **Review related modules** - Similar functionality may exist elsewhere
+
+### Shared Utilities (`src/utils.rs`)
+
+The following utilities are available and should be used instead of creating duplicates:
+
+```rust
+// Boolean parsing from strings
+parse_bool(value: Option<&str>, default: bool) -> bool
+
+// U32 parsing with fallback
+parse_u32(value: Option<&str>, default: Option<u32>) -> Option<u32>
+
+// Number parsing with bounds
+parse_bounded_number(value: Option<&str>, default: usize, max: Option<usize>) -> usize
+
+// Human-readable file sizes
+format_size(bytes: u64) -> String  // Returns "512 B", "1 KB", "1.5 MB"
+
+// Stdin reading
+read_stdin() -> Result<String, String>
+
+// String capitalization
+capitalize(s: &str) -> String
+```
+
+### Tool Registration (`src/tools/registry.rs`)
+
+All tool registration is centralized. When adding a new tool:
+1. Add the tool function in the appropriate module (e.g., `src/tools/weather.rs`)
+2. Register it in `register_tools()` in `src/tools/registry.rs`
+3. Add the tool name to `get_available_tool_names()` if needed
+
+### Common Patterns to Avoid Duplicating
+
+1. **Model configuration building** - Use `ModelConfig::build_model_options()`
+2. **Capability detection** - Use `ModelCapabilities::detect_or_default()`
+3. **Thinking display** - Use `display_thinking()`
+4. **Model resolution** - Use `resolve_model_config()`
+5. **Think mode validation** - Use `resolve_think_mode()`
+
+### When to Create New Shared Utilities
+
+Create a new utility in `src/utils.rs` when:
+- The same code appears 2+ times in different files
+- The code is a pure function with no external dependencies
+- The code could be useful in multiple contexts
+
+### `#[allow(dead_code)]` Policy
+
+Only use `#[allow(dead_code)]` with justification:
+
+**Acceptable reasons:**
+- JSON deserialization fields (required by serde)
+- Error enum variants (for completeness/extensibility)
+- Public API methods (for library completeness)
+- Test-only code with `#[cfg(test)]`
+
+**Not acceptable:**
+- "Might be useful later" without concrete plan
+- Dead code that should be removed
+
+Before adding `#[allow(dead_code)]`, verify the code is truly unused:
+```bash
+cargo clippy 2>&1 | grep "never used\|never constructed"
+```
+
 ## Tool Development Guidelines
 
 When creating or modifying tools, follow these principles:

@@ -3,7 +3,7 @@
 //! Defines the command-line interface for the OCR subcommand
 //! which extracts text from images using GLM-OCR.
 
-use clap::{Args, ValueEnum};
+use clap::Args;
 use std::path::PathBuf;
 
 use super::mode::OcrMode;
@@ -64,16 +64,6 @@ pub struct OcrArgs {
     pub max_tokens: u32,
 }
 
-/// Output format for OCR results
-#[derive(ValueEnum, Clone, Debug, Copy, PartialEq, Eq, Default)]
-pub enum OutputFormat {
-    /// Plain text output (default)
-    #[default]
-    Text,
-    /// JSON format
-    Json,
-}
-
 impl OcrArgs {
     /// Validate that files are provided
     pub fn validate(&self) -> Result<(), String> {
@@ -84,22 +74,6 @@ impl OcrArgs {
                 .to_string());
         }
         Ok(())
-    }
-
-    /// Get output format
-    #[allow(dead_code)]
-    pub fn output_format(&self) -> OutputFormat {
-        if self.json {
-            OutputFormat::Json
-        } else {
-            OutputFormat::Text
-        }
-    }
-
-    /// Check if batch mode (multiple files)
-    #[allow(dead_code)]
-    pub fn is_batch(&self) -> bool {
-        self.files.len() > 1
     }
 }
 
@@ -125,24 +99,5 @@ mod tests {
             max_tokens: 8192,
         };
         assert!(args_empty.validate().is_err());
-    }
-
-    #[test]
-    fn test_is_batch() {
-        let single = OcrArgs {
-            files: vec![PathBuf::from("test.png")],
-            mode: OcrMode::Text,
-            json: false,
-            max_tokens: 8192,
-        };
-        assert!(!single.is_batch());
-
-        let batch = OcrArgs {
-            files: vec![PathBuf::from("1.png"), PathBuf::from("2.png")],
-            mode: OcrMode::Text,
-            json: false,
-            max_tokens: 8192,
-        };
-        assert!(batch.is_batch());
     }
 }

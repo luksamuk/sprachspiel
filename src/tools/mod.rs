@@ -39,6 +39,7 @@ pub use weather::*;
 #[derive(Debug, Deserialize)]
 pub struct NamedApiResource {
     pub name: String,
+    /// URL is needed for JSON deserialization and is used in pokemon.rs
     #[allow(dead_code)]
     pub url: String,
 }

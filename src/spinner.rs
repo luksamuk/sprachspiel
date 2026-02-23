@@ -10,9 +10,13 @@ static ACTIVE_SPINNER: RwLock<Option<ProgressBar>> = RwLock::new(None);
 
 /// RAII guard that automatically finishes the spinner when dropped
 ///
-/// Use this for automatic cleanup in error paths:
-/// ```
-/// use ask_ollama::spinner::SpinnerGuard;
+/// This is a convenience API for automatic cleanup in error paths.
+/// Current code uses manual `create_spinner`/`finish_spinner` pairs,
+/// but this guard can be adopted incrementally.
+///
+/// # Example
+/// ```ignore
+/// use crate::spinner::SpinnerGuard;
 ///
 /// fn operation() -> Result<(), Error> {
 ///     let _spinner = SpinnerGuard::new("Working...");
@@ -20,8 +24,10 @@ static ACTIVE_SPINNER: RwLock<Option<ProgressBar>> = RwLock::new(None);
 ///     Ok(()) // Spinner automatically finished here
 /// } // Or finished here on early return
 /// ```
+#[allow(dead_code)]
 pub struct SpinnerGuard(Option<ProgressBar>);
 
+#[allow(dead_code)]
 impl SpinnerGuard {
     /// Create a new spinner guard with the given message
     pub fn new(message: &str) -> Self {
