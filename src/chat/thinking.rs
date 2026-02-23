@@ -109,7 +109,7 @@ pub fn strip_thinking_tags(content: &str) -> String {
 /// # Returns
 /// The extracted thinking content (if any), for potential further use
 pub fn display_thinking(content: &str, thinking_field: Option<&String>) -> Option<String> {
-    let thinking_content = thinking_field.map(|t| t.clone()).or_else(|| {
+    let thinking_content = thinking_field.cloned().or_else(|| {
         let processed = process_thinking(content);
         processed.thinking
     });
