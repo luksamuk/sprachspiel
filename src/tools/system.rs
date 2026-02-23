@@ -201,8 +201,22 @@ const PROJECT_MARKERS: &[(&str, &str)] = &[
 
 /// Get current date and time information.
 ///
-/// Returns current date, time, timezone, and related info.
-/// Use when you need precise or updated time information.
+/// Returns the current date, time, timezone, and related information.
+/// Use this when you need to know the current time for any reason:
+/// scheduling, deadlines, timestamps, or time-sensitive decisions.
+///
+/// # Arguments
+/// None
+///
+/// # Returns
+/// Current datetime information including:
+/// - Date in human-readable format (e.g., "Monday, January 15, 2024")
+/// - Time with timezone (e.g., "14:30:45 (UTC-3)")
+/// - Day of week
+/// - Week of year
+/// - ISO 8601 format
+/// - Unix timestamp
+///
 #[function]
 pub async fn get_current_datetime() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("get_current_datetime", &[]);
@@ -232,11 +246,27 @@ pub async fn get_current_datetime() -> Result<String, Box<dyn std::error::Error 
     Ok(result)
 }
 
-/// Get current project state (git, languages, file structure).
+/// Get current project context (git, languages, file structure).
 ///
-/// This tool does NOT replace AGENTS.md - it provides dynamic state information.
-/// Follow AGENTS.md for conventions and guidelines.
-/// Use this tool for: current branch, what files exist, detected stack.
+/// Provides dynamic information about the current project state.
+/// Use this to understand the project structure, git branch, and detected
+/// technologies. This complements AGENTS.md with runtime information.
+///
+/// # Arguments
+/// None
+///
+/// # Returns
+/// Project context information including:
+/// - Current working directory
+/// - Git branch (if in a git repository)
+/// - Detected programming languages and frameworks
+/// - Key configuration files found
+/// - Directory structure overview
+///
+/// # Notes
+/// This tool does NOT replace AGENTS.md - it provides dynamic state.
+/// Follow AGENTS.md for conventions and coding guidelines.
+///
 #[function]
 pub async fn get_project_context() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("get_project_context", &[]);

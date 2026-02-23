@@ -8,14 +8,22 @@ use ollama_rs::function;
 
 /// Evaluate a mathematical expression.
 ///
-/// Supports:
-/// - Basic arithmetic: +, -, *, /
-/// - Exponents: ** or ^
-/// - Percentages: "15% of 850"
-/// - Functions: sqrt(), sin(), cos(), tan(), log(), etc.
-/// - Parentheses for grouping
+/// Performs mathematical calculations and returns the result.
+/// Use this tool for any arithmetic or mathematical computation.
 ///
-/// * expression - The mathematical expression to evaluate.
+/// # Arguments
+/// * `expression` - The mathematical expression to evaluate.
+///   - Basic arithmetic: "2 + 3 * 4", "100 / 5"
+///   - Exponents: "2 ** 10", "5 ^ 3"
+///   - Percentages: "15% of 850", "20% of 1500"
+///   - Functions: "sqrt(144)", "sin(3.14)", "log(100)"
+///   - Parentheses: "(2 + 3) * 4"
+///
+/// # Returns
+/// The numeric result of the expression, formatted appropriately.
+///
+/// # Errors
+/// Returns error message for invalid expressions, syntax errors, or math errors.
 #[function]
 pub async fn calculate(
     expression: String,

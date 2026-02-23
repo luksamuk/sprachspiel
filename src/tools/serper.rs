@@ -67,10 +67,21 @@ pub fn is_serper_available() -> bool {
 /// Search the web using Google via Serper.dev API.
 ///
 /// Returns search results with title, URL, and snippet for each result.
-/// This tool uses Google Search for comprehensive results.
+/// Use this tool when you need to find current information on the internet.
+/// Requires SERPER_API_KEY environment variable to be set.
 ///
-/// * query - The search query (what to search for)
-/// * num_results - Number of results to return (default: 5, max: 10)
+/// # Arguments
+/// * `query` - The search query (what to search for). Be specific for better results.
+///   - Example: "Rust async programming best practices" instead of just "rust async"
+/// * `num_results` - Number of results to return (default: 5, max: 10). Optional.
+///
+/// # Returns
+/// Formatted search results with:
+/// - Quick answer (if available from Google)
+/// - Title, URL, and snippet for each result
+///
+/// # Errors
+/// Returns error message if SERPER_API_KEY is not set or API fails.
 #[function]
 pub async fn web_search(
     query: String,
@@ -176,7 +187,25 @@ pub async fn web_search(
 /// Searches specifically for news articles about a topic.
 ///
 /// * query - The news topic to search for
-/// * num_results - Number of results to return (default: 3, max: 10)
+/// Search for recent news using Google via Serper.dev API.
+///
+/// Returns news articles with title, URL, snippet, and publication date.
+/// Use this tool when you need current news or recently published information.
+/// Requires SERPER_API_KEY environment variable to be set.
+///
+/// # Arguments
+/// * `query` - The news search query. Be specific for better results.
+///   - Example: "AI technology latest news" or "Rust programming updates"
+/// * `num_results` - Number of results to return (default: 3, max: 10). Optional.
+///
+/// # Returns
+/// Formatted news results with:
+/// - Article title
+/// - Source and publication date
+/// - URL and snippet
+///
+/// # Errors
+/// Returns error message if SERPER_API_KEY is not set or API fails.
 #[function]
 pub async fn web_search_news(
     query: String,

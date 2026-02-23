@@ -506,6 +506,86 @@ let result = format!("**Weather in {}**\nTemperature: {}°C", location_name, tem
 let result = format!("**Clima em {}**\nTemperatura: {}°C", location_name, temp);
 ```
 
+### Tool Documentation (Docstrings)
+
+**Well-documented tools help LLMs understand what each tool does and how to use it correctly.** Poor documentation leads to incorrect tool calls and wasted tokens.
+
+#### Docstring Structure
+
+Every tool function MUST have a docstring with:
+1. **One-line summary** - What the tool does (imperative mood)
+2. **Extended description** - When to use, what it returns
+3. **Parameter documentation** - Name, type, description, examples
+
+#### Example: Good Docstring
+
+```rust
+/// Search the web using Google via Serper.dev API.
+///
+/// Returns search results with title, URL, and snippet for each result.
+/// Use this tool when you need to find current information on the internet.
+///
+/// # Arguments
+/// * `query` - The search query (what to search for). Be specific for better results.
+///   - Example: "Rust async programming best practices" instead of just "rust async"
+/// * `num_results` - Number of results to return (default: 5, max: 10). Optional.
+///
+/// # Returns
+/// Formatted search results with titles, URLs, and snippets.
+/// Returns error message if SERPER_API_KEY is not set or if the API fails.
+///
+/// # Example
+/// ```ignore
+/// web_search("Python pandas dataframe merge".to_string(), Some("3".to_string()))
+/// ```
+#[function]
+pub async fn web_search(query: String, num_results: Option<String>) -> Result<String, ...>
+```
+
+#### Example: Bad Docstring
+
+```rust
+/// Fetch basic information about a Pokémon.
+///
+/// * pokemon_name - The name of the Pokémon in lowercase.
+#[function]
+pub async fn fetch_pokemon_basic(pokemon_name: String) -> Result<String, ...>
+```
+
+#### Docstring Guidelines
+
+1. **First line**: Capital letter, period at end, imperative mood ("Search the web", not "Searches the web")
+2. **When to use**: Mention specific use cases in the extended description
+3. **Parameters**: Document each parameter with:
+   - What it accepts (type constraints, format)
+   - Default value if optional
+   - Example values
+4. **Returns**: Describe the format of successful output
+5. **Errors**: Mention common error conditions
+6. **Examples**: Show realistic function call examples
+7. **Keep it concise**: LLMs need to read this every time they consider using the tool
+
+#### Parameter Documentation Format
+
+```rust
+/// * `parameter_name` - Brief description. More details if needed.
+///   - Accepts: "value1", "value2", or "value3"
+///   - Default: value1
+///   - Example: "value2"
+```
+
+#### Current Tool Documentation Status
+
+| Tool Category | Tools | Documentation Quality |
+|--------------|-------|----------------------|
+| weather-tools | 3 tools | ⚠️ Needs improvement |
+| file-tools | 5 tools | ⚠️ Needs improvement |
+| pokemon-tools | 9 tools | ⚠️ Minimal docstrings |
+| calc-tools | 1 tool | ⚠️ Needs improvement |
+| serper-tools | 2 tools | ✅ Good |
+| system-tools | 2 tools | ⚠️ Needs improvement |
+| search-tools | 3 tools | ⚠️ Needs improvement |
+
 ## Notes
 
 - The project is a CLI tool for interacting with local Ollama models

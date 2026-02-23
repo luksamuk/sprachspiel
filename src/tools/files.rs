@@ -6,7 +6,27 @@ use std::path::{Path, PathBuf};
 const MAX_FILE_SIZE: usize = 1_000_000; // 1MB max file size
 const MAX_RESULTS: usize = 100; // Maximum search results
 
-/// Read the contents of a file
+/// Read the contents of a text file.
+///
+/// Reads and returns the contents of a file. Use this to examine code,
+/// configuration files, or any text-based documents.
+///
+/// # Arguments
+/// * `path` - Path to the file (relative to current directory or absolute).
+///   - Examples: "README.md", "src/main.rs", "/etc/config.yml"
+/// * `max_lines` - Maximum number of lines to read (default: all). Optional.
+///   - Use for large files to avoid context pollution.
+///   - Example: "100" to read first 100 lines
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
+///   - "true" (default): Only allow files within current directory tree
+///   - "false": Allow any absolute path
+///
+/// # Returns
+/// The file contents with line numbers, or an error message.
+/// For files over 1MB, use count_lines first, then read_file_segment.
+///
+/// # Errors
+/// Returns error message if file doesn't exist, is not readable, or is too large.
 #[ollama_rs::function]
 pub async fn read_file(
     path: String,
@@ -97,7 +117,27 @@ pub async fn read_file(
 
 /// Read a specific segment of a file (from start_line for num_lines).
 /// Useful for reading parts of large files without loading the entire file.
-/// Both start_line and num_lines are required.
+/// Read a specific range of lines from a file.
+///
+/// Use this to read large files in chunks instead of loading the entire file.
+/// Ideal for examining specific sections of code or log files.
+///
+/// # Arguments
+/// * `path` - Path to the file (relative to current directory or absolute).
+///   - Examples: "src/main.rs", "/var/log/app.log"
+/// * `start_line` - Line number to start reading from (1-indexed). Required.
+///   - Example: "1" to start from the beginning
+/// * `num_lines` - Number of lines to read. Required.
+///   - Example: "50" to read 50 lines
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
+///   - "true" (default): Only allow files within current directory tree
+///   - "false": Allow any absolute path
+///
+/// # Returns
+/// The specified lines with line numbers, or an error message.
+///
+/// # Errors
+/// Returns error message if file doesn't exist, start_line is invalid, or num_lines is 0.
 #[ollama_rs::function]
 pub async fn read_file_segment(
     path: String,
@@ -241,7 +281,26 @@ pub async fn read_file_segment(
     Ok(result)
 }
 
-/// Count lines in a file. Use this before reading large files to avoid polluting context.
+/// Count the number of lines in a file.
+///
+/// Use this before reading large files to determine if you need to use
+/// read_file_segment. Helps avoid polluting context with huge files.
+///
+/// # Arguments
+/// * `path` - Path to the file (relative to current directory or absolute).
+///   - Examples: "large_file.txt", "src/module.rs"
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
+///   - "true" (default): Only allow files within current directory tree
+///   - "false": Allow any absolute path
+///
+/// # Returns
+/// File information including:
+/// - Total line count
+/// - File size in human-readable format (KB/MB)
+/// - Line count recommendation for reading strategy
+///
+/// # Errors
+/// Returns error message if file doesn't exist or is not readable.
 #[ollama_rs::function]
 pub async fn count_lines(
     path: String,
@@ -298,7 +357,29 @@ pub async fn count_lines(
     Ok(result)
 }
 
-/// List contents of a directory
+/// List contents of a directory.
+///
+/// Shows files and subdirectories in a directory. Use this to explore
+/// project structure or find specific files.
+///
+/// # Arguments
+/// * `path` - Path to the directory (relative to current directory or absolute).
+///   - Examples: ".", "src", "/home/user/projects"
+/// * `recursive` - List subdirectories recursively (default: false). Optional.
+///   - "true": List all files in subdirectories
+///   - "false" (default): List only immediate contents
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
+///   - "true" (default): Only allow directories within current directory tree
+///   - "false": Allow any absolute path
+///
+/// # Returns
+/// Directory listing with:
+/// - File/directory names with type indicators ([file], [dir], [symlink])
+/// - File sizes for regular files
+/// - Tree structure for recursive listings
+///
+/// # Errors
+/// Returns error message if directory doesn't exist or is not accessible.
 #[ollama_rs::function]
 pub async fn list_directory(
     path: String,
@@ -467,7 +548,30 @@ fn collect_entries_recursive(
     Ok(())
 }
 
-/// Search for a pattern in files
+/// Search for a text pattern in files using regex.
+///
+/// Searches for a regular expression pattern in files within a directory.
+/// Useful for finding code, configuration values, or specific text.
+///
+/// # Arguments
+/// * `pattern` - Regular expression pattern to search for.
+///   - Examples: "fn main", "import.*react", "TODO", "error.*handler"
+/// * `path` - Directory to search in (relative to current directory or absolute).
+///   - Examples: ".", "src", "/home/user/project"
+/// * `file_pattern` - Glob pattern to filter files (default: all files). Optional.
+///   - Examples: "*.rs", "*.py", "*.js", "*.txt"
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
+///   - "true" (default): Only search within current directory tree
+///   - "false": Allow searching any directory
+///
+/// # Returns
+/// Search results with:
+/// - File paths and line numbers where matches were found
+/// - Matching line content with highlighted match
+/// - Total match count
+///
+/// # Errors
+/// Returns error message for invalid regex pattern or inaccessible directory.
 #[ollama_rs::function]
 pub async fn search_files(
     pattern: String,

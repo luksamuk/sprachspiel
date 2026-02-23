@@ -42,7 +42,23 @@ async fn get_coordinates(
     }
 }
 
-/// Fetch current weather and forecast for a location
+/// Get current weather and 7-day forecast for a location.
+///
+/// Fetches comprehensive weather data including current conditions
+/// and extended forecast. Use this when you need both current weather
+/// and future predictions.
+///
+/// # Arguments
+/// * `location` - City name or location. Can include country for disambiguation.
+///   - Examples: "Paris", "Tokyo, Japan", "New York", "São Paulo, Brazil"
+///
+/// # Returns
+/// Formatted weather report with:
+/// - Current temperature, feels-like, humidity, wind, precipitation
+/// - 7-day forecast with high/low temperatures and precipitation probability
+///
+/// # Errors
+/// Returns error message if location is not found or API is unavailable.
 #[function]
 pub async fn get_weather(
     location: String,
@@ -157,7 +173,25 @@ Source: Open-Meteo"#,
     Ok(result)
 }
 
-/// Get current weather only (simpler response)
+/// Get current weather conditions only (no forecast).
+///
+/// Fetches current weather data for a location without the 7-day forecast.
+/// Use this when you only need current conditions and want a faster response.
+///
+/// # Arguments
+/// * `location` - City name or location. Can include country for disambiguation.
+///   - Examples: "Paris", "Tokyo, Japan", "New York"
+///
+/// # Returns
+/// Formatted current weather with:
+/// - Temperature and feels-like temperature
+/// - Weather condition (clear, cloudy, rain, etc.)
+/// - Humidity percentage
+/// - Wind speed and direction
+/// - Precipitation amount
+///
+/// # Errors
+/// Returns error message if location is not found or API is unavailable.
 #[function]
 pub async fn get_current_weather(
     location: String,
@@ -251,7 +285,26 @@ Source: Open-Meteo"#,
     Ok(result)
 }
 
-/// Get weather forecast for a location
+/// Get multi-day weather forecast for a location.
+///
+/// Fetches daily weather forecast including high/low temperatures
+/// and precipitation probability. Use this for planning ahead.
+///
+/// # Arguments
+/// * `location` - City name or location. Can include country for disambiguation.
+///   - Examples: "Paris", "Tokyo, Japan", "New York"
+/// * `days` - Number of forecast days (default: 5, max: 7). Optional.
+///   - Examples: "3", "7"
+///
+/// # Returns
+/// Formatted forecast with daily entries:
+/// - Date and day of week
+/// - High and low temperatures
+/// - Weather condition
+/// - Precipitation probability
+///
+/// # Errors
+/// Returns error message if location is not found or API is unavailable.
 #[function]
 pub async fn get_weather_forecast(
     location: String,

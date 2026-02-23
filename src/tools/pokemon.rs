@@ -2,9 +2,26 @@ use super::*;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::capitalize;
 
-/// Fetch basic information about a Pokémon (name, types, height, weight, abilities).
+/// Fetch basic information about a Pokémon.
 ///
-/// * pokemon_name - The name of the Pokémon in lowercase.
+/// Returns the Pokémon's name, types, height, weight, and abilities.
+/// Use this for quick lookups when you need basic info.
+///
+/// # Arguments
+/// * `pokemon_name` - The name or Pokedex number of the Pokémon (case-insensitive).
+///   - Examples: "pikachu", "Charizard", "25", "mewtwo"
+///
+/// # Returns
+/// Formatted information including:
+/// - Name (capitalized)
+/// - Types (e.g., "Electric", "Fire/Flying")
+/// - Height in meters
+/// - Weight in kilograms
+/// - Abilities (including hidden abilities)
+///
+/// # Errors
+/// Returns error message if Pokémon is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
     log_tool_call(
@@ -74,9 +91,28 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
     Ok(result)
 }
 
-/// Fetch base stats of a Pokémon (HP, Attack, Defense, etc.).
+/// Fetch base stats of a Pokémon.
 ///
-/// * pokemon_name - The name of the Pokémon in lowercase.
+/// Returns the Pokémon's base stats used for battle calculations.
+/// Use this to compare Pokémon stats or plan competitive builds.
+///
+/// # Arguments
+/// * `pokemon_name` - The name or Pokedex number of the Pokémon (case-insensitive).
+///   - Examples: "gengar", "dragonite", "6" (Charizard)
+///
+/// # Returns
+/// Base stats including:
+/// - HP (Hit Points)
+/// - Attack
+/// - Defense
+/// - Special Attack
+/// - Special Defense
+/// - Speed
+/// - Base stat total (BST)
+///
+/// # Errors
+/// Returns error message if Pokémon is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
     log_tool_call(
@@ -149,8 +185,25 @@ pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
 
 /// Fetch moves that a Pokémon can learn.
 ///
-/// * pokemon_name - The name of the Pokémon in lowercase.
-/// * limit - Maximum number of moves to return (default 20).
+/// Returns a list of moves the Pokémon can learn through leveling,
+/// TMs, breeding, etc. Note that some Pokémon have many moves, so
+/// use the limit parameter to avoid overwhelming output.
+///
+/// # Arguments
+/// * `pokemon_name` - The name or Pokedex number of the Pokémon (case-insensitive).
+///   - Examples: "charizard", "pikachu", "150"
+/// * `limit` - Maximum number of moves to return. Use a reasonable number.
+///   - Example: 20 for a quick overview, 50 for detailed analysis
+///
+/// # Returns
+/// List of moves with:
+/// - Move name
+/// - Learn method (level-up, machine, egg, etc.)
+/// - Level learned (for level-up moves)
+///
+/// # Errors
+/// Returns error message if Pokémon is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult<String> {
     log_tool_call(
@@ -226,7 +279,22 @@ pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult
 
 /// Fetch evolution chain for a Pokémon species.
 ///
-/// * pokemon_name - The name of the Pokémon species in lowercase.
+/// Returns the complete evolution chain showing how a Pokémon evolves.
+/// Use this to understand evolution requirements and stages.
+///
+/// # Arguments
+/// * `pokemon_name` - The name of the Pokémon species (case-insensitive).
+///   - Examples: "pikachu", "charmander", "eevee"
+///
+/// # Returns
+/// Evolution chain with:
+/// - All Pokémon in the chain
+/// - Evolution triggers (level, item, trade, etc.)
+/// - Conditions for each evolution
+///
+/// # Errors
+/// Returns error message if Pokémon is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String> {
     log_tool_call(
@@ -313,7 +381,22 @@ pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String>
 
 /// Fetch detailed information about a Pokémon ability.
 ///
-/// * ability_name - The name of the ability in lowercase.
+/// Returns the description and effects of a Pokémon ability.
+/// Use this to understand what an ability does in battle.
+///
+/// # Arguments
+/// * `ability_name` - The name of the ability (case-insensitive).
+///   - Examples: "levitate", "intimidate", "sturdy"
+///
+/// # Returns
+/// Ability information including:
+/// - Ability name
+/// - Short description (in-game effect)
+/// - Detailed effect explanation
+///
+/// # Errors
+/// Returns error message if ability is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
     log_tool_call(
@@ -390,7 +473,25 @@ pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
 
 /// Fetch type effectiveness (weaknesses, resistances, immunities).
 ///
-/// * type_name - The name of the type in lowercase.
+/// Returns damage relationships for a Pokémon type - what it's strong/weak against.
+/// Essential for battle strategy and team building.
+///
+/// # Arguments
+/// * `type_name` - The name of the type (case-insensitive).
+///   - Examples: "fire", "water", "dragon", "electric"
+///
+/// # Returns
+/// Type effectiveness chart showing:
+/// - Double damage TO (super effective)
+/// - Half damage TO (not very effective)
+/// - No damage TO (ineffective)
+/// - Double damage FROM (weakness)
+/// - Half damage FROM (resistance)
+/// - No damage FROM (immunity)
+///
+/// # Errors
+/// Returns error message if type is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
     log_tool_call(
@@ -471,8 +572,21 @@ pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
 
 /// List all Pokémon of a specific type.
 ///
-/// * type_name - The name of the type in lowercase (e.g., "water", "fire", "electric").
-/// * limit - Maximum number of Pokémon to return (default 20, max 100).
+/// Returns a list of Pokémon that have the specified type.
+/// Use this to find Pokémon for team building or type-based strategies.
+///
+/// # Arguments
+/// * `type_name` - The name of the type (case-insensitive).
+///   - Examples: "fire", "water", "dragon", "fairy"
+/// * `limit` - Maximum number of Pokémon to return (default: 20, max: 100). Optional.
+///   - Example: "10" for a quick list, "50" for a comprehensive list
+///
+/// # Returns
+/// List of Pokémon names with the specified type.
+///
+/// # Errors
+/// Returns error message if type is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> ToolResult<String> {
     let limit_num = limit
@@ -548,7 +662,23 @@ pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> 
 
 /// Fetch detailed information about a Pokémon move.
 ///
-/// * move_name - The name of the move in lowercase.
+/// Returns complete information about a move including stats, type,
+/// and effects. Use this for battle analysis and move selection.
+///
+/// # Arguments
+/// * `move_name` - The name of the move (case-insensitive).
+///   - Examples: "thunderbolt", "flamethrower", "earthquake"
+///
+/// # Returns
+/// Move details including:
+/// - Name and type
+/// - Power, accuracy, and PP
+/// - Damage class (physical, special, status)
+/// - Effect description
+///
+/// # Errors
+/// Returns error message if move is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
     log_tool_call(
@@ -631,9 +761,24 @@ pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
 }
 
 /// Fetch comprehensive information about a Pokémon.
-/// This combines basic info, stats, and abilities into one response.
 ///
-/// * pokemon_name - The name of the Pokémon in lowercase.
+/// Combines basic info, stats, and abilities into a single response.
+/// Use this when you need complete information about a Pokémon.
+///
+/// # Arguments
+/// * `pokemon_name` - The name or Pokedex number of the Pokémon (case-insensitive).
+///   - Examples: "pikachu", "charizard", "150" (Mewtwo)
+///
+/// # Returns
+/// Complete Pokémon information including:
+/// - Name, types, height, weight
+/// - Base stats (HP, Attack, Defense, Sp. Atk, Sp. Def, Speed)
+/// - Abilities (including hidden abilities)
+/// - Base stat total
+///
+/// # Errors
+/// Returns error message if Pokémon is not found or API is unavailable.
+///
 #[ollama_rs::function]
 pub async fn fetch_pokemon(pokemon_name: String) -> ToolResult<String> {
     log_tool_call(

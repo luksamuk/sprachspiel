@@ -23,9 +23,19 @@ struct SearchResult {
 ///
 /// Returns search results with title, URL, and snippet for each result.
 /// Use this tool when you need to find current information on the internet.
+/// Note: Does not require an API key, but may be blocked by CAPTCHA.
 ///
-/// * query - The search query (what to search for)
-/// * num_results - Number of results to return (default: 5, max: 10)
+/// # Arguments
+/// * `query` - The search query (what to search for). Be specific for better results.
+///   - Example: "Rust async programming patterns"
+/// * `num_results` - Number of results to return (default: 5, max: 10). Optional.
+///
+/// # Returns
+/// Formatted search results with:
+/// - Title, URL, and snippet for each result
+///
+/// # Errors
+/// Returns error message if search fails or is blocked by CAPTCHA.
 #[function]
 pub async fn web_search(
     query: String,
@@ -99,9 +109,19 @@ pub async fn web_search(
 /// Search for news using DuckDuckGo.
 ///
 /// Searches specifically for news articles about a topic.
+/// Returns news results with title, URL, and snippet for each article.
+/// Note: Does not require an API key, but may be blocked by CAPTCHA.
 ///
-/// * query - The news topic to search for
-/// * num_results - Number of results to return (default: 3, max: 10)
+/// # Arguments
+/// * `query` - The news topic to search for.
+///   - Example: "technology" or "climate change updates"
+/// * `num_results` - Number of results to return (default: 3, max: 10). Optional.
+///
+/// # Returns
+/// Formatted news results with title, URL, and snippet for each article.
+///
+/// # Errors
+/// Returns error message if search fails or is blocked by CAPTCHA.
 #[function]
 pub async fn web_search_news(
     query: String,
@@ -178,7 +198,18 @@ pub async fn web_search_news(
 /// Fetches a webpage and converts it to readable markdown text.
 /// Use this to get detailed content from a specific URL found via web_search.
 ///
-/// * url - The URL of the webpage to scrape
+/// # Arguments
+/// * `url` - The full URL of the webpage to scrape.
+///   - Example: "https://example.com/article"
+///
+/// # Returns
+/// Extracted text content in markdown format with:
+/// - Page title
+/// - Main content (headers, paragraphs, lists)
+/// - Content size indicator
+///
+/// # Errors
+/// Returns error message if URL is invalid, page is unreachable, or content cannot be parsed.
 #[function]
 pub async fn web_scrape(url: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("web_scrape", &[("url".to_string(), url.clone())]);
