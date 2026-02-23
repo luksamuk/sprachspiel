@@ -47,7 +47,15 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Changed
 
-- **Major Code Refactoring** - Eliminated ~400 lines of duplicated code
+- **Major Code Refactoring** - Eliminated ~600 lines of duplicated code
+  - Created `src/query.rs` module with shared query logic:
+    - `run_query()` - unified function for query, legacy query, and chat message handling
+    - `ChatContext` - builder for coordinator with event callbacks
+    - `OutputFlags` - resolved debug/plain flags from CLI and config
+    - `handle_chat_event()` - centralized event handling for tool execution
+  - Consolidated `handle_query()` and `handle_legacy_query()` in `main.rs`
+  - `main.rs` reduced from 1175 lines to 572 lines (51% reduction)
+  - Chat REPL now uses `ChatContext` builder pattern
   - Created `src/tools/registry.rs` with centralized tool registration
   - Created `src/utils.rs` with shared utility functions
   - Moved `build_model_options()` to `ModelConfig` as instance method
@@ -61,6 +69,14 @@ All notable changes to Ask-AI will be documented in this file.
 - **Dead Code** - Removed unused code and false-positive `#[allow(dead_code)]`
   - Removed `OutputFormat` enum and unused methods from `ocr/cli.rs`
   - Removed false `#[allow(dead_code)]` from `NamedApiResource.url` and `Settings::blacklist_set()`
+
+### Fixed
+
+- **Chat Mode CLI Flags** - Model and flags from CLI now work correctly
+  - `ask chat -m <model>` now properly sets the initial model
+  - `ask chat -t` now enables think mode from CLI
+  - `ask chat --tools` now enables tools from CLI
+  - `ask chat --ignore-agents` now ignores AGENTS.md from CLI
 
 ### Added
 
