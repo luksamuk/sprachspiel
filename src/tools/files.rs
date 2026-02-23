@@ -1,27 +1,10 @@
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::utils::{format_size, parse_bool, parse_u32};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 
 const MAX_FILE_SIZE: usize = 1_000_000; // 1MB max file size
 const MAX_RESULTS: usize = 100; // Maximum search results
-
-/// Parse boolean from string (handles "true", "false", "1", "0", empty = default)
-fn parse_bool(value: Option<String>, default: bool) -> bool {
-    match value {
-        None => default,
-        Some(s) if s.is_empty() => default,
-        Some(s) => matches!(s.to_lowercase().as_str(), "true" | "1" | "yes"),
-    }
-}
-
-/// Parse u32 from string (handles numbers, empty = default)
-fn parse_u32(value: Option<String>, default: Option<u32>) -> Option<u32> {
-    match value {
-        None => default,
-        Some(s) if s.is_empty() => default,
-        Some(s) => s.parse::<u32>().ok().or(default),
-    }
-}
 
 /// Read the contents of a file
 #[ollama_rs::function]
@@ -397,12 +380,7 @@ pub async fn list_directory(
                 "other"
             };
             let size = if metadata.is_file() {
-                let kb = metadata.len() as f64 / 1024.0;
-                if kb >= 1024.0 {
-                    format!(" ({:.1} MB)", kb / 1024.0)
-                } else {
-                    format!(" ({:.0} KB)", kb)
-                }
+                format!(" ({})", format_size(metadata.len()))
             } else {
                 String::new()
             };
@@ -470,12 +448,7 @@ fn collect_entries_recursive(
         };
 
         let size_info = if metadata.is_file() {
-            let kb = metadata.len() as f64 / 1024.0;
-            if kb >= 1024.0 {
-                format!(" ({:.1} MB)", kb / 1024.0)
-            } else {
-                format!(" ({:.0} KB)", kb)
-            }
+            format!(" ({})", format_size(metadata.len()))
         } else {
             String::new()
         };

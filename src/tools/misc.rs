@@ -1,13 +1,5 @@
 use crate::debug_tools::{log_tool_call, log_tool_result};
-
-/// Parse boolean from string (handles "true", "false", "1", "0", empty = default)
-fn parse_bool(value: Option<String>, default: bool) -> bool {
-    match value {
-        None => default,
-        Some(s) if s.is_empty() => default,
-        Some(s) => matches!(s.to_lowercase().as_str(), "true" | "1" | "yes"),
-    }
-}
+use crate::utils::parse_bool;
 
 /// Debug tool for testing tool calling.
 /// 
@@ -21,7 +13,7 @@ pub async fn test_tool(should_fail: String) -> Result<String, Box<dyn std::error
     );
     
     // Always return Ok - the model sees the result and can react
-    let result = if parse_bool(Some(should_fail), false) {
+    let result = if parse_bool(Some(&should_fail), false) {
         "Error: The tool execution has failed intentionally. This is a test error. \
          The model should acknowledge this error and try again with should_fail=false, \
          or provide a direct response explaining what happened."

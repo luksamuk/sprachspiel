@@ -3,6 +3,7 @@
 //! Uses DuckDuckGo HTML interface which does not require CAPTCHA.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::utils::{format_size, parse_bounded_number};
 use ollama_rs::function;
 use ollama_rs::generation::tools::implementations::DDGSearcher;
 use std::sync::Arc;
@@ -16,17 +17,6 @@ struct SearchResult {
     title: String,
     link: String,
     snippet: String,
-}
-
-/// Parse optional string to usize with default.
-/// Accepts: "5", "10", empty, or None
-fn parse_num_results(s: Option<String>, default: usize, max: usize) -> usize {
-    match s {
-        Some(ref val) if !val.trim().is_empty() => {
-            val.trim().parse::<usize>().unwrap_or(default).min(max)
-        }
-        _ => default,
-    }
 }
 
 /// Search the web using DuckDuckGo.
@@ -52,7 +42,7 @@ pub async fn web_search(
         ],
     );
 
-    let num_results = parse_num_results(num_results, 5, 10);
+    let num_results = parse_bounded_number(num_results.as_deref(), 5, Some(10));
 
     let searcher = SEARCHER.clone();
     let searcher = searcher.lock().await;
@@ -128,7 +118,7 @@ pub async fn web_search_news(
         ],
     );
 
-    let num_results = parse_num_results(num_results, 3, 10);
+    let num_results = parse_bounded_number(num_results.as_deref(), 3, Some(10));
     let news_query = format!("{} news", query);
 
     let searcher = SEARCHER.clone();
@@ -234,12 +224,7 @@ pub async fn web_scrape(url: String) -> Result<String, Box<dyn std::error::Error
         return Ok(result);
     }
 
-    let kb = content.len() as f64 / 1024.0;
-    let size_info = if kb >= 1024.0 {
-        format!(" ({:.1} MB)", kb / 1024.0)
-    } else {
-        format!(" ({:.0} KB)", kb)
-    };
+    let size_info = format!(" ({})", format_size(content.len() as u64));
 
     let result = format!("**Content from {}**{}\n\n{}", url, size_info, content);
     log_tool_result("web_scrape", &result);

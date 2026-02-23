@@ -18,6 +18,7 @@ mod tool_robustness;
 mod tools;
 mod translate;
 mod user_models;
+mod utils;
 
 use clap::Parser;
 use ollama_rs::coordinator::Coordinator;

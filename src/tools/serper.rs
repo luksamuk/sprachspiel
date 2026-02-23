@@ -4,6 +4,7 @@
 //! Requires SERPER_API_KEY environment variable.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::utils::parse_bounded_number;
 use ollama_rs::function;
 use serde::Deserialize;
 
@@ -54,15 +55,6 @@ struct AnswerBox {
     snippet: String,
 }
 
-fn parse_num_results(s: Option<String>, default: usize, max: usize) -> usize {
-    match s {
-        Some(ref val) if !val.trim().is_empty() => {
-            val.trim().parse::<usize>().unwrap_or(default).min(max)
-        }
-        _ => default,
-    }
-}
-
 fn get_api_key() -> Option<String> {
     std::env::var("SERPER_API_KEY").ok()
 }
@@ -104,7 +96,7 @@ pub async fn web_search(
         }
     };
 
-    let num_results = parse_num_results(num_results, 5, 10);
+    let num_results = parse_bounded_number(num_results.as_deref(), 5, Some(10));
 
     let client = match reqwest::Client::builder().build() {
         Ok(c) => c,
@@ -210,7 +202,7 @@ pub async fn web_search_news(
         }
     };
 
-    let num_results = parse_num_results(num_results, 3, 10);
+    let num_results = parse_bounded_number(num_results.as_deref(), 3, Some(10));
 
     let client = match reqwest::Client::builder().build() {
         Ok(c) => c,
