@@ -2,6 +2,27 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.14.2] - 2026-02-22
+
+### Fixed
+
+- **Tool Error Handling** - Tools now return errors as `Ok(String)` instead of `Err()`
+  - Model sees tool errors and can react/retry
+  - Previously, `Err()` would immediately fail the entire request
+  - Now the model receives the error message and decides how to proceed
+
+- **test_tool** - Debug tool now returns error message as success
+  - Allows testing tool error recovery scenarios
+  - Model can see error and retry with different parameters
+
+### Added
+
+- **Error Recovery Helpers** - New utilities in `chat/coordinator.rs`
+  - `RecoverableError` enum for classifying errors
+  - `classify_error_str()` for string-based error classification
+  - `format_recovery_message()` for model-friendly error messages
+  - Prepared for future network/Ollama-level error recovery
+
 ## [0.14.1] - 2026-02-20
 
 ### Fixed

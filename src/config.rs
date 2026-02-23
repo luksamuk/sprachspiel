@@ -6,6 +6,7 @@ pub const DEFAULT_MODEL: &str = "llama3.1";
 static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| {
     let mut configs = HashMap::new();
 
+    // Default model for general queries
     configs.insert(
         "llama3.1",
         ModelConfig {
@@ -19,6 +20,7 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
         },
     );
 
+    // Translation model (used by translate command)
     configs.insert(
         "translategemma",
         ModelConfig {
@@ -32,6 +34,7 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
         },
     );
 
+    // OCR model (used by ocr command)
     configs.insert(
         "glm-ocr",
         ModelConfig {
@@ -127,8 +130,10 @@ mod tests {
     #[test]
     fn test_llama31_parameters() {
         let llama = ModelConfig::get("llama3.1").unwrap();
-        assert_eq!(llama.num_ctx, 4096);
+        assert_eq!(llama.model_id, "llama3.1:8b");
         assert_eq!(llama.temperature, 0.8);
+        assert_eq!(llama.top_k, None);
+        assert_eq!(llama.top_p, None);
         assert_eq!(llama.repeat_penalty, Some(1.1));
     }
 }

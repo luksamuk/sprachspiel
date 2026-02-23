@@ -304,6 +304,7 @@ impl Settings {
 
 # The default model preset to use for general queries.
 # See all available models with: ask-ai --list-models
+# Recommended: "llama3.1" (built-in) or "ministral" (from models.toml)
 # Default: "llama3.1"
 default = "llama3.1"
 
@@ -339,9 +340,9 @@ ollama_port = 11434
 # --- SUMMARIZE SUBCOMMAND ---
 [model.summarize]
 # The model to use for 'ask summarize'.
-# Recommended: a lightweight model like llama3.2 for speed.
+# Recommended: a lightweight model like qwen3 for speed and thinking.
 # If not specified, falls back to the global [model] default.
-# model = "llama3.2"
+# model = "qwen3"
 
 # Summarization typically doesn't need thinking mode.
 # If not specified, defaults to: false for summarize

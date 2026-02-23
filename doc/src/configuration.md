@@ -300,25 +300,24 @@ You can configure different models for different subcommands. This allows you to
 
 ```toml
 [model]
-# Global default (fallback)
-default = "llama3.1"
+# Global default model
+default = "ministral"
 
 [model.query]
-# Use llama3.1 for general queries
-model = "llama3.1"
-thinking = true
+# Model for general queries
+model = "ministral"
+thinking = false
 tools = true
 
 [model.summarize]
-# Use lightweight model for summarization
-model = "llama3.2"
+# Model for summarization
+model = "qwen3"
 thinking = false
 tools = false
 
 [model.code]
-# Use code-optimized model for programming tasks
-model = "deepseek-coder-v2"
-thinking = false
+# Model for code generation
+model = "qwen3-coder"
 tools = true
 ```
 
@@ -326,12 +325,13 @@ tools = true
 
 For subcommands, the priority is:
 
+1. **CLI flags** - `-m`, `-t`, `--tools`
 2. **Subcommand-specific config** - e.g., `[model.code]` settings
 3. **Global default** - from `[model]` section
 
 Example: If you run `ask query -c "function"` with the above config:
-- It will use `deepseek-coder-v2` (from `[model.code]`)
-- Not `lfm` (global default)
+- It will use `qwen3-coder` (from `[model.code]`)
+- Not `ministral` (global default)
 
 ### Options
 

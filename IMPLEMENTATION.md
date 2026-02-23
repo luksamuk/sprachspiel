@@ -12,25 +12,27 @@
 
 ✅ **Completed:**
 
-- Core CLI with 4 subcommands (query, translate, ocr, summarize)
+- Core CLI with 5 subcommands (query, chat, translate, ocr, summarize)
 - Interactive chat mode with persistent sessions
 - Custom models support via `~/.config/ask-ai/models.toml`
-- 14 tools (8 Pokémon, 3 Weather, 3 Web Search)
-- 14 built-in model presets + user-defined models
-- Dynamic model selection
-- Markdown rendering
-- Model capability detection
-- Tool integration
+- Built-in models: llama3.1, translategemma, glm-ocr (user models in config)
+- Thinking support for cloud models (configurable via `thinking = true`)
+- Dynamic model selection with capability detection
+- Tool integration with error recovery
 - Translation (50+ languages)
 - OCR with multiple modes
 - Summarization with styles
+- Markdown rendering
 - Pipe support
 - Debug mode
 - Think mode with visible thinking output
 - Code mode
 - Token metrics display
+- AGENTS.md context injection with security sanitization
 - Complete documentation with mdBook
 - Man page
+- Termux/Android builds
+- Error recovery for tool/network errors
 
 ## Documentation
 
@@ -66,4 +68,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-02-19 - v0.14.0: Custom models, thinking output, token metrics
+2026-02-22 - v0.14.1: Bugfix for thinking output, error recovery helpers
