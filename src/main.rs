@@ -199,10 +199,15 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         text
     } else {
         // Read from stdin
-        use std::io::{self, Read};
-        let mut input = String::new();
-        io::stdin().read_to_string(&mut input)?;
-        input.trim().to_string()
+        match crate::utils::read_stdin() {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                eprintln!("Usage: ask translate LANGUAGE \"text to translate\"");
+                eprintln!("   or: echo \"text\" | ask translate LANGUAGE");
+                std::process::exit(1);
+            }
+        }
     };
 
     if text.is_empty() {
@@ -878,21 +883,12 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
         text.clone()
     } else {
         // Read from stdin
-        use std::io::{self, Read};
-        let mut input = String::new();
-        match io::stdin().read_to_string(&mut input) {
-            Ok(_) => {
-                let trimmed = input.trim().to_string();
-                if trimmed.is_empty() {
-                    eprintln!("Error: No text provided for summarization.");
-                    eprintln!("Usage: ask summarize [OPTIONS] <TEXT>");
-                    eprintln!("   or: echo \"text\" | ask summarize");
-                    std::process::exit(1);
-                }
-                trimmed
-            }
+        match crate::utils::read_stdin() {
+            Ok(t) => t,
             Err(e) => {
-                eprintln!("Error: Failed to read from stdin: {}", e);
+                eprintln!("Error: {}", e);
+                eprintln!("Usage: ask summarize [OPTIONS] <TEXT>");
+                eprintln!("   or: echo \"text\" | ask summarize");
                 std::process::exit(1);
             }
         }

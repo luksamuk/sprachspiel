@@ -1,5 +1,6 @@
 use super::*;
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::utils::capitalize;
 
 /// Fetch basic information about a Pokémon (name, types, height, weight, abilities).
 ///
@@ -738,14 +739,6 @@ pub async fn fetch_pokemon(pokemon_name: String) -> ToolResult<String> {
     );
     log_tool_result("fetch_pokemon", &result);
     Ok(result)
-}
-
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(first) => first.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
-    }
 }
 
 fn format_evolution_chain(link: &EvolutionLink, depth: usize) -> String {
