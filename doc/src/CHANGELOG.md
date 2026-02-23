@@ -2,6 +2,47 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.15.0] - 2026-02-23
+
+### Added
+
+- **Custom Coordinator** - New `CustomCoordinator` implementation
+  - Pre-tool content forwarding - model's thinking/intro text before tool calls is now displayed
+  - Event callbacks for `PreToolContent`, `ToolCall`, `ToolResult`, `FinalResponse`
+  - Replaces ollama-rs Coordinator for full control over tool execution flow
+
+- **Thinking Display Improvements**
+  - Lighter gray color (`\x1B[37m`) for better readability
+  - Markdown rendering support with `termimad::MadSkin`
+  - Proper word wrapping respecting terminal width
+  - No more words cut in half on narrow terminals
+
+- **Retry Logic for Query Mode**
+  - Query and legacy query now have same retry logic as REPL
+  - Recoverable errors (unknown tool, invalid args, network) trigger retry
+  - Model receives error message and can correct tool calls
+  - Up to 3 retry attempts
+
+### Changed
+
+- **Tool Output Display**
+  - Tool calls show function name with parameters (from debug_tools.rs)
+  - Tool results show abbreviated preview in normal mode
+  - Debug mode shows full detailed output
+  - No duplicate logging
+
+- **Refactored `display_thinking()`**
+  - New `render_markdown` parameter for markdown rendering
+  - Automatically detects terminal width for proper wrapping
+  - Word-wrap algorithm respects word boundaries
+
+### Fixed
+
+- **Thinking Text Wrapping** - Now properly wraps at word boundaries
+  - Uses terminal width detection via `termimad::terminal_size()`
+  - Accounts for 2-character indentation
+  - Supports both markdown and plain text modes
+
 ## [Unreleased]
 
 ### Changed

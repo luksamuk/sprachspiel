@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "ask-ai"
-version = "0.14.2"
+version = "0.15.0"
 dependencies = [
  "base64",
  "calc",
@@ -131,6 +131,7 @@ dependencies = [
  "termimad",
  "tokio",
  "toml",
+ "unicode-width 0.2.2",
  "urlencoding",
  "walkdir",
 ]

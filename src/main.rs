@@ -21,18 +21,20 @@ mod user_models;
 mod utils;
 
 use clap::Parser;
-use ollama_rs::coordinator::Coordinator;
 use ollama_rs::generation::chat::ChatMessage;
 use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
-use crate::chat::{display_thinking, strip_thinking_tags};
+use crate::chat::{
+    display_thinking, strip_thinking_tags, CustomCoordinator, ChatEvent,
+    coordinator::{classify_error_str, format_recovery_message, is_error_str_recoverable, MAX_RETRIES},
+};
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::ocr::{OcrArgs, OcrProcessor, print_results};
 use crate::prompts::get_prompt_with_blacklist;
 use crate::settings::Settings;
-use crate::spinner::{create_spinner, finish_spinner};
+use crate::spinner::{create_spinner, finish_spinner, suspend_for_print};
 use crate::summarize::{SummarizeArgs, SummarizeProcessor};
 use crate::tool_robustness::format_tool_error;
 use crate::translate::{
@@ -239,7 +241,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
 
     // Build coordinator - no tools for translation
     let mut coordinator =
-        Coordinator::new(ollama, model_config.model_id.clone(), vec![]).options(model_options);
+        CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![]).options(model_options);
 
     // Create messages - use system prompt for translation instructions
     let system_message = ChatMessage::system(prompt);
@@ -385,10 +387,55 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
 
     let model_options = model_config.build_model_options();
 
-    // Build coordinator
-    let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
+    // Build coordinator with event callback for pre-tool content
+    let use_plain_final = use_plain;
+    // Note: use_think_final is already defined above
+    let mut coordinator = CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
         .options(model_options)
-        .think(use_think_final);
+        .think(use_think_final)
+        .on_event(move |event| {
+            match event {
+                ChatEvent::PreToolContent { content, thinking } => {
+                    // Show pre-tool content (thinking/intro text before tool calls)
+                    suspend_for_print(|| {
+                        if use_think_final {
+                            display_thinking(&content, thinking.as_ref(), !use_plain_final);
+                        }
+                        if !content.trim().is_empty() {
+                            let cleaned = strip_thinking_tags(&content);
+                            if !cleaned.trim().is_empty() {
+                                if use_plain_final {
+                                    println!("{}", cleaned);
+                                } else {
+                                    print_text(&cleaned);
+                                }
+                            }
+                        }
+                    });
+                }
+                ChatEvent::ToolCall { .. } => {
+                    // Tool call logging is handled by debug_tools.rs
+                    // which shows the tool name with parameters
+                }
+                ChatEvent::ToolResult { result, .. } => {
+                    // In normal mode, show abbreviated result
+                    // In debug mode, debug_tools.rs shows detailed result
+                    if !use_debug {
+                        suspend_for_print(|| {
+                            let preview = if result.len() > 100 {
+                                format!("{}...", &result[..100])
+                            } else {
+                                result.clone()
+                            };
+                            eprintln!("\x1B[90m✓ Result: {}\x1B[0m", preview.replace('\n', " "));
+                        });
+                    }
+                }
+                ChatEvent::FinalResponse(_) => {
+                    // Final response is handled after coordinator.chat() returns
+                }
+            }
+        });
 
     // Add tools if enabled
     if use_tools_final {
@@ -402,6 +449,13 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
         eprintln!("⚠️  [Tools] No tools enabled for this model");
     }
 
+    // Get available tool names for error messages
+    let tool_names: Vec<String> = if use_tools_final {
+        crate::tools::get_available_tool_names(settings)
+    } else {
+        vec![]
+    };
+
     // Create messages
     let system_message = ChatMessage::system(system_prompt.to_string());
     let user_message = ChatMessage::user(query);
@@ -409,8 +463,48 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
     // Show spinner
     let spinner = create_spinner("Waiting for response...");
 
-    // Send request
-    let result = coordinator.chat(vec![system_message, user_message]).await;
+    // Send request with retry logic for recoverable errors
+    let mut attempts = 0;
+    let mut messages = vec![system_message, user_message];
+    let result = loop {
+        let current_result = coordinator.chat(messages.clone()).await;
+
+        match current_result {
+            Ok(response) => break Ok(response),
+            Err(e) => {
+                let error_str = e.to_string();
+
+                // Check if error is recoverable using string matching
+                if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                    attempts += 1;
+
+                    let recovery_err = classify_error_str(&error_str, &tool_names);
+                    let error_msg = format_recovery_message(&recovery_err);
+
+                    if use_debug {
+                        log_debug(&format!(
+                            "🔧 [Recovery] Attempt {}/{} - {}",
+                            attempts, MAX_RETRIES, recovery_err.description()
+                        ));
+                    }
+
+                    // Add error as tool message and retry
+                    messages.push(ChatMessage::tool(error_msg));
+
+                    // Show brief retry indicator
+                    if attempts == 1 {
+                        finish_spinner(spinner.clone());
+                        eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                    }
+
+                    continue;
+                } else {
+                    // Max retries or non-recoverable
+                    break Err(error_str);
+                }
+            }
+        }
+    };
 
     // Handle result with better error messages
     let response = match result {
@@ -421,7 +515,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
             if crate::debug_tools::is_debug_enabled() {
                 eprintln!("\n❌ Tool execution failed (RAW):\n{:#?}\n", e);
             } else {
-                let error_msg = format_tool_error(&e.to_string());
+                let error_msg = format_tool_error(&e);
                 eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
             }
             std::process::exit(1);
@@ -432,7 +526,7 @@ async fn handle_query(args: QueryArgs, cli: &Cli, settings: &Settings) -> AppRes
 
     // Show thinking if present and think mode is enabled
     if use_think {
-        display_thinking(&response.message.content, response.message.thinking.as_ref());
+        display_thinking(&response.message.content, response.message.thinking.as_ref(), !use_plain);
     }
 
     // Strip thinking tags from content
@@ -564,10 +658,55 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
 
     let model_options = model_config.build_model_options();
 
-    // Build coordinator
-    let mut coordinator = Coordinator::new(ollama, model_config.model_id.clone(), vec![])
+    // Build coordinator with event callback for pre-tool content
+    let use_plain_final = use_plain;
+    let use_think_final = use_think;
+    let mut coordinator = CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
         .options(model_options)
-        .think(use_think);
+        .think(use_think_final)
+        .on_event(move |event| {
+            match event {
+                ChatEvent::PreToolContent { content, thinking } => {
+                    // Show pre-tool content (thinking/intro text before tool calls)
+                    suspend_for_print(|| {
+                        if use_think_final {
+                            display_thinking(&content, thinking.as_ref(), !use_plain_final);
+                        }
+                        if !content.trim().is_empty() {
+                            let cleaned = strip_thinking_tags(&content);
+                            if !cleaned.trim().is_empty() {
+                                if use_plain_final {
+                                    println!("{}", cleaned);
+                                } else {
+                                    print_text(&cleaned);
+                                }
+                            }
+                        }
+                    });
+                }
+                ChatEvent::ToolCall { .. } => {
+                    // Tool call logging is handled by debug_tools.rs
+                    // which shows the tool name with parameters
+                }
+                ChatEvent::ToolResult { result, .. } => {
+                    // In normal mode, show abbreviated result
+                    // In debug mode, debug_tools.rs shows detailed result
+                    if !use_debug {
+                        suspend_for_print(|| {
+                            let preview = if result.len() > 100 {
+                                format!("{}...", &result[..100])
+                            } else {
+                                result.clone()
+                            };
+                            eprintln!("\x1B[90m✓ Result: {}\x1B[0m", preview.replace('\n', " "));
+                        });
+                    }
+                }
+                ChatEvent::FinalResponse(_) => {
+                    // Final response is handled after coordinator.chat() returns
+                }
+            }
+        });
 
     // Add tools if enabled
     if use_tools {
@@ -584,6 +723,13 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         eprintln!("⚠️  [Tools] No tools enabled for this model");
     }
 
+    // Get available tool names for error messages
+    let tool_names: Vec<String> = if use_tools {
+        crate::tools::get_available_tool_names(settings)
+    } else {
+        vec![]
+    };
+
     // Create messages
     let system_message = ChatMessage::system(system_prompt.to_string());
     let user_message = ChatMessage::user(query);
@@ -591,8 +737,48 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     // Show spinner
     let spinner = create_spinner("Waiting for response...");
 
-    // Send request
-    let result = coordinator.chat(vec![system_message, user_message]).await;
+    // Send request with retry logic for recoverable errors
+    let mut attempts = 0;
+    let mut messages = vec![system_message, user_message];
+    let result = loop {
+        let current_result = coordinator.chat(messages.clone()).await;
+
+        match current_result {
+            Ok(response) => break Ok(response),
+            Err(e) => {
+                let error_str = e.to_string();
+
+                // Check if error is recoverable using string matching
+                if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                    attempts += 1;
+
+                    let recovery_err = classify_error_str(&error_str, &tool_names);
+                    let error_msg = format_recovery_message(&recovery_err);
+
+                    if use_debug {
+                        log_debug(&format!(
+                            "🔧 [Recovery] Attempt {}/{} - {}",
+                            attempts, MAX_RETRIES, recovery_err.description()
+                        ));
+                    }
+
+                    // Add error as tool message and retry
+                    messages.push(ChatMessage::tool(error_msg));
+
+                    // Show brief retry indicator
+                    if attempts == 1 {
+                        finish_spinner(spinner.clone());
+                        eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                    }
+
+                    continue;
+                } else {
+                    // Max retries or non-recoverable
+                    break Err(error_str);
+                }
+            }
+        }
+    };
 
     // Handle result with better error messages
     let response = match result {
@@ -603,7 +789,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
             if crate::debug_tools::is_debug_enabled() {
                 eprintln!("\n❌ Tool execution failed (RAW):\n{:#?}\n", e);
             } else {
-                let error_msg = format_tool_error(&e.to_string());
+                let error_msg = format_tool_error(&e);
                 eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
             }
             std::process::exit(1);
@@ -614,7 +800,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
 
     // Show thinking if present and think mode is enabled
     if use_think {
-        display_thinking(&response.message.content, response.message.thinking.as_ref());
+        display_thinking(&response.message.content, response.message.thinking.as_ref(), !use_plain);
     }
 
     // Strip thinking tags from content

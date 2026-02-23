@@ -3,6 +3,17 @@
 //! Handles extraction and display of thinking content from LLM responses.
 
 use regex::Regex;
+use termimad::MadSkin;
+use unicode_width::UnicodeWidthChar;
+
+/// ANSI color for thinking text (light gray)
+const THINKING_COLOR: &str = "\x1B[37m";
+/// ANSI dim/faint style
+const DIM_STYLE: &str = "\x1B[2m";
+/// ANSI reset
+const RESET: &str = "\x1B[0m";
+/// Indentation for thinking content (in characters)
+const THINKING_INDENT: usize = 2;
 
 /// Processed thinking content
 #[derive(Debug, Clone)]
@@ -97,7 +108,7 @@ pub fn strip_thinking_tags(content: &str) -> String {
     process_thinking(content).content
 }
 
-/// Display thinking content to stderr in gray/dim style
+/// Display thinking content to stderr with light gray color and optional markdown
 ///
 /// Checks the API-provided thinking field first, then falls back to
 /// extracting from content.
@@ -105,24 +116,98 @@ pub fn strip_thinking_tags(content: &str) -> String {
 /// # Arguments
 /// * `content` - The full response content
 /// * `thinking_field` - Optional thinking field from API response
+/// * `render_markdown` - Whether to render as markdown
 ///
 /// # Returns
 /// The extracted thinking content (if any), for potential further use
-pub fn display_thinking(content: &str, thinking_field: Option<&String>) -> Option<String> {
+pub fn display_thinking(
+    content: &str,
+    thinking_field: Option<&String>,
+    render_markdown: bool,
+) -> Option<String> {
     let thinking_content = thinking_field.cloned().or_else(|| {
         let processed = process_thinking(content);
         processed.thinking
     });
 
     if let Some(ref thinking) = thinking_content {
-        eprintln!("\x1B[2m\x1B[90m[Thinking]\x1B[0m");
-        for line in thinking.lines() {
-            eprintln!("\x1B[2m\x1B[90m  {}\x1B[0m", line);
+        eprintln!("{DIM_STYLE}{THINKING_COLOR}[Thinking]{RESET}");
+
+        // Get terminal width, accounting for indentation
+        let terminal_width = termimad::terminal_size().0 as usize;
+        let wrap_width = terminal_width.saturating_sub(THINKING_INDENT);
+
+        if render_markdown {
+            // Use MadSkin with proper wrapping
+            let skin = MadSkin::default();
+            let wrapped = skin.text(thinking, Some(wrap_width));
+            for line in wrapped.to_string().lines() {
+                eprintln!("{DIM_STYLE}{THINKING_COLOR}  {}{RESET}", line);
+            }
+        } else {
+            // Manual word wrap for plain text
+            let wrapped = wrap_text(thinking, wrap_width);
+            for line in wrapped.lines() {
+                eprintln!("{DIM_STYLE}{THINKING_COLOR}  {}{RESET}", line);
+            }
         }
         eprintln!();
     }
 
     thinking_content
+}
+
+/// Wrap plain text to a given width, breaking at word boundaries
+fn wrap_text(text: &str, width: usize) -> String {
+    if width < 10 {
+        return text.to_string();
+    }
+
+    // Preserve paragraph breaks (double newlines in original)
+    let paragraphs: Vec<&str> = text.split("\n\n").collect();
+    if paragraphs.len() > 1 {
+        return paragraphs
+            .iter()
+            .map(|p| wrap_single_paragraph(p, width))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+    }
+
+    wrap_single_paragraph(text, width)
+}
+
+/// Wrap a single paragraph (no internal double newlines)
+fn wrap_single_paragraph(text: &str, width: usize) -> String {
+    if width < 10 {
+        return text.to_string();
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+    let mut current_len = 0;
+
+    for word in text.split_whitespace() {
+        let word_len = word.chars().map(|c| c.width().unwrap_or(0)).sum::<usize>();
+
+        if current_len == 0 {
+            current_line.push_str(word);
+            current_len = word_len;
+        } else if current_len + 1 + word_len <= width {
+            current_line.push(' ');
+            current_line.push_str(word);
+            current_len += 1 + word_len;
+        } else {
+            lines.push(current_line);
+            current_line = word.to_string();
+            current_len = word_len;
+        }
+    }
+
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    lines.join("\n")
 }
 
 #[cfg(test)]

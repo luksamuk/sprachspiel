@@ -3,9 +3,6 @@
 //! Centralized tool registration for use across query, legacy query, and chat modes.
 //! Handles feature flags and blacklist filtering.
 
-use ollama_rs::coordinator::Coordinator;
-use ollama_rs::history::ChatHistory;
-
 use crate::settings::Settings;
 
 #[cfg(any(
@@ -19,65 +16,80 @@ use crate::settings::Settings;
 ))]
 use super::*;
 
-/// Register all available tools with the coordinator
+/// Trait for tool registration - implemented by both Coordinator types
+pub trait ToolRegistrar: Sized {
+    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self;
+}
+
+impl<C: ollama_rs::history::ChatHistory> ToolRegistrar for ollama_rs::coordinator::Coordinator<C> {
+    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self {
+        self.add_tool(tool)
+    }
+}
+
+impl<C: ollama_rs::history::ChatHistory> ToolRegistrar
+    for crate::chat::custom_coordinator::CustomCoordinator<C>
+{
+    fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self {
+        self.add_tool(tool)
+    }
+}
+
+/// Register all available tools with any coordinator implementing ToolRegistrar
 ///
 /// Returns the updated coordinator and the number of tools registered.
 /// Tools are filtered based on:
 /// - Feature flags (compile-time)
 /// - Settings blacklist (runtime)
 /// - API key availability (for Serper)
-pub fn register_tools<C>(
-    mut coordinator: Coordinator<C>,
-    settings: &Settings,
-    use_debug: bool,
-) -> (Coordinator<C>, usize)
+pub fn register_tools<C>(mut coordinator: C, settings: &Settings, use_debug: bool) -> (C, usize)
 where
-    C: ChatHistory + Clone,
+    C: ToolRegistrar,
 {
     let is_tool_allowed = |name: &str| !settings.is_tool_blacklisted(name);
     let mut tool_count = 0;
 
     // Always register test_tool
-    coordinator = coordinator.add_tool(test_tool);
+    coordinator = coordinator.register_tool(test_tool);
     tool_count += 1;
 
     // Pokemon tools
     #[cfg(feature = "pokemon-tools")]
     {
         if is_tool_allowed("fetch_pokemon") {
-            coordinator = coordinator.add_tool(fetch_pokemon);
+            coordinator = coordinator.register_tool(fetch_pokemon);
             tool_count += 1;
         }
         if is_tool_allowed("fetch_pokemon_basic") {
-            coordinator = coordinator.add_tool(fetch_pokemon_basic);
+            coordinator = coordinator.register_tool(fetch_pokemon_basic);
             tool_count += 1;
         }
         if is_tool_allowed("fetch_pokemon_stats") {
-            coordinator = coordinator.add_tool(fetch_pokemon_stats);
+            coordinator = coordinator.register_tool(fetch_pokemon_stats);
             tool_count += 1;
         }
         if is_tool_allowed("fetch_pokemon_moves") {
-            coordinator = coordinator.add_tool(fetch_pokemon_moves);
+            coordinator = coordinator.register_tool(fetch_pokemon_moves);
             tool_count += 1;
         }
         if is_tool_allowed("fetch_pokemon_evolution") {
-            coordinator = coordinator.add_tool(fetch_pokemon_evolution);
+            coordinator = coordinator.register_tool(fetch_pokemon_evolution);
             tool_count += 1;
         }
         if is_tool_allowed("fetch_ability_details") {
-            coordinator = coordinator.add_tool(fetch_ability_details);
+            coordinator = coordinator.register_tool(fetch_ability_details);
             tool_count += 1;
         }
         if is_tool_allowed("fetch_type_effectiveness") {
-            coordinator = coordinator.add_tool(fetch_type_effectiveness);
+            coordinator = coordinator.register_tool(fetch_type_effectiveness);
             tool_count += 1;
         }
         if is_tool_allowed("fetch_pokemon_by_type") {
-            coordinator = coordinator.add_tool(fetch_pokemon_by_type);
+            coordinator = coordinator.register_tool(fetch_pokemon_by_type);
             tool_count += 1;
         }
         if is_tool_allowed("fetch_move_details") {
-            coordinator = coordinator.add_tool(fetch_move_details);
+            coordinator = coordinator.register_tool(fetch_move_details);
             tool_count += 1;
         }
     }
@@ -86,15 +98,15 @@ where
     #[cfg(feature = "weather-tools")]
     {
         if is_tool_allowed("get_weather") {
-            coordinator = coordinator.add_tool(get_weather);
+            coordinator = coordinator.register_tool(get_weather);
             tool_count += 1;
         }
         if is_tool_allowed("get_current_weather") {
-            coordinator = coordinator.add_tool(get_current_weather);
+            coordinator = coordinator.register_tool(get_current_weather);
             tool_count += 1;
         }
         if is_tool_allowed("get_weather_forecast") {
-            coordinator = coordinator.add_tool(get_weather_forecast);
+            coordinator = coordinator.register_tool(get_weather_forecast);
             tool_count += 1;
         }
     }
@@ -103,7 +115,7 @@ where
     #[cfg(feature = "calc-tools")]
     {
         if is_tool_allowed("calculate") {
-            coordinator = coordinator.add_tool(calculate);
+            coordinator = coordinator.register_tool(calculate);
             tool_count += 1;
         }
     }
@@ -116,11 +128,11 @@ where
                 eprintln!("🔑 [Serper] API key found - enabling Google Search via Serper");
             }
             if is_tool_allowed("web_search") {
-                coordinator = coordinator.add_tool(super::serper::web_search);
+                coordinator = coordinator.register_tool(super::serper::web_search);
                 tool_count += 1;
             }
             if is_tool_allowed("web_search_news") {
-                coordinator = coordinator.add_tool(super::serper::web_search_news);
+                coordinator = coordinator.register_tool(super::serper::web_search_news);
                 tool_count += 1;
             }
         } else {
@@ -132,11 +144,11 @@ where
                     );
                 }
                 if is_tool_allowed("web_search") {
-                    coordinator = coordinator.add_tool(web_search);
+                    coordinator = coordinator.register_tool(web_search);
                     tool_count += 1;
                 }
                 if is_tool_allowed("web_search_news") {
-                    coordinator = coordinator.add_tool(web_search_news);
+                    coordinator = coordinator.register_tool(web_search_news);
                     tool_count += 1;
                 }
             }
@@ -155,11 +167,11 @@ where
     #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
     {
         if is_tool_allowed("web_search") {
-            coordinator = coordinator.add_tool(web_search);
+            coordinator = coordinator.register_tool(web_search);
             tool_count += 1;
         }
         if is_tool_allowed("web_search_news") {
-            coordinator = coordinator.add_tool(web_search_news);
+            coordinator = coordinator.register_tool(web_search_news);
             tool_count += 1;
         }
     }
@@ -168,7 +180,7 @@ where
     #[cfg(feature = "search-tools")]
     {
         if is_tool_allowed("web_scrape") {
-            coordinator = coordinator.add_tool(web_scrape);
+            coordinator = coordinator.register_tool(web_scrape);
             tool_count += 1;
         }
     }
@@ -177,7 +189,7 @@ where
     #[cfg(feature = "finance-tools")]
     {
         if is_tool_allowed("get_stock_quote") {
-            coordinator = coordinator.add_tool(get_stock_quote);
+            coordinator = coordinator.register_tool(get_stock_quote);
             tool_count += 1;
         }
     }
@@ -186,11 +198,11 @@ where
     #[cfg(feature = "system-tools")]
     {
         if is_tool_allowed("get_current_datetime") {
-            coordinator = coordinator.add_tool(get_current_datetime);
+            coordinator = coordinator.register_tool(get_current_datetime);
             tool_count += 1;
         }
         if is_tool_allowed("get_project_context") {
-            coordinator = coordinator.add_tool(get_project_context);
+            coordinator = coordinator.register_tool(get_project_context);
             tool_count += 1;
         }
     }
@@ -199,23 +211,23 @@ where
     #[cfg(feature = "file-tools")]
     {
         if is_tool_allowed("read_file") {
-            coordinator = coordinator.add_tool(read_file);
+            coordinator = coordinator.register_tool(read_file);
             tool_count += 1;
         }
         if is_tool_allowed("read_file_segment") {
-            coordinator = coordinator.add_tool(read_file_segment);
+            coordinator = coordinator.register_tool(read_file_segment);
             tool_count += 1;
         }
         if is_tool_allowed("count_lines") {
-            coordinator = coordinator.add_tool(count_lines);
+            coordinator = coordinator.register_tool(count_lines);
             tool_count += 1;
         }
         if is_tool_allowed("list_directory") {
-            coordinator = coordinator.add_tool(list_directory);
+            coordinator = coordinator.register_tool(list_directory);
             tool_count += 1;
         }
         if is_tool_allowed("search_files") {
-            coordinator = coordinator.add_tool(search_files);
+            coordinator = coordinator.register_tool(search_files);
             tool_count += 1;
         }
     }

@@ -7,11 +7,13 @@ pub mod cli;
 pub mod commands;
 pub mod completion;
 pub mod coordinator;
+pub mod custom_coordinator;
 pub mod history;
 pub mod repl;
 pub mod session;
 pub mod thinking;
 
 pub use cli::ChatArgs;
+pub use custom_coordinator::{ChatEvent, CustomCoordinator};
 pub use repl::run_chat_repl;
 pub use thinking::{display_thinking, strip_thinking_tags};

@@ -3,9 +3,9 @@
 //! Handles text summarization using mistral-small model with tools disabled.
 //! Ensures security and efficiency by not allowing tool calls during summarization.
 
-use ollama_rs::coordinator::Coordinator;
 use ollama_rs::generation::chat::ChatMessage;
 
+use crate::chat::CustomCoordinator;
 use crate::prompts::{SYSTEM_PROMPT_SUMMARIZE, get_prompt};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -45,7 +45,7 @@ impl SummarizeProcessor {
 
         // Build coordinator WITHOUT tools (security requirement)
         let mut coordinator =
-            Coordinator::new(ollama, model_config.model_id.clone(), vec![]).options(model_options);
+            CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![]).options(model_options);
         // Note: No .add_tool() calls - tools are disabled
 
         // Build system prompt (no Pepe personality for summarize - keep it professional)

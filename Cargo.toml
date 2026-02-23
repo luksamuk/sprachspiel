@@ -1,6 +1,6 @@
 [package]
 name = "ask-ai"
-version = "0.14.2"
+version = "0.15.0"
 edition = "2024"
 
 [features]
@@ -49,3 +49,4 @@ tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
 toml = "0.8"
 urlencoding = "2.1"
 walkdir = "2.5"
+unicode-width = "0.2.2"

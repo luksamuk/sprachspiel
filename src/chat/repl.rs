@@ -2,7 +2,6 @@
 //!
 //! Handles the main chat loop, user input, and model interaction.
 
-use ollama_rs::coordinator::Coordinator;
 use ollama_rs::generation::chat::ChatMessage;
 use rustyline::Config;
 use rustyline::error::ReadlineError;
@@ -14,7 +13,7 @@ use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::prompts::get_prompt_with_blacklist;
 use crate::settings::Settings;
-use crate::spinner::{create_spinner, finish_spinner};
+use crate::spinner::{create_spinner, finish_spinner, suspend_for_print};
 use crate::tool_robustness::format_tool_error;
 
 use super::commands::{CommandResult, execute_command, parse_command};
@@ -22,6 +21,7 @@ use super::completion::ChatCompleter;
 use super::coordinator::{
     classify_error_str, format_recovery_message, is_error_str_recoverable, MAX_RETRIES,
 };
+use super::custom_coordinator::{ChatEvent, CustomCoordinator};
 use super::history::{ConversationStorage, get_project_id};
 use super::session::ChatSession;
 use super::thinking::{display_thinking, strip_thinking_tags};
@@ -478,16 +478,55 @@ async fn send_message(
         .unwrap_or_else(|| "You are a helpful assistant.".to_string())
     };
 
-    // Build coordinator
-    let mut coordinator: Coordinator<Vec<ChatMessage>> =
-        Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
-            .options(model_options)
-            .think(think_enabled);
+    // Build coordinator with event callback for pre-tool content
+    let coordinator = CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+        .options(model_options)
+        .think(think_enabled)
+        .on_event(move |event| {
+            match event {
+                ChatEvent::PreToolContent { content, thinking } => {
+                    // Show pre-tool content (thinking/intro text before tool calls)
+                    suspend_for_print(|| {
+                        if think_enabled {
+                            display_thinking(&content, thinking.as_ref(), true);
+                        }
+                        if !content.trim().is_empty() {
+                            let cleaned = strip_thinking_tags(&content);
+                            if !cleaned.trim().is_empty() {
+                                print_text(&cleaned);
+                            }
+                        }
+                    });
+                }
+                ChatEvent::ToolCall { .. } => {
+                    // Tool call logging is handled by debug_tools.rs
+                    // which shows the tool name with parameters
+                }
+                ChatEvent::ToolResult { result, .. } => {
+                    // In normal mode, show abbreviated result
+                    // In debug mode, debug_tools.rs shows detailed result
+                    if !use_debug {
+                        suspend_for_print(|| {
+                            let preview = if result.len() > 100 {
+                                format!("{}...", &result[..100])
+                            } else {
+                                result.clone()
+                            };
+                            eprintln!("\x1B[90m✓ Result: {}\x1B[0m", preview.replace('\n', " "));
+                        });
+                    }
+                }
+                ChatEvent::FinalResponse(_) => {
+                    // Final response is handled after coordinator.chat() returns
+                }
+            }
+        });
 
     // Add tools if enabled
+    let mut coordinator = coordinator;
     if tools_enabled {
-        let (coordinator_new, tool_count) = crate::tools::register_tools(coordinator, settings, use_debug);
-        coordinator = coordinator_new;
+        let (coord_new, tool_count) = crate::tools::register_tools(coordinator, settings, use_debug);
+        coordinator = coord_new;
         if use_debug {
             log_debug(&format!("{} tools active", tool_count));
         }
@@ -580,8 +619,9 @@ async fn send_message(
             };
 
             // Show thinking content in gray/dim if present and think mode is enabled
+            // RENDER mode uses markdown
             if think_enabled {
-                display_thinking(&content, response.message.thinking.as_ref());
+                display_thinking(&content, response.message.thinking.as_ref(), true);
             }
 
             // Strip thinking tags from content for display
@@ -636,15 +676,14 @@ Provide a clear, structured summary that captures the essential context."#,
         conversation_text
     );
 
-    // Build coordinator for compact
+    // Build coordinator for compact (no tools, no events needed)
     let mut model_cfg = model_config.clone();
     model_cfg.temperature = 0.3;
     model_cfg.top_p = Some(0.9);
     let model_options = model_cfg.build_model_options();
 
-    let mut coordinator: Coordinator<Vec<ChatMessage>> =
-        Coordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
-            .options(model_options);
+    let mut coordinator = CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+        .options(model_options);
 
     let messages = vec![
         ChatMessage::system("You are a helpful assistant that summarizes conversations concisely while preserving key information.".to_string()),
