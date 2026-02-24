@@ -27,6 +27,7 @@
   - [Architecture](./development/architecture.md)
   - [Roadmap](./development/roadmap.md)
   - [Chat Mode Design](./development/chat-mode-design.md)
+  - [Context Management Research](./development/context_management_research.md)
   - [Contributing](./development/contributing.md)
 
 ---
