@@ -168,6 +168,34 @@ ask vision -m llava image.png                  # Specific model
 
 ---
 
+### LLM Context History Redesign
+
+**Priority:** HIGH  
+**Status:** Research and brainstorming needed
+
+**Problem:** Suspicion that LLMs are receiving excessive conversation history. Need to investigate and redesign how context is passed to the model.
+
+**Potential Issues:**
+- Too many messages in history consuming context window
+- Redundant or low-value messages being included
+- Model performance degrading with long histories
+- Token usage inefficiency
+
+**Research Needed:**
+- Analyze current history management in chat sessions
+- Benchmark model performance with varying history sizes
+- Investigate message pruning strategies
+- Consider relevance-based history selection
+
+**Tasks:**
+- [ ] Research: Audit current context/history passing mechanism
+- [ ] Research: Benchmark history size vs model performance
+- [ ] Brainstorm: History pruning strategies
+- [ ] Design: New context management approach
+- [ ] Implement: Optimized history handling
+
+---
+
 ## Medium Priority
 
 ### Automatic Conversation Compaction
