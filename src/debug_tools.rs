@@ -37,11 +37,7 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
             eprintln!("───────────────────────────────────────────────────────────────");
 
             for (key, value) in args {
-                let display_value = if value.len() > 80 {
-                    format!("{}...", &value[..77])
-                } else {
-                    value.clone()
-                };
+                let display_value = crate::utils::truncate_chars(value, 77);
                 eprintln!("  {}: {}", key, display_value);
             }
             eprintln!("───────────────────────────────────────────────────────────────");
@@ -51,11 +47,7 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
         let args_str: Vec<String> = args
             .iter()
             .map(|(k, v)| {
-                let v_display = if v.len() > 40 {
-                    format!("{}...", &v[..37])
-                } else {
-                    v.clone()
-                };
+                let v_display = crate::utils::truncate_chars(v, 37);
                 format!("{}={}", k, v_display)
             })
             .collect();
@@ -71,12 +63,10 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
         return;
     }
 
-    let display_result = if result.len() > 500 {
-        format!(
-            "{}...[truncated {} chars]",
-            &result[..497],
-            result.len() - 497
-        )
+    let display_result = if result.chars().count() > 500 {
+        let truncated: String = result.chars().take(497).collect();
+        let remaining = result.chars().count() - 497;
+        format!("{}...[truncated {} chars]", truncated, remaining)
     } else {
         result.to_string()
     };

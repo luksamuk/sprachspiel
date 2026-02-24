@@ -97,11 +97,7 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
         ChatEvent::ToolResult { result, .. } => {
             if !use_debug {
                 suspend_for_print(|| {
-                    let preview = if result.len() > 100 {
-                        format!("{}...", &result[..100])
-                    } else {
-                        result.clone()
-                    };
+                    let preview = crate::utils::truncate_chars(&result, 100);
                     eprintln!("\x1B[90m✓ Result: {}\x1B[0m", preview.replace('\n', " "));
                 });
             }

@@ -365,11 +365,7 @@ fn print_session_info(session: &ChatSession) {
     println!("  Updated:   {}", updated);
 
     if let Some(ref prompt) = session.system_prompt {
-        let preview = if prompt.len() > 100 {
-            format!("{}...", &prompt[..100])
-        } else {
-            prompt.clone()
-        };
+        let preview = crate::utils::truncate_chars(prompt, 100);
         println!("  System:    {}", preview);
     }
 }

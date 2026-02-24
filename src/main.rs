@@ -155,11 +155,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
             eprintln!("Language:          {}", lang);
         }
         if let Some(text) = &args.text {
-            let preview = if text.len() > 50 {
-                format!("{}...", &text[..50])
-            } else {
-                text.clone()
-            };
+            let preview = crate::utils::truncate_chars(text, 50);
             eprintln!("Text:              {}", preview);
         }
         eprintln!("==========================");

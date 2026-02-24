@@ -121,6 +121,18 @@ pub fn capitalize(s: &str) -> String {
     }
 }
 
+/// Truncate a string to a maximum number of characters (not bytes)
+///
+/// This is Unicode-safe and won't panic on multibyte characters.
+/// Returns the truncated string with "..." appended if truncation occurred.
+pub fn truncate_chars(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        format!("{}...", s.chars().take(max_chars).collect::<String>())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,5 +189,23 @@ mod tests {
         assert_eq!(capitalize("HELLO"), "Hello");
         assert_eq!(capitalize("h"), "H");
         assert_eq!(capitalize(""), "");
+    }
+
+    #[test]
+    fn test_truncate_chars() {
+        // Short string - no truncation
+        assert_eq!(truncate_chars("hello", 10), "hello");
+
+        // Exact length - no truncation
+        assert_eq!(truncate_chars("hello", 5), "hello");
+
+        // Needs truncation
+        assert_eq!(truncate_chars("hello world", 5), "hello...");
+
+        // Unicode - multibyte characters
+        assert_eq!(truncate_chars("中国对巴西新闻视角", 5), "中国对巴西...");
+
+        // Mixed ASCII and Unicode
+        assert_eq!(truncate_chars("Hello中国", 6), "Hello中...");
     }
 }
