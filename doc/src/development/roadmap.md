@@ -193,6 +193,46 @@ tools = false
 
 ---
 
+### To-Do List Tooling
+
+**Priority:** HIGH  
+**Status:** Research and brainstorming needed
+
+**Problem:** LLMs need better task management during long sessions. A to-do list tool would help models track progress and maintain focus on multi-step tasks.
+
+**Proposed Features:**
+- Create a new list with multiple items
+- Query current progress on the list
+- Mark items as "done", "in_progress", or "pending"
+- Clear the entire list
+- Add items at specific positions
+- Remove specific items
+
+**Session Types:**
+- **Query mode:** Ephemeral session, list is in-memory only, used for single-task progress tracking
+- **Chat mode:** Persistent session, list survives across messages, used for multi-step workflows
+
+**Integration Points:**
+- Adjust chat and query prompts to encourage list usage
+- Model should use lists to maintain progress visibility
+- Tools should check/update list when performing tasks
+
+**Research Needed:**
+- Best practices for LLM task management
+- Existing patterns in LLM agents/frameworks
+- Prompt engineering for self-tracking
+
+**Tasks:**
+- [ ] Research: LLM task management patterns and best practices
+- [ ] Research: Similar implementations in other LLM frameworks
+- [ ] Brainstorm: Tool API design and prompt integration
+- [ ] Design: Tool interface (create_list, query_list, update_list, etc.)
+- [ ] Design: Prompt modifications for chat and query
+- [ ] Implement: To-do list tools
+- [ ] Test: Multi-step task scenarios
+
+---
+
 ## Medium Priority
 
 ### Automatic Conversation Compaction
