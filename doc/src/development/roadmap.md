@@ -286,6 +286,47 @@ tools = false
 
 ---
 
+### File Modification Tools
+
+**Priority:** Medium  
+**Status:** Research needed
+
+**Problem:** Need safe, restrictive file creation, editing, and removal tools that respect security guidelines and enable session-based tracking.
+
+**Security Constraints:**
+- **Create:** Only create files that don't exist (prevents deliberate overwriting)
+- **Edit:** Only edit files that were read in the current session
+- **Remove:** Only remove files that were read in full during the session
+- **External modification:** If file was modified externally after last read/edit, force re-read before any operation
+- **Deleted files:** If a file was deleted, any session records of edits to that file must be cleared; file can only be created again (not "restored")
+
+**Session State Requirements:**
+- Track which files were read, edited, created, or removed in the session
+- Maintain a log of line additions/removals per file
+- Track file hashes or timestamps to detect external modifications
+- Clear records when files are deleted
+
+**Future Integration:**
+- Different "modes" will authorize only certain tools in REPL
+- Restrictive by default, permissive modes opt-in
+
+**Research Needed:**
+- Best practices in other LLM agents/frameworks (Claude Code, Cursor, etc.)
+- File locking and concurrent modification detection
+- Session state persistence strategies
+- Undo/rollback mechanisms
+
+**Tasks:**
+- [ ] Research: File modification patterns in other LLM agents
+- [ ] Research: Security best practices for file operations
+- [ ] Design: Session state structure (file tracking, edit log)
+- [ ] Design: Tool API (create_file, edit_file, remove_file)
+- [ ] Design: External modification detection strategy
+- [ ] Implement: File tracking in session
+- [ ] Implement: Restrictive file tools
+
+---
+
 ### System Tools - run_command
 
 **Priority:** Medium  
