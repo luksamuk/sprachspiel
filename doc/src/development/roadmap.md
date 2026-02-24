@@ -83,7 +83,7 @@ None currently.
 ### Vision Module for Image Processing
 
 **Priority:** HIGH  
-**Status:** Planning
+**Status:** Completed
 
 **Problem:** Add a dedicated vision module for image description/analysis. Currently, we have OCR for text extraction, but no way to get general image understanding.
 
@@ -94,35 +94,35 @@ None currently.
   - Two commands, two purposes, two optimized models
 - **Default model:** moondream:1.8b (1.7GB, lightweight, edge-optimized, "runs anywhere")
 - **Focus:** Standalone subcommand first, chat integration later
+- **Multi-image:** Single API call using `images` array (user chooses model with `-m minicpm-v`)
+- **No `--ocr` flag:** OCR is a separate module, no duplication
 
-**Vision Models Comparison (available in Ollama, ≤32B params):**
+**Vision Models (Tested):**
 
-| Model | Size | Context | Params | Multi-Img | Notes |
-|-------|------|---------|--------|-----------|-------|
-| moondream:1.8b | 1.7 GB | 2K | 1.8B | ❓ | Lightweight, edge devices (DEFAULT) |
-| llava:7b | 4.7 GB | 32K | 7B | ⚠️ | Popular, good OCR, higher resolution |
-| llava:13b | 8.0 GB | 4K | 13B | ⚠️ | More accurate than 7b |
-| minicpm-v:8b | 5.5 GB | 32K | 8B | ✅ | Multi-image leader, strong OCR, beats GPT-4V |
-| llama3.2-vision:11b | 7.8 GB | 128K | 11B | ❓ | Meta official, large context |
-| qwen2.5vl:7b | 6.0 GB | 125K | 7B | ❓ | Qwen vision, large context |
-| qwen2.5vl:32b | 21 GB | 125K | 32B | ❓ | Max size for 32GB RAM |
+| Model | Size | Context | Multi-Image | Notes |
+|-------|------|---------|-------------|-------|
+| moondream:1.8b | 1.7 GB | 2K | No | Lightweight, default |
+| llava:13b | 8.0 GB | 4K | No | Better quality |
+| llama3.2-vision:11b | 7.8 GB | 128K | No | Large context, good interpretation |
+| ministral-3:14b | 7.5 GB | 32K | Yes | Multi-image, general purpose |
 
-**Proposed Structure:**
+**Note:** 8K context is sufficient for most vision tasks.
+
+**Implemented Structure:**
 ```
 src/vision/
 ├── mod.rs           # Exports
 ├── cli.rs           # VisionArgs (clap)
-├── processor.rs     # VisionProcessor (similar to OcrProcessor)
+├── processor.rs     # VisionProcessor
 └── error.rs         # VisionError
 ```
 
-**Proposed CLI:**
+**Final CLI:**
 ```bash
 ask vision image.png                           # Default description
 ask vision --detailed image.png                # Detailed analysis
-ask vision --ocr image.png                     # Light OCR
 ask vision image.png "What objects are here?"  # Custom prompt
-ask vision img1.png img2.png                   # Multiple images
+ask vision img1.png img2.png                   # Multiple images (single API call)
 ask vision --json image.png                    # JSON output
 ask vision -m llava image.png                  # Specific model
 ```
@@ -131,40 +131,37 @@ ask vision -m llava image.png                  # Specific model
 - Ollama API natively supports `images` array
 - Best model for multi-image: minicpm-v:8b (SOTA on benchmarks)
 - Use cases: comparison, before/after, counting across images
-- No automatic fallback: if model performs poorly, user switches model manually
+- No automatic fallback: user chooses model with `-m` flag
 
-**Research Completed:**
-- [x] Available vision models in Ollama (moondream, llava, minicpm-v, etc.)
-- [x] Model comparison and default selection (moondream:1.8b)
-- [x] Multi-image support: Ollama API supports `images` array; minicpm-v:8b is the leader (SOTA on multi-image benchmarks)
+**Configuration:**
+```toml
+# ~/.config/ask-ai/config.toml
+[model.vision]
+model = "moondream"
+thinking = false
+tools = false
+```
 
-**Research Needed:**
-- [ ] API differences: `/api/generate` vs `/api/chat` for vision
-- [ ] Image size limitations
+**Model Resolution:**
+1. CLI flag `-m/--model` → use that
+2. config.toml `[model.vision].model` → use that
+3. Fallback: "moondream" (default)
 
-**Modes and Use Cases:**
+**Modes:**
 
 | Mode | Flag | Default Prompt |
 |------|------|----------------|
 | default | (none) | "Describe this image." |
 | detailed | `--detailed` | "Describe this image in detail, including composition, colors, subjects, and any notable elements." |
-| ocr | `--ocr` | "Extract and transcribe all text visible in this image." |
-
-**Use Cases Covered:**
-- General description (default)
-- Detailed analysis (--detailed)
-- Light OCR (--ocr)
-- Custom prompts (user-provided prompt overrides modes)
-- **Comparison/inventory** (multi-image with custom prompt)
-- **Code/UI analysis** (via custom prompt)
+| custom | (prompt arg) | User-provided prompt |
 
 **Tasks:**
-- [ ] Design: Default prompt for description (brainstorming in progress)
-- [ ] Design: Vision command interface
-- [ ] Implement: Vision module (cli, processor, error)
-- [ ] Implement: Vision command
-- [ ] Test: Compare vision models (configs added to models.toml)
-- [ ] Document: Vision capabilities
+- [x] Implement: Vision module (cli, processor, error)
+- [x] Implement: Vision command handler in main.rs
+- [x] Register: moondream model in config.rs
+- [x] Add: vision subcommand config in settings.rs
+- [x] Refactor: Extract shared image validation to utils.rs
+- [x] Document: Vision capabilities in doc/src/commands/vision.md
 
 ---
 
@@ -430,6 +427,19 @@ ask-ai --generate-completion bash
 - Reduced `main.rs` from 1175 to 572 lines (51% reduction)
 - Fixed chat mode CLI flags (`-m`, `-t`, `--tools`, `--ignore-agents`)
 - Total reduction: ~600 lines of duplicated code eliminated
+
+### Vision Module ✅
+
+**Completed:** 2026-02-23
+
+- New `ask vision` command for image description and analysis
+- Default model: moondream:1.8b (lightweight, 1.7GB)
+- Multi-image support via Ollama API `images` array
+- Modes: default (brief), --detailed (comprehensive), custom prompt
+- JSON output for programmatic use
+- Configuration via `[model.vision]` in config.toml
+- Shared image validation utilities in `src/utils.rs`
+- Documentation in `doc/src/commands/vision.md`
 
 ---
 

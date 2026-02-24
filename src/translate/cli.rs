@@ -8,6 +8,7 @@ use clap::{Args, Subcommand};
 use crate::chat::ChatArgs;
 use crate::ocr::OcrArgs;
 use crate::summarize::SummarizeArgs;
+use crate::vision::VisionArgs;
 
 /// Commands for the ask-ai CLI
 #[derive(Subcommand, Debug, Clone)]
@@ -31,6 +32,10 @@ pub enum Commands {
     /// Interactive chat with conversation history
     #[command(visible_alias = "c")]
     Chat(ChatArgs),
+
+    /// Analyze and describe images using vision models
+    #[command(visible_alias = "v")]
+    Vision(VisionArgs),
 
     /// Generate shell completions
     #[command(about = "Generate shell completions for ask-ai")]

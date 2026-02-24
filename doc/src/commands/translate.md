@@ -204,7 +204,7 @@ cat english.txt | ask-ai translate :pt > portuguese.txt
 
 ## Limitations
 
-- Requires `translategemma:12b-32k` model
+- Requires `translategemma:4b` model
 - Best for single sentences or short paragraphs
 - Very long texts may be truncated
 

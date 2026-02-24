@@ -2,6 +2,38 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.16.0] - 2026-02-24
+
+### Added
+
+- **Vision Command** - New `ask vision` subcommand for image analysis
+  - Default model: moondream:1.8b (lightweight, 1.7GB)
+  - Multi-image support via Ollama API `images` array
+  - Three modes: default (brief), --detailed (comprehensive), custom prompt
+  - JSON output with --json flag
+  - Markdown rendering with --plain global flag for plain text
+  - Configurable via `[model.vision]` in config.toml
+  - Documentation in `doc/src/commands/vision.md`
+
+- **Shared Image Utilities** in `src/utils.rs`
+  - `validate_image_file()` - validates file existence and extension
+  - `read_file_as_base64()` - async file reading with base64 encoding
+  - Used by both OCR and Vision modules
+
+### Changed
+
+- **Translation Model Updated** - Changed default from translategemma:12b to translategemma:4b
+  - Smaller, faster model with same translation quality
+  - Updated all documentation and config defaults
+
+- **Vision Models Tested** - Updated documentation with verified working models:
+  - moondream:1.8b - Default, lightweight
+  - llava:13b - Better quality (llava:7b doesn't work)
+  - llama3.2-vision:11b - Large context, good interpretation
+  - ministral-3:14b - Multi-image support
+
+- **Code Deduplication** - Shared utilities between OCR and Vision modules
+
 ## [0.15.0] - 2026-02-23
 
 ### Added
@@ -42,12 +74,6 @@ All notable changes to Ask-AI will be documented in this file.
   - Uses terminal width detection via `termimad::terminal_size()`
   - Accounts for 2-character indentation
   - Supports both markdown and plain text modes
-
-## [Unreleased]
-
-### Changed
-
-- **Major Code Refactoring** - Eliminated ~600 lines of duplicated code
   - Created `src/query.rs` module with shared query logic:
     - `run_query()` - unified function for query, legacy query, and chat message handling
     - `ChatContext` - builder for coordinator with event callbacks
@@ -77,13 +103,6 @@ All notable changes to Ask-AI will be documented in this file.
   - `ask chat -t` now enables think mode from CLI
   - `ask chat --tools` now enables tools from CLI
   - `ask chat --ignore-agents` now ignores AGENTS.md from CLI
-
-### Added
-
-- **Code Deduplication Guidelines** - Added to AGENTS.md
-  - Shared utilities documentation
-  - When to create new shared utilities
-  - `#[allow(dead_code)]` policy
 
 ## [0.14.2] - 2026-02-22
 
@@ -158,7 +177,7 @@ All notable changes to Ask-AI will be documented in this file.
   - Compact summary shown after `/compact` command
 
 - **Built-in Models Simplified** - Reduced to essential models only
-  - Built-in: `llama3.1:8b` (default), `translategemma:12b` (translation), `glm-ocr:bf16` (OCR)
+  - Built-in: `llama3.1:8b` (default), `translategemma:4b` (translation), `glm-ocr:bf16` (OCR), `moondream:1.8b` (vision)
   - All other models moved to `~/.config/ask-ai/models.toml`
   - Cloud models have no hardcoded parameters (let Ollama decide)
 

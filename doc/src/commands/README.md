@@ -1,6 +1,6 @@
 # Commands Reference
 
-Ask-AI provides five main commands for different tasks. Each command is designed to be composable with pipes for building powerful workflows.
+Ask-AI provides six main commands for different tasks. Each command is designed to be composable with pipes for building powerful workflows.
 
 ## Command Overview
 
@@ -10,6 +10,7 @@ Ask-AI provides five main commands for different tasks. Each command is designed
 | `chat` | `c` | Interactive chat with history | lfm |
 | `translate` | `t` | Language translation | translate |
 | `ocr` | `o` | Image text extraction | glm-ocr |
+| `vision` | `v` | Image description and analysis | moondream |
 | `summarize` | `sum` | Text summarization | llama3.2 |
 
 ## Default Mode
@@ -68,14 +69,14 @@ ask-ai ocr doc.png | ask-ai summarize | ask-ai translate :pt
 
 ## Command Comparison
 
-| Feature | query | chat | translate | ocr | summarize |
-|---------|-------|------|-----------|-----|-----------|
-| **Input** | Text query | Interactive | Text + language codes | Image files | Text |
-| **Output** | AI response | Interactive | Translated text | Extracted text | Summary |
-| **Model** | Configurable | Configurable | translate (fixed) | glm-ocr (fixed) | Configurable |
-| **Tools** | Yes (auto) | Yes (auto) | No | No | No |
-| **Stdin** | Yes | No | Yes | No | Yes |
-| **History** | No | Yes | No | No | No |
+| Feature | query | chat | translate | ocr | vision | summarize |
+|---------|-------|------|-----------|-----|--------|-----------|
+| **Input** | Text query | Interactive | Text + language codes | Image files | Image files | Text |
+| **Output** | AI response | Interactive | Translated text | Extracted text | Description | Summary |
+| **Model** | Configurable | Configurable | translate (fixed) | glm-ocr (fixed) | moondream | Configurable |
+| **Tools** | Yes (auto) | Yes (auto) | No | No | No | No |
+| **Stdin** | Yes | No | Yes | No | No | Yes |
+| **History** | No | Yes | No | No | No | No |
 
 ## Detailed Documentation
 
@@ -85,6 +86,7 @@ For complete documentation on each command:
 - **[chat](./chat.md)** - Interactive chat with conversation history
 - **[translate](./translate.md)** - Language translation with 50+ languages
 - **[ocr](./ocr.md)** - Image text, table, formula, and figure extraction
+- **[vision](./vision.md)** - Image description and analysis
 - **[summarize](./summarize.md)** - Text summarization with multiple styles
 
 ## Workflow Examples

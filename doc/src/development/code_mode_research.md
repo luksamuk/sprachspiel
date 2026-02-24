@@ -197,7 +197,7 @@ thinking = false
 # Fixed: glm-ocr:bf16 (not configurable)
 
 [model.translate]
-# Fixed: translategemma:12b-32k (not configurable)
+# Fixed: translategemma:4b (not configurable)
 ```
 
 **Tasks:**

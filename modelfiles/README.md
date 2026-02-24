@@ -25,8 +25,9 @@ make models-essential
 
 This installs:
 - **llama3.1:8b** - Default for general queries (4K context, auto-detected)
-- **translategemma:12b** - For translation (4K context)
+- **translategemma:4b** - For translation (4K context)
 - **glm-ocr:bf16** - For OCR
+- **moondream:1.8b** - For vision/image description
 
 ### Install Optional Models (Recommended)
 
@@ -116,8 +117,9 @@ If you prefer not to use modelfiles, pull directly:
 ```bash
 # Essential models (just pull, no modelfile needed)
 ollama pull llama3.1:8b
-ollama pull translategemma:12b
+ollama pull translategemma:4b
 ollama pull glm-ocr:bf16
+ollama pull moondream:1.8b
 
 # Optional - some need modelfiles for custom config
 ollama pull lfm2.5-thinking:1.2b

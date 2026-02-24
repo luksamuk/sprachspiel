@@ -26,7 +26,7 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
     configs.insert(
         "translategemma",
         ModelConfig {
-            model_id: "translategemma:12b".to_string(),
+            model_id: "translategemma:4b".to_string(),
             num_ctx: 4096,
             temperature: 0.2,
             top_k: None,
@@ -46,6 +46,20 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
             top_k: None,
             top_p: None,
             repeat_penalty: Some(1.0),
+            thinking: false,
+        },
+    );
+
+    // Vision model (used by vision command)
+    configs.insert(
+        "moondream",
+        ModelConfig {
+            model_id: "moondream:1.8b".to_string(),
+            num_ctx: 2048,
+            temperature: 0.1,
+            top_k: None,
+            top_p: None,
+            repeat_penalty: Some(1.1),
             thinking: false,
         },
     );
@@ -85,7 +99,7 @@ impl ModelConfig {
     }
 
     pub fn list_builtin_names() -> Vec<&'static str> {
-        vec!["llama3.1", "translategemma", "glm-ocr"]
+        vec!["llama3.1", "translategemma", "glm-ocr", "moondream"]
     }
 
     #[allow(dead_code)]
@@ -133,7 +147,7 @@ mod tests {
     #[test]
     fn test_all_models_exist() {
         let names = ModelConfig::list_names();
-        assert_eq!(names.len(), 3);
+        assert_eq!(names.len(), 4);
 
         for name in names {
             assert!(ModelConfig::is_valid(name), "Model {} should exist", name);

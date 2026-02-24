@@ -12,16 +12,18 @@ These models are required for basic functionality:
 | Preset | Model ID | Context | Best For |
 |--------|----------|---------|----------|
 | **llama3.1** | llama3.1:8b | 4K | General queries (default) |
-| translategemma | translategemma:12b | 4K | Translation |
+| translategemma | translategemma:4b | 4K | Translation |
 | glm-ocr | glm-ocr:bf16 | Auto | OCR/image text extraction |
+| moondream | moondream:1.8b | 2K | Vision/image description |
 
 ### Installation
 
 ```bash
 # Required models
 ollama pull llama3.1:8b
-ollama pull translategemma:12b
+ollama pull translategemma:4b
 ollama pull glm-ocr:bf16
+ollama pull moondream:1.8b
 ```
 
 ## Recommended Models
@@ -59,6 +61,27 @@ High-capability models with large context windows:
 | Preset | Model ID | Context | Best For |
 |--------|----------|---------|----------|
 | assistant-pepe | assistant-pepe:8b | 64K | Entertainment |
+
+### Vision Models
+
+These models are used by the `ask vision` command for image analysis:
+
+| Preset | Model ID | Size | Context | Multi-Image | Best For |
+|--------|----------|------|---------|-------------|----------|
+| moondream | moondream:1.8b | 1.7 GB | 2K | No | Default, lightweight |
+| llava | llava:13b | 8.0 GB | 4K | No | Better quality |
+| llama3.2-vision | llama3.2-vision:11b | 7.8 GB | 128K | No | Large context, good interpretation |
+| ministral | ministral-3:14b | 7.5 GB | 32K | Yes | Multi-image, general purpose |
+
+**Note:** 8K context is sufficient for most vision tasks. Vision models don't require large context windows.
+
+```bash
+# Install vision models
+ollama pull moondream:1.8b       # Required (default)
+ollama pull llava:13b            # Optional, better quality
+ollama pull llama3.2-vision:11b  # Optional, large context
+ollama pull ministral-3:14b      # Optional, multi-image support
+```
 
 ## Sample Configuration
 
@@ -125,7 +148,10 @@ tools = true
 | llama3.1 | Yes | No | No | Yes |
 | translategemma | No | No | No | Yes |
 | glm-ocr | No | Yes | No | Yes |
-| ministral | Yes | No | No | Yes |
+| moondream | No | Yes | No | Yes |
+| llava | No | Yes | No | Yes |
+| llama3.2-vision | No | Yes | No | Yes |
+| ministral | Yes | Yes | No | Yes |
 | qwen3 | No | No | Yes | Yes |
 | qwen3-coder | Yes | No | No | Yes |
 | nemotron | No | No | Yes | Yes |

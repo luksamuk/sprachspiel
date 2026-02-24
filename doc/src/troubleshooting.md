@@ -63,10 +63,10 @@ sudo systemctl start ollama
 
 ```bash
 # Pull required models
-ollama pull lfm2.5-thinking:1.2b-32k
-ollama pull translategemma:12b-32k
+ollama pull llama3.1:8b
+ollama pull translategemma:4b
 ollama pull glm-ocr:bf16
-ollama pull llama3.2:3b-32k
+ollama pull moondream:1.8b
 ```
 
 ## Model Issues

@@ -20,6 +20,7 @@ mod tools;
 mod translate;
 mod user_models;
 mod utils;
+mod vision;
 
 use clap::Parser;
 use ollama_rs::generation::chat::ChatMessage;
@@ -27,7 +28,7 @@ use termimad::print_text;
 
 use crate::chat::ChatArgs;
 use crate::debug_tools::enable_debug;
-use crate::ocr::{OcrArgs, OcrProcessor, print_results};
+use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
 use crate::query::{OutputFlags, run_query};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -36,6 +37,7 @@ use crate::translate::{
     Commands, CompletionArgs, LanguageMapper, QueryArgs, Shell, TranslateArgs, TranslationStyle,
     build_translation_prompt, parse_language_pair,
 };
+use crate::vision::{VisionArgs, VisionProcessor, print_results as print_vision_results};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -129,6 +131,7 @@ async fn main() -> AppResult<()> {
                 return handle_summarize(args.clone(), &cli, &settings).await;
             }
             Commands::Chat(args) => return handle_chat(args.clone(), &cli, &settings).await,
+            Commands::Vision(args) => return handle_vision(args.clone(), &cli, &settings).await,
             Commands::Completion(args) => return handle_completion(args.clone(), &settings),
         }
     }
@@ -431,7 +434,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
         }
     };
 
-    print_results(&results, args.json);
+    print_ocr_results(&results, args.json);
 
     Ok(())
 }
@@ -539,6 +542,63 @@ fn handle_completion(args: CompletionArgs, _settings: &Settings) -> AppResult<()
     }
 
     Ok(())
+}
+
+async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
+    if let Err(e) = args.validate() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+
+    let (subcommand_model, _, _) = settings.get_subcommand_config("vision");
+
+    let model_name = if let Some(ref m) = cli.model {
+        m.clone()
+    } else if let Some(ref m) = args.model {
+        m.clone()
+    } else if !subcommand_model.is_empty() {
+        subcommand_model
+    } else {
+        "moondream".to_string()
+    };
+
+    let model_config = user_models::resolve_model_config(&model_name);
+    let model_id = model_config.model_id.clone();
+
+    let output_flags = OutputFlags::resolve(cli.debug, cli.plain, settings);
+
+    if output_flags.debug {
+        enable_debug();
+        eprintln!("Debug Mode - Vision Configuration:");
+        eprintln!("==========================");
+        eprintln!("Model:             {}", model_id);
+        eprintln!("Files:             {:?}", args.files);
+        eprintln!("Prompt:            {}", args.get_prompt());
+        eprintln!("Detailed:          {}", args.detailed);
+        eprintln!("JSON Output:       {}", args.json);
+        eprintln!("Max Tokens:        {}", args.max_tokens);
+        eprintln!("==========================");
+        eprintln!("\n🚀 Executing vision analysis with debug logging enabled...\n");
+    }
+
+    let processor = VisionProcessor::new();
+
+    match processor.process(&args, &model_id, settings).await {
+        Ok(result) => {
+            if args.json {
+                print_vision_results(&result, true);
+            } else if output_flags.plain {
+                println!("{}", result.content);
+            } else {
+                print_text(&result.content);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -59,6 +59,8 @@ pub struct ModelSettings {
     pub summarize: SubcommandModelConfig,
     #[serde(default)]
     pub code: SubcommandModelConfig,
+    #[serde(default)]
+    pub vision: SubcommandModelConfig,
 }
 
 /// Model configuration for a specific subcommand
@@ -123,6 +125,7 @@ impl Default for ModelSettings {
             query: SubcommandModelConfig::default(),
             summarize: SubcommandModelConfig::default(),
             code: SubcommandModelConfig::default(),
+            vision: SubcommandModelConfig::default(),
         }
     }
 }
@@ -231,6 +234,7 @@ impl Settings {
             "query" => &self.model.query,
             "summarize" => &self.model.summarize,
             "code" => &self.model.code,
+            "vision" => &self.model.vision,
             _ => &SubcommandModelConfig::default(),
         };
 
@@ -245,6 +249,7 @@ impl Settings {
         let default_thinking = match subcommand {
             "query" => true,
             "code" => false,
+            "vision" => false,
             _ => false,
         };
         let thinking = subcommand_config.thinking.unwrap_or(default_thinking);
@@ -254,6 +259,7 @@ impl Settings {
             "query" => true,
             "code" => true,
             "summarize" => false,
+            "vision" => false,
             _ => true,
         };
         let tools = subcommand_config.tools.unwrap_or(default_tools);

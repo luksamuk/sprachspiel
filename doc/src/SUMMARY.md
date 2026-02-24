@@ -12,6 +12,7 @@
   - [chat](./commands/chat.md)
   - [translate](./commands/translate.md)
   - [ocr](./commands/ocr.md)
+  - [vision](./commands/vision.md)
   - [summarize](./commands/summarize.md)
 - [Models](./models.md)
 - [Prompts](./prompts.md)

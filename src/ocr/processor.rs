@@ -11,6 +11,7 @@ use std::path::Path;
 
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
+use crate::utils::validate_image_file;
 
 use super::cli::OcrArgs;
 use super::error::{OcrError, OcrResult};
@@ -32,10 +33,8 @@ impl OcrProcessor {
         mode: OcrMode,
         settings: &Settings,
     ) -> OcrResult<OcrOutput> {
-        // Validate file
-        self.validate_file(path)?;
+        validate_image_file(path).map_err(OcrError::FileNotFound)?;
 
-        // Read the image file bytes
         let image_bytes = tokio::fs::read(path)
             .await
             .map_err(|e| OcrError::ReadFailed {
@@ -43,20 +42,11 @@ impl OcrProcessor {
                 error: e.to_string(),
             })?;
 
-        // Base64 encode the image bytes - REQUIRED!
         let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
-
-        // Create the Image object from base64
         let image = Image::from_base64(base64_image);
-
-        // Build prompt (just the mode prompt, no file path needed)
         let prompt = mode.into_prompt();
-
-        // Initialize Ollama with settings
         let ollama = settings.ollama_client();
-
-        // Build model options (fixed parameters for glm-ocr)
-        let model_options = ModelOptions::default().temperature(0.0); // GLM-OCR uses temperature 0
+        let model_options = ModelOptions::default().temperature(0.0);
 
         // Create generation request with the image attached
         let request = GenerationRequest::new("glm-ocr:bf16".to_string(), prompt)
@@ -116,39 +106,6 @@ impl OcrProcessor {
 
         Ok(results)
     }
-
-    /// Validate that file exists and has supported extension
-    fn validate_file(&self, path: &Path) -> OcrResult<()> {
-        // Check file exists
-        if !path.exists() {
-            return Err(OcrError::FileNotFound(path.to_string_lossy().to_string()));
-        }
-
-        // Check it's a file (not directory)
-        if !path.is_file() {
-            return Err(OcrError::FileNotFound(format!(
-                "{} is not a file",
-                path.display()
-            )));
-        }
-
-        // Validate extension
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| s.to_lowercase());
-
-        let allowed = ["png", "jpg", "jpeg", "webp", "gif"];
-
-        match ext {
-            Some(ref e) if allowed.contains(&e.as_str()) => Ok(()),
-            Some(e) => Err(OcrError::UnsupportedFormat {
-                found: e,
-                supported: allowed.join(", "),
-            }),
-            None => Err(OcrError::InvalidExtension("unknown".to_string())),
-        }
-    }
 }
 
 impl Default for OcrProcessor {
@@ -201,25 +158,21 @@ pub fn print_results(results: &[OcrOutput], json_output: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::validate_image_file;
 
     #[test]
     fn test_validate_file_extension() {
-        let processor = OcrProcessor::new();
+        assert!(validate_image_file(Path::new("test.png")).is_err());
+        assert!(validate_image_file(Path::new("test.jpg")).is_err());
 
-        // Valid extensions
-        assert!(processor.validate_file(Path::new("test.png")).is_err()); // File doesn't exist
-        assert!(processor.validate_file(Path::new("test.jpg")).is_err()); // File doesn't exist
-
-        // Invalid extensions - should fail with FileNotFound (files don't exist)
-        // The extension validation happens after existence check
         assert!(matches!(
-            processor.validate_file(Path::new("test.pdf")),
-            Err(OcrError::FileNotFound(_))
+            validate_image_file(Path::new("test.pdf")),
+            Err(_)
         ));
 
         assert!(matches!(
-            processor.validate_file(Path::new("test.txt")),
-            Err(OcrError::FileNotFound(_))
+            validate_image_file(Path::new("test.txt")),
+            Err(_)
         ));
     }
 

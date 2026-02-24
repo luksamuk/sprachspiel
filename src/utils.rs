@@ -2,6 +2,7 @@
 //!
 //! Shared utilities for parameter parsing, I/O, and formatting.
 
+use base64::Engine;
 use std::io::{self, Read};
 
 /// Parse a boolean from an optional string value
@@ -58,6 +59,43 @@ pub fn read_stdin() -> Result<String, String> {
     } else {
         Ok(trimmed)
     }
+}
+
+/// Supported image extensions
+pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
+
+/// Validate that a file exists and has a supported image extension
+pub fn validate_image_file(path: &std::path::Path) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("File not found: {}", path.display()));
+    }
+
+    if !path.is_file() {
+        return Err(format!("{} is not a file", path.display()));
+    }
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase());
+
+    match ext {
+        Some(ref e) if IMAGE_EXTENSIONS.contains(&e.as_str()) => Ok(()),
+        Some(e) => Err(format!(
+            "Unsupported image format: {}. Supported: {}",
+            e,
+            IMAGE_EXTENSIONS.join(", ")
+        )),
+        None => Err("Invalid file extension: unknown".to_string()),
+    }
+}
+
+/// Read a file and return its contents as base64-encoded string
+pub async fn read_file_as_base64(path: &std::path::Path) -> Result<String, String> {
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
 
 /// Format file size in human-readable format (KB/MB)
