@@ -201,51 +201,39 @@ pub async fn run_chat_repl(
                     match parse_command(line) {
                         Some(Ok(cmd)) => {
                             if let super::commands::ChatCommand::Model { name } = &cmd {
-                                if !crate::user_models::is_model_valid(name) {
-                                    eprintln!(
-                                        "Unknown model: '{}'. Use --list to see available models.",
-                                        name
-                                    );
-                                    continue;
-                                }
+                                match super::model_switch::switch_model(
+                                    name,
+                                    &ollama,
+                                    &capabilities,
+                                    session.think,
+                                    session.tools,
+                                ).await {
+                                    Ok(result) => {
+                                        session.set_model(result.model_name.clone());
+                                        session.think = result.think_active;
+                                        session.tools = result.tools_active;
+                                        
+                                        current_model_name = result.model_name.clone();
+                                        model_config = result.model_config;
+                                        capabilities = result.capabilities;
+                                        tools_active = result.tools_active;
 
-                                session.set_model(name.clone());
-                                current_model_name = name.clone();
-
-                                let new_config = crate::user_models::resolve_model_config(name);
-
-                                let new_caps =
-                                    match ModelCapabilities::detect(&ollama, &new_config.model_id)
-                                        .await
-                                    {
-                                        Ok(c) => c,
-                                        Err(_) => {
-                                            eprintln!("Warning: Could not detect capabilities, keeping previous.");
-                                            capabilities.clone()
+                                        for warning in &result.warnings {
+                                            eprintln!("{}", warning);
                                         }
-                                    };
 
-                                model_config = new_config;
-                                capabilities = new_caps;
-                                tools_active = session.tools && capabilities.tools;
+                                        println!(
+                                            "Model switched to: {} ({})",
+                                            result.model_name, model_config.model_id
+                                        );
 
-                                if session.think && !capabilities.thinking {
-                                    eprintln!("Note: '{}' does not support think mode.", name);
-                                }
-                                if session.tools && !capabilities.tools {
-                                    eprintln!(
-                                        "Warning: Tools are enabled but '{}' does not support tool calling.",
-                                        name
-                                    );
-                                    eprintln!(
-                                        "         Tools have been disabled. Use /tools to toggle."
-                                    );
-                                }
-
-                                println!("Model switched to: {} ({})", name, model_config.model_id);
-
-                                if !session.anonymous {
-                                    let _ = session.save(&storage);
+                                        if !session.anonymous {
+                                            let _ = session.save(&storage);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("{}", e);
+                                    }
                                 }
                                 continue;
                             }

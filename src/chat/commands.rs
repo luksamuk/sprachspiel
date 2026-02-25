@@ -189,17 +189,9 @@ pub fn execute_command(
             CommandResult::Continue
         }
 
-        ChatCommand::Model { name } => {
-            if !crate::user_models::is_model_valid(&name) {
-                return CommandResult::Error(format!(
-                    "Unknown model: '{}'. Use --list to see available models.",
-                    name
-                ));
-            }
-            session.set_model(name.clone());
-            println!("Model switched to: {}", name);
-            CommandResult::Continue
-        }
+        // Note: Model switching is handled directly in repl.rs via model_switch module
+        // This ensures consistent state management for capabilities, tools, and think mode
+        ChatCommand::Model { name: _ } => CommandResult::Continue,
 
         ChatCommand::System { prompt } => {
             session.set_system_prompt(prompt.clone());

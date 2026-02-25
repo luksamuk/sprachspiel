@@ -9,6 +9,7 @@ pub mod completion;
 pub mod coordinator;
 pub mod custom_coordinator;
 pub mod history;
+pub mod model_switch;
 pub mod repl;
 pub mod session;
 pub mod thinking;

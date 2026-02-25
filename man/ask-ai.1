@@ -1,4 +1,4 @@
-.TH ASK-AI 1 "2026-02-24" "ask-ai 0.16.0" "User Commands"
+.TH ASK-AI 1 "2026-02-25" "ask-ai 0.16.1" "User Commands"
 .SH NAME
 ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
@@ -18,10 +18,13 @@ ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .RI [ GLOBAL_OPTIONS ] " ocr " FILE ...
 .br
 .B ask-ai
+.RI [ GLOBAL_OPTIONS ] " vision " FILE ...
+.br
+.B ask-ai
 .RI [ GLOBAL_OPTIONS ] " summarize " [ TEXT ]
 .SH DESCRIPTION
 .B ask-ai
-is a Rust CLI tool for interacting with local Ollama LLM models, featuring markdown rendering, tool-assisted queries, translation, OCR, and text summarization.
+is a Rust CLI tool for interacting with local Ollama LLM models, featuring markdown rendering, tool-assisted queries, translation, OCR, vision, and text summarization.
 .PP
 When invoked without a subcommand, it defaults to query mode. The application reads from stdin if no QUERY or TEXT is provided, making it suitable for piping.
 .PP
@@ -40,8 +43,14 @@ Translate text between 50+ languages using TranslateGemma model.
 .B ocr, o
 Extract text from images using GLM-OCR. Supports text, tables, figures, and formulas.
 .TP
+.B vision, v
+Analyze and describe images using vision models (moondream default). Supports multiple images.
+.TP
 .B summarize, sum
 Create concise summaries of text with customizable styles.
+.TP
+.B completion
+Generate shell completions for bash, elvish, fish, powershell, and zsh.
 .SH GLOBAL OPTIONS
 These options must be placed BEFORE the subcommand:
 .TP
@@ -72,6 +81,9 @@ Code mode: optimize response for code output.
 .BR \-\-ignore\-agents
 Ignore AGENTS.md file in current directory (disable context injection).
 .TP
+.BR \-\-init\-config
+Initialize/create sample configuration file.
+.TP
 .BR \-h ", " \-\-help
 Show help message and exit.
 .TP
@@ -85,11 +97,17 @@ Start anonymous session (no history persistence).
 .BR \-l ", " \-\-load " " \fISESSION\fR
 Load a named session.
 .TP
+.BR \-m ", " \-\-model " " \fIMODEL\fR
+Model preset to use.
+.TP
 .BR \-t ", " \-\-think
 Enable think mode for models that support it.
 .TP
 .BR \-\-tools
 Force enable tools even if model doesn't advertise support.
+.TP
+.BR \-\-tools\-output " " \fILEVEL\fR
+Tool output verbosity: compact, full, hidden (default: compact).
 .TP
 .BR \-\-ignore\-agents
 Ignore AGENTS.md file in current directory.
@@ -109,6 +127,8 @@ Interactive commands available inside chat:
 /think \- Toggle think mode
 .br
 /tools \- Toggle tools
+.br
+/tools-output \- Set tool output level
 .br
 /compact \- Compact conversation history
 .br
@@ -132,6 +152,9 @@ Session storage: ~/.local/share/ask-ai/conversations/<project-id>/default.json
 Project ID is derived from git remote URL or folder name.
 .SH TRANSLATE OPTIONS
 .TP
+.BR \-m ", " \-\-model " " \fIMODEL\fR
+Model preset to use (default: translategemma).
+.TP
 .BR \-p ", " \-\-prompt " " \fISTYLE\fR
 Translation style: formal, casual, technical, literary.
 .TP
@@ -153,6 +176,22 @@ Maximum tokens per image (default: 8192).
 .TP
 .B FILE
 One or more image files: PNG, JPG, JPEG, WebP, GIF.
+.SH VISION OPTIONS
+.TP
+.BR \-m ", " \-\-model " " \fIMODEL\fR
+Model preset to use (default: moondream).
+.TP
+.BR \-\-detailed
+Request detailed image analysis.
+.TP
+.BR \-\-json
+Output as JSON.
+.TP
+.BR \-\-max\-tokens " " \fINUM\fR
+Maximum tokens for response (default: 4096).
+.TP
+.B FILE
+One or more image files: PNG, JPG, JPEG, WebP, GIF.
 .SH SUMMARIZE OPTIONS
 .TP
 .BR \-l ", " \-\-max\-length " " \fIWORDS\fR
@@ -163,6 +202,10 @@ Output format: paragraph, bullets, both (default).
 .TP
 .BR \-\-style " " \fISTYLE\fR
 Focus style: general (default), technical, academic, business.
+.SH COMPLETION OPTIONS
+.TP
+.B SHELL
+Shell to generate completions for: bash, elvish, fish, powershell, zsh.
 .SH MODELS
 Built-in model presets (always available):
 .PP
@@ -172,30 +215,9 @@ l l l l.
 Preset|Model|Context|Best For
 _
 llama3.1|llama3.1:8b|4K|General queries (default)
-translategemma|translategemma:12b|4K|Translation
+translategemma|translategemma:4b|4K|Translation
 glm-ocr|glm-ocr:bf16|Auto|OCR/image extraction
-.TE
-.PP
-User-defined models (see ~/.config/ask-ai/models.toml):
-.PP
-.TS
-tab(|);
-l l l l.
-Preset|Model|Context|Best For
-_
-lfm|lfm2.5-thinking:1.2b|32K|Reasoning with thinking
-llama3.2|llama3.2:3b|32K|Summarization, tools
-mistral-small|mistral-small3.2:24b|32K|Agentic tasks, tools
-qwen3-coder|qwen3-coder:30b|64K|Code generation, tools
-deepseek-coder-v2|deepseek-coder-v2:16b|32K|Code generation
-devstral-small-2|devstral-small-2:24b|64K|Coding
-sead|sead:14b|32K|General purpose
-smollm3|smollm3:Q8_0|64K|Edge deployment
-pepe|pepe:8b|64K|Sarcastic assistant
-glm-5|glm-5:cloud|Auto|Cloud reasoning
-kimi-k2.5|kimi-k2.5:cloud|Auto|Multimodal agentic
-minimax-m2.5|minimax-m2.5:cloud|Auto|Coding, agentic
-qwen3.5|qwen3.5:cloud|Auto|Vision-language
+moondream|moondream:1.8b|8K|Vision/image analysis
 .TE
 .PP
 Run 'ask-ai --list' to see all available models including user-defined ones.
@@ -212,7 +234,7 @@ Use specific model:
 .PP
 .nf
 .RS
-ask-ai -m mistral-small query "Explain quantum computing"
+ask-ai -m qwen3 query "Explain quantum computing"
 .RE
 .fi
 .PP
@@ -229,7 +251,7 @@ Code mode (for programming):
 .nf
 .RS
 ask-ai -c query "Write a Rust function"
-ask-ai -c -m deepseek-coder-v2 query "Implement a thread pool"
+ask-ai -c -m qwen3-coder query "Implement a thread pool"
 .RE
 .fi
 .PP
@@ -242,7 +264,7 @@ ask-ai -d translate :pt "Auto-detect source"
 .RE
 .fi
 .PP
-Extract text from image:
+Extract text from image (OCR):
 .PP
 .nf
 .RS
@@ -251,12 +273,22 @@ ask-ai ocr --mode table spreadsheet.png
 .RE
 .fi
 .PP
+Analyze image (Vision):
+.PP
+.nf
+.RS
+ask-ai vision photo.jpg
+ask-ai vision --detailed landscape.png
+ask-ai vision -m llava image1.png image2.png
+.RE
+.fi
+.PP
 Summarize text:
 .PP
 .nf
 .RS
 ask-ai summarize "Long text here..."
-ask-ai -m mistral-small summarize --style technical "Long text"
+ask-ai summarize --style technical "Long text"
 echo "Long text" | ask-ai summarize --style technical
 .RE
 .fi
@@ -291,8 +323,6 @@ ask-ai "How do I run the tests?"
 ask-ai --ignore-agents "What is machine learning?"
 .RE
 .fi
-.RE
-.fi
 .PP
 Chain commands:
 .PP
@@ -300,7 +330,17 @@ Chain commands:
 .RS
 ask-ai ocr document.png | ask-ai summarize
 ask-ai ocr japanese.png | ask-ai translate ja:pt
-ask-ai ocr report.png | ask-ai summarize | ask-ai translate :pt
+ask-ai vision photo.jpg | ask-ai summarize
+.RE
+.fi
+.PP
+Interactive chat:
+.PP
+.nf
+.RS
+ask-ai chat
+ask-ai chat -a  # anonymous mode
+ask-ai chat -m qwen3.5 --tools
 .RE
 .fi
 .PP
@@ -309,6 +349,15 @@ List available models:
 .nf
 .RS
 ask-ai --list
+.RE
+.fi
+.PP
+Generate shell completions:
+.PP
+.nf
+.RS
+ask-ai completion bash > ~/.local/share/bash-completion/completions/ask-ai
+ask-ai completion zsh > ~/.zfunc/_ask-ai
 .RE
 .fi
 .SH LANGUAGE CODES
@@ -325,7 +374,7 @@ Use \fBask-ai translate --list\fR to see all supported languages.
 General purpose queries with markdown formatting.
 .TP
 .B tool_user
-Enhanced prompt for tool usage (Pokémon, Weather, Web Search).
+Enhanced prompt for tool usage (Pokemon, Weather, Web Search).
 .TP
 .B code
 Code-focused responses, minimal explanations.
@@ -354,7 +403,7 @@ User-defined model configurations. Add custom models or override built-in parame
 Project context file automatically loaded when present in current directory. Provides project-specific instructions and context to the model. Can be disabled with --ignore-agents flag.
 .TP
 .I src/config.rs
-Built-in model configurations (llama3.1, translategemma, glm-ocr).
+Built-in model configurations (llama3.1, translategemma, glm-ocr, moondream).
 .TP
 .I src/prompts.rs
 System prompt definitions.

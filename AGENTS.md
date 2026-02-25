@@ -248,6 +248,48 @@ All tool registration is centralized. When adding a new tool:
 3. **Thinking display** - Use `display_thinking()`
 4. **Model resolution** - Use `resolve_model_config()`
 5. **Think mode validation** - Use `resolve_think_mode()`
+6. **Model switching** - Use `model_switch::switch_model()` (see below)
+
+### Model Switching - SINGLE POINT OF FAILURE
+
+**CRITICAL:** All model switching MUST go through `src/chat/model_switch.rs`.
+
+The `switch_model()` function is the ONLY place that handles:
+- Model validation
+- Config resolution
+- Capability detection
+- Think/tools state adjustment
+- Warning generation
+
+```rust
+// ✅ CORRECT - Use the centralized function
+match super::model_switch::switch_model(
+    name,
+    &ollama,
+    &capabilities,
+    session.think,
+    session.tools,
+).await {
+    Ok(result) => {
+        session.set_model(result.model_name.clone());
+        session.think = result.think_active;
+        session.tools = result.tools_active;
+        // ... update other state
+    }
+    Err(e) => eprintln!("{}", e),
+}
+
+// ❌ WRONG - Never duplicate this logic
+if !user_models::is_model_valid(name) { ... }
+let config = user_models::resolve_model_config(name);
+let caps = ModelCapabilities::detect(...).await;
+// ... etc
+```
+
+**Why this matters:**
+- Prevents inconsistent state between `session.think`, `session.tools`, and `tools_active`
+- Ensures capabilities are always detected and warnings are consistent
+- Single place to fix bugs related to model switching
 
 ### When to Create New Shared Utilities
 

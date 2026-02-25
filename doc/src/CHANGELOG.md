@@ -2,6 +2,22 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.16.1] - 2026-02-25
+
+### Fixed
+
+- **Model Switching in Chat** - Centralized model switching logic to prevent state inconsistencies
+  - Created `src/chat/model_switch.rs` as single point for all model switching
+  - Fixed bug where `session.tools` and `session.think` could diverge from internal state
+  - All model validation, capability detection, and state updates now happen in one place
+  - Removed duplicate model switching code from `commands.rs`
+
+- **Man Page Updated** - Updated to v0.16.1 with:
+  - New `vision` command documentation
+  - New `completion` command documentation
+  - Updated model list with default vision model (moondream)
+  - Correction: translategemma default changed to 4b model
+
 ## [0.16.0] - 2026-02-24
 
 ### Added
