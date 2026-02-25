@@ -2,6 +2,15 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.16.2] - 2026-02-25
+
+### Fixed
+
+- **CLI Model Override in Chat** - CLI model parameter now takes precedence over saved session model
+  - Fixed bug where `-m <model>` was ignored when resuming a saved session
+  - Added validation: if CLI model doesn't exist, show error and exit gracefully
+  - Added fallback: if saved session model no longer exists, use default with warning
+
 ## [0.16.1] - 2026-02-25
 
 ### Fixed

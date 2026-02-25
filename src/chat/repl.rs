@@ -127,6 +127,29 @@ pub async fn run_chat_repl(
     let tools_enabled = cli_tools || args.tools || settings.get_subcommand_config("query").2;
     let ignore_agents = cli_ignore_agents || args.ignore_agents;
 
+    // CLI model override takes precedence over saved session model
+    // Validate model exists before applying
+    if let Some(ref model) = model_override {
+        if crate::user_models::is_model_valid(model) {
+            session.set_model(model.to_string());
+        } else {
+            eprintln!(
+                "Error: Unknown model '{}'. Use --list to see available models.",
+                model
+            );
+            return Ok(());
+        }
+    } else {
+        // Validate session model exists (may have been deleted)
+        if !crate::user_models::is_model_valid(&session.model) {
+            eprintln!(
+                "Warning: Saved model '{}' no longer exists. Using default '{}'.",
+                session.model, settings.model.default
+            );
+            session.set_model(settings.model.default.clone());
+        }
+    }
+
     session.think = think_enabled;
     session.tools = tools_enabled;
     session.tool_output_level = args.tools_output;
