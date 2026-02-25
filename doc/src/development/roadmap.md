@@ -365,6 +365,33 @@ tools = false
 
 ## Low Priority
 
+### OCR Model Customization
+
+**Priority:** Low  
+**Status:** Research needed
+
+**Problem:** OCR module currently uses a fixed model (glm-ocr:bf16) with no CLI override option. Users cannot choose alternative OCR-capable models.
+
+**Research Needed:**
+- Identify alternative OCR-capable models (Qwen-VL, LLaVA, etc.)
+- Test if existing OCR prompts work with other models
+- Determine model-specific prompt adjustments needed
+- Benchmark OCR quality across different models
+
+**Proposed CLI:**
+```bash
+ask ocr image.png                     # Default: glm-ocr
+ask ocr -m qwen-vl image.png          # Alternative model
+```
+
+**Tasks:**
+- [ ] Research: Identify OCR-capable vision models
+- [ ] Test: OCR prompts with alternative models
+- [ ] Design: Model override for OCR command
+- [ ] Document: Recommended models for OCR tasks
+
+---
+
 ### Plugin System
 
 **Priority:** Low  
