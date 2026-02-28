@@ -235,6 +235,69 @@ tools = false
 
 ## Medium Priority
 
+### Skills System - File-based Skill Loading
+
+**Priority:** Medium  
+**Status:** Not started
+
+**Problem:** Allow users to define reusable "skills" via Markdown files with YAML frontmatter. Skills would be loaded dynamically to provide context, prompts, or behavior presets for the LLM.
+
+**Concept:**
+- Skills are Markdown files (`.md`) with YAML frontmatter metadata
+- Stored in a dedicated directory (e.g., `~/.config/ask-ai/skills/` or project-local `.ask-ai/skills/`)
+- Frontmatter contains: name, description, tags, triggers, model preferences, etc.
+- Content (below frontmatter) contains the skill instructions/context
+
+**Example Skill File:**
+```markdown
+---
+name: code-review
+description: Review code for quality and best practices
+tags: [code, review, quality]
+triggers: [review, critique]
+model_preference: null
+---
+
+When reviewing code, focus on:
+- Code readability and maintainability
+- Potential bugs or edge cases
+- Performance considerations
+- Security vulnerabilities
+...
+```
+
+**Proposed Features:**
+- `--skill <name>` flag to load a skill for a query/chat session
+- List available skills: `ask skills list`
+- Show skill details: `ask skills show <name>`
+- Skill discovery via tags/triggers
+- Project-level skills (`.ask-ai/skills/`) override user-level skills
+- Skills can specify recommended models
+
+**Technical Approach:**
+- Parse frontmatter with `gray_matter` crate
+- Index skills for fast lookup (potential use of `tantivy` for full-text search)
+- Cache parsed skills in memory during session
+
+**Research Needed:**
+- Similar implementations in other LLM CLI tools
+- How Hermes Agent and Claude Code handle skills
+- Best practices for skill file format and organization
+
+**Tasks:**
+- [ ] Research: Skill systems in other LLM agents (Hermes, Claude Code, etc.)
+- [ ] Research: `gray_matter` crate for frontmatter parsing
+- [ ] Research: `tantivy` for skill indexing/search
+- [ ] Design: Skill file format and frontmatter schema
+- [ ] Design: Skill discovery and loading mechanism
+- [ ] Design: CLI interface for skills
+- [ ] Implement: Skill file parser
+- [ ] Implement: Skill registry and indexing
+- [ ] Implement: `--skill` flag integration
+- [ ] Document: Skill creation guide
+
+---
+
 ### Automatic Conversation Compaction
 
 **Priority:** Medium  
