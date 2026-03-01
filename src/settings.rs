@@ -511,6 +511,23 @@ debug_default = false
 # Options: "dark", "light", or "mono" (for terminals without color)
 # Default: "dark"
 skin = "dark"
+
+# =============================================================================
+# LED CONTROL CONFIGURATION (Optional)
+# =============================================================================
+# Control NeoPixel LED strips via Raspberry Pi Pico W HTTP server.
+# LED tools are disabled by default and require configuration to activate.
+# 
+# Build with LED tools: cargo build --release --features led-tools
+
+[led]
+# IP address of your Raspberry Pi Pico W LED server.
+# Required to enable LED tools. If not set, LED tools are disabled.
+# ip = "192.168.1.100"
+
+# HTTP port for the LED server.
+# Default: 80
+# port = 80
 "#;
 
         std::fs::write(&config_path, sample_config)?;
