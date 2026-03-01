@@ -7,6 +7,8 @@ pub mod calc;
 pub mod files;
 #[cfg(feature = "finance-tools")]
 pub mod finance;
+#[cfg(feature = "led-tools")]
+pub mod led;
 pub mod misc;
 #[cfg(feature = "pokemon-tools")]
 pub mod pokemon;
@@ -24,6 +26,8 @@ pub use calc::*;
 pub use files::*;
 #[cfg(feature = "finance-tools")]
 pub use finance::*;
+#[cfg(feature = "led-tools")]
+pub use led::*;
 pub use misc::*;
 #[cfg(feature = "pokemon-tools")]
 pub use pokemon::*;

@@ -163,6 +163,39 @@ Available: get_current_datetime, get_project_context"#
         }
     }
 
+    // LED tools (requires configuration)
+    #[cfg(feature = "led-tools")]
+    {
+        let led_tools = [
+            "led_get_status",
+            "led_set_power",
+            "led_set_program",
+            "led_set_brightness",
+            "led_set_color",
+        ];
+        let available: Vec<_> = led_tools
+            .iter()
+            .filter(|t| !blacklist.contains(*t))
+            .collect();
+
+        if !available.is_empty() {
+            sections.push(
+                r#"### LED TOOLS
+Use for controlling NeoPixel LED strips via Raspberry Pi Pico W.
+Available: led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color
+
+For color adjustments:
+1. Get current color with led_get_status
+2. Note the RGB values provided in the response
+3. Adjust R/G/B values as needed (0-255 each)
+4. Set new color with led_set_color using r/g/b parameters
+
+Color tips: To make "more red", increase R or decrease G/B. For "warmer", increase R slightly. For "cooler", increase B slightly."#
+                    .to_string(),
+            );
+        }
+    }
+
     sections.join("\n\n")
 }
 

@@ -14,8 +14,11 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Finance | 1 | Google Finance | ✅ Working | ❌ Disabled |
 | System | 2 | Local system | ✅ Working | ✅ Enabled |
 | File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
+| LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
+
+\** **LED tools require configuration.** See [LED Control Tools](#led-control-tools-5) section.
 
 ## Compilation Features
 
@@ -43,6 +46,7 @@ The default build includes:
 | `finance-tools` | Stock quotes | get_stock_quote | ❌ No |
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files | ✅ Yes |
+| `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
 ### Web Search Configuration
@@ -523,6 +527,180 @@ file_sandbox = false
 ```
 
 **Warning:** Disabling the sandbox allows the AI to access any file your user account can read. Only disable if you fully trust the AI and understand the security implications.
+
+## LED Control Tools (5)
+
+Control NeoPixel LED strips via a Raspberry Pi Pico W HTTP server. These tools allow natural language control of lighting through REST API calls to the device.
+
+**Note:** This is an optional feature for personal IoT projects. Build with `--features led-tools` to enable.
+
+### Configuration
+
+LED tools require configuration before use:
+
+```toml
+# ~/.config/ask-ai/config.toml
+[led]
+ip = "192.168.1.100"  # Required: IP address of your Raspberry Pi Pico W
+port = 80             # Optional: HTTP port (default: 80)
+```
+
+Tools are only available when `led.ip` is configured. If not set, LED tools won't be registered.
+
+### Prerequisites
+
+1. **Hardware:** Raspberry Pi Pico W with NeoPixel LED strip
+2. **Software:** Server running from [led-control project](https://github.com/luksamuk/led-control)
+3. **Network:** Device must be reachable from your machine
+
+### led_get_status
+
+Get current LED status (power state, program, brightness, color).
+
+```
+Function: led_get_status
+Args: (none)
+Example: led_get_status()
+```
+
+**Output includes:**
+- `power`: "on" or "off"
+- `program`: Current program (0=Christmas, 1=Trail, 2=Lamp)
+- `brightness`: Current brightness level (0.02 to 1.0)
+- `color_hex`: Current color in hex format (e.g., "ffa648")
+- `color_rgb`: Current color as R, G, B values (0-255 each)
+
+**Example queries:**
+- "What's the current LED status?"
+- "What color are the LEDs?"
+- "Is the LED strip on?"
+
+### led_set_power
+
+Turn LEDs on, off, or toggle the current state.
+
+```
+Function: led_set_power
+Args: action (string: "on", "off", or "toggle")
+Example: led_set_power(action: "on")
+Example: led_set_power(action: "toggle")
+```
+
+**Actions:**
+- `"on"` - Turn LEDs on
+- `"off"` - Turn LEDs off
+- `"toggle"` - Invert current state
+
+### led_set_program
+
+Set the LED program mode.
+
+```
+Function: led_set_program
+Args: program (string or number: "0", "1", "2", or "next")
+Example: led_set_program(program: "lamp")
+Example: led_set_program(program: "next")
+```
+
+**Programs:**
+- `0` or `"christmas"` - Christmas lights effect (cycling colors)
+- `1` or `"trail"` - Trail effect (back-and-forth motion)
+- `2` or `"lamp"` - Static lamp mode (solid color, uses brightness and color)
+- `"next"` or `"cycle"` - Advance to next program
+
+### led_set_brightness
+
+Set LED brightness level.
+
+```
+Function: led_set_brightness
+Args: brightness (string, 0.02 to 1.0)
+Example: led_set_brightness(brightness: "0.5")   # 50% brightness
+Example: led_set_brightness(brightness: "1.0")   # Full brightness
+Example: led_set_brightness(brightness: "0.1")   # Dim (10%)
+```
+
+**Note:** Brightness affects all programs. Low values (< 0.05) are very dim.
+
+### led_set_color
+
+Set LED color for Lamp mode. Accepts either hex or separate RGB values.
+
+```
+Function: led_set_color
+Args: 
+  - hex (string, optional): Color in hex format like "ff5500"
+  - r (string, optional): Red value (0-255)
+  - g (string, optional): Green value (0-255)
+  - b (string, optional): Blue value (0-255)
+Example: led_set_color(hex: "ff5500")                # Orange
+Example: led_set_color(r: "255", g: "85", b: "0")    # Orange via RGB
+Example: led_set_color(hex: "00ff00")                # Green
+```
+
+**Color Tips for LLMs:**
+- Use `led_get_status()` first to get current RGB values
+- RGB format (r/g/b separate) is easier for calculations
+- To make "more red": increase R, decrease G and B
+- To make "warmer": increase R, slightly decrease B
+- To make "cooler": increase B, slightly decrease R
+- Common colors:
+  - Red: `ff0000` or `r: 255, g: 0, b: 0`
+  - Green: `00ff00` or `r: 0, g: 255, b: 0`
+  - Blue: `0000ff` or `r: 0, g: 0, b: 255`
+  - White: `ffffff` or `r: 255, g: 255, b: 255`
+  - Warm white: `ffa040`
+  - Cool white: `f0f8ff`
+
+### Example Workflows
+
+**Natural language color adjustment:**
+```
+User: "Turn the LEDs slightly more orange"
+Action: led_get_status()
+Result: { "color_rgb": { "r": 255, "g": 100, "b": 50 }, ... }
+Analysis: To make it more orange, I should increase green slightly
+Action: led_set_color(r: 255, g: 130, b: 40)
+Response: "I've adjusted the LEDs to be more orange."
+```
+
+**Setting up lighting:**
+```
+User: "Set the LEDs to warm white at 50% brightness for reading"
+Action: led_set_program(program: "lamp")
+Action: led_set_color(hex: "ffa040")
+Action: led_set_brightness(brightness: "0.5")
+Response: "Done! LEDs are now in lamp mode with warm white at 50% brightness."
+```
+
+**Quick toggle:**
+```
+User: "Goodnight, turn off the lights"
+Action: led_set_power(action: "off")
+Response: "Goodnight! LEDs turned off."
+```
+
+### Error Handling
+
+LED tools handle connection errors gracefully:
+
+| Situation | Error Message |
+|-----------|---------------|
+| Device unreachable | `Error: Could not connect to LED device. Please check if the device is powered on and connected to the network.` |
+| Invalid program | `Error: Invalid program '4'. Use 0 (Christmas), 1 (Trail), 2 (Lamp), or 'next'.` |
+| Invalid brightness | `Error: Brightness 1.5 out of range. Must be between 0.02 and 1.0.` |
+| Invalid color | `Error: Invalid color value. Red must be between 0 and 255, got 300.` |
+| Not configured | LED tools won't be available if `led.ip` is not configured |
+
+### Building with LED Tools
+
+```bash
+# Build with LED tools enabled
+cargo build --release --features led-tools
+
+# Build with LED tools and other optional features
+cargo build --release --features "led-tools,finance-tools"
+```
 
 ## Using Tools
 

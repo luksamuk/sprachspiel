@@ -232,6 +232,47 @@ where
         }
     }
 
+    // LED tools (requires configuration)
+    #[cfg(feature = "led-tools")]
+    {
+        if settings.is_led_configured() {
+            // Initialize the LED endpoint from settings
+            super::led::set_led_endpoint(settings.led_endpoint());
+
+            if use_debug {
+                eprintln!(
+                    "💡 [LED] Device configured at {}",
+                    settings.led_endpoint().unwrap_or_default()
+                );
+            }
+
+            if is_tool_allowed("led_get_status") {
+                coordinator = coordinator.register_tool(led_get_status);
+                tool_count += 1;
+            }
+            if is_tool_allowed("led_set_power") {
+                coordinator = coordinator.register_tool(led_set_power);
+                tool_count += 1;
+            }
+            if is_tool_allowed("led_set_program") {
+                coordinator = coordinator.register_tool(led_set_program);
+                tool_count += 1;
+            }
+            if is_tool_allowed("led_set_brightness") {
+                coordinator = coordinator.register_tool(led_set_brightness);
+                tool_count += 1;
+            }
+            if is_tool_allowed("led_set_color") {
+                coordinator = coordinator.register_tool(led_set_color);
+                tool_count += 1;
+            }
+        } else {
+            if use_debug {
+                eprintln!("💡 [LED] No device configured - LED tools disabled. Add [led] ip = \"<IP>\" to config.toml");
+            }
+        }
+    }
+
     (coordinator, tool_count)
 }
 
@@ -323,6 +364,24 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
         for tool in file_tools {
             if is_allowed(tool) {
                 tools.push(tool.to_string());
+            }
+        }
+    }
+
+    #[cfg(feature = "led-tools")]
+    {
+        if settings.is_led_configured() {
+            let led_tools = [
+                "led_get_status",
+                "led_set_power",
+                "led_set_program",
+                "led_set_brightness",
+                "led_set_color",
+            ];
+            for tool in led_tools {
+                if is_allowed(tool) {
+                    tools.push(tool.to_string());
+                }
             }
         }
     }

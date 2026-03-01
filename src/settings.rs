@@ -38,6 +38,9 @@ pub struct Settings {
     /// Display configuration
     #[serde(default)]
     pub display: DisplaySettings,
+    /// LED control configuration
+    #[serde(default)]
+    pub led: LedSettings,
 }
 
 /// Model-related settings with per-subcommand configuration
@@ -114,6 +117,22 @@ pub struct DisplaySettings {
     /// Terminal skin/theme
     #[serde(default = "default_skin")]
     pub skin: String,
+}
+
+/// LED control settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LedSettings {
+    /// IP address of the LED device (Raspberry Pi Pico W)
+    /// If not set, LED tools will be disabled
+    #[serde(default)]
+    pub ip: Option<String>,
+    /// HTTP port for LED device (default: 80)
+    #[serde(default = "default_led_port")]
+    pub port: u16,
+}
+
+fn default_led_port() -> u16 {
+    80
 }
 
 impl Default for ModelSettings {
@@ -225,6 +244,18 @@ impl Settings {
     /// Check if a tool is blacklisted
     pub fn is_tool_blacklisted(&self, tool_name: &str) -> bool {
         self.tools.blacklist.iter().any(|b| b == tool_name)
+    }
+
+    /// Check if LED is configured (IP address set)
+    pub fn is_led_configured(&self) -> bool {
+        self.led.ip.is_some()
+    }
+
+    /// Get LED endpoint URL (returns None if not configured)
+    pub fn led_endpoint(&self) -> Option<String> {
+        self.led.ip.as_ref().map(|ip| {
+            format!("http://{}:{}", ip, self.led.port)
+        })
     }
 
     /// Get model configuration for a specific subcommand

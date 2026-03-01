@@ -1,11 +1,11 @@
 [package]
 name = "ask-ai"
-version = "0.17.0"
+version = "0.18.0"
 edition = "2024"
 
 [features]
 default = ["weather-tools", "file-tools", "pokemon-tools", "calc-tools", "serper-tools", "system-tools"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools"]
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin
@@ -17,6 +17,7 @@ calc-tools = []
 # scraper is also in ollama-rs, but we need direct access for finance tool
 finance-tools = ["dep:scraper"]
 system-tools = []
+led-tools = []
 
 [dependencies]
 base64 = "0.22.1"

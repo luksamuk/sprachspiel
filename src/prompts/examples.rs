@@ -83,6 +83,30 @@ database:
   url: "postgres://localhost/mydb"
   pool_size: 10
 ```
+
+---
+
+User: Turn on the LEDs and set them to warm white
+Action: led_set_power(action="on")
+Action: led_set_program(program="lamp")
+Action: led_set_color(hex="ffa040")
+Response: **LED Status**: LEDs are now ON in lamp mode with warm white color (#ffa040).
+
+---
+
+User: Make the LEDs slightly more orange
+Action: led_get_status()
+Result: { "color_rgb": { "r": 255, "g": 160, "b": 64 }, ... }
+Analysis: Current color is warm white (R:255, G:160, B:64). To make it more orange, I need to decrease green slightly.
+Action: led_set_color(r="255", g="130", b="40")
+Response: **LED Updated**: Changed color from warm white to a more orange tone. The green was reduced from 160 to 130, and blue from 64 to 40.
+
+---
+
+User: Set the lights to 50% brightness and turn them off
+Action: led_set_brightness(brightness="0.5")
+Action: led_set_power(action="off")
+Response: **Done**: Brightness set to 50%, then LEDs turned off. The brightness setting will be remembered when you turn them back on.
 "#;
 
 /// Get the tool examples string
@@ -136,6 +160,12 @@ mod tests {
         assert!(
             TOOL_EXAMPLES.contains("list_directory"),
             "Missing file example"
+        );
+
+        // LED example
+        assert!(
+            TOOL_EXAMPLES.contains("led_set_power"),
+            "Missing LED example"
         );
     }
 }

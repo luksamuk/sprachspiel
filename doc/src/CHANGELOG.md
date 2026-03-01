@@ -2,6 +2,44 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.18.0] - 2026-03-01
+
+### Added
+
+- **LED Control Tools** - New optional tool category for NeoPixel LED control
+  - 5 tools: `led_get_status`, `led_set_power`, `led_set_program`, `led_set_brightness`, `led_set_color`
+  - Control LED strips via Raspberry Pi Pico W HTTP server
+  - Requires `led-tools` feature flag and `[led]` configuration in config.toml
+  - Color manipulation with hex or RGB values (LLM-friendly)
+  - Configuration: `ip` (required) and `port` (optional, default: 80)
+
+- **LED Tools Documentation** - Comprehensive docs in `doc/src/tools.md`
+  - Tool reference with examples
+  - Configuration guide
+  - Color manipulation tips for LLMs
+  - Example workflows for natural language control
+
+### Configuration
+
+New `[led]` section in config.toml:
+```toml
+[led]
+ip = "192.168.1.100"  # Required for LED tools
+port = 80             # Optional, default: 80
+```
+
+### Feature Flags
+
+- `led-tools` - Enable LED control tools (disabled by default)
+- `all-tools` now includes `led-tools`
+
+### Few-shot Examples
+
+Added 3 new LED tool examples to demonstrate:
+- Basic power and color control
+- Color adjustment workflow (get status → modify RGB → set color)
+- Brightness and power control
+
 ## [0.17.0] - 2026-02-28
 
 ### Added

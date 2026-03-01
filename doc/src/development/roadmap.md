@@ -214,6 +214,43 @@ When reviewing code, focus on:
 
 ---
 
+### LED Control Tools
+
+**Priority:** Medium  
+**Status:** Completed (v0.18.0)
+
+**Problem:** Allow LLM to control NeoPixel LED strips via Raspberry Pi Pico W HTTP server. Users can configure the device IP and have natural language control over their lighting.
+
+**Implementation:**
+- 5 tools for LED control: `led_get_status`, `led_set_power`, `led_set_program`, `led_set_brightness`, `led_set_color`
+- Feature flag: `led-tools` (optional, disabled by default)
+- Configuration via `[led]` section in config.toml with `ip` and optional `port`
+- Color manipulation with RGB values (LLM-friendly, no hex arithmetic)
+- Tools only available when `led.ip` is configured
+
+**Configuration:**
+```toml
+[led]
+ip = "192.168.1.100"  # Required for LED tools
+port = 80             # Optional, default: 80
+```
+
+**Tools:**
+- `led_get_status` - Get current state (on/off, program, brightness, color in hex and RGB)
+- `led_set_power` - Turn on, off, or toggle
+- `led_set_program` - Set program (0=Christmas, 1=Trail, 2=Lamp) or cycle to next
+- `led_set_brightness` - Set brightness (0.02 to 1.0)
+- `led_set_color` - Set color (accepts hex or separate R/G/B values)
+
+**Tasks:**
+- [x] Implement: src/tools/led.rs with all 5 tools
+- [x] Implement: Configuration in settings.rs
+- [x] Implement: Tool registration with IP detection
+- [x] Implement: Prompt context and examples
+- [x] Document: doc/src/tools/led.md
+
+---
+
 ### Chat Module Integration
 
 **Priority:** Medium  
