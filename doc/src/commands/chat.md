@@ -38,6 +38,7 @@ Once inside the chat, these commands are available:
 | `/tools` | Toggle tools on/off |
 | `/compact` | Compact conversation history (summarize) |
 | `/retry`, `/r` | Regenerate the last response |
+| `/undo`, `/u` | Undo last message (remove response, show last input) |
 | `/save [name]` | Save current session (optionally named) |
 | `/load <name>`, `/l <name>` | Load a saved session |
 | `/export <format> [file]`, `/e <format>` | Export conversation (md, json) |

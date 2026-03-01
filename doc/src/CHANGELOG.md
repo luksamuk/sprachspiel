@@ -2,6 +2,16 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.18.2] - 2026-03-01
+
+### Added
+
+- **Undo Command** - New `/undo` (alias `/u`) command for chat
+  - Removes last assistant response(s) from conversation
+  - Displays last user message for easy re-editing
+  - Use arrow up (↑) to retrieve from history and edit
+  - Workflow: `/undo` → see message → ↑ to edit → resend
+
 ## [0.18.1] - 2026-03-01
 
 ### Fixed

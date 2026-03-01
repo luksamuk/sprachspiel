@@ -465,6 +465,24 @@ pub async fn run_chat_repl(
                                     }
                                     continue;
                                 }
+                                CommandResult::Undo => {
+                                    // Remove last assistant messages
+                                    let removed = session.remove_last_assistant_messages();
+                                    if removed > 0 {
+                                        println!("Removed {} assistant message(s).", removed);
+                                    } else {
+                                        println!("No assistant messages to remove.");
+                                    }
+
+                                    // Get and display the last user message
+                                    if let Some(user_msg) = session.get_last_user_message() {
+                                        println!("Last message: \"{}\"", user_msg.content);
+                                        println!("(Press \u{2191} to retrieve and edit, or type a new message)");
+                                    } else {
+                                        println!("No user message to show.");
+                                    }
+                                    continue;
+                                }
                             }
                         }
                         Some(Err(e)) => {
