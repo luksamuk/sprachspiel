@@ -7,7 +7,11 @@
 use std::env;
 
 /// Detected platform type
+///
+/// Variants represent possible platforms - not all will be constructed
+/// on every system, but all are needed for completeness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Platform {
     /// Standard Linux desktop (Arch, Ubuntu, Fedora, etc.)
     Linux,
@@ -35,6 +39,7 @@ impl std::fmt::Display for Platform {
 
 /// Detected Linux distribution (Linux only)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum LinuxDistro {
     Arch,
     Ubuntu,
@@ -70,7 +75,8 @@ pub struct PlatformInfo {
     pub platform: Platform,
     /// Linux distribution (only set if platform is Linux)
     pub linux_distro: Option<LinuxDistro>,
-    /// Whether running on Android
+    /// Whether running on Android (stored for potential future use)
+    #[allow(dead_code)]
     pub is_android: bool,
 }
 

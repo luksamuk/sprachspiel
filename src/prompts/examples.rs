@@ -109,11 +109,6 @@ Action: led_set_power(action="off")
 Response: **Done**: Brightness set to 50%, then LEDs turned off. The brightness setting will be remembered when you turn them back on.
 "#;
 
-/// Get the tool examples string
-pub fn get_tool_examples() -> &'static str {
-    TOOL_EXAMPLES
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

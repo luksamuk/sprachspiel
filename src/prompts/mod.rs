@@ -38,13 +38,15 @@ pub mod examples;
 pub mod personality;
 pub mod tools;
 
-// Re-export commonly used items
+// Re-export commonly used items for external access (tests, etc.)
+// These may trigger unused_imports warnings in the binary but are used by tests/prompt_benchmark.rs
+#[allow(unused_imports)]
 pub use base::{SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE};
-pub use builder::{
-    build_code_with_tools_prompt, build_system_prompt, build_tool_user_prompt, PromptConfig,
-    PromptType,
-};
+#[allow(unused_imports)]
+pub use builder::{build_system_prompt, build_tool_user_prompt, PromptConfig, PromptType};
+#[allow(unused_imports)]
 pub use personality::{get_personality_prefix, is_pepe_model, PERSONALITY_PEPE};
+#[allow(unused_imports)]
 pub use tools::build_tool_context;
 
 // Re-export legacy functions for backward compatibility

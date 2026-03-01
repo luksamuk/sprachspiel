@@ -19,6 +19,7 @@ use crate::platform::PlatformInfo;
 
 /// Prompt type determines which base prompt to use
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum PromptType {
     /// Default assistant with tools
     Default,
@@ -33,6 +34,11 @@ pub enum PromptType {
 }
 
 /// Configuration for building a system prompt
+///
+/// This struct can be constructed directly or using the builder pattern
+/// via `new()` and `with_*` methods. The builder pattern is primarily used
+/// in benchmark tests (`tests/prompt_benchmark.rs`).
+#[allow(dead_code)]
 pub struct PromptConfig<'a> {
     /// Type of prompt to generate
     pub prompt_type: PromptType,
@@ -48,6 +54,9 @@ pub struct PromptConfig<'a> {
 
 impl<'a> PromptConfig<'a> {
     /// Create a new prompt configuration
+    ///
+    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
+    #[allow(dead_code)]
     pub fn new(prompt_type: PromptType) -> Self {
         Self {
             prompt_type,
@@ -62,24 +71,36 @@ impl<'a> PromptConfig<'a> {
     }
 
     /// Set the model ID
+    ///
+    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
+    #[allow(dead_code)]
     pub fn with_model_id(mut self, model_id: Option<&'a str>) -> Self {
         self.model_id = model_id;
         self
     }
 
     /// Set the tool blacklist
+    ///
+    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
+    #[allow(dead_code)]
     pub fn with_blacklist(mut self, blacklist: Option<&'a HashSet<&'a str>>) -> Self {
         self.blacklist = blacklist;
         self
     }
 
     /// Set the AGENTS.md content
+    ///
+    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
+    #[allow(dead_code)]
     pub fn with_agents_md(mut self, agents_md: Option<&'a str>) -> Self {
         self.agents_md = agents_md;
         self
     }
 
     /// Set whether tools are enabled
+    ///
+    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
+    #[allow(dead_code)]
     pub fn with_tools(mut self, tools_enabled: bool) -> Self {
         self.tools_enabled = tools_enabled;
         self
@@ -215,22 +236,18 @@ fn build_file_tools_context(blacklist: &HashSet<&str>) -> String {
 
 use std::collections::HashSet as OldHashSet;
 
-/// Legacy function - builds tool_user prompt for backward compatibility
+/// Legacy function - builds tool_user prompt for benchmark tests.
 ///
-/// This function is used by existing code during migration.
-/// Prefer `build_system_prompt` for new code.
+/// This function is kept for backward compatibility with the benchmark test suite
+/// in `tests/prompt_benchmark.rs`. New code should use `build_system_prompt` directly.
+///
+/// # Why this exists
+/// The benchmark tests need a simple way to generate tool_user prompts without
+/// constructing a full PromptConfig. This function provides that convenience wrapper.
+#[allow(dead_code)]
 pub fn build_tool_user_prompt(blacklist: &OldHashSet<&str>) -> String {
     build_system_prompt(
         PromptConfig::new(PromptType::ToolUser)
-            .with_blacklist(Some(blacklist))
-            .with_tools(true),
-    )
-}
-
-/// Legacy function - builds code_with_tools prompt for backward compatibility
-pub fn build_code_with_tools_prompt(blacklist: &OldHashSet<&str>) -> String {
-    build_system_prompt(
-        PromptConfig::new(PromptType::CodeWithTools)
             .with_blacklist(Some(blacklist))
             .with_tools(true),
     )
