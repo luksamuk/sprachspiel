@@ -31,6 +31,7 @@ This document outlines planned features and the current state of Ask-AI.
 - `/think` and `/tools` toggle commands
 - `/tools-output` for controlling tool verbosity
 - `/compact` for conversation summarization
+- `/retry` (alias `/r`) for regenerating last response
 - Tab completion for commands and models
 - Mode indicators in prompt (`[t]`, `[T]`)
 - Token metrics display
@@ -79,133 +80,6 @@ None currently.
 ---
 
 ## High Priority
-
-### Prompt Refactoring
-
-**Priority:** HIGH  
-**Status:** Planned  
-**Planning Document:** [Prompt Refactoring Plan](./prompt-refactor.md)
-
-**Problem:** Current prompts use anti-patterns that degrade LLM performance:
-- Excessive negative instructions ("DO NOT", "NEVER") that models ignore
-- Malformatted few-shot examples
-- Hardcoded "Arch Linux" instead of dynamic platform detection
-- ~1700 tokens that could be reduced by ~65%
-- No clear hierarchical structure
-
-**Goals:**
-- Remove all negative instructions, replace with positive alternatives
-- Implement dynamic platform detection (Linux, Termux, macOS, Windows)
-- Add 5+ proper ReAct-style few-shot examples
-- Reduce token count by ~65%
-- Create automated benchmark tests
-
-**Implementation:**
-1. Create `src/platform.rs` for OS/distro detection
-2. Create `src/prompts/` module with restructured prompts
-3. Migrate callers to new prompt builder
-4. Create benchmark tests for comparison
-5. Validate with real models
-
-**Tasks:**
-- [ ] Create `src/platform.rs` - Platform detection
-- [ ] Modify `src/context.rs` - Use PlatformInfo
-- [ ] Create `src/prompts/mod.rs` - Module exports
-- [ ] Create `src/prompts/base.rs` - Core prompts
-- [ ] Create `src/prompts/tools.rs` - Tool context builder
-- [ ] Create `src/prompts/examples.rs` - Few-shot examples
-- [ ] Create `src/prompts/personality.rs` - Pepe personality
-- [ ] Create `src/prompts/builder.rs` - Main builder function
-- [ ] Create `tests/prompt_benchmark.rs` - Comparison tests
-- [ ] Update callers in `src/query.rs` and `src/chat/repl.rs`
-- [ ] Run all tests and validate
-
----
-
-### Vision Module for Image Processing
-
-**Priority:** HIGH  
-**Status:** Completed
-
-**Problem:** Add a dedicated vision module for image description/analysis. Currently, we have OCR for text extraction, but no way to get general image understanding.
-
-**Design Decisions:**
-- **Separate from OCR** - OCR (glm-ocr) for text extraction, Vision (moondream) for image understanding
-  - OCR: specialized for text/tables/formulas extraction
-  - Vision: general image description and analysis
-  - Two commands, two purposes, two optimized models
-- **Default model:** moondream:1.8b (1.7GB, lightweight, edge-optimized, "runs anywhere")
-- **Focus:** Standalone subcommand first, chat integration later
-- **Multi-image:** Single API call using `images` array (user chooses model with `-m minicpm-v`)
-- **No `--ocr` flag:** OCR is a separate module, no duplication
-
-**Vision Models (Tested):**
-
-| Model | Size | Context | Multi-Image | Notes |
-|-------|------|---------|-------------|-------|
-| moondream:1.8b | 1.7 GB | 2K | No | Lightweight, default |
-| llava:13b | 8.0 GB | 4K | No | Better quality |
-| llama3.2-vision:11b | 7.8 GB | 128K | No | Large context, good interpretation |
-| ministral-3:14b | 7.5 GB | 32K | Yes | Multi-image, general purpose |
-
-**Note:** 8K context is sufficient for most vision tasks.
-
-**Implemented Structure:**
-```
-src/vision/
-├── mod.rs           # Exports
-├── cli.rs           # VisionArgs (clap)
-├── processor.rs     # VisionProcessor
-└── error.rs         # VisionError
-```
-
-**Final CLI:**
-```bash
-ask vision image.png                           # Default description
-ask vision --detailed image.png                # Detailed analysis
-ask vision image.png "What objects are here?"  # Custom prompt
-ask vision img1.png img2.png                   # Multiple images (single API call)
-ask vision --json image.png                    # JSON output
-ask vision -m llava image.png                  # Specific model
-```
-
-**Multi-Image Support:**
-- Ollama API natively supports `images` array
-- Best model for multi-image: minicpm-v:8b (SOTA on benchmarks)
-- Use cases: comparison, before/after, counting across images
-- No automatic fallback: user chooses model with `-m` flag
-
-**Configuration:**
-```toml
-# ~/.config/ask-ai/config.toml
-[model.vision]
-model = "moondream"
-thinking = false
-tools = false
-```
-
-**Model Resolution:**
-1. CLI flag `-m/--model` → use that
-2. config.toml `[model.vision].model` → use that
-3. Fallback: "moondream" (default)
-
-**Modes:**
-
-| Mode | Flag | Default Prompt |
-|------|------|----------------|
-| default | (none) | "Describe this image." |
-| detailed | `--detailed` | "Describe this image in detail, including composition, colors, subjects, and any notable elements." |
-| custom | (prompt arg) | User-provided prompt |
-
-**Tasks:**
-- [x] Implement: Vision module (cli, processor, error)
-- [x] Implement: Vision command handler in main.rs
-- [x] Register: moondream model in config.rs
-- [x] Add: vision subcommand config in settings.rs
-- [x] Refactor: Extract shared image validation to utils.rs
-- [x] Document: Vision capabilities in doc/src/commands/vision.md
-
----
 
 ### LLM Context History Redesign
 
@@ -448,26 +322,6 @@ When reviewing code, focus on:
 
 ---
 
-### Automatic Conversation Compaction
-
-**Priority:** Low  
-**Status:** Research needed
-
-**Problem:** Manual `/compact` is sufficient, but automatic compaction based on token count would be more convenient.
-
-**Research Needed:**
-- Token counting for conversation history
-- Optimal threshold for compaction
-- Integration with model's context window size
-
-**Tasks:**
-- [ ] Research: Token counting methods (tiktoken, ollama API)
-- [ ] Design: Threshold configuration (messages vs tokens)
-- [ ] Implement: Compact before context exhausted
-- [ ] Test: Verify context maintained after auto-compact
-
----
-
 ## Low Priority
 
 ### OCR Model Customization
@@ -591,6 +445,40 @@ ask-ai --generate-completion bash
 ---
 
 ## Completed
+
+### Prompt Refactoring ✅
+
+**Completed:** 2026-02-28 (v0.17.0)
+
+- Created modular `src/prompts/` module with hierarchical structure
+- Dynamic platform detection via `src/platform.rs` (Linux distros, Termux, macOS, Windows)
+- 13 ReAct-style few-shot examples (replaced arrow notation)
+- Removed all negative instructions (DO NOT, NEVER, etc.)
+- Token count reduced from ~1700 to ~890 tokens (47% reduction)
+- Benchmark tests in `tests/prompt_benchmark.rs` (10 passing)
+- Created `src/lib.rs` for library module exports
+
+### Vision Module ✅
+
+**Completed:** 2026-02-23
+
+- New `ask vision` command for image description and analysis
+- Default model: moondream:1.8b (lightweight, 1.7GB)
+- Multi-image support via Ollama API `images` array
+- Modes: default (brief), --detailed (comprehensive), custom prompt
+- JSON output for programmatic use
+- Configuration via `[model.vision]` in config.toml
+- Shared image validation utilities in `src/utils.rs`
+- Documentation in `doc/src/commands/vision.md`
+
+### Chat Improvements ✅
+
+**Completed:** 2026-02-28 (v0.17.0)
+
+- Fixed anonymous mode to truly not load/save history
+- User messages saved immediately after sending (before LLM response)
+- Added `/retry` command (alias `/r`) for regenerating last response
+- Added `remove_last_assistant_messages()` and `get_last_user_message()` to ChatSession
 
 ### Termux Builds ✅
 
