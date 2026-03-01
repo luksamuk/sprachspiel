@@ -2,6 +2,15 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.18.1] - 2026-03-01
+
+### Fixed
+
+- **Chat Model Configuration** - `[model.chat].model` is now properly respected
+  - Chat subcommand now uses `model.chat.model` from config.toml as default
+  - Previously fell back directly to global `model.default`, ignoring chat-specific model
+  - Affects anonymous mode (`-a`), failed session loads, and new sessions
+
 ## [0.18.0] - 2026-03-01
 
 ### Added

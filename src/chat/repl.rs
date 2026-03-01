@@ -61,8 +61,16 @@ pub async fn run_chat_repl(
 
     let storage = ConversationStorage::new();
 
-    // Resolve model from CLI args or ChatArgs
+    // Get chat-specific configuration for model/thinking/tools defaults
+    let (config_model, config_thinking, config_tools) = settings.get_subcommand_config("chat");
+
+    // Resolve model from CLI args or ChatArgs, falling back to chat config
     let model_override = cli_model.or(args.model.as_deref());
+    let default_model = if !config_model.is_empty() {
+        &config_model
+    } else {
+        &settings.model.default
+    };
 
     // Load or create session
     let mut session = if args.anonymous {
@@ -72,7 +80,7 @@ pub async fn run_chat_repl(
         }
         ChatSession::new(
             model_override
-                .unwrap_or(&settings.model.default)
+                .unwrap_or(default_model)
                 .to_string(),
             None, // No project_id for anonymous
             true,  // anonymous = true
@@ -92,7 +100,7 @@ pub async fn run_chat_repl(
                 println!("Starting new session...");
                 ChatSession::new(
                     model_override
-                        .unwrap_or(&settings.model.default)
+                        .unwrap_or(default_model)
                         .to_string(),
                     project_id.clone(),
                     false,
@@ -116,7 +124,7 @@ pub async fn run_chat_repl(
                     println!("Starting new session...");
                     ChatSession::new(
                         model_override
-                            .unwrap_or(&settings.model.default)
+                            .unwrap_or(default_model)
                             .to_string(),
                         project_id.clone(),
                         false,
@@ -126,7 +134,7 @@ pub async fn run_chat_repl(
         } else {
             ChatSession::new(
                 model_override
-                    .unwrap_or(&settings.model.default)
+                    .unwrap_or(default_model)
                     .to_string(),
                 project_id.clone(),
                 false,
@@ -154,9 +162,9 @@ pub async fn run_chat_repl(
         if !crate::user_models::is_model_valid(&session.model) {
             eprintln!(
                 "Warning: Saved model '{}' no longer exists. Using default '{}'.",
-                session.model, settings.model.default
+                session.model, default_model
             );
-            session.set_model(settings.model.default.clone());
+            session.set_model(default_model.to_string());
         }
     }
 
@@ -172,12 +180,11 @@ pub async fn run_chat_repl(
     // 3. Chat-specific config (model.chat.thinking)
     // 4. Global config (model.thinking)
     // 5. Model default (from models.toml or built-in config)
-    let cli_think = cli_think || args.think;
-    let (_, config_thinking, _) = settings.get_subcommand_config("chat");
+    let cli_think_flag = cli_think || args.think;
     let model_default_thinking = model_config.thinking;
 
     // Determine thinking mode
-    let think_enabled = if cli_think {
+    let think_enabled = if cli_think_flag {
         // User explicitly requested thinking via CLI
         if !capabilities.thinking {
             eprintln!(
@@ -204,9 +211,8 @@ pub async fn run_chat_repl(
     };
 
     // Tools mode priority: CLI -> config -> default
-    let cli_tools = cli_tools || args.tools;
-    let (_, _, config_tools) = settings.get_subcommand_config("chat");
-    let tools_enabled = if cli_tools {
+    let cli_tools_flag = cli_tools || args.tools;
+    let tools_enabled = if cli_tools_flag {
         true
     } else {
         config_tools
