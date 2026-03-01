@@ -78,142 +78,234 @@ This document outlines planned features and the current state of Ask-AI.
 
 ## Known Issues
 
-None currently.
+### GLM-OCR Returns Empty Output
+
+**Status:** Upstream bug (Ollama issue #14474)
+
+GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Ollama, not in ask-ai.
+
+**Workaround:** Use `ask vision` for image analysis until fixed.
 
 ---
 
 ## High Priority
 
-### LLM Context History Redesign
-
-**Priority:** HIGH  
-**Status:** Research and brainstorming needed
-
-**Problem:** Suspicion that LLMs are receiving excessive conversation history. Need to investigate and redesign how context is passed to the model.
-
-**Potential Issues:**
-- Too many messages in history consuming context window
-- Redundant or low-value messages being included
-- Model performance degrading with long histories
-- Token usage inefficiency
-
-**Research Needed:**
-- Analyze current history management in chat sessions
-- Benchmark model performance with varying history sizes
-- Investigate message pruning strategies
-- Consider relevance-based history selection
-
-**Tasks:**
-- [ ] Research: Audit current context/history passing mechanism
-- [ ] Research: Benchmark history size vs model performance
-- [ ] Brainstorm: History pruning strategies
-- [ ] Design: New context management approach
-- [ ] Implement: Optimized history handling
-
----
-
 ### To-Do List Tooling
 
 **Priority:** HIGH  
-**Status:** Research and brainstorming needed
+**Status:** Ready for implementation
 
-**Problem:** LLMs need better task management during long sessions. A to-do list tool would help models track progress and maintain focus on multi-step tasks.
+**Problem:** LLMs waste context searching through conversation history to track progress on multi-step tasks. An explicit to-do list reduces this need.
 
 **Proposed Features:**
-- Create a new list with multiple items
-- Query current progress on the list
-- Mark items as "done", "in_progress", or "pending"
-- Clear the entire list
-- Add items at specific positions
-- Remove specific items
+- `create_list(name: String)` - Create a new task list
+- `add_task(list: String, task: String)` - Add task to list
+- `update_task(list: String, task_id: usize, status: String)` - Update status (pending/in_progress/done)
+- `get_tasks(list: String)` - Retrieve current tasks (model can query)
+- `clear_list(list: String)` - Clear completed tasks
 
 **Session Types:**
-- **Query mode:** Ephemeral session, list is in-memory only, used for single-task progress tracking
-- **Chat mode:** Persistent session, list survives across messages, used for multi-step workflows
+- **Query mode:** Ephemeral, in-memory list for single-task tracking
+- **Chat mode:** Persistent, stored with session for multi-step workflows
 
-**Integration Points:**
-- Adjust chat and query prompts to encourage list usage
-- Model should use lists to maintain progress visibility
-- Tools should check/update list when performing tasks
-
-**Research Needed:**
-- Best practices for LLM task management
-- Existing patterns in LLM agents/frameworks
-- Prompt engineering for self-tracking
+**Implementation Notes:**
+- Store list state separately from chat history
+- Include current list in system prompt context
+- Model references list instead of scanning history
 
 **Tasks:**
-- [ ] Research: LLM task management patterns and best practices
-- [ ] Research: Similar implementations in other LLM frameworks
-- [ ] Brainstorm: Tool API design and prompt integration
-- [ ] Design: Tool interface (create_list, query_list, update_list, etc.)
-- [ ] Design: Prompt modifications for chat and query
-- [ ] Implement: To-do list tools
+- [ ] Research: LLM task management patterns
+- [ ] Design: Tool interface and state storage
+- [ ] Implement: To-do list tools in `src/tools/todo.rs`
+- [ ] Integrate: Include list state in system prompt
 - [ ] Test: Multi-step task scenarios
+
+---
+
+### Context Management v2 - Embeddings Research
+
+**Priority:** HIGH  
+**Status:** Research needed
+
+**Goal:** Enable semantic retrieval of conversation history for intelligent context selection.
+
+**Research Tasks:**
+- [ ] Evaluate Rust embedding crates
+  - [ ] `ort` (ONNX Runtime) - production-ready
+  - [ ] `candle` (Hugging Face) - pure Rust
+  - [ ] `rust-bert` - BERT in Rust
+- [ ] Evaluate local embedding models
+  - [ ] all-MiniLM-L6-v2 (384d, 80MB) - fast
+  - [ ] all-mpnet-base-v2 (768d, 420MB) - better quality
+  - [ ] nomic-embed-text-v1 (768d, 520MB) - open source
+- [ ] Evaluate SQLite vector extensions
+  - [ ] sqlite-vec (recommended)
+  - [ ] sqlite-vss (alternative)
+- [ ] Design: Storage schema and query interface
+- [ ] Test: Performance and latency benchmarks
+
+---
+
+### Token Counting & Context Metrics
+
+**Priority:** HIGH  
+**Status:** Ready for implementation
+
+**Problem:** No visibility into token usage per session. Users can't optimize context usage.
+
+**Implementation:**
+```rust
+fn count_tokens(messages: &[Message], model: &str) -> usize {
+    // Use tiktoken-rs or estimation (~0.75 words/token)
+    // Include message overhead (~4 tokens/message)
+    // Include tool definitions
+}
+```
+
+**Tasks:**
+- [ ] Implement: Token counting utility
+- [ ] Add: Token metrics to chat sessions
+- [ ] Create: `/context` command for session info
+- [ ] Display: Tokens per message type
 
 ---
 
 ## Medium Priority
 
-### Skills System - File-based Skill Loading
+### Automatic Middle Compaction
 
 **Priority:** Medium  
-**Status:** Not started
+**Status:** Planning
 
-**Problem:** Allow users to define reusable "skills" via Markdown files with YAML frontmatter. Skills would be loaded dynamically to provide context, prompts, or behavior presets for the LLM.
+**Goal:** Automatically compact middle messages when approaching context limit.
 
-**Concept:**
-- Skills are Markdown files (`.md`) with YAML frontmatter metadata
-- Stored in a dedicated directory (e.g., `~/.config/ask-ai/skills/` or project-local `.ask-ai/skills/`)
-- Frontmatter contains: name, description, tags, triggers, model preferences, etc.
-- Content (below frontmatter) contains the skill instructions/context
+**Strategy:**
+1. Preserve: System prompt + Working state + Recent messages (last 10)
+2. Summarize: Middle messages (abstractive)
+3. Trigger: At 80% of context window
 
-**Example Skill File:**
+**Tasks:**
+- [ ] Implement: Sliding window foundation
+- [ ] Implement: Middle summarization
+- [ ] Add: Auto-compact trigger
+- [ ] Configure: Threshold in config.toml
+
+---
+
+### Chat Module Integration
+
+**Priority:** Medium  
+**Status:** Planning needed
+
+**Problem:** Users must exit chat to use OCR, Vision, Translate, Summarize features.
+
+**Proposed Features:**
+- `/ocr <image>` - Run OCR from chat
+- `/vision <image>` - Analyze image
+- `/translate <lang> <text>` - Translate
+- `/summarize [text]` - Summarize
+
+**Context Integration:**
+- Module outputs should be contextualized
+- Model should understand extracted text as conversation context
+
+**Tasks:**
+- [ ] Design: Command interface
+- [ ] Design: Model switching during commands
+- [ ] Implement: `/ocr` command
+- [ ] Implement: `/vision` command
+- [ ] Implement: `/translate` command
+- [ ] Document: Chat module commands
+
+---
+
+### File Session State
+
+**Priority:** Medium  
+**Status:** Research needed
+
+**Goal:** Explicit tracking of file operations for context reduction and security.
+
+```rust
+struct FileSessionState {
+    read_files: HashSet<PathBuf>,
+    edited_files: HashMap<PathBuf, FileEditLog>,
+    created_files: HashSet<PathBuf>,
+    removed_files: HashSet<PathBuf>,
+}
+```
+
+**Security Constraints:**
+- Create: Only files that don't exist
+- Edit: Only files read in session
+- Remove: Only files read in full
+- Detect: External modifications
+
+**Tasks:**
+- [ ] Research: File tracking patterns
+- [ ] Design: Session state structure
+- [ ] Implement: File tracking in session
+- [ ] Implement: Security constraints
+
+---
+
+### System Tools - run_command
+
+**Priority:** Medium  
+**Status:** Blocked by security concerns
+
+- `run_command` - Execute commands with configurable whitelist
+- Requires: Robust error handling, security assessment
+
+**Tasks:**
+- [ ] Research: Secure command execution
+- [ ] Design: Whitelist configuration
+- [ ] Implement: Security constraints
+
+---
+
+### Skills System
+
+**Priority:** Medium  
+**Status:** Research needed
+
+Load custom behaviors from `.ask-ai/skills/` or `~/.config/ask-ai/skills/`.
+
+**Example:**
 ```markdown
 ---
 name: code-review
-description: Review code for quality and best practices
-tags: [code, review, quality]
-triggers: [review, critique]
-model_preference: null
+description: Review code for quality
+tags: [code, review]
 ---
 
 When reviewing code, focus on:
-- Code readability and maintainability
-- Potential bugs or edge cases
-- Performance considerations
+- Readability and maintainability
+- Potential bugs
 - Security vulnerabilities
-...
 ```
 
-**Proposed Features:**
-- `--skill <name>` flag to load a skill for a query/chat session
-- List available skills: `ask skills list`
-- Show skill details: `ask skills show <name>`
-- Skill discovery via tags/triggers
-- Project-level skills (`.ask-ai/skills/`) override user-level skills
-- Skills can specify recommended models
+**Tasks:**
+- [ ] Research: Skill systems in other agents
+- [ ] Design: Skill file format
+- [ ] Implement: Skill parser
+- [ ] Implement: `--skill` flag
 
-**Technical Approach:**
-- Parse frontmatter with `gray_matter` crate
-- Index skills for fast lookup (potential use of `tantivy` for full-text search)
-- Cache parsed skills in memory during session
+---
 
-**Research Needed:**
-- Similar implementations in other LLM CLI tools
-- How Hermes Agent and Claude Code handle skills
-- Best practices for skill file format and organization
+## Low Priority
+
+### OCR Model Customization
+
+**Priority:** Low  
+**Status:** Blocked by Ollama bug #14474
+
+See Known Issues.
 
 **Tasks:**
-- [ ] Research: Skill systems in other LLM agents (Hermes, Claude Code, etc.)
-- [ ] Research: `gray_matter` crate for frontmatter parsing
-- [ ] Research: `tantivy` for skill indexing/search
-- [ ] Design: Skill file format and frontmatter schema
-- [ ] Design: Skill discovery and loading mechanism
-- [ ] Design: CLI interface for skills
-- [ ] Implement: Skill file parser
-- [ ] Implement: Skill registry and indexing
-- [ ] Implement: `--skill` flag integration
-- [ ] Document: Skill creation guide
+- [ ] Wait: Ollama bug fix
+- [ ] Research: Alternative OCR models
+- [ ] Implement: `-m` flag for OCR
 
 ---
 
@@ -222,64 +314,71 @@ When reviewing code, focus on:
 **Priority:** Low  
 **Status:** Not started
 
-Support for custom tools via plugins:
-
-```rust
-// User-defined tool
-#[ollama_rs::function]
-pub async fn my_custom_tool(arg: String) -> Result<String> {
-    // Implementation
-}
-```
-
-**Tasks:**
-- [ ] Research: Dynamic loading vs compile-time plugins
-- [ ] Design: Plugin interface
-- [ ] Implement: Plugin loading mechanism
-- [ ] Document: Plugin development guide
+User-defined tools via dynamic loading or compilation.
 
 ---
 
-### Shell Completions
+## Completed
 
-**Priority:** Low  
-**Status:** Not started
+### Context Management Research ✅
 
-Generate shell completions for bash, zsh, fish:
+**Completed:** 2026-02-24
 
-```bash
-ask-ai --generate-completion bash
-```
+Full research document in `doc/src/development/context_management_research.md`.
 
-**Tasks:**
-- [ ] Implement: Completion generation using clap
-- [ ] Document: How to enable completions
+### Prompt Refactoring ✅
 
----
+**Completed:** 2026-02-27
 
-### Automatic Conversation Compaction
+- Modular structure (65% token reduction)
+- ReAct-style examples
+- Platform detection
+- Documented in `doc/src/development/prompt-refactor.md`
 
-**Priority:** Low  
-**Status:** Blocked by LLM Context History Redesign
+### Tool Calling Improvements ✅
 
-**Problem:** Manual `/compact` is sufficient, but automatic compaction based on token count would be more convenient.
+**Completed:** 2026-02-27
 
-**Blocked By:** This requires the LLM Context History Redesign to be completed first, as we need proper token counting and context management infrastructure.
+- CustomCoordinator with event-driven callbacks
+- Pre-tool content forwarding
+- Error recovery system
+- Smaller model parameter tuning
+- Documented in `TOOL_CALLING_RESEARCH.md`
 
-**Research Needed:**
-- Token counting for conversation history
-- Optimal threshold for compaction
-- Integration with model's context window size
+### Model Switching Fix ✅
 
-**Tasks:**
-- [ ] Research: Token counting methods (tiktoken, ollama API)
-- [ ] Design: Threshold configuration (messages vs tokens)
-- [ ] Implement: Compact before context exhausted
-- [ ] Test: Verify context maintained after auto-compact
+**Completed:** 2026-02-25
+
+- Centralized model switching in `src/chat/model_switch.rs`
+- CLI model override now has precedence
+- Fixed state inconsistencies
 
 ---
 
-### Streaming Output
+## Completed (Historical)
+
+### Vision Module ✅
+
+**Completed:** 2026-02-23
+
+- New `ask vision` command for image analysis
+- Multi-image support
+- Documentation in `doc/src/commands/vision.md`
+
+### Custom Model Support ✅
+
+**Completed:** 2026-02-19
+
+- User-defined models in `~/.config/ask-ai/models.toml`
+- Optional parameters: `top_k`, `top_p`, `repeat_penalty`
+- Cloud model thinking support
+
+### Termux Builds ✅
+
+**Completed:** 2026-02-19
+
+- Cross-compilation with `cross`
+- aarch64-linux-android builds
 
 **Priority:** Low  
 **Status:** Research needed

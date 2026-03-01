@@ -28,6 +28,8 @@
   - [Roadmap](./development/roadmap.md)
   - [Chat Mode Design](./development/chat-mode-design.md)
   - [Context Management Research](./development/context_management_research.md)
+  - [Context v2 Plan](./development/context_v2_plan.md)
+  - [Prompt Refactoring](./development/prompt-refactor.md)
   - [Contributing](./development/contributing.md)
 
 ---
