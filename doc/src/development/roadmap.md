@@ -214,26 +214,6 @@ When reviewing code, focus on:
 
 ---
 
-### Automatic Conversation Compaction
-
-**Priority:** Medium  
-**Status:** Research needed
-
-**Problem:** Manual `/compact` is sufficient, but automatic compaction based on token count would be more convenient.
-
-**Research Needed:**
-- Token counting for conversation history
-- Optimal threshold for compaction
-- Integration with model's context window size
-
-**Tasks:**
-- [ ] Research: Token counting methods (tiktoken, ollama API)
-- [ ] Design: Threshold configuration (messages vs tokens)
-- [ ] Implement: Compact before context exhausted
-- [ ] Test: Verify context maintained after auto-compact
-
----
-
 ### Chat Module Integration
 
 **Priority:** Medium  
@@ -388,6 +368,28 @@ ask-ai --generate-completion bash
 **Tasks:**
 - [ ] Implement: Completion generation using clap
 - [ ] Document: How to enable completions
+
+---
+
+### Automatic Conversation Compaction
+
+**Priority:** Low  
+**Status:** Blocked by LLM Context History Redesign
+
+**Problem:** Manual `/compact` is sufficient, but automatic compaction based on token count would be more convenient.
+
+**Blocked By:** This requires the LLM Context History Redesign to be completed first, as we need proper token counting and context management infrastructure.
+
+**Research Needed:**
+- Token counting for conversation history
+- Optimal threshold for compaction
+- Integration with model's context window size
+
+**Tasks:**
+- [ ] Research: Token counting methods (tiktoken, ollama API)
+- [ ] Design: Threshold configuration (messages vs tokens)
+- [ ] Implement: Compact before context exhausted
+- [ ] Test: Verify context maintained after auto-compact
 
 ---
 
