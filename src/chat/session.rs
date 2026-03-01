@@ -200,6 +200,32 @@ impl ChatSession {
         self.updated_at = Utc::now();
     }
 
+    /// Remove the last assistant message(s) for retry functionality
+    /// Returns the number of messages removed
+    pub fn remove_last_assistant_messages(&mut self) -> usize {
+        let mut removed = 0;
+        while let Some(last) = self.messages.last() {
+            if last.role == MessageRole::Assistant {
+                self.messages.pop();
+                removed += 1;
+            } else {
+                break;
+            }
+        }
+        if removed > 0 {
+            self.updated_at = Utc::now();
+        }
+        removed
+    }
+
+    /// Get the last user message (for retry functionality)
+    pub fn get_last_user_message(&self) -> Option<&SavedMessage> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|m| m.role == MessageRole::User)
+    }
+
     /// Set the compacted summary and update the LLM message index
     pub fn set_compacted_summary(&mut self, summary: String) {
         self.compacted_summary = Some(summary);

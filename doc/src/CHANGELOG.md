@@ -2,6 +2,50 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.17.0] - 2026-02-28
+
+### Added
+
+- **Prompt Refactoring** - Complete system prompt overhaul based on prompt engineering best practices
+  - Created modular prompt system in `src/prompts/` with hierarchical structure
+  - Added 13 ReAct-style few-shot examples (replaced arrow notation)
+  - Removed all negative instructions (DO NOT, NEVER, etc.)
+  - Created benchmark tests (10 passing) for prompt validation
+  - Token count reduced from ~1700 to ~890 tokens
+
+- **Platform Detection** - Dynamic OS/distro detection in `src/platform.rs`
+  - Detects Linux distros (Arch, Ubuntu, Debian, Fedora, etc.)
+  - Detects Termux on Android
+  - Detects macOS and Windows
+  - Platform info added to system context
+
+- **Retry Command** - New `/retry` (alias: `/r`) command
+  - Removes assistant messages since last user message
+  - Regenerates response with same context
+  - Useful for getting different answers
+
+### Fixed
+
+- **Anonymous Chat Mode** - Now truly anonymous
+  - Fixed bug where anonymous mode was loading sessions from "anonymous" directory
+  - Anonymous sessions now start completely fresh, no history persistence
+
+- **Immediate Message Saving** - User messages saved immediately after sending
+  - Previous behavior: saved only after receiving response
+  - New behavior: saved immediately, preventing message loss on crash/interrupt
+
+### Changed
+
+- **Chat Session API** - Added new methods:
+  - `remove_last_assistant_messages()` - removes messages since last user message
+  - `get_last_user_message()` - retrieves last user message for retry
+
+### Technical
+
+- Created `src/lib.rs` for library module exports (test infrastructure)
+- Added `PromptConfig` builder pattern for flexible prompt generation
+- Deprecated old prompt functions (`get_prompt`, `get_prompt_with_blacklist`)
+
 ## [0.16.2] - 2026-02-25
 
 ### Fixed

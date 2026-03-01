@@ -65,7 +65,19 @@ pub async fn run_chat_repl(
     let model_override = cli_model.or(args.model.as_deref());
 
     // Load or create session
-    let mut session = if let Some(ref session_name) = args.load {
+    let mut session = if args.anonymous {
+        // Anonymous mode: never load history, always start fresh
+        if use_debug {
+            log_debug("Anonymous mode: starting fresh session without history");
+        }
+        ChatSession::new(
+            model_override
+                .unwrap_or(&settings.model.default)
+                .to_string(),
+            None, // No project_id for anonymous
+            true,  // anonymous = true
+        )
+    } else if let Some(ref session_name) = args.load {
         match ChatSession::load(&storage, &project_id, session_name) {
             Ok(s) => {
                 println!(
@@ -83,7 +95,7 @@ pub async fn run_chat_repl(
                         .unwrap_or(&settings.model.default)
                         .to_string(),
                     project_id.clone(),
-                    args.anonymous,
+                    false,
                 )
             }
         }
@@ -107,7 +119,7 @@ pub async fn run_chat_repl(
                             .unwrap_or(&settings.model.default)
                             .to_string(),
                         project_id.clone(),
-                        args.anonymous,
+                        false,
                     )
                 }
             }
@@ -117,7 +129,7 @@ pub async fn run_chat_repl(
                     .unwrap_or(&settings.model.default)
                     .to_string(),
                 project_id.clone(),
-                args.anonymous,
+                false,
             )
         }
     };
@@ -354,6 +366,63 @@ pub async fn run_chat_repl(
                                     println!("Debug mode: {}", new_state);
                                     continue;
                                 }
+                                CommandResult::Retry => {
+                                    // Remove last assistant messages
+                                    let removed = session.remove_last_assistant_messages();
+                                    if removed > 0 {
+                                        println!("Removed {} assistant message(s). Ready to retry.", removed);
+                                    } else {
+                                        println!("No assistant messages to remove.");
+                                    }
+
+                                    // Get the last user message
+                                    if let Some(user_msg) = session.get_last_user_message() {
+                                        let user_content = user_msg.content.clone();
+                                        println!("Retrying: {}", user_content);
+
+                                        // Send the message again
+                                        match send_message(
+                                            &ollama,
+                                            &model_config,
+                                            &session,
+                                            &user_content,
+                                            tools_active,
+                                            session.think,
+                                            settings,
+                                            agents_md.as_deref(),
+                                            use_debug,
+                                        )
+                                        .await
+                                        {
+                                            Ok((response, metrics)) => {
+                                                session.add_assistant_message(response);
+
+                                                if metrics.total_tokens > 0 {
+                                                    eprintln!(
+                                                "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
+                                                metrics.prompt_tokens,
+                                                metrics.response_tokens,
+                                                metrics.total_tokens
+                                            );
+                                                }
+
+                                                if !session.anonymous
+                                                    && let Err(e) = session.save(&storage)
+                                                    && use_debug
+                                                {
+                                                    log_debug(&format!("Warning: Could not save session: {}", e));
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let error_str = e.to_string();
+                                                eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
+                                            }
+                                        }
+                                    } else {
+                                        println!("No user message to retry.");
+                                    }
+                                    continue;
+                                }
                             }
                         }
                         Some(Err(e)) => {
@@ -361,6 +430,16 @@ pub async fn run_chat_repl(
                             continue;
                         }
                         None => {}
+                    }
+                }
+
+                // Save user message immediately before sending
+                session.add_user_message(line.to_string());
+                if !session.anonymous {
+                    if let Err(e) = session.save(&storage) {
+                        if use_debug {
+                            log_debug(&format!("Warning: Could not save session: {}", e));
+                        }
                     }
                 }
 
@@ -378,7 +457,6 @@ pub async fn run_chat_repl(
                 .await
                 {
                     Ok((response, metrics)) => {
-                        session.add_user_message(line.to_string());
                         session.add_assistant_message(response);
 
                         if metrics.total_tokens > 0 {

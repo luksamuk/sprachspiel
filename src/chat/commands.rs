@@ -25,6 +25,8 @@ pub enum CommandResult {
     ToolOutputChanged(super::session::ToolOutputLevel),
     /// Toggle debug (returns new state)
     DebugToggled(bool),
+    /// Retry last message (regenerate response)
+    Retry,
 }
 
 /// Parsed chat command
@@ -65,6 +67,8 @@ pub enum ChatCommand {
     },
     /// Enable debug
     Debug,
+    /// Retry last message (regenerate response)
+    Retry,
 }
 
 /// Export format for /export command
@@ -160,6 +164,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
+        "retry" | "r" => ChatCommand::Retry,
         _ => return Some(Err(format!("Unknown command: /{}", cmd))),
     };
 
@@ -299,6 +304,8 @@ pub fn execute_command(
         }
 
         ChatCommand::Debug => CommandResult::DebugToggled(toggle_debug()),
+
+        ChatCommand::Retry => CommandResult::Retry,
     }
 }
 
@@ -315,6 +322,7 @@ fn print_help() {
   /tools           Toggle tools
   /tools-output    Set tool output level (compact|full|hidden)
   /compact         Compact conversation history (summarize)
+  /retry           Retry last message (regenerate response)
   /save [name]     Save current session (optionally named)
   /load <name>     Load a saved session
   /export <fmt>    Export conversation (md, json)
@@ -325,7 +333,7 @@ Shortcuts:
   /q = /quit, /c = /clear, /h = /help
   /m = /model, /s = /system, /l = /load
   /t = /think, /e = /export, /ls = /list, /i = /info
-  /to = /tools-output"#
+  /r = /retry, /to = /tools-output"#
     );
 }
 

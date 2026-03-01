@@ -1,0 +1,25 @@
+//! Ask-AI library module
+//!
+//! Exposes internal modules for testing and external use.
+
+pub mod capabilities;
+pub mod chat;
+pub mod config;
+pub mod context;
+pub mod debug_tools;
+pub mod ocr;
+pub mod platform;
+pub mod prompts;
+pub mod query;
+pub mod settings;
+pub mod spinner;
+pub mod summarize;
+pub mod tool_robustness;
+pub mod tools;
+pub mod translate;
+pub mod user_models;
+pub mod utils;
+pub mod vision;
+
+/// Result type alias for application errors
+pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;

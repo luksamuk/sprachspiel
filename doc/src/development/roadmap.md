@@ -80,6 +80,48 @@ None currently.
 
 ## High Priority
 
+### Prompt Refactoring
+
+**Priority:** HIGH  
+**Status:** Planned  
+**Planning Document:** [Prompt Refactoring Plan](./prompt-refactor.md)
+
+**Problem:** Current prompts use anti-patterns that degrade LLM performance:
+- Excessive negative instructions ("DO NOT", "NEVER") that models ignore
+- Malformatted few-shot examples
+- Hardcoded "Arch Linux" instead of dynamic platform detection
+- ~1700 tokens that could be reduced by ~65%
+- No clear hierarchical structure
+
+**Goals:**
+- Remove all negative instructions, replace with positive alternatives
+- Implement dynamic platform detection (Linux, Termux, macOS, Windows)
+- Add 5+ proper ReAct-style few-shot examples
+- Reduce token count by ~65%
+- Create automated benchmark tests
+
+**Implementation:**
+1. Create `src/platform.rs` for OS/distro detection
+2. Create `src/prompts/` module with restructured prompts
+3. Migrate callers to new prompt builder
+4. Create benchmark tests for comparison
+5. Validate with real models
+
+**Tasks:**
+- [ ] Create `src/platform.rs` - Platform detection
+- [ ] Modify `src/context.rs` - Use PlatformInfo
+- [ ] Create `src/prompts/mod.rs` - Module exports
+- [ ] Create `src/prompts/base.rs` - Core prompts
+- [ ] Create `src/prompts/tools.rs` - Tool context builder
+- [ ] Create `src/prompts/examples.rs` - Few-shot examples
+- [ ] Create `src/prompts/personality.rs` - Pepe personality
+- [ ] Create `src/prompts/builder.rs` - Main builder function
+- [ ] Create `tests/prompt_benchmark.rs` - Comparison tests
+- [ ] Update callers in `src/query.rs` and `src/chat/repl.rs`
+- [ ] Run all tests and validate
+
+---
+
 ### Vision Module for Image Processing
 
 **Priority:** HIGH  

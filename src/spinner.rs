@@ -59,8 +59,8 @@ impl Drop for SpinnerGuard {
 /// A ProgressBar instance that should be cleared when the response arrives
 ///
 /// # Example
-/// ```
-/// use ask_ollama::spinner::create_spinner;
+/// ```ignore
+/// use ask_ai::spinner::create_spinner;
 ///
 /// let spinner = create_spinner("Thinking...");
 /// // Do work...

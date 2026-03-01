@@ -10,6 +10,7 @@ mod config;
 mod context;
 mod debug_tools;
 mod ocr;
+mod platform;
 mod prompts;
 mod query;
 mod settings;
