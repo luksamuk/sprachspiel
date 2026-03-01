@@ -15,7 +15,7 @@ use crate::chat::{
 };
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
-use crate::prompts::get_prompt_with_blacklist;
+use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner, suspend_for_print};
 use crate::tool_robustness::format_tool_error;
@@ -228,21 +228,32 @@ pub async fn run_query(
 
     let blacklist_set = settings.blacklist_set();
 
-    let system_prompt = match get_prompt_with_blacklist(
-        prompt_name,
-        Some(&model_config.model_id),
-        Some(&blacklist_set),
-        agents_md.as_deref(),
-    ) {
-        Some(prompt) => prompt,
-        None => {
-            eprintln!(
-                "Error: Unknown prompt '{}'. Use --list to see available prompts.",
-                cli_prompt
-            );
-            std::process::exit(1);
-        }
+    // Determine prompt type for build_system_prompt
+    let prompt_type = match prompt_name {
+        "tool_user" => PromptType::ToolUser,
+        "code_with_tools" => PromptType::CodeWithTools,
+        "code" => PromptType::Code,
+        "summarize" => PromptType::Summarize,
+        _ => PromptType::Default,
     };
+
+    let system_prompt = build_system_prompt(
+        PromptConfig::new(prompt_type)
+            .with_model_id(Some(&model_config.model_id))
+            .with_blacklist(Some(&blacklist_set))
+            .with_agents_md(agents_md.as_deref())
+            .with_tools(use_tools),
+    );
+
+    // Validate prompt type (only for legacy prompt names)
+    if !matches!(prompt_type, PromptType::ToolUser | PromptType::CodeWithTools 
+                 | PromptType::Code | PromptType::Summarize | PromptType::Default) {
+        eprintln!(
+            "Error: Unknown prompt '{}'. Use --list to see available prompts.",
+            cli_prompt
+        );
+        std::process::exit(1);
+    }
 
     if output_flags.debug {
         enable_debug();

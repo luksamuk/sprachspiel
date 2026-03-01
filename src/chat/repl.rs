@@ -11,7 +11,7 @@ use termimad::print_text;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
-use crate::prompts::get_prompt_with_blacklist;
+use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::query::ChatContext;
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -561,19 +561,23 @@ async fn send_message(
 ) -> AppResult<(String, TokenMetrics)> {
     let model_options = model_config.build_model_options();
 
-    let prompt_name = if tools_enabled { "tool_user" } else { "default" };
     let blacklist_set = settings.blacklist_set();
 
     let system_prompt = if let Some(ref custom_prompt) = session.system_prompt {
         custom_prompt.clone()
     } else {
-        get_prompt_with_blacklist(
-            prompt_name,
-            Some(&model_config.model_id),
-            Some(&blacklist_set),
-            agents_md,
+        let prompt_type = if tools_enabled {
+            PromptType::ToolUser
+        } else {
+            PromptType::Default
+        };
+        build_system_prompt(
+            PromptConfig::new(prompt_type)
+                .with_model_id(Some(&model_config.model_id))
+                .with_blacklist(Some(&blacklist_set))
+                .with_agents_md(agents_md)
+                .with_tools(tools_enabled),
         )
-        .unwrap_or_else(|| "You are a helpful assistant.".to_string())
     };
 
     let coordinator = ChatContext {

@@ -6,7 +6,7 @@
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::CustomCoordinator;
-use crate::prompts::{SYSTEM_PROMPT_SUMMARIZE, get_prompt};
+use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 
@@ -49,8 +49,10 @@ impl SummarizeProcessor {
         // Note: No .add_tool() calls - tools are disabled
 
         // Build system prompt (no Pepe personality for summarize - keep it professional)
-        let base_prompt = get_prompt("summarize", Some(&model_config.model_id))
-            .unwrap_or_else(|| SYSTEM_PROMPT_SUMMARIZE.to_string());
+        let base_prompt = build_system_prompt(
+            PromptConfig::new(PromptType::Summarize)
+                .with_model_id(Some(&model_config.model_id))
+        );
         let system_prompt = args.build_prompt(&base_prompt);
 
         // Create messages

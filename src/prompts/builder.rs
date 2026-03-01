@@ -19,7 +19,6 @@ use crate::platform::PlatformInfo;
 
 /// Prompt type determines which base prompt to use
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum PromptType {
     /// Default assistant with tools
     Default,
@@ -35,10 +34,14 @@ pub enum PromptType {
 
 /// Configuration for building a system prompt
 ///
-/// This struct can be constructed directly or using the builder pattern
-/// via `new()` and `with_*` methods. The builder pattern is primarily used
-/// in benchmark tests (`tests/prompt_benchmark.rs`).
-#[allow(dead_code)]
+/// Use the builder pattern to construct:
+/// ```ignore
+/// let prompt = build_system_prompt(
+///     PromptConfig::new(PromptType::ToolUser)
+///         .with_model_id(Some("llama3.2"))
+///         .with_tools(true)
+/// );
+/// ```
 pub struct PromptConfig<'a> {
     /// Type of prompt to generate
     pub prompt_type: PromptType,
@@ -54,9 +57,6 @@ pub struct PromptConfig<'a> {
 
 impl<'a> PromptConfig<'a> {
     /// Create a new prompt configuration
-    ///
-    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
-    #[allow(dead_code)]
     pub fn new(prompt_type: PromptType) -> Self {
         Self {
             prompt_type,
@@ -71,36 +71,24 @@ impl<'a> PromptConfig<'a> {
     }
 
     /// Set the model ID
-    ///
-    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
-    #[allow(dead_code)]
     pub fn with_model_id(mut self, model_id: Option<&'a str>) -> Self {
         self.model_id = model_id;
         self
     }
 
     /// Set the tool blacklist
-    ///
-    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
-    #[allow(dead_code)]
     pub fn with_blacklist(mut self, blacklist: Option<&'a HashSet<&'a str>>) -> Self {
         self.blacklist = blacklist;
         self
     }
 
     /// Set the AGENTS.md content
-    ///
-    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
-    #[allow(dead_code)]
     pub fn with_agents_md(mut self, agents_md: Option<&'a str>) -> Self {
         self.agents_md = agents_md;
         self
     }
 
     /// Set whether tools are enabled
-    ///
-    /// This builder method is used by benchmark tests in `tests/prompt_benchmark.rs`.
-    #[allow(dead_code)]
     pub fn with_tools(mut self, tools_enabled: bool) -> Self {
         self.tools_enabled = tools_enabled;
         self

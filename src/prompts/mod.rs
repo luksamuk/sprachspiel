@@ -21,15 +21,13 @@
 //! ```ignore
 //! use ask_ai::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 //!
-//! let config = PromptConfig {
-//!     prompt_type: PromptType::ToolUser,
-//!     model_id: Some("llama3.2:3b"),
-//!     blacklist: Some(&blacklist),
-//!     agents_md: Some(agents_content),
-//!     tools_enabled: true,
-//! };
-//!
-//! let prompt = build_system_prompt(config);
+//! let prompt = build_system_prompt(
+//!     PromptConfig::new(PromptType::ToolUser)
+//!         .with_model_id(Some("llama3.2:3b"))
+//!         .with_blacklist(Some(&blacklist))
+//!         .with_agents_md(Some(agents_content))
+//!         .with_tools(true)
+//! );
 //! ```
 
 pub mod base;
@@ -48,45 +46,6 @@ pub use builder::{build_system_prompt, build_tool_user_prompt, PromptConfig, Pro
 pub use personality::{get_personality_prefix, is_pepe_model, PERSONALITY_PEPE};
 #[allow(unused_imports)]
 pub use tools::build_tool_context;
-
-// Re-export legacy functions for backward compatibility
-use std::collections::HashSet;
-
-/// Legacy function - use build_system_prompt instead
-#[deprecated(note = "Use build_system_prompt from builder module instead")]
-pub fn get_prompt(name: &str, model_id: Option<&str>) -> Option<String> {
-    get_prompt_with_blacklist(name, model_id, None, None)
-}
-
-/// Legacy function - use build_system_prompt instead
-#[deprecated(note = "Use build_system_prompt from builder module instead")]
-pub fn get_prompt_with_blacklist(
-    name: &str,
-    model_id: Option<&str>,
-    blacklist: Option<&HashSet<&str>>,
-    agents_md: Option<&str>,
-) -> Option<String> {
-    let prompt_type = match name {
-        "default" | "tool_user" => PromptType::ToolUser,
-        "code" => PromptType::Code,
-        "code_with_tools" => PromptType::CodeWithTools,
-        "summarize" => PromptType::Summarize,
-        _ => return None,
-    };
-
-    let config = PromptConfig {
-        prompt_type,
-        model_id,
-        blacklist,
-        agents_md,
-        tools_enabled: matches!(
-            prompt_type,
-            PromptType::ToolUser | PromptType::CodeWithTools
-        ),
-    };
-
-    Some(build_system_prompt(config))
-}
 
 /// List all available prompt names
 pub fn list_prompts() -> Vec<&'static str> {
