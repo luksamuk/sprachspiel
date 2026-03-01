@@ -47,6 +47,12 @@ Ask-AI looks for the config file in this order:
 # Default: "llama3.1"
 default = "llama3.1"
 
+# Global default for thinking mode (optional).
+# This is used as a fallback for all subcommands that don't have their own setting.
+# Subcommand-specific settings (model.query.thinking, etc.) override this.
+# Model capability takes precedence: if the model doesn't support thinking, this is ignored.
+# thinking = false
+
 # Ollama server connection settings.
 # Change these if your Ollama server is not running on the default localhost.
 # Default: "127.0.0.1"
@@ -73,6 +79,20 @@ ollama_port = 11434
 
 # Enable tool calling for queries (weather, file operations, etc.).
 # If not specified, defaults to: true for query
+# tools = true
+
+# --- CHAT SUBCOMMAND ---
+[model.chat]
+# The model to use for 'ask chat'.
+# If not specified, falls back to the global [model] default.
+# model = "llama3.1"
+
+# Enable thinking mode for chat. Some models show their reasoning process.
+# If not specified, defaults to: false for chat
+# thinking = false
+
+# Enable tool calling for chat (weather, file operations, etc.).
+# If not specified, defaults to: true for chat
 # tools = true
 
 # --- SUMMARIZE SUBCOMMAND ---
@@ -175,6 +195,27 @@ Settings are applied in this priority order (highest first):
 1. **Command-line arguments** - Override everything
 2. **Config file** - Persistent user preferences
 3. **Default values** - Built-in defaults
+
+#### Model Selection Precedence
+
+When choosing which model to use for a subcommand:
+
+1. **CLI flag** (`-m/--model`) - Always takes precedence
+2. **Subcommand config** (`model.chat.model`, `model.query.model`, etc.)
+3. **Global default** (`model.default`)
+
+#### Thinking Mode Precedence
+
+When determining if thinking mode is enabled:
+
+1. **Model capability** - Some models don't support thinking (checked first)
+2. **CLI flag** (`-t/--think`) - User override
+3. **Subcommand config** (`model.chat.thinking`, `model.query.thinking`, etc.)
+4. **Global config** (`model.thinking`)
+5. **Model default** (`thinking = true` in models.toml)
+6. **Hardcoded default** (true for query, false for others)
+
+Note: If thinking is enabled in config but the model doesn't support it, a warning is displayed and thinking is disabled.
 
 ## Custom Models
 

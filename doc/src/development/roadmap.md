@@ -38,7 +38,7 @@ This document outlines planned features and the current state of Ask-AI.
 - Thinking output visible when enabled
 - Error recovery for tool/network errors
 
-**Tools (23 total):**
+**Tools (28 total):**
 
 | Category | Count | Feature Flag | Default |
 |----------|-------|--------------|---------|
@@ -49,6 +49,9 @@ This document outlines planned features and the current state of Ask-AI.
 | Web Search (Serper) | 2 | `serper-tools` | ✅ Enabled |
 | Web Search (DDG) | 3 | `search-tools` | ❌ Disabled |
 | System | 2 | `system-tools` | ✅ Enabled |
+| LED Control | 5 | `led-tools` | ❌ Disabled* |
+
+*LED tools require `[led]` configuration in config.toml.
 
 **System Tools:**
 - `get_current_datetime` - Date, time, timezone, ISO 8601, Unix timestamp
@@ -211,160 +214,6 @@ When reviewing code, focus on:
 - [ ] Implement: Skill registry and indexing
 - [ ] Implement: `--skill` flag integration
 - [ ] Document: Skill creation guide
-
----
-
-### LED Control Tools
-
-**Priority:** Medium  
-**Status:** Completed (v0.18.0)
-
-**Problem:** Allow LLM to control NeoPixel LED strips via Raspberry Pi Pico W HTTP server. Users can configure the device IP and have natural language control over their lighting.
-
-**Implementation:**
-- 5 tools for LED control: `led_get_status`, `led_set_power`, `led_set_program`, `led_set_brightness`, `led_set_color`
-- Feature flag: `led-tools` (optional, disabled by default)
-- Configuration via `[led]` section in config.toml with `ip` and optional `port`
-- Color manipulation with RGB values (LLM-friendly, no hex arithmetic)
-- Tools only available when `led.ip` is configured
-
-**Configuration:**
-```toml
-[led]
-ip = "192.168.1.100"  # Required for LED tools
-port = 80             # Optional, default: 80
-```
-
-**Tools:**
-- `led_get_status` - Get current state (on/off, program, brightness, color in hex and RGB)
-- `led_set_power` - Turn on, off, or toggle
-- `led_set_program` - Set program (0=Christmas, 1=Trail, 2=Lamp) or cycle to next
-- `led_set_brightness` - Set brightness (0.02 to 1.0)
-- `led_set_color` - Set color (accepts hex or separate R/G/B values)
-
-**Tasks:**
-- [x] Implement: src/tools/led.rs with all 5 tools
-- [x] Implement: Configuration in settings.rs
-- [x] Implement: Tool registration with IP detection
-- [x] Implement: Prompt context and examples
-- [x] Document: doc/src/tools/led.md
-
----
-
-### Chat Module Integration
-
-**Priority:** Medium  
-**Status:** Planning needed
-
-**Problem:** Allow calling other modules (OCR, Vision, Translate, Summarize) from within chat mode. Currently, users must exit chat to use these features.
-
-**Research Needed:**
-- How to expose module functionality as chat commands
-- Model switching for specialized tasks (e.g., switch to glm-ocr for OCR, then back)
-- State management during module calls
-- User experience design (commands vs tools vs natural language)
-- **Contextualization:** When integrating with chat, think about how to contextualize module outputs. For example, after running OCR, the chat model should understand the extracted text as part of the conversation context, not just raw output. Same for vision descriptions - the model should be able to reason about what it "saw".
-
-**Proposed Features:**
-- `/ocr <image>` - Run OCR from within chat
-- `/translate <lang> <text>` - Translate text in chat
-- `/summarize` - Summarize conversation or pasted text
-- `/vision <image>` - Analyze image (when vision module ready)
-
-**Tasks:**
-- [ ] Research: Best approach for module integration (commands vs tools)
-- [ ] Design: Command interface and UX
-- [ ] Design: Model switching strategy
-- [ ] Implement: OCR command in chat
-- [ ] Implement: Translate command in chat
-- [ ] Implement: Summarize command in chat
-- [ ] Document: Chat module commands
-
----
-
-### File Modification Tools
-
-**Priority:** Medium  
-**Status:** Research needed
-
-**Problem:** Need safe, restrictive file creation, editing, and removal tools that respect security guidelines and enable session-based tracking.
-
-**Security Constraints:**
-- **Create:** Only create files that don't exist (prevents deliberate overwriting)
-- **Edit:** Only edit files that were read in the current session
-- **Remove:** Only remove files that were read in full during the session
-- **External modification:** If file was modified externally after last read/edit, force re-read before any operation
-- **Deleted files:** If a file was deleted, any session records of edits to that file must be cleared; file can only be created again (not "restored")
-
-**Session State Requirements:**
-- Track which files were read, edited, created, or removed in the session
-- Maintain a log of line additions/removals per file
-- Track file hashes or timestamps to detect external modifications
-- Clear records when files are deleted
-
-**Future Integration:**
-- Different "modes" will authorize only certain tools in REPL
-- Restrictive by default, permissive modes opt-in
-
-**Research Needed:**
-- Best practices in other LLM agents/frameworks (Claude Code, Cursor, etc.)
-- File locking and concurrent modification detection
-- Session state persistence strategies
-- Undo/rollback mechanisms
-
-**Tasks:**
-- [ ] Research: File modification patterns in other LLM agents
-- [ ] Research: Security best practices for file operations
-- [ ] Design: Session state structure (file tracking, edit log)
-- [ ] Design: Tool API (create_file, edit_file, remove_file)
-- [ ] Design: External modification detection strategy
-- [ ] Implement: File tracking in session
-- [ ] Implement: Restrictive file tools
-
----
-
-### System Tools - run_command
-
-**Priority:** Medium  
-**Status:** Blocked by tool call reliability
-
-- `run_command` - Execute commands with configurable whitelist
-  - **Requires:** Robust error handling and validation
-  - **Security:** Command whitelist, timeout, sandboxing
-
-**Tasks:**
-- [ ] Research: Secure command execution patterns
-- [ ] Design: Whitelist configuration
-- [ ] Implement: `run_command` with security constraints
-
----
-
-## Low Priority
-
-### OCR Model Customization
-
-**Priority:** Low  
-**Status:** Research needed
-
-**Problem:** OCR module currently uses a fixed model (glm-ocr:bf16) with no CLI override option. Users cannot choose alternative OCR-capable models.
-
-**Research Needed:**
-- Identify alternative OCR-capable models (Qwen-VL, LLaVA, etc.)
-- Test if existing OCR prompts work with other models
-- Determine model-specific prompt adjustments needed
-- Benchmark OCR quality across different models
-
-**Proposed CLI:**
-```bash
-ask ocr image.png                     # Default: glm-ocr
-ask ocr -m qwen-vl image.png          # Alternative model
-```
-
-**Tasks:**
-- [ ] Research: Identify OCR-capable vision models
-- [ ] Test: OCR prompts with alternative models
-- [ ] Design: Model override for OCR command
-- [ ] Document: Recommended models for OCR tasks
 
 ---
 

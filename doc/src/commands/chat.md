@@ -37,6 +37,7 @@ Once inside the chat, these commands are available:
 | `/think`, `/t` | Toggle think mode on/off |
 | `/tools` | Toggle tools on/off |
 | `/compact` | Compact conversation history (summarize) |
+| `/retry`, `/r` | Regenerate the last response |
 | `/save [name]` | Save current session (optionally named) |
 | `/load <name>`, `/l <name>` | Load a saved session |
 | `/export <format> [file]`, `/e <format>` | Export conversation (md, json) |
