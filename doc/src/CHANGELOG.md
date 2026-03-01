@@ -19,7 +19,29 @@ All notable changes to Ask-AI will be documented in this file.
   - Color manipulation tips for LLMs
   - Example workflows for natural language control
 
+- **Chat Configuration** - New `[model.chat]` section in config.toml
+  - Configure default model, thinking, and tools for chat subcommand
+  - Falls back to global `[model]` settings if not specified
+
+- **Thinking Mode Priority** - Improved thinking mode resolution
+  - Priority: Model capability → CLI flags → Subcommand config → Global config → Model default
+  - Configurable via `model.thinking` (global) and `model.chat.thinking` (subcommand)
+  - Warning shown if thinking enabled but model doesn't support it
+
 ### Configuration
+
+New config.toml options:
+```toml
+[model]
+# Global default for thinking mode (optional)
+thinking = false
+
+[model.chat]
+# Chat-specific model and settings
+# model = "llama3.1"
+# thinking = false
+# tools = true
+```
 
 New `[led]` section in config.toml:
 ```toml

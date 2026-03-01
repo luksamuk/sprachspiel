@@ -397,6 +397,9 @@ Override the default Ollama server host (default: localhost:11434).
 .TP
 .I ~/.config/ask-ai/config.toml
 User configuration file (model presets, tool settings, output preferences).
+Supports per-subcommand configuration: [model.query], [model.chat], [model.summarize], [model.code], [model.vision].
+Each subcommand can override model, thinking, and tools from global [model] settings.
+Thinking mode priority: CLI flags > subcommand config > global config > model default > hardcoded default.
 .TP
 .I ~/.config/ask-ai/models.toml
 User-defined model configurations. Add custom models or override built-in parameters.

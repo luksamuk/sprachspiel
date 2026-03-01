@@ -55,9 +55,14 @@ pub struct ModelSettings {
     /// Ollama port
     #[serde(default = "default_ollama_port")]
     pub ollama_port: u16,
+    /// Global default for thinking mode (used as fallback for all subcommands)
+    #[serde(default)]
+    pub thinking: Option<bool>,
     /// Per-subcommand model configurations
     #[serde(default)]
     pub query: SubcommandModelConfig,
+    #[serde(default)]
+    pub chat: SubcommandModelConfig,
     #[serde(default)]
     pub summarize: SubcommandModelConfig,
     #[serde(default)]
@@ -141,7 +146,9 @@ impl Default for ModelSettings {
             default: default_model(),
             ollama_host: default_ollama_host(),
             ollama_port: default_ollama_port(),
+            thinking: None,
             query: SubcommandModelConfig::default(),
+            chat: SubcommandModelConfig::default(),
             summarize: SubcommandModelConfig::default(),
             code: SubcommandModelConfig::default(),
             vision: SubcommandModelConfig::default(),
@@ -260,9 +267,16 @@ impl Settings {
 
     /// Get model configuration for a specific subcommand
     /// Returns (model_name, thinking_enabled, tools_enabled)
+    ///
+    /// Priority for thinking:
+    /// 1. Subcommand-specific config (model.query.thinking, model.chat.thinking, etc.)
+    /// 2. Global config (model.thinking)
+    /// 3. Model default (from model config in models.toml or built-in)
+    /// 4. Hardcoded default (false for most, true for query)
     pub fn get_subcommand_config(&self, subcommand: &str) -> (String, bool, bool) {
         let subcommand_config = match subcommand {
             "query" => &self.model.query,
+            "chat" => &self.model.chat,
             "summarize" => &self.model.summarize,
             "code" => &self.model.code,
             "vision" => &self.model.vision,
@@ -276,18 +290,23 @@ impl Settings {
             .cloned()
             .unwrap_or_else(|| self.model.default.clone());
 
-        // Get thinking: subcommand specific -> default (true for query, false for others)
-        let default_thinking = match subcommand {
-            "query" => true,
-            "code" => false,
-            "vision" => false,
-            _ => false,
-        };
-        let thinking = subcommand_config.thinking.unwrap_or(default_thinking);
+        // Get thinking: subcommand specific -> global -> model default
+        // Note: This returns the config preference; model capability check happens elsewhere
+        let thinking = subcommand_config
+            .thinking
+            .or(self.model.thinking)
+            .unwrap_or_else(|| {
+                // Fall back to subcommand-specific defaults
+                match subcommand {
+                    "query" => true,  // Query benefits from thinking by default
+                    _ => false,        // Chat, summarize, code, vision default to no thinking
+                }
+            });
 
-        // Get tools: subcommand specific -> default (true for query/code with tools, false for summarize)
+        // Get tools: subcommand specific -> default by subcommand
         let default_tools = match subcommand {
             "query" => true,
+            "chat" => true,
             "code" => true,
             "summarize" => false,
             "vision" => false,
@@ -344,6 +363,13 @@ impl Settings {
 # Default: "llama3.1"
 default = "llama3.1"
 
+# Global default for thinking mode.
+# This is used as a fallback for all subcommands that don't have their own setting.
+# Subcommand-specific settings (model.query.thinking, model.chat.thinking, etc.) override this.
+# Model capability takes precedence: if the model doesn't support thinking, this is ignored.
+# If not specified, subcommand defaults are used (true for query, false for others).
+# thinking = false
+
 # Ollama server connection settings.
 # Change these if your Ollama server is not running on the default localhost.
 # The host can be an IP address (e.g., "192.168.1.100") or a URL (e.g., "http://192.168.1.100").
@@ -358,6 +384,13 @@ ollama_port = 11434
 # You can use different models for different subcommands.
 # This allows you to use lightweight models for simple tasks and 
 # powerful models for complex ones, optimizing for speed and cost.
+#
+# Priority for thinking mode:
+# 1. Model capability (can't enable if model doesn't support it)
+# 2. Subcommand-specific setting (e.g., model.query.thinking)
+# 3. Global setting (model.thinking)
+# 4. Model default (from models.toml or built-in config)
+# 5. Subcommand hardcoded default (true for query, false for others)
 
 # --- QUERY SUBCOMMAND ---
 [model.query]
@@ -371,6 +404,20 @@ ollama_port = 11434
 
 # Enable tool calling for queries (weather, file operations, etc.).
 # If not specified, defaults to: true for query
+# tools = true
+
+# --- CHAT SUBCOMMAND ---
+[model.chat]
+# The model to use for 'ask chat'.
+# If not specified, falls back to the global [model] default.
+# model = "llama3.1"
+
+# Enable thinking mode for chat. Some models show their reasoning process.
+# If not specified, defaults to: false for chat
+# thinking = false
+
+# Enable tool calling for chat (weather, file operations, etc.).
+# If not specified, defaults to: true for chat
 # tools = true
 
 # --- SUMMARIZE SUBCOMMAND ---

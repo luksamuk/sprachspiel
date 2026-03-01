@@ -135,8 +135,6 @@ pub async fn run_chat_repl(
     };
 
     // Apply CLI flags (CLI takes precedence over args)
-    let think_enabled = cli_think || args.think;
-    let tools_enabled = cli_tools || args.tools || settings.get_subcommand_config("query").2;
     let ignore_agents = cli_ignore_agents || args.ignore_agents;
 
     // CLI model override takes precedence over saved session model
@@ -162,23 +160,61 @@ pub async fn run_chat_repl(
         }
     }
 
-    session.think = think_enabled;
-    session.tools = tools_enabled;
-    session.tool_output_level = args.tools_output;
-
     let mut current_model_name = session.model.clone();
     let mut model_config = crate::user_models::resolve_model_config(&current_model_name);
 
     let ollama = settings.ollama_client();
     let mut capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
-    if session.think && !capabilities.thinking {
-        eprintln!(
-            "Warning: Model '{}' does not support think mode. Ignoring -t flag.",
-            model_config.model_id
-        );
-        session.think = false;
-    }
+    // Thinking mode priority:
+    // 1. Model capability check (can't enable if not supported)
+    // 2. CLI flags (-t/--think) - user override
+    // 3. Chat-specific config (model.chat.thinking)
+    // 4. Global config (model.thinking)
+    // 5. Model default (from models.toml or built-in config)
+    let cli_think = cli_think || args.think;
+    let (_, config_thinking, _) = settings.get_subcommand_config("chat");
+    let model_default_thinking = model_config.thinking;
+
+    // Determine thinking mode
+    let think_enabled = if cli_think {
+        // User explicitly requested thinking via CLI
+        if !capabilities.thinking {
+            eprintln!(
+                "Warning: Model '{}' does not support think mode. Ignoring -t/--think flag.",
+                model_config.model_id
+            );
+            false
+        } else {
+            true
+        }
+    } else {
+        // Use config preference, respecting model capability
+        let requested_thinking = config_thinking || model_default_thinking;
+        if requested_thinking && !capabilities.thinking {
+            // Config says yes, but model says no - warn and respect model
+            eprintln!(
+                "Warning: Model '{}' does not support think mode. Disabled for this session.",
+                model_config.model_id
+            );
+            false
+        } else {
+            requested_thinking
+        }
+    };
+
+    // Tools mode priority: CLI -> config -> default
+    let cli_tools = cli_tools || args.tools;
+    let (_, _, config_tools) = settings.get_subcommand_config("chat");
+    let tools_enabled = if cli_tools {
+        true
+    } else {
+        config_tools
+    };
+
+    session.think = think_enabled;
+    session.tools = tools_enabled;
+    session.tool_output_level = args.tools_output;
 
     let agents_md = if !ignore_agents {
         let md = crate::context::load_agents_md();
