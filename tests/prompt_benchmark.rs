@@ -245,7 +245,6 @@ fn test_new_prompt_structure() {
     );
 
     // Check order
-    let role_pos = new_prompt.find("### ROLE").unwrap_or(0);
     let context_pos = new_prompt.find("### CONTEXT").unwrap_or(0);
     let tools_pos = new_prompt.find("### TOOLS").unwrap_or(0);
     let examples_pos = new_prompt.find("### EXAMPLES").unwrap_or(0);

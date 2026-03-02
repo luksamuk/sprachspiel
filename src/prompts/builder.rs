@@ -139,7 +139,7 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
     if config.prompt_type == PromptType::CodeWithTools {
         prompt.push_str("\n### FILE TOOLS\n");
         prompt.push_str("You have file tools to inspect the codebase:\n");
-        let blacklist = config.blacklist.map(|b| b.clone()).unwrap_or_default();
+        let blacklist = config.blacklist.cloned().unwrap_or_default();
         prompt.push_str(&build_file_tools_context(&blacklist));
     }
 
@@ -168,7 +168,7 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
 
     // 4. Tools section (if enabled)
     if config.tools_enabled {
-        let blacklist = config.blacklist.map(|b| b.clone()).unwrap_or_default();
+        let blacklist = config.blacklist.cloned().unwrap_or_default();
         let tool_context = build_tool_context(&blacklist);
         if !tool_context.is_empty() {
             prompt.push('\n');

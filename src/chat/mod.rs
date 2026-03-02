@@ -13,8 +13,11 @@ pub mod model_switch;
 pub mod repl;
 pub mod session;
 pub mod thinking;
+pub mod todo_state;
 
 pub use cli::ChatArgs;
 pub use custom_coordinator::CustomCoordinator;
 pub use repl::run_chat_repl;
 pub use thinking::{display_thinking, strip_thinking_tags};
+#[allow(dead_code)]
+pub use todo_state::TodoState;

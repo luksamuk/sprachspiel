@@ -248,8 +248,7 @@ fn contains_fake_system_tags(line: &str) -> bool {
         "</system>",
         "<instruction>",
         "</instruction>",
-        "<|system|>",
-        "<|instruction|>",
+        "๏ปฟ<|instruction|>",
     ];
 
     for tag in fake_tags {
@@ -259,6 +258,81 @@ fn contains_fake_system_tags(line: &str) -> bool {
     }
 
     false
+}
+
+// ============================================================================
+// System Context Injection
+// ============================================================================
+
+/// Get minimal system context for injection into system prompt.
+///
+/// Returns ~20 tokens of essential information:
+/// - Current date (day of week, month, day, year)
+/// - Current working directory
+/// - Git branch (if in a git repository)
+#[cfg(feature = "system-tools")]
+pub fn get_system_context() -> String {
+    let mut lines = Vec::new();
+
+    // Current date
+    let now = chrono::Local::now();
+    lines.push(format!("Today: {}", now.format("%A, %b %d, %Y")));
+
+    // Current working directory
+    if let Ok(cwd) = std::env::current_dir()
+        && let Some(path) = cwd.to_str()
+    {
+        lines.push(format!("CWD: {}", path));
+    }
+
+    // Git branch (if in a git repository)
+    if let Some(branch) = get_git_branch() {
+        lines.push(format!("Git: {}", branch));
+    }
+
+    lines.join("\n")
+}
+
+/// Non-chrono version for when system-tools feature is disabled
+#[cfg(not(feature = "system-tools"))]
+pub fn get_system_context() -> String {
+    let mut lines = Vec::new();
+
+    // Current working directory only
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(path) = cwd.to_str() {
+            lines.push(format!("CWD: {}", path));
+        }
+    }
+
+    // Git branch (if in a git repository)
+    if let Some(branch) = get_git_branch() {
+        lines.push(format!("Git: {}", branch));
+    }
+
+    lines.join("\n")
+}
+
+/// Read git branch from .git/HEAD file (no shell commands).
+///
+/// Returns:
+/// - Branch name (e.g., "main", "develop")
+/// - "detached@<hash>" for detached HEAD state
+/// - None if not in a git repository
+fn get_git_branch() -> Option<String> {
+    let git_head = std::path::Path::new(".git").join("HEAD");
+    let content = std::fs::read_to_string(git_head).ok()?;
+
+    let content = content.trim();
+
+    // Format: "ref: refs/heads/<branch>"
+    if content.starts_with("ref: refs/heads/") {
+        Some(content.strip_prefix("ref: refs/heads/")?.to_string())
+    } else {
+        // Detached HEAD - show short hash
+        let hash_len = content.len().min(7);
+        Some(format!("detached@{}", &content[..hash_len]))
+    }
 }
 
 #[cfg(test)]
@@ -438,80 +512,5 @@ evil command
         assert!(!contains_fake_system_tags(
             "Follow the instructions in the README"
         ));
-    }
-}
-
-// ============================================================================
-// System Context Injection
-// ============================================================================
-
-/// Get minimal system context for injection into system prompt.
-///
-/// Returns ~20 tokens of essential information:
-/// - Current date (day of week, month, day, year)
-/// - Current working directory
-/// - Git branch (if in a git repository)
-#[cfg(feature = "system-tools")]
-pub fn get_system_context() -> String {
-    let mut lines = Vec::new();
-
-    // Current date
-    let now = chrono::Local::now();
-    lines.push(format!("Today: {}", now.format("%A, %b %d, %Y")));
-
-    // Current working directory
-    if let Ok(cwd) = std::env::current_dir()
-        && let Some(path) = cwd.to_str()
-    {
-        lines.push(format!("CWD: {}", path));
-    }
-
-    // Git branch (if in a git repository)
-    if let Some(branch) = get_git_branch() {
-        lines.push(format!("Git: {}", branch));
-    }
-
-    lines.join("\n")
-}
-
-/// Non-chrono version for when system-tools feature is disabled
-#[cfg(not(feature = "system-tools"))]
-pub fn get_system_context() -> String {
-    let mut lines = Vec::new();
-
-    // Current working directory only
-    if let Ok(cwd) = std::env::current_dir() {
-        if let Some(path) = cwd.to_str() {
-            lines.push(format!("CWD: {}", path));
-        }
-    }
-
-    // Git branch (if in a git repository)
-    if let Some(branch) = get_git_branch() {
-        lines.push(format!("Git: {}", branch));
-    }
-
-    lines.join("\n")
-}
-
-/// Read git branch from .git/HEAD file (no shell commands).
-///
-/// Returns:
-/// - Branch name (e.g., "main", "develop")
-/// - "detached@<hash>" for detached HEAD state
-/// - None if not in a git repository
-fn get_git_branch() -> Option<String> {
-    let git_head = std::path::Path::new(".git").join("HEAD");
-    let content = std::fs::read_to_string(git_head).ok()?;
-
-    let content = content.trim();
-
-    // Format: "ref: refs/heads/<branch>"
-    if content.starts_with("ref: refs/heads/") {
-        Some(content.strip_prefix("ref: refs/heads/")?.to_string())
-    } else {
-        // Detached HEAD - show short hash
-        let hash_len = content.len().min(7);
-        Some(format!("detached@{}", &content[..hash_len]))
     }
 }

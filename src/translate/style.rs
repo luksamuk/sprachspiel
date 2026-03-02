@@ -20,10 +20,10 @@ pub enum TranslationStyle {
 }
 
 impl TranslationStyle {
-    /// Convert string to TranslationStyle
+    /// Parse string to TranslationStyle
     /// Recognizes: formal, casual, technical, literary
     /// Anything else becomes Custom(style_instruction)
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         let normalized = s.trim().to_lowercase();
 
         match normalized.as_str() {
@@ -92,36 +92,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_from_str_predefined() {
+    fn test_parse_predefined() {
         assert!(matches!(
-            TranslationStyle::from_str("formal"),
+            TranslationStyle::parse("formal"),
             TranslationStyle::Formal
         ));
         assert!(matches!(
-            TranslationStyle::from_str("FORMAL"),
+            TranslationStyle::parse("FORMAL"),
             TranslationStyle::Formal
         ));
         assert!(matches!(
-            TranslationStyle::from_str("Formal"),
+            TranslationStyle::parse("Formal"),
             TranslationStyle::Formal
         ));
         assert!(matches!(
-            TranslationStyle::from_str("casual"),
+            TranslationStyle::parse("casual"),
             TranslationStyle::Casual
         ));
         assert!(matches!(
-            TranslationStyle::from_str("technical"),
+            TranslationStyle::parse("technical"),
             TranslationStyle::Technical
         ));
         assert!(matches!(
-            TranslationStyle::from_str("literary"),
+            TranslationStyle::parse("literary"),
             TranslationStyle::Literary
         ));
     }
 
     #[test]
-    fn test_from_str_custom() {
-        let style = TranslationStyle::from_str("use Brazilian slang");
+    fn test_parse_custom() {
+        let style = TranslationStyle::parse("use Brazilian slang");
         assert!(matches!(style, TranslationStyle::Custom(_)));
         assert_eq!(style.custom_instruction(), Some("use Brazilian slang"));
     }

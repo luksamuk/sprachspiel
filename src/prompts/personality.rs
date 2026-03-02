@@ -32,10 +32,10 @@ pub fn is_pepe_model(model_id: &str) -> bool {
 /// # Returns
 /// The personality prefix string, or empty string if no personality applies
 pub fn get_personality_prefix(model_id: Option<&str>) -> &'static str {
-    if let Some(id) = model_id {
-        if is_pepe_model(id) {
-            return PERSONALITY_PEPE;
-        }
+    if let Some(id) = model_id
+        && is_pepe_model(id)
+    {
+        return PERSONALITY_PEPE;
     }
     ""
 }

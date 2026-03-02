@@ -16,6 +16,7 @@ mod query;
 mod settings;
 mod spinner;
 mod summarize;
+mod tokens;
 mod tool_robustness;
 mod tools;
 mod translate;
@@ -200,7 +201,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         std::process::exit(1);
     }
 
-    let style = args.prompt.as_ref().map(|s| TranslationStyle::from_str(s));
+    let style = args.prompt.as_ref().map(|s| TranslationStyle::parse(s));
     let prompt = build_translation_prompt(source.as_ref(), &target, &text, style.as_ref());
 
     let model_config = match user_models::get_model_config("translate") {

@@ -129,10 +129,10 @@ impl PlatformInfo {
         }
 
         // Check for Termux via PREFIX path
-        if let Ok(prefix) = env::var("PREFIX") {
-            if prefix.contains("com.termux") {
-                return Platform::Termux;
-            }
+        if let Ok(prefix) = env::var("PREFIX")
+            && prefix.contains("com.termux")
+        {
+            return Platform::Termux;
         }
 
         // Use compile-time target detection

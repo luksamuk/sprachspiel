@@ -847,8 +847,8 @@ mod tests {
         let outside_path = PathBuf::from("/tmp");
         let result = validate_path(&outside_path, false);
         // This might fail if /tmp doesn't exist, but should not fail due to sandbox
-        if result.is_err() {
-            let err_msg = result.unwrap_err().to_string();
+        if let Err(err) = result {
+            let err_msg = err.to_string();
             assert!(!err_msg.contains("sandboxed"));
         }
     }

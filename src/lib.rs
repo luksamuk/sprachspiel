@@ -15,6 +15,7 @@ pub mod settings;
 pub mod spinner;
 pub mod summarize;
 pub mod tool_robustness;
+pub mod tokens;
 pub mod tools;
 pub mod translate;
 pub mod user_models;

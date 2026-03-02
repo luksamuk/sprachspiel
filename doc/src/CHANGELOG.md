@@ -2,6 +2,49 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.19.0] - UNRELEASED
+
+### Added
+
+- **Context Metrics Command** - New `/context` (alias `/ctx`) command for chat
+  - Displays estimated token usage breakdown (system, tools, conversation)
+  - Shows context window utilization percentage
+  - Helps users understand context pressure and plan compaction
+
+- **Token Counting Module** - New `src/tokens.rs` module
+  - Word-based token estimation (~0.75 words/token for English)
+  - Message overhead calculation (~4 tokens per message)
+  - `ContextMetrics` struct for context usage tracking
+  - `calculate_context_metrics()` for full context analysis
+
+- **Todo List Tools** - New tool category for task tracking
+  - `todo_add(description)` - Add a new task to the list
+  - `todo_update(id, status)` - Update task status (pending/in_progress/done)
+  - `todo_list()` - List all tasks with current status
+  - `todo_clear_done()` - Remove completed tasks
+  - `todo_clear_all()` - Clear all tasks
+  - Reduces need to search conversation history for task tracking
+  - Enabled via `todo-tools` feature flag (enabled by default)
+
+- **Todo State Persistence** - Todo list persists with chat session
+  - New `todos` field in `ChatSession`
+  - `TodoState` struct with `Task` and `TaskStatus` enums
+  - Automatically saved/restored with session
+
+### Fixed
+
+- **Code Quality** - Clippy warnings and dead code cleanup
+  - Fixed collapsible if statements in platform.rs and personality.rs
+  - Fixed `.map(|x| x.clone())` to `.cloned()` in builder.rs
+  - Fixed manual RangeInclusive::contains patterns in tests
+  - Removed duplicate ContextMetrics struct
+  - Fixed MESSAGE_OVERHEAD constant visibility
+
+### Changed
+
+- **Feature Flags** - `todo-tools` added to default features
+  - `all-tools` now includes `todo-tools`
+
 ## [0.18.2] - 2026-03-01
 
 ### Added

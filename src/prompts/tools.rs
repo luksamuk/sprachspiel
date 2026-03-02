@@ -196,6 +196,39 @@ Color tips: To make "more red", increase R or decrease G/B. For "warmer", increa
         }
     }
 
+    // Todo tools
+    #[cfg(feature = "todo-tools")]
+    {
+        let todo_tools = [
+            "todo_add",
+            "todo_update",
+            "todo_list",
+            "todo_clear_done",
+            "todo_clear_all",
+        ];
+        let available: Vec<_> = todo_tools
+            .iter()
+            .filter(|t| !blacklist.contains(*t))
+            .collect();
+
+        if !available.is_empty() {
+            sections.push(
+                r#"### TODO TOOLS
+Use for tracking tasks during multi-step work. Reduces need to search conversation history.
+Available: todo_add, todo_update, todo_list, todo_clear_done, todo_clear_all
+
+Workflow:
+1. Add tasks with todo_add("description") when starting multi-step work
+2. List tasks with todo_list() to see current status
+3. Update status with todo_update(id, "in_progress") or todo_update(id, "done")
+4. Clear completed tasks with todo_clear_done()
+
+Status values: pending, in_progress, done"#
+                    .to_string(),
+            );
+        }
+    }
+
     sections.join("\n\n")
 }
 

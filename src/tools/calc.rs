@@ -115,6 +115,6 @@ mod tests {
     #[test]
     fn test_format_number() {
         assert_eq!(format_number(4.0), "4");
-        assert_eq!(format_number(3.14159), "3.14159");
+        assert_eq!(format_number(std::f64::consts::PI), std::f64::consts::PI.to_string());
     }
 }

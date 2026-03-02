@@ -19,6 +19,8 @@ pub mod search_builtin;
 pub mod serper;
 #[cfg(feature = "system-tools")]
 pub mod system;
+#[cfg(feature = "todo-tools")]
+pub mod todo;
 pub mod weather;
 
 #[cfg(feature = "calc-tools")]
@@ -36,6 +38,8 @@ pub use registry::{get_available_tool_names, register_tools};
 pub use search_builtin::*;
 #[cfg(feature = "system-tools")]
 pub use system::*;
+#[cfg(feature = "todo-tools")]
+pub use todo::*;
 pub use weather::*;
 
 /// Common response structure for PokeAPI

@@ -12,7 +12,8 @@ use crate::settings::Settings;
     feature = "serper-tools",
     feature = "search-tools",
     feature = "system-tools",
-    feature = "file-tools"
+    feature = "file-tools",
+    feature = "todo-tools"
 ))]
 use super::*;
 
@@ -273,6 +274,31 @@ where
         }
     }
 
+    // Todo tools
+    #[cfg(feature = "todo-tools")]
+    {
+        if is_tool_allowed("todo_add") {
+            coordinator = coordinator.register_tool(todo_add);
+            tool_count += 1;
+        }
+        if is_tool_allowed("todo_update") {
+            coordinator = coordinator.register_tool(todo_update);
+            tool_count += 1;
+        }
+        if is_tool_allowed("todo_list") {
+            coordinator = coordinator.register_tool(todo_list);
+            tool_count += 1;
+        }
+        if is_tool_allowed("todo_clear_done") {
+            coordinator = coordinator.register_tool(todo_clear_done);
+            tool_count += 1;
+        }
+        if is_tool_allowed("todo_clear_all") {
+            coordinator = coordinator.register_tool(todo_clear_all);
+            tool_count += 1;
+        }
+    }
+
     (coordinator, tool_count)
 }
 
@@ -382,6 +408,22 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
                 if is_allowed(tool) {
                     tools.push(tool.to_string());
                 }
+            }
+        }
+    }
+
+    #[cfg(feature = "todo-tools")]
+    {
+        let todo_tools = [
+            "todo_add",
+            "todo_update",
+            "todo_list",
+            "todo_clear_done",
+            "todo_clear_all",
+        ];
+        for tool in todo_tools {
+            if is_allowed(tool) {
+                tools.push(tool.to_string());
             }
         }
     }

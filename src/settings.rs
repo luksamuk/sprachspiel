@@ -254,11 +254,17 @@ impl Settings {
     }
 
     /// Check if LED is configured (IP address set)
+    ///
+    /// Note: Used only when `led-tools` feature is enabled.
+    #[allow(dead_code)]
     pub fn is_led_configured(&self) -> bool {
         self.led.ip.is_some()
     }
 
     /// Get LED endpoint URL (returns None if not configured)
+    ///
+    /// Note: Used only when `led-tools` feature is enabled.
+    #[allow(dead_code)]
     pub fn led_endpoint(&self) -> Option<String> {
         self.led.ip.as_ref().map(|ip| {
             format!("http://{}:{}", ip, self.led.port)
@@ -295,7 +301,7 @@ impl Settings {
         let thinking = subcommand_config
             .thinking
             .or(self.model.thinking)
-            .unwrap_or_else(|| {
+            .unwrap_or({
                 // Fall back to subcommand-specific defaults
                 match subcommand {
                     "query" => true,  // Query benefits from thinking by default

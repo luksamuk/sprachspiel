@@ -165,15 +165,9 @@ mod tests {
         assert!(validate_image_file(Path::new("test.png")).is_err());
         assert!(validate_image_file(Path::new("test.jpg")).is_err());
 
-        assert!(matches!(
-            validate_image_file(Path::new("test.pdf")),
-            Err(_)
-        ));
+        assert!(validate_image_file(Path::new("test.pdf")).is_err());
 
-        assert!(matches!(
-            validate_image_file(Path::new("test.txt")),
-            Err(_)
-        ));
+        assert!(validate_image_file(Path::new("test.txt")).is_err());
     }
 
     #[test]

@@ -5,6 +5,7 @@
 use super::history::ConversationStorage;
 use super::session::ChatSession;
 use crate::debug_tools::toggle_debug;
+use crate::tokens::ContextMetrics;
 
 /// Result of executing a command
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +30,8 @@ pub enum CommandResult {
     Retry,
     /// Undo last message (remove response, show last input)
     Undo,
+    /// Show context metrics (handled in REPL)
+    Context,
 }
 
 /// Parsed chat command
@@ -57,6 +60,8 @@ pub enum ChatCommand {
     List,
     /// Show session information
     Info,
+    /// Show context metrics and token usage
+    Context,
     /// Toggle think mode
     Think,
     /// Toggle tools
@@ -155,6 +160,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         }
         "list" | "ls" => ChatCommand::List,
         "info" | "i" => ChatCommand::Info,
+        "context" | "ctx" => ChatCommand::Context,
         "think" | "t" => ChatCommand::Think,
         "debug" | "d" => ChatCommand::Debug,
         "tools" => ChatCommand::Tools,
@@ -287,9 +293,11 @@ pub fn execute_command(
         }
 
         ChatCommand::Info => {
-            print_session_info(session);
+            print_session_info(session, None);
             CommandResult::Continue
         }
+
+        ChatCommand::Context => CommandResult::Context,
 
         ChatCommand::Think => {
             session.think = !session.think;
@@ -336,17 +344,19 @@ fn print_help() {
   /export <fmt>    Export conversation (md, json)
   /list            List saved sessions for this project
   /info            Show current session information
+  /context         Show context metrics and token usage
 
 Shortcuts:
   /q = /quit, /c = /clear, /h = /help
   /m = /model, /s = /system, /l = /load
   /t = /think, /e = /export, /ls = /list, /i = /info
-  /r = /retry, /to = /tools-output, /u = /undo"#
+  /r = /retry, /to = /tools-output, /u = /undo
+  /ctx = /context"#
     );
 }
 
 /// Print session information
-fn print_session_info(session: &ChatSession) {
+pub fn print_session_info(session: &ChatSession, metrics: Option<&ContextMetrics>) {
     let name = session.name.as_deref().unwrap_or("unnamed");
     let project = session.project_id.as_deref().unwrap_or("none");
     let created = session.created_at.format("%Y-%m-%d %H:%M:%S");
@@ -363,6 +373,15 @@ fn print_session_info(session: &ChatSession) {
         println!(
             "  Compacted: {} messages summarized",
             session.compacted_message_count()
+        );
+    }
+
+    if let Some(m) = metrics {
+        println!(
+            "  Context:   {} / {} tokens ({:.1}%)",
+            m.total_tokens,
+            m.context_window,
+            m.utilization * 100.0
         );
     }
 

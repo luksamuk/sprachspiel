@@ -7,6 +7,7 @@ use ollama_rs::generation::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 
 use super::history::{ConversationStorage, SessionInfo};
+use super::todo_state::TodoState;
 
 /// Tool output verbosity level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -84,6 +85,9 @@ pub struct ChatSession {
     /// Tool output verbosity level
     #[serde(default)]
     pub tool_output_level: ToolOutputLevel,
+    /// Todo list state for task tracking
+    #[serde(default)]
+    pub todos: TodoState,
 }
 
 /// A saved message for persistence
@@ -128,6 +132,7 @@ impl ChatSession {
             think: false,
             tools: true,
             tool_output_level: ToolOutputLevel::default(),
+            todos: TodoState::new(),
         }
     }
 

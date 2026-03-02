@@ -44,6 +44,7 @@ Once inside the chat, these commands are available:
 | `/export <format> [file]`, `/e <format>` | Export conversation (md, json) |
 | `/list`, `/ls` | List saved sessions for this project |
 | `/info`, `/i` | Show current session information |
+| `/context`, `/ctx` | Show context metrics and token usage |
 
 ## Prompt Indicators
 

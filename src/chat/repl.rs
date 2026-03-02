@@ -15,6 +15,7 @@ use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::query::ChatContext;
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
+use crate::tokens::calculate_context_metrics;
 use crate::tool_robustness::format_tool_error;
 use crate::tools::{get_available_tool_names, register_tools};
 
@@ -408,6 +409,16 @@ pub async fn run_chat_repl(
                                     println!("Debug mode: {}", new_state);
                                     continue;
                                 }
+                                CommandResult::Context => {
+                                    print_context_info(
+                                        &session,
+                                        &model_config,
+                                        tools_active,
+                                        agents_md.as_deref(),
+                                        settings,
+                                    );
+                                    continue;
+                                }
                                 CommandResult::Retry => {
                                     // Remove last assistant messages
                                     let removed = session.remove_last_assistant_messages();
@@ -495,12 +506,11 @@ pub async fn run_chat_repl(
 
                 // Save user message immediately before sending
                 session.add_user_message(line.to_string());
-                if !session.anonymous {
-                    if let Err(e) = session.save(&storage) {
-                        if use_debug {
-                            log_debug(&format!("Warning: Could not save session: {}", e));
-                        }
-                    }
+                if !session.anonymous
+                    && let Err(e) = session.save(&storage)
+                    && use_debug
+                {
+                    log_debug(&format!("Warning: Could not save session: {}", e));
                 }
 
                 match send_message(
@@ -837,4 +847,76 @@ fn history_path() -> std::path::PathBuf {
     } else {
         std::path::PathBuf::from(".chat_history.txt")
     }
+}
+
+fn print_context_info(
+    session: &ChatSession,
+    model_config: &ModelConfig,
+    tools_enabled: bool,
+    agents_md: Option<&str>,
+    settings: &Settings,
+) {
+    let blacklist_set = settings.blacklist_set();
+    
+    let prompt_type = if tools_enabled {
+        PromptType::ToolUser
+    } else {
+        PromptType::Default
+    };
+    
+    let system_prompt = build_system_prompt(
+        PromptConfig::new(prompt_type)
+            .with_model_id(Some(&model_config.model_id))
+            .with_blacklist(Some(&blacklist_set))
+            .with_agents_md(agents_md)
+            .with_tools(tools_enabled),
+    );
+    
+    let history_messages = session.get_messages_for_llm(&system_prompt);
+    let context_window = model_config.num_ctx as usize;
+    
+    let tool_count = if tools_enabled {
+        get_available_tool_names(settings).len()
+    } else {
+        0
+    };
+    
+    let tools_tokens = if tools_enabled && tool_count > 0 {
+        tool_count * 20
+    } else {
+        0
+    };
+    
+    let metrics = calculate_context_metrics(
+        &history_messages,
+        context_window,
+        &system_prompt,
+        tools_tokens,
+    );
+    
+    let context_window_k = context_window / 1024;
+    
+    println!();
+    println!("Context Information:");
+    println!("  Model:          {} ({}K context)", model_config.model_id, context_window_k);
+    println!();
+    println!("  Token Breakdown:");
+    println!("    System prompt:  ~{} tokens", metrics.system_tokens);
+    if tools_enabled && tool_count > 0 {
+        println!("    Tool definitions: ~{} tokens ({} tools)", metrics.tools_tokens, tool_count);
+    }
+    println!("    Conversation:    ~{} tokens ({} messages)", metrics.history_tokens, session.messages.len());
+    println!("    {}", "─".repeat(40));
+    println!("    Total used:       ~{} tokens", metrics.total_tokens);
+    println!("    Available:        ~{} tokens", metrics.available());
+    println!("    Utilization:      {:.1}%", metrics.utilization * 100.0);
+    println!();
+    
+    if session.has_compacted_messages() {
+        println!("  Session:");
+        println!("    Compacted:       {} messages summarized", session.compacted_message_count());
+        println!("    Active:          {} messages", session.messages.len() - session.compacted_message_count());
+    }
+    println!("    Total:           {} messages", session.messages.len());
+    println!();
 }

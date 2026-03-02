@@ -90,10 +90,10 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 ## High Priority
 
-### Token Counting & Context Metrics
+### Token Counting & Context Metrics ✅
 
 **Priority:** HIGH  
-**Status:** Ready for implementation
+**Status:** Completed (will be released in v0.19.0)
 
 **Rationale:** Foundation for all context management. Without token visibility, we can't measure or optimize.
 
@@ -101,52 +101,54 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 **Implementation:**
 ```rust
-fn count_tokens(messages: &[Message], model: &str) -> usize {
-    // Use tiktoken-rs or estimation (~0.75 words/token)
-    // Include message overhead (~4 tokens/message)
-    // Include tool definitions
+fn count_messages_tokens(messages: &[ChatMessage]) -> usize {
+    // Word-based estimation: ~0.75 words/token
+    // Message overhead: ~4 tokens/message
+    // System prompt + tools + history
 }
 ```
 
 **Tasks:**
-- [ ] Implement: Token counting utility
-- [ ] Add: Token metrics to chat sessions
-- [ ] Create: `/context` command for session info
-- [ ] Display: Tokens per message type
+- [x] Implement: Token counting utility (`src/tokens.rs`)
+- [x] Add: Token metrics to chat sessions (`ContextMetrics` struct)
+- [x] Create: `/context` command for session info
+- [x] Display: Tokens per message type (system, tools, history)
+- [x] Document: `/context` command in doc/src/commands/context.md
 
 ---
 
-### To-Do List Tooling
+### To-Do List Tooling ✅
 
 **Priority:** HIGH  
-**Status:** Ready for implementation
+**Status:** Completed (will be released in v0.19.0)
 
 **Rationale:** State Management is the most impactful context reduction. Explicit task tracking eliminates the need to search through history.
 
 **Problem:** LLMs waste context searching through conversation history to track progress on multi-step tasks. An explicit to-do list reduces this need.
 
-**Proposed Features:**
-- `create_list(name: String)` - Create a new task list
-- `add_task(list: String, task: String)` - Add task to list
-- `update_task(list: String, task_id: usize, status: String)` - Update status (pending/in_progress/done)
-- `get_tasks(list: String)` - Retrieve current tasks (model can query)
-- `clear_list(list: String)` - Clear completed tasks
+**Implemented Features:**
+- `todo_add(description)` - Add a new task to the list
+- `todo_update(task_id, status)` - Update status (pending/in_progress/done)
+- `todo_list()` - List all tasks with current status
+- `todo_clear_done()` - Remove completed tasks
+- `todo_clear_all()` - Clear all tasks
 
 **Session Types:**
-- **Query mode:** Ephemeral, in-memory list for single-task tracking
-- **Chat mode:** Persistent, stored with session for multi-step workflows
+- **Query mode:** Ephemeral, in-memory list via global state
+- **Chat mode:** Persistent, stored with session in `todos` field
 
-**Implementation Notes:**
-- Store list state separately from chat history
-- Include current list in system prompt context
-- Model references list instead of scanning history
+**Implementation:**
+- `src/chat/todo_state.rs` - TodoState, Task, TaskStatus structs
+- `src/tools/todo.rs` - 5 todo tools
+- `src/prompts/tools.rs` - TODO TOOLS section in system prompt
+- Enabled via `todo-tools` feature flag (default: enabled)
 
 **Tasks:**
-- [ ] Research: LLM task management patterns
-- [ ] Design: Tool interface and state storage
-- [ ] Implement: To-do list tools in `src/tools/todo.rs`
-- [ ] Integrate: Include list state in system prompt
-- [ ] Test: Multi-step task scenarios
+- [x] Research: LLM task management patterns
+- [x] Design: Tool interface and state storage
+- [x] Implement: To-do list tools in `src/tools/todo.rs`
+- [x] Integrate: Include state in system prompt
+- [x] Test: Unit tests for todo_state
 
 ---
 
