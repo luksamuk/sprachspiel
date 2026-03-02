@@ -2,7 +2,7 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.19.0] - UNRELEASED
+## [0.19.0] - 2026-03-02
 
 ### Added
 
@@ -31,6 +31,17 @@ All notable changes to Ask-AI will be documented in this file.
   - `TodoState` struct with `Task` and `TaskStatus` enums
   - Automatically saved/restored with session
 
+- **HTTP Helpers** - New utilities for tool implementations
+  - `fetch_json<T>()` for GET requests with JSON parsing
+  - `fetch_json_with_headers<T>()` for requests with custom headers
+  - `post_json_with_headers<T>()` for POST requests
+  - All helpers include automatic error logging
+
+- **Logging Macros** - Boilerplate reduction for tools
+  - `log_tool_call!` macro for tool call logging
+  - `log_tool_result!` macro for result logging
+  - `tool_wrapper!` macro for automatic logging wrapper
+
 ### Fixed
 
 - **Code Quality** - Clippy warnings and dead code cleanup
@@ -44,6 +55,12 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **Feature Flags** - `todo-tools` added to default features
   - `all-tools` now includes `todo-tools`
+
+- **Refactoring** - Unified HTTP handling across tools (~370 lines reduced)
+  - pokemon.rs: 9 functions refactored using shared helper
+  - weather.rs: 3 functions + helper refactored
+  - serper.rs: 2 functions refactored with POST helper
+  - finance.rs: collapsible_if fix
 
 ## [0.18.2] - 2026-03-01
 
