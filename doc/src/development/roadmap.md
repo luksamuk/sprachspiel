@@ -90,10 +90,38 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 ## High Priority
 
+### Token Counting & Context Metrics
+
+**Priority:** HIGH  
+**Status:** Ready for implementation
+
+**Rationale:** Foundation for all context management. Without token visibility, we can't measure or optimize.
+
+**Problem:** No visibility into token usage per session. Users can't optimize context usage.
+
+**Implementation:**
+```rust
+fn count_tokens(messages: &[Message], model: &str) -> usize {
+    // Use tiktoken-rs or estimation (~0.75 words/token)
+    // Include message overhead (~4 tokens/message)
+    // Include tool definitions
+}
+```
+
+**Tasks:**
+- [ ] Implement: Token counting utility
+- [ ] Add: Token metrics to chat sessions
+- [ ] Create: `/context` command for session info
+- [ ] Display: Tokens per message type
+
+---
+
 ### To-Do List Tooling
 
 **Priority:** HIGH  
 **Status:** Ready for implementation
+
+**Rationale:** State Management is the most impactful context reduction. Explicit task tracking eliminates the need to search through history.
 
 **Problem:** LLMs waste context searching through conversation history to track progress on multi-step tasks. An explicit to-do list reduces this need.
 
@@ -127,6 +155,8 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 **Priority:** HIGH  
 **Status:** Research needed
 
+**Rationale:** Required for semantic retrieval (Phase 4 of context management). Research now, implement later.
+
 **Goal:** Enable semantic retrieval of conversation history for intelligent context selection.
 
 **Research Tasks:**
@@ -143,30 +173,6 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
   - [ ] sqlite-vss (alternative)
 - [ ] Design: Storage schema and query interface
 - [ ] Test: Performance and latency benchmarks
-
----
-
-### Token Counting & Context Metrics
-
-**Priority:** HIGH  
-**Status:** Ready for implementation
-
-**Problem:** No visibility into token usage per session. Users can't optimize context usage.
-
-**Implementation:**
-```rust
-fn count_tokens(messages: &[Message], model: &str) -> usize {
-    // Use tiktoken-rs or estimation (~0.75 words/token)
-    // Include message overhead (~4 tokens/message)
-    // Include tool definitions
-}
-```
-
-**Tasks:**
-- [ ] Implement: Token counting utility
-- [ ] Add: Token metrics to chat sessions
-- [ ] Create: `/context` command for session info
-- [ ] Display: Tokens per message type
 
 ---
 
