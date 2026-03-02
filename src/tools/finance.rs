@@ -75,13 +75,13 @@ impl StockScraper {
         let mut stock_data = HashMap::new();
 
         for item in document.select(&items_selector) {
-            if let Some(item_desc) = item.select(&desc_selector).next() {
-                if let Some(item_val) = item.select(&value_selector).next() {
-                    stock_data.insert(
-                        item_desc.text().collect::<Vec<_>>().join(""),
-                        item_val.text().collect::<Vec<_>>().join(""),
-                    );
-                }
+            if let Some(item_desc) = item.select(&desc_selector).next()
+                && let Some(item_val) = item.select(&value_selector).next()
+            {
+                stock_data.insert(
+                    item_desc.text().collect::<Vec<_>>().join(""),
+                    item_val.text().collect::<Vec<_>>().join(""),
+                );
             }
         }
 

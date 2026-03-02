@@ -4,7 +4,7 @@
 //! Requires SERPER_API_KEY environment variable.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use crate::utils::parse_bounded_number;
+use crate::utils::{parse_bounded_number, post_json_with_headers};
 use ollama_rs::function;
 use serde::Deserialize;
 
@@ -109,47 +109,19 @@ pub async fn web_search(
 
     let num_results = parse_bounded_number(num_results.as_deref(), 5, Some(10));
 
-    let client = match reqwest::Client::builder().build() {
-        Ok(c) => c,
-        Err(e) => {
-            let err = format!("Error creating HTTP client: {}. Please try again later.", e);
-            log_tool_result("web_search", &err);
-            return Ok(err);
-        }
-    };
-
-    let response = match client
-        .post(SERPER_API_URL)
-        .header("X-API-KEY", &api_key)
-        .header("Content-Type", "application/json")
-        .json(&serde_json::json!({ "q": &query }))
-        .send()
-        .await
+    let data: SerperResponse = match post_json_with_headers(
+        SERPER_API_URL,
+        "web_search",
+        vec![
+            ("X-API-KEY", api_key.as_str()),
+            ("Content-Type", "application/json"),
+        ],
+        &serde_json::json!({ "q": &query }),
+    )
+    .await
     {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!("Network error: {}. Please try again later.", e);
-            log_tool_result("web_search", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Serper API error: HTTP {}. Please check your API key.",
-            response.status()
-        );
-        log_tool_result("web_search", &err);
-        return Ok(err);
-    }
-
-    let data: SerperResponse = match response.json().await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!("Error parsing response: {}", e);
-            log_tool_result("web_search", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     if data.organic.is_empty() && data.answer_box.is_none() {
@@ -233,47 +205,19 @@ pub async fn web_search_news(
 
     let num_results = parse_bounded_number(num_results.as_deref(), 3, Some(10));
 
-    let client = match reqwest::Client::builder().build() {
-        Ok(c) => c,
-        Err(e) => {
-            let err = format!("Error creating HTTP client: {}. Please try again later.", e);
-            log_tool_result("web_search_news", &err);
-            return Ok(err);
-        }
-    };
-
-    let response = match client
-        .post(SERPER_API_URL)
-        .header("X-API-KEY", &api_key)
-        .header("Content-Type", "application/json")
-        .json(&serde_json::json!({ "q": &query, "type": "news" }))
-        .send()
-        .await
+    let data: SerperResponse = match post_json_with_headers(
+        SERPER_API_URL,
+        "web_search_news",
+        vec![
+            ("X-API-KEY", api_key.as_str()),
+            ("Content-Type", "application/json"),
+        ],
+        &serde_json::json!({ "q": &query, "type": "news" }),
+    )
+    .await
     {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!("Network error: {}. Please try again later.", e);
-            log_tool_result("web_search_news", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Serper API error: HTTP {}. Please check your API key.",
-            response.status()
-        );
-        log_tool_result("web_search_news", &err);
-        return Ok(err);
-    }
-
-    let data: SerperResponse = match response.json().await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!("Error parsing response: {}", e);
-            log_tool_result("web_search_news", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     if data.news.is_empty() {

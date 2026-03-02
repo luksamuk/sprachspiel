@@ -159,7 +159,7 @@ fn parse_brightness(value: &str) -> Result<f32, String> {
         .parse()
         .map_err(|_| format!("Invalid brightness '{}'. Must be a number.", value))?;
 
-    if brightness < 0.02 || brightness > 1.0 {
+    if !(0.02..=1.0).contains(&brightness) {
         Err(format!(
             "Brightness {:.2} out of range. Must be between 0.02 and 1.0.",
             brightness

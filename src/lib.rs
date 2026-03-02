@@ -7,6 +7,7 @@ pub mod chat;
 pub mod config;
 pub mod context;
 pub mod debug_tools;
+pub mod macros;
 pub mod ocr;
 pub mod platform;
 pub mod prompts;

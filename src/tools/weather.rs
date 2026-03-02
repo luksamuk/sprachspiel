@@ -13,32 +13,27 @@ const OPEN_METEO_BASE: &str = "https://api.open-meteo.com/v1/forecast";
 const GEOCODING_BASE: &str = "https://geocoding-api.open-meteo.com/v1/search";
 
 /// Get coordinates for a location name using Open-Meteo geocoding
-async fn get_coordinates(
-    location: &str,
-) -> Result<(f64, f64), Box<dyn std::error::Error + Send + Sync>> {
+async fn get_coordinates(location: &str) -> Result<(f64, f64), String> {
     let url = format!(
         "{}?name={}&count=1&language=en&format=json",
         GEOCODING_BASE,
         urlencoding::encode(location)
     );
 
-    let client = reqwest::Client::new();
-    let response = client.get(&url).send().await?;
-
-    if !response.status().is_success() {
-        return Err(format!("Geocoding API error: {}", response.status()).into());
-    }
-
-    let geo_response: GeocodingResponse = response.json().await?;
+    let geo_response: GeocodingResponse =
+        match crate::utils::fetch_json(&url, "get_coordinates").await {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
 
     if let Some(results) = geo_response.results {
         if let Some(first) = results.first() {
             Ok((first.latitude, first.longitude))
         } else {
-            Err(format!("Location '{}' not found", location).into())
+            Err(format!("Location '{}' not found", location))
         }
     } else {
-        Err(format!("Location '{}' not found", location).into())
+        Err(format!("Location '{}' not found", location))
     }
 }
 
@@ -65,7 +60,6 @@ pub async fn get_weather(
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("get_weather", &[("location".to_string(), location.clone())]);
 
-    // First, get coordinates for the location
     let (lat, lon) = match get_coordinates(&location).await {
         Ok(coords) => coords,
         Err(e) => {
@@ -75,45 +69,16 @@ pub async fn get_weather(
         }
     };
 
-    // Build Open-Meteo API URL
     let url = format!(
         "{}?latitude={}&longitude={}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto",
         OPEN_METEO_BASE, lat, lon
     );
 
-    // Make the request
-    let client = reqwest::Client::new();
-    let response = match client.get(&url).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching weather: {}. Please try again later.",
-                e
-            );
-            log_tool_result("get_weather", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Weather API error: {}. Please try again later.",
-            response.status()
-        );
-        log_tool_result("get_weather", &err);
-        return Ok(err);
-    }
-
-    let weather: WeatherResponse = match response.json().await {
+    let weather: WeatherResponse = match crate::utils::fetch_json(&url, "get_weather").await {
         Ok(w) => w,
-        Err(e) => {
-            let err = format!("Error parsing weather data: {}. Please try again later.", e);
-            log_tool_result("get_weather", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
-    // Format the response
     let location_name = format!(
         "{}, {}",
         weather
@@ -201,7 +166,6 @@ pub async fn get_current_weather(
         &[("location".to_string(), location.clone())],
     );
 
-    // Get current weather data directly
     let (lat, lon) = match get_coordinates(&location).await {
         Ok(coords) => coords,
         Err(e) => {
@@ -216,36 +180,11 @@ pub async fn get_current_weather(
         OPEN_METEO_BASE, lat, lon
     );
 
-    let client = reqwest::Client::new();
-    let response = match client.get(&url).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching weather: {}. Please try again later.",
-                e
-            );
-            log_tool_result("get_current_weather", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Weather API error: {}. Please try again later.",
-            response.status()
-        );
-        log_tool_result("get_current_weather", &err);
-        return Ok(err);
-    }
-
-    let weather: WeatherResponse = match response.json().await {
-        Ok(w) => w,
-        Err(e) => {
-            let err = format!("Error parsing weather data: {}. Please try again later.", e);
-            log_tool_result("get_current_weather", &err);
-            return Ok(err);
-        }
-    };
+    let weather: WeatherResponse =
+        match crate::utils::fetch_json(&url, "get_current_weather").await {
+            Ok(w) => w,
+            Err(e) => return Ok(e),
+        };
     let current = &weather.current;
 
     let location_name = format!(
@@ -323,7 +262,6 @@ pub async fn get_weather_forecast(
 
     let days = days.and_then(|d| d.parse::<u8>().ok()).unwrap_or(5).min(7) as usize;
 
-    // First, get coordinates for the location
     let (lat, lon) = match get_coordinates(&location).await {
         Ok(coords) => coords,
         Err(e) => {
@@ -333,45 +271,16 @@ pub async fn get_weather_forecast(
         }
     };
 
-    // Build Open-Meteo API URL with extended forecast
     let url = format!(
         "{}?latitude={}&longitude={}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=auto&forecast_days={}",
         OPEN_METEO_BASE, lat, lon, days
     );
 
-    let client = reqwest::Client::new();
-    let response = match client.get(&url).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching forecast: {}. Please try again later.",
-                e
-            );
-            log_tool_result("get_weather_forecast", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Weather API error: {}. Please try again later.",
-            response.status()
-        );
-        log_tool_result("get_weather_forecast", &err);
-        return Ok(err);
-    }
-
-    let weather: WeatherResponse = match response.json().await {
-        Ok(w) => w,
-        Err(e) => {
-            let err = format!(
-                "Error parsing forecast data: {}. Please try again later.",
-                e
-            );
-            log_tool_result("get_weather_forecast", &err);
-            return Ok(err);
-        }
-    };
+    let weather: WeatherResponse =
+        match crate::utils::fetch_json(&url, "get_weather_forecast").await {
+            Ok(w) => w,
+            Err(e) => return Ok(e),
+        };
     let daily = &weather.daily;
 
     if daily.time.is_empty() {
@@ -419,7 +328,6 @@ pub async fn get_weather_forecast(
     Ok(result)
 }
 
-// Weather code to description mapping (English)
 fn get_weather_description(code: i32) -> &'static str {
     match code {
         0 => "Clear sky",
@@ -441,14 +349,12 @@ fn get_weather_description(code: i32) -> &'static str {
     }
 }
 
-// Convert wind direction degrees to cardinal direction
 fn get_wind_direction(degrees: u16) -> &'static str {
     let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
     let index = ((degrees as f64 + 22.5) / 45.0) as usize % 8;
     directions[index]
 }
 
-// Open-Meteo API Response Structures
 #[derive(Debug, Deserialize)]
 struct GeocodingResponse {
     results: Option<Vec<GeocodingResult>>,
@@ -465,7 +371,7 @@ struct GeocodingResult {
     country: String,
     #[serde(default)]
     #[allow(dead_code)]
-    admin1: String, // State/region
+    admin1: String,
 }
 
 #[derive(Debug, Deserialize)]

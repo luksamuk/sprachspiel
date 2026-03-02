@@ -267,10 +267,8 @@ where
                 coordinator = coordinator.register_tool(led_set_color);
                 tool_count += 1;
             }
-        } else {
-            if use_debug {
-                eprintln!("💡 [LED] No device configured - LED tools disabled. Add [led] ip = \"<IP>\" to config.toml");
-            }
+        } else if use_debug {
+            eprintln!("💡 [LED] No device configured - LED tools disabled. Add [led] ip = \"<IP>\" to config.toml");
         }
     }
 

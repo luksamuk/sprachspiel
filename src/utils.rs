@@ -133,6 +133,103 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// Fetch JSON from a URL with proper error handling for tools.
+///
+/// This is a helper function for tool implementations that need to
+/// make HTTP requests and parse JSON responses.
+///
+/// # Arguments
+/// * `url` - The URL to fetch
+/// * `tool_name` - Tool name for logging (via debug_tools)
+///
+/// # Returns
+/// * `Ok(T)` - Parsed JSON response
+/// * `Err(String)` - Error message suitable for LLM consumption
+#[cfg(any(
+    feature = "weather-tools",
+    feature = "pokemon-tools",
+    feature = "serper-tools",
+    feature = "search-tools"
+))]
+pub async fn fetch_json<T: serde::de::DeserializeOwned>(
+    url: &str,
+    tool_name: &str,
+) -> Result<T, String> {
+    use crate::debug_tools::log_tool_result;
+
+    let response = match reqwest::get(url).await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error: {}. Please try again later.", e);
+            log_tool_result(tool_name, &err);
+            return Err(err);
+        }
+    };
+
+    if !response.status().is_success() {
+        let err = format!(
+            "HTTP error: {}. The service may be temporarily unavailable.",
+            response.status()
+        );
+        log_tool_result(tool_name, &err);
+        return Err(err);
+    }
+
+    match response.json().await {
+        Ok(data) => Ok(data),
+        Err(e) => {
+            let err = format!("Error parsing response: {}. Please try again.", e);
+            log_tool_result(tool_name, &err);
+            Err(err)
+        }
+    }
+}
+
+/// POST JSON to a URL with custom headers.
+///
+/// Same as `fetch_json` but uses POST with a JSON body.
+#[cfg(any(feature = "serper-tools", feature = "search-tools"))]
+pub async fn post_json_with_headers<T: serde::de::DeserializeOwned>(
+    url: &str,
+    tool_name: &str,
+    headers: Vec<(&str, &str)>,
+    body: &serde_json::Value,
+) -> Result<T, String> {
+    use crate::debug_tools::log_tool_result;
+
+    let mut request = reqwest::Client::new().post(url);
+    for (key, value) in headers {
+        request = request.header(key, value);
+    }
+
+    let response = match request.json(body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err = format!("Network error: {}. Please try again later.", e);
+            log_tool_result(tool_name, &err);
+            return Err(err);
+        }
+    };
+
+    if !response.status().is_success() {
+        let err = format!(
+            "HTTP error: {}. The service may be temporarily unavailable.",
+            response.status()
+        );
+        log_tool_result(tool_name, &err);
+        return Err(err);
+    }
+
+    match response.json().await {
+        Ok(data) => Ok(data),
+        Err(e) => {
+            let err = format!("Error parsing response: {}. Please try again.", e);
+            log_tool_result(tool_name, &err);
+            Err(err)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

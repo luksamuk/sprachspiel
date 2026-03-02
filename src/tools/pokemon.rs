@@ -34,35 +34,9 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
         pokemon_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching Pokémon: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_basic", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Pokémon '{}' not found. HTTP {}",
-            pokemon_name,
-            response.status()
-        );
-        log_tool_result("fetch_pokemon_basic", &err);
-        return Ok(err);
-    }
-
-    let data: PokemonData = match response.json().await {
+    let data: PokemonData = match crate::utils::fetch_json(&url, "fetch_pokemon_basic").await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!("Error parsing Pokémon data: {}. Please try again later.", e);
-            log_tool_result("fetch_pokemon_basic", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let name = capitalize(&data.name);
@@ -76,8 +50,8 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> ToolResult<String> {
         .iter()
         .map(|a| a.ability.name.clone())
         .collect();
-    let height = data.height as f32 / 10.0; // decimeters to meters
-    let weight = data.weight as f32 / 10.0; // hectograms to kg
+    let height = data.height as f32 / 10.0;
+    let weight = data.weight as f32 / 10.0;
 
     let result = format!(
         "Name: {}\nTypes: {}\nHeight: {:.1}m\nWeight: {:.1}kg\nAbilities: {}",
@@ -125,38 +99,9 @@ pub async fn fetch_pokemon_stats(pokemon_name: String) -> ToolResult<String> {
         pokemon_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching Pokémon stats: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_stats", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Pokémon '{}' not found. HTTP {}",
-            pokemon_name,
-            response.status()
-        );
-        log_tool_result("fetch_pokemon_stats", &err);
-        return Ok(err);
-    }
-
-    let data: PokemonData = match response.json().await {
+    let data: PokemonData = match crate::utils::fetch_json(&url, "fetch_pokemon_stats").await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!(
-                "Error parsing Pokémon stats: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_stats", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let name = capitalize(&data.name);
@@ -219,38 +164,9 @@ pub async fn fetch_pokemon_moves(pokemon_name: String, limit: u32) -> ToolResult
         pokemon_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching Pokémon moves: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_moves", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Pokémon '{}' not found. HTTP {}",
-            pokemon_name,
-            response.status()
-        );
-        log_tool_result("fetch_pokemon_moves", &err);
-        return Ok(err);
-    }
-
-    let data: PokemonData = match response.json().await {
+    let data: PokemonData = match crate::utils::fetch_json(&url, "fetch_pokemon_moves").await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!(
-                "Error parsing Pokémon moves: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_moves", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let name = capitalize(&data.name);
@@ -307,70 +223,16 @@ pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String>
         pokemon_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&species_url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching Pokémon species: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_evolution", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Pokémon species '{}' not found. HTTP {}",
-            pokemon_name,
-            response.status()
-        );
-        log_tool_result("fetch_pokemon_evolution", &err);
-        return Ok(err);
-    }
-
-    let species: SpeciesData = match response.json().await {
+    let species: SpeciesData = match crate::utils::fetch_json(&species_url, "fetch_pokemon_evolution").await {
         Ok(s) => s,
-        Err(e) => {
-            let err = format!("Error parsing species data: {}. Please try again later.", e);
-            log_tool_result("fetch_pokemon_evolution", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let evo_url = &species.evolution_chain.url;
 
-    let evo_response = match reqwest::get(evo_url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching evolution chain: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_evolution", &err);
-            return Ok(err);
-        }
-    };
-
-    if !evo_response.status().is_success() {
-        let err = format!(
-            "Error fetching evolution chain: HTTP {}",
-            evo_response.status()
-        );
-        log_tool_result("fetch_pokemon_evolution", &err);
-        return Ok(err);
-    }
-
-    let chain: EvolutionChain = match evo_response.json().await {
+    let chain: EvolutionChain = match crate::utils::fetch_json(evo_url, "fetch_pokemon_evolution").await {
         Ok(c) => c,
-        Err(e) => {
-            let err = format!(
-                "Error parsing evolution chain: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_evolution", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let formatted = format_evolution_chain(&chain.chain, 0);
@@ -409,35 +271,9 @@ pub async fn fetch_ability_details(ability_name: String) -> ToolResult<String> {
         ability_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching ability: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_ability_details", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Ability '{}' not found. HTTP {}",
-            ability_name,
-            response.status()
-        );
-        log_tool_result("fetch_ability_details", &err);
-        return Ok(err);
-    }
-
-    let data: AbilityData = match response.json().await {
+    let data: AbilityData = match crate::utils::fetch_json(&url, "fetch_ability_details").await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!("Error parsing ability data: {}. Please try again later.", e);
-            log_tool_result("fetch_ability_details", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let name = data
@@ -504,35 +340,9 @@ pub async fn fetch_type_effectiveness(type_name: String) -> ToolResult<String> {
         type_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching type: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_type_effectiveness", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Type '{}' not found. HTTP {}",
-            type_name,
-            response.status()
-        );
-        log_tool_result("fetch_type_effectiveness", &err);
-        return Ok(err);
-    }
-
-    let data: TypeData = match response.json().await {
+    let data: TypeData = match crate::utils::fetch_json(&url, "fetch_type_effectiveness").await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!("Error parsing type data: {}. Please try again later.", e);
-            log_tool_result("fetch_type_effectiveness", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let dr = &data.damage_relations;
@@ -607,35 +417,9 @@ pub async fn fetch_pokemon_by_type(type_name: String, limit: Option<String>) -> 
         type_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching type: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon_by_type", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Type '{}' not found. HTTP {}",
-            type_name,
-            response.status()
-        );
-        log_tool_result("fetch_pokemon_by_type", &err);
-        return Ok(err);
-    }
-
-    let data: TypeData = match response.json().await {
+    let data: TypeData = match crate::utils::fetch_json(&url, "fetch_pokemon_by_type").await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!("Error parsing type data: {}. Please try again later.", e);
-            log_tool_result("fetch_pokemon_by_type", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let total = data.pokemon.len();
@@ -691,35 +475,9 @@ pub async fn fetch_move_details(move_name: String) -> ToolResult<String> {
         move_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching move: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_move_details", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Move '{}' not found. HTTP {}",
-            move_name,
-            response.status()
-        );
-        log_tool_result("fetch_move_details", &err);
-        return Ok(err);
-    }
-
-    let data: MoveData = match response.json().await {
+    let data: MoveData = match crate::utils::fetch_json(&url, "fetch_move_details").await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!("Error parsing move data: {}. Please try again later.", e);
-            log_tool_result("fetch_move_details", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let name = data
@@ -791,35 +549,9 @@ pub async fn fetch_pokemon(pokemon_name: String) -> ToolResult<String> {
         pokemon_name.to_lowercase()
     );
 
-    let response = match reqwest::get(&url).await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = format!(
-                "Network error while fetching Pokémon: {}. Please try again later.",
-                e
-            );
-            log_tool_result("fetch_pokemon", &err);
-            return Ok(err);
-        }
-    };
-
-    if !response.status().is_success() {
-        let err = format!(
-            "Error: Pokémon '{}' not found. HTTP {}",
-            pokemon_name,
-            response.status()
-        );
-        log_tool_result("fetch_pokemon", &err);
-        return Ok(err);
-    }
-
-    let data: PokemonData = match response.json().await {
+    let data: PokemonData = match crate::utils::fetch_json(&url, "fetch_pokemon").await {
         Ok(d) => d,
-        Err(e) => {
-            let err = format!("Error parsing Pokémon data: {}. Please try again later.", e);
-            log_tool_result("fetch_pokemon", &err);
-            return Ok(err);
-        }
+        Err(e) => return Ok(e),
     };
 
     let name = capitalize(&data.name);
@@ -843,25 +575,20 @@ pub async fn fetch_pokemon(pokemon_name: String) -> ToolResult<String> {
         .collect();
     let total_stats: u32 = stats.values().sum();
 
-    // Fetch ability details for first 3 abilities
     let mut ability_details = Vec::new();
     for ability_name in abilities.iter().take(3) {
         let url = format!("https://pokeapi.co/api/v2/ability/{}/", ability_name);
-        match reqwest::get(&url).await {
-            Ok(response) if response.status().is_success() => {
-                if let Ok(ability_data) = response.json::<AbilityData>().await {
-                    let effect = ability_data
-                        .effect_entries
-                        .iter()
-                        .find(|e| e.language.name == "en")
-                        .map(|e| e.short_effect.clone())
-                        .unwrap_or_else(|| "No description.".to_string());
-                    ability_details.push(format!("  - {}: {}", ability_name, effect));
-                } else {
-                    ability_details.push(format!("  - {}", ability_name));
-                }
+        match crate::utils::fetch_json::<AbilityData>(&url, "fetch_pokemon").await {
+            Ok(ability_data) => {
+                let effect = ability_data
+                    .effect_entries
+                    .iter()
+                    .find(|e| e.language.name == "en")
+                    .map(|e| e.short_effect.clone())
+                    .unwrap_or_else(|| "No description.".to_string());
+                ability_details.push(format!("  - {}: {}", ability_name, effect));
             }
-            _ => {
+            Err(_) => {
                 ability_details.push(format!("  - {}", ability_name));
             }
         }

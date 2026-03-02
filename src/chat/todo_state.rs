@@ -198,31 +198,6 @@ impl TodoState {
 
         output
     }
-
-    /// Format the todo list for system prompt inclusion
-    /// Returns None if the list is empty
-    pub fn format_for_prompt(&self) -> Option<String> {
-        if self.tasks.is_empty() {
-            return None;
-        }
-
-        let mut output = String::new();
-        output.push_str("### CURRENT TASKS\n\n");
-        output.push_str("You are tracking the following tasks:\n\n");
-
-        for task in &self.tasks {
-            output.push_str(&format!(
-                "{} {} ({}): {}\n",
-                task.status_symbol(),
-                task.id,
-                task.status,
-                task.description
-            ));
-        }
-
-        output.push_str("\n### END TASKS\n");
-        Some(output)
-    }
 }
 
 #[cfg(test)]
@@ -357,23 +332,6 @@ mod tests {
         assert!(formatted.contains("✓"));
         assert!(formatted.contains("Task 1"));
         assert!(formatted.contains("Stats: 0 pending, 0 in progress, 1 done"));
-    }
-
-    #[test]
-    fn test_todo_state_format_for_prompt() {
-        let mut state = TodoState::new();
-
-        // Empty state returns None
-        assert!(state.format_for_prompt().is_none());
-
-        // With tasks returns Some
-        state.add("Task 1".to_string());
-        state.update_status(1, TaskStatus::InProgress).unwrap();
-
-        let prompt = state.format_for_prompt().unwrap();
-        assert!(prompt.contains("CURRENT TASKS"));
-        assert!(prompt.contains("► 1 (in_progress): Task 1"));
-        assert!(prompt.contains("END TASKS"));
     }
 
     #[test]
