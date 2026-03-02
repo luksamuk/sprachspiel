@@ -157,33 +157,246 @@ This makes **Token-Based Pruning + Middle Compaction** viable without losing cri
 ## Embeddings Research (New High Priority Task)
 
 **Priority:** HIGH (after To-Do List)  
+**Status:** Model research complete, implementation research pending
+
+### Model Research ✅
+
+#### Primary: nomic-embed-text-v2-moe (Multilingual)
+
+| Aspect | Value |
+|--------|-------|
+| **Size** | 958 MB |
+| **Parameters** | 475M total, 305M active (MoE) |
+| **Context Window** | 512 tokens |
+| **Dimensions** | 768 (flexible: 768 → 256 via Matryoshka) |
+| **Languages** | ~100 languages |
+| **Training** | 1.6B multilingual pairs |
+
+**Best for:** Multilingual conversations, Portuguese/English mixed context
+
+**Key Features:**
+- Mixture of Experts (8 experts, top-2 routing)
+- Matryoshka embeddings: use 256-dim for 3x storage savings
+- SoTA multilingual performance (MIRACL: 65.80)
+- Fully open-source (weights, code, training data)
+
+**Benchmark Comparison:**
+```
+Model                | Params | Dim  | BEIR  | MIRACL
+---------------------|--------|------|-------|--------
+nomic-embed-text-v2  | 305M   | 768  | 52.86 | 65.80 ✅
+mE5 Base             | 278M   | 768  | 48.88 | 62.30
+mGTE Base            | 305M   | 768  | 51.10 | 63.40
+Arctic Embed v2 Base | 305M   | 768  | 55.40 | 59.90
+BGE M3               | 568M   | 1024 | 48.80 | 69.20
+```
+
+#### Alternative: nomic-embed-text (English-only)
+
+| Aspect | Value |
+|--------|-------|
+| **Size** | 274 MB |
+| **Context Window** | 2048 tokens |
+| **Dimensions** | 768 |
+| **Languages** | English only |
+
+**Best for:** English-only context, longer documents
+
+**Key Features:**
+- 4x longer context window (2048 vs 512 tokens)
+- Surpasses OpenAI text-embedding-ada-002
+- Surpasses text-embedding-3-small
+- Smaller footprint (274MB vs 958MB)
+
+**Comparison:**
+```
+Model                  | Size  | Context | Languages | Use Case
+-----------------------|-------|---------|-----------|------------------
+nomic-embed-text-v2-moe| 958MB | 512     | 100       | Multilingual
+nomic-embed-text       | 274MB | 2048    | English   | Long English docs
+```
+
+### Usage Patterns
+
+#### Prefix Conventions (nomic-embed-text-v2-moe only)
+
+```rust
+// REQUIRED for v2-moe - add appropriate prefixes
+let query = "search_query: Como fazer X em Rust?";
+let doc = "search_document: Guia completo de X em Rust...";
+
+// NOT required for nomic-embed-text (v1)
+```
+
+#### Dimension Optimization
+
+```rust
+// Full precision (768d) - maximum quality
+let embedding_dim = 768;  // ~3KB per message
+
+// Matryoshka reduction (256d) - 3x storage savings
+let embedding_dim = 256;  // ~1KB per message
+// Performance degradation: ~5-10% on most benchmarks
+```
+
+### Integration with ollama-rs
+
+The `ollama-rs` library (v0.3.4+) has native embedding support:
+
+```rust
+use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
+
+// Single embedding
+let request = GenerateEmbeddingsRequest::new(
+    "nomic-embed-text-v2-moe:latest".to_string(),
+    "search_query: your text here".into()
+);
+let res = ollama.generate_embeddings(request).await?;
+
+// Batch embeddings (multiple texts at once)
+let request = GenerateEmbeddingsRequest::new(
+    "nomic-embed-text-v2-moe:latest".to_string(),
+    vec!["text 1", "text 2", "text 3"].into()
+);
+let res = ollama.generate_embeddings(request).await?;
+```
+
+### Recommended Configuration
+
+```rust
+// src/config.rs - add embedding model config
+configs.insert(
+    "nomic-embed",
+    ModelConfig {
+        model_id: "nomic-embed-text-v2-moe:latest".to_string(),
+        num_ctx: 512,     // Max for v2-moe
+        embedding_dim: 256, // Optimized for storage
+        // ... temperature not applicable for embedding models
+    },
+);
+```
+
+---
+
+### Implementation Research (Pending)
+
+#### Rust Integration ✅
+
+**Already solved via `ollama-rs`:**
+
+The project already depends on `ollama-rs` (v0.3.4+) which has native embedding support:
+
+```rust
+use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
+
+// Single embedding
+let request = GenerateEmbeddingsRequest::new(
+    "nomic-embed-text-v2-moe:latest".to_string(),
+    "search_query: your text here".into()
+);
+let res = ollama.generate_embeddings(request).await?;
+
+// Batch embeddings
+let request = GenerateEmbeddingsRequest::new(
+    "nomic-embed-text-v2-moe:latest".to_string(),
+    vec!["text 1", "text 2", "text 3"].into()
+);
+let res = ollama.generate_embeddings(request).await?;
+```
+
+**No additional crates needed** - `ollama-rs` handles all embedding operations via Ollama API.
+
+#### SQLite Vector Extensions
+
 **Status:** Research needed
 
-### Tasks
+**sqlite-vec:**
+- Pure C extension, minimal dependencies
+- Supports cosine similarity, L2 distance
+- Binary blob storage for vectors
+- Works with SQLite's BLOB type
+- GitHub: https://github.com/asg017/sqlite-vec
 
-- [ ] Evaluate Rust embedding crates
-  - [ ] `ort` (ONNX Runtime) - production-ready, maintained
-  - [ ] `candle` (Hugging Face) - pure Rust, flexible
-  - [ ] `rust-bert` - BERT in Rust
-  
-- [ ] Evaluate local embedding models
-  - [ ] all-MiniLM-L6-v2 (384d, 80MB) - fast, good quality
-  - [ ] all-mpnet-base-v2 (768d, 420MB) - better quality
-  - [ ] nomic-embed-text-v1 (768d, 520MB) - open source
-  
-- [ ] Evaluate SQLite vector extensions
-  - [ ] sqlite-vec (recommended)
-  - [ ] sqlite-vss (alternative)
-  
-- [ ] Architecture design
-  - [ ] Embedding generation timing (on message creation vs batch)
-  - [ ] Storage schema (messages + embeddings)
-  - [ ] Query interface for semantic retrieval
-  
-- [ ] Performance testing
-  - [ ] Embedding latency
-  - [ ] Storage requirements
-  - [ ] Query latency for similarity search
+**sqlite-vss:**
+- Alternative extension
+- More features, heavier dependencies
+- May have compatibility issues
+
+**Storage Estimation:**
+```
+Per message storage:
+- 768 dimensions × 4 bytes (f32) = ~3 KB
+- 256 dimensions × 4 bytes (f32) = ~1 KB
+
+For 1000 messages:
+- 768d: ~3 MB
+- 256d: ~1 MB
+```
+
+#### Architecture Design
+
+**Status:** Research needed
+
+**Key Questions:**
+1. **Embedding Generation Timing**
+   - On message creation (real-time, higher latency)
+   - Batch mode (background job, lower overhead)
+   
+2. **Storage Schema**
+   - Session-based or global?
+   - Embedding per message or per conversation turn?
+   - Metadata to store (timestamp, role, topic?)
+   
+3. **Query Interface**
+   - Similarity search API
+   - Integration with context builder
+   - Threshold configuration
+   
+4. **Dimension Selection**
+   - 768d: Maximum quality
+   - 256d: 3x storage savings, ~5-10% quality loss
+
+#### Performance Testing
+
+**Status:** Not started
+
+**Metrics to measure:**
+- Embedding latency (Ollama API call)
+- Storage requirements (per dimension)
+- Query latency for similarity search
+- Memory usage during search
+
+---
+
+### Task Checklist
+
+#### Model Selection ✅
+- [x] Evaluate nomic-embed-text-v2-moe (958MB, multilingual, SoTA)
+- [x] Evaluate nomic-embed-text (274MB, English, long context)
+- [x] Compare benchmarks (BEIR, MIRACL)
+
+#### Rust Integration ✅
+- [x] Use ollama-rs for embeddings (no additional crates needed)
+- [x] Document `generate_embeddings` API usage
+- [x] Document batch embedding support
+
+#### SQLite & Storage (Pending)
+- [ ] Research sqlite-vec API and Rust bindings
+- [ ] Research sqlite-vss as alternative
+- [ ] Design storage schema for embeddings
+- [ ] Prototype vector similarity queries
+
+#### Architecture (Pending)
+- [ ] Design embedding generation pipeline
+- [ ] Design context retrieval API
+- [ ] Decide: real-time vs batch embedding
+- [ ] Decide: 768d vs 256d dimensions
+
+#### Performance (Pending)
+- [ ] Benchmark embedding latency
+- [ ] Benchmark similarity search latency
+- [ ] Measure storage overhead
+- [ ] Test with 10/100/1000 message sessions
 
 ---
 

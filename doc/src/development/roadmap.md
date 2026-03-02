@@ -153,26 +153,32 @@ fn count_tokens(messages: &[Message], model: &str) -> usize {
 ### Context Management v2 - Embeddings Research
 
 **Priority:** HIGH  
-**Status:** Research needed
+**Status:** Research in progress
 
-**Rationale:** Required for semantic retrieval (Phase 4 of context management). Research now, implement later.
+**Rationale:** Required for semantic retrieval (Phase 4 of context management). Model research complete, remaining tasks pending.
 
 **Goal:** Enable semantic retrieval of conversation history for intelligent context selection.
 
-**Research Tasks:**
-- [ ] Evaluate Rust embedding crates
-  - [ ] `ort` (ONNX Runtime) - production-ready
-  - [ ] `candle` (Hugging Face) - pure Rust
-  - [ ] `rust-bert` - BERT in Rust
-- [ ] Evaluate local embedding models
-  - [ ] all-MiniLM-L6-v2 (384d, 80MB) - fast
-  - [ ] all-mpnet-base-v2 (768d, 420MB) - better quality
-  - [ ] nomic-embed-text-v1 (768d, 520MB) - open source
+**Model Research:** ✅ Complete - See `context_v2_plan.md` for details
+
+| Model | Size | Context | Languages | Use Case |
+|-------|------|---------|-----------|----------|
+| **nomic-embed-text-v2-moe** | 958MB | 512 | 100 | Multilingual (primary) |
+| nomic-embed-text | 274MB | 2048 | English | Long English docs |
+
+**Rust Integration:** ✅ Complete - `ollama-rs` provides native embedding support via `generate_embeddings`
+
+**Remaining Research Tasks:**
 - [ ] Evaluate SQLite vector extensions
   - [ ] sqlite-vec (recommended)
   - [ ] sqlite-vss (alternative)
 - [ ] Design: Storage schema and query interface
-- [ ] Test: Performance and latency benchmarks
+- [ ] Design: Dimension selection (768 vs 256)
+- [ ] Test: Embedding latency (Ollama API call)
+- [ ] Test: Storage requirements per dimension
+- [ ] Test: Query latency for similarity search
+
+**Detailed Research:** `doc/src/development/context_v2_plan.md`
 
 ---
 
