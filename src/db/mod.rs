@@ -9,7 +9,7 @@ mod schema;
 
 pub use connection::Database;
 pub use migration::{migrate_project, migrate_session, reindex_conversation};
-pub use operations::{SearchResult, SearchType};
+pub use operations::{SearchResult, SearchType, reciprocal_rank_fusion};
 
 /// Initialize sqlite-vec extension globally.
 /// Must be called once at startup before any database operations.

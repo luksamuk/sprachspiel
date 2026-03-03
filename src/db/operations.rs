@@ -463,7 +463,7 @@ impl Database {
 ///
 /// Combines multiple ranked lists into a single ranked list.
 /// RRF score = Σ (weight_i / (k + rank_i)) where k is typically 60
-fn reciprocal_rank_fusion(
+pub fn reciprocal_rank_fusion(
     keyword_results: Vec<SearchResult>,
     semantic_results: Vec<SearchResult>,
     keyword_weight: f32,

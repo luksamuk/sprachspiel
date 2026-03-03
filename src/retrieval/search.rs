@@ -5,7 +5,7 @@
 use chrono::{DateTime, Utc};
 use ollama_rs::Ollama;
 
-use crate::db::{Database, SearchResult, SearchType};
+use crate::db::{Database, SearchResult, SearchType, reciprocal_rank_fusion};
 use crate::embeddings::EmbeddingClient;
 
 /// Search result with formatted output
@@ -120,12 +120,59 @@ pub async fn run_search(
     conversation_id: Option<&str>,
     limit: usize,
 ) {
-    match search_conversations(db, ollama, query, conversation_id, limit).await {
-        Ok(results) => {
-            display_results(&results);
+    // Debug: Show search parameters
+    eprintln!("\x1B[90m[debug] Search params:\x1B[0m");
+    eprintln!("\x1B[90m  query: \"{}\"\x1B[0m", query);
+    eprintln!("\x1B[90m  conversation_id: {:?}\x1B[0m", conversation_id);
+    eprintln!("\x1B[90m  limit: {}\x1B[0m", limit);
+    
+    // Generate embedding for query
+    let embedding_client = EmbeddingClient::new(ollama.clone());
+    
+    eprintln!("\x1B[90m[debug] Generating embedding for query...\x1B[0m");
+    let embedding = match embedding_client.embed(query).await {
+        Ok(emb) => {
+            eprintln!("\x1B[90m[debug] Embedding generated ({} dimensions)\x1B[0m", emb.len());
+            emb
         }
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("\x1B[31mError: Failed to generate embedding: {}\x1B[0m", e);
+            return;
         }
-    }
+    };
+
+    // Perform keyword search (BM25)
+    eprintln!("\x1B[90m[debug] Running keyword search (BM25)...\x1B[0m");
+    let keyword_results = match db.search_keyword(query, conversation_id, limit) {
+        Ok(results) => {
+            eprintln!("\x1B[90m[debug] Keyword search found {} results\x1B[0m", results.len());
+            results
+        }
+        Err(e) => {
+            eprintln!("\x1B[31mError: Keyword search failed: {}\x1B[0m", e);
+            Vec::new()
+        }
+    };
+
+    // Perform semantic search (vector similarity)
+    eprintln!("\x1B[90m[debug] Running semantic search (vector)...\x1B[0m");
+    let semantic_results = match db.search_semantic(&embedding, conversation_id, limit) {
+        Ok(results) => {
+            eprintln!("\x1B[90m[debug] Semantic search found {} results\x1B[0m", results.len());
+            results
+        }
+        Err(e) => {
+            eprintln!("\x1B[31mError: Semantic search failed: {}\x1B[0m", e);
+            Vec::new()
+        }
+    };
+
+    // Combine with RRF
+    eprintln!("\x1B[90m[debug] Combining results with RRF (keyword=0.4, semantic=0.6)...\x1B[0m");
+    let results = reciprocal_rank_fusion(keyword_results, semantic_results, 0.4, 0.6, limit);
+    eprintln!("\x1B[90m[debug] Final combined results: {}\x1B[0m", results.len());
+
+    // Convert to formatted results
+    let formatted: Vec<FormattedResult> = results.into_iter().map(FormattedResult::from).collect();
+    display_results(&formatted);
 }

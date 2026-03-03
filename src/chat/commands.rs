@@ -398,7 +398,7 @@ fn print_help() {
   /list            List saved sessions for this project
   /info            Show current session information
   /context         Show context metrics and token usage
-  /search <query>  Search conversation history (hybrid: keyword + semantic)
+  /search <query>  Search current conversation (keyword + semantic)
   /migrate [id]    Migrate session(s) to SQLite for semantic search
   /reindex [id]    Rebuild embeddings for semantic search
   /retrieval       Toggle semantic retrieval from conversation history
