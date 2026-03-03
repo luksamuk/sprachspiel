@@ -19,12 +19,6 @@ use crate::embeddings::EmbeddingClient;
 /// Minimum messages before auto-retrieval activates
 pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 5;
 
-/// Minimum messages for forced retrieval after /clear (DEPRECATED)
-/// Now we compare DB count vs session count, so this is no longer used.
-/// Kept for documentation and potential future use.
-#[allow(dead_code)]
-pub const MIN_RETRIEVAL_FORCE_COUNT: usize = 2;
-
 /// Number of semantically relevant messages to retrieve
 pub const RELEVANT_MESSAGES_COUNT: usize = 5;
 

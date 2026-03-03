@@ -168,19 +168,6 @@ impl ChatSession {
         }
     }
 
-    /// Create a new named session
-    #[allow(dead_code)]
-    pub fn new_named(
-        name: String,
-        model: String,
-        project_id: Option<String>,
-        anonymous: bool,
-    ) -> Self {
-        let mut session = Self::new(model, project_id, anonymous);
-        session.name = Some(name);
-        session
-    }
-
     /// Load a session from storage
     pub fn load(
         storage: &ConversationStorage,

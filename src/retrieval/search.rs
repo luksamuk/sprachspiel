@@ -74,18 +74,18 @@ pub fn display_results(results: &[FormattedResult]) {
             let prefix = if start > 0 { "..." } else { "" };
             let suffix = if end < result.content.len() as i32 { "..." } else { "" };
             
-            // Truncate chunk if too long for display
-            let chunk_display = if chunk.len() > 400 {
-                format!("{}...", &chunk[..400])
+            // Truncate chunk if too long for display (respect UTF-8 boundaries)
+            let chunk_display = if chunk.chars().count() > 400 {
+                format!("{}...", chunk.chars().take(400).collect::<String>())
             } else {
                 chunk.clone()
             };
             
             format!("{}{}{}", prefix, chunk_display, suffix)
         } else {
-            // Full message matched - truncate for display
-            if result.content.len() > 300 {
-                format!("{}...", &result.content[..300])
+            // Full message matched - truncate for display (respect UTF-8 boundaries)
+            if result.content.chars().count() > 300 {
+                format!("{}...", result.content.chars().take(300).collect::<String>())
             } else {
                 result.content.clone()
             }

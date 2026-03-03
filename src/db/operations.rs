@@ -437,8 +437,7 @@ impl Database {
 
     /// Delete a conversation and all its messages
     ///
-    /// Future use: Conversation management commands (delete, archive).
-    #[allow(dead_code)]
+    /// Used by /forget command to completely remove conversation history.
     pub fn delete_conversation(&self, conversation_id: &str) -> Result<()> {
         self.with_connection(|conn: &rusqlite::Connection| {
             // Embeddings are deleted via CASCADE
@@ -498,6 +497,8 @@ impl Database {
     }
 
     /// Check if a conversation exists
+    ///
+    /// Used by tests to verify conversation creation.
     #[allow(dead_code)]
     pub fn conversation_exists(&self, conversation_id: &str) -> Result<bool> {
         self.with_connection(|conn: &rusqlite::Connection| {
@@ -538,8 +539,7 @@ impl Database {
 
     /// Get all messages without embeddings for reindexing
     ///
-    /// Future use: `/reindex all` command to generate missing embeddings.
-    #[allow(dead_code)]
+    /// Used by recovery manager to generate missing embeddings.
     pub fn get_messages_for_reindex(&self) -> Result<Vec<SearchResult>> {
         self.with_connection(|conn: &rusqlite::Connection| {
             let mut results = Vec::new();
