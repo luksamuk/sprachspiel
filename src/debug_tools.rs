@@ -82,7 +82,7 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
 pub fn log_debug(msg: &str) {
     if is_debug_enabled() {
         suspend_for_print(|| {
-            eprintln!("[DEBUG] {}", msg);
+            eprintln!("\x1B[90m[DEBUG] {}\x1B[0m", msg);
         });
     }
 }

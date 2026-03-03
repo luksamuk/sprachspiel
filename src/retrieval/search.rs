@@ -4,8 +4,10 @@
 
 use chrono::{DateTime, Utc};
 use ollama_rs::Ollama;
+use termimad::print_text;
 
 use crate::db::{Database, SearchResult, SearchType, reciprocal_rank_fusion};
+use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
 
 /// Search result with formatted output
@@ -32,84 +34,50 @@ impl From<SearchResult> for FormattedResult {
     }
 }
 
-/// Search conversations using hybrid search (BM25 + semantic + RRF)
-///
-/// # Arguments
-/// * `db` - Database instance
-/// * `ollama` - Ollama client for embeddings
-/// * `query` - Search query
-/// * `conversation_id` - Optional conversation ID to search within
-/// * `limit` - Maximum number of results
-///
-/// # Returns
-/// Formatted search results or error message
-pub async fn search_conversations(
-    db: &Database,
-    ollama: &Ollama,
-    query: &str,
-    conversation_id: Option<&str>,
-    limit: usize,
-) -> Result<Vec<FormattedResult>, String> {
-    // Generate embedding for query
-    let embedding_client = EmbeddingClient::new(ollama.clone());
-    
-    let embedding = embedding_client
-        .embed(query)
-        .await
-        .map_err(|e| format!("Failed to generate embedding: {}", e))?;
-
-    // Perform hybrid search
-    let results = db
-        .search_hybrid(query, &embedding, conversation_id, limit, 0.4, 0.6)
-        .map_err(|e| format!("Search failed: {}", e))?;
-
-    // Convert to formatted results
-    Ok(results.into_iter().map(FormattedResult::from).collect())
-}
-
-/// Display search results in a readable format
+/// Display search results in a readable format with markdown
 pub fn display_results(results: &[FormattedResult]) {
     if results.is_empty() {
         println!("No results found.");
         return;
     }
 
-    println!("\n**Search Results** ({} found)\n", results.len());
+    let mut output = String::new();
+    output.push_str(&format!("**Search Results** ({} found)\n\n", results.len()));
 
     for (i, result) in results.iter().enumerate() {
-        let type_icon = match result.search_type {
-            SearchType::Keyword => "🔍",
-            SearchType::Semantic => "🧠",
-            SearchType::Hybrid => "🔗",
+        let type_str = match result.search_type {
+            SearchType::Keyword => "🔍 Keyword",
+            SearchType::Semantic => "🧠 Semantic",
+            SearchType::Hybrid => "🔗 Hybrid",
         };
 
-        let role_icon = match result.role.as_str() {
-            "user" => "👤",
-            "assistant" => "🤖",
-            "system" => "⚙️",
-            "tool" => "🔧",
-            _ => "📝",
+        let role_str = match result.role.as_str() {
+            "user" => "👤 **User**",
+            "assistant" => "🤖 **Assistant**",
+            "system" => "⚙️ **System**",
+            "tool" => "🔧 **Tool**",
+            _ => &format!("📝 **{}**", result.role),
         };
 
-        println!(
-            "{}. {} {} **{}** (score: {:.4})",
-            i + 1,
-            type_icon,
-            role_icon,
-            result.role,
-            result.score
-        );
+        output.push_str(&format!("{}. {} — {} (score: {:.4})\n", i + 1, type_str, role_str, result.score));
 
         // Truncate content for display
-        let content = if result.content.len() > 200 {
-            format!("{}...", &result.content[..200])
+        let content = if result.content.len() > 300 {
+            format!("{}...", &result.content[..300])
         } else {
             result.content.clone()
         };
-
-        println!("   {}", content.replace('\n', "\n   "));
-        println!("   _{}_ _{}_\n", result.conversation_id, result.timestamp.format("%Y-%m-%d %H:%M"));
+        
+        // Format content with indentation
+        output.push_str("```\n");
+        for line in content.lines() {
+            output.push_str(&format!("  {}\n", line));
+        }
+        output.push_str("```\n");
+        output.push_str(&format!("_{} — {}_\n\n", result.conversation_id, result.timestamp.format("%Y-%m-%d %H:%M")));
     }
+
+    print_text(&output);
 }
 
 /// Run an interactive search session
@@ -121,18 +89,16 @@ pub async fn run_search(
     limit: usize,
 ) {
     // Debug: Show search parameters
-    eprintln!("\x1B[90m[debug] Search params:\x1B[0m");
-    eprintln!("\x1B[90m  query: \"{}\"\x1B[0m", query);
-    eprintln!("\x1B[90m  conversation_id: {:?}\x1B[0m", conversation_id);
-    eprintln!("\x1B[90m  limit: {}\x1B[0m", limit);
+    log_debug(&format!("Search params:\n  query: \"{}\"\n  conversation_id: {:?}\n  limit: {}", 
+        query, conversation_id, limit));
     
     // Generate embedding for query
     let embedding_client = EmbeddingClient::new(ollama.clone());
     
-    eprintln!("\x1B[90m[debug] Generating embedding for query...\x1B[0m");
+    log_debug("Generating embedding for query...");
     let embedding = match embedding_client.embed(query).await {
         Ok(emb) => {
-            eprintln!("\x1B[90m[debug] Embedding generated ({} dimensions)\x1B[0m", emb.len());
+            log_debug(&format!("Embedding generated ({} dimensions)", emb.len()));
             emb
         }
         Err(e) => {
@@ -142,10 +108,10 @@ pub async fn run_search(
     };
 
     // Perform keyword search (BM25)
-    eprintln!("\x1B[90m[debug] Running keyword search (BM25)...\x1B[0m");
+    log_debug("Running keyword search (BM25)...");
     let keyword_results = match db.search_keyword(query, conversation_id, limit) {
         Ok(results) => {
-            eprintln!("\x1B[90m[debug] Keyword search found {} results\x1B[0m", results.len());
+            log_debug(&format!("Keyword search found {} results", results.len()));
             results
         }
         Err(e) => {
@@ -155,10 +121,10 @@ pub async fn run_search(
     };
 
     // Perform semantic search (vector similarity)
-    eprintln!("\x1B[90m[debug] Running semantic search (vector)...\x1B[0m");
+    log_debug("Running semantic search (vector)...");
     let semantic_results = match db.search_semantic(&embedding, conversation_id, limit) {
         Ok(results) => {
-            eprintln!("\x1B[90m[debug] Semantic search found {} results\x1B[0m", results.len());
+            log_debug(&format!("Semantic search found {} results", results.len()));
             results
         }
         Err(e) => {
@@ -168,9 +134,9 @@ pub async fn run_search(
     };
 
     // Combine with RRF
-    eprintln!("\x1B[90m[debug] Combining results with RRF (keyword=0.4, semantic=0.6)...\x1B[0m");
+    log_debug("Combining results with RRF (keyword=0.4, semantic=0.6)...");
     let results = reciprocal_rank_fusion(keyword_results, semantic_results, 0.4, 0.6, limit);
-    eprintln!("\x1B[90m[debug] Final combined results: {}\x1B[0m", results.len());
+    log_debug(&format!("Final combined results: {}", results.len()));
 
     // Convert to formatted results
     let formatted: Vec<FormattedResult> = results.into_iter().map(FormattedResult::from).collect();
