@@ -219,6 +219,9 @@ impl Database {
     }
 
     /// Search messages using vector similarity
+    ///
+    /// Note: sqlite-vec requires `k = ?` syntax for KNN queries, not LIMIT.
+    /// See: https://github.com/asg017/sqlite-vec
     pub fn search_semantic(
         &self,
         embedding: &[f32],
@@ -227,18 +230,28 @@ impl Database {
     ) -> Result<Vec<SearchResult>> {
         self.with_connection(|conn: &rusqlite::Connection| {
             let embedding_bytes = embedding.as_bytes();
-            let mut results = Vec::new();
 
+            // sqlite-vec uses `k = ?` in WHERE clause, not LIMIT
             let sql = match conversation_id {
-                Some(conv_id) => {
-                    let sql = r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance
+                Some(_) => {
+                    r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance
                         FROM message_embeddings me
                         JOIN messages m ON me.message_id = m.id
-                        WHERE me.embedding MATCH ?1 AND me.conversation_id = ?2
-                        ORDER BY distance ASC
-                        LIMIT ?3"#;
-                    let mut stmt = conn.prepare(sql)?;
-                    let rows = stmt.query_map(params![embedding_bytes, conv_id, limit as i32], |row: &rusqlite::Row<'_>| {
+                        WHERE me.embedding MATCH ?1 AND me.k = ?2 AND me.conversation_id = ?3"#
+                }
+                None => {
+                    r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance
+                        FROM message_embeddings me
+                        JOIN messages m ON me.message_id = m.id
+                        WHERE me.embedding MATCH ?1 AND me.k = ?2"#
+                }
+            };
+
+            let mut stmt = conn.prepare(sql)?;
+
+            let results = match conversation_id {
+                Some(conv_id) => {
+                    let rows = stmt.query_map(params![embedding_bytes, limit as i32, conv_id], |row| {
                         Ok(SearchResult {
                             message_id: row.get(0)?,
                             conversation_id: row.get(1)?,
@@ -249,37 +262,24 @@ impl Database {
                             search_type: SearchType::Semantic,
                         })
                     })?;
-                    for r in rows {
-                        results.push(r?);
-                    }
-                    return Ok(results);
+                    rows.collect::<Result<Vec<_>>>()?
                 }
                 None => {
-                    r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance
-                        FROM message_embeddings me
-                        JOIN messages m ON me.message_id = m.id
-                        WHERE me.embedding MATCH ?1
-                        ORDER BY distance ASC
-                        LIMIT ?2"#
+                    let rows = stmt.query_map(params![embedding_bytes, limit as i32], |row| {
+                        Ok(SearchResult {
+                            message_id: row.get(0)?,
+                            conversation_id: row.get(1)?,
+                            role: row.get(2)?,
+                            content: row.get(3)?,
+                            timestamp: row.get(4)?,
+                            score: row.get::<_, f32>(5)?,
+                            search_type: SearchType::Semantic,
+                        })
+                    })?;
+                    rows.collect::<Result<Vec<_>>>()?
                 }
             };
 
-            let mut stmt = conn.prepare(sql)?;
-            let rows = stmt.query_map(params![embedding_bytes, limit as i32], |row: &rusqlite::Row<'_>| {
-                Ok(SearchResult {
-                    message_id: row.get(0)?,
-                    conversation_id: row.get(1)?,
-                    role: row.get(2)?,
-                    content: row.get(3)?,
-                    timestamp: row.get(4)?,
-                    score: row.get::<_, f32>(5)?,
-                    search_type: SearchType::Semantic,
-                })
-            })?;
-
-            for r in rows {
-                results.push(r?);
-            }
             Ok(results)
         })
     }
