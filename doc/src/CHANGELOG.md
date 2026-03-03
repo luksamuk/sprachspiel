@@ -2,6 +2,53 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.20.0] - 2026-03-03
+
+### Added
+
+- **Semantic Search** - New `/search` (alias `/find`, `/f`) command for chat
+  - Hybrid search combining BM25 (keyword) and semantic (vector similarity)
+  - Reciprocal Rank Fusion (RRF) for result ranking
+  - Search across all conversation history
+  - Usage: `/search <query>` or `/search <query> <limit>`
+  - Requires `nomic-embed-text-v2-moe` model from Ollama
+
+- **Database Module** - New SQLite storage with sqlite-vec extension
+  - `src/db/mod.rs` - Database initialization and exports
+  - `src/db/schema.rs` - SQL schema (conversations, messages, embeddings, FTS5)
+  - `src/db/connection.rs` - sqlite-vec global initialization
+  - `src/db/operations.rs` - CRUD operations and hybrid search
+  - Storage location: `~/.local/share/ask-ai/embeddings.db`
+
+- **Embeddings Module** - New embedding generation for semantic search
+  - `src/embeddings/client.rs` - Ollama embedding client
+  - `src/embeddings/truncate.rs` - Matryoshka truncation (768d → 256d)
+  - Validates embedding dimensions before truncation
+  - L2 normalization for cosine similarity
+
+- **Retrieval Module** - New search module
+  - `src/retrieval/search.rs` - Hybrid search implementation
+  - Formatted results with icons and metadata
+  - Integration with `/search` command
+
+- **FTS5 Query Sanitization** - SQL injection protection
+  - `fts5_escape()` function for safe FTS5 queries
+  - Wraps queries in double quotes, escapes embedded quotes
+  - Prevents FTS5 syntax errors and injection attacks
+
+### Dependencies
+
+- `rusqlite` 0.32 (bundled) - SQLite database
+- `sqlite-vec` 0.1 - Vector similarity extension
+- `zerocopy` 0.8 - Safe byte casting for embeddings
+
+### Technical
+
+- Embedding dimensions: 768 (full) → 256 (truncated, Matryoshka)
+- RRF weights: Keyword 0.4, Semantic 0.6
+- sqlite-vec KNN syntax: `WHERE embedding MATCH ? AND k = ?`
+- Database initialized on startup via `db::init()`
+
 ## [0.19.0] - 2026-03-02
 
 ### Added

@@ -35,3 +35,9 @@
 ---
 
 [Changelog](./CHANGELOG.md)
+
+---
+
+# Reference
+
+- [/search Command](./commands/search.md)

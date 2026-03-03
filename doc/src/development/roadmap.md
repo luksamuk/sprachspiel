@@ -32,6 +32,9 @@ This document outlines planned features and the current state of Ask-AI.
 - `/tools-output` for controlling tool verbosity
 - `/compact` for conversation summarization
 - `/retry` (alias `/r`) for regenerating last response
+- `/undo` for removing last response
+- `/search` (alias `/find`, `/f`) for semantic search
+- `/context` (alias `/ctx`) for token metrics
 - Tab completion for commands and models
 - Mode indicators in prompt (`[t]`, `[T]`)
 - Token metrics display
@@ -155,7 +158,7 @@ fn count_messages_tokens(messages: &[ChatMessage]) -> usize {
 ### Context Management v2 - Semantic Retrieval ✅
 
 **Priority:** HIGH  
-**Status:** Architecture decided, implementation pending
+**Status:** Completed (released in v0.20.0)
 
 **Goal:** Enable semantic retrieval of conversation history for intelligent context selection.
 
@@ -172,16 +175,20 @@ fn count_messages_tokens(messages: &[ChatMessage]) -> usize {
 
 **Storage Estimate:** ~20-30 MB for 10,000 messages
 
-**Implementation Tasks:**
-- [ ] Create `src/db/` module with sqlite-vec integration
-- [ ] Create `src/embeddings/` module with Ollama API
-- [ ] Create `src/retrieval/` module with hybrid search (RRF)
-- [ ] Add embedding generation on message save
-- [ ] Add similarity search API
-- [ ] Integrate with context builder
-- [ ] Add `/search <query>` command
-- [ ] Test incremental updates
-- [ ] Benchmark performance
+**Implemented:**
+- [x] Create `src/db/` module with sqlite-vec integration
+- [x] Create `src/embeddings/` module with Ollama API
+- [x] Create `src/retrieval/` module with hybrid search (RRF)
+- [x] Add `/search <query>` command
+- [x] FTS5 query sanitization for SQL injection protection
+- [x] Embedding dimension validation (768 → 256)
+
+**Pending (v0.21.0):**
+- [ ] Integrate with ChatSession (auto-save messages + embeddings)
+- [ ] Add `/migrate` command (JSON → SQLite)
+- [ ] Add `/reindex` command (rebuild embeddings)
+- [ ] Context overflow handling
+- [ ] Auto-retrieval (M recent + N relevant)
 
 **Dependencies:**
 ```toml
