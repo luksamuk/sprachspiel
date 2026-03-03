@@ -12,6 +12,7 @@ use crate::markdown;
 
 /// Search result with formatted output
 pub struct FormattedResult {
+    pub message_id: i64,
     pub conversation_id: String,
     pub role: String,
     pub content: String,
@@ -26,6 +27,7 @@ pub struct FormattedResult {
 impl From<SearchResult> for FormattedResult {
     fn from(result: SearchResult) -> Self {
         FormattedResult {
+            message_id: result.message_id,
             conversation_id: result.conversation_id,
             role: result.role,
             content: result.content,
@@ -161,7 +163,43 @@ pub async fn run_search(
     let results = reciprocal_rank_fusion(keyword_results, semantic_results, 0.4, 0.6, limit);
     log_debug(&format!("Final combined results: {}", results.len()));
 
-    // Convert to formatted results
-    let formatted: Vec<FormattedResult> = results.into_iter().map(FormattedResult::from).collect();
+    // Enrich results with conversation context
+    log_debug("Enriching results with assistant responses...");
+    let enriched_results = match db.enrich_with_context(results) {
+        Ok(r) => {
+            let enriched_count = r.iter().filter(|msg| msg.next_message.is_some()).count();
+            log_debug(&format!("Enriched {} results with assistant responses", enriched_count));
+            r
+        }
+        Err(e) => {
+            eprintln!("\x1B[33mWarning: Failed to enrich results: {}\x1B[0m", e);
+            // Return early on error - can't use results after move
+            return;
+        }
+    };
+
+    // Convert to formatted results with context
+    let formatted: Vec<FormattedResult> = enriched_results.into_iter().map(|msg| {
+        // If this message has a context (assistant response), include it
+        let content_with_context = if let Some(ref answer) = msg.next_message {
+            format!("{}\n\n--- Assistant Response ---\n{}", msg.content, answer.content)
+        } else {
+            msg.content.clone()
+        };
+
+        FormattedResult {
+            message_id: msg.message_id,
+            conversation_id: msg.conversation_id,
+            role: msg.role,
+            content: content_with_context,
+            timestamp: DateTime::from_timestamp(msg.timestamp, 0).unwrap_or_else(Utc::now),
+            score: msg.score,
+            search_type: msg.search_type,
+            chunk_content: msg.chunk_content,
+            chunk_start: msg.chunk_start,
+            chunk_end: msg.chunk_end,
+        }
+    }).collect();
+
     display_results(&formatted);
 }

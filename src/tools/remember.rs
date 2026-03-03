@@ -114,13 +114,33 @@ async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) 
             let timestamp = chrono::DateTime::from_timestamp(msg.timestamp, 0)
                 .unwrap_or_else(chrono::Utc::now);
 
-            format!(
+            let mut output = format!(
                 "**Message {}**\nRole: {}\nTimestamp: {}\n\n---\n{}\n---",
                 msg.message_id,
                 role_label,
                 timestamp.format("%Y-%m-%d %H:%M"),
                 msg.content
-            )
+            );
+
+            // If user message, also fetch the assistant response
+            if msg.role == "user" {
+                if let Ok(Some(answer)) = db.get_next_message_by_role(
+                    msg.message_id,
+                    &msg.conversation_id,
+                    "assistant",
+                ) {
+                    let answer_timestamp = chrono::DateTime::from_timestamp(answer.timestamp, 0)
+                        .unwrap_or_else(chrono::Utc::now);
+                    output.push_str(&format!(
+                        "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
+                        answer.message_id,
+                        answer_timestamp.format("%Y-%m-%d %H:%M"),
+                        answer.content
+                    ));
+                }
+            }
+
+            output
         }
         Ok(None) => format!(
             "Error: Message {} not found.\n\n\
@@ -177,10 +197,23 @@ async fn remember_by_query(
             .to_string();
     }
 
-    // Format results
-    let mut output = format!("**Found {} message(s)**\n\n", results.len());
+    // Enrich results with assistant responses
+    let enriched_results = match db.enrich_with_context(results) {
+        Ok(r) => r,
+        Err(e) => {
+            // Continue with un-enriched results
+            return format!(
+                "Warning: Could not enrich results: {}\n\n\
+                 Use message IDs to retrieve full content.",
+                e
+            );
+        }
+    };
 
-    for msg in results {
+    // Format results
+    let mut output = format!("**Found {} message(s)**\n\n", enriched_results.len());
+
+    for msg in enriched_results {
         let role_label = match msg.role.as_str() {
             "user" => "👤 User",
             "assistant" => "🤖 Assistant",
@@ -200,6 +233,20 @@ async fn remember_by_query(
             "**[id={}]** {} (score: {:.2})\n{}\n\n",
             msg.message_id, role_label, msg.score, content
         ));
+
+        // If user message has an assistant response, show it
+        if let Some(ref answer) = msg.next_message {
+            let answer_label = "🤖 Assistant";
+            let answer_content = if answer.content.chars().count() > 200 {
+                format!("{}...", answer.content.chars().take(200).collect::<String>())
+            } else {
+                answer.content.clone()
+            };
+            output.push_str(&format!(
+                "  └─ **[id={}]** {}\n     {}\n\n",
+                answer.message_id, answer_label, answer_content
+            ));
+        }
     }
 
     output.push_str("Use message IDs to retrieve full content: remember(id=\"N\")");

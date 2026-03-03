@@ -154,36 +154,60 @@ pub async fn build_context(
                     config.keyword_weight,
                     config.semantic_weight,
                 ) {
+                    // Enrich results with conversation context (attach assistant responses to user questions)
+                    let enriched_results = match db.enrich_with_context(results) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            if use_debug {
+                                log_debug(&format!("Warning: Failed to enrich results: {}", e));
+                            }
+                            // Return empty on error - the original `results` is consumed by enrich_with_context
+                            Vec::new()
+                        }
+                    };
+                    
                     if use_debug {
                         log_debug(&format!(
                             "Search returned {} results",
-                            results.len()
+                            enriched_results.len()
                         ));
                     }
                     
-                    if !results.is_empty() {
-                        retrieved_count = results.len();
+                    if !enriched_results.is_empty() {
+                        retrieved_count = enriched_results.len();
                         retrieval_performed = true;
                         
                         let mut retrieved_text = String::from("<retrieved_context>\n");
                         retrieved_text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n");
                         retrieved_text.push_str("Each message has an ID. Use remember(id=\"N\") for full content.\n");
                         retrieved_text.push_str("Use remember(query=\"topic\") to search for past discussions.\n\n");
-                        for msg in results.iter() {
+                        for msg in enriched_results.iter() {
                             retrieved_text.push_str(&format!(
                                 "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
                                 msg.message_id,
                                 msg.role,
                                 msg.content
                             ));
+                            
+                            // If user message has an assistant response, include it
+                            if let Some(ref answer) = msg.next_message {
+                                retrieved_text.push_str(&format!(
+                                    "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
+                                    answer.message_id,
+                                    answer.role,
+                                    answer.content
+                                ));
+                            }
                         }
                         retrieved_text.push_str("</retrieved_context>");
                         messages.push(ChatMessage::system(retrieved_text));
                         
                         if use_debug {
+                            let enriched_count = enriched_results.iter().filter(|r| r.next_message.is_some()).count();
                             log_debug(&format!(
-                                "Added {} retrieved messages to context",
-                                retrieved_count
+                                "Added {} retrieved messages to context ({} enriched with responses)",
+                                retrieved_count,
+                                enriched_count
                             ));
                         }
                     }

@@ -56,6 +56,10 @@ pub struct SearchResult {
     pub chunk_start: Option<i32>,
     /// Chunk end offset in original message
     pub chunk_end: Option<i32>,
+    /// Next message in conversation (for user messages, this is the assistant response)
+    /// This enables conversation-aware retrieval where questions are paired with answers
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_message: Option<Box<SearchResult>>,
 }
 
 /// Type of search that found the result
@@ -189,6 +193,7 @@ impl Database {
                             chunk_content: None,
                             chunk_start: None,
                             chunk_end: None,
+                            next_message: None,
                         })
                     })?;
                     for r in rows {
@@ -219,6 +224,7 @@ impl Database {
                     chunk_content: None,
                     chunk_start: None,
                     chunk_end: None,
+                            next_message: None,
                 })
             })?;
 
@@ -279,6 +285,7 @@ impl Database {
                     chunk_content: row.get(6)?,
                     chunk_start: row.get(7)?,
                     chunk_end: row.get(8)?,
+                    next_message: None,
                 })
             })?;
             for r in rows {
@@ -306,6 +313,7 @@ impl Database {
                     chunk_content: row.get(6)?,
                     chunk_start: row.get(7)?,
                     chunk_end: row.get(8)?,
+                    next_message: None,
                 })
             })?;
             for r in rows {
@@ -399,6 +407,7 @@ impl Database {
                                 chunk_content: None,
                                 chunk_start: None,
                                 chunk_end: None,
+                                next_message: None,
                             })
                         },
                     )?;
@@ -423,6 +432,7 @@ impl Database {
                                 chunk_content: None,
                                 chunk_start: None,
                                 chunk_end: None,
+                                next_message: None,
                             })
                         })?;
                     for r in rows {
@@ -489,11 +499,97 @@ impl Database {
                     chunk_content: None,
                     chunk_start: None,
                     chunk_end: None,
+                    next_message: None,
                 })
             })?;
 
             Ok(rows.next().transpose()?)
         })
+    }
+
+    /// Get the next message by role in a conversation
+    ///
+    /// Used for conversation-aware retrieval: find the assistant response
+    /// that follows a user question in the same conversation.
+    ///
+    /// # Arguments
+    /// * `after_message_id` - The message ID to search after
+    /// * `conversation_id` - The conversation ID (ensures we don't cross sessions)
+    /// * `role` - The role to find (typically "assistant")
+    ///
+    /// # Returns
+    /// The next message with the specified role, or None if not found
+    pub fn get_next_message_by_role(
+        &self,
+        after_message_id: i64,
+        conversation_id: &str,
+        role: &str,
+    ) -> Result<Option<SearchResult>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let sql = "SELECT id, conversation_id, role, content, timestamp 
+                       FROM messages 
+                       WHERE conversation_id = ?1 
+                         AND id > ?2 
+                         AND role = ?3
+                       ORDER BY id ASC 
+                       LIMIT 1";
+            let mut stmt = conn.prepare(sql)?;
+            let mut rows = stmt.query_map(
+                params![conversation_id, after_message_id, role],
+                |row: &rusqlite::Row<'_>| {
+                    Ok(SearchResult {
+                        message_id: row.get(0)?,
+                        conversation_id: row.get(1)?,
+                        role: row.get(2)?,
+                        content: row.get(3)?,
+                        timestamp: row.get(4)?,
+                        score: 1.0,
+                        search_type: SearchType::Keyword,
+                        chunk_content: None,
+                        chunk_start: None,
+                        chunk_end: None,
+                        next_message: None,
+                    })
+                },
+            )?;
+
+            Ok(rows.next().transpose()?)
+        })
+    }
+
+    /// Enrich search results with conversation context
+    ///
+    /// For user messages, attaches the next assistant message from the same conversation.
+    /// This ensures question-answer pairs are retrieved together, addressing the issue
+    /// where short questions have high similarity but long answers have low similarity.
+    ///
+    /// # Arguments
+    /// * `results` - Search results from hybrid search
+    ///
+    /// # Returns
+    /// Results with next_message populated for user messages
+    pub fn enrich_with_context(&self, results: Vec<SearchResult>) -> Result<Vec<SearchResult>> {
+        let mut enriched = Vec::with_capacity(results.len());
+
+        for result in results {
+            let next_message = if result.role == "user" {
+                self.get_next_message_by_role(
+                    result.message_id,
+                    &result.conversation_id,
+                    "assistant",
+                )?
+                .map(Box::new)
+            } else {
+                None
+            };
+
+            enriched.push(SearchResult {
+                next_message,
+                ..result
+            });
+        }
+
+        Ok(enriched)
     }
 
     /// Check if a conversation exists
@@ -562,6 +658,7 @@ impl Database {
                     chunk_content: None,
                     chunk_start: None,
                     chunk_end: None,
+                    next_message: None,
                 })
             })?;
 
@@ -880,6 +977,7 @@ mod tests {
             chunk_content: None,
             chunk_start: None,
             chunk_end: None,
+            next_message: None,
         };
 
         let keyword_results = vec![
