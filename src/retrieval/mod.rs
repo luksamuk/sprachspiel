@@ -6,5 +6,5 @@
 mod context_builder;
 mod search;
 
-pub use context_builder::{build_context, RetrievalConfig};
+pub use context_builder::{build_context, update_retrieval_time, ContextResult, RetrievalConfig};
 pub use search::run_search;

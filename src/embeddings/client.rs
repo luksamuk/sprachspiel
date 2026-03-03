@@ -59,10 +59,14 @@ impl EmbeddingClient {
         Ok(truncate_and_normalize(&embedding))
     }
 
-    /// Generate embeddings for multiple texts
+    /// Generate embeddings for multiple texts in batch
     ///
-    /// More efficient than calling embed() multiple times.
+    /// More efficient than calling `embed()` multiple times.
     /// Uses "search_document: " prefix for each text.
+    ///
+    /// Future use: Bulk migration with `/migrate` for better performance
+    /// when migrating large conversation histories.
+    #[allow(dead_code)]
     pub async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
         if texts.is_empty() {
             return Ok(Vec::new());
@@ -93,6 +97,10 @@ impl EmbeddingClient {
     }
     
     /// Get the truncated embedding dimension
+    ///
+    /// Useful for validating embedding sizes and dimension checks.
+    /// Currently used by tests only.
+    #[allow(dead_code)]
     pub fn embedding_dimension() -> usize {
         TRUNCATED_DIMENSIONS
     }

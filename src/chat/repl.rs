@@ -12,11 +12,11 @@ use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::context_overflow::check_context_overflow;
+use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD};
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::query::ChatContext;
-use crate::retrieval::{build_context, RetrievalConfig};
+use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::tokens::calculate_context_metrics;
@@ -446,6 +446,17 @@ pub async fn run_chat_repl(
                                     println!("Debug mode: {}", new_state);
                                     continue;
                                 }
+                                CommandResult::RetrievalToggled(new_state) => {
+                                    if new_state {
+                                        println!("Semantic retrieval enabled. Messages will be retrieved from history for context.");
+                                        if session.messages.len() < 20 {
+                                            println!("Note: Retrieval activates after 20 messages (current: {})", session.messages.len());
+                                        }
+                                    } else {
+                                        println!("Semantic retrieval disabled.");
+                                    }
+                                    continue;
+                                }
                                 CommandResult::Context => {
                                     print_context_info(
                                         &session,
@@ -471,13 +482,14 @@ pub async fn run_chat_repl(
                                         println!("Retrying: {}", user_content);
 
                                         // Send the message again
+                                        let think_enabled = session.think;
                                         match send_message(
                                             &ollama,
                                             &model_config,
-                                            &session,
+                                            &mut session,
                                             &user_content,
                                             tools_active,
-                                            session.think,
+                                            think_enabled,
                                             settings,
                                             agents_md.as_deref(),
                                             use_debug,
@@ -672,13 +684,14 @@ pub async fn run_chat_repl(
                     log_debug(&format!("Warning: Could not save session: {}", e));
                 }
 
+                let think_enabled = session.think;
                 match send_message(
                     &ollama,
                     &model_config,
-                    &session,
+                    &mut session,
                     line,
                     tools_active,
-                    session.think,
+                    think_enabled,
                     settings,
                     agents_md.as_deref(),
                     use_debug,
@@ -746,7 +759,7 @@ pub struct TokenMetrics {
 async fn send_message(
     ollama: &ollama_rs::Ollama,
     model_config: &ModelConfig,
-    session: &ChatSession,
+    session: &mut ChatSession,
     user_input: &str,
     tools_enabled: bool,
     think_enabled: bool,
@@ -779,7 +792,7 @@ async fn send_message(
 
     // Check context overflow
     let context_window = model_config.num_ctx as usize;
-    let overflow_status = check_context_overflow(session, &system_prompt, context_window, 0.8);
+    let overflow_status = check_context_overflow(session, &system_prompt, context_window, DEFAULT_OVERFLOW_THRESHOLD);
     
     if overflow_status.needs_compaction() {
         eprintln!(
@@ -824,7 +837,7 @@ async fn send_message(
         }
     };
 
-    let mut messages = build_context(
+    let context_result = build_context(
         session,
         db,
         embedding_client,
@@ -832,6 +845,19 @@ async fn send_message(
         &system_prompt,
         &retrieval_config,
     ).await;
+    
+    // Update last_retrieval_time if retrieval was performed
+    if context_result.retrieval_performed {
+        update_retrieval_time(session);
+        if use_debug {
+            log_debug(&format!(
+                "Retrieved {} relevant messages",
+                context_result.retrieved_count
+            ));
+        }
+    }
+    
+    let mut messages = context_result.messages;
     
     // Add current user query at the end
     messages.push(ChatMessage::user(user_input.to_string()));

@@ -9,10 +9,29 @@
 
 use ollama_rs::generation::chat::ChatMessage;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::chat::session::{ChatSession, MessageRole};
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
+
+/// Minimum messages before auto-retrieval activates
+pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 20;
+
+/// Number of semantically relevant messages to retrieve
+pub const RELEVANT_MESSAGES_COUNT: usize = 5;
+
+/// Number of recent messages to include in context
+pub const RECENT_MESSAGES_COUNT: usize = 10;
+
+/// Minimum interval between retrievals in seconds
+pub const MIN_RETRIEVAL_INTERVAL_SECS: u64 = 5;
+
+/// Keyword weight for RRF (BM25)
+pub const KEYWORD_WEIGHT: f32 = 0.4;
+
+/// Semantic weight for RRF (vector similarity)
+pub const SEMANTIC_WEIGHT: f32 = 0.6;
 
 /// Configuration for context retrieval
 #[derive(Debug, Clone)]
@@ -37,14 +56,25 @@ impl Default for RetrievalConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            min_messages: 20,
-            relevant_count: 5,
-            recent_count: 10,
-            min_query_interval_secs: 5,
-            keyword_weight: 0.4,
-            semantic_weight: 0.6,
+            min_messages: MIN_MESSAGES_FOR_RETRIEVAL,
+            relevant_count: RELEVANT_MESSAGES_COUNT,
+            recent_count: RECENT_MESSAGES_COUNT,
+            min_query_interval_secs: MIN_RETRIEVAL_INTERVAL_SECS,
+            keyword_weight: KEYWORD_WEIGHT,
+            semantic_weight: SEMANTIC_WEIGHT,
         }
     }
+}
+
+/// Result of building context
+#[derive(Debug, Clone)]
+pub struct ContextResult {
+    /// Messages to send to LLM
+    pub messages: Vec<ChatMessage>,
+    /// Whether retrieval was performed
+    pub retrieval_performed: bool,
+    /// Number of retrieved messages
+    pub retrieved_count: usize,
 }
 
 /// Build context for LLM with optimal ordering
@@ -55,6 +85,8 @@ impl Default for RetrievalConfig {
 /// 3. Compacted summary (if present)
 /// 4. Recent messages (chronological)
 /// 5. Current query (always last)
+///
+/// Returns ContextResult with messages and retrieval status.
 pub async fn build_context(
     session: &ChatSession,
     db: Option<&Arc<Database>>,
@@ -62,8 +94,10 @@ pub async fn build_context(
     user_query: &str,
     system_prompt: &str,
     config: &RetrievalConfig,
-) -> Vec<ChatMessage> {
+) -> ContextResult {
     let mut messages = Vec::new();
+    let mut retrieval_performed = false;
+    let mut retrieved_count = 0;
 
     // 1. System prompt (always first - research shows up to 30% better performance)
     messages.push(ChatMessage::system(system_prompt.to_string()));
@@ -81,6 +115,9 @@ pub async fn build_context(
                     config.semantic_weight,
                 ) {
                     if !results.is_empty() {
+                        retrieved_count = results.len();
+                        retrieval_performed = true;
+                        
                         let mut retrieved_text = String::from("<retrieved_context>\n");
                         for (i, msg) in results.iter().enumerate() {
                             retrieved_text.push_str(&format!(
@@ -136,7 +173,11 @@ pub async fn build_context(
     // 5. Current query (always at the very end - critical for model performance)
     // This is added by the caller, not here
 
-    messages
+    ContextResult {
+        messages,
+        retrieval_performed,
+        retrieved_count,
+    }
 }
 
 impl RetrievalConfig {
@@ -159,12 +200,16 @@ impl RetrievalConfig {
     }
 }
 
+/// Update last retrieval time after successful retrieval
+pub fn update_retrieval_time(session: &mut ChatSession) {
+    session.last_retrieval_time = Some(Instant::now());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chat::session::SavedMessage;
     use chrono::Utc;
-    use std::time::Instant;
 
     fn create_test_session(message_count: usize) -> ChatSession {
         let mut session = ChatSession::new("test-model".to_string(), None, false);
@@ -185,15 +230,15 @@ mod tests {
     fn test_retrieval_config_default() {
         let config = RetrievalConfig::default();
         assert!(config.enabled);
-        assert_eq!(config.min_messages, 20);
-        assert_eq!(config.relevant_count, 5);
-        assert_eq!(config.recent_count, 10);
+        assert_eq!(config.min_messages, MIN_MESSAGES_FOR_RETRIEVAL);
+        assert_eq!(config.relevant_count, RELEVANT_MESSAGES_COUNT);
+        assert_eq!(config.recent_count, RECENT_MESSAGES_COUNT);
     }
 
     #[test]
     fn test_should_retrieve_below_min_messages() {
         let config = RetrievalConfig::default();
-        let session = create_test_session(10); // Below min_messages of 20
+        let session = create_test_session(MIN_MESSAGES_FOR_RETRIEVAL - 10);
 
         assert!(!config.should_retrieve(&session));
     }
@@ -201,7 +246,7 @@ mod tests {
     #[test]
     fn test_should_retrieve_above_min_messages() {
         let config = RetrievalConfig::default();
-        let session = create_test_session(25);
+        let session = create_test_session(MIN_MESSAGES_FOR_RETRIEVAL + 5);
 
         assert!(config.should_retrieve(&session));
     }
@@ -227,5 +272,33 @@ mod tests {
 
         // Should not be throttled with 0 interval
         assert!(config.should_retrieve(&session));
+    }
+
+    #[test]
+    fn test_update_retrieval_time() {
+        let mut session = create_test_session(10);
+        
+        // Initially None
+        assert!(session.last_retrieval_time.is_none());
+        
+        // Update
+        update_retrieval_time(&mut session);
+        assert!(session.last_retrieval_time.is_some());
+    }
+
+    #[test]
+    fn test_retrieval_toggle() {
+        let mut session = create_test_session(10);
+        
+        // Initially false
+        assert!(!session.retrieval_enabled);
+        
+        // Toggle on
+        session.retrieval_enabled = true;
+        assert!(session.retrieval_enabled);
+        
+        // Toggle off
+        session.retrieval_enabled = false;
+        assert!(!session.retrieval_enabled);
     }
 }

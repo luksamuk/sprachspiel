@@ -38,6 +38,8 @@ pub enum CommandResult {
     Migrate { session_id: Option<String> },
     /// Reindex embeddings (handled in REPL)
     Reindex { conversation_id: Option<String> },
+    /// Toggle retrieval mode (returns new state)
+    RetrievalToggled(bool),
 }
 
 /// Parsed chat command
@@ -90,6 +92,8 @@ pub enum ChatCommand {
     Migrate { session_id: Option<String> },
     /// Reindex embeddings
     Reindex { conversation_id: Option<String> },
+    /// Toggle retrieval mode
+    Retrieval,
 }
 
 /// Export format for /export command
@@ -213,6 +217,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             };
             ChatCommand::Reindex { conversation_id }
         }
+        "retrieval" => ChatCommand::Retrieval,
         _ => return Some(Err(format!("Unknown command: /{}", cmd))),
     };
 
@@ -364,6 +369,11 @@ pub fn execute_command(
         ChatCommand::Migrate { session_id } => CommandResult::Migrate { session_id },
 
         ChatCommand::Reindex { conversation_id } => CommandResult::Reindex { conversation_id },
+
+        ChatCommand::Retrieval => {
+            session.retrieval_enabled = !session.retrieval_enabled;
+            CommandResult::RetrievalToggled(session.retrieval_enabled)
+        }
     }
 }
 
@@ -391,6 +401,7 @@ fn print_help() {
   /search <query>  Search conversation history (hybrid: keyword + semantic)
   /migrate [id]    Migrate session(s) to SQLite for semantic search
   /reindex [id]    Rebuild embeddings for semantic search
+  /retrieval       Toggle semantic retrieval from conversation history
 
 Shortcuts:
   /q = /quit, /c = /clear, /h = /help

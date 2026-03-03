@@ -355,6 +355,9 @@ impl Database {
     }
 
     /// Delete a conversation and all its messages
+    ///
+    /// Future use: Conversation management commands (delete, archive).
+    #[allow(dead_code)]
     pub fn delete_conversation(&self, conversation_id: &str) -> Result<()> {
         self.with_connection(|conn: &rusqlite::Connection| {
             // Embeddings are deleted via CASCADE
@@ -371,6 +374,9 @@ impl Database {
     }
 
     /// Count messages with embeddings
+    ///
+    /// Future use: Database statistics and diagnostics.
+    #[allow(dead_code)]
     pub fn count_embedded_messages(&self) -> Result<i64> {
         self.with_connection(|conn: &rusqlite::Connection| {
             conn.query_row(
@@ -382,6 +388,9 @@ impl Database {
     }
 
     /// Get all conversation IDs
+    ///
+    /// Future use: `/reindex all` command to rebuild embeddings for all conversations.
+    #[allow(dead_code)]
     pub fn list_conversations(&self) -> Result<Vec<String>> {
         self.with_connection(|conn: &rusqlite::Connection| {
             let mut stmt = conn.prepare("SELECT id FROM conversations ORDER BY updated_at DESC")?;
@@ -390,7 +399,10 @@ impl Database {
         })
     }
 
-    /// Get all messages for reindexing (with has_embedding = 0)
+    /// Get all messages without embeddings for reindexing
+    ///
+    /// Future use: `/reindex all` command to generate missing embeddings.
+    #[allow(dead_code)]
     pub fn get_messages_for_reindex(&self) -> Result<Vec<SearchResult>> {
         self.with_connection(|conn: &rusqlite::Connection| {
             let mut results = Vec::new();

@@ -106,6 +106,9 @@ impl Database {
     }
 
     /// Execute a query with a mutable locked connection
+    ///
+    /// Future use: DDL operations, schema migrations, bulk inserts.
+    #[allow(dead_code)]
     pub fn with_connection_mut<F, T>(&self, f: F) -> Result<T>
     where
         F: FnOnce(&mut Connection) -> Result<T>,

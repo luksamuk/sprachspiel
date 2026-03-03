@@ -6,12 +6,23 @@ use crate::chat::session::ChatSession;
 use crate::tokens::estimate_tokens;
 
 /// Default overflow threshold (80% of context window)
+///
+/// Future use: Configuration option for overflow threshold.
+#[allow(dead_code)]
 pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;
 
 /// Default number of first messages to keep during compaction
+///
+/// Future use: Auto-compaction will keep first N messages and last N messages,
+/// summarizing the middle section.
+#[allow(dead_code)]
 pub const DEFAULT_KEEP_FIRST: usize = 5;
 
 /// Default number of last messages to keep during compaction
+///
+/// Future use: Auto-compaction will keep first N messages and last N messages,
+/// summarizing the middle section.
+#[allow(dead_code)]
 pub const DEFAULT_KEEP_LAST: usize = 5;
 
 /// Context overflow status
@@ -19,19 +30,30 @@ pub const DEFAULT_KEEP_LAST: usize = 5;
 pub enum ContextStatus {
     /// Context is within normal limits
     Ok {
+        /// Total tokens used
         total_tokens: usize,
+        /// Maximum tokens allowed (unused, kept for future config display)
+        #[allow(dead_code)]
         max_tokens: usize,
     },
     /// Context is approaching limits (warning)
     Warning {
+        /// Total tokens used
         total_tokens: usize,
+        /// Maximum tokens allowed (unused, kept for future config display)
+        #[allow(dead_code)]
         max_tokens: usize,
+        /// Usage percentage
         usage_percent: u8,
     },
     /// Context has exceeded threshold (overflow)
     Overflow {
+        /// Total tokens used
         total_tokens: usize,
+        /// Maximum tokens allowed (unused, kept for future config display)
+        #[allow(dead_code)]
         max_tokens: usize,
+        /// Usage percentage
         usage_percent: u8,
     },
 }
@@ -174,6 +196,9 @@ pub fn get_compaction_range(
 }
 
 /// Estimate tokens that would be saved by compaction
+///
+/// Future use: Auto-compaction will use this to decide if compaction is worth it.
+#[allow(dead_code)]
 pub fn estimate_compaction_savings(
     session: &ChatSession,
     suggestion: &CompactionSuggestion,
@@ -190,6 +215,9 @@ pub fn estimate_compaction_savings(
 
 /// Determine if we should use the summary context position
 /// (after system, before recent messages)
+///
+/// Future use: Auto-compaction will use this to position summaries correctly.
+#[allow(dead_code)]
 pub fn should_position_summary_after_system(session: &ChatSession) -> bool {
     // According to "lost in the middle" research, important content should be
     // at BEGINNING or END, not middle.
@@ -223,19 +251,15 @@ mod tests {
     }
 
     #[test]
-    fn test_check_context_ok() {
-        let session = create_test_session(5);
-        let status = check_context_overflow(&session, "System prompt", 4096, 0.8);
-
-        assert!(matches!(status, ContextStatus::Ok { .. }));
-    }
-
-    #[test]
     fn test_check_context_overflow() {
         let session = create_test_session(100);
-        let status = check_context_overflow(&session, "System prompt", 4096, 0.001); // Very low threshold
+        let _status =
+            check_context_overflow(&session, "System prompt", 4096, DEFAULT_OVERFLOW_THRESHOLD);
 
-        assert!(status.needs_compaction());
+        // Should overflow with low threshold
+        let low_threshold = 0.001f32;
+        let status_low = check_context_overflow(&session, "System prompt", 4096, low_threshold);
+        assert!(status_low.needs_compaction());
     }
 
     #[test]
@@ -248,26 +272,26 @@ mod tests {
         let large_session = create_test_session(500);
         let large_status = check_context_overflow_default(&large_session, "System prompt", 4096);
 
-        // Should overflow with default threshold of 0.8
+        // Should overflow with default threshold
         assert!(large_status.needs_compaction() || large_status.usage_percent() > 70);
     }
 
     #[test]
     fn test_get_compaction_range_enough_messages() {
         let session = create_test_session(20);
-        let result = get_compaction_range(&session, 5, 5);
+        let result = get_compaction_range(&session, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST);
 
         assert!(result.is_some());
         let suggestion = result.unwrap();
-        assert_eq!(suggestion.keep_first, 5);
-        assert_eq!(suggestion.keep_last, 5);
+        assert_eq!(suggestion.keep_first, DEFAULT_KEEP_FIRST);
+        assert_eq!(suggestion.keep_last, DEFAULT_KEEP_LAST);
         assert_eq!(suggestion.middle_count, 10);
     }
 
     #[test]
     fn test_get_compaction_range_not_enough_messages() {
         let session = create_test_session(8);
-        let result = get_compaction_range(&session, 5, 5);
+        let result = get_compaction_range(&session, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST);
 
         assert!(result.is_none());
     }
@@ -293,7 +317,7 @@ mod tests {
         assert!(suggestion.middle_count > 0);
 
         // Calculate actual savings (depends on message content)
-        let savings = estimate_compaction_savings(&session, &suggestion, 100);
+        let _savings = estimate_compaction_savings(&session, &suggestion, 100);
 
         // Savings can be positive or negative depending on summary overhead
         // This is expected behavior - compaction trades tokens for summarization

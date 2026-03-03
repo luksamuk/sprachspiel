@@ -15,18 +15,22 @@ All notable changes to Ask-AI will be documented in this file.
 - **Context Overflow Detection** - Automatic warning when context fills
   - `check_context_overflow()` function monitors token usage
   - Warning at 80% of context window (72% = early warning)
+  - Constants: `DEFAULT_OVERFLOW_THRESHOLD`, `DEFAULT_KEEP_FIRST`, `DEFAULT_KEEP_LAST`
   - Suggests `/compact` when approaching limits
+  - Future: Auto-compaction will use `get_compaction_range()` and `estimate_compaction_savings()`
 
 - **Context Builder** - Optimal message ordering for LLM
   - `build_context()` implements "lost in the middle" research
   - Order: System → Retrieved → Summary → Recent → Query
   - Research shows up to 30% better performance with this ordering
+  - Constants: `MIN_MESSAGES_FOR_RETRIEVAL`, `RELEVANT_MESSAGES_COUNT`, `RECENT_MESSAGES_COUNT`
 
 - **Retrieval Configuration** - Configurable context retrieval
   - `RetrievalConfig` with sensible defaults
   - Min 20 messages before activation
   - 5 relevant messages retrieved + 10 recent messages
   - 5-second throttle between retrievals
+  - `/retrieval` command to toggle on/off
 
 - **Migration Commands** - JSON to SQLite migration
   - `/migrate` - Migrate all project sessions or specific session
@@ -39,15 +43,25 @@ All notable changes to Ask-AI will be documented in this file.
   - Integrated overflow detection with warning display
   - Integrated retrieval context building
   - Added `db` and `embedding_client` parameters
+  - Returns `ContextResult` with retrieval status
 
-- **Embeddings** - Marked `normalize()` and `cosine_similarity()` as `#[allow(dead_code)]`
-  - Kept for future: diversity filtering, manual reranking, threshold filtering
+- **Embeddings** - Documented future-use functions
+  - `embed_batch()` for bulk embedding (future: `/migrate` performance)
+  - `embedding_dimension()` for validation (test use)
+  - `normalize()` and `cosine_similarity()` for future diversity filtering
+
+- **Database operations** - Documented future-use functions
+  - `list_conversations()` for `/reindex all` command
+  - `get_messages_for_reindex()` for bulk reindexing
+  - `delete_conversation()` for conversation management
+  - `count_embedded_messages()` for statistics
+  - `with_connection_mut()` for DDL operations
 
 ### Technical
 
 - **New modules:**
   - `src/db/migration.rs` - Session migration logic
-  - `src/context_overflow.rs` - Overflow detection and compaction suggestions
+  - `src/context_overflow.rs` - Overflow detection and compaction planning
   - `src/retrieval/context_builder.rs` - Context composition with optimal ordering
 
 - **Database operations:**
@@ -56,9 +70,19 @@ All notable changes to Ask-AI will be documented in this file.
   - `insert_message()` with embedding support
 
 - **Context constants:**
-  - DEFAULT_OVERFLOW_THRESHOLD: 0.8 (80%)
-  - DEFAULT_KEEP_FIRST: 5 messages
-  - DEFAULT_KEEP_LAST: 5 messages
+  - `DEFAULT_OVERFLOW_THRESHOLD`: 0.8 (80%)
+  - `DEFAULT_KEEP_FIRST`: 5 messages
+  - `DEFAULT_KEEP_LAST`: 5 messages
+  - `MIN_MESSAGES_FOR_RETRIEVAL`: 20 messages
+  - `RELEVANT_MESSAGES_COUNT`: 5 messages
+  - `RECENT_MESSAGES_COUNT`: 10 messages
+
+- **Future-use functions (documented with `#[allow(dead_code)]`):**
+  - `check_context_overflow_default()` - Auto-overflow detection
+  - `get_compaction_range_default()` - Auto-compaction planning
+  - `estimate_compaction_savings()` - Compaction benefit calculation
+  - `should_position_summary_after_system()` - Summary placement
+  - CompactionSuggestion struct fields: `keep_first`, `keep_last`, `middle_count`
 
 ## [0.20.0] - 2026-03-03
 
