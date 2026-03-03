@@ -1,7 +1,7 @@
 # Context Management v2 - Implementation Plan
 
-**Status:** Planning  
-**Date:** 2026-03-01  
+**Status:** Phase 4 Completed (v0.20.0), Phase 5 Pending  
+**Date:** 2026-03-03  
 **Based on:** Context Management Research + User Discussion
 
 ---
@@ -73,30 +73,61 @@ This makes **Token-Based Pruning + Middle Compaction** viable without losing cri
 
 ## Implementation Phases
 
-### Phase 1: Foundation (v0.17.0)
+### Phase 1: Foundation (v0.19.0) ✅ COMPLETED
 
-**Goal:** Infrastructure for context management
+- [x] Token counting utility (`src/tokens.rs`)
+- [x] Context metrics (`ContextMetrics` struct)
+- [x] `/context` command for session info
+- [x] Tokens per message type display
 
-1. **Token Counting**
-   - Implement `count_tokens()` utility
-   - Use `tiktoken-rs` or estimation (~0.75 words = 1 token for English)
-   - Track tokens per message type
-   - Display in `/info` and `/context` commands
+### Phase 2: State Management (v0.19.0) ✅ COMPLETED
 
-2. **Session State Structure**
-   ```rust
-   struct SessionState {
-       files_read: HashSet<PathBuf>,
-       files_edited: HashMap<PathBuf, EditLog>,
-       decisions: Vec<Decision>,
-       active_tasks: Vec<Task>,
-   }
-   ```
+- [x] To-do list tools (`src/tools/todo.rs`)
+- [x] TodoState persistence in session
+- [x] Tools for task management (add, update, list, clear)
 
-3. **Context Metrics**
-   - Total tokens used
-   - Tokens per message type
-   - Context window utilization percentage
+### Phase 3: Semantic Retrieval (v0.20.0) ✅ COMPLETED
+
+**Goal:** Enable semantic search across conversation history
+
+- [x] Database module (`src/db/`)
+  - SQLite with sqlite-vec extension
+  - FTS5 for keyword search
+  - Schema: conversations, messages, message_embeddings
+- [x] Embeddings module (`src/embeddings/`)
+  - Ollama embedding client
+  - Matryoshka truncation (768d → 256d)
+- [x] Retrieval module (`src/retrieval/`)
+  - Hybrid search (BM25 + semantic)
+  - Reciprocal Rank Fusion (RRF)
+- [x] `/search` command in REPL
+- [x] FTS5 query sanitization
+
+### Phase 4: Integration (v0.21.0) 🚧 PENDING
+
+**Goal:** Auto-index messages on save, enable auto-retrieval
+
+- [ ] Integrate with ChatSession
+  - Auto-save messages to SQLite
+  - Auto-generate embeddings on message
+- [ ] `/migrate` command
+  - Migrate JSON sessions to SQLite
+  - Generate embeddings for existing messages
+- [ ] `/reindex` command
+  - Rebuild all embeddings
+- [ ] Context overflow handling
+  - Auto-compact at 80% context window
+  - Middle summarization
+- [ ] Auto-retrieval
+  - M relevant messages (semantic)
+  - N recent messages (chronological)
+  - Combine for LLM context
+
+### Phase 5: Future (v0.22+)
+
+- [ ] Chat module integration (`/ocr`, `/vision` from chat)
+- [ ] File session state tracking
+- [ ] Hierarchical context compression
 
 ### Phase 2: To-Do List Tooling (v0.18.0)
 

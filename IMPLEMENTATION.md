@@ -18,21 +18,41 @@
 - Built-in models: llama3.1, translategemma, glm-ocr (user models in config)
 - Thinking support for cloud models (configurable via `thinking = true`)
 - Dynamic model selection with capability detection
-- Tool integration with error recovery
+- Tool integration with error recovery (28 tools in 8 categories)
 - Translation (50+ languages)
 - OCR with multiple modes
 - Summarization with styles
+- Vision analysis
 - Markdown rendering
 - Pipe support
 - Debug mode
 - Think mode with visible thinking output
 - Code mode
-- Token metrics display
+- Token metrics display (`/context`)
+- Context management foundation
+- Semantic search (`/search`) with hybrid retrieval (BM25 + vector + RRF)
+- SQLite storage with sqlite-vec extension
+- Embedding generation with Matryoshka truncation (768d → 256d)
 - AGENTS.md context injection with security sanitization
 - Complete documentation with mdBook
 - Man page
 - Termux/Android builds
 - Error recovery for tool/network errors
+
+🚧 **In Progress (v0.21.0):**
+
+- ChatSession integration (auto-save messages + embeddings)
+- `/migrate` command (JSON → SQLite)
+- `/reindex` command (rebuild embeddings)
+- Context overflow handling (auto-compaction)
+- Auto-retrieval (M relevant + N recent messages)
+
+📋 **Planned:**
+
+- Chat module integration (`/ocr`, `/vision`, `/translate` from chat)
+- File session state tracking
+- Skills system
+- Plugin system
 
 ## Documentation
 
@@ -68,4 +88,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-02-22 - v0.14.1: Bugfix for thinking output, error recovery helpers
+2026-03-03 - v0.20.0: Semantic search with sqlite-vec
