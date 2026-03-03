@@ -130,6 +130,9 @@ pub fn check_context_overflow(
 }
 
 /// Check if context has overflowed using default threshold
+///
+/// Future use: Called automatically before sending messages to detect overflow.
+#[allow(dead_code)]
 pub fn check_context_overflow_default(
     session: &ChatSession,
     system_prompt: &str,
@@ -144,13 +147,19 @@ pub fn check_context_overflow_default(
 }
 
 /// Middle compaction result
+///
+/// Future use: Auto-compaction will use this to determine which messages to summarize.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CompactionSuggestion {
     /// Number of messages to keep at the beginning
+    #[allow(dead_code)]
     pub keep_first: usize,
     /// Number of messages to keep at the end
+    #[allow(dead_code)]
     pub keep_last: usize,
     /// Number of messages in the middle to summarize
+    #[allow(dead_code)]
     pub middle_count: usize,
     /// Indices of messages to compact (for reference)
     pub middle_indices: std::ops::Range<usize>,
@@ -158,7 +167,8 @@ pub struct CompactionSuggestion {
 
 /// Calculate which messages should be compacted using default keep values
 ///
-/// Returns None if there aren't enough messages to compact.
+/// Future use: Auto-compaction will call this to plan the compaction.
+#[allow(dead_code)]
 pub fn get_compaction_range_default(session: &ChatSession) -> Option<CompactionSuggestion> {
     get_compaction_range(session, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST)
 }
@@ -166,6 +176,7 @@ pub fn get_compaction_range_default(session: &ChatSession) -> Option<CompactionS
 /// Calculate which messages should be compacted (middle compaction)
 ///
 /// Returns None if there aren't enough messages to compact.
+#[allow(dead_code)]
 pub fn get_compaction_range(
     session: &ChatSession,
     keep_first: usize,

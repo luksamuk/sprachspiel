@@ -69,7 +69,7 @@ impl Database {
     pub fn init_sqlite_vec() {
         unsafe {
             rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
-                sqlite_vec::sqlite3_vec_init as usize,
+                sqlite_vec::sqlite3_vec_init as *const (),
             )));
         }
     }
