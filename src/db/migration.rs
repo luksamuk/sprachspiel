@@ -107,6 +107,11 @@ pub async fn migrate_session(
         }
     }
     
+    // Rebuild FTS5 index after migration
+    if let Err(e) = db.rebuild_fts5() {
+        stats.errors.push(format!("Failed to rebuild FTS5 index: {}", e));
+    }
+    
     Ok(stats)
 }
 
@@ -157,6 +162,13 @@ pub async fn migrate_project(
                 stats.errors.push(format!("Failed to load session {}: {}", session_name, e));
             }
         }
+    }
+    
+    // Rebuild FTS5 index after all migrations complete
+    println!("Rebuilding search index...");
+    match db.rebuild_fts5() {
+        Ok(count) => println!("Indexed {} messages for keyword search.", count),
+        Err(e) => stats.errors.push(format!("Failed to rebuild FTS5 index: {}", e)),
     }
     
     Ok(stats)

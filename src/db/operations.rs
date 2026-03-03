@@ -432,6 +432,31 @@ impl Database {
             Ok(results)
         })
     }
+
+    /// Rebuild FTS5 index from existing messages
+    ///
+    /// Call this after migration to ensure all messages are searchable.
+    /// This is needed because FTS5 with external content table doesn't
+    /// automatically index existing messages - only new INSERTs trigger indexing.
+    pub fn rebuild_fts5(&self) -> Result<usize> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            // First, clear the FTS index
+            conn.execute("DELETE FROM messages_fts", [])?;
+
+            // Then, rebuild from messages table
+            // For FTS5 with content table, we need to insert each row
+            let count: i64 = conn.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))?;
+
+            // Insert all messages into FTS5
+            conn.execute(
+                "INSERT INTO messages_fts(rowid, content) 
+                 SELECT id, content FROM messages",
+                [],
+            )?;
+
+            Ok(count as usize)
+        })
+    }
 }
 
 /// Reciprocal Rank Fusion algorithm
