@@ -454,6 +454,34 @@ impl Database {
         })
     }
 
+    /// Count messages in a conversation (for RAG decision after /clear)
+    ///
+    /// This is used by RAG to determine if retrieval should be performed
+    /// even when session.messages is empty (after /clear).
+    pub fn count_conversation_messages(&self, conversation_id: &str) -> Result<usize> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM messages WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+            Ok(count as usize)
+        })
+    }
+
+    /// Check if a conversation exists
+    #[allow(dead_code)]
+    pub fn conversation_exists(&self, conversation_id: &str) -> Result<bool> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM conversations WHERE id = ?1",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+            Ok(count > 0)
+        })
+    }
+
     /// Count messages with embeddings
     ///
     /// Future use: Database statistics and diagnostics.
@@ -872,6 +900,81 @@ mod tests {
         assert_eq!(
             fts5_escape("test); DROP TABLE users; --"),
             "\"test); DROP TABLE users; --\""
+        );
+    }
+
+    #[test]
+    fn test_count_conversation_messages() {
+        let db = Database::in_memory().expect("Failed to create database");
+        let conv_id = "test-conv-count";
+
+        // Insert conversation
+        db.insert_conversation(conv_id, None, None, "test-model", Utc::now(), Utc::now())
+            .expect("Failed to insert conversation");
+
+        // Insert messages
+        for i in 0..10 {
+            db.insert_message(conv_id, "user", &format!("Message {}", i), Utc::now())
+                .expect("Failed to insert message");
+        }
+
+        // Count
+        let count = db
+            .count_conversation_messages(conv_id)
+            .expect("Failed to count");
+        assert_eq!(count, 10);
+
+        // Non-existent conversation
+        let count = db
+            .count_conversation_messages("nonexistent")
+            .expect("Failed to count");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_conversation_exists() {
+        let db = Database::in_memory().expect("Failed to create database");
+        let conv_id = "test-conv-exists";
+
+        // Insert conversation
+        db.insert_conversation(conv_id, None, None, "test-model", Utc::now(), Utc::now())
+            .expect("Failed to insert conversation");
+
+        // Check exists
+        assert!(db.conversation_exists(conv_id).expect("Failed to check"));
+        assert!(!db
+            .conversation_exists("nonexistent")
+            .expect("Failed to check"));
+    }
+
+    #[test]
+    fn test_delete_conversation() {
+        let db = Database::in_memory().expect("Failed to create database");
+        let conv_id = "test-conv-delete";
+
+        // Insert conversation with messages
+        db.insert_conversation(conv_id, None, None, "test-model", Utc::now(), Utc::now())
+            .expect("Failed to insert conversation");
+        db.insert_message(conv_id, "user", "Hello", Utc::now())
+            .expect("Failed to insert message");
+
+        // Verify exists
+        assert!(db.conversation_exists(conv_id).expect("Failed to check"));
+        assert_eq!(
+            db.count_conversation_messages(conv_id)
+                .expect("Failed to count"),
+            1
+        );
+
+        // Delete
+        db.delete_conversation(conv_id).expect("Failed to delete");
+
+        // Verify deleted
+        assert!(!db.conversation_exists(conv_id).expect("Failed to check"));
+        assert_eq!(
+            db.count_conversation_messages(conv_id)
+                .expect("Failed to count"),
+            0
         );
     }
 }

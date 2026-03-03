@@ -417,10 +417,41 @@ impl ChatSession {
         self.updated_at = Utc::now();
     }
 
-    /// Clear all messages (keep system prompt and summary)
+    /// Clear messages for a new topic, preserving conversation context
+    ///
+    /// This clears the message history but preserves the compacted summary,
+    /// allowing the conversation context to persist for retrieval.
+    /// Use `/forget` for a complete session reset.
+    ///
+    /// # Preserved
+    /// - compacted_summary
+    /// - compacted_range
+    /// - SQLite conversation history
+    ///
+    /// # Cleared
+    /// - messages (in-memory)
+    /// - messages_sent_to_llm
     pub fn clear_messages(&mut self) {
         self.messages.clear();
+        // Preserved: compacted_summary, compacted_range
+        // These allow RAG to work after clear
+        self.messages_sent_to_llm = 0;
+        self.updated_at = Utc::now();
+    }
+
+    /// Forget all context completely (new conversation, no history)
+    ///
+    /// Clears everything:
+    /// - All messages
+    /// - Compacted summary
+    /// - Compacted range
+    ///
+    /// This is a destructive operation and cannot be undone.
+    /// The caller is responsible for deleting from SQLite.
+    pub fn forget_session(&mut self) {
+        self.messages.clear();
         self.compacted_summary = None;
+        self.compacted_range = None;
         self.messages_sent_to_llm = 0;
         self.updated_at = Utc::now();
     }
@@ -600,5 +631,92 @@ impl ChatSession {
 impl Default for ChatSession {
     fn default() -> Self {
         Self::new("llama3.1".to_string(), None, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_clear_messages_preserves_summary() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Setup
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Test message".into(),
+            timestamp: Utc::now(),
+        });
+        session.set_compacted_summary_with_range("Summary of conversation".into(), Some((0, 1)));
+        
+        // Verify setup
+        assert_eq!(session.messages.len(), 1);
+        assert!(session.compacted_summary.is_some());
+        
+        // Clear
+        session.clear_messages();
+        
+        // Verify
+        assert!(session.messages.is_empty());  // Messages cleared
+        assert!(session.compacted_summary.is_some());  // Summary PRESERVED!
+        assert_eq!(session.messages_sent_to_llm, 0);
+    }
+    
+    #[test]
+    fn test_forget_session_clears_everything() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Setup
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Test message".into(),
+            timestamp: Utc::now(),
+        });
+        session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
+        
+        // Verify setup
+        assert_eq!(session.messages.len(), 1);
+        assert!(session.compacted_summary.is_some());
+        
+        // Forget
+        session.forget_session();
+        
+        // Verify
+        assert!(session.messages.is_empty());  // Messages cleared
+        assert!(session.compacted_summary.is_none());  // Summary CLEARED!
+        assert!(session.compacted_range.is_none());  // Range CLEARED!
+        assert_eq!(session.messages_sent_to_llm, 0);
+    }
+    
+    #[test]
+    fn test_clear_vs_forget_difference() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Add messages and summary
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Message 1".into(),
+            timestamp: Utc::now(),
+        });
+        session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
+        
+        // Test clear_messages preserves summary
+        session.clear_messages();
+        assert!(session.messages.is_empty());
+        assert!(session.compacted_summary.is_some());
+        
+        // Add messages again
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Message 2".into(),
+            timestamp: Utc::now(),
+        });
+        
+        // Test forget_session clears everything
+        session.forget_session();
+        assert!(session.messages.is_empty());
+        assert!(session.compacted_summary.is_none());
+        assert!(session.compacted_range.is_none());
     }
 }

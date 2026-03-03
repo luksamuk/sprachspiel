@@ -2,7 +2,34 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.22.4] - PLANNED
+## [0.22.5] - 2026-03-03
+
+### Fixed
+
+- **Retrieval After /clear** - Critical bug fixed
+  - Model lost all memory after `/clear` even though SQLite data persisted
+  - Root causes: retrieval disabled by default, minimum threshold too high (20)
+  
+### Changed
+
+- **Forced Retrieval After Clear** - Automatic context recovery
+  - Added `should_force_retrieve()` function
+  - Retrieval activates when session empty but DB has 2+ messages
+  - Ignores `retrieval_enabled` flag and `MIN_MESSAGES` threshold
+  - Gray system message: `[i] Semantic retrieval enabled.`
+  - Gray hint: `[i] You may ask about previous topics.`
+
+- **Lowered Retrieval Threshold**
+  - `MIN_MESSAGES_FOR_RETRIEVAL`: 20 → 5 (more useful for short conversations)
+  - `MIN_RETRIEVAL_FORCE_COUNT`: 2 (minimum for forced retrieval)
+
+### Technical
+
+- Modified `build_context()` to check both normal and forced retrieval conditions
+- Added `MIN_RETRIEVAL_FORCE_COUNT` constant for post-clear threshold
+- Updated `/clear` command to check DB for messages and show appropriate messages
+
+## [0.22.4] - 2026-03-03
 
 ### Added
 

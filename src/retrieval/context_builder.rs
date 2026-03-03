@@ -16,7 +16,10 @@ use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 
 /// Minimum messages before auto-retrieval activates
-pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 20;
+pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 5;
+
+/// Minimum messages for forced retrieval after /clear
+pub const MIN_RETRIEVAL_FORCE_COUNT: usize = 2;
 
 /// Number of semantically relevant messages to retrieve
 pub const RELEVANT_MESSAGES_COUNT: usize = 5;
@@ -102,8 +105,13 @@ pub async fn build_context(
     // 1. System prompt (always first - research shows up to 30% better performance)
     messages.push(ChatMessage::system(system_prompt.to_string()));
 
-    // 2. Retrieved messages (if enabled - placed after system to avoid being lost)
-    if config.enabled && config.should_retrieve(session) {
+    // 2. Retrieved messages (placed after system to avoid being lost)
+    // Normal retrieval: enabled and meets threshold
+    let should_retrieve = config.enabled && config.should_retrieve(session, db);
+    // Forced retrieval: after /clear, session empty but DB has messages
+    let force_retrieve = should_force_retrieve(session, db);
+    
+    if should_retrieve || force_retrieve {
         if let (Some(db), Some(client)) = (db, embedding_client) {
             if let Ok(embedding) = client.embed(user_query).await {
                 if let Ok(results) = db.search_hybrid(
@@ -209,14 +217,77 @@ pub async fn build_context(
     }
 }
 
+/// Get effective message count for retrieval decisions
+///
+/// After `/clear`, session.messages may be empty but the database
+/// still contains the conversation history. This function returns
+/// the effective count considering both sources.
+pub fn get_effective_message_count(
+    session: &ChatSession,
+    db: Option<&Arc<Database>>,
+) -> usize {
+    // If session has messages, use session count
+    if !session.messages.is_empty() {
+        return session.messages.len();
+    }
+    
+    // If session is empty but has summary, check DB
+    // (messages were cleared but context persists)
+    if session.compacted_summary.is_some() {
+        if let Some(db) = db {
+            if let Ok(count) = db.count_conversation_messages(&session.id) {
+                return count;
+            }
+        }
+    }
+    
+    0
+}
+
+/// Check if retrieval should be forced after /clear
+///
+/// When session is empty but database has messages, force retrieval
+/// regardless of retrieval_enabled flag or MIN_MESSAGES threshold.
+/// This ensures users can ask about previous topics after clearing.
+pub fn should_force_retrieve(
+    session: &ChatSession,
+    db: Option<&Arc<Database>>,
+) -> bool {
+    // Only force if session is empty (after /clear)
+    if !session.messages.is_empty() {
+        return false;
+    }
+    
+    // Must have summary or enough DB messages
+    if session.compacted_summary.is_some() {
+        return true;
+    }
+    
+    // Check DB for message count
+    if let Some(db) = db {
+        if !session.anonymous && !session.id.is_empty() {
+            if let Ok(count) = db.count_conversation_messages(&session.id) {
+                return count >= MIN_RETRIEVAL_FORCE_COUNT;
+            }
+        }
+    }
+    
+    false
+}
+
 impl RetrievalConfig {
     /// Check if retrieval should be performed
-    pub fn should_retrieve(&self, session: &ChatSession) -> bool {
-        // Check minimum messages threshold
-        if session.messages.len() < self.min_messages {
+    ///
+    /// After `/clear`, session.messages may be empty but DB still has history.
+    /// This checks both the session and the database.
+    pub fn should_retrieve(&self, session: &ChatSession, db: Option<&Arc<Database>>) -> bool {
+        // Use session + DB count to decide
+        let effective_count = get_effective_message_count(session, db);
+        
+        if effective_count < self.min_messages {
             return false;
         }
-
+        
         // Check throttling
         if let Some(last_time) = session.last_retrieval_time {
             let elapsed = last_time.elapsed().as_secs();
@@ -224,7 +295,7 @@ impl RetrievalConfig {
                 return false;
             }
         }
-
+        
         true
     }
 }
@@ -267,17 +338,17 @@ mod tests {
     #[test]
     fn test_should_retrieve_below_min_messages() {
         let config = RetrievalConfig::default();
-        let session = create_test_session(MIN_MESSAGES_FOR_RETRIEVAL - 10);
+        let session = create_test_session(MIN_MESSAGES_FOR_RETRIEVAL - 2);
 
-        assert!(!config.should_retrieve(&session));
+        assert!(!config.should_retrieve(&session, None));
     }
 
     #[test]
     fn test_should_retrieve_above_min_messages() {
         let config = RetrievalConfig::default();
-        let session = create_test_session(MIN_MESSAGES_FOR_RETRIEVAL + 5);
+        let session = create_test_session(MIN_MESSAGES_FOR_RETRIEVAL + 2);
 
-        assert!(config.should_retrieve(&session));
+        assert!(config.should_retrieve(&session, None));
     }
 
     #[test]
@@ -287,7 +358,7 @@ mod tests {
         session.last_retrieval_time = Some(Instant::now()); // Just now
 
         // Should be throttled
-        assert!(!config.should_retrieve(&session));
+        assert!(!config.should_retrieve(&session, None));
     }
 
     #[test]
@@ -300,7 +371,7 @@ mod tests {
         session.last_retrieval_time = Some(Instant::now());
 
         // Should not be throttled with 0 interval
-        assert!(config.should_retrieve(&session));
+        assert!(config.should_retrieve(&session, None));
     }
 
     #[test]
@@ -329,5 +400,59 @@ mod tests {
         // Toggle off
         session.retrieval_enabled = false;
         assert!(!session.retrieval_enabled);
+    }
+
+    #[test]
+    fn test_get_effective_message_count_with_messages() {
+        let session = create_test_session(25);
+        
+        // Session has messages, so count should be session len
+        let count = get_effective_message_count(&session, None);
+        assert_eq!(count, 25);
+    }
+
+    #[test]
+    fn test_get_effective_message_count_empty_no_summary() {
+        let session = create_test_session(0);
+        
+        // Empty session, no summary, no DB
+        let count = get_effective_message_count(&session, None);
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_get_effective_message_count_after_clear_with_summary() {
+        let mut session = create_test_session(0);  // Empty after clear
+        session.set_compacted_summary_with_range("Summary".into(), Some((5, 20)));
+        
+        // After /clear, session is empty but has summary
+        // Without DB, can't check DB count
+        let count = get_effective_message_count(&session, None);
+        assert_eq!(count, 0);  // Can't reach DB, returns 0
+    }
+
+    #[test]
+    fn test_should_force_retrieve_with_messages() {
+        let session = create_test_session(10);
+        
+        // Session has messages - should NOT force retrieve
+        assert!(!should_force_retrieve(&session, None));
+    }
+
+    #[test]
+    fn test_should_force_retrieve_empty_with_summary() {
+        let mut session = create_test_session(0);  // Empty after clear
+        session.set_compacted_summary_with_range("Summary".into(), Some((0, 10)));
+        
+        // Empty session with summary - should force retrieve
+        assert!(should_force_retrieve(&session, None));
+    }
+
+    #[test]
+    fn test_should_force_retrieve_empty_no_summary() {
+        let session = create_test_session(0);  // Empty, no summary
+        
+        // Empty session, no summary, no DB - should NOT force
+        assert!(!should_force_retrieve(&session, None));
     }
 }

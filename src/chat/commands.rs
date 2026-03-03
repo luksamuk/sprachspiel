@@ -49,6 +49,8 @@ pub enum ChatCommand {
     Quit,
     /// Clear conversation history
     Clear,
+    /// Forget everything (clear + delete from database)
+    Forget,
     /// Show help message
     Help,
     /// Switch to a different model
@@ -118,7 +120,8 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 
     let command = match *cmd {
         "quit" | "exit" | "q" => ChatCommand::Quit,
-        "clear" | "c" => ChatCommand::Clear,
+        "clear" | "c" | "new" | "n" => ChatCommand::Clear,
+        "forget" | "f" => ChatCommand::Forget,
         "help" | "h" | "?" => ChatCommand::Help,
         "model" | "m" => {
             if args.is_empty() {
@@ -192,7 +195,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         }
         "retry" | "r" => ChatCommand::Retry,
         "undo" | "u" => ChatCommand::Undo,
-        "search" | "find" | "f" => {
+        "search" | "find" => {
             if args.is_empty() {
                 return Some(Err("Usage: /search <query> [limit]".to_string()));
             }
@@ -237,8 +240,70 @@ pub fn execute_command(
         }
 
         ChatCommand::Clear => {
+            let has_summary = session.compacted_summary.is_some();
+            
+            // Check if there are messages in DB for retrieval after clear
+            let has_db_messages = if let Some(ref db) = session.db {
+                !session.anonymous 
+                    && !session.id.is_empty()
+                    && db.count_conversation_messages(&session.id)
+                        .map(|count| count > 0)
+                        .unwrap_or(false)
+            } else {
+                false
+            };
+            
             session.clear_messages();
-            println!("Conversation history cleared.");
+            
+            if !session.anonymous
+                && let Err(e) = session.save(storage)
+            {
+                eprintln!("Warning: Could not save session: {}", e);
+            }
+            
+            if has_summary {
+                println!("Conversation history cleared.");
+                println!("Context summary preserved for retrieval.");
+                println!("\x1B[90m[i] You may ask about previous topics.\x1B[0m");
+            } else if has_db_messages {
+                println!("Conversation history cleared.");
+                println!("\x1B[90m[i] Semantic retrieval enabled.\x1B[0m");
+                println!("\x1B[90m[i] You may ask about previous topics.\x1B[0m");
+            } else {
+                println!("Conversation history cleared.");
+            }
+            CommandResult::Continue
+        }
+
+        ChatCommand::Forget => {
+            session.forget_session();
+            
+            if let Some(ref db) = session.db
+                && !session.anonymous
+                && !session.id.is_empty()
+            {
+                print!("Removing conversation from database... ");
+                std::io::Write::flush(&mut std::io::stdout()).ok();
+                match db.delete_conversation(&session.id) {
+                    Ok(_) => println!("Done."),
+                    Err(e) => eprintln!("\nWarning: Could not delete conversation: {}", e),
+                }
+            }
+            
+            if !session.anonymous {
+                // Generate new session ID using timestamp
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                session.id = format!("session-{}", timestamp);
+                if let Err(e) = session.save(storage) {
+                    eprintln!("Warning: Could not save new session: {}", e);
+                }
+            }
+            
+            println!("Session forgotten. Starting fresh conversation.");
             CommandResult::Continue
         }
 
@@ -382,7 +447,8 @@ fn print_help() {
     println!(
         r#"Available commands:
   /quit, /exit     Exit the chat session
-  /clear           Clear conversation history
+  /clear, /new     Clear messages (preserves context for retrieval)
+  /forget          Forget everything, start fresh (removes from database)
   /help            Show this help message
   /model <name>    Switch to a different model
   /system <text>   Change the system prompt
