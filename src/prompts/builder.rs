@@ -53,6 +53,8 @@ pub struct PromptConfig<'a> {
     pub agents_md: Option<&'a str>,
     /// Whether tools are enabled for this prompt
     pub tools_enabled: bool,
+    /// Whether retrieval is enabled (adds MEMORY section)
+    pub retrieval_enabled: bool,
 }
 
 impl<'a> PromptConfig<'a> {
@@ -67,6 +69,7 @@ impl<'a> PromptConfig<'a> {
                 prompt_type,
                 PromptType::ToolUser | PromptType::CodeWithTools
             ),
+            retrieval_enabled: false,
         }
     }
 
@@ -91,6 +94,12 @@ impl<'a> PromptConfig<'a> {
     /// Set whether tools are enabled
     pub fn with_tools(mut self, tools_enabled: bool) -> Self {
         self.tools_enabled = tools_enabled;
+        self
+    }
+
+    /// Set whether retrieval is enabled
+    pub fn with_retrieval(mut self, retrieval_enabled: bool) -> Self {
+        self.retrieval_enabled = retrieval_enabled;
         self
     }
 }
@@ -174,6 +183,14 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
             prompt.push('\n');
             prompt.push_str(&tool_context);
         }
+    }
+
+    // 4b. Memory section (if retrieval is enabled)
+    if config.retrieval_enabled {
+        prompt.push_str("\n### MEMORY\n");
+        prompt.push_str("When <retrieved_context> appears in our conversation, ");
+        prompt.push_str("it contains messages from our prior conversation. ");
+        prompt.push_str("Reference them when the user asks about topics we discussed earlier.\n");
     }
 
     // 5. Examples (if tools enabled)

@@ -52,6 +52,7 @@ impl SummarizeProcessor {
         let base_prompt = build_system_prompt(
             PromptConfig::new(PromptType::Summarize)
                 .with_model_id(Some(&model_config.model_id))
+                .with_retrieval(false),
         );
         let system_prompt = args.build_prompt(&base_prompt);
 

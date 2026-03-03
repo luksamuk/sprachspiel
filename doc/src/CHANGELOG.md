@@ -2,49 +2,89 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.22.9] - PLANNED
+## [0.23.0] - PLANNED
 
-### Issue
+### Added
 
-**Context Framing for Semantic Retrieval**
+- **Remember Tool** - LLM can actively retrieve conversation history
+  - `remember(id="42")` - Get full message by ID
+  - `remember(query="topic")` - Search by topic
+  - Default 5 results, max 10
+  - Task-local storage for async-safe DB access (via `tokio::task_local!`)
 
-After implementing forced retrieval (v0.22.7), semantic retrieval works correctly:
-- ✅ Session ID is stable across model switches
-- ✅ Messages are preserved in SQLite after `/clear`
-- ✅ Hybrid search returns relevant results
-- ✅ `should_force_retrieve()` correctly detects post-clear state
+- **Context Enhancement** - Retrieved messages now show database IDs
+  - Messages include `id="N"` attribute
+  - Clear framing explains tool usage
+  - MEMORY TOOLS section in system prompt
 
-**However, the LLM still says "I have no memory of previous conversations."**
+- **Retrieval Enabled by Default** - `retrieval_enabled: true` in new sessions
 
-The problem is **prompt engineering**: the LLM doesn't understand what `<retrieved_context>` represents.
+### Changed
 
-### Planned Changes
+- Retrieved context uses `message_id` instead of enumeration index
+- Anonymous sessions don't register the remember tool (no database available)
 
-1. **Improve retrieved_context framing** - Add explicit explanation:
-   ```xml
-   <retrieved_context>
+### Technical Details
+
+The GLM-5:cloud model (198K context) was still responding "I have no memory" after v0.22.9 because:
+1. LLM couldn't request MORE context (only received 5 messages)
+2. LLM couldn't reference specific messages (no IDs)
+3. LLM couldn't search for topics (no tool)
+
+**Solution:** Give the LLM both IDs and an explicit tool to request more context.
+
+**Token Overhead:** ~130 tokens (0.06% of 198K context)
+
+### Files Modified
+
+- `src/db/operations.rs` - Add `get_message_by_id()`
+- `src/tools/context.rs` - NEW: Task-local storage
+- `src/tools/remember.rs` - NEW: Remember tool
+- `src/tools/mod.rs` - Export new modules
+- `src/tools/registry.rs` - Conditional registration
+- `src/retrieval/context_builder.rs` - ID format + new framing
+- `src/prompts/builder.rs` - MEMORY TOOLS section
+- `src/chat/session.rs` - Default `retrieval_enabled: true`
+- `src/chat/repl.rs` - Context wrapper
+
+## [0.22.9] - 2026-03-03
+
+### Fixed
+
+- **Context Framing for Semantic Retrieval** - LLM now understands retrieved context
+  - Added explicit framing text in `<retrieved_context>` explaining the context is from the conversation history
+  - Added MEMORY section to system prompt explaining the retrieval mechanism
+  - Models now correctly reference past conversations after `/clear`
+
+### Technical Details
+
+After v0.22.7, semantic retrieval was working correctly (session ID stable, messages preserved in SQLite, proper detection of post-clear state). However, the LLM still said "I have no memory of previous conversations" because it didn't understand what `<retrieved_context>` represented.
+
+**Solution:**
+1. Added framing text (~50 tokens):
+   ```
    The following messages are from YOUR conversation history with this user.
    They represent topics you have discussed together earlier.
    Reference these when the user asks about previous topics.
-   ...
-   </retrieved_context>
    ```
 
-2. **Add MEMORY section to system prompt** - Explain retrieval mechanism:
+2. Added MEMORY section in system prompt (~30 tokens):
    ```
    ### MEMORY
    When <retrieved_context> appears in our conversation, it contains 
-   messages from our prior conversation. Reference them when relevant.
+   messages from our prior conversation. Reference them when the user 
+   asks about topics we discussed earlier.
    ```
 
-### Files to Modify
+**Token overhead:** ~80 tokens (0.04% of 198K context for glm-5:cloud)
 
-- `src/retrieval/context_builder.rs` - Add framing text
-- `src/prompts/builder.rs` - Add MEMORY section
+### Files Modified
 
-### Detailed Plan
-
-See `doc/src/development/v0.22.9_plan.md`
+- `src/retrieval/context_builder.rs` - Added framing text to retrieved context
+- `src/prompts/builder.rs` - Added MEMORY section, `retrieval_enabled` flag
+- `src/chat/repl.rs` - Pass retrieval flag to prompt builder
+- `src/query.rs` - Pass retrieval flag to prompt builder
+- `src/summarize/processor.rs` - Pass retrieval flag (false) for summarize
 
 ## [0.22.8] - 2026-03-03
 

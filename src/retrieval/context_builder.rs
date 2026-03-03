@@ -172,6 +172,9 @@ pub async fn build_context(
                         retrieval_performed = true;
                         
                         let mut retrieved_text = String::from("<retrieved_context>\n");
+                        retrieved_text.push_str("The following messages are from YOUR conversation history with this user.\n");
+                        retrieved_text.push_str("They represent topics you have discussed together earlier.\n");
+                        retrieved_text.push_str("Reference these when the user asks about previous topics.\n\n");
                         for (i, msg) in results.iter().enumerate() {
                             retrieved_text.push_str(&format!(
                                 "<message index=\"{}\" timestamp=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",

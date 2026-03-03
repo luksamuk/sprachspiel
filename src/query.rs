@@ -242,7 +242,8 @@ pub async fn run_query(
             .with_model_id(Some(&model_config.model_id))
             .with_blacklist(Some(&blacklist_set))
             .with_agents_md(agents_md.as_deref())
-            .with_tools(use_tools),
+            .with_tools(use_tools)
+            .with_retrieval(false),
     );
 
     // Validate prompt type (only for legacy prompt names)

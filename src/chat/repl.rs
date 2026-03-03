@@ -847,7 +847,8 @@ async fn send_message(
                 .with_model_id(Some(&model_config.model_id))
                 .with_blacklist(Some(&blacklist_set))
                 .with_agents_md(agents_md)
-                .with_tools(tools_enabled),
+                .with_tools(tools_enabled)
+                .with_retrieval(session.retrieval_enabled),
         )
     };
 
@@ -1243,7 +1244,8 @@ fn print_context_info(
             .with_model_id(Some(&model_config.model_id))
             .with_blacklist(Some(&blacklist_set))
             .with_agents_md(agents_md)
-            .with_tools(tools_enabled),
+            .with_tools(tools_enabled)
+            .with_retrieval(false),
     );
     
     let history_messages = session.get_messages_for_llm(&system_prompt);
