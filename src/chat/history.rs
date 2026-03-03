@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
 
+use super::session::ChatSession;
+
 /// Information about a saved session
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
@@ -104,9 +106,9 @@ impl ConversationStorage {
                 let path = entry.path();
                 if path.extension().is_some_and(|ext| ext == "json")
                     && let Ok(json) = std::fs::read_to_string(&path)
-                    && let Ok(info) = serde_json::from_str::<SessionInfo>(&json)
+                    && let Ok(session) = serde_json::from_str::<ChatSession>(&json)
                 {
-                    sessions.push(info);
+                    sessions.push(session.to_info());
                 }
             }
         }
