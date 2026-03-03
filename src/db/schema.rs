@@ -8,7 +8,7 @@
 //! - messages_fts virtual table (FTS5)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 3;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"

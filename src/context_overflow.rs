@@ -6,23 +6,12 @@ use crate::chat::session::ChatSession;
 use crate::tokens::estimate_tokens;
 
 /// Default overflow threshold (80% of context window)
-///
-/// Future use: Configuration option for overflow threshold.
-#[allow(dead_code)]
 pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;
 
 /// Default number of first messages to keep during compaction
-///
-/// Future use: Auto-compaction will keep first N messages and last N messages,
-/// summarizing the middle section.
-#[allow(dead_code)]
 pub const DEFAULT_KEEP_FIRST: usize = 5;
 
 /// Default number of last messages to keep during compaction
-///
-/// Future use: Auto-compaction will keep first N messages and last N messages,
-/// summarizing the middle section.
-#[allow(dead_code)]
 pub const DEFAULT_KEEP_LAST: usize = 5;
 
 /// Context overflow status
@@ -130,9 +119,6 @@ pub fn check_context_overflow(
 }
 
 /// Check if context has overflowed using default threshold
-///
-/// Future use: Called automatically before sending messages to detect overflow.
-#[allow(dead_code)]
 pub fn check_context_overflow_default(
     session: &ChatSession,
     system_prompt: &str,
@@ -147,28 +133,19 @@ pub fn check_context_overflow_default(
 }
 
 /// Middle compaction result
-///
-/// Future use: Auto-compaction will use this to determine which messages to summarize.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CompactionSuggestion {
     /// Number of messages to keep at the beginning
-    #[allow(dead_code)]
     pub keep_first: usize,
     /// Number of messages to keep at the end
-    #[allow(dead_code)]
     pub keep_last: usize,
     /// Number of messages in the middle to summarize
-    #[allow(dead_code)]
     pub middle_count: usize,
     /// Indices of messages to compact (for reference)
     pub middle_indices: std::ops::Range<usize>,
 }
 
 /// Calculate which messages should be compacted using default keep values
-///
-/// Future use: Auto-compaction will call this to plan the compaction.
-#[allow(dead_code)]
 pub fn get_compaction_range_default(session: &ChatSession) -> Option<CompactionSuggestion> {
     get_compaction_range(session, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST)
 }
@@ -176,7 +153,6 @@ pub fn get_compaction_range_default(session: &ChatSession) -> Option<CompactionS
 /// Calculate which messages should be compacted (middle compaction)
 ///
 /// Returns None if there aren't enough messages to compact.
-#[allow(dead_code)]
 pub fn get_compaction_range(
     session: &ChatSession,
     keep_first: usize,
@@ -207,9 +183,6 @@ pub fn get_compaction_range(
 }
 
 /// Estimate tokens that would be saved by compaction
-///
-/// Future use: Auto-compaction will use this to decide if compaction is worth it.
-#[allow(dead_code)]
 pub fn estimate_compaction_savings(
     session: &ChatSession,
     suggestion: &CompactionSuggestion,
@@ -226,9 +199,6 @@ pub fn estimate_compaction_savings(
 
 /// Determine if we should use the summary context position
 /// (after system, before recent messages)
-///
-/// Future use: Auto-compaction will use this to position summaries correctly.
-#[allow(dead_code)]
 pub fn should_position_summary_after_system(session: &ChatSession) -> bool {
     // According to "lost in the middle" research, important content should be
     // at BEGINNING or END, not middle.

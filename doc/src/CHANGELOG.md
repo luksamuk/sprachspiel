@@ -2,6 +2,50 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.22.2] - 2026-03-03
+
+### Fixed
+
+- **Synchronous Chunking** - Chunks are now saved synchronously, guaranteeing persistence
+  - Previously: fire-and-forget async could lose chunks if process terminated
+  - Now: chunks always saved, embeddings generated asynchronously
+  - Addresses stress test finding: 2 of 6 long messages had incomplete chunking
+
+- **Embedding Recovery** - Automatic recovery of missing embeddings on startup
+  - New `get_chunks_without_embedding()` database function
+  - Recovery runs silently on REPL startup, reports count if recovered
+  - Database now has `has_embedding` flag for chunks
+
+- **Middle Compaction** - `/compact` now preserves first N + last N messages
+  - Previously: summarized ALL messages, losing important context
+  - Now: preserves first 5 and last 5 messages, summarizes middle
+  - Based on "Lost in the Middle" research for optimal LLM performance
+
+### Changed
+
+- **Context Builder** - New context order for middle compaction
+  - Order: System → Retrieved → First N → Summary → Recent → Query
+  - Uses `compacted_range` for middle compaction context
+  - Falls back to `messages_sent_to_llm` for legacy sessions
+
+- **Database Schema** - Version bumped to 3
+  - Added `has_embedding` column to `message_chunks` table
+  - Added index for finding chunks without embeddings
+
+### Technical
+
+- **Recovery Module** - New `src/embeddings/recovery.rs`
+  - `recover_missing_embeddings()` function for startup recovery
+  - Handles both messages and chunks without embeddings
+
+- **Session Field** - Added `compacted_range: Option<(usize, usize)>`
+  - Tuple format: `(first_preserved, last_preserved_start)`
+  - Backward compatible: defaults to None, uses `messages_sent_to_llm` fallback
+
+- **Compaction Function** - `compact_conversation()` now returns `(summary, range)`
+  - Uses `get_compaction_range_default()` for middle compaction
+  - Falls back to full compaction for small message counts
+
 ## [0.22.1] - 2026-03-03
 
 ### Fixed

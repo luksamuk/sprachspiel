@@ -70,7 +70,18 @@ pub struct ChatSession {
     /// Compacted summary of old messages (for LLM context)
     #[serde(default)]
     pub compacted_summary: Option<String>,
+    /// Range of compacted messages (middle compaction)
+    ///
+    /// If Some((first_preserved, last_preserved_start)):
+    ///   - [..first_preserved] = preserved at start
+    ///   - [first_preserved..last_preserved_start] = in summary
+    ///   - [last_preserved_start..] = preserved at end
+    ///
+    /// If None: no compaction (use messages_sent_to_llm for legacy compatibility)
+    #[serde(default)]
+    pub compacted_range: Option<(usize, usize)>,
     /// Index of first message to send to LLM (after compacted portion)
+    /// Deprecated: Use compacted_range for middle compaction
     #[serde(default)]
     pub messages_sent_to_llm: usize,
     /// Session creation time
@@ -141,6 +152,7 @@ impl ChatSession {
             system_prompt: None,
             messages: Vec::new(),
             compacted_summary: None,
+            compacted_range: None,
             messages_sent_to_llm: 0,
             created_at: now,
             updated_at: now,
@@ -213,7 +225,8 @@ impl ChatSession {
 
             match db.insert_message(&self.id, "user", &content, now) {
                 Ok(message_id) => {
-                    // Generate embedding asynchronously (fire-and-forget)
+                    // Insert chunks synchronously (guaranteed persistence)
+                    // Generate embeddings asynchronously (can be recovered on restart)
                     if let Some(ref client) = self.embedding_client {
                         let client = Arc::clone(client);
                         let db = Arc::clone(db);
@@ -221,31 +234,37 @@ impl ChatSession {
                         let timestamp = now;
                         let content = content.clone();
 
+                        // Check if chunking needed and insert chunks synchronously
+                        let chunk_data = if crate::embeddings::needs_chunking(&content) {
+                            let chunks = crate::embeddings::chunk_text(&content);
+                            let mut data = Vec::new();
+                            for chunk in &chunks {
+                                match db.insert_chunk(
+                                    message_id,
+                                    chunk.index as i32,
+                                    &chunk.content,
+                                    chunk.start_offset as i32,
+                                    chunk.end_offset as i32,
+                                    timestamp,
+                                ) {
+                                    Ok(chunk_id) => {
+                                        data.push((chunk_id, chunk.content.clone()));
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Warning: Failed to insert chunk: {}", e);
+                                    }
+                                }
+                            }
+                            data
+                        } else {
+                            vec![]
+                        };
+
+                        // Generate embeddings asynchronously (can be interrupted, will be recovered)
                         tokio::spawn(async move {
-                            // Check if chunking needed
-                            if crate::embeddings::needs_chunking(&content) {
-                                // Long message: split into chunks
-                                let chunks = crate::embeddings::chunk_text(&content);
-                                
-                                for chunk in &chunks {
-                                    // Insert chunk
-                                    let chunk_id = match db.insert_chunk(
-                                        message_id,
-                                        chunk.index as i32,
-                                        &chunk.content,
-                                        chunk.start_offset as i32,
-                                        chunk.end_offset as i32,
-                                        timestamp,
-                                    ) {
-                                        Ok(id) => id,
-                                        Err(e) => {
-                                            eprintln!("Warning: Failed to insert chunk: {}", e);
-                                            continue;
-                                        }
-                                    };
-                                    
-                                    // Generate embedding for chunk
-                                    if let Ok(embedding) = client.embed(&chunk.content).await {
+                            if !chunk_data.is_empty() {
+                                for (chunk_id, content) in chunk_data {
+                                    if let Ok(embedding) = client.embed(&content).await {
                                         let _ = db.update_chunk_embedding(
                                             chunk_id,
                                             &embedding,
@@ -255,7 +274,6 @@ impl ChatSession {
                                     }
                                 }
                             } else {
-                                // Short message: single embedding
                                 if let Ok(embedding) = client.embed(&content).await {
                                     let _ = db.update_message_embedding(
                                         message_id,
@@ -299,7 +317,8 @@ impl ChatSession {
 
             match db.insert_message(&self.id, "assistant", &content, now) {
                 Ok(message_id) => {
-                    // Generate embedding asynchronously (fire-and-forget)
+                    // Insert chunks synchronously (guaranteed persistence)
+                    // Generate embeddings asynchronously (can be recovered on restart)
                     if let Some(ref client) = self.embedding_client {
                         let client = Arc::clone(client);
                         let db = Arc::clone(db);
@@ -307,31 +326,37 @@ impl ChatSession {
                         let timestamp = now;
                         let content = content.clone();
 
+                        // Check if chunking needed and insert chunks synchronously
+                        let chunk_data = if crate::embeddings::needs_chunking(&content) {
+                            let chunks = crate::embeddings::chunk_text(&content);
+                            let mut data = Vec::new();
+                            for chunk in &chunks {
+                                match db.insert_chunk(
+                                    message_id,
+                                    chunk.index as i32,
+                                    &chunk.content,
+                                    chunk.start_offset as i32,
+                                    chunk.end_offset as i32,
+                                    timestamp,
+                                ) {
+                                    Ok(chunk_id) => {
+                                        data.push((chunk_id, chunk.content.clone()));
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Warning: Failed to insert chunk: {}", e);
+                                    }
+                                }
+                            }
+                            data
+                        } else {
+                            vec![]
+                        };
+
+                        // Generate embeddings asynchronously (can be interrupted, will be recovered)
                         tokio::spawn(async move {
-                            // Check if chunking needed
-                            if crate::embeddings::needs_chunking(&content) {
-                                // Long message: split into chunks
-                                let chunks = crate::embeddings::chunk_text(&content);
-                                
-                                for chunk in &chunks {
-                                    // Insert chunk
-                                    let chunk_id = match db.insert_chunk(
-                                        message_id,
-                                        chunk.index as i32,
-                                        &chunk.content,
-                                        chunk.start_offset as i32,
-                                        chunk.end_offset as i32,
-                                        timestamp,
-                                    ) {
-                                        Ok(id) => id,
-                                        Err(e) => {
-                                            eprintln!("Warning: Failed to insert chunk: {}", e);
-                                            continue;
-                                        }
-                                    };
-                                    
-                                    // Generate embedding for chunk
-                                    if let Ok(embedding) = client.embed(&chunk.content).await {
+                            if !chunk_data.is_empty() {
+                                for (chunk_id, content) in chunk_data {
+                                    if let Ok(embedding) = client.embed(&content).await {
                                         let _ = db.update_chunk_embedding(
                                             chunk_id,
                                             &embedding,
@@ -341,7 +366,6 @@ impl ChatSession {
                                     }
                                 }
                             } else {
-                                // Short message: single embedding
                                 if let Ok(embedding) = client.embed(&content).await {
                                     let _ = db.update_message_embedding(
                                         message_id,
@@ -427,10 +451,29 @@ impl ChatSession {
             .find(|m| m.role == MessageRole::User)
     }
 
-    /// Set the compacted summary and update the LLM message index
+    /// Set the compacted summary and update the LLM message index (full compaction)
     pub fn set_compacted_summary(&mut self, summary: String) {
         self.compacted_summary = Some(summary);
         self.messages_sent_to_llm = self.messages.len();
+        self.compacted_range = Some((0, self.messages.len()));
+        self.updated_at = Utc::now();
+    }
+
+    /// Set the compacted summary with middle compaction (preserves first and last messages)
+    pub fn set_compacted_summary_with_range(
+        &mut self,
+        summary: String,
+        range: Option<(usize, usize)>,
+    ) {
+        self.compacted_summary = Some(summary);
+        if let Some((first_preserved, last_preserved_start)) = range {
+            self.compacted_range = Some((first_preserved, last_preserved_start));
+            self.messages_sent_to_llm = last_preserved_start;
+        } else {
+            // Full compaction (backward compatible)
+            self.compacted_range = Some((0, self.messages.len()));
+            self.messages_sent_to_llm = self.messages.len();
+        }
         self.updated_at = Utc::now();
     }
 
@@ -439,12 +482,14 @@ impl ChatSession {
     pub fn clear_compacted_summary(&mut self) {
         self.compacted_summary = None;
         self.messages_sent_to_llm = 0;
+        self.compacted_range = None;
         self.updated_at = Utc::now();
     }
 
     /// Check if there are compacted messages
     pub fn has_compacted_messages(&self) -> bool {
-        self.compacted_summary.is_some() && self.messages_sent_to_llm > 0
+        self.compacted_summary.is_some()
+            && (self.messages_sent_to_llm > 0 || self.compacted_range.is_some())
     }
 
     /// Get the number of compacted messages

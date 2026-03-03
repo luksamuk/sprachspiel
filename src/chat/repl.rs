@@ -210,6 +210,12 @@ pub async fn run_chat_repl(
     // Attach database to session
     if let (Some(db), Some(client)) = (&db, &embedding_client) {
         session.attach_db(Arc::clone(db), Arc::clone(client));
+        
+        // Recover any missing embeddings from previous session
+        let recovered = crate::embeddings::recover_missing_embeddings(db, client, &session.id).await;
+        if recovered > 0 {
+            log_debug(&format!("Recovered {} missing embedding(s)", recovered));
+        }
     }
 
     // Thinking mode priority:
@@ -416,13 +422,33 @@ pub async fn run_chat_repl(
                                     )
                                     .await
                                     {
-                                        Ok(summary) => {
-                                            let compacted_count = session.messages.len();
-                                            session.set_compacted_summary(summary.clone());
-                                            println!(
-                                                "Compacted {} messages into summary.",
-                                                compacted_count
-                                            );
+                                        Ok((summary, range)) => {
+                                            let (first_preserved, last_preserved_start) =
+                                                range.unwrap_or((0, session.messages.len()));
+                                            let compacted_count =
+                                                last_preserved_start - first_preserved;
+
+                                            session
+                                                .set_compacted_summary_with_range(summary.clone(), range);
+
+                                            if first_preserved > 0
+                                                || last_preserved_start < session.messages.len()
+                                            {
+                                                // Middle compaction
+                                                println!(
+                                                    "Compacted {} messages (preserved {} first, {} last).",
+                                                    compacted_count,
+                                                    first_preserved,
+                                                    session.messages.len() - last_preserved_start
+                                                );
+                                            } else {
+                                                // Full compaction (backward compatible)
+                                                println!(
+                                                    "Compacted all {} messages.",
+                                                    compacted_count
+                                                );
+                                            }
+
                                             println!();
                                             println!("\x1B[90m--- Summary ---\x1B[0m");
                                             println!("{}", summary);
@@ -956,9 +982,35 @@ async fn compact_conversation(
     session: &ChatSession,
     _settings: &Settings,
     _agents_md: Option<&str>,
-) -> AppResult<String> {
+) -> AppResult<(String, Option<(usize, usize)>)> {
+    use crate::context_overflow::get_compaction_range_default;
+
+    if session.messages.is_empty() {
+        return Err("No messages to compact.".into());
+    }
+
+    // Determine which messages to summarize (middle compaction)
+    let (messages_to_summarize, range) = match get_compaction_range_default(session) {
+        Some(suggestion) => {
+            // Middle compaction: preserve first N + last N, summarize middle
+            let middle: Vec<_> = session.messages[suggestion.middle_indices.clone()].to_vec();
+            let range = Some((
+                suggestion.keep_first,
+                session.messages.len() - suggestion.keep_last,
+            ));
+            (middle, range)
+        }
+        None => {
+            // Not enough messages for middle compaction, summarize all
+            let all = session.messages.clone();
+            let range = Some((0, session.messages.len()));
+            (all, range)
+        }
+    };
+
+    // Build conversation text for summarization
     let mut conversation_text = String::new();
-    for msg in &session.messages {
+    for msg in &messages_to_summarize {
         match msg.role {
             super::session::MessageRole::User => {
                 conversation_text.push_str(&format!("User: {}\n", msg.content));
@@ -1007,7 +1059,7 @@ Provide a clear, structured summary that captures the essential context."#,
     match result {
         Ok(response) => {
             let summary = strip_thinking_tags(&response.message.content);
-            Ok(summary)
+            Ok((summary, range))
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),
     }

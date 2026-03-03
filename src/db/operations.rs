@@ -591,6 +591,12 @@ impl Database {
                 ],
             )?;
 
+            // Mark chunk as having embedding
+            conn.execute(
+                "UPDATE message_chunks SET has_embedding = 1 WHERE id = ?1",
+                params![chunk_id],
+            )?;
+
             Ok(())
         })
     }
@@ -616,6 +622,31 @@ impl Database {
                     end_offset: row.get(5)?,
                     created_at: row.get(6)?,
                 })
+            })?;
+
+            rows.collect::<Result<Vec<_>>>()
+        })
+    }
+
+    /// Get chunks without embeddings for recovery
+    ///
+    /// Returns (chunk_id, content) pairs for chunks that need embedding generation.
+    /// Used by recovery manager on startup to resume interrupted embedding generation.
+    pub fn get_chunks_without_embedding(
+        &self,
+        conversation_id: &str,
+    ) -> Result<Vec<(i64, String)>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let mut stmt = conn.prepare(
+                "SELECT mc.id, mc.content 
+                 FROM message_chunks mc
+                 JOIN messages m ON mc.message_id = m.id
+                 WHERE m.conversation_id = ?1 AND mc.has_embedding = 0
+                 ORDER BY mc.id ASC",
+            )?;
+
+            let rows = stmt.query_map(params![conversation_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
             })?;
 
             rows.collect::<Result<Vec<_>>>()

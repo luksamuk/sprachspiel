@@ -136,7 +136,31 @@ pub async fn build_context(
         }
     }
 
-    // 3. Compacted summary (if present)
+    // 3. First preserved messages (if middle compaction)
+    // According to "lost in the middle" research, important content should be
+    // at BEGINNING or END, not middle.
+    if let Some((first_preserved, _)) = session.compacted_range {
+        if first_preserved > 0 {
+            for msg in &session.messages[..first_preserved] {
+                match msg.role {
+                    MessageRole::User => {
+                        messages.push(ChatMessage::user(msg.content.clone()));
+                    }
+                    MessageRole::Assistant => {
+                        messages.push(ChatMessage::assistant(msg.content.clone()));
+                    }
+                    MessageRole::System => {
+                        // System messages are handled separately
+                    }
+                    MessageRole::Tool => {
+                        messages.push(ChatMessage::tool(msg.content.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Compacted summary (if present)
     if let Some(ref summary) = session.compacted_summary {
         messages.push(ChatMessage::system(format!(
             "<summary_context>\n{}\n</summary_context>",
@@ -144,8 +168,13 @@ pub async fn build_context(
         )));
     }
 
-    // 4. Recent messages (before query - avoid "lost in middle")
-    let start_idx = session.messages_sent_to_llm.min(session.messages.len());
+    // 5. Recent messages (before query - avoid "lost in middle")
+    // Use compacted_range for middle compaction, or messages_sent_to_llm for legacy
+    let start_idx = match session.compacted_range {
+        Some((_, last_preserved_start)) => last_preserved_start,
+        None => session.messages_sent_to_llm.min(session.messages.len()),
+    };
+
     let recent_messages: Vec<_> = session.messages[start_idx..]
         .iter()
         .rev()
@@ -170,7 +199,7 @@ pub async fn build_context(
         }
     }
 
-    // 5. Current query (always at the very end - critical for model performance)
+    // 6. Current query (always at the very end - critical for model performance)
     // This is added by the caller, not here
 
     ContextResult {

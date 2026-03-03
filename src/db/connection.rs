@@ -55,10 +55,43 @@ impl Database {
         // Check and migrate schema
         let version: i32 = conn.query_row(VERSION_SQL, [], |row| row.get(0))?;
         if version < SCHEMA_VERSION {
-            // Apply schema
+            // Apply base schema
             conn.execute_batch(SCHEMA_SQL)?;
+
+            // Apply incremental migrations
+            Self::apply_migrations(conn, version)?;
+
             // Set version (not parameterized)
             conn.execute_batch(&set_version_sql(SCHEMA_VERSION))?;
+        }
+
+        Ok(())
+    }
+
+    /// Apply incremental schema migrations
+    fn apply_migrations(conn: &Connection, from_version: i32) -> Result<()> {
+        // Migration v2 -> v3: Add has_embedding to message_chunks
+        if from_version < 3 {
+            // Check if column already exists (for databases created with v3 schema)
+            let column_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM pragma_table_info(message_chunks) WHERE name='has_embedding'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )? > 0;
+
+            if !column_exists {
+                conn.execute(
+                    "ALTER TABLE message_chunks ADD COLUMN has_embedding INTEGER DEFAULT 0",
+                    [],
+                )?;
+            }
+
+            // Create index for missing embeddings
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_chunks_missing_embedding 
+                 ON message_chunks(has_embedding) WHERE has_embedding = 0",
+                [],
+            )?;
         }
 
         Ok(())
