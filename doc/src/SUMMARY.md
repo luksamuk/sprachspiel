@@ -29,6 +29,7 @@
   - [Chat Mode Design](./development/chat-mode-design.md)
   - [Context Management Research](./development/context_management_research.md)
   - [Context v2 Plan](./development/context_v2_plan.md)
+  - [Context Composition Design](./development/context_composition_design.md)
   - [Prompt Refactoring](./development/prompt-refactor.md)
   - [Contributing](./development/contributing.md)
 

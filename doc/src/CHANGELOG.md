@@ -2,6 +2,17 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [Unreleased] - v0.21.0 (In Progress)
+
+### Design
+
+- **Context Composition Design** - New design document for v0.21.0
+  - Documented optimal context ordering based on "Lost in the Middle" research
+  - Defined auto-retrieval behavior and thresholds
+  - Specified ChatSession SQLite integration
+  - Planned `/migrate`, `/reindex`, `/retrieval` commands
+  - See `doc/src/development/context_composition_design.md`
+
 ## [0.20.0] - 2026-03-03
 
 ### Added

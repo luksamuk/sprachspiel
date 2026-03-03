@@ -1,8 +1,10 @@
 # Context Management v2 - Implementation Plan
 
-**Status:** Phase 4 Completed (v0.20.0), Phase 5 Pending  
+**Status:** Phase 4 Completed (v0.20.0), Phase 5 In Progress (v0.21.0)  
 **Date:** 2026-03-03  
 **Based on:** Context Management Research + User Discussion
+
+**See also:** [Context Composition Design](./context_composition_design.md) - Detailed design decisions for v0.21.0
 
 ---
 
@@ -107,21 +109,28 @@ This makes **Token-Based Pruning + Middle Compaction** viable without losing cri
 
 **Goal:** Auto-index messages on save, enable auto-retrieval
 
+**Detailed Design:** See [Context Composition Design](./context_composition_design.md)
+
 - [ ] Integrate with ChatSession
+  - Add `db` and `embedding_client` fields
   - Auto-save messages to SQLite
-  - Auto-generate embeddings on message
+  - Auto-generate embeddings asynchronously (fire-and-forget)
 - [ ] `/migrate` command
   - Migrate JSON sessions to SQLite
   - Generate embeddings for existing messages
+  - Batch processing for efficiency
 - [ ] `/reindex` command
   - Rebuild all embeddings
+  - Support specific conversation_id
 - [ ] Context overflow handling
-  - Auto-compact at 80% context window
-  - Middle summarization
+  - Detect overflow at 80% context window
+  - Middle compaction (keep first N + last N)
+  - Preserve messages in SQLite (never delete)
 - [ ] Auto-retrieval
-  - M relevant messages (semantic)
+  - M semantically relevant messages
   - N recent messages (chronological)
-  - Combine for LLM context
+  - Position: AFTER system prompt, BEFORE query
+  - Configurable via config.toml
 
 ### Phase 5: Future (v0.22+)
 
@@ -129,63 +138,9 @@ This makes **Token-Based Pruning + Middle Compaction** viable without losing cri
 - [ ] File session state tracking
 - [ ] Hierarchical context compression
 
-### Phase 2: To-Do List Tooling (v0.18.0)
-
-**Goal:** State Management as primary context reduction
-
-1. **To-Do List Tools**
-   - `create_list(name: String)` - Create a new task list
-   - `add_task(list: String, task: String)` - Add task to list
-   - `update_task(list: String, id: usize, status: String)` - Update task status
-   - `get_tasks(list: String)` - Retrieve current tasks
-   - `clear_list(list: String)` - Clear completed tasks
-
-2. **Session State Integration**
-   - Track files read in session
-   - Track decisions made
-   - Expose via `/info` command
-
-3. **Prompt Integration**
-   - Include current to-do list state in system prompt
-   - Include files read summary
-
-### Phase 3: Token-Based Pruning (v0.19.0)
-
-**Goal:** Automatic context management
-
-1. **Sliding Window**
-   - Configurable `max_messages` (default: 20)
-   - Preserve system + working state + recent N
-
-2. **Token-Based Trigger**
-   - Auto-compact at 80% of context window
-   - Visual indicator when compacting
-
-3. **Middle Compaction**
-   - Summarize messages in the middle
-   - Keep first N and last N full
-   - Use abstractive summarization
-
-### Phase 4: Semantic Retrieval (v0.20.0+)
-
-**Goal:** Intelligent context selection
-
-1. **Embeddings Infrastructure**
-   - Research Rust crates (`ort`, `candle`)
-   - Local embedding model (all-MiniLM-L6-v2 or similar)
-   - SQLite + sqlite-vec for storage
-
-2. **Vector Storage**
-   - Embed all conversation turns
-   - Store in SQLite with session metadata
-
-3. **Hybrid Retrieval**
-   - Recent (5) + Relevant (K) + Summary
-   - Semantic similarity search
-
 ---
 
-## Embeddings Research (New High Priority Task)
+## Embeddings Research
 
 **Priority:** HIGH (after To-Do List)  
 **Status:** Model research complete, implementation research pending

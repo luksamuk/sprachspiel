@@ -44,8 +44,9 @@
 - ChatSession integration (auto-save messages + embeddings)
 - `/migrate` command (JSON → SQLite)
 - `/reindex` command (rebuild embeddings)
-- Context overflow handling (auto-compaction)
+- Context overflow handling (auto-compaction at 80%)
 - Auto-retrieval (M relevant + N recent messages)
+- Context composition based on "Lost in the Middle" research
 
 📋 **Planned:**
 
@@ -75,8 +76,9 @@ man ask-ai
 See the development documentation:
 
 1. [Architecture](./doc/src/development/architecture.md) - Technical architecture
-2. [Roadmap](./doc/src/development/roadmap.md) - What's coming next
+2. [Roadmap](./doc/src/development/roadmap.md) - Future plans
 3. [Contributing](./doc/src/development/contributing.md) - How to contribute
+4. [Context Composition Design](./doc/src/development/context_composition_design.md) - v0.21.0 design decisions
 
 ## Legacy Content
 
@@ -88,4 +90,5 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-03 - v0.20.0: Semantic search with sqlite-vec
+2026-03-03 - v0.20.0: Semantic search with sqlite-vec  
+2026-03-03 - v0.21.0: Design decisions documented
