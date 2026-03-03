@@ -72,6 +72,44 @@ pub fn needs_chunking_with_config(text: &str, config: &ChunkConfig) -> bool {
     text.len() > config.max_chars
 }
 
+/// Find the nearest valid UTF-8 character boundary at or before the target byte position
+fn find_char_boundary(text: &str, target_byte: usize) -> usize {
+    if target_byte >= text.len() {
+        return text.len();
+    }
+
+    // If already on a boundary, return it
+    if text.is_char_boundary(target_byte) {
+        return target_byte;
+    }
+
+    // Find the previous boundary
+    let mut boundary = target_byte;
+    while boundary > 0 && !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    boundary
+}
+
+/// Find the nearest valid UTF-8 character boundary at or after the target byte position
+fn find_char_boundary_forward(text: &str, target_byte: usize) -> usize {
+    if target_byte >= text.len() {
+        return text.len();
+    }
+
+    // If already on a boundary, return it
+    if text.is_char_boundary(target_byte) {
+        return target_byte;
+    }
+
+    // Find the next boundary
+    let mut boundary = target_byte;
+    while boundary < text.len() && !text.is_char_boundary(boundary) {
+        boundary += 1;
+    }
+    boundary
+}
+
 /// Split text into overlapping chunks using default configuration
 ///
 /// # Example
@@ -101,9 +139,14 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
         // Calculate chunk end position
         let mut end = (pos + config.max_chars).min(text_len);
 
+        // Adjust to valid UTF-8 boundary
+        end = find_char_boundary(text, end);
+
         // Adjust end to sentence boundary if possible (don't break in middle of sentence)
         if end < text_len {
             end = find_sentence_boundary(text, end);
+            // Ensure it's still a valid boundary after sentence adjustment
+            end = find_char_boundary(text, end);
         }
 
         // Extract chunk content
@@ -116,9 +159,13 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
         // Move to next position with overlap
         // But ensure we advance (avoid infinite loop)
         let next_pos = end.saturating_sub(config.overlap_chars);
+        // Ensure next_pos is a valid boundary
+        let next_pos = find_char_boundary_forward(text, next_pos);
+
         if next_pos <= pos {
             // Couldn't find good boundary, advance by step
             pos += step;
+            pos = find_char_boundary_forward(text, pos);
         } else {
             pos = next_pos;
         }
@@ -159,27 +206,27 @@ fn find_sentence_boundary(text: &str, target_pos: usize) -> usize {
     // Search backwards from target_pos for sentence boundary
     let search_start = target_pos.saturating_sub(100); // Look back up to 100 chars
 
-    // We need byte positions, so work with the string carefully
-    let text_bytes = text.as_bytes();
-
     // Search from target_pos backwards to find good boundary
     for pos in (search_start..target_pos).rev() {
-        if pos >= text_bytes.len() {
+        // Skip if not a valid UTF-8 boundary
+        if !text.is_char_boundary(pos) {
             continue;
         }
 
-        let ch = text_bytes[pos] as char;
+        // Get the character at this position
+        let ch = text[pos..].chars().next().unwrap();
 
         // Check for sentence-ending punctuation
         if ch == '.' || ch == '!' || ch == '?' || ch == '\n' {
             // Check if this is really end of sentence
-            let next_pos = pos + 1;
-            if next_pos >= text_bytes.len() {
+            let next_pos = pos + ch.len_utf8();
+            if next_pos >= text.len() {
                 // End of text, this is a boundary
                 return next_pos;
             }
 
-            let next_ch = text_bytes[next_pos] as char;
+            // Get next character
+            let next_ch = text[next_pos..].chars().next().unwrap();
 
             // Good boundary if followed by:
             // - Whitespace and capital letter
@@ -313,5 +360,64 @@ mod tests {
         let chunks = chunk_text("");
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].content, "");
+    }
+
+    #[test]
+    fn test_utf8_char_boundary() {
+        // Portuguese with accents - multibyte characters
+        let text = "São Paulo é uma cidade maravilhosa! ".repeat(50);
+        let chunks = chunk_text(&text);
+
+        // Verify all chunks are valid UTF-8
+        for chunk in &chunks {
+            assert!(
+                chunk.content.is_char_boundary(0),
+                "Start should be boundary"
+            );
+            assert!(
+                chunk.content.is_char_boundary(chunk.content.len()),
+                "End should be boundary"
+            );
+        }
+    }
+
+    #[test]
+    fn test_utf8_multibyte_at_boundary() {
+        // Test where multibyte char would be at chunk boundary position 1024
+        // 'ó' is 2 bytes (UTF-8), so position 1024 might split it
+        let text = "a".repeat(1022) + "ção" + &"b".repeat(100);
+        let chunks = chunk_text(&text);
+
+        assert!(chunks.len() > 0, "Should create chunks");
+
+        // Verify all chunks are valid UTF-8
+        for chunk in &chunks {
+            assert!(chunk.content.is_char_boundary(0));
+            assert!(chunk.content.is_char_boundary(chunk.content.len()));
+        }
+    }
+
+    #[test]
+    fn test_emoji_in_text() {
+        // Emojis are 4 bytes in UTF-8
+        let text = "Hello 👋 World 🌍 test! ".repeat(100);
+        let chunks = chunk_text(&text);
+
+        for chunk in &chunks {
+            assert!(chunk.content.is_char_boundary(0));
+            assert!(chunk.content.is_char_boundary(chunk.content.len()));
+        }
+    }
+
+    #[test]
+    fn test_chinese_characters() {
+        // Chinese characters are 3 bytes in UTF-8
+        let text = "你好世界测试中文 ".repeat(100);
+        let chunks = chunk_text(&text);
+
+        for chunk in &chunks {
+            assert!(chunk.content.is_char_boundary(0));
+            assert!(chunk.content.is_char_boundary(chunk.content.len()));
+        }
     }
 }
