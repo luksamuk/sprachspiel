@@ -172,14 +172,13 @@ pub async fn build_context(
                         retrieval_performed = true;
                         
                         let mut retrieved_text = String::from("<retrieved_context>\n");
-                        retrieved_text.push_str("The following messages are from YOUR conversation history with this user.\n");
-                        retrieved_text.push_str("They represent topics you have discussed together earlier.\n");
-                        retrieved_text.push_str("Reference these when the user asks about previous topics.\n\n");
-                        for (i, msg) in results.iter().enumerate() {
+                        retrieved_text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n");
+                        retrieved_text.push_str("Each message has an ID. Use remember(id=\"N\") for full content.\n");
+                        retrieved_text.push_str("Use remember(query=\"topic\") to search for past discussions.\n\n");
+                        for msg in results.iter() {
                             retrieved_text.push_str(&format!(
-                                "<message index=\"{}\" timestamp=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
-                                i + 1,
-                                msg.timestamp,
+                                "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
+                                msg.message_id,
                                 msg.role,
                                 msg.content
                             ));
@@ -458,16 +457,16 @@ mod tests {
     fn test_retrieval_toggle() {
         let mut session = create_test_session(10);
         
-        // Initially false
-        assert!(!session.retrieval_enabled);
-        
-        // Toggle on
-        session.retrieval_enabled = true;
+        // Initially true (default changed in v0.23.0)
         assert!(session.retrieval_enabled);
         
         // Toggle off
         session.retrieval_enabled = false;
         assert!(!session.retrieval_enabled);
+        
+        // Toggle back on
+        session.retrieval_enabled = true;
+        assert!(session.retrieval_enabled);
     }
 
     #[test]

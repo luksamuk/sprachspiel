@@ -104,10 +104,10 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 ## High Priority
 
-### Remember Tool & Context Enhancement (CRITICAL)
+### Remember Tool & Context Enhancement ✅
 
-**Priority:** CRITICAL  
-**Status:** Planned (v0.23.0)
+**Priority:** HIGH  
+**Status:** Completed (released in v0.23.0)
 
 **Problem:** Even with v0.22.9 context framing, GLM-5:cloud still responds "I have no memory of previous conversations." The LLM:
 1. Doesn't know HOW to retrieve MORE context (only receives 5 messages)
@@ -115,33 +115,15 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 3. Can't search for topics NOT in the last query
 
 **Solution:**
-1. Add `remember(id)` tool to retrieve full message by ID
-2. Add `remember(query)` tool to search by topic
+1. `remember(id)` tool to retrieve full message by ID
+2. `remember(query)` tool to search by topic
 3. Include message IDs in retrieved context
 4. Enable retrieval by default
 5. Clear MEMORY TOOLS section in prompt
 
-**Decisions:**
-- Use `tokio::task_local!` for DB/EmbeddingClient access (safe for async)
-- Tool name: `remember` (not `recall`, more natural)
-- Default limit: 5, max: 10
-- Don't register tool in anonymous sessions
-- Use database ID directly (minimal token overhead)
+**Released:** v0.23.0 (2026-03-03)
 
-**Token Overhead:** ~130 tokens (0.06% of 198K context)
-
-**Detailed Plan:** `doc/src/development/v0.23.0_plan.md`
-
-**Tasks:**
-- [ ] Add `get_message_by_id()` to Database
-- [ ] Create `src/tools/context.rs` with task_local storage
-- [ ] Create `src/tools/remember.rs` with remember tool
-- [ ] Update `context_builder.rs` to use message_id + new framing
-- [ ] Change `retrieval_enabled` default to `true`
-- [ ] Conditional tool registration + context wrapper
-- [ ] Add MEMORY TOOLS section to prompts
-- [ ] Tests: Remember by ID, Remember by query, Anonymous session
-- [ ] Update CHANGELOG
+**See:** `doc/src/development/v0.23.0_plan.md`
 
 ---
 

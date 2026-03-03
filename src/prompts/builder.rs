@@ -193,6 +193,23 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         prompt.push_str("Reference them when the user asks about topics we discussed earlier.\n");
     }
 
+    // 4c. Memory tools section (if retrieval and tools are both enabled)
+    if config.retrieval_enabled && config.tools_enabled {
+        prompt.push_str("\n### MEMORY TOOLS\n");
+        prompt.push_str("You have access to your conversation history via the remember tool:\n\n");
+        prompt.push_str("- **remember(id=\"N\")**: Get full message by ID\n");
+        prompt.push_str("  Use when you see a relevant but truncated message in context.\n\n");
+        prompt.push_str("- **remember(query=\"topic\")**: Search past discussions\n");
+        prompt.push_str("  Use when the user asks about something not in current context.\n\n");
+        prompt.push_str("**Example:**\n");
+        prompt.push_str(
+            "Context shows: <message id='42'><content>What about...</content></message>\n",
+        );
+        prompt.push_str("You think: This looks relevant but incomplete.\n");
+        prompt.push_str("You call: remember(id=\"42\")\n");
+        prompt.push_str("You receive: Full message content\n");
+    }
+
     // 5. Examples (if tools enabled)
     if config.tools_enabled {
         prompt.push_str("\n\n");

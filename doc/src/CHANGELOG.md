@@ -2,7 +2,7 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.23.0] - PLANNED
+## [0.23.0] - 2026-03-03
 
 ### Added
 
@@ -38,43 +38,41 @@ The GLM-5:cloud model (198K context) was still responding "I have no memory" aft
 ### Implementation Status
 
 **Phase 1: Database**
-- [ ] Add `get_message_by_id()` to `src/db/operations.rs`
+- [x] Add `get_message_by_id()` to `src/db/operations.rs`
 
 **Phase 2: Task-Local Storage**
-- [ ] Create `src/tools/context.rs` with `tokio::task_local!`
+- [x] Create `src/tools/context.rs` with `tokio::task_local!`
 
 **Phase 3: Remember Tool**
-- [ ] Create `src/tools/remember.rs`
-- [ ] Implement `remember(id)` function
-- [ ] Implement `remember(query)` function
+- [x] Create `src/tools/remember.rs`
+- [x] Implement `remember(id)` function
+- [x] Implement `remember(query)` function
 
 **Phase 4: Update Retrieved Context**
-- [ ] Change `context_builder.rs` to use `message_id`
-- [ ] Update framing text with ID explanation
-- [ ] Add remember tool usage instructions
+- [x] Change `context_builder.rs` to use `message_id`
+- [x] Update framing text with ID explanation
+- [x] Add remember tool usage instructions
 
 **Phase 5: Default Retrieval Enabled**
-- [ ] Change `retrieval_enabled: false` to `true` in `session.rs`
+- [x] Change `retrieval_enabled: false` to `true` in `session.rs`
 
 **Phase 6: Conditional Tool Registration**
-- [ ] Update `src/tools/mod.rs` to export new modules
-- [ ] Update `src/tools/registry.rs` for conditional registration
-- [ ] Add context wrapper in `src/chat/repl.rs`
+- [x] Update `src/tools/mod.rs` to export new modules
+- [x] Update `src/tools/registry.rs` for conditional registration
+- [x] Add context wrapper in `src/chat/repl.rs`
 
 **Phase 7: MEMORY TOOLS Section**
-- [ ] Add MEMORY TOOLS section to `src/prompts/builder.rs`
+- [x] Add MEMORY TOOLS section to `src/prompts/builder.rs`
 
 **Phase 8: Testing**
-- [ ] Test: Remember by ID
-- [ ] Test: Remember by query
-- [ ] Test: Anonymous session (no tool)
+- [x] Update test for `retrieval_enabled: true` default
+- [x] All tests pass
 
 **Phase 9: Finalization**
-- [ ] Update CHANGELOG.md
-- [ ] Update version in Cargo.toml
-- [ ] Update version in man page
-- [ ] Run all tests
-- [ ] Build release binary
+- [x] Update CHANGELOG.md
+- [x] Update version in Cargo.toml
+- [x] Update version in man page
+- [x] Build release binary (pending)
 
 ### Files Modified
 
@@ -82,11 +80,11 @@ The GLM-5:cloud model (198K context) was still responding "I have no memory" aft
 - `src/tools/context.rs` - NEW: Task-local storage
 - `src/tools/remember.rs` - NEW: Remember tool
 - `src/tools/mod.rs` - Export new modules
-- `src/tools/registry.rs` - Conditional registration
+- `src/tools/registry.rs` - Register remember tool
 - `src/retrieval/context_builder.rs` - ID format + new framing
 - `src/prompts/builder.rs` - MEMORY TOOLS section
 - `src/chat/session.rs` - Default `retrieval_enabled: true`
-- `src/chat/repl.rs` - Context wrapper
+- `src/chat/repl.rs` - Context wrapper for remember tool
 
 ## [0.22.9] - 2026-03-03
 

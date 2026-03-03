@@ -2,6 +2,7 @@
 #[cfg(feature = "pokemon-tools")]
 use serde::Deserialize;
 
+pub mod context;
 #[cfg(feature = "calc-tools")]
 pub mod calc;
 pub mod files;
@@ -12,6 +13,7 @@ pub mod led;
 pub mod misc;
 #[cfg(feature = "pokemon-tools")]
 pub mod pokemon;
+pub mod remember;
 pub mod registry;
 #[cfg(feature = "search-tools")]
 pub mod search_builtin;
@@ -23,6 +25,7 @@ pub mod system;
 pub mod todo;
 pub mod weather;
 
+pub use context::*;
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
 pub use files::*;
@@ -33,6 +36,7 @@ pub use led::*;
 pub use misc::*;
 #[cfg(feature = "pokemon-tools")]
 pub use pokemon::*;
+pub use remember::*;
 pub use registry::{get_available_tool_names, register_tools};
 #[cfg(feature = "search-tools")]
 pub use search_builtin::*;

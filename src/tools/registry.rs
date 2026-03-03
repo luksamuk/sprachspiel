@@ -17,6 +17,9 @@ use crate::settings::Settings;
 ))]
 use super::*;
 
+// Remember tool is always available (checks context internally)
+use super::remember;
+
 /// Trait for tool registration - implemented by both Coordinator types
 pub trait ToolRegistrar: Sized {
     fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self;
@@ -297,6 +300,13 @@ where
         }
     }
 
+    // Remember tool - always available (checks context internally)
+    // Note: The tool returns an error if DB/EmbeddingClient not available
+    if is_tool_allowed("remember") {
+        coordinator = coordinator.register_tool(remember);
+        tool_count += 1;
+    }
+
     (coordinator, tool_count)
 }
 
@@ -306,6 +316,8 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
     let is_allowed = |name: &str| !settings.is_tool_blacklisted(name);
 
     tools.push("test_tool".to_string());
+    // Remember tool - always available (checks context internally)
+    tools.push("remember".to_string());
 
     #[cfg(feature = "pokemon-tools")]
     {

@@ -469,6 +469,34 @@ impl Database {
         })
     }
 
+    /// Get a single message by ID (for remember tool)
+    ///
+    /// Used by the remember tool to retrieve full message content
+    /// when the LLM sees a truncated message in the retrieved context.
+    pub fn get_message_by_id(&self, message_id: i64) -> Result<Option<SearchResult>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let sql = "SELECT id, conversation_id, role, content, timestamp FROM messages 
+                       WHERE id = ?1";
+            let mut stmt = conn.prepare(sql)?;
+            let mut rows = stmt.query_map(params![message_id], |row: &rusqlite::Row<'_>| {
+                Ok(SearchResult {
+                    message_id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    timestamp: row.get(4)?,
+                    score: 1.0,
+                    search_type: SearchType::Keyword,
+                    chunk_content: None,
+                    chunk_start: None,
+                    chunk_end: None,
+                })
+            })?;
+
+            Ok(rows.next().transpose()?)
+        })
+    }
+
     /// Check if a conversation exists
     #[allow(dead_code)]
     pub fn conversation_exists(&self, conversation_id: &str) -> Result<bool> {

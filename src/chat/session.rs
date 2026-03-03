@@ -163,7 +163,7 @@ impl ChatSession {
             todos: TodoState::new(),
             db: None,
             embedding_client: None,
-            retrieval_enabled: false,
+            retrieval_enabled: true,
             last_retrieval_time: None,
         }
     }

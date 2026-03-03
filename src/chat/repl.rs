@@ -946,7 +946,16 @@ async fn send_message(
     let mut attempts = 0;
     let mut messages = messages;
     let result = loop {
-        let current_result = coordinator.chat(messages.clone()).await;
+        // Run chat with context if DB and embedding client are available
+        let current_result = if let (Some(db), Some(embedding)) = (db, embedding_client) {
+            crate::tools::context::with_context(
+                db.clone(),
+                embedding.clone(),
+                coordinator.chat(messages.clone())
+            ).await
+        } else {
+            coordinator.chat(messages.clone()).await
+        };
 
         match current_result {
             Ok(response) => break Ok(response),
