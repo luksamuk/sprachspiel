@@ -220,7 +220,8 @@ impl Database {
 
     /// Search messages using vector similarity
     ///
-    /// Note: sqlite-vec requires `k = ?` syntax for KNN queries, not LIMIT.
+    /// Note: sqlite-vec KNN queries only support `embedding MATCH ? AND k = ?`.
+    /// Additional filters (like conversation_id) must be applied after retrieval.
     /// See: https://github.com/asg017/sqlite-vec
     pub fn search_semantic(
         &self,
@@ -231,54 +232,40 @@ impl Database {
         self.with_connection(|conn: &rusqlite::Connection| {
             let embedding_bytes = embedding.as_bytes();
 
-            // sqlite-vec uses `k = ?` in WHERE clause, not LIMIT
-            let sql = match conversation_id {
-                Some(_) => {
-                    r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance
-                        FROM message_embeddings me
-                        JOIN messages m ON me.message_id = m.id
-                        WHERE me.embedding MATCH ?1 AND me.k = ?2 AND me.conversation_id = ?3"#
-                }
-                None => {
-                    r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance
-                        FROM message_embeddings me
-                        JOIN messages m ON me.message_id = m.id
-                        WHERE me.embedding MATCH ?1 AND me.k = ?2"#
-                }
+            // sqlite-vec KNN: only embedding MATCH and k=? allowed in WHERE
+            // We fetch more results and filter in application code if needed
+            let fetch_limit = if conversation_id.is_some() {
+                // Fetch 3x more when filtering by conversation to ensure enough results
+                limit * 3
+            } else {
+                limit
             };
+
+            let sql = r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance
+                FROM message_embeddings me
+                JOIN messages m ON me.message_id = m.id
+                WHERE me.embedding MATCH ?1 AND me.k = ?2"#;
 
             let mut stmt = conn.prepare(sql)?;
+            let rows = stmt.query_map(params![embedding_bytes, fetch_limit as i32], |row| {
+                Ok(SearchResult {
+                    message_id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    timestamp: row.get(4)?,
+                    score: row.get::<_, f32>(5)?,
+                    search_type: SearchType::Semantic,
+                })
+            })?;
 
-            let results = match conversation_id {
-                Some(conv_id) => {
-                    let rows = stmt.query_map(params![embedding_bytes, limit as i32, conv_id], |row| {
-                        Ok(SearchResult {
-                            message_id: row.get(0)?,
-                            conversation_id: row.get(1)?,
-                            role: row.get(2)?,
-                            content: row.get(3)?,
-                            timestamp: row.get(4)?,
-                            score: row.get::<_, f32>(5)?,
-                            search_type: SearchType::Semantic,
-                        })
-                    })?;
-                    rows.collect::<Result<Vec<_>>>()?
-                }
-                None => {
-                    let rows = stmt.query_map(params![embedding_bytes, limit as i32], |row| {
-                        Ok(SearchResult {
-                            message_id: row.get(0)?,
-                            conversation_id: row.get(1)?,
-                            role: row.get(2)?,
-                            content: row.get(3)?,
-                            timestamp: row.get(4)?,
-                            score: row.get::<_, f32>(5)?,
-                            search_type: SearchType::Semantic,
-                        })
-                    })?;
-                    rows.collect::<Result<Vec<_>>>()?
-                }
-            };
+            let mut results: Vec<SearchResult> = rows.collect::<Result<Vec<_>>>()?;
+
+            // Filter by conversation_id in application code
+            if let Some(conv_id) = conversation_id {
+                results.retain(|r| r.conversation_id == conv_id);
+                results.truncate(limit);
+            }
 
             Ok(results)
         })
