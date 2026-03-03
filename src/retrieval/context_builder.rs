@@ -13,6 +13,7 @@ use std::time::Instant;
 
 use crate::chat::session::{ChatSession, MessageRole};
 use crate::db::Database;
+use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
 
 /// Minimum messages before auto-retrieval activates
@@ -97,6 +98,7 @@ pub async fn build_context(
     user_query: &str,
     system_prompt: &str,
     config: &RetrievalConfig,
+    use_debug: bool,
 ) -> ContextResult {
     let mut messages = Vec::new();
     let mut retrieval_performed = false;
@@ -111,9 +113,42 @@ pub async fn build_context(
     // Forced retrieval: after /clear, session empty but DB has messages
     let force_retrieve = should_force_retrieve(session, db);
     
+    if use_debug {
+        log_debug(&format!(
+            "Retrieval: enabled={}, should_retrieve={}, force_retrieve={}",
+            config.enabled, should_retrieve, force_retrieve
+        ));
+        log_debug(&format!(
+            "Session: id={}, anonymous={}, messages={}, has_summary={}",
+            session.id,
+            session.anonymous,
+            session.messages.len(),
+            session.compacted_summary.is_some()
+        ));
+    }
+    
     if should_retrieve || force_retrieve {
+        if use_debug {
+            log_debug(&format!(
+                "Attempting retrieval: db={}, embedding_client={}",
+                db.is_some(),
+                embedding_client.is_some()
+            ));
+        }
+        
         if let (Some(db), Some(client)) = (db, embedding_client) {
+            if use_debug {
+                log_debug("Generating embedding for query...");
+            }
+            
             if let Ok(embedding) = client.embed(user_query).await {
+                if use_debug {
+                    log_debug(&format!(
+                        "Searching for relevant messages in conversation: {}",
+                        session.id
+                    ));
+                }
+                
                 if let Ok(results) = db.search_hybrid(
                     user_query,
                     &embedding,
@@ -122,6 +157,13 @@ pub async fn build_context(
                     config.keyword_weight,
                     config.semantic_weight,
                 ) {
+                    if use_debug {
+                        log_debug(&format!(
+                            "Search returned {} results",
+                            results.len()
+                        ));
+                    }
+                    
                     if !results.is_empty() {
                         retrieved_count = results.len();
                         retrieval_performed = true;
@@ -138,10 +180,25 @@ pub async fn build_context(
                         }
                         retrieved_text.push_str("</retrieved_context>");
                         messages.push(ChatMessage::system(retrieved_text));
+                        
+                        if use_debug {
+                            log_debug(&format!(
+                                "Added {} retrieved messages to context",
+                                retrieved_count
+                            ));
+                        }
                     }
+                } else if use_debug {
+                    log_debug("Search returned no results");
                 }
+            } else if use_debug {
+                log_debug("Failed to generate embedding for query");
             }
+        } else if use_debug {
+            log_debug("Skipping retrieval: db or embedding_client not available");
         }
+    } else if use_debug {
+        log_debug("Skipping retrieval: conditions not met");
     }
 
     // 3. First preserved messages (if middle compaction)

@@ -2,6 +2,23 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.22.6] - 2026-03-03
+
+### Fixed
+
+- **Retrieval After /clear Debug Logging** - Added comprehensive debug logs
+  - Logs show: `enabled`, `should_retrieve`, `force_retrieve` values
+  - Logs show: session ID, anonymous status, message count, summary status
+  - Logs show: DB and embedding client availability
+  - Logs show: search results count
+  - Use `/debug` to see detailed retrieval diagnostics
+
+### Changed
+
+- **build_context() parameter** - Added `use_debug: bool` parameter
+  - Required for debug logging in context builder
+  - Updated call sites in `repl.rs`
+
 ## [0.22.5] - 2026-03-03
 
 ### Fixed
@@ -16,8 +33,7 @@ All notable changes to Ask-AI will be documented in this file.
   - Added `should_force_retrieve()` function
   - Retrieval activates when session empty but DB has 2+ messages
   - Ignores `retrieval_enabled` flag and `MIN_MESSAGES` threshold
-  - Gray system message: `[i] Semantic retrieval enabled.`
-  - Gray hint: `[i] You may ask about previous topics.`
+  - Gray system message: `[i] You may ask about previous topics.`
 
 - **Lowered Retrieval Threshold**
   - `MIN_MESSAGES_FOR_RETRIEVAL`: 20 → 5 (more useful for short conversations)

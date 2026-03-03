@@ -905,6 +905,7 @@ async fn send_message(
         user_input,
         &system_prompt,
         &retrieval_config,
+        use_debug,
     ).await;
     
     // Update last_retrieval_time if retrieval was performed
