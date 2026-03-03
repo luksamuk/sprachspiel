@@ -15,6 +15,9 @@ pub struct FormattedResult {
     pub conversation_id: String,
     pub role: String,
     pub content: String,
+    pub chunk_content: Option<String>,
+    pub chunk_start: Option<i32>,
+    pub chunk_end: Option<i32>,
     pub timestamp: DateTime<Utc>,
     pub score: f32,
     pub search_type: SearchType,
@@ -26,6 +29,9 @@ impl From<SearchResult> for FormattedResult {
             conversation_id: result.conversation_id,
             role: result.role,
             content: result.content,
+            chunk_content: result.chunk_content,
+            chunk_start: result.chunk_start,
+            chunk_end: result.chunk_end,
             timestamp: DateTime::from_timestamp(result.timestamp, 0)
                 .unwrap_or_else(Utc::now),
             score: result.score,
@@ -61,16 +67,33 @@ pub fn display_results(results: &[FormattedResult]) {
 
         output.push_str(&format!("{}. {} — {} (score: {:.4})\n", i + 1, type_str, role_str, result.score));
 
-        // Truncate content for display
-        let content = if result.content.len() > 300 {
-            format!("{}...", &result.content[..300])
+        // Check if we have chunk content (matched a chunk of a long message)
+        let display_content = if let (Some(chunk), Some(start), Some(end)) = 
+            (&result.chunk_content, result.chunk_start, result.chunk_end) {
+            // Chunk matched - show with ellipsis for context
+            let prefix = if start > 0 { "..." } else { "" };
+            let suffix = if end < result.content.len() as i32 { "..." } else { "" };
+            
+            // Truncate chunk if too long for display
+            let chunk_display = if chunk.len() > 400 {
+                format!("{}...", &chunk[..400])
+            } else {
+                chunk.clone()
+            };
+            
+            format!("{}{}{}", prefix, chunk_display, suffix)
         } else {
-            result.content.clone()
+            // Full message matched - truncate for display
+            if result.content.len() > 300 {
+                format!("{}...", &result.content[..300])
+            } else {
+                result.content.clone()
+            }
         };
         
         // Format content with indentation
         output.push_str("```\n");
-        for line in content.lines() {
+        for line in display_content.lines() {
             output.push_str(&format!("  {}\n", line));
         }
         output.push_str("```\n");

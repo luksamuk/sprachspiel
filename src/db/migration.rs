@@ -1,6 +1,7 @@
 //! Session migration from JSON to SQLite
 //!
 //! Migrates JSON session files to SQLite database with embeddings.
+//! Applies chunking to long messages (>1024 chars) for better semantic search.
 
 use std::sync::Arc;
 
@@ -8,7 +9,7 @@ use chrono::Utc;
 
 use super::Database;
 use crate::chat::session::{ChatSession, MessageRole};
-use crate::embeddings::EmbeddingClient;
+use crate::embeddings::{EmbeddingClient, chunk_text, needs_chunking};
 use crate::chat::history::ConversationStorage;
 
 /// Migration statistics
@@ -20,6 +21,8 @@ pub struct MigrationStats {
     pub messages_migrated: usize,
     /// Total embeddings generated
     pub embeddings_generated: usize,
+    /// Total chunks created
+    pub chunks_created: usize,
     /// Number of errors
     pub errors: Vec<String>,
 }
@@ -69,8 +72,51 @@ pub async fn migrate_session(
         
         stats.messages_migrated += 1;
         
-        // Generate embedding for user messages only
-        if msg.role == MessageRole::User {
+        // Generate embeddings for ALL roles (not just user)
+        // Apply chunking for long messages
+        if needs_chunking(&msg.content) {
+            // Long message: split into chunks
+            let chunks = chunk_text(&msg.content);
+            
+            for chunk in &chunks {
+                let chunk_id = db.insert_chunk(
+                    message_id,
+                    chunk.index as i32,
+                    &chunk.content,
+                    chunk.start_offset as i32,
+                    chunk.end_offset as i32,
+                    msg.timestamp,
+                ).map_err(|e| format!("Failed to insert chunk: {}", e))?;
+                
+                // Generate embedding for chunk
+                match embedding_client.embed(&chunk.content).await {
+                    Ok(embedding) => {
+                        if let Err(e) = db.update_chunk_embedding(
+                            chunk_id,
+                            &embedding,
+                            &session.id,
+                            msg.timestamp,
+                        ) {
+                            stats.errors.push(format!(
+                                "Failed to save chunk embedding for message {}: {}",
+                                idx, e
+                            ));
+                        } else {
+                            stats.embeddings_generated += 1;
+                        }
+                    }
+                    Err(e) => {
+                        stats.errors.push(format!(
+                            "Failed to generate chunk embedding for message {}: {}",
+                            idx, e
+                        ));
+                    }
+                }
+            }
+            
+            stats.chunks_created += chunks.len();
+        } else {
+            // Short message: single embedding
             match embedding_client.embed(&msg.content).await {
                 Ok(embedding) => {
                     if let Err(e) = db.update_message_embedding(
@@ -99,10 +145,11 @@ pub async fn migrate_session(
         // Print progress every 10 messages
         if total_messages > 10 && (idx + 1) % 10 == 0 {
             println!(
-                "  Progress: {}/{} messages ({} embeddings)",
+                "  Progress: {}/{} messages ({} embeddings, {} chunks)",
                 idx + 1,
                 total_messages,
-                stats.embeddings_generated
+                stats.embeddings_generated,
+                stats.chunks_created
             );
         }
     }
@@ -194,45 +241,87 @@ pub async fn reindex_conversation(
     println!("Reindexing {} message(s)...", messages.len());
     
     for (idx, msg) in messages.iter().enumerate() {
-        // Only reindex user messages
-        if msg.role != "user" {
-            continue;
-        }
+        // Reindex ALL roles (not just user)
         
-        match embedding_client.embed(&msg.content).await {
-            Ok(embedding) => {
-                // Convert timestamp
-                let timestamp = chrono::DateTime::from_timestamp(msg.timestamp, 0)
-                    .unwrap_or_else(Utc::now);
-                    
-                if let Err(e) = db.update_message_embedding(
+        // Convert timestamp
+        let timestamp = chrono::DateTime::from_timestamp(msg.timestamp, 0)
+            .unwrap_or_else(Utc::now);
+        
+        // Apply chunking for long messages
+        if needs_chunking(&msg.content) {
+            // Long message: split into chunks
+            let chunks = chunk_text(&msg.content);
+            
+            for chunk in &chunks {
+                let chunk_id = db.insert_chunk(
                     msg.message_id,
-                    &embedding,
-                    conversation_id,
+                    chunk.index as i32,
+                    &chunk.content,
+                    chunk.start_offset as i32,
+                    chunk.end_offset as i32,
                     timestamp,
-                ) {
-                    stats.errors.push(format!(
-                        "Failed to update embedding for message {}: {}",
-                        idx, e
-                    ));
-                } else {
-                    stats.embeddings_generated += 1;
+                ).map_err(|e| format!("Failed to insert chunk: {}", e))?;
+                
+                match embedding_client.embed(&chunk.content).await {
+                    Ok(embedding) => {
+                        if let Err(e) = db.update_chunk_embedding(
+                            chunk_id,
+                            &embedding,
+                            conversation_id,
+                            timestamp,
+                        ) {
+                            stats.errors.push(format!(
+                                "Failed to update chunk embedding for message {}: {}",
+                                idx, e
+                            ));
+                        } else {
+                            stats.embeddings_generated += 1;
+                        }
+                    }
+                    Err(e) => {
+                        stats.errors.push(format!(
+                            "Failed to generate chunk embedding for message {}: {}",
+                            idx, e
+                        ));
+                    }
                 }
             }
-            Err(e) => {
-                stats.errors.push(format!(
-                    "Failed to generate embedding for message {}: {}",
-                    idx, e
-                ));
+            
+            stats.chunks_created += chunks.len();
+        } else {
+            // Short message: single embedding
+            match embedding_client.embed(&msg.content).await {
+                Ok(embedding) => {
+                    if let Err(e) = db.update_message_embedding(
+                        msg.message_id,
+                        &embedding,
+                        conversation_id,
+                        timestamp,
+                    ) {
+                        stats.errors.push(format!(
+                            "Failed to update embedding for message {}: {}",
+                            idx, e
+                        ));
+                    } else {
+                        stats.embeddings_generated += 1;
+                    }
+                }
+                Err(e) => {
+                    stats.errors.push(format!(
+                        "Failed to generate embedding for message {}: {}",
+                        idx, e
+                    ));
+                }
             }
         }
         
         // Print progress every 10 messages
         if messages.len() > 10 && (idx + 1) % 10 == 0 {
             println!(
-                "  Progress: {}/{} embeddings",
+                "  Progress: {}/{} embeddings ({} chunks)",
                 idx + 1,
-                messages.len()
+                messages.len(),
+                stats.chunks_created
             );
         }
     }

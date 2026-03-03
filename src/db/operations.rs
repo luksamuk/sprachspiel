@@ -42,7 +42,7 @@ pub struct SearchResult {
     pub conversation_id: String,
     /// Message role
     pub role: String,
-    /// Message content
+    /// Message content (full message)
     pub content: String,
     /// Timestamp
     pub timestamp: i64,
@@ -50,6 +50,12 @@ pub struct SearchResult {
     pub score: f32,
     /// Source of the result
     pub search_type: SearchType,
+    /// Chunk content (if result matched a chunk)
+    pub chunk_content: Option<String>,
+    /// Chunk start offset in original message
+    pub chunk_start: Option<i32>,
+    /// Chunk end offset in original message
+    pub chunk_end: Option<i32>,
 }
 
 /// Type of search that found the result
@@ -180,6 +186,9 @@ impl Database {
                             timestamp: row.get(4)?,
                             score: row.get::<_, f32>(5)?,
                             search_type: SearchType::Keyword,
+                            chunk_content: None,
+                            chunk_start: None,
+                            chunk_end: None,
                         })
                     })?;
                     for r in rows {
@@ -207,6 +216,9 @@ impl Database {
                     timestamp: row.get(4)?,
                     score: row.get::<_, f32>(5)?,
                     search_type: SearchType::Keyword,
+                    chunk_content: None,
+                    chunk_start: None,
+                    chunk_end: None,
                 })
             })?;
 
@@ -222,6 +234,10 @@ impl Database {
     /// Note: sqlite-vec KNN queries only support `embedding MATCH ? AND k = ?`.
     /// Additional filters (like conversation_id) must be applied after retrieval.
     /// See: https://github.com/asg017/sqlite-vec
+    ///
+    /// Searches both:
+    /// - Short messages (stored in message_embeddings)
+    /// - Chunks of long messages (stored in chunk_embeddings)
     pub fn search_semantic(
         &self,
         embedding: &[f32],
@@ -240,12 +256,17 @@ impl Database {
                 limit
             };
 
-            let sql = r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance
+            // Query message_embeddings (short messages without chunks)
+            let sql_messages = r#"SELECT me.message_id, me.conversation_id, m.role, m.content, m.timestamp, me.distance,
+                NULL as chunk_content, NULL as chunk_start, NULL as chunk_end
                 FROM message_embeddings me
                 JOIN messages m ON me.message_id = m.id
                 WHERE me.embedding MATCH ?1 AND me.k = ?2"#;
 
-            let mut stmt = conn.prepare(sql)?;
+            let mut results: Vec<SearchResult> = Vec::new();
+
+            // Search message embeddings (short messages)
+            let mut stmt = conn.prepare(sql_messages)?;
             let rows = stmt.query_map(params![embedding_bytes, fetch_limit as i32], |row| {
                 Ok(SearchResult {
                     message_id: row.get(0)?,
@@ -255,14 +276,68 @@ impl Database {
                     timestamp: row.get(4)?,
                     score: row.get::<_, f32>(5)?,
                     search_type: SearchType::Semantic,
+                    chunk_content: row.get(6)?,
+                    chunk_start: row.get(7)?,
+                    chunk_end: row.get(8)?,
                 })
             })?;
+            for r in rows {
+                results.push(r?);
+            }
 
-            let mut results: Vec<SearchResult> = rows.collect::<Result<Vec<_>>>()?;
+            // Query chunk_embeddings (chunks of long messages)
+            let sql_chunks = r#"SELECT c.message_id, ce.conversation_id, m.role, m.content, m.timestamp, ce.distance,
+                c.content as chunk_content, c.start_offset, c.end_offset
+                FROM chunk_embeddings ce
+                JOIN message_chunks c ON ce.chunk_id = c.id
+                JOIN messages m ON c.message_id = m.id
+                WHERE ce.embedding MATCH ?1 AND ce.k = ?2"#;
+
+            let mut stmt = conn.prepare(sql_chunks)?;
+            let rows = stmt.query_map(params![embedding_bytes, fetch_limit as i32], |row| {
+                Ok(SearchResult {
+                    message_id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    timestamp: row.get(4)?,
+                    score: row.get::<_, f32>(5)?,
+                    search_type: SearchType::Semantic,
+                    chunk_content: row.get(6)?,
+                    chunk_start: row.get(7)?,
+                    chunk_end: row.get(8)?,
+                })
+            })?;
+            for r in rows {
+                results.push(r?);
+            }
+
+            // Deduplicate by message_id, keeping best score
+            // (a message might appear in both results if it has chunks)
+            use std::collections::HashMap;
+            let mut best_results: HashMap<i64, SearchResult> = HashMap::new();
+            for result in results {
+                let entry = best_results.entry(result.message_id);
+                match entry {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        if result.score < e.get().score {
+                            e.insert(result);
+                        }
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(result);
+                    }
+                }
+            }
+
+            let mut results: Vec<SearchResult> = best_results.into_values().collect();
+            results.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
 
             // Filter by conversation_id in application code
             if let Some(conv_id) = conversation_id {
                 results.retain(|r| r.conversation_id == conv_id);
+                results.truncate(limit);
+            } else {
                 results.truncate(limit);
             }
 
@@ -321,6 +396,9 @@ impl Database {
                                 timestamp: row.get(4)?,
                                 score: 0.0,
                                 search_type: SearchType::Hybrid,
+                                chunk_content: None,
+                                chunk_start: None,
+                                chunk_end: None,
                             })
                         },
                     )?;
@@ -342,6 +420,9 @@ impl Database {
                                 timestamp: row.get(4)?,
                                 score: 0.0,
                                 search_type: SearchType::Hybrid,
+                                chunk_content: None,
+                                chunk_start: None,
+                                chunk_end: None,
                             })
                         })?;
                     for r in rows {
@@ -422,6 +503,9 @@ impl Database {
                     timestamp: row.get(4)?,
                     score: 0.0,
                     search_type: SearchType::Hybrid,
+                    chunk_content: None,
+                    chunk_start: None,
+                    chunk_end: None,
                 })
             })?;
 
@@ -457,6 +541,99 @@ impl Database {
             Ok(count as usize)
         })
     }
+
+    /// Insert a chunk of a long message
+    pub fn insert_chunk(
+        &self,
+        message_id: i64,
+        chunk_index: i32,
+        content: &str,
+        start_offset: i32,
+        end_offset: i32,
+        timestamp: DateTime<Utc>,
+    ) -> Result<i64> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            conn.execute(
+                "INSERT INTO message_chunks (message_id, chunk_index, content, start_offset, end_offset, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    message_id,
+                    chunk_index,
+                    content,
+                    start_offset,
+                    end_offset,
+                    timestamp.timestamp(),
+                ],
+            )?;
+            Ok(conn.last_insert_rowid())
+        })
+    }
+
+    /// Update a chunk with its embedding
+    pub fn update_chunk_embedding(
+        &self,
+        chunk_id: i64,
+        embedding: &[f32],
+        conversation_id: &str,
+        timestamp: DateTime<Utc>,
+    ) -> Result<()> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let embedding_bytes = embedding.as_bytes();
+
+            conn.execute(
+                "INSERT INTO chunk_embeddings (chunk_id, embedding, conversation_id, timestamp)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    chunk_id,
+                    embedding_bytes,
+                    conversation_id,
+                    timestamp.timestamp(),
+                ],
+            )?;
+
+            Ok(())
+        })
+    }
+
+    /// Get all chunks for a message
+    #[allow(dead_code)]
+    pub fn get_message_chunks(&self, message_id: i64) -> Result<Vec<ChunkRow>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let mut stmt = conn.prepare(
+                "SELECT id, message_id, chunk_index, content, start_offset, end_offset, created_at
+                 FROM message_chunks 
+                 WHERE message_id = ?1 
+                 ORDER BY chunk_index ASC",
+            )?;
+
+            let rows = stmt.query_map(params![message_id], |row| {
+                Ok(ChunkRow {
+                    id: row.get(0)?,
+                    message_id: row.get(1)?,
+                    chunk_index: row.get(2)?,
+                    content: row.get(3)?,
+                    start_offset: row.get(4)?,
+                    end_offset: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            })?;
+
+            rows.collect::<Result<Vec<_>>>()
+        })
+    }
+}
+
+/// Row from message_chunks table
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ChunkRow {
+    pub id: i64,
+    pub message_id: i64,
+    pub chunk_index: i32,
+    pub content: String,
+    pub start_offset: i32,
+    pub end_offset: i32,
+    pub created_at: i64,
 }
 
 /// Reciprocal Rank Fusion algorithm
@@ -613,6 +790,9 @@ mod tests {
             timestamp: 0,
             score: 0.0,
             search_type: SearchType::Keyword,
+            chunk_content: None,
+            chunk_start: None,
+            chunk_end: None,
         };
 
         let keyword_results = vec![

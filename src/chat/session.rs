@@ -219,15 +219,51 @@ impl ChatSession {
                         let db = Arc::clone(db);
                         let conv_id = self.id.clone();
                         let timestamp = now;
+                        let content = content.clone();
 
                         tokio::spawn(async move {
-                            if let Ok(embedding) = client.embed(&content).await {
-                                let _ = db.update_message_embedding(
-                                    message_id,
-                                    &embedding,
-                                    &conv_id,
-                                    timestamp,
-                                );
+                            // Check if chunking needed
+                            if crate::embeddings::needs_chunking(&content) {
+                                // Long message: split into chunks
+                                let chunks = crate::embeddings::chunk_text(&content);
+                                
+                                for chunk in &chunks {
+                                    // Insert chunk
+                                    let chunk_id = match db.insert_chunk(
+                                        message_id,
+                                        chunk.index as i32,
+                                        &chunk.content,
+                                        chunk.start_offset as i32,
+                                        chunk.end_offset as i32,
+                                        timestamp,
+                                    ) {
+                                        Ok(id) => id,
+                                        Err(e) => {
+                                            eprintln!("Warning: Failed to insert chunk: {}", e);
+                                            continue;
+                                        }
+                                    };
+                                    
+                                    // Generate embedding for chunk
+                                    if let Ok(embedding) = client.embed(&chunk.content).await {
+                                        let _ = db.update_chunk_embedding(
+                                            chunk_id,
+                                            &embedding,
+                                            &conv_id,
+                                            timestamp,
+                                        );
+                                    }
+                                }
+                            } else {
+                                // Short message: single embedding
+                                if let Ok(embedding) = client.embed(&content).await {
+                                    let _ = db.update_message_embedding(
+                                        message_id,
+                                        &embedding,
+                                        &conv_id,
+                                        timestamp,
+                                    );
+                                }
                             }
                         });
                     }
@@ -242,6 +278,7 @@ impl ChatSession {
     /// Add an assistant message to the session
     /// 
     /// If database is attached, saves to SQLite immediately.
+    /// Applies chunking for long messages (>1024 chars).
     pub fn add_assistant_message(&mut self, content: String) {
         let now = Utc::now();
         
@@ -260,8 +297,66 @@ impl ChatSession {
             // Ensure conversation exists before inserting message
             self.ensure_conversation_exists();
 
-            if let Err(e) = db.insert_message(&self.id, "assistant", &content, now) {
-                eprintln!("Warning: Could not save message to database: {}", e);
+            match db.insert_message(&self.id, "assistant", &content, now) {
+                Ok(message_id) => {
+                    // Generate embedding asynchronously (fire-and-forget)
+                    if let Some(ref client) = self.embedding_client {
+                        let client = Arc::clone(client);
+                        let db = Arc::clone(db);
+                        let conv_id = self.id.clone();
+                        let timestamp = now;
+                        let content = content.clone();
+
+                        tokio::spawn(async move {
+                            // Check if chunking needed
+                            if crate::embeddings::needs_chunking(&content) {
+                                // Long message: split into chunks
+                                let chunks = crate::embeddings::chunk_text(&content);
+                                
+                                for chunk in &chunks {
+                                    // Insert chunk
+                                    let chunk_id = match db.insert_chunk(
+                                        message_id,
+                                        chunk.index as i32,
+                                        &chunk.content,
+                                        chunk.start_offset as i32,
+                                        chunk.end_offset as i32,
+                                        timestamp,
+                                    ) {
+                                        Ok(id) => id,
+                                        Err(e) => {
+                                            eprintln!("Warning: Failed to insert chunk: {}", e);
+                                            continue;
+                                        }
+                                    };
+                                    
+                                    // Generate embedding for chunk
+                                    if let Ok(embedding) = client.embed(&chunk.content).await {
+                                        let _ = db.update_chunk_embedding(
+                                            chunk_id,
+                                            &embedding,
+                                            &conv_id,
+                                            timestamp,
+                                        );
+                                    }
+                                }
+                            } else {
+                                // Short message: single embedding
+                                if let Ok(embedding) = client.embed(&content).await {
+                                    let _ = db.update_message_embedding(
+                                        message_id,
+                                        &embedding,
+                                        &conv_id,
+                                        timestamp,
+                                    );
+                                }
+                            }
+                        });
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not save message to database: {}", e);
+                }
             }
         }
     }

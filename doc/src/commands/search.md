@@ -90,23 +90,79 @@ Each result shows:
 1. **Query Embedding** - Your query is converted to a 256-dimensional vector using `nomic-embed-text-v2-moe`
 2. **BM25 Search** - Full-text search using FTS5 with escaped query
 3. **Semantic Search** - Vector similarity using cosine distance
+   - Searches both message embeddings (short messages) and chunk embeddings (long messages)
+   - Combines results from both sources
 4. **RRF Fusion** - Results combined with Reciprocal Rank Fusion
 5. **Ranking** - Final results sorted by combined score
 
+## Chunking
+
+Messages longer than 1024 characters are automatically split into overlapping 
+chunks for better semantic search:
+
+- **Chunk size**: 1024 characters
+- **Overlap**: 200 characters (20%)
+- **All roles**: Embeddings generated for user, assistant, system, and tool messages
+
+### Example
+
+A 3000-character assistant response is split into:
+- Chunk 0: characters 0-1024
+- Chunk 1: characters 824-1848  (overlaps with chunk 0)
+- Chunk 2: characters 1648-2672 (overlaps with chunk 1)
+- Chunk 3: characters 2472-3000 (final chunk)
+
+**Search results** show the matched chunk content (with ellipsis for context) 
+but clicking/viewing reveals the full message.
+
+### Why Chunking?
+
+1. **Granularity**: 3000+ character embeddings lose precision
+2. **Context**: Query about "Wittgenstein's later work" matches chunk 
+   discussing specifically that, not entire response
+3. **Recall**: Chunks with overlap ensure boundary terms are searchable
+
+**Why Overlap?**
+
+Without overlap, search terms split across chunk boundaries are invisible:
+- Chunk 0: "...Wittgenstein's philosophical inves-"
+- Chunk 1: "tigationss demonstrate..."
+
+A search for "philosophical investigations" wouldn't match either chunk.
+
+With 20% overlap (200 chars):
+- Chunk 0: "...Wittgenstein's philosophical investigationss demonst-"
+- Chunk 1: "...tionss demonstrate..."
+
+The full phrase appears in both chunks, ensuring matches.
+
+**Chunk vs Full Message Storage:**
+
+| Aspect | Chunk Storage | Full Message |
+|--------|---------------|--------------|
+| Embedding granularity | High | Low |
+| Match precision | Sentence-level | Document-level |
+| Storage overhead | 2-3x for long msgs | 1x |
+| Search relevance | Better for long responses | Good for short queries |
+
+We store **both**: chunks for search, parent message for display.
+
 ## Migration
 
-Messages are **not automatically indexed** yet. This feature is planned for v0.21.0.
+Messages are automatically indexed when:
+- Added during chat session (real-time)
+- Migrated via `/migrate` command (historical)
 
-To index existing conversations, you would need to:
-
-1. Run `/migrate` (not yet implemented)
-2. Or manually insert messages via SQLite
+**Note:** Run `/migrate` after upgrading to v0.22.0+ to re-index all messages with chunking.
 
 ## Storage
 
 - Database: `~/.local/share/ask-ai/embeddings.db`
 - Embedding dimensions: 256 (Matryoshka truncation from 768)
-- Storage per message: ~3KB (text + embedding)
+- Storage per message: ~3KB base (text + embedding)
+- Storage per chunk: ~3KB additional (chunk embedding)
+
+Messages > 1024 chars: overhead is ~3KB per chunk
 
 ## Limitations
 

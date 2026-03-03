@@ -3,11 +3,12 @@
 //! Includes:
 //! - conversations table
 //! - messages table
+//! - message_chunks table (for long messages)
 //! - message_embeddings virtual table (vec0)
 //! - messages_fts virtual table (FTS5)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -41,9 +42,37 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp 
     ON messages(timestamp DESC);
 
--- Vector embeddings (256-dim Matryoshka)
+-- Message chunks for long messages (>1024 chars)
+CREATE TABLE IF NOT EXISTS message_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    start_offset INTEGER NOT NULL,
+    end_offset INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
+-- Index for chunk lookup by message
+CREATE INDEX IF NOT EXISTS idx_chunks_message 
+    ON message_chunks(message_id);
+
+-- Index for chunk ordering
+CREATE INDEX IF NOT EXISTS idx_chunks_order 
+    ON message_chunks(message_id, chunk_index);
+
+-- Vector embeddings for short messages (256-dim Matryoshka)
 CREATE VIRTUAL TABLE IF NOT EXISTS message_embeddings USING vec0(
     message_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +conversation_id TEXT,
+    +timestamp INTEGER
+);
+
+-- Vector embeddings for message chunks
+CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
+    chunk_id INTEGER PRIMARY KEY,
     embedding FLOAT[256],
     +conversation_id TEXT,
     +timestamp INTEGER

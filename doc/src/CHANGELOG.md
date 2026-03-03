@@ -2,6 +2,59 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.22.0] - 2026-03-03
+
+### Added
+
+- **Message Chunking** - Automatic splitting of long messages for better semantic search
+  - Messages > 1024 characters are split into overlapping chunks (20% overlap)
+  - Each chunk gets its own embedding for precise matching
+  - All message roles (user/assistant/system/tool) now get embeddings
+  - Search results show matched chunk with context ellipsis
+
+- **Chunk Storage** - New `message_chunks` table
+  - Stores chunk content, offsets, and links to parent message
+  - Enables reconstructing full message from chunk matches
+  - Automatic cleanup when parent message is deleted (CASCADE)
+
+### Changed
+
+- **Embedding Generation** - Now applies to ALL roles, not just user messages
+  - Fixes issue where assistant responses about Wittgenstein weren't searchable
+  - System and tool messages also benefit from semantic search
+
+- **Search Results** - Improved display for chunked messages
+  - Shows matched chunk content with `...` ellipsis for boundary context
+  - Full message content available for viewing
+  - Better relevance scoring with chunk-level precision
+
+- **Database Schema** - Version bumped to 2
+  - Added `message_chunks` table
+  - Added `chunk_embeddings` virtual table (sqlite-vec)
+  - Separate embedding tables for messages and chunks
+
+### Technical
+
+- **New module**: `src/embeddings/chunker.rs` - Text chunking with overlap
+  - `chunk_text()` - Split text into overlapping chunks
+  - `needs_chunking()` - Check if message needs chunking
+  - Sentence boundary detection for clean splits
+  
+- **Constants**:
+  - `DEFAULT_CHUNK_SIZE`: 1024 characters
+  - `DEFAULT_CHUNK_OVERLAP`: 200 characters
+  - `DEFAULT_CHUNK_MIN_SIZE`: 256 characters
+
+- **Database operations**:
+  - `insert_chunk()` - Insert a message chunk
+  - `update_chunk_embedding()` - Store chunk embedding
+  - `get_message_chunks()` - Retrieve all chunks for a message
+  
+- **Search operations**:
+  - `search_semantic()` now queries both `message_embeddings` and `chunk_embeddings`
+  - Result deduplication by `message_id` (keep best score)
+  - `SearchResult` now includes `chunk_content`, `chunk_start`, `chunk_end` fields
+
 ## [0.21.0] - 2026-03-03
 
 ### Added
