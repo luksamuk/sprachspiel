@@ -267,7 +267,6 @@ pub fn execute_command(
                 println!("\x1B[90m[i] You may ask about previous topics.\x1B[0m");
             } else if has_db_messages {
                 println!("Conversation history cleared.");
-                println!("\x1B[90m[i] Semantic retrieval enabled.\x1B[0m");
                 println!("\x1B[90m[i] You may ask about previous topics.\x1B[0m");
             } else {
                 println!("Conversation history cleared.");
