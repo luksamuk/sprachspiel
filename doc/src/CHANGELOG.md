@@ -2,6 +2,50 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.22.9] - PLANNED
+
+### Issue
+
+**Context Framing for Semantic Retrieval**
+
+After implementing forced retrieval (v0.22.7), semantic retrieval works correctly:
+- ✅ Session ID is stable across model switches
+- ✅ Messages are preserved in SQLite after `/clear`
+- ✅ Hybrid search returns relevant results
+- ✅ `should_force_retrieve()` correctly detects post-clear state
+
+**However, the LLM still says "I have no memory of previous conversations."**
+
+The problem is **prompt engineering**: the LLM doesn't understand what `<retrieved_context>` represents.
+
+### Planned Changes
+
+1. **Improve retrieved_context framing** - Add explicit explanation:
+   ```xml
+   <retrieved_context>
+   The following messages are from YOUR conversation history with this user.
+   They represent topics you have discussed together earlier.
+   Reference these when the user asks about previous topics.
+   ...
+   </retrieved_context>
+   ```
+
+2. **Add MEMORY section to system prompt** - Explain retrieval mechanism:
+   ```
+   ### MEMORY
+   When <retrieved_context> appears in our conversation, it contains 
+   messages from our prior conversation. Reference them when relevant.
+   ```
+
+### Files to Modify
+
+- `src/retrieval/context_builder.rs` - Add framing text
+- `src/prompts/builder.rs` - Add MEMORY section
+
+### Detailed Plan
+
+See `doc/src/development/v0.22.9_plan.md`
+
 ## [0.22.8] - 2026-03-03
 
 ### Added

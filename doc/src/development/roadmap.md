@@ -89,9 +89,63 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 **Workaround:** Use `ask vision` for image analysis until fixed.
 
+### Semantic Retrieval Context Framing (CRITICAL)
+
+**Status:** Identified, fix planned for v0.22.9
+
+The LLM doesn't understand what `<retrieved_context>` represents. It sees retrieved messages but doesn't recognize them as conversation history. Smaller models (ministral) are especially affected.
+
+**Symptoms:**
+- After `/clear`, LLM says "no memory of previous conversations"
+- After model switch, same issue
+- Retrieved context is ignored
+
+**Root Cause:** The `<retrieved_context>` tag lacks explanation that these are past conversation messages.
+
+**Fix:** See `doc/src/development/v0.22.9_plan.md`
+
 ---
 
 ## High Priority
+
+### Context Framing for Semantic Retrieval (CRITICAL)
+
+**Priority:** CRITICAL  
+**Status:** Planned (v0.22.9)
+
+**Problem:** After implementing forced retrieval (v0.22.7), semantic retrieval works correctly but the LLM doesn't understand the retrieved context.
+
+The LLM receives:
+```xml
+<retrieved_context>
+<message index="1">...</message>
+</retrieved_context>
+```
+
+But doesn't know these are past conversation messages.
+
+**Solution:**
+1. Add framing text explaining `<retrieved_context>`
+2. Add MEMORY section to system prompt (conditional)
+
+**Decisions:**
+- Accept ~80 tokens overhead for clarity
+- MEMORY section conditional (only when retrieval happens)
+- Keep 5 message limit (works for 32K+ context)
+- Don't include conversation_id in messages
+- Defer recall tool to future (low priority)
+
+**Detailed Plan:** `doc/src/development/v0.22.9_plan.md`
+
+**Tasks:**
+- [ ] Add context explanation to retrieved messages
+- [ ] Add MEMORY section to system prompt (conditional)
+- [ ] Pass retrieval flag to prompt builder
+- [ ] Test with glm-5:cloud and ministral
+- [ ] Verify retrieval after `/clear`
+- [ ] Verify retrieval after model switch
+
+---
 
 ### Token Counting & Context Metrics ✅
 
@@ -321,6 +375,48 @@ When reviewing code, focus on:
 - [ ] Design: Skill file format
 - [ ] Implement: Skill parser
 - [ ] Implement: `--skill` flag
+
+---
+
+### Recall Tool for Conversation History
+
+**Priority:** Low  
+**Status:** Deferred (future research)
+
+**Concept:** Allow LLM to explicitly recall topics from conversation history via a tool call.
+
+**Tool Interface:**
+```rust
+/// Search conversation history for a specific topic
+/// Returns relevant messages with context
+recall_topic(query: String, limit: Option<usize>) -> Result<String>
+```
+
+**Benefits:**
+- LLM has explicit control over what to recall
+- Can search specific topics, not just rely on automatic retrieval
+- Can request more context when needed
+- User can see what LLM is recalling
+
+**Challenges:**
+- Requires tool calling capability (not all models support)
+- Need to define tool interface and parameters
+- May conflict with automatic retrieval
+- Tool calling overhead adds latency
+- Research needed on optimal interaction pattern
+
+**Relationship to Current Work:**
+- Current automatic retrieval (v0.22.7+) works for most cases
+- Recall tool would be LLM-initiated, not automatic
+- Could complement or replace automatic retrieval
+- Needs research on when LLM should call it
+
+**Tasks:**
+- [ ] Research: Tool calling patterns for memory
+- [ ] Research: Auto vs. manual recall trade-offs
+- [ ] Design: Tool interface and parameters
+- [ ] Implement: `recall_topic` tool
+- [ ] Evaluate: User experience comparison
 
 ---
 
