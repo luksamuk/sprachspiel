@@ -35,6 +35,47 @@ The GLM-5:cloud model (198K context) was still responding "I have no memory" aft
 
 **Token Overhead:** ~130 tokens (0.06% of 198K context)
 
+### Implementation Status
+
+**Phase 1: Database**
+- [ ] Add `get_message_by_id()` to `src/db/operations.rs`
+
+**Phase 2: Task-Local Storage**
+- [ ] Create `src/tools/context.rs` with `tokio::task_local!`
+
+**Phase 3: Remember Tool**
+- [ ] Create `src/tools/remember.rs`
+- [ ] Implement `remember(id)` function
+- [ ] Implement `remember(query)` function
+
+**Phase 4: Update Retrieved Context**
+- [ ] Change `context_builder.rs` to use `message_id`
+- [ ] Update framing text with ID explanation
+- [ ] Add remember tool usage instructions
+
+**Phase 5: Default Retrieval Enabled**
+- [ ] Change `retrieval_enabled: false` to `true` in `session.rs`
+
+**Phase 6: Conditional Tool Registration**
+- [ ] Update `src/tools/mod.rs` to export new modules
+- [ ] Update `src/tools/registry.rs` for conditional registration
+- [ ] Add context wrapper in `src/chat/repl.rs`
+
+**Phase 7: MEMORY TOOLS Section**
+- [ ] Add MEMORY TOOLS section to `src/prompts/builder.rs`
+
+**Phase 8: Testing**
+- [ ] Test: Remember by ID
+- [ ] Test: Remember by query
+- [ ] Test: Anonymous session (no tool)
+
+**Phase 9: Finalization**
+- [ ] Update CHANGELOG.md
+- [ ] Update version in Cargo.toml
+- [ ] Update version in man page
+- [ ] Run all tests
+- [ ] Build release binary
+
 ### Files Modified
 
 - `src/db/operations.rs` - Add `get_message_by_id()`

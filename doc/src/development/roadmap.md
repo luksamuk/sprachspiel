@@ -89,61 +89,59 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 **Workaround:** Use `ask vision` for image analysis until fixed.
 
-### Semantic Retrieval Context Framing (CRITICAL)
+### Semantic Retrieval Context Framing ✅
 
-**Status:** Identified, fix planned for v0.22.9
+**Status:** Completed (released in v0.22.9)
 
-The LLM doesn't understand what `<retrieved_context>` represents. It sees retrieved messages but doesn't recognize them as conversation history. Smaller models (ministral) are especially affected.
+~The LLM doesn't understand what `<retrieved_context>` represents.~ Fixed with:
+1. Framing text explaining messages are from conversation history
+2. MEMORY section in system prompt (conditional)
+3. Explicit instructions for smaller models
 
-**Symptoms:**
-- After `/clear`, LLM says "no memory of previous conversations"
-- After model switch, same issue
-- Retrieved context is ignored
-
-**Root Cause:** The `<retrieved_context>` tag lacks explanation that these are past conversation messages.
-
-**Fix:** See `doc/src/development/v0.22.9_plan.md`
+**See:** `doc/src/development/v0.22.9_plan.md`
 
 ---
 
 ## High Priority
 
-### Context Framing for Semantic Retrieval (CRITICAL)
+### Remember Tool & Context Enhancement (CRITICAL)
 
 **Priority:** CRITICAL  
-**Status:** Planned (v0.22.9)
+**Status:** Planned (v0.23.0)
 
-**Problem:** After implementing forced retrieval (v0.22.7), semantic retrieval works correctly but the LLM doesn't understand the retrieved context.
-
-The LLM receives:
-```xml
-<retrieved_context>
-<message index="1">...</message>
-</retrieved_context>
-```
-
-But doesn't know these are past conversation messages.
+**Problem:** Even with v0.22.9 context framing, GLM-5:cloud still responds "I have no memory of previous conversations." The LLM:
+1. Doesn't know HOW to retrieve MORE context (only receives 5 messages)
+2. Doesn't understand HOW to reference retrieved messages
+3. Can't search for topics NOT in the last query
 
 **Solution:**
-1. Add framing text explaining `<retrieved_context>`
-2. Add MEMORY section to system prompt (conditional)
+1. Add `remember(id)` tool to retrieve full message by ID
+2. Add `remember(query)` tool to search by topic
+3. Include message IDs in retrieved context
+4. Enable retrieval by default
+5. Clear MEMORY TOOLS section in prompt
 
 **Decisions:**
-- Accept ~80 tokens overhead for clarity
-- MEMORY section conditional (only when retrieval happens)
-- Keep 5 message limit (works for 32K+ context)
-- Don't include conversation_id in messages
-- Defer recall tool to future (low priority)
+- Use `tokio::task_local!` for DB/EmbeddingClient access (safe for async)
+- Tool name: `remember` (not `recall`, more natural)
+- Default limit: 5, max: 10
+- Don't register tool in anonymous sessions
+- Use database ID directly (minimal token overhead)
 
-**Detailed Plan:** `doc/src/development/v0.22.9_plan.md`
+**Token Overhead:** ~130 tokens (0.06% of 198K context)
+
+**Detailed Plan:** `doc/src/development/v0.23.0_plan.md`
 
 **Tasks:**
-- [ ] Add context explanation to retrieved messages
-- [ ] Add MEMORY section to system prompt (conditional)
-- [ ] Pass retrieval flag to prompt builder
-- [ ] Test with glm-5:cloud and ministral
-- [ ] Verify retrieval after `/clear`
-- [ ] Verify retrieval after model switch
+- [ ] Add `get_message_by_id()` to Database
+- [ ] Create `src/tools/context.rs` with task_local storage
+- [ ] Create `src/tools/remember.rs` with remember tool
+- [ ] Update `context_builder.rs` to use message_id + new framing
+- [ ] Change `retrieval_enabled` default to `true`
+- [ ] Conditional tool registration + context wrapper
+- [ ] Add MEMORY TOOLS section to prompts
+- [ ] Tests: Remember by ID, Remember by query, Anonymous session
+- [ ] Update CHANGELOG
 
 ---
 
