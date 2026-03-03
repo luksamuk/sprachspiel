@@ -2,6 +2,60 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.24.0] - PLANNED
+
+### Problem
+
+When searching conversation history, short user questions are retrieved with high
+semantic similarity but contain no information. Long assistant responses with the
+actual information have lower similarity due to semantic dispersion.
+
+**Example:**
+```
+Query: "Wittgenstein"
+Results: Only user questions about Wittgenstein are returned,
+         not the assistant responses that contain the actual information.
+```
+
+### Solution
+
+**Post-Retrieval Enrichment**: When a user message is retrieved, automatically
+include the next assistant message from the same conversation.
+
+### Added
+
+- **Conversation-Aware Retrieval** - Enrich retrieved user messages with assistant responses
+  - `next_message` field in SearchResult for user messages
+  - `get_next_message_by_role()` database method
+  - `enrich_with_context()` to attach assistant responses to user questions
+  - Both auto-context and remember tool use the same enrichment
+
+### Changed
+
+- `SearchResult` struct now has optional `next_message` field
+- Context builder formats question-answer pairs together
+- Search command uses enriched results
+
+### Technical Details
+
+**Root Cause**: Short messages have concentrated semantic similarity (high score),
+long messages have dispersed similarity (low score). RRF fusion doesn't account
+for message role or conversation adjacency.
+
+**Solution**: Post-retrieval enrichment:
+1. Retrieve messages as before (semantic + keyword hybrid)
+2. For each user message, query DB for next assistant message
+3. Include both in context for complete question-answer pairs
+
+**Token Overhead**: +5 assistant responses (acceptable within 198K context)
+
+### Files Modified
+
+- `src/db/operations.rs` - Add `next_message` field, enrichment methods
+- `src/retrieval/context_builder.rs` - Format question-answer pairs
+- `src/tools/remember.rs` - Use enrichment in search
+- `src/retrieval/search.rs` - Use enrichment in search command
+
 ## [0.23.0] - 2026-03-03
 
 ### Added

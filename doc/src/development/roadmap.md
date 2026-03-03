@@ -104,6 +104,45 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 ## High Priority
 
+### Conversation-Aware Retrieval (IN PROGRESS)
+
+**Priority:** HIGH  
+**Status:** v0.24.0 (in progress)
+
+**Problem:** When searching conversation history, short user questions are retrieved with high
+similarity but contain no information. Long assistant responses with the actual information
+have lower similarity due to semantic dispersion.
+
+**Symptoms:**
+- remember(query) returns only questions, not answers
+- Context shows "What about Wittgenstein?" but not the response about Wittgenstein
+- LLM cannot access the information it previously provided
+
+**Root Cause:** Short messages have concentrated similarity (high score), long messages
+have dispersed similarity (low score). RRF doesn't account for message role.
+
+**Solution:** Post-retrieval enrichment - attach assistant responses to user questions.
+
+**Implementation:**
+1. Add `next_message` field to SearchResult
+2. `get_next_message_by_role()` to fetch next assistant message
+3. `enrich_with_context()` to attach responses to questions
+4. Format question-answer pairs in context
+
+**Detailed Plan:** `doc/src/development/v0.24.0_plan.md`
+
+**Tasks:**
+- [ ] Add `next_message` field to SearchResult
+- [ ] Implement `get_next_message_by_role()` in Database
+- [ ] Implement `enrich_with_context()` in Database
+- [ ] Update context_builder to format next_message
+- [ ] Update remember tool to use enrichment
+- [ ] Update search command to use enrichment
+- [ ] Tests: User question returns with answer
+- [ ] Tests: Cross-session safety
+
+---
+
 ### Remember Tool & Context Enhancement ✅
 
 **Priority:** HIGH  
