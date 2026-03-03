@@ -8,4 +8,5 @@ mod client;
 mod truncate;
 
 pub use client::EmbeddingClient;
+#[allow(unused_imports)]
 pub use truncate::truncate_and_normalize;

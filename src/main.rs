@@ -15,6 +15,7 @@ mod ocr;
 mod platform;
 mod prompts;
 mod query;
+mod retrieval;
 mod settings;
 mod spinner;
 mod summarize;
@@ -106,6 +107,10 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
+    // Initialize sqlite-vec extension globally
+    // This must be done before any database operations
+    crate::db::init();
+
     let cli = Cli::parse();
 
     if cli.init_config {

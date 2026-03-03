@@ -32,6 +32,8 @@ pub enum CommandResult {
     Undo,
     /// Show context metrics (handled in REPL)
     Context,
+    /// Search conversation history (handled in REPL)
+    Search { query: String, limit: usize },
 }
 
 /// Parsed chat command
@@ -78,6 +80,8 @@ pub enum ChatCommand {
     Retry,
     /// Undo last message (remove response, show last input)
     Undo,
+    /// Search conversation history
+    Search { query: String, limit: usize },
 }
 
 /// Export format for /export command
@@ -176,6 +180,15 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         }
         "retry" | "r" => ChatCommand::Retry,
         "undo" | "u" => ChatCommand::Undo,
+        "search" | "find" | "f" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /search <query> [limit]".to_string()));
+            }
+            let parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let query = parts.first().unwrap_or(&"").to_string();
+            let limit: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
+            ChatCommand::Search { query, limit }
+        }
         _ => return Some(Err(format!("Unknown command: /{}", cmd))),
     };
 
@@ -321,6 +334,8 @@ pub fn execute_command(
         ChatCommand::Retry => CommandResult::Retry,
 
         ChatCommand::Undo => CommandResult::Undo,
+
+        ChatCommand::Search { query, limit } => CommandResult::Search { query, limit },
     }
 }
 
@@ -345,13 +360,14 @@ fn print_help() {
   /list            List saved sessions for this project
   /info            Show current session information
   /context         Show context metrics and token usage
+  /search <query>  Search conversation history (hybrid: keyword + semantic)
 
 Shortcuts:
   /q = /quit, /c = /clear, /h = /help
   /m = /model, /s = /system, /l = /load
   /t = /think, /e = /export, /ls = /list, /i = /info
   /r = /retry, /to = /tools-output, /u = /undo
-  /ctx = /context"#
+  /ctx = /context, /f = /search"#
     );
 }
 

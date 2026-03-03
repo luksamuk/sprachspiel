@@ -494,6 +494,33 @@ pub async fn run_chat_repl(
                                     }
                                     continue;
                                 }
+                                CommandResult::Search { query, limit } => {
+                                    // Initialize database if not already
+                                    if let Err(e) = crate::db::Database::new() {
+                                        eprintln!("Warning: Could not initialize search database: {}", e);
+                                        eprintln!("Messages will not be indexed for search.");
+                                        continue;
+                                    }
+
+                                    // Get the database
+                                    let db = match crate::db::Database::new() {
+                                        Ok(db) => db,
+                                        Err(e) => {
+                                            eprintln!("Error: Failed to open database: {}", e);
+                                            continue;
+                                        }
+                                    };
+
+                                    // Run search
+                                    crate::retrieval::run_search(
+                                        &db,
+                                        &ollama,
+                                        &query,
+                                        session.project_id.as_deref(),
+                                        limit,
+                                    ).await;
+                                    continue;
+                                }
                             }
                         }
                         Some(Err(e)) => {

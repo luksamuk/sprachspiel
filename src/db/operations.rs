@@ -22,11 +22,12 @@ use super::Database;
 ///
 /// # Examples
 /// ```
+/// # use ask_ai::db::fts5_escape;
 /// let safe = fts5_escape("hello world");  // "\"hello world\""
 /// let safe = fts5_escape("test\"quote");  // "\"test""quote\""
-/// let safe = fts5_escape("a AND b");      // "\"a AND b\"" (literal search, not boolean)
+/// let safe = fts5_escape("a AND b");       // "\"a AND b\"" (literal search, not boolean)
 /// ```
-fn fts5_escape(query: &str) -> String {
+pub fn fts5_escape(query: &str) -> String {
     // Escape double quotes by doubling them
     let escaped = query.replace('"', "\"\"");
     // Wrap in double quotes for phrase search
@@ -572,28 +573,30 @@ mod tests {
 
     #[test]
     fn test_fts5_escape() {
+        use super::fts5_escape;
+
         // Basic text
-        assert_eq!(super::fts5_escape("hello"), "\"hello\"");
+        assert_eq!(fts5_escape("hello"), "\"hello\"");
 
         // Text with spaces (phrase)
-        assert_eq!(super::fts5_escape("hello world"), "\"hello world\"");
+        assert_eq!(fts5_escape("hello world"), "\"hello world\"");
 
         // Text with special FTS characters (should be literal, not operators)
-        assert_eq!(super::fts5_escape("test AND other"), "\"test AND other\"");
-        assert_eq!(super::fts5_escape("test OR other"), "\"test OR other\"");
-        assert_eq!(super::fts5_escape("test NOT other"), "\"test NOT other\"");
-        assert_eq!(super::fts5_escape("test*"), "\"test*\"");
+        assert_eq!(fts5_escape("test AND other"), "\"test AND other\"");
+        assert_eq!(fts5_escape("test OR other"), "\"test OR other\"");
+        assert_eq!(fts5_escape("test NOT other"), "\"test NOT other\"");
+        assert_eq!(fts5_escape("test*"), "\"test*\"");
 
         // Text with double quotes (should be escaped)
-        assert_eq!(super::fts5_escape("test\"quote"), "\"test\"\"quote\"");
-        assert_eq!(super::fts5_escape("a\"b\"c"), "\"a\"\"b\"\"c\"");
+        assert_eq!(fts5_escape("test\"quote"), "\"test\"\"quote\"");
+        assert_eq!(fts5_escape("a\"b\"c"), "\"a\"\"b\"\"c\"");
 
         // Parentheses (should be literal)
-        assert_eq!(super::fts5_escape("test()"), "\"test()\"");
+        assert_eq!(fts5_escape("test()"), "\"test()\"");
 
         // Injection attempt
         assert_eq!(
-            super::fts5_escape("test); DROP TABLE users; --"),
+            fts5_escape("test); DROP TABLE users; --"),
             "\"test); DROP TABLE users; --\""
         );
     }

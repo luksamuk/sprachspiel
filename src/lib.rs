@@ -14,6 +14,7 @@ pub mod ocr;
 pub mod platform;
 pub mod prompts;
 pub mod query;
+pub mod retrieval;
 pub mod settings;
 pub mod spinner;
 pub mod summarize;

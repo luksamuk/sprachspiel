@@ -5,13 +5,10 @@
 use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 use ollama_rs::Ollama;
 
-use super::truncate::truncate_and_normalize;
+use super::truncate::{truncate_and_normalize, FULL_DIMENSIONS, TRUNCATED_DIMENSIONS};
 
 /// Default embedding model (nomic-embed-text-v2-moe)
 pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
-
-/// Embedding dimension (Matryoshka truncated to 256)
-pub const EMBEDDING_DIMENSION: usize = 256;
 
 /// Client for generating embeddings via Ollama
 pub struct EmbeddingClient {
@@ -48,7 +45,15 @@ impl EmbeddingClient {
             .map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
 
         let embedding = response.embeddings.into_iter().next()
-            .ok_or_else(|| EmbeddingError::NoEmbedding)?;
+            .ok_or(EmbeddingError::NoEmbedding)?;
+
+        // Validate dimensions
+        if embedding.len() != FULL_DIMENSIONS {
+            return Err(EmbeddingError::InvalidDimensions {
+                expected: FULL_DIMENSIONS,
+                got: embedding.len(),
+            });
+        }
 
         // Truncate and normalize
         Ok(truncate_and_normalize(&embedding))
@@ -86,6 +91,11 @@ impl EmbeddingClient {
     pub fn model(&self) -> &str {
         &self.model
     }
+    
+    /// Get the truncated embedding dimension
+    pub fn embedding_dimension() -> usize {
+        TRUNCATED_DIMENSIONS
+    }
 }
 
 /// Errors from embedding generation
@@ -95,6 +105,11 @@ pub enum EmbeddingError {
     ApiError(String),
     /// No embedding returned
     NoEmbedding,
+    /// Invalid embedding dimensions
+    InvalidDimensions {
+        expected: usize,
+        got: usize,
+    },
 }
 
 impl std::fmt::Display for EmbeddingError {
@@ -102,6 +117,9 @@ impl std::fmt::Display for EmbeddingError {
         match self {
             Self::ApiError(msg) => write!(f, "Embedding API error: {}", msg),
             Self::NoEmbedding => write!(f, "No embedding returned from API"),
+            Self::InvalidDimensions { expected, got } => {
+                write!(f, "Invalid embedding dimensions: expected {}, got {}", expected, got)
+            }
         }
     }
 }
@@ -110,16 +128,25 @@ impl std::error::Error for EmbeddingError {}
 
 #[cfg(test)]
 mod tests {
-    // Note: Integration tests require Ollama running with nomic-embed-text-v2-moe model
-    // These are unit tests for the structure only
-    
+    use super::*;
+
     #[test]
     fn test_embedding_dimension() {
-        assert_eq!(super::EMBEDDING_DIMENSION, 256);
+        assert_eq!(TRUNCATED_DIMENSIONS, 256);
+    }
+
+    #[test]
+    fn test_full_dimensions() {
+        assert_eq!(FULL_DIMENSIONS, 768);
     }
 
     #[test]
     fn test_default_model() {
-        assert_eq!(super::DEFAULT_EMBEDDING_MODEL, "nomic-embed-text-v2-moe:latest");
+        assert_eq!(DEFAULT_EMBEDDING_MODEL, "nomic-embed-text-v2-moe:latest");
+    }
+
+    #[test]
+    fn test_embedding_dimension_method() {
+        assert_eq!(EmbeddingClient::embedding_dimension(), 256);
     }
 }

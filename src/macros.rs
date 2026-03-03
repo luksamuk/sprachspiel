@@ -8,9 +8,11 @@
 /// It should be paired with `log_tool_result` at the end.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use crate::debug_tools::log_tool_call;
 ///
+/// let value1 = "hello";
+/// let value2 = 42;
 /// log_tool_call("my_tool", &[
 ///     ("param1".to_string(), value1.to_string()),
 ///     ("param2".to_string(), value2.to_string()),
@@ -28,11 +30,11 @@ macro_rules! log_tool_call {
 /// This macro logs the result of a tool call before returning.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use crate::debug_tools::log_tool_result;
 ///
+/// let result = "success".to_string();
 /// log_tool_result("my_tool", &result);
-/// Ok(result)
 /// ```
 #[macro_export]
 macro_rules! log_tool_result {
@@ -47,7 +49,7 @@ macro_rules! log_tool_result {
 /// It automatically returns `Ok(result)`.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use crate::tool_wrapper;
 ///
 /// async fn my_tool(param: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {

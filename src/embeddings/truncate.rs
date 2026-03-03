@@ -3,7 +3,9 @@
 //! Truncates 768-dimensional embeddings to 256 dimensions with normalization.
 //! This reduces storage by 3x with only 2-3% quality loss.
 
+/// Full embedding dimensions from nomic-embed-text-v2-moe
 pub const FULL_DIMENSIONS: usize = 768;
+/// Truncated dimensions (Matryoshka)
 pub const TRUNCATED_DIMENSIONS: usize = 256;
 
 /// Truncate and normalize a 768-dimensional embedding to 256 dimensions.
@@ -25,6 +27,15 @@ pub fn truncate_and_normalize(embedding: &[f32]) -> Vec<f32> {
             "Embedding too short: expected at least {} dimensions, got {}",
             TRUNCATED_DIMENSIONS,
             embedding.len()
+        );
+    }
+
+    // Warn if not using full dimensions (for quality consistency)
+    if embedding.len() != FULL_DIMENSIONS && cfg!(debug_assertions) {
+        eprintln!(
+            "Warning: Embedding has {} dimensions, expected {}",
+            embedding.len(),
+            FULL_DIMENSIONS
         );
     }
 
