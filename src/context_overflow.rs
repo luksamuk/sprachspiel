@@ -57,11 +57,19 @@ impl ContextStatus {
     }
 
     /// Check if context is at warning level (≥72%)
+    ///
+    /// Returns true when context usage is between 72% and 80%.
+    /// Used internally by auto-compaction to determine urgency.
+    #[allow(dead_code)]
     pub fn is_warning(&self) -> bool {
         matches!(self, ContextStatus::Warning { .. })
     }
 
     /// Check if context is at overflow level (≥80%)
+    ///
+    /// Returns true when context usage is at or above 80%.
+    /// Used internally by auto-compaction to determine urgency.
+    #[allow(dead_code)]
     pub fn is_overflow(&self) -> bool {
         matches!(self, ContextStatus::Overflow { .. })
     }
@@ -131,7 +139,11 @@ pub fn check_context_overflow(
     }
 }
 
-/// Check if context has overflowed using default threshold
+/// Check if context has overflowed using default threshold (80%)
+///
+/// Convenience function for code that doesn't need custom thresholds.
+/// Equivalent to `check_context_overflow(session, prompt, window, DEFAULT_OVERFLOW_THRESHOLD)`.
+#[allow(dead_code)]
 pub fn check_context_overflow_default(
     session: &ChatSession,
     system_prompt: &str,
@@ -152,9 +164,7 @@ pub struct CompactionSuggestion {
     pub keep_first: usize,
     /// Number of messages to keep at the end
     pub keep_last: usize,
-    /// Number of messages in the middle to summarize
-    pub middle_count: usize,
-    /// Indices of messages to compact (for reference)
+    /// Indices of messages to compact (middle section)
     pub middle_indices: std::ops::Range<usize>,
 }
 
@@ -185,17 +195,27 @@ pub fn get_compaction_range(
         return None;
     }
 
-    let middle_count = middle_end - middle_start;
-
     Some(CompactionSuggestion {
         keep_first,
         keep_last,
-        middle_count,
         middle_indices: middle_start..middle_end,
     })
 }
 
 /// Estimate tokens that would be saved by compaction
+///
+/// Useful for deciding if compaction is worthwhile before invoking LLM.
+/// Currently not used in auto-compaction flow, but planned for smart
+/// auto-compaction that compares estimated savings vs. compaction cost.
+///
+/// # Arguments
+/// * `session` - Chat session with messages
+/// * `suggestion` - Compaction suggestion from `get_compaction_range()`
+/// * `summary_overhead` - Estimated tokens for the summary (~500-1000)
+///
+/// # Returns
+/// Estimated tokens saved by compacting the middle section
+#[allow(dead_code)]
 pub fn estimate_compaction_savings(
     session: &ChatSession,
     suggestion: &CompactionSuggestion,
@@ -212,6 +232,14 @@ pub fn estimate_compaction_savings(
 
 /// Determine if we should use the summary context position
 /// (after system, before recent messages)
+///
+/// According to "lost in the middle" research, important content should be
+/// at BEGINNING or END, not middle. Summary should go after system prompt
+/// (beginning) to avoid being lost.
+///
+/// Currently always returns true when summary exists. Planned for future
+/// context optimization strategies that may place summary differently.
+#[allow(dead_code)]
 pub fn should_position_summary_after_system(session: &ChatSession) -> bool {
     // According to "lost in the middle" research, important content should be
     // at BEGINNING or END, not middle.
@@ -279,7 +307,7 @@ mod tests {
         let suggestion = result.unwrap();
         assert_eq!(suggestion.keep_first, DEFAULT_KEEP_FIRST);
         assert_eq!(suggestion.keep_last, DEFAULT_KEEP_LAST);
-        assert_eq!(suggestion.middle_count, 10);
+        assert_eq!(suggestion.middle_indices.len(), 10); // 20 - 5 - 5 = 10
     }
 
     #[test]
@@ -299,7 +327,7 @@ mod tests {
         let suggestion = result.unwrap();
         assert_eq!(suggestion.keep_first, DEFAULT_KEEP_FIRST);
         assert_eq!(suggestion.keep_last, DEFAULT_KEEP_LAST);
-        assert_eq!(suggestion.middle_count, 10); // 20 - 5 - 5 = 10
+        assert_eq!(suggestion.middle_indices.len(), 10); // 20 - 5 - 5 = 10
     }
 
     #[test]
@@ -308,7 +336,7 @@ mod tests {
         let suggestion = get_compaction_range(&session, 5, 5).unwrap();
 
         // Verify we have some middle messages to compact
-        assert!(suggestion.middle_count > 0);
+        assert!(!suggestion.middle_indices.is_empty());
 
         // Calculate actual savings (depends on message content)
         let _savings = estimate_compaction_savings(&session, &suggestion, 100);

@@ -111,8 +111,6 @@ pub async fn recover_missing_embeddings(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_recovery_structure() {
         // Verify recovery function exists and compiles

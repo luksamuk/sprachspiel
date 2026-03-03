@@ -452,6 +452,12 @@ impl ChatSession {
     }
 
     /// Set the compacted summary and update the LLM message index (full compaction)
+    ///
+    /// This is the legacy API for full compaction. Prefer `set_compacted_summary_with_range()`
+    /// for middle compaction support (preserves first N and last N messages).
+    ///
+    /// Use this only when you want to compact ALL messages (no preservation).
+    #[allow(dead_code)]
     pub fn set_compacted_summary(&mut self, summary: String) {
         self.compacted_summary = Some(summary);
         self.messages_sent_to_llm = self.messages.len();
