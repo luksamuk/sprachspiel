@@ -20,14 +20,6 @@ tokio::task_local! {
     pub static REMEMBER_EMBEDDING: Arc<EmbeddingClient>;
 }
 
-/// Check if tool context is available
-///
-/// Returns true if both DB and EmbeddingClient are set.
-/// Tools can use this to check if they should be available.
-pub fn has_context() -> bool {
-    REMEMBER_DB.try_with(|_| ()).is_ok() && REMEMBER_EMBEDDING.try_with(|_| ()).is_ok()
-}
-
 /// Helper to get database from task-local context
 ///
 /// Returns None if context is not set (e.g., anonymous session)

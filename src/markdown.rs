@@ -59,16 +59,6 @@ pub fn print_markdown(text: &str) {
     skin.print_text(text);
 }
 
-/// Get a reference to the global markdown skin.
-///
-/// Use this when you need the skin for custom rendering operations.
-pub fn get_markdown_skin() -> &'static MadSkin {
-    MARKDOWN_SKIN
-        .get()
-        .or_else(|| DEFAULT_SKIN.get())
-        .expect("Skin not initialized - call init_markdown_skin() at startup")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

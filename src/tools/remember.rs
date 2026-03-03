@@ -189,9 +189,9 @@ async fn remember_by_query(
             _ => &msg.role,
         };
 
-        // Truncate content for display
-        let content = if msg.content.len() > 200 {
-            format!("{}...", &msg.content[..200])
+        // Truncate content for display (respect UTF-8 boundaries)
+        let content = if msg.content.chars().count() > 200 {
+            format!("{}...", msg.content.chars().take(200).collect::<String>())
         } else {
             msg.content.clone()
         };

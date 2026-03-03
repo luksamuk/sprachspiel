@@ -3,9 +3,9 @@
 use serde::Deserialize;
 
 pub mod context;
+pub mod files;
 #[cfg(feature = "calc-tools")]
 pub mod calc;
-pub mod files;
 #[cfg(feature = "finance-tools")]
 pub mod finance;
 #[cfg(feature = "led-tools")]
@@ -25,7 +25,6 @@ pub mod system;
 pub mod todo;
 pub mod weather;
 
-pub use context::*;
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
 pub use files::*;
