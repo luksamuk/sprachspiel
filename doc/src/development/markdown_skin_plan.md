@@ -1,19 +1,41 @@
 # Markdown Skin Implementation Plan
 
-**Status:** PLANNED - High Priority  
+**Status:** COMPLETED ✓  
 **Date:** 2026-03-03  
 **Issue:** `settings.display.skin` configuration is parsed but never applied
 
 ---
 
-## Problem
+## Implementation Summary
 
-The `skin` setting in `config.toml` is dead code:
-- Parsed from config file ✓
-- Stored in `Settings.display.skin` ✓
-- **NEVER passed to termimad** ✗
+### Files Changed
 
-All markdown rendering uses `MadSkin::default()` regardless of user configuration.
+| File | Change |
+|------|--------|
+| `src/markdown.rs` | **NEW** - Global skin module with `init_markdown_skin()` and `print_markdown()` |
+| `src/lib.rs` | Added `pub mod markdown;` |
+| `src/main.rs` | Added `mod markdown;` and call to `init_markdown_skin()` |
+| `src/query.rs` | Replaced `termimad::print_text` with `markdown::print_markdown` |
+| `src/chat/repl.rs` | Replaced `termimad::print_text` with `markdown::print_markdown` |
+| `src/retrieval/search.rs` | Replaced `termimad::print_text` with `markdown::print_markdown` |
+
+### Theme Support
+
+- `dark`: `MadSkin::default_dark()` - Transparent background for dark terminals
+- `light`: `MadSkin::default_light()` - Transparent background for light terminals
+- `mono`: Custom `MadSkin::no_style()` with gray bold/italic
+
+### Usage
+
+```toml
+# ~/.config/ask-ai/config.toml
+[display]
+skin = "mono"  # Options: "dark", "light", "mono"
+```
+
+---
+
+## Original Plan
 
 ---
 

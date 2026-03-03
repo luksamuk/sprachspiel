@@ -5,7 +5,6 @@
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 use ollama_rs::Ollama;
-use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
 use crate::chat::{
@@ -15,6 +14,7 @@ use crate::chat::{
 };
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
+use crate::markdown;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner, suspend_for_print};
@@ -85,7 +85,7 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
                         if use_plain {
                             println!("{}", cleaned);
                         } else {
-                            print_text(&cleaned);
+                            markdown::print_markdown(&cleaned);
                         }
                     }
                 }
@@ -160,7 +160,7 @@ pub fn display_result(result: &QueryResult, use_think: bool, use_plain: bool) {
     if use_plain {
         println!("{}", content);
     } else {
-        print_text(&content);
+        markdown::print_markdown(&content);
     }
 }
 

@@ -2,7 +2,33 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.22.7] - 2026-03-03
+## [0.22.8] - 2026-03-03
+
+### Added
+
+- **Markdown Skin Configuration** - Theme support for markdown rendering
+  - New `src/markdown.rs` module with global skin initialization
+  - Supports `dark`, `light`, and `mono` themes from `config.toml`
+  - `dark`: Transparent background, optimized for dark terminals
+  - `light`: Transparent background, optimized for light terminals
+  - `mono`: Monochrome with gray bold/italic, no colors
+  - Config: `display.skin = "mono"` in `~/.config/ask-ai/config.toml`
+
+### Changed
+
+- **All markdown output now respects skin setting**
+  - `main.rs`: translate, summarize, vision commands
+  - `query.rs`: query output
+  - `chat/repl.rs`: chat responses
+  - `retrieval/search.rs`: search results
+  - `thinking.rs`: Keeps its own skin (unaffected by global skin)
+
+### Technical
+
+- Added `markdown::init_markdown_skin()` call at startup
+- Created `markdown::print_markdown()` as replacement for `termimad::print_text()`
+- Added `markdown::get_markdown_skin()` for custom rendering needs
+- All modules now use `markdown::print_markdown()` instead of `print_text()`
 
 ### Fixed
 

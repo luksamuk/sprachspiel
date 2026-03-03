@@ -4,11 +4,11 @@
 
 use chrono::{DateTime, Utc};
 use ollama_rs::Ollama;
-use termimad::print_text;
 
 use crate::db::{Database, SearchResult, SearchType, reciprocal_rank_fusion};
 use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
+use crate::markdown;
 
 /// Search result with formatted output
 pub struct FormattedResult {
@@ -100,7 +100,7 @@ pub fn display_results(results: &[FormattedResult]) {
         output.push_str(&format!("_{} — {}_\n\n", result.conversation_id, result.timestamp.format("%Y-%m-%d %H:%M")));
     }
 
-    print_text(&output);
+    markdown::print_markdown(&output);
 }
 
 /// Run an interactive search session

@@ -12,6 +12,7 @@ mod context_overflow;
 mod db;
 mod debug_tools;
 mod embeddings;
+mod markdown;
 mod ocr;
 mod platform;
 mod prompts;
@@ -30,7 +31,6 @@ mod vision;
 
 use clap::Parser;
 use ollama_rs::generation::chat::ChatMessage;
-use termimad::print_text;
 
 use crate::chat::ChatArgs;
 use crate::debug_tools::enable_debug;
@@ -129,6 +129,9 @@ async fn main() -> AppResult<()> {
     }
 
     let settings = Settings::load();
+    
+    // Initialize markdown skin with user configuration
+    markdown::init_markdown_skin(&settings.display.skin);
 
     if let Some(ref command) = cli.command {
         match command {
@@ -243,7 +246,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     if output_flags.plain {
         println!("{}", translated);
     } else {
-        print_text(translated);
+        markdown::print_markdown(translated);
     }
 
     Ok(())
@@ -496,7 +499,7 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
             if output_flags.plain {
                 println!("{}", summary);
             } else {
-                print_text(&summary);
+                markdown::print_markdown(&summary);
             }
             Ok(())
         }
@@ -596,7 +599,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
             } else if output_flags.plain {
                 println!("{}", result.content);
             } else {
-                print_text(&result.content);
+                markdown::print_markdown(&result.content);
             }
             Ok(())
         }

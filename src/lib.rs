@@ -11,6 +11,7 @@ pub mod db;
 pub mod debug_tools;
 pub mod embeddings;
 pub mod macros;
+pub mod markdown;
 pub mod ocr;
 pub mod platform;
 pub mod prompts;

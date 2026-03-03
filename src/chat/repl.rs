@@ -8,12 +8,12 @@ use ollama_rs::generation::chat::ChatMessage;
 use rustyline::Config;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
-use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD};
 use crate::debug_tools::{enable_debug, log_debug};
+use crate::markdown;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::query::ChatContext;
 use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
@@ -1001,7 +1001,7 @@ async fn send_message(
             }
 
             let display_content = strip_thinking_tags(&content);
-            print_text(&display_content);
+            markdown::print_markdown(&display_content);
             Ok(SendMessageResult {
                 response: display_content,
                 metrics,
