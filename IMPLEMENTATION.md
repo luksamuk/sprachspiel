@@ -38,15 +38,14 @@
 - Man page
 - Termux/Android builds
 - Error recovery for tool/network errors
-
-🚧 **In Progress (v0.21.0):**
-
-- ChatSession integration (auto-save messages + embeddings)
-- `/migrate` command (JSON → SQLite)
-- `/reindex` command (rebuild embeddings)
-- Context overflow handling (auto-compaction at 80%)
-- Auto-retrieval (M relevant + N recent messages)
-- Context composition based on "Lost in the Middle" research
+- ChatSession integration (auto-save messages + embeddings) - v0.21.0
+- `/migrate` command (JSON → SQLite) - v0.21.0
+- `/reindex` command (rebuild embeddings) - v0.21.0
+- Context overflow handling (auto-compaction at 80%) - v0.21.0
+- Auto-retrieval (M relevant + N recent messages) - v0.21.0
+- Context composition based on "Lost in the Middle" research - v0.21.0
+- Message chunking for long messages (>1024 chars) - v0.22.0
+- UTF-8 safe chunking with char boundary detection - v0.22.1
 
 📋 **Planned:**
 
@@ -90,5 +89,6 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-03 - v0.20.0: Semantic search with sqlite-vec  
 2026-03-03 - v0.21.0: Design decisions documented
+2026-03-03 - v0.22.0: Message chunking for semantic search
+2026-03-03 - v0.22.1: UTF-8 safe chunking
