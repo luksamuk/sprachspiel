@@ -524,17 +524,30 @@ pub async fn run_chat_repl(
                                         )
                                         .await
                                         {
-                                            Ok((response, metrics)) => {
-                                                session.add_assistant_message(response);
+                                            Ok(result) => {
+                                                session.add_assistant_message(result.response);
 
-                                                if metrics.total_tokens > 0 {
+                                                if result.metrics.total_tokens > 0 {
                                                     eprintln!(
                                                 "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-                                                metrics.prompt_tokens,
-                                                metrics.response_tokens,
-                                                metrics.total_tokens
+                                                result.metrics.prompt_tokens,
+                                                result.metrics.response_tokens,
+                                                result.metrics.total_tokens
                                             );
                                                 }
+
+                                                // Auto-compact if needed (after response, before next input)
+                                                auto_compact_if_needed(
+                                                    &ollama,
+                                                    &model_config,
+                                                    &mut session,
+                                                    settings,
+                                                    agents_md.as_deref(),
+                                                    &storage,
+                                                    &result.system_prompt,
+                                                    result.context_window,
+                                                    use_debug,
+                                                ).await;
 
                                                 if !session.anonymous
                                                     && let Err(e) = session.save(&storage)
@@ -726,17 +739,32 @@ pub async fn run_chat_repl(
                 )
                 .await
                 {
-                    Ok((response, metrics)) => {
-                        session.add_assistant_message(response);
+                    Ok(result) => {
+                        session.add_assistant_message(result.response);
 
-                        if metrics.total_tokens > 0 {
+                        if result.metrics.total_tokens > 0 {
                             eprintln!(
                                 "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-                                metrics.prompt_tokens,
-                                metrics.response_tokens,
-                                metrics.total_tokens
+                                result.metrics.prompt_tokens,
+                                result.metrics.response_tokens,
+                                result.metrics.total_tokens
                             );
                         }
+
+                        // Auto-compact if needed (after response, before next input)
+                        let context_window = result.context_window;
+                        let system_prompt = result.system_prompt.clone();
+                        auto_compact_if_needed(
+                            &ollama,
+                            &model_config,
+                            &mut session,
+                            settings,
+                            agents_md.as_deref(),
+                            &storage,
+                            &system_prompt,
+                            context_window,
+                            use_debug,
+                        ).await;
 
                         if !session.anonymous
                             && let Err(e) = session.save(&storage)
@@ -781,6 +809,13 @@ pub struct TokenMetrics {
     pub total_tokens: u64,
 }
 
+pub struct SendMessageResult {
+    pub response: String,
+    pub metrics: TokenMetrics,
+    pub context_window: usize,
+    pub system_prompt: String,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn send_message(
     ollama: &ollama_rs::Ollama,
@@ -794,7 +829,7 @@ async fn send_message(
     use_debug: bool,
     db: Option<&Arc<crate::db::Database>>,
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
-) -> AppResult<(String, TokenMetrics)> {
+) -> AppResult<SendMessageResult> {
     let model_options = model_config.build_model_options();
 
     let blacklist_set = settings.blacklist_set();
@@ -966,7 +1001,12 @@ async fn send_message(
 
             let display_content = strip_thinking_tags(&content);
             print_text(&display_content);
-            Ok((display_content, metrics))
+            Ok(SendMessageResult {
+                response: display_content,
+                metrics,
+                context_window,
+                system_prompt,
+            })
         }
         Err(e) => {
             let error_msg = format_tool_error(&e);
@@ -1127,6 +1167,61 @@ fn history_path() -> std::path::PathBuf {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn auto_compact_if_needed(
+    ollama: &ollama_rs::Ollama,
+    model_config: &ModelConfig,
+    session: &mut ChatSession,
+    settings: &Settings,
+    agents_md: Option<&str>,
+    storage: &ConversationStorage,
+    system_prompt: &str,
+    context_window: usize,
+    use_debug: bool,
+) {
+    let status = check_context_overflow(session, system_prompt, context_window, DEFAULT_OVERFLOW_THRESHOLD);
+    
+    if !status.needs_compaction() {
+        return;
+    }
+    
+    // Attempt auto-compaction
+    match compact_conversation(ollama, model_config, session, settings, agents_md).await {
+        Ok((summary, range)) => {
+            session.set_compacted_summary_with_range(summary, range);
+            
+            // Get compacted count
+            let (first_preserved, last_preserved_start) = range.unwrap_or((0, session.messages.len()));
+            let compacted_count = last_preserved_start - first_preserved;
+            
+            // Determine urgency level for message
+            let urgency = if status.is_overflow() {
+                "urgent" // Overflow at 80%+
+            } else {
+                "auto"   // Warning at 72%+
+            };
+            
+            eprintln!(
+                "\x1B[90m[{}-compacted context at {}%: {} messages]\x1B[0m",
+                urgency,
+                status.usage_percent(),
+                compacted_count
+            );
+            
+            if !session.anonymous {
+                if let Err(e) = session.save(storage) {
+                    if use_debug {
+                        log_debug(&format!("Warning: Could not save session after auto-compact: {}", e));
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("\x1B[31mAuto-compaction failed: {}\x1B[0m", e);
+        }
+    }
+}
+
 fn print_context_info(
     session: &ChatSession,
     model_config: &ModelConfig,
@@ -1174,27 +1269,61 @@ fn print_context_info(
     
     let context_window_k = context_window / 1024;
     
+    // Calculate usage percentage
+    let usage_percent = (metrics.utilization * 100.0) as u8;
+    
+    // Visual bar (20 chars wide)
+    let bar_width = 20;
+    let filled = ((usage_percent as usize).min(100) * bar_width) / 100;
+    let empty = bar_width - filled;
+    
+    // Color code based on usage
+    let (color_code, reset_code, status_text) = if usage_percent < 72 {
+        ("\x1B[32m", "\x1B[0m", "OK") // Green
+    } else if usage_percent < 80 {
+        ("\x1B[33m", "\x1B[0m", "WARNING (approaching limit)") // Yellow
+    } else {
+        ("\x1B[31m", "\x1B[0m", "OVERFLOW (auto-compact triggered)") // Red
+    };
+    
     println!();
     println!("Context Information:");
     println!("  Model:          {} ({}K context)", model_config.model_id, context_window_k);
     println!();
+    println!("  Context Utilization:");
+    println!("    {}{}{}{} {}{}", 
+        color_code,
+        "█".repeat(filled),
+        "░".repeat(empty),
+        reset_code,
+        color_code,
+        usage_percent
+    );
+    println!("    {}{} / {} tokens{}\x1B[0m", 
+        color_code,
+        metrics.total_tokens,
+        context_window,
+        reset_code
+    );
+    println!();
+    println!("  Status: {}", status_text);
+    println!();
     println!("  Token Breakdown:");
-    println!("    System prompt:  ~{} tokens", metrics.system_tokens);
+    println!("    System prompt:    ~{} tokens", metrics.system_tokens);
     if tools_enabled && tool_count > 0 {
         println!("    Tool definitions: ~{} tokens ({} tools)", metrics.tools_tokens, tool_count);
     }
-    println!("    Conversation:    ~{} tokens ({} messages)", metrics.history_tokens, session.messages.len());
+    println!("    Conversation:     ~{} tokens ({} messages)", metrics.history_tokens, session.messages.len());
     println!("    {}", "─".repeat(40));
     println!("    Total used:       ~{} tokens", metrics.total_tokens);
     println!("    Available:        ~{} tokens", metrics.available());
-    println!("    Utilization:      {:.1}%", metrics.utilization * 100.0);
     println!();
     
     if session.has_compacted_messages() {
         println!("  Session:");
-        println!("    Compacted:       {} messages summarized", session.compacted_message_count());
-        println!("    Active:          {} messages", session.messages.len() - session.compacted_message_count());
+        println!("    Compacted:        {} messages summarized", session.compacted_message_count());
+        println!("    Active:           {} messages", session.messages.len() - session.compacted_message_count());
     }
-    println!("    Total:           {} messages", session.messages.len());
+    println!("    Total:            {} messages", session.messages.len());
     println!();
 }

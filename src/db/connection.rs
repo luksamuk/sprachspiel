@@ -72,26 +72,39 @@ impl Database {
     fn apply_migrations(conn: &Connection, from_version: i32) -> Result<()> {
         // Migration v2 -> v3: Add has_embedding to message_chunks
         if from_version < 3 {
-            // Check if column already exists (for databases created with v3 schema)
-            let column_exists: bool = conn.query_row(
-                "SELECT COUNT(*) FROM pragma_table_info(message_chunks) WHERE name='has_embedding'",
+            // Check if message_chunks table exists first
+            let table_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='message_chunks'",
                 [],
                 |row| row.get::<_, i32>(0),
             )? > 0;
 
-            if !column_exists {
+            if table_exists {
+                // Check if column already exists using pragma
+                let column_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(message_chunks)")?;
+                    let rows = stmt.query_map([], |row| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&"has_embedding".to_string())
+                };
+
+                if !column_exists {
+                    conn.execute(
+                        "ALTER TABLE message_chunks ADD COLUMN has_embedding INTEGER DEFAULT 0",
+                        [],
+                    )?;
+                }
+
+                // Create index for missing embeddings
                 conn.execute(
-                    "ALTER TABLE message_chunks ADD COLUMN has_embedding INTEGER DEFAULT 0",
+                    "CREATE INDEX IF NOT EXISTS idx_chunks_missing_embedding 
+                     ON message_chunks(has_embedding) WHERE has_embedding = 0",
                     [],
                 )?;
             }
-
-            // Create index for missing embeddings
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_chunks_missing_embedding 
-                 ON message_chunks(has_embedding) WHERE has_embedding = 0",
-                [],
-            )?;
         }
 
         Ok(())

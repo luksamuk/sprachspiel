@@ -2,6 +2,30 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.22.3] - 2026-03-03
+
+### Added
+
+- **Auto-Compaction** - Silent automatic context compaction
+  - Triggers at 72% warning threshold
+  - Triggers at 80% overflow threshold
+  - Runs after assistant response
+  - No user confirmation required
+  - Shows `[auto-compacted context at 72%]` message in gray
+
+- **Visual Metrics in /context** - Bar chart with colors
+  - Green for <72% usage
+  - Yellow for 72-80% usage  
+  - Red for ≥80% usage
+  - Shows token counts and percentage
+  - Status text indicates current state
+
+### Changed
+
+- **ContextStatus** - New methods `is_warning()`, `is_overflow()`
+- **needs_compaction()** - Now returns true for Warning OR Overflow
+- **SendMessageResult** - Now includes `system_prompt` and `context_window` for auto-compact
+
 ## [0.22.2] - 2026-03-03
 
 ### Fixed

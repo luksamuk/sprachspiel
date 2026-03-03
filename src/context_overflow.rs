@@ -48,8 +48,21 @@ pub enum ContextStatus {
 }
 
 impl ContextStatus {
-    /// Check if context needs compaction
+    /// Check if context needs compaction (Warning or Overflow)
     pub fn needs_compaction(&self) -> bool {
+        matches!(
+            self,
+            ContextStatus::Warning { .. } | ContextStatus::Overflow { .. }
+        )
+    }
+
+    /// Check if context is at warning level (≥72%)
+    pub fn is_warning(&self) -> bool {
+        matches!(self, ContextStatus::Warning { .. })
+    }
+
+    /// Check if context is at overflow level (≥80%)
+    pub fn is_overflow(&self) -> bool {
         matches!(self, ContextStatus::Overflow { .. })
     }
 
@@ -336,5 +349,71 @@ mod tests {
         // With summary
         session.compacted_summary = Some("Summary of old messages".to_string());
         assert!(should_position_summary_after_system(&session));
+    }
+
+    #[test]
+    fn test_context_status_needs_compaction() {
+        let status_ok = ContextStatus::Ok {
+            total_tokens: 100,
+            max_tokens: 1000,
+        };
+        let status_warn = ContextStatus::Warning {
+            total_tokens: 750,
+            max_tokens: 1000,
+            usage_percent: 75,
+        };
+        let status_over = ContextStatus::Overflow {
+            total_tokens: 850,
+            max_tokens: 1000,
+            usage_percent: 85,
+        };
+
+        assert!(!status_ok.needs_compaction());
+        assert!(status_warn.needs_compaction());
+        assert!(status_over.needs_compaction());
+    }
+
+    #[test]
+    fn test_context_status_is_warning() {
+        let status_ok = ContextStatus::Ok {
+            total_tokens: 100,
+            max_tokens: 1000,
+        };
+        let status_warn = ContextStatus::Warning {
+            total_tokens: 750,
+            max_tokens: 1000,
+            usage_percent: 75,
+        };
+        let status_over = ContextStatus::Overflow {
+            total_tokens: 850,
+            max_tokens: 1000,
+            usage_percent: 85,
+        };
+
+        assert!(!status_ok.is_warning());
+        assert!(status_warn.is_warning());
+        assert!(!status_over.is_warning());
+    }
+
+    #[test]
+    fn test_context_status_is_overflow() {
+        let status_ok = ContextStatus::Ok {
+            total_tokens: 100,
+            max_tokens: 1000,
+        };
+        let status_warn = ContextStatus::Warning {
+            total_tokens: 750,
+            max_tokens: 1000,
+            usage_percent: 75,
+        };
+        let status_over = ContextStatus::Overflow {
+            total_tokens: 850,
+            max_tokens: 1000,
+            usage_percent: 85,
+        };
+
+        assert!(!status_ok.is_overflow());
+        assert!(!status_warn.is_overflow());
+        assert!(status_over.is_overflow());
     }
 }

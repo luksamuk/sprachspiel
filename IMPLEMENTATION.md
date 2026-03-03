@@ -49,6 +49,8 @@
 - Synchronous chunking (guaranteed persistence) - v0.22.2
 - Embedding recovery on startup - v0.22.2
 - Middle compaction (preserve first N + last N) - v0.22.2
+- Auto-compaction at 72% warning and 80% overflow - v0.22.3
+- Visual context utilization bar in /context - v0.22.3
 
 📋 **Planned:**
 
