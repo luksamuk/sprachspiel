@@ -67,7 +67,7 @@ pub fn display_results(results: &[FormattedResult]) {
             _ => &format!("📝 **{}**", result.role),
         };
 
-        output.push_str(&format!("{}. {} — {} (score: {:.4})\n", i + 1, type_str, role_str, result.score));
+        output.push_str(&format!("{}. [id={}] {} — {} (score: {:.4})\n", i + 1, result.message_id, type_str, role_str, result.score));
 
         // Check if we have chunk content (matched a chunk of a long message)
         let display_content = if let (Some(chunk), Some(start), Some(end)) = 
