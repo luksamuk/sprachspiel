@@ -2,6 +2,32 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.22.4] - PLANNED
+
+### Added
+
+- **Persistent Memory** - Context survives `/clear` command
+  - `/clear` and `/new` preserve compacted summary
+  - SQLite history intact for RAG retrieval
+  - Users can ask about previous topics after clearing
+
+- **/forget Command** - Complete session reset
+  - Clears all messages and summary
+  - Deletes conversation from SQLite synchronously
+  - Generates new session ID
+  - Truly fresh start
+
+### Changed
+
+- **/clear Command** - Now preserves context instead of destroying it
+  - Messages cleared from session memory
+  - Compacted summary preserved for retrieval
+  - SQLite conversation history preserved
+  
+- **should_retrieve()** - Now checks database message count
+  - Works even when session.messages is empty (after /clear)
+  - Considers both session and database for retrieval decisions
+
 ## [0.22.3] - 2026-03-03
 
 ### Added

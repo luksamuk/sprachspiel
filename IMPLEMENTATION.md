@@ -51,6 +51,7 @@
 - Middle compaction (preserve first N + last N) - v0.22.2
 - Auto-compaction at 72% warning and 80% overflow - v0.22.3
 - Visual context utilization bar in /context - v0.22.3
+- Persistent memory with /clear and /forget - v0.22.4 (PLANNED)
 
 📋 **Planned:**
 
@@ -94,4 +95,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-03 - v0.22.2: Synchronous chunking + middle compaction
+2026-03-03 - v0.22.4 planned: Persistent memory + /clear and /forget
