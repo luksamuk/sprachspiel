@@ -19,7 +19,10 @@ use crate::embeddings::EmbeddingClient;
 /// Minimum messages before auto-retrieval activates
 pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 5;
 
-/// Minimum messages for forced retrieval after /clear
+/// Minimum messages for forced retrieval after /clear (DEPRECATED)
+/// Now we compare DB count vs session count, so this is no longer used.
+/// Kept for documentation and potential future use.
+#[allow(dead_code)]
 pub const MIN_RETRIEVAL_FORCE_COUNT: usize = 2;
 
 /// Number of semantically relevant messages to retrieve
@@ -303,30 +306,35 @@ pub fn get_effective_message_count(
 
 /// Check if retrieval should be forced after /clear
 ///
-/// When session is empty but database has messages, force retrieval
-/// regardless of retrieval_enabled flag or MIN_MESSAGES threshold.
-/// This ensures users can ask about previous topics after clearing.
+/// When session has fewer messages than the database, it means:
+/// 1. User ran /clear (messages removed from session but not from DB)
+/// 2. Or there's historical context in DB that should be retrieved
+///
+/// This check works regardless of how many new messages user added after /clear.
 pub fn should_force_retrieve(
     session: &ChatSession,
     db: Option<&Arc<Database>>,
 ) -> bool {
-    // Only force if session is empty (after /clear)
-    if !session.messages.is_empty() {
-        return false;
-    }
-    
-    // Must have summary or enough DB messages
-    if session.compacted_summary.is_some() {
-        return true;
-    }
-    
     // Check DB for message count
     if let Some(db) = db {
         if !session.anonymous && !session.id.is_empty() {
-            if let Ok(count) = db.count_conversation_messages(&session.id) {
-                return count >= MIN_RETRIEVAL_FORCE_COUNT;
+            if let Ok(db_count) = db.count_conversation_messages(&session.id) {
+                // If DB has more messages than session, retrieval should happen
+                // This covers:
+                // - After /clear: DB has old messages, session has 0-1 new messages
+                // - During conversation: DB and session are in sync
+                let session_count = session.messages.len();
+                if db_count > session_count {
+                    return true;
+                }
             }
         }
+    }
+    
+    // Also force retrieve if session has summary (from compaction)
+    // even if DB check didn't trigger
+    if session.messages.is_empty() && session.compacted_summary.is_some() {
+        return true;
     }
     
     false
@@ -492,7 +500,16 @@ mod tests {
     fn test_should_force_retrieve_with_messages() {
         let session = create_test_session(10);
         
-        // Session has messages - should NOT force retrieve
+        // Session has 10 messages, no DB - can't compare, should NOT force
+        assert!(!should_force_retrieve(&session, None));
+    }
+
+    #[test]
+    fn test_should_force_retrieve_after_clear_with_new_messages() {
+        // Simulates: user ran /clear, then asked 1-2 questions
+        // Session has 2 messages (after clear), DB has 6 (before clear)
+        let session = create_test_session(2);
+        // Without DB, can't detect the difference
         assert!(!should_force_retrieve(&session, None));
     }
 

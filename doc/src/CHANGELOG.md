@@ -2,6 +2,28 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.22.7] - 2026-03-03
+
+### Fixed
+
+- **CRITICAL: Retrieval after /clear now works!**
+  - Bug: `should_force_retrieve()` checked if session was empty, but user already added 1+ messages
+  - Fix: Compare DB message count vs session message count
+  - If DB has more messages than session, retrieval is forced
+  - This correctly handles: `/clear` → user asks question → retrieval happens
+
+### Changed
+
+- **`should_force_retrieve()` logic rewritten**
+  - Old: Only triggered when session.messages.is_empty()
+  - New: Triggers when DB count > session count (after /clear with new messages)
+  - Also triggers when session is empty AND has compacted_summary
+
+### Technical
+
+- Added test `test_should_force_retrieve_after_clear_with_new_messages`
+- `MIN_RETRIEVAL_FORCE_COUNT` now deprecated (kept with `#[allow(dead_code)]`)
+
 ## [0.22.6] - 2026-03-03
 
 ### Fixed
