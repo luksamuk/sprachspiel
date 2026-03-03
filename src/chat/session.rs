@@ -5,9 +5,13 @@
 use chrono::{DateTime, Utc};
 use ollama_rs::generation::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::time::Instant;
 
 use super::history::{ConversationStorage, SessionInfo};
 use super::todo_state::TodoState;
+use crate::db::Database;
+use crate::embeddings::EmbeddingClient;
 
 /// Tool output verbosity level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -49,7 +53,7 @@ impl std::str::FromStr for ToolOutputLevel {
 }
 
 /// Represents a single chat session
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ChatSession {
     /// Unique session identifier
     pub id: String,
@@ -88,6 +92,18 @@ pub struct ChatSession {
     /// Todo list state for task tracking
     #[serde(default)]
     pub todos: TodoState,
+    /// Database for message persistence (not serializable)
+    #[serde(skip)]
+    pub db: Option<Arc<Database>>,
+    /// Embedding client for semantic search (not serializable)
+    #[serde(skip)]
+    pub embedding_client: Option<Arc<EmbeddingClient>>,
+    /// Whether auto-retrieval is enabled
+    #[serde(skip)]
+    pub retrieval_enabled: bool,
+    /// Last time retrieval was performed (for throttling)
+    #[serde(skip)]
+    pub last_retrieval_time: Option<Instant>,
 }
 
 /// A saved message for persistence
@@ -133,6 +149,10 @@ impl ChatSession {
             tools: true,
             tool_output_level: ToolOutputLevel::default(),
             todos: TodoState::new(),
+            db: None,
+            embedding_client: None,
+            retrieval_enabled: false,
+            last_retrieval_time: None,
         }
     }
 
@@ -170,25 +190,106 @@ impl ChatSession {
     }
 
     /// Add a user message to the session
+    /// 
+    /// If database is attached, saves to SQLite immediately and generates
+    /// embedding asynchronously (fire-and-forget).
     pub fn add_user_message(&mut self, content: String) {
         let now = Utc::now();
+        
+        // Add to memory (immediate)
         self.messages.push(SavedMessage {
             role: MessageRole::User,
-            content,
+            content: content.clone(),
             timestamp: now,
         });
         self.updated_at = now;
+        
+        // Save to SQLite if database is attached (immediate)
+        if !self.anonymous
+            && let Some(ref db) = self.db
+        {
+            // Ensure conversation exists before inserting message
+            self.ensure_conversation_exists();
+
+            match db.insert_message(&self.id, "user", &content, now) {
+                Ok(message_id) => {
+                    // Generate embedding asynchronously (fire-and-forget)
+                    if let Some(ref client) = self.embedding_client {
+                        let client = Arc::clone(client);
+                        let db = Arc::clone(db);
+                        let conv_id = self.id.clone();
+                        let timestamp = now;
+
+                        tokio::spawn(async move {
+                            if let Ok(embedding) = client.embed(&content).await {
+                                let _ = db.update_message_embedding(
+                                    message_id,
+                                    &embedding,
+                                    &conv_id,
+                                    timestamp,
+                                );
+                            }
+                        });
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not save message to database: {}", e);
+                }
+            }
+        }
     }
 
     /// Add an assistant message to the session
+    /// 
+    /// If database is attached, saves to SQLite immediately.
     pub fn add_assistant_message(&mut self, content: String) {
         let now = Utc::now();
+        
+        // Add to memory (immediate)
         self.messages.push(SavedMessage {
             role: MessageRole::Assistant,
-            content,
+            content: content.clone(),
             timestamp: now,
         });
         self.updated_at = now;
+        
+        // Save to SQLite if database is attached (immediate)
+        if !self.anonymous
+            && let Some(ref db) = self.db
+        {
+            // Ensure conversation exists before inserting message
+            self.ensure_conversation_exists();
+
+            if let Err(e) = db.insert_message(&self.id, "assistant", &content, now) {
+                eprintln!("Warning: Could not save message to database: {}", e);
+            }
+        }
+    }
+
+    /// Attach database and embedding client for persistence
+    pub fn attach_db(&mut self, db: Arc<Database>, embedding_client: Arc<EmbeddingClient>) {
+        self.db = Some(db);
+        self.embedding_client = Some(embedding_client);
+    }
+    
+    /// Ensure conversation exists in database (call before first message insert)
+    pub fn ensure_conversation_exists(&self) {
+        if self.anonymous {
+            return;
+        }
+        if let Some(ref db) = self.db {
+            let title = self.name.as_deref().unwrap_or(&self.id);
+            if let Err(e) = db.insert_conversation(
+                &self.id,
+                self.project_id.as_deref(),
+                Some(title),
+                &self.model,
+                self.created_at,
+                self.updated_at,
+            ) {
+                eprintln!("Warning: Could not ensure conversation exists: {}", e);
+            }
+        }
     }
 
     /// Set the system prompt

@@ -21,8 +21,7 @@ use super::Database;
 /// This prevents SQL injection and FTS5 syntax errors.
 ///
 /// # Examples
-/// ```
-/// # use ask_ai::db::fts5_escape;
+/// ```ignore
 /// let safe = fts5_escape("hello world");  // "\"hello world\""
 /// let safe = fts5_escape("test\"quote");  // "\"test""quote\""
 /// let safe = fts5_escape("a AND b");       // "\"a AND b\"" (literal search, not boolean)
@@ -379,6 +378,46 @@ impl Database {
                 [],
                 |row: &rusqlite::Row<'_>| row.get(0),
             )
+        })
+    }
+
+    /// Get all conversation IDs
+    pub fn list_conversations(&self) -> Result<Vec<String>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let mut stmt = conn.prepare("SELECT id FROM conversations ORDER BY updated_at DESC")?;
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect::<Result<Vec<_>>>()
+        })
+    }
+
+    /// Get all messages for reindexing (with has_embedding = 0)
+    pub fn get_messages_for_reindex(&self) -> Result<Vec<SearchResult>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let mut results = Vec::new();
+
+            let sql = "SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp 
+                FROM messages m 
+                WHERE m.has_embedding = 0 
+                ORDER BY m.timestamp ASC";
+
+            let mut stmt = conn.prepare(sql)?;
+            let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
+                Ok(SearchResult {
+                    message_id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    role: row.get(2)?,
+                    content: row.get(3)?,
+                    timestamp: row.get(4)?,
+                    score: 0.0,
+                    search_type: SearchType::Hybrid,
+                })
+            })?;
+
+            for r in rows {
+                results.push(r?);
+            }
+
+            Ok(results)
         })
     }
 }

@@ -2,6 +2,8 @@
 //!
 //! Handles the main chat loop, user input, and model interaction.
 
+use std::sync::Arc;
+
 use ollama_rs::generation::chat::ChatMessage;
 use rustyline::Config;
 use rustyline::error::ReadlineError;
@@ -10,9 +12,11 @@ use termimad::print_text;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
+use crate::context_overflow::check_context_overflow;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::query::ChatContext;
+use crate::retrieval::{build_context, RetrievalConfig};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::tokens::calculate_context_metrics;
@@ -174,6 +178,39 @@ pub async fn run_chat_repl(
 
     let ollama = settings.ollama_client();
     let mut capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
+    
+    // Initialize database and embedding client for message persistence
+    let db: Option<Arc<crate::db::Database>> = if !session.anonymous {
+        match crate::db::Database::new() {
+            Ok(database) => {
+                if use_debug {
+                    log_debug("Database initialized for message persistence");
+                }
+                Some(Arc::new(database))
+            }
+            Err(e) => {
+                if use_debug {
+                    log_debug(&format!("Warning: Could not initialize database: {}", e));
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+    
+    // Create embedding client
+    let embedding_client: Option<Arc<crate::embeddings::EmbeddingClient>> = 
+        if db.is_some() {
+            Some(Arc::new(crate::embeddings::EmbeddingClient::new(ollama.clone())))
+        } else {
+            None
+        };
+    
+    // Attach database to session
+    if let (Some(db), Some(client)) = (&db, &embedding_client) {
+        session.attach_db(Arc::clone(db), Arc::clone(client));
+    }
 
     // Thinking mode priority:
     // 1. Model capability check (can't enable if not supported)
@@ -444,6 +481,8 @@ pub async fn run_chat_repl(
                                             settings,
                                             agents_md.as_deref(),
                                             use_debug,
+                                            db.as_ref(),
+                                            embedding_client.as_ref(),
                                         )
                                         .await
                                         {
@@ -521,6 +560,99 @@ pub async fn run_chat_repl(
                                     ).await;
                                     continue;
                                 }
+                                CommandResult::Migrate { session_id } => {
+                                    // Check if database is available
+                                    let db = match &db {
+                                        Some(d) => Arc::clone(d),
+                                        None => {
+                                            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+                                            continue;
+                                        }
+                                    };
+                                    
+                                    let embedding_client = crate::embeddings::EmbeddingClient::new(ollama.clone());
+                                    let embedding_client = Arc::new(embedding_client);
+                                    
+                                    if let Some(sid) = session_id {
+                                        // Migrate specific session
+                                        println!("Migrating session: {}", sid);
+                                        match ChatSession::load(&storage, &session.project_id, &sid) {
+                                            Ok(sess) => {
+                                                match crate::db::migrate_session(&sess, &db, &embedding_client).await {
+                                                    Ok(stats) => {
+                                                        println!(
+                                                            "Migration complete: {} messages, {} embeddings",
+                                                            stats.messages_migrated,
+                                                            stats.embeddings_generated
+                                                        );
+                                                        if !stats.errors.is_empty() {
+                                                            eprintln!("Errors:");
+                                                            for e in stats.errors {
+                                                                eprintln!("  - {}", e);
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(e) => eprintln!("Error: {}", e),
+                                                }
+                                            }
+                                            Err(e) => eprintln!("Error loading session: {}", e),
+                                        }
+                                    } else {
+                                        // Migrate all sessions for project
+                                        match crate::db::migrate_project(&storage, &session.project_id, &db, &embedding_client).await {
+                                            Ok(stats) => {
+                                                println!(
+                                                    "Migration complete: {} sessions, {} messages, {} embeddings",
+                                                    stats.sessions_migrated,
+                                                    stats.messages_migrated,
+                                                    stats.embeddings_generated
+                                                );
+                                                if !stats.errors.is_empty() {
+                                                    eprintln!("Errors:");
+                                                    for e in stats.errors {
+                                                        eprintln!("  - {}", e);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => eprintln!("Error: {}", e),
+                                        }
+                                    }
+                                    continue;
+                                }
+                                CommandResult::Reindex { conversation_id } => {
+                                    // Check if database is available
+                                    let db = match &db {
+                                        Some(d) => Arc::clone(d),
+                                        None => {
+                                            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+                                            continue;
+                                        }
+                                    };
+                                    
+                                    let embedding_client = crate::embeddings::EmbeddingClient::new(ollama.clone());
+                                    let embedding_client = Arc::new(embedding_client);
+                                    
+                                    let conv_id = conversation_id.unwrap_or_else(|| session.id.clone());
+                                    
+                                    println!("Reindexing conversation: {}", conv_id);
+                                    match crate::db::reindex_conversation(&db, &embedding_client, &conv_id).await {
+                                        Ok(stats) => {
+                                            println!(
+                                                "Reindex complete: {} messages, {} embeddings",
+                                                stats.messages_migrated,
+                                                stats.embeddings_generated
+                                            );
+                                            if !stats.errors.is_empty() {
+                                                eprintln!("Errors:");
+                                                for e in stats.errors {
+                                                    eprintln!("  - {}", e);
+                                                }
+                                            }
+                                        }
+                                        Err(e) => eprintln!("Error: {}", e),
+                                    }
+                                    continue;
+                                }
                             }
                         }
                         Some(Err(e)) => {
@@ -550,6 +682,8 @@ pub async fn run_chat_repl(
                     settings,
                     agents_md.as_deref(),
                     use_debug,
+                    db.as_ref(),
+                    embedding_client.as_ref(),
                 )
                 .await
                 {
@@ -619,6 +753,8 @@ async fn send_message(
     settings: &Settings,
     agents_md: Option<&str>,
     use_debug: bool,
+    db: Option<&Arc<crate::db::Database>>,
+    embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
 ) -> AppResult<(String, TokenMetrics)> {
     let model_options = model_config.build_model_options();
 
@@ -641,6 +777,24 @@ async fn send_message(
         )
     };
 
+    // Check context overflow
+    let context_window = model_config.num_ctx as usize;
+    let overflow_status = check_context_overflow(session, &system_prompt, context_window, 0.8);
+    
+    if overflow_status.needs_compaction() {
+        eprintln!(
+            "\x1B[33m⚠ Context {}% full. Consider using /compact to summarize old messages.\x1B[0m",
+            overflow_status.usage_percent()
+        );
+    } else if use_debug {
+        log_debug(&format!(
+            "Context usage: {} / {} tokens ({:.1}%)",
+            overflow_status.total_tokens(),
+            context_window,
+            overflow_status.usage_percent() as f32
+        ));
+    }
+
     let coordinator = ChatContext {
         ollama: ollama.clone(),
         model_id: model_config.model_id.clone(),
@@ -660,7 +814,26 @@ async fn send_message(
         }
     }
 
-    let mut messages = session.get_messages_for_llm(&system_prompt);
+    // Build context with retrieval if enabled and available
+    let retrieval_config = if session.retrieval_enabled {
+        RetrievalConfig::default()
+    } else {
+        RetrievalConfig {
+            enabled: false,
+            ..RetrievalConfig::default()
+        }
+    };
+
+    let mut messages = build_context(
+        session,
+        db,
+        embedding_client,
+        user_input,
+        &system_prompt,
+        &retrieval_config,
+    ).await;
+    
+    // Add current user query at the end
     messages.push(ChatMessage::user(user_input.to_string()));
 
     if use_debug {

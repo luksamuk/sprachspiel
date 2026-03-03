@@ -34,6 +34,10 @@ pub enum CommandResult {
     Context,
     /// Search conversation history (handled in REPL)
     Search { query: String, limit: usize },
+    /// Migrate sessions to SQLite (handled in REPL)
+    Migrate { session_id: Option<String> },
+    /// Reindex embeddings (handled in REPL)
+    Reindex { conversation_id: Option<String> },
 }
 
 /// Parsed chat command
@@ -82,6 +86,10 @@ pub enum ChatCommand {
     Undo,
     /// Search conversation history
     Search { query: String, limit: usize },
+    /// Migrate sessions to SQLite
+    Migrate { session_id: Option<String> },
+    /// Reindex embeddings
+    Reindex { conversation_id: Option<String> },
 }
 
 /// Export format for /export command
@@ -188,6 +196,22 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let query = parts.first().unwrap_or(&"").to_string();
             let limit: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
             ChatCommand::Search { query, limit }
+        }
+        "migrate" => {
+            let session_id = if args.is_empty() {
+                None
+            } else {
+                Some(args.trim().to_string())
+            };
+            ChatCommand::Migrate { session_id }
+        }
+        "reindex" => {
+            let conversation_id = if args.is_empty() {
+                None
+            } else {
+                Some(args.trim().to_string())
+            };
+            ChatCommand::Reindex { conversation_id }
         }
         _ => return Some(Err(format!("Unknown command: /{}", cmd))),
     };
@@ -336,6 +360,10 @@ pub fn execute_command(
         ChatCommand::Undo => CommandResult::Undo,
 
         ChatCommand::Search { query, limit } => CommandResult::Search { query, limit },
+
+        ChatCommand::Migrate { session_id } => CommandResult::Migrate { session_id },
+
+        ChatCommand::Reindex { conversation_id } => CommandResult::Reindex { conversation_id },
     }
 }
 
@@ -361,6 +389,8 @@ fn print_help() {
   /info            Show current session information
   /context         Show context metrics and token usage
   /search <query>  Search conversation history (hybrid: keyword + semantic)
+  /migrate [id]    Migrate session(s) to SQLite for semantic search
+  /reindex [id]    Rebuild embeddings for semantic search
 
 Shortcuts:
   /q = /quit, /c = /clear, /h = /help

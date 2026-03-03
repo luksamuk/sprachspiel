@@ -55,7 +55,13 @@ pub fn truncate_and_normalize(embedding: &[f32]) -> Vec<f32> {
 
 /// Normalize a vector to unit length.
 ///
-/// Used for cosine similarity calculations.
+/// Useful for future features:
+/// - Diversity filtering (MMR) - filter similar messages from retrieval
+/// - Manual reranking after sqlite-vec KNN
+/// - Similarity threshold filtering (remove low-relevance results)
+///
+/// Currently not used - kept for planned retrieval improvements.
+#[allow(dead_code)]
 pub fn normalize(vec: &[f32]) -> Vec<f32> {
     let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
 
@@ -69,6 +75,14 @@ pub fn normalize(vec: &[f32]) -> Vec<f32> {
 /// Calculate cosine similarity between two vectors.
 ///
 /// Assumes both vectors are normalized.
+///
+/// Useful for future features:
+/// - Diversity filtering (MMR) - detect similar messages
+/// - Manual reranking after sqlite-vec KNN
+/// - Similarity threshold filtering
+///
+/// Currently not used - kept for planned retrieval improvements.
+#[allow(dead_code)]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
         panic!("Vector length mismatch: {} vs {}", a.len(), b.len());

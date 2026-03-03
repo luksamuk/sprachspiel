@@ -3,10 +3,12 @@
 //! Provides SQLite storage with sqlite-vec extension for vector embeddings.
 
 mod connection;
+mod migration;
 mod operations;
 mod schema;
 
 pub use connection::Database;
+pub use migration::{migrate_project, migrate_session, reindex_conversation};
 pub use operations::{SearchResult, SearchType};
 
 /// Initialize sqlite-vec extension globally.

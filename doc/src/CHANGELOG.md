@@ -2,16 +2,63 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [Unreleased] - v0.21.0 (In Progress)
+## [0.21.0] - 2026-03-03
 
-### Design
+### Added
 
-- **Context Composition Design** - New design document for v0.21.0
-  - Documented optimal context ordering based on "Lost in the Middle" research
-  - Defined auto-retrieval behavior and thresholds
-  - Specified ChatSession SQLite integration
-  - Planned `/migrate`, `/reindex`, `/retrieval` commands
-  - See `doc/src/development/context_composition_design.md`
+- **ChatSession SQLite Integration** - Automatic message persistence
+  - Messages saved to SQLite immediately when added
+  - Embeddings generated asynchronously in background
+  - Database attached via `attach_db()` method
+  - Fields: `db`, `embedding_client`, `retrieval_enabled`, `last_retrieval_time`
+
+- **Context Overflow Detection** - Automatic warning when context fills
+  - `check_context_overflow()` function monitors token usage
+  - Warning at 80% of context window (72% = early warning)
+  - Suggests `/compact` when approaching limits
+
+- **Context Builder** - Optimal message ordering for LLM
+  - `build_context()` implements "lost in the middle" research
+  - Order: System → Retrieved → Summary → Recent → Query
+  - Research shows up to 30% better performance with this ordering
+
+- **Retrieval Configuration** - Configurable context retrieval
+  - `RetrievalConfig` with sensible defaults
+  - Min 20 messages before activation
+  - 5 relevant messages retrieved + 10 recent messages
+  - 5-second throttle between retrievals
+
+- **Migration Commands** - JSON to SQLite migration
+  - `/migrate` - Migrate all project sessions or specific session
+  - `/reindex` - Rebuild embeddings for current conversation
+  - Progress reporting for long migrations
+
+### Changed
+
+- **`send_message()`** - Now uses `build_context()` instead of `get_messages_for_llm()`
+  - Integrated overflow detection with warning display
+  - Integrated retrieval context building
+  - Added `db` and `embedding_client` parameters
+
+- **Embeddings** - Marked `normalize()` and `cosine_similarity()` as `#[allow(dead_code)]`
+  - Kept for future: diversity filtering, manual reranking, threshold filtering
+
+### Technical
+
+- **New modules:**
+  - `src/db/migration.rs` - Session migration logic
+  - `src/context_overflow.rs` - Overflow detection and compaction suggestions
+  - `src/retrieval/context_builder.rs` - Context composition with optimal ordering
+
+- **Database operations:**
+  - `get_messages_for_reindex()` - Fetch messages needing embeddings
+  - `list_conversations()` - List all conversation IDs
+  - `insert_message()` with embedding support
+
+- **Context constants:**
+  - DEFAULT_OVERFLOW_THRESHOLD: 0.8 (80%)
+  - DEFAULT_KEEP_FIRST: 5 messages
+  - DEFAULT_KEEP_LAST: 5 messages
 
 ## [0.20.0] - 2026-03-03
 
