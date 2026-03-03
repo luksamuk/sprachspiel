@@ -2,6 +2,21 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.22.1] - 2026-03-03
+
+### Fixed
+
+- **UTF-8 Chunking Crash** - Fixed panic when splitting strings at multi-byte character boundaries
+  - Chunker now correctly handles UTF-8 multi-byte characters (accents, emojis, CJK)
+  - Added `find_char_boundary()` and `find_char_boundary_forward()` helpers
+  - Fixed `find_sentence_boundary()` to use `.chars()` instead of byte indexing
+  - Bug: "byte index 1024 is not a char boundary; it is inside 'ó'"
+  - Reported when assistant response with Portuguese accents triggered chunking
+
+### Technical
+
+- **Tests**: Added 4 UTF-8 boundary tests (Portuguese accents, emojis, Chinese, boundary edge case)
+
 ## [0.22.0] - 2026-03-03
 
 ### Added
