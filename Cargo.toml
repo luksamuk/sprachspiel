@@ -52,3 +52,7 @@ toml = "0.8"
 urlencoding = "2.1"
 walkdir = "2.5"
 unicode-width = "0.2.2"
+# Database for semantic search
+rusqlite = { version = "0.32", features = ["bundled"] }
+sqlite-vec = "0.1"
+zerocopy = "0.8"

@@ -306,97 +306,106 @@ let res = ollama.generate_embeddings(request).await?;
 
 **No additional crates needed** - `ollama-rs` handles all embedding operations via Ollama API.
 
-#### SQLite Vector Extensions
+#### SQLite & Storage ✅
 
-**Status:** Research needed
+**Decision:** sqlite-vec (sqlite-vss archived)
 
-**sqlite-vec:**
-- Pure C extension, minimal dependencies
-- Supports cosine similarity, L2 distance
-- Binary blob storage for vectors
-- Works with SQLite's BLOB type
-- GitHub: https://github.com/asg017/sqlite-vec
+| sqlite-vec | sqlite-vss |
+|------------|------------|
+| Active development | **Archived** |
+| Pure C, zero deps | Requires FAISS |
+| Easy installation | Complex setup |
+| Termux confirmed | Not tested |
 
-**sqlite-vss:**
-- Alternative extension
-- More features, heavier dependencies
-- May have compatibility issues
+**Storage Schema:**
+```sql
+-- Conversations
+CREATE TABLE conversations (
+    id TEXT PRIMARY KEY,
+    title TEXT, model TEXT,
+    created_at INTEGER DEFAULT (strftime('%s', 'now')),
+    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+);
 
-**Storage Estimation:**
+-- Messages
+CREATE TABLE messages (
+    id INTEGER PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
+    content TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    importance REAL DEFAULT 0.5,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+);
+
+-- Vector embeddings (256-dim)
+CREATE VIRTUAL TABLE message_embeddings USING vec0(
+    message_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +conversation_id TEXT,
+    +timestamp INTEGER
+);
+
+-- FTS5 for keyword search
+CREATE VIRTUAL TABLE messages_fts USING fts5(
+    content, content='messages', content_rowid='id',
+    tokenize='porter unicode61'
+);
 ```
-Per message storage:
-- 768 dimensions × 4 bytes (f32) = ~3 KB
-- 256 dimensions × 4 bytes (f32) = ~1 KB
 
-For 1000 messages:
-- 768d: ~3 MB
-- 256d: ~1 MB
+**Hybrid Search (BM25 + Semantic + RRF):**
+- Keyword weight: 0.4
+- Semantic weight: 0.6
+- Similarity threshold: 0.7 cosine
+
+**Storage Estimates:**
+- 10,000 messages: ~20-30 MB
+- 50,000 messages: ~85-125 MB
+
+#### Architecture ✅
+
+**Decisions:**
+1. **Embedding timing:** On message creation (real-time)
+2. **Dimension:** 256 (Matryoshka truncation)
+3. **Storage:** SQLite + sqlite-vec + FTS5
+4. **Retrieval:** Hybrid (keyword + semantic) with RRF
+
+**Dependencies:**
+```toml
+rusqlite = { version = "0.32", features = ["bundled"] }
+sqlite-vec = "0.1"
+zerocopy = "0.8"
 ```
 
-#### Architecture Design
+#### Performance ✅
 
-**Status:** Research needed
+**Estimates:**
+- Embedding latency: ~50-100ms per message (Ollama API)
+- Similarity search: ~1-5ms for 10k vectors
+- Storage overhead: ~2-3 KB per message
 
-**Key Questions:**
-1. **Embedding Generation Timing**
-   - On message creation (real-time, higher latency)
-   - Batch mode (background job, lower overhead)
-   
-2. **Storage Schema**
-   - Session-based or global?
-   - Embedding per message or per conversation turn?
-   - Metadata to store (timestamp, role, topic?)
-   
-3. **Query Interface**
-   - Similarity search API
-   - Integration with context builder
-   - Threshold configuration
-   
-4. **Dimension Selection**
-   - 768d: Maximum quality
-   - 256d: 3x storage savings, ~5-10% quality loss
+#### Implementation Tasks
 
-#### Performance Testing
+##### SQLite & Storage ✅
+- [x] Select sqlite-vec (sqlite-vss archived)
+- [x] Design storage schema (4 tables + triggers)
+- [x] FTS5 integration for hybrid search
+- [x] Test Termux compatibility (confirmed)
 
-**Status:** Not started
+##### Architecture ✅
+- [x] Hybrid retrieval (BM25 + semantic + RRF)
+- [x] Dimension selection (256d Matryoshka)
+- [x] Similarity threshold (0.7)
+- [x] Module structure design
 
-**Metrics to measure:**
-- Embedding latency (Ollama API call)
-- Storage requirements (per dimension)
-- Query latency for similarity search
-- Memory usage during search
-
----
-
-### Task Checklist
-
-#### Model Selection ✅
-- [x] Evaluate nomic-embed-text-v2-moe (958MB, multilingual, SoTA)
-- [x] Evaluate nomic-embed-text (274MB, English, long context)
-- [x] Compare benchmarks (BEIR, MIRACL)
-
-#### Rust Integration ✅
-- [x] Use ollama-rs for embeddings (no additional crates needed)
-- [x] Document `generate_embeddings` API usage
-- [x] Document batch embedding support
-
-#### SQLite & Storage (Pending)
-- [ ] Research sqlite-vec API and Rust bindings
-- [ ] Research sqlite-vss as alternative
-- [ ] Design storage schema for embeddings
-- [ ] Prototype vector similarity queries
-
-#### Architecture (Pending)
-- [ ] Design embedding generation pipeline
-- [ ] Design context retrieval API
-- [ ] Decide: real-time vs batch embedding
-- [ ] Decide: 768d vs 256d dimensions
-
-#### Performance (Pending)
-- [ ] Benchmark embedding latency
-- [ ] Benchmark similarity search latency
-- [ ] Measure storage overhead
-- [ ] Test with 10/100/1000 message sessions
+##### Implementation (Pending)
+- [ ] Create `src/db/` module
+- [ ] Create `src/embeddings/` module
+- [ ] Create `src/retrieval/` module
+- [ ] Integrate into chat session
+- [ ] Add `/search` command for retrieval
+- [ ] Test incremental updates
+- [ ] Performance benchmarks
 
 ---
 

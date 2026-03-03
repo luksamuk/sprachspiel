@@ -152,35 +152,45 @@ fn count_messages_tokens(messages: &[ChatMessage]) -> usize {
 
 ---
 
-### Context Management v2 - Embeddings Research
+### Context Management v2 - Semantic Retrieval ✅
 
 **Priority:** HIGH  
-**Status:** Research in progress
-
-**Rationale:** Required for semantic retrieval (Phase 4 of context management). Model research complete, remaining tasks pending.
+**Status:** Architecture decided, implementation pending
 
 **Goal:** Enable semantic retrieval of conversation history for intelligent context selection.
 
-**Model Research:** ✅ Complete - See `context_v2_plan.md` for details
+**Architecture Decisions:**
 
-| Model | Size | Context | Languages | Use Case |
-|-------|------|---------|-----------|----------|
-| **nomic-embed-text-v2-moe** | 958MB | 512 | 100 | Multilingual (primary) |
-| nomic-embed-text | 274MB | 2048 | English | Long English docs |
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Vector Extension | **sqlite-vec** | sqlite-vss archived, sqlite-vec active |
+| Dimensions | **256 (Matryoshka)** | 3x storage savings, ~2-3% quality loss |
+| Retrieval | **Hybrid (BM25 + Semantic)** | RRF fusion, weights: 0.4 keyword / 0.6 semantic |
+| Threshold | **0.7 cosine similarity** | Balance precision/recall |
 
-**Rust Integration:** ✅ Complete - `ollama-rs` provides native embedding support via `generate_embeddings`
+**Model:** nomic-embed-text-v2-moe (958MB, 768 → 256d, multilingual)
 
-**Remaining Research Tasks:**
-- [ ] Evaluate SQLite vector extensions
-  - [ ] sqlite-vec (recommended)
-  - [ ] sqlite-vss (alternative)
-- [ ] Design: Storage schema and query interface
-- [ ] Design: Dimension selection (768 vs 256)
-- [ ] Test: Embedding latency (Ollama API call)
-- [ ] Test: Storage requirements per dimension
-- [ ] Test: Query latency for similarity search
+**Storage Estimate:** ~20-30 MB for 10,000 messages
 
-**Detailed Research:** `doc/src/development/context_v2_plan.md`
+**Implementation Tasks:**
+- [ ] Create `src/db/` module with sqlite-vec integration
+- [ ] Create `src/embeddings/` module with Ollama API
+- [ ] Create `src/retrieval/` module with hybrid search (RRF)
+- [ ] Add embedding generation on message save
+- [ ] Add similarity search API
+- [ ] Integrate with context builder
+- [ ] Add `/search <query>` command
+- [ ] Test incremental updates
+- [ ] Benchmark performance
+
+**Dependencies:**
+```toml
+rusqlite = { version = "0.32", features = ["bundled"] }
+sqlite-vec = "0.1"
+zerocopy = "0.8"
+```
+
+**Detailed Plan:** `doc/src/development/context_v2_plan.md`
 
 ---
 
