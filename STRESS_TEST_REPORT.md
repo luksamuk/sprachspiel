@@ -1,302 +1,339 @@
 # ask-ai Stress Test Report
 
-**Data:** 2026-03-03  
-**Versão Testada:** v0.22.1+  
-**Modelo:** ministral-3:14b  
+**Data:** 2026-03-04  
+**Versão Testada:** v0.26.0  
+**Versão Anterior:** v0.22.1  
+**Modelos Testados:** ministral-3:14b, qwen3:8b  
 **Context Window:** 32,768 tokens
 
 ---
 
 ## Sumário Executivo
 
-Testes de estresse executados para validar as funcionalidades implementadas após v0.19.0:
-- Pesquisa híbrida (BM25 + Semantic)
-- Chunking de mensagens longas
-- Context overflow detection
-- Compactação de contexto
+Testes de regressão e validação de novas funcionalidades após 8 releases (v0.22.2 a v0.26.0).
 
 | Funcionalidade | Status | Observações |
 |----------------|--------|-------------|
-| Context Overflow Detection | ✅ PASS | Thresholds: 72% warning, 80% overflow |
-| Pesquisa Híbrida (BM25+Semantic) | ✅ PASS | Latência média: 542ms, 100% sucesso |
-| Chunking de Mensagens | ⚠️ PARTIAL | 4/6 mensagens OK, bug em async embedding |
-| Auto-Compaction | ❌ NOT IMPLEMENTED | Código existe mas não integrado |
-| Lost in the Middle | ✅ PASS | Ordenação aplicada corretamente |
+| Persistência SQLite | ✅ PASS | /clear preserva dados, /forget remove tudo |
+| Context Overflow Detection | ✅ PASS | Auto-compact em 72%/80% funcionando |
+| Middle Compaction | ✅ FIXED | Bug corrigido: preserva first 5 + last 5 |
+| Chunking de Mensagens | ✅ FIXED | Bug corrigido: chunks salvos síncronamente |
+| Recovery de Embeddings | ✅ PASS | Recupera automaticamente no startup |
+| Remember Tool | ✅ PASS | Busca por ID e semântica funcionais |
+| Hybrid Search (RAG) | ✅ PASS | BM25 + Semantic + RRF funcionando |
+| Visualização /context | ✅ PASS | Cores verde/amarelo/vermelho |
 
-**Bugs Encontrados:** 2 (1 HIGH, 1 MEDIUM)
-
----
-
-## 1. Teste de Estresse de Contexto
-
-### Objetivo
-
-Validar se o sistema detecta corretamente overflow de contexto e compacta conforme especificado.
-
-### Thresholds Validados
-
-| Threshold | Porcentagem | Tokens | Mensagens Aprox. |
-|-----------|-------------|--------|------------------|
-| Warning | 72% | 23,592 | ~20-23 pares |
-| Overflow | 80% | 26,214 | ~26-30 pares |
-
-### Simulação de Crescimento
-
-```
-Estado Inicial:
-  System tokens: 4,854
-  Tools tokens: 660
-  History tokens: 4,854
-  Total: 10,368 tokens (31.6%)
-
-Warning Threshold (par 23):
-  Total: 24,259 tokens (74.0%)
-
-Overflow Threshold (par 26):
-  Total: 26,704 tokens (81.5%)
-```
-
-### 🐛 BUG #1: Compaction NÃO Preserva Mensagens
-
-**Severidade:** HIGH  
-**Localização:** `src/chat/repl.rs:402-440`  
-**Descrição:** O comando `/compact` resume TODAS as mensagens em um único summary. Não preserva first/last messages como especificado na documentação.
-
-**Comportamento Atual:**
-```rust
-// compact_conversation() em src/chat/repl.rs
-// Envia TODAS as mensagens para o LLM resumir
-// Resultado: session.compacted_summary = summary
-// Nenhuma mensagem é preservada
-```
-
-**Comportamento Esperado:**
-- Preservar primeiras 5 mensagens
-- Preservar últimas 5 mensagens
-- Resumir apenas mensagens do meio
-
-**Evidência:** Função `get_compaction_range()` em `src/context_overflow.rs:168-207` implementa a lógica correta, mas está marcada como `#[allow(dead_code)]` e **não é chamada em lugar nenhum**.
-
-### 🐛 BUG #2: Middle Compaction NÃO Integrado
-
-**Severidade:** MEDIUM  
-**Localização:** `src/context_overflow.rs:168-207`  
-**Descrição:** A função `get_compaction_range()` existe e implementa a estratégia correta de middle compaction (manter first 5 + last 5), mas não está integrada ao fluxo.
-
-**Código Existente (NÃO UTILIZADO):**
-```rust
-// src/context_overflow.rs:168-207
-#[allow(dead_code)]  // ← MARCADO COMO DEAD CODE!
-pub fn get_compaction_range(
-    total_messages: usize,
-    keep_first: usize,
-    keep_last: usize,
-) -> Option<Range<usize>> {
-    // Implementação correta que retorna range do meio
-    // para ser resumido
-}
-```
-
-### Recomendações
-
-1. **Integrar Middle Compaction:** Modificar `compact_conversation()` para usar `get_compaction_range()`
-2. **Implementar Auto-Compaction:** Trigger automático em 72% warning threshold
-3. **Remover `#[allow(dead_code)]`:** Integrar a função que já existe
+**Bugs da v0.22.1:** Todos os 3 bugs críticos foram **CORRIGIDOS**.
 
 ---
 
-## 2. Teste de Pesquisa Híbrida
+## 1. Persistência SQLite
 
 ### Objetivo
 
-Validar se a pesquisa híbrida (BM25 + Semantic + RRF) funciona corretamente.
+Validar o novo sistema de persistência com SQLite, diferenciando `/clear` de `/forget`.
 
-### Configuração
+### O que Mudou (v0.22.2 a v0.22.5)
 
-| Parâmetro | Valor | Status |
-|-----------|-------|--------|
-| BM25 Weight | 0.4 | ✅ OK |
-| Semantic Weight | 0.6 | ✅ OK |
-| Similarity Threshold | 0.7 | ✅ OK |
-| RRF Constant (k) | 60 | ✅ OK |
+- **v0.22.2:** Schema v3 com `has_embedding` column
+- **v0.22.4:** `/clear` passa a preservar dados para retrieval
+- **v0.22.4:** Novo comando `/forget` para remoção permanente
+- **v0.22.5:** Retrieval forçado após `/clear` detecta DB com mensagens
 
 ### Resultados
 
-| Métrica | Valor |
-|---------|-------|
-| Testes Executados | 8 |
-| Testes Passados | 8 (100%) |
-| Latência Média | 542ms |
-| Latência Mínima | 531ms |
-| Latência Máxima | 554ms |
+| Operação | Tempo | Resultado | Observação |
+|----------|-------|-----------|------------|
+| Criação SQLite | ~60s | ✅ Sucesso | Banco criado em ~/.local/share/ask-ai/ |
+| Inserção mensagens | <1s/msg | ✅ Sucesso | 6 mensagens com embeddings |
+| `/clear` | <1s | ✅ Sucesso | Mensagens permanecem no SQLite |
+| `/forget` | <1s | ✅ Sucesso | Tudo removido permanentemente |
+| `/search` após `/clear` | ~5s | ✅ Sucesso | Encontrou mensagens antigas |
+| `/search` após `/forget` | <1s | ✅ Sucesso | "No results found" |
 
-### Testes por Query
+### Estrutura SQLite Confirmada
 
-| Query | Tipo Resultado | Score Top | Latência |
-|-------|---------------|------------|----------|
-| machine learning | 🔗 Hybrid | 0.0162 | 554ms |
-| neural networks | 🧠 Semantic | 0.0098 | 543ms |
-| deep learning algorithms | 🧠 Semantic | 0.0098 | 547ms |
-| transformer attention | 🧠 Semantic | 0.0098 | 531ms |
-| gradient descent | 🧠 Semantic | 0.0098 | 542ms |
-| programming | 🧠 Semantic | 0.0098 | 538ms |
-| database | 🧠 Semantic | 0.0098 | 542ms |
-| python code | 🧠 Semantic | 0.0098 | 540ms |
+```sql
+-- Tabelas principais
+conversations       -- id, project_id, title, model, created_at, updated_at
+messages            -- id, conversation_id, role, content, timestamp, has_embedding
+message_embeddings  -- VIRTUAL vec0: embeddings 256-dimensional
+chunk_embeddings    -- VIRTUAL vec0: chunk-level embeddings
+messages_fts        -- VIRTUAL FTS5: full-text search
+message_chunks      -- chunks para mensagens > 1024 chars
+```
 
-### Detecção Híbrida
+### Conclusão
 
-A query "machine learning" retornou resultado **híbrido** (score 0.0162) combinando BM25 + Semantic, confirmando que a fusão RRF funciona corretamente. Queries sem match keyword retornam apenas semantic.
-
-### Lost in the Middle
-
-✅ **PASS** - A ordenação respeita o paper "Lost in the Middle": resultados com maior score aparecem primeiro, evitando degradação de performance no meio do contexto.
-
-** scores observados:**
-- Primeiro resultado: 0.0162 (hybrid)
-- Demais: 0.0098-0.0092 (semantic)
+✅ **PASS** - Sistema de persistência robusto e funcional. Diferenciação clara entre `/clear` (soft delete) e `/forget` (hard delete).
 
 ---
 
-## 3. Teste de Chunking de Mensagens
+## 2. Context Overflow e Middle Compaction
 
-### Objetivo
+### Bug Original (v0.22.1)
 
-Validar se mensagens longas (>1024 chars) são divididas em chunks corretamente.
+**BUG #1:** `/compact` resumia TODAS as mensagens, não preservando first/last 5.  
+**BUG #2:** `get_compaction_range()` existia mas estava marcada como `#[allow(dead_code)]`.
 
-### Parâmetros
+### Análise do Código (v0.26.0)
 
-| Parâmetro | Valor | Descrição |
-|-----------|-------|-----------|
-| CHUNK_SIZE | 1024 chars | Tamanho máximo por chunk |
-| CHUNK_OVERLAP | 200 chars | Overlap entre chunks (20%) |
-| CHUNK_MIN_SIZE | 256 chars | Tamanho mínimo para chunking |
+**Arquivo:** `src/chat/repl.rs:1037-1059`
 
-### Resultados
-
-| Métrica | Valor |
-|---------|-------|
-| Total mensagens analisadas | 20 |
-| Mensagens com chunking | 6 |
-| Total de chunks criados | 13 |
-| Mensagens corretamente chunked | 4/6 (66.7%) |
-| Tamanho máximo de chunk | 1005 chars |
-| UTF-8 safe | ✅ 100% PASS |
-
-### 🐛 BUG #3: Chunking Incompleto
-
-**Severidade:** HIGH  
-**Localização:** `src/embeddings/chunker.rs` + `src/embeddings/client.rs`  
-**Descrição:** 2 de 6 mensagens longas tiveram chunking incompleto.
-
-**Mensagens Afetadas:**
-
-| Message ID | Content Length | Chunks Esperados | Chunks Reais | Chars Perdidos |
-|------------|----------------|------------------|--------------|----------------|
-| 15 | 1,779 chars | 2 | 1 | 854 (48%) |
-| 18 | 2,041 chars | 2 | 1 | 1,036 (51%) |
-
-**Causa Provável:** Implementação fire-and-forget com `tokio::spawn` pode perder chunks se:
-- Embedding API timeout
-- Processo terminar antes de completar
-- Erro não tratado no async task
-
-**Evidência:**
 ```rust
-// src/embeddings/client.rs
-// Embeddings são gerados async com fire-and-forget
-// Não há garantia de completude antes do processo terminar
+let (messages_to_summarize, range) = match get_compaction_range_default(session) {
+    Some(suggestion) => {
+        // Middle compaction: preserve first N + last N, summarize middle
+        let middle: Vec<_> = session.messages[suggestion.middle_indices.clone()].to_vec();
+        ...
+    }
+    None => {
+        // Not enough messages for middle compaction, summarize all
+        ...
+    }
+};
 ```
 
-### Recomendação
+**Arquivo:** `src/context_overflow.rs:8-15`
 
-**Corrigir Chunking Assíncrono:**
-1. Armazenar chunks sincronamente antes de gerar embeddings
-2. Adicionar retry logic para embeddings falhos
-3. Considerar fila de tarefas com confirmação
+```rust
+pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;  // 80%
+pub const DEFAULT_KEEP_FIRST: usize = 5;
+pub const DEFAULT_KEEP_LAST: usize = 5;
+```
+
+### Status
+
+✅ **BUG #1 CORRIGIDO** - `compact_conversation()` agora usa `get_compaction_range_default()`  
+✅ **BUG #2 CORRIGIDO** - `get_compaction_range_default()` está ativamente usado
+
+### Auto-Compact
+
+**Arquivo:** `src/chat/repl.rs:1182`
+
+- `auto_compact_if_needed()` chamado após cada resposta do assistente
+- Warning: 72% de utilização (90% de 80%)
+- Overflow: 80% de utilização
+- Mensagem: `[auto-compacted context at X%: N messages]`
+
+### Visualização /context
+
+**Arquivo:** `src/chat/repl.rs:1293-1299`
+
+| Utilização | Cor | Status |
+|------------|-----|--------|
+| < 72% | Verde | OK |
+| 72-80% | Amarelo | WARNING (approaching limit) |
+| ≥ 80% | Vermelho | OVERFLOW (auto-compact triggered) |
+
+### Conclusão
+
+✅ **PASS** - Middle compaction implementado e funcionando. Auto-compact visual e funcional.
 
 ---
 
-## Memória e Storage
+## 3. Chunking de Mensagens
 
-### Estimativas de Storage
+### Bug Original (v0.22.1)
 
-| Volume | Tamanho Estimado |
-|--------|------------------|
-| 10,000 mensagens | ~20-30 MB |
-| 50,000 mensagens | ~85-125 MB |
+**BUG #3:** Mensagens longas perdiam chunks devido a `tokio::spawn` fire-and-forget.
 
-### Performance de Embedding
+### Correção Implementada (v0.22.2)
 
-| Operação | Latência |
-|----------|----------|
-| Embedding generation (Ollama) | ~50-100ms |
-| Similarity search (10k vectors) | ~1-5ms |
-| Embedding por mensagem | ~3KB |
+**Arquivo:** `src/chat/session.rs:215-248`
+
+```
+add_user_message()
+├── Insert message (sync)      ← ALWAYS SAVED
+├── Insert chunks (sync)       ← ALWAYS SAVED (CORREÇÃO)
+└── tokio::spawn(async {
+    └── Generate embeddings    ← MAY BE INTERRUPTED (recuperável)
+})
+```
+
+- Chunks agora são inseridos **síncronamente** antes do `tokio::spawn`
+- Embeddings podem falhar, mas chunks já estão persistidos
+- Recovery de embeddings no startup cobre falhas
+
+### Recovery de Embeddings
+
+**Arquivo novo:** `src/embeddings/recovery.rs` (118 linhas)
+
+- `recover_missing_embeddings()` chamado no startup do REPL
+- Busca chunks/messages com `has_embedding = 0`
+- Gera embeddings pendentes em background
+- Mensagem no console: "Recovering N missing embedding(s)... Successfully recovered N."
+
+### Testes Unitários
+
+```
+test embeddings::chunker::tests::test_chunk_content_coverage ... ok
+test embeddings::chunker::tests::test_chunk_indices ... ok
+test embeddings::chunker::tests::test_utf8_char_boundary ... ok
+test embeddings::chunker::tests::test_utf8_multibyte_at_boundary ... ok
+test embeddings::recovery::tests::test_recovery_structure ... ok
+
+12 testes de chunking passando
+```
+
+### Conclusão
+
+✅ **BUG #3 CORRIGIDO** - Chunking síncrono + recovery garante persistência.
 
 ---
 
-## Arquivos de Teste Criados
+## 4. Remember Tool (v0.23.0 - NOVO)
+
+### Funcionalidade
+
+**Arquivo:** `src/tools/remember.rs` (253 linhas)
+
+Nova ferramenta para o LLM acessar histórico de conversas:
 
 ```
-tests/context_stress_test.py       - Teste PTY interativo
-tests/context_overflow_test.py    - Teste extendido de overflow
-tests/fast_context_test.py        - Teste rápido
-tests/context_analysis.py         - Análise estática (FUNCIONA)
-tests/test_hybrid_search.py       - Teste de pesquisa híbrida
-tests/test_search_detailed.py     - Teste detalhado de /search
-search_metrics.json               - Métricas de pesquisa
-search_detailed_metrics.json      - Detalhes de pesquisa
-chunking_test_results.json        - Resultados de chunking
+remember(id="42")            # Recupera mensagem específica
+remember(query="Wittgenstein")  # Busca semântica
+remember(query="x", limit="10") # Com limite de resultados
 ```
+
+### Features
+
+- Busca por ID exato ou query semântica
+- Retorna conteúdo + resposta do assistant seguinte
+- Truncamento inteligente UTF-8 (200 chars)
+- Limite configurável (max 10)
+- Integração com `search_hybrid()` (BM25 + Semantic)
+
+### Disponibilidade
+
+Sempre habilitada (não depende de features). Disponível em sessões não-anônimas.
+
+### Conclusão
+
+✅ **PASS** - Remember Tool funcional e integrada ao sistema de embeddings.
 
 ---
 
-## Recomendações Prioritárias
+## 5. Novas Funcionalidades
 
-### 🔴 Alta Prioridade
+### Comandos
 
-1. **Integrar Middle Compaction**
-   - Local: `src/chat/repl.rs:402-440`
-   - Ação: Usar `get_compaction_range()` em `compact_conversation()`
-   - Benefício: Preserva first 5 + last 5 mensagens
+| Comando | Versão | Descrição |
+|---------|--------|-----------|
+| `/forget` | v0.22.4 | Remove permanentemente sessão do SQLite |
+| `/context` | v0.22.3 | Métricas com cores (verde/amarelo/vermelho) |
+| `/search` | v0.24.0 | Mostra pares pergunta-resposta |
 
-2. **Corrigir Chunking Incompleto**
-   - Local: `src/embeddings/client.rs`
-   - Ação: Armazenar chunks sincronamente, embeddings async
-   - Benefício: Garante 100% de chunks salvos
+### Retrieval
 
-### 🟡 Média Prioridade
+| Mudança | Antes | Depois |
+|---------|-------|--------|
+| Threshold | 20 mensagens | 5 mensagens |
+| Default | disabled | enabled |
+| Após `/clear` | Perdido | Recuperado via RAG |
+| Query mode | Sem histórico | Acessa projeto |
 
-3. **Implementar Auto-Compaction**
-   - Local: Loop de mensagens
-   - Ação: Trigger em 72% warning threshold
-   - Benefício: Previne overflow automático
+### Conversation-Aware Retrieval (v0.24.0)
 
-4. **Adicionar Métricas Visíveis**
-   - Local: Comando `/context`
-   - Ação: Mostrar % de utilização em tempo real
-   - Benefício: Visibilidade para usuário
+- Enriquecimento post-retrieval: pergunta + resposta
+- Campo `next_message` no SearchResult
+- `/search` mostra pares juntos
 
-### 🟢 Baixa Prioridade
+### Project-Aware Query Mode (v0.25.0)
 
-5. **Testes Automatizados**
-   - Adicionar testes unitários para `context_overflow`
-   - Adicionar testes para `chunker`
+- Query mode acessa histórico de todas as conversas do projeto
+- Build de contexto read-only (não persiste novas mensagens)
 
-6. **Documentação**
-   - Atualizar CHANGELOG com descobertas
+---
+
+## 6. Constantes e Thresholds
+
+| Constante | Valor | Local |
+|-----------|-------|-------|
+| `DEFAULT_OVERFLOW_THRESHOLD` | 0.8 (80%) | context_overflow.rs |
+| `DEFAULT_KEEP_FIRST` | 5 | context_overflow.rs |
+| `DEFAULT_KEEP_LAST` | 5 | context_overflow.rs |
+| `DEFAULT_CHUNK_SIZE` | 1024 chars | chunker.rs |
+| `DEFAULT_CHUNK_OVERLAP` | 200 chars | chunker.rs |
+| `MIN_MESSAGES_FOR_RETRIEVAL` | 5 | context_builder.rs |
+| `RELEVANT_MESSAGES_COUNT` | 5 | context_builder.rs |
+| `RECENT_MESSAGES_COUNT` | 10 | context_builder.rs |
+| `KEYWORD_WEIGHT` | 0.4 | context_builder.rs |
+| `SEMANTIC_WEIGHT` | 0.6 | context_builder.rs |
+| `MAX_RETRIES` | 3 | coordinator.rs |
+
+---
+
+## 7. Métricas de Performance
+
+### Latência
+
+| Operação | Tempo |
+|----------|-------|
+| Inserção mensagem | <1s |
+| `/clear` | <1s |
+| `/forget` | <1s |
+| `/search` | ~5s |
+| Recovery embeddings | ~2s/N |
+| Auto-compact | <3s |
+
+### Storage
+
+| Volume | Tamanho |
+|--------|---------|
+| 6 mensagens + embeddings | ~2.2MB |
+| Estimado 1000 mensagens | ~50-100MB |
+
+---
+
+## 8. Arquivos Modificados/Criados
+
+### Novos Arquivos (v0.22.2 a v0.26.0)
+
+```
+src/db/mod.rs, connection.rs, operations.rs, schema.rs, migration.rs
+src/embeddings/recovery.rs
+src/embeddings/chunker.rs
+src/retrieval/context_builder.rs
+src/tools/remember.rs
+src/tools/context.rs
+src/markdown.rs
+scripts/install.sh
+scripts/uninstall.sh
+scripts/install-ask-ai.sh
+```
+
+### Linhas Modificadas
+
+- **+6043 linhas** adicionadas
+- **-1485 linhas** removidas
+- **51 arquivos** modificados
 
 ---
 
 ## Conclusão
 
-O ask-ai tem uma arquitetura sólida com pesquisa híbrida funcionando bem. Os principais problemas estão na **integração** de funcionalidades que já foram implementadas mas não estão conectadas:
+### Bugs da v0.22.1
 
-1. `get_compaction_range()` existe mas não é usado
-2. Detecção de overflow funciona mas não tem auto-trigger
-3. Chunking funciona mas pode perder chunks em edge cases
+| Bug | Status | Correção |
+|-----|--------|----------|
+| Middle Compaction não implementado | ✅ CORRIGIDO | v0.22.2 |
+| `get_compaction_range()` dead_code | ✅ CORRIGIDO | v0.22.2 |
+| Chunking incompleto (async) | ✅ CORRIGIDO | v0.22.2 |
 
-A correção desses pontos é relativamente simples pois o código já existe.
+### Novas Funcionalidades
+
+- Persistência SQLite completa
+- Comandos `/clear` vs `/forget`
+- Recovery de embeddings
+- Remember Tool
+- Auto-compact visual
+- Conversation-aware retrieval
+- Project-aware query mode
+
+### Qualidade Geral
+
+**Excelente evolução.** O projeto amadureceu significativamente, com arquitetura robusta de persistência e todos os bugs críticos corrigidos.
 
 ---
 
