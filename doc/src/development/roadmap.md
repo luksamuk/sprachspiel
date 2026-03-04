@@ -109,6 +109,131 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 ## High Priority
 
+### Memory Enhancement (Multi-Phase)
+
+**Priority:** HIGH  
+**Status:** Phase 0 - Research & Planning
+
+**Goal:** Improve memory/RAG system for better context retrieval and source attribution.
+
+This is a multi-phase enhancement to our RAG capabilities, broken into small deliverables that can be implemented incrementally.
+
+#### Phase 1: Source Attribution (1-2 days)
+
+**Goal:** LLM should cite sources in responses.
+
+**Implementation:**
+- Track source for each retrieved chunk (conversation, document, note)
+- Format context with clear source attribution
+- System prompt instructs LLM to cite sources
+
+**Tasks:**
+- [ ] Add `source_type` concept to `RetrievedChunk` struct
+- [ ] Format retrieved context with source labels
+- [ ] Add examples to system prompt for citation behavior
+- [ ] Test: LLM includes "[Conversation X, 2024-01-15]" style citations
+
+**See:** `src/retrieval/context_builder.rs`, `src/prompts/`
+
+#### Phase 2: Query Routing Research (Research)
+
+**Goal:** Determine best approach for routing queries to appropriate search targets.
+
+**Problem:** Different queries should search different sources:
+- "lembra o que eu falei?" → Memory (conversations)
+- "o que está no PDF?" → Documents
+- "como está o tempo?" → None (skip search)
+
+**Research Questions:**
+- Regex-based routing (fast, language-specific patterns)
+- Embedding-based intent matching (language-agnostic, ~30ms overhead)
+- Hybrid approach (regex fallback to embedding)
+
+**Multilingual Concerns:**
+- Regex requires patterns per language (pt-BR, en, es, fr, de)
+- Embedding approach is language-agnostic but has latency
+- May integrate with chat modules (OCR/Translation) in future
+
+**Tasks:**
+- [ ] Collect real query patterns from usage (analyze logs)
+- [ ] Prototype regex routing (pt-BR + en)
+- [ ] Benchmark embedding-based routing latency
+- [ ] Test `whatlang` crate for language detection
+- [ ] Compare accuracy vs latency trade-offs
+
+**See:** `doc/src/development/research-query-routing.md`
+
+#### Phase 3: Timestamp Filtering (1 day)
+
+**Goal:** Filter results by time ("what did I say yesterday?").
+
+**Implementation:**
+- Extract temporal references from query
+- Convert to timestamp range ("ontem" → yesterday's range)
+- Add timestamp filter to `search_hybrid()`
+
+**Tasks:**
+- [ ] Add `timestamp_range: Option<(i64, i64)>` to `search_hybrid()`
+- [ ] Implement temporal reference detection (pt-BR + en)
+- [ ] Add SQL WHERE clause for timestamp filtering
+- [ ] Test: "o que eu falei ontem" returns only yesterday's messages
+
+**See:** `src/db/operations.rs`
+
+#### Phase 4: Schema Preparation (1-2 days)
+
+**Goal:** Prepare schema for multiple source types (conversations, documents, notes).
+
+**Implementation:**
+- Create separate `documents` table (not in messages)
+- Add `source_type` to retrieval logic
+- Update embedding tables for multi-source search
+
+**Schema Design:**
+```sql
+CREATE TABLE documents (
+    id TEXT PRIMARY KEY,
+    source_type TEXT,  -- 'pdf', 'markdown', 'text', 'web'
+    title TEXT,
+    content TEXT,
+    created_at INTEGER,
+    updated_at INTEGER
+);
+
+CREATE VIRTUAL TABLE document_embeddings USING vec0(
+    embedding FLOAT[256],
+    +document_id TEXT,
+    +source_type TEXT,
+    +created_at INTEGER
+);
+```
+
+**Tasks:**
+- [ ] Design `documents` table schema
+- [ ] Create `document_embeddings` virtual table
+- [ ] Update `SearchTarget` enum
+- [ ] Add `source_type` filter to hybrid search
+- [ ] Test: Search returns results from correct source
+
+**See:** `src/db/schema.rs`
+
+#### Phase 5: Document Ingestion (Future)
+
+**Goal:** Ingest and index external documents (PDFs, markdown, text files).
+
+**Dependencies:**
+- Phase 4 (schema preparation)
+- Chat module integration (for OCR/Vision)
+
+**Tasks:**
+- [ ] Research: PDF parsing crates (pdf-extract, lopdf)
+- [ ] Implement: Document chunking with overlap
+- [ ] Implement: Embedding generation for chunks
+- [ ] Implement: `/ingest <path>` command
+- [ ] Integrate: OCR from chat for scanned documents
+
+---
+
 ### Conversation-Aware Retrieval ✅
 
 **Priority:** HIGH  
@@ -452,6 +577,52 @@ curl -fsSL https://ollama.com/install.sh | sh
 **Status:** Not started
 
 User-defined tools via dynamic loading or compilation.
+
+---
+
+### TUI (Terminal User Interface)
+
+**Priority:** Low  
+**Status:** Research & Planning needed
+
+**Goal:** Build a responsive TUI using Ratatui-rs that works across:
+- Desktop terminals (resizable)
+- Termux on Android
+- Various screen sizes
+
+**Challenges:**
+- Responsive layout for different terminal sizes
+- Markdown rendering in TUI (tables, code blocks)
+- Streaming output without flickering
+- Keyboard navigation and shortcuts
+- Accessibility (screen readers)
+- Touch support (Termux on-screen keyboard)
+
+**Research Topics:**
+- [ ] Ratatui-rs capabilities and limitations
+- [ ] Terminal resize handling patterns
+- [ ] Markdown-to-TUI rendering approaches
+- [ ] Existing TUI chat interfaces for inspiration
+- [ ] UX patterns for CLI-to-TUI transition
+
+**Design Questions:**
+- Single-pane vs multi-pane layout?
+- How to handle tools output in TUI?
+- Split view for thinking mode?
+- Theme/skin system?
+
+**Dependencies:**
+- Chat module integration (for inline OCR/vision)
+- Memory enhancement (for better context display)
+
+**Tasks:**
+- [ ] Research: Ratatui-rs best practices
+- [ ] Research: Terminal capability detection
+- [ ] Design: UX wireframes for main views
+- [ ] Design: Responsive layout system
+- [ ] Prototype: Basic TUI skeleton
+- [ ] Test: Termux compatibility
+- [ ] Document: TUI user guide
 
 ---
 

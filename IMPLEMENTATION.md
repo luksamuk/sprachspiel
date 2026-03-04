@@ -58,10 +58,25 @@
 
 📋 **Planned:**
 
+### High Priority
+
+- **Memory Enhancement** (Multi-phase)
+  - Phase 1: Source Attribution - LLM cites sources in responses
+  - Phase 2: Query Routing - Route queries to appropriate search targets
+  - Phase 3: Timestamp Filtering - "what did I say yesterday?"
+  - Phase 4: Schema Preparation - Multi-source support (docs, notes)
+  - Phase 5: Document Ingestion - PDF/markdown indexing
+
+### Medium Priority
+
 - Chat module integration (`/ocr`, `/vision`, `/translate` from chat)
 - File session state tracking
 - Skills system
+
+### Low Priority
+
 - Plugin system
+- TUI (Terminal User Interface) with Ratatui-rs
 
 ## Documentation
 
