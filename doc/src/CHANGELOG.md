@@ -2,6 +2,51 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.25.0] - PLANNED
+
+### Added
+
+- **Project-Aware Query Mode** - Query mode now retrieves context from project history
+  - Access to all conversations in the project (read-only)
+  - Same RAG retrieval as chat mode
+  - Same 5-message context limit via RRF
+  - Same enrichment with assistant responses
+
+### Changed
+
+- `query` and `legacy` modes initialize DB + EmbeddingClient
+- `search_hybrid()` now accepts `project_id` parameter for project-wide search
+- Prompt includes MEMORY section when retrieval is available
+- `--code` continues without DB/history (unchanged)
+
+### Technical Details
+
+**Problem:** Query mode had no access to conversation history, making it less useful
+for quick questions that benefit from project context.
+
+**Solution:** Enable retrieval from project's conversation history using the same
+RAG system as chat mode, but without persisting new messages.
+
+**Implementation:**
+1. `project_id` determined same way as chat (git remote or folder name)
+2. DB + EmbeddingClient initialized for query (except --code)
+3. `build_query_context()` retrieves from all sessions in project
+4. Task-local context enables remember tool in query
+5. Graceful degradation if DB unavailable
+
+**Example:**
+```
+Query before: [system_prompt] + [user_query]
+Query after:  [system_prompt] + [retrieved_context] + [user_query]
+                            ↑ from project history (read-only)
+```
+
+### Files Modified
+
+- `src/db/operations.rs` - Add `project_id` to `search_hybrid()`
+- `src/retrieval/context_builder.rs` - New `build_query_context()` function
+- `src/query.rs` - Initialize DB, use context, task-local for remember tool
+
 ## [0.24.0] - 2026-03-03
 
 ### Added

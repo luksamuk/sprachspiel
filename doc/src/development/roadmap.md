@@ -104,6 +104,39 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 ## High Priority
 
+### Project-Aware Query Mode (IN PROGRESS)
+
+**Priority:** HIGH  
+**Status:** v0.25.0 (in progress)
+
+**Problem:** Query mode has no access to conversation history. When running
+`ask query "What did we discuss?"`, it responds without context from previous
+chats in that project.
+
+**Solution:** Enable retrieval from project's conversation history, using same
+RAG system as chat mode, but without persisting new messages.
+
+**Implementation:**
+- Initialize DB + EmbeddingClient in query (except --code)
+- Add `project_id` parameter to `search_hybrid()`
+- Create `build_query_context()` for ephemeral context
+- Search ALL sessions in project (not just default)
+- Enrich with assistant responses (v0.24.0 enrichment)
+- Graceful degradation if DB unavailable
+
+**Detailed Plan:** `doc/src/development/v0.25.0_plan.md`
+
+**Tasks:**
+- [ ] Phase 1: Add project_id to search_hybrid()
+- [ ] Phase 2: Create build_query_context() function
+- [ ] Phase 3: Initialize DB/EmbeddingClient in query.rs
+- [ ] Phase 4: Use build_query_context() for message array
+- [ ] Phase 5: Wrap coordinator.chat() with task-local context
+- [ ] Phase 6: Update PromptConfig with retrieval flag
+- [ ] Tests: Query with/without history, --code mode
+
+---
+
 ### Conversation-Aware Retrieval ✅
 
 **Priority:** HIGH  
