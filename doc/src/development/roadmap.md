@@ -427,13 +427,18 @@ Allow LLM to explicitly recall topics from conversation history via tool call.
 ### OCR Model Customization
 
 **Priority:** Low  
-**Status:** Ready for implementation
+**Status:** Blocked by Arch Linux package availability
 
-Fixed in Ollama v0.17.6. Can now implement custom OCR model selection.
+Fixed in Ollama v0.17.6, but Arch Linux repositories may not have the update yet.
+Users can install via official script for immediate fix:
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
 
 **Goal:** Allow users to specify custom OCR model via `-m` flag.
 
 **Tasks:**
+- [ ] Wait: Arch Linux package update to v0.17.6+
 - [ ] Implement: `-m` flag for `ask ocr` command
 - [ ] Research: Alternative OCR models (glm-ocr alternatives)
 - [ ] Test: GLM-OCR with various image types
