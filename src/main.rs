@@ -215,10 +215,25 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let style = args.prompt.as_ref().map(|s| TranslationStyle::parse(s));
     let prompt = build_translation_prompt(source.as_ref(), &target, &text, style.as_ref());
 
-    let model_config = match user_models::get_model_config("translate") {
+    // Get translate model from settings or fall back to builtin "translategemma"
+    // Priority: settings.model.translate.model -> "translategemma" (NOT global default)
+    let translate_model = settings
+        .model
+        .translate
+        .model
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "translategemma".to_string());
+    
+    let model_config = match user_models::get_model_config(&translate_model) {
         Some(cfg) => cfg,
         None => {
-            eprintln!("Error: Translate model configuration not found.");
+            eprintln!(
+                "Error: Translate model '{}' not found. \
+                 Add it to ~/.config/ask-ai/models.toml or use a built-in model.",
+                translate_model
+            );
+            eprintln!("Built-in models: llama3.1, translategemma, glm-ocr, moondream");
             std::process::exit(1);
         }
     };

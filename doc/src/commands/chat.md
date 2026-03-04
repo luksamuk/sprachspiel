@@ -12,6 +12,14 @@ ask chat [OPTIONS]
 
 Start an interactive chat session with an Ollama model. Conversations are automatically saved per project (identified by git remote URL or folder name), allowing you to resume conversations where you left off.
 
+## Key Features
+
+- **Persistent History**: Conversations saved per project
+- **Semantic Search**: Find past discussions with `/search`
+- **Context Awareness**: Automatic retrieval of relevant messages
+- **Model Switching**: Change models mid-conversation with `/model`
+- **Tool Integration**: Automatic tool use for capable models
+
 ## Options
 
 | Option | Description |
@@ -27,24 +35,129 @@ Start an interactive chat session with an Ollama model. Conversations are automa
 
 Once inside the chat, these commands are available:
 
+### Session Management
+
 | Command | Description |
 |---------|-------------|
 | `/quit`, `/exit`, `/q` | Exit the chat session |
 | `/clear`, `/c` | Clear conversation history |
 | `/help`, `/h`, `/?` | Show available commands |
-| `/model <name>`, `/m <name>` | Switch to a different model |
-| `/system <prompt>`, `/s <prompt>` | Change the system prompt |
-| `/think`, `/t` | Toggle think mode on/off |
-| `/tools` | Toggle tools on/off |
-| `/compact` | Compact conversation history (summarize) |
-| `/retry`, `/r` | Regenerate the last response |
-| `/undo`, `/u` | Undo last message (remove response, show last input) |
 | `/save [name]` | Save current session (optionally named) |
 | `/load <name>`, `/l <name>` | Load a saved session |
-| `/export <format> [file]`, `/e <format>` | Export conversation (md, json) |
 | `/list`, `/ls` | List saved sessions for this project |
 | `/info`, `/i` | Show current session information |
+
+### Model & Mode
+
+| Command | Description |
+|---------|-------------|
+| `/model <name>`, `/m <name>` | Switch to a different model |
+| `/think`, `/t` | Toggle think mode on/off |
+| `/tools` | Toggle tools on/off |
+| `/tools-output <level>` | Set tool output verbosity: compact, full, hidden |
+
+### Conversation
+
+| Command | Description |
+|---------|-------------|
+| `/system <prompt>`, `/s <prompt>` | Change the system prompt |
+| `/compact` | Compact conversation history (summarize old messages) |
+| `/retry`, `/r` | Regenerate the last response |
+| `/undo`, `/u` | Undo last message (remove response, show last input) |
+| `/export <format> [file]` | Export conversation (md, json) |
+
+### Context & Search
+
+| Command | Description |
+|---------|-------------|
 | `/context`, `/ctx` | Show context metrics and token usage |
+| `/search <query>`, `/find <query>`, `/f <query>` | Search conversation history (semantic search) |
+
+## /context - Context Metrics
+
+Show token usage and context utilization for the current session:
+
+```
+> /context
+Context Information:
+  Model:          llama3.1:8b (32K context)
+
+  Token Breakdown:
+    System prompt:    ~890 tokens
+    Tool definitions: ~450 tokens (23 tools)
+    Conversation:     ~1,250 tokens (15 messages)
+    ────────────────────────────────────────────
+    Total used:       ~2,590 tokens
+    Available:        ~29,506 tokens
+    Utilization:      8.1%
+
+  Session:
+    Total:           15 messages
+```
+
+### Token Estimation
+
+Token counts are estimates based on:
+- **Text**: ~0.75 words per token (GPT-style)
+- **Message overhead**: ~4 tokens per message (role markers, formatting)
+- **Code**: ~0.5 tokens per character (higher density)
+
+Actual token usage may vary depending on the model's tokenizer.
+
+## /search - Semantic Search
+
+Search conversation history using hybrid search (keyword + semantic):
+
+```bash
+/search authentication           # Basic search
+/search "error handling" 5      # Limit to 5 results
+/f database design               # Alias
+```
+
+### How It Works
+
+The search combines three techniques:
+
+1. **BM25 (Keyword Search)** - Full-text search via FTS5
+2. **Semantic Search** - Vector similarity using `nomic-embed-text-v2-moe`
+3. **Reciprocal Rank Fusion (RRF)** - Combines results with weights 0.4/0.6
+
+### Output Format
+
+```
+🔍 🔗 **user** (score: 0.0423)
+   How do I control the LED strip?
+   _default_ _2026-03-02 14:30_
+
+🧠 🔗 **assistant** (score: 0.0387)
+   You can use the LED tools to control...
+   _default_ _2026-03-02 14:31_
+```
+
+| Icon | Meaning |
+|------|---------|
+| 🔍 | Keyword match (BM25 only) |
+| 🧠 | Semantic match (vector only) |
+| 🔗 | Hybrid match (both keyword and semantic) |
+
+### Chunking
+
+Messages longer than 1024 characters are automatically split into overlapping chunks:
+
+- **Chunk size**: 1024 characters
+- **Overlap**: 200 characters (20%)
+- **Why overlap**: Ensures search terms split across boundaries are still found
+
+Example: A 3000-character message creates 4 overlapping chunks, ensuring phrases like "Wittgenstein's philosophical investigations" match even if split across chunks.
+
+### Prerequisites
+
+1. **Ollama running** with embedding model:
+   ```bash
+   ollama pull nomic-embed-text-v2-moe
+   ```
+
+2. **Messages indexed** - Messages saved to database are searchable. Use `/migrate` to index historical messages after upgrading.
 
 ## Prompt Indicators
 

@@ -4,6 +4,7 @@
 //! Supports basic arithmetic, exponents, percentages, and mathematical functions.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::utils::normalize_input;
 use ollama_rs::function;
 
 /// Evaluate a mathematical expression.
@@ -58,7 +59,7 @@ fn eval_expression(expr: &str) -> Result<f64, String> {
 
 /// Parse expressions like "15% of 850" or "50% OF 200"
 fn parse_percent_of(expr: &str) -> Option<f64> {
-    let expr_lower = expr.to_lowercase();
+    let expr_lower = normalize_input(expr);
     let parts: Vec<&str> = expr_lower.split("% of ").collect();
 
     if parts.len() == 2 {

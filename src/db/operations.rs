@@ -160,10 +160,17 @@ impl Database {
     }
 
     /// Search messages using full-text search (BM25)
+    ///
+    /// # Arguments
+    /// * `query` - Search query
+    /// * `conversation_id` - Specific conversation to search (None = all conversations)
+    /// * `project_id` - Project to search (None = all projects, only used if conversation_id is None)
+    /// * `limit` - Maximum results to return
     pub fn search_keyword(
         &self,
         query: &str,
         conversation_id: Option<&str>,
+        project_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchResult>> {
         // Escape the query for FTS5 to prevent syntax errors and injection
@@ -172,47 +179,77 @@ impl Database {
         self.with_connection(|conn: &rusqlite::Connection| {
             let mut results = Vec::new();
 
-            let sql = match conversation_id {
-                Some(conv_id) => {
-                    let sql = r#"SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp, bm25(messages_fts) as score
-                        FROM messages_fts fts
-                        JOIN messages m ON fts.rowid = m.id
-                        WHERE messages_fts MATCH ?1 AND m.conversation_id = ?2
-                        ORDER BY score ASC
-                        LIMIT ?3"#;
-                    let mut stmt = conn.prepare(sql)?;
-                    let rows = stmt.query_map(params![escaped_query, conv_id, limit as i32], |row: &rusqlite::Row<'_>| {
-                        Ok(SearchResult {
-                            message_id: row.get(0)?,
-                            conversation_id: row.get(1)?,
-                            role: row.get(2)?,
-                            content: row.get(3)?,
-                            timestamp: row.get(4)?,
-                            score: row.get::<_, f32>(5)?,
-                            search_type: SearchType::Keyword,
-                            chunk_content: None,
-                            chunk_start: None,
-                            chunk_end: None,
-                            next_message: None,
-                        })
-                    })?;
-                    for r in rows {
-                        results.push(r?);
-                    }
-                    return Ok(results);
+            // Build query based on filters
+            // conversation_id takes priority over project_id
+            if let Some(conv_id) = conversation_id {
+                let sql = r#"SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp, bm25(messages_fts) as score
+                    FROM messages_fts fts
+                    JOIN messages m ON fts.rowid = m.id
+                    WHERE messages_fts MATCH ?1 AND m.conversation_id = ?2
+                    ORDER BY score ASC
+                    LIMIT ?3"#;
+                let mut stmt = conn.prepare(sql)?;
+                let rows = stmt.query_map(params![escaped_query, conv_id, limit as i32], |row| {
+                    Ok(SearchResult {
+                        message_id: row.get(0)?,
+                        conversation_id: row.get(1)?,
+                        role: row.get(2)?,
+                        content: row.get(3)?,
+                        timestamp: row.get(4)?,
+                        score: row.get::<_, f32>(5)?,
+                        search_type: SearchType::Keyword,
+                        chunk_content: None,
+                        chunk_start: None,
+                        chunk_end: None,
+                        next_message: None,
+                    })
+                })?;
+                for r in rows {
+                    results.push(r?);
                 }
-                None => {
-                    r#"SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp, bm25(messages_fts) as score
-                        FROM messages_fts fts
-                        JOIN messages m ON fts.rowid = m.id
-                        WHERE messages_fts MATCH ?1
-                        ORDER BY score ASC
-                        LIMIT ?2"#
-                }
-            };
+                return Ok(results);
+            }
 
+            // No conversation_id specified, check project_id
+            if let Some(proj_id) = project_id {
+                let sql = r#"SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp, bm25(messages_fts) as score
+                    FROM messages_fts fts
+                    JOIN messages m ON fts.rowid = m.id
+                    JOIN conversations c ON m.conversation_id = c.id
+                    WHERE messages_fts MATCH ?1 AND c.project_id = ?2
+                    ORDER BY score ASC
+                    LIMIT ?3"#;
+                let mut stmt = conn.prepare(sql)?;
+                let rows = stmt.query_map(params![escaped_query, proj_id, limit as i32], |row| {
+                    Ok(SearchResult {
+                        message_id: row.get(0)?,
+                        conversation_id: row.get(1)?,
+                        role: row.get(2)?,
+                        content: row.get(3)?,
+                        timestamp: row.get(4)?,
+                        score: row.get::<_, f32>(5)?,
+                        search_type: SearchType::Keyword,
+                        chunk_content: None,
+                        chunk_start: None,
+                        chunk_end: None,
+                        next_message: None,
+                    })
+                })?;
+                for r in rows {
+                    results.push(r?);
+                }
+                return Ok(results);
+            }
+
+            // No filters - search all messages
+            let sql = r#"SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp, bm25(messages_fts) as score
+                FROM messages_fts fts
+                JOIN messages m ON fts.rowid = m.id
+                WHERE messages_fts MATCH ?1
+                ORDER BY score ASC
+                LIMIT ?2"#;
             let mut stmt = conn.prepare(sql)?;
-            let rows = stmt.query_map(params![escaped_query, limit as i32], |row: &rusqlite::Row<'_>| {
+            let rows = stmt.query_map(params![escaped_query, limit as i32], |row| {
                 Ok(SearchResult {
                     message_id: row.get(0)?,
                     conversation_id: row.get(1)?,
@@ -224,10 +261,9 @@ impl Database {
                     chunk_content: None,
                     chunk_start: None,
                     chunk_end: None,
-                            next_message: None,
+                    next_message: None,
                 })
             })?;
-
             for r in rows {
                 results.push(r?);
             }
@@ -238,7 +274,7 @@ impl Database {
     /// Search messages using vector similarity
     ///
     /// Note: sqlite-vec KNN queries only support `embedding MATCH ? AND k = ?`.
-    /// Additional filters (like conversation_id) must be applied after retrieval.
+    /// Additional filters (like conversation_id, project_id) must be applied after retrieval.
     /// See: https://github.com/asg017/sqlite-vec
     ///
     /// Searches both:
@@ -248,6 +284,7 @@ impl Database {
         &self,
         embedding: &[f32],
         conversation_id: Option<&str>,
+        project_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<SearchResult>> {
         self.with_connection(|conn: &rusqlite::Connection| {
@@ -255,8 +292,8 @@ impl Database {
 
             // sqlite-vec KNN: only embedding MATCH and k=? allowed in WHERE
             // We fetch more results and filter in application code if needed
-            let fetch_limit = if conversation_id.is_some() {
-                // Fetch 3x more when filtering by conversation to ensure enough results
+            let fetch_limit = if conversation_id.is_some() || project_id.is_some() {
+                // Fetch 3x more when filtering to ensure enough results
                 limit * 3
             } else {
                 limit
@@ -341,9 +378,41 @@ impl Database {
             let mut results: Vec<SearchResult> = best_results.into_values().collect();
             results.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
 
-            // Filter by conversation_id in application code
+            // Filter by conversation_id or project_id in application code
+            // conversation_id takes priority over project_id
             if let Some(conv_id) = conversation_id {
                 results.retain(|r| r.conversation_id == conv_id);
+                results.truncate(limit);
+            } else if let Some(proj_id) = project_id {
+                // Fetch project_id for each conversation and filter
+                let conv_ids: Vec<&str> = results.iter().map(|r| r.conversation_id.as_str()).collect();
+                if conv_ids.is_empty() {
+                    return Ok(Vec::new());
+                }
+                
+                let placeholders: Vec<String> = conv_ids.iter().map(|_| "?".to_string()).collect();
+                let placeholders = placeholders.join(",");
+                
+                let sql_project = format!(
+                    "SELECT id, project_id FROM conversations WHERE id IN ({})",
+                    placeholders
+                );
+                let mut stmt = conn.prepare(&sql_project)?;
+                let params: Vec<&str> = conv_ids.iter().map(|s| *s).collect();
+                let project_map: HashMap<String, Option<String>> = stmt
+                    .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                
+                results.retain(|r| {
+                    project_map
+                        .get(&r.conversation_id)
+                        .and_then(|opt| opt.as_ref())
+                        .map(|p| p == proj_id)
+                        .unwrap_or(false)
+                });
                 results.truncate(limit);
             } else {
                 results.truncate(limit);
@@ -359,15 +428,17 @@ impl Database {
         query: &str,
         embedding: &[f32],
         conversation_id: Option<&str>,
+        project_id: Option<&str>,
         limit: usize,
         keyword_weight: f32,
         semantic_weight: f32,
     ) -> Result<Vec<SearchResult>> {
         // Get keyword results (more = better fusion)
-        let keyword_results = self.search_keyword(query, conversation_id, limit * 2)?;
+        let keyword_results = self.search_keyword(query, conversation_id, project_id, limit * 2)?;
 
         // Get semantic results (more = better fusion)
-        let semantic_results = self.search_semantic(embedding, conversation_id, limit * 2)?;
+        let semantic_results =
+            self.search_semantic(embedding, conversation_id, project_id, limit * 2)?;
 
         // Combine with RRF
         Ok(reciprocal_rank_fusion(
@@ -957,7 +1028,7 @@ mod tests {
             .expect("Failed to insert message");
 
         let results = db
-            .search_keyword("Rust", None, 10)
+            .search_keyword("Rust", None, None, 10)
             .expect("Failed to search");
 
         assert_eq!(results.len(), 1);

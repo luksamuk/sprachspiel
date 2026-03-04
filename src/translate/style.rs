@@ -3,6 +3,8 @@
 //! Supports predefined styles (formal, casual, technical, literary)
 //! and custom style instructions.
 
+use crate::utils::normalize_input;
+
 /// Translation style enum with predefined options and custom support
 #[derive(Debug, Clone, Default)]
 pub enum TranslationStyle {
@@ -24,7 +26,7 @@ impl TranslationStyle {
     /// Recognizes: formal, casual, technical, literary
     /// Anything else becomes Custom(style_instruction)
     pub fn parse(s: &str) -> Self {
-        let normalized = s.trim().to_lowercase();
+        let normalized = normalize_input(s);
 
         match normalized.as_str() {
             "formal" => Self::Formal,

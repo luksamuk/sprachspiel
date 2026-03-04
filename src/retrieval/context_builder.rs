@@ -150,6 +150,7 @@ pub async fn build_context(
                     user_query,
                     &embedding,
                     Some(&session.id),
+                    session.project_id.as_deref(),
                     config.relevant_count,
                     config.keyword_weight,
                     config.semantic_weight,
@@ -289,6 +290,154 @@ pub async fn build_context(
 
     // 6. Current query (always at the very end - critical for model performance)
     // This is added by the caller, not here
+
+    ContextResult {
+        messages,
+        retrieval_performed,
+        retrieved_count,
+    }
+}
+
+/// Build context for query mode (no session persistence)
+///
+/// Similar to build_context() but for ephemeral queries:
+/// 1. System prompt (always first)
+/// 2. Retrieved messages from project history (if available)
+/// 3. Current query (always last)
+///
+/// Unlike build_context():
+/// - No recent messages (no session state)
+/// - No compacted summary (no session state)
+/// - Only searches by project_id (not conversation_id)
+/// - Does not persist any messages
+pub async fn build_query_context(
+    project_id: Option<&str>,
+    db: Option<&Arc<Database>>,
+    embedding_client: Option<&Arc<EmbeddingClient>>,
+    user_query: &str,
+    system_prompt: &str,
+    config: &RetrievalConfig,
+    use_debug: bool,
+) -> ContextResult {
+    let mut messages = Vec::new();
+    let mut retrieval_performed = false;
+    let mut retrieved_count = 0;
+
+    // 1. System prompt (always first)
+    messages.push(ChatMessage::system(system_prompt.to_string()));
+
+    // 2. Retrieved messages (search across all project sessions)
+    if config.enabled {
+        if use_debug {
+            log_debug(&format!(
+                "Query mode retrieval: project_id={:?}, enabled={}",
+                project_id, config.enabled
+            ));
+        }
+        
+        if let (Some(db), Some(client)) = (db, embedding_client) {
+            if use_debug {
+                log_debug("Generating embedding for query...");
+            }
+            
+            if let Ok(embedding) = client.embed(user_query).await {
+                if use_debug {
+                    log_debug(&format!(
+                        "Searching for relevant messages in project: {:?}",
+                        project_id
+                    ));
+                }
+                
+                // Search by project_id only (no conversation_id)
+                if let Ok(results) = db.search_hybrid(
+                    user_query,
+                    &embedding,
+                    None,           // No conversation_id - search all in project
+                    project_id,      // Search by project
+                    config.relevant_count,
+                    config.keyword_weight,
+                    config.semantic_weight,
+                ) {
+                    // Enrich results with conversation context
+                    let enriched_results = match db.enrich_with_context(results) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            if use_debug {
+                                log_debug(&format!("Warning: Failed to enrich results: {}", e));
+                            }
+                            Vec::new()
+                        }
+                    };
+                    
+                    if use_debug {
+                        log_debug(&format!(
+                            "Search returned {} results",
+                            enriched_results.len()
+                        ));
+                    }
+                    
+                    if !enriched_results.is_empty() {
+                        retrieved_count = enriched_results.len();
+                        retrieval_performed = true;
+                        
+                        let mut retrieved_text = String::from("<retrieved_context>\n");
+                        retrieved_text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n");
+                        retrieved_text.push_str("Each message has an ID. Use remember(id=\"N\") for full content.\n");
+                        retrieved_text.push_str("Use remember(query=\"topic\") to search for past discussions.\n\n");
+                        for msg in enriched_results.iter() {
+                            retrieved_text.push_str(&format!(
+                                "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
+                                msg.message_id,
+                                msg.role,
+                                msg.content
+                            ));
+                            
+                            // If user message has an assistant response, include it
+                            if let Some(ref answer) = msg.next_message {
+                                retrieved_text.push_str(&format!(
+                                    "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
+                                    answer.message_id,
+                                    answer.role,
+                                    answer.content
+                                ));
+                            }
+                        }
+                        retrieved_text.push_str("</retrieved_context>");
+                        messages.push(ChatMessage::system(retrieved_text));
+                        
+                        if use_debug {
+                            let enriched_count = enriched_results.iter().filter(|r| r.next_message.is_some()).count();
+                            log_debug(&format!(
+                                "Added {} retrieved messages to context ({} enriched with responses)",
+                                retrieved_count,
+                                enriched_count
+                            ));
+                        }
+                    }
+                } else if use_debug {
+                    log_debug("Search returned no results");
+                }
+            } else if use_debug {
+                log_debug("Failed to generate embedding for query");
+            }
+        } else if use_debug {
+            log_debug("Skipping retrieval: db or embedding_client not available");
+        }
+    } else if use_debug {
+        log_debug("Skipping retrieval: disabled");
+    }
+
+    // 3. Current query (always last)
+    messages.push(ChatMessage::user(user_query.to_string()));
+    
+    if use_debug {
+        log_debug(&format!(
+            "Query context built: {} messages, retrieval={}, retrieved={}",
+            messages.len(),
+            retrieval_performed,
+            retrieved_count
+        ));
+    }
 
     ContextResult {
         messages,

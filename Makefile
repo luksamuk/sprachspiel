@@ -28,10 +28,18 @@ TERMUX_BUILD_DIR = target/$(TERMUX_TARGET)/release
 # Distribution
 VERSION ?= $(shell grep '^version =' Cargo.toml | head -1 | cut -d'"' -f2)
 DIST_DIR = dist
-TARBALL_NAME = $(BINARY)-$(VERSION)
-TARBALL_NAME_TERMUX = $(BINARY)-$(VERSION)-termux-$(TERMUX_TARGET)
+TARBALL_BASE = $(BINARY)-$(VERSION)
 
-.PHONY: all build install uninstall clean test check build-pokemon build-all-tools install-pokemon install-all-tools install-local-pokemon install-local-all-tools test-all termux termux-all-tools tarball tarball-linux tarball-linux-all-tools tarball-termux tarball-termux-all-tools all-tarballs help
+# Scripts
+SCRIPTS_DIR = scripts
+INSTALL_SCRIPT = $(SCRIPTS_DIR)/install.sh
+UNINSTALL_SCRIPT = $(SCRIPTS_DIR)/uninstall.sh
+
+.PHONY: all build install uninstall clean test check build-pokemon build-all-tools install-pokemon install-all-tools install-local-pokemon install-local-all-tools test-all termux termux-all-tools tarball tarball-linux tarball-linux-all-tools tarball-termux tarball-termux-all-tools all-tarballs help clean-dist
+
+# =============================================================================
+# Build Targets
+# =============================================================================
 
 # Default target
 all: build
@@ -47,6 +55,10 @@ build-pokemon:
 # Build with all tools (weather, file, web-search, pokemon)
 build-all-tools:
 	cargo build $(CARGO_FLAGS) $(FEATURE_ALL)
+
+# =============================================================================
+# Installation Targets
+# =============================================================================
 
 # Install binary and man page to PREFIX
 install: build
@@ -92,6 +104,47 @@ uninstall:
 	@rm -f $(MANDIR)/ask-ai.1
 	@echo "Uninstallation complete!"
 
+# =============================================================================
+# Local Installation (~/.local)
+# =============================================================================
+
+# Install locally (for development)
+install-local: build
+	@echo "Installing $(TARGET) to ~/.local/bin..."
+	@mkdir -p ~/.local/bin
+	@cp $(BUILD_DIR)/$(BINARY) ~/.local/bin/$(TARGET)
+	@chmod +x ~/.local/bin/$(TARGET)
+	@mkdir -p ~/.local/share/man/man1
+	@cp $(MANPAGE) ~/.local/share/man/man1/
+	@echo "Local installation complete!"
+	@echo "Binary: ~/.local/bin/$(TARGET)"
+	@echo "Manpage: ~/.local/share/man/man1/ask-ai.1"
+	@echo "Make sure ~/.local/bin is in your PATH"
+
+# Install locally with Pokémon tools
+install-local-pokemon: build-pokemon
+	@echo "Installing $(TARGET) (with Pokémon tools) to ~/.local/bin..."
+	@mkdir -p ~/.local/bin
+	@cp $(BUILD_DIR)/$(BINARY) ~/.local/bin/$(TARGET)
+	@chmod +x ~/.local/bin/$(TARGET)
+	@mkdir -p ~/.local/share/man/man1
+	@cp $(MANPAGE) ~/.local/share/man/man1/
+	@echo "Local installation complete! (includes Pokémon tools)"
+
+# Install locally with all tools
+install-local-all-tools: build-all-tools
+	@echo "Installing $(TARGET) (with all tools) to ~/.local/bin..."
+	@mkdir -p ~/.local/bin
+	@cp $(BUILD_DIR)/$(BINARY) ~/.local/bin/$(TARGET)
+	@chmod +x ~/.local/bin/$(TARGET)
+	@mkdir -p ~/.local/share/man/man1
+	@cp $(MANPAGE) ~/.local/share/man/man1/
+	@echo "Local installation complete! (includes all tools)"
+
+# =============================================================================
+# Development Targets
+# =============================================================================
+
 # Clean build artifacts
 clean:
 	cargo clean
@@ -121,91 +174,10 @@ fmt:
 debug:
 	cargo build
 
-# Install locally (for development)
-install-local: build
-	@echo "Installing $(TARGET) to ~/.local/bin..."
-	@mkdir -p ~/.local/bin
-	@cp $(BUILD_DIR)/$(BINARY) ~/.local/bin/$(TARGET)
-	@chmod +x ~/.local/bin/$(TARGET)
-	@echo "Local installation complete!"
-	@echo "Make sure ~/.local/bin is in your PATH"
-
-# Install locally with Pokémon tools
-install-local-pokemon: build-pokemon
-	@echo "Installing $(TARGET) (with Pokémon tools) to ~/.local/bin..."
-	@mkdir -p ~/.local/bin
-	@cp $(BUILD_DIR)/$(BINARY) ~/.local/bin/$(TARGET)
-	@chmod +x ~/.local/bin/$(TARGET)
-	@echo "Local installation complete! (includes Pokémon tools)"
-
-# Install locally with all tools
-install-local-all-tools: build-all-tools
-	@echo "Installing $(TARGET) (with all tools) to ~/.local/bin..."
-	@mkdir -p ~/.local/bin
-	@cp $(BUILD_DIR)/$(BINARY) ~/.local/bin/$(TARGET)
-	@chmod +x ~/.local/bin/$(TARGET)
-	@echo "Local installation complete! (includes all tools)"
-
-# Show help
-help:
-	@echo "Available targets:"
-	@echo ""
-	@echo "Build targets:"
-	@echo "  make build              - Build release binary (default: weather, file-tools)"
-	@echo "  make build-pokemon      - Build with Pokémon tools (adds 8 Pokémon tools)"
-	@echo "  make build-all-tools    - Build with all tools (weather, file, web-search, pokemon)"
-	@echo "  make debug              - Build debug version"
-	@echo ""
-	@echo "Installation targets:"
-	@echo "  make install            - Install binary and man page (default: /usr/local)"
-	@echo "  make install-pokemon    - Install with Pokémon tools"
-	@echo "  make install-all-tools  - Install with all tools"
-	@echo "  make install-local      - Install to ~/.local/bin"
-	@echo "  make install-local-pokemon - Install to ~/.local/bin with Pokémon tools"
-	@echo "  make install-local-all-tools - Install to ~/.local/bin with all tools"
-	@echo "  make uninstall          - Remove from PREFIX"
-	@echo ""
-	@echo "Termux/Android builds:"
-	@echo "  make termux             - Build for Termux (aarch64-linux-android)"
-	@echo "  make termux-all-tools   - Build for Termux with all tools"
-	@echo "  make tarball            - Create release tarball for current platform"
-	@echo "  make tarball-linux      - Create Linux x86_64 tarball"
-	@echo "  make tarball-linux-all-tools - Create Linux x86_64 tarball (all tools)"
-	@echo "  make tarball-termux     - Create Termux tarball"
-	@echo "  make tarball-termux-all-tools - Create Termux tarball (all tools)"
-	@echo "  make all-tarballs       - Create all distribution tarballs"
-	@echo ""
-	@echo "Development targets:"
-	@echo "  make clean              - Clean build artifacts"
-	@echo "  make test               - Run tests"
-	@echo "  make test-all           - Run tests with all features"
-	@echo "  make check              - Run cargo check"
-	@echo "  make lint               - Run clippy"
-	@echo "  make fmt                - Format code"
-	@echo ""
-	@echo "Model Installation (run from modelfiles/):"
-	@echo "  cd modelfiles && make models-essential   - Install required models"
-	@echo "  cd modelfiles && make models-optional    - Install recommended models"
-	@echo "  cd modelfiles && make models-all        - Install all local models"
-	@echo "  cd modelfiles && make models-cloud       - Install cloud models"
-	@echo "  cd modelfiles && make help                - Show model help"
-	@echo ""
-	@echo "Variables:"
-	@echo "  PREFIX=<path>           - Installation prefix (default: /usr/local)"
-	@echo "  VERSION=<version>       - Version for tarball (default: from Cargo.toml)"
-	@echo ""
-	@echo "Examples:"
-	@echo "  make install                           # Install to /usr/local"
-	@echo "  make install PREFIX=/usr               # Install to /usr"
-	@echo "  make install PREFIX=~/.local           # Install to ~/.local"
-	@echo "  make install-local-pokemon             # Install locally with Pokémon tools"
-	@echo "  make install-local-all-tools           # Install locally with all tools"
-	@echo "  make termux                            # Build for Android/Termux"
-	@echo "  make tarball-termux                    # Create Termux distribution tarball"
-
 # =============================================================================
 # Termux/Android Cross-Compilation
 # =============================================================================
+
 # Requires: cargo install cross --git https://github.com/cross-rs/cross
 # Requires: Docker or Podman running
 # See Cross.toml for configuration
@@ -231,86 +203,173 @@ termux-all-tools:
 tarball: build
 	@echo "Creating distribution tarball..."
 	@mkdir -p $(DIST_DIR)
-	cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz $(BINARY) -C $(CURDIR) man/ask-ai.1 README.md LICENSE.txt
-	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz"
+	@cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64.tar.gz $(BINARY) -C $(CURDIR) man/ask-ai.1 README.md LICENSE.txt
+	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64.tar.gz"
 
-# Create tarball for Linux x86_64
+# Create Linux x86_64 tarball with installation scripts
 tarball-linux: build
 	@echo "Creating Linux x86_64 tarball..."
-	@mkdir -p $(DIST_DIR)
-	cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz $(BINARY) -C $(CURDIR) man/ask-ai.1 README.md LICENSE.txt
-	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64.tar.gz"
+	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64
+	@cp $(BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64/$(BINARY)
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64/$(BINARY).1
+	@cp README.md $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64/
+	@cp LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64/ 2>/dev/null || cp LICENSE $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64/ || true
+	@cp $(INSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64/
+	@cp $(UNINSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64/
+	@sed -i 's/^VERSION=""/VERSION="$(VERSION)"/' $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64/install.sh
+	@cd $(DIST_DIR) && tar -czvf $(TARBALL_BASE)-linux-x86_64.tar.gz $(TARBALL_BASE)-linux-x86_64
+	@rm -rf $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64
+	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64.tar.gz"
 
-# Create tarball for Linux x86_64 with all tools
+# Create Linux x86_64 tarball with all tools
 tarball-linux-all-tools: build-all-tools
 	@echo "Creating Linux x86_64 tarball (all tools)..."
-	@mkdir -p $(DIST_DIR)
-	cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64-all-tools.tar.gz $(BINARY) -C $(CURDIR) man/ask-ai.1 README.md LICENSE.txt
-	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME)-linux-x86_64-all-tools.tar.gz"
+	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools
+	@cp $(BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools/$(BINARY)
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools/$(BINARY).1
+	@cp README.md $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools/
+	@cp LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools/ 2>/dev/null || cp LICENSE $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools/ || true
+	@cp $(INSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools/
+	@cp $(UNINSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools/
+	@sed -i 's/^VERSION=""/VERSION="$(VERSION)"/' $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools/install.sh
+	@cd $(DIST_DIR) && tar -czvf $(TARBALL_BASE)-linux-x86_64-all-tools.tar.gz $(TARBALL_BASE)-linux-x86_64-all-tools
+	@rm -rf $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools
+	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64-all-tools.tar.gz"
 
-# Create tarball for Termux (Android aarch64)
+# Create Termux tarball with installation scripts
 tarball-termux: termux
 	@echo "Creating Termux tarball..."
-	@mkdir -p $(DIST_DIR)
-	@echo "Installation instructions for Termux:" > $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "1. Install dependencies:" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   pkg install wget" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "2. Extract the tarball:" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   tar -xzf $(TARBALL_NAME_TERMUX).tar.gz" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "3. Install the binary:" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   chmod +x ask-ai" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   mv ask-ai /data/data/com.termux/files/usr/bin/" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "4. Run:" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   ask-ai --version" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "Note: Ollama must run on a separate machine (desktop/server)." >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml" >> $(DIST_DIR)/README-TERMUX.txt
-	cd $(TERMUX_BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME_TERMUX).tar.gz $(BINARY) -C $(CURDIR)/$(DIST_DIR) README-TERMUX.txt
-	@rm $(DIST_DIR)/README-TERMUX.txt
-	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME_TERMUX).tar.gz"
-	@echo ""
-	@echo "To install in Termux:"
-	@echo "  pkg install wget"
-	@echo "  wget <release-url>/$(TARBALL_NAME_TERMUX).tar.gz"
-	@echo "  tar -xzf $(TARBALL_NAME_TERMUX).tar.gz"
-	@echo "  chmod +x ask-ai && mv ask-ai /data/data/com.termux/files/usr/bin/"
+	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)
+	@cp $(TERMUX_BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/$(BINARY)
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/$(BINARY).1
+	@cp README.md $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/
+	@cp LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/ 2>/dev/null || cp LICENSE $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/ || true
+	@sed 's/^# Termux Notes:/📱 Termux Notes:\n  - Ollama must run on a separate machine (desktop\/server)\n  - Configure OLLAMA_HOST in ~\/.config\/ask-ai\/config.toml\n  - Example: host = "192.168.1.100:11434"\n\n# Termux Notes:/' $(INSTALL_SCRIPT) > $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/install.sh
+	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMux.txt
+	@echo "# ask-ai for Termux" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
+	@echo "## Installation" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
+	@echo "./install.sh" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
+	@cp $(UNINSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/
+	@sed -i 's/^VERSION=""/VERSION="$(VERSION)"/' $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/install.sh
+	@cd $(DIST_DIR) && tar -czvf $(TARBALL_BASE)-termux-$(TERMUX_TARGET).tar.gz $(TARBALL_BASE)-termux-$(TERMUX_TARGET)
+	@rm -rf $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)
+	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET).tar.gz"
 
-# Create tarball for Termux with all tools
+# Create Termux tarball with all tools
 tarball-termux-all-tools: termux-all-tools
 	@echo "Creating Termux tarball (all tools)..."
-	@mkdir -p $(DIST_DIR)
-	@echo "Installation instructions for Termux:" > $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "1. Install dependencies:" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   pkg install wget" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "2. Extract the tarball:" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   tar -xzf $(TARBALL_NAME_TERMUX)-all-tools.tar.gz" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "3. Install the binary:" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   chmod +x ask-ai" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   mv ask-ai /data/data/com.termux/files/usr/bin/" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "4. Run:" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "   ask-ai --version" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "Note: Ollama must run on a separate machine (desktop/server)." >> $(DIST_DIR)/README-TERMUX.txt
-	@echo "Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml" >> $(DIST_DIR)/README-TERMUX.txt
-	cd $(TERMUX_BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz $(BINARY) -C $(CURDIR)/$(DIST_DIR) README-TERMUX.txt
-	@rm $(DIST_DIR)/README-TERMUX.txt
-	@echo "Created: $(DIST_DIR)/$(TARBALL_NAME_TERMUX)-all-tools.tar.gz"
+	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools
+	@cp $(TERMUX_BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/$(BINARY)
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/$(BINARY).1
+	@cp README.md $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
+	@cp LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/ 2>/dev/null || cp LICENSE $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/ || true
+	@cp $(INSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
+	@cp $(UNINSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
+	@echo "📱 Termux Notes:" > $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@echo "- Ollama must run on a separate machine (desktop/server)" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@echo "- Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@echo "- Example: host = \"192.168.1.100:11434\"" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@echo "## Installation" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@echo "./install.sh" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
+	@sed -i 's/^VERSION=""/VERSION="$(VERSION)"/' $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/install.sh
+	@cd $(DIST_DIR) && tar -czvf $(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools.tar.gz $(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools
+	@rm -rf $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools
+	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools.tar.gz"
+
+# Create tarball with scripts for current platform
+tarball-with-scripts: build
+	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)
+	@cp $(BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/ask-ai.1
+	@cp README.md LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/ 2>/dev/null || cp README.md LICENSE $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/ || true
+	@cp $(INSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/
+	@cp $(UNINSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/
+	@sed -i 's/^VERSION=""/VERSION="$(VERSION)"/' $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/install.sh
+	@cd $(DIST_DIR) && tar -czvf $(TARBALL_BASE)-linux-$(shell uname -m).tar.gz $(TARBALL_BASE)-$(shell uname -m)
+	@rm -rf $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)
+	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-linux-$(shell uname -m).tar.gz"
 
 # Create all distribution tarballs
 all-tarballs: tarball-linux tarball-linux-all-tools tarball-termux tarball-termux-all-tools
 	@echo ""
 	@echo "All tarballs created in $(DIST_DIR)/:"
 	@ls -lh $(DIST_DIR)/*.tar.gz
+	@echo ""
+	@echo "Installation instructions:"
+	@echo "  Linux:   tar -xzf ask-ai-$(VERSION)-linux-x86_64.tar.gz && cd ask-ai-$(VERSION)-linux-x86_64 && ./install.sh"
+	@echo "  Termux:  tar -xzf ask-ai-$(VERSION)-termux-aarch64.tar.gz && cd ask-ai-$(VERSION)-termux-aarch64 && ./install.sh"
 
 # Clean distribution directory
 clean-dist:
 	@rm -rf $(DIST_DIR)
 	@echo "Distribution directory cleaned"
+
+# =============================================================================
+# Help
+# =============================================================================
+
+help:
+	@echo "Available targets:"
+	@echo ""
+	@echo "Build targets:"
+	@echo "  make build              - Build release binary (default: weather, file-tools)"
+	@echo "  make build-pokemon      - Build with Pokémon tools (adds 8 Pokémon tools)"
+	@echo "  make build-all-tools    - Build with all tools (weather, file, web-search, pokemon)"
+	@echo "  make debug              - Build debug version"
+	@echo ""
+	@echo "Installation targets:"
+	@echo "  make install            - Install binary and man page (default: /usr/local)"
+	@echo "  make install-pokemon    - Install with Pokémon tools"
+	@echo "  make install-all-tools  - Install with all tools"
+	@echo "  make install-local      - Install to ~/.local/bin"
+	@echo "  make install-local-pokemon - Install to ~/.local/bin with Pokémon tools"
+	@echo "  make install-local-all-tools - Install to ~/.local/bin with all tools"
+	@echo "  make uninstall          - Remove from PREFIX"
+	@echo ""
+	@echo "Termux/Android builds:"
+	@echo "  make termux             - Build for Termux (aarch64-linux-android)"
+	@echo "  make termux-all-tools   - Build for Termux with all tools"
+	@echo "  make tarball-linux      - Create Linux x86_64 tarball with install scripts"
+	@echo "  make tarball-linux-all-tools - Create Linux x86_64 tarball (all tools)"
+	@echo "  make tarball-termux     - Create Termux tarball with install scripts"
+	@echo "  make tarball-termux-all-tools - Create Termux tarball (all tools)"
+	@echo "  make all-tarballs       - Create all distribution tarballs"
+	@echo ""
+	@echo "Development targets:"
+	@echo "  make clean              - Clean build artifacts"
+	@echo "  make test               - Run tests"
+	@echo "  make test-all           - Run tests with all features"
+	@echo "  make check              - Run cargo check"
+	@echo "  make lint               - Run clippy"
+	@echo "  make fmt                - Format code"
+	@echo ""
+	@echo "Model Installation (run from modelfiles/):"
+	@echo "  cd modelfiles && make models-essential   - Install required models"
+	@echo "  cd modelfiles && make models-optional    - Install recommended models"
+	@echo "  cd modelfiles && make models-all         - Install all local models"
+	@echo "  cd modelfiles && make models-cloud       - Install cloud models"
+	@echo "  cd modelfiles && make help               - Show model help"
+	@echo ""
+	@echo "Variables:"
+	@echo "  PREFIX=<path>           - Installation prefix (default: /usr/local)"
+	@echo "  VERSION=<version>       - Version for tarball (default: from Cargo.toml)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make install                           # Install to /usr/local"
+	@echo "  make install PREFIX=/usr               # Install to /usr"
+	@echo "  make install PREFIX=~/.local           # Install to ~/.local"
+	@echo "  make install-local-pokemon             # Install locally with Pokémon tools"
+	@echo "  make install-local-all-tools           # Install locally with all tools"
+	@echo "  make termux                            # Build for Android/Termux"
+	@echo "  make tarball-termux                    # Create Termux distribution tarball"
+	@echo "  make all-tarballs                      # Create all distribution tarballs"
+	@echo ""
+	@echo "Remote Installation:"
+	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash"
+	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0"
+	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --tools all"

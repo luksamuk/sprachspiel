@@ -69,6 +69,10 @@ pub struct ModelSettings {
     pub code: SubcommandModelConfig,
     #[serde(default)]
     pub vision: SubcommandModelConfig,
+    /// Translate subcommand configuration
+    /// Falls back to "translategemma" if model not specified
+    #[serde(default)]
+    pub translate: SubcommandModelConfig,
 }
 
 /// Model configuration for a specific subcommand
@@ -152,6 +156,7 @@ impl Default for ModelSettings {
             summarize: SubcommandModelConfig::default(),
             code: SubcommandModelConfig::default(),
             vision: SubcommandModelConfig::default(),
+            translate: SubcommandModelConfig::default(),
         }
     }
 }
@@ -286,6 +291,7 @@ impl Settings {
             "summarize" => &self.model.summarize,
             "code" => &self.model.code,
             "vision" => &self.model.vision,
+            "translate" => &self.model.translate,
             _ => &SubcommandModelConfig::default(),
         };
 
@@ -315,6 +321,7 @@ impl Settings {
             "chat" => true,
             "code" => true,
             "summarize" => false,
+            "translate" => false,
             "vision" => false,
             _ => true,
         };
@@ -441,6 +448,21 @@ ollama_port = 11434
 # If not specified, defaults to: false for summarize
 # tools = false
 
+# --- TRANSLATE SUBCOMMAND ---
+[model.translate]
+# The model to use for 'ask translate'.
+# Built-in: "translategemma" (optimized for translation)
+# If not specified, uses "translategemma" by default.
+# model = "translategemma"
+
+# Translation typically doesn't need thinking mode.
+# If not specified, defaults to: false for translate
+# thinking = false
+
+# Translation doesn't use tools.
+# If not specified, defaults to: false for translate
+# tools = false
+
 # --- CODE MODE ---
 [model.code]
 # The model to use when the code flag (-c) is active.
@@ -556,6 +578,8 @@ mod tests {
         // These should be false by default
         assert!(!settings.output.plain_default);
         assert!(!settings.output.debug_default);
+        // Translate model defaults to None (uses builtin "translategemma")
+        assert!(settings.model.translate.model.is_none());
     }
 
     #[test]
@@ -607,5 +631,25 @@ skin = "light"
         assert!(settings.output.plain_default);
         assert!(settings.output.debug_default);
         assert_eq!(settings.display.skin, "light");
+    }
+
+    #[test]
+    fn test_translate_model_override() {
+        let sample = r#"
+[model.translate]
+model = "qwen3"
+"#;
+
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert_eq!(settings.model.translate.model, Some("qwen3".to_string()));
+    }
+
+    #[test]
+    fn test_translate_model_default() {
+        let settings = Settings::default();
+        // Translate defaults to None, code should use "translategemma" as fallback
+        assert!(settings.model.translate.model.is_none());
+        assert!(settings.model.translate.thinking.is_none());
+        assert!(settings.model.translate.tools.is_none());
     }
 }

@@ -121,6 +121,21 @@ pub fn capitalize(s: &str) -> String {
     }
 }
 
+/// Normalize input string for comparison
+///
+/// Trims whitespace and converts to lowercase. This is Unicode-safe.
+/// Use this for case-insensitive matching of user input.
+///
+/// # Example
+/// ```
+/// use ask_ai::utils::normalize_input;
+/// assert_eq!(normalize_input("  HeLLo  "), "hello");
+/// assert_eq!(normalize_input("Pokémon"), "pokémon");  // Unicode preserved
+/// ```
+pub fn normalize_input(s: &str) -> String {
+    s.trim().to_lowercase()
+}
+
 /// Truncate a string to a maximum number of characters (not bytes)
 ///
 /// This is Unicode-safe and won't panic on multibyte characters.
@@ -286,6 +301,26 @@ mod tests {
         assert_eq!(capitalize("HELLO"), "Hello");
         assert_eq!(capitalize("h"), "H");
         assert_eq!(capitalize(""), "");
+    }
+
+    #[test]
+    fn test_normalize_input() {
+        // Basic whitespace trimming
+        assert_eq!(normalize_input("  hello  "), "hello");
+        
+        // Case conversion
+        assert_eq!(normalize_input("HeLLo WoRLD"), "hello world");
+        
+        // Unicode preserved
+        assert_eq!(normalize_input("  Pokémon  "), "pokémon");
+        assert_eq!(normalize_input("中国对巴西"), "中国对巴西");
+        
+        // Mixed ASCII and Unicode
+        assert_eq!(normalize_input("  HeLLo中国  "), "hello中国");
+        
+        // Empty and whitespace only
+        assert_eq!(normalize_input(""), "");
+        assert_eq!(normalize_input("   "), "");
     }
 
     #[test]

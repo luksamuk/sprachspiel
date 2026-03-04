@@ -4,7 +4,7 @@ This document describes the architecture and design decisions of Ask-AI.
 
 ## Overview
 
-Ask-AI is a Rust CLI tool that provides an interface to Ollama LLM models. It follows a modular architecture with clear separation of concerns.
+Ask-AI is a Rust CLI tool that provides an interface to Ollama LLM models. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
 
 ## System Architecture
 
@@ -19,29 +19,40 @@ graph TB
         B --> D[Translate Handler]
         B --> E[OCR Handler]
         B --> F[Summarize Handler]
+        B --> G[Chat Handler]
     end
 
     subgraph Core["Core Services"]
-        C --> G[Config]
-        D --> G
-        E --> G
-        F --> G
-        C --> H[Capabilities]
-        C --> I[Prompts]
-        C --> J[Spinner]
+        C --> H[Config]
+        D --> H
+        E --> H
+        F --> H
+        G --> H
+        C --> I[Capabilities]
+        G --> I
+        C --> J[Prompts]
+        G --> J
+        G --> K[Retrieval]
+    end
+
+    subgraph Storage["Persistence Layer"]
+        K --> L[Database]
+        K --> M[Embeddings]
+        G --> N[Session Store]
     end
 
     subgraph External["External"]
-        C --> K[Ollama API]
-        D --> K
-        E --> K
-        F --> K
-        C --> L[Tools]
+        C --> O[Ollama API]
+        D --> O
+        E --> O
+        F --> O
+        G --> O
+        O --> P[Tools]
     end
 
     subgraph Output["Output"]
-        K --> M[termimad]
-        M --> N[Terminal]
+        O --> Q[termimad]
+        Q --> R[Terminal]
     end
 ```
 
@@ -67,25 +78,27 @@ struct Cli {
 
 Each subcommand has its own module:
 
-- **Query**: `src/main.rs` (default mode)
-- **Translate**: `src/translate/`
-- **OCR**: `src/ocr/`
-- **Summarize**: `src/summarize/`
+| Command | Module | Purpose |
+|---------|--------|---------|
+| query | `src/query.rs` | One-shot queries (default mode) |
+| chat | `src/chat/` | Interactive conversations with history |
+| translate | `src/translate/` | Text translation |
+| ocr | `src/ocr/` | Image text extraction |
+| summarize | `src/summarize/` | Text summarization |
+| vision | `src/vision/` | Image analysis |
 
 ### 3. Core Services
 
-#### Config (`src/config.rs`)
+#### Config (`src/config.rs` + `src/settings.rs`)
 
-Model configuration management:
+Model configuration with per-subcommand overrides:
 
 ```rust
 pub struct ModelConfig {
     pub model_id: String,
     pub temperature: f32,
-    pub top_k: i32,
-    pub top_p: f32,
-    pub num_ctx: i32,
-    pub repeat_penalty: f32,
+    pub num_ctx: u32,
+    pub thinking: bool,
 }
 ```
 
@@ -95,47 +108,265 @@ Runtime model capability detection:
 
 ```rust
 pub struct ModelCapabilities {
-    pub tools: bool,
-    pub vision: bool,
-    pub completion: bool,
-    pub thinking: bool,
+    pub tools: bool,      // Tool calling support
+    pub vision: bool,     // Image input support
+    pub completion: bool, // Completion API support
+    pub thinking: bool,   // Reasoning support
 }
 ```
 
-#### Prompts (`src/prompts.rs`)
+#### Prompts (`src/prompts/`)
 
-System prompt definitions for different modes.
+Modular prompt building system:
 
-#### Spinner (`src/spinner.rs`)
+```mermaid
+graph LR
+    A[PromptBuilder] --> B[Base Prompt]
+    A --> C[Tool Context]
+    A --> D[Personality]
+    A --> E[Examples]
+    A --> F[Retrieved Context]
+```
 
-UX feedback during requests.
+### 4. Persistence Layer
 
-### 4. Tools (`src/tools/`)
+#### Database (`src/db/`)
+
+SQLite database for conversation history and embeddings:
+
+- **Messages**: User/assistant/tool messages
+- **Conversations**: Session metadata with project tracking  
+- **Embeddings**: Vector embeddings for semantic search
+- **Chunks**: Long message segments for retrieval
+
+```mermaid
+erDiagram
+    CONVERSATIONS ||--o{ MESSAGES : contains
+    MESSAGES ||--o{ MESSAGE_CHUNKS : has
+    MESSAGES ||--o| MESSAGE_EMBEDDINGS : has
+    CHUNKS ||--o| CHUNK_EMBEDDINGS : has
+    
+    CONVERSATIONS {
+        string id PK
+        string project_id
+        datetime created_at
+        string model_id
+    }
+    
+    MESSAGES {
+        int id PK
+        string conversation_id FK
+        string role
+        string content
+        datetime timestamp
+    }
+    
+    EMBEDDINGS {
+        blob embedding
+        float distance
+    }
+```
+
+#### Embeddings (`src/embeddings/`)
+
+Ollama-based embedding generation:
+
+```rust
+pub struct EmbeddingClient {
+    ollama: Ollama,
+    model: String,
+}
+
+impl EmbeddingClient {
+    pub async fn embed(&self, text: &str) -> Result<Vec<f32>>;
+}
+```
+
+### 5. Retrieval System
+
+#### Context Building (`src/retrieval/context_builder.rs`)
+
+Hybrid search (BM25 + Semantic + RRF):
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Query
+    participant Retriever
+    participant DB
+    participant Embedding
+    
+    User->>Query: Ask question
+    Query->>Embedding: Generate embedding
+    Embedding-->>Query: Vector
+    Query->>Retriever: Search(query, embedding)
+    Retriever->>DB: BM25 keyword search
+    Retriever->>DB: Semantic vector search
+    DB-->>Retriever: Results
+    Retriever->>Retriever: Reciprocal Rank Fusion
+    Retriever->>DB: Enrich with next_message
+    DB-->>Retriever: Enriched results
+    Retriever-->>Query: Context
+    Query->>Query: Build prompt with context
+```
+
+#### Message Enrichment
+
+Retrieved user messages include their assistant responses:
+
+```rust
+pub struct SearchResult {
+    pub message_id: i64,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub score: f32,
+    pub search_type: SearchType,
+    pub next_message: Option<EnrichedResponse>,
+}
+```
+
+### 6. Chat Mode
+
+#### Session Management (`src/chat/session.rs`)
+
+```rust
+pub struct ChatSession {
+    pub id: String,
+    pub model: String,
+    pub project_id: Option<String>,
+    pub messages: Vec<Message>,
+    pub anonymous: bool,
+    pub think: bool,
+    pub tools: bool,
+    // ...
+}
+```
+
+#### REPL (`src/chat/repl.rs`)
+
+Interactive command loop with:
+
+- Model switching (`/model`)
+- Tool toggling (`/tools`)
+- History search (`/search`)
+- Context compaction (`/compact`)
+- Session management (`/save`, `/load`)
+
+### 7. Tools (`src/tools/`)
 
 Tool implementations using the `ollama-rs` macro:
 
 ```rust
 #[ollama_rs::function]
-pub async fn fetch_pokemon(name: String) -> Result<String, Error> {
-    // Implementation
+pub async fn my_tool(param: String) -> Result<String, Box<dyn Error + Send + Sync>> {
+    // Always return Ok(String), even on error
+    Ok(result)
 }
 ```
 
-### 5. External Integration
+Tool categories (feature-flags):
 
-#### Ollama API (`ollama-rs`)
+| Category | Tools | Default |
+|----------|-------|---------|
+| `pokemon-tools` | 9 | ✅ |
+| `weather-tools` | 3 | ✅ |
+| `file-tools` | 5 | ✅ |
+| `calc-tools` | 1 | ✅ |
+| `serper-tools` | 2 | ✅ |
+| `system-tools` | 2 | ✅ |
+| `search-tools` | 3 | ❌ |
+| `led-tools` | 5 | ❌ |
 
-Uses the Coordinator pattern for chat sessions:
+### 8. Query Mode
 
-```rust
-let coordinator = Coordinator::new(ollama, model_id, vec![])
-    .options(model_options)
-    .think(use_think);
+Two modes supported:
+
+#### Legacy Query
+Simple one-shot queries without history.
+
+#### Enhanced Query (v0.25.0+)
+Retrieves context from project history:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Query
+    participant DB
+    participant Embedding
+    participant Ollama
+    
+    User->>Query: "What did we discuss about X?"
+    Query->>DB: Get project_id
+    Query->>Embedding: Generate embedding
+    Query->>DB: Search by project_id
+    DB-->>Query: Relevant messages
+    Query->>Query: Build context
+    Query->>Ollama: Send query + context
+    Ollama-->>Query: Response
+    Query-->>User: Answer (no persistence)
 ```
 
 ## Design Decisions
 
-### 1. Markdown Rendering Strategy
+### 1. Retrieval Architecture
+
+**Decision:** Hybrid search (BM25 + Semantic + RRF)
+
+**Rationale:**
+- BM25 excels at keyword matching
+- Semantic search captures meaning
+- RRF combines scores effectively
+- Context enrichment adds conversation flow
+
+**Trade-offs:**
+- ✅ Better recall than either alone
+- ✅ Handles different query types
+- ❌ Requires embedding model
+- ❌ Database size grows with history
+
+### 2. Context Window Management
+
+**Decision:** "Lost in the middle" mitigation
+
+**Rationale:**
+Research shows LLMs perform better when important information is at the **beginning** or **end** of context.
+
+**Implementation:**
+```mermaid
+graph TD
+    A[System Prompt] --> B[Retrieved Messages]
+    B --> C[Preserved Messages]
+    C --> D[Recent Messages]
+    D --> E[Current Query]
+```
+
+### 3. Conversation Persistence
+
+**Decision:** Per-project sessions with optional anonymous mode
+
+**Rationale:**
+- Projects benefit from shared context
+- Anonymous mode for one-off queries
+- SQLite for portability and reliability
+
+**Schema:**
+```sql
+-- Project-based organization
+CREATE TABLE conversations (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    model_id TEXT
+);
+
+-- Message-level embeddings
+CREATE TABLE message_embeddings (
+    message_id INTEGER PRIMARY KEY,
+    embedding BLOB
+);
+```
+
+### 4. Markdown Rendering Strategy
 
 **Decision:** Batch rendering (not streaming)
 
@@ -149,103 +380,112 @@ let coordinator = Coordinator::new(ollama, model_id, vec![])
 - ✅ Simple implementation
 - ❌ No live token feedback
 
-### 2. Capability Detection
+### 5. Error Handling in Tools
 
-**Decision:** Runtime detection via Ollama API
-
-**Rationale:**
-- `ollama.show_model_info()` provides capability data
-- More accurate than hardcoding
-- Handles custom models
-
-### 3. Tool Enablement
-
-**Decision:** Auto-enable for capable models, with `--tools` override
+**Decision:** Always return `Ok(String)`
 
 **Rationale:**
-- Seamless UX for capable models
-- `--tools` allows forcing tools
-- No overhead for non-tool models
-
-### 4. Modular Architecture
-
-Each command is self-contained:
-
-```
-src/
-├── main.rs           # Entry + query command
-├── translate/        # Translation module
-├── ocr/             # OCR module
-├── summarize/       # Summarize module
-└── tools/           # Shared tools
-```
-
-### 5. Error Handling
-
-Uses `AppResult<T>` type alias:
+- Tools should never crash the application
+- Model sees error and can react/retry
+- Error classification for recovery
 
 ```rust
-type AppResult<T> = Result<T, Box<dyn std::error::Error + Sync + Send>>;
+// ✅ CORRECT - Returns error message to LLM
+let result = match operation() {
+    Ok(data) => format_success(data),
+    Err(e) => format!("Error: {}. Suggestion: try...",
+        e),
+};
+Ok(result)
+
+// ❌ WRONG - Crashes tool execution
+let result = operation()?;  // Never use ? in tools
 ```
 
 ## Data Flow
 
-### Query Flow
+### Chat Flow with Retrieval
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant CLI
-    participant Config
+    participant REPL
+    participant Retriever
+    participant DB
     participant Ollama
-    participant Tools
-    participant Render
-
-    User->>CLI: ask-ai "Query"
-    CLI->>Config: Load model config
-    CLI->>Ollama: Detect capabilities
-    alt Tools enabled
-        CLI->>Tools: Register tools
+    
+    User->>REPL: Message
+    REPL->>DB: Check message count
+    
+    alt Has history
+        REPL->>Retriever: Hybrid search
+        Retriever->>DB: BM25 + Semantic
+        DB-->>Retriever: Results
+        Retriever->>DB: Enrich with next_message
+        DB-->>Retriever: Enriched results
+        Retriever-->>REPL: Context
+    else Empty session
+        Note over REPL: Skip retrieval
     end
-    CLI->>Ollama: Send request
-    Ollama->>Ollama: Process (with tools if needed)
-    Ollama->>CLI: Return response
-    CLI->>Render: Format markdown
-    Render->>User: Display output
+    
+    REPL->>Ollama: Chat with context
+    Ollama-->>REPL: Response
+    REPL->>DB: Save messages + embeddings
+    REPL-->>User: Display response
 ```
 
-### OCR Flow
+## Project Structure
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant OCR
-    participant Ollama
-    participant Render
-
-    User->>OCR: ask-ai ocr image.png
-    OCR->>OCR: Encode image to base64
-    OCR->>Ollama: Send with glm-ocr model
-    Ollama->>OCR: Return extracted text
-    OCR->>Render: Format output
-    Render->>User: Display text
 ```
-
-## Async Architecture
-
-Uses Tokio for async runtime:
-
-```rust
-#[tokio::main]
-async fn main() -> AppResult<()> {
-    // Async code
-}
+ask-ai/
+├── src/
+│   ├── main.rs              # Entry point + CLI
+│   ├── query.rs             # Query execution (shared logic)
+│   ├── config.rs            # Built-in model configs
+│   ├── user_models.rs       # User model definitions
+│   ├── settings.rs          # Configuration management
+│   ├── capabilities.rs      # Model capability detection
+│   ├── platform.rs          # Platform detection
+│   ├── prompts/             # Prompt building system
+│   │   ├── mod.rs
+│   │   ├── builder.rs
+│   │   ├── base.rs
+│   │   ├── tools.rs
+│   │   ├── examples.rs
+│   │   └── personality.rs
+│   ├── chat/                # Chat mode
+│   │   ├── mod.rs
+│   │   ├── repl.rs          # Interactive loop
+│   │   ├── session.rs       # Session state
+│   │   ├── history.rs        # Message storage
+│   │   ├── model_switch.rs  # Centralized switching
+│   │   └── compaction.rs    # Context management
+│   ├── db/                  # Database operations
+│   │   ├── connection.rs
+│   │   ├── operations.rs
+│   │   ├── schema.rs
+│   │   └── migrations.rs
+│   ├── embeddings/          # Vector operations
+│   │   ├── client.rs
+│   │   └── chunker.rs
+│   ├── retrieval/          # Search system
+│   │   ├── search.rs
+│   │   └── context_builder.rs
+│   ├── tools/               # Tool implementations
+│   │   ├── mod.rs
+│   │   ├── registry.rs
+│   │   ├── pokemon.rs
+│   │   ├── weather.rs
+│   │   └── ...
+│   ├── translate/           # Translation
+│   ├── ocr/                 # OCR processing
+│   ├── summarize/          # Summarization
+│   ├── vision/              # Image analysis
+│   └── utils.rs             # Shared utilities
+├── doc/                     # mdBook documentation
+├── man/                     # Man page
+└── tests/                   # Integration tests
 ```
-
-All I/O operations are async:
-- Ollama API calls
-- Tool HTTP requests
-- File operations
 
 ## Dependencies
 
@@ -257,9 +497,48 @@ All I/O operations are async:
 | `indicatif` | Progress spinners |
 | `tokio` | Async runtime |
 | `reqwest` | HTTP client |
+| `rusqlite` + `sqlite-vec` | Database + embeddings |
 | `serde` | Serialization |
-| `base64` | Image encoding |
-| `regex` | Pattern matching |
+| `chrono` | DateTime handling |
+
+## Performance Considerations
+
+### Embedding Generation
+
+- Embeddings generated asynchronously
+- Chunked for messages > 1000 chars
+- Cached in database for retrieval
+- Batch operations during compaction
+
+### Database Operations
+
+- Connection pooling via `RwLock`
+- Write transactions batched
+- Read operations use indexes
+- Embedding queries use KNN index
+
+### Memory Usage
+
+- Large models (30B+) need significant RAM
+- Embedding model loaded on demand
+- Database kept in memory-mapped file
+- Context window limits prevent unbounded growth
+
+## Security
+
+### Input Validation
+
+- CLI args validated by clap
+- File paths sandboxed to CWD
+- Language codes validated
+- SQL parameters escaped
+
+### Tool Safety
+
+- Tools use external APIs only
+- File operations sandboxed
+- Blacklist for sensitive tools
+- Error messages sanitized
 
 ## Testing Strategy
 
@@ -285,64 +564,9 @@ cargo test --test test_name
 cargo test
 ```
 
-## Performance Considerations
-
-### Model Loading
-
-- Models are loaded by Ollama
-- First request after pull may be slow
-- Subsequent requests use cached model
-
-### Memory Usage
-
-- Large models (30B+) need significant RAM
-- Use smaller models (3B-8B) for constrained systems
-- Consider `smollm3` or `llama3.2` for edge
-
-### Network
-
-- Cloud models require internet
-- Local models work offline
-- Tools may need HTTP requests
-
-## Security
-
-### Input Validation
-
-- CLI args validated by clap
-- File paths checked for existence
-- Language codes validated
-
-### Tool Safety
-
-- Tools use external APIs (PokéAPI, Open-Meteo)
-- No local file system access from tools
-- Web search blocked (CAPTCHA protection)
-
-## Future Architecture
-
-### Planned Improvements
-
-1. **Configuration file support**
-   - `~/.config/ask-ai/config.toml`
-   - User-defined models
-   - Default preferences
-
-2. **Plugin system**
-   - Custom tools
-   - User extensions
-
-3. **Streaming output**
-   - Line-buffered rendering
-   - Progressive display
-
-4. **Caching**
-   - Response caching
-   - Tool result caching
-
 ## See Also
 
 - [Roadmap](./roadmap.md) - Future plans
 - [Contributing](./contributing.md) - How to contribute
+- [Changelog](../CHANGELOG.md) - Version history
 - AGENTS.md - Development guidelines
-- IMPLEMENTATION.md - Implementation details

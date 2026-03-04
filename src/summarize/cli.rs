@@ -113,35 +113,18 @@ impl SummaryStyle {
 }
 
 impl SummarizeArgs {
-    /// Get text from args or stdin
-    #[allow(dead_code)]
-    pub fn get_text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        // If text provided as argument, use it
-        if let Some(ref text) = self.text {
-            return Ok(text.trim().to_string());
-        }
-
-        // Read from stdin
-        use std::io::{self, Read};
-        let mut input = String::new();
-        match io::stdin().read_to_string(&mut input) {
-            Ok(_) => {
-                let trimmed = input.trim();
-                if trimmed.is_empty() {
-                    Err("Input from stdin is empty.".into())
-                } else {
-                    Ok(trimmed.to_string())
-                }
-            }
-            Err(e) => Err(format!("Failed to read from stdin: {}", e).into()),
-        }
-    }
-
     /// Validate that text is provided
     #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), String> {
-        match self.get_text() {
-            Ok(text) if !text.is_empty() => Ok(()),
+        if let Some(ref text) = self.text {
+            if !text.trim().is_empty() {
+                return Ok(());
+            }
+        }
+
+        // Check stdin
+        match crate::utils::read_stdin() {
+            Ok(t) if !t.is_empty() => Ok(()),
             Ok(_) => Err("No text provided for summarization.\n\
                 Usage: ask summarize [OPTIONS] <TEXT>\n\
                    or: echo \"text\" | ask summarize\n\
@@ -174,42 +157,30 @@ mod tests {
 
     #[test]
     fn test_summary_format_instructions() {
-        assert!(
-            SummaryFormat::Paragraph
-                .into_instruction()
-                .contains("paragraph")
-        );
-        assert!(
-            SummaryFormat::Bullets
-                .into_instruction()
-                .contains("bullet points")
-        );
+        assert!(SummaryFormat::Paragraph
+            .into_instruction()
+            .contains("paragraph"));
+        assert!(SummaryFormat::Bullets
+            .into_instruction()
+            .contains("bullet points"));
         assert!(SummaryFormat::Both.into_instruction().contains("paragraph"));
-        assert!(
-            SummaryFormat::Both
-                .into_instruction()
-                .contains("bullet points")
-        );
+        assert!(SummaryFormat::Both
+            .into_instruction()
+            .contains("bullet points"));
     }
 
     #[test]
     fn test_summary_style_instructions() {
         assert!(SummaryStyle::General.into_instruction().contains("general"));
-        assert!(
-            SummaryStyle::Technical
-                .into_instruction()
-                .contains("technical")
-        );
-        assert!(
-            SummaryStyle::Academic
-                .into_instruction()
-                .contains("academic")
-        );
-        assert!(
-            SummaryStyle::Business
-                .into_instruction()
-                .contains("business")
-        );
+        assert!(SummaryStyle::Technical
+            .into_instruction()
+            .contains("technical"));
+        assert!(SummaryStyle::Academic
+            .into_instruction()
+            .contains("academic"));
+        assert!(SummaryStyle::Business
+            .into_instruction()
+            .contains("business"));
     }
 
     #[test]

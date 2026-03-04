@@ -18,7 +18,18 @@ The query command is the most flexible way to interact with LLMs through Ask-AI.
 - **Tool integration** - Automatic use of Pokémon, Weather, and Web Search tools
 - **Think mode** - Enable reasoning for complex questions
 - **Code mode** - Optimize responses for code output
+- **Context retrieval** - Access project history (v0.25.0+)
 - **Markdown rendering** - Beautiful terminal output
+
+## Project-Aware Retrieval (v0.25.0+)
+
+Query mode can access your conversation history to provide context:
+
+- Retrieves relevant messages from all sessions in the project
+- Uses semantic search to find related discussions
+- Enriches user questions with their assistant answers
+
+This is **read-only** - query mode does not persist new messages.
 
 ## Arguments
 
@@ -32,13 +43,13 @@ These options must be placed **before** the `query` subcommand:
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--model` | `-m` | Model preset to use | `lfm` |
+| `--model` | `-m` | Model preset to use | `llama3.1` |
 | `--prompt` | `-p` | System prompt mode | `default` |
 | `--think` | `-t` | Enable think mode | disabled |
 | `--plain` | | Output plain text (no markdown) | disabled |
 | `--debug` | `-d` | Enable debug logging | disabled |
 | `--tools` | | Force enable tools | auto-detect |
-| `--code` | `-c` | Code mode | disabled |
+| `--code` | `-c` | Code mode (no retrieval) | disabled |
 | `--ignore-agents` | | Ignore AGENTS.md context | disabled |
 | `--help` | `-h` | Show help | - |
 

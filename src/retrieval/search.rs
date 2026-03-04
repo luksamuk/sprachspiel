@@ -134,7 +134,7 @@ pub async fn run_search(
 
     // Perform keyword search (BM25)
     log_debug("Running keyword search (BM25)...");
-    let keyword_results = match db.search_keyword(query, conversation_id, limit) {
+    let keyword_results = match db.search_keyword(query, conversation_id, None, limit) {
         Ok(results) => {
             log_debug(&format!("Keyword search found {} results", results.len()));
             results
@@ -147,7 +147,7 @@ pub async fn run_search(
 
     // Perform semantic search (vector similarity)
     log_debug("Running semantic search (vector)...");
-    let semantic_results = match db.search_semantic(&embedding, conversation_id, limit) {
+    let semantic_results = match db.search_semantic(&embedding, conversation_id, None, limit) {
         Ok(results) => {
             log_debug(&format!("Semantic search found {} results", results.len()));
             results

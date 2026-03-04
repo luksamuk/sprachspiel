@@ -10,6 +10,7 @@
 //! ```
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::utils::normalize_input;
 use once_cell::sync::Lazy;
 use ollama_rs::function;
 use serde::Deserialize;
@@ -25,17 +26,7 @@ pub fn set_led_endpoint(endpoint: Option<String>) {
     }
 }
 
-/// Check if LED is configured
-#[allow(dead_code)]
-pub fn is_led_configured() -> bool {
-    if let Ok(guard) = LED_ENDPOINT.read() {
-        guard.is_some()
-    } else {
-        false
-    }
-}
-
-/// LED device status response
+/// Check if LED is configured (using settings)
 #[derive(Debug, Deserialize, Default)]
 struct LedStatus {
     /// Whether the LEDs are on (true) or off (false)
@@ -139,7 +130,7 @@ fn format_status(status: &LedStatus) -> String {
 
 /// Parse program string to program number
 fn parse_program(program: &str) -> Result<u8, String> {
-    let program_lower = program.to_lowercase().trim().to_string();
+    let program_lower = normalize_input(program);
     match program_lower.as_str() {
         "0" | "christmas" => Ok(0),
         "1" | "trail" => Ok(1),
@@ -278,7 +269,7 @@ pub async fn led_set_power(
         }
     };
 
-    let action_lower = action.to_lowercase().trim().to_string();
+    let action_lower = normalize_input(&action);
     let path = match action_lower.as_str() {
         "on" => "/led/on",
         "off" => "/led/off",

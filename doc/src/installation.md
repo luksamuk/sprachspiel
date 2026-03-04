@@ -42,21 +42,86 @@ source $HOME/.cargo/env
 
 ## Installation Methods
 
-### Method 1: Using Make (Recommended)
+### Method 1: One-Liner (Recommended)
 
-The easiest way to install Ask-AI is using the provided Makefile:
+Install directly from GitHub releases:
+
+```bash
+# Install latest version
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
+
+# Install specific version
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
+
+# Install with all tools enabled
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --tools all
+
+# Install system-wide (requires sudo)
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
+```
+
+**What it does:**
+1. Detects your platform (Linux x86_64, Linux ARM64, or Termux)
+2. Downloads the appropriate tarball from GitHub Releases
+3. Extracts and runs the installation script
+4. Installs to `~/.local/bin` by default (or your chosen prefix)
+5. Installs manpage to `~/.local/share/man/man1`
+
+**Post-installation:**
+Add `~/.local/bin` to PATH if not already:
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+export MANPATH="$HOME/.local/share/man:$MANPATH"
+```
+
+### Method 2: Download Tarball
+
+Download from [GitHub Releases](https://github.com/anomalyco/ask-ai/releases):
+
+```bash
+# Download latest release
+wget https://github.com/anomalyco/ask-ai/releases/latest/download/ask-ai-0.25.0-linux-x86_64.tar.gz
+
+# Extract
+tar -xzf ask-ai-0.25.0-linux-x86_64.tar.gz
+cd ask-ai-0.25.0-linux-x86_64
+
+# Install (interactive)
+./install.sh
+
+# Or install to custom location
+./install.sh --prefix /usr
+./install.sh --bin ~/bin --man ~/man
+
+# Uninstall
+./uninstall.sh
+```
+
+**Tarball contents:**
+- `ask-ai` - Binary
+- `ask-ai.1` - Manpage
+- `install.sh` - Installation script
+- `uninstall.sh` - Uninstallation script
+- `README.md` - Documentation
+- `LICENSE.txt` - License
+
+### Method 3: Building from Source
+
+The traditional way using Make:
 
 ```bash
 # Clone the repository
-git clone https://github.com/luksamuk/ask-ai-rs.git
+git clone https://github.com/anomalyco/ask-ai.git
 cd ask-ai
 
 # Build and install (default: /usr/local)
 make install
 
-# Or install to a custom location
+# Or install to ~/.local (recommended for development)
+make install-local
+
+# Or with custom prefix
 make install PREFIX=/usr
-make install PREFIX=$HOME/.local
 ```
 
 This will:
@@ -64,24 +129,71 @@ This will:
 2. Install it to `/usr/local/bin/ask-ai` (or your chosen prefix)
 3. Install the man page to `/usr/local/share/man/man1/`
 
-### Method 2: Termux (Android)
+### Method 4: Termux (Android)
 
 Ask-AI can run on Android via Termux. Since Ollama doesn't run on Android, you'll need a remote Ollama server.
 
+#### Quick Install (One-Liner)
+
+```bash
+# In Termux
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
+```
+
+The installer automatically detects Termux and configures the correct paths.
+
+#### Manual Install on Termux
+
+```bash
+# In Termux
+pkg install wget
+
+# Download the tarball from GitHub releases
+wget https://github.com/anomalyco/ask-ai/releases/download/v0.25.0/ask-ai-0.25.0-termux-aarch64.tar.gz
+
+# Extract
+tar -xzf ask-ai-0.25.0-termux-aarch64.tar.gz
+cd ask-ai-0.25.0-termux-aarch64
+
+# Install (creates ~/bin and adds to PATH)
+./install.sh
+
+# Or install to ~/.local/bin
+./install.sh --bin ~/.local/bin --man ~/.local/share/man/man1
+
+# Create config directory
+mkdir -p ~/.config/ask-ai
+
+# Configure remote Ollama
+cat > ~/.config/ask-ai/config.toml << 'EOF'
+[ollama]
+host = "192.168.1.100:11434"  # Replace with your desktop/server IP
+EOF
+```
+
+#### Termux-Specific Notes
+
+- **Binary location**: `~/bin` (or `~/.local/bin`)
+- **Manpage**: `~/.local/share/man/man1/ask-ai.1`
+- **Ollama**: Must run on a separate machine (desktop/laptop/server)
+- **Configuration**: `~/.config/ask-ai/config.toml`
+- **See**: `README-TERMUX.txt` included in the tarball
+
+#### Building for Termux (Developers)
+
+If you're building from source for Termux (requires cross-compilation):
+
 **Prerequisites:**
-1. Install Termux from F-Droid (not Play Store - Play Store version is outdated)
-2. Install Docker or Podman on your development machine
-3. Install `cross` for cross-compilation:
+1. Docker or Podman on your development machine
+2. `cross` for Rust cross-compilation:
    ```bash
    cargo install cross --git https://github.com/cross-rs/cross
    ```
 
-**Build for Android:**
-
 ```bash
 # On your development machine
-git clone https://github.com/luksamuk/ask-ai-rs.git
-cd ask-ai-rs
+git clone https://github.com/anomalyco/ask-ai.git
+cd ask-ai
 
 # Build for Termux (aarch64)
 make termux
@@ -93,44 +205,7 @@ make termux-all-tools
 make tarball-termux
 ```
 
-**Install on Termux:**
-
-```bash
-# In Termux (on your Android device)
-pkg install wget
-
-# Download the tarball from GitHub releases or transfer via scp
-wget https://github.com/luksamuk/ask-ai-rs/releases/download/vX.Y.Z/ask-ai-X.Y.Z-termux-aarch64-linux-android.tar.gz
-
-# Extract and install
-tar -xzf ask-ai-*.tar.gz
-chmod +x ask-ai
-mv ask-ai $PREFIX/bin/
-
-# Verify
-ask-ai --version
-```
-
-**Configure Remote Ollama:**
-
-Create the config file in Termux:
-
-```bash
-mkdir -p ~/.config/ask-ai
-cat > ~/.config/ask-ai/config.toml << EOF
-[model]
-# IP address of your Ollama server (desktop/laptop)
-ollama_host = "192.168.1.100"
-ollama_port = 11434
-EOF
-```
-
-Replace `192.168.1.100` with your Ollama server's IP address. The host can be specified as:
-- IP address: `192.168.1.100`
-- With scheme: `http://192.168.1.100`
-- Hostname: `myserver.local`
-
-**Available Make Targets:**
+Available Make targets:
 
 | Target | Description |
 |--------|-------------|
@@ -139,7 +214,7 @@ Replace `192.168.1.100` with your Ollama server's IP address. The host can be sp
 | `make tarball-termux` | Create tarball for distribution |
 | `make tarball-termux-all-tools` | Create tarball with all tools |
 
-### Method 3: Manual Installation
+### Method 5: Manual Installation
 
 Build from source manually:
 
@@ -158,7 +233,7 @@ sudo cp target/release/ask-ai /usr/local/bin/ask-ai
 sudo cp man/ask-ai.1 /usr/local/share/man/man1/
 ```
 
-### Method 3: Development Build
+### Method 6: Development Build
 
 For development or testing:
 
@@ -333,6 +408,36 @@ ollama rm $(ollama list | awk 'NR>1 {print $1}')
 ```
 
 ## Post-Installation
+
+### PATH Configuration (Essential)
+
+After installation, ensure `~/.local/bin` is in your PATH:
+
+```bash
+# Check if installed binary is in PATH
+which ask-ai
+# Should show: /home/youruser/.local/bin/ask-ai
+
+# If not found, add to your shell config
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Manpage Access (Optional)
+
+To read the manpage, add the man directory to your MANPATH:
+
+```bash
+# Add to your shell config (~/.bashrc, ~/.zshrc, etc.)
+echo 'export MANPATH="$HOME/.local/share/man:$MANPATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Then you can use
+man ask-ai
+
+# Or use man -M without setting MANPATH
+man -M ~/.local/share/man ask-ai
+```
 
 ### Shell Completion (Optional)
 

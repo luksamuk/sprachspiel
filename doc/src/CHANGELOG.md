@@ -2,7 +2,111 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.25.0] - PLANNED
+## [0.26.0] - 2026-03-04
+
+### Added
+
+- **Improved Distribution System** - Easier installation for Linux and Termux
+  - One-liner installation via curl|bash
+  - Intelligent install script with automatic platform detection
+  - Manpage installation support for Termux
+  - Detailed installation instructions in README-TERMUX.txt
+
+- **Installation Scripts**
+  - `scripts/install.sh` - Portable installer with --prefix, --bin, --man options
+  - `scripts/uninstall.sh` - Clean uninstallation
+  - `scripts/install-ask-ai.sh` - Remote installer for curl|bash one-liner
+
+- **New Makefile Targets**
+  - `tarball-linux` - Linux tarball with install scripts
+  - `tarball-termux` - Termux tarball with README-TERMUX.txt
+  - `all-tarballs` - Create all distribution tarballs
+
+- **Documentation Improvements**
+  - Consolidated version history into `implementation-history.md`
+  - Integrated `/search` and `/context` commands into `chat.md`
+  - Updated installation documentation with one-liner instructions
+  - Added architecture diagrams to `architecture.md`
+  - New `retrieval-design.md` explaining hybrid search
+
+### Changed
+
+- **Tarball Structure** - Now includes install/uninstall scripts inside
+  - `ask-ai.1` manpage renamed from `man/ask-ai.1` to top-level
+  - Added `README-TERMUX.txt` for Termux tarballs
+  - Install script detects Termux and adjusts default paths
+
+- **Documentation Cleanup**
+  - Removed obsolete version plan files (v0.22.x, v0.23.0, v0.24.0, v0.25.0)
+  - Removed `context_v2_plan.md` (superseded by `context_composition_design.md`)
+  - Removed `markdown_skin_plan.md` (completed, documented elsewhere)
+  - Removed separate `search.md` and `context.md` (integrated into `chat.md`)
+
+### Fixed
+
+- **Translate Model Configuration** - Fixed "Translate model configuration not found"
+  - Added `translate: SubcommandModelConfig` to settings
+  - Falls back to "translategemma" builtin model
+  - Sample config now includes `[model.translate]` section
+
+- **Code Cleanup**
+  - Removed duplicate `is_led_configured()` function in led.rs
+  - Removed unused `SummarizeArgs::get_text()` method
+  - Added `normalize_input()` utility for unicode-safe lowercase+trim
+  - Fixed stdin duplication by consolidating to `utils::read_stdin()`
+
+### Technical Details
+
+**Install Script Features:**
+- Platform detection: Linux, Termux, macOS
+- Default paths: `~/.local/bin` (Linux/macOS), `~/bin` (Termux)
+- Manpage installation: `~/.local/share/man/man1/ask-ai.1`
+- PATH/MANPATH detection and instructions
+- Manpage access verification
+
+**Tarball Contents:**
+```
+ask-ai-VERSION-linux-x86_64.tar.gz
+├── ask-ai
+├── ask-ai.1
+├── install.sh
+├── uninstall.sh
+├── README.md
+└── LICENSE.txt
+```
+
+**One-liner Installation:**
+```bash
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
+curl -sL ... | bash -s -- --version 0.26.0
+curl -sL ... | bash -s -- --tools all
+curl -sL ... | bash -s -- --prefix /usr
+```
+
+### Files Modified
+
+- `Cargo.toml` - Version bump to 0.26.0
+- `Makefile` - New tarball targets with install scripts
+- `README.md` - Reorganized installation section
+- `doc/src/installation.md` - New installation methods
+- `doc/src/commands/chat.md` - Integrated /search and /context
+- `doc/src/SUMMARY.md` - Updated structure
+- `doc/src/development/implementation-history.md` - NEW: Consolidated decisions
+- `doc/src/development/architecture.md` - Major rewrite with diagrams
+- `doc/src/development/retrieval-design.md` - NEW: Retrieval system design
+- `scripts/install.sh` - NEW: Portable installer
+- `scripts/uninstall.sh` - NEW: Uninstaller
+- `scripts/install-ask-ai.sh` - NEW: One-liner installer
+- `README-TERMUX.txt` - NEW: Termux-specific instructions
+- `src/settings.rs` - Added translate model config
+- `src/main.rs` - Translate model fallback
+- `src/utils.rs` - Added normalize_input()
+- `src/summarize/cli.rs` - Removed dead code
+- `src/tools/led.rs` - Removed duplicate, use normalize_input()
+- `src/tools/calc.rs` - Use normalize_input()
+- `src/translate/style.rs` - Use normalize_input()
+
+## [0.25.0] - 2026-03-03
 
 ### Added
 

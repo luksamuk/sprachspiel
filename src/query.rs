@@ -2,6 +2,8 @@
 //!
 //! Consolidates common logic for query, legacy query, and chat message handling.
 
+use std::sync::Arc;
+
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
 use ollama_rs::Ollama;
@@ -11,11 +13,15 @@ use crate::chat::{
     coordinator::{classify_error_str, format_recovery_message, is_error_str_recoverable, MAX_RETRIES},
     custom_coordinator::{ChatEvent, CustomCoordinator},
     display_thinking, strip_thinking_tags,
+    history::get_project_id,
 };
 use crate::config::ModelConfig;
+use crate::db::Database;
 use crate::debug_tools::{enable_debug, log_debug};
+use crate::embeddings::EmbeddingClient;
 use crate::markdown;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+use crate::retrieval::{build_query_context, RetrievalConfig};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner, suspend_for_print};
 use crate::tool_robustness::format_tool_error;
@@ -237,13 +243,34 @@ pub async fn run_query(
         _ => PromptType::Default,
     };
 
+    // Skip DB/retrieval for --code mode (no project context needed)
+    let project_id = if cli_code {
+        None
+    } else {
+        get_project_id()
+    };
+
+    let (db, embedding_client) = if cli_code {
+        (None, None)
+    } else {
+        match Database::new() {
+            Ok(db) => {
+                let embedding = Arc::new(EmbeddingClient::new(ollama.clone()));
+                (Some(Arc::new(db)), Some(embedding))
+            }
+            Err(_) => (None, None),
+        }
+    };
+
+    let retrieval_enabled = db.is_some() && embedding_client.is_some();
+
     let system_prompt = build_system_prompt(
         PromptConfig::new(prompt_type)
             .with_model_id(Some(&model_config.model_id))
             .with_blacklist(Some(&blacklist_set))
             .with_agents_md(agents_md.as_deref())
             .with_tools(use_tools)
-            .with_retrieval(false),
+            .with_retrieval(retrieval_enabled),
     );
 
     // Validate prompt type (only for legacy prompt names)
@@ -307,47 +334,106 @@ pub async fn run_query(
         vec![]
     };
 
-    let messages = vec![
-        ChatMessage::system(system_prompt.to_string()),
-        ChatMessage::user(query),
-    ];
+    // Build messages with optional retrieval
+    let retrieval_config = RetrievalConfig::default();
+    
+    let context_result = build_query_context(
+        project_id.as_deref(),
+        db.as_ref(),
+        embedding_client.as_ref(),
+        &query,
+        &system_prompt,
+        &retrieval_config,
+        output_flags.debug,
+    )
+    .await;
+    
+    let messages = context_result.messages;
 
     // Execute with retry logic
     let spinner = create_spinner("Waiting for response...");
 
     let mut attempts = 0;
     let mut messages = messages;
-    let result = loop {
-        let current_result = coordinator.chat(messages.clone()).await;
+    let result = if let (Some(db), Some(embedding)) = (&db, &embedding_client) {
+        // Wrap with task-local context for remember tool
+        crate::tools::context::with_context(
+            db.clone(),
+            embedding.clone(),
+            async {
+                let mut attempts = 0;
+                loop {
+                    let current_result = coordinator.chat(messages.clone()).await;
 
-        match current_result {
-            Ok(response) => break Ok(response),
-            Err(e) => {
-                let error_str = e.to_string();
+                    match current_result {
+                        Ok(response) => break Ok(response),
+                        Err(e) => {
+                            let error_str = e.to_string();
 
-                if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
-                    attempts += 1;
+                            if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                                attempts += 1;
 
-                    let recovery_err = classify_error_str(&error_str, &tool_names);
-                    let error_msg = format_recovery_message(&recovery_err);
+                                let recovery_err = classify_error_str(&error_str, &tool_names);
+                                let error_msg = format_recovery_message(&recovery_err);
 
-                    if output_flags.debug {
-                        log_debug(&format!(
-                            "🔧 [Recovery] Attempt {}/{} - {}",
-                            attempts, MAX_RETRIES, recovery_err.description()
-                        ));
+                                if output_flags.debug {
+                                    log_debug(&format!(
+                                        "🔧 [Recovery] Attempt {}/{} - {}",
+                                        attempts, MAX_RETRIES, recovery_err.description()
+                                    ));
+                                }
+
+                                messages.push(ChatMessage::tool(error_msg));
+
+                                if attempts == 1 {
+                                    finish_spinner(spinner.clone());
+                                    eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                                }
+
+                                continue;
+                            } else {
+                                break Err(error_str);
+                            }
+                        }
                     }
+                }
+            },
+        )
+        .await
+    } else {
+        // No DB context, run directly
+        loop {
+            let current_result = coordinator.chat(messages.clone()).await;
 
-                    messages.push(ChatMessage::tool(error_msg));
+            match current_result {
+                Ok(response) => break Ok(response),
+                Err(e) => {
+                    let error_str = e.to_string();
 
-                    if attempts == 1 {
-                        finish_spinner(spinner.clone());
-                        eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                    if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                        attempts += 1;
+
+                        let recovery_err = classify_error_str(&error_str, &tool_names);
+                        let error_msg = format_recovery_message(&recovery_err);
+
+                        if output_flags.debug {
+                            log_debug(&format!(
+                                "🔧 [Recovery] Attempt {}/{} - {}",
+                                attempts, MAX_RETRIES, recovery_err.description()
+                            ));
+                        }
+
+                        messages.push(ChatMessage::tool(error_msg));
+
+                        if attempts == 1 {
+                            finish_spinner(spinner.clone());
+                            eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                        }
+
+                        continue;
+                    } else {
+                        break Err(error_str);
                     }
-
-                    continue;
-                } else {
-                    break Err(error_str);
                 }
             }
         }

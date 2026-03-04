@@ -177,7 +177,7 @@ async fn remember_by_query(
     };
 
     // Perform hybrid search
-    let results = match db.search_hybrid(query, &embedding, None, limit, 0.4, 0.6) {
+    let results = match db.search_hybrid(query, &embedding, None, None, limit, 0.4, 0.6) {
         Ok(r) => r,
         Err(e) => {
             return format!(

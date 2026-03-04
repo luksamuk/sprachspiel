@@ -9,8 +9,8 @@ Ask-AI provides a comprehensive command-line interface to local and cloud-based 
 ## Quick Start
 
 ```bash
-# Install (default includes Pokémon, Weather, File tools)
-make install
+# Install (one-liner)
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
 
 # Basic query
 ask-ai "What is Rust?"
@@ -30,14 +30,99 @@ ask-ai --list
 
 ## Installation
 
+### Option 1: One-Liner (Recommended)
+
+Install directly from GitHub releases:
+
 ```bash
-# Clone and build
-git clone <repository>
+# Latest version
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
+
+# Specific version
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
+
+# With all tools
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --tools all
+
+# System-wide (requires sudo)
+curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
+```
+
+Installs to `~/.local/bin` by default. The manpage is installed to `~/.local/share/man/man1`.
+
+### Option 2: Download Tarball
+
+Download from [GitHub Releases](https://github.com/anomalyco/ask-ai/releases):
+
+```bash
+# Download and extract
+tar -xzf ask-ai-0.25.0-linux-x86_64.tar.gz
+cd ask-ai-0.25.0-linux-x86_64
+
+# Install
+./install.sh
+
+# Or install to custom location
+./install.sh --prefix /usr    # System-wide (requires sudo)
+./install.sh --bin ~/bin      # Custom binary location
+./install.sh --man ~/man      # Custom manpage location
+
+# Uninstall
+./uninstall.sh
+```
+
+### Option 3: Build from Source
+
+```bash
+# Clone
+git clone https://github.com/anomalyco/ask-ai.git
 cd ask-ai
+
+# Install required models first
+cd modelfiles && make models-essential && cd ..
+
+# Build and install
 make install
 
-# Or with custom prefix
-make install PREFIX=/usr
+# Or install to ~/.local (recommended for development)
+make install-local
+```
+
+### Termux (Android)
+
+Ask-AI works on Termux! Download the Termux tarball from releases:
+
+```bash
+# In Termux
+pkg install wget
+
+# Download and install
+wget https://github.com/anomalyco/ask-ai/releases/download/v0.25.0/ask-ai-0.25.0-termux-aarch64.tar.gz
+tar -xzf ask-ai-0.25.0-termux-aarch64.tar.gz
+cd ask-ai-0.25.0-termux-aarch64
+./install.sh
+```
+
+**Note:** Ollama must run on a separate machine. Configure in `~/.config/ask-ai/config.toml`:
+
+```toml
+[ollama]
+host = "192.168.1.100:11434"  # Your desktop/server IP
+```
+
+### Post-Installation
+
+Add `~/.local/bin` to PATH if not already:
+
+```bash
+# Add to shell config (~/.bashrc, ~/.zshrc, etc.)
+export PATH="$HOME/.local/bin:$PATH"
+
+# For manpage access
+export MANPATH="$HOME/.local/share/man:$MANPATH"
+
+# Source the config
+source ~/.bashrc  # or ~/.zshrc
 ```
 
 ## Documentation
@@ -50,7 +135,9 @@ make install PREFIX=/usr
 
 ## Commands
 
+- `ask-ai [query]` - General LLM queries (default command)
 - `ask-ai query [QUERY]` - General LLM queries
+- `ask-ai chat` - Interactive chat session
 - `ask-ai translate [LANG] [TEXT]` - Translate (50+ languages)
 - `ask-ai ocr [FILE...]` - Extract text from images
 - `ask-ai summarize [TEXT]` - Summarize text
@@ -66,11 +153,20 @@ cat article.txt | ask-ai translate :es
 
 # Code with specific model
 ask-ai -m qwen3-coder "Write a Python function"
+
+# Interactive chat
+ask-ai chat
+
+# Query with tools
+ask-ai "What's the weather in Tokyo?"
+
+# Query specific model with think mode
+ask-ai -m glm-5:cloud -t "Explain quantum computing"
 ```
 
 ## Requirements
 
-- [Ollama](https://ollama.ai) running locally
+- [Ollama](https://ollama.ai) running locally (or on a remote server for Termux)
 - Required models: `llama3.1:8b`, `translategemma:4b`, `glm-ocr:bf16`, `moondream:1.8b`
 
 ## Installing Models
@@ -130,6 +226,30 @@ make install-local-all-tools
 | `system-tools` | 2 System info tools | ✅ Yes | |
 | `search-tools` | 3 DuckDuckGo tools | ❌ No | May fail due to CAPTCHA |
 | `finance-tools` | 1 Stock quote tool | ❌ No | Planned |
+
+## Distribution Tarballs
+
+Create distribution tarballs for release:
+
+```bash
+# Linux x86_64
+make tarball-linux
+make tarball-linux-all-tools
+
+# Termux (Android aarch64)
+make tarball-termux
+make tarball-termux-all-tools
+
+# All tarballs
+make all-tarballs
+```
+
+Tarballs include:
+- Binary (`ask-ai`)
+- Manpage (`ask-ai.1`)
+- Installation scripts (`install.sh`, `uninstall.sh`)
+- Documentation (`README.md`, `LICENSE.txt`)
+- Platform-specific instructions (Termux includes `README-TERMUX.txt`)
 
 ## AI-Assisted Development
 

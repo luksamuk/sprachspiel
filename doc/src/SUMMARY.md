@@ -26,19 +26,15 @@
 - [Development](./development/README.md)
   - [Architecture](./development/architecture.md)
   - [Roadmap](./development/roadmap.md)
+  - [Implementation History](./development/implementation-history.md)
   - [Chat Mode Design](./development/chat-mode-design.md)
+  - [Retrieval Design](./development/retrieval-design.md)
   - [Context Management Research](./development/context_management_research.md)
-  - [Context v2 Plan](./development/context_v2_plan.md)
   - [Context Composition Design](./development/context_composition_design.md)
+  - [Code Mode Research](./development/code_mode_research.md)
   - [Prompt Refactoring](./development/prompt-refactor.md)
   - [Contributing](./development/contributing.md)
 
 ---
 
 [Changelog](./CHANGELOG.md)
-
----
-
-# Reference
-
-- [/search Command](./commands/search.md)
