@@ -51,7 +51,10 @@
 - Middle compaction (preserve first N + last N) - v0.22.2
 - Auto-compaction at 72% warning and 80% overflow - v0.22.3
 - Visual context utilization bar in /context - v0.22.3
-- Persistent memory with /clear and /forget - v0.22.4 (PLANNED)
+- Remember tool for conversation recall - v0.23.0
+- Conversation-aware retrieval (enrichment) - v0.24.0
+- Project-aware query mode - v0.25.0
+- `/clear` and `/forget` commands for session management - v0.22.5
 
 📋 **Planned:**
 
@@ -95,4 +98,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-03 - v0.22.4 planned: Persistent memory + /clear and /forget
+2026-03-04 - v0.26.0 released: Improved distribution system

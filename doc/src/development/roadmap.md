@@ -81,13 +81,18 @@ This document outlines planned features and the current state of Ask-AI.
 
 ## Known Issues
 
-### GLM-OCR Returns Empty Output
+### GLM-OCR Returns Empty Output ✅
 
-**Status:** Upstream bug (Ollama issue #14474)
+**Status:** Fixed in Ollama v0.17.6 (2026-03-04)
 
-GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Ollama, not in ask-ai.
+GLM-OCR model returned empty markdown after Ollama v0.17.1 due to incorrect prompt rendering.
 
-**Workaround:** Use `ask vision` for image analysis until fixed.
+**Resolved:** Ollama v0.17.6 includes the fix: "Fixed issue where GLM-OCR would not work due to incorrect prompt rendering"
+
+**Note:** Users on rolling-release distros (e.g., Arch Linux) may need to wait for package updates. For immediate fix, use the official install script:
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
 
 ### Semantic Retrieval Context Framing ✅
 
@@ -401,45 +406,19 @@ When reviewing code, focus on:
 
 ---
 
-### Recall Tool for Conversation History
+### Remember Tool for Conversation History ✅
 
 **Priority:** Low  
-**Status:** Deferred (future research)
+**Status:** Completed (released in v0.23.0)
 
-**Concept:** Allow LLM to explicitly recall topics from conversation history via a tool call.
+Allow LLM to explicitly recall topics from conversation history via tool call.
 
-**Tool Interface:**
-```rust
-/// Search conversation history for a specific topic
-/// Returns relevant messages with context
-recall_topic(query: String, limit: Option<usize>) -> Result<String>
-```
+**Implemented Tools:**
+- `remember(id="42")` - Get specific message by ID
+- `remember(query="topic")` - Search history by topic
+- `remember(query="topic", limit="10")` - Search with limit
 
-**Benefits:**
-- LLM has explicit control over what to recall
-- Can search specific topics, not just rely on automatic retrieval
-- Can request more context when needed
-- User can see what LLM is recalling
-
-**Challenges:**
-- Requires tool calling capability (not all models support)
-- Need to define tool interface and parameters
-- May conflict with automatic retrieval
-- Tool calling overhead adds latency
-- Research needed on optimal interaction pattern
-
-**Relationship to Current Work:**
-- Current automatic retrieval (v0.22.7+) works for most cases
-- Recall tool would be LLM-initiated, not automatic
-- Could complement or replace automatic retrieval
-- Needs research on when LLM should call it
-
-**Tasks:**
-- [ ] Research: Tool calling patterns for memory
-- [ ] Research: Auto vs. manual recall trade-offs
-- [ ] Design: Tool interface and parameters
-- [ ] Implement: `recall_topic` tool
-- [ ] Evaluate: User experience comparison
+**See:** `doc/src/development/implementation-history.md` (Remember Tool section)
 
 ---
 
@@ -448,14 +427,17 @@ recall_topic(query: String, limit: Option<usize>) -> Result<String>
 ### OCR Model Customization
 
 **Priority:** Low  
-**Status:** Blocked by Ollama bug #14474
+**Status:** Ready for implementation
 
-See Known Issues.
+Fixed in Ollama v0.17.6. Can now implement custom OCR model selection.
+
+**Goal:** Allow users to specify custom OCR model via `-m` flag.
 
 **Tasks:**
-- [ ] Wait: Ollama bug fix
-- [ ] Research: Alternative OCR models
-- [ ] Implement: `-m` flag for OCR
+- [ ] Implement: `-m` flag for `ask ocr` command
+- [ ] Research: Alternative OCR models (glm-ocr alternatives)
+- [ ] Test: GLM-OCR with various image types
+- [ ] Document: Custom OCR model configuration
 
 ---
 
