@@ -104,39 +104,6 @@ GLM-OCR model returns empty markdown after Ollama v0.17.1. This is a bug in Olla
 
 ## High Priority
 
-### Project-Aware Query Mode (IN PROGRESS)
-
-**Priority:** HIGH  
-**Status:** v0.25.0 (in progress)
-
-**Problem:** Query mode has no access to conversation history. When running
-`ask query "What did we discuss?"`, it responds without context from previous
-chats in that project.
-
-**Solution:** Enable retrieval from project's conversation history, using same
-RAG system as chat mode, but without persisting new messages.
-
-**Implementation:**
-- Initialize DB + EmbeddingClient in query (except --code)
-- Add `project_id` parameter to `search_hybrid()`
-- Create `build_query_context()` for ephemeral context
-- Search ALL sessions in project (not just default)
-- Enrich with assistant responses (v0.24.0 enrichment)
-- Graceful degradation if DB unavailable
-
-**Detailed Plan:** `doc/src/development/v0.25.0_plan.md`
-
-**Tasks:**
-- [ ] Phase 1: Add project_id to search_hybrid()
-- [ ] Phase 2: Create build_query_context() function
-- [ ] Phase 3: Initialize DB/EmbeddingClient in query.rs
-- [ ] Phase 4: Use build_query_context() for message array
-- [ ] Phase 5: Wrap coordinator.chat() with task-local context
-- [ ] Phase 6: Update PromptConfig with retrieval flag
-- [ ] Tests: Query with/without history, --code mode
-
----
-
 ### Conversation-Aware Retrieval ✅
 
 **Priority:** HIGH  
@@ -273,12 +240,7 @@ fn count_messages_tokens(messages: &[ChatMessage]) -> usize {
 - [x] FTS5 query sanitization for SQL injection protection
 - [x] Embedding dimension validation (768 → 256)
 
-**Pending (v0.21.0):**
-- [ ] Integrate with ChatSession (auto-save messages + embeddings)
-- [ ] Add `/migrate` command (JSON → SQLite)
-- [ ] Add `/reindex` command (rebuild embeddings)
-- [ ] Context overflow handling
-- [ ] Auto-retrieval (M recent + N relevant)
+**Released:** v0.20.0 (2026-03-02)
 
 **Dependencies:**
 ```toml
@@ -291,27 +253,52 @@ zerocopy = "0.8"
 
 ---
 
-## Medium Priority
+### Project-Aware Query Mode ✅
 
-### Automatic Middle Compaction
+**Priority:** HIGH  
+**Status:** Completed (released in v0.25.0)
+
+**Problem:** Query mode had no access to conversation history. When running
+`ask query "What did we discuss?"`, it responded without context from previous
+chats in that project.
+
+**Solution:** Enabled retrieval from project's conversation history, using same
+RAG system as chat mode, but without persisting new messages.
+
+**Implementation:**
+- `build_query_context()` for ephemeral context (`src/retrieval/context_builder.rs`)
+- `project_id` parameter in `search_hybrid()`
+- DB + EmbeddingClient initialization in query mode (except `--code`)
+- Task-local context for `remember()` tool support
+- Graceful degradation if DB unavailable
+
+**Released:** v0.25.0 (2026-03-04)
+
+**See:** `doc/src/development/implementation-history.md`
+
+---
+
+### Automatic Middle Compaction ✅
 
 **Priority:** Medium  
-**Status:** Planning
+**Status:** Completed (released in v0.22.3)
 
 **Goal:** Automatically compact middle messages when approaching context limit.
 
-**Strategy:**
-1. Preserve: System prompt + Working state + Recent messages (last 10)
-2. Summarize: Middle messages (abstractive)
-3. Trigger: At 80% of context window
+**Implementation:**
+- `CompactionSuggestion` struct with `keep_first`, `keep_last`, `middle_indices`
+- `get_compaction_range_default()` - calculates middle range to compact
+- Auto-compact trigger at 72% (warning) and 80% (overflow)
+- Preserves first N + last N messages, summarizes middle
+- Visual context utilization bar in `/context`
 
-**Tasks:**
-- [ ] Implement: Sliding window foundation
-- [ ] Implement: Middle summarization
-- [ ] Add: Auto-compact trigger
-- [ ] Configure: Threshold in config.toml
+**Released:** v0.22.2 (middle compaction), v0.22.3 (auto-trigger)
+
+**See:** `src/context_overflow.rs`, `src/chat/repl.rs:1182-1234`
 
 ---
+
+## Medium Priority
 
 ### Chat Module Integration
 
