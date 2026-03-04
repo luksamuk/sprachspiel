@@ -4,7 +4,7 @@ A powerful Rust CLI tool for interacting with Ollama LLM models with support for
 
 ## Overview
 
-Ask-AI provides a comprehensive command-line interface to local and cloud-based LLMs through Ollama.
+Ask-AI provides a comprehensive command-line interface to local and cloud-based LLMs through Ollama, with semantic search, persistent conversations, and intelligent tool use.
 
 ## Quick Start
 
@@ -14,6 +14,9 @@ curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/insta
 
 # Basic query
 ask-ai "What is Rust?"
+
+# Interactive chat with semantic search
+ask-ai chat
 
 # Translate
 ask-ai translate en:pt "Hello world"
@@ -39,7 +42,7 @@ Install directly from GitHub releases:
 curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
 
 # Specific version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --version 0.26.0
 
 # With all tools
 curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --tools all
@@ -56,8 +59,8 @@ Download from [GitHub Releases](https://github.com/luksamuk/ask-ai-rs/releases):
 
 ```bash
 # Download and extract
-tar -xzf ask-ai-0.25.0-linux-x86_64.tar.gz
-cd ask-ai-0.25.0-linux-x86_64
+tar -xzf ask-ai-0.26.0-linux-x86_64.tar.gz
+cd ask-ai-0.26.0-linux-x86_64
 
 # Install
 ./install.sh
@@ -76,7 +79,7 @@ cd ask-ai-0.25.0-linux-x86_64
 ```bash
 # Clone
 git clone https://github.com/luksamuk/ask-ai-rs.git
-cd ask-ai
+cd ask-ai-rs
 
 # Install required models first
 cd modelfiles && make models-essential && cd ..
@@ -97,9 +100,9 @@ Ask-AI works on Termux! Download the Termux tarball from releases:
 pkg install wget
 
 # Download and install
-wget https://github.com/luksamuk/ask-ai-rs/releases/download/v0.25.0/ask-ai-0.25.0-termux-aarch64.tar.gz
-tar -xzf ask-ai-0.25.0-termux-aarch64.tar.gz
-cd ask-ai-0.25.0-termux-aarch64
+wget https://github.com/luksamuk/ask-ai-rs/releases/download/v0.26.0/ask-ai-0.26.0-termux-aarch64.tar.gz
+tar -xzf ask-ai-0.26.0-termux-aarch64.tar.gz
+cd ask-ai-0.26.0-termux-aarch64
 ./install.sh
 ```
 
@@ -135,12 +138,64 @@ source ~/.bashrc  # or ~/.zshrc
 
 ## Commands
 
-- `ask-ai [query]` - General LLM queries (default command)
-- `ask-ai query [QUERY]` - General LLM queries
-- `ask-ai chat` - Interactive chat session
-- `ask-ai translate [LANG] [TEXT]` - Translate (50+ languages)
-- `ask-ai ocr [FILE...]` - Extract text from images
-- `ask-ai summarize [TEXT]` - Summarize text
+### Query Mode (Default)
+
+```bash
+ask-ai "What is Rust?"           # Basic query
+ask-ai -m llama3.2 "Explain async"  # Specific model
+ask-ai -c "Write a Python function"  # Code mode
+ask-ai -t "Think step by step"   # Think mode
+```
+
+### Chat Mode
+
+Interactive chat with persistent history and semantic search:
+
+```bash
+ask-ai chat                      # Start chat session
+ask-ai chat -m glm-5:cloud       # Specific model
+ask-ai chat -t                   # Chat with thinking
+ask-ai chat --anonymous          # Anonymous session (no history)
+```
+
+**Chat Commands:**
+- `/search <query>` - Search conversation history semantically
+- `/context` - Show context usage and token count
+- `/compact` - Compact old messages to free context
+- `/model <name>` - Switch model mid-session
+- `/clear` - Clear current session
+- `/save [name]` / `/load <name>` - Save/load sessions
+
+### Translate
+
+```bash
+ask-ai translate en:pt "Hello world"    # English to Portuguese
+ask-ai translate :es "Bonjour"          # Auto-detect to Spanish
+cat file.txt | ask-ai translate :pt     # Pipe input
+```
+
+### OCR
+
+```bash
+ask-ai ocr document.png                 # Extract text
+ask-ai ocr --detailed image.jpg         # Detailed extraction
+ask-ai ocr page1.png page2.png           # Multiple files
+```
+
+### Summarize
+
+```bash
+ask-ai summarize "Long text..."         # Summarize text
+cat article.txt | ask-ai summarize      # Pipe input
+ask-ai summarize --style bullets file.txt  # Bullet points
+```
+
+### Vision
+
+```bash
+ask-ai vision photo.jpg "What's in this image?"
+ask-ai vision screenshot.png "Describe the UI"
+```
 
 ## Examples
 
@@ -154,14 +209,19 @@ cat article.txt | ask-ai translate :es
 # Code with specific model
 ask-ai -m qwen3-coder "Write a Python function"
 
-# Interactive chat
+# Interactive chat with semantic search
 ask-ai chat
+>>> /search "What did we discuss about databases?"
+>>> /context
+>>> /model glm-5:cloud
 
 # Query with tools
 ask-ai "What's the weather in Tokyo?"
+ask-ai "Read the README.md and explain the project"
+ask-ai "Calculate 15% of 847"
 
-# Query specific model with think mode
-ask-ai -m glm-5:cloud -t "Explain quantum computing"
+# Think mode for complex reasoning
+ask-ai -m glm-5:cloud -t "Explain quantum computing step by step"
 ```
 
 ## Requirements
@@ -206,7 +266,7 @@ Content is sanitized for security (injection patterns, executable code blocks re
 Tools are organized into compile-time features:
 
 ```bash
-# Default build (includes: Pokémon, Weather, File, Calculator, Serper, System tools)
+# Default build (includes: Pokémon, Weather, File, Calculator, Serper, System, Todo, LED, Remember)
 make build
 
 # With all tools (adds DuckDuckGo search, Finance)
@@ -218,14 +278,36 @@ make install-local-all-tools
 
 | Feature | Tools | Default | Notes |
 |---------|-------|---------|-------|
-| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes | |
-| `weather-tools` | 3 Weather lookup tools | ✅ Yes | |
-| `file-tools` | 5 File operation tools | ✅ Yes | |
-| `calc-tools` | 1 Calculator tool | ✅ Yes | |
+| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes | Fetch Pokémon stats, types, abilities |
+| `weather-tools` | 3 Weather tools | ✅ Yes | Current weather, forecast, air quality |
+| `file-tools` | 5 File tools | ✅ Yes | Read files, search, list directories |
+| `calc-tools` | 1 Calculator | ✅ Yes | Mathematical expressions |
 | `serper-tools` | 2 Web search tools | ✅ Yes | Requires `SERPER_API_KEY` |
-| `system-tools` | 2 System info tools | ✅ Yes | |
+| `system-tools` | 2 System tools | ✅ Yes | System info, current directory |
+| `todo-tools` | 5 Todo tools | ✅ Yes | Task tracking with priorities |
+| `led-tools` | 4 LED control tools | Yes | Control GPIO LEDs (embedded) |
+| `remember` | 1 History search tool | Yes | Search conversation history |
 | `search-tools` | 3 DuckDuckGo tools | ❌ No | May fail due to CAPTCHA |
 | `finance-tools` | 1 Stock quote tool | ❌ No | Planned |
+
+## Configuration
+
+Create `~/.config/ask-ai/config.toml`:
+
+```toml
+[ollama]
+host = "localhost:11434"        # Ollama server address
+
+[model]
+default = "llama3.1:8b"         # Default model
+
+[display]
+skin = "dark"                   # Markdown theme: dark, light, mono
+
+[retrieval]
+enabled = true                  # Enable semantic search in chat
+relevant_count = 5              # Number of messages to retrieve
+```
 
 ## Distribution Tarballs
 
@@ -251,11 +333,25 @@ Tarballs include:
 - Documentation (`README.md`, `LICENSE.txt`)
 - Platform-specific instructions (Termux includes `README-TERMUX.txt`)
 
+## Semantic Search & RAG
+
+Ask-AI features intelligent context retrieval:
+
+- **Chat Mode**: Automatically retrieves relevant past conversations
+- **Query Mode**: Access to project-wide conversation history
+- **`/search` Command**: Semantic search across all sessions
+- **Remember Tool**: Let the LLM query conversation history
+
+The system uses:
+- **Hybrid Search**: BM25 (keyword) + Semantic (vector) + RRF fusion
+- **Context Enrichment**: User questions are paired with assistant responses
+- **Smart Positioning**: Retrieved context placed optimally (not "lost in middle")
+
 ## AI-Assisted Development
 
 Developed with assistance from:
-- **Kimi K2.5** (Moonshot AI) - Build and Research
-- **GLM 5** (Z.ai) - Plan and Brainstorm
+- **GLM 5** (Z.ai) - Plan, research, and implementation
+- **Kimi K2.5** (Moonshot AI) - Architecture design
 
 Human oversight for architecture decisions and quality assurance.
 

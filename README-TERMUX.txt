@@ -177,5 +177,5 @@ man ask-ai  # If manpage is installed
 ## Links
 
 - GitHub: https://github.com/luksamuk/ask-ai-rs
-- Documentation: https://anomalyco.github.io/ask-ai/
+- Documentation: https://luksamuk.github.io/ask-ai/
 - Issues: https://github.com/luksamuk/ask-ai-rs/issues

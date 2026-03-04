@@ -77,7 +77,7 @@ ask-ai-VERSION-linux-x86_64.tar.gz
 
 **One-liner Installation:**
 ```bash
-curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai/main/scripts/install-ask-ai.sh | bash
 curl -sL ... | bash -s -- --version 0.26.0
 curl -sL ... | bash -s -- --tools all
 curl -sL ... | bash -s -- --prefix /usr
