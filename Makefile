@@ -241,16 +241,11 @@ tarball-termux: termux
 	@echo "Creating Termux tarball..."
 	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)
 	@cp $(TERMUX_BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/$(BINARY)
-	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/$(BINARY).1
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/ask-ai.1
 	@cp README.md $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/
 	@cp LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/ 2>/dev/null || cp LICENSE $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/ || true
-	@sed 's/^# Termux Notes:/📱 Termux Notes:\n  - Ollama must run on a separate machine (desktop\/server)\n  - Configure OLLAMA_HOST in ~\/.config\/ask-ai\/config.toml\n  - Example: host = "192.168.1.100:11434"\n\n# Termux Notes:/' $(INSTALL_SCRIPT) > $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/install.sh
-	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMux.txt
-	@echo "# ask-ai for Termux" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
-	@echo "## Installation" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
-	@echo "./install.sh" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/README-TERMUX.txt
+	@cp README-TERMUX.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/
+	@cp $(INSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/
 	@cp $(UNINSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/
 	@sed -i 's/^VERSION=""/VERSION="$(VERSION)"/' $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/install.sh
 	@cd $(DIST_DIR) && tar -czvf $(TARBALL_BASE)-termux-$(TERMUX_TARGET).tar.gz $(TARBALL_BASE)-termux-$(TERMUX_TARGET)
@@ -262,20 +257,12 @@ tarball-termux-all-tools: termux-all-tools
 	@echo "Creating Termux tarball (all tools)..."
 	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools
 	@cp $(TERMUX_BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/$(BINARY)
-	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/$(BINARY).1
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/ask-ai.1
 	@cp README.md $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
 	@cp LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/ 2>/dev/null || cp LICENSE $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/ || true
+	@cp README-TERMUX.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
 	@cp $(INSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
 	@cp $(UNINSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
-	@echo "📱 Termux Notes:" > $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
-	@echo "- Ollama must run on a separate machine (desktop/server)" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
-	@echo "- Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
-	@echo "- Example: host = \"192.168.1.100:11434\"" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
-	@echo "## Installation" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
-	@echo "" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
-	@echo "./install.sh" >> $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/README-TERMUX.txt
 	@sed -i 's/^VERSION=""/VERSION="$(VERSION)"/' $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/install.sh
 	@cd $(DIST_DIR) && tar -czvf $(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools.tar.gz $(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools
 	@rm -rf $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools
