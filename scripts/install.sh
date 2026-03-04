@@ -131,7 +131,7 @@ After Installation:
   - Add ~/.local/bin (or your chosen dir) to PATH
   - Run 'man -M ~/.local/share/man ask-ai' or set MANPATH
 
-For more information: https://github.com/anomalyco/ask-ai
+For more information: https://github.com/luksamuk/ask-ai-rs
 EOF
 }
 

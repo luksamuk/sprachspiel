@@ -5,10 +5,10 @@
 # This script downloads and installs ask-ai from GitHub releases.
 #
 # Usage:
-#   curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
-#   curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
-#   curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --tools all
-#   curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
+#   curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
+#   curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
+#   curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --tools all
+#   curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
 #
 # Platform Detection:
 #   - Linux x86_64: Downloads ask-ai-VERSION-linux-x86_64.tar.gz
@@ -25,7 +25,7 @@
 set -e
 
 # Repository information
-REPO="anomalyco/ask-ai"
+REPO="luksamuk/ask-ai-rs"
 RELEASES_URL="https://github.com/$REPO/releases/download"
 LATEST_API_URL="https://api.github.com/repos/$REPO/releases/latest"
 
@@ -132,8 +132,8 @@ show_help() {
 Ask AI Remote Installer
 
 Usage:
-  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
-  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- [OPTIONS]
+  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
+  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- [OPTIONS]
 
 Options:
   --version VERSION   Install specific version (default: latest)
@@ -146,18 +146,18 @@ Options:
 
 Examples:
   # Install latest version
-  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash
+  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
 
   # Install specific version
-  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
+  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
 
   # Install with all tools
-  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --tools all
+  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --tools all
 
   # Install system-wide (requires sudo for /usr)
-  curl -sL https://raw.githubusercontent.com/anomalyco/ask-ai/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
+  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
 
-For more information: https://github.com/anomalyco/ask-ai
+For more information: https://github.com/luksamuk/ask-ai-rs
 EOF
 }
 
