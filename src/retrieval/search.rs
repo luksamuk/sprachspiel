@@ -5,6 +5,7 @@
 use chrono::{DateTime, Utc};
 use ollama_rs::Ollama;
 
+use crate::consts::roles::format_role_label_md;
 use crate::db::{Database, SearchResult, SearchType, reciprocal_rank_fusion};
 use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
@@ -59,13 +60,7 @@ pub fn display_results(results: &[FormattedResult]) {
             SearchType::Hybrid => "🔗 Hybrid",
         };
 
-        let role_str = match result.role.as_str() {
-            "user" => "👤 **User**",
-            "assistant" => "🤖 **Assistant**",
-            "system" => "⚙️ **System**",
-            "tool" => "🔧 **Tool**",
-            _ => &format!("📝 **{}**", result.role),
-        };
+        let role_str = format_role_label_md(&result.role);
 
         output.push_str(&format!("{}. [id={}] {} — {} (score: {:.4})\n", i + 1, result.message_id, type_str, role_str, result.score));
 

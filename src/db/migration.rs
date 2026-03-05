@@ -9,6 +9,7 @@ use chrono::Utc;
 
 use super::Database;
 use crate::chat::session::{ChatSession, MessageRole};
+use crate::consts::roles::{ROLE_ASSISTANT, ROLE_SYSTEM, ROLE_TOOL, ROLE_USER};
 use crate::embeddings::{EmbeddingClient, chunk_text, needs_chunking};
 use crate::chat::history::ConversationStorage;
 
@@ -61,10 +62,10 @@ pub async fn migrate_session(
         let message_id = db.insert_message(
             &session.id,
             match msg.role {
-                MessageRole::User => "user",
-                MessageRole::Assistant => "assistant",
-                MessageRole::System => "system",
-                MessageRole::Tool => "tool",
+                MessageRole::User => ROLE_USER,
+                MessageRole::Assistant => ROLE_ASSISTANT,
+                MessageRole::System => ROLE_SYSTEM,
+                MessageRole::Tool => ROLE_TOOL,
             },
             &msg.content,
             msg.timestamp,

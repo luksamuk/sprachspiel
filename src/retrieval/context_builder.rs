@@ -59,14 +59,22 @@ fn format_timestamp(timestamp: i64) -> String {
 
 /// Format retrieved messages into context string
 fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
+    use crate::db::SourceType;
+    
     let mut text = String::from("<retrieved_context>\n");
     text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n\n");
-    text.push_str("Each message has an ID. Use remember(id=\"msg:N\") for full content or remember(query=\"topic\") to search.\n\n");
+    text.push_str(&format!(
+        "Each message has an ID. Use remember(id=\"{}:N\") for full content or remember(query=\"topic\") to search.\n\n",
+        SourceType::Conversation.prefix()
+    ));
     text.push_str("CITATIONS: When referencing retrieved content, include the source ID after the statement.\n");
-    text.push_str("- Conversations: [msg:N]\n");
-    text.push_str("- Documents: [doc:N]\n");
-    text.push_str("- Notes: [note:N]\n\n");
-    text.push_str("Example: \"As we discussed [msg:42], the project uses Rust.\"\n\n");
+    text.push_str(&format!("- Conversations: [{}:N]\n", SourceType::Conversation.prefix()));
+    text.push_str(&format!("- Documents: [{}:N]\n", SourceType::Document.prefix()));
+    text.push_str(&format!("- Notes: [{}:N]\n\n", SourceType::Note.prefix()));
+    text.push_str(&format!(
+        "Example: \"As we discussed [{}:42], the project uses Rust.\"\n\n",
+        SourceType::Conversation.prefix()
+    ));
     
     for msg in results {
         let timestamp = format_timestamp(msg.timestamp);

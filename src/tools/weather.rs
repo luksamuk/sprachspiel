@@ -3,20 +3,16 @@
 //! Provides weather information for any location using the Open-Meteo API.
 //! Supports current weather, forecasts, and geocoding.
 
+use crate::consts::api::{OPEN_METEO_BASE, OPEN_METEO_GEOCODING};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use ollama_rs::function;
 use serde::Deserialize;
-
-/// Base URL for Open-Meteo API
-const OPEN_METEO_BASE: &str = "https://api.open-meteo.com/v1/forecast";
-/// Base URL for Open-Meteo Geocoding API
-const GEOCODING_BASE: &str = "https://geocoding-api.open-meteo.com/v1/search";
 
 /// Get coordinates for a location name using Open-Meteo geocoding
 async fn get_coordinates(location: &str) -> Result<(f64, f64), String> {
     let url = format!(
         "{}?name={}&count=1&language=en&format=json",
-        GEOCODING_BASE,
+        OPEN_METEO_GEOCODING,
         urlencoding::encode(location)
     );
 

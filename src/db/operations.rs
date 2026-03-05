@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use zerocopy::IntoBytes;
 
 use super::Database;
+use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 
 /// Escape a string for FTS5 MATCH queries.
 ///
@@ -708,11 +709,11 @@ impl Database {
         let mut enriched = Vec::with_capacity(results.len());
 
         for result in results {
-            let next_message = if result.role == "user" {
+            let next_message = if result.role == ROLE_USER {
                 self.get_next_message_by_role(
                     result.message_id,
                     &result.conversation_id,
-                    "assistant",
+                    ROLE_ASSISTANT,
                 )?
                 .map(Box::new)
             } else {
@@ -1047,7 +1048,7 @@ mod tests {
             .expect("Failed to insert conversation");
 
         let msg_id = db
-            .insert_message("test-conv", "user", "Hello world", Utc::now())
+            .insert_message("test-conv", ROLE_USER, "Hello world", Utc::now())
             .expect("Failed to insert message");
 
         assert!(msg_id > 0);
@@ -1061,7 +1062,7 @@ mod tests {
             .expect("Failed to insert conversation");
 
         let msg_id = db
-            .insert_message("test-conv", "user", "Hello world", Utc::now())
+            .insert_message("test-conv", ROLE_USER, "Hello world", Utc::now())
             .expect("Failed to insert message");
 
         let embedding: Vec<f32> = (0..256).map(|i| i as f32 / 256.0).collect();
@@ -1088,10 +1089,15 @@ mod tests {
         db.insert_conversation("test-conv", None, None, "llama3.1", Utc::now(), Utc::now())
             .expect("Failed to insert conversation");
 
-        db.insert_message("test-conv", "user", "Hello world from Rust", Utc::now())
+        db.insert_message("test-conv", ROLE_USER, "Hello world from Rust", Utc::now())
             .expect("Failed to insert message");
-        db.insert_message("test-conv", "assistant", "How can I help you?", Utc::now())
-            .expect("Failed to insert message");
+        db.insert_message(
+            "test-conv",
+            ROLE_ASSISTANT,
+            "How can I help you?",
+            Utc::now(),
+        )
+        .expect("Failed to insert message");
 
         let results = db
             .search_keyword("Rust", None, None, 10)
@@ -1106,7 +1112,7 @@ mod tests {
         let make_result = |id: i64, content: &str| SearchResult {
             message_id: id,
             conversation_id: "test".to_string(),
-            role: "user".to_string(),
+            role: ROLE_USER.to_string(),
             content: content.to_string(),
             timestamp: 0,
             source_type: SourceType::Conversation,
@@ -1178,7 +1184,7 @@ mod tests {
 
         // Insert messages
         for i in 0..10 {
-            db.insert_message(conv_id, "user", &format!("Message {}", i), Utc::now())
+            db.insert_message(conv_id, ROLE_USER, &format!("Message {}", i), Utc::now())
                 .expect("Failed to insert message");
         }
 
@@ -1219,7 +1225,7 @@ mod tests {
         // Insert conversation with messages
         db.insert_conversation(conv_id, None, None, "test-model", Utc::now(), Utc::now())
             .expect("Failed to insert conversation");
-        db.insert_message(conv_id, "user", "Hello", Utc::now())
+        db.insert_message(conv_id, ROLE_USER, "Hello", Utc::now())
             .expect("Failed to insert message");
 
         // Verify exists

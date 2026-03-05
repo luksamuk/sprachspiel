@@ -3,12 +3,11 @@
 //! Provides Google Search results via Serper.dev API.
 //! Requires SERPER_API_KEY environment variable.
 
+use crate::consts::api::SERPER_API_URL;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{parse_bounded_number, post_json_with_headers};
 use ollama_rs::function;
 use serde::Deserialize;
-
-const SERPER_API_URL: &str = "https://google.serper.dev/search";
 
 #[derive(Debug, Deserialize, Default)]
 struct SerperResponse {

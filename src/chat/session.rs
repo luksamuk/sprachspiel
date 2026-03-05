@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use super::history::{ConversationStorage, SessionInfo};
 use super::todo_state::TodoState;
+use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 
@@ -210,7 +211,7 @@ impl ChatSession {
             // Ensure conversation exists before inserting message
             self.ensure_conversation_exists();
 
-            match db.insert_message(&self.id, "user", &content, now) {
+            match db.insert_message(&self.id, ROLE_USER, &content, now) {
                 Ok(message_id) => {
                     // Insert chunks synchronously (guaranteed persistence)
                     // Generate embeddings asynchronously (can be recovered on restart)
@@ -302,7 +303,7 @@ impl ChatSession {
             // Ensure conversation exists before inserting message
             self.ensure_conversation_exists();
 
-            match db.insert_message(&self.id, "assistant", &content, now) {
+            match db.insert_message(&self.id, ROLE_ASSISTANT, &content, now) {
                 Ok(message_id) => {
                     // Insert chunks synchronously (guaranteed persistence)
                     // Generate embeddings asynchronously (can be recovered on restart)

@@ -317,6 +317,153 @@ Before adding `#[allow(dead_code)]`, verify the code is truly unused:
 cargo clippy 2>&1 | grep "never used\|never constructed"
 ```
 
+## Constants and String Management
+
+### CRITICAL: No Hardcoded String Duplicates
+
+**String literals must NEVER be duplicated.** When a string value is used in multiple places, 
+it MUST be defined once and referenced everywhere.
+
+### String Constants Module
+
+All string constants are centralized in `src/consts/`:
+
+- `src/consts/roles.rs` - Message role constants (`ROLE_USER`, `ROLE_ASSISTANT`, etc.)
+- `src/consts/api.rs` - API URLs (`OPEN_METEO_BASE`, `SERPER_API_URL`, etc.)
+
+### Categories of Duplicated Strings
+
+#### 1. Source Type Prefixes
+
+**NEVER hardcode source type prefixes like `"msg"`, `"doc"`, `"note"`, `"web"`.**
+
+```rust
+// ❌ WRONG - Hardcoded prefix
+format!("msg:{}", id)
+text.push_str("Use remember(id=\"msg:N\")...\n");
+
+// ✅ CORRECT - Use SourceType::prefix()
+let prefix = SourceType::Conversation.prefix();
+format!("{}:{}", prefix, id)
+text.push_str(&format!("Use remember(id=\"{}:N\")...\n", prefix));
+```
+
+**Source of truth:** `src/db/operations.rs` - `SourceType::prefix()` and `SourceType::from_prefix()`
+
+#### 2. Message Roles
+
+**NEVER hardcode role strings like `"user"`, `"assistant"`, `"system"`, `"tool"`.**
+
+```rust
+// ❌ WRONG - Hardcoded role
+if msg.role == "user" { ... }
+db.insert_message(&id, "assistant", &content, now);
+
+// ✅ CORRECT - Use constants from src/consts/roles.rs
+use crate::consts::roles::*;
+if msg.role == ROLE_USER { ... }
+db.insert_message(&id, ROLE_ASSISTANT, &content, now);
+
+// ✅ CORRECT - Use MessageRole enum when type-safe
+use crate::chat::session::MessageRole;
+match role {
+    MessageRole::User => { ... }
+    MessageRole::Assistant => { ... }
+}
+```
+
+#### 3. Role Display Labels
+
+**NEVER duplicate role display labels.** Use the central functions.
+
+```rust
+// ❌ WRONG - Duplicated in multiple files
+let role_label = match msg.role.as_str() {
+    "user" => "👤 User",
+    "assistant" => "🤖 Assistant",
+    // ...
+};
+
+// ✅ CORRECT - Use central function from src/consts/roles.rs
+use crate::consts::roles::format_role_label;
+let role_label = format_role_label(&msg.role);
+
+// For Markdown bold format
+use crate::consts::roles::format_role_label_md;
+let label = format_role_label_md("user"); // "👤 **User**"
+```
+
+#### 4. API URLs and Endpoints
+
+**NEVER hardcode API URLs directly in code.**
+
+```rust
+// ❌ WRONG - Hardcoded URL
+const GEOCODING_URL: &str = "https://geocoding-api.open-meteo.com/v1/search";
+
+// ✅ CORRECT - Use centralized constants from src/consts/api.rs
+use crate::consts::api::OPEN_METEO_GEOCODING;
+```
+
+### String Constants Location
+
+When adding new constants:
+
+1. **Source type prefixes** → Add to `SourceType` enum in `src/db/operations.rs`
+2. **Message roles** → Add to `src/consts/roles.rs`
+3. **API URLs** → Add to `src/consts/api.rs`
+4. **Other strings** → Add new submodule to `src/consts/` or use existing constants
+
+### When to Use Constants vs. Functions vs. Enums
+
+**Use constants for:**
+- String literals that are pure values (URLs, identifiers, labels)
+- Values that don't change based on context
+
+**Use functions for:**
+- Formatted strings that depend on input parameters
+- Display logic (like `format_role_label()`)
+
+**Use enums for:**
+- Values with associated data or methods
+- State that needs pattern matching (like `SourceType`, `MessageRole`)
+
+### Checklist Before Adding String Literals
+
+Before committing code with string literals, verify:
+
+1. **Search for duplicates:** `grep -r "literal_string" src/`
+2. **Check if enum/method exists:** Does `SourceType`, `MessageRole`, etc. already provide this?
+3. **Check consts module:** Is there already a constant in `src/consts/` for this?
+4. **Consider future use:** Will this string be needed elsewhere? Create a constant.
+
+### `#[allow(dead_code)]` Rejection on Constants
+
+**REJECT `#[allow(dead_code)]` on newly created constants without explicit justification.**
+
+If you create a constant for consistency but it's currently unused:
+1. **Don't create it yet** - YAGNI (You Ain't Gonna Need It)
+2. **Wait until it's needed in multiple places**
+3. **Then create it and use it everywhere**
+
+The only exception: constants that are part of a documented enum pattern (like `SourceType::prefix()`) where unused variants exist for API completeness.
+
+### Enforcement
+
+Before any PR merge, run these checks:
+```bash
+# Check for duplicated role strings
+rg '"user"|"assistant"|"system"|"tool"' src/ --type rust
+
+# Check for duplicated source prefixes
+rg '"msg"|"doc"|"note"' src/ --type rust | grep -v 'const\|prefix()'
+
+# Check for dead_code annotations on constants
+rg '#\[allow\(dead_code\)\]' src/consts/
+```
+
+If duplicates found: refactor before merging.
+
 ## Tool Development Guidelines
 
 When creating or modifying tools, follow these principles:

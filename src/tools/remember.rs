@@ -3,6 +3,7 @@
 //! Provides the LLM with explicit access to search and retrieve
 //! messages from conversation history.
 
+use crate::consts::roles::{format_role_label, ROLE_ASSISTANT, ROLE_USER};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::db::SourceType;
 use crate::tools::context::{get_db, get_embedding};
@@ -16,8 +17,12 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
 
         let source_type = SourceType::from_prefix(prefix).ok_or_else(|| {
             format!(
-                "Unknown source type: '{}'. Valid types: msg, doc, note, web",
-                prefix
+                "Unknown source type: '{}'. Valid types: {}, {}, {}, {}",
+                prefix,
+                SourceType::Conversation.prefix(),
+                SourceType::Document.prefix(),
+                SourceType::Note.prefix(),
+                SourceType::Web.prefix()
             )
         })?;
 
@@ -29,10 +34,13 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
     } else {
         Err(format!(
             "Invalid ID format: '{}'. Must include source type prefix.\n\
-             Use: remember(id=\"msg:42\") for conversations\n\
-             Use: remember(id=\"doc:13\") for documents\n\
-             Use: remember(id=\"note:7\") for notes",
-            id
+             Use: remember(id=\"{}:42\") for conversations\n\
+             Use: remember(id=\"{}:13\") for documents\n\
+             Use: remember(id=\"{}:7\") for notes",
+            id,
+            SourceType::Conversation.prefix(),
+            SourceType::Document.prefix(),
+            SourceType::Note.prefix()
         ))
     }
 }
@@ -165,13 +173,7 @@ async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id
     // Get message from database
     match db.get_message_by_id(id) {
         Ok(Some(msg)) => {
-            let role_label = match msg.role.as_str() {
-                "user" => "👤 User",
-                "assistant" => "🤖 Assistant",
-                "system" => "⚙️ System",
-                "tool" => "🔧 Tool",
-                _ => &msg.role,
-            };
+            let role_label = format_role_label(&msg.role);
 
             let timestamp = chrono::DateTime::from_timestamp(msg.timestamp, 0)
                 .unwrap_or_else(chrono::Utc::now);
@@ -185,11 +187,11 @@ async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id
             );
 
             // If user message, also fetch the assistant response
-            if msg.role == "user" {
+            if msg.role == ROLE_USER {
                 if let Ok(Some(answer)) = db.get_next_message_by_role(
                     msg.message_id,
                     &msg.conversation_id,
-                    "assistant",
+                    ROLE_ASSISTANT,
                 ) {
                     let answer_timestamp = chrono::DateTime::from_timestamp(answer.timestamp, 0)
                         .unwrap_or_else(chrono::Utc::now);
@@ -276,13 +278,7 @@ async fn remember_by_query(
     let mut output = format!("**Found {} message(s)**\n\n", enriched_results.len());
 
     for msg in enriched_results {
-        let role_label = match msg.role.as_str() {
-            "user" => "👤 User",
-            "assistant" => "🤖 Assistant",
-            "system" => "⚙️ System",
-            "tool" => "🔧 Tool",
-            _ => &msg.role,
-        };
+        let role_label = format_role_label(&msg.role);
 
         // Truncate content for display (respect UTF-8 boundaries)
         let content = if msg.content.chars().count() > 200 {
@@ -298,7 +294,7 @@ async fn remember_by_query(
 
         // If user message has an assistant response, show it
         if let Some(ref answer) = msg.next_message {
-            let answer_label = "🤖 Assistant";
+            let answer_label = format_role_label(ROLE_ASSISTANT);
             let answer_content = if answer.content.chars().count() > 200 {
                 format!("{}...", answer.content.chars().take(200).collect::<String>())
             } else {
@@ -311,6 +307,9 @@ async fn remember_by_query(
         }
     }
 
-    output.push_str("Use message IDs to retrieve full content: remember(id=\"N\")");
+    output.push_str(&format!(
+        "Use message IDs to retrieve full content: remember(id=\"{}:N\")",
+        SourceType::Conversation.prefix()
+    ));
     output
 }
