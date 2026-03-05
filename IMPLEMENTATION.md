@@ -61,7 +61,7 @@
 ### High Priority
 
 - **Memory Enhancement** (Multi-phase)
-  - Phase 1: Source Attribution - LLM cites sources in responses
+  - Phase 1: Source Attribution ✅ Complete (v0.26.1)
   - Phase 2: Query Routing - Route queries to appropriate search targets
   - Phase 3: Timestamp Filtering - "what did I say yesterday?"
   - Phase 4: Schema Preparation - Multi-source support (docs, notes)

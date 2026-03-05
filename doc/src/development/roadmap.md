@@ -112,28 +112,30 @@ curl -fsSL https://ollama.com/install.sh | sh
 ### Memory Enhancement (Multi-Phase)
 
 **Priority:** HIGH  
-**Status:** Phase 0 - Research & Planning
+**Status:** Phase 1 Complete, Phase 2 Research Needed
 
 **Goal:** Improve memory/RAG system for better context retrieval and source attribution.
 
 This is a multi-phase enhancement to our RAG capabilities, broken into small deliverables that can be implemented incrementally.
 
-#### Phase 1: Source Attribution (1-2 days)
+#### Phase 1: Source Attribution ✅
+
+**Status:** Completed (released in v0.26.1)
 
 **Goal:** LLM should cite sources in responses.
 
-**Implementation:**
-- Track source for each retrieved chunk (conversation, document, note)
-- Format context with clear source attribution
-- System prompt instructs LLM to cite sources
+**Implemented:**
+- ✅ `SourceType` enum in `src/db/operations.rs` (Conversation, Document, Note, Web)
+- ✅ `source_type` field in `SearchResult` struct
+- ✅ `SourceType::prefix()` method for ID prefixes (msg, doc, note, web)
+- ✅ Context formatted with source labels: `[msg:N]`, `[doc:N]`, `[note:N]`
+- ✅ Example citations in system prompt: "As we discussed [msg:42]"
+- ✅ `remember` tool updated to use source type prefixes
 
-**Tasks:**
-- [ ] Add `source_type` concept to `RetrievedChunk` struct
-- [ ] Format retrieved context with source labels
-- [ ] Add examples to system prompt for citation behavior
-- [ ] Test: LLM includes "[Conversation X, 2024-01-15]" style citations
-
-**See:** `src/retrieval/context_builder.rs`, `src/prompts/`
+**Implementation Details:**
+- `src/db/operations.rs` - `SourceType` enum with `prefix()` and `from_prefix()` methods
+- `src/retrieval/context_builder.rs` - `format_retrieved_context()` with source attribution
+- `src/tools/remember.rs` - Source ID parsing with `parse_source_id()`
 
 #### Phase 2: Query Routing Research (Research)
 
