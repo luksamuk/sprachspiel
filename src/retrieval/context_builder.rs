@@ -34,6 +34,67 @@ pub const KEYWORD_WEIGHT: f32 = 0.4;
 /// Semantic weight for RRF (vector similarity)
 pub const SEMANTIC_WEIGHT: f32 = 0.6;
 
+/// Format timestamp for human-readable display
+fn format_timestamp(timestamp: i64) -> String {
+    use chrono::{Datelike, TimeZone, Utc};
+    
+    let dt = Utc.timestamp_opt(timestamp, 0).single().unwrap_or_else(Utc::now);
+    let now = Utc::now();
+    let diff = now.signed_duration_since(dt);
+    
+    if diff.num_hours() < 24 {
+        // Today - show time only
+        dt.format("%H:%M").to_string()
+    } else if diff.num_days() < 7 {
+        // This week - show day and time
+        dt.format("%A %H:%M").to_string()
+    } else if dt.year() == now.year() {
+        // Same year - show month and day
+        dt.format("%b %d %H:%M").to_string()
+    } else {
+        // Different year - show full date
+        dt.format("%Y-%m-%d %H:%M").to_string()
+    }
+}
+
+/// Format retrieved messages into context string
+fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
+    let mut text = String::from("<retrieved_context>\n");
+    text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n\n");
+    text.push_str("Each message has an ID. Use remember(id=\"N\") for full content or remember(query=\"topic\") to search.\n\n");
+    text.push_str("CITATIONS: When referencing retrieved content, include the source ID after the statement.\n");
+    text.push_str("- Conversations: [msg:N] or just [N]\n");
+    text.push_str("- Documents: [doc:N]\n");
+    text.push_str("- Notes: [note:N]\n\n");
+    text.push_str("Example: \"As we discussed [msg:42], the project uses Rust.\"\n\n");
+    
+    for msg in results {
+        let timestamp = format_timestamp(msg.timestamp);
+        text.push_str(&format!(
+            "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+            msg.message_id,
+            msg.role,
+            msg.content,
+            timestamp
+        ));
+        
+        // If user message has an assistant response, include it
+        if let Some(ref answer) = msg.next_message {
+            let answer_timestamp = format_timestamp(answer.timestamp);
+            text.push_str(&format!(
+                "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+                answer.message_id,
+                answer.role,
+                answer.content,
+                answer_timestamp
+            ));
+        }
+    }
+    
+    text.push_str("</retrieved_context>");
+    text
+}
+
 /// Configuration for context retrieval
 #[derive(Debug, Clone)]
 pub struct RetrievalConfig {
@@ -178,29 +239,7 @@ pub async fn build_context(
                         retrieved_count = enriched_results.len();
                         retrieval_performed = true;
                         
-                        let mut retrieved_text = String::from("<retrieved_context>\n");
-                        retrieved_text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n");
-                        retrieved_text.push_str("Each message has an ID. Use remember(id=\"N\") for full content.\n");
-                        retrieved_text.push_str("Use remember(query=\"topic\") to search for past discussions.\n\n");
-                        for msg in enriched_results.iter() {
-                            retrieved_text.push_str(&format!(
-                                "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
-                                msg.message_id,
-                                msg.role,
-                                msg.content
-                            ));
-                            
-                            // If user message has an assistant response, include it
-                            if let Some(ref answer) = msg.next_message {
-                                retrieved_text.push_str(&format!(
-                                    "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
-                                    answer.message_id,
-                                    answer.role,
-                                    answer.content
-                                ));
-                            }
-                        }
-                        retrieved_text.push_str("</retrieved_context>");
+                        let retrieved_text = format_retrieved_context(&enriched_results);
                         messages.push(ChatMessage::system(retrieved_text));
                         
                         if use_debug {
@@ -380,29 +419,7 @@ pub async fn build_query_context(
                         retrieved_count = enriched_results.len();
                         retrieval_performed = true;
                         
-                        let mut retrieved_text = String::from("<retrieved_context>\n");
-                        retrieved_text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n");
-                        retrieved_text.push_str("Each message has an ID. Use remember(id=\"N\") for full content.\n");
-                        retrieved_text.push_str("Use remember(query=\"topic\") to search for past discussions.\n\n");
-                        for msg in enriched_results.iter() {
-                            retrieved_text.push_str(&format!(
-                                "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
-                                msg.message_id,
-                                msg.role,
-                                msg.content
-                            ));
-                            
-                            // If user message has an assistant response, include it
-                            if let Some(ref answer) = msg.next_message {
-                                retrieved_text.push_str(&format!(
-                                    "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n</message>\n",
-                                    answer.message_id,
-                                    answer.role,
-                                    answer.content
-                                ));
-                            }
-                        }
-                        retrieved_text.push_str("</retrieved_context>");
+                        let retrieved_text = format_retrieved_context(&enriched_results);
                         messages.push(ChatMessage::system(retrieved_text));
                         
                         if use_debug {

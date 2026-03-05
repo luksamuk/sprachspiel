@@ -4,7 +4,33 @@
 //! messages from conversation history.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::db::SourceType;
 use crate::tools::context::{get_db, get_embedding};
+
+/// Parse a source ID into (SourceType, numeric_id)
+/// Supports both "42" and "msg:42" formats for backwards compatibility
+fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
+    if id.contains(':') {
+        // Prefixed format: "msg:42", "doc:13", etc.
+        let parts: Vec<&str> = id.split(':').collect();
+        if parts.len() != 2 {
+            return Err(format!("Invalid ID format: {}. Expected 'type:number' (e.g., 'msg:42')", id));
+        }
+        
+        let source_type = SourceType::from_prefix(parts[0])
+            .ok_or_else(|| format!("Unknown source type: {}. Valid types: msg, doc, note, web", parts[0]))?;
+        
+        let numeric_id = parts[1].parse::<i64>()
+            .map_err(|e| format!("Invalid numeric ID '{}': {}", parts[1], e))?;
+        
+        Ok((source_type, numeric_id))
+    } else {
+        // Plain numeric ID - assume conversation for backwards compatibility
+        let numeric_id = id.parse::<i64>()
+            .map_err(|e| format!("Invalid message ID '{}': {}. Must be a number or prefixed ID (e.g., 'msg:42')", id, e))?;
+        Ok((SourceType::Conversation, numeric_id))
+    }
+}
 
 /// Recall messages from your conversation history.
 ///
@@ -86,20 +112,50 @@ pub async fn remember(
     Ok(result)
 }
 
-/// Retrieve a specific message by its database ID
+/// Retrieve a specific message by its ID
 async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) -> String {
-    // Parse ID
-    let id: i64 = match id_str.parse() {
-        Ok(id) => id,
-        Err(_) => {
-            return format!(
-                "Error: Invalid message ID '{}'. Message IDs must be numbers.\n\n\
-                 Tip: Look for id=\"N\" attributes in <retrieved_context>.",
-                id_str
-            );
+    // Parse ID (supports "42" and "msg:42" formats)
+    let (source_type, numeric_id) = match parse_source_id(id_str) {
+        Ok(result) => result,
+        Err(e) => {
+            let err = format!("Error: {}\n\nTip: Look for id=\"N\" attributes in <retrieved_context>.", e);
+            log_tool_result("remember", &err);
+            return err;
         }
     };
 
+    // Handle different source types
+    match source_type {
+        SourceType::Conversation => {
+            fetch_conversation_message(db, numeric_id).await
+        }
+        SourceType::Document => {
+            // Phase 5: Document ingestion not yet implemented
+            let err = "Error: Document retrieval not yet implemented.\n\n\
+                       Only conversation messages are supported at this time. \
+                       Use remember(id=\"N\") or remember(id=\"msg:N\") to retrieve messages.";
+            log_tool_result("remember", err);
+            err.to_string()
+        }
+        SourceType::Note => {
+            // Future: Note support
+            let err = "Error: Note retrieval not yet implemented.\n\n\
+                       Only conversation messages are supported at this time.";
+            log_tool_result("remember", err);
+            err.to_string()
+        }
+        SourceType::Web => {
+            // Future: Web source support
+            let err = "Error: Web retrieval not yet implemented.\n\n\
+                       Only conversation messages are supported at this time.";
+            log_tool_result("remember", err);
+            err.to_string()
+        }
+    }
+}
+
+/// Fetch a conversation message by ID
+async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id: i64) -> String {
     // Get message from database
     match db.get_message_by_id(id) {
         Ok(Some(msg)) => {

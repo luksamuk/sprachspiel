@@ -44,8 +44,10 @@ pub struct SearchResult {
     pub role: String,
     /// Message content (full message)
     pub content: String,
-    /// Timestamp
+    /// Timestamp (Unix epoch)
     pub timestamp: i64,
+    /// Source type (conversation, document, note, web)
+    pub source_type: SourceType,
     /// Combined score (RRF)
     pub score: f32,
     /// Source of the result
@@ -72,6 +74,60 @@ pub enum SearchType {
     Semantic,
     /// Combined result (appears in both)
     Hybrid,
+}
+
+/// Source type for retrieved content
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceType {
+    /// Conversation history
+    Conversation,
+    /// Document (PDF, markdown, etc.)
+    Document,
+    /// User note
+    Note,
+    /// Web source
+    Web,
+}
+
+impl Default for SourceType {
+    fn default() -> Self {
+        SourceType::Conversation
+    }
+}
+
+impl std::fmt::Display for SourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceType::Conversation => write!(f, "conversation"),
+            SourceType::Document => write!(f, "document"),
+            SourceType::Note => write!(f, "note"),
+            SourceType::Web => write!(f, "web"),
+        }
+    }
+}
+
+impl SourceType {
+    /// Get the prefix for this source type (e.g., "msg" for Conversation)
+    pub fn prefix(&self) -> &'static str {
+        match self {
+            SourceType::Conversation => "msg",
+            SourceType::Document => "doc",
+            SourceType::Note => "note",
+            SourceType::Web => "web",
+        }
+    }
+
+    /// Parse a prefix string to SourceType
+    pub fn from_prefix(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "msg" | "conversation" => Some(SourceType::Conversation),
+            "doc" | "document" => Some(SourceType::Document),
+            "note" => Some(SourceType::Note),
+            "web" => Some(SourceType::Web),
+            _ => None,
+        }
+    }
 }
 
 impl Database {
@@ -198,6 +254,7 @@ impl Database {
                         timestamp: row.get(4)?,
                         score: row.get::<_, f32>(5)?,
                         search_type: SearchType::Keyword,
+                        source_type: SourceType::Conversation,
                         chunk_content: None,
                         chunk_start: None,
                         chunk_end: None,
@@ -229,6 +286,7 @@ impl Database {
                         timestamp: row.get(4)?,
                         score: row.get::<_, f32>(5)?,
                         search_type: SearchType::Keyword,
+                        source_type: SourceType::Conversation,
                         chunk_content: None,
                         chunk_start: None,
                         chunk_end: None,
@@ -258,6 +316,7 @@ impl Database {
                     timestamp: row.get(4)?,
                     score: row.get::<_, f32>(5)?,
                     search_type: SearchType::Keyword,
+                    source_type: SourceType::Conversation,
                     chunk_content: None,
                     chunk_start: None,
                     chunk_end: None,
@@ -317,6 +376,7 @@ impl Database {
                     role: row.get(2)?,
                     content: row.get(3)?,
                     timestamp: row.get(4)?,
+                    source_type: SourceType::Conversation,
                     score: row.get::<_, f32>(5)?,
                     search_type: SearchType::Semantic,
                     chunk_content: row.get(6)?,
@@ -345,6 +405,7 @@ impl Database {
                     role: row.get(2)?,
                     content: row.get(3)?,
                     timestamp: row.get(4)?,
+                    source_type: SourceType::Conversation,
                     score: row.get::<_, f32>(5)?,
                     search_type: SearchType::Semantic,
                     chunk_content: row.get(6)?,
@@ -473,6 +534,7 @@ impl Database {
                                 role: row.get(2)?,
                                 content: row.get(3)?,
                                 timestamp: row.get(4)?,
+                                source_type: SourceType::Conversation,
                                 score: 0.0,
                                 search_type: SearchType::Hybrid,
                                 chunk_content: None,
@@ -498,6 +560,7 @@ impl Database {
                                 role: row.get(2)?,
                                 content: row.get(3)?,
                                 timestamp: row.get(4)?,
+                                source_type: SourceType::Conversation,
                                 score: 0.0,
                                 search_type: SearchType::Hybrid,
                                 chunk_content: None,
@@ -565,6 +628,7 @@ impl Database {
                     role: row.get(2)?,
                     content: row.get(3)?,
                     timestamp: row.get(4)?,
+                    source_type: SourceType::Conversation,
                     score: 1.0,
                     search_type: SearchType::Keyword,
                     chunk_content: None,
@@ -616,6 +680,7 @@ impl Database {
                         timestamp: row.get(4)?,
                         score: 1.0,
                         search_type: SearchType::Keyword,
+                        source_type: SourceType::Conversation,
                         chunk_content: None,
                         chunk_start: None,
                         chunk_end: None,
@@ -724,6 +789,7 @@ impl Database {
                     role: row.get(2)?,
                     content: row.get(3)?,
                     timestamp: row.get(4)?,
+                    source_type: SourceType::Conversation,
                     score: 0.0,
                     search_type: SearchType::Hybrid,
                     chunk_content: None,
@@ -1043,6 +1109,7 @@ mod tests {
             role: "user".to_string(),
             content: content.to_string(),
             timestamp: 0,
+            source_type: SourceType::Conversation,
             score: 0.0,
             search_type: SearchType::Keyword,
             chunk_content: None,
