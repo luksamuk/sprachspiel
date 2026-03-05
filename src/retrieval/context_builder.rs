@@ -61,9 +61,9 @@ fn format_timestamp(timestamp: i64) -> String {
 fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
     let mut text = String::from("<retrieved_context>\n");
     text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n\n");
-    text.push_str("Each message has an ID. Use remember(id=\"N\") for full content or remember(query=\"topic\") to search.\n\n");
+    text.push_str("Each message has an ID. Use remember(id=\"msg:N\") for full content or remember(query=\"topic\") to search.\n\n");
     text.push_str("CITATIONS: When referencing retrieved content, include the source ID after the statement.\n");
-    text.push_str("- Conversations: [msg:N] or just [N]\n");
+    text.push_str("- Conversations: [msg:N]\n");
     text.push_str("- Documents: [doc:N]\n");
     text.push_str("- Notes: [note:N]\n\n");
     text.push_str("Example: \"As we discussed [msg:42], the project uses Rust.\"\n\n");
@@ -71,7 +71,7 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
     for msg in results {
         let timestamp = format_timestamp(msg.timestamp);
         text.push_str(&format!(
-            "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+            "<message id=\"msg:{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
             msg.message_id,
             msg.role,
             msg.content,
@@ -82,7 +82,7 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
         if let Some(ref answer) = msg.next_message {
             let answer_timestamp = format_timestamp(answer.timestamp);
             text.push_str(&format!(
-                "<message id=\"{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+                "<message id=\"msg:{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
                 answer.message_id,
                 answer.role,
                 answer.content,

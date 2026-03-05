@@ -8,27 +8,32 @@ use crate::db::SourceType;
 use crate::tools::context::{get_db, get_embedding};
 
 /// Parse a source ID into (SourceType, numeric_id)
-/// Supports both "42" and "msg:42" formats for backwards compatibility
+/// IDs must include source type prefix (e.g., "msg:42", "doc:13")
 fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
-    if id.contains(':') {
-        // Prefixed format: "msg:42", "doc:13", etc.
-        let parts: Vec<&str> = id.split(':').collect();
-        if parts.len() != 2 {
-            return Err(format!("Invalid ID format: {}. Expected 'type:number' (e.g., 'msg:42')", id));
-        }
-        
-        let source_type = SourceType::from_prefix(parts[0])
-            .ok_or_else(|| format!("Unknown source type: {}. Valid types: msg, doc, note, web", parts[0]))?;
-        
-        let numeric_id = parts[1].parse::<i64>()
-            .map_err(|e| format!("Invalid numeric ID '{}': {}", parts[1], e))?;
-        
-        Ok((source_type, numeric_id))
+    if let Some(pos) = id.find(':') {
+        let prefix = &id[..pos];
+        let num_str = &id[pos + 1..];
+
+        let source_type = SourceType::from_prefix(prefix).ok_or_else(|| {
+            format!(
+                "Unknown source type: '{}'. Valid types: msg, doc, note, web",
+                prefix
+            )
+        })?;
+
+        let num = num_str
+            .parse::<i64>()
+            .map_err(|e| format!("Invalid ID number: {}", e))?;
+
+        Ok((source_type, num))
     } else {
-        // Plain numeric ID - assume conversation for backwards compatibility
-        let numeric_id = id.parse::<i64>()
-            .map_err(|e| format!("Invalid message ID '{}': {}. Must be a number or prefixed ID (e.g., 'msg:42')", id, e))?;
-        Ok((SourceType::Conversation, numeric_id))
+        Err(format!(
+            "Invalid ID format: '{}'. Must include source type prefix.\n\
+             Use: remember(id=\"msg:42\") for conversations\n\
+             Use: remember(id=\"doc:13\") for documents\n\
+             Use: remember(id=\"note:7\") for notes",
+            id
+        ))
     }
 }
 
@@ -39,8 +44,9 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
 /// 2. Search for topics not in the current context (by query)
 ///
 /// # Arguments
-/// * `id` - ID of message to retrieve (from retrieved context). Optional.
-///   - Example: "42" to get message with id="42"
+/// * `id` - ID of message to retrieve (MUST include prefix). Optional.
+///   - Example: "msg:42" for conversation message
+///   - Example: "doc:13" for document (when implemented)
 /// * `query` - Search query for semantic search. Optional.
 ///   - Example: "Wittgenstein" to find messages about that topic
 /// * `limit` - Max results for query (default: 5, max: 10). Optional.
@@ -51,9 +57,9 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
 ///
 /// # Examples
 /// ```ignore
-/// remember(id="42")                           // Get message 42
-/// remember(query="Wittgenstein")              // Search for Wittgenstein
-/// remember(query="philosophy", limit="10")    // Search with limit
+/// remember(id="msg:42")              // Get conversation message 42
+/// remember(query="Wittgenstein")     // Search by topic
+/// remember(query="philosophy", limit="10")
 /// ```
 #[ollama_rs::function]
 pub async fn remember(
