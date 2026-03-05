@@ -75,7 +75,6 @@
 
 ### Medium Priority
 
-- Chat module integration (`/ocr`, `/vision`, `/translate` from chat)
 - File session state tracking
 - Skills system
 
