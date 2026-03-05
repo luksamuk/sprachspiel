@@ -2,6 +2,15 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.26.2] - 2026-03-05
+
+### Fixed
+
+- **remember() tool ID display** - Fixed missing source type prefix in search results
+  - IDs now properly display as `msg:N` instead of just `N`
+  - Affects query results, specific message retrieval, and error messages
+  - Prevents confusion when AI tries to use returned IDs in subsequent calls
+
 ## [0.26.1] - 2026-03-05
 
 ### Added
