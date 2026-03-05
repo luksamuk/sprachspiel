@@ -60,10 +60,16 @@
 
 ### High Priority
 
-- **Memory Enhancement** (Multi-phase)
+- **Memory Enhancement Part 1** (Phases 1-3)
   - Phase 1: Source Attribution ✅ Complete (v0.26.1)
   - Phase 2: Query Routing - Route queries to appropriate search targets
   - Phase 3: Timestamp Filtering - "what did I say yesterday?"
+
+- **Chat Module Integration** - `/ocr`, `/vision`, `/translate`, `/summarize` from chat
+  - Required dependency for Memory Enhancement Part 2
+  - OCR/Vision needed to process scanned documents
+
+- **Memory Enhancement Part 2** (Phases 4-5) - Blocked by Chat Module Integration
   - Phase 4: Schema Preparation - Multi-source support (docs, notes)
   - Phase 5: Document Ingestion - PDF/markdown indexing
 

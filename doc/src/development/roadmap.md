@@ -109,7 +109,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 ## High Priority
 
-### Memory Enhancement (Multi-Phase)
+### Memory Enhancement Part 1 (Phases 1-3)
 
 **Priority:** HIGH  
 **Status:** Phase 1 Complete, Phase 2 Research Needed
@@ -181,6 +181,74 @@ This is a multi-phase enhancement to our RAG capabilities, broken into small del
 - [ ] Test: "o que eu falei ontem" returns only yesterday's messages
 
 **See:** `src/db/operations.rs`
+
+---
+
+### Chat Module Integration
+
+**Priority:** HIGH  
+**Status:** Planning needed
+
+**Problem:** Users must exit chat to use OCR, Vision, Translate, Summarize features.
+
+**Proposed Features:**
+- `/ocr <image>` - Run OCR from chat
+- `/vision <image>` - Analyze image
+- `/translate <lang> <text>` - Translate
+- `/summarize [text]` - Summarize
+
+**Context Integration:**
+- Module outputs should be contextualized
+- Model should understand extracted text as conversation context
+
+**Why High Priority:**
+- Required dependency for Memory Enhancement Part 2 (document ingestion)
+- OCR/Vision needed to process scanned documents and images
+- Significantly improves user workflow (no need to exit chat)
+
+**Streaming Consideration:**
+
+Currently, chat uses non-streaming `send_chat_messages()`. To add streaming:
+
+```rust
+// Current approach (non-streaming)
+let response = coordinator.chat(messages).await?;
+
+// Streaming approach (future)
+let mut stream = ollama.send_chat_messages_stream(request).await?;
+while let Some(chunk) = stream.next().await {
+    let chunk = chunk?;
+    
+    // Real-time content
+    print!("{}", chunk.message.content);
+    
+    // Thinking for reasoning models (DeepSeek R1, etc.)
+    if let Some(thinking) = &chunk.message.thinking {
+        // Display thinking separately
+    }
+}
+```
+
+**Tasks:**
+- [ ] Design: Command interface
+- [ ] Design: Model switching during commands
+- [ ] Implement: `/ocr` command
+- [ ] Implement: `/vision` command
+- [ ] Implement: `/translate` command
+- [ ] Document: Chat module commands
+
+---
+
+### Memory Enhancement Part 2 (Phases 4-5)
+
+**Priority:** HIGH  
+**Status:** Blocked by Chat Module Integration
+
+**Goal:** Extend memory system to support documents and notes.
+
+**Dependencies:**
+- Chat Module Integration (for OCR/Vision to process scanned documents)
+- Memory Enhancement Part 1 (source attribution foundation)
 
 #### Phase 4: Schema Preparation (1-2 days)
 
@@ -431,62 +499,6 @@ RAG system as chat mode, but without persisting new messages.
 ---
 
 ## Medium Priority
-
-### Chat Module Integration
-
-**Priority:** Medium  
-**Status:** Planning needed
-
-**Problem:** Users must exit chat to use OCR, Vision, Translate, Summarize features.
-
-**Proposed Features:**
-- `/ocr <image>` - Run OCR from chat
-- `/vision <image>` - Analyze image
-- `/translate <lang> <text>` - Translate
-- `/summarize [text]` - Summarize
-
-**Context Integration:**
-- Module outputs should be contextualized
-- Model should understand extracted text as conversation context
-
-**Tasks:**
-- [ ] Design: Command interface
-- [ ] Design: Model switching during commands
-- [ ] Implement: `/ocr` command
-- [ ] Implement: `/vision` command
-- [ ] Implement: `/translate` command
-- [ ] Document: Chat module commands
-
-**Streaming Consideration:**
-
-Currently, chat uses non-streaming `send_chat_messages()`. To add streaming:
-
-```rust
-// Current approach (non-streaming)
-let response = coordinator.chat(messages).await?;
-
-// Streaming approach (future)
-let mut stream = ollama.send_chat_messages_stream(request).await?;
-while let Some(chunk) = stream.next().await {
-    let chunk = chunk?;
-    
-    // Real-time content
-    print!("{}", chunk.message.content);
-    
-    // Thinking for reasoning models (DeepSeek R1, etc.)
-    if let Some(thinking) = &chunk.message.thinking {
-        // Display thinking separately
-    }
-}
-```
-
-**Challenges for Streaming in Current CLI:**
-- `termimad` (current markdown renderer) is synchronous/line-based
-- Block-buffered rendering creates latency between blocks
-- Plain text during stream loses markdown formatting
-- Best experience requires TUI with incremental frame rendering
-
----
 
 ### File Session State
 
