@@ -2,6 +2,34 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.26.1] - 2026-03-05
+
+### Added
+
+- **Centralized String Constants Module** - `src/consts/`
+  - `roles.rs` - Message role constants (`ROLE_USER`, `ROLE_ASSISTANT`, `ROLE_SYSTEM`, `ROLE_TOOL`)
+  - `api.rs` - API URL constants (`OPEN_METEO_BASE`, `OPEN_METEO_GEOCODING`, `SERPER_API_URL`)
+  - Helper functions: `format_role_label()`, `format_role_label_md()`
+
+- **AGENTS.md Guidelines** - New "Constants and String Management" section
+  - Rules for preventing string duplication
+  - Categories of regulated strings (roles, source prefixes, API URLs)
+  - Checklist for adding new string literals
+  - Policy for rejecting `#[allow(dead_code)]` on constants
+
+### Changed
+
+- **Refactored 11 files to use centralized constants**
+  - `retrieval/context_builder.rs` - Use `SourceType::prefix()` dynamically
+  - `tools/remember.rs` - Use `format_role_label()` and role constants
+  - `retrieval/search.rs` - Use `format_role_label_md()`
+  - `tools/weather.rs` - Use `OPEN_METEO_BASE/GEOCODING` constants
+  - `tools/serper.rs` - Use `SERPER_API_URL` constant
+  - `db/operations.rs` - Use `ROLE_USER/ASSISTANT` constants
+  - `db/migration.rs` - Use role constants
+  - `chat/session.rs` - Use `ROLE_USER/ASSISTANT` constants
+  - Test files updated accordingly
+
 ## [0.26.0] - 2026-03-04
 
 ### Added
