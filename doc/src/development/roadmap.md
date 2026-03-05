@@ -455,6 +455,35 @@ RAG system as chat mode, but without persisting new messages.
 - [ ] Implement: `/translate` command
 - [ ] Document: Chat module commands
 
+**Streaming Consideration:**
+
+Currently, chat uses non-streaming `send_chat_messages()`. To add streaming:
+
+```rust
+// Current approach (non-streaming)
+let response = coordinator.chat(messages).await?;
+
+// Streaming approach (future)
+let mut stream = ollama.send_chat_messages_stream(request).await?;
+while let Some(chunk) = stream.next().await {
+    let chunk = chunk?;
+    
+    // Real-time content
+    print!("{}", chunk.message.content);
+    
+    // Thinking for reasoning models (DeepSeek R1, etc.)
+    if let Some(thinking) = &chunk.message.thinking {
+        // Display thinking separately
+    }
+}
+```
+
+**Challenges for Streaming in Current CLI:**
+- `termimad` (current markdown renderer) is synchronous/line-based
+- Block-buffered rendering creates latency between blocks
+- Plain text during stream loses markdown formatting
+- Best experience requires TUI with incremental frame rendering
+
 ---
 
 ### File Session State
@@ -623,6 +652,109 @@ User-defined tools via dynamic loading or compilation.
 - [ ] Prototype: Basic TUI skeleton
 - [ ] Test: Termux compatibility
 - [ ] Document: TUI user guide
+
+**Streaming Considerations:**
+
+The `ollama-rs` library (already included with `stream` feature) supports streaming chat completions:
+
+```rust
+// Streaming API from ollama-rs
+pub async fn send_chat_messages_stream(
+    &self,
+    request: ChatMessageRequest,
+) -> Result<ChatMessageResponseStream>
+
+// ChatMessage includes thinking field for reasoning models
+pub struct ChatMessage {
+    pub role: MessageRole,
+    pub content: String,
+    pub thinking: Option<String>,  // DeepSeek R1, etc.
+    pub tool_calls: Vec<ToolCall>,
+    pub images: Option<Vec<Image>>,
+}
+
+// Consuming the stream
+while let Some(chunk_result) = stream.next().await {
+    let chunk = chunk_result?;
+    // Incremental content
+    print!("{}", chunk.message.content);
+    // Thinking (if available)
+    if let Some(thinking) = &chunk.message.thinking {
+        // Display thinking in real-time
+    }
+}
+```
+
+**Implementation Approach for Streaming:**
+
+Option A: Accumulate and render blocks
+- Buffer incoming content
+- Render when block delimiter received (double newline)
+- Latency between blocks visible to user
+
+Option B: Plain text during stream + markdown at end
+- Stream raw text for responsiveness
+- Render full markdown when stream completes
+- Less visually appealing during stream
+
+Option C: TUI with incremental rendering (recommended for TUI mode)
+- Use Ratatui's frame-based rendering
+- Update buffer on each chunk
+- Render complete frame efficiently
+- Thinking pane separated from response pane
+
+**Markdown Rendering in TUI:**
+
+The `tui-markdown` crate solves markdown rendering for Ratatui:
+
+```rust
+use tui_markdown::from_str;
+
+let markdown = r#"
+# Heading
+- List item 1
+- List item 2
+
+```rust
+fn main() {
+    println!("Hello, world!");
+}
+```
+"#;
+
+let text = from_str(markdown);  // Returns ratatui::text::Text
+frame.render_widget(text, frame.area());
+```
+
+Features:
+- Uses `pulldown-cmark` for markdown parsing
+- Converts to `ratatui::text::Text` with styles
+- Syntax highlighting via `highlight-code` feature (uses syntect)
+- Works with incremental updates
+
+**TUI Layout for Streaming:**
+
+```
+┌─────────────────────────────────────────────────┐
+│ 💭 Thinking                                     │
+│ [thinking content streams here in real-time]     │
+│ [dimmed style for thinking]                     │
+├─────────────────────────────────────────────────┤
+│ 🤖 Assistant                                    │
+│ [response content streams here]                  │
+│ **bold**, `code`, lists rendered via            │
+│ tui-markdown                                     │
+│                                                  │
+│ [scrolls as content grows]                      │
+└─────────────────────────────────────────────────┘
+```
+
+**Key Advantage of TUI for Streaming:**
+- Thinking pane separated from response pane
+- Incremental updates per frame (no flickering)
+- User can scroll back through history
+- Interrupt with Ctrl+C or 'q' key
+- State persists between messages
 
 ---
 

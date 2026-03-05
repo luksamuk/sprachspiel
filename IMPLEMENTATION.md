@@ -56,7 +56,7 @@
 - Project-aware query mode - v0.25.0
 - `/clear` and `/forget` commands for session management - v0.22.5
 
-📋 **Planned:**
+ 📋 **Planned:**
 
 ### High Priority
 
@@ -77,6 +77,36 @@
 
 - Plugin system
 - TUI (Terminal User Interface) with Ratatui-rs
+
+## Streaming Architecture (Future)
+
+The `ollama-rs` library (already included with `stream` feature) provides streaming capabilities:
+
+```rust
+// Streaming API
+pub async fn send_chat_messages_stream(
+    &self,
+    request: ChatMessageRequest,
+) -> Result<ChatMessageResponseStream>
+
+// ChatMessage includes thinking content
+pub struct ChatMessage {
+    pub content: String,
+    pub thinking: Option<String>,  // For DeepSeek R1, etc.
+    // ...
+}
+```
+
+**Current Status:** Non-streaming only (`send_chat_messages()`)
+**Streaming Path:** `send_chat_messages_stream()` or `send_chat_messages_with_history_stream()`
+
+**Implementation Considerations:**
+
+1. **CLI Mode (current):** `termimad` is synchronous, requires block buffering
+2. **TUI Mode (future):** Ratatui supports incremental rendering via `tui-markdown`
+3. **Thinking Display:** Separate pane in TUI, inline dimmed text in CLI
+
+See: `doc/src/development/roadmap.md` - TUI section for detailed streaming approach
 
 ## Documentation
 
