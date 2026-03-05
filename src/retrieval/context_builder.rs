@@ -70,8 +70,10 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
     
     for msg in results {
         let timestamp = format_timestamp(msg.timestamp);
+        let prefix = msg.source_type.prefix();
         text.push_str(&format!(
-            "<message id=\"msg:{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+            "<message id=\"{}:{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+            prefix,
             msg.message_id,
             msg.role,
             msg.content,
@@ -81,8 +83,10 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
         // If user message has an assistant response, include it
         if let Some(ref answer) = msg.next_message {
             let answer_timestamp = format_timestamp(answer.timestamp);
+            let answer_prefix = answer.source_type.prefix();
             text.push_str(&format!(
-                "<message id=\"msg:{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+                "<message id=\"{}:{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+                answer_prefix,
                 answer.message_id,
                 answer.role,
                 answer.content,
