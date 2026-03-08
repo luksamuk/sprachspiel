@@ -525,7 +525,10 @@ pub async fn run_chat_repl(
                                         .await
                                         {
                                             Ok(result) => {
-                                                session.add_assistant_message(result.response);
+                                                session.add_assistant_message(
+                                                    result.response,
+                                                    Some(result.metrics.prompt_tokens),
+                                                );
 
                                                 if result.metrics.total_tokens > 0 {
                                                     eprintln!(
@@ -740,7 +743,10 @@ pub async fn run_chat_repl(
                 .await
                 {
                     Ok(result) => {
-                        session.add_assistant_message(result.response);
+                        session.add_assistant_message(
+                            result.response,
+                            Some(result.metrics.prompt_tokens),
+                        );
 
                         if result.metrics.total_tokens > 0 {
                             eprintln!(
@@ -1254,7 +1260,7 @@ fn print_context_info(
             .with_blacklist(Some(&blacklist_set))
             .with_agents_md(agents_md)
             .with_tools(tools_enabled)
-            .with_retrieval(false),
+            .with_retrieval(session.retrieval_enabled),
     );
     
     let history_messages = session.get_messages_for_llm(&system_prompt);
@@ -1266,10 +1272,19 @@ fn print_context_info(
         0
     };
     
+    const TOKENS_PER_TOOL: usize = 50;
     let tools_tokens = if tools_enabled && tool_count > 0 {
-        tool_count * 20
+        tool_count * TOKENS_PER_TOOL
     } else {
         0
+    };
+    
+    // Get real token count from history (if available)
+    let real_history_tokens = session.history_real_tokens();
+    let real_tokens_opt = if real_history_tokens > 0 {
+        Some(real_history_tokens)
+    } else {
+        None
     };
     
     let metrics = calculate_context_metrics(
@@ -1277,6 +1292,7 @@ fn print_context_info(
         context_window,
         &system_prompt,
         tools_tokens,
+        real_tokens_opt,
     );
     
     let context_window_k = context_window / 1024;

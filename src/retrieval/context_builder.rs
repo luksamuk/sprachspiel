@@ -583,6 +583,7 @@ mod tests {
                 role: if i % 2 == 0 { MessageRole::User } else { MessageRole::Assistant },
                 content: format!("Test message {} content", i),
                 timestamp: Utc::now(),
+                ..Default::default()
             });
         }
 

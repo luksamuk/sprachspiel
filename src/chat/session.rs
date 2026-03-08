@@ -124,6 +124,20 @@ pub struct SavedMessage {
     pub role: MessageRole,
     pub content: String,
     pub timestamp: DateTime<Utc>,
+    /// Prompt tokens used in this interaction (real count from Ollama)
+    #[serde(default)]
+    pub prompt_tokens: Option<u64>,
+}
+
+impl Default for SavedMessage {
+    fn default() -> Self {
+        Self {
+            role: MessageRole::User,
+            content: String::new(),
+            timestamp: Utc::now(),
+            prompt_tokens: None,
+        }
+    }
 }
 
 /// Message role
@@ -201,6 +215,7 @@ impl ChatSession {
             role: MessageRole::User,
             content: content.clone(),
             timestamp: now,
+            ..Default::default()
         });
         self.updated_at = now;
         
@@ -285,7 +300,7 @@ impl ChatSession {
     /// 
     /// If database is attached, saves to SQLite immediately.
     /// Applies chunking for long messages (>1024 chars).
-    pub fn add_assistant_message(&mut self, content: String) {
+    pub fn add_assistant_message(&mut self, content: String, prompt_tokens: Option<u64>) {
         let now = Utc::now();
         
         // Add to memory (immediate)
@@ -293,6 +308,8 @@ impl ChatSession {
             role: MessageRole::Assistant,
             content: content.clone(),
             timestamp: now,
+            prompt_tokens,
+            ..Default::default()
         });
         self.updated_at = now;
         
@@ -522,6 +539,16 @@ impl ChatSession {
         self.messages_sent_to_llm
     }
 
+    /// Get real token count from historical messages (sum of prompt_tokens)
+    /// This uses actual token counts from Ollama responses when available
+    pub fn history_real_tokens(&self) -> usize {
+        self.messages
+            .iter()
+            .filter_map(|m| m.prompt_tokens)
+            .map(|t| t as usize)
+            .sum()
+    }
+
     /// Get messages to send to LLM (summary + recent messages)
     pub fn get_messages_for_llm(&self, system_prompt: &str) -> Vec<ChatMessage> {
         let mut messages = Vec::new();
@@ -635,6 +662,7 @@ mod tests {
             role: MessageRole::User,
             content: "Test message".into(),
             timestamp: Utc::now(),
+            ..Default::default()
         });
         session.set_compacted_summary_with_range("Summary of conversation".into(), Some((0, 1)));
         
@@ -660,6 +688,7 @@ mod tests {
             role: MessageRole::User,
             content: "Test message".into(),
             timestamp: Utc::now(),
+            ..Default::default()
         });
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
         
@@ -684,8 +713,9 @@ mod tests {
         // Add messages and summary
         session.messages.push(SavedMessage {
             role: MessageRole::User,
-            content: "Message 1".into(),
+            content: "Test message".into(),
             timestamp: Utc::now(),
+            ..Default::default()
         });
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
         
@@ -699,6 +729,7 @@ mod tests {
             role: MessageRole::User,
             content: "Message 2".into(),
             timestamp: Utc::now(),
+            ..Default::default()
         });
         
         // Test forget_session clears everything

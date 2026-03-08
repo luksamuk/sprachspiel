@@ -128,7 +128,7 @@ fn test_calculate_context_metrics_basic() {
         ChatMessage::user("hello world".to_string()),
         ChatMessage::assistant("hi there".to_string()),
     ];
-    let metrics = calculate_context_metrics(&messages, 4096, "You are helpful.", 100);
+    let metrics = calculate_context_metrics(&messages, 4096, "You are helpful.", 100, None);
     assert!(metrics.system_tokens > 0);
     assert!(metrics.tools_tokens > 0);
     assert!(metrics.history_tokens > 0);
@@ -177,7 +177,7 @@ fn test_count_messages_tokens_single() {
 
 #[test]
 fn test_utilization_calculation() {
-    let metrics = calculate_context_metrics(&[], 1000, "test", 0);
+    let metrics = calculate_context_metrics(&[], 1000, "test", 0, None);
     let ratio = metrics.total_tokens as f32 / metrics.context_window as f32;
     assert!((metrics.utilization - ratio).abs() < 0.001);
 }
@@ -185,7 +185,7 @@ fn test_utilization_calculation() {
 #[test]
 fn test_available_tokens_calculation() {
     let messages = vec![ChatMessage::user("test".to_string())];
-    let metrics = calculate_context_metrics(&messages, 4096, "system prompt", 0);
+    let metrics = calculate_context_metrics(&messages, 4096, "system prompt", 0, None);
     assert_eq!(
         metrics.available(),
         metrics.context_window.saturating_sub(metrics.total_tokens)

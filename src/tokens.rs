@@ -73,14 +73,18 @@ impl ContextMetrics {
 /// * `context_window` - Maximum context window size in tokens
 /// * `system_prompt` - System prompt text
 /// * `tools_tokens` - Estimated tokens for tool definitions
+/// * `real_history_tokens` - Optional real token count from Ollama (if available)
 pub fn calculate_context_metrics(
     history_messages: &[ChatMessage],
     context_window: usize,
     system_prompt: &str,
     tools_tokens: usize,
+    real_history_tokens: Option<usize>,
 ) -> ContextMetrics {
     let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
-    let history_tokens = count_messages_tokens(history_messages);
+    // Use real tokens if available, otherwise estimate
+    let history_tokens =
+        real_history_tokens.unwrap_or_else(|| count_messages_tokens(history_messages));
     let total_tokens = system_tokens
         .saturating_add(tools_tokens)
         .saturating_add(history_tokens);
@@ -190,7 +194,7 @@ mod tests {
             ChatMessage::user("hello world".to_string()),
             ChatMessage::assistant("hi there".to_string()),
         ];
-        let metrics = calculate_context_metrics(&messages, 4096, "You are helpful.", 100);
+        let metrics = calculate_context_metrics(&messages, 4096, "You are helpful.", 100, None);
         assert_eq!(metrics.system_tokens, 8);
         assert_eq!(metrics.tools_tokens, 100);
         assert_eq!(metrics.history_tokens, 14);
@@ -201,7 +205,7 @@ mod tests {
     #[test]
     fn test_calculate_context_metrics_empty() {
         let messages: Vec<ChatMessage> = Vec::new();
-        let metrics = calculate_context_metrics(&messages, 4096, "", 0);
+        let metrics = calculate_context_metrics(&messages, 4096, "", 0, None);
         assert_eq!(metrics.system_tokens, 4);
         assert_eq!(metrics.history_tokens, 0);
         assert_eq!(metrics.total_tokens, 4);

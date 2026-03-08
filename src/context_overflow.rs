@@ -266,6 +266,7 @@ mod tests {
                 },
                 content: format!("Message {} content here with some tokens to count", i),
                 timestamp: Utc::now(),
+                ..Default::default()
             });
         }
 
