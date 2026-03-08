@@ -107,6 +107,124 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 ---
 
+## Critical (Bugs & Hotfixes)
+
+**Status:** Under Analysis
+
+These items represent critical bugs that must be fixed before any new features.
+
+### Context Token Count Mismatch
+
+**Status:** Under Analysis
+
+**Problem:** The token count shown after each Ollama response (`prompt_eval_count`) differs significantly from `/context` command output.
+
+**Observation:**
+- After each message: Shows actual tokens sent to Ollama (e.g., 13379 tokens)
+- `/context` command: Shows only ~2970 tokens (2% utilization)
+
+**Root Cause (suspected):**
+1. Retrieval context not included in `/context` calculation (~200 tokens)
+2. Tool definitions not accurately counted
+3. Message overhead (role tags, etc.) not fully accounted for
+
+**Impact:** User trust issues - cannot rely on context metrics for compaction decisions. May lead to unexpected context overflow.
+
+**See:** `src/tokens.rs`, `src/chat/repl.rs:print_context_info()`
+
+---
+
+### Context Builder Panic After /compact
+
+**Status:** Under Analysis
+
+**Problem:**
+```
+thread 'main' panicked at src/retrieval/context_builder.rs:318:51:
+range start index 2 out of range for slice of length 1
+```
+
+**Trigger:** Occurs after running `/compact` command manually.
+
+**Impact:** Application crash, potential data loss.
+
+**Suspected Cause:** Incorrect range calculation in middle compaction logic when message count is low.
+
+**See:** `src/retrieval/context_builder.rs`
+
+---
+
+### /undo Incomplete Cleanup
+
+**Status:** Under Analysis
+
+**Problem:** Need to verify that `/undo` properly removes:
+- User prompt from history
+- Assistant response from history
+- All associated embeddings for both messages
+
+**Impact:** Incomplete undo can lead to duplicate content in retrieval.
+
+---
+
+### User Prompt Included in Hybrid Search
+
+**Status:** Under Analysis
+
+**Problem:** The most recent user message is being included in hybrid search queries.
+
+**Expected behavior:** Only past messages (not the current user prompt) should be searched, since:
+1. The LLM already has the current prompt
+2. Including it wastes search tokens
+3. It may skew relevance rankings
+
+**Impact:** Wasted tokens, potentially irrelevant retrieval results.
+
+---
+
+### Code Mode (-c Flag) Not Working
+
+**Status:** Under Analysis
+
+**Problem:** The `-c` (code mode) parameter is not being passed correctly to the LLM. Debug output shows it's using query mode instead.
+
+**Expected behavior:** Code mode should set concise/instructional system prompt.
+
+**Impact:** User experience - code mode appears broken.
+
+---
+
+### Premature Message Saving
+
+**Status:** Proposed Solution
+
+**Problem:** When user sends a message, it's only saved after the LLM responds. If the process is interrupted (Ctrl+C), the user message is lost.
+
+**Proposed Solution:**
+1. Save user message immediately when sent
+2. Use async embeddings (already implemented for recovery)
+3. Mark messages as "pending indexing" until embeddings are ready
+
+**Impact:** Data loss prevention.
+
+---
+
+### Legacy "conversations" Folder
+
+**Status:** Proposed Solution
+
+**Problem:** The `conversations/` folder still contains JSON files even though SQLite is now the primary storage.
+
+**Proposed Solution:**
+1. Deprecate conversations folder
+2. Migrate any remaining data to SQLite
+3. Remove legacy code
+4. Rely solely on SQLite queries
+
+**Benefit:** Simplified codebase, reduced storage duplication.
+
+---
+
 ## High Priority
 
 ### Memory Enhancement Part 1 (Phases 1-3)
@@ -498,6 +616,77 @@ RAG system as chat mode, but without persisting new messages.
 
 ---
 
+### SOUL.md Support (Personality System)
+
+**Priority:** HIGH  
+**Status:** Research Needed
+
+**Goal:** Support for `SOUL.md` file to define LLM personality and modus operandi.
+
+**Research Required:**
+1. What is SOUL.md? Structure and format used by other agents
+2. How to handle comments in the file (likely should be ignored)
+3. Where is it injected in the system prompt?
+4. Impact on context usage
+5. Can it replace parts of existing chat/query prompts?
+
+**Proposed Implementation:**
+1. Create template in config folder: `~/.config/ask-ai/SOUL.md`
+2. Add config option: `soul_file = "path/to/SOUL.md"` (default: config folder)
+3. Inject content after personality prefix
+4. Deprecate Pepe personality (move to `SOUL-pepe.md`)
+
+**Tasks:**
+- [ ] Research: SOUL.md format in other agents
+- [ ] Research: Best injection point in system prompt
+- [ ] Design: Config option for custom SOUL.md path
+- [ ] Implement: SOUL.md file loading
+- [ ] Implement: Inject into system prompt
+- [ ] Deprecate: Pepe personality (optional, move to SOUL-pepe.md)
+
+---
+
+### Smart Model List (Installed Only)
+
+**Priority:** MEDIUM  
+**Status:** Proposed
+
+**Goal:** Show only installed/available models in listings and validate model availability on startup.
+
+**Current Problem:**
+- `ask-ai -l` shows all configured models, not just installed ones
+- No validation when switching models
+- May fail with network errors during chat
+
+**Proposed Behavior:**
+1. List command: Filter to only show models found in `ollama list`
+2. Model switch: Validate model exists before switching
+3. Chat startup (no model specified): 
+   - If default not available, try fallback chain
+   - If no models available, show error but allow commands only
+4. Mode indicators show "[none]" when no model loaded
+
+**Example:**
+```
+$ ask chat -m hermes4:14b
+Warning: hermes4:14b not installed. Falling back to qwen3.5:9b.
+Warning: qwen3.5:9b not installed and is default. Commands only - no model.
+
+none> /model qwen3.5:27b
+Model loaded.
+
+qwen3.5:27b[t][T]>
+```
+
+**Tasks:**
+- [ ] Implement: `is_model_installed(model_id)` function
+- [ ] Modify: `/list` command to filter installed models
+- [ ] Modify: Model switch to validate before loading
+- [ ] Modify: Chat startup with fallback chain
+- [ ] Add: "[none]" mode indicator
+
+---
+
 ## Medium Priority
 
 ### File Session State
@@ -542,6 +731,34 @@ struct FileSessionState {
 - [ ] Research: Secure command execution
 - [ ] Design: Whitelist configuration
 - [ ] Implement: Security constraints
+
+---
+
+### SQL ORM Evaluation
+
+**Priority:** MEDIUM  
+**Status:** Research Needed
+
+**Goal:** Evaluate migration from raw SQL to ORM for type safety and maintainability.
+
+**Concerns:**
+- Current raw SQL may have dialect issues across SQLite versions
+- ORM would provide type safety for queries
+- But: May increase binary size
+- But: May complicate FTS5 search (need raw SQL for performance)
+
+**Proposed Approach:**
+- Keep raw SQL for FTS5 and complex queries (performance critical)
+- Use ORM (e.g., `sqlx` or `sea-orm`) for:
+  - Conversation retrieval
+  - Message CRUD
+  - Session management
+
+**Tasks:**
+- [ ] Research: `sqlx` vs `sea-orm` trade-offs
+- [ ] Benchmark: Binary size impact
+- [ ] Prototype: ORM for simple queries
+- [ ] Migrate: Non-critical SQL to ORM
 
 ---
 
@@ -620,6 +837,40 @@ curl -fsSL https://ollama.com/install.sh | sh
 **Status:** Not started
 
 User-defined tools via dynamic loading or compilation.
+
+---
+
+### OpenAPI Compatibility (Direct API Access)
+
+**Priority:** LOW  
+**Status:** Research Needed
+
+**Goal:** Support direct interaction with OpenAI-compatible APIs (not just Ollama).
+
+**Rationale:**
+- Ollama is convenient but limited in flexibility
+- LM Studio offers more parameter control
+- OpenAI API provides cloud alternatives
+- Remove dependency on Ollama-specific features
+
+**Research Required:**
+- Identify OpenAI-compatible endpoints needed
+- Evaluate `openai` crate vs custom HTTP client
+- Determine config changes needed
+- Assess impact on tool integration
+
+**Proposed Implementation:**
+1. Add config option: `provider = "ollama" | "openai" | "lm-studio"`
+2. Create trait for LLM providers
+3. Implement Ollama as default (current behavior)
+4. Add OpenAI/LM Studio provider implementations
+
+**Tasks:**
+- [ ] Research: Required API endpoints
+- [ ] Design: Provider trait/interface
+- [ ] Implement: OpenAI provider
+- [ ] Implement: LM Studio provider
+- [ ] Config: Add provider option
 
 ---
 
