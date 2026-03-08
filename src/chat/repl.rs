@@ -570,12 +570,22 @@ pub async fn run_chat_repl(
                                     continue;
                                 }
                                 CommandResult::Undo => {
-                                    // Remove last assistant messages
-                                    let removed = session.remove_last_assistant_messages();
+                                    // Remove last assistant messages (includes preceding user message)
+                                    let (removed, _) = session.remove_last_assistant_messages_with_content();
                                     if removed > 0 {
-                                        println!("Removed {} assistant message(s).", removed);
+                                        // Also delete from database if not anonymous
+                                        if !session.anonymous && !session.id.is_empty() {
+                                            if let Ok(db) = crate::db::Database::new() {
+                                                if let Err(e) = db.delete_last_messages(&session.id, removed) {
+                                                    eprintln!("Warning: Failed to delete from database: {}", e);
+                                                } else {
+                                                    println!("Removed {} message(s) from database.", removed);
+                                                }
+                                            }
+                                        }
+                                        println!("Removed {} message(s) from session.", removed);
                                     } else {
-                                        println!("No assistant messages to remove.");
+                                        println!("No messages to remove.");
                                     }
 
                                     // Get and display the last user message

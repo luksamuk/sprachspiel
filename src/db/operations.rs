@@ -182,6 +182,109 @@ impl Database {
         })
     }
 
+    /// Delete a message and all its associated data (embeddings, chunks)
+    /// This is used by /undo command to clean up properly
+    pub fn delete_message(&self, message_id: i64) -> Result<()> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            // Delete from message_embeddings (vec0 requires special handling)
+            conn.execute(
+                "DELETE FROM message_embeddings WHERE message_id = ?1",
+                params![message_id],
+            )?;
+
+            // Get chunk IDs for this message before deleting chunks
+            let chunk_ids: Vec<i64> = {
+                let mut stmt =
+                    conn.prepare("SELECT id FROM message_chunks WHERE message_id = ?1")?;
+                stmt.query_map(params![message_id], |row| row.get(0))?
+                    .filter_map(|r| r.ok())
+                    .collect()
+            };
+
+            // Delete chunk embeddings
+            for chunk_id in &chunk_ids {
+                conn.execute(
+                    "DELETE FROM chunk_embeddings WHERE chunk_id = ?1",
+                    params![chunk_id],
+                )?;
+            }
+
+            // Delete message chunks
+            conn.execute(
+                "DELETE FROM message_chunks WHERE message_id = ?1",
+                params![message_id],
+            )?;
+
+            // Delete the message itself
+            conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])?;
+
+            Ok(())
+        })
+    }
+
+    /// Delete the last N messages from a conversation (used by /undo)
+    /// Returns the number of messages actually deleted
+    pub fn delete_last_messages(&self, conversation_id: &str, count: usize) -> Result<usize> {
+        if count == 0 {
+            return Ok(0);
+        }
+
+        self.with_connection(|conn: &rusqlite::Connection| {
+            // Get the IDs of the last N messages
+            let message_ids: Vec<i64> = {
+                let mut stmt = conn.prepare(
+                    "SELECT id FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT ?2"
+                )?;
+                stmt.query_map(params![conversation_id, count as i64], |row| row.get(0))?
+                    .filter_map(|r| r.ok())
+                    .collect()
+            };
+            
+            // Delete embeddings and chunks for each message
+            for msg_id in &message_ids {
+                // Delete message embeddings
+                conn.execute(
+                    "DELETE FROM message_embeddings WHERE message_id = ?1",
+                    params![msg_id],
+                )?;
+                
+                // Get chunk IDs
+                let chunk_ids: Vec<i64> = {
+                    let mut stmt = conn.prepare(
+                        "SELECT id FROM message_chunks WHERE message_id = ?1"
+                    )?;
+                    stmt.query_map(params![msg_id], |row| row.get(0))?
+                        .filter_map(|r| r.ok())
+                        .collect()
+                };
+                
+                // Delete chunk embeddings
+                for chunk_id in &chunk_ids {
+                    conn.execute(
+                        "DELETE FROM chunk_embeddings WHERE chunk_id = ?1",
+                        params![chunk_id],
+                    )?;
+                }
+                
+                // Delete chunks
+                conn.execute(
+                    "DELETE FROM message_chunks WHERE message_id = ?1",
+                    params![msg_id],
+                )?;
+            }
+            
+            // Delete messages
+            let deleted = conn.execute(
+                "DELETE FROM messages WHERE conversation_id = ?1 AND id IN (
+                    SELECT id FROM messages WHERE conversation_id = ?1 ORDER BY timestamp DESC LIMIT ?2
+                )",
+                params![conversation_id, count as i64],
+            )?;
+            
+            Ok(deleted)
+        })
+    }
+
     /// Update a message with its embedding
     pub fn update_message_embedding(
         &self,

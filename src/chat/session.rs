@@ -464,19 +464,38 @@ impl ChatSession {
     /// Remove the last assistant message(s) for retry functionality
     /// Returns the number of messages removed
     pub fn remove_last_assistant_messages(&mut self) -> usize {
+        self.remove_last_assistant_messages_with_content().0
+    }
+
+    /// Remove the last assistant message(s) and return content for cleanup
+    /// Returns (count, Vec of assistant message contents)
+    pub fn remove_last_assistant_messages_with_content(&mut self) -> (usize, Vec<String>) {
         let mut removed = 0;
+        let mut contents = Vec::new();
+        
         while let Some(last) = self.messages.last() {
             if last.role == MessageRole::Assistant {
+                contents.push(last.content.clone());
                 self.messages.pop();
                 removed += 1;
             } else {
                 break;
             }
         }
+        
+        // Also remove the preceding user message
+        if let Some(last) = self.messages.last() {
+            if last.role == MessageRole::User {
+                contents.push(last.content.clone());
+                self.messages.pop();
+                removed += 1;
+            }
+        }
+        
         if removed > 0 {
             self.updated_at = Utc::now();
         }
-        removed
+        (removed, contents)
     }
 
     /// Get the last user message (for retry functionality)
