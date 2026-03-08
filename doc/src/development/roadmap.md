@@ -115,28 +115,34 @@ These items represent critical bugs that must be fixed before any new features.
 
 ### Context Token Count Mismatch
 
-**Status:** Under Analysis
+**Status:** ✅ FIXED (v0.26.2)
 
 **Problem:** The token count shown after each Ollama response (`prompt_eval_count`) differs significantly from `/context` command output.
 
-**Observation:**
-- After each message: Shows actual tokens sent to Ollama (e.g., 13379 tokens)
-- `/context` command: Shows only ~2970 tokens (2% utilization)
-
-**Root Cause (suspected):**
+**Root Cause:**
 1. Retrieval context not included in `/context` calculation (~200 tokens)
-2. Tool definitions not accurately counted
-3. Message overhead (role tags, etc.) not fully accounted for
+2. Tool definitions estimated at 20 tokens (should be ~50)
+3. Using estimated tokens instead of real Ollama counts
 
-**Impact:** User trust issues - cannot rely on context metrics for compaction decisions. May lead to unexpected context overflow.
+**Fix Applied (v0.26.2):**
+- Added `prompt_tokens: Option<u64>` field to `SavedMessage`
+- Store `prompt_eval_count` from Ollama after each response
+- Use real tokens in `/context` when available, fallback to estimate
+- Fixed retrieval inclusion in context calculation
+- Increased tools_tokens estimate to 50 per tool
 
-**See:** `src/tokens.rs`, `src/chat/repl.rs:print_context_info()`
+**Files Changed:**
+- `src/chat/session.rs` - Added prompt_tokens field
+- `src/chat/repl.rs` - Pass real tokens to context calculation
+- `src/tokens.rs` - Added real_history_tokens parameter
+
+**Verification Needed:** Test in production to confirm alignment.
 
 ---
 
 ### Context Builder Panic After /compact
 
-**Status:** Under Analysis
+**Status:** ⚠️ Needs Reproduction
 
 **Problem:**
 ```
@@ -146,79 +152,143 @@ range start index 2 out of range for slice of length 1
 
 **Trigger:** Occurs after running `/compact` command manually.
 
-**Impact:** Application crash, potential data loss.
+**Code Analysis (`src/context_overflow.rs`):**
+- Edge case handling appears CORRECT (returns None when ≤10 messages)
+- Range calculation verified correct for all edge cases
 
-**Suspected Cause:** Incorrect range calculation in middle compaction logic when message count is low.
+**Possible Causes:**
+1. Race condition during /compact execution
+2. Session modified between CompactionSuggestion creation and use
+3. Message count changed mid-execution
 
-**See:** `src/retrieval/context_builder.rs`
+**See:** `src/context_overflow.rs:get_compaction_range_default()`
 
 ---
 
 ### /undo Incomplete Cleanup
 
-**Status:** Under Analysis
+**Status:** ❌ BUG CONFIRMED
 
-**Problem:** Need to verify that `/undo` properly removes:
-- User prompt from history
-- Assistant response from history
-- All associated embeddings for both messages
+**Problem:** `/undo` removes messages from memory but does NOT delete embeddings from database.
 
-**Impact:** Incomplete undo can lead to duplicate content in retrieval.
+**Code Location:** `src/chat/repl.rs:572-588`
+
+**Current Behavior:**
+```rust
+let removed = session.remove_last_assistant_messages();
+// Only removes from Vec<SavedMessage>, NO database cleanup
+```
+
+**Impact:** Orphaned embeddings in SQLite database.
+
+**Fix Required:**
+1. Add function to delete embeddings for specific messages
+2. Call delete before removing from memory
+
+**See:** `src/chat/session.rs:remove_last_assistant_messages()`
 
 ---
 
 ### User Prompt Included in Hybrid Search
 
-**Status:** Under Analysis
+**Status:** ❌ BUG CONFIRMED
 
-**Problem:** The most recent user message is being included in hybrid search queries.
+**Problem:** The most recent user message is always included in hybrid search queries.
 
-**Expected behavior:** Only past messages (not the current user prompt) should be searched, since:
-1. The LLM already has the current prompt
-2. Including it wastes search tokens
-3. It may skew relevance rankings
+**Code Location:** `src/db/operations.rs:488-513`
 
-**Impact:** Wasted tokens, potentially irrelevant retrieval results.
+**Root Cause:** `search_hybrid()` has no parameter to exclude specific message IDs.
+
+```rust
+pub fn search_hybrid(
+    &self,
+    query: &str,
+    embedding: &[f32],
+    conversation_id: Option<&str>,
+    project_id: Option<&str>,
+    limit: usize,
+    keyword_weight: f32,
+    semantic_weight: f32,
+) -> Result<Vec<SearchResult>> {
+    // No exclude_ids parameter!
+}
+```
+
+**Impact:** 
+- Wasted search tokens (current prompt shouldn't be searched)
+- Skewed relevance rankings (current prompt biases results)
+
+**Fix Required:**
+1. Add `exclude_message_ids: Option<Vec<i64>>` parameter to `search_hybrid()`
+2. Modify SQL queries to exclude these IDs
+3. Pass last message ID when calling search
+
+**See:** `src/retrieval/context_builder.rs:222` (caller)
 
 ---
 
-### Code Mode (-c Flag) Not Working
+### Code Mode (-c Flag) Not Working in Chat
 
-**Status:** Under Analysis
+**Status:** ❌ BUG CONFIRMED
 
-**Problem:** The `-c` (code mode) parameter is not being passed correctly to the LLM. Debug output shows it's using query mode instead.
+**Problem:** The `-c` (code mode) parameter works in `ask query` but NOT in `ask chat`.
 
-**Expected behavior:** Code mode should set concise/instructional system prompt.
+**Root Cause:** `cli.code` is NOT passed to `run_chat_repl()`.
 
-**Impact:** User experience - code mode appears broken.
+**Code Location:** `src/main.rs:468`
+
+```rust
+// Current (broken):
+chat::run_chat_repl(settings, &args, cli.model.as_deref(), cli.think, cli.tools, cli.ignore_agents).await
+
+// Missing: cli.code parameter
+```
+
+**Fix Required:**
+1. Add `cli_code: bool` parameter to `run_chat_repl()` signature
+2. Pass `cli.code` from `handle_chat()`
+3. Use code configuration
+
+**See:** `src/chat/repl.rs:38` (function signature)
 
 ---
 
 ### Premature Message Saving
 
-**Status:** Proposed Solution
+**Status:** ✅ ALREADY FIXED
 
 **Problem:** When user sends a message, it's only saved after the LLM responds. If the process is interrupted (Ctrl+C), the user message is lost.
 
-**Proposed Solution:**
-1. Save user message immediately when sent
-2. Use async embeddings (already implemented for recovery)
-3. Mark messages as "pending indexing" until embeddings are ready
+**Current Behavior (verified in code):**
+```rust
+// src/chat/repl.rs:721-727
+// Save user message immediately before sending
+session.add_user_message(line.to_string());
+if !session.anonymous
+    && let Err(e) = session.save(&storage)
+{
+    // handle error
+}
+```
 
-**Impact:** Data loss prevention.
+**Verdict:** User messages are already saved immediately before sending to LLM. This bug was likely based on an older version.
 
 ---
 
 ### Legacy "conversations" Folder
 
-**Status:** Proposed Solution
+**Status:** ⚠️ Needs Investigation
 
 **Problem:** The `conversations/` folder still contains JSON files even though SQLite is now the primary storage.
 
-**Proposed Solution:**
-1. Deprecate conversations folder
-2. Migrate any remaining data to SQLite
-3. Remove legacy code
+**Questions:**
+1. Is there still code writing to conversations folder?
+2. Is it just reading for legacy migration?
+3. Should we remove the folder entirely?
+
+**Investigation Required:**
+- [ ] Check for any `conversations/` write operations
+- [ ] Determine if folder should be deleted or kept for backward compatibility
 4. Rely solely on SQLite queries
 
 **Benefit:** Simplified codebase, reduced storage duplication.
