@@ -364,7 +364,21 @@ These issues relate to context management during tool calls and compaction.
 - `src/context_overflow.rs` - `truncate_tool_result()` function
 - `src/chat/custom_coordinator.rs` - Apply truncation to tool results
 
-#### Phase 3: Pre-Tool Context Check
+#### Phase 3: Pre-Tool Context Check ✅ (v0.26.4)
+
+**Completed:**
+- ✅ Added `PRE_TOOL_THRESHOLD` constant (75%)
+- ✅ Added `needs_pre_tool_compaction()` function
+- ✅ Added `MIN_PRESERVE_LAST` constant for turn preservation
+- ✅ Check context before creating coordinator in `run_chat_repl()`
+- ✅ Auto-compact at 75% threshold before tool execution
+- ✅ User message preserved during compaction (already saved before check)
+
+**Files Changed:**
+- `src/context_overflow.rs` - New function and threshold
+- `src/chat/repl.rs` - Pre-tool check before send_message()
+
+### Compaction Threshold Behavior
 
 **Status:** Planned
 

@@ -11,7 +11,7 @@ use rustyline::history::DefaultHistory;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD};
+use crate::context_overflow::{check_context_overflow, needs_pre_tool_compaction, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_THRESHOLD};
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::markdown;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
@@ -736,6 +736,35 @@ pub async fn run_chat_repl(
                     && use_debug
                 {
                     log_debug(&format!("Warning: Could not save session: {}", e));
+                }
+
+                // Pre-tool context check: Auto-compact BEFORE tool execution if context is high
+                // This prevents context exhaustion during multi-tool turns
+                let context_window = model_config.num_ctx as usize;
+                let system_prompt_for_check = build_system_prompt(
+                    PromptConfig::new(PromptType::ToolUser)
+                        .with_model_id(Some(&model_config.model_id))
+                        .with_blacklist(Some(&settings.blacklist_set()))
+                        .with_agents_md(agents_md.as_deref())
+                        .with_tools(tools_active)
+                        .with_retrieval(session.retrieval_enabled && !cli_code),
+                );
+                
+                if needs_pre_tool_compaction(&session, &system_prompt_for_check, context_window) {
+                    let usage_pct = check_context_overflow(&session, &system_prompt_for_check, context_window, PRE_TOOL_THRESHOLD).usage_percent();
+                    eprintln!("\x1B[33m⏳ Context {}% full. Auto-compacting before tool execution...\x1B[0m", usage_pct);
+                    
+                    auto_compact_if_needed(
+                        &ollama,
+                        &model_config,
+                        &mut session,
+                        settings,
+                        agents_md.as_deref(),
+                        &storage,
+                        &system_prompt_for_check,
+                        context_window,
+                        use_debug,
+                    ).await;
                 }
 
                 let think_enabled = session.think;

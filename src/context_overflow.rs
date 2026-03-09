@@ -9,11 +9,26 @@ use ollama_rs::generation::chat::ChatMessage;
 /// Default overflow threshold (80% of context window)
 pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;
 
+/// Pre-tool check threshold (75% of context window)
+/// Lower than overflow to allow room for tool results during execution
+pub const PRE_TOOL_THRESHOLD: f32 = 0.75;
+
 /// Default number of first messages to keep during compaction
 pub const DEFAULT_KEEP_FIRST: usize = 5;
 
 /// Default number of last messages to keep during compaction
 pub const DEFAULT_KEEP_LAST: usize = 5;
+
+/// Check if context needs pre-tool compaction
+/// Returns true if context is above PRE_TOOL_THRESHOLD (75%)
+pub fn needs_pre_tool_compaction(
+    session: &ChatSession,
+    system_prompt: &str,
+    context_window: usize,
+) -> bool {
+    let status = check_context_overflow(session, system_prompt, context_window, PRE_TOOL_THRESHOLD);
+    status.needs_compaction()
+}
 
 /// Estimate tokens in a list of SavedMessage
 /// Includes message overhead for each message
