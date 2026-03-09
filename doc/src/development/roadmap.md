@@ -199,51 +199,6 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ---
 
-## Pending Items
-
-### Context Builder Panic After /compact (without /clear)
-
-**Status:** ⚠️ Needs Reproduction
-
-**Problem:**
-```
-thread 'main' panicked at src/retrieval/context_builder.rs:318:51:
-range start index 2 out of range for slice of length 1
-```
-
-**Possible Causes:**
-1. Race condition during `/compact` execution
-2. Session modified between CompactionSuggestion creation and use
-
-### Compaction Visual Indicator
-
-**Status:** Planned
-
-When context threshold is reached:
-- User message should be saved temporarily
-- Compaction should run
-- Visual indicator ("Compacting context...") should show
-
-### Context Not Cleared After /compact
-
-**Status:** Under Analysis
-
-After `/compact`, context remains in overflow state. `/clear` is needed.
-
-### Markdown in Compaction Summary
-
-**Status:** Under Analysis
-
-Context compaction summary does not produce markdown output.
-
-### Web Scraping Content Quality
-
-**Status:** Under Analysis
-
-Web fetch tool sometimes returns raw HTML/CSS instead of clean markdown.
-
----
-
 ## SQLite as Single Storage
 
 **Priority:** HIGH  
