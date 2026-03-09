@@ -97,6 +97,7 @@ pub fn check_legacy_sessions(
                         let session_id = stem.to_string_lossy().to_string();
 
                         // Try to load session to get name
+                        #[allow(deprecated)]
                         let session_name = ChatSession::load(storage, project_id, &session_id)
                             .ok()
                             .and_then(|s| s.name);
@@ -124,6 +125,7 @@ pub fn check_legacy_sessions(
 ///
 /// This imports all messages, metadata, and todos from the JSON backup.
 /// Useful for recovering sessions that were accidentally deleted from SQLite.
+#[allow(deprecated)]
 pub fn restore_session(
     storage: &ConversationStorage,
     db: &Arc<Database>,
@@ -271,6 +273,7 @@ pub async fn migrate_all_legacy_sessions(
     // Migrate sessions not yet in SQLite
     for session_info in &to_migrate {
         // Load from JSON
+        #[allow(deprecated)]
         match ChatSession::load(storage, &session_info.project_id, &session_info.id) {
             Ok(session) => {
                 // Migrate to SQLite with embeddings

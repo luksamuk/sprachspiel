@@ -254,6 +254,7 @@ impl ChatSession {
     /// 
     /// Legacy API for JSON-based storage. Prefer `save_sqlite()` for new code.
     #[deprecated(note = "Use save_sqlite() for SQLite-based storage")]
+    #[allow(dead_code)]
     pub fn save(
         &self,
         storage: &ConversationStorage,

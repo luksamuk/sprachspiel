@@ -11,7 +11,6 @@ use super::Database;
 use crate::chat::session::{ChatSession, MessageRole};
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_SYSTEM, ROLE_TOOL, ROLE_USER};
 use crate::embeddings::{EmbeddingClient, chunk_text, needs_chunking};
-use crate::chat::history::ConversationStorage;
 
 /// Migration statistics
 #[derive(Debug, Clone, Default)]
