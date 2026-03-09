@@ -321,16 +321,84 @@ These issues relate to context management during tool calls and compaction.
 
 ### Context Exhaustion During Tool Calls
 
-**Status:** Under Analysis
+**Status:** 🟡 IN PROGRESS (Phase 1 Complete)
 
 **Problem:** Context can be exhausted during a chain of tool calls, leaving no room for the final response.
 
-**Proposed Solution:**
-1. Implement auto-compaction during tool execution
-2. Preserve user message + last assistant message after compaction
-3. If entire turn is too large, summarize the turn itself
+**Root Cause:**
+- Messages accumulate in coordinator history during tool execution without size checks
+- `auto_compact_if_needed()` only runs AFTER complete response
+- Large tool results have no size limits
+- No context check in `process_next()` before sending to Ollama
 
-**See:** `src/context_overflow.rs`
+**Implementation Plan:**
+
+#### Phase 1: Token Estimation in Coordinator ✅ (v0.26.4)
+
+**Completed:**
+- ✅ Added `estimate_messages_tokens()` for SavedMessage
+- ✅ Added `estimate_chat_messages_tokens()` for ChatMessage
+- ✅ Added `context_window` and `system_prompt` fields to `CustomCoordinator`
+- ✅ Added `context_window()` and `system_prompt()` builder methods
+- ✅ Added context check in `process_next()` (90% threshold)
+- ✅ Unit tests for token estimation
+- ✅ Error returned when overflow detected during tool execution
+
+**Files Changed:**
+- `src/context_overflow.rs` - New estimation functions
+- `src/chat/custom_coordinator.rs` - Context fields and check
+- `src/query.rs` - Pass context to coordinator
+- `src/chat/repl.rs` - Pass context to coordinator
+
+#### Phase 2: Unicode-Safe Tool Result Truncation
+
+**Status:** Planned
+
+- Truncate large tool results to 4000 tokens
+- Use `.chars().take()` for Unicode-safe truncation
+- Add truncation notice in result
+
+#### Phase 3: Pre-Tool Context Check
+
+**Status:** Planned
+
+- Check context BEFORE creating coordinator
+- Auto-compact at 75% threshold if needed
+- Preserve current turn during compaction
+
+#### Phase 4: Turn Preservation in Compaction
+
+**Status:** Planned
+
+- Modify `get_compaction_range()` to preserve last N messages
+- Never compact user message + assistant + tool chain
+
+#### Phase 5: During-Tool Context Check
+
+**Status:** Planned
+
+- Already implemented in Phase 1 (context check in `process_next()`)
+- Returns error when overflow detected
+
+#### Phase 6: Error Recovery
+
+**Status:** Planned
+
+- Detect overflow error from coordinator
+- Auto-compact immediately
+- Retry once with compacted context
+
+#### Phase 7: Testing
+
+**Status:** Planned
+
+- Test large tool result truncation
+- Test context overflow during tool execution
+- Test turn preservation
+- Test Unicode-safe truncation
+- Test multi-tool chain near context limit
+
+**See:** `src/context_overflow.rs`, `src/chat/custom_coordinator.rs`
 
 ### Compaction Threshold Behavior
 

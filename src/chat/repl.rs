@@ -902,6 +902,8 @@ async fn send_message(
         use_think: think_enabled,
         use_debug,
         use_plain: false,
+        context_window: Some(model_config.num_ctx as usize),
+        system_prompt: Some(system_prompt.clone()),
     }
     .build_coordinator();
 

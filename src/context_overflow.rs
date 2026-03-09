@@ -3,7 +3,8 @@
 //! Implements auto-compaction when context reaches threshold.
 
 use crate::chat::session::ChatSession;
-use crate::tokens::estimate_tokens;
+use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
+use ollama_rs::generation::chat::ChatMessage;
 
 /// Default overflow threshold (80% of context window)
 pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;
@@ -13,6 +14,30 @@ pub const DEFAULT_KEEP_FIRST: usize = 5;
 
 /// Default number of last messages to keep during compaction
 pub const DEFAULT_KEEP_LAST: usize = 5;
+
+/// Estimate tokens in a list of SavedMessage
+/// Includes message overhead for each message
+pub fn estimate_messages_tokens(messages: &[crate::chat::session::SavedMessage]) -> usize {
+    if messages.is_empty() {
+        return 0;
+    }
+    messages
+        .iter()
+        .map(|msg| MESSAGE_OVERHEAD + estimate_tokens(&msg.content))
+        .sum()
+}
+
+/// Estimate tokens in a list of ChatMessage (for coordinator history)
+/// Includes message overhead for each message
+pub fn estimate_chat_messages_tokens(messages: &[ChatMessage]) -> usize {
+    if messages.is_empty() {
+        return 0;
+    }
+    messages
+        .iter()
+        .map(|msg| MESSAGE_OVERHEAD + estimate_tokens(&msg.content))
+        .sum()
+}
 
 /// Context overflow status
 #[derive(Debug, Clone)]
@@ -444,5 +469,70 @@ mod tests {
         assert!(!status_ok.is_overflow());
         assert!(!status_warn.is_overflow());
         assert!(status_over.is_overflow());
+    }
+
+    #[test]
+    fn test_estimate_messages_tokens() {
+        // Empty messages
+        let empty: Vec<SavedMessage> = Vec::new();
+        assert_eq!(estimate_messages_tokens(&empty), 0);
+
+        // Single message
+        let single = vec![SavedMessage {
+            role: MessageRole::User,
+            content: "Hello world".to_string(), // ~2 tokens + 4 overhead = 6
+            timestamp: Utc::now(),
+            ..Default::default()
+        }];
+        let single_tokens = estimate_messages_tokens(&single);
+        assert!(single_tokens >= 4, "Should have at least overhead");
+        assert!(single_tokens < 20, "Should be small for short message");
+
+        // Multiple messages
+        let multiple: Vec<SavedMessage> = (0..10)
+            .map(|i| SavedMessage {
+                role: if i % 2 == 0 {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
+                content: format!("Message {}", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            })
+            .collect();
+        let multiple_tokens = estimate_messages_tokens(&multiple);
+        assert!(
+            multiple_tokens > single_tokens,
+            "More messages should have more tokens"
+        );
+
+        // Each message should contribute roughly same amount
+        // 10 messages with ~2 tokens each + 4 overhead = ~60 tokens
+        assert!(
+            multiple_tokens > 40,
+            "10 short messages should have ~60 tokens"
+        );
+        assert!(
+            multiple_tokens < 100,
+            "10 short messages should have ~60 tokens"
+        );
+    }
+
+    #[test]
+    fn test_estimate_messages_tokens_with_long_content() {
+        // Long message content
+        let long_content = "word ".repeat(100); // 100 words
+        let long_message = vec![SavedMessage {
+            role: MessageRole::User,
+            content: long_content.clone(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        }];
+
+        let long_tokens = estimate_messages_tokens(&long_message);
+        // 100 words / 0.75 = ~133 tokens + 4 overhead = ~137
+        assert!(long_tokens > 100, "Should estimate more than 100 tokens");
+        assert!(long_tokens < 200, "Should estimate less than 200 tokens");
     }
 }

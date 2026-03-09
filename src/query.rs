@@ -59,6 +59,10 @@ pub struct ChatContext {
     pub use_think: bool,
     pub use_debug: bool,
     pub use_plain: bool,
+    /// Context window size for overflow detection
+    pub context_window: Option<usize>,
+    /// System prompt for token estimation
+    pub system_prompt: Option<String>,
 }
 
 impl ChatContext {
@@ -68,12 +72,22 @@ impl ChatContext {
         let use_plain = self.use_plain;
         let use_debug = self.use_debug;
 
-        CustomCoordinator::new(self.ollama, self.model_id, vec![])
+        let mut coordinator = CustomCoordinator::new(self.ollama, self.model_id, vec![])
             .options(self.model_options)
             .think(use_think)
             .on_event(move |event| {
                 handle_chat_event(event, use_think, use_plain, use_debug);
-            })
+            });
+
+        if let Some(ctx_window) = self.context_window {
+            coordinator = coordinator.context_window(ctx_window);
+        }
+
+        if let Some(prompt) = self.system_prompt {
+            coordinator = coordinator.system_prompt(prompt);
+        }
+
+        coordinator
     }
 }
 
@@ -310,6 +324,8 @@ pub async fn run_query(
         use_think,
         use_debug: output_flags.debug,
         use_plain: output_flags.plain,
+        context_window: Some(model_config.num_ctx as usize),
+        system_prompt: Some(system_prompt.clone()),
     }
     .build_coordinator();
 

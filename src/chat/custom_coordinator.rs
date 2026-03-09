@@ -135,6 +135,10 @@ pub struct CustomCoordinator<C: ChatHistory> {
     think: Option<ThinkType>,
     /// Callback for events
     event_callback: Option<Box<dyn Fn(ChatEvent) + Send + Sync>>,
+    /// Context window size for overflow detection during tool execution
+    context_window: Option<usize>,
+    /// System prompt for token estimation
+    system_prompt: Option<String>,
 }
 
 impl<C: ChatHistory> CustomCoordinator<C> {
@@ -152,7 +156,21 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             keep_alive: None,
             think: None,
             event_callback: None,
+            context_window: None,
+            system_prompt: None,
         }
+    }
+
+    /// Set the context window size for overflow detection
+    pub fn context_window(mut self, context_window: usize) -> Self {
+        self.context_window = Some(context_window);
+        self
+    }
+
+    /// Set the system prompt for token estimation
+    pub fn system_prompt(mut self, system_prompt: String) -> Self {
+        self.system_prompt = Some(system_prompt);
+        self
     }
 
     /// Add a tool to the coordinator
@@ -374,6 +392,25 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
     /// Process next response after tool calls
     async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
+        // Check context overflow before sending to Ollama
+        if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
+            let history_tokens = crate::context_overflow::estimate_chat_messages_tokens(&self.history.messages());
+            let system_tokens = crate::tokens::estimate_tokens(prompt) + crate::tokens::MESSAGE_OVERHEAD;
+            let total_tokens = history_tokens + system_tokens;
+            
+            // Use 90% threshold to detect overflow early
+            let threshold = (ctx_window as f64 * 0.9) as usize;
+            
+            if total_tokens > threshold {
+                // Return error that will be caught by caller
+                let msg = format!(
+                    "Context overflow during tool execution: {} tokens used, {} available. Use /compact to reduce context.",
+                    total_tokens, ctx_window
+                );
+                return Err(ollama_rs::error::OllamaError::Other(msg));
+            }
+        }
+        
         let resp = self
             .ollama
             .send_chat_messages(self.build_request())
