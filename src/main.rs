@@ -465,7 +465,7 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 }
 
 async fn handle_chat(args: ChatArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
-    chat::run_chat_repl(settings, &args, cli.model.as_deref(), cli.think, cli.tools, cli.ignore_agents).await
+    chat::run_chat_repl(settings, &args, cli.model.as_deref(), cli.think, cli.tools, cli.code, cli.ignore_agents).await
 }
 
 async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {

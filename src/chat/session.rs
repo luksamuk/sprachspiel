@@ -436,10 +436,15 @@ impl ChatSession {
     /// # Cleared
     /// - messages (in-memory)
     /// - messages_sent_to_llm
+    /// - compacted_range (reset since messages are gone)
+    ///
+    /// # Preserved
+    /// - compacted_summary (for RAG to still work)
     pub fn clear_messages(&mut self) {
         self.messages.clear();
-        // Preserved: compacted_summary, compacted_range
-        // These allow RAG to work after clear
+        // Reset compacted_range since we no longer have those messages
+        // This prevents range start > messages.len() panics
+        self.compacted_range = None;
         self.messages_sent_to_llm = 0;
         self.updated_at = Utc::now();
     }

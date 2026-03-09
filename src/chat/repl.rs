@@ -41,6 +41,7 @@ pub async fn run_chat_repl(
     cli_model: Option<&str>,
     cli_think: bool,
     cli_tools: bool,
+    cli_code: bool,
     cli_ignore_agents: bool,
 ) -> AppResult<()> {
     let use_debug = settings.output.debug_default;
@@ -516,6 +517,7 @@ pub async fn run_chat_repl(
                                             &user_content,
                                             tools_active,
                                             think_enabled,
+                                            false,  // cli_code: false for retry (use existing config)
                                             settings,
                                             agents_md.as_deref(),
                                             use_debug,
@@ -744,6 +746,7 @@ pub async fn run_chat_repl(
                     line,
                     tools_active,
                     think_enabled,
+                    cli_code,  // from function parameter
                     settings,
                     agents_md.as_deref(),
                     use_debug,
@@ -840,6 +843,7 @@ async fn send_message(
     user_input: &str,
     tools_enabled: bool,
     think_enabled: bool,
+    cli_code: bool,
     settings: &Settings,
     agents_md: Option<&str>,
     use_debug: bool,
@@ -853,7 +857,12 @@ async fn send_message(
     let system_prompt = if let Some(ref custom_prompt) = session.system_prompt {
         custom_prompt.clone()
     } else {
-        let prompt_type = if tools_enabled {
+        // Determine prompt type based on code mode and tools
+        let prompt_type = if cli_code && tools_enabled {
+            PromptType::CodeWithTools
+        } else if cli_code {
+            PromptType::Code
+        } else if tools_enabled {
             PromptType::ToolUser
         } else {
             PromptType::Default
@@ -864,7 +873,7 @@ async fn send_message(
                 .with_blacklist(Some(&blacklist_set))
                 .with_agents_md(agents_md)
                 .with_tools(tools_enabled)
-                .with_retrieval(session.retrieval_enabled),
+                .with_retrieval(session.retrieval_enabled && !cli_code),  // Disable retrieval for code mode
         )
     };
 

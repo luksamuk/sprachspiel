@@ -240,8 +240,8 @@ async fn remember_by_query(
         }
     };
 
-    // Perform hybrid search
-    let results = match db.search_hybrid(query, &embedding, None, None, limit, 0.4, 0.6) {
+    // Perform hybrid search (no ID exclusion for remember tool)
+    let results = match db.search_hybrid(query, &embedding, None, None, limit, 0.4, 0.6, None) {
         Ok(r) => r,
         Err(e) => {
             return format!(

@@ -253,6 +253,27 @@ chat::run_chat_repl(settings, &args, cli.model.as_deref(), cli.think, cli.tools,
 
 ---
 
+### Context Builder Panic After /compact + /clear
+
+**Status:** ✅ FIXED (this commit)
+
+**Problem:** After `/compact` followed by `/clear`, the session crashes with:
+```
+range end index 5 out of range for slice of length 2
+```
+
+**Root Cause:** `clear_messages()` preserved `compacted_range` which contains indices into `messages`. After clear, `messages` is empty but `compacted_range` still references old indices.
+
+**Fix Applied:**
+1. Reset `compacted_range` in `clear_messages()`
+2. Add bounds checking with `.min(session.messages.len())` in `context_builder.rs`
+
+**Files Changed:**
+- `src/chat/session.rs` - Reset `compacted_range` on clear
+- `src/retrieval/context_builder.rs` - Clamp indices to message count
+
+---
+
 ### Premature Message Saving
 
 **Status:** ✅ ALREADY FIXED
@@ -289,9 +310,69 @@ if !session.anonymous
 **Investigation Required:**
 - [ ] Check for any `conversations/` write operations
 - [ ] Determine if folder should be deleted or kept for backward compatibility
-4. Rely solely on SQLite queries
 
-**Benefit:** Simplified codebase, reduced storage duplication.
+---
+
+## Context Overflow & Compaction Issues (bugs2.md)
+
+**Status:** Under Analysis
+
+These issues relate to context management during tool calls and compaction.
+
+### Context Exhaustion During Tool Calls
+
+**Status:** Under Analysis
+
+**Problem:** Context can be exhausted during a chain of tool calls, leaving no room for the final response.
+
+**Proposed Solution:**
+1. Implement auto-compaction during tool execution
+2. Preserve user message + last assistant message after compaction
+3. If entire turn is too large, summarize the turn itself
+
+**See:** `src/context_overflow.rs`
+
+### Compaction Threshold Behavior
+
+**Status:** Under Analysis
+
+**Problem:** When context threshold is reached:
+- User message should be saved temporarily
+- Compaction should run
+- Then normal flow continues with saved message
+- No visual indication of compaction happening
+
+**Proposed:**
+- Add visual indicator ("Compacting context...")
+- Save user message before compaction
+- Restore after compaction
+
+### Context Not Cleared After /compact
+
+**Status:** Under Analysis
+
+**Problem:** After `/compact`, context remains in overflow state. `/clear` is needed.
+
+**Possible Causes:**
+1. Compaction not reducing context enough
+2. Summary itself is too large
+3. Recent messages preserved are still too many
+
+### Markdown in Compaction Summary
+
+**Status:** Under Analysis
+
+**Problem:** Context compaction summary does not produce markdown output.
+
+**Fix Required:** Ensure LLM generates markdown for summaries.
+
+### Web Scraping Content Quality
+
+**Status:** Under Analysis
+
+**Problem:** Web fetch tool sometimes returns raw HTML/CSS instead of clean markdown, polluting context.
+
+**Proposed:** Review and improve HTML-to-markdown conversion in web tools.
 
 ---
 

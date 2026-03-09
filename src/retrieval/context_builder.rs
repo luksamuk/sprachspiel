@@ -219,6 +219,11 @@ pub async fn build_context(
                     ));
                 }
                 
+                // Note: We don't exclude the current message from search because:
+                // 1. Messages don't have DB IDs in memory
+                // 2. The current message hasn't been saved to DB yet when search runs
+                // 3. Search only finds historical messages, not current prompt
+                
                 if let Ok(results) = db.search_hybrid(
                     user_query,
                     &embedding,
@@ -227,6 +232,7 @@ pub async fn build_context(
                     config.relevant_count,
                     config.keyword_weight,
                     config.semantic_weight,
+                    None,  // No IDs to exclude - current message not in DB yet
                 ) {
                     // Enrich results with conversation context (attach assistant responses to user questions)
                     let enriched_results = match db.enrich_with_context(results) {
@@ -280,6 +286,8 @@ pub async fn build_context(
     // According to "lost in the middle" research, important content should be
     // at BEGINNING or END, not middle.
     if let Some((first_preserved, _)) = session.compacted_range {
+        // Clamp to actual message count to avoid panic after /clear
+        let first_preserved = first_preserved.min(session.messages.len());
         if first_preserved > 0 {
             for msg in &session.messages[..first_preserved] {
                 match msg.role {
@@ -311,7 +319,10 @@ pub async fn build_context(
     // 5. Recent messages (before query - avoid "lost in middle")
     // Use compacted_range for middle compaction, or messages_sent_to_llm for legacy
     let start_idx = match session.compacted_range {
-        Some((_, last_preserved_start)) => last_preserved_start,
+        Some((_, last_preserved_start)) => {
+            // Clamp to actual message count to avoid panic after /clear
+            last_preserved_start.min(session.messages.len())
+        }
         None => session.messages_sent_to_llm.min(session.messages.len()),
     };
 
@@ -408,6 +419,7 @@ pub async fn build_query_context(
                     config.relevant_count,
                     config.keyword_weight,
                     config.semantic_weight,
+                    None,            // No exclusion for query mode
                 ) {
                     // Enrich results with conversation context
                     let enriched_results = match db.enrich_with_context(results) {

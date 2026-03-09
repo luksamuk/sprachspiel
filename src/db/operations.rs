@@ -588,6 +588,16 @@ impl Database {
     }
 
     /// Hybrid search using Reciprocal Rank Fusion
+    ///
+    /// # Arguments
+    /// * `query` - Search query text
+    /// * `embedding` - Query embedding vector
+    /// * `conversation_id` - Specific conversation to search
+    /// * `project_id` - Project to search
+    /// * `limit` - Maximum results to return
+    /// * `keyword_weight` - Weight for keyword search (BM25)
+    /// * `semantic_weight` - Weight for semantic search (vector)
+    /// * `exclude_ids` - Optional list of message IDs to exclude (e.g., current message)
     pub fn search_hybrid(
         &self,
         query: &str,
@@ -597,6 +607,7 @@ impl Database {
         limit: usize,
         keyword_weight: f32,
         semantic_weight: f32,
+        exclude_ids: Option<&[i64]>,
     ) -> Result<Vec<SearchResult>> {
         // Get keyword results (more = better fusion)
         let keyword_results = self.search_keyword(query, conversation_id, project_id, limit * 2)?;
@@ -606,13 +617,23 @@ impl Database {
             self.search_semantic(embedding, conversation_id, project_id, limit * 2)?;
 
         // Combine with RRF
-        Ok(reciprocal_rank_fusion(
+        let mut results = reciprocal_rank_fusion(
             keyword_results,
             semantic_results,
             keyword_weight,
             semantic_weight,
-            limit,
-        ))
+            limit * 2, // Get more results before filtering
+        );
+
+        // Filter out excluded IDs
+        if let Some(exclude) = exclude_ids {
+            results.retain(|r| !exclude.contains(&r.message_id));
+        }
+
+        // Truncate to final limit
+        results.truncate(limit);
+
+        Ok(results)
     }
 
     /// Get messages for a conversation (for context loading)
