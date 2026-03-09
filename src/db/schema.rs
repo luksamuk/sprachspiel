@@ -1,28 +1,37 @@
 //! SQL schema for semantic search storage
 //!
 //! Includes:
-//! - conversations table
-//! - messages table
+//! - conversations table (with session metadata)
+//! - messages table (with prompt_tokens)
 //! - message_chunks table (for long messages)
 //! - message_embeddings virtual table (vec0)
 //! - messages_fts virtual table (FTS5)
+//! - session_todos table (for task tracking)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 4;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
--- Conversations table
+-- Conversations table (with session metadata)
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     project_id TEXT,
     title TEXT,
     model TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    -- Session metadata columns (added in v4)
+    system_prompt TEXT,
+    compacted_summary TEXT,
+    compacted_range_start INTEGER,
+    compacted_range_end INTEGER,
+    think INTEGER DEFAULT 0,
+    tools INTEGER DEFAULT 1,
+    tool_output_level TEXT DEFAULT 'compact'
 );
 
--- Messages table
+-- Messages table (with prompt_tokens)
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id TEXT NOT NULL,
@@ -31,6 +40,8 @@ CREATE TABLE IF NOT EXISTS messages (
     timestamp INTEGER NOT NULL,
     importance REAL DEFAULT 0.5,
     has_embedding INTEGER DEFAULT 0,
+    -- Real token count from Ollama (added in v4)
+    prompt_tokens INTEGER,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
 );
 
@@ -101,6 +112,21 @@ CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
     VALUES('delete', old.id, old.content);
     INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
+
+-- Session todos table (for task tracking)
+CREATE TABLE IF NOT EXISTS session_todos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL,
+    task_id INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+-- Index for todo lookup by conversation
+CREATE INDEX IF NOT EXISTS idx_todos_conversation 
+    ON session_todos(conversation_id);
 "#;
 
 /// Version check query

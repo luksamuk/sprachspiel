@@ -65,7 +65,7 @@ pub struct SearchResult {
     pub next_message: Option<Box<SearchResult>>,
 }
 
-/// Type of search that found the result
+/// Source type for retrieved content
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SearchType {
@@ -78,23 +78,14 @@ pub enum SearchType {
 }
 
 /// Source type for retrieved content
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceType {
-    /// Conversation history
+    #[default]
     Conversation,
-    /// Document (PDF, markdown, etc.)
     Document,
-    /// User note
     Note,
-    /// Web source
     Web,
-}
-
-impl Default for SourceType {
-    fn default() -> Self {
-        SourceType::Conversation
-    }
 }
 
 impl std::fmt::Display for SourceType {
@@ -109,7 +100,7 @@ impl std::fmt::Display for SourceType {
 }
 
 impl SourceType {
-    /// Get the prefix for this source type (e.g., "msg" for Conversation)
+    /// Get the prefix for a source type (used in message IDs)
     pub fn prefix(&self) -> &'static str {
         match self {
             SourceType::Conversation => "msg",
@@ -119,16 +110,42 @@ impl SourceType {
         }
     }
 
-    /// Parse a prefix string to SourceType
-    pub fn from_prefix(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
+    /// Parse a source type from a prefix
+    pub fn from_prefix(prefix: &str) -> Option<Self> {
+        match prefix {
             "msg" | "conversation" => Some(SourceType::Conversation),
-            "doc" | "document" => Some(SourceType::Document),
+            "doc" => Some(SourceType::Document),
             "note" => Some(SourceType::Note),
             "web" => Some(SourceType::Web),
             _ => None,
         }
     }
+}
+
+/// Conversation metadata from the database
+#[derive(Debug, Clone)]
+pub struct ConversationMetadata {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub name: Option<String>,
+    pub model: String,
+    pub system_prompt: Option<String>,
+    pub compacted_summary: Option<String>,
+    pub compacted_range: Option<(usize, usize)>,
+    pub think: bool,
+    pub tools: bool,
+    pub tool_output_level: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Todo row from the database
+#[derive(Debug, Clone)]
+pub struct TodoRow {
+    pub task_id: usize,
+    pub description: String,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
 }
 
 impl Database {
@@ -878,6 +895,159 @@ impl Database {
         self.with_connection(|conn: &rusqlite::Connection| {
             let mut stmt = conn.prepare("SELECT id FROM conversations ORDER BY updated_at DESC")?;
             let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect::<Result<Vec<_>>>()
+        })
+    }
+
+    /// Update conversation metadata (for session persistence)
+    ///
+    /// Updates session-specific fields: system_prompt, compacted_summary,
+    /// compacted_range, think, tools, tool_output_level.
+    #[allow(dead_code)]
+    pub fn update_conversation_metadata(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        system_prompt: Option<&str>,
+        compacted_summary: Option<&str>,
+        compacted_range: Option<(usize, usize)>,
+        think: bool,
+        tools: bool,
+        tool_output_level: &str,
+        updated_at: DateTime<Utc>,
+    ) -> Result<()> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            conn.execute(
+                "UPDATE conversations SET 
+                    title = COALESCE(?1, title),
+                    system_prompt = ?2,
+                    compacted_summary = ?3,
+                    compacted_range_start = ?4,
+                    compacted_range_end = ?5,
+                    think = ?6,
+                    tools = ?7,
+                    tool_output_level = ?8,
+                    updated_at = ?9
+                 WHERE id = ?10",
+                params![
+                    name,
+                    system_prompt,
+                    compacted_summary,
+                    compacted_range.map(|(s, _)| s as i64),
+                    compacted_range.map(|(_, e)| e as i64),
+                    think as i64,
+                    tools as i64,
+                    tool_output_level,
+                    updated_at.timestamp(),
+                    id,
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Get conversation metadata
+    ///
+    /// Returns session metadata for loading a saved session.
+    pub fn get_conversation_metadata(&self, id: &str) -> Result<ConversationMetadata> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            conn.query_row(
+                "SELECT id, project_id, title, model, system_prompt, 
+                        compacted_summary, compacted_range_start, compacted_range_end,
+                        think, tools, tool_output_level, created_at, updated_at
+                 FROM conversations WHERE id = ?1",
+                params![id],
+                |row| {
+                    let created_at_ts: i64 = row.get(11)?;
+                    let updated_at_ts: i64 = row.get(12)?;
+
+                    Ok(ConversationMetadata {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        name: row.get(2)?,
+                        model: row.get(3)?,
+                        system_prompt: row.get(4)?,
+                        compacted_summary: row.get(5)?,
+                        compacted_range: match (
+                            row.get::<_, Option<i64>>(6)?,
+                            row.get::<_, Option<i64>>(7)?,
+                        ) {
+                            (Some(start), Some(end)) => Some((start as usize, end as usize)),
+                            _ => None,
+                        },
+                        think: row
+                            .get::<_, Option<i64>>(8)?
+                            .map(|v| v != 0)
+                            .unwrap_or(false),
+                        tools: row
+                            .get::<_, Option<i64>>(9)?
+                            .map(|v| v != 0)
+                            .unwrap_or(true),
+                        tool_output_level: row
+                            .get::<_, Option<String>>(10)?
+                            .unwrap_or_else(|| "compact".to_string()),
+                        created_at: chrono::DateTime::from_timestamp(created_at_ts, 0)
+                            .unwrap_or_else(Utc::now),
+                        updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
+                            .unwrap_or_else(Utc::now),
+                    })
+                },
+            )
+        })
+    }
+
+    /// Save todos for a conversation
+    ///
+    /// Replaces all existing todos for the conversation.
+    pub fn save_todos(&self, conversation_id: &str, todos: &[TodoRow]) -> Result<()> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            // Delete existing todos
+            conn.execute(
+                "DELETE FROM session_todos WHERE conversation_id = ?1",
+                params![conversation_id],
+            )?;
+
+            // Insert new todos
+            for todo in todos {
+                conn.execute(
+                    "INSERT INTO session_todos (conversation_id, task_id, description, status, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        conversation_id,
+                        todo.task_id,
+                        todo.description,
+                        todo.status,
+                        todo.created_at.timestamp(),
+                    ],
+                )?;
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Get todos for a conversation
+    pub fn get_todos(&self, conversation_id: &str) -> Result<Vec<TodoRow>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let mut stmt = conn.prepare(
+                "SELECT task_id, description, status, created_at 
+                 FROM session_todos 
+                 WHERE conversation_id = ?1 
+                 ORDER BY task_id ASC",
+            )?;
+
+            let rows = stmt.query_map(params![conversation_id], |row| {
+                let timestamp: i64 = row.get(3)?;
+                let created_at =
+                    chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
+                Ok(TodoRow {
+                    task_id: row.get(0)?,
+                    description: row.get(1)?,
+                    status: row.get(2)?,
+                    created_at,
+                })
+            })?;
+
             rows.collect::<Result<Vec<_>>>()
         })
     }

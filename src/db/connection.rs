@@ -107,6 +107,76 @@ impl Database {
             }
         }
 
+        // Migration v3 -> v4: Add session metadata and todos
+        if from_version < 4 {
+            // Add columns to conversations table
+            let conversations_columns = [
+                ("system_prompt", "TEXT"),
+                ("compacted_summary", "TEXT"),
+                ("compacted_range_start", "INTEGER"),
+                ("compacted_range_end", "INTEGER"),
+                ("think", "INTEGER DEFAULT 0"),
+                ("tools", "INTEGER DEFAULT 1"),
+                ("tool_output_level", "TEXT DEFAULT 'compact'"),
+            ];
+
+            for (col_name, col_type) in conversations_columns {
+                // Check if column exists
+                let column_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(conversations)")?;
+                    let rows = stmt.query_map([], |row| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&col_name.to_string())
+                };
+
+                if !column_exists {
+                    conn.execute(
+                        &format!(
+                            "ALTER TABLE conversations ADD COLUMN {} {}",
+                            col_name, col_type
+                        ),
+                        [],
+                    )?;
+                }
+            }
+
+            // Add prompt_tokens column to messages table
+            let prompt_tokens_exists: bool = {
+                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                names.contains(&"prompt_tokens".to_string())
+            };
+
+            if !prompt_tokens_exists {
+                conn.execute("ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER", [])?;
+            }
+
+            // Create session_todos table if not exists
+            conn.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS session_todos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id TEXT NOT NULL,
+                    task_id INTEGER NOT NULL,
+                    description TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+                );
+                
+                CREATE INDEX IF NOT EXISTS idx_todos_conversation 
+                    ON session_todos(conversation_id);
+                "#,
+            )?;
+        }
+
         Ok(())
     }
 
@@ -203,5 +273,74 @@ mod tests {
         assert!(tables.contains(&"messages".to_string()));
         assert!(tables.contains(&"message_embeddings".to_string()));
         assert!(tables.contains(&"messages_fts".to_string()));
+        assert!(tables.contains(&"session_todos".to_string()));
+    }
+
+    #[test]
+    fn test_session_todos_table() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Verify session_todos table structure
+        let columns: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(session_todos)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to get table info");
+
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"conversation_id".to_string()));
+        assert!(columns.contains(&"task_id".to_string()));
+        assert!(columns.contains(&"description".to_string()));
+        assert!(columns.contains(&"status".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+    }
+
+    #[test]
+    fn test_conversations_metadata_columns() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Verify conversations table has metadata columns
+        let columns: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(conversations)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to get table info");
+
+        assert!(columns.contains(&"system_prompt".to_string()));
+        assert!(columns.contains(&"compacted_summary".to_string()));
+        assert!(columns.contains(&"compacted_range_start".to_string()));
+        assert!(columns.contains(&"compacted_range_end".to_string()));
+        assert!(columns.contains(&"think".to_string()));
+        assert!(columns.contains(&"tools".to_string()));
+        assert!(columns.contains(&"tool_output_level".to_string()));
+    }
+
+    #[test]
+    fn test_messages_prompt_tokens_column() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Verify messages table has prompt_tokens column
+        let columns: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to get table info");
+
+        assert!(columns.contains(&"prompt_tokens".to_string()));
     }
 }
