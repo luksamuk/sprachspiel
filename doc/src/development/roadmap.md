@@ -224,14 +224,16 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ### Web Scraping Content Quality
 
-**Status:** 🔍 Under Analysis
+**Status:** ✅ FIXED (v0.27.2)
 
-**Problem:** Web fetch tool sometimes returns raw HTML/CSS instead of clean markdown.
+**Problem:** Web fetch tool sometimes returned raw HTML/CSS instead of clean markdown.
 
-**Possible Causes:**
-- JavaScript-rendered content not captured
-- Some sites block web scraping
-- HTML-to-markdown conversion issues
+**Fix:**
+- Added `clean_html()` function to extract main content (`<main>`, `<article>`, etc.)
+- Prioritizes semantic content over navigation, sidebars, ads
+- Added `truncate_content()` with safe UTF-8 boundary handling
+- Content limited to 50,000 characters to prevent memory issues
+- Shows "(truncated)" indicator when content is limited
 
 ---
 

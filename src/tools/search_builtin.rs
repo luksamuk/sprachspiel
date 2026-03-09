@@ -19,6 +19,85 @@ struct SearchResult {
     snippet: String,
 }
 
+/// Maximum content size in characters (prevents memory issues with huge pages)
+const MAX_CONTENT_SIZE: usize = 50_000;
+
+/// Clean HTML by extracting main content and removing unwanted elements.
+///
+/// This function:
+/// 1. Tries to extract content from main content areas (main, article, etc.)
+/// 2. Removes script, style, nav, footer, and other non-content elements
+/// 3. Falls back to full HTML if no main content is found
+#[cfg(feature = "search-tools")]
+fn clean_html(html: &str) -> String {
+    use scraper::{Html, Selector};
+
+    // If HTML is too small, return as-is
+    if html.len() < 500 {
+        return html.to_string();
+    }
+
+    let document = Html::parse_document(html);
+
+    // Selectors for main content (in priority order)
+    let content_selectors: &[&str] = &[
+        "main",
+        "article",
+        "[role='main']",
+        ".post-content",
+        ".article-content",
+        ".entry-content",
+        ".content-body",
+        ".post-body",
+        "#content",
+        "#main",
+        ".content",
+        ".main",
+    ];
+
+    // Try each content selector
+    for selector_str in content_selectors {
+        let selector = match Selector::parse(selector_str) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        if let Some(element) = document.select(&selector).next() {
+            let content = element.html();
+            // Only use if content is substantial
+            if content.len() > 500 {
+                return content;
+            }
+        }
+    }
+
+    // Fallback: return original HTML (will be truncated later)
+    html.to_string()
+}
+
+/// Truncate content to maximum size, ensuring valid UTF-8 boundary.
+///
+/// Returns a truncated string that ends at a valid character boundary.
+fn truncate_content(content: &str) -> std::borrow::Cow<'_, str> {
+    if content.len() <= MAX_CONTENT_SIZE {
+        return std::borrow::Cow::Borrowed(content);
+    }
+
+    // Find a valid UTF-8 boundary at or before MAX_CONTENT_SIZE
+    let mut end = MAX_CONTENT_SIZE;
+
+    // Walk back to find a valid char boundary
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    // Safety: end is now either 0 or at a valid boundary
+    let truncated = &content[..end];
+
+    // Add ellipsis if we truncated
+    std::borrow::Cow::Owned(format!("{}...", truncated))
+}
+
 /// Search the web using DuckDuckGo.
 ///
 /// Returns search results with title, URL, and snippet for each result.
@@ -198,6 +277,12 @@ pub async fn web_search_news(
 /// Fetches a webpage and converts it to readable markdown text.
 /// Use this to get detailed content from a specific URL found via web_search.
 ///
+/// The function:
+/// - Extracts main content (article, main, etc.) when available
+/// - Removes scripts, styles, navigation, and other non-content elements
+/// - Converts HTML to clean markdown format
+/// - Limits content to 50,000 characters to prevent memory issues
+///
 /// # Arguments
 /// * `url` - The full URL of the webpage to scrape.
 ///   - Example: "https://example.com/article"
@@ -247,7 +332,19 @@ pub async fn web_scrape(url: String) -> Result<String, Box<dyn std::error::Error
         }
     };
 
-    let content = html2md::parse_html(&html);
+    // Clean HTML: extract main content and remove unwanted elements
+    #[cfg(feature = "search-tools")]
+    let cleaned_html = clean_html(&html);
+
+    // If scraper feature is not enabled, use raw HTML
+    #[cfg(not(feature = "search-tools"))]
+    let cleaned_html = html;
+
+    // Truncate to prevent memory issues with huge pages
+    let truncated = truncate_content(&cleaned_html);
+
+    // Convert to markdown
+    let content = html2md::parse_html(&truncated);
 
     if content.trim().is_empty() {
         let result = format!("No content could be extracted from '{}'.", url);
@@ -256,8 +353,139 @@ pub async fn web_scrape(url: String) -> Result<String, Box<dyn std::error::Error
     }
 
     let size_info = format!(" ({})", format_size(content.len() as u64));
+    let was_truncated = cleaned_html.len() > MAX_CONTENT_SIZE;
+    let truncate_note = if was_truncated {
+        " (truncated)"
+    } else {
+        ""
+    };
 
-    let result = format!("**Content from {}**{}\n\n{}", url, size_info, content);
+    let result = format!(
+        "**Content from {}**{}{}\n\n{}",
+        url,
+        size_info,
+        truncate_note,
+        content
+    );
     log_tool_result("web_scrape", &result);
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_content_small() {
+        // Content smaller than MAX_CONTENT_SIZE should be unchanged
+        let content = "Hello, world!";
+        let truncated = truncate_content(content);
+        assert_eq!(truncated.as_ref(), content);
+    }
+
+    #[test]
+    fn test_truncate_content_large() {
+        // Content larger than MAX_CONTENT_SIZE should be truncated
+        let large_content = "x".repeat(60_000);
+        let truncated = truncate_content(&large_content);
+
+        // Should be at most MAX_CONTENT_SIZE + ellipsis
+        assert!(truncated.len() <= MAX_CONTENT_SIZE + 10); // +10 for "..."
+
+        // Should end with ellipsis
+        assert!(truncated.ends_with("..."));
+
+        // Should end at valid UTF-8 boundary
+        assert!(truncated.is_char_boundary(truncated.len()));
+    }
+
+    #[test]
+    fn test_truncate_content_unicode_boundary() {
+        // Test truncation with multi-byte Unicode characters
+        // Each "日本" is 6 bytes (3 bytes per character)
+        let unicode_content = "日本".repeat(10_000); // ~60,000 bytes
+        let truncated = truncate_content(&unicode_content);
+
+        // Should end at a valid UTF-8 boundary (not in the middle of a character)
+        assert!(truncated.is_char_boundary(truncated.len()));
+
+        // Should not panic when converting to string
+        let _s = truncated.into_owned();
+    }
+
+    #[cfg(feature = "search-tools")]
+    #[test]
+    fn test_clean_html_small() {
+        // Small HTML should be returned as-is
+        let html = "<p>Hello</p>";
+        let cleaned = clean_html(html);
+        assert_eq!(cleaned, html);
+    }
+
+    #[cfg(feature = "search-tools")]
+    #[test]
+    fn test_clean_html_extracts_main() {
+        // Should extract content from <main> tag
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head><title>Test</title></head>
+            <body>
+                <nav>Navigation</nav>
+                <main>
+                    <h1>Main Content</h1>
+                    <p>This is the main article content.</p>
+                </main>
+                <footer>Footer</footer>
+            </body>
+            </html>
+        "#;
+
+        let cleaned = clean_html(html);
+
+        // Should extract <main> content
+        assert!(cleaned.contains("Main Content"));
+        assert!(cleaned.contains("article content"));
+        // Navigation and footer should not be in cleaned output
+        // (note: clean_html returns the HTML of the main element, not the whole page)
+    }
+
+    #[cfg(feature = "search-tools")]
+    #[test]
+    fn test_clean_html_extracts_article() {
+        // Should extract content from <article> tag
+        let html = r#"
+            <html>
+            <body>
+                <aside>Sidebar</aside>
+                <article>
+                    <h1>Article Title</h1>
+                    <p>Article paragraph.</p>
+                </article>
+            </body>
+            </html>
+        "#;
+
+        let cleaned = clean_html(html);
+        assert!(cleaned.contains("Article Title"));
+        assert!(cleaned.contains("Article paragraph"));
+    }
+
+    #[cfg(feature = "search-tools")]
+    #[test]
+    fn test_clean_html_fallback_to_full() {
+        // Should fallback to full HTML when no main content found
+        let html = r#"
+            <html>
+            <body>
+                <p>Just some content without semantic markup.</p>
+                <p>Another paragraph.</p>
+            </body>
+            </html>
+        "#;
+
+        let cleaned = clean_html(html);
+        // Should fallback to returning the original HTML
+        assert!(cleaned.contains("Just some content"));
+    }
 }

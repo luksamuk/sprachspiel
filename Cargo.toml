@@ -1,6 +1,6 @@
 [package]
 name = "ask-ai"
-version = "0.27.2"
+version = "0.27.3"
 edition = "2024"
 
 [features]
@@ -9,7 +9,8 @@ all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "ca
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin
-search-tools = ["dep:html2md"]
+# scraper is used to clean HTML before converting to markdown
+search-tools = ["dep:html2md", "dep:scraper"]
 serper-tools = []
 file-tools = []
 # calc is also in ollama-rs, but we need direct access for calculate tool

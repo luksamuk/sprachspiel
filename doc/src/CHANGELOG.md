@@ -24,6 +24,13 @@ All notable changes to Ask-AI will be documented in this file.
   - Uses `print_markdown()` for proper rendering in terminal
   - Sections include: Key Topics, Decisions Made, Technical Details, Action Items
 
+- **Web Scraping Content Quality** - Improved HTML-to-markdown conversion
+  - Extracts main content area (`<main>`, `<article>`, etc.) when available
+  - Prioritizes semantic content over navigation/sidebars
+  - Limits content to 50,000 characters to prevent memory issues
+  - Safe UTF-8 boundary handling for Unicode content
+  - Shows "(truncated)" indicator when content is limited
+
 ## [0.27.1] - 2026-03-09
 
 ### Fixed
