@@ -163,65 +163,6 @@ pub async fn migrate_session(
     Ok(stats)
 }
 
-/// Migrate all sessions for a project from JSON to SQLite
-pub async fn migrate_project(
-    storage: &ConversationStorage,
-    project_id: &Option<String>,
-    db: &Arc<Database>,
-    embedding_client: &Arc<EmbeddingClient>,
-) -> Result<MigrationStats, String> {
-    let mut stats = MigrationStats::default();
-    
-    let sessions = storage.list_sessions(project_id);
-    let total_sessions = sessions.len();
-    
-    if total_sessions == 0 {
-        println!("No sessions found for project.");
-        return Ok(stats);
-    }
-    
-    println!("Found {} session(s) to migrate.", total_sessions);
-    
-    for (idx, info) in sessions.iter().enumerate() {
-        let session_name = info.name.as_deref().unwrap_or(&info.id);
-        println!(
-            "[{}/{}] Migrating session: {} ({} messages)",
-            idx + 1,
-            total_sessions,
-            session_name,
-            info.message_count
-        );
-        
-        match ChatSession::load(storage, project_id, &info.id) {
-            Ok(session) => {
-                match migrate_session(&session, db, embedding_client).await {
-                    Ok(session_stats) => {
-                        stats.sessions_migrated += session_stats.sessions_migrated;
-                        stats.messages_migrated += session_stats.messages_migrated;
-                        stats.embeddings_generated += session_stats.embeddings_generated;
-                        stats.errors.extend(session_stats.errors);
-                    }
-                    Err(e) => {
-                        stats.errors.push(format!("Failed to migrate session {}: {}", session_name, e));
-                    }
-                }
-            }
-            Err(e) => {
-                stats.errors.push(format!("Failed to load session {}: {}", session_name, e));
-            }
-        }
-    }
-    
-    // Rebuild FTS5 index after all migrations complete
-    println!("Rebuilding search index...");
-    match db.rebuild_fts5() {
-        Ok(count) => println!("Indexed {} messages for keyword search.", count),
-        Err(e) => stats.errors.push(format!("Failed to rebuild FTS5 index: {}", e)),
-    }
-    
-    Ok(stats)
-}
-
 /// Reindex embeddings for all messages in a conversation
 pub async fn reindex_conversation(
     db: &Arc<Database>,

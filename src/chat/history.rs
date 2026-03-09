@@ -12,6 +12,7 @@ use std::process::Command;
 use super::session::ChatSession;
 
 /// Information about a saved session
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub id: String,
@@ -51,8 +52,13 @@ impl ConversationStorage {
         }
     }
 
+    /// Get the base storage path
+    pub fn base_path(&self) -> &PathBuf {
+        &self.base_path
+    }
+
     /// Get the path for a project's sessions
-    fn project_path(&self, project_id: &Option<String>) -> PathBuf {
+    pub fn project_path(&self, project_id: &Option<String>) -> PathBuf {
         match project_id {
             Some(id) => {
                 let safe_id = sanitize_path(id);
@@ -69,6 +75,7 @@ impl ConversationStorage {
     }
 
     /// Save a session to disk
+    #[allow(dead_code)]
     pub fn save_session<T: Serialize>(
         &self,
         project_id: &Option<String>,
@@ -97,6 +104,7 @@ impl ConversationStorage {
     }
 
     /// List sessions for a project
+    #[allow(dead_code)]
     pub fn list_sessions(&self, project_id: &Option<String>) -> Vec<SessionInfo> {
         let project_path = self.project_path(project_id);
         let mut sessions = Vec::new();
@@ -130,11 +138,13 @@ impl ConversationStorage {
     }
 
     /// Check if a session exists
+    #[allow(dead_code)]
     pub fn session_exists(&self, project_id: &Option<String>, session_id: &str) -> bool {
         self.session_path(project_id, session_id).exists()
     }
 
     /// Get the default session ID for a project
+    #[allow(dead_code)]
     pub fn default_session_id() -> String {
         "default".to_string()
     }

@@ -8,10 +8,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
 
+#[allow(unused_imports)]
 use super::history::{ConversationStorage, SessionInfo};
 use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
-use crate::db::{Database, TodoRow};
+use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 
 /// Tool output verbosity level
@@ -200,8 +201,6 @@ impl ChatSession {
         db: &Arc<Database>,
         conversation_id: &str,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        use crate::db::ConversationMetadata;
-        
         let meta = db.get_conversation_metadata(conversation_id)?;
         let messages = db.get_conversation_messages(conversation_id, None)?;
         let todo_rows = db.get_todos(conversation_id)?;
@@ -219,7 +218,7 @@ impl ChatSession {
                 content: m.content,
                 timestamp: chrono::DateTime::from_timestamp(m.timestamp, 0)
                     .unwrap_or_else(Utc::now),
-                prompt_tokens: None, // TODO: add to SearchResult
+                prompt_tokens: m.prompt_tokens.map(|t| t as u64),
             })
             .collect();
 
@@ -416,6 +415,13 @@ impl ChatSession {
 
             match db.insert_message(&self.id, ROLE_ASSISTANT, &content, now) {
                 Ok(message_id) => {
+                    // Save prompt_tokens if available
+                    if let Some(tokens) = prompt_tokens {
+                        if let Err(e) = db.update_message_prompt_tokens(message_id, tokens) {
+                            eprintln!("Warning: Failed to save prompt_tokens: {}", e);
+                        }
+                    }
+                    
                     // Insert chunks synchronously (guaranteed persistence)
                     // Generate embeddings asynchronously (can be recovered on restart)
                     if let Some(ref client) = self.embedding_client {
@@ -634,33 +640,51 @@ impl ChatSession {
         self.messages_sent_to_llm
     }
 
-    /// Get real token count from historical messages (sum of prompt_tokens)
-    /// This uses actual token counts from Ollama responses when available
+    /// Get real token count from the most recent prompt evaluation
     /// 
-    /// IMPORTANT: Only counts tokens for messages that will be sent to the LLM.
-    /// Skips compacted messages and includes the compacted summary if present.
+    /// IMPORTANT: Ollama's prompt_eval_count is CUMULATIVE - it includes:
+    /// - System prompt
+    /// - Tool definitions (if any)
+    /// - ALL conversation history
+    /// - Current user message
+    /// 
+    /// We return the most recent value as the total prompt size.
+    /// For context display purposes, callers should NOT add system + tools again.
     pub fn history_real_tokens(&self) -> usize {
-        // Count tokens from messages that will be sent to LLM (skip compacted)
-        let messages_tokens: usize = self
+        // Find the most recent message with prompt_tokens
+        // This value is ALREADY cumulative from Ollama's prompt_eval_count
+        let last_prompt_tokens = self
             .messages
             .iter()
-            .skip(self.messages_sent_to_llm)
+            .rev()
             .filter_map(|m| m.prompt_tokens)
-            .map(|t| t as usize)
-            .sum();
-
-        // Add estimated tokens from compacted summary if present
-        // Use ~1.3 tokens per word as rough estimate for summaries
-        let summary_tokens = self
-            .compacted_summary
-            .as_ref()
-            .map(|s| {
-                let word_count = s.split_whitespace().count();
-                (word_count as f32 * 1.3).ceil() as usize + 4 // +4 for message overhead
-            })
-            .unwrap_or(0);
-
-        messages_tokens + summary_tokens
+            .next();
+        
+        match last_prompt_tokens {
+            Some(tokens) => tokens as usize,
+            None => {
+                // Fallback: estimate from message content when no real tokens available
+                // This happens when loading from DB before first interaction
+                let messages_tokens: usize = self
+                    .messages
+                    .iter()
+                    .skip(self.messages_sent_to_llm)
+                    .map(|m| crate::tokens::estimate_tokens(&m.content) + crate::tokens::MESSAGE_OVERHEAD)
+                    .sum();
+                
+                // Add estimated tokens from compacted summary if present
+                let summary_tokens = self
+                    .compacted_summary
+                    .as_ref()
+                    .map(|s| {
+                        let word_count = s.split_whitespace().count();
+                        (word_count as f32 * 1.3).ceil() as usize + crate::tokens::MESSAGE_OVERHEAD
+                    })
+                    .unwrap_or(0);
+                
+                messages_tokens + summary_tokens
+            }
+        }
     }
 
     /// Get messages to send to LLM (summary + recent messages)
@@ -702,6 +726,7 @@ impl ChatSession {
     }
 
     /// Convert to SessionInfo for listing
+    #[allow(dead_code)]
     pub fn to_info(&self) -> SessionInfo {
         SessionInfo {
             id: self.id.clone(),
@@ -823,54 +848,75 @@ mod tests {
     }
     
     #[test]
-    fn test_history_real_tokens_without_compaction() {
+    fn test_history_real_tokens_returns_cumulative() {
         let mut session = ChatSession::new("test-model".into(), None, false);
         
-        // Add messages with prompt_tokens
+        // Add messages with cumulative prompt_tokens
+        // These represent Ollama's prompt_eval_count which IS cumulative
         for i in 0..5 {
             session.messages.push(SavedMessage {
                 role: MessageRole::User,
                 content: format!("Message {}", i),
                 timestamp: Utc::now(),
+                // Cumulative: each value includes all previous messages + this one
+                // 500 is the final total (system + tools + all history)
                 prompt_tokens: Some(100 * (i + 1)), // 100, 200, 300, 400, 500
                 ..Default::default()
             });
         }
         
-        // Without compaction, should sum all tokens
+        // history_real_tokens returns the LAST (most recent) cumulative value
         let tokens = session.history_real_tokens();
-        assert_eq!(tokens, 100 + 200 + 300 + 400 + 500); // 1500
+        assert_eq!(tokens, 500); // Last message's prompt_tokens
+    }
+    
+    #[test]
+    fn test_history_real_tokens_fallback_estimation() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Add messages WITHOUT prompt_tokens (fallback to estimation)
+        for i in 0..5 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {} ", i), // Short message
+                timestamp: Utc::now(),
+                prompt_tokens: None, // No real tokens available
+                ..Default::default()
+            });
+        }
+        
+        // Should estimate from message content
+        let tokens = session.history_real_tokens();
+        // Each "Message N " is ~2 words, so ~3 tokens each + 4 overhead = ~7 tokens each
+        // 5 messages * 7 tokens = 35 tokens (rough estimate)
+        assert!(tokens > 0, "Should have some estimated tokens");
+        assert!(tokens < 100, "Should be reasonable estimate for short messages");
     }
     
     #[test]
     fn test_history_real_tokens_with_compaction() {
         let mut session = ChatSession::new("test-model".into(), None, false);
         
-        // Add messages with prompt_tokens
+        // Add messages with cumulative prompt_tokens
         for i in 0..5 {
             session.messages.push(SavedMessage {
                 role: MessageRole::User,
                 content: format!("Message {}", i),
                 timestamp: Utc::now(),
-                prompt_tokens: Some(100 * (i + 1)), // 100, 200, 300, 400, 500
+                prompt_tokens: Some(100 * (i + 1)), // Cumulative: 100, 200, 300, 400, 500
                 ..Default::default()
             });
         }
         
-        // Compaction: skip first 3 messages (messages_sent_to_llm = 3)
+        // With compaction, still returns the LAST cumulative value
+        // (which represents the total prompt size)
         session.messages_sent_to_llm = 3;
-        session.compacted_summary = Some("This is a summary of the conversation".into());
+        session.compacted_summary = Some("This is a summary".into());
         
-        // With compaction, should only count messages after index 3
-        // Messages 3 and 4: 400 + 500 = 900
-        // Plus summary tokens (estimated)
         let tokens = session.history_real_tokens();
-        
-        // Should be 900 + summary tokens
-        assert!(tokens >= 900, "Tokens should be at least 900 (from messages 3 and 4)");
-        
-        // Summary has ~7 words, so ~10 tokens
-        assert!(tokens < 1500, "Tokens should be less than 1500 (not counting compacted messages)");
+        // Still returns 500 (the most recent cumulative value)
+        // The breakdown (system + tools + history) is handled separately
+        assert_eq!(tokens, 500);
     }
     
     #[test]
@@ -902,8 +948,30 @@ mod tests {
         // Second is summary
         assert!(messages[1].content.contains("Previous conversation summary"));
         
-        // Third and fourth are the remaining messages
-        assert!(messages[2].content.contains("Message 3"));
-        assert!(messages[3].content.contains("Message 4"));
+        // Remaining are messages
+        assert_eq!(messages[2].content, "Message 3");
+        assert_eq!(messages[3].content, "Message 4");
+    }
+
+    #[test]
+    fn test_to_rows_and_from_rows() {
+        use crate::chat::todo_state::TaskStatus;
+        use crate::db::TodoRow;
+        
+        let mut todos = super::TodoState::new();
+        todos.add("Task 1".to_string());
+        todos.add("Task 2".to_string());
+        todos.update_status(1, TaskStatus::Done).unwrap();
+        
+        let rows = todos.to_rows();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].description, "Task 1");
+        assert_eq!(rows[0].status, "done");
+        assert_eq!(rows[1].description, "Task 2");
+        assert_eq!(rows[1].status, "pending");
+        
+        // Convert back
+        let restored = super::TodoState::from_rows(&rows);
+        assert_eq!(restored.tasks.len(), 2);
     }
 }

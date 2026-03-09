@@ -185,26 +185,45 @@ pub fn check_context_overflow(
     context_window: usize,
     threshold: f32,
 ) -> ContextStatus {
-    // Calculate tokens for system prompt
-    let system_tokens = estimate_tokens(system_prompt) + 4; // +4 for message overhead
+    // Try to get real token count from Ollama's last prompt_eval_count
+    // This is already the TOTAL prompt size (system + tools + history)
+    let real_tokens = session.history_real_tokens();
 
-    // Calculate tokens for compacted summary (if present)
-    let summary_tokens = session
-        .compacted_summary
-        .as_ref()
-        .map(|s| estimate_tokens(s) + 4)
-        .unwrap_or(0);
+    // Calculate total tokens
+    // If real_tokens > 0, it's the cumulative prompt size from Ollama
+    // (includes system prompt, tools definitions if injected, and history)
+    let total_tokens = if real_tokens > 0 {
+        // Use real value from Ollama
+        real_tokens
+    } else {
+        // Fallback: estimate from message content
+        let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
 
-    // Calculate tokens from messages that will be sent to LLM
-    // Skip compacted messages (those before messages_sent_to_llm)
-    let history_tokens: usize = session
-        .messages
-        .iter()
-        .skip(session.messages_sent_to_llm)
-        .map(|msg| estimate_tokens(&msg.content) + 4)
-        .sum();
+        let summary_tokens = session
+            .compacted_summary
+            .as_ref()
+            .map(|s| estimate_tokens(s) + MESSAGE_OVERHEAD)
+            .unwrap_or(0);
 
-    let total_tokens = system_tokens + history_tokens + summary_tokens;
+        let history_tokens: usize = session
+            .messages
+            .iter()
+            .skip(session.messages_sent_to_llm)
+            .map(|msg| estimate_tokens(&msg.content) + MESSAGE_OVERHEAD)
+            .sum();
+
+        // Estimate tools tokens if enabled (~50 tokens per tool)
+        let tools_tokens = if session.tools {
+            // Approximate: ~50 tokens per tool for tool definitions
+            // This is a rough estimate; actual count depends on tool complexity
+            50 * 34 // Assuming ~34 tools when enabled
+        } else {
+            0
+        };
+
+        system_tokens + tools_tokens + history_tokens + summary_tokens
+    };
+
     let usage = total_tokens as f32 / context_window as f32;
     let usage_percent = (usage * 100.0).min(100.0) as u8;
 

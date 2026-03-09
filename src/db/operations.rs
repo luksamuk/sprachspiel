@@ -63,6 +63,9 @@ pub struct SearchResult {
     /// This enables conversation-aware retrieval where questions are paired with answers
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_message: Option<Box<SearchResult>>,
+    /// Token count from Ollama's prompt_eval_count (cumulative - includes all prompt tokens)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens: Option<i64>,
 }
 
 /// Source type for retrieved content
@@ -146,6 +149,18 @@ pub struct TodoRow {
     pub description: String,
     pub status: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// Session summary for listing
+#[derive(Debug, Clone)]
+pub struct SessionSummary {
+    pub id: String,
+    pub name: Option<String>,
+    pub model: String,
+    pub message_count: usize,
+    #[allow(dead_code)]
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl Database {
@@ -338,6 +353,20 @@ impl Database {
         })
     }
 
+    /// Update a message with its prompt token count
+    ///
+    /// This stores the cumulative token count from Ollama's prompt_eval_count.
+    /// The value is cumulative (includes system prompt + tools + all history + current message).
+    pub fn update_message_prompt_tokens(&self, message_id: i64, prompt_tokens: u64) -> Result<()> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            conn.execute(
+                "UPDATE messages SET prompt_tokens = ?1 WHERE id = ?2",
+                params![prompt_tokens as i64, message_id],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Search messages using full-text search (BM25)
     ///
     /// # Arguments
@@ -382,6 +411,7 @@ impl Database {
                         chunk_start: None,
                         chunk_end: None,
                         next_message: None,
+                        prompt_tokens: None,
                     })
                 })?;
                 for r in rows {
@@ -414,6 +444,7 @@ impl Database {
                         chunk_start: None,
                         chunk_end: None,
                         next_message: None,
+                        prompt_tokens: None,
                     })
                 })?;
                 for r in rows {
@@ -444,6 +475,7 @@ impl Database {
                     chunk_start: None,
                     chunk_end: None,
                     next_message: None,
+                    prompt_tokens: None,
                 })
             })?;
             for r in rows {
@@ -506,6 +538,7 @@ impl Database {
                     chunk_start: row.get(7)?,
                     chunk_end: row.get(8)?,
                     next_message: None,
+                    prompt_tokens: None,
                 })
             })?;
             for r in rows {
@@ -535,6 +568,7 @@ impl Database {
                     chunk_start: row.get(7)?,
                     chunk_end: row.get(8)?,
                     next_message: None,
+                    prompt_tokens: None,
                 })
             })?;
             for r in rows {
@@ -666,7 +700,7 @@ impl Database {
 
             match limit {
                 Some(lim) => {
-                    let sql = "SELECT id, conversation_id, role, content, timestamp FROM messages 
+                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens FROM messages 
                         WHERE conversation_id = ?1 ORDER BY timestamp ASC LIMIT ?2";
                     let mut stmt = conn.prepare(sql)?;
                     let rows = stmt.query_map(
@@ -685,6 +719,7 @@ impl Database {
                                 chunk_start: None,
                                 chunk_end: None,
                                 next_message: None,
+                                prompt_tokens: row.get(5)?,
                             })
                         },
                     )?;
@@ -693,7 +728,7 @@ impl Database {
                     }
                 }
                 None => {
-                    let sql = "SELECT id, conversation_id, role, content, timestamp FROM messages 
+                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens FROM messages 
                         WHERE conversation_id = ?1 ORDER BY timestamp ASC";
                     let mut stmt = conn.prepare(sql)?;
                     let rows =
@@ -711,6 +746,7 @@ impl Database {
                                 chunk_start: None,
                                 chunk_end: None,
                                 next_message: None,
+                                prompt_tokens: row.get(5)?,
                             })
                         })?;
                     for r in rows {
@@ -762,7 +798,8 @@ impl Database {
     /// when the LLM sees a truncated message in the retrieved context.
     pub fn get_message_by_id(&self, message_id: i64) -> Result<Option<SearchResult>> {
         self.with_connection(|conn: &rusqlite::Connection| {
-            let sql = "SELECT id, conversation_id, role, content, timestamp FROM messages 
+            let sql =
+                "SELECT id, conversation_id, role, content, timestamp, prompt_tokens FROM messages 
                        WHERE id = ?1";
             let mut stmt = conn.prepare(sql)?;
             let mut rows = stmt.query_map(params![message_id], |row: &rusqlite::Row<'_>| {
@@ -779,6 +816,7 @@ impl Database {
                     chunk_start: None,
                     chunk_end: None,
                     next_message: None,
+                    prompt_tokens: row.get(5)?,
                 })
             })?;
 
@@ -829,6 +867,7 @@ impl Database {
                         chunk_start: None,
                         chunk_end: None,
                         next_message: None,
+                        prompt_tokens: None,
                     })
                 },
             )?;
@@ -896,6 +935,66 @@ impl Database {
             let mut stmt = conn.prepare("SELECT id FROM conversations ORDER BY updated_at DESC")?;
             let rows = stmt.query_map([], |row| row.get(0))?;
             rows.collect::<Result<Vec<_>>>()
+        })
+    }
+
+    /// List sessions for a project
+    ///
+    /// Returns session info including name, model, message count, and timestamps.
+    pub fn list_sessions(&self, project_id: Option<&str>) -> Result<Vec<SessionSummary>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let sql = if project_id.is_some() {
+                "SELECT id, title, model, created_at, updated_at,
+                        (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count
+                 FROM conversations c
+                 WHERE project_id = ?1
+                 ORDER BY updated_at DESC"
+            } else {
+                "SELECT id, title, model, created_at, updated_at,
+                        (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count
+                 FROM conversations c
+                 ORDER BY updated_at DESC"
+            };
+
+            let mut stmt = conn.prepare(sql)?;
+
+            let rows = if let Some(pid) = project_id {
+                stmt.query_map(params![pid], |row| {
+                    let created_at_ts: i64 = row.get(3)?;
+                    let updated_at_ts: i64 = row.get(4)?;
+                    let msg_count: i64 = row.get(5)?;
+
+                    Ok(SessionSummary {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        model: row.get(2)?,
+                        message_count: msg_count as usize,
+                        created_at: chrono::DateTime::from_timestamp(created_at_ts, 0)
+                            .unwrap_or_else(Utc::now),
+                        updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
+                            .unwrap_or_else(Utc::now),
+                    })
+                })?.collect::<Result<Vec<_>>>()
+            } else {
+                stmt.query_map([], |row| {
+                    let created_at_ts: i64 = row.get(3)?;
+                    let updated_at_ts: i64 = row.get(4)?;
+                    let msg_count: i64 = row.get(5)?;
+
+                    Ok(SessionSummary {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        model: row.get(2)?,
+                        message_count: msg_count as usize,
+                        created_at: chrono::DateTime::from_timestamp(created_at_ts, 0)
+                            .unwrap_or_else(Utc::now),
+                        updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
+                            .unwrap_or_else(Utc::now),
+                    })
+                })?.collect::<Result<Vec<_>>>()
+            };
+
+            rows
         })
     }
 
@@ -1079,6 +1178,7 @@ impl Database {
                     chunk_start: None,
                     chunk_end: None,
                     next_message: None,
+                    prompt_tokens: None,
                 })
             })?;
 
@@ -1364,6 +1464,7 @@ mod tests {
             chunk_start: None,
             chunk_end: None,
             next_message: None,
+            prompt_tokens: None,
         };
 
         let keyword_results = vec![
@@ -1488,5 +1589,170 @@ mod tests {
                 .expect("Failed to count"),
             0
         );
+    }
+
+    #[test]
+    fn test_list_sessions() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert multiple conversations
+        db.insert_conversation(
+            "conv1",
+            Some("project1"),
+            Some("Session One"),
+            "llama3.1",
+            Utc::now(),
+            Utc::now(),
+        )
+        .expect("Failed to insert conversation");
+        db.insert_conversation(
+            "conv2",
+            Some("project1"),
+            Some("Session Two"),
+            "llama3.2",
+            Utc::now(),
+            Utc::now(),
+        )
+        .expect("Failed to insert conversation");
+        db.insert_conversation(
+            "conv3",
+            Some("project2"),
+            Some("Session Three"),
+            "llama3.1",
+            Utc::now(),
+            Utc::now(),
+        )
+        .expect("Failed to insert conversation");
+
+        // Add messages to conv1
+        db.insert_message("conv1", ROLE_USER, "Hello", Utc::now())
+            .expect("Failed to insert message");
+        db.insert_message("conv1", ROLE_ASSISTANT, "Hi there", Utc::now())
+            .expect("Failed to insert message");
+
+        // List all sessions
+        let all_sessions = db.list_sessions(None).expect("Failed to list sessions");
+        assert_eq!(all_sessions.len(), 3);
+
+        // List sessions for project1
+        let project1_sessions = db
+            .list_sessions(Some("project1"))
+            .expect("Failed to list sessions");
+        assert_eq!(project1_sessions.len(), 2);
+
+        // List sessions for project2
+        let project2_sessions = db
+            .list_sessions(Some("project2"))
+            .expect("Failed to list sessions");
+        assert_eq!(project2_sessions.len(), 1);
+        assert_eq!(project2_sessions[0].name, Some("Session Three".to_string()));
+        assert_eq!(project2_sessions[0].model, "llama3.1");
+
+        // Check message count
+        let conv1_session = all_sessions
+            .iter()
+            .find(|s| s.id == "conv1")
+            .expect("conv1 not found");
+        assert_eq!(conv1_session.message_count, 2);
+    }
+
+    #[test]
+    fn test_get_conversation_metadata() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert conversation with metadata
+        db.insert_conversation(
+            "test-meta",
+            Some("project1"),
+            Some("Test Session"),
+            "llama3.1",
+            Utc::now(),
+            Utc::now(),
+        )
+        .expect("Failed to insert conversation");
+
+        // Update metadata
+        db.update_conversation_metadata(
+            "test-meta",
+            Some("Renamed Session"),
+            Some("You are helpful"),
+            Some("Summary of conversation"),
+            Some((5, 10)),
+            true,
+            false,
+            "full",
+            Utc::now(),
+        )
+        .expect("Failed to update metadata");
+
+        // Get metadata
+        let meta = db
+            .get_conversation_metadata("test-meta")
+            .expect("Failed to get metadata");
+        assert_eq!(meta.id, "test-meta");
+        assert_eq!(meta.project_id, Some("project1".to_string()));
+        assert_eq!(meta.name, Some("Renamed Session".to_string()));
+        assert_eq!(meta.model, "llama3.1");
+        assert_eq!(meta.system_prompt, Some("You are helpful".to_string()));
+        assert_eq!(
+            meta.compacted_summary,
+            Some("Summary of conversation".to_string())
+        );
+        assert_eq!(meta.compacted_range, Some((5, 10)));
+        assert!(meta.think);
+        assert!(!meta.tools);
+        assert_eq!(meta.tool_output_level, "full");
+    }
+
+    #[test]
+    fn test_save_and_get_todos() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert conversation
+        db.insert_conversation("test-todos", None, None, "llama3.1", Utc::now(), Utc::now())
+            .expect("Failed to insert conversation");
+
+        // Save todos
+        let todos = vec![
+            TodoRow {
+                task_id: 1,
+                description: "Task 1".to_string(),
+                status: "pending".to_string(),
+                created_at: Utc::now(),
+            },
+            TodoRow {
+                task_id: 2,
+                description: "Task 2".to_string(),
+                status: "completed".to_string(),
+                created_at: Utc::now(),
+            },
+        ];
+
+        db.save_todos("test-todos", &todos)
+            .expect("Failed to save todos");
+
+        // Get todos
+        let retrieved = db.get_todos("test-todos").expect("Failed to get todos");
+        assert_eq!(retrieved.len(), 2);
+        assert_eq!(retrieved[0].description, "Task 1");
+        assert_eq!(retrieved[0].status, "pending");
+        assert_eq!(retrieved[1].description, "Task 2");
+        assert_eq!(retrieved[1].status, "completed");
+
+        // Update todos (replace)
+        let updated_todos = vec![TodoRow {
+            task_id: 1,
+            description: "Updated Task".to_string(),
+            status: "in_progress".to_string(),
+            created_at: Utc::now(),
+        }];
+
+        db.save_todos("test-todos", &updated_todos)
+            .expect("Failed to update todos");
+
+        let retrieved = db.get_todos("test-todos").expect("Failed to get todos");
+        assert_eq!(retrieved.len(), 1);
+        assert_eq!(retrieved[0].description, "Updated Task");
+        assert_eq!(retrieved[0].status, "in_progress");
     }
 }

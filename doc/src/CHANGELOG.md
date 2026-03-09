@@ -2,6 +2,45 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.27.1] - 2026-03-09
+
+### Fixed
+
+- **Token Count Bug** - Fixed incorrect token calculation in `/context` display
+  - `history_real_tokens()` now uses the LAST cumulative `prompt_tokens` value (Ollama's `prompt_eval_count`)
+  - Previous code incorrectly SUMMED all `prompt_tokens` values, causing ~184K tokens when actual was ~22K
+  - `check_context_overflow()` now correctly handles fallback path (includes tools estimate)
+  - Context status simplified to "OK", "MODERATE", "CRITICAL" (removed confusing "auto-compact triggered")
+
+### Fixed
+
+- **Token Persistence** - Added `prompt_tokens` column to messages table
+  - Messages now store `prompt_eval_count` from Ollama responses
+  - Token counts persist across sessions
+  - `/context` shows accurate token usage on startup
+
+### Added
+
+- **Automatic JSON Migration** - One-time automatic migration on startup
+  - Detects all JSON sessions in `~/.local/share/ask-ai/conversations/`
+  - Migrates sessions not yet in SQLite (with embeddings)
+  - Archives ALL JSON files to `~/.local/share/ask-ai/archived/`
+  - Removes empty project directories
+  - Does NOT touch `OLD/` directory
+
+### Changed
+
+- **SQLite-Only Storage** - Removed dual-write to JSON files
+  - `/save` and `/load` now use SQLite exclusively
+  - Removed `/migrate` command (automatic migration replaces it)
+  - `/restore <id>` imported from JSON as disaster recovery option
+
+### Removed
+
+- **Dead Code Cleanup**
+  - Removed `migrate_project()` function (replaced by automatic migration)
+  - Deprecated `Session.save()` (JSON) in favor of `Session.save_sqlite()`
+
 ## [0.26.8] - 2026-03-09
 
 ### Fixed

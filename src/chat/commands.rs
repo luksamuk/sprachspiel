@@ -2,7 +2,6 @@
 //!
 //! Parses and executes commands like /quit, /clear, /model, etc.
 
-use super::history::ConversationStorage;
 use super::session::ChatSession;
 use crate::debug_tools::toggle_debug;
 use crate::tokens::ContextMetrics;
@@ -34,8 +33,8 @@ pub enum CommandResult {
     Context,
     /// Search conversation history (handled in REPL)
     Search { query: String, limit: usize },
-    /// Migrate sessions to SQLite (handled in REPL)
-    Migrate { session_id: Option<String> },
+    /// Restore session from JSON to SQLite (handled in REPL)
+    Restore { session_id: String },
     /// Reindex embeddings (handled in REPL)
     Reindex { conversation_id: Option<String> },
     /// Toggle retrieval mode (returns new state)
@@ -90,8 +89,8 @@ pub enum ChatCommand {
     Undo,
     /// Search conversation history
     Search { query: String, limit: usize },
-    /// Migrate sessions to SQLite
-    Migrate { session_id: Option<String> },
+    /// Restore session from JSON to SQLite
+    Restore { session_id: String },
     /// Reindex embeddings
     Reindex { conversation_id: Option<String> },
     /// Toggle retrieval mode
@@ -204,13 +203,13 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let limit: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
             ChatCommand::Search { query, limit }
         }
-        "migrate" => {
-            let session_id = if args.is_empty() {
-                None
-            } else {
-                Some(args.trim().to_string())
-            };
-            ChatCommand::Migrate { session_id }
+        "restore" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /restore <session-id>".to_string()));
+            }
+            ChatCommand::Restore {
+                session_id: args.trim().to_string(),
+            }
         }
         "reindex" => {
             let conversation_id = if args.is_empty() {
@@ -228,11 +227,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 }
 
 /// Execute a chat command
-pub fn execute_command(
-    command: ChatCommand,
-    session: &mut ChatSession,
-    storage: &ConversationStorage,
-) -> CommandResult {
+pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> CommandResult {
     match command {
         ChatCommand::Quit => {
             println!("Goodbye!");
@@ -256,7 +251,7 @@ pub fn execute_command(
             session.clear_messages();
             
             if !session.anonymous
-                && let Err(e) = session.save(storage)
+                && let Err(e) = session.save_sqlite()
             {
                 eprintln!("Warning: Could not save session: {}", e);
             }
@@ -297,7 +292,7 @@ pub fn execute_command(
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
                 session.id = format!("session-{}", timestamp);
-                if let Err(e) = session.save(storage) {
+                if let Err(e) = session.save_sqlite() {
                     eprintln!("Warning: Could not save new session: {}", e);
                 }
             }
@@ -333,7 +328,7 @@ pub fn execute_command(
                 session.rename(n);
             }
 
-            match session.save(storage) {
+            match session.save_sqlite() {
                 Ok(()) => {
                     let session_name = session.name.as_deref().unwrap_or(&session.id);
                     println!("Session saved: {}", session_name);
@@ -344,7 +339,17 @@ pub fn execute_command(
         }
 
         ChatCommand::Load { name } => {
-            match ChatSession::load(storage, &session.project_id, &name) {
+            // Need database for load
+            let db = match &session.db {
+                Some(d) => std::sync::Arc::clone(d),
+                None => {
+                    return CommandResult::Error(
+                        "Cannot load session: database not initialized.".to_string(),
+                    );
+                }
+            };
+
+            match ChatSession::load_sqlite(&db, &name) {
                 Ok(loaded) => {
                     *session = loaded;
                     let display_name = session.name.as_deref().unwrap_or(&session.id);
@@ -381,18 +386,34 @@ pub fn execute_command(
         }
 
         ChatCommand::List => {
-            let sessions = storage.list_sessions(&session.project_id);
-            if sessions.is_empty() {
-                println!("No saved sessions for this project.");
-            } else {
-                println!("Saved sessions:");
-                for info in sessions {
-                    let name = info.name.as_deref().unwrap_or(&info.id);
-                    let time = info.updated_at.format("%Y-%m-%d %H:%M");
-                    println!(
-                        "  {} - {} messages, {} (model: {})",
-                        name, info.message_count, time, info.model
+            // Need database for list
+            let db = match &session.db {
+                Some(d) => std::sync::Arc::clone(d),
+                None => {
+                    return CommandResult::Error(
+                        "Cannot list sessions: database not initialized.".to_string(),
                     );
+                }
+            };
+
+            match db.list_sessions(session.project_id.as_deref()) {
+                Ok(sessions) => {
+                    if sessions.is_empty() {
+                        println!("No saved sessions for this project.");
+                    } else {
+                        println!("Saved sessions:");
+                        for info in sessions {
+                            let name = info.name.as_deref().unwrap_or(&info.id);
+                            let time = info.updated_at.format("%Y-%m-%d %H:%M");
+                            println!(
+                                "  {} - {} messages, {} (model: {})",
+                                name, info.message_count, time, info.model
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error listing sessions: {}", e);
                 }
             }
             CommandResult::Continue
@@ -430,7 +451,7 @@ pub fn execute_command(
 
         ChatCommand::Search { query, limit } => CommandResult::Search { query, limit },
 
-        ChatCommand::Migrate { session_id } => CommandResult::Migrate { session_id },
+        ChatCommand::Restore { session_id } => CommandResult::Restore { session_id },
 
         ChatCommand::Reindex { conversation_id } => CommandResult::Reindex { conversation_id },
 
@@ -464,7 +485,7 @@ fn print_help() {
   /info            Show current session information
   /context         Show context metrics and token usage
   /search <query>  Search current conversation (keyword + semantic)
-  /migrate [id]    Migrate session(s) to SQLite for semantic search
+  /restore <id>    Restore session from JSON to SQLite
   /reindex [id]    Rebuild embeddings for semantic search
   /retrieval       Toggle semantic retrieval from conversation history
 

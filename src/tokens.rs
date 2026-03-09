@@ -73,21 +73,40 @@ impl ContextMetrics {
 /// * `context_window` - Maximum context window size in tokens
 /// * `system_prompt` - System prompt text
 /// * `tools_tokens` - Estimated tokens for tool definitions
-/// * `real_history_tokens` - Optional real token count from Ollama (if available)
+/// * `real_prompt_tokens` - Optional real token count from Ollama's prompt_eval_count
+///   IMPORTANT: This is CUMULATIVE - it includes system prompt + tools + ALL history
+///   When provided, we use it directly as total_tokens (no need to add system + tools again)
 pub fn calculate_context_metrics(
     history_messages: &[ChatMessage],
     context_window: usize,
     system_prompt: &str,
     tools_tokens: usize,
-    real_history_tokens: Option<usize>,
+    real_prompt_tokens: Option<usize>,
 ) -> ContextMetrics {
     let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
-    // Use real tokens if available, otherwise estimate
-    let history_tokens =
-        real_history_tokens.unwrap_or_else(|| count_messages_tokens(history_messages));
-    let total_tokens = system_tokens
-        .saturating_add(tools_tokens)
-        .saturating_add(history_tokens);
+
+    // When real_prompt_tokens is provided, it's the TOTAL prompt size from Ollama
+    // (system + tools + history). We use it directly.
+    // Otherwise, we estimate from message content only (no system/tools included).
+    let (total_tokens, history_tokens) = match real_prompt_tokens {
+        Some(total) => {
+            // real_prompt_tokens is the total prompt size
+            // history_tokens is derived by subtracting system + tools
+            let history = total
+                .saturating_sub(system_tokens)
+                .saturating_sub(tools_tokens);
+            (total, history)
+        }
+        None => {
+            // Fallback: estimate from messages only
+            let history = count_messages_tokens(history_messages);
+            let total = system_tokens
+                .saturating_add(tools_tokens)
+                .saturating_add(history);
+            (total, history)
+        }
+    };
+
     let utilization = if context_window > 0 {
         (total_tokens as f32 / context_window as f32).min(1.0)
     } else {

@@ -78,6 +78,49 @@ pub async fn run_chat_repl(
         &settings.model.default
     };
 
+    // Initialize database first (needed for session loading and migration)
+    let db: Option<Arc<crate::db::Database>> = if !args.anonymous {
+        match crate::db::Database::new() {
+            Ok(database) => {
+                if use_debug {
+                    log_debug("Database initialized for message persistence");
+                }
+                Some(Arc::new(database))
+            }
+            Err(e) => {
+                if use_debug {
+                    log_debug(&format!("Warning: Could not initialize database: {}", e));
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Create ollama client early for embedding client (needed for migration)
+    let ollama = settings.ollama_client();
+    let embedding_client: Option<Arc<crate::embeddings::EmbeddingClient>> = 
+        if db.is_some() {
+            Some(Arc::new(crate::embeddings::EmbeddingClient::new(ollama.clone())))
+        } else {
+            None
+        };
+
+    // Run ONE-TIME automatic migration from JSON to SQLite
+    if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
+        if !args.anonymous {
+            let migration_stats = crate::db::migrate_all_legacy_sessions(&storage, db_ref, client).await;
+            if migration_stats.sessions_migrated > 0 {
+                // Sessions were migrated, save the count for later display
+                log_debug(&format!(
+                    "Migrated {} session(s) from JSON to SQLite",
+                    migration_stats.sessions_migrated
+                ));
+            }
+        }
+    }
+
     // Load or create session
     let mut session = if args.anonymous {
         // Anonymous mode: never load history, always start fresh
@@ -91,19 +134,71 @@ pub async fn run_chat_repl(
             None, // No project_id for anonymous
             true,  // anonymous = true
         )
-    } else if let Some(ref session_name) = args.load {
-        match ChatSession::load(&storage, &project_id, session_name) {
-            Ok(s) => {
-                println!(
-                    "Loaded session: {} ({} messages)",
-                    session_name,
-                    s.messages.len()
-                );
-                s
+    } else if let Some(session_name) = &args.load {
+        // Try loading from SQLite
+        if let Some(db_ref) = &db {
+            match ChatSession::load_sqlite(db_ref, session_name) {
+                Ok(s) => {
+                    println!(
+                        "Loaded session: {} ({} messages)",
+                        session_name,
+                        s.messages.len()
+                    );
+                    s
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not load session '{}': {}", session_name, e);
+                    println!("Starting new session...");
+                    let mut new_session = ChatSession::new(
+                        model_override
+                            .unwrap_or(default_model)
+                            .to_string(),
+                        project_id.clone(),
+                        false,
+                    );
+                    new_session.id = session_name.clone();
+                    new_session
+                }
             }
-            Err(e) => {
-                eprintln!("Warning: Could not load session '{}': {}", session_name, e);
-                println!("Starting new session...");
+        } else {
+            // No database, fallback
+            ChatSession::new(
+                model_override
+                    .unwrap_or(default_model)
+                    .to_string(),
+                project_id.clone(),
+                false,
+            )
+        }
+    } else if let Some(db_ref) = &db {
+        // Try loading default session from SQLite
+        let default_id = "default";
+        match db_ref.conversation_exists(default_id) {
+            Ok(true) => {
+                match ChatSession::load_sqlite(db_ref, default_id) {
+                    Ok(s) => {
+                        println!(
+                            "Resumed session: {} ({} messages)",
+                            default_id,
+                            s.messages.len()
+                        );
+                        s
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Could not load default session: {}", e);
+                        println!("Starting new session...");
+                        ChatSession::new(
+                            model_override
+                                .unwrap_or(default_model)
+                                .to_string(),
+                            project_id.clone(),
+                            false,
+                        )
+                    }
+                }
+            }
+            _ => {
+                // No default session in DB, create new
                 ChatSession::new(
                     model_override
                         .unwrap_or(default_model)
@@ -114,38 +209,14 @@ pub async fn run_chat_repl(
             }
         }
     } else {
-        let default_id = ConversationStorage::default_session_id();
-        if storage.session_exists(&project_id, &default_id) {
-            match ChatSession::load(&storage, &project_id, &default_id) {
-                Ok(s) => {
-                    println!(
-                        "Resumed session: {} ({} messages)",
-                        default_id,
-                        s.messages.len()
-                    );
-                    s
-                }
-                Err(e) => {
-                    eprintln!("Warning: Could not load default session: {}", e);
-                    println!("Starting new session...");
-                    ChatSession::new(
-                        model_override
-                            .unwrap_or(default_model)
-                            .to_string(),
-                        project_id.clone(),
-                        false,
-                    )
-                }
-            }
-        } else {
-            ChatSession::new(
-                model_override
-                    .unwrap_or(default_model)
-                    .to_string(),
-                project_id.clone(),
-                false,
-            )
-        }
+        // No database available, create new session
+        ChatSession::new(
+            model_override
+                .unwrap_or(default_model)
+                .to_string(),
+            project_id.clone(),
+            false,
+        )
     };
 
     // Apply CLI flags (CLI takes precedence over args)
@@ -177,43 +248,14 @@ pub async fn run_chat_repl(
     let mut current_model_name = session.model.clone();
     let mut model_config = crate::user_models::resolve_model_config(&current_model_name);
 
-    let ollama = settings.ollama_client();
     let mut capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
     
-    // Initialize database and embedding client for message persistence
-    let db: Option<Arc<crate::db::Database>> = if !session.anonymous {
-        match crate::db::Database::new() {
-            Ok(database) => {
-                if use_debug {
-                    log_debug("Database initialized for message persistence");
-                }
-                Some(Arc::new(database))
-            }
-            Err(e) => {
-                if use_debug {
-                    log_debug(&format!("Warning: Could not initialize database: {}", e));
-                }
-                None
-            }
-        }
-    } else {
-        None
-    };
-    
-    // Create embedding client
-    let embedding_client: Option<Arc<crate::embeddings::EmbeddingClient>> = 
-        if db.is_some() {
-            Some(Arc::new(crate::embeddings::EmbeddingClient::new(ollama.clone())))
-        } else {
-            None
-        };
-    
     // Attach database to session
-    if let (Some(db), Some(client)) = (&db, &embedding_client) {
-        session.attach_db(Arc::clone(db), Arc::clone(client));
+    if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
+        session.attach_db(Arc::clone(db_ref), Arc::clone(client));
         
         // Recover any missing embeddings from previous session
-        let recovered = crate::embeddings::recover_missing_embeddings(db, client, &session.id).await;
+        let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client, &session.id).await;
         if recovered > 0 {
             log_debug(&format!("Recovered {} missing embedding(s)", recovered));
         }
@@ -350,7 +392,7 @@ pub async fn run_chat_repl(
                                         );
 
                                         if !session.anonymous {
-                                            let _ = session.save(&storage);
+                                            let _ = session.save_sqlite();
                                         }
                                     }
                                     Err(e) => {
@@ -360,12 +402,12 @@ pub async fn run_chat_repl(
                                 continue;
                             }
 
-                            match execute_command(cmd, &mut session, &storage) {
+                            match execute_command(cmd, &mut session) {
                                 CommandResult::Continue => continue,
                                 CommandResult::Exit => {
                                     let _ = rl.save_history(&history_path());
                                     if !session.anonymous {
-                                        let _ = session.save(&storage);
+                                        let _ = session.save_sqlite();
                                     }
                                     return Ok(());
                                 }
@@ -456,7 +498,7 @@ pub async fn run_chat_repl(
                                             println!("\x1B[90m---------------\x1B[0m");
 
                                             if !session.anonymous {
-                                                let _ = session.save(&storage);
+                                                let _ = session.save_sqlite();
                                             }
                                         }
                                         Err(e) => {
@@ -548,14 +590,13 @@ pub async fn run_chat_repl(
                                                     &mut session,
                                                     settings,
                                                     agents_md.as_deref(),
-                                                    &storage,
                                                     &result.system_prompt,
                                                     result.context_window,
                                                     use_debug,
                                                 ).await;
 
                                                 if !session.anonymous
-                                                    && let Err(e) = session.save(&storage)
+                                                    && let Err(e) = session.save_sqlite()
                                                     && use_debug
                                                 {
                                                     log_debug(&format!("Warning: Could not save session: {}", e));
@@ -626,7 +667,7 @@ pub async fn run_chat_repl(
                                     ).await;
                                     continue;
                                 }
-                                CommandResult::Migrate { session_id } => {
+                                CommandResult::Restore { session_id } => {
                                     // Check if database is available
                                     let db = match &db {
                                         Some(d) => Arc::clone(d),
@@ -636,52 +677,18 @@ pub async fn run_chat_repl(
                                         }
                                     };
                                     
-                                    let embedding_client = crate::embeddings::EmbeddingClient::new(ollama.clone());
-                                    let embedding_client = Arc::new(embedding_client);
-                                    
-                                    if let Some(sid) = session_id {
-                                        // Migrate specific session
-                                        println!("Migrating session: {}", sid);
-                                        match ChatSession::load(&storage, &session.project_id, &sid) {
-                                            Ok(sess) => {
-                                                match crate::db::migrate_session(&sess, &db, &embedding_client).await {
-                                                    Ok(stats) => {
-                                                        println!(
-                                                            "Migration complete: {} messages, {} embeddings",
-                                                            stats.messages_migrated,
-                                                            stats.embeddings_generated
-                                                        );
-                                                        if !stats.errors.is_empty() {
-                                                            eprintln!("Errors:");
-                                                            for e in stats.errors {
-                                                                eprintln!("  - {}", e);
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(e) => eprintln!("Error: {}", e),
-                                                }
-                                            }
-                                            Err(e) => eprintln!("Error loading session: {}", e),
+                                    println!("Restoring session: {}", session_id);
+                                    match crate::db::restore_session(&storage, &db, &session.project_id, &session_id) {
+                                        Ok(restored) => {
+                                            println!(
+                                                "Session restored: {} ({} messages)",
+                                                session_id,
+                                                restored.messages.len()
+                                            );
+                                            // Switch to the restored session
+                                            session = restored;
                                         }
-                                    } else {
-                                        // Migrate all sessions for project
-                                        match crate::db::migrate_project(&storage, &session.project_id, &db, &embedding_client).await {
-                                            Ok(stats) => {
-                                                println!(
-                                                    "Migration complete: {} sessions, {} messages, {} embeddings",
-                                                    stats.sessions_migrated,
-                                                    stats.messages_migrated,
-                                                    stats.embeddings_generated
-                                                );
-                                                if !stats.errors.is_empty() {
-                                                    eprintln!("Errors:");
-                                                    for e in stats.errors {
-                                                        eprintln!("  - {}", e);
-                                                    }
-                                                }
-                                            }
-                                            Err(e) => eprintln!("Error: {}", e),
-                                        }
+                                        Err(e) => eprintln!("Error: {}", e),
                                     }
                                     continue;
                                 }
@@ -732,7 +739,7 @@ pub async fn run_chat_repl(
                 // Save user message immediately before sending
                 session.add_user_message(line.to_string());
                 if !session.anonymous
-                    && let Err(e) = session.save(&storage)
+                    && let Err(e) = session.save_sqlite()
                     && use_debug
                 {
                     log_debug(&format!("Warning: Could not save session: {}", e));
@@ -760,7 +767,6 @@ pub async fn run_chat_repl(
                         &mut session,
                         settings,
                         agents_md.as_deref(),
-                        &storage,
                         &system_prompt_for_check,
                         context_window,
                         use_debug,
@@ -808,14 +814,13 @@ pub async fn run_chat_repl(
                             &mut session,
                             settings,
                             agents_md.as_deref(),
-                            &storage,
                             &system_prompt,
                             context_window,
                             use_debug,
                         ).await;
 
                         if !session.anonymous
-                            && let Err(e) = session.save(&storage)
+                            && let Err(e) = session.save_sqlite()
                             && use_debug
                         {
                             log_debug(&format!("Warning: Could not save session: {}", e));
@@ -852,7 +857,6 @@ pub async fn run_chat_repl(
                                 &mut session,
                                 settings,
                                 agents_md.as_deref(),
-                                &storage,
                                 &overflow_system_prompt,
                                 overflow_context_window,
                                 use_debug,
@@ -860,7 +864,7 @@ pub async fn run_chat_repl(
                             
                             // Save session after compaction
                             if !session.anonymous {
-                                if let Err(save_err) = session.save(&storage) {
+                                if let Err(save_err) = session.save_sqlite() {
                                     if use_debug {
                                         log_debug(&format!("Warning: Could not save session after recovery: {}", save_err));
                                     }
@@ -883,7 +887,7 @@ pub async fn run_chat_repl(
                 println!("^D");
                 let _ = rl.save_history(&history_path());
                 if !session.anonymous {
-                    let _ = session.save(&storage);
+                    let _ = session.save_sqlite();
                 }
                 return Ok(());
             }
@@ -1289,7 +1293,6 @@ async fn auto_compact_if_needed(
     session: &mut ChatSession,
     settings: &Settings,
     agents_md: Option<&str>,
-    storage: &ConversationStorage,
     system_prompt: &str,
     context_window: usize,
     use_debug: bool,
@@ -1324,7 +1327,7 @@ async fn auto_compact_if_needed(
             );
             
             if !session.anonymous {
-                if let Err(e) = session.save(storage) {
+                if let Err(e) = session.save_sqlite() {
                     if use_debug {
                         log_debug(&format!("Warning: Could not save session after auto-compact: {}", e));
                     }
@@ -1407,9 +1410,9 @@ fn print_context_info(
     let (color_code, reset_code, status_text) = if usage_percent < 72 {
         ("\x1B[32m", "\x1B[0m", "OK") // Green
     } else if usage_percent < 80 {
-        ("\x1B[33m", "\x1B[0m", "WARNING (approaching limit)") // Yellow
+        ("\x1B[33m", "\x1B[0m", "MODERATE") // Yellow
     } else {
-        ("\x1B[31m", "\x1B[0m", "OVERFLOW (auto-compact triggered)") // Red
+        ("\x1B[31m", "\x1B[0m", "CRITICAL") // Red
     };
     
     println!();
@@ -1447,12 +1450,24 @@ fn print_context_info(
         session.messages.len()
     };
     
-    // Include summary in conversation display if present
-    if session.has_compacted_messages() {
-        println!("    Summary:          ~{} tokens", estimate_tokens(session.compacted_summary.as_deref().unwrap_or("")) + 4);
-        println!("    Conversation:     ~{} tokens ({} active messages)", metrics.history_tokens, active_messages);
+    // Show real token count if available (from Ollama's prompt_eval_count)
+    if metrics.total_tokens > 0 {
+        // When we have real tokens, total = system + tools + history
+        // history_tokens is derived: total - system - tools
+        println!("    History:          ~{} tokens", metrics.history_tokens);
+        if session.has_compacted_messages() {
+            println!("                      ({} active messages + summary)", active_messages);
+        } else {
+            println!("                      ({} messages)", active_messages);
+        }
     } else {
-        println!("    Conversation:     ~{} tokens ({} messages)", metrics.history_tokens, active_messages);
+        // Fallback estimation
+        if session.has_compacted_messages() {
+            println!("    Summary:          ~{} tokens", estimate_tokens(session.compacted_summary.as_deref().unwrap_or("")) + 4);
+            println!("    Conversation:     ~{} tokens ({} active messages)", metrics.history_tokens, active_messages);
+        } else {
+            println!("    Conversation:     ~{} tokens ({} messages)", metrics.history_tokens, active_messages);
+        }
     }
     
     println!("    {}", "─".repeat(40));
