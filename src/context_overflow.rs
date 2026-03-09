@@ -19,6 +19,10 @@ pub const DEFAULT_KEEP_FIRST: usize = 5;
 /// Default number of last messages to keep during compaction
 pub const DEFAULT_KEEP_LAST: usize = 5;
 
+/// Minimum messages to preserve during pre-tool compaction
+/// This ensures the current turn (user message) is never compacted
+pub const MIN_PRESERVE_LAST: usize = 1;
+
 /// Check if context needs pre-tool compaction
 /// Returns true if context is above PRE_TOOL_THRESHOLD (75%)
 pub fn needs_pre_tool_compaction(
@@ -673,5 +677,153 @@ mod tests {
         assert!(!was_truncated);
         assert_eq!(truncated, "");
         assert_eq!(original_tokens, 0);
+    }
+
+    #[test]
+    fn test_pre_tool_threshold() {
+        // PRE_TOOL_THRESHOLD should be lower than DEFAULT_OVERFLOW_THRESHOLD
+        assert!(
+            PRE_TOOL_THRESHOLD < DEFAULT_OVERFLOW_THRESHOLD,
+            "Pre-tool threshold should be lower than overflow threshold"
+        );
+        assert_eq!(PRE_TOOL_THRESHOLD, 0.75, "Pre-tool threshold should be 75%");
+        assert_eq!(
+            DEFAULT_OVERFLOW_THRESHOLD, 0.80,
+            "Overflow threshold should be 80%"
+        );
+    }
+
+    #[test]
+    fn test_needs_pre_tool_compaction_below_threshold() {
+        // Session with low context usage (below 75%)
+        let mut session = ChatSession::new("test-model".to_string(), None, false);
+
+        // Add a few small messages (well below threshold)
+        for i in 0..5 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Short message {}", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            });
+        }
+
+        let system_prompt = "You are helpful.";
+        let context_window = 128000; // Typical large context
+
+        // Should NOT need pre-tool compaction
+        assert!(
+            !needs_pre_tool_compaction(&session, system_prompt, context_window),
+            "Session below 75% should not need pre-tool compaction"
+        );
+    }
+
+    #[test]
+    fn test_needs_pre_tool_compaction_above_threshold() {
+        // Session with high context usage (above 75%)
+        let mut session = ChatSession::new("test-model".to_string(), None, false);
+
+        // Fill session with large content to exceed threshold
+        let large_content = "word ".repeat(50000); // ~67000 tokens
+        for _ in 0..3 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: large_content.clone(),
+                timestamp: Utc::now(),
+                ..Default::default()
+            });
+        }
+
+        let system_prompt = "You are helpful.";
+        let context_window = 128000;
+
+        // Should need pre-tool compaction
+        assert!(
+            needs_pre_tool_compaction(&session, system_prompt, context_window),
+            "Session above 75% should need pre-tool compaction"
+        );
+    }
+
+    #[test]
+    fn test_min_preserve_last() {
+        // MIN_PRESERVE_LAST should ensure at least 1 message is preserved
+        assert!(MIN_PRESERVE_LAST >= 1, "Should preserve at least 1 message");
+        assert!(
+            MIN_PRESERVE_LAST <= DEFAULT_KEEP_LAST,
+            "Min preserve should not exceed default keep last"
+        );
+    }
+
+    #[test]
+    fn test_context_status_percentages() {
+        // Test that thresholds align correctly
+        // Warning: 72% = 0.9 * 0.8 (90% of overflow threshold)
+        // Overflow: 80%
+        // Pre-tool: 75%
+
+        // At 70%: OK
+        let status_ok = ContextStatus::Ok {
+            total_tokens: 7000,
+            max_tokens: 10000,
+        };
+        assert!(!status_ok.needs_compaction());
+
+        // At 75%: Warning (above pre-tool threshold)
+        let status_warn = ContextStatus::Warning {
+            total_tokens: 7500,
+            max_tokens: 10000,
+            usage_percent: 75,
+        };
+        assert!(status_warn.needs_compaction());
+        assert!(!status_warn.is_overflow());
+
+        // At 80%: Overflow
+        let status_over = ContextStatus::Overflow {
+            total_tokens: 8000,
+            max_tokens: 10000,
+            usage_percent: 80,
+        };
+        assert!(status_over.needs_compaction());
+        assert!(status_over.is_overflow());
+    }
+
+    #[test]
+    fn test_estimate_chat_messages_tokens() {
+        use ollama_rs::generation::chat::ChatMessage;
+
+        // Empty messages
+        let empty: Vec<ChatMessage> = Vec::new();
+        assert_eq!(estimate_chat_messages_tokens(&empty), 0);
+
+        // Single message
+        let single = vec![ChatMessage::user("Hello".to_string())];
+        let single_tokens = estimate_chat_messages_tokens(&single);
+        assert!(single_tokens >= 4, "Should have at least MESSAGE_OVERHEAD");
+        assert!(single_tokens < 20, "Should be small for short message");
+
+        // Multiple messages with different roles
+        let multiple: Vec<ChatMessage> = vec![
+            ChatMessage::user("Hello".to_string()),
+            ChatMessage::assistant("Hi there!".to_string()),
+            ChatMessage::user("How are you?".to_string()),
+        ];
+        let multiple_tokens = estimate_chat_messages_tokens(&multiple);
+        assert!(
+            multiple_tokens > single_tokens,
+            "More messages should have more tokens"
+        );
+    }
+
+    #[test]
+    fn test_max_tool_result_tokens() {
+        // MAX_TOOL_RESULT_TOKENS should be reasonable
+        assert!(
+            MAX_TOOL_RESULT_TOKENS >= 1000,
+            "Should allow at least 1000 tokens for tool results"
+        );
+        assert!(
+            MAX_TOOL_RESULT_TOKENS <= 10000,
+            "Should not exceed 10000 tokens for tool results"
+        );
     }
 }
