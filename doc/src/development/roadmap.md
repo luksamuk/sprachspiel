@@ -199,6 +199,43 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ---
 
+## Pending Bugs
+
+### Context Not Cleared After /compact
+
+**Status:** ✅ FIXED (v0.27.2)
+
+**Problem:** After `/compact`, context utilization remained high/overflow. User needed `/clear` to actually free space.
+
+**Cause:** `prompt_tokens` values stored in messages still reflected the old (larger) context size after compaction.
+
+**Fix:** `set_compacted_summary_with_range()` now clears `prompt_tokens` from all messages. The next LLM interaction will receive fresh token counts reflecting the reduced context.
+
+### Markdown in Compaction Summary
+
+**Status:** 🔍 Under Analysis
+
+**Problem:** Compaction summary is plain text, not formatted as markdown.
+
+**Expected:** Summary should use markdown (headers, bullets, bold).
+
+**Investigation Needed:**
+- Check compaction prompt in `compact_conversation()`
+- Verify output formatting
+
+### Web Scraping Content Quality
+
+**Status:** 🔍 Under Analysis
+
+**Problem:** Web fetch tool sometimes returns raw HTML/CSS instead of clean markdown.
+
+**Possible Causes:**
+- JavaScript-rendered content not captured
+- Some sites block web scraping
+- HTML-to-markdown conversion issues
+
+---
+
 ## SQLite as Single Storage
 
 **Priority:** HIGH  

@@ -12,6 +12,13 @@ All notable changes to Ask-AI will be documented in this file.
   - `/compact` command now shows checkmark "✓ Compacted" on success
   - Error messages show "✗ Compaction failed" in red
 
+### Fixed
+
+- **Context Not Cleared After /compact** - Token count now correctly reflects reduced context
+  - `prompt_tokens` are cleared from messages after compaction
+  - Next interaction will have fresh token count
+  - `/context` now shows accurate reduced token usage after `/compact`
+
 ## [0.27.1] - 2026-03-09
 
 ### Fixed

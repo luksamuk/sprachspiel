@@ -601,6 +601,14 @@ impl ChatSession {
             self.compacted_range = Some((0, self.messages.len()));
             self.messages_sent_to_llm = self.messages.len();
         }
+        
+        // Clear prompt_tokens from all messages since they no longer reflect
+        // the actual context size after compaction. The next message sent to
+        // the LLM will have fresh prompt_tokens reflecting the reduced context.
+        for msg in &mut self.messages {
+            msg.prompt_tokens = None;
+        }
+        
         self.updated_at = Utc::now();
     }
 
@@ -885,15 +893,16 @@ mod tests {
             });
         }
         
-        // With compaction, still returns the LAST cumulative value
-        // (which represents the total prompt size)
-        session.messages_sent_to_llm = 3;
-        session.compacted_summary = Some("This is a summary".into());
+        // Set compaction - this clears prompt_tokens
+        session.set_compacted_summary_with_range("Summary".into(), Some((2, 3)));
         
+        // After compaction, prompt_tokens are cleared, so fallback estimation is used
+        // messages_sent_to_llm = 3, so messages[3..] are counted (messages 3 and 4)
         let tokens = session.history_real_tokens();
-        // Still returns 500 (the most recent cumulative value)
-        // The breakdown (system + tools + history) is handled separately
-        assert_eq!(tokens, 500);
+        
+        // Fallback: estimate from messages_sent_to_llm onwards + summary
+        // Message 3 and 4 have ~7-8 tokens each + 2*MESSAGE_OVERHEAD + summary tokens
+        assert!(tokens < 100, "Should use fallback estimation after compaction, got {}", tokens);
     }
     
     #[test]
