@@ -350,13 +350,19 @@ These issues relate to context management during tool calls and compaction.
 - `src/query.rs` - Pass context to coordinator
 - `src/chat/repl.rs` - Pass context to coordinator
 
-#### Phase 2: Unicode-Safe Tool Result Truncation
+#### Phase 2: Unicode-Safe Tool Result Truncation ✅ (v0.26.4)
 
-**Status:** Planned
+**Completed:**
+- ✅ Added `truncate_tool_result()` function (Unicode-safe using `.chars()`)
+- ✅ Added `MAX_TOOL_RESULT_TOKENS` constant (4000 tokens)
+- ✅ Added `CHARS_PER_TOKEN` constant (4 chars/token conservative)
+- ✅ Applied truncation in `custom_coordinator.rs` before pushing to history
+- ✅ Debug logging when truncation occurs
+- ✅ Unit tests for truncation (empty, short, long, Unicode, at-limit)
 
-- Truncate large tool results to 4000 tokens
-- Use `.chars().take()` for Unicode-safe truncation
-- Add truncation notice in result
+**Files Changed:**
+- `src/context_overflow.rs` - `truncate_tool_result()` function
+- `src/chat/custom_coordinator.rs` - Apply truncation to tool results
 
 #### Phase 3: Pre-Tool Context Check
 

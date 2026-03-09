@@ -39,6 +39,50 @@ pub fn estimate_chat_messages_tokens(messages: &[ChatMessage]) -> usize {
         .sum()
 }
 
+/// Maximum tokens for a tool result before truncation
+/// Tool results can be very large (e.g., file contents, web pages)
+/// Limit to 4000 tokens to preserve context space
+pub const MAX_TOOL_RESULT_TOKENS: usize = 4000;
+
+/// Approximate characters per token (conservative estimate)
+/// Using 4 chars per token to account for word-based estimation variance
+pub const CHARS_PER_TOKEN: usize = 4;
+
+/// Truncate a tool result to fit within token limit (Unicode-safe)
+///
+/// This function ensures that large tool results don't consume excessive
+/// context space. It truncates the result to MAX_TOOL_RESULT_TOKENS and
+/// appends a notice about the truncation.
+///
+/// # Arguments
+/// * `result` - The tool result string to potentially truncate
+///
+/// # Returns
+/// * A tuple of (truncated_result, was_truncated, original_tokens)
+///
+/// # Unicode Safety
+/// Uses `.chars()` iterator which handles multi-byte characters correctly.
+/// Never panics on Unicode boundaries.
+pub fn truncate_tool_result(result: &str) -> (String, bool, usize) {
+    let original_tokens = estimate_tokens(result);
+
+    if original_tokens <= MAX_TOOL_RESULT_TOKENS {
+        return (result.to_string(), false, original_tokens);
+    }
+
+    // Calculate max characters (conservative estimate)
+    let max_chars = MAX_TOOL_RESULT_TOKENS * CHARS_PER_TOKEN;
+    let truncation_notice = format!(
+        "\n\n[...truncated from {:?} tokens to {:?}...]",
+        original_tokens, MAX_TOOL_RESULT_TOKENS
+    );
+
+    // Truncate using chars() for Unicode safety
+    let truncated: String = result.chars().take(max_chars).collect();
+
+    (truncated + &truncation_notice, true, original_tokens)
+}
+
 /// Context overflow status
 #[derive(Debug, Clone)]
 pub enum ContextStatus {
@@ -534,5 +578,85 @@ mod tests {
         // 100 words / 0.75 = ~133 tokens + 4 overhead = ~137
         assert!(long_tokens > 100, "Should estimate more than 100 tokens");
         assert!(long_tokens < 200, "Should estimate less than 200 tokens");
+    }
+
+    #[test]
+    fn test_truncate_tool_result_no_truncation_needed() {
+        // Short result should not be truncated
+        let short_result = "Hello world";
+        let (truncated, was_truncated, original_tokens) = truncate_tool_result(short_result);
+
+        assert!(!was_truncated, "Short result should not be truncated");
+        assert_eq!(truncated, short_result);
+        assert!(original_tokens < MAX_TOOL_RESULT_TOKENS);
+    }
+
+    #[test]
+    fn test_truncate_tool_result_long_result() {
+        // Long result should be truncated
+        let long_result = "word ".repeat(10000); // ~10000 words = ~13333 tokens
+        let (truncated, was_truncated, original_tokens) = truncate_tool_result(&long_result);
+
+        assert!(was_truncated, "Long result should be truncated");
+        assert!(original_tokens > MAX_TOOL_RESULT_TOKENS);
+        assert!(
+            truncated.contains("[...truncated"),
+            "Should contain truncation notice"
+        );
+
+        // Check length is approximately correct
+        // MAX_TOOL_RESULT_TOKENS * CHARS_PER_TOKEN = 4000 * 4 = 16000 chars max
+        assert!(
+            truncated.len() <= 20000,
+            "Truncated result should be within bounds"
+        );
+    }
+
+    #[test]
+    fn test_truncate_tool_result_unicode_safe() {
+        // Result with multi-byte Unicode characters
+        let unicode_result = "こんにちは世界 ".repeat(10000); // Japanese: "Hello world "
+        let (truncated, was_truncated, _) = truncate_tool_result(&unicode_result);
+
+        assert!(was_truncated, "Unicode result should be truncated");
+
+        // Should not panic and should produce valid UTF-8
+        // If chars() was used correctly, no panic occurs
+        assert!(
+            truncated.is_char_boundary(truncated.len()),
+            "Should end at char boundary"
+        );
+    }
+
+    #[test]
+    fn test_truncate_tool_result_exactly_at_limit() {
+        // Result exactly at the limit should not be truncated
+        let at_limit = "word ".repeat(3000); // ~3000 words = ~4000 tokens
+        let tokens = estimate_tokens(&at_limit);
+
+        // This might or might not be at exactly MAX_TOOL_RESULT_TOKENS
+        // depending on estimation, so we test both cases
+        let (truncated, was_truncated, _) = truncate_tool_result(&at_limit);
+
+        if tokens <= MAX_TOOL_RESULT_TOKENS {
+            assert!(
+                !was_truncated,
+                "Result at or under limit should not be truncated"
+            );
+            assert_eq!(truncated, at_limit);
+        } else {
+            assert!(was_truncated, "Result over limit should be truncated");
+        }
+    }
+
+    #[test]
+    fn test_truncate_tool_result_empty() {
+        // Empty result should not panic
+        let empty = "";
+        let (truncated, was_truncated, original_tokens) = truncate_tool_result(empty);
+
+        assert!(!was_truncated);
+        assert_eq!(truncated, "");
+        assert_eq!(original_tokens, 0);
     }
 }
