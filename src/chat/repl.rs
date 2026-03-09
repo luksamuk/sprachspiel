@@ -823,6 +823,54 @@ pub async fn run_chat_repl(
                     }
                     Err(e) => {
                         let error_str = e.to_string();
+                        
+                        // Check if this is a context overflow error during tool execution
+                        if error_str.contains("Context overflow during tool execution") {
+                            eprintln!("\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m");
+                            
+                            // Remove the failed message
+                            let (removed, _) = session.remove_last_assistant_messages_with_content();
+                            if use_debug {
+                                log_debug(&format!("Removed {} messages after overflow error", removed));
+                            }
+                            
+                            // Auto-compact to free space
+                            let overflow_context_window = model_config.num_ctx as usize;
+                            let overflow_system_prompt = build_system_prompt(
+                                PromptConfig::new(PromptType::ToolUser)
+                                    .with_model_id(Some(&model_config.model_id))
+                                    .with_blacklist(Some(&settings.blacklist_set()))
+                                    .with_agents_md(agents_md.as_deref())
+                                    .with_tools(tools_enabled)
+                                    .with_retrieval(session.retrieval_enabled && !cli_code),
+                            );
+                            
+                            eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
+                            auto_compact_if_needed(
+                                &ollama,
+                                &model_config,
+                                &mut session,
+                                settings,
+                                agents_md.as_deref(),
+                                &storage,
+                                &overflow_system_prompt,
+                                overflow_context_window,
+                                use_debug,
+                            ).await;
+                            
+                            // Save session after compaction
+                            if !session.anonymous {
+                                if let Err(save_err) = session.save(&storage) {
+                                    if use_debug {
+                                        log_debug(&format!("Warning: Could not save session after recovery: {}", save_err));
+                                    }
+                                }
+                            }
+                            
+                            eprintln!("\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m");
+                            continue;
+                        }
+                        
                         eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
                     }
                 }

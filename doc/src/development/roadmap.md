@@ -378,6 +378,48 @@ These issues relate to context management during tool calls and compaction.
 - `src/context_overflow.rs` - New function and threshold
 - `src/chat/repl.rs` - Pre-tool check before send_message()
 
+#### Phase 4: Turn Preservation in Compaction
+
+**Status:** ✅ Completed (already implemented in Phase 3)
+
+User message is saved to session BEFORE pre-tool check runs, so it's automatically
+preserved during compaction. The `DEFAULT_KEEP_LAST = 5` ensures recent messages
+are never compacted.
+
+#### Phase 5: During-Tool Context Check
+
+**Status:** ✅ Completed (Phase 1)
+
+Already implemented in Phase 1 - context check in `process_next()` returns
+clear error when overflow detected.
+
+#### Phase 6: Error Recovery ✅ (v0.26.5)
+
+**Completed:**
+- ✅ Detect "Context overflow during tool execution" error
+- ✅ Remove failed assistant messages from session
+- ✅ Auto-compact immediately after error
+- ✅ Save session after recovery
+- ✅ Prompt user to retry with clear message
+- ✅ `continue` to prevent further processing
+
+**Files Changed:**
+- `src/chat/repl.rs` - Error detection and recovery in main loop
+
+#### Phase 7: Testing ✅ (v0.26.4)
+
+**Completed:**
+- ✅ Added `PRE_TOOL_THRESHOLD` constant (75%)
+- ✅ Added `needs_pre_tool_compaction()` function
+- ✅ Added `MIN_PRESERVE_LAST` constant for turn preservation
+- ✅ Check context before creating coordinator in `run_chat_repl()`
+- ✅ Auto-compact at 75% threshold before tool execution
+- ✅ User message preserved during compaction (already saved before check)
+
+**Files Changed:**
+- `src/context_overflow.rs` - New function and threshold
+- `src/chat/repl.rs` - Pre-tool check before send_message()
+
 ### Compaction Threshold Behavior
 
 **Status:** Planned
