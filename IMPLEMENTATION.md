@@ -63,26 +63,37 @@
 
 ### High Priority
 
-- **SQLite as Single Storage** (~95% complete)
-  - ✅ Schema v4 with session metadata
-  - ✅ `save_sqlite()` / `load_sqlite()` implemented
-  - ✅ `/restore` command
-  - ✅ Auto-migration on startup
-  - ✅ Commands use SQLite (`/save`, `/load`, `/list`)
-  - ✅ Cleanup: `ConversationStorage` deprecated and removed from REPL
+- **Document Import Tool** - `/import-doc` to index PDF/MD/TXT files
+  - Design schema for documents and chunks
+  - PDF parsing (pdf-extract, lopdf, or pdfium-render)
+  - Text chunking with overlap (512 tokens, 64 overlap)
+  - `/import-doc`, `/list-docs`, `/remove-doc` commands
+  - Update `search_hybrid()` to include document chunks
 
-- **Memory Enhancement Part 1**
-  - ✅ Phase 1: Source Attribution (v0.26.1)
-  - ❌ Phase 2: Query Routing - Route queries to appropriate search targets
-  - ❌ Phase 3: Timestamp Filtering - "what did I say yesterday?"
+- **Notes System** - Persistent notes with semantic search
+  - `/note add/list/show/edit/delete` commands
+  - Note storage with embeddings
+  - Update context builder for note results
+  - Add `SourceType::Note` to retrieval system
 
-- **Chat Module Integration** - `/ocr`, `/vision`, `/translate`, `/summarize` from chat
-  - Required dependency for Memory Enhancement Part 2
-  - OCR/Vision needed to process scanned documents
+- **Chat Module Integration** - Use OCR/Vision/Translate/Summarize from chat
+  - `/ocr`, `/vision`, `/translate`, `/summarize` commands in REPL
+  - Model switching during commands
+  - Design: temporary context or persistent?
 
-- **Memory Enhancement Part 2** (Phases 4-5) - Blocked by Chat Module Integration
-  - Phase 4: Schema Preparation - Multi-source support (docs, notes)
-  - Phase 5: Document Ingestion - PDF/markdown indexing
+### Blocked (Requires Prerequisites)
+
+- **Memory Enhancement Phase 2** - Query routing
+  - BLOCKED by Document Import Tool + Notes System
+  - Requires multiple source types to route between
+
+- **Memory Enhancement Phase 3** - Timestamp filtering
+  - BLOCKED by Phase 2
+  - Requires routing implementation first
+
+- **Memory Enhancement Part 2** - Phases 4-5
+  - BLOCKED by Document Import + Notes System
+  - Multi-source support requires sources to exist first
 
 ### Medium Priority
 
@@ -159,4 +170,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-09 - v0.26.7: Dead code cleanup; updated roadmap to reflect actual implementation status
+2026-03-09 - v0.27.3: Roadmap reorganization; Document Import and Notes as prerequisites for Memory Enhancement

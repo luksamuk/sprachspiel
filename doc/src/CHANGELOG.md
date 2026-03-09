@@ -2,7 +2,7 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.27.2] - 2026-03-09
+## [0.27.3] - 2026-03-09
 
 ### Added
 
@@ -30,6 +30,14 @@ All notable changes to Ask-AI will be documented in this file.
   - Limits content to 50,000 characters to prevent memory issues
   - Safe UTF-8 boundary handling for Unicode content
   - Shows "(truncated)" indicator when content is limited
+
+### Changed
+
+- **Roadmap Reorganization** - Memory Enhancement Phases 2-3 moved to Blocked
+  - Phase 2 (Query Routing) blocked by Document Import Tool + Notes System
+  - Phase 3 (Timestamp Filtering) blocked by Phase 2
+  - New priorities: Document Import Tool and Notes System first
+  - Chat Module Integration remains high priority
 
 ## [0.27.1] - 2026-03-09
 

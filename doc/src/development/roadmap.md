@@ -281,40 +281,179 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ## High Priority
 
-### Memory Enhancement Part 1 (Phases 1-3)
+### Document Import Tool
 
 **Priority:** HIGH  
-**Status:** Phase 1 Complete, Phase 2-3 NOT STARTED
+**Status:** 🔴 NOT STARTED
 
-#### Phase 1: Source Attribution ✅ (v0.26.1)
+**Goal:** Allow users to import and index documents (PDF, Markdown, TXT) for semantic search.
 
-Completed:
-- ✅ `SourceType` enum with `prefix()` and `from_prefix()` methods
-- ✅ Context formatted with source labels: `[msg:N]`, `[doc:N]`, `[note:N]`
-- ✅ `remember` tool updated to use source type prefixes
+**Problem:** Currently ask-ai can only search within conversation history. Users cannot reference documents, articles, or notes.
 
-#### Phase 2: Query Routing ❌ NOT STARTED
+**Proposed Design:**
 
-**Goal:** Route queries to appropriate search targets (conversations, docs, notes).
+```
+/import-doc <path> [--title <title>] [--tags <tags>]
+```
 
-**Current State:**
-- No query routing implementation exists
-- All searches go through `search_hybrid()` without target discrimination
+**Features:**
+- Import PDF, Markdown, TXT files
+- Extract text content (PDF parsing via `pdf-extract` or `lopdf`)
+- Chunk text with overlap for better retrieval
+- Generate embeddings for each chunk
+- Store in `documents` table with metadata
+
+**Database Schema:**
+```sql
+CREATE TABLE documents (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    source_path TEXT,
+    content_hash TEXT,
+    imported_at INTEGER,
+    metadata TEXT  -- JSON for tags, author, etc.
+);
+
+CREATE TABLE document_chunks (
+    id INTEGER PRIMARY KEY,
+    document_id TEXT,
+    chunk_index INTEGER,
+    content TEXT,
+    start_offset INTEGER,
+    end_offset INTEGER,
+    FOREIGN KEY (document_id) REFERENCES documents(id)
+);
+
+-- Embeddings stored in existing sqlite-vec virtual table
+```
 
 **Tasks:**
+- [ ] Design schema for documents and chunks
+- [ ] Research PDF parsing crates (pdf-extract, lopdf, pdfium-render)
+- [ ] Implement text extraction for PDF
+- [ ] Implement text extraction for Markdown (preserve headers)
+- [ ] Implement chunking strategy (512 tokens, 64 overlap)
+- [ ] Implement `/import-doc` command
+- [ ] Implement `/list-docs` command
+- [ ] Implement `/remove-doc <id>` command
+- [ ] Update `search_hybrid()` to include document chunks
+- [ ] Update context builder to format document results
+- [ ] Add `SourceType::Document` to retrieval system
+
+---
+
+### Notes System
+
+**Priority:** HIGH  
+**Status:** 🔴 NOT STARTED
+
+**Goal:** Allow users to create and manage persistent notes that are indexed for semantic search.
+
+**Problem:** Users have no way to store quick thoughts, ideas, or reference information that persists across sessions.
+
+**Proposed Commands:**
+```
+/note add <text>           - Create a new note
+/note list                 - List all notes
+/note show <id>            - Show note content
+/note edit <id> <text>     - Edit note
+/note delete <id>          - Delete note
+/note search <query>       - Search notes
+```
+
+**Proposed Design:**
+- Notes stored in `notes` table with embeddings
+- Accessible via semantic search
+- Displayed in context with `[note:N]` prefix
+- Can be referenced by AI via `remember` tool
+
+**Database Schema:**
+```sql
+CREATE TABLE notes (
+    id TEXT PRIMARY KEY,
+    content TEXT,
+    created_at INTEGER,
+    updated_at INTEGER,
+    project_id TEXT,
+    tags TEXT  -- JSON array
+);
+```
+
+**Tasks:**
+- [ ] Design schema for notes
+- [ ] Implement `/note` command group
+- [ ] Implement note storage with embeddings
+- [ ] Update `search_hybrid()` to include notes
+- [ ] Update context builder to format note results
+- [ ] Add `SourceType::Note` to retrieval system
+- [ ] Implement note search within `/note` command
+
+---
+
+### Chat Module Integration
+
+**Priority:** HIGH  
+**Status:** 🔵 Planning needed
+
+**Problem:** Users must exit chat to use OCR, Vision, Translate, Summarize features.
+
+**Proposed Features:**
+- `/ocr <image>` - Run OCR from chat
+- `/vision <image>` - Analyze image
+- `/translate <lang> <text>` - Translate
+- `/summarize [text]` - Summarize
+
+**Design Questions:**
+- Model switching during commands (some features need specific models)
+- Should results be saved to conversation history?
+- Temporary context or persistent?
+
+**Tasks:**
+- [ ] Design: Command interface
+- [ ] Design: Model switching during commands
+- [ ] Implement: `/ocr` command
+- [ ] Implement: `/vision` command
+- [ ] Implement: `/translate` command
+- [ ] Implement: `/summarize` command
+- [ ] Document: Chat module commands
+
+---
+
+## Blocked (Requires Prerequisites)
+
+### Memory Enhancement Phase 2: Query Routing
+
+**Priority:** MEDIUM  
+**Status:** 🔴 BLOCKED by Document Import Tool + Notes System
+
+**Blocking Reason:** Query routing requires multiple source types (conversations, documents, notes). Currently only conversations exist.
+
+**Goal:** Route queries to appropriate search targets.
+
+**What's Needed First:**
+- Document Import Tool (import documents)
+- Notes System (create notes)
+- Both must populate the database with searchable content
+
+**Future Tasks:**
 - [ ] Collect real query patterns from usage
 - [ ] Prototype regex routing (pt-BR + en)
 - [ ] Benchmark embedding-based routing latency
 - [ ] Test `whatlang` crate for language detection
 
-#### Phase 3: Timestamp Filtering ❌ NOT STARTED
+### Memory Enhancement Phase 3: Timestamp Filtering
+
+**Priority:** MEDIUM  
+**Status:** 🔴 BLOCKED by Phase 2
+
+**Blocking Reason:** Timestamp filtering is useful for all source types, but design depends on Phase 2 routing implementation.
 
 **Goal:** Filter results by time ("what did I say yesterday?").
 
 **Current State:**
 - `search_hybrid()` has no timestamp filtering capability
 
-**Implementation Needed:**
+**Future Implementation:**
 ```rust
 pub fn search_hybrid(
     &self,
@@ -326,50 +465,21 @@ pub fn search_hybrid(
     keyword_weight: f32,
     semantic_weight: f32,
     exclude_ids: Option<&[i64]>,
-    // NEW: Add timestamp filter
-    timestamp_range: Option<(i64, i64)>,  // <-- Add this
+    source_type: Option<SourceType>,      // Phase 2
+    timestamp_range: Option<(i64, i64)>,   // Phase 3
 ) -> Result<Vec<SearchResult>>
 ```
-
-**Tasks:**
-- [ ] Add `timestamp_range: Option<(i64, i64)>` parameter to `search_hybrid()`
-- [ ] Implement temporal reference detection (pt-BR + en patterns)
-- [ ] Add SQL WHERE clause for timestamp filtering
-- [ ] Update `remember` tool to support time-based queries
-
----
-
-### Chat Module Integration
-
-**Priority:** HIGH  
-**Status:** Planning needed
-
-**Problem:** Users must exit chat to use OCR, Vision, Translate, Summarize features.
-
-**Proposed Features:**
-- `/ocr <image>` - Run OCR from chat
-- `/vision <image>` - Analyze image
-- `/translate <lang> <text>` - Translate
-- `/summarize [text]` - Summarize
-
-**Tasks:**
-- [ ] Design: Command interface
-- [ ] Design: Model switching during commands
-- [ ] Implement: `/ocr` command
-- [ ] Implement: `/vision` command
-- [ ] Implement: `/translate` command
-- [ ] Document: Chat module commands
 
 ---
 
 ### Memory Enhancement Part 2 (Phases 4-5)
 
-**Priority:** HIGH  
-**Status:** Blocked by Chat Module Integration
+**Priority:** MEDIUM  
+**Status:** 🔴 BLOCKED by Document Import Tool + Notes System
 
-#### Phase 4: Schema Preparation (1-2 days)
+**Blocking Reason:** Phases 4-5 are about multi-source support, which requires the tools to create those sources first.
 
-**Goal:** Prepare schema for multiple source types.
+**Phase 4: Schema Preparation (depends on Document Import Tool + Notes System)**
 
 **Tasks:**
 - [ ] Design `documents` table schema
