@@ -2,6 +2,78 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.27.0] - PLANNED
+
+### Changed
+
+**SQLite as Single Storage** - Major architecture change
+
+This release consolidates session storage from dual (JSON + SQLite) to SQLite-only, improving reliability and eliminating data synchronization issues.
+
+#### Architecture Changes
+
+- **Session storage** - Moved from JSON files to SQLite database
+  - Session metadata (model, think, tools, system_prompt) now in `conversations` table
+  - Todo list state now in `session_todos` table
+  - Compaction metadata (summary, range) persisted in database
+  - Messages remain in SQLite (no change)
+
+- **Commands updated** - All session commands now use SQLite
+  - `/save` - Saves to SQLite only (no more JSON)
+  - `/load` - Loads from SQLite only
+  - `/list` - Queries SQLite for sessions
+  - `/forget` - Deletes from SQLite only
+
+#### New Features
+
+- **`/restore <file>`** - Restore session from JSON backup
+  - Imports backup files (from `/export json`)
+  - Deletes JSON after successful import
+  - Useful for disaster recovery
+
+- **Legacy session detection** - Automatic notification on startup
+  - Detects uncommitted JSON sessions
+  - Prompts to use `/restore` command
+
+#### Removed
+
+- **`/migrate` command** - Replaced by `/restore` and auto-detection
+  - Legacy JSONs now imported via `/restore <file>`
+  - Automatic detection on startup replaces manual migration
+
+#### Schema Changes
+
+- Added `conversations` table columns:
+  - `system_prompt TEXT`
+  - `compacted_summary TEXT`
+  - `compacted_range_start INTEGER`
+  - `compacted_range_end INTEGER`
+  - `think INTEGER DEFAULT 0`
+  - `tools INTEGER DEFAULT 1`
+  - `tool_output_level TEXT DEFAULT 'compact'`
+
+- Added `messages` table column:
+  - `prompt_tokens INTEGER`
+
+- Added `session_todos` table for task tracking
+
+#### Benefits
+
+- **Reliability** - ACID transactions prevent data corruption
+- **Consistency** - Single source of truth, no sync issues
+- **Performance** - SQLite faster than filesystem writes
+- **RAG Access** - Compacted messages remain searchable
+
+#### Migration
+
+Users with existing JSON sessions will see a notification:
+```
+[!] Found 3 uncommitted session(s): session1, session2, default
+[!] Use /restore <file> to import them.
+```
+
+---
+
 ## [0.26.7] - 2026-03-09
 
 ### Changed
