@@ -2,6 +2,99 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.26.6] - 2026-03-08
+
+### Added
+
+- **Integration Tests for Context Overflow** - Comprehensive test coverage for overflow protection
+  - `tests/context_recovery_flow.rs` - 9 integration tests
+  - `tests/context_tool_overflow.rs` - 13 integration tests
+  - Tests for threshold hierarchy, Unicode truncation, recovery cycles
+  - Tests for message removal, turn preservation, multiple recovery cycles
+
+### Fixed
+
+- **Context Builder Panic After /compact + /clear** - Session crash fixed
+  - `clear_messages()` now resets `compacted_range` to prevent stale indices
+  - Added bounds checking in `context_builder.rs` with `.min(session.messages.len())`
+  - Prevents "range end index X out of range for slice of length Y" panic
+
+## [0.26.5] - 2026-03-08
+
+### Added
+
+- **Error Recovery During Tool Execution** - Automatic recovery from context overflow
+  - Detects "Context overflow during tool execution" error from coordinator
+  - Removes failed assistant messages from session
+  - Auto-compacts immediately after error
+  - Saves session after recovery
+  - Prompts user to retry with clear message
+
+- **Pre-Tool Context Check** - Proactive compaction before tool execution
+  - Checks context at 75% threshold before creating coordinator
+  - Auto-compacts if needed to prevent overflow during tools
+  - User message preserved during compaction (already saved)
+  - Prevents context exhaustion during multi-tool turns
+
+- **Turn Preservation in Compaction** - Current turn never compacted
+  - `MIN_PRESERVE_LAST` constant ensures at least 1 message preserved
+  - User message saved before pre-tool check runs
+  - Compaction preserves `DEFAULT_KEEP_LAST = 5` recent messages
+
+### Fixed
+
+- **/undo Incomplete Cleanup** - Embeddings now deleted from database
+  - Added `delete_last_messages()` function in Database
+  - `/undo` calls database cleanup for both messages and embeddings
+  - Prevents orphaned embeddings in SQLite
+
+- **User Prompt Included in Hybrid Search** - Current prompt excluded
+  - Added `exclude_ids` parameter to `search_hybrid()`
+  - Prepared for future use (not yet wired - current message not in DB at search time)
+
+- **Code Mode (-c Flag) Not Working in Chat** - Now functional
+  - `cli_code` parameter passed through to `run_chat_repl()`
+  - Code mode now correctly disables retrieval and uses code prompts
+
+## [0.26.4] - 2026-03-08
+
+### Added
+
+- **Token Estimation in Coordinator** - Context overflow detection during tool execution
+  - `estimate_messages_tokens()` for SavedMessage (session history)
+  - `estimate_chat_messages_tokens()` for ChatMessage (coordinator history)
+  - `context_window` and `system_prompt` fields added to CustomCoordinator
+  - Context check in `process_next()` at 90% threshold
+  - Returns clear error when overflow detected during tools
+
+- **Unicode-Safe Tool Result Truncation** - Prevents unbounded context growth
+  - `truncate_tool_result()` with `.chars().take()` for Unicode safety
+  - `MAX_TOOL_RESULT_TOKENS = 4000` limit for tool results
+  - `CHARS_PER_TOKEN = 4` conservative ratio
+  - Truncation notice includes original token count
+  - Debug logging when truncation occurs
+
+- **Unit Tests** - 7 new tests in `src/context_overflow.rs`
+  - Token estimation accuracy tests
+  - Unicode truncation tests (Japanese, Chinese, Arabic, Emoji)
+  - Threshold hierarchy tests
+  - Context status percentage tests
+
+## [0.26.3] - 2026-03-08
+
+### Fixed
+
+- **Multiple Bug Fixes**:
+  - `/undo` now deletes embeddings from database (not just memory)
+  - Fix crash after `/compact` + `/clear` (reset compacted_range on clear)
+  - Add bounds checking in context_builder to prevent panics
+  - Code mode (-c flag) now works in chat mode
+  - Hybrid search supports `exclude_ids` parameter (prepared for future use)
+
+### Added
+
+- **delete_last_messages()** in Database for proper cleanup
+
 ## [0.26.2] - 2026-03-05
 
 ### Fixed
