@@ -213,15 +213,14 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ### Markdown in Compaction Summary
 
-**Status:** 🔍 Under Analysis
+**Status:** ✅ FIXED (v0.27.2)
 
-**Problem:** Compaction summary is plain text, not formatted as markdown.
+**Problem:** Compaction summary was plain text, not formatted as markdown.
 
-**Expected:** Summary should use markdown (headers, bullets, bold).
-
-**Investigation Needed:**
-- Check compaction prompt in `compact_conversation()`
-- Verify output formatting
+**Fix:**
+- Updated compaction prompt to request structured markdown output
+- Changed `println!` to `markdown::print_markdown()` for proper rendering
+- Summary now includes sections: Key Topics, Decisions Made, Technical Details, Action Items
 
 ### Web Scraping Content Quality
 

@@ -19,6 +19,11 @@ All notable changes to Ask-AI will be documented in this file.
   - Next interaction will have fresh token count
   - `/context` now shows accurate reduced token usage after `/compact`
 
+- **Markdown in Compaction Summary** - Summary now renders in markdown format
+  - Compaction prompt requests structured markdown output
+  - Uses `print_markdown()` for proper rendering in terminal
+  - Sections include: Key Topics, Decisions Made, Technical Details, Action Items
+
 ## [0.27.1] - 2026-03-09
 
 ### Fixed

@@ -493,7 +493,7 @@ pub async fn run_chat_repl(
 
                                             println!();
                                             println!("\x1B[90m--- Summary ---\x1B[0m");
-                                            println!("{}", summary);
+                                            markdown::print_markdown(&summary);
                                             println!("\x1B[90m---------------\x1B[0m");
 
                                             if !session.anonymous {
@@ -1182,16 +1182,28 @@ async fn compact_conversation(
     }
 
     let compact_prompt = format!(
-        r#"Summarize the following conversation concisely, preserving:
-1. Key topics discussed
-2. Important decisions or conclusions
-3. Any code or technical details mentioned
-4. Action items or pending questions
+        r#"Summarize the following conversation concisely in MARKDOWN format.
+
+Use this structure:
+**Key Topics:**
+- Topic 1
+- Topic 2
+
+**Decisions Made:**
+- Decision 1
+- Decision 2
+
+**Technical Details:**
+- Important code/technical info
+
+**Action Items:**
+- [ ] Pending task 1
+- [ ] Pending task 2
 
 Conversation:
 {}
 
-Provide a clear, structured summary that captures the essential context."#,
+Provide a structured markdown summary that captures the essential context."#,
         conversation_text
     );
 
@@ -1204,7 +1216,7 @@ Provide a clear, structured summary that captures the essential context."#,
         .options(model_options);
 
     let messages = vec![
-        ChatMessage::system("You are a helpful assistant that summarizes conversations concisely while preserving key information.".to_string()),
+        ChatMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),
         ChatMessage::user(compact_prompt),
     ];
 
