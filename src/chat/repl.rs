@@ -452,7 +452,8 @@ pub async fn run_chat_repl(
                                         continue;
                                     }
 
-                                    println!("Compacting {} messages...", session.messages.len());
+                                    let msg_count = session.messages.len();
+                                    println!("\x1B[33m⏳ Compacting {} messages...\x1B[0m", msg_count);
 
                                     match compact_conversation(
                                         &ollama,
@@ -477,7 +478,7 @@ pub async fn run_chat_repl(
                                             {
                                                 // Middle compaction
                                                 println!(
-                                                    "Compacted {} messages (preserved {} first, {} last).",
+                                                    "\x1B[32m✓ Compacted {} messages\x1B[0m (preserved {} first, {} last).",
                                                     compacted_count,
                                                     first_preserved,
                                                     session.messages.len() - last_preserved_start
@@ -485,7 +486,7 @@ pub async fn run_chat_repl(
                                             } else {
                                                 // Full compaction (backward compatible)
                                                 println!(
-                                                    "Compacted all {} messages.",
+                                                    "\x1B[32m✓ Compacted all {} messages.\x1B[0m",
                                                     compacted_count
                                                 );
                                             }
@@ -500,7 +501,7 @@ pub async fn run_chat_repl(
                                             }
                                         }
                                         Err(e) => {
-                                            eprintln!("Error compacting conversation: {}", e);
+                                            eprintln!("\x1B[31m✗ Compaction failed: {}\x1B[0m", e);
                                         }
                                     }
                                     continue;
@@ -1299,6 +1300,14 @@ async fn auto_compact_if_needed(
         return;
     }
     
+    // Show indicator before starting compaction
+    let urgency = if status.is_overflow() {
+        "urgent"
+    } else {
+        "auto"
+    };
+    eprintln!("\x1B[33m⏳ Compacting context ({}% full)...\x1B[0m", status.usage_percent());
+    
     // Attempt auto-compaction
     match compact_conversation(ollama, model_config, session, settings, agents_md).await {
         Ok((summary, range)) => {
@@ -1308,17 +1317,9 @@ async fn auto_compact_if_needed(
             let (first_preserved, last_preserved_start) = range.unwrap_or((0, session.messages.len()));
             let compacted_count = last_preserved_start - first_preserved;
             
-            // Determine urgency level for message
-            let urgency = if status.is_overflow() {
-                "urgent" // Overflow at 80%+
-            } else {
-                "auto"   // Warning at 72%+
-            };
-            
             eprintln!(
-                "\x1B[90m[{}-compacted context at {}%: {} messages]\x1B[0m",
+                "\x1B[90m[{}-compacted: {} messages summarized]\x1B[0m",
                 urgency,
-                status.usage_percent(),
                 compacted_count
             );
             

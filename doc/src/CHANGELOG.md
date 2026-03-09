@@ -2,6 +2,16 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.27.2] - 2026-03-09
+
+### Added
+
+- **Compaction Visual Indicator** - Clear feedback during context compaction
+  - Shows yellow "⏳ Compacting context (X% full)..." before starting
+  - Shows dimmed result: "[auto/urgent-compacted: N messages summarized]"
+  - `/compact` command now shows checkmark "✓ Compacted" on success
+  - Error messages show "✗ Compaction failed" in red
+
 ## [0.27.1] - 2026-03-09
 
 ### Fixed
