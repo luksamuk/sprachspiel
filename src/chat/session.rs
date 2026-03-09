@@ -11,7 +11,7 @@ use std::time::Instant;
 use super::history::{ConversationStorage, SessionInfo};
 use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
-use crate::db::Database;
+use crate::db::{Database, TodoRow};
 use crate::embeddings::EmbeddingClient;
 
 /// Tool output verbosity level
@@ -184,6 +184,9 @@ impl ChatSession {
     }
 
     /// Load a session from storage
+    /// 
+    /// Legacy API for JSON-based storage. Prefer `load_sqlite()` for new code.
+    #[deprecated(note = "Use load_sqlite() for SQLite-based storage")]
     pub fn load(
         storage: &ConversationStorage,
         project_id: &Option<String>,
@@ -192,7 +195,66 @@ impl ChatSession {
         storage.load_session(project_id, session_id)
     }
 
+    /// Load a session from SQLite database
+    pub fn load_sqlite(
+        db: &Arc<Database>,
+        conversation_id: &str,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        use crate::db::ConversationMetadata;
+        
+        let meta = db.get_conversation_metadata(conversation_id)?;
+        let messages = db.get_conversation_messages(conversation_id, None)?;
+        let todo_rows = db.get_todos(conversation_id)?;
+        
+        // Convert database rows to session structures
+        let saved_messages: Vec<SavedMessage> = messages
+            .into_iter()
+            .map(|m| SavedMessage {
+                role: match m.role.as_str() {
+                    "user" => MessageRole::User,
+                    "assistant" => MessageRole::Assistant,
+                    "system" => MessageRole::System,
+                    _ => MessageRole::Tool,
+                },
+                content: m.content,
+                timestamp: chrono::DateTime::from_timestamp(m.timestamp, 0)
+                    .unwrap_or_else(Utc::now),
+                prompt_tokens: None, // TODO: add to SearchResult
+            })
+            .collect();
+
+        let todos = TodoState::from_rows(&todo_rows);
+
+        Ok(Self {
+            id: meta.id,
+            name: meta.name,
+            project_id: meta.project_id,
+            model: meta.model,
+            system_prompt: meta.system_prompt,
+            messages: saved_messages,
+            compacted_summary: meta.compacted_summary,
+            compacted_range: meta.compacted_range,
+            messages_sent_to_llm: meta.compacted_range
+                .map(|(_, end)| end)
+                .unwrap_or(0),
+            created_at: meta.created_at,
+            updated_at: meta.updated_at,
+            anonymous: false,
+            think: meta.think,
+            tools: meta.tools,
+            tool_output_level: meta.tool_output_level.parse().unwrap_or_default(),
+            todos,
+            db: Some(Arc::clone(db)),
+            embedding_client: None,
+            retrieval_enabled: true,
+            last_retrieval_time: None,
+        })
+    }
+
     /// Save the session to storage
+    /// 
+    /// Legacy API for JSON-based storage. Prefer `save_sqlite()` for new code.
+    #[deprecated(note = "Use save_sqlite() for SQLite-based storage")]
     pub fn save(
         &self,
         storage: &ConversationStorage,
@@ -201,6 +263,38 @@ impl ChatSession {
             return Ok(());
         }
         storage.save_session(&self.project_id, &self.id, self)
+    }
+
+    /// Save session metadata to SQLite
+    /// 
+    /// Note: Messages are already saved to SQLite by add_user_message() and
+    /// add_assistant_message(). This only saves session metadata and todos.
+    pub fn save_sqlite(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.anonymous {
+            return Ok(());
+        }
+
+        let db = self.db.as_ref()
+            .ok_or("No database attached to session")?;
+
+        // Update conversation metadata
+        db.update_conversation_metadata(
+            &self.id,
+            self.name.as_deref(),
+            self.system_prompt.as_deref(),
+            self.compacted_summary.as_deref(),
+            self.compacted_range,
+            self.think,
+            self.tools,
+            &self.tool_output_level.to_string(),
+            self.updated_at,
+        )?;
+
+        // Save todos
+        let todo_rows = self.todos.to_rows();
+        db.save_todos(&self.id, &todo_rows)?;
+
+        Ok(())
     }
 
     /// Add a user message to the session

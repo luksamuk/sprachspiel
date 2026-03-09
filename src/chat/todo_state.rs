@@ -192,6 +192,45 @@ impl TodoState {
 
         output
     }
+
+    /// Convert TodoState to database rows
+    pub fn to_rows(&self) -> Vec<crate::db::TodoRow> {
+        self.tasks
+            .iter()
+            .map(|task| crate::db::TodoRow {
+                task_id: task.id,
+                description: task.description.clone(),
+                status: task.status.to_string(),
+                created_at: task.created_at,
+            })
+            .collect()
+    }
+
+    /// Convert database rows to TodoState
+    pub fn from_rows(rows: &[crate::db::TodoRow]) -> Self {
+        let tasks: Vec<Task> = rows
+            .iter()
+            .map(|row| {
+                let status = row.status.parse().unwrap_or(TaskStatus::Pending);
+                Task {
+                    id: row.task_id,
+                    description: row.description.clone(),
+                    status,
+                    created_at: row.created_at,
+                    updated_at: row.created_at,
+                }
+            })
+            .collect();
+
+        let next_id = tasks
+            .iter()
+            .map(|t| t.id)
+            .max()
+            .map(|id| id + 1)
+            .unwrap_or(1);
+
+        TodoState { tasks, next_id }
+    }
 }
 
 #[cfg(test)]
