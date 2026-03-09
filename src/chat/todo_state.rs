@@ -141,16 +141,10 @@ impl TodoState {
         count
     }
 
-    /// Get a task by ID (for testing/external use)
-    #[allow(dead_code)]
+    /// Get a task by ID
+    #[cfg(test)]
     pub fn get(&self, id: usize) -> Option<&Task> {
         self.tasks.iter().find(|t| t.id == id)
-    }
-
-    /// Get all tasks (for testing/external use)
-    #[allow(dead_code)]
-    pub fn all(&self) -> &[Task] {
-        &self.tasks
     }
 
     /// Count tasks by status
@@ -159,13 +153,13 @@ impl TodoState {
     }
 
     /// Count total tasks
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn count(&self) -> usize {
         self.tasks.len()
     }
 
     /// Check if the list is empty
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
     }

@@ -2,6 +2,28 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.26.7] - 2026-03-09
+
+### Changed
+
+- **Dead Code Cleanup** - Removed unused code for better maintainability
+  - Removed `MIN_PRESERVE_LAST` constant from `context_overflow.rs` (only used in tests, now local)
+  - Removed unused `count_embedded_messages()` from `db/operations.rs`
+  - Removed unused `get_message_chunks()` and `ChunkRow` struct from `db/operations.rs`
+  - Removed legacy `set_compacted_summary()` from `chat/session.rs` (replaced by `set_compacted_summary_with_range()`)
+  - Removed unused `clear_compacted_summary()` from `chat/session.rs`
+  - Removed duplicate `as_chat_messages()` from `chat/session.rs` (same as `get_messages_for_llm()`)
+  - Removed unused `set_todo_state()` and `get_todo_copy()` from `tools/todo.rs`
+  - Converted test-only methods to `#[cfg(test)]` in `chat/todo_state.rs` (`get()`, `all()`, `count()`, `is_empty()`)
+  - Removed `#[allow(dead_code)]` from `to_info()` in `chat/session.rs` (actually used in `history.rs`)
+
+### Notes
+
+- Functions and structs with roadmap justifications were kept:
+  - `list_conversations()` - planned for `/reindex all`
+  - `embed_batch()`, `with_model()`, `model()`, `embedding_dimension()` - planned for future use
+  - `normalize()`, `cosine_similarity()` - planned for MMR/reranking
+
 ## [0.26.6] - 2026-03-08
 
 ### Added

@@ -19,10 +19,6 @@ pub const DEFAULT_KEEP_FIRST: usize = 5;
 /// Default number of last messages to keep during compaction
 pub const DEFAULT_KEEP_LAST: usize = 5;
 
-/// Minimum messages to preserve during pre-tool compaction
-/// This ensures the current turn (user message) is never compacted
-pub const MIN_PRESERVE_LAST: usize = 1;
-
 /// Check if context needs pre-tool compaction
 /// Returns true if context is above PRE_TOOL_THRESHOLD (75%)
 pub fn needs_pre_tool_compaction(
@@ -36,6 +32,7 @@ pub fn needs_pre_tool_compaction(
 
 /// Estimate tokens in a list of SavedMessage
 /// Includes message overhead for each message
+#[allow(dead_code)]
 pub fn estimate_messages_tokens(messages: &[crate::chat::session::SavedMessage]) -> usize {
     if messages.is_empty() {
         return 0;
@@ -741,16 +738,6 @@ mod tests {
         assert!(
             needs_pre_tool_compaction(&session, system_prompt, context_window),
             "Session above 75% should need pre-tool compaction"
-        );
-    }
-
-    #[test]
-    fn test_min_preserve_last() {
-        // MIN_PRESERVE_LAST should ensure at least 1 message is preserved
-        assert!(MIN_PRESERVE_LAST >= 1, "Should preserve at least 1 message");
-        assert!(
-            MIN_PRESERVE_LAST <= DEFAULT_KEEP_LAST,
-            "Min preserve should not exceed default keep last"
         );
     }
 

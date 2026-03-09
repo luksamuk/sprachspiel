@@ -29,28 +29,6 @@ pub fn reset_todo_state() {
     *guard = crate::chat::todo_state::TodoState::new();
 }
 
-/// Set the todo state from an existing state (for session persistence)
-/// 
-/// This function is called when loading a saved session to restore
-/// the todo list state from the ChatSession.todos field.
-#[allow(dead_code)]
-pub fn set_todo_state(state: crate::chat::todo_state::TodoState) {
-    let global_state = get_todo_state();
-    let mut guard = global_state.lock().unwrap();
-    *guard = state;
-}
-
-/// Get a copy of the current todo state (for session persistence)
-///
-/// This function is called when saving a session to persist
-/// the current todo list state to the ChatSession.todos field.
-#[allow(dead_code)]
-pub fn get_todo_copy() -> crate::chat::todo_state::TodoState {
-    let global_state = get_todo_state();
-    let guard = global_state.lock().unwrap();
-    guard.clone()
-}
-
 /// Add a new task to the todo list.
 ///
 /// Use this tool when starting a new task that needs to be tracked.

@@ -511,20 +511,6 @@ impl ChatSession {
             .find(|m| m.role == MessageRole::User)
     }
 
-    /// Set the compacted summary and update the LLM message index (full compaction)
-    ///
-    /// This is the legacy API for full compaction. Prefer `set_compacted_summary_with_range()`
-    /// for middle compaction support (preserves first N and last N messages).
-    ///
-    /// Use this only when you want to compact ALL messages (no preservation).
-    #[allow(dead_code)]
-    pub fn set_compacted_summary(&mut self, summary: String) {
-        self.compacted_summary = Some(summary);
-        self.messages_sent_to_llm = self.messages.len();
-        self.compacted_range = Some((0, self.messages.len()));
-        self.updated_at = Utc::now();
-    }
-
     /// Set the compacted summary with middle compaction (preserves first and last messages)
     pub fn set_compacted_summary_with_range(
         &mut self,
@@ -540,15 +526,6 @@ impl ChatSession {
             self.compacted_range = Some((0, self.messages.len()));
             self.messages_sent_to_llm = self.messages.len();
         }
-        self.updated_at = Utc::now();
-    }
-
-    /// Clear the compacted summary (send full history to LLM)
-    #[allow(dead_code)]
-    pub fn clear_compacted_summary(&mut self) {
-        self.compacted_summary = None;
-        self.messages_sent_to_llm = 0;
-        self.compacted_range = None;
         self.updated_at = Utc::now();
     }
 
@@ -611,38 +588,7 @@ impl ChatSession {
         messages
     }
 
-    /// Get messages as ChatMessage for the API (full history)
-    #[allow(dead_code)]
-    pub fn as_chat_messages(&self, system_prompt: &str) -> Vec<ChatMessage> {
-        let mut messages = Vec::new();
-
-        // Add system message
-        let prompt = self.system_prompt.as_deref().unwrap_or(system_prompt);
-        messages.push(ChatMessage::system(prompt.to_string()));
-
-        // Add conversation history
-        for msg in &self.messages {
-            match msg.role {
-                MessageRole::User => {
-                    messages.push(ChatMessage::user(msg.content.clone()));
-                }
-                MessageRole::Assistant => {
-                    messages.push(ChatMessage::assistant(msg.content.clone()));
-                }
-                MessageRole::System => {
-                    // System messages are handled separately
-                }
-                MessageRole::Tool => {
-                    messages.push(ChatMessage::tool(msg.content.clone()));
-                }
-            }
-        }
-
-        messages
-    }
-
     /// Convert to SessionInfo for listing
-    #[allow(dead_code)]
     pub fn to_info(&self) -> SessionInfo {
         SessionInfo {
             id: self.id.clone(),

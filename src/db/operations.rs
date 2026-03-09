@@ -184,6 +184,8 @@ impl Database {
 
     /// Delete a message and all its associated data (embeddings, chunks)
     /// This is used by /undo command to clean up properly
+    /// Note: Currently unused, kept for future single-message operations
+    #[allow(dead_code)]
     pub fn delete_message(&self, message_id: i64) -> Result<()> {
         self.with_connection(|conn: &rusqlite::Connection| {
             // Delete from message_embeddings (vec0 requires special handling)
@@ -868,20 +870,6 @@ impl Database {
         })
     }
 
-    /// Count messages with embeddings
-    ///
-    /// Future use: Database statistics and diagnostics.
-    #[allow(dead_code)]
-    pub fn count_embedded_messages(&self) -> Result<i64> {
-        self.with_connection(|conn: &rusqlite::Connection| {
-            conn.query_row(
-                "SELECT COUNT(*) FROM messages WHERE has_embedding = 1",
-                [],
-                |row: &rusqlite::Row<'_>| row.get(0),
-            )
-        })
-    }
-
     /// Get all conversation IDs
     ///
     /// Future use: `/reindex all` command to rebuild embeddings for all conversations.
@@ -1016,33 +1004,6 @@ impl Database {
         })
     }
 
-    /// Get all chunks for a message
-    #[allow(dead_code)]
-    pub fn get_message_chunks(&self, message_id: i64) -> Result<Vec<ChunkRow>> {
-        self.with_connection(|conn: &rusqlite::Connection| {
-            let mut stmt = conn.prepare(
-                "SELECT id, message_id, chunk_index, content, start_offset, end_offset, created_at
-                 FROM message_chunks 
-                 WHERE message_id = ?1 
-                 ORDER BY chunk_index ASC",
-            )?;
-
-            let rows = stmt.query_map(params![message_id], |row| {
-                Ok(ChunkRow {
-                    id: row.get(0)?,
-                    message_id: row.get(1)?,
-                    chunk_index: row.get(2)?,
-                    content: row.get(3)?,
-                    start_offset: row.get(4)?,
-                    end_offset: row.get(5)?,
-                    created_at: row.get(6)?,
-                })
-            })?;
-
-            rows.collect::<Result<Vec<_>>>()
-        })
-    }
-
     /// Get chunks without embeddings for recovery
     ///
     /// Returns (chunk_id, content) pairs for chunks that need embedding generation.
@@ -1067,19 +1028,6 @@ impl Database {
             rows.collect::<Result<Vec<_>>>()
         })
     }
-}
-
-/// Row from message_chunks table
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct ChunkRow {
-    pub id: i64,
-    pub message_id: i64,
-    pub chunk_index: i32,
-    pub content: String,
-    pub start_offset: i32,
-    pub end_offset: i32,
-    pub created_at: i64,
 }
 
 /// Reciprocal Rank Fusion algorithm
