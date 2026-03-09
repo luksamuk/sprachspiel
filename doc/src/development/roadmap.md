@@ -247,341 +247,42 @@ Web fetch tool sometimes returns raw HTML/CSS instead of clean markdown.
 ## SQLite as Single Storage
 
 **Priority:** HIGH  
-**Status:** 🟡 PLANNED (v0.27.0)
+**Status:** 🟢 ~85% COMPLETE (v0.26.x)
 
 **Goal:** Migrate from dual storage (JSON + SQLite) to SQLite as the single source of truth.
 
+### Completed Work
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1: Schema | ✅ | Schema v4 with session metadata columns |
+| Phase 2: ChatSession | ✅ | `save_sqlite()` / `load_sqlite()` implemented |
+| Phase 3: Restore | ✅ | `/restore` command + auto-migration on startup |
+| Phase 4: Commands | ✅ | `/save`, `/load`, `/list` use SQLite |
+| Phase 5: Testing | ⚠️ | Basic tests exist, needs more coverage |
+| Phase 6: Cleanup | ❌ | Legacy code still present |
+
 ### Current State
 
-| Storage | Location | Content |
-|---------|----------|---------|
-| JSON | `~/.local/share/ask-ai/conversations/<project>/<session>.json` | Full session state |
-| SQLite | `~/.local/share/ask-ai/ask-ai.db` | Messages for RAG |
+| Storage | Status | Content |
+|---------|--------|---------|
+| SQLite | 🟢 Primary | Full session state (messages + metadata + todos) |
+| JSON | 🟡 Legacy | Still created by deprecated `save()`, used by `/export json` |
 
-**Problems:**
-1. **Redundancy** - Messages stored in both places
-2. **Inconsistency** - JSON and SQLite can diverge
-3. **Confusion** - `/migrate` imports but doesn't clean up
-4. **Orphaned data** - JSONs remain after migration
+### Remaining Cleanup Tasks
 
-### Target State
+- [ ] Remove `ConversationStorage` instantiation from `repl.rs`
+- [ ] Mark `src/chat/history.rs` as deprecated or move to internal module
+- [ ] Remove `#[deprecated]` methods `save()` and `load()` from ChatSession
+- [ ] Keep JSON for `/export json` only (not for persistence)
+- [ ] Update documentation to reflect SQLite-only storage
+- [ ] Add integration tests for session roundtrip
 
-| Storage | Content |
-|---------|---------|
-| SQLite | Full session state (messages + metadata + todos) |
-| JSON (export only) | Backup/sharing format |
+### Notes
 
-**Benefits:**
-1. **Single source of truth** - No more sync issues
-2. **ACID transactions** - Atomic saves
-3. **Better performance** - SQLite faster than filesystem
-4. **RAG access** - Compact messages still searchable
-
-### Implementation Plan
-
-#### Phase 1: Schema Migration (2h)
-
-**Goal:** Extend SQLite schema to store all session metadata.
-
-**Schema Changes:**
-
-```sql
--- Version 4
-ALTER TABLE conversations ADD COLUMN system_prompt TEXT;
-ALTER TABLE conversations ADD COLUMN compacted_summary TEXT;
-ALTER TABLE conversations ADD COLUMN compacted_range_start INTEGER;
-ALTER TABLE conversations ADD COLUMN compacted_range_end INTEGER;
-ALTER TABLE conversations ADD COLUMN think INTEGER DEFAULT 0;
-ALTER TABLE conversations ADD COLUMN tools INTEGER DEFAULT 1;
-ALTER TABLE conversations ADD COLUMN tool_output_level TEXT DEFAULT 'compact';
-
-ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER;
-
-CREATE TABLE session_todos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id TEXT NOT NULL,
-    task_id INTEGER NOT NULL,
-    description TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_todos_conversation ON session_todos(conversation_id);
-```
-
-**Files Changed:**
-- `src/db/schema.rs` - Add schema version 4
-- `src/db/operations.rs` - Add CRUD for todos, metadata columns
-
-**Tasks:**
-- [ ] Create `SCHEMA_VERSION = 4`
-- [ ] Add migration SQL for new columns
-- [ ] Add `update_conversation_metadata()` function
-- [ ] Add `get_conversation_metadata()` function
-- [ ] Add `save_todos()` and `get_todos()` functions
-- [ ] Add tests for schema migration
-
-#### Phase 2: ChatSession SQLite-Only (4h)
-
-**Goal:** Remove JSON dependency from ChatSession save/load.
-
-**Changes:**
-
-```rust
-// Current (JSON-based)
-impl ChatSession {
-    pub fn save(&self, storage: &ConversationStorage) -> Result<()> {
-        storage.save_session(&self.project_id, &self.id, self)
-    }
-    pub fn load(storage: &ConversationStorage, ...) -> Result<Self> {
-        storage.load_session(project_id, session_id)
-    }
-}
-
-// New (SQLite-based)
-impl ChatSession {
-    pub fn save(&self) -> Result<()> {
-        let db = self.db.as_ref().ok_or("No database")?;
-        db.update_conversation_metadata(&self.id, ...)?;
-        db.save_todos(&self.id, &self.todos)?;
-        Ok(())
-    }
-    pub fn load(db: &Arc<Database>, conversation_id: &str) -> Result<Self> {
-        let meta = db.get_conversation_metadata(conversation_id)?;
-        let messages = db.get_conversation_messages(conversation_id, None)?;
-        let todos = db.get_todos(conversation_id)?;
-        Self::reconstruct(meta, messages, todos, db)
-    }
-}
-```
-
-**Files Changed:**
-- `src/chat/session.rs` - Remove `ConversationStorage` dependency
-- `src/chat/history.rs` - Deprecate or move to `legacy/`
-- `src/db/operations.rs` - New metadata functions
-
-**Tasks:**
-- [ ] Implement `save()` using SQLite only
-- [ ] Implement `load()` using SQLite only
-- [ ] Ensure messages already saved to SQLite (current behavior)
-- [ ] Add `ensure_conversation_exists()` before save
-- [ ] Update `save()` to persist metadata + todos
-- [ ] Test session persistence roundtrip
-
-#### Phase 3: Restore Command + Legacy Detection (2h)
-
-**Goal:** Replace `/migrate` with `/restore` and auto-detect legacy sessions.
-
-**New Command:**
-```
-/restore <file>    Restore session from JSON backup file
-```
-
-**Behavior:**
-1. Read JSON file (backup or legacy)
-2. Validate structure
-3. Import conversation metadata to SQLite
-4. Import messages to SQLite (skip duplicates by timestamp)
-5. Import todos to SQLite
-6. Show success/failure
-7. **If import successful:** Delete JSON file
-
-**Legacy Detection:**
-On REPL startup, check for uncommitted JSON sessions:
-```
-[!] Found 3 uncommitted session(s): session1, session2, default
-[!] Use /restore <file> to import them.
-[!] JSONs will be deleted after successful import.
-```
-
-**Implementation:**
-```rust
-// src/db/legacy_check.rs (new module)
-pub fn check_legacy_sessions(
-    db: &Database,
-    storage: &ConversationStorage,
-    project_id: &Option<String>,
-) -> Option<Vec<String>> {
-    let json_sessions = storage.list_sessions(project_id);
-    let sqlite_sessions = db.list_conversations().unwrap_or_default();
-    
-    let uncommitted: Vec<String> = json_sessions
-        .iter()
-        .filter(|s| !sqlite_sessions.contains(&s.id))
-        .map(|s| s.id.clone())
-        .collect();
-    
-    if !uncommitted.is_empty() { Some(uncommitted) } else { None }
-}
-
-pub fn restore_session(
-    db: &Database,
-    json_path: &Path,
-) -> Result<(), String> {
-    let session = read_session_from_json(json_path)?;
-    migrate_session_to_sqlite(&session, db)?;
-    std::fs::remove_file(json_path)?;
-    Ok(())
-}
-```
-
-**Files Changed:**
-- `src/db/legacy_check.rs` - New module
-- `src/db/mod.rs` - Export legacy_check
-- `src/chat/commands.rs` - Remove `Migrate` command, add `Restore`
-- `src/chat/repl.rs` - Add legacy detection on startup
-
-**Tasks:**
-- [ ] Create `src/db/legacy_check.rs`
-- [ ] Implement `check_legacy_sessions()`
-- [ ] Implement `read_session_from_json()`
-- [ ] Implement `migrate_session_to_sqlite()`
-- [ ] Add `Restore` command in `ChatCommand` enum
-- [ ] Add legacy detection to REPL startup
-- [ ] Remove `Migrate` command (keep internal function)
-- [ ] Update help text
-
-#### Phase 4: Update Commands (2h)
-
-**Goal:** Commands use SQLite instead of JSON.
-
-| Command | Current | New |
-|---------|---------|-----|
-| `/save [name]` | `storage.save_session()` | `session.save()` (SQLite) |
-| `/load <name>` | `ChatSession::load(storage, ...)` | `ChatSession::load(&db, id)` |
-| `/list` | `storage.list_sessions()` | `db.list_conversations()` |
-| `/export json` | Same (exports ChatSession) | Same |
-| `/forget` | Delete JSON + SQLite | SQLite only |
-
-**Files Changed:**
-- `src/chat/commands.rs` - Remove `storage` parameter, use `db` from session
-- `src/chat/repl.rs` - Update `execute_command()` calls
-
-**Tasks:**
-- [ ] Update `execute_command()` signature (remove `storage`)
-- [ ] Update `/save` to use SQLite
-- [ ] Update `/load` to load from SQLite
-- [ ] Update `/list` to query SQLite
-- [ ] Update `/forget` to use SQLite only
-- [ ] Test all commands
-
-#### Phase 5: Testing (2h)
-
-**Goal:** Verify all functionality works with SQLite-only storage.
-
-**Test Cases:**
-
-1. **Migration Test:**
-```rust
-#[test]
-fn test_migrate_legacy_json_to_sqlite() {
-    // Create JSON session manually
-    let legacy_session = create_test_session();
-    let json = serde_json::to_string(&legacy_session).unwrap();
-    
-    // Write to legacy location
-    let json_path = storage.session_path(&project_id, "test-session");
-    std::fs::write(&json_path, &json).unwrap();
-    
-    // Restore from JSON
-    let db = Database::in_memory().unwrap();
-    restore_session(&db, &json_path).unwrap();
-    
-    // Verify SQLite has all data
-    let loaded = ChatSession::load(&db, "test-session").unwrap();
-    assert_eq!(loaded.think, legacy_session.think);
-    assert_eq!(loaded.tools, legacy_session.tools);
-    assert_eq!(loaded.todos.tasks.len(), legacy_session.todos.tasks.len());
-    
-    // Verify JSON was deleted
-    assert!(!json_path.exists());
-}
-```
-
-2. **Session Roundtrip:**
-```rust
-#[test]
-fn test_session_sqlite_roundtrip() {
-    let db = Database::in_memory().unwrap();
-    
-    let mut session = ChatSession::new("test-model".into(), None, false);
-    session.think = true;
-    session.tools = false;
-    session.add_user_message("Hello".into());
-    session.add_assistant_message("Hi!".into());
-    session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
-    
-    // Save
-    session.save().unwrap();
-    
-    // Load
-    let loaded = ChatSession::load(&db, &session.id).unwrap();
-    
-    assert_eq!(loaded.model, "test-model");
-    assert_eq!(loaded.think, true);
-    assert_eq!(loaded.tools, false);
-    assert_eq!(loaded.messages.len(), 2);
-    assert!(loaded.compacted_summary.is_some());
-}
-```
-
-3. **Todo Persistence:**
-```rust
-#[test]
-fn test_todos_persist_in_sqlite() {
-    let db = Database::in_memory().unwrap();
-    let mut session = ChatSession::new("model".into(), None, false);
-    
-    session.todos.add_task("Task 1".into());
-    session.todos.add_task("Task 2".into());
-    session.save().unwrap();
-    
-    let loaded = ChatSession::load(&db, &session.id).unwrap();
-    assert_eq!(loaded.todos.tasks.len(), 2);
-}
-```
-
-4. **Compaction + RAG:**
-```rust
-#[test]
-fn test_compaction_preserves_rag_access() {
-    let db = Database::in_memory().unwrap();
-    let mut session = ChatSession::new("model".into(), None, false);
-    session.db = Some(Arc::new(db.clone()));
-    
-    // Add many messages
-    for i in 0..20 {
-        session.add_user_message(format!("Message {}", i).into());
-    }
-    
-    // Compact middle
-    session.set_compacted_summary_with_range("Summary".into(), Some((5, 15)));
-    session.save().unwrap();
-    
-    // Search should still find compacted messages
-    let results = db.search_keyword("Message", None, None, 10).unwrap();
-    assert!(results.len() >= 10); // Compacted messages still searchable
-}
-```
-
-**Tasks:**
-- [ ] Write migration test
-- [ ] Write session roundtrip test
-- [ ] Write todo persistence test
-- [ ] Write compaction + RAG test
-- [ ] Add integration test for `/restore` command
-
-#### Phase 6: Cleanup (1h)
-
-**Goal:** Remove deprecated code.
-
-**Tasks:**
-- [ ] Remove `src/chat/history.rs` or mark as deprecated
-- [ ] Remove `ConversationStorage` parameter from `execute_command()`
-- [ ] Update all callers in `src/chat/repl.rs`
-- [ ] Dead code elimination for unused JSON functions
-- [ ] Update documentation
+- Auto-migration runs on startup via `migrate_all_legacy_sessions()`
+- `/restore <session-id>` imports JSON backup to SQLite
+- Commands `ChatCommand::{Save, Load, List}` use `save_sqlite()` and `load_sqlite()`
 
 ---
 
@@ -590,17 +291,22 @@ fn test_compaction_preserves_rag_access() {
 ### Memory Enhancement Part 1 (Phases 1-3)
 
 **Priority:** HIGH  
-**Status:** Phase 1 Complete, Phase 2-3 Research Needed
+**Status:** Phase 1 Complete, Phase 2-3 NOT STARTED
 
 #### Phase 1: Source Attribution ✅ (v0.26.1)
 
+Completed:
 - ✅ `SourceType` enum with `prefix()` and `from_prefix()` methods
 - ✅ Context formatted with source labels: `[msg:N]`, `[doc:N]`, `[note:N]`
 - ✅ `remember` tool updated to use source type prefixes
 
-#### Phase 2: Query Routing Research
+#### Phase 2: Query Routing ❌ NOT STARTED
 
-**Goal:** Route queries to appropriate search targets.
+**Goal:** Route queries to appropriate search targets (conversations, docs, notes).
+
+**Current State:**
+- No query routing implementation exists
+- All searches go through `search_hybrid()` without target discrimination
 
 **Tasks:**
 - [ ] Collect real query patterns from usage
@@ -608,14 +314,35 @@ fn test_compaction_preserves_rag_access() {
 - [ ] Benchmark embedding-based routing latency
 - [ ] Test `whatlang` crate for language detection
 
-#### Phase 3: Timestamp Filtering (1 day)
+#### Phase 3: Timestamp Filtering ❌ NOT STARTED
 
 **Goal:** Filter results by time ("what did I say yesterday?").
 
+**Current State:**
+- `search_hybrid()` has no timestamp filtering capability
+
+**Implementation Needed:**
+```rust
+pub fn search_hybrid(
+    &self,
+    query: &str,
+    embedding: &[f32],
+    conversation_id: Option<&str>,
+    project_id: Option<&str>,
+    limit: usize,
+    keyword_weight: f32,
+    semantic_weight: f32,
+    exclude_ids: Option<&[i64]>,
+    // NEW: Add timestamp filter
+    timestamp_range: Option<(i64, i64)>,  // <-- Add this
+) -> Result<Vec<SearchResult>>
+```
+
 **Tasks:**
-- [ ] Add `timestamp_range: Option<(i64, i64)>` to `search_hybrid()`
-- [ ] Implement temporal reference detection (pt-BR + en)
+- [ ] Add `timestamp_range: Option<(i64, i64)>` parameter to `search_hybrid()`
+- [ ] Implement temporal reference detection (pt-BR + en patterns)
 - [ ] Add SQL WHERE clause for timestamp filtering
+- [ ] Update `remember` tool to support time-based queries
 
 ---
 

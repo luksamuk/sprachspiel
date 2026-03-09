@@ -55,15 +55,25 @@
 - Conversation-aware retrieval (enrichment) - v0.24.0
 - Project-aware query mode - v0.25.0
 - `/clear` and `/forget` commands for session management - v0.22.5
+- Source attribution in memory system (`SourceType` enum) - v0.26.1
+- SQLite as primary storage (schema v4, `/restore`, auto-migration) - v0.26.x
 
  📋 **Planned:**
 
 ### High Priority
 
-- **Memory Enhancement Part 1** (Phases 1-3)
-  - Phase 1: Source Attribution ✅ Complete (v0.26.1)
-  - Phase 2: Query Routing - Route queries to appropriate search targets
-  - Phase 3: Timestamp Filtering - "what did I say yesterday?"
+- **SQLite as Single Storage** (~85% complete)
+  - ✅ Schema v4 with session metadata
+  - ✅ `save_sqlite()` / `load_sqlite()` implemented
+  - ✅ `/restore` command
+  - ✅ Auto-migration on startup
+  - ✅ Commands use SQLite (`/save`, `/load`, `/list`)
+  - ❌ Cleanup: Remove `ConversationStorage` dependency from REPL
+
+- **Memory Enhancement Part 1**
+  - ✅ Phase 1: Source Attribution (v0.26.1)
+  - ❌ Phase 2: Query Routing - Route queries to appropriate search targets
+  - ❌ Phase 3: Timestamp Filtering - "what did I say yesterday?"
 
 - **Chat Module Integration** - `/ocr`, `/vision`, `/translate`, `/summarize` from chat
   - Required dependency for Memory Enhancement Part 2
@@ -148,4 +158,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-04 - v0.26.0 released: Improved distribution system
+2026-03-09 - v0.26.7: Dead code cleanup; updated roadmap to reflect actual implementation status

@@ -1,0 +1,261 @@
+# Anatomy of Context
+
+**Status:** Implemented  
+**Version:** v0.21.0+  
+**File:** `src/retrieval/context_builder.rs`
+
+This document explains how ask-ai composes the LLM context window, following research-based principles to avoid "lost in the middle" issues.
+
+---
+
+## The Problem: Lost in the Middle
+
+Research from Liu et al. (2023) shows that language models perform significantly worse when relevant information is placed in the **middle** of context windows.
+
+**Key findings:**
+- **Beginning**: Up to 30% better performance (Anthropic research)
+- **End**: Critical for current query understanding
+- **Middle**: Information gets "lost" or poorly recalled
+
+---
+
+## Context Composition
+
+The context window has 6 sections assembled in order:
+
+```mermaid
+graph TB
+    subgraph P1["SYSTEM PROMPT"]
+        S1["Identity and personality"]
+        S2["Available tools"]
+        S3["Platform info"]
+        S4["AGENTS.md content"]
+    end
+    
+    subgraph P2["RETRIEVED CONTEXT"]
+        R1["Semantically relevant messages"]
+        R2["Enriched with responses"]
+        R3["Source IDs for citations"]
+    end
+    
+    subgraph P3["FIRST PRESERVED"]
+        F1["Messages before compacted"]
+        F2["Initial context"]
+    end
+    
+    subgraph P4["COMPACTED SUMMARY"]
+        C1["Key decisions"]
+        C2["Entities mentioned"]
+        C3["Open questions"]
+    end
+    
+    subgraph P5["RECENT MESSAGES"]
+        M1["Last N message pairs"]
+        M2["Chronological order"]
+    end
+    
+    subgraph P6["CURRENT QUERY"]
+        Q1["User question"]
+    end
+    
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6
+    
+    style P1 fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+    style P2 fill:#fff3e0,stroke:#ef6c00,color:#e65100
+    style P3 fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
+    style P4 fill:#fce4ec,stroke:#c2185b,color:#880e4f
+    style P5 fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    style P6 fill:#fffde7,stroke:#f9a825,color:#f57f17
+```
+
+### Token Budget per Section
+
+| Section | Tokens | Priority |
+|---------|--------|----------|
+| System Prompt | 500-2000 | Critical |
+| Retrieved Context | 1000-5000 | High |
+| First Preserved | Variable | Medium |
+| Compacted Summary | 500-1000 | Medium |
+| Recent Messages | 2000-5000 | High |
+| Current Query | Variable | Critical |
+
+### Section Details
+
+**System Prompt** — Always first. Contains identity, tools, behavior, platform info, AGENTS.md.
+
+**Retrieved Context** — Semantically relevant messages from history. Active when session has 5+ messages and retrieval is enabled.
+
+**First Preserved** — Messages before compacted range. Only present after middle compaction.
+
+**Compacted Summary** — LLM-generated summary with key decisions, entities, open questions. After `/compact`.
+
+**Recent Messages** — Last 10 message pairs. Always included, chronological order.
+
+**Current Query** — User's question. Always at very end for best comprehension.
+
+---
+
+## Flow Diagram
+
+```mermaid
+graph TD
+    A["User Query"] --> B{"Messages >= 5?"}
+    B -->|Yes| C{"Retrieval ON?"}
+    B -->|No| F["Assemble Context"]
+    C -->|Yes| D{"DB Ready?"}
+    C -->|No| F
+    D -->|Yes| E["Semantic Retrieval"]
+    D -->|No| F
+    E --> F
+    F --> G["Send to Ollama"]
+```
+
+---
+
+## Retrieval Sequence
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant CB as ContextBuilder
+    participant EC as EmbeddingClient
+    participant DB as SQLite
+    participant LLM as Ollama
+
+    U->>CB: send query
+    activate CB
+
+    alt Retrieval Active
+        CB->>EC: embed query
+        activate EC
+        EC-->>CB: 256-dim vector
+        deactivate EC
+        
+        CB->>DB: search_hybrid
+        activate DB
+        DB-->>CB: top 5 messages
+        deactivate DB
+        
+        CB->>DB: enrich_with_context
+        activate DB
+        DB-->>CB: messages + responses
+        deactivate DB
+    end
+
+    CB->>CB: assemble context
+    CB->>LLM: send context
+    deactivate CB
+    activate LLM
+    LLM-->>U: response
+    deactivate LLM
+```
+
+---
+
+## Middle Compaction
+
+When context reaches 80% of the window:
+
+```mermaid
+graph TB
+    subgraph Before["Before: 80%+ full"]
+        B1["System"] --> B2["Msgs 0-5"]
+        B2 --> B3["Msgs 6-25"]
+        B3 --> B4["Msgs 26-30"]
+        B4 --> B5["Query"]
+    end
+
+    subgraph After["After: 60% full"]
+        A1["System"] --> A2["Msgs 0-5"]
+        A2 --> A3["Summary"]
+        A3 --> A4["Msgs 26-30"]
+        A4 --> A5["Query"]
+    end
+
+    Before --> After
+    
+    style B3 fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style A3 fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+```
+
+**Key invariant:** Messages are NEVER deleted from SQLite. Compaction only affects what's sent to the LLM.
+
+---
+
+## Token Budget
+
+| Context Window | Target | Tokens | Buffer |
+|----------------|--------|--------|--------|
+| 4K | 60-80% | 2.4K - 3.2K | 800+ |
+| 8K | 60-80% | 4.8K - 6.4K | 1.6K+ |
+| 16K | 60-80% | 9.6K - 12.8K | 3.2K+ |
+| 32K | 60-80% | 19K - 26K | 6K+ |
+| 128K | 60-80% | 77K - 102K | 26K+ |
+
+**Why 60-80%?** Leaves room for tool responses and prevents overflow.
+
+---
+
+## Anti-Patterns
+
+| Anti-Pattern | Problem | Solution |
+|--------------|---------|----------|
+| Retrieval in middle | Lost info | Place after system |
+| Query in middle | Model confused | Query at very end |
+| Context 100% full | Overflow | Target 60-80% |
+| No structure tags | Confusion | Use XML tags |
+| Generic summary | Lost details | Preserve entities |
+| Delete from SQLite | Lost data | Never delete |
+
+---
+
+## Configuration
+
+Default values in `src/retrieval/context_builder.rs`:
+
+```rust
+pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 5;
+pub const RELEVANT_MESSAGES_COUNT: usize = 5;
+pub const RECENT_MESSAGES_COUNT: usize = 10;
+pub const MIN_RETRIEVAL_INTERVAL_SECS: u64 = 5;
+pub const KEYWORD_WEIGHT: f32 = 0.4;
+pub const SEMANTIC_WEIGHT: f32 = 0.6;
+```
+
+### Activation Conditions
+
+Retrieval activates when ALL are true:
+- `config.enabled == true`
+- `session.messages.len() >= 5`
+- `db.is_some()`
+- `embedding_client.is_some()`
+- Throttle passed (5 seconds)
+
+---
+
+## Query Mode
+
+For `ask-ai query` (no persistence):
+
+```mermaid
+graph TB
+    subgraph QMode["Query Mode"]
+        Q1["System Prompt"]
+        Q2["Retrieved Context"]
+        Q3["Current Query"]
+    end
+    
+    Q1 --> Q2 --> Q3
+    
+    style QMode fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+```
+
+**Differences from Chat Mode:** No recent messages, no summary, searches all projects, no persistence.
+
+---
+
+## See Also
+
+- [Context Composition Design](./context_composition_design.md) — Design decisions
+- [Retrieval Design](./retrieval_design.md) — Hybrid search implementation
+- [Architecture](./architecture.md) — Overall system architecture
