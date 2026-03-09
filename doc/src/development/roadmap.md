@@ -176,6 +176,26 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 | Code mode (-c) not working | ✅ Fixed | v0.26.3 |
 | Context panic after `/compact` + `/clear` | ✅ Fixed | v0.26.6 |
 | Context exhaustion during tools | ✅ Fixed | v0.26.4-v0.26.6 |
+| Context utilization after `/compact` | ✅ Fixed | v0.26.8 |
+
+### Context Utilization After Compaction
+
+**Status:** ✅ FIXED (v0.26.8) - Needs Manual Testing
+
+**Problem:** After running `/compact`, the `/context` command showed incorrect token counts:
+- Displayed 100%+ utilization even after successful compaction
+- Counted ALL messages including compacted ones
+- Wrong message counts in breakdown
+
+**Fix Applied:**
+- `history_real_tokens()` now skips compacted messages and includes summary
+- `check_context_overflow()` respects `messages_sent_to_llm`
+- `/context` display shows active messages and summary tokens correctly
+
+**Needs Manual Testing:**
+- Test with long conversations that trigger auto-compact
+- Verify `/context` shows reduced tokens after `/compact`
+- Test with different compaction scenarios (manual vs auto)
 
 ---
 
