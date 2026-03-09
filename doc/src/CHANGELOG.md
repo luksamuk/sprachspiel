@@ -2,6 +2,28 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.26.8] - 2026-03-09
+
+### Fixed
+
+- **Context Utilization After Compaction** - Fixed token count calculation after `/compact`
+  - `history_real_tokens()` now skips compacted messages
+  - `check_context_overflow()` now respects `messages_sent_to_llm`
+  - `/context` display now shows correct active messages and summary tokens
+  - Context utilization bar reflects post-compaction state
+
+### Details
+
+Before this fix, `/context` showed incorrect token counts after compaction:
+- Counted ALL messages (including compacted ones)
+- Showed 100%+ utilization even after successful compaction
+- Displayed wrong message count
+
+Now correctly calculates:
+- Tokens from summary + active messages only
+- Skips messages before `messages_sent_to_llm`
+- Shows summary token estimate in output
+
 ## [0.27.0] - PLANNED
 
 ### Changed

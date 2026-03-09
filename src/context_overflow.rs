@@ -185,19 +185,24 @@ pub fn check_context_overflow(
     context_window: usize,
     threshold: f32,
 ) -> ContextStatus {
-    // Calculate total tokens
+    // Calculate tokens for system prompt
     let system_tokens = estimate_tokens(system_prompt) + 4; // +4 for message overhead
-    let history_tokens: usize = session
-        .messages
-        .iter()
-        .map(|msg| estimate_tokens(&msg.content) + 4)
-        .sum();
 
+    // Calculate tokens for compacted summary (if present)
     let summary_tokens = session
         .compacted_summary
         .as_ref()
         .map(|s| estimate_tokens(s) + 4)
         .unwrap_or(0);
+
+    // Calculate tokens from messages that will be sent to LLM
+    // Skip compacted messages (those before messages_sent_to_llm)
+    let history_tokens: usize = session
+        .messages
+        .iter()
+        .skip(session.messages_sent_to_llm)
+        .map(|msg| estimate_tokens(&msg.content) + 4)
+        .sum();
 
     let total_tokens = system_tokens + history_tokens + summary_tokens;
     let usage = total_tokens as f32 / context_window as f32;
@@ -811,6 +816,85 @@ mod tests {
         assert!(
             MAX_TOOL_RESULT_TOKENS <= 10000,
             "Should not exceed 10000 tokens for tool results"
+        );
+    }
+
+    #[test]
+    fn test_check_context_overflow_respects_compaction() {
+        // Session without compaction - all messages should be counted
+        let mut session = ChatSession::new("test-model".into(), None, false);
+
+        // Add 10 messages with lots of content
+        for _ in 0..10 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: "This is a long message with lots of content to test token counting in the context overflow check".into(),
+                timestamp: Utc::now(),
+                ..Default::default()
+            });
+        }
+
+        let status_no_compact = check_context_overflow(&session, "System prompt", 1000, 0.8);
+        let tokens_no_compact = status_no_compact.total_tokens();
+
+        // Now compact first 5 messages
+        session.messages_sent_to_llm = 5;
+        session.compacted_summary = Some("This is a summary of the first 5 messages".into());
+
+        let status_with_compact = check_context_overflow(&session, "System prompt", 1000, 0.8);
+        let tokens_with_compact = status_with_compact.total_tokens();
+
+        // With compaction, should have fewer tokens
+        assert!(
+            tokens_with_compact < tokens_no_compact,
+            "Compacted session should have fewer tokens: {} < {}",
+            tokens_with_compact,
+            tokens_no_compact
+        );
+
+        // Difference should be about 5 messages
+        let diff = tokens_no_compact - tokens_with_compact;
+        assert!(
+            diff > 50,
+            "Should have removed at least 50 tokens from compacted messages, got: {}",
+            diff
+        );
+    }
+
+    #[test]
+    fn test_check_context_overflow_includes_summary() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+
+        // Add 2 messages (will all be sent to LLM, no compaction)
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Hello".into(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        });
+        session.messages.push(SavedMessage {
+            role: MessageRole::Assistant,
+            content: "Hi".into(),
+            timestamp: Utc::now(),
+            ..Default::default()
+        });
+
+        let status_no_summary = check_context_overflow(&session, "System", 1000, 0.8);
+        let tokens_no_summary = status_no_summary.total_tokens();
+
+        // Add a summary
+        session.compacted_summary =
+            Some("This is a summary of the previous conversation about important topics".into());
+
+        let status_with_summary = check_context_overflow(&session, "System", 1000, 0.8);
+        let tokens_with_summary = status_with_summary.total_tokens();
+
+        // Summary should add tokens
+        assert!(
+            tokens_with_summary > tokens_no_summary,
+            "Summary should add tokens: {} > {}",
+            tokens_with_summary,
+            tokens_no_summary
         );
     }
 }

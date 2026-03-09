@@ -542,12 +542,31 @@ impl ChatSession {
 
     /// Get real token count from historical messages (sum of prompt_tokens)
     /// This uses actual token counts from Ollama responses when available
+    /// 
+    /// IMPORTANT: Only counts tokens for messages that will be sent to the LLM.
+    /// Skips compacted messages and includes the compacted summary if present.
     pub fn history_real_tokens(&self) -> usize {
-        self.messages
+        // Count tokens from messages that will be sent to LLM (skip compacted)
+        let messages_tokens: usize = self
+            .messages
             .iter()
+            .skip(self.messages_sent_to_llm)
             .filter_map(|m| m.prompt_tokens)
             .map(|t| t as usize)
-            .sum()
+            .sum();
+
+        // Add estimated tokens from compacted summary if present
+        // Use ~1.3 tokens per word as rough estimate for summaries
+        let summary_tokens = self
+            .compacted_summary
+            .as_ref()
+            .map(|s| {
+                let word_count = s.split_whitespace().count();
+                (word_count as f32 * 1.3).ceil() as usize + 4 // +4 for message overhead
+            })
+            .unwrap_or(0);
+
+        messages_tokens + summary_tokens
     }
 
     /// Get messages to send to LLM (summary + recent messages)
@@ -707,5 +726,90 @@ mod tests {
         assert!(session.messages.is_empty());
         assert!(session.compacted_summary.is_none());
         assert!(session.compacted_range.is_none());
+    }
+    
+    #[test]
+    fn test_history_real_tokens_without_compaction() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Add messages with prompt_tokens
+        for i in 0..5 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {}", i),
+                timestamp: Utc::now(),
+                prompt_tokens: Some(100 * (i + 1)), // 100, 200, 300, 400, 500
+                ..Default::default()
+            });
+        }
+        
+        // Without compaction, should sum all tokens
+        let tokens = session.history_real_tokens();
+        assert_eq!(tokens, 100 + 200 + 300 + 400 + 500); // 1500
+    }
+    
+    #[test]
+    fn test_history_real_tokens_with_compaction() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Add messages with prompt_tokens
+        for i in 0..5 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {}", i),
+                timestamp: Utc::now(),
+                prompt_tokens: Some(100 * (i + 1)), // 100, 200, 300, 400, 500
+                ..Default::default()
+            });
+        }
+        
+        // Compaction: skip first 3 messages (messages_sent_to_llm = 3)
+        session.messages_sent_to_llm = 3;
+        session.compacted_summary = Some("This is a summary of the conversation".into());
+        
+        // With compaction, should only count messages after index 3
+        // Messages 3 and 4: 400 + 500 = 900
+        // Plus summary tokens (estimated)
+        let tokens = session.history_real_tokens();
+        
+        // Should be 900 + summary tokens
+        assert!(tokens >= 900, "Tokens should be at least 900 (from messages 3 and 4)");
+        
+        // Summary has ~7 words, so ~10 tokens
+        assert!(tokens < 1500, "Tokens should be less than 1500 (not counting compacted messages)");
+    }
+    
+    #[test]
+    fn test_get_messages_for_llm_respects_compaction() {
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Add 5 messages
+        for i in 0..5 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {}", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            });
+        }
+        
+        // Compact first 3 messages
+        session.set_compacted_summary_with_range("Summary".into(), Some((0, 3)));
+        
+        // get_messages_for_llm should return system + summary + messages 3,4
+        let messages = session.get_messages_for_llm("You are helpful.");
+        
+        // 1 system + 1 summary + 2 messages = 4
+        assert_eq!(messages.len(), 4);
+        
+        // First is system
+        assert!(messages[0].content.starts_with("You are helpful."));
+        
+        // Second is summary
+        assert!(messages[1].content.contains("Previous conversation summary"));
+        
+        // Third and fourth are the remaining messages
+        assert!(messages[2].content.contains("Message 3"));
+        assert!(messages[3].content.contains("Message 4"));
     }
 }

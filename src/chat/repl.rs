@@ -19,7 +19,7 @@ use crate::query::ChatContext;
 use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
-use crate::tokens::calculate_context_metrics;
+use crate::tokens::{calculate_context_metrics, estimate_tokens};
 use crate::tool_robustness::format_tool_error;
 use crate::tools::{get_available_tool_names, register_tools};
 
@@ -1439,7 +1439,22 @@ fn print_context_info(
     if tools_enabled && tool_count > 0 {
         println!("    Tool definitions: ~{} tokens ({} tools)", metrics.tools_tokens, tool_count);
     }
-    println!("    Conversation:     ~{} tokens ({} messages)", metrics.history_tokens, session.messages.len());
+    
+    // Show correct message count (active messages, not all)
+    let active_messages = if session.has_compacted_messages() {
+        session.messages.len() - session.messages_sent_to_llm
+    } else {
+        session.messages.len()
+    };
+    
+    // Include summary in conversation display if present
+    if session.has_compacted_messages() {
+        println!("    Summary:          ~{} tokens", estimate_tokens(session.compacted_summary.as_deref().unwrap_or("")) + 4);
+        println!("    Conversation:     ~{} tokens ({} active messages)", metrics.history_tokens, active_messages);
+    } else {
+        println!("    Conversation:     ~{} tokens ({} messages)", metrics.history_tokens, active_messages);
+    }
+    
     println!("    {}", "─".repeat(40));
     println!("    Total used:       ~{} tokens", metrics.total_tokens);
     println!("    Available:        ~{} tokens", metrics.available());
@@ -1448,8 +1463,11 @@ fn print_context_info(
     if session.has_compacted_messages() {
         println!("  Session:");
         println!("    Compacted:        {} messages summarized", session.compacted_message_count());
-        println!("    Active:           {} messages", session.messages.len() - session.compacted_message_count());
+        println!("    Active:           {} messages", active_messages);
+        println!("    Total:            {} messages", session.messages.len());
+    } else {
+        println!("  Session:");
+        println!("    Total:            {} messages", session.messages.len());
     }
-    println!("    Total:            {} messages", session.messages.len());
     println!();
 }
