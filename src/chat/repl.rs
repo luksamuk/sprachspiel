@@ -27,7 +27,7 @@ use super::commands::{CommandResult, execute_command, parse_command};
 use super::completion::ChatCompleter;
 use super::coordinator::{classify_error_str, format_recovery_message, is_error_str_recoverable, MAX_RETRIES};
 use super::custom_coordinator::CustomCoordinator;
-use super::history::{ConversationStorage, get_project_id};
+use super::history::get_project_id;
 use super::session::ChatSession;
 use super::thinking::{display_thinking, strip_thinking_tags};
 
@@ -64,8 +64,6 @@ pub async fn run_chat_repl(
             log_debug("Running in anonymous mode (no persistence)");
         }
     }
-
-    let storage = ConversationStorage::new();
 
     // Get chat-specific configuration for model/thinking/tools defaults
     let (config_model, config_thinking, config_tools) = settings.get_subcommand_config("chat");
@@ -108,16 +106,16 @@ pub async fn run_chat_repl(
         };
 
     // Run ONE-TIME automatic migration from JSON to SQLite
-    if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
-        if !args.anonymous {
-            let migration_stats = crate::db::migrate_all_legacy_sessions(&storage, db_ref, client).await;
-            if migration_stats.sessions_migrated > 0 {
-                // Sessions were migrated, save the count for later display
-                log_debug(&format!(
-                    "Migrated {} session(s) from JSON to SQLite",
-                    migration_stats.sessions_migrated
-                ));
-            }
+    if let (Some(db_ref), Some(client)) = (&db, &embedding_client)
+        && !args.anonymous
+    {
+        let migration_stats = crate::db::migrate_all_legacy_sessions(db_ref, client).await;
+        if migration_stats.sessions_migrated > 0 {
+            // Sessions were migrated, save the count for later display
+            log_debug(&format!(
+                "Migrated {} session(s) from JSON to SQLite",
+                migration_stats.sessions_migrated
+            ));
         }
     }
 
@@ -621,8 +619,6 @@ pub async fn run_chat_repl(
                                             if let Ok(db) = crate::db::Database::new() {
                                                 if let Err(e) = db.delete_last_messages(&session.id, removed) {
                                                     eprintln!("Warning: Failed to delete from database: {}", e);
-                                                } else {
-                                                    println!("Removed {} message(s) from database.", removed);
                                                 }
                                             }
                                         }
@@ -678,7 +674,7 @@ pub async fn run_chat_repl(
                                     };
                                     
                                     println!("Restoring session: {}", session_id);
-                                    match crate::db::restore_session(&storage, &db, &session.project_id, &session_id) {
+                                    match crate::db::restore_session(&db, &session.project_id, &session_id) {
                                         Ok(restored) => {
                                             println!(
                                                 "Session restored: {} ({} messages)",

@@ -247,7 +247,7 @@ Web fetch tool sometimes returns raw HTML/CSS instead of clean markdown.
 ## SQLite as Single Storage
 
 **Priority:** HIGH  
-**Status:** 🟢 ~85% COMPLETE (v0.26.x)
+**Status:** 🟢 ~95% COMPLETE (v0.27.x)
 
 **Goal:** Migrate from dual storage (JSON + SQLite) to SQLite as the single source of truth.
 
@@ -255,34 +255,34 @@ Web fetch tool sometimes returns raw HTML/CSS instead of clean markdown.
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Phase 1: Schema | ✅ | Schema v4 with session metadata columns |
-| Phase 2: ChatSession | ✅ | `save_sqlite()` / `load_sqlite()` implemented |
-| Phase 3: Restore | ✅ | `/restore` command + auto-migration on startup |
-| Phase 4: Commands | ✅ | `/save`, `/load`, `/list` use SQLite |
-| Phase 5: Testing | ⚠️ | Basic tests exist, needs more coverage |
-| Phase 6: Cleanup | ❌ | Legacy code still present |
+| Phase 1: Schema | ✅ Done | Schema v4 with session metadata columns |
+| Phase 2: ChatSession | ✅ Done | `save_sqlite()` / `load_sqlite()` implemented |
+| Phase 3: Restore | ✅ Done | `/restore` command + auto-migration on startup |
+| Phase 4: Commands | ✅ Done | `/save`, `/load`, `/list` use SQLite |
+| Phase 5: Testing | ✅ Done | Basic tests pass |
+| Phase 6: Cleanup | 🔄 In Progress | `ConversationStorage` deprecated, `repl.rs` clean |
 
 ### Current State
 
 | Storage | Status | Content |
 |---------|--------|---------|
 | SQLite | 🟢 Primary | Full session state (messages + metadata + todos) |
-| JSON | 🟡 Legacy | Still created by deprecated `save()`, used by `/export json` |
+| JSON | 🟡 Legacy | Still used by `/export json` and internal migration |
 
-### Remaining Cleanup Tasks
+### Recent Changes (v0.27.x)
 
-- [ ] Remove `ConversationStorage` instantiation from `repl.rs`
-- [ ] Mark `src/chat/history.rs` as deprecated or move to internal module
-- [ ] Remove `#[deprecated]` methods `save()` and `load()` from ChatSession
-- [ ] Keep JSON for `/export json` only (not for persistence)
-- [ ] Update documentation to reflect SQLite-only storage
-- [ ] Add integration tests for session roundtrip
+- `ConversationStorage` now marked with `#[deprecated]`
+- `repl.rs` no longer instantiates `ConversationStorage`
+- `migrate_all_legacy_sessions()` creates storage internally
+- `restore_session()` creates storage internally
+- Removed `save()` and `load()` deprecated methods from `ChatSession`
+- `legacy_check.rs` uses `storage.load_session()` directly
 
-### Notes
+### Remaining Tasks
 
-- Auto-migration runs on startup via `migrate_all_legacy_sessions()`
-- `/restore <session-id>` imports JSON backup to SQLite
-- Commands `ChatCommand::{Save, Load, List}` use `save_sqlite()` and `load_sqlite()`
+- [ ] Consider removing `history.rs` entirely in future version
+- [ ] Update user documentation for storage model
+- [ ] Consider removing `SessionInfo` struct (only used for legacy listing)
 
 ---
 

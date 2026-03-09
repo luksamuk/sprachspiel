@@ -57,18 +57,19 @@
 - `/clear` and `/forget` commands for session management - v0.22.5
 - Source attribution in memory system (`SourceType` enum) - v0.26.1
 - SQLite as primary storage (schema v4, `/restore`, auto-migration) - v0.26.x
+- `ConversationStorage` deprecated, removed from REPL - v0.27.x
 
  📋 **Planned:**
 
 ### High Priority
 
-- **SQLite as Single Storage** (~85% complete)
+- **SQLite as Single Storage** (~95% complete)
   - ✅ Schema v4 with session metadata
   - ✅ `save_sqlite()` / `load_sqlite()` implemented
   - ✅ `/restore` command
   - ✅ Auto-migration on startup
   - ✅ Commands use SQLite (`/save`, `/load`, `/list`)
-  - ❌ Cleanup: Remove `ConversationStorage` dependency from REPL
+  - ✅ Cleanup: `ConversationStorage` deprecated and removed from REPL
 
 - **Memory Enhancement Part 1**
   - ✅ Phase 1: Source Attribution (v0.26.1)

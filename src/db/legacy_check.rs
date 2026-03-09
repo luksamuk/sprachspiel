@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::Database;
+#[allow(deprecated)]
 use crate::chat::history::ConversationStorage;
 use crate::chat::session::{ChatSession, MessageRole};
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_SYSTEM, ROLE_TOOL, ROLE_USER};
@@ -48,6 +49,7 @@ fn role_to_string(role: &MessageRole) -> &'static str {
 }
 
 /// Discover all project directories in the storage path
+#[allow(deprecated)]
 fn discover_project_dirs(storage: &ConversationStorage) -> Vec<Option<String>> {
     let mut projects = Vec::new();
 
@@ -75,6 +77,7 @@ fn discover_project_dirs(storage: &ConversationStorage) -> Vec<Option<String>> {
 ///
 /// Returns a list of JSON sessions with their migration status.
 /// Scans all project directories for JSON files.
+#[allow(deprecated)]
 pub fn check_legacy_sessions(
     storage: &ConversationStorage,
     db: &Arc<Database>,
@@ -98,7 +101,7 @@ pub fn check_legacy_sessions(
 
                         // Try to load session to get name
                         #[allow(deprecated)]
-                        let session_name = ChatSession::load(storage, project_id, &session_id)
+                        let session_name = storage.load_session::<ChatSession>(project_id, &session_id)
                             .ok()
                             .and_then(|s| s.name);
 
@@ -127,13 +130,15 @@ pub fn check_legacy_sessions(
 /// Useful for recovering sessions that were accidentally deleted from SQLite.
 #[allow(deprecated)]
 pub fn restore_session(
-    storage: &ConversationStorage,
     db: &Arc<Database>,
     project_id: &Option<String>,
     session_id: &str,
 ) -> Result<ChatSession, String> {
+    // Create storage internally (only for restoration)
+    let storage = ConversationStorage::new();
+    
     // Load the JSON session
-    let session = ChatSession::load(storage, project_id, session_id)
+    let session = storage.load_session::<ChatSession>(project_id, session_id)
         .map_err(|e| format!("Failed to load JSON session '{}': {}", session_id, e))?;
 
     // Check if already in SQLite
@@ -238,17 +243,20 @@ pub fn print_legacy_warning(legacy_sessions: &[LegacySession]) {
 /// - Does NOT touch the OLD/ directory
 ///
 /// Returns migration statistics.
+#[allow(deprecated)]
 pub async fn migrate_all_legacy_sessions(
-    storage: &ConversationStorage,
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
 ) -> MigrationStats {
+    // Create storage internally (only for migration)
+    let storage = ConversationStorage::new();
+    
     let mut stats = MigrationStats::default();
     let base_path = storage.base_path();
     let archived_path = base_path.join("archived");
 
     // Discover all JSON sessions
-    let legacy_sessions = check_legacy_sessions(storage, db);
+    let legacy_sessions = check_legacy_sessions(&storage, db);
 
     if legacy_sessions.is_empty() {
         return stats;
@@ -274,7 +282,7 @@ pub async fn migrate_all_legacy_sessions(
     for session_info in &to_migrate {
         // Load from JSON
         #[allow(deprecated)]
-        match ChatSession::load(storage, &session_info.project_id, &session_info.id) {
+        match storage.load_session::<ChatSession>(&session_info.project_id, &session_info.id) {
             Ok(session) => {
                 // Migrate to SQLite with embeddings
                 match super::migration::migrate_session(&session, db, embedding_client).await {
@@ -327,7 +335,7 @@ pub async fn migrate_all_legacy_sessions(
     }
 
     // Remove empty project directories (but preserve OLD/ and archived/)
-    let project_dirs = discover_project_dirs(storage);
+    let project_dirs = discover_project_dirs(&storage);
     for project_id in project_dirs {
         // Skip archived and OLD directories
         if project_id.as_deref() == Some("archived") || project_id.as_deref() == Some("OLD") {

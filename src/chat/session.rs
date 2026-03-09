@@ -9,7 +9,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 #[allow(unused_imports)]
-use super::history::{ConversationStorage, SessionInfo};
+#[allow(deprecated)]
+use super::history::SessionInfo;
 use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 use crate::db::Database;
@@ -184,18 +185,6 @@ impl ChatSession {
         }
     }
 
-    /// Load a session from storage
-    /// 
-    /// Legacy API for JSON-based storage. Prefer `load_sqlite()` for new code.
-    #[deprecated(note = "Use load_sqlite() for SQLite-based storage")]
-    pub fn load(
-        storage: &ConversationStorage,
-        project_id: &Option<String>,
-        session_id: &str,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        storage.load_session(project_id, session_id)
-    }
-
     /// Load a session from SQLite database
     pub fn load_sqlite(
         db: &Arc<Database>,
@@ -248,21 +237,6 @@ impl ChatSession {
             retrieval_enabled: true,
             last_retrieval_time: None,
         })
-    }
-
-    /// Save the session to storage
-    /// 
-    /// Legacy API for JSON-based storage. Prefer `save_sqlite()` for new code.
-    #[deprecated(note = "Use save_sqlite() for SQLite-based storage")]
-    #[allow(dead_code)]
-    pub fn save(
-        &self,
-        storage: &ConversationStorage,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if self.anonymous {
-            return Ok(());
-        }
-        storage.save_session(&self.project_id, &self.id, self)
     }
 
     /// Save session metadata to SQLite
@@ -728,7 +702,9 @@ impl ChatSession {
 
     /// Convert to SessionInfo for listing
     #[allow(dead_code)]
+    #[allow(deprecated)]
     pub fn to_info(&self) -> SessionInfo {
+        #[allow(deprecated)]
         SessionInfo {
             id: self.id.clone(),
             name: self.name.clone(),

@@ -1,8 +1,17 @@
-//! Project identification and conversation persistence
+//! Project identification and legacy conversation storage
 //!
-//! Handles:
-//! - Identifying the current project (git remote URL or folder name fallback)
-//! - Storing and retrieving conversation sessions
+//! This module contains:
+//!
+//! ## Active Functions (still in use)
+//! - [`get_project_id`] - Get current project identifier from git or folder
+//! - [`normalize_git_url`] - Normalize git URLs for consistent project IDs
+//!
+//! ## Deprecated Types (only for migration/restore)
+//! - [`ConversationStorage`] - JSON-based storage, replaced by SQLite
+//! - [`SessionInfo`] - Legacy session info struct
+//!
+//! DO NOT use `ConversationStorage` in new code. Use `Database` from
+//! `src/db/operations.rs` instead.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -14,6 +23,7 @@ use super::session::ChatSession;
 /// Information about a saved session
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(note = "Legacy struct, not used in SQLite storage")]
 pub struct SessionInfo {
     pub id: String,
     pub name: Option<String>,
@@ -23,11 +33,16 @@ pub struct SessionInfo {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Manages conversation storage on disk
+/// Manages conversation storage on disk (JSON-based)
+///
+/// **DEPRECATED**: Only used for legacy migration and `/restore` command.
+#[deprecated(note = "Use SQLite storage via Database struct instead")]
+#[allow(deprecated)]
 pub struct ConversationStorage {
     base_path: PathBuf,
 }
 
+#[allow(deprecated)]
 impl ConversationStorage {
     /// Create a new storage instance
     pub fn new() -> Self {
@@ -150,6 +165,7 @@ impl ConversationStorage {
     }
 }
 
+#[allow(deprecated)]
 impl Default for ConversationStorage {
     fn default() -> Self {
         Self::new()
