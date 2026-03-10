@@ -6,6 +6,8 @@
 
 - [Architecture](./doc/src/development/architecture.md) - Design decisions and system architecture
 - [Roadmap](./doc/src/development/roadmap.md) - Future features and planned improvements
+- [Skills System Design](./doc/src/development/skills-system-design.md) - Skills architecture and implementation
+- [CLI Tools Research](./doc/src/development/cli-tools-research.md) - External tools reference
 - [Contributing](./doc/src/development/contributing.md) - How to contribute to the project
 
 ## Current Implementation Status
@@ -58,17 +60,35 @@
 - Source attribution in memory system (`SourceType` enum) - v0.26.1
 - SQLite as primary storage (schema v4, `/restore`, auto-migration) - v0.26.x
 - `ConversationStorage` deprecated, removed from REPL - v0.27.x
+- Markdown in compaction summaries - v0.27.2
+- Web scraping content quality improvements - v0.27.2
 
  📋 **Planned:**
 
-### High Priority
+### High Priority (Phase 1)
 
-- **Document Import Tool** - `/import-doc` to index PDF/MD/TXT files
-  - Design schema for documents and chunks
-  - PDF parsing (pdf-extract, lopdf, or pdfium-render)
-  - Text chunking with overlap (512 tokens, 64 overlap)
+- **CLI Tools Infrastructure** - External tool integration system
+  - ToolRegistry with `which` crate for detection
+  - CommandExecutor with async + timeout
+  - tools.toml whitelist configuration
+  - `check_tool_availability()` tool
+  - `run_command()` tool
+  - Platform-specific installation hints
+
+- **Skills System** - Markdown-defined AI behavior
+  - SkillsLoader for `.md` files
+  - Builtin skills (pdf-processing, ocr-images)
+  - User skills (`~/.config/ask-ai/skills/`)
+  - Project skills (`.ask-ai/skills/`)
+  - Prompt injection integration
+
+- **Document Import Tool** - Import documents for semantic search
+  - TEXT/MD: Builtin support (import_text_file)
+  - PDF: External tools (pdftotext) + skills
+  - Scanned PDF: tesseract + pdftoppm pipeline
+  - Chunking with overlap (512 tokens, 64 overlap)
   - `/import-doc`, `/list-docs`, `/remove-doc` commands
-  - Update `search_hybrid()` to include document chunks
+  - Update `search_hybrid()` for document chunks
 
 - **Notes System** - Persistent notes with semantic search
   - `/note add/list/show/edit/delete` commands
@@ -80,6 +100,23 @@
   - `/ocr`, `/vision`, `/translate`, `/summarize` commands in REPL
   - Model switching during commands
   - Design: temporary context or persistent?
+
+### Medium Priority (Phase 2)
+
+- **OCR/Vision Tools** - Image processing via CLI tools
+  - `extract_text_from_image()` via tesseract
+  - `get_image_metadata()` via exiftool
+  - `convert_image()` via imagemagick (sandboxed)
+  - Feature flags: `ocr-tools`, `image-tools`
+
+- **File Session State** - Explicit file tracking
+  - Security constraints
+  - Context reduction
+
+- **Skills System Extended** - Advanced features
+  - YAML frontmatter parsing
+  - Skill invocation commands
+  - Skill composition
 
 ### Blocked (Requires Prerequisites)
 
@@ -94,11 +131,6 @@
 - **Memory Enhancement Part 2** - Phases 4-5
   - BLOCKED by Document Import + Notes System
   - Multi-source support requires sources to exist first
-
-### Medium Priority
-
-- File session state tracking
-- Skills system
 
 ### Low Priority
 

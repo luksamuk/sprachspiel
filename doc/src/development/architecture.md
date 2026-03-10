@@ -278,6 +278,62 @@ Tool categories (feature-flags):
 | `search-tools` | 3 | ❌ |
 | `led-tools` | 5 | ❌ |
 
+### 8. Skills System (`src/skills/`)
+
+**Status:** Planned (see [Skills System Design](./skills-system-design.md))
+
+Skills are Markdown files that define AI behavior and tool usage patterns:
+
+```
+~/.config/ask-ai/skills/
+├── pdf-processing.md
+├── ocr-images.md
+└── custom-skill.md
+```
+
+Skills are **instructions for the model**, not executable code:
+
+```markdown
+# pdf-processing.md
+
+When asked to process PDF files:
+1. Check tool availability with `check_tool_availability`
+2. Use `run_command` to execute `pdftotext` if available
+...
+```
+
+### 9. External Tools (`src/external/`)
+
+**Status:** Planned
+
+External CLI tools integration for PDF processing, OCR, and image manipulation:
+
+```rust
+// Detection
+pub fn check_tool_availability(tool: String) -> Result<String, ...>
+
+// Execution
+pub fn run_command(
+    command: String,
+    args: Vec<String>,
+    timeout: Option<u32>,
+) -> Result<String, ...>
+```
+
+Configuration via `~/.config/ask-ai/tools.toml`:
+
+```toml
+[pdftotext]
+enabled = true
+timeout = 30
+
+[tesseract]
+enabled = true
+timeout = 120
+```
+
+See [CLI Tools Research](./cli-tools-research.md) for supported tools.
+
 ### 8. Query Mode
 
 Two modes supported:
@@ -476,7 +532,22 @@ ask-ai/
 │   │   ├── registry.rs
 │   │   ├── pokemon.rs
 │   │   ├── weather.rs
+│   │   ├── tool_check.rs    # (planned) External tool detection
+│   │   ├── run_command.rs   # (planned) Command execution
 │   │   └── ...
+│   ├── external/             # (planned) External tools
+│   │   ├── mod.rs
+│   │   ├── registry.rs      # Tool detection
+│   │   ├── executor.rs      # Command execution
+│   │   ├── config.rs        # tools.toml parser
+│   │   └── sandbox.rs       # Security (future)
+│   ├── skills/               # (planned) Skills system
+│   │   ├── mod.rs
+│   │   ├── loader.rs        # File loading
+│   │   ├── types.rs         # Skill structs
+│   │   └── builtin/         # Embedded skills
+│   │       ├── pdf-processing.md
+│   │       └── ocr-images.md
 │   ├── translate/           # Translation
 │   ├── ocr/                 # OCR processing
 │   ├── summarize/          # Summarization
@@ -500,6 +571,8 @@ ask-ai/
 | `rusqlite` + `sqlite-vec` | Database + embeddings |
 | `serde` | Serialization |
 | `chrono` | DateTime handling |
+| `which` | (Planned) Command detection |
+| `shell-words` | (Planned) Safe argument parsing |
 
 ## Performance Considerations
 

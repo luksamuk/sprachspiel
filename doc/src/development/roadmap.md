@@ -281,256 +281,95 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ## High Priority
 
-### Document Import Tool
+### CLI Tools Infrastructure
 
 **Priority:** HIGH  
-**Status:** 🔴 NOT STARTED
+**Status:** 🔴 NOT STARTED (New Feature)
 
-**Goal:** Allow users to import and index documents (PDF, Markdown, TXT) for semantic search.
+**Goal:** Modular system for integrating external CLI tools (pdftotext, tesseract, exiftool, etc.) instead of embedding Rust crates.
 
-**Problem:** Currently ask-ai can only search within conversation history. Users cannot reference documents, articles, or notes.
+**Problem:** Adding Rust dependencies for PDF parsing, image processing, and OCR significantly increases binary size and maintenance burden. CLI tools offer:
+- Smaller binary (-2 to 10MB vs embedding crates)
+- Better OCR support (tesseract + pdftoppm for scanned PDFs)
+- Delegated maintenance (system package managers)
+- User flexibility (install only needed tools)
 
-**Proposed Design:**
+**Architecture:** See [Skills System Design](./skills-system-design.md) and [CLI Tools Research](./cli-tools-research.md).
 
-```
-/import-doc <path> [--title <title>] [--tags <tags>]
-```
+**Components:**
 
-**Features:**
-- Import PDF, Markdown, TXT files
-- Extract text content (PDF parsing via `pdf-extract` or `lopdf`)
-- Chunk text with overlap for better retrieval
-- Generate embeddings for each chunk
-- Store in `documents` table with metadata
+1. **External Tool Registry** (`src/external/registry.rs`)
+   - Detect available tools at runtime (`which` crate)
+   - Cache availability status
+   - Provide installation hints by platform
 
-**Database Schema:**
-```sql
-CREATE TABLE documents (
-    id TEXT PRIMARY KEY,
-    title TEXT,
-    source_path TEXT,
-    content_hash TEXT,
-    imported_at INTEGER,
-    metadata TEXT  -- JSON for tags, author, etc.
-);
+2. **Command Executor** (`src/external/executor.rs`)
+   - Async execution with timeout
+   - Safe argument handling
+   - Output capture
+   - Error classification
 
-CREATE TABLE document_chunks (
-    id INTEGER PRIMARY KEY,
-    document_id TEXT,
-    chunk_index INTEGER,
-    content TEXT,
-    start_offset INTEGER,
-    end_offset INTEGER,
-    FOREIGN KEY (document_id) REFERENCES documents(id)
-);
+3. **Tools Configuration** (`~/.config/ask-ai/tools.toml`)
+   - Whitelist of allowed commands
+   - Per-tool timeout settings
+   - Sandbox options (future: landlock)
 
--- Embeddings stored in existing sqlite-vec virtual table
+4. **New Tools:**
+   - `check_tool_availability(tool: String)` - Check if tool is installed
+   - `run_command(command: String, args: Vec<String>, timeout: Option<u32>)` - Execute whitelisted command
+
+**Dependencies:**
+```toml
+which = "8.0"        # Command detection
+shell-words = "1.1"  # Safe argument parsing (optional)
 ```
 
 **Tasks:**
-- [ ] Design schema for documents and chunks
-- [ ] Research PDF parsing crates (pdf-extract, lopdf, pdfium-render)
-- [ ] Implement text extraction for PDF
-- [ ] Implement text extraction for Markdown (preserve headers)
-- [ ] Implement chunking strategy (512 tokens, 64 overlap)
-- [ ] Implement `/import-doc` command
-- [ ] Implement `/list-docs` command
-- [ ] Implement `/remove-doc <id>` command
-- [ ] Update `search_hybrid()` to include document chunks
-- [ ] Update context builder to format document results
-- [ ] Add `SourceType::Document` to retrieval system
+- [ ] Create `src/external/mod.rs` module structure
+- [ ] Implement `ToolRegistry` with `which` crate
+- [ ] Implement `CommandExecutor` with async + timeout
+- [ ] Create `tools.toml` parser and config
+- [ ] Implement `check_tool_availability` tool
+- [ ] Implement `run_command` tool
+- [ ] Write unit tests for tool detection
+- [ ] Write integration tests for command execution
+- [ ] Document installation instructions by platform
 
 ---
 
-### Notes System
-
-**Priority:** HIGH  
-**Status:** 🔴 NOT STARTED
-
-**Goal:** Allow users to create and manage persistent notes that are indexed for semantic search.
-
-**Problem:** Users have no way to store quick thoughts, ideas, or reference information that persists across sessions.
-
-**Proposed Commands:**
-```
-/note add <text>           - Create a new note
-/note list                 - List all notes
-/note show <id>            - Show note content
-/note edit <id> <text>     - Edit note
-/note delete <id>          - Delete note
-/note search <query>       - Search notes
-```
-
-**Proposed Design:**
-- Notes stored in `notes` table with embeddings
-- Accessible via semantic search
-- Displayed in context with `[note:N]` prefix
-- Can be referenced by AI via `remember` tool
-
-**Database Schema:**
-```sql
-CREATE TABLE notes (
-    id TEXT PRIMARY KEY,
-    content TEXT,
-    created_at INTEGER,
-    updated_at INTEGER,
-    project_id TEXT,
-    tags TEXT  -- JSON array
-);
-```
-
-**Tasks:**
-- [ ] Design schema for notes
-- [ ] Implement `/note` command group
-- [ ] Implement note storage with embeddings
-- [ ] Update `search_hybrid()` to include notes
-- [ ] Update context builder to format note results
-- [ ] Add `SourceType::Note` to retrieval system
-- [ ] Implement note search within `/note` command
-
 ---
 
-### Chat Module Integration
+### Skills System (Extended)
 
-**Priority:** HIGH  
-**Status:** 🔵 Planning needed
+**Priority:** MEDIUM (Extended from HIGH Phase 2)  
+**Status:** Research Complete
 
-**Problem:** Users must exit chat to use OCR, Vision, Translate, Summarize features.
+**Goal:** Refine skills system for advanced use cases.
 
-**Proposed Features:**
-- `/ocr <image>` - Run OCR from chat
-- `/vision <image>` - Analyze image
-- `/translate <lang> <text>` - Translate
-- `/summarize [text]` - Summarize
+**Extended Tasks:**
 
-**Design Questions:**
-- Model switching during commands (some features need specific models)
-- Should results be saved to conversation history?
-- Temporary context or persistent?
+**Phase 1: Core Skills** (covered in HIGH priority section above)
+- Basic Markdown loading
+- Prompt injection
+- Builtin skills
 
-**Tasks:**
-- [ ] Design: Command interface
-- [ ] Design: Model switching during commands
-- [ ] Implement: `/ocr` command
-- [ ] Implement: `/vision` command
-- [ ] Implement: `/translate` command
-- [ ] Implement: `/summarize` command
-- [ ] Document: Chat module commands
+**Phase 2: Advanced Features** (future)
+- [ ] YAML frontmatter parsing
+- [ ] Skill invocation commands (`/skill-name`)
+- [ ] Skill composition (multiple skills active)
+- [ ] Skill dependencies (skill A requires skill B)
+- [ ] Project-level skill discovery
+- [ ] Skill hot-reload during development
 
----
+**Phase 3: Integration** (future)
+- [ ] Integration with Document Import Tool
+- [ ] Integration with OCR/Vision Tools
+- [ ] User skill sharing (community repository?)
+- [ ] Skill versioning
 
-## Blocked (Requires Prerequisites)
-
-### Memory Enhancement Phase 2: Query Routing
-
-**Priority:** MEDIUM  
-**Status:** 🔴 BLOCKED by Document Import Tool + Notes System
-
-**Blocking Reason:** Query routing requires multiple source types (conversations, documents, notes). Currently only conversations exist.
-
-**Goal:** Route queries to appropriate search targets.
-
-**What's Needed First:**
-- Document Import Tool (import documents)
-- Notes System (create notes)
-- Both must populate the database with searchable content
-
-**Future Tasks:**
-- [ ] Collect real query patterns from usage
-- [ ] Prototype regex routing (pt-BR + en)
-- [ ] Benchmark embedding-based routing latency
-- [ ] Test `whatlang` crate for language detection
-
-### Memory Enhancement Phase 3: Timestamp Filtering
-
-**Priority:** MEDIUM  
-**Status:** 🔴 BLOCKED by Phase 2
-
-**Blocking Reason:** Timestamp filtering is useful for all source types, but design depends on Phase 2 routing implementation.
-
-**Goal:** Filter results by time ("what did I say yesterday?").
-
-**Current State:**
-- `search_hybrid()` has no timestamp filtering capability
-
-**Future Implementation:**
-```rust
-pub fn search_hybrid(
-    &self,
-    query: &str,
-    embedding: &[f32],
-    conversation_id: Option<&str>,
-    project_id: Option<&str>,
-    limit: usize,
-    keyword_weight: f32,
-    semantic_weight: f32,
-    exclude_ids: Option<&[i64]>,
-    source_type: Option<SourceType>,      // Phase 2
-    timestamp_range: Option<(i64, i64)>,   // Phase 3
-) -> Result<Vec<SearchResult>>
-```
+**Research Complete:** See [CLI Tools Research](./cli-tools-research.md) and [Skills System Design](./skills-system-design.md) for full details.
 
 ---
-
-### Memory Enhancement Part 2 (Phases 4-5)
-
-**Priority:** MEDIUM  
-**Status:** 🔴 BLOCKED by Document Import Tool + Notes System
-
-**Blocking Reason:** Phases 4-5 are about multi-source support, which requires the tools to create those sources first.
-
-**Phase 4: Schema Preparation (depends on Document Import Tool + Notes System)**
-
-**Tasks:**
-- [ ] Design `documents` table schema
-- [ ] Create `document_embeddings` virtual table
-- [ ] Update `SearchTarget` enum
-- [ ] Add `source_type` filter to hybrid search
-
-#### Phase 5: Document Ingestion
-
-**Goal:** Ingest and index external documents.
-
-**Tasks:**
-- [ ] Research: PDF parsing crates (pdf-extract, lopdf)
-- [ ] Implement: Document chunking with overlap
-- [ ] Implement: Embedding generation for chunks
-- [ ] Implement: `/ingest <path>` command
-
----
-
-### SOUL.md Support (Personality System)
-
-**Priority:** HIGH  
-**Status:** Research Needed
-
-**Goal:** Support for `SOUL.md` file to define LLM personality.
-
-**Tasks:**
-- [ ] Research: SOUL.md format in other agents
-- [ ] Research: Best injection point in system prompt
-- [ ] Design: Config option for custom SOUL.md path
-- [ ] Implement: SOUL.md file loading
-- [ ] Implement: Inject into system prompt
-
----
-
-### Smart Model List (Installed Only)
-
-**Priority:** MEDIUM  
-**Status:** Proposed
-
-**Goal:** Show only installed/available models.
-
-**Tasks:**
-- [ ] Implement: `is_model_installed(model_id)` function
-- [ ] Modify: `/list` command to filter installed models
-- [ ] Modify: Model switch to validate before loading
-- [ ] Modify: Chat startup with fallback chain
-
----
-
-## Medium Priority
 
 ### File Session State
 
