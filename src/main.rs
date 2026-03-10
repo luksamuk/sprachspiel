@@ -13,6 +13,7 @@ mod context_overflow;
 mod db;
 mod debug_tools;
 mod embeddings;
+pub mod external;
 mod markdown;
 mod ocr;
 mod platform;

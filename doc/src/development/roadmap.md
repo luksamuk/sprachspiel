@@ -284,7 +284,7 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 ### CLI Tools Infrastructure
 
 **Priority:** HIGH  
-**Status:** 🔴 NOT STARTED (New Feature)
+**Status:** 🟡 PARTIAL (Core done, TOML parsing incomplete)
 
 **Goal:** Modular system for integrating external CLI tools (pdftotext, tesseract, exiftool, etc.) instead of embedding Rust crates.
 
@@ -298,35 +298,28 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 **Components:**
 
-1. **External Tool Registry** (`src/external/registry.rs`)
-   - Detect available tools at runtime (`which` crate)
-   - Cache availability status
-   - Provide installation hints by platform
+1. **External Tool Types** (`src/external/types.rs`) ✅ COMPLETE
+   - `Platform` enum with detection
+   - `ExternalTool` struct (enabled, timeout, binary, sandbox, install_hints)
+   - `ExternalToolsConfig` with defaults
 
-2. **Command Executor** (`src/external/executor.rs`)
-   - Async execution with timeout
-   - Safe argument handling
-   - Output capture
-   - Error classification
+2. **Tools Configuration** (`~/.config/ask-ai/tools.toml`) ⚠️ INCOMPLETE
+   - Global settings parsed: `default_timeout`, `enable_sandbox`
+   - Per-tool settings NOT parsed: `[external.tools.*]` sections ignored
+   - See `src/external/config.rs:106-119` for FIXME
 
-3. **Tools Configuration** (`~/.config/ask-ai/tools.toml`)
-   - Whitelist of allowed commands
-   - Per-tool timeout settings
-   - Sandbox options (future: landlock)
-
-4. **New Tools:**
+3. **New Tools:** ✅ COMPLETE
    - `check_tool_availability(tool: String)` - Check if tool is installed
    - `run_command(command: String, args: Vec<String>, timeout: Option<u32>)` - Execute whitelisted command
 
 **Dependencies:**
 ```toml
-which = "8.0"        # Command detection
-shell-words = "1.1"  # Safe argument parsing (optional)
+which = "8.0"        # Command detection ✅ ADDED
 ```
 
 **Tasks:**
-- [ ] Create `src/external/mod.rs` module structure
-- [ ] Implement `ToolRegistry` with `which` crate
+- [x] Create `src/external/mod.rs` module structure
+- [x] Implement `ExternalTool` types with defaults
 - [ ] Implement `CommandExecutor` with async + timeout
 - [ ] Create `tools.toml` parser and config
 - [ ] Implement `check_tool_availability` tool
@@ -422,6 +415,29 @@ shell-words = "1.1"  # Safe argument parsing (optional)
 - [ ] Design: Skill file format
 - [ ] Implement: Skill parser
 - [ ] Implement: `--skill` flag
+
+---
+
+### Effective AI Coding Agents Analysis
+
+**Priority:** Medium  
+**Status:** Research Complete
+
+**Goal:** Apply lessons learned from academic research on terminal-native AI agents.
+
+Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OPENDEV, arXiv:2603.05344v2) comparing best practices with ask-ollama-rs architecture.
+
+**Key Findings:**
+- ask-ollama-rs implements ~60-70% of recommended patterns
+- Strong alignment: Context Engineering (hybrid retrieval), Session Management, Tool System
+- Gaps: Memory System (structured facts), System Reminders, Adaptive Compaction
+
+**Recommendations:**
+- Memory System for extracted facts (integrates with planned Notes + Document Import)
+- System Reminders for instruction fade-out mitigation
+- Per-workflow model selection for resource optimization
+
+**Full Analysis:** See [Effective Agents Analysis](./effective-agents-analysis.md) for detailed comparison, code references, and implementation roadmap.
 
 ---
 

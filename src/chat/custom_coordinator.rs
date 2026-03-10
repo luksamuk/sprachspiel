@@ -352,15 +352,36 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 }
 
                 let Some(tool) = self.tools.get_mut(&tool_name) else {
+                    if self.debug {
+                        eprintln!(
+                            "\x1B[90m[DEBUG] Unknown tool '{}'. Available: {}\x1B[0m",
+                            tool_name,
+                            self.tools.keys().cloned().collect::<Vec<_>>().join(", ")
+                        );
+                    }
                     return Err(ollama_rs::error::OllamaError::ToolCallError(
                         ollama_rs::error::ToolCallError::UnknownToolName,
                     ));
                 };
 
-                let result = tool
-                    .call(args)
-                    .await
-                    .map_err(ollama_rs::error::ToolCallError::InternalToolError)?;
+                let result = match tool.call(args.clone()).await {
+                    Ok(result) => result,
+                    Err(e) => {
+                        if self.debug {
+                            eprintln!(
+                                "\x1B[90m[DEBUG] Tool '{}' call failed: {}\x1B[0m",
+                                tool_name, e
+                            );
+                            eprintln!(
+                                "\x1B[90m[DEBUG]   Arguments: {}\x1B[0m",
+                                serde_json::to_string(&args).unwrap_or_else(|_| args.to_string())
+                            );
+                        }
+                        return Err(ollama_rs::error::OllamaError::ToolCallError(
+                            ollama_rs::error::ToolCallError::InternalToolError(e),
+                        ));
+                    }
+                };
 
                 if self.debug {
                     eprintln!("Tool response: {}", &result);

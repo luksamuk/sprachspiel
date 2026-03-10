@@ -918,3 +918,39 @@ Documentation should:
 - Be **complete** (cover all features)
 - Be **maintained** (updated with code changes)
 - Include **examples** (practical usage)
+
+## Never Leave Things for Later
+
+**CRITICAL RULE:** If you cannot complete something now, you MUST document it somewhere:
+
+1. **Todo list** - Use the todowrite tool for immediate tasks
+2. **Roadmap** - Update `IMPLEMENTATION.md` for larger features
+3. **Code comments** - If leaving TODO/FIXME, add issue reference or context
+4. **Changelog** - Note incomplete work in version notes
+
+**Why this matters:** The user cannot read your mind. If you "leave something for later" without documenting it, it will be forgotten and may cause confusion, bugs, or security issues.
+
+**Examples of what to document:**
+
+```rust
+// ❌ BAD - Will be forgotten
+fn parse_config() {
+    // TODO: implement per-tool parsing later
+}
+
+// ✅ GOOD - Tracked and explained
+fn parse_config() {
+    // FIXME: Per-tool TOML parsing not implemented yet.
+    // See IMPLEMENTATION.md Phase 1.2 for details.
+    // Currently uses hardcoded defaults regardless of TOML content.
+}
+```
+
+**When you realize something is incomplete:**
+1. Stop and assess: Is this critical for current task?
+2. If yes → Implement it now
+3. If no → Document immediately in todo list AND roadmap
+4. Never proceed silently with incomplete work
+
+**In conversation context:**
+If you tell the user "I'll do X later", you have failed. Either do it now, or explicitly ask if it should be deferred and then document it in a visible place.

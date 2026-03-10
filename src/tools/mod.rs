@@ -25,6 +25,10 @@ pub mod system;
 pub mod todo;
 pub mod weather;
 
+// External tool wrappers (always available)
+pub mod tool_check;
+pub mod run_cmd;
+
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
 pub use files::*;
@@ -39,11 +43,17 @@ pub use remember::*;
 pub use registry::{get_available_tool_names, register_tools};
 #[cfg(feature = "search-tools")]
 pub use search_builtin::*;
+#[cfg(feature = "serper-tools")]
+pub use serper::*;
 #[cfg(feature = "system-tools")]
 pub use system::*;
 #[cfg(feature = "todo-tools")]
 pub use todo::*;
 pub use weather::*;
+
+// External tool wrappers (always available)
+pub use tool_check::check_tool_availability;
+pub use run_cmd::run_command;
 
 /// Common response structure for PokeAPI
 #[cfg(feature = "pokemon-tools")]

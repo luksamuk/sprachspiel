@@ -37,6 +37,7 @@
   - [Context Management Research](./development/context_management_research.md)
   - [Code Mode Research](./development/code_mode_research.md)
   - [Prompt Refactoring](./development/prompt-refactor.md)
+  - [Effective Agents Analysis](./development/effective-agents-analysis.md)
   - [Contributing](./development/contributing.md)
 
 ---

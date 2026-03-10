@@ -136,11 +136,18 @@ Available: calculate"#
             .collect();
 
         if !available.is_empty() {
-            sections.push(r#"### FILE TOOLS
+            sections.push(
+                r#"### FILE TOOLS
 Use for reading, listing, and searching files.
 Available: read_file, read_file_segment, count_lines, list_directory, search_files
 
-Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines."#.to_string());
+Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines.
+
+**IMPORTANT FOR PDFs:** read_file cannot read PDFs (binary format). Use run_command instead:
+- run_command("pdftotext", ["-f", "1", "-l", "10", "document.pdf", "-"]) extracts pages 1-10
+- Always use "-" as the last argument to output to stdout."#
+                    .to_string(),
+            );
         }
     }
 
@@ -224,6 +231,36 @@ Workflow:
 4. Clear completed tasks with todo_clear_done()
 
 Status values: pending, in_progress, done"#
+                    .to_string(),
+            );
+        }
+    }
+
+    // External CLI tools (always available, no feature flag)
+    {
+        let external_tools = ["check_tool_availability", "run_command"];
+        let available: Vec<_> = external_tools
+            .iter()
+            .filter(|t| !blacklist.contains(*t))
+            .collect();
+
+        if !available.is_empty() {
+            sections.push(
+                r#"### EXTERNAL TOOLS
+Use for operations requiring external CLI tools (PDF, OCR, image metadata).
+Available: check_tool_availability, run_command
+
+**When to use:**
+- PDFs: Use run_command("pdftotext", ["document.pdf", "-"]) instead of read_file
+- OCR: Use run_command("tesseract", ["image.png", "stdout"]) for text from images
+- Images: Use run_command("exiftool", ["image.jpg"]) for metadata
+
+**Workflow:**
+1. First check availability: check_tool_availability("pdftotext")
+2. If available, run: run_command("pdftotext", ["-f", "1", "-l", "10", "file.pdf", "-"])
+3. For large PDFs, extract specific pages: use -f (first) and -l (last) flags
+
+**Security:** Only whitelisted tools in tools.toml can execute. No shell features (pipes, redirects)."#
                     .to_string(),
             );
         }

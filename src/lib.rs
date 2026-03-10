@@ -11,6 +11,7 @@ pub mod context_overflow;
 pub mod db;
 pub mod debug_tools;
 pub mod embeddings;
+pub mod external;
 pub mod macros;
 pub mod markdown;
 pub mod ocr;

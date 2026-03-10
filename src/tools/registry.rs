@@ -20,6 +20,9 @@ use super::*;
 // Remember tool is always available (checks context internally)
 use super::remember;
 
+// External tool wrappers (always available)
+use super::{check_tool_availability, run_command};
+
 /// Trait for tool registration - implemented by both Coordinator types
 pub trait ToolRegistrar: Sized {
     fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self;
@@ -307,6 +310,17 @@ where
         tool_count += 1;
     }
 
+    // External tool wrappers (always available)
+    // These tools check for external CLI tools like pdftotext, tesseract, etc.
+    if is_tool_allowed("check_tool_availability") {
+        coordinator = coordinator.register_tool(check_tool_availability);
+        tool_count += 1;
+    }
+    if is_tool_allowed("run_command") {
+        coordinator = coordinator.register_tool(run_command);
+        tool_count += 1;
+    }
+
     (coordinator, tool_count)
 }
 
@@ -318,6 +332,10 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
     tools.push("test_tool".to_string());
     // Remember tool - always available (checks context internally)
     tools.push("remember".to_string());
+
+    // External tool wrappers (always available)
+    tools.push("check_tool_availability".to_string());
+    tools.push("run_command".to_string());
 
     #[cfg(feature = "pokemon-tools")]
     {

@@ -57,3 +57,5 @@ unicode-width = "0.2.2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sqlite-vec = "0.1"
 zerocopy = "0.8"
+# External tool detection
+which = "8.0"

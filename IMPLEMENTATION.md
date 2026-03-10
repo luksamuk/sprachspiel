@@ -68,12 +68,13 @@
 ### High Priority (Phase 1)
 
 - **CLI Tools Infrastructure** - External tool integration system
-  - ToolRegistry with `which` crate for detection
-  - CommandExecutor with async + timeout
-  - tools.toml whitelist configuration
-  - `check_tool_availability()` tool
-  - `run_command()` tool
-  - Platform-specific installation hints
+  - ✅ ToolRegistry with `which` crate for detection
+  - ✅ CommandExecutor with sync execution
+  - ✅ tools.toml configuration file (full parsing)
+  - ✅ Per-tool TOML parsing (`[external.tools.*]`)
+  - ✅ `check_tool_availability()` tool
+  - ✅ `run_command()` tool
+  - ✅ Platform-specific installation hints
 
 - **Skills System** - Markdown-defined AI behavior
   - SkillsLoader for `.md` files

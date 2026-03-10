@@ -1125,8 +1125,7 @@ async fn send_message(
             })
         }
         Err(e) => {
-            let error_msg = format_tool_error(&e);
-            eprintln!("\n{}", error_msg);
+            // Error will be formatted and printed by the caller (REPL loop)
             Err(e.into())
         }
     }
