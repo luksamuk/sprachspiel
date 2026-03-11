@@ -21,6 +21,7 @@ pub mod prompts;
 pub mod query;
 pub mod retrieval;
 pub mod settings;
+pub mod soul;
 pub mod spinner;
 pub mod summarize;
 pub mod tokens;

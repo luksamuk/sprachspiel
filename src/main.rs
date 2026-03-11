@@ -23,6 +23,7 @@ mod prompts;
 mod query;
 mod retrieval;
 mod settings;
+mod soul;
 mod spinner;
 mod summarize;
 mod tokens;
