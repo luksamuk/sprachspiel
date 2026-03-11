@@ -240,7 +240,7 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 ## SQLite as Single Storage
 
 **Priority:** HIGH  
-**Status:** 🟢 ~95% COMPLETE (v0.27.x)
+**Status:** 🟢 COMPLETE (v0.28.0)
 
 **Goal:** Migrate from dual storage (JSON + SQLite) to SQLite as the single source of truth.
 
@@ -253,29 +253,17 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 | Phase 3: Restore | ✅ Done | `/restore` command + auto-migration on startup |
 | Phase 4: Commands | ✅ Done | `/save`, `/load`, `/list` use SQLite |
 | Phase 5: Testing | ✅ Done | Basic tests pass |
-| Phase 6: Cleanup | 🔄 In Progress | `ConversationStorage` deprecated, `repl.rs` clean |
+| Phase 6: Cleanup | ✅ Done | Project identification moved to `project.rs` |
+| User Documentation | ✅ Done | Updated `chat.md` with SQLite storage model |
 
 ### Current State
 
-| Storage | Status | Content |
-|---------|--------|---------|
-| SQLite | 🟢 Primary | Full session state (messages + metadata + todos) |
-| JSON | 🟡 Legacy | Still used by `/export json` and internal migration |
+| Storage | Status | Description |
+|---------|--------|-------------|
+| SQLite | 🟢 Primary | `~/.local/share/ask-ai/embeddings.db` |
+| JSON | 🟡 Backup | Only for `/export json` and `/restore` command |
 
-### Recent Changes (v0.27.x)
-
-- `ConversationStorage` now marked with `#[deprecated]`
-- `repl.rs` no longer instantiates `ConversationStorage`
-- `migrate_all_legacy_sessions()` creates storage internally
-- `restore_session()` creates storage internally
-- Removed `save()` and `load()` deprecated methods from `ChatSession`
-- `legacy_check.rs` uses `storage.load_session()` directly
-
-### Remaining Tasks
-
-- [ ] Consider removing `history.rs` entirely in future version
-- [ ] Update user documentation for storage model
-- [ ] Consider removing `SessionInfo` struct (only used for legacy listing)
+**Note:** `/restore` command is kept indefinitely for disaster recovery from JSON backups.
 
 ---
 

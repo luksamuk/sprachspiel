@@ -15,7 +15,6 @@ use crate::chat::{
     },
     custom_coordinator::{ChatEvent, CustomCoordinator},
     display_thinking,
-    history::get_project_id,
     strip_thinking_tags,
 };
 use crate::config::ModelConfig;
@@ -23,6 +22,7 @@ use crate::db::Database;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::embeddings::EmbeddingClient;
 use crate::markdown;
+use crate::project::get_project_id;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::retrieval::{RetrievalConfig, build_query_context};
 use crate::settings::Settings;

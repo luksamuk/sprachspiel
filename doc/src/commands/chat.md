@@ -40,12 +40,15 @@ Once inside the chat, these commands are available:
 | Command | Description |
 |---------|-------------|
 | `/quit`, `/exit`, `/q` | Exit the chat session |
-| `/clear`, `/c` | Clear conversation history |
+| `/clear`, `/c` | Clear conversation history (keeps session) |
+| `/forget` | Delete session completely from database |
 | `/help`, `/h`, `/?` | Show available commands |
 | `/save [name]` | Save current session (optionally named) |
 | `/load <name>`, `/l <name>` | Load a saved session |
 | `/list`, `/ls` | List saved sessions for this project |
 | `/info`, `/i` | Show current session information |
+| `/restore <file>` | Restore session from JSON backup |
+| `/export <format> [file]` | Export conversation (md, json) |
 
 ### Model & Mode
 
@@ -157,7 +160,7 @@ Example: A 3000-character message creates 4 overlapping chunks, ensuring phrases
    ollama pull nomic-embed-text-v2-moe
    ```
 
-2. **Messages indexed** - Messages saved to database are searchable. Use `/migrate` to index historical messages after upgrading.
+2. **Messages indexed** - Messages are automatically indexed when saved to SQLite.
 
 ## Prompt Indicators
 
@@ -176,15 +179,67 @@ Press Tab to complete:
 
 ## Session Storage
 
-Sessions are stored in `~/.local/share/ask-ai/conversations/` organized by project:
+Sessions are stored in a SQLite database at `~/.local/share/ask-ai/embeddings.db`:
 
-- Projects are identified by git remote URL (e.g., `github.com/user/repo`)
-- If not in a git repo, the folder name is used as fallback
-- Anonymous sessions (`--anonymous`) are not persisted
+- **Primary storage**: SQLite database with full-text search (FTS5) and vector embeddings
+- **Automatic persistence**: Every message is saved immediately
+- **Project organization**: Sessions grouped by git remote URL or folder name
+- **Anonymous sessions** (`--anonymous`): Not persisted, in-memory only
 
 ### Storage Location
 
 ```
+~/.local/share/ask-ai/
+├── embeddings.db              # SQLite database (conversations + embeddings)
+├── chat_history.txt           # Readline history
+└── archived/                  # Archived JSON sessions (after migration)
+    └── github.com/
+        └── user/
+            └── repo/
+                └── session.json
+```
+
+### Project Identification
+
+1. **Git repository with remote**: Uses normalized git remote URL
+   - `git@github.com:user/repo.git` → `github.com/user/repo`
+   - `https://github.com/user/repo.git` → `github.com/user/repo`
+
+2. **Git repository without remote**: Uses folder name
+
+3. **Not a git repository**: Uses current folder name
+
+### Database Tables
+
+The SQLite database contains:
+
+| Table | Purpose |
+|-------|---------|
+| `conversations` | Session metadata (model, name, system_prompt, etc.) |
+| `messages` | Conversation history with embeddings |
+| `message_chunks` | Split message content for semantic search |
+| `session_todos` | Todo list state per session |
+
+### /restore - Disaster Recovery
+
+If you have JSON backup files from older versions, restore them with:
+
+```bash
+/restore path/to/session.json
+```
+
+This imports the JSON session into SQLite and deletes the original file.
+
+### /export - Backup Conversations
+
+Export sessions for backup or transfer:
+
+```bash
+/export json              # Export current session to JSON
+/export md conversation.md # Export as Markdown
+```
+
+**Note**: JSON export is for backup purposes. Sessions are stored in SQLite and don't need manual export.
 ~/.local/share/ask-ai/
 ├── chat_history.txt           # Readline history
 └── conversations/

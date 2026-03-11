@@ -10,6 +10,10 @@
 - [CLI Tools Research](./doc/src/development/cli-tools-research.md) - External tools reference
 - [Contributing](./doc/src/development/contributing.md) - How to contribute to the project
 
+## Current Version
+
+**v0.28.0** - 2026-03-11
+
 ## Current Implementation Status
 
 ✅ **Completed:**
@@ -27,9 +31,7 @@
 - Vision analysis
 - Markdown rendering
 - Pipe support
-- Debug mode
-- Think mode with visible thinking output
-- Code mode
+- Debug mode, Think mode, Code mode
 - Token metrics display (`/context`)
 - Context management foundation
 - Semantic search (`/search`) with hybrid retrieval (BM25 + vector + RRF)
@@ -40,124 +42,194 @@
 - Man page
 - Termux/Android builds
 - Error recovery for tool/network errors
-- ChatSession integration (auto-save messages + embeddings) - v0.21.0
-- `/migrate` command (JSON → SQLite) - v0.21.0
-- `/reindex` command (rebuild embeddings) - v0.21.0
-- Context overflow handling (auto-compaction at 80%) - v0.21.0
-- Auto-retrieval (M relevant + N recent messages) - v0.21.0
-- Context composition based on "Lost in the Middle" research - v0.21.0
-- Message chunking for long messages (>1024 chars) - v0.22.0
-- UTF-8 safe chunking with char boundary detection - v0.22.1
-- Synchronous chunking (guaranteed persistence) - v0.22.2
-- Embedding recovery on startup - v0.22.2
-- Middle compaction (preserve first N + last N) - v0.22.2
-- Auto-compaction at 72% warning and 80% overflow - v0.22.3
-- Visual context utilization bar in /context - v0.22.3
-- Remember tool for conversation recall - v0.23.0
-- Conversation-aware retrieval (enrichment) - v0.24.0
-- Project-aware query mode - v0.25.0
-- `/clear` and `/forget` commands for session management - v0.22.5
-- Source attribution in memory system (`SourceType` enum) - v0.26.1
-- SQLite as primary storage (schema v4, `/restore`, auto-migration) - v0.26.x
-- `ConversationStorage` deprecated, removed from REPL - v0.27.x
-- Markdown in compaction summaries - v0.27.2
-- Web scraping content quality improvements - v0.27.2
-- **CLI Tools Infrastructure (Phase 1)** - v0.28.0
+
+### v0.21.x - ChatSession Integration
+
+- ChatSession integration (auto-save messages + embeddings)
+- `/migrate` command (JSON → SQLite)
+- `/reindex` command (rebuild embeddings)
+- Context overflow handling (auto-compaction at 80%)
+- Auto-retrieval (M relevant + N recent messages)
+- Context composition based on "Lost in the Middle" research
+
+### v0.22.x - Chunking & Compaction
+
+- Message chunking for long messages (>1024 chars)
+- UTF-8 safe chunking with char boundary detection
+- Synchronous chunking (guaranteed persistence)
+- Embedding recovery on startup
+- Middle compaction (preserve first N + last N)
+- Auto-compaction at 72% warning and 80% overflow
+- Visual context utilization bar in /context
+- Remember tool for conversation recall
+- Conversation-aware retrieval (enrichment)
+- Project-aware query mode
+
+### v0.26.x - Memory & Storage
+
+- Source attribution in memory system (`SourceType` enum)
+- SQLite as primary storage (schema v4, `/restore`, auto-migration)
+- `ConversationStorage` deprecated, removed from REPL
+
+### v0.27.x - Quality Improvements
+
+- Markdown in compaction summaries
+- Web scraping content quality improvements
+- Compaction visual indicator
+
+### v0.28.x - CLI Tools & Timeout
+
+- **CLI Tools Infrastructure (Phase 1)**
   - External module with types, config, platform detection
   - Per-tool TOML parsing for tools.toml
   - `check_tool_availability()` and `run_command()` tools
-  - Simplified run_command API: single command_line string (shell-words parsing)
+  - Simplified run_command API: single command_line string
   - Debug logging for tool failures
   - Fixed duplicate error messages in REPL
-- **run_command Security Redesign** - v0.29.0
+
+- **run_command Security Redesign**
   - No shell features (pipes, redirects, command chains blocked)
   - Mandatory whitelist (only configured tools can execute)
   - head/tail parameters for LLM-controlled output truncation
   - Landlock sandbox (enabled by default on Linux, kernel 5.13+)
   - Platform-specific sandbox handling (Termux, macOS documented)
   - Pattern validation with proper ordering (multi-char before single-char)
-  - Removed automatic truncation (LLM decides via head/tail parameters)
-- **run_command Timeout Fix** - v0.28.0
+
+- **run_command Timeout & Parameter Types**
   - Fixed critical bug: processes not killed on timeout
   - Changed to tokio::process::Command with kill_on_drop(true)
   - Fixed parameter types from Option<usize> to Option<String> (LLM compatibility)
   - Removed dead code (executor.rs, registry.rs)
   - Added unit tests for timeout and string parameter handling
 
- 📋 **Planned:**
+- **SQLite Cleanup**
+  - Created `src/project.rs` with `get_project_id()` and `normalize_git_url()`
+  - Updated `history.rs` to be purely migration module (deprecated)
+  - Clear separation: project identification vs. legacy storage
+  - `history.rs` kept for `/restore` command (disaster recovery)
+  - Updated user documentation: `doc/src/commands/chat.md` now explains SQLite storage
 
-### High Priority (Phase 1)
+---
 
-- **CLI Tools Infrastructure** - External tool integration system
-  - ✅ ToolRegistry with `which` crate for detection
-  - ✅ CommandExecutor with sync execution
-  - ✅ tools.toml configuration file (full parsing)
-  - ✅ Per-tool TOML parsing (`[external.tools.*]`)
-  - ✅ `check_tool_availability()` tool
-  - ✅ `run_command()` tool with simplified API
-  - ✅ Platform-specific installation hints
+## Priority Roadmap
 
-- **Skills System** - Markdown-defined AI behavior
-  - SkillsLoader for `.md` files
-  - Builtin skills (pdf-processing, ocr-images)
-  - User skills (`~/.config/ask-ai/skills/`)
-  - Project skills (`.ask-ai/skills/`)
-  - Prompt injection integration
+### 🚨 PRIORITY 1: SOUL.md - AI Personality System
 
-- **Document Import Tool** - Import documents for semantic search
-  - TEXT/MD: Builtin support (import_text_file)
-  - PDF: External tools (pdftotext) + skills
-  - Scanned PDF: tesseract + pdftoppm pipeline
-  - Chunking with overlap (512 tokens, 64 overlap)
-  - `/import-doc`, `/list-docs`, `/remove-doc` commands
-  - Update `search_hybrid()` for document chunks
+**Status:** ❌ NOT STARTED (file ready, needs integration)
 
-- **Notes System** - Persistent notes with semantic search
-  - `/note add/list/show/edit/delete` commands
-  - Note storage with embeddings
-  - Update context builder for note results
-  - Add `SourceType::Note` to retrieval system
+**Goal:** Define AI personality, behavior, and communication style.
 
-- **Chat Module Integration** - Use OCR/Vision/Translate/Summarize from chat
-  - `/ocr`, `/vision`, `/translate`, `/summarize` commands in REPL
-  - Model switching during commands
-  - Design: temporary context or persistent?
+**Implementation:**
+- Add SOUL.md to context injection (similar to AGENTS.md)
+- Define personality traits, tone, and interaction style
+- User can customize or override
 
-### Medium Priority (Phase 2)
+**Dependencies:** None
 
-- **OCR/Vision Tools** - Image processing via CLI tools
-  - `extract_text_from_image()` via tesseract
-  - `get_image_metadata()` via exiftool
-  - `convert_image()` via imagemagick (sandboxed)
-  - Feature flags: `ocr-tools`, `image-tools`
+**Estimated effort:** 1 day
 
-- **File Session State** - Explicit file tracking
-  - Security constraints
-  - Context reduction
+---
 
-- **Skills System Extended** - Advanced features
-  - YAML frontmatter parsing
-  - Skill invocation commands
-  - Skill composition
+### 🔴 PRIORITY 2: Notes System
 
-### Blocked (Requires Prerequisites)
+**Status:** ❌ NOT STARTED
 
-- **Memory Enhancement Phase 2** - Query routing
-  - BLOCKED by Document Import Tool + Notes System
-  - Requires multiple source types to route between
+**Goal:** Persistent notes with semantic search.
 
-- **Memory Enhancement Phase 3** - Timestamp filtering
-  - BLOCKED by Phase 2
-  - Requires routing implementation first
+**Features:**
+- `/note add/list/show/edit/delete` commands
+- Note storage with embeddings
+- Update context builder for note results
+- Add `SourceType::Note` to retrieval system
 
-- **Memory Enhancement Part 2** - Phases 4-5
-  - BLOCKED by Document Import + Notes System
-  - Multi-source support requires sources to exist first
+**Dependencies:** None
 
-### Low Priority
+**Estimated effort:** 2-3 days
 
-- Plugin system
-- TUI (Terminal User Interface) with Ratatui-rs
+**Reference:** `doc/src/development/planning-session-cli-tools.md` lines 157-160, 303-311
+
+---
+
+### 🔴 PRIORITY 3: Skills System Phase 1
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Markdown-defined AI behaviors for tool pipelines.
+
+**Features:**
+- SkillsLoader for `.md` files
+- Builtin skills (pdf-processing, ocr-images)
+- User skills (`~/.config/ask-ai/skills/`)
+- Project skills (`.ask-ai/skills/`)
+- Prompt injection integration
+
+**Dependencies:** None
+
+**Estimated effort:** 3-5 days
+
+**Reference:** `doc/src/development/skills-system-design.md`
+
+---
+
+### 🟡 PRIORITY 4: Document Import Tool
+
+**Status:** ❌ BLOCKED (requires Skills System Phase 1)
+
+**Goal:** Import documents for semantic search.
+
+**Features:**
+- TEXT/MD: Builtin support (import_text_file)
+- PDF: External tools (pdftotext) + skills
+- Scanned PDF: tesseract + pdftoppm pipeline
+- Chunking with overlap (512 tokens, 64 overlap)
+- `/import-doc`, `/list-docs`, `/remove-doc` commands
+- Update `search_hybrid()` for document chunks
+
+**Dependencies:** Skills System Phase 1 (for PDF pipeline definition)
+
+**Estimated effort:** 5-7 days
+
+---
+
+### 🟡 PRIORITY 5: Chat Module Integration
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Use OCR/Vision/Translate/Summarize from chat.
+
+**Features:**
+- `/ocr`, `/vision`, `/translate`, `/summarize` commands in REPL
+- Model switching during commands
+- Design: temporary context or persistent?
+
+**Dependencies:** None
+
+**Estimated effort:** 3-5 days
+
+---
+
+### 🟢 LOW PRIORITY: Memory Enhancement
+
+**Status:** ❌ BLOCKED (requires Document Import + Notes System)
+
+**Phases:**
+- **Phase 2:** Query routing (blocked by multiple source types)
+- **Phase 3:** Timestamp filtering (blocked by Phase 2)
+- **Phase 4-5:** Advanced memory features (blocked by Document Import + Notes)
+
+**Reference:** `doc/src/development/effective-agents-analysis.md` lines 196-226, 446-545
+
+---
+
+### 🟢 LOW PRIORITY: Other Features
+
+- **OCR/Vision Tools** - Image processing via CLI tools (tesseract, exiftool, imagemagick)
+- **File Session State** - Explicit file tracking with security constraints
+- **Skills System Extended** - YAML frontmatter, skill composition
+- **Plugin System** - User-defined tools via dynamic loading
+- **TUI (Terminal User Interface)** - Ratatui-rs based interface
+
+---
 
 ## Streaming Architecture (Future)
 
@@ -188,6 +260,8 @@ pub struct ChatMessage {
 3. **Thinking Display:** Separate pane in TUI, inline dimmed text in CLI
 
 See: `doc/src/development/roadmap.md` - TUI section for detailed streaming approach
+
+---
 
 ## Documentation
 
@@ -224,4 +298,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-10 - v0.29.0: run_command security redesign (Landlock sandbox, head/tail parameters, pattern validation)
+2026-03-11 - v0.28.0: SQLite cleanup, run_command timeout fix, parameter type fix
