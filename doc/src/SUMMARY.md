@@ -29,6 +29,7 @@
   - [Skills System Design](./development/skills-system-design.md)
   - [CLI Tools Research](./development/cli-tools-research.md)
   - [Planning Session: CLI Tools](./development/planning-session-cli-tools.md)
+  - [run_command Redesign](./development/run-command-redesign.md)
   - [Implementation History](./development/implementation-history.md)
   - [Chat Mode Design](./development/chat-mode-design.md)
   - [Anatomy of Context](./development/context-anatomy.md)
