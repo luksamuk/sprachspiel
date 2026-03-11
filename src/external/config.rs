@@ -18,7 +18,7 @@ struct ToolsToml {
 struct ExternalSection {
     #[serde(default = "default_timeout")]
     default_timeout: u64,
-    #[serde(default)]
+    #[serde(default = "default_enable_sandbox")]
     enable_sandbox: bool,
     #[serde(default)]
     tools: HashMap<String, ToolToml>,
@@ -43,11 +43,15 @@ fn default_enabled() -> bool {
     true
 }
 
+fn default_enable_sandbox() -> bool {
+    true // Enabled by default on Linux
+}
+
 impl Default for ExternalSection {
     fn default() -> Self {
         ExternalSection {
             default_timeout: 30,
-            enable_sandbox: false,
+            enable_sandbox: true, // Enabled by default on Linux
             tools: HashMap::new(),
         }
     }
@@ -120,7 +124,7 @@ fn parse_config(toml_config: ToolsToml) -> ExternalToolsConfig {
         .external
         .as_ref()
         .map(|e| e.enable_sandbox)
-        .unwrap_or(false);
+        .unwrap_or(true); // Default: true
 
     // Start with default tools
     let mut config = ExternalToolsConfig::with_defaults();
@@ -248,14 +252,47 @@ pub fn generate_default_toml() -> String {
 # If this file doesn't exist, all default tools are enabled.
 # If this file exists, ONLY tools defined here are available.
 #
-# SECURITY: Tools are executed without shell interpretation (no pipes, redirects).
-# This prevents command injection attacks but limits flexibility.
+# =============================================================================
+# SECURITY MODEL
+# =============================================================================
+#
+# Commands are executed WITHOUT shell interpretation (no pipes, redirects).
+# This prevents command injection attacks.
+#
+# Output is returned in FULL. Use head/tail parameters to control size:
+#   run_command("pdftotext doc.pdf -", 100, null, null)  # First 100 lines
+#   run_command("pdftotext doc.pdf -", null, 50, null)   # Last 50 lines
+#
+# =============================================================================
+# SANDBOX (Linux only)
+# =============================================================================
+#
+# enable_sandbox = true: Uses Landlock to isolate filesystem access
+# - Requires Linux kernel 5.13+ (graceful degradation on older kernels)
+# - Automatically disabled on Termux, macOS, and non-Linux systems
+# - Restricts file access to current directory + /usr (read-only)
+#
+# enable_sandbox = false: No filesystem isolation (use with caution)
+#
+# RECOMMENDATION: Keep sandbox enabled unless you have specific needs.
+# For maximum isolation, run inside a container or VM.
+#
+# =============================================================================
+# PLATFORM SUPPORT
+# =============================================================================
+#
+# Linux:    Full sandbox support (Landlock)
+# Termux:   No sandbox (Android provides app-level isolation)
+# macOS:    No sandbox yet (future: sandbox-exec)
+# Windows:  Not supported (use WSL)
+#
 
 [external]
 # Default timeout for all commands (seconds)
 default_timeout = 30
-# Enable sandboxing (Linux landlock, future feature - not implemented yet)
-enable_sandbox = false
+# Enable Landlock sandbox on Linux (kernel 5.13+)
+# Automatically disabled on non-Linux platforms
+enable_sandbox = true
 
 # =============================================================================
 # PDF TOOLS (from poppler-utils)
@@ -359,7 +396,7 @@ mod tests {
 
         // Default timeout
         assert_eq!(config.default_timeout, Duration::from_secs(30));
-        assert!(!config.enable_sandbox);
+        assert!(config.enable_sandbox); // Enabled by default
     }
 
     #[test]

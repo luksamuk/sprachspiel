@@ -143,7 +143,7 @@ impl ExternalToolsConfig {
     pub fn new() -> Self {
         ExternalToolsConfig {
             default_timeout: Duration::from_secs(30),
-            enable_sandbox: false,
+            enable_sandbox: true, // Enabled by default on Linux (graceful on other platforms)
             tools: HashMap::new(),
         }
     }

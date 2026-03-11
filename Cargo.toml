@@ -20,6 +20,8 @@ finance-tools = ["dep:scraper"]
 system-tools = []
 led-tools = []
 todo-tools = []
+# Landlock sandbox for Linux (kernel 5.13+)
+sandbox = ["dep:landlock"]
 
 [dependencies]
 base64 = "0.22.1"
@@ -61,3 +63,8 @@ zerocopy = "0.8"
 which = "8.0"
 # Shell-style command line parsing for run_command
 shell-words = "1.1"
+
+# Platform-specific dependencies
+[target.'cfg(target_os = "linux")'.dependencies]
+# Landlock sandbox for filesystem isolation (Linux kernel 5.13+)
+landlock = { version = "0.4", optional = true }
