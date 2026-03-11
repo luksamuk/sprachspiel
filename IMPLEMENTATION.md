@@ -77,6 +77,12 @@
   - Platform-specific sandbox handling (Termux, macOS documented)
   - Pattern validation with proper ordering (multi-char before single-char)
   - Removed automatic truncation (LLM decides via head/tail parameters)
+- **run_command Timeout Fix** - v0.28.0
+  - Fixed critical bug: processes not killed on timeout
+  - Changed to tokio::process::Command with kill_on_drop(true)
+  - Fixed parameter types from Option<usize> to Option<String> (LLM compatibility)
+  - Removed dead code (executor.rs, registry.rs)
+  - Added unit tests for timeout and string parameter handling
 
  📋 **Planned:**
 

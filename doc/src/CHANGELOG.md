@@ -2,6 +2,53 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.28.0] - 2026-03-11
+
+### Fixed
+
+- **CRITICAL: run_command Parameter Types** - Fixed crash when LLM sends strings for numeric parameters
+  - Changed `head`, `tail`, `timeout_seconds` from `Option<usize>`/`Option<u32>` to `Option<String>`
+  - LLMs frequently send `"null"` (string) instead of `null` (JSON), causing deserialization failures
+  - Internal parsing with `.parse().ok()` handles all variations (`"5"`, `5`, `"null"`, `null`, `""`)
+  - Added `"CRITICAL: Parameter Types for LLM Tools"` section to AGENTS.md
+  - Updated doc/src/tools.md with guidance on parameter types
+
+- **run_command Timeout Implementation** - Processes now properly killed on timeout
+  - Replaced `std::process::Command` with `tokio::process::Command`
+  - Added `.kill_on_drop(true)` to ensure process termination
+  - Implemented `tokio::time::timeout` wrapper
+  - Timeout error messages include actionable suggestions
+  - Added unit tests for timeout functionality and string parameter parsing
+
+- **Landlock API Deprecation** - Updated to new Ruleset API
+  - Changed `Ruleset::new()` to `Ruleset::default()` (deprecated warning fixed)
+
+### Changed
+
+- **Code Cleanup** - Removed unused code and fixed all clippy warnings
+  - Deleted `src/external/executor.rs` (CommandExecutor never used)
+  - Deleted `src/external/registry.rs` (only used by executor.rs)
+  - Removed `CommandError` and `ToolAvailability` unused types from types.rs
+  - Fixed 15+ clippy warnings: `collapsible_if`, `needless_question_mark`, `redundant_locals`, `map_clone`, `let_and_return`, `io_other_error`, `needless_borrow`, `manual_clamp`, `redundant_async_block`
+
+- **API Refactoring** - Improved function signatures for maintainability
+  - Created `SearchParams` struct for `search_hybrid()` parameters (9 args → 1 struct)
+  - Created `ConversationMetadataParams` struct for `update_conversation_metadata()` (10 args → 1 struct)
+  - Both structs exported from `src/db/mod.rs` for external use
+
+### Added
+
+- **Documentation** - Added LLM tool parameter type guidelines
+  - `AGENTS.md`: New section "CRITICAL: Parameter Types for LLM Tools" explaining why `Option<String>` is required
+  - `doc/src/tools.md`: Updated Tool Error Handling section with guidance
+  - Reference tables showing dangerous vs correct parameter types
+
+- **Unit Tests** - Test coverage for timeout and parameter parsing
+  - `test_timeout_kills_long_running_command` - Verifies process killed on timeout
+  - `test_timeout_allows_fast_command` - Verifies normal execution within timeout
+  - `test_timeout_error_message_format` - Verifies error message structure
+  - `test_string_parameter_parsing` - Verifies string-to-number conversion
+
 ## [0.27.3] - 2026-03-09
 
 ### Added
