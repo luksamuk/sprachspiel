@@ -62,6 +62,13 @@
 - `ConversationStorage` deprecated, removed from REPL - v0.27.x
 - Markdown in compaction summaries - v0.27.2
 - Web scraping content quality improvements - v0.27.2
+- **CLI Tools Infrastructure (Phase 1)** - v0.28.0
+  - External module with types, config, platform detection
+  - Per-tool TOML parsing for tools.toml
+  - `check_tool_availability()` and `run_command()` tools
+  - Simplified run_command API: single command_line string (shell-words parsing)
+  - Debug logging for tool failures
+  - Fixed duplicate error messages in REPL
 
  📋 **Planned:**
 
@@ -73,7 +80,7 @@
   - ✅ tools.toml configuration file (full parsing)
   - ✅ Per-tool TOML parsing (`[external.tools.*]`)
   - ✅ `check_tool_availability()` tool
-  - ✅ `run_command()` tool
+  - ✅ `run_command()` tool with simplified API
   - ✅ Platform-specific installation hints
 
 - **Skills System** - Markdown-defined AI behavior

@@ -144,8 +144,8 @@ Available: read_file, read_file_segment, count_lines, list_directory, search_fil
 Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines.
 
 **IMPORTANT FOR PDFs:** read_file cannot read PDFs (binary format). Use run_command instead:
-- run_command("pdftotext", ["-f", "1", "-l", "10", "document.pdf", "-"]) extracts pages 1-10
-- Always use "-" as the last argument to output to stdout."#
+- run_command("pdftotext document.pdf -") extracts full text
+- run_command("pdftotext -f 1 -l 10 document.pdf -") extracts pages 1-10"#
                     .to_string(),
             );
         }
@@ -251,16 +251,21 @@ Use for operations requiring external CLI tools (PDF, OCR, image metadata).
 Available: check_tool_availability, run_command
 
 **When to use:**
-- PDFs: Use run_command("pdftotext", ["document.pdf", "-"]) instead of read_file
-- OCR: Use run_command("tesseract", ["image.png", "stdout"]) for text from images
-- Images: Use run_command("exiftool", ["image.jpg"]) for metadata
+- PDFs: run_command("pdftotext document.pdf -")
+- OCR: run_command("tesseract image.png stdout")
+- Images: run_command("exiftool image.jpg")
 
 **Workflow:**
 1. First check availability: check_tool_availability("pdftotext")
-2. If available, run: run_command("pdftotext", ["-f", "1", "-l", "10", "file.pdf", "-"])
-3. For large PDFs, extract specific pages: use -f (first) and -l (last) flags
+2. If available: run_command("pdftotext -f 1 -l 10 file.pdf -")
+3. Use -f/-l flags for large PDFs (first/last page)
 
-**Security:** Only whitelisted tools in tools.toml can execute. No shell features (pipes, redirects)."#
+**Examples:**
+- run_command("pdftotext document.pdf -") - Extract all text
+- run_command("pdftotext -f 1 -l 5 document.pdf -") - Extract pages 1-5
+- run_command("tesseract image.png stdout -l jpn") - OCR with Japanese
+
+**Security:** Only whitelisted tools in tools.toml. Supports quoting for filenames with spaces."#
                     .to_string(),
             );
         }

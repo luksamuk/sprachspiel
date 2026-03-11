@@ -129,6 +129,7 @@ dependencies = [
  "scraper 0.22.0",
  "serde",
  "serde_json",
+ "shell-words",
  "sqlite-vec",
  "termimad",
  "tokio",
@@ -2689,6 +2690,12 @@ checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
 dependencies = [
  "stable_deref_trait",
 ]
+
+[[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"
