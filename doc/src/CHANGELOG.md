@@ -49,6 +49,12 @@ All notable changes to Ask-AI will be documented in this file.
   - `test_timeout_error_message_format` - Verifies error message structure
   - `test_string_parameter_parsing` - Verifies string-to-number conversion
 
+- **Code Organization** - SQLite cleanup
+  - Created `src/project.rs` with `get_project_id()` and `normalize_git_url()`
+  - Updated `history.rs` to be purely a migration module (deprecated)
+  - Clear separation: project identification vs. legacy storage
+  - `history.rs` still contains `ConversationStorage` for `/restore` command
+
 ## [0.27.3] - 2026-03-09
 
 ### Added

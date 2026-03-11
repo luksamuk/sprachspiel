@@ -32,9 +32,9 @@ use super::coordinator::{
     MAX_RETRIES, classify_error_str, format_recovery_message, is_error_str_recoverable,
 };
 use super::custom_coordinator::CustomCoordinator;
-use super::history::get_project_id;
 use super::session::ChatSession;
 use super::thinking::{display_thinking, strip_thinking_tags};
+use crate::project::get_project_id;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

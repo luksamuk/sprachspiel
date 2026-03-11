@@ -260,22 +260,20 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 | Storage | Status | Content |
 |---------|--------|---------|
 | SQLite | 🟢 Primary | Full session state (messages + metadata + todos) |
-| JSON | 🟡 Legacy | Still used by `/export json` and internal migration |
+| JSON | 🟡 Legacy | Only used by `/restore` command for backup import |
 
-### Recent Changes (v0.27.x)
+### Recent Changes (v0.28.0)
 
-- `ConversationStorage` now marked with `#[deprecated]`
-- `repl.rs` no longer instantiates `ConversationStorage`
-- `migrate_all_legacy_sessions()` creates storage internally
-- `restore_session()` creates storage internally
-- Removed `save()` and `load()` deprecated methods from `ChatSession`
-- `legacy_check.rs` uses `storage.load_session()` directly
+- `get_project_id()` and `normalize_git_url()` moved to `src/project.rs`
+- `history.rs` is now purely a migration module (deprecated)
+- Clear separation: project identification (`project.rs`) vs. legacy storage (`history.rs`)
 
 ### Remaining Tasks
 
-- [ ] Consider removing `history.rs` entirely in future version
+- [x] Move `get_project_id()` to separate module (`project.rs`) - DONE v0.28.0
+- [x] Update history.rs to be migration-only - DONE v0.28.0
 - [ ] Update user documentation for storage model
-- [ ] Consider removing `SessionInfo` struct (only used for legacy listing)
+- [ ] Consider removing `history.rs` entirely after JSON migration is complete
 
 ---
 

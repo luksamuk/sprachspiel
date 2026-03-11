@@ -1,22 +1,20 @@
-//! Project identification and legacy conversation storage
+//! Legacy conversation storage for migration and restore.
 //!
-//! This module contains:
+//! This module is DEPRECATED and should NOT be used in new code.
+//! Use `Database` from `src/db/operations.rs` instead.
 //!
-//! ## Active Functions (still in use)
-//! - [`get_project_id`] - Get current project identifier from git or folder
-//! - [`normalize_git_url`] - Normalize git URLs for consistent project IDs
+//! ## Purpose
+//! This module exists solely to support:
+//! - `/restore` command (import JSON backups)
+//! - Automatic migration detection on startup
 //!
-//! ## Deprecated Types (only for migration/restore)
-//! - [`ConversationStorage`] - JSON-based storage, replaced by SQLite
-//! - [`SessionInfo`] - Legacy session info struct
-//!
-//! DO NOT use `ConversationStorage` in new code. Use `Database` from
-//! `src/db/operations.rs` instead.
+//! ## Migration Path
+//! After all JSON sessions are migrated, this module will be removed.
+//! See `src/db/legacy_check.rs` for migration logic.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
 
 use super::session::ChatSession;
 
@@ -178,59 +176,12 @@ impl Default for ConversationStorage {
 /// - Normalized git remote origin URL if in a git repo with origin
 /// - Current folder name as fallback
 /// - None if no identifier can be determined
-pub fn get_project_id() -> Option<String> {
-    get_git_remote_url().or_else(get_folder_name)
-}
-
-/// Get the git remote origin URL
-fn get_git_remote_url() -> Option<String> {
-    let output = Command::new("git")
-        .args(["remote", "get-url", "origin"])
-        .output()
-        .ok()?;
-
-    if output.status.success() {
-        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !url.is_empty() {
-            return Some(normalize_git_url(&url));
-        }
-    }
-    None
-}
-
-/// Get the current folder name
-fn get_folder_name() -> Option<String> {
-    std::env::current_dir()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-}
-
-/// Normalize a git URL to a consistent format
 ///
-/// Examples:
-/// - git@github.com:user/repo.git -> github.com/user/repo
-/// - https://github.com/user/repo.git -> github.com/user/repo
-/// - git@gitlab.com:user/repo -> gitlab.com/user/repo
-pub fn normalize_git_url(url: &str) -> String {
-    let url = url.trim();
-
-    if url.starts_with("git@") {
-        let url = url.strip_prefix("git@").unwrap_or(url);
-        let url = url.replace(':', "/");
-        let url = url.strip_suffix(".git").unwrap_or(&url);
-        url.to_string()
-    } else if url.starts_with("https://") || url.starts_with("http://") {
-        let url = url
-            .strip_prefix("https://")
-            .or_else(|| url.strip_prefix("http://"))
-            .unwrap_or(url);
-        let url = url.strip_suffix(".git").unwrap_or(url);
-        url.to_string()
-    } else if url.ends_with(".git") {
-        url.strip_suffix(".git").unwrap_or(url).to_string()
-    } else {
-        url.to_string()
-    }
+/// **DEPRECATED**: Use `crate::project::get_project_id()` instead.
+#[allow(dead_code)]
+#[deprecated(note = "Use crate::project::get_project_id() instead")]
+pub fn get_project_id() -> Option<String> {
+    crate::project::get_project_id()
 }
 
 /// Sanitize a string for use as a path component
@@ -244,51 +195,4 @@ fn sanitize_path(s: &str) -> String {
             }
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_normalize_git_url_ssh() {
-        assert_eq!(
-            normalize_git_url("git@github.com:user/repo.git"),
-            "github.com/user/repo"
-        );
-    }
-
-    #[test]
-    fn test_normalize_git_url_https() {
-        assert_eq!(
-            normalize_git_url("https://github.com/user/repo.git"),
-            "github.com/user/repo"
-        );
-    }
-
-    #[test]
-    fn test_normalize_git_url_https_no_suffix() {
-        assert_eq!(
-            normalize_git_url("https://github.com/user/repo"),
-            "github.com/user/repo"
-        );
-    }
-
-    #[test]
-    fn test_normalize_git_url_gitlab() {
-        assert_eq!(
-            normalize_git_url("git@gitlab.com:user/repo.git"),
-            "gitlab.com/user/repo"
-        );
-    }
-
-    #[test]
-    fn test_sanitize_path() {
-        assert_eq!(
-            sanitize_path("github.com/user/repo"),
-            "github_com/user/repo"
-        );
-        assert_eq!(sanitize_path("simple"), "simple");
-        assert_eq!(sanitize_path("with spaces"), "with_spaces");
-    }
 }

@@ -16,6 +16,7 @@ pub mod macros;
 pub mod markdown;
 pub mod ocr;
 pub mod platform;
+pub mod project;
 pub mod prompts;
 pub mod query;
 pub mod retrieval;
