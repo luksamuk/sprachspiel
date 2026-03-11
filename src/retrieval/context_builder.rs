@@ -37,11 +37,14 @@ pub const SEMANTIC_WEIGHT: f32 = 0.6;
 /// Format timestamp for human-readable display
 fn format_timestamp(timestamp: i64) -> String {
     use chrono::{Datelike, TimeZone, Utc};
-    
-    let dt = Utc.timestamp_opt(timestamp, 0).single().unwrap_or_else(Utc::now);
+
+    let dt = Utc
+        .timestamp_opt(timestamp, 0)
+        .single()
+        .unwrap_or_else(Utc::now);
     let now = Utc::now();
     let diff = now.signed_duration_since(dt);
-    
+
     if diff.num_hours() < 24 {
         // Today - show time only
         dt.format("%H:%M").to_string()
@@ -60,7 +63,7 @@ fn format_timestamp(timestamp: i64) -> String {
 /// Format retrieved messages into context string
 fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
     use crate::db::SourceType;
-    
+
     let mut text = String::from("<retrieved_context>\n");
     text.push_str("MESSAGES FROM YOUR PAST CONVERSATION with this user.\n\n");
     text.push_str(&format!(
@@ -68,14 +71,20 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
         SourceType::Conversation.prefix()
     ));
     text.push_str("CITATIONS: When referencing retrieved content, include the source ID after the statement.\n");
-    text.push_str(&format!("- Conversations: [{}:N]\n", SourceType::Conversation.prefix()));
-    text.push_str(&format!("- Documents: [{}:N]\n", SourceType::Document.prefix()));
+    text.push_str(&format!(
+        "- Conversations: [{}:N]\n",
+        SourceType::Conversation.prefix()
+    ));
+    text.push_str(&format!(
+        "- Documents: [{}:N]\n",
+        SourceType::Document.prefix()
+    ));
     text.push_str(&format!("- Notes: [{}:N]\n\n", SourceType::Note.prefix()));
     text.push_str(&format!(
         "Example: \"As we discussed [{}:42], the project uses Rust.\"\n\n",
         SourceType::Conversation.prefix()
     ));
-    
+
     for msg in results {
         let timestamp = format_timestamp(msg.timestamp);
         let prefix = msg.source_type.prefix();
@@ -87,7 +96,7 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
             msg.content,
             timestamp
         ));
-        
+
         // If user message has an assistant response, include it
         if let Some(ref answer) = msg.next_message {
             let answer_timestamp = format_timestamp(answer.timestamp);
@@ -102,7 +111,7 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
             ));
         }
     }
-    
+
     text.push_str("</retrieved_context>");
     text
 }
@@ -182,7 +191,7 @@ pub async fn build_context(
     let should_retrieve = config.enabled && config.should_retrieve(session, db);
     // Forced retrieval: after /clear, session empty but DB has messages
     let force_retrieve = should_force_retrieve(session, db);
-    
+
     if use_debug {
         log_debug(&format!(
             "Retrieval: enabled={}, should_retrieve={}, force_retrieve={}",
@@ -196,7 +205,7 @@ pub async fn build_context(
             session.compacted_summary.is_some()
         ));
     }
-    
+
     if should_retrieve || force_retrieve {
         if use_debug {
             log_debug(&format!(
@@ -205,12 +214,12 @@ pub async fn build_context(
                 embedding_client.is_some()
             ));
         }
-        
+
         if let (Some(db), Some(client)) = (db, embedding_client) {
             if use_debug {
                 log_debug("Generating embedding for query...");
             }
-            
+
             if let Ok(embedding) = client.embed(user_query).await {
                 if use_debug {
                     log_debug(&format!(
@@ -218,22 +227,22 @@ pub async fn build_context(
                         session.id
                     ));
                 }
-                
+
                 // Note: We don't exclude the current message from search because:
                 // 1. Messages don't have DB IDs in memory
                 // 2. The current message hasn't been saved to DB yet when search runs
                 // 3. Search only finds historical messages, not current prompt
-                
-                if let Ok(results) = db.search_hybrid(
-                    user_query,
-                    &embedding,
-                    Some(&session.id),
-                    session.project_id.as_deref(),
-                    config.relevant_count,
-                    config.keyword_weight,
-                    config.semantic_weight,
-                    None,  // No IDs to exclude - current message not in DB yet
-                ) {
+
+                if let Ok(results) = db.search_hybrid(&crate::db::SearchParams {
+                    query: user_query,
+                    embedding: &embedding,
+                    conversation_id: Some(&session.id),
+                    project_id: session.project_id.as_deref(),
+                    limit: config.relevant_count,
+                    keyword_weight: config.keyword_weight,
+                    semantic_weight: config.semantic_weight,
+                    exclude_ids: None, // No IDs to exclude - current message not in DB yet
+                }) {
                     // Enrich results with conversation context (attach assistant responses to user questions)
                     let enriched_results = match db.enrich_with_context(results) {
                         Ok(r) => r,
@@ -245,27 +254,29 @@ pub async fn build_context(
                             Vec::new()
                         }
                     };
-                    
+
                     if use_debug {
                         log_debug(&format!(
                             "Search returned {} results",
                             enriched_results.len()
                         ));
                     }
-                    
+
                     if !enriched_results.is_empty() {
                         retrieved_count = enriched_results.len();
                         retrieval_performed = true;
-                        
+
                         let retrieved_text = format_retrieved_context(&enriched_results);
                         messages.push(ChatMessage::system(retrieved_text));
-                        
+
                         if use_debug {
-                            let enriched_count = enriched_results.iter().filter(|r| r.next_message.is_some()).count();
+                            let enriched_count = enriched_results
+                                .iter()
+                                .filter(|r| r.next_message.is_some())
+                                .count();
                             log_debug(&format!(
                                 "Added {} retrieved messages to context ({} enriched with responses)",
-                                retrieved_count,
-                                enriched_count
+                                retrieved_count, enriched_count
                             ));
                         }
                     }
@@ -396,12 +407,12 @@ pub async fn build_query_context(
                 project_id, config.enabled
             ));
         }
-        
+
         if let (Some(db), Some(client)) = (db, embedding_client) {
             if use_debug {
                 log_debug("Generating embedding for query...");
             }
-            
+
             if let Ok(embedding) = client.embed(user_query).await {
                 if use_debug {
                     log_debug(&format!(
@@ -409,18 +420,18 @@ pub async fn build_query_context(
                         project_id
                     ));
                 }
-                
+
                 // Search by project_id only (no conversation_id)
-                if let Ok(results) = db.search_hybrid(
-                    user_query,
-                    &embedding,
-                    None,           // No conversation_id - search all in project
-                    project_id,      // Search by project
-                    config.relevant_count,
-                    config.keyword_weight,
-                    config.semantic_weight,
-                    None,            // No exclusion for query mode
-                ) {
+                if let Ok(results) = db.search_hybrid(&crate::db::SearchParams {
+                    query: user_query,
+                    embedding: &embedding,
+                    conversation_id: None, // No conversation_id - search all in project
+                    project_id,            // Search by project
+                    limit: config.relevant_count,
+                    keyword_weight: config.keyword_weight,
+                    semantic_weight: config.semantic_weight,
+                    exclude_ids: None, // No exclusion for query mode
+                }) {
                     // Enrich results with conversation context
                     let enriched_results = match db.enrich_with_context(results) {
                         Ok(r) => r,
@@ -431,27 +442,29 @@ pub async fn build_query_context(
                             Vec::new()
                         }
                     };
-                    
+
                     if use_debug {
                         log_debug(&format!(
                             "Search returned {} results",
                             enriched_results.len()
                         ));
                     }
-                    
+
                     if !enriched_results.is_empty() {
                         retrieved_count = enriched_results.len();
                         retrieval_performed = true;
-                        
+
                         let retrieved_text = format_retrieved_context(&enriched_results);
                         messages.push(ChatMessage::system(retrieved_text));
-                        
+
                         if use_debug {
-                            let enriched_count = enriched_results.iter().filter(|r| r.next_message.is_some()).count();
+                            let enriched_count = enriched_results
+                                .iter()
+                                .filter(|r| r.next_message.is_some())
+                                .count();
                             log_debug(&format!(
                                 "Added {} retrieved messages to context ({} enriched with responses)",
-                                retrieved_count,
-                                enriched_count
+                                retrieved_count, enriched_count
                             ));
                         }
                     }
@@ -470,7 +483,7 @@ pub async fn build_query_context(
 
     // 3. Current query (always last)
     messages.push(ChatMessage::user(user_query.to_string()));
-    
+
     if use_debug {
         log_debug(&format!(
             "Query context built: {} messages, retrieval={}, retrieved={}",
@@ -492,25 +505,21 @@ pub async fn build_query_context(
 /// After `/clear`, session.messages may be empty but the database
 /// still contains the conversation history. This function returns
 /// the effective count considering both sources.
-pub fn get_effective_message_count(
-    session: &ChatSession,
-    db: Option<&Arc<Database>>,
-) -> usize {
+pub fn get_effective_message_count(session: &ChatSession, db: Option<&Arc<Database>>) -> usize {
     // If session has messages, use session count
     if !session.messages.is_empty() {
         return session.messages.len();
     }
-    
+
     // If session is empty but has summary, check DB
     // (messages were cleared but context persists)
-    if session.compacted_summary.is_some() {
-        if let Some(db) = db {
-            if let Ok(count) = db.count_conversation_messages(&session.id) {
-                return count;
-            }
-        }
+    if session.compacted_summary.is_some()
+        && let Some(db) = db
+        && let Ok(count) = db.count_conversation_messages(&session.id)
+    {
+        return count;
     }
-    
+
     0
 }
 
@@ -521,32 +530,29 @@ pub fn get_effective_message_count(
 /// 2. Or there's historical context in DB that should be retrieved
 ///
 /// This check works regardless of how many new messages user added after /clear.
-pub fn should_force_retrieve(
-    session: &ChatSession,
-    db: Option<&Arc<Database>>,
-) -> bool {
+pub fn should_force_retrieve(session: &ChatSession, db: Option<&Arc<Database>>) -> bool {
     // Check DB for message count
-    if let Some(db) = db {
-        if !session.anonymous && !session.id.is_empty() {
-            if let Ok(db_count) = db.count_conversation_messages(&session.id) {
-                // If DB has more messages than session, retrieval should happen
-                // This covers:
-                // - After /clear: DB has old messages, session has 0-1 new messages
-                // - During conversation: DB and session are in sync
-                let session_count = session.messages.len();
-                if db_count > session_count {
-                    return true;
-                }
-            }
+    if let Some(db) = db
+        && !session.anonymous
+        && !session.id.is_empty()
+        && let Ok(db_count) = db.count_conversation_messages(&session.id)
+    {
+        // If DB has more messages than session, retrieval should happen
+        // This covers:
+        // - After /clear: DB has old messages, session has 0-1 new messages
+        // - During conversation: DB and session are in sync
+        let session_count = session.messages.len();
+        if db_count > session_count {
+            return true;
         }
     }
-    
+
     // Also force retrieve if session has summary (from compaction)
     // even if DB check didn't trigger
     if session.messages.is_empty() && session.compacted_summary.is_some() {
         return true;
     }
-    
+
     false
 }
 
@@ -558,11 +564,11 @@ impl RetrievalConfig {
     pub fn should_retrieve(&self, session: &ChatSession, db: Option<&Arc<Database>>) -> bool {
         // Use session + DB count to decide
         let effective_count = get_effective_message_count(session, db);
-        
+
         if effective_count < self.min_messages {
             return false;
         }
-        
+
         // Check throttling
         if let Some(last_time) = session.last_retrieval_time {
             let elapsed = last_time.elapsed().as_secs();
@@ -570,7 +576,7 @@ impl RetrievalConfig {
                 return false;
             }
         }
-        
+
         true
     }
 }
@@ -592,7 +598,11 @@ mod tests {
 
         for i in 0..message_count {
             session.messages.push(SavedMessage {
-                role: if i % 2 == 0 { MessageRole::User } else { MessageRole::Assistant },
+                role: if i % 2 == 0 {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
                 content: format!("Test message {} content", i),
                 timestamp: Utc::now(),
                 ..Default::default()
@@ -653,10 +663,10 @@ mod tests {
     #[test]
     fn test_update_retrieval_time() {
         let mut session = create_test_session(10);
-        
+
         // Initially None
         assert!(session.last_retrieval_time.is_none());
-        
+
         // Update
         update_retrieval_time(&mut session);
         assert!(session.last_retrieval_time.is_some());
@@ -665,14 +675,14 @@ mod tests {
     #[test]
     fn test_retrieval_toggle() {
         let mut session = create_test_session(10);
-        
+
         // Initially true (default changed in v0.23.0)
         assert!(session.retrieval_enabled);
-        
+
         // Toggle off
         session.retrieval_enabled = false;
         assert!(!session.retrieval_enabled);
-        
+
         // Toggle back on
         session.retrieval_enabled = true;
         assert!(session.retrieval_enabled);
@@ -681,7 +691,7 @@ mod tests {
     #[test]
     fn test_get_effective_message_count_with_messages() {
         let session = create_test_session(25);
-        
+
         // Session has messages, so count should be session len
         let count = get_effective_message_count(&session, None);
         assert_eq!(count, 25);
@@ -690,7 +700,7 @@ mod tests {
     #[test]
     fn test_get_effective_message_count_empty_no_summary() {
         let session = create_test_session(0);
-        
+
         // Empty session, no summary, no DB
         let count = get_effective_message_count(&session, None);
         assert_eq!(count, 0);
@@ -698,19 +708,19 @@ mod tests {
 
     #[test]
     fn test_get_effective_message_count_after_clear_with_summary() {
-        let mut session = create_test_session(0);  // Empty after clear
+        let mut session = create_test_session(0); // Empty after clear
         session.set_compacted_summary_with_range("Summary".into(), Some((5, 20)));
-        
+
         // After /clear, session is empty but has summary
         // Without DB, can't check DB count
         let count = get_effective_message_count(&session, None);
-        assert_eq!(count, 0);  // Can't reach DB, returns 0
+        assert_eq!(count, 0); // Can't reach DB, returns 0
     }
 
     #[test]
     fn test_should_force_retrieve_with_messages() {
         let session = create_test_session(10);
-        
+
         // Session has 10 messages, no DB - can't compare, should NOT force
         assert!(!should_force_retrieve(&session, None));
     }
@@ -726,17 +736,17 @@ mod tests {
 
     #[test]
     fn test_should_force_retrieve_empty_with_summary() {
-        let mut session = create_test_session(0);  // Empty after clear
+        let mut session = create_test_session(0); // Empty after clear
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 10)));
-        
+
         // Empty session with summary - should force retrieve
         assert!(should_force_retrieve(&session, None));
     }
 
     #[test]
     fn test_should_force_retrieve_empty_no_summary() {
-        let session = create_test_session(0);  // Empty, no summary
-        
+        let session = create_test_session(0); // Empty, no summary
+
         // Empty session, no summary, no DB - should NOT force
         assert!(!should_force_retrieve(&session, None));
     }

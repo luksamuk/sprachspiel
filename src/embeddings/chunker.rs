@@ -240,10 +240,10 @@ fn find_sentence_boundary(text: &str, target_pos: usize) -> usize {
                 // Check if next non-whitespace is capital letter
                 let lookahead = &text[next_pos..];
                 let trimmed = lookahead.trim_start();
-                if let Some(first_char) = trimmed.chars().next() {
-                    if first_char.is_uppercase() {
-                        return next_pos;
-                    }
+                if let Some(first_char) = trimmed.chars().next()
+                    && first_char.is_uppercase()
+                {
+                    return next_pos;
                 }
             }
         }

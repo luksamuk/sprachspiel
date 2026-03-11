@@ -229,41 +229,6 @@ impl ExternalToolsConfig {
     }
 }
 
-/// Result of tool availability check.
-#[derive(Debug, Clone)]
-pub struct ToolAvailability {
-    /// Tool name.
-    pub name: String,
-    /// Whether the tool is installed.
-    pub installed: bool,
-    /// Whether the tool is enabled in config.
-    pub enabled: bool,
-    /// Installation hint for current platform.
-    pub install_hint: Option<String>,
-}
-
-impl std::fmt::Display for ToolAvailability {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.installed && self.enabled {
-            write!(f, "✓ {} is available", self.name)
-        } else if self.installed && !self.enabled {
-            write!(f, "✗ {} is installed but disabled in config", self.name)
-        } else if !self.installed && self.enabled {
-            if let Some(hint) = &self.install_hint {
-                write!(
-                    f,
-                    "✗ {} is not installed. Install with: {}",
-                    self.name, hint
-                )
-            } else {
-                write!(f, "✗ {} is not installed", self.name)
-            }
-        } else {
-            write!(f, "✗ {} is not configured", self.name)
-        }
-    }
-}
-
 /// Output from command execution.
 #[derive(Debug, Clone)]
 pub struct CommandOutput {
@@ -277,40 +242,6 @@ pub struct CommandOutput {
     pub success: bool,
 }
 
-/// Error during command execution.
-#[derive(Debug, Clone)]
-pub enum CommandError {
-    /// Tool is disabled in configuration.
-    Disabled(String),
-    /// Tool binary not found in PATH.
-    NotFound(String),
-    /// Command execution timed out.
-    Timeout(String),
-    /// Command execution failed.
-    Execution(String),
-}
-
-impl std::fmt::Display for CommandError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CommandError::Disabled(name) => {
-                write!(f, "Tool '{}' is disabled in configuration", name)
-            }
-            CommandError::NotFound(name) => {
-                write!(f, "Tool '{}' is not installed", name)
-            }
-            CommandError::Timeout(name) => {
-                write!(f, "Tool '{}' execution timed out", name)
-            }
-            CommandError::Execution(msg) => {
-                write!(f, "Execution failed: {}", msg)
-            }
-        }
-    }
-}
-
-impl std::error::Error for CommandError {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,7 +249,6 @@ mod tests {
     #[test]
     fn test_platform_detect() {
         let platform = Platform::detect();
-        // Just ensure it doesn't panic
         assert!(matches!(
             platform,
             Platform::Arch
@@ -377,50 +307,23 @@ mod tests {
     fn test_config_with_defaults() {
         let config = ExternalToolsConfig::with_defaults();
 
-        // Should have PDF tools
         assert!(config.tools.contains_key("pdftotext"));
         assert!(config.tools.contains_key("pdfinfo"));
         assert!(config.tools.contains_key("pdftoppm"));
-
-        // Should have OCR tool
         assert!(config.tools.contains_key("tesseract"));
-
-        // Should have image tool
         assert!(config.tools.contains_key("exiftool"));
     }
 
     #[test]
-    fn test_tool_availability_display() {
-        let available = ToolAvailability {
-            name: "pdftotext".to_string(),
-            installed: true,
-            enabled: true,
-            install_hint: None,
+    fn test_command_output() {
+        let output = CommandOutput {
+            stdout: "test output".to_string(),
+            stderr: String::new(),
+            exit_code: Some(0),
+            success: true,
         };
-        assert_eq!(available.to_string(), "✓ pdftotext is available");
 
-        let not_installed = ToolAvailability {
-            name: "tesseract".to_string(),
-            installed: false,
-            enabled: true,
-            install_hint: Some("sudo apt install tesseract-ocr".to_string()),
-        };
-        assert!(not_installed.to_string().contains("not installed"));
-        assert!(not_installed.to_string().contains("apt install"));
-    }
-
-    #[test]
-    fn test_command_error_display() {
-        let err = CommandError::Disabled("ffmpeg".to_string());
-        assert!(err.to_string().contains("disabled"));
-
-        let err = CommandError::NotFound("pdftotext".to_string());
-        assert!(err.to_string().contains("not installed"));
-
-        let err = CommandError::Timeout("tesseract".to_string());
-        assert!(err.to_string().contains("timed out"));
-
-        let err = CommandError::Execution("Command failed".to_string());
-        assert!(err.to_string().contains("failed"));
+        assert!(output.success);
+        assert_eq!(output.exit_code, Some(0));
     }
 }

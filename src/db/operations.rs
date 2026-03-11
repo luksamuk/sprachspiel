@@ -91,6 +91,50 @@ pub enum SourceType {
     Web,
 }
 
+/// Parameters for hybrid search
+#[derive(Debug, Clone)]
+pub struct SearchParams<'a> {
+    /// Search query
+    pub query: &'a str,
+    /// Query embedding for semantic search
+    pub embedding: &'a [f32],
+    /// Filter by conversation ID
+    pub conversation_id: Option<&'a str>,
+    /// Filter by project ID
+    pub project_id: Option<&'a str>,
+    /// Maximum results to return
+    pub limit: usize,
+    /// Weight for keyword search (BM25)
+    pub keyword_weight: f32,
+    /// Weight for semantic search (vector)
+    pub semantic_weight: f32,
+    /// Message IDs to exclude from results
+    pub exclude_ids: Option<&'a [i64]>,
+}
+
+/// Parameters for updating conversation metadata
+#[derive(Debug, Clone)]
+pub struct ConversationMetadataParams<'a> {
+    /// Conversation ID
+    pub id: &'a str,
+    /// New name for the conversation
+    pub name: Option<&'a str>,
+    /// System prompt
+    pub system_prompt: Option<&'a str>,
+    /// Compacted summary
+    pub compacted_summary: Option<&'a str>,
+    /// Range of compacted messages (start, end)
+    pub compacted_range: Option<(usize, usize)>,
+    /// Whether thinking is enabled
+    pub think: bool,
+    /// Whether tools are enabled
+    pub tools: bool,
+    /// Tool output verbosity level
+    pub tool_output_level: &'a str,
+    /// Update timestamp
+    pub updated_at: DateTime<Utc>,
+}
+
 impl std::fmt::Display for SourceType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -616,7 +660,7 @@ impl Database {
                     placeholders
                 );
                 let mut stmt = conn.prepare(&sql_project)?;
-                let params: Vec<&str> = conv_ids.iter().map(|s| *s).collect();
+                let params: Vec<&str> = conv_ids.to_vec();
                 let project_map: HashMap<String, Option<String>> = stmt
                     .query_map(rusqlite::params_from_iter(params.iter()), |row| {
                         Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
@@ -643,48 +687,40 @@ impl Database {
     /// Hybrid search using Reciprocal Rank Fusion
     ///
     /// # Arguments
-    /// * `query` - Search query text
-    /// * `embedding` - Query embedding vector
-    /// * `conversation_id` - Specific conversation to search
-    /// * `project_id` - Project to search
-    /// * `limit` - Maximum results to return
-    /// * `keyword_weight` - Weight for keyword search (BM25)
-    /// * `semantic_weight` - Weight for semantic search (vector)
-    /// * `exclude_ids` - Optional list of message IDs to exclude (e.g., current message)
-    pub fn search_hybrid(
-        &self,
-        query: &str,
-        embedding: &[f32],
-        conversation_id: Option<&str>,
-        project_id: Option<&str>,
-        limit: usize,
-        keyword_weight: f32,
-        semantic_weight: f32,
-        exclude_ids: Option<&[i64]>,
-    ) -> Result<Vec<SearchResult>> {
+    /// * `params` - Search parameters
+    pub fn search_hybrid(&self, params: &SearchParams<'_>) -> Result<Vec<SearchResult>> {
         // Get keyword results (more = better fusion)
-        let keyword_results = self.search_keyword(query, conversation_id, project_id, limit * 2)?;
+        let keyword_results = self.search_keyword(
+            params.query,
+            params.conversation_id,
+            params.project_id,
+            params.limit * 2,
+        )?;
 
         // Get semantic results (more = better fusion)
-        let semantic_results =
-            self.search_semantic(embedding, conversation_id, project_id, limit * 2)?;
+        let semantic_results = self.search_semantic(
+            params.embedding,
+            params.conversation_id,
+            params.project_id,
+            params.limit * 2,
+        )?;
 
         // Combine with RRF
         let mut results = reciprocal_rank_fusion(
             keyword_results,
             semantic_results,
-            keyword_weight,
-            semantic_weight,
-            limit * 2, // Get more results before filtering
+            params.keyword_weight,
+            params.semantic_weight,
+            params.limit * 2, // Get more results before filtering
         );
 
         // Filter out excluded IDs
-        if let Some(exclude) = exclude_ids {
+        if let Some(exclude) = params.exclude_ids {
             results.retain(|r| !exclude.contains(&r.message_id));
         }
 
         // Truncate to final limit
-        results.truncate(limit);
+        results.truncate(params.limit);
 
         Ok(results)
     }
@@ -820,7 +856,7 @@ impl Database {
                 })
             })?;
 
-            Ok(rows.next().transpose()?)
+            rows.next().transpose()
         })
     }
 
@@ -872,7 +908,7 @@ impl Database {
                 },
             )?;
 
-            Ok(rows.next().transpose()?)
+            rows.next().transpose()
         })
     }
 
@@ -958,8 +994,8 @@ impl Database {
 
             let mut stmt = conn.prepare(sql)?;
 
-            let rows = if let Some(pid) = project_id {
-                stmt.query_map(params![pid], |row| {
+            if let Some(pid) = project_id {
+                let rows = stmt.query_map(params![pid], |row| {
                     let created_at_ts: i64 = row.get(3)?;
                     let updated_at_ts: i64 = row.get(4)?;
                     let msg_count: i64 = row.get(5)?;
@@ -974,9 +1010,11 @@ impl Database {
                         updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
                             .unwrap_or_else(Utc::now),
                     })
-                })?.collect::<Result<Vec<_>>>()
+                })?;
+
+                rows.collect::<Result<Vec<_>>>()
             } else {
-                stmt.query_map([], |row| {
+                let rows = stmt.query_map([], |row| {
                     let created_at_ts: i64 = row.get(3)?;
                     let updated_at_ts: i64 = row.get(4)?;
                     let msg_count: i64 = row.get(5)?;
@@ -991,10 +1029,10 @@ impl Database {
                         updated_at: chrono::DateTime::from_timestamp(updated_at_ts, 0)
                             .unwrap_or_else(Utc::now),
                     })
-                })?.collect::<Result<Vec<_>>>()
-            };
+                })?;
 
-            rows
+                rows.collect::<Result<Vec<_>>>()
+            }
         })
     }
 
@@ -1005,15 +1043,7 @@ impl Database {
     #[allow(dead_code)]
     pub fn update_conversation_metadata(
         &self,
-        id: &str,
-        name: Option<&str>,
-        system_prompt: Option<&str>,
-        compacted_summary: Option<&str>,
-        compacted_range: Option<(usize, usize)>,
-        think: bool,
-        tools: bool,
-        tool_output_level: &str,
-        updated_at: DateTime<Utc>,
+        params: &ConversationMetadataParams<'_>,
     ) -> Result<()> {
         self.with_connection(|conn: &rusqlite::Connection| {
             conn.execute(
@@ -1029,16 +1059,16 @@ impl Database {
                     updated_at = ?9
                  WHERE id = ?10",
                 params![
-                    name,
-                    system_prompt,
-                    compacted_summary,
-                    compacted_range.map(|(s, _)| s as i64),
-                    compacted_range.map(|(_, e)| e as i64),
-                    think as i64,
-                    tools as i64,
-                    tool_output_level,
-                    updated_at.timestamp(),
-                    id,
+                    params.name,
+                    params.system_prompt,
+                    params.compacted_summary,
+                    params.compacted_range.map(|(s, _)| s as i64),
+                    params.compacted_range.map(|(_, e)| e as i64),
+                    params.think as i64,
+                    params.tools as i64,
+                    params.tool_output_level,
+                    params.updated_at.timestamp(),
+                    params.id,
                 ],
             )?;
             Ok(())
@@ -1672,17 +1702,17 @@ mod tests {
         .expect("Failed to insert conversation");
 
         // Update metadata
-        db.update_conversation_metadata(
-            "test-meta",
-            Some("Renamed Session"),
-            Some("You are helpful"),
-            Some("Summary of conversation"),
-            Some((5, 10)),
-            true,
-            false,
-            "full",
-            Utc::now(),
-        )
+        db.update_conversation_metadata(&ConversationMetadataParams {
+            id: "test-meta",
+            name: Some("Renamed Session"),
+            system_prompt: Some("You are helpful"),
+            compacted_summary: Some("Summary of conversation"),
+            compacted_range: Some((5, 10)),
+            think: true,
+            tools: false,
+            tool_output_level: "full",
+            updated_at: Utc::now(),
+        })
         .expect("Failed to update metadata");
 
         // Get metadata

@@ -182,6 +182,7 @@ impl Database {
 
     /// Load sqlite-vec extension globally (must be called before any connection)
     /// This is a one-time initialization for the process.
+    #[allow(clippy::missing_transmute_annotations)]
     pub fn init_sqlite_vec() {
         unsafe {
             rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
@@ -213,8 +214,7 @@ impl Database {
         F: FnOnce(&Connection) -> Result<T>,
     {
         let conn = self.conn.lock().map_err(|_| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
                 "Failed to acquire database lock",
             )))
         })?;
@@ -230,8 +230,7 @@ impl Database {
         F: FnOnce(&mut Connection) -> Result<T>,
     {
         let mut conn = self.conn.lock().map_err(|_| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
                 "Failed to acquire database lock",
             )))
         })?;

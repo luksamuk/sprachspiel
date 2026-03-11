@@ -7,8 +7,8 @@
 //! thread-local storage is unsafe in async contexts where tasks
 //! can move between threads after `await` points.
 
-use std::sync::Arc;
 use std::future::Future;
+use std::sync::Arc;
 
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
@@ -45,17 +45,16 @@ pub fn get_embedding() -> Option<Arc<EmbeddingClient>> {
 ///     coordinator.chat(messages).await
 /// }).await;
 /// ```
-pub async fn with_context<F, T>(
-    db: Arc<Database>,
-    embedding: Arc<EmbeddingClient>,
-    f: F,
-) -> T
+#[allow(clippy::redundant_async_block)]
+pub async fn with_context<F, T>(db: Arc<Database>, embedding: Arc<EmbeddingClient>, f: F) -> T
 where
     F: Future<Output = T>,
 {
-    REMEMBER_DB.scope(db, async move {
-        REMEMBER_EMBEDDING.scope(embedding, async move {
-            f.await
-        }).await
-    }).await
+    REMEMBER_DB
+        .scope(db, async move {
+            REMEMBER_EMBEDDING
+                .scope(embedding, async move { f.await })
+                .await
+        })
+        .await
 }

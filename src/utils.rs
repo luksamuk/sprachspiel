@@ -307,17 +307,17 @@ mod tests {
     fn test_normalize_input() {
         // Basic whitespace trimming
         assert_eq!(normalize_input("  hello  "), "hello");
-        
+
         // Case conversion
         assert_eq!(normalize_input("HeLLo WoRLD"), "hello world");
-        
+
         // Unicode preserved
         assert_eq!(normalize_input("  Pokémon  "), "pokémon");
         assert_eq!(normalize_input("中国对巴西"), "中国对巴西");
-        
+
         // Mixed ASCII and Unicode
         assert_eq!(normalize_input("  HeLLo中国  "), "hello中国");
-        
+
         // Empty and whitespace only
         assert_eq!(normalize_input(""), "");
         assert_eq!(normalize_input("   "), "");

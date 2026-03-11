@@ -19,7 +19,8 @@ BUILD_DIR = target/release
 # Feature flags
 FEATURE_POKEMON = --features pokemon-tools
 FEATURE_ALL = --features all-tools
-FEATURE_TERMUX = --features "weather-tools,file-tools,calc-tools,system-tools"
+FEATURE_ALL_NO_SANDBOX = --features all-tools-no-sandbox
+FEATURE_TERMUX = --features all-tools-no-sandbox
 
 # Cross-compilation targets
 TERMUX_TARGET = aarch64-linux-android
@@ -52,7 +53,7 @@ build:
 build-pokemon:
 	cargo build $(CARGO_FLAGS) $(FEATURE_POKEMON)
 
-# Build with all tools (weather, file, web-search, pokemon)
+# Build with all tools (includes sandbox on Linux)
 build-all-tools:
 	cargo build $(CARGO_FLAGS) $(FEATURE_ALL)
 
@@ -182,17 +183,17 @@ debug:
 # Requires: Docker or Podman running
 # See Cross.toml for configuration
 
-# Build for Termux (Android aarch64) - recommended features only
+# Build for Termux (Android aarch64) - no sandbox (Android provides isolation)
 termux:
 	@echo "Building for Termux (aarch64-linux-android)..."
 	@echo "Note: Requires 'cross' and Docker/Podman. Run: cargo install cross --git https://github.com/cross-rs/cross"
 	cross build --target $(TERMUX_TARGET) $(CARGO_FLAGS)
 	@echo "Binary: $(TERMUX_BUILD_DIR)/$(BINARY)"
 
-# Build for Termux with all tools
+# Build for Termux with all tools (no sandbox - Android provides isolation)
 termux-all-tools:
-	@echo "Building for Termux with all tools..."
-	cross build --target $(TERMUX_TARGET) $(CARGO_FLAGS) $(FEATURE_ALL)
+	@echo "Building for Termux with all tools (no sandbox)..."
+	cross build --target $(TERMUX_TARGET) $(CARGO_FLAGS) $(FEATURE_ALL_NO_SANDBOX)
 	@echo "Binary: $(TERMUX_BUILD_DIR)/$(BINARY)"
 
 # =============================================================================
@@ -306,7 +307,7 @@ help:
 	@echo "Build targets:"
 	@echo "  make build              - Build release binary (default: weather, file-tools)"
 	@echo "  make build-pokemon      - Build with Pokémon tools (adds 8 Pokémon tools)"
-	@echo "  make build-all-tools    - Build with all tools (weather, file, web-search, pokemon)"
+	@echo "  make build-all-tools    - Build with all tools + sandbox (Linux)"
 	@echo "  make debug              - Build debug version"
 	@echo ""
 	@echo "Installation targets:"
@@ -319,13 +320,12 @@ help:
 	@echo "  make uninstall          - Remove from PREFIX"
 	@echo ""
 	@echo "Termux/Android builds:"
-	@echo "  make termux             - Build for Termux (aarch64-linux-android)"
-	@echo "  make termux-all-tools   - Build for Termux with all tools"
+	@echo "  make termux             - Build for Termux (aarch64, no sandbox)"
+	@echo "  make termux-all-tools   - Build for Termux with all tools (no sandbox)"
 	@echo "  make tarball-linux      - Create Linux x86_64 tarball with install scripts"
-	@echo "  make tarball-linux-all-tools - Create Linux x86_64 tarball (all tools)"
+	@echo "  make tarball-linux-all-tools - Create Linux x86_64 tarball (all tools + sandbox)"
 	@echo "  make tarball-termux     - Create Termux tarball with install scripts"
-	@echo "  make tarball-termux-all-tools - Create Termux tarball (all tools)"
-	@echo "  make all-tarballs       - Create all distribution tarballs"
+	@echo "  make tarball-termux-all-tools - Create Termux tarball (all tools, no sandbox)"
 	@echo ""
 	@echo "Development targets:"
 	@echo "  make clean              - Clean build artifacts"

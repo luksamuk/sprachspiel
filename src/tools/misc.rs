@@ -18,12 +18,14 @@ use crate::utils::parse_bool;
 /// # Note
 /// This tool is primarily for debugging and testing tool calling behavior.
 #[ollama_rs::function]
-pub async fn test_tool(should_fail: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn test_tool(
+    should_fail: String,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call(
         "test_tool",
         &[("should_fail".to_string(), should_fail.clone())],
     );
-    
+
     // Always return Ok - the model sees the result and can react
     let result = if parse_bool(Some(&should_fail), false) {
         "Error: The tool execution has failed intentionally. This is a test error. \
@@ -32,7 +34,7 @@ pub async fn test_tool(should_fail: String) -> Result<String, Box<dyn std::error
     } else {
         "Success: Tool calling works correctly! The test passed."
     };
-    
+
     log_tool_result("test_tool", result);
     Ok(result.to_string())
 }

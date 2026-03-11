@@ -78,12 +78,23 @@ pub async fn recover_missing_embeddings(
 
         match embedding_client.embed(&msg.content).await {
             Ok(embedding) => {
-                if db.update_message_embedding(msg.message_id, &embedding, &msg.conversation_id, timestamp).is_ok() {
+                if db
+                    .update_message_embedding(
+                        msg.message_id,
+                        &embedding,
+                        &msg.conversation_id,
+                        timestamp,
+                    )
+                    .is_ok()
+                {
                     recovered += 1;
                 }
             }
             Err(e) => {
-                eprintln!("Warning: Failed to recover embedding for message {}: {}", msg.message_id, e);
+                eprintln!(
+                    "Warning: Failed to recover embedding for message {}: {}",
+                    msg.message_id, e
+                );
             }
         }
     }
@@ -92,12 +103,18 @@ pub async fn recover_missing_embeddings(
     for (chunk_id, content) in &chunks {
         match embedding_client.embed(content).await {
             Ok(embedding) => {
-                if db.update_chunk_embedding(*chunk_id, &embedding, conversation_id, Utc::now()).is_ok() {
+                if db
+                    .update_chunk_embedding(*chunk_id, &embedding, conversation_id, Utc::now())
+                    .is_ok()
+                {
                     recovered += 1;
                 }
             }
             Err(e) => {
-                eprintln!("Warning: Failed to recover embedding for chunk {}: {}", chunk_id, e);
+                eprintln!(
+                    "Warning: Failed to recover embedding for chunk {}: {}",
+                    chunk_id, e
+                );
             }
         }
     }

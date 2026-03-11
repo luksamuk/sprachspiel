@@ -11,8 +11,8 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::normalize_input;
-use once_cell::sync::Lazy;
 use ollama_rs::function;
+use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::sync::RwLock;
 
@@ -65,9 +65,9 @@ impl LedStatus {
 /// Get the LED endpoint, returning an error message if not configured
 fn get_endpoint() -> Result<String, String> {
     if let Ok(guard) = LED_ENDPOINT.read() {
-        guard
-            .clone()
-            .ok_or_else(|| "LED tools not configured. Add [led] ip = \"<IP>\" to config.toml".to_string())
+        guard.clone().ok_or_else(|| {
+            "LED tools not configured. Add [led] ip = \"<IP>\" to config.toml".to_string()
+        })
     } else {
         Err("LED configuration error".to_string())
     }
@@ -79,11 +79,21 @@ async fn led_request(endpoint: &str, path: &str) -> Result<LedStatus, String> {
     let client = reqwest::Client::new();
 
     let response = match client
-        .request(if path.starts_with("/led/on") || path.starts_with("/led/off") || path.starts_with("/led/toggle") || path.starts_with("/led/dim") || path.starts_with("/led/color") || path.starts_with("/led/program") || path.starts_with("/led/change") {
-            reqwest::Method::POST
-        } else {
-            reqwest::Method::GET
-        }, &url)
+        .request(
+            if path.starts_with("/led/on")
+                || path.starts_with("/led/off")
+                || path.starts_with("/led/toggle")
+                || path.starts_with("/led/dim")
+                || path.starts_with("/led/color")
+                || path.starts_with("/led/program")
+                || path.starts_with("/led/change")
+            {
+                reqwest::Method::POST
+            } else {
+                reqwest::Method::GET
+            },
+            &url,
+        )
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await
@@ -124,7 +134,9 @@ fn format_status(status: &LedStatus) -> String {
         status.program,
         status.dim,
         status.color,
-        r, g, b
+        r,
+        g,
+        b
     )
 }
 
@@ -275,10 +287,7 @@ pub async fn led_set_power(
         "off" => "/led/off",
         "toggle" => "/led/toggle",
         _ => {
-            let err = format!(
-                "Invalid action '{}'. Use 'on', 'off', or 'toggle'.",
-                action
-            );
+            let err = format!("Invalid action '{}'. Use 'on', 'off', or 'toggle'.", action);
             log_tool_result("led_set_power", &err);
             return Ok(err);
         }
@@ -321,7 +330,10 @@ pub async fn led_set_power(
 pub async fn led_set_program(
     program: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("led_set_program", &[("program".to_string(), program.clone())]);
+    log_tool_call(
+        "led_set_program",
+        &[("program".to_string(), program.clone())],
+    );
 
     let endpoint = match get_endpoint() {
         Ok(e) => e,

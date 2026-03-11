@@ -275,21 +275,27 @@ mod tests {
 
     #[test]
     fn test_recoverable_error_is_recoverable() {
-        assert!(RecoverableError::UnknownTool {
-            tool_name: "test".to_string(),
-            available_tools: vec![],
-        }
-        .is_recoverable());
+        assert!(
+            RecoverableError::UnknownTool {
+                tool_name: "test".to_string(),
+                available_tools: vec![],
+            }
+            .is_recoverable()
+        );
 
-        assert!(RecoverableError::NetworkError {
-            message: "test".to_string(),
-        }
-        .is_recoverable());
+        assert!(
+            RecoverableError::NetworkError {
+                message: "test".to_string(),
+            }
+            .is_recoverable()
+        );
 
-        assert!(!RecoverableError::OllamaError {
-            message: "test".to_string(),
-        }
-        .is_recoverable());
+        assert!(
+            !RecoverableError::OllamaError {
+                message: "test".to_string(),
+            }
+            .is_recoverable()
+        );
     }
 
     #[test]

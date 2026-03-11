@@ -262,21 +262,21 @@ run_command("pdfinfo document.pdf", null, null, null)
 ## Implementation Checklist
 
 - [x] Document design decisions
-- [ ] Add `landlock` dependency to Cargo.toml
-- [ ] Add `enable_sandbox` to ExternalToolsConfig
-- [ ] Parse `enable_sandbox` in config.rs
-- [ ] Implement new run_command signature
-- [ ] Implement pattern validation
-- [ ] Implement head/tail logic
-- [ ] Implement Landlock sandbox (Linux)
-- [ ] Implement sandbox warnings (non-Linux)
-- [ ] Remove automatic truncation from custom_coordinator.rs
-- [ ] Update EXTERNAL TOOLS prompt
-- [ ] Update FILE TOOLS prompt
-- [ ] Add unit tests
-- [ ] Manual testing
-- [ ] Update tools.toml template
-- [ ] Update IMPLEMENTATION.md
+- [x] Add `landlock` dependency to Cargo.toml (feature flag `sandbox`)
+- [x] Add `enable_sandbox` to ExternalToolsConfig
+- [x] Parse `enable_sandbox` in config.rs
+- [x] Implement new run_command signature
+- [x] Implement pattern validation
+- [x] Implement head/tail logic
+- [x] Implement Landlock sandbox (Linux)
+- [x] Implement sandbox warnings (non-Linux)
+- [x] Remove automatic truncation from custom_coordinator.rs
+- [x] Update EXTERNAL TOOLS prompt
+- [x] Update FILE TOOLS prompt
+- [x] Add unit tests (14 tests)
+- [x] Update tools.toml template with security documentation
+- [ ] Manual testing with --debug
+- [x] Update IMPLEMENTATION.md
 
 ## References
 

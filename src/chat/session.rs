@@ -193,7 +193,7 @@ impl ChatSession {
         let meta = db.get_conversation_metadata(conversation_id)?;
         let messages = db.get_conversation_messages(conversation_id, None)?;
         let todo_rows = db.get_todos(conversation_id)?;
-        
+
         // Convert database rows to session structures
         let saved_messages: Vec<SavedMessage> = messages
             .into_iter()
@@ -222,9 +222,7 @@ impl ChatSession {
             messages: saved_messages,
             compacted_summary: meta.compacted_summary,
             compacted_range: meta.compacted_range,
-            messages_sent_to_llm: meta.compacted_range
-                .map(|(_, end)| end)
-                .unwrap_or(0),
+            messages_sent_to_llm: meta.compacted_range.map(|(_, end)| end).unwrap_or(0),
             created_at: meta.created_at,
             updated_at: meta.updated_at,
             anonymous: false,
@@ -240,7 +238,7 @@ impl ChatSession {
     }
 
     /// Save session metadata to SQLite
-    /// 
+    ///
     /// Note: Messages are already saved to SQLite by add_user_message() and
     /// add_assistant_message(). This only saves session metadata and todos.
     pub fn save_sqlite(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -248,21 +246,20 @@ impl ChatSession {
             return Ok(());
         }
 
-        let db = self.db.as_ref()
-            .ok_or("No database attached to session")?;
+        let db = self.db.as_ref().ok_or("No database attached to session")?;
 
         // Update conversation metadata
-        db.update_conversation_metadata(
-            &self.id,
-            self.name.as_deref(),
-            self.system_prompt.as_deref(),
-            self.compacted_summary.as_deref(),
-            self.compacted_range,
-            self.think,
-            self.tools,
-            &self.tool_output_level.to_string(),
-            self.updated_at,
-        )?;
+        db.update_conversation_metadata(&crate::db::ConversationMetadataParams {
+            id: &self.id,
+            name: self.name.as_deref(),
+            system_prompt: self.system_prompt.as_deref(),
+            compacted_summary: self.compacted_summary.as_deref(),
+            compacted_range: self.compacted_range,
+            think: self.think,
+            tools: self.tools,
+            tool_output_level: &self.tool_output_level.to_string(),
+            updated_at: self.updated_at,
+        })?;
 
         // Save todos
         let todo_rows = self.todos.to_rows();
@@ -272,12 +269,12 @@ impl ChatSession {
     }
 
     /// Add a user message to the session
-    /// 
+    ///
     /// If database is attached, saves to SQLite immediately and generates
     /// embedding asynchronously (fire-and-forget).
     pub fn add_user_message(&mut self, content: String) {
         let now = Utc::now();
-        
+
         // Add to memory (immediate)
         self.messages.push(SavedMessage {
             role: MessageRole::User,
@@ -286,7 +283,7 @@ impl ChatSession {
             ..Default::default()
         });
         self.updated_at = now;
-        
+
         // Save to SQLite if database is attached (immediate)
         if !self.anonymous
             && let Some(ref db) = self.db
@@ -337,20 +334,14 @@ impl ChatSession {
                                 for (chunk_id, content) in chunk_data {
                                     if let Ok(embedding) = client.embed(&content).await {
                                         let _ = db.update_chunk_embedding(
-                                            chunk_id,
-                                            &embedding,
-                                            &conv_id,
-                                            timestamp,
+                                            chunk_id, &embedding, &conv_id, timestamp,
                                         );
                                     }
                                 }
                             } else {
                                 if let Ok(embedding) = client.embed(&content).await {
                                     let _ = db.update_message_embedding(
-                                        message_id,
-                                        &embedding,
-                                        &conv_id,
-                                        timestamp,
+                                        message_id, &embedding, &conv_id, timestamp,
                                     );
                                 }
                             }
@@ -365,22 +356,21 @@ impl ChatSession {
     }
 
     /// Add an assistant message to the session
-    /// 
+    ///
     /// If database is attached, saves to SQLite immediately.
     /// Applies chunking for long messages (>1024 chars).
     pub fn add_assistant_message(&mut self, content: String, prompt_tokens: Option<u64>) {
         let now = Utc::now();
-        
+
         // Add to memory (immediate)
         self.messages.push(SavedMessage {
             role: MessageRole::Assistant,
             content: content.clone(),
             timestamp: now,
             prompt_tokens,
-            ..Default::default()
         });
         self.updated_at = now;
-        
+
         // Save to SQLite if database is attached (immediate)
         if !self.anonymous
             && let Some(ref db) = self.db
@@ -391,12 +381,12 @@ impl ChatSession {
             match db.insert_message(&self.id, ROLE_ASSISTANT, &content, now) {
                 Ok(message_id) => {
                     // Save prompt_tokens if available
-                    if let Some(tokens) = prompt_tokens {
-                        if let Err(e) = db.update_message_prompt_tokens(message_id, tokens) {
-                            eprintln!("Warning: Failed to save prompt_tokens: {}", e);
-                        }
+                    if let Some(tokens) = prompt_tokens
+                        && let Err(e) = db.update_message_prompt_tokens(message_id, tokens)
+                    {
+                        eprintln!("Warning: Failed to save prompt_tokens: {}", e);
                     }
-                    
+
                     // Insert chunks synchronously (guaranteed persistence)
                     // Generate embeddings asynchronously (can be recovered on restart)
                     if let Some(ref client) = self.embedding_client {
@@ -438,20 +428,14 @@ impl ChatSession {
                                 for (chunk_id, content) in chunk_data {
                                     if let Ok(embedding) = client.embed(&content).await {
                                         let _ = db.update_chunk_embedding(
-                                            chunk_id,
-                                            &embedding,
-                                            &conv_id,
-                                            timestamp,
+                                            chunk_id, &embedding, &conv_id, timestamp,
                                         );
                                     }
                                 }
                             } else {
                                 if let Ok(embedding) = client.embed(&content).await {
                                     let _ = db.update_message_embedding(
-                                        message_id,
-                                        &embedding,
-                                        &conv_id,
-                                        timestamp,
+                                        message_id, &embedding, &conv_id, timestamp,
                                     );
                                 }
                             }
@@ -470,7 +454,7 @@ impl ChatSession {
         self.db = Some(db);
         self.embedding_client = Some(embedding_client);
     }
-    
+
     /// Ensure conversation exists in database (call before first message insert)
     pub fn ensure_conversation_exists(&self) {
         if self.anonymous {
@@ -552,7 +536,7 @@ impl ChatSession {
     pub fn remove_last_assistant_messages_with_content(&mut self) -> (usize, Vec<String>) {
         let mut removed = 0;
         let mut contents = Vec::new();
-        
+
         while let Some(last) = self.messages.last() {
             if last.role == MessageRole::Assistant {
                 contents.push(last.content.clone());
@@ -562,16 +546,16 @@ impl ChatSession {
                 break;
             }
         }
-        
+
         // Also remove the preceding user message
-        if let Some(last) = self.messages.last() {
-            if last.role == MessageRole::User {
-                contents.push(last.content.clone());
-                self.messages.pop();
-                removed += 1;
-            }
+        if let Some(last) = self.messages.last()
+            && last.role == MessageRole::User
+        {
+            contents.push(last.content.clone());
+            self.messages.pop();
+            removed += 1;
         }
-        
+
         if removed > 0 {
             self.updated_at = Utc::now();
         }
@@ -601,14 +585,14 @@ impl ChatSession {
             self.compacted_range = Some((0, self.messages.len()));
             self.messages_sent_to_llm = self.messages.len();
         }
-        
+
         // Clear prompt_tokens from all messages since they no longer reflect
         // the actual context size after compaction. The next message sent to
         // the LLM will have fresh prompt_tokens reflecting the reduced context.
         for msg in &mut self.messages {
             msg.prompt_tokens = None;
         }
-        
+
         self.updated_at = Utc::now();
     }
 
@@ -624,13 +608,13 @@ impl ChatSession {
     }
 
     /// Get real token count from the most recent prompt evaluation
-    /// 
+    ///
     /// IMPORTANT: Ollama's prompt_eval_count is CUMULATIVE - it includes:
     /// - System prompt
     /// - Tool definitions (if any)
     /// - ALL conversation history
     /// - Current user message
-    /// 
+    ///
     /// We return the most recent value as the total prompt size.
     /// For context display purposes, callers should NOT add system + tools again.
     pub fn history_real_tokens(&self) -> usize {
@@ -642,7 +626,7 @@ impl ChatSession {
             .rev()
             .filter_map(|m| m.prompt_tokens)
             .next();
-        
+
         match last_prompt_tokens {
             Some(tokens) => tokens as usize,
             None => {
@@ -652,9 +636,11 @@ impl ChatSession {
                     .messages
                     .iter()
                     .skip(self.messages_sent_to_llm)
-                    .map(|m| crate::tokens::estimate_tokens(&m.content) + crate::tokens::MESSAGE_OVERHEAD)
+                    .map(|m| {
+                        crate::tokens::estimate_tokens(&m.content) + crate::tokens::MESSAGE_OVERHEAD
+                    })
                     .sum();
-                
+
                 // Add estimated tokens from compacted summary if present
                 let summary_tokens = self
                     .compacted_summary
@@ -664,7 +650,7 @@ impl ChatSession {
                         (word_count as f32 * 1.3).ceil() as usize + crate::tokens::MESSAGE_OVERHEAD
                     })
                     .unwrap_or(0);
-                
+
                 messages_tokens + summary_tokens
             }
         }
@@ -745,11 +731,11 @@ impl Default for ChatSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_clear_messages_preserves_summary() {
         let mut session = ChatSession::new("test-model".into(), None, false);
-        
+
         // Setup
         session.messages.push(SavedMessage {
             role: MessageRole::User,
@@ -758,24 +744,24 @@ mod tests {
             ..Default::default()
         });
         session.set_compacted_summary_with_range("Summary of conversation".into(), Some((0, 1)));
-        
+
         // Verify setup
         assert_eq!(session.messages.len(), 1);
         assert!(session.compacted_summary.is_some());
-        
+
         // Clear
         session.clear_messages();
-        
+
         // Verify
-        assert!(session.messages.is_empty());  // Messages cleared
-        assert!(session.compacted_summary.is_some());  // Summary PRESERVED!
+        assert!(session.messages.is_empty()); // Messages cleared
+        assert!(session.compacted_summary.is_some()); // Summary PRESERVED!
         assert_eq!(session.messages_sent_to_llm, 0);
     }
-    
+
     #[test]
     fn test_forget_session_clears_everything() {
         let mut session = ChatSession::new("test-model".into(), None, false);
-        
+
         // Setup
         session.messages.push(SavedMessage {
             role: MessageRole::User,
@@ -784,25 +770,25 @@ mod tests {
             ..Default::default()
         });
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
-        
+
         // Verify setup
         assert_eq!(session.messages.len(), 1);
         assert!(session.compacted_summary.is_some());
-        
+
         // Forget
         session.forget_session();
-        
+
         // Verify
-        assert!(session.messages.is_empty());  // Messages cleared
-        assert!(session.compacted_summary.is_none());  // Summary CLEARED!
-        assert!(session.compacted_range.is_none());  // Range CLEARED!
+        assert!(session.messages.is_empty()); // Messages cleared
+        assert!(session.compacted_summary.is_none()); // Summary CLEARED!
+        assert!(session.compacted_range.is_none()); // Range CLEARED!
         assert_eq!(session.messages_sent_to_llm, 0);
     }
-    
+
     #[test]
     fn test_clear_vs_forget_difference() {
         let mut session = ChatSession::new("test-model".into(), None, false);
-        
+
         // Add messages and summary
         session.messages.push(SavedMessage {
             role: MessageRole::User,
@@ -811,12 +797,12 @@ mod tests {
             ..Default::default()
         });
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 1)));
-        
+
         // Test clear_messages preserves summary
         session.clear_messages();
         assert!(session.messages.is_empty());
         assert!(session.compacted_summary.is_some());
-        
+
         // Add messages again
         session.messages.push(SavedMessage {
             role: MessageRole::User,
@@ -824,18 +810,18 @@ mod tests {
             timestamp: Utc::now(),
             ..Default::default()
         });
-        
+
         // Test forget_session clears everything
         session.forget_session();
         assert!(session.messages.is_empty());
         assert!(session.compacted_summary.is_none());
         assert!(session.compacted_range.is_none());
     }
-    
+
     #[test]
     fn test_history_real_tokens_returns_cumulative() {
         let mut session = ChatSession::new("test-model".into(), None, false);
-        
+
         // Add messages with cumulative prompt_tokens
         // These represent Ollama's prompt_eval_count which IS cumulative
         for i in 0..5 {
@@ -849,16 +835,16 @@ mod tests {
                 ..Default::default()
             });
         }
-        
+
         // history_real_tokens returns the LAST (most recent) cumulative value
         let tokens = session.history_real_tokens();
         assert_eq!(tokens, 500); // Last message's prompt_tokens
     }
-    
+
     #[test]
     fn test_history_real_tokens_fallback_estimation() {
         let mut session = ChatSession::new("test-model".into(), None, false);
-        
+
         // Add messages WITHOUT prompt_tokens (fallback to estimation)
         for i in 0..5 {
             session.messages.push(SavedMessage {
@@ -869,19 +855,22 @@ mod tests {
                 ..Default::default()
             });
         }
-        
+
         // Should estimate from message content
         let tokens = session.history_real_tokens();
         // Each "Message N " is ~2 words, so ~3 tokens each + 4 overhead = ~7 tokens each
         // 5 messages * 7 tokens = 35 tokens (rough estimate)
         assert!(tokens > 0, "Should have some estimated tokens");
-        assert!(tokens < 100, "Should be reasonable estimate for short messages");
+        assert!(
+            tokens < 100,
+            "Should be reasonable estimate for short messages"
+        );
     }
-    
+
     #[test]
     fn test_history_real_tokens_with_compaction() {
         let mut session = ChatSession::new("test-model".into(), None, false);
-        
+
         // Add messages with cumulative prompt_tokens
         for i in 0..5 {
             session.messages.push(SavedMessage {
@@ -892,23 +881,27 @@ mod tests {
                 ..Default::default()
             });
         }
-        
+
         // Set compaction - this clears prompt_tokens
         session.set_compacted_summary_with_range("Summary".into(), Some((2, 3)));
-        
+
         // After compaction, prompt_tokens are cleared, so fallback estimation is used
         // messages_sent_to_llm = 3, so messages[3..] are counted (messages 3 and 4)
         let tokens = session.history_real_tokens();
-        
+
         // Fallback: estimate from messages_sent_to_llm onwards + summary
         // Message 3 and 4 have ~7-8 tokens each + 2*MESSAGE_OVERHEAD + summary tokens
-        assert!(tokens < 100, "Should use fallback estimation after compaction, got {}", tokens);
+        assert!(
+            tokens < 100,
+            "Should use fallback estimation after compaction, got {}",
+            tokens
+        );
     }
-    
+
     #[test]
     fn test_get_messages_for_llm_respects_compaction() {
         let mut session = ChatSession::new("test-model".into(), None, false);
-        
+
         // Add 5 messages
         for i in 0..5 {
             session.messages.push(SavedMessage {
@@ -918,22 +911,26 @@ mod tests {
                 ..Default::default()
             });
         }
-        
+
         // Compact first 3 messages
         session.set_compacted_summary_with_range("Summary".into(), Some((0, 3)));
-        
+
         // get_messages_for_llm should return system + summary + messages 3,4
         let messages = session.get_messages_for_llm("You are helpful.");
-        
+
         // 1 system + 1 summary + 2 messages = 4
         assert_eq!(messages.len(), 4);
-        
+
         // First is system
         assert!(messages[0].content.starts_with("You are helpful."));
-        
+
         // Second is summary
-        assert!(messages[1].content.contains("Previous conversation summary"));
-        
+        assert!(
+            messages[1]
+                .content
+                .contains("Previous conversation summary")
+        );
+
         // Remaining are messages
         assert_eq!(messages[2].content, "Message 3");
         assert_eq!(messages[3].content, "Message 4");
@@ -943,19 +940,19 @@ mod tests {
     fn test_to_rows_and_from_rows() {
         use crate::chat::todo_state::TaskStatus;
         use crate::db::TodoRow;
-        
+
         let mut todos = super::TodoState::new();
         todos.add("Task 1".to_string());
         todos.add("Task 2".to_string());
         todos.update_status(1, TaskStatus::Done).unwrap();
-        
+
         let rows = todos.to_rows();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].description, "Task 1");
         assert_eq!(rows[0].status, "done");
         assert_eq!(rows[1].description, "Task 2");
         assert_eq!(rows[1].status, "pending");
-        
+
         // Convert back
         let restored = super::TodoState::from_rows(&rows);
         assert_eq!(restored.tasks.len(), 2);

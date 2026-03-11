@@ -1,11 +1,14 @@
 //! Tool to execute external CLI commands.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use crate::external::{load_tools_config, CommandOutput, ExternalToolsConfig, Platform};
+use crate::external::{CommandOutput, ExternalToolsConfig, Platform, load_tools_config};
 use ollama_rs::function;
+use std::process::Stdio;
+use tokio::process::Command;
+use tokio::time::{Duration, timeout};
 
 /// Get the external tools configuration (cached).
-fn get_config() -> &'static ExternalToolsConfig {
+pub fn get_config() -> &'static ExternalToolsConfig {
     static CONFIG: std::sync::OnceLock<ExternalToolsConfig> = std::sync::OnceLock::new();
     CONFIG.get_or_init(load_tools_config)
 }
@@ -16,6 +19,15 @@ fn get_platform() -> &'static Platform {
     PLATFORM.get_or_init(Platform::detect)
 }
 
+/// Log a debug message with format (only in debug mode).
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if crate::debug_tools::is_debug_enabled() {
+            eprintln!("[DEBUG] {}", format!($($arg)*));
+        }
+    };
+}
+
 /// Execute an external command and return the output.
 ///
 /// SECURITY: Only whitelisted commands in tools.toml can be executed.
@@ -24,9 +36,9 @@ fn get_platform() -> &'static Platform {
 ///
 /// # Arguments
 /// * `command_line` - Command to execute (e.g., "pdftotext -f 1 -l 5 doc.pdf -")
-/// * `head` - Return only first N lines (null = no limit)
-/// * `tail` - Return only last N lines (null = no limit)
-/// * `timeout_seconds` - Optional timeout in seconds (default: 30)
+/// * `head` - Return only first N lines (null = no limit). Accepts string or number.
+/// * `tail` - Return only last N lines (null = no limit). Accepts string or number.
+/// * `timeout_seconds` - Optional timeout in seconds (default: from config). Accepts string or number.
 ///
 /// # Controlling Output Size
 /// Use head/tail to limit output instead of pipes:
@@ -44,40 +56,45 @@ fn get_platform() -> &'static Platform {
 ///
 /// # Examples
 /// ```ignore
-/// // First 100 lines
-/// run_command("pdftotext doc.pdf -", 100, null, null).await
+/// // First 100 lines (LLM can pass as string or null)
+/// run_command("pdftotext doc.pdf -", "100", null, null).await
 ///
 /// // Last 50 lines (conclusion)
-/// run_command("pdftotext doc.pdf -", null, 50, null).await
+/// run_command("pdftotext doc.pdf -", null, "50", null).await
 ///
 /// // Specific pages
 /// run_command("pdftotext -f 1 -l 5 doc.pdf -", null, null, null).await
 ///
-/// // OCR with language
-/// run_command("tesseract image.png stdout -l jpn", null, null, 120).await
+/// // OCR with language and 2 minute timeout
+/// run_command("tesseract image.png stdout -l jpn", null, null, "120").await
 /// ```
 #[function]
 pub async fn run_command(
     command_line: String,
-    head: Option<usize>,
-    tail: Option<usize>,
-    timeout_seconds: Option<u32>,
+    head: Option<String>,
+    tail: Option<String>,
+    timeout_seconds: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Parse optional numeric parameters (accepts strings from LLM or null)
+    let head_val: Option<usize> = head.as_deref().and_then(|h| h.parse().ok());
+    let tail_val: Option<usize> = tail.as_deref().and_then(|t| t.parse().ok());
+    let timeout_val: Option<u32> = timeout_seconds.as_deref().and_then(|t| t.parse().ok());
+
     log_tool_call(
         "run_command",
         &[
             ("command_line".to_string(), command_line.clone()),
             (
                 "head".to_string(),
-                head.map(|h| h.to_string()).unwrap_or_default(),
+                head_val.map(|h| h.to_string()).unwrap_or_default(),
             ),
             (
                 "tail".to_string(),
-                tail.map(|t| t.to_string()).unwrap_or_default(),
+                tail_val.map(|t| t.to_string()).unwrap_or_default(),
             ),
             (
                 "timeout_seconds".to_string(),
-                timeout_seconds.map(|t| t.to_string()).unwrap_or_default(),
+                timeout_val.map(|t| t.to_string()).unwrap_or_default(),
             ),
         ],
     );
@@ -113,52 +130,64 @@ pub async fn run_command(
 
     // Check if tool is enabled
     if !tool_config.enabled {
+        // Generic message - don't reveal that it's just a config flag
         let result = format!(
-            "Error: '{}' is disabled in tools.toml. Enable it to use this command.",
+            "Error: '{}' is not available. Only tools configured in tools.toml can be executed.",
             command
         );
         log_tool_result("run_command", &result);
         return Ok(result);
     }
 
-    // Check if binary exists
+    // Check if binary exists and get its path
     let binary = &tool_config.binary;
-    if which::which(binary).is_err() {
-        let hint = tool_config.install_hints.get(platform);
-        let result = if let Some(hint) = hint {
-            format!(
-                "Error: '{}' is not installed. Install with: {}",
-                command, hint
-            )
-        } else {
-            format!(
-                "Error: '{}' is not installed. Install with your package manager.",
-                command
-            )
-        };
-        log_tool_result("run_command", &result);
-        return Ok(result);
-    }
+    let binary_path = match which::which(binary) {
+        Ok(path) => {
+            debug_log!("Found binary '{}' at: {:?}", binary, path);
+            Some(path)
+        }
+        Err(_) => {
+            let hint = tool_config.install_hints.get(platform);
+            let result = if let Some(hint) = hint {
+                format!(
+                    "Error: '{}' is not installed. Install with: {}",
+                    command, hint
+                )
+            } else {
+                format!(
+                    "Error: '{}' is not installed. Install with your package manager.",
+                    command
+                )
+            };
+            log_tool_result("run_command", &result);
+            return Ok(result);
+        }
+    };
 
     // Apply sandbox (Linux only, if enabled)
-    if let Err(e) = apply_sandbox_if_enabled(config) {
+    if let Err(e) = apply_sandbox_if_enabled(config, binary_path.as_deref()) {
         log_tool_result("run_command", &e);
         return Ok(e);
     }
 
     // Determine timeout
-    let _timeout = timeout_seconds
-        .map(|t| std::time::Duration::from_secs(t as u64))
+    let timeout_duration = timeout_val
+        .map(|t| Duration::from_secs(t as u64))
         .unwrap_or(tool_config.timeout);
 
-    // Execute command
-    let output_result = execute_command(binary, &args);
+    debug_log!(
+        "Command '{}' with timeout {:?}s",
+        command,
+        timeout_duration.as_secs()
+    );
+
+    let output_result = execute_command(binary, &args, timeout_duration, &command_line).await;
 
     let result = match output_result {
         Ok(output) => {
             if output.success {
                 // Success - apply head/tail and return
-                apply_head_tail(output.stdout, head, tail)
+                apply_head_tail(output.stdout, head_val, tail_val)
             } else {
                 // Command failed - return stderr
                 if output.stderr.is_empty() {
@@ -238,18 +267,16 @@ fn apply_head_tail(output: String, head: Option<usize>, tail: Option<usize>) -> 
         (Some(h), None) if h < total_lines => {
             lines.iter().take(h).cloned().collect::<Vec<_>>().join("\n")
         }
-        (None, Some(t)) if t < total_lines => {
-            lines
-                .iter()
-                .rev()
-                .take(t)
-                .cloned()
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
+        (None, Some(t)) if t < total_lines => lines
+            .iter()
+            .rev()
+            .take(t)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n"),
         (Some(h), Some(t)) if h + t < total_lines => {
             let head_part: Vec<&str> = lines.iter().take(h).cloned().collect();
             let tail_part: Vec<&str> = lines
@@ -263,7 +290,9 @@ fn apply_head_tail(output: String, head: Option<usize>, tail: Option<usize>) -> 
                 .collect();
 
             let mut result = head_part.join("\n");
-            result.push_str("\n\n... [output truncated, use specific page range for full content] ...\n\n");
+            result.push_str(
+                "\n\n... [output truncated, use specific page range for full content] ...\n\n",
+            );
             result.push_str(&tail_part.join("\n"));
             result
         }
@@ -272,25 +301,68 @@ fn apply_head_tail(output: String, head: Option<usize>, tail: Option<usize>) -> 
 }
 
 /// Apply Landlock sandbox if enabled (Linux only).
+///
+/// Design based on landlock sandboxer example:
+/// https://github.com/landlock-lsm/rust-landlock/blob/master/examples/sandboxer.rs
+///
+/// Key insight: from_read(abi) includes Execute, ReadFile, ReadDir
+/// So RO paths with from_read() can execute binaries and read files.
 #[cfg(all(feature = "sandbox", target_os = "linux"))]
-fn apply_sandbox_if_enabled(config: &ExternalToolsConfig) -> Result<(), String> {
+fn apply_sandbox_if_enabled(
+    config: &ExternalToolsConfig,
+    _binary_path: Option<&std::path::Path>,
+) -> Result<(), String> {
     if !config.enable_sandbox {
+        debug_log!("Sandbox disabled in config");
         return Ok(());
     }
 
-    use landlock::{AccessFs, PathBeneath, Ruleset, ABI};
+    use landlock::{
+        ABI, Access, AccessFs, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus,
+        path_beneath_rules,
+    };
+
+    debug_log!("Applying Landlock sandbox...");
+
+    // CWD: read/write
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string());
+
+    debug_log!("CWD: {}", cwd);
+
+    // Get ask-ai config directory (read-only)
+    let config_dir = get_config_dir();
+    debug_log!("Config dir: {:?}", config_dir);
+
+    // Get ask-ai data directory (read/write)
+    let data_dir = get_data_dir();
+    debug_log!("Data dir: {:?}", data_dir);
 
     let abi = ABI::V1;
 
+    // System read-only paths - using from_read(abi) which includes:
+    // Execute, ReadFile, ReadDir
+    let ro_paths: Vec<&str> = ["/usr", "/lib", "/lib64", "/etc", "/proc"]
+        .iter()
+        .filter(|p| std::path::Path::new(p).exists())
+        .copied()
+        .collect();
+
+    debug_log!("System read-only paths: {:?}", ro_paths);
+
     // Create ruleset
-    let ruleset = match Ruleset::new()
+    let ruleset_result = Ruleset::new()
         .handle_access(AccessFs::from_all(abi))
         .map_err(|e| format!("Failed to create Landlock ruleset: {}", e))?
-        .create()
-    {
-        Ok(rs) => rs,
+        .create();
+
+    let ruleset_created = match ruleset_result {
+        Ok(rs) => {
+            debug_log!("Ruleset created successfully");
+            rs
+        }
         Err(e) => {
-            // Landlock not supported (kernel too old)
             eprintln!(
                 "Warning: Landlock sandbox not supported (kernel may be too old): {}",
                 e
@@ -300,124 +372,228 @@ fn apply_sandbox_if_enabled(config: &ExternalToolsConfig) -> Result<(), String> 
         }
     };
 
-    // Add rules
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let usr = std::path::PathBuf::from("/usr");
-    let lib = std::path::PathBuf::from("/lib");
-    let lib64 = std::path::PathBuf::from("/lib64");
-    let etc = std::path::PathBuf::from("/etc");
-    let tmp = std::path::PathBuf::from("/tmp");
+    // Add CWD with full access (read/write)
+    debug_log!("Adding CWD rule (from_all)...");
+    let mut ruleset_created = ruleset_created
+        .add_rules(path_beneath_rules([&cwd], AccessFs::from_all(abi)))
+        .map_err(|e| format!("Failed to add CWD rule: {}", e))?;
 
-    // CWD: read/write
-    if let Err(e) = ruleset.add_rule(PathBeneath::new(
-        cwd,
-        AccessFs::ReadFile | AccessFs::WriteFile | AccessFs::ReadDir | AccessFs::MakeDir
-            | AccessFs::MakeReg,
-    )) {
-        eprintln!("Warning: Failed to add CWD rule to sandbox: {}", e);
+    // Add ask-ai data directory with full access (for database/conversations)
+    if let Some(ref data) = data_dir {
+        debug_log!("Adding data dir rule (from_all): {:?}", data);
+        ruleset_created = ruleset_created
+            .add_rules(path_beneath_rules([data], AccessFs::from_all(abi)))
+            .map_err(|e| format!("Failed to add data dir rule: {}", e))?;
     }
 
-    // /usr: read-only (binaries)
-    if usr.exists() {
-        if let Err(e) =
-            ruleset.add_rule(PathBeneath::new(&usr, AccessFs::ReadFile | AccessFs::ReadDir))
-        {
-            eprintln!("Warning: Failed to add /usr rule to sandbox: {}", e);
-        }
+    // Add system read-only paths (from_read includes Execute!)
+    if !ro_paths.is_empty() {
+        debug_log!("Adding system read-only paths (from_read)...");
+        ruleset_created = ruleset_created
+            .add_rules(path_beneath_rules(ro_paths, AccessFs::from_read(abi)))
+            .map_err(|e| format!("Failed to add read-only rules: {}", e))?;
     }
 
-    // /lib: read-only (libraries)
-    if lib.exists() {
-        if let Err(e) =
-            ruleset.add_rule(PathBeneath::new(&lib, AccessFs::ReadFile | AccessFs::ReadDir))
-        {
-            eprintln!("Warning: Failed to add /lib rule to sandbox: {}", e);
-        }
+    // Add ask-ai config directory (read-only, for tools.toml, config.toml)
+    if let Some(ref config_path) = config_dir {
+        debug_log!("Adding config dir rule (from_read): {:?}", config_path);
+        ruleset_created = ruleset_created
+            .add_rules(path_beneath_rules([config_path], AccessFs::from_read(abi)))
+            .map_err(|e| format!("Failed to add config dir rule: {}", e))?;
     }
 
-    // /lib64: read-only (libraries on 64-bit systems)
-    if lib64.exists() {
-        if let Err(e) =
-            ruleset.add_rule(PathBeneath::new(&lib64, AccessFs::ReadFile | AccessFs::ReadDir))
-        {
-            eprintln!("Warning: Failed to add /lib64 rule to sandbox: {}", e);
-        }
+    // Add /tmp with full access
+    if std::path::Path::new("/tmp").exists() {
+        debug_log!("Adding /tmp rule (from_all)...");
+        ruleset_created = ruleset_created
+            .add_rules(path_beneath_rules(["/tmp"], AccessFs::from_all(abi)))
+            .map_err(|e| format!("Failed to add /tmp rule: {}", e))?;
     }
 
-    // /etc: read-only (config)
-    if etc.exists() {
-        if let Err(e) =
-            ruleset.add_rule(PathBeneath::new(&etc, AccessFs::ReadFile | AccessFs::ReadDir))
-        {
-            eprintln!("Warning: Failed to add /etc rule to sandbox: {}", e);
-        }
+    // Add /dev/null for output redirection (read/write)
+    if std::path::Path::new("/dev/null").exists() {
+        debug_log!("Adding /dev/null rule (from_all)...");
+        ruleset_created = ruleset_created
+            .add_rules(path_beneath_rules(["/dev/null"], AccessFs::from_all(abi)))
+            .map_err(|e| format!("Failed to add /dev/null rule: {}", e))?;
     }
 
-    // /tmp: read/write
-    if tmp.exists() {
-        if let Err(e) = ruleset.add_rule(PathBeneath::new(
-            &tmp,
-            AccessFs::ReadFile | AccessFs::WriteFile | AccessFs::ReadDir,
-        )) {
-            eprintln!("Warning: Failed to add /tmp rule to sandbox: {}", e);
-        }
-    }
-
-    // Restrict self
-    let status = ruleset
+    // Apply restrictions
+    debug_log!("Calling restrict_self()...");
+    let status = ruleset_created
         .restrict_self()
         .map_err(|e| format!("Failed to apply Landlock sandbox: {}", e))?;
 
-    if !status.ruleset.is_fully_enforced() {
-        eprintln!("Warning: Landlock sandbox not fully enforced (kernel may not support all features)");
+    debug_log!("Sandbox status: {:?}", status.ruleset);
+
+    if status.ruleset != RulesetStatus::FullyEnforced {
+        eprintln!(
+            "Warning: Landlock sandbox not fully enforced (kernel may not support all features)"
+        );
     }
 
     Ok(())
+}
+
+/// Get the ask-ai config directory path.
+/// Returns None if the directory doesn't exist.
+#[cfg(all(feature = "sandbox", target_os = "linux"))]
+fn get_config_dir() -> Option<String> {
+    // Check XDG_CONFIG_HOME first
+    if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
+        let path = std::path::PathBuf::from(xdg_config).join("ask-ai");
+        if path.exists() {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+
+    // Fall back to ~/.config/ask-ai
+    if let Some(home) = dirs::home_dir() {
+        let path = home.join(".config").join("ask-ai");
+        if path.exists() {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+/// Get the ask-ai data directory path.
+/// Returns None if the directory doesn't exist.
+#[cfg(all(feature = "sandbox", target_os = "linux"))]
+fn get_data_dir() -> Option<String> {
+    // Check XDG_DATA_HOME first
+    if let Ok(xdg_data) = std::env::var("XDG_DATA_HOME") {
+        let path = std::path::PathBuf::from(xdg_data).join("ask-ai");
+        if path.exists() {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+
+    // Fall back to ~/.local/share/ask-ai
+    if let Some(home) = dirs::home_dir() {
+        let path = home.join(".local").join("share").join("ask-ai");
+        if path.exists() {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+
+    None
 }
 
 /// Apply sandbox if enabled (non-Linux platforms).
 #[cfg(not(all(feature = "sandbox", target_os = "linux")))]
-fn apply_sandbox_if_enabled(config: &ExternalToolsConfig) -> Result<(), String> {
-    if config.enable_sandbox {
-        #[cfg(target_os = "android")]
-        eprintln!("Warning: Sandbox not available on Termux. Running without filesystem isolation.");
-        
-        #[cfg(target_os = "macos")]
-        eprintln!("Warning: Sandbox not yet supported on macOS. Running without filesystem isolation.");
-        
-        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
-        eprintln!("Warning: Sandbox not supported on this platform. Running without filesystem isolation.");
+fn apply_sandbox_if_enabled(
+    _config: &ExternalToolsConfig,
+    _binary_path: Option<&std::path::Path>,
+) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    if _config.enable_sandbox {
+        eprintln!(
+            "Warning: Sandbox not available on Termux. Running without filesystem isolation."
+        );
     }
+
+    #[cfg(target_os = "macos")]
+    if _config.enable_sandbox {
+        eprintln!(
+            "Warning: Sandbox not yet supported on macOS. Running without filesystem isolation."
+        );
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+    if _config.enable_sandbox {
+        eprintln!(
+            "Warning: Sandbox not supported on this platform. Running without filesystem isolation."
+        );
+    }
+
     Ok(())
 }
 
-/// Execute a command synchronously.
-fn execute_command(binary: &str, args: &[String]) -> Result<CommandOutput, String> {
-    use std::process::{Command, Stdio};
+/// Execute a command with timeout enforcement.
+///
+/// Uses tokio::process::Command with kill_on_drop(true) to ensure
+/// the process is terminated when timeout expires.
+///
+/// # Arguments
+/// * `binary` - Path to the binary
+/// * `args` - Arguments for the command
+/// * `timeout_duration` - Maximum execution time
+/// * `command_line` - Full command line for error message suggestions
+///
+/// # Returns
+/// * Ok(CommandOutput) - Command result
+/// * Err(String) - Error message with suggestions
+async fn execute_command(
+    binary: &str,
+    args: &[String],
+    timeout_duration: Duration,
+    command_line: &str,
+) -> Result<CommandOutput, String> {
+    debug_log!("Executing: {} {:?}", binary, args);
 
-    let mut cmd = Command::new(binary);
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let args_owned = args.to_vec();
+    let binary_owned = binary.to_string();
 
-    // Execute
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to execute '{}': {}", binary, e))?;
-
-    // Capture output
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let exit_code = output.status.code();
-    let success = output.status.success();
-
-    Ok(CommandOutput {
-        stdout,
-        stderr,
-        exit_code,
-        success,
+    let result = timeout(timeout_duration, async {
+        Command::new(&binary_owned)
+            .args(&args_owned)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .output()
+            .await
     })
+    .await;
+
+    match result {
+        Ok(Ok(output)) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let exit_code = output.status.code();
+            let success = output.status.success();
+
+            debug_log!(
+                "Command '{}' finished: success={}, exit_code={:?}",
+                binary_owned,
+                success,
+                exit_code
+            );
+
+            Ok(CommandOutput {
+                stdout,
+                stderr,
+                exit_code,
+                success,
+            })
+        }
+        Ok(Err(e)) => {
+            let err_msg = format!("Error: Failed to execute '{}': {}", binary_owned, e);
+            debug_log!("{}", err_msg);
+            Err(err_msg)
+        }
+        Err(_) => {
+            let timeout_secs = timeout_duration.as_secs();
+            let err_msg = format!(
+                "Error: Command '{}' timed out after {} seconds.\n\n\
+                Suggestions:\n\
+                1. Increase timeout: run_command(\"{}\", null, null, {})\n\
+                2. Use faster approach: reduce input size or add flags to limit work",
+                command_line,
+                timeout_secs,
+                command_line,
+                timeout_secs * 2
+            );
+            debug_log!(
+                "Command '{}' timed out after {} seconds",
+                binary_owned,
+                timeout_secs
+            );
+            Err(err_msg)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -428,18 +604,22 @@ mod tests {
     fn test_validate_command_blocks_semicolon() {
         let result = validate_command("pdftotext file.pdf - ; rm -rf /");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("'command separator' is not allowed"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("'command separator' is not allowed")
+        );
     }
 
     #[test]
     fn test_validate_command_blocks_and() {
         let result = validate_command("pdftotext file.pdf - && cat /etc/passwd");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("'AND operator' is not allowed"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("'AND operator' is not allowed")
+        );
     }
 
     #[test]
@@ -453,18 +633,22 @@ mod tests {
     fn test_validate_command_blocks_command_substitution() {
         let result = validate_command("pdftotext $(cat file.txt).pdf -");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("'command substitution' is not allowed"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("'command substitution' is not allowed")
+        );
     }
 
     #[test]
     fn test_validate_command_blocks_redirect() {
         let result = validate_command("pdftotext file.pdf - > output.txt");
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .contains("'output redirect' is not allowed"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("'output redirect' is not allowed")
+        );
     }
 
     #[test]
@@ -531,5 +715,122 @@ mod tests {
         let output = "line1\nline2\nline3".to_string();
         let result = apply_head_tail(output.clone(), None, None);
         assert_eq!(result, output);
+    }
+
+    #[test]
+    fn test_string_parameter_parsing() {
+        // Tests that string parameters are correctly parsed to numbers
+        // This is what the LLM sends when it passes "5" as a string
+
+        // Test valid string numbers
+        let head: Option<String> = Some("100".to_string());
+        let head_val: Option<usize> = head.as_deref().and_then(|h| h.parse().ok());
+        assert_eq!(head_val, Some(100));
+
+        // Test null as string (should fail to parse and become None)
+        let head: Option<String> = Some("null".to_string());
+        let head_val: Option<usize> = head.as_deref().and_then(|h| h.parse().ok());
+        assert_eq!(head_val, None);
+
+        // Test empty string (should become None)
+        let head: Option<String> = Some("".to_string());
+        let head_val: Option<usize> = head.as_deref().and_then(|h| h.parse().ok());
+        assert_eq!(head_val, None);
+
+        // Test actual None
+        let head: Option<String> = None;
+        let head_val: Option<usize> = head.as_deref().and_then(|h| h.parse().ok());
+        assert_eq!(head_val, None);
+
+        // Test timeout parsing
+        let timeout: Option<String> = Some("30".to_string());
+        let timeout_val: Option<u32> = timeout.as_deref().and_then(|t| t.parse().ok());
+        assert_eq!(timeout_val, Some(30));
+
+        // Test timeout with "null" string
+        let timeout: Option<String> = Some("null".to_string());
+        let timeout_val: Option<u32> = timeout.as_deref().and_then(|t| t.parse().ok());
+        assert_eq!(timeout_val, None);
+
+        // Test whitespace handling
+        let head: Option<String> = Some(" 50 ".to_string());
+        let head_val: Option<usize> = head.as_deref().and_then(|h| h.trim().parse().ok());
+        assert_eq!(head_val, Some(50));
+    }
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_timeout_kills_long_running_command() {
+        // Test that timeout kills processes that take too long
+        // Requires "sleep" command to be available
+        let result = execute_command(
+            "sleep",
+            &["10".to_string()],
+            Duration::from_millis(50),
+            "sleep 10",
+        )
+        .await;
+
+        assert!(result.is_err(), "Should return error on timeout");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("timed out"),
+            "Error should mention timeout, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_timeout_allows_fast_command() {
+        // Test that fast commands complete within timeout
+        // Requires "echo" command to be available
+        let result = execute_command(
+            "echo",
+            &["hello".to_string()],
+            Duration::from_secs(5),
+            "echo hello",
+        )
+        .await;
+
+        assert!(result.is_ok(), "Fast command should succeed");
+        let output = result.unwrap();
+        assert!(output.success, "Command should succeed");
+        assert!(
+            output.stdout.contains("hello"),
+            "Output should contain 'hello', got: {}",
+            output.stdout
+        );
+    }
+
+    #[tokio::test]
+    async fn test_timeout_error_message_format() {
+        // Test that timeout error includes suggestions
+        let result = execute_command(
+            "sleep",
+            &["10".to_string()],
+            Duration::from_millis(50),
+            "sleep 10",
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Suggestions:"),
+            "Error should include suggestions"
+        );
+        assert!(
+            err.contains("Increase timeout"),
+            "Error should suggest increasing timeout"
+        );
+        assert!(
+            err.contains("reduce input size"),
+            "Error should suggest reducing input"
+        );
     }
 }

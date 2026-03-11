@@ -2,10 +2,10 @@
 //!
 //! Generates embeddings using nomic-embed-text-v2-moe model.
 
-use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 use ollama_rs::Ollama;
+use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 
-use super::truncate::{truncate_and_normalize, FULL_DIMENSIONS, TRUNCATED_DIMENSIONS};
+use super::truncate::{FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, truncate_and_normalize};
 
 /// Default embedding model (nomic-embed-text-v2-moe)
 pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
@@ -38,13 +38,19 @@ impl EmbeddingClient {
     pub async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         // Add prefix for nomic-embed-text-v2-moe
         let prefixed_text = format!("search_document: {}", text);
-        
+
         let request = GenerateEmbeddingsRequest::new(self.model.clone(), prefixed_text.into());
-        
-        let response = self.ollama.generate_embeddings(request).await
+
+        let response = self
+            .ollama
+            .generate_embeddings(request)
+            .await
             .map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
 
-        let embedding = response.embeddings.into_iter().next()
+        let embedding = response
+            .embeddings
+            .into_iter()
+            .next()
             .ok_or(EmbeddingError::NoEmbedding)?;
 
         // Validate dimensions
@@ -79,12 +85,16 @@ impl EmbeddingClient {
             .collect();
 
         let request = GenerateEmbeddingsRequest::new(self.model.clone(), prefixed_texts.into());
-        
-        let response = self.ollama.generate_embeddings(request).await
+
+        let response = self
+            .ollama
+            .generate_embeddings(request)
+            .await
             .map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
 
         // Truncate and normalize each embedding
-        Ok(response.embeddings
+        Ok(response
+            .embeddings
             .into_iter()
             .map(|e| truncate_and_normalize(&e))
             .collect())
@@ -95,7 +105,7 @@ impl EmbeddingClient {
     pub fn model(&self) -> &str {
         &self.model
     }
-    
+
     /// Get the truncated embedding dimension
     ///
     /// Useful for validating embedding sizes and dimension checks.
@@ -114,10 +124,7 @@ pub enum EmbeddingError {
     /// No embedding returned
     NoEmbedding,
     /// Invalid embedding dimensions
-    InvalidDimensions {
-        expected: usize,
-        got: usize,
-    },
+    InvalidDimensions { expected: usize, got: usize },
 }
 
 impl std::fmt::Display for EmbeddingError {
@@ -126,7 +133,11 @@ impl std::fmt::Display for EmbeddingError {
             Self::ApiError(msg) => write!(f, "Embedding API error: {}", msg),
             Self::NoEmbedding => write!(f, "No embedding returned from API"),
             Self::InvalidDimensions { expected, got } => {
-                write!(f, "Invalid embedding dimensions: expected {}, got {}", expected, got)
+                write!(
+                    f,
+                    "Invalid embedding dimensions: expected {}, got {}",
+                    expected, got
+                )
             }
         }
     }

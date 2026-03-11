@@ -116,10 +116,10 @@ impl SummarizeArgs {
     /// Validate that text is provided
     #[allow(dead_code)]
     pub fn validate(&self) -> Result<(), String> {
-        if let Some(ref text) = self.text {
-            if !text.trim().is_empty() {
-                return Ok(());
-            }
+        if let Some(ref text) = self.text
+            && !text.trim().is_empty()
+        {
+            return Ok(());
         }
 
         // Check stdin
@@ -157,30 +157,42 @@ mod tests {
 
     #[test]
     fn test_summary_format_instructions() {
-        assert!(SummaryFormat::Paragraph
-            .into_instruction()
-            .contains("paragraph"));
-        assert!(SummaryFormat::Bullets
-            .into_instruction()
-            .contains("bullet points"));
+        assert!(
+            SummaryFormat::Paragraph
+                .into_instruction()
+                .contains("paragraph")
+        );
+        assert!(
+            SummaryFormat::Bullets
+                .into_instruction()
+                .contains("bullet points")
+        );
         assert!(SummaryFormat::Both.into_instruction().contains("paragraph"));
-        assert!(SummaryFormat::Both
-            .into_instruction()
-            .contains("bullet points"));
+        assert!(
+            SummaryFormat::Both
+                .into_instruction()
+                .contains("bullet points")
+        );
     }
 
     #[test]
     fn test_summary_style_instructions() {
         assert!(SummaryStyle::General.into_instruction().contains("general"));
-        assert!(SummaryStyle::Technical
-            .into_instruction()
-            .contains("technical"));
-        assert!(SummaryStyle::Academic
-            .into_instruction()
-            .contains("academic"));
-        assert!(SummaryStyle::Business
-            .into_instruction()
-            .contains("business"));
+        assert!(
+            SummaryStyle::Technical
+                .into_instruction()
+                .contains("technical")
+        );
+        assert!(
+            SummaryStyle::Academic
+                .into_instruction()
+                .contains("academic")
+        );
+        assert!(
+            SummaryStyle::Business
+                .into_instruction()
+                .contains("business")
+        );
     }
 
     #[test]

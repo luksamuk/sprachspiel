@@ -223,17 +223,19 @@ pub async fn fetch_pokemon_evolution(pokemon_name: String) -> ToolResult<String>
         pokemon_name.to_lowercase()
     );
 
-    let species: SpeciesData = match crate::utils::fetch_json(&species_url, "fetch_pokemon_evolution").await {
-        Ok(s) => s,
-        Err(e) => return Ok(e),
-    };
+    let species: SpeciesData =
+        match crate::utils::fetch_json(&species_url, "fetch_pokemon_evolution").await {
+            Ok(s) => s,
+            Err(e) => return Ok(e),
+        };
 
     let evo_url = &species.evolution_chain.url;
 
-    let chain: EvolutionChain = match crate::utils::fetch_json(evo_url, "fetch_pokemon_evolution").await {
-        Ok(c) => c,
-        Err(e) => return Ok(e),
-    };
+    let chain: EvolutionChain =
+        match crate::utils::fetch_json(evo_url, "fetch_pokemon_evolution").await {
+            Ok(c) => c,
+            Err(e) => return Ok(e),
+        };
 
     let formatted = format_evolution_chain(&chain.chain, 0);
     let result = format!("Evolution Chain:\n{}", formatted);

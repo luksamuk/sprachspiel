@@ -6,7 +6,9 @@
 mod context_builder;
 mod search;
 
-pub use context_builder::{build_context, build_query_context, update_retrieval_time, RetrievalConfig};
+pub use context_builder::{
+    RetrievalConfig, build_context, build_query_context, update_retrieval_time,
+};
 // ContextResult is public for external consumers but not used internally
 #[allow(unused_imports)]
 pub use context_builder::ContextResult;

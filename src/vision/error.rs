@@ -63,7 +63,10 @@ impl fmt::Display for VisionError {
             VisionError::NoImages => {
                 writeln!(f, "Error: No image files provided.")?;
                 writeln!(f)?;
-                write!(f, "Usage: ask vision [OPTIONS] <FILE>...\nTry 'ask vision --help' for more information.")
+                write!(
+                    f,
+                    "Usage: ask vision [OPTIONS] <FILE>...\nTry 'ask vision --help' for more information."
+                )
             }
         }
     }

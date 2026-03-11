@@ -35,12 +35,13 @@ impl VisionProcessor {
         for file in &args.files {
             validate_image_file(file).map_err(VisionError::FileNotFound)?;
 
-            let base64_image = read_file_as_base64(file)
-                .await
-                .map_err(|e| VisionError::ReadFailed {
-                    file: file.to_string_lossy().to_string(),
-                    error: e,
-                })?;
+            let base64_image =
+                read_file_as_base64(file)
+                    .await
+                    .map_err(|e| VisionError::ReadFailed {
+                        file: file.to_string_lossy().to_string(),
+                        error: e,
+                    })?;
 
             images.push(Image::from_base64(base64_image));
         }
@@ -67,16 +68,23 @@ impl VisionProcessor {
         };
         let spinner = create_spinner(&spinner_msg);
 
-        let response = ollama.generate(request).await.map_err(|e| VisionError::OllamaError {
-            message: format!("Failed to process image(s): {}", e),
-        })?;
+        let response = ollama
+            .generate(request)
+            .await
+            .map_err(|e| VisionError::OllamaError {
+                message: format!("Failed to process image(s): {}", e),
+            })?;
 
         finish_spinner(spinner);
 
         let content = response.response.trim().to_string();
 
         Ok(VisionOutput {
-            files: args.files.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+            files: args
+                .files
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect(),
             prompt: args.get_prompt(),
             content,
         })

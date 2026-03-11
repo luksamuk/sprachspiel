@@ -4,24 +4,27 @@
 
 use std::sync::Arc;
 
+use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
-use ollama_rs::Ollama;
 
 use crate::capabilities::ModelCapabilities;
 use crate::chat::{
-    coordinator::{classify_error_str, format_recovery_message, is_error_str_recoverable, MAX_RETRIES},
+    coordinator::{
+        MAX_RETRIES, classify_error_str, format_recovery_message, is_error_str_recoverable,
+    },
     custom_coordinator::{ChatEvent, CustomCoordinator},
-    display_thinking, strip_thinking_tags,
+    display_thinking,
     history::get_project_id,
+    strip_thinking_tags,
 };
 use crate::config::ModelConfig;
 use crate::db::Database;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::embeddings::EmbeddingClient;
 use crate::markdown;
-use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
-use crate::retrieval::{build_query_context, RetrievalConfig};
+use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
+use crate::retrieval::{RetrievalConfig, build_query_context};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner, suspend_for_print};
 use crate::tool_robustness::format_tool_error;
@@ -258,11 +261,7 @@ pub async fn run_query(
     };
 
     // Skip DB/retrieval for --code mode (no project context needed)
-    let project_id = if cli_code {
-        None
-    } else {
-        get_project_id()
-    };
+    let project_id = if cli_code { None } else { get_project_id() };
 
     let (db, embedding_client) = if cli_code {
         (None, None)
@@ -288,8 +287,14 @@ pub async fn run_query(
     );
 
     // Validate prompt type (only for legacy prompt names)
-    if !matches!(prompt_type, PromptType::ToolUser | PromptType::CodeWithTools 
-                 | PromptType::Code | PromptType::Summarize | PromptType::Default) {
+    if !matches!(
+        prompt_type,
+        PromptType::ToolUser
+            | PromptType::CodeWithTools
+            | PromptType::Code
+            | PromptType::Summarize
+            | PromptType::Default
+    ) {
         eprintln!(
             "Error: Unknown prompt '{}'. Use --list to see available prompts.",
             cli_prompt
@@ -352,7 +357,7 @@ pub async fn run_query(
 
     // Build messages with optional retrieval
     let retrieval_config = RetrievalConfig::default();
-    
+
     let context_result = build_query_context(
         project_id.as_deref(),
         db.as_ref(),
@@ -363,7 +368,7 @@ pub async fn run_query(
         output_flags.debug,
     )
     .await;
-    
+
     let messages = context_result.messages;
 
     // Execute with retry logic
@@ -373,48 +378,46 @@ pub async fn run_query(
     let mut messages = messages;
     let result = if let (Some(db), Some(embedding)) = (&db, &embedding_client) {
         // Wrap with task-local context for remember tool
-        crate::tools::context::with_context(
-            db.clone(),
-            embedding.clone(),
-            async {
-                let mut attempts = 0;
-                loop {
-                    let current_result = coordinator.chat(messages.clone()).await;
+        crate::tools::context::with_context(db.clone(), embedding.clone(), async {
+            let mut attempts = 0;
+            loop {
+                let current_result = coordinator.chat(messages.clone()).await;
 
-                    match current_result {
-                        Ok(response) => break Ok(response),
-                        Err(e) => {
-                            let error_str = e.to_string();
+                match current_result {
+                    Ok(response) => break Ok(response),
+                    Err(e) => {
+                        let error_str = e.to_string();
 
-                            if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
-                                attempts += 1;
+                        if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                            attempts += 1;
 
-                                let recovery_err = classify_error_str(&error_str, &tool_names);
-                                let error_msg = format_recovery_message(&recovery_err);
+                            let recovery_err = classify_error_str(&error_str, &tool_names);
+                            let error_msg = format_recovery_message(&recovery_err);
 
-                                if output_flags.debug {
-                                    log_debug(&format!(
-                                        "🔧 [Recovery] Attempt {}/{} - {}",
-                                        attempts, MAX_RETRIES, recovery_err.description()
-                                    ));
-                                }
-
-                                messages.push(ChatMessage::tool(error_msg));
-
-                                if attempts == 1 {
-                                    finish_spinner(spinner.clone());
-                                    eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
-                                }
-
-                                continue;
-                            } else {
-                                break Err(error_str);
+                            if output_flags.debug {
+                                log_debug(&format!(
+                                    "🔧 [Recovery] Attempt {}/{} - {}",
+                                    attempts,
+                                    MAX_RETRIES,
+                                    recovery_err.description()
+                                ));
                             }
+
+                            messages.push(ChatMessage::tool(error_msg));
+
+                            if attempts == 1 {
+                                finish_spinner(spinner.clone());
+                                eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                            }
+
+                            continue;
+                        } else {
+                            break Err(error_str);
                         }
                     }
                 }
-            },
-        )
+            }
+        })
         .await
     } else {
         // No DB context, run directly
@@ -435,7 +438,9 @@ pub async fn run_query(
                         if output_flags.debug {
                             log_debug(&format!(
                                 "🔧 [Recovery] Attempt {}/{} - {}",
-                                attempts, MAX_RETRIES, recovery_err.description()
+                                attempts,
+                                MAX_RETRIES,
+                                recovery_err.description()
                             ));
                         }
 

@@ -35,8 +35,7 @@ impl From<SearchResult> for FormattedResult {
             chunk_content: result.chunk_content,
             chunk_start: result.chunk_start,
             chunk_end: result.chunk_end,
-            timestamp: DateTime::from_timestamp(result.timestamp, 0)
-                .unwrap_or_else(Utc::now),
+            timestamp: DateTime::from_timestamp(result.timestamp, 0).unwrap_or_else(Utc::now),
             score: result.score,
             search_type: result.search_type,
         }
@@ -62,39 +61,58 @@ pub fn display_results(results: &[FormattedResult]) {
 
         let role_str = format_role_label_md(&result.role);
 
-        output.push_str(&format!("{}. [id={}] {} — {} (score: {:.4})\n", i + 1, result.message_id, type_str, role_str, result.score));
+        output.push_str(&format!(
+            "{}. [id={}] {} — {} (score: {:.4})\n",
+            i + 1,
+            result.message_id,
+            type_str,
+            role_str,
+            result.score
+        ));
 
         // Check if we have chunk content (matched a chunk of a long message)
-        let display_content = if let (Some(chunk), Some(start), Some(end)) = 
-            (&result.chunk_content, result.chunk_start, result.chunk_end) {
+        let display_content = if let (Some(chunk), Some(start), Some(end)) =
+            (&result.chunk_content, result.chunk_start, result.chunk_end)
+        {
             // Chunk matched - show with ellipsis for context
             let prefix = if start > 0 { "..." } else { "" };
-            let suffix = if end < result.content.len() as i32 { "..." } else { "" };
-            
+            let suffix = if end < result.content.len() as i32 {
+                "..."
+            } else {
+                ""
+            };
+
             // Truncate chunk if too long for display (respect UTF-8 boundaries)
             let chunk_display = if chunk.chars().count() > 400 {
                 format!("{}...", chunk.chars().take(400).collect::<String>())
             } else {
                 chunk.clone()
             };
-            
+
             format!("{}{}{}", prefix, chunk_display, suffix)
         } else {
             // Full message matched - truncate for display (respect UTF-8 boundaries)
             if result.content.chars().count() > 300 {
-                format!("{}...", result.content.chars().take(300).collect::<String>())
+                format!(
+                    "{}...",
+                    result.content.chars().take(300).collect::<String>()
+                )
             } else {
                 result.content.clone()
             }
         };
-        
+
         // Format content with indentation
         output.push_str("```\n");
         for line in display_content.lines() {
             output.push_str(&format!("  {}\n", line));
         }
         output.push_str("```\n");
-        output.push_str(&format!("_{} — {}_\n\n", result.conversation_id, result.timestamp.format("%Y-%m-%d %H:%M")));
+        output.push_str(&format!(
+            "_{} — {}_\n\n",
+            result.conversation_id,
+            result.timestamp.format("%Y-%m-%d %H:%M")
+        ));
     }
 
     markdown::print_markdown(&output);
@@ -109,12 +127,14 @@ pub async fn run_search(
     limit: usize,
 ) {
     // Debug: Show search parameters
-    log_debug(&format!("Search params:\n  query: \"{}\"\n  conversation_id: {:?}\n  limit: {}", 
-        query, conversation_id, limit));
-    
+    log_debug(&format!(
+        "Search params:\n  query: \"{}\"\n  conversation_id: {:?}\n  limit: {}",
+        query, conversation_id, limit
+    ));
+
     // Generate embedding for query
     let embedding_client = EmbeddingClient::new(ollama.clone());
-    
+
     log_debug("Generating embedding for query...");
     let embedding = match embedding_client.embed(query).await {
         Ok(emb) => {
@@ -163,7 +183,10 @@ pub async fn run_search(
     let enriched_results = match db.enrich_with_context(results) {
         Ok(r) => {
             let enriched_count = r.iter().filter(|msg| msg.next_message.is_some()).count();
-            log_debug(&format!("Enriched {} results with assistant responses", enriched_count));
+            log_debug(&format!(
+                "Enriched {} results with assistant responses",
+                enriched_count
+            ));
             r
         }
         Err(e) => {
@@ -174,27 +197,33 @@ pub async fn run_search(
     };
 
     // Convert to formatted results with context
-    let formatted: Vec<FormattedResult> = enriched_results.into_iter().map(|msg| {
-        // If this message has a context (assistant response), include it
-        let content_with_context = if let Some(ref answer) = msg.next_message {
-            format!("{}\n\n--- Assistant Response ---\n{}", msg.content, answer.content)
-        } else {
-            msg.content.clone()
-        };
+    let formatted: Vec<FormattedResult> = enriched_results
+        .into_iter()
+        .map(|msg| {
+            // If this message has a context (assistant response), include it
+            let content_with_context = if let Some(ref answer) = msg.next_message {
+                format!(
+                    "{}\n\n--- Assistant Response ---\n{}",
+                    msg.content, answer.content
+                )
+            } else {
+                msg.content.clone()
+            };
 
-        FormattedResult {
-            message_id: msg.message_id,
-            conversation_id: msg.conversation_id,
-            role: msg.role,
-            content: content_with_context,
-            timestamp: DateTime::from_timestamp(msg.timestamp, 0).unwrap_or_else(Utc::now),
-            score: msg.score,
-            search_type: msg.search_type,
-            chunk_content: msg.chunk_content,
-            chunk_start: msg.chunk_start,
-            chunk_end: msg.chunk_end,
-        }
-    }).collect();
+            FormattedResult {
+                message_id: msg.message_id,
+                conversation_id: msg.conversation_id,
+                role: msg.role,
+                content: content_with_context,
+                timestamp: DateTime::from_timestamp(msg.timestamp, 0).unwrap_or_else(Utc::now),
+                score: msg.score,
+                search_type: msg.search_type,
+                chunk_content: msg.chunk_content,
+                chunk_start: msg.chunk_start,
+                chunk_end: msg.chunk_end,
+            }
+        })
+        .collect();
 
     display_results(&formatted);
 }

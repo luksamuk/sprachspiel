@@ -271,9 +271,10 @@ impl Settings {
     /// Note: Used only when `led-tools` feature is enabled.
     #[allow(dead_code)]
     pub fn led_endpoint(&self) -> Option<String> {
-        self.led.ip.as_ref().map(|ip| {
-            format!("http://{}:{}", ip, self.led.port)
-        })
+        self.led
+            .ip
+            .as_ref()
+            .map(|ip| format!("http://{}:{}", ip, self.led.port))
     }
 
     /// Get model configuration for a specific subcommand
@@ -310,8 +311,8 @@ impl Settings {
             .unwrap_or({
                 // Fall back to subcommand-specific defaults
                 match subcommand {
-                    "query" => true,  // Query benefits from thinking by default
-                    _ => false,        // Chat, summarize, code, vision default to no thinking
+                    "query" => true, // Query benefits from thinking by default
+                    _ => false,      // Chat, summarize, code, vision default to no thinking
                 }
             });
 

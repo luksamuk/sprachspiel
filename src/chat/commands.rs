@@ -236,26 +236,27 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
 
         ChatCommand::Clear => {
             let has_summary = session.compacted_summary.is_some();
-            
+
             // Check if there are messages in DB for retrieval after clear
             let has_db_messages = if let Some(ref db) = session.db {
-                !session.anonymous 
+                !session.anonymous
                     && !session.id.is_empty()
-                    && db.count_conversation_messages(&session.id)
+                    && db
+                        .count_conversation_messages(&session.id)
                         .map(|count| count > 0)
                         .unwrap_or(false)
             } else {
                 false
             };
-            
+
             session.clear_messages();
-            
+
             if !session.anonymous
                 && let Err(e) = session.save_sqlite()
             {
                 eprintln!("Warning: Could not save session: {}", e);
             }
-            
+
             if has_summary {
                 println!("Conversation history cleared.");
                 println!("Context summary preserved for retrieval.");
@@ -271,7 +272,7 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
 
         ChatCommand::Forget => {
             session.forget_session();
-            
+
             if let Some(ref db) = session.db
                 && !session.anonymous
                 && !session.id.is_empty()
@@ -283,7 +284,7 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                     Err(e) => eprintln!("\nWarning: Could not delete conversation: {}", e),
                 }
             }
-            
+
             if !session.anonymous {
                 // Generate new session ID using timestamp
                 use std::time::{SystemTime, UNIX_EPOCH};
@@ -296,7 +297,7 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                     eprintln!("Warning: Could not save new session: {}", e);
                 }
             }
-            
+
             println!("Session forgotten. Starting fresh conversation.");
             CommandResult::Continue
         }
@@ -530,6 +531,11 @@ pub fn print_session_info(session: &ChatSession, metrics: Option<&ContextMetrics
 
     println!("  Think:     {}", session.think);
     println!("  Tools:     {}", session.tools);
+
+    // Show sandbox status
+    let sandbox_status = crate::external::get_sandbox_status();
+    println!("  Sandbox:   {}", sandbox_status);
+
     println!("  Anonymous: {}", session.anonymous);
     println!("  Created:   {}", created);
     println!("  Updated:   {}", updated);

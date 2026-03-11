@@ -11,12 +11,15 @@ use rustyline::history::DefaultHistory;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::context_overflow::{check_context_overflow, needs_pre_tool_compaction, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_THRESHOLD};
+use crate::context_overflow::{
+    DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_THRESHOLD, check_context_overflow,
+    needs_pre_tool_compaction,
+};
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::markdown;
-use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::query::ChatContext;
-use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
+use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::tokens::{calculate_context_metrics, estimate_tokens};
@@ -25,7 +28,9 @@ use crate::tools::{get_available_tool_names, register_tools};
 
 use super::commands::{CommandResult, execute_command, parse_command};
 use super::completion::ChatCompleter;
-use super::coordinator::{classify_error_str, format_recovery_message, is_error_str_recoverable, MAX_RETRIES};
+use super::coordinator::{
+    MAX_RETRIES, classify_error_str, format_recovery_message, is_error_str_recoverable,
+};
 use super::custom_coordinator::CustomCoordinator;
 use super::history::get_project_id;
 use super::session::ChatSession;
@@ -98,12 +103,13 @@ pub async fn run_chat_repl(
 
     // Create ollama client early for embedding client (needed for migration)
     let ollama = settings.ollama_client();
-    let embedding_client: Option<Arc<crate::embeddings::EmbeddingClient>> = 
-        if db.is_some() {
-            Some(Arc::new(crate::embeddings::EmbeddingClient::new(ollama.clone())))
-        } else {
-            None
-        };
+    let embedding_client: Option<Arc<crate::embeddings::EmbeddingClient>> = if db.is_some() {
+        Some(Arc::new(crate::embeddings::EmbeddingClient::new(
+            ollama.clone(),
+        )))
+    } else {
+        None
+    };
 
     // Run ONE-TIME automatic migration from JSON to SQLite
     if let (Some(db_ref), Some(client)) = (&db, &embedding_client)
@@ -126,11 +132,9 @@ pub async fn run_chat_repl(
             log_debug("Anonymous mode: starting fresh session without history");
         }
         ChatSession::new(
-            model_override
-                .unwrap_or(default_model)
-                .to_string(),
+            model_override.unwrap_or(default_model).to_string(),
             None, // No project_id for anonymous
-            true,  // anonymous = true
+            true, // anonymous = true
         )
     } else if let Some(session_name) = &args.load {
         // Try loading from SQLite
@@ -148,9 +152,7 @@ pub async fn run_chat_repl(
                     eprintln!("Warning: Could not load session '{}': {}", session_name, e);
                     println!("Starting new session...");
                     let mut new_session = ChatSession::new(
-                        model_override
-                            .unwrap_or(default_model)
-                            .to_string(),
+                        model_override.unwrap_or(default_model).to_string(),
                         project_id.clone(),
                         false,
                     );
@@ -161,9 +163,7 @@ pub async fn run_chat_repl(
         } else {
             // No database, fallback
             ChatSession::new(
-                model_override
-                    .unwrap_or(default_model)
-                    .to_string(),
+                model_override.unwrap_or(default_model).to_string(),
                 project_id.clone(),
                 false,
             )
@@ -172,35 +172,29 @@ pub async fn run_chat_repl(
         // Try loading default session from SQLite
         let default_id = "default";
         match db_ref.conversation_exists(default_id) {
-            Ok(true) => {
-                match ChatSession::load_sqlite(db_ref, default_id) {
-                    Ok(s) => {
-                        println!(
-                            "Resumed session: {} ({} messages)",
-                            default_id,
-                            s.messages.len()
-                        );
-                        s
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Could not load default session: {}", e);
-                        println!("Starting new session...");
-                        ChatSession::new(
-                            model_override
-                                .unwrap_or(default_model)
-                                .to_string(),
-                            project_id.clone(),
-                            false,
-                        )
-                    }
+            Ok(true) => match ChatSession::load_sqlite(db_ref, default_id) {
+                Ok(s) => {
+                    println!(
+                        "Resumed session: {} ({} messages)",
+                        default_id,
+                        s.messages.len()
+                    );
+                    s
                 }
-            }
+                Err(e) => {
+                    eprintln!("Warning: Could not load default session: {}", e);
+                    println!("Starting new session...");
+                    ChatSession::new(
+                        model_override.unwrap_or(default_model).to_string(),
+                        project_id.clone(),
+                        false,
+                    )
+                }
+            },
             _ => {
                 // No default session in DB, create new
                 ChatSession::new(
-                    model_override
-                        .unwrap_or(default_model)
-                        .to_string(),
+                    model_override.unwrap_or(default_model).to_string(),
                     project_id.clone(),
                     false,
                 )
@@ -209,9 +203,7 @@ pub async fn run_chat_repl(
     } else {
         // No database available, create new session
         ChatSession::new(
-            model_override
-                .unwrap_or(default_model)
-                .to_string(),
+            model_override.unwrap_or(default_model).to_string(),
             project_id.clone(),
             false,
         )
@@ -246,14 +238,16 @@ pub async fn run_chat_repl(
     let mut current_model_name = session.model.clone();
     let mut model_config = crate::user_models::resolve_model_config(&current_model_name);
 
-    let mut capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
-    
+    let mut capabilities =
+        ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
+
     // Attach database to session
     if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
         session.attach_db(Arc::clone(db_ref), Arc::clone(client));
-        
+
         // Recover any missing embeddings from previous session
-        let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client, &session.id).await;
+        let recovered =
+            crate::embeddings::recover_missing_embeddings(db_ref, client, &session.id).await;
         if recovered > 0 {
             log_debug(&format!("Recovered {} missing embedding(s)", recovered));
         }
@@ -297,11 +291,7 @@ pub async fn run_chat_repl(
 
     // Tools mode priority: CLI -> config -> default
     let cli_tools_flag = cli_tools || args.tools;
-    let tools_enabled = if cli_tools_flag {
-        true
-    } else {
-        config_tools
-    };
+    let tools_enabled = if cli_tools_flag { true } else { config_tools };
 
     session.think = think_enabled;
     session.tools = tools_enabled;
@@ -369,12 +359,14 @@ pub async fn run_chat_repl(
                                     &capabilities,
                                     session.think,
                                     session.tools,
-                                ).await {
+                                )
+                                .await
+                                {
                                     Ok(result) => {
                                         session.set_model(result.model_name.clone());
                                         session.think = result.think_active;
                                         session.tools = result.tools_active;
-                                        
+
                                         current_model_name = result.model_name.clone();
                                         model_config = result.model_config;
                                         capabilities = result.capabilities;
@@ -453,7 +445,10 @@ pub async fn run_chat_repl(
                                     }
 
                                     let msg_count = session.messages.len();
-                                    println!("\x1B[33m⏳ Compacting {} messages...\x1B[0m", msg_count);
+                                    println!(
+                                        "\x1B[33m⏳ Compacting {} messages...\x1B[0m",
+                                        msg_count
+                                    );
 
                                     match compact_conversation(
                                         &ollama,
@@ -470,8 +465,10 @@ pub async fn run_chat_repl(
                                             let compacted_count =
                                                 last_preserved_start - first_preserved;
 
-                                            session
-                                                .set_compacted_summary_with_range(summary.clone(), range);
+                                            session.set_compacted_summary_with_range(
+                                                summary.clone(),
+                                                range,
+                                            );
 
                                             if first_preserved > 0
                                                 || last_preserved_start < session.messages.len()
@@ -516,9 +513,14 @@ pub async fn run_chat_repl(
                                 }
                                 CommandResult::RetrievalToggled(new_state) => {
                                     if new_state {
-                                        println!("Semantic retrieval enabled. Messages will be retrieved from history for context.");
+                                        println!(
+                                            "Semantic retrieval enabled. Messages will be retrieved from history for context."
+                                        );
                                         if session.messages.len() < 20 {
-                                            println!("Note: Retrieval activates after 20 messages (current: {})", session.messages.len());
+                                            println!(
+                                                "Note: Retrieval activates after 20 messages (current: {})",
+                                                session.messages.len()
+                                            );
                                         }
                                     } else {
                                         println!("Semantic retrieval disabled.");
@@ -539,7 +541,10 @@ pub async fn run_chat_repl(
                                     // Remove last assistant messages
                                     let removed = session.remove_last_assistant_messages();
                                     if removed > 0 {
-                                        println!("Removed {} assistant message(s). Ready to retry.", removed);
+                                        println!(
+                                            "Removed {} assistant message(s). Ready to retry.",
+                                            removed
+                                        );
                                     } else {
                                         println!("No assistant messages to remove.");
                                     }
@@ -558,7 +563,7 @@ pub async fn run_chat_repl(
                                             &user_content,
                                             tools_active,
                                             think_enabled,
-                                            false,  // cli_code: false for retry (use existing config)
+                                            false, // cli_code: false for retry (use existing config)
                                             settings,
                                             agents_md.as_deref(),
                                             use_debug,
@@ -575,11 +580,11 @@ pub async fn run_chat_repl(
 
                                                 if result.metrics.total_tokens > 0 {
                                                     eprintln!(
-                                                "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-                                                result.metrics.prompt_tokens,
-                                                result.metrics.response_tokens,
-                                                result.metrics.total_tokens
-                                            );
+                                                        "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
+                                                        result.metrics.prompt_tokens,
+                                                        result.metrics.response_tokens,
+                                                        result.metrics.total_tokens
+                                                    );
                                                 }
 
                                                 // Auto-compact if needed (after response, before next input)
@@ -592,18 +597,25 @@ pub async fn run_chat_repl(
                                                     &result.system_prompt,
                                                     result.context_window,
                                                     use_debug,
-                                                ).await;
+                                                )
+                                                .await;
 
                                                 if !session.anonymous
                                                     && let Err(e) = session.save_sqlite()
                                                     && use_debug
                                                 {
-                                                    log_debug(&format!("Warning: Could not save session: {}", e));
+                                                    log_debug(&format!(
+                                                        "Warning: Could not save session: {}",
+                                                        e
+                                                    ));
                                                 }
                                             }
                                             Err(e) => {
                                                 let error_str = e.to_string();
-                                                eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
+                                                eprintln!(
+                                                    "\x1B[31m{}\x1B[0m",
+                                                    format_tool_error(&error_str)
+                                                );
                                             }
                                         }
                                     } else {
@@ -613,15 +625,20 @@ pub async fn run_chat_repl(
                                 }
                                 CommandResult::Undo => {
                                     // Remove last assistant messages (includes preceding user message)
-                                    let (removed, _) = session.remove_last_assistant_messages_with_content();
+                                    let (removed, _) =
+                                        session.remove_last_assistant_messages_with_content();
                                     if removed > 0 {
                                         // Also delete from database if not anonymous
-                                        if !session.anonymous && !session.id.is_empty() {
-                                            if let Ok(db) = crate::db::Database::new() {
-                                                if let Err(e) = db.delete_last_messages(&session.id, removed) {
-                                                    eprintln!("Warning: Failed to delete from database: {}", e);
-                                                }
-                                            }
+                                        if !session.anonymous
+                                            && !session.id.is_empty()
+                                            && let Ok(db) = crate::db::Database::new()
+                                            && let Err(e) =
+                                                db.delete_last_messages(&session.id, removed)
+                                        {
+                                            eprintln!(
+                                                "Warning: Failed to delete from database: {}",
+                                                e
+                                            );
                                         }
                                         println!("Removed {} message(s) from session.", removed);
                                     } else {
@@ -631,7 +648,9 @@ pub async fn run_chat_repl(
                                     // Get and display the last user message
                                     if let Some(user_msg) = session.get_last_user_message() {
                                         println!("Last message: \"{}\"", user_msg.content);
-                                        println!("(Press \u{2191} to retrieve and edit, or type a new message)");
+                                        println!(
+                                            "(Press \u{2191} to retrieve and edit, or type a new message)"
+                                        );
                                     } else {
                                         println!("No user message to show.");
                                     }
@@ -649,9 +668,12 @@ pub async fn run_chat_repl(
 
                                     // Search in current conversation
                                     let conversation_id = session.id.clone();
-                                    
+
                                     if use_debug {
-                                        log_debug(&format!("Searching in conversation: {}", conversation_id));
+                                        log_debug(&format!(
+                                            "Searching in conversation: {}",
+                                            conversation_id
+                                        ));
                                     }
 
                                     // Run search
@@ -661,7 +683,8 @@ pub async fn run_chat_repl(
                                         &query,
                                         Some(&conversation_id),
                                         limit,
-                                    ).await;
+                                    )
+                                    .await;
                                     continue;
                                 }
                                 CommandResult::Restore { session_id } => {
@@ -669,13 +692,19 @@ pub async fn run_chat_repl(
                                     let db = match &db {
                                         Some(d) => Arc::clone(d),
                                         None => {
-                                            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+                                            eprintln!(
+                                                "Error: Database not initialized. Run chat without --anonymous."
+                                            );
                                             continue;
                                         }
                                     };
-                                    
+
                                     println!("Restoring session: {}", session_id);
-                                    match crate::db::restore_session(&db, &session.project_id, &session_id) {
+                                    match crate::db::restore_session(
+                                        &db,
+                                        &session.project_id,
+                                        &session_id,
+                                    ) {
                                         Ok(restored) => {
                                             println!(
                                                 "Session restored: {} ({} messages)",
@@ -694,23 +723,32 @@ pub async fn run_chat_repl(
                                     let db = match &db {
                                         Some(d) => Arc::clone(d),
                                         None => {
-                                            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+                                            eprintln!(
+                                                "Error: Database not initialized. Run chat without --anonymous."
+                                            );
                                             continue;
                                         }
                                     };
-                                    
-                                    let embedding_client = crate::embeddings::EmbeddingClient::new(ollama.clone());
+
+                                    let embedding_client =
+                                        crate::embeddings::EmbeddingClient::new(ollama.clone());
                                     let embedding_client = Arc::new(embedding_client);
-                                    
-                                    let conv_id = conversation_id.unwrap_or_else(|| session.id.clone());
-                                    
+
+                                    let conv_id =
+                                        conversation_id.unwrap_or_else(|| session.id.clone());
+
                                     println!("Reindexing conversation: {}", conv_id);
-                                    match crate::db::reindex_conversation(&db, &embedding_client, &conv_id).await {
+                                    match crate::db::reindex_conversation(
+                                        &db,
+                                        &embedding_client,
+                                        &conv_id,
+                                    )
+                                    .await
+                                    {
                                         Ok(stats) => {
                                             println!(
                                                 "Reindex complete: {} messages, {} embeddings",
-                                                stats.messages_migrated,
-                                                stats.embeddings_generated
+                                                stats.messages_migrated, stats.embeddings_generated
                                             );
                                             if !stats.errors.is_empty() {
                                                 eprintln!("Errors:");
@@ -753,11 +791,20 @@ pub async fn run_chat_repl(
                         .with_tools(tools_active)
                         .with_retrieval(session.retrieval_enabled && !cli_code),
                 );
-                
+
                 if needs_pre_tool_compaction(&session, &system_prompt_for_check, context_window) {
-                    let usage_pct = check_context_overflow(&session, &system_prompt_for_check, context_window, PRE_TOOL_THRESHOLD).usage_percent();
-                    eprintln!("\x1B[33m⏳ Context {}% full. Auto-compacting before tool execution...\x1B[0m", usage_pct);
-                    
+                    let usage_pct = check_context_overflow(
+                        &session,
+                        &system_prompt_for_check,
+                        context_window,
+                        PRE_TOOL_THRESHOLD,
+                    )
+                    .usage_percent();
+                    eprintln!(
+                        "\x1B[33m⏳ Context {}% full. Auto-compacting before tool execution...\x1B[0m",
+                        usage_pct
+                    );
+
                     auto_compact_if_needed(
                         &ollama,
                         &model_config,
@@ -767,7 +814,8 @@ pub async fn run_chat_repl(
                         &system_prompt_for_check,
                         context_window,
                         use_debug,
-                    ).await;
+                    )
+                    .await;
                 }
 
                 let think_enabled = session.think;
@@ -778,7 +826,7 @@ pub async fn run_chat_repl(
                     line,
                     tools_active,
                     think_enabled,
-                    cli_code,  // from function parameter
+                    cli_code, // from function parameter
                     settings,
                     agents_md.as_deref(),
                     use_debug,
@@ -814,7 +862,8 @@ pub async fn run_chat_repl(
                             &system_prompt,
                             context_window,
                             use_debug,
-                        ).await;
+                        )
+                        .await;
 
                         if !session.anonymous
                             && let Err(e) = session.save_sqlite()
@@ -825,17 +874,23 @@ pub async fn run_chat_repl(
                     }
                     Err(e) => {
                         let error_str = e.to_string();
-                        
+
                         // Check if this is a context overflow error during tool execution
                         if error_str.contains("Context overflow during tool execution") {
-                            eprintln!("\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m");
-                            
+                            eprintln!(
+                                "\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m"
+                            );
+
                             // Remove the failed message
-                            let (removed, _) = session.remove_last_assistant_messages_with_content();
+                            let (removed, _) =
+                                session.remove_last_assistant_messages_with_content();
                             if use_debug {
-                                log_debug(&format!("Removed {} messages after overflow error", removed));
+                                log_debug(&format!(
+                                    "Removed {} messages after overflow error",
+                                    removed
+                                ));
                             }
-                            
+
                             // Auto-compact to free space
                             let overflow_context_window = model_config.num_ctx as usize;
                             let overflow_system_prompt = build_system_prompt(
@@ -846,7 +901,7 @@ pub async fn run_chat_repl(
                                     .with_tools(tools_enabled)
                                     .with_retrieval(session.retrieval_enabled && !cli_code),
                             );
-                            
+
                             eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
                             auto_compact_if_needed(
                                 &ollama,
@@ -857,21 +912,26 @@ pub async fn run_chat_repl(
                                 &overflow_system_prompt,
                                 overflow_context_window,
                                 use_debug,
-                            ).await;
-                            
+                            )
+                            .await;
+
                             // Save session after compaction
-                            if !session.anonymous {
-                                if let Err(save_err) = session.save_sqlite() {
-                                    if use_debug {
-                                        log_debug(&format!("Warning: Could not save session after recovery: {}", save_err));
-                                    }
-                                }
+                            if !session.anonymous
+                                && let Err(save_err) = session.save_sqlite()
+                                && use_debug
+                            {
+                                log_debug(&format!(
+                                    "Warning: Could not save session after recovery: {}",
+                                    save_err
+                                ));
                             }
-                            
-                            eprintln!("\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m");
+
+                            eprintln!(
+                                "\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m"
+                            );
                             continue;
                         }
-                        
+
                         eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
                     }
                 }
@@ -951,14 +1011,19 @@ async fn send_message(
                 .with_blacklist(Some(&blacklist_set))
                 .with_agents_md(agents_md)
                 .with_tools(tools_enabled)
-                .with_retrieval(session.retrieval_enabled && !cli_code),  // Disable retrieval for code mode
+                .with_retrieval(session.retrieval_enabled && !cli_code), // Disable retrieval for code mode
         )
     };
 
     // Check context overflow
     let context_window = model_config.num_ctx as usize;
-    let overflow_status = check_context_overflow(session, &system_prompt, context_window, DEFAULT_OVERFLOW_THRESHOLD);
-    
+    let overflow_status = check_context_overflow(
+        session,
+        &system_prompt,
+        context_window,
+        DEFAULT_OVERFLOW_THRESHOLD,
+    );
+
     if overflow_status.needs_compaction() {
         eprintln!(
             "\x1B[33m⚠ Context {}% full. Consider using /compact to summarize old messages.\x1B[0m",
@@ -1012,8 +1077,9 @@ async fn send_message(
         &system_prompt,
         &retrieval_config,
         use_debug,
-    ).await;
-    
+    )
+    .await;
+
     // Update last_retrieval_time if retrieval was performed
     if context_result.retrieval_performed {
         update_retrieval_time(session);
@@ -1024,9 +1090,9 @@ async fn send_message(
             ));
         }
     }
-    
+
     let mut messages = context_result.messages;
-    
+
     // Add current user query at the end
     messages.push(ChatMessage::user(user_input.to_string()));
 
@@ -1056,8 +1122,9 @@ async fn send_message(
             crate::tools::context::with_context(
                 db.clone(),
                 embedding.clone(),
-                coordinator.chat(messages.clone())
-            ).await
+                coordinator.chat(messages.clone()),
+            )
+            .await
         } else {
             coordinator.chat(messages.clone()).await
         };
@@ -1076,7 +1143,9 @@ async fn send_message(
                     if use_debug {
                         log_debug(&format!(
                             "🔧 [Recovery] Attempt {}/{} - {}",
-                            attempts, MAX_RETRIES, recovery_err.description()
+                            attempts,
+                            MAX_RETRIES,
+                            recovery_err.description()
                         ));
                     }
 
@@ -1211,8 +1280,9 @@ Provide a structured markdown summary that captures the essential context."#,
     model_cfg.top_p = Some(0.9);
     let model_options = model_cfg.build_model_options();
 
-    let mut coordinator = CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
-        .options(model_options);
+    let mut coordinator =
+        CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
+            .options(model_options);
 
     let messages = vec![
         ChatMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),
@@ -1244,6 +1314,9 @@ fn print_welcome(
         session.name.as_deref().unwrap_or(&session.id)
     };
 
+    // Get sandbox status
+    let sandbox_status = crate::external::get_sandbox_status();
+
     println!();
     println!("+==============================================================+");
     println!("|  Ask-AI Chat                                                 |");
@@ -1262,6 +1335,11 @@ fn print_welcome(
             "|  Think: {:52} |",
             if session.think { "enabled" } else { "disabled" }
         );
+    }
+
+    // Show sandbox status if run_command tool is available
+    {
+        println!("|  Sandbox: {:51} |", sandbox_status);
     }
 
     println!("|  Project: {:50} |", truncate_str(project, 50));
@@ -1305,41 +1383,51 @@ async fn auto_compact_if_needed(
     context_window: usize,
     use_debug: bool,
 ) {
-    let status = check_context_overflow(session, system_prompt, context_window, DEFAULT_OVERFLOW_THRESHOLD);
-    
+    let status = check_context_overflow(
+        session,
+        system_prompt,
+        context_window,
+        DEFAULT_OVERFLOW_THRESHOLD,
+    );
+
     if !status.needs_compaction() {
         return;
     }
-    
+
     // Show indicator before starting compaction
     let urgency = if status.is_overflow() {
         "urgent"
     } else {
         "auto"
     };
-    eprintln!("\x1B[33m⏳ Compacting context ({}% full)...\x1B[0m", status.usage_percent());
-    
+    eprintln!(
+        "\x1B[33m⏳ Compacting context ({}% full)...\x1B[0m",
+        status.usage_percent()
+    );
+
     // Attempt auto-compaction
     match compact_conversation(ollama, model_config, session, settings, agents_md).await {
         Ok((summary, range)) => {
             session.set_compacted_summary_with_range(summary, range);
-            
+
             // Get compacted count
-            let (first_preserved, last_preserved_start) = range.unwrap_or((0, session.messages.len()));
+            let (first_preserved, last_preserved_start) =
+                range.unwrap_or((0, session.messages.len()));
             let compacted_count = last_preserved_start - first_preserved;
-            
+
             eprintln!(
                 "\x1B[90m[{}-compacted: {} messages summarized]\x1B[0m",
-                urgency,
-                compacted_count
+                urgency, compacted_count
             );
-            
-            if !session.anonymous {
-                if let Err(e) = session.save_sqlite() {
-                    if use_debug {
-                        log_debug(&format!("Warning: Could not save session after auto-compact: {}", e));
-                    }
-                }
+
+            if !session.anonymous
+                && let Err(e) = session.save_sqlite()
+                && use_debug
+            {
+                log_debug(&format!(
+                    "Warning: Could not save session after auto-compact: {}",
+                    e
+                ));
             }
         }
         Err(e) => {
@@ -1356,13 +1444,13 @@ fn print_context_info(
     settings: &Settings,
 ) {
     let blacklist_set = settings.blacklist_set();
-    
+
     let prompt_type = if tools_enabled {
         PromptType::ToolUser
     } else {
         PromptType::Default
     };
-    
+
     let system_prompt = build_system_prompt(
         PromptConfig::new(prompt_type)
             .with_model_id(Some(&model_config.model_id))
@@ -1371,23 +1459,23 @@ fn print_context_info(
             .with_tools(tools_enabled)
             .with_retrieval(session.retrieval_enabled),
     );
-    
+
     let history_messages = session.get_messages_for_llm(&system_prompt);
     let context_window = model_config.num_ctx as usize;
-    
+
     let tool_count = if tools_enabled {
         get_available_tool_names(settings).len()
     } else {
         0
     };
-    
+
     const TOKENS_PER_TOOL: usize = 50;
     let tools_tokens = if tools_enabled && tool_count > 0 {
         tool_count * TOKENS_PER_TOOL
     } else {
         0
     };
-    
+
     // Get real token count from history (if available)
     let real_history_tokens = session.history_real_tokens();
     let real_tokens_opt = if real_history_tokens > 0 {
@@ -1395,7 +1483,7 @@ fn print_context_info(
     } else {
         None
     };
-    
+
     let metrics = calculate_context_metrics(
         &history_messages,
         context_window,
@@ -1403,17 +1491,17 @@ fn print_context_info(
         tools_tokens,
         real_tokens_opt,
     );
-    
+
     let context_window_k = context_window / 1024;
-    
+
     // Calculate usage percentage
     let usage_percent = (metrics.utilization * 100.0) as u8;
-    
+
     // Visual bar (20 chars wide)
     let bar_width = 20;
     let filled = ((usage_percent as usize).min(100) * bar_width) / 100;
     let empty = bar_width - filled;
-    
+
     // Color code based on usage
     let (color_code, reset_code, status_text) = if usage_percent < 72 {
         ("\x1B[32m", "\x1B[0m", "OK") // Green
@@ -1422,13 +1510,17 @@ fn print_context_info(
     } else {
         ("\x1B[31m", "\x1B[0m", "CRITICAL") // Red
     };
-    
+
     println!();
     println!("Context Information:");
-    println!("  Model:          {} ({}K context)", model_config.model_id, context_window_k);
+    println!(
+        "  Model:          {} ({}K context)",
+        model_config.model_id, context_window_k
+    );
     println!();
     println!("  Context Utilization:");
-    println!("    {}{}{}{} {}{}", 
+    println!(
+        "    {}{}{}{} {}{}",
         color_code,
         "█".repeat(filled),
         "░".repeat(empty),
@@ -1436,11 +1528,9 @@ fn print_context_info(
         color_code,
         usage_percent
     );
-    println!("    {}{} / {} tokens{}\x1B[0m", 
-        color_code,
-        metrics.total_tokens,
-        context_window,
-        reset_code
+    println!(
+        "    {}{} / {} tokens{}\x1B[0m",
+        color_code, metrics.total_tokens, context_window, reset_code
     );
     println!();
     println!("  Status: {}", status_text);
@@ -1448,44 +1538,62 @@ fn print_context_info(
     println!("  Token Breakdown:");
     println!("    System prompt:    ~{} tokens", metrics.system_tokens);
     if tools_enabled && tool_count > 0 {
-        println!("    Tool definitions: ~{} tokens ({} tools)", metrics.tools_tokens, tool_count);
+        println!(
+            "    Tool definitions: ~{} tokens ({} tools)",
+            metrics.tools_tokens, tool_count
+        );
     }
-    
+
     // Show correct message count (active messages, not all)
     let active_messages = if session.has_compacted_messages() {
         session.messages.len() - session.messages_sent_to_llm
     } else {
         session.messages.len()
     };
-    
+
     // Show real token count if available (from Ollama's prompt_eval_count)
     if metrics.total_tokens > 0 {
         // When we have real tokens, total = system + tools + history
         // history_tokens is derived: total - system - tools
         println!("    History:          ~{} tokens", metrics.history_tokens);
         if session.has_compacted_messages() {
-            println!("                      ({} active messages + summary)", active_messages);
+            println!(
+                "                      ({} active messages + summary)",
+                active_messages
+            );
         } else {
             println!("                      ({} messages)", active_messages);
         }
     } else {
         // Fallback estimation
         if session.has_compacted_messages() {
-            println!("    Summary:          ~{} tokens", estimate_tokens(session.compacted_summary.as_deref().unwrap_or("")) + 4);
-            println!("    Conversation:     ~{} tokens ({} active messages)", metrics.history_tokens, active_messages);
+            println!(
+                "    Summary:          ~{} tokens",
+                estimate_tokens(session.compacted_summary.as_deref().unwrap_or("")) + 4
+            );
+            println!(
+                "    Conversation:     ~{} tokens ({} active messages)",
+                metrics.history_tokens, active_messages
+            );
         } else {
-            println!("    Conversation:     ~{} tokens ({} messages)", metrics.history_tokens, active_messages);
+            println!(
+                "    Conversation:     ~{} tokens ({} messages)",
+                metrics.history_tokens, active_messages
+            );
         }
     }
-    
+
     println!("    {}", "─".repeat(40));
     println!("    Total used:       ~{} tokens", metrics.total_tokens);
     println!("    Available:        ~{} tokens", metrics.available());
     println!();
-    
+
     if session.has_compacted_messages() {
         println!("  Session:");
-        println!("    Compacted:        {} messages summarized", session.compacted_message_count());
+        println!(
+            "    Compacted:        {} messages summarized",
+            session.compacted_message_count()
+        );
         println!("    Active:           {} messages", active_messages);
         println!("    Total:            {} messages", session.messages.len());
     } else {

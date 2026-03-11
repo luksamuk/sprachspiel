@@ -69,6 +69,14 @@
   - Simplified run_command API: single command_line string (shell-words parsing)
   - Debug logging for tool failures
   - Fixed duplicate error messages in REPL
+- **run_command Security Redesign** - v0.29.0
+  - No shell features (pipes, redirects, command chains blocked)
+  - Mandatory whitelist (only configured tools can execute)
+  - head/tail parameters for LLM-controlled output truncation
+  - Landlock sandbox (enabled by default on Linux, kernel 5.13+)
+  - Platform-specific sandbox handling (Termux, macOS documented)
+  - Pattern validation with proper ordering (multi-char before single-char)
+  - Removed automatic truncation (LLM decides via head/tail parameters)
 
  📋 **Planned:**
 
@@ -210,4 +218,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-09 - v0.27.3: Roadmap reorganization; Document Import and Notes as prerequisites for Memory Enhancement
+2026-03-10 - v0.29.0: run_command security redesign (Landlock sandbox, head/tail parameters, pattern validation)

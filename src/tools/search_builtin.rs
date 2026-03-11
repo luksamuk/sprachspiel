@@ -354,18 +354,11 @@ pub async fn web_scrape(url: String) -> Result<String, Box<dyn std::error::Error
 
     let size_info = format!(" ({})", format_size(content.len() as u64));
     let was_truncated = cleaned_html.len() > MAX_CONTENT_SIZE;
-    let truncate_note = if was_truncated {
-        " (truncated)"
-    } else {
-        ""
-    };
+    let truncate_note = if was_truncated { " (truncated)" } else { "" };
 
     let result = format!(
         "**Content from {}**{}{}\n\n{}",
-        url,
-        size_info,
-        truncate_note,
-        content
+        url, size_info, truncate_note, content
     );
     log_tool_result("web_scrape", &result);
     Ok(result)

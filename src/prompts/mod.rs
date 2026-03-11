@@ -41,9 +41,9 @@ pub mod tools;
 #[allow(unused_imports)]
 pub use base::{SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE};
 #[allow(unused_imports)]
-pub use builder::{build_system_prompt, build_tool_user_prompt, PromptConfig, PromptType};
+pub use builder::{PromptConfig, PromptType, build_system_prompt, build_tool_user_prompt};
 #[allow(unused_imports)]
-pub use personality::{get_personality_prefix, is_pepe_model, PERSONALITY_PEPE};
+pub use personality::{PERSONALITY_PEPE, get_personality_prefix, is_pepe_model};
 #[allow(unused_imports)]
 pub use tools::build_tool_context;
 

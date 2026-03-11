@@ -131,7 +131,7 @@ async fn main() -> AppResult<()> {
     }
 
     let settings = Settings::load();
-    
+
     // Initialize markdown skin with user configuration
     markdown::init_markdown_skin(&settings.display.skin);
 
@@ -140,7 +140,9 @@ async fn main() -> AppResult<()> {
             Commands::Translate(args) => {
                 return handle_translate(args.clone(), &cli, &settings).await;
             }
-            Commands::Query(args) => return handle_query_subcommand(args.clone(), &cli, &settings).await,
+            Commands::Query(args) => {
+                return handle_query_subcommand(args.clone(), &cli, &settings).await;
+            }
             Commands::Ocr(args) => return handle_ocr(args.clone(), &cli, &settings).await,
             Commands::Summarize(args) => {
                 return handle_summarize(args.clone(), &cli, &settings).await;
@@ -226,7 +228,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         .as_ref()
         .cloned()
         .unwrap_or_else(|| "translategemma".to_string());
-    
+
     let model_config = match user_models::get_model_config(&translate_model) {
         Some(cfg) => cfg,
         None => {
@@ -244,7 +246,8 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let model_options = model_config.build_model_options();
 
     let mut coordinator =
-        chat::CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![]).options(model_options);
+        chat::CustomCoordinator::new(ollama, model_config.model_id.clone(), vec![])
+            .options(model_options);
 
     let system_message = ChatMessage::system(prompt);
     let user_message = ChatMessage::user("".to_string());
@@ -466,7 +469,16 @@ async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<
 }
 
 async fn handle_chat(args: ChatArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
-    chat::run_chat_repl(settings, &args, cli.model.as_deref(), cli.think, cli.tools, cli.code, cli.ignore_agents).await
+    chat::run_chat_repl(
+        settings,
+        &args,
+        cli.model.as_deref(),
+        cli.think,
+        cli.tools,
+        cli.code,
+        cli.ignore_agents,
+    )
+    .await
 }
 
 async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
@@ -645,7 +657,10 @@ mod tests {
 
         let input_multiline = "<think>\nThinking...\n</think>\n\nFinal answer.";
         let expected_multiline = "Final answer.";
-        assert_eq!(chat::strip_thinking_tags(input_multiline), expected_multiline);
+        assert_eq!(
+            chat::strip_thinking_tags(input_multiline),
+            expected_multiline
+        );
 
         let input_upper = "<THINK>Thinking...</THINK>Response.";
         let expected_upper = "Response.";

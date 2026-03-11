@@ -274,7 +274,9 @@ where
                 tool_count += 1;
             }
         } else if use_debug {
-            eprintln!("💡 [LED] No device configured - LED tools disabled. Add [led] ip = \"<IP>\" to config.toml");
+            eprintln!(
+                "💡 [LED] No device configured - LED tools disabled. Add [led] ip = \"<IP>\" to config.toml"
+            );
         }
     }
 

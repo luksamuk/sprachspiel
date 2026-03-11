@@ -176,11 +176,11 @@ pub async fn get_current_weather(
         OPEN_METEO_BASE, lat, lon
     );
 
-    let weather: WeatherResponse =
-        match crate::utils::fetch_json(&url, "get_current_weather").await {
-            Ok(w) => w,
-            Err(e) => return Ok(e),
-        };
+    let weather: WeatherResponse = match crate::utils::fetch_json(&url, "get_current_weather").await
+    {
+        Ok(w) => w,
+        Err(e) => return Ok(e),
+    };
     let current = &weather.current;
 
     let location_name = format!(

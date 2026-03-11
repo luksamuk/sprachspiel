@@ -5,24 +5,20 @@
 //! - Thinking content callbacks
 //! - Full control over tool execution flow
 
-use std::{
-    collections::HashMap,
-    future::Future,
-    pin::Pin,
-};
+use std::{collections::HashMap, future::Future, pin::Pin};
 
+use ollama_rs::re_exports::serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ollama_rs::{
+    Ollama,
     generation::{
-        chat::{request::ChatMessageRequest, ChatMessage, ChatMessageResponse, MessageRole},
+        chat::{ChatMessage, ChatMessageResponse, MessageRole, request::ChatMessageRequest},
         parameters::{FormatType, KeepAlive, ThinkType},
         tools::Tool,
     },
     history::ChatHistory,
     models::ModelOptions,
-    re_exports::schemars::{generate::SchemaSettings, JsonSchema, Schema},
-    Ollama,
+    re_exports::schemars::{JsonSchema, Schema, generate::SchemaSettings},
 };
-use ollama_rs::re_exports::serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
 /// Result type for tool execution
@@ -30,17 +26,24 @@ pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Se
 
 /// Trait to hold and call tools - our own implementation since ollama-rs's ToolHolder is private
 pub trait ToolHolder: Send + Sync {
-    fn call(&mut self, parameters: Value) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send + Sync>>;
+    fn call(
+        &mut self,
+        parameters: Value,
+    ) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send + Sync>>;
 }
 
 impl<T: Tool> ToolHolder for T {
-    fn call(&mut self, parameters: Value) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send + Sync>> {
+    fn call(
+        &mut self,
+        parameters: Value,
+    ) -> Pin<Box<dyn Future<Output = ToolResult> + '_ + Send + Sync>> {
         Box::pin(async move {
             // Handle different JSON formats that models might return
-            let param_value = match serde_json::from_value::<ToolCallFunctionParser>(parameters.clone()) {
-                Ok(func) => func.arguments,
-                Err(_) => parameters,
-            };
+            let param_value =
+                match serde_json::from_value::<ToolCallFunctionParser>(parameters.clone()) {
+                    Ok(func) => func.arguments,
+                    Err(_) => parameters,
+                };
 
             let params: T::Params = serde_json::from_value(param_value)?;
             T::call(self, params).await
@@ -238,8 +241,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             }
         }
 
-        let request = ChatMessageRequest::new(self.model.clone(), messages)
-            .options(self.options.clone());
+        let request =
+            ChatMessageRequest::new(self.model.clone(), messages).options(self.options.clone());
 
         // Apply optional settings
         let request = self.apply_optional_settings(request);
@@ -250,10 +253,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         }
 
         // Make the request
-        let resp = self
-            .ollama
-            .send_chat_messages(self.build_request())
-            .await?;
+        let resp = self.ollama.send_chat_messages(self.build_request()).await?;
 
         // Process the response
         self.process_response(resp).await
@@ -284,8 +284,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
     /// Build a request from current history
     fn build_request(&self) -> ChatMessageRequest {
-        let mut request = ChatMessageRequest::new(self.model.clone(), self.history.messages().to_vec())
-            .options(self.options.clone());
+        let mut request =
+            ChatMessageRequest::new(self.model.clone(), self.history.messages().to_vec())
+                .options(self.options.clone());
 
         // Add tools - need to convert our CustomToolInfo to ollama-rs's ToolInfo
         // We serialize ours and it's compatible
@@ -387,9 +388,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     eprintln!("Tool response: {}", &result);
                 }
 
-                // Use full result (no truncation - LLM controls via head/tail)
-                let result = result;
-
                 // Emit tool result event
                 self.emit_event(ChatEvent::ToolResult {
                     name: tool_name.clone(),
@@ -418,13 +416,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
         // Check context overflow before sending to Ollama
         if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
-            let history_tokens = crate::context_overflow::estimate_chat_messages_tokens(&self.history.messages());
-            let system_tokens = crate::tokens::estimate_tokens(prompt) + crate::tokens::MESSAGE_OVERHEAD;
+            let history_tokens =
+                crate::context_overflow::estimate_chat_messages_tokens(&self.history.messages());
+            let system_tokens =
+                crate::tokens::estimate_tokens(prompt) + crate::tokens::MESSAGE_OVERHEAD;
             let total_tokens = history_tokens + system_tokens;
-            
+
             // Use 90% threshold to detect overflow early
             let threshold = (ctx_window as f64 * 0.9) as usize;
-            
+
             if total_tokens > threshold {
                 // Return error that will be caught by caller
                 let msg = format!(
@@ -434,11 +434,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 return Err(ollama_rs::error::OllamaError::Other(msg));
             }
         }
-        
-        let resp = self
-            .ollama
-            .send_chat_messages(self.build_request())
-            .await?;
+
+        let resp = self.ollama.send_chat_messages(self.build_request()).await?;
 
         self.process_response(resp).await
     }

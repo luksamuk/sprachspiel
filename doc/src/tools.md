@@ -953,10 +953,16 @@ Tools are designed to handle errors gracefully and provide helpful feedback to t
 
 **Tools never crash the application.** Instead, they return informative error messages that help the LLM understand what went wrong and how to fix it.
 
-**CRITICAL: All numeric/optional parameters must use `Option<String>` type.** LLMs frequently pass strings like `"5"` instead of integers. The tool must parse these internally:
+### CRITICAL: Parameter Types for LLM Tools
+
+**LLMs frequently pass parameters as strings instead of proper JSON types.** All numeric/optional parameters MUST use `Option<String>` type.
+
+See [AGENTS.md - CRITICAL: Parameter Types for LLM Tools](../../AGENTS.md#critical-parameter-types-for-llm-tools) for detailed guidelines.
+
+**Quick Summary:**
 
 ```rust
-// CORRECT: Accept strings, parse internally
+// ✅ CORRECT: Accept strings, parse internally
 pub async fn web_search(
     query: String,
     num_results: Option<String>,  // NOT Option<u8>!
@@ -974,6 +980,13 @@ fn parse_num_results(s: Option<String>, default: usize, max: usize) -> usize {
     }
 }
 ```
+
+**Why strings?** LLMs may send:
+- `"5"` instead of `5` (string instead of number)
+- `"null"` instead of `null` (string literal instead of JSON null)
+- `""` instead of omitting the parameter
+
+All of these fail with `Option<usize>` but work correctly with `Option<String>` + internal parsing.
 
 Examples:
 

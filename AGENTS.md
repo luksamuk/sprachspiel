@@ -585,6 +585,104 @@ log_tool_call(
 );
 ```
 
+### CRITICAL: Parameter Types for LLM Tools
+
+**LLMs often send parameters as strings instead of proper JSON types.** This causes deserialization failures that crash tools.
+
+#### The Problem
+
+When an LLM generates tool calls, it may send:
+- `"5"` instead of `5` (string instead of number)
+- `"null"` instead of `null` (string literal instead of JSON null)
+- `""` instead of `null` (empty string instead of omitting the parameter)
+
+#### WRONG: Numeric Types in Tool Parameters
+
+```rust
+// ❌ NEVER USE numeric types for optional parameters
+#[function]
+pub async fn my_tool(
+    path: String,
+    max_lines: Option<usize>,      // ❌ Will fail if LLM sends "100" or "null"
+    timeout: Option<u32>,          // ❌ Will fail if LLM sends "30" or "null"
+) -> Result<String, ...>
+```
+
+**Why this fails:**
+- `"100"` (string) cannot deserialize to `Option<usize>` → serde error → tool crashes
+- `"null"` (string) cannot deserialize to `Option<u32>` → serde error → tool crashes
+- The LLM sees "Error calling tool" with no useful feedback
+
+#### CORRECT: String Types with Internal Parsing
+
+```rust
+// ✅ ALWAYS USE String for optional parameters, parse internally
+#[function]
+pub async fn my_tool(
+    path: String,
+    max_lines: Option<String>,      // ✅ Accepts "100", 100, "null", null
+    timeout: Option<String>,       // ✅ Accepts "30", 30, "null", null
+) -> Result<String, ...> {
+    // Parse strings safely - returns None for invalid input
+    let max_lines_val: Option<usize> = max_lines.as_deref().and_then(|m| m.parse().ok());
+    let timeout_val: Option<u32> = timeout.as_deref().and_then(|t| t.parse().ok());
+    
+    // Use parsed values
+    let lines = max_lines_val.unwrap_or(usize::MAX);
+    // ...
+}
+```
+
+#### Required Numeric Parameters
+
+For parameters that MUST be provided and MUST be numeric, still use `String` but validate early:
+
+```rust
+// ✅ String type with validation
+#[function]
+pub async fn my_tool(
+    path: String,
+    start_line: String,     // Required, but String to accept LLM variations
+    num_lines: String,      // Required, but String to accept LLM variations
+) -> Result<String, ...> {
+    // Validate required parameters early
+    let start: usize = start_line.parse()
+        .map_err(|_| format!("Error: Invalid start_line '{}'. Must be a positive number.", start_line))?;
+    
+    if start == 0 {
+        let err_msg = "Error: start_line must be 1 or greater. Line numbers start at 1.".to_string();
+        log_tool_result("my_tool", &err_msg);
+        return Ok(err_msg);
+    }
+    // ...
+}
+```
+
+#### Existing Tools Using This Pattern
+
+| Tool | File | Parameters |
+|------|------|------------|
+| `web_search` | `src/tools/serper.rs` | `num_results: Option<String>` |
+| `get_current_weather` | `src/tools/weather.rs` | `latitude: Option<String>`, `longitude: Option<String>` |
+| `run_command` | `src/tools/run_cmd.rs` | `head: Option<String>`, `tail: Option<String>`, `timeout_seconds: Option<String>` |
+
+#### NEVER Use These Types in Tool Parameters
+
+| Type | Why It's Dangerous | Use Instead |
+|------|-------------------|-------------|
+| `Option<usize>` | Fails on `"100"` or `"null"` | `Option<String>` |
+| `Option<u32>` | Fails on `"30"` or `"null"` | `Option<String>` |
+| `Option<i32>` | Fails on `"-1"` or `"null"` | `Option<String>` |
+| `usize` (required) | Fails on `"5"` or empty string | `String` + validate |
+| `bool` (optional) | May work, but `Option<String>` is safer | `Option<String>` → `parse_bool()` |
+
+#### Summary
+
+1. **Always use `String` or `Option<String>` for numeric parameters**
+2. **Parse internally with `.parse().ok()` or utility functions**
+3. **Validate required parameters early and return helpful errors**
+4. **Use existing patterns from `web_search`, `run_command`, etc.**
+
 ### Required Parameters
 
 For parameters that MUST be provided (like `read_file_segment`'s `start_line` and `num_lines`):

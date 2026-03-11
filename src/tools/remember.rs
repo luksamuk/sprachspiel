@@ -3,9 +3,9 @@
 //! Provides the LLM with explicit access to search and retrieve
 //! messages from conversation history.
 
-use crate::consts::roles::{format_role_label, ROLE_ASSISTANT, ROLE_USER};
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER, format_role_label};
 use crate::db::SourceType;
+use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::tools::context::{get_db, get_embedding};
 
 /// Parse a source ID into (SourceType, numeric_id)
@@ -80,7 +80,10 @@ pub async fn remember(
         &[
             ("id".to_string(), id.clone().unwrap_or_default()),
             ("query".to_string(), query.clone().unwrap_or_default()),
-            ("limit".to_string(), limit.clone().unwrap_or_else(|| "5".to_string())),
+            (
+                "limit".to_string(),
+                limit.clone().unwrap_or_else(|| "5".to_string()),
+            ),
         ],
     );
 
@@ -98,8 +101,7 @@ pub async fn remember(
     let limit_num = limit
         .and_then(|l| l.parse::<usize>().ok())
         .unwrap_or(5)
-        .min(10)
-        .max(1);
+        .clamp(1, 10);
 
     // Get task-local context
     let result = match (get_db(), get_embedding()) {
@@ -132,7 +134,10 @@ async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) 
     let (source_type, numeric_id) = match parse_source_id(id_str) {
         Ok(result) => result,
         Err(e) => {
-            let err = format!("Error: {}\n\nTip: Look for id=\"N\" attributes in <retrieved_context>.", e);
+            let err = format!(
+                "Error: {}\n\nTip: Look for id=\"N\" attributes in <retrieved_context>.",
+                e
+            );
             log_tool_result("remember", &err);
             return err;
         }
@@ -140,9 +145,7 @@ async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) 
 
     // Handle different source types
     match source_type {
-        SourceType::Conversation => {
-            fetch_conversation_message(db, numeric_id).await
-        }
+        SourceType::Conversation => fetch_conversation_message(db, numeric_id).await,
         SourceType::Document => {
             // Phase 5: Document ingestion not yet implemented
             let err = "Error: Document retrieval not yet implemented.\n\n\
@@ -175,8 +178,8 @@ async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id
         Ok(Some(msg)) => {
             let role_label = format_role_label(&msg.role);
 
-            let timestamp = chrono::DateTime::from_timestamp(msg.timestamp, 0)
-                .unwrap_or_else(chrono::Utc::now);
+            let timestamp =
+                chrono::DateTime::from_timestamp(msg.timestamp, 0).unwrap_or_else(chrono::Utc::now);
 
             let mut output = format!(
                 "**Message {}**\nRole: {}\nTimestamp: {}\n\n---\n{}\n---",
@@ -187,21 +190,21 @@ async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id
             );
 
             // If user message, also fetch the assistant response
-            if msg.role == ROLE_USER {
-                if let Ok(Some(answer)) = db.get_next_message_by_role(
+            if msg.role == ROLE_USER
+                && let Ok(Some(answer)) = db.get_next_message_by_role(
                     msg.message_id,
                     &msg.conversation_id,
                     ROLE_ASSISTANT,
-                ) {
-                    let answer_timestamp = chrono::DateTime::from_timestamp(answer.timestamp, 0)
-                        .unwrap_or_else(chrono::Utc::now);
-                    output.push_str(&format!(
-                        "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
-                        answer.message_id,
-                        answer_timestamp.format("%Y-%m-%d %H:%M"),
-                        answer.content
-                    ));
-                }
+                )
+            {
+                let answer_timestamp = chrono::DateTime::from_timestamp(answer.timestamp, 0)
+                    .unwrap_or_else(chrono::Utc::now);
+                output.push_str(&format!(
+                    "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
+                    answer.message_id,
+                    answer_timestamp.format("%Y-%m-%d %H:%M"),
+                    answer.content
+                ));
             }
 
             output
@@ -241,7 +244,16 @@ async fn remember_by_query(
     };
 
     // Perform hybrid search (no ID exclusion for remember tool)
-    let results = match db.search_hybrid(query, &embedding, None, None, limit, 0.4, 0.6, None) {
+    let results = match db.search_hybrid(&crate::db::SearchParams {
+        query,
+        embedding: &embedding,
+        conversation_id: None,
+        project_id: None,
+        limit,
+        keyword_weight: 0.4,
+        semantic_weight: 0.6,
+        exclude_ids: None,
+    }) {
         Ok(r) => r,
         Err(e) => {
             return format!(
@@ -296,7 +308,10 @@ async fn remember_by_query(
         if let Some(ref answer) = msg.next_message {
             let answer_label = format_role_label(ROLE_ASSISTANT);
             let answer_content = if answer.content.chars().count() > 200 {
-                format!("{}...", answer.content.chars().take(200).collect::<String>())
+                format!(
+                    "{}...",
+                    answer.content.chars().take(200).collect::<String>()
+                )
             } else {
                 answer.content.clone()
             };

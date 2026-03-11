@@ -15,9 +15,7 @@ static TODO_STATE: OnceCell<Arc<Mutex<crate::chat::todo_state::TodoState>>> = On
 /// Get or initialize the global todo state
 fn get_todo_state() -> Arc<Mutex<crate::chat::todo_state::TodoState>> {
     TODO_STATE
-        .get_or_init(|| {
-            Arc::new(Mutex::new(crate::chat::todo_state::TodoState::new()))
-        })
+        .get_or_init(|| Arc::new(Mutex::new(crate::chat::todo_state::TodoState::new())))
         .clone()
 }
 
@@ -48,7 +46,9 @@ pub fn reset_todo_state() {
 /// // Returns: "Added task 1: Review the pull request [pending]"
 /// ```
 #[ollama_rs::function]
-pub async fn todo_add(description: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn todo_add(
+    description: String,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
     let id = guard.add(description.clone());
@@ -76,23 +76,29 @@ pub async fn todo_add(description: String) -> Result<String, Box<dyn std::error:
 /// // Returns: "Task 1 marked as in_progress"
 /// ```
 #[ollama_rs::function]
-pub async fn todo_update(task_id: String, status: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn todo_update(
+    task_id: String,
+    status: String,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let id: usize = match task_id.parse() {
         Ok(id) => id,
         Err(_) => {
-            let err = format!("Error: Invalid task ID '{}'. Must be a number like '1', '2', etc.", task_id);
+            let err = format!(
+                "Error: Invalid task ID '{}'. Must be a number like '1', '2', etc.",
+                task_id
+            );
             return Ok(err);
         }
     };
-    
+
     let new_status: TaskStatus = match status.parse() {
         Ok(s) => s,
         Err(e) => return Ok(format!("Error: {}", e)),
     };
-    
+
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
-    
+
     match guard.update_status(id, new_status) {
         Ok(()) => Ok(format!("Task {} marked as {}", id, new_status)),
         Err(e) => Ok(format!("Error: {}", e)),
@@ -145,7 +151,7 @@ pub async fn todo_clear_done() -> Result<String, Box<dyn std::error::Error + Sen
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
     let removed = guard.clear_done();
-    
+
     if removed == 0 {
         Ok("No completed tasks to remove.".to_string())
     } else if removed == 1 {
@@ -173,7 +179,7 @@ pub async fn todo_clear_all() -> Result<String, Box<dyn std::error::Error + Send
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
     let count = guard.clear_all();
-    
+
     if count == 0 {
         Ok("The task list was already empty.".to_string())
     } else if count == 1 {
@@ -190,12 +196,12 @@ mod tests {
     #[test]
     fn test_todo_add() {
         reset_todo_state();
-        
+
         // This would be async in real usage, but we can test the state directly
         let state = get_todo_state();
         let mut guard = state.lock().unwrap();
         let id = guard.add("Test task".to_string());
-        
+
         assert_eq!(id, 1);
         assert_eq!(guard.count(), 1);
     }
@@ -203,19 +209,19 @@ mod tests {
     #[test]
     fn test_todo_update() {
         reset_todo_state();
-        
+
         let state = get_todo_state();
         {
             let mut guard = state.lock().unwrap();
             guard.add("Test task".to_string());
         }
-        
+
         {
             let mut guard = state.lock().unwrap();
             let result = guard.update_status(1, TaskStatus::InProgress);
             assert!(result.is_ok());
         }
-        
+
         let guard = state.lock().unwrap();
         assert_eq!(guard.get(1).unwrap().status, TaskStatus::InProgress);
     }
@@ -223,7 +229,7 @@ mod tests {
     #[test]
     fn test_todo_clear_done() {
         reset_todo_state();
-        
+
         let state = get_todo_state();
         {
             let mut guard = state.lock().unwrap();
@@ -233,7 +239,7 @@ mod tests {
             guard.update_status(1, TaskStatus::Done).unwrap();
             guard.update_status(2, TaskStatus::Done).unwrap();
         }
-        
+
         {
             let mut guard = state.lock().unwrap();
             let removed = guard.clear_done();

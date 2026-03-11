@@ -5,7 +5,8 @@ edition = "2024"
 
 [features]
 default = ["weather-tools", "file-tools", "pokemon-tools", "calc-tools", "serper-tools", "system-tools", "todo-tools"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "sandbox"]
+all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools"]
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin

@@ -1,7 +1,7 @@
 //! Tool to check if an external CLI tool is available on this system.
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use crate::external::{Platform, ExternalToolsConfig, load_tools_config};
+use crate::external::{ExternalToolsConfig, Platform, load_tools_config};
 use ollama_rs::function;
 use which;
 
@@ -57,7 +57,10 @@ fn get_platform() -> &'static Platform {
 pub async fn check_tool_availability(
     tool: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("check_tool_availability", &[("tool".to_string(), tool.clone())]);
+    log_tool_call(
+        "check_tool_availability",
+        &[("tool".to_string(), tool.clone())],
+    );
 
     // Load configuration (cached)
     let config = get_config();

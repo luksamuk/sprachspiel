@@ -101,7 +101,8 @@ pub fn check_legacy_sessions(
 
                         // Try to load session to get name
                         #[allow(deprecated)]
-                        let session_name = storage.load_session::<ChatSession>(project_id, &session_id)
+                        let session_name = storage
+                            .load_session::<ChatSession>(project_id, &session_id)
                             .ok()
                             .and_then(|s| s.name);
 
@@ -136,9 +137,10 @@ pub fn restore_session(
 ) -> Result<ChatSession, String> {
     // Create storage internally (only for restoration)
     let storage = ConversationStorage::new();
-    
+
     // Load the JSON session
-    let session = storage.load_session::<ChatSession>(project_id, session_id)
+    let session = storage
+        .load_session::<ChatSession>(project_id, session_id)
         .map_err(|e| format!("Failed to load JSON session '{}': {}", session_id, e))?;
 
     // Check if already in SQLite
@@ -173,17 +175,17 @@ pub fn restore_session(
     }
 
     // Save metadata (summary, think, tools, etc.)
-    db.update_conversation_metadata(
-        &session.id,
-        session.name.as_deref(),
-        session.system_prompt.as_deref(),
-        session.compacted_summary.as_deref(),
-        session.compacted_range,
-        session.think,
-        session.tools,
-        &session.tool_output_level.to_string(),
-        session.updated_at,
-    )
+    db.update_conversation_metadata(&crate::db::ConversationMetadataParams {
+        id: &session.id,
+        name: session.name.as_deref(),
+        system_prompt: session.system_prompt.as_deref(),
+        compacted_summary: session.compacted_summary.as_deref(),
+        compacted_range: session.compacted_range,
+        think: session.think,
+        tools: session.tools,
+        tool_output_level: &session.tool_output_level.to_string(),
+        updated_at: session.updated_at,
+    })
     .map_err(|e| format!("Failed to save metadata: {}", e))?;
 
     // Save todos
@@ -250,7 +252,7 @@ pub async fn migrate_all_legacy_sessions(
 ) -> MigrationStats {
     // Create storage internally (only for migration)
     let storage = ConversationStorage::new();
-    
+
     let mut stats = MigrationStats::default();
     let base_path = storage.base_path();
     let archived_path = base_path.join("archived");
@@ -274,7 +276,9 @@ pub async fn migrate_all_legacy_sessions(
 
     // Create archived directory structure
     if let Err(e) = fs::create_dir_all(&archived_path) {
-        stats.errors.push(format!("Failed to create archive directory: {}", e));
+        stats
+            .errors
+            .push(format!("Failed to create archive directory: {}", e));
         return stats;
     }
 
@@ -292,42 +296,41 @@ pub async fn migrate_all_legacy_sessions(
                         stats.embeddings_generated += session_stats.embeddings_generated;
 
                         let name = session_info.name.as_deref().unwrap_or(&session_info.id);
-                        println!("   ✓ Migrated: {} ({} messages)", name, session_stats.messages_migrated);
+                        println!(
+                            "   ✓ Migrated: {} ({} messages)",
+                            name, session_stats.messages_migrated
+                        );
                     }
                     Err(e) => {
-                        stats.errors.push(format!(
-                            "Failed to migrate {}: {}",
-                            session_info.id, e
-                        ));
+                        stats
+                            .errors
+                            .push(format!("Failed to migrate {}: {}", session_info.id, e));
                         continue;
                     }
                 }
             }
             Err(e) => {
-                stats.errors.push(format!(
-                    "Failed to load {}: {}",
-                    session_info.id, e
-                ));
+                stats
+                    .errors
+                    .push(format!("Failed to load {}: {}", session_info.id, e));
                 continue;
             }
         }
 
         // Archive the JSON file
-        if let Err(e) = archive_session(&session_info, &archived_path) {
-            stats.errors.push(format!(
-                "Failed to archive {}: {}",
-                session_info.id, e
-            ));
+        if let Err(e) = archive_session(session_info, &archived_path) {
+            stats
+                .errors
+                .push(format!("Failed to archive {}: {}", session_info.id, e));
         }
     }
 
     // Archive sessions already in SQLite (JSON is obsolete)
     for session_info in &to_archive {
         if let Err(e) = archive_session(session_info, &archived_path) {
-            stats.errors.push(format!(
-                "Failed to archive {}: {}",
-                session_info.id, e
-            ));
+            stats
+                .errors
+                .push(format!("Failed to archive {}: {}", session_info.id, e));
         } else {
             let name = session_info.name.as_deref().unwrap_or(&session_info.id);
             println!("   📦 Archived: {} (already in SQLite)", name);
@@ -347,16 +350,22 @@ pub async fn migrate_all_legacy_sessions(
         if project_path.exists() {
             // Check if directory contains only JSON files (will be empty after archiving)
             let should_remove = fs::read_dir(&project_path)
-                .map(|mut entries| entries.all(|e| e.ok().and_then(|e| e.path().extension().map(|ext| ext == "json")).unwrap_or(false)))
+                .map(|mut entries| {
+                    entries.all(|e| {
+                        e.ok()
+                            .and_then(|e| e.path().extension().map(|ext| ext == "json"))
+                            .unwrap_or(false)
+                    })
+                })
                 .unwrap_or(false);
 
-            if should_remove {
-                if let Err(e) = fs::remove_dir_all(&project_path) {
-                    stats.errors.push(format!(
-                        "Failed to remove empty directory {:?}: {}",
-                        project_path, e
-                    ));
-                }
+            if should_remove
+                && let Err(e) = fs::remove_dir_all(&project_path)
+            {
+                stats.errors.push(format!(
+                    "Failed to remove empty directory {:?}: {}",
+                    project_path, e
+                ));
             }
         }
     }
@@ -366,17 +375,18 @@ pub async fn migrate_all_legacy_sessions(
     if stats.sessions_migrated > 0 {
         println!(
             "✅ Migration complete: {} session(s) migrated, {} message(s), {} embedding(s)",
-            stats.sessions_migrated,
-            stats.messages_migrated,
-            stats.embeddings_generated
+            stats.sessions_migrated, stats.messages_migrated, stats.embeddings_generated
         );
     }
-    
+
     let archived_count = to_archive.len();
     if archived_count > 0 {
-        println!("📦 Archived: {} session(s) (already in SQLite)", archived_count);
+        println!(
+            "📦 Archived: {} session(s) (already in SQLite)",
+            archived_count
+        );
     }
-    
+
     println!("   Location: {}", archived_path.display());
 
     if !stats.errors.is_empty() {
@@ -392,15 +402,18 @@ pub async fn migrate_all_legacy_sessions(
 }
 
 /// Archive a session's JSON file to the archived directory
-fn archive_session(session_info: &LegacySession, archived_path: &std::path::Path) -> std::io::Result<()> {
+fn archive_session(
+    session_info: &LegacySession,
+    archived_path: &std::path::Path,
+) -> std::io::Result<()> {
     let project_name = session_info.project_id.as_deref().unwrap_or("anonymous");
     let archived_project = archived_path.join(project_name);
-    
+
     fs::create_dir_all(&archived_project)?;
-    
+
     let archived_file = archived_project.join(format!("{}.json", session_info.id));
     fs::rename(&session_info.path, &archived_file)?;
-    
+
     Ok(())
 }
 

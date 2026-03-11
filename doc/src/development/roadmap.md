@@ -281,52 +281,45 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ## High Priority
 
-### CLI Tools Infrastructure
+### CLI Tools Infrastructure (Phase 1)
 
 **Priority:** HIGH  
-**Status:** 🟡 PARTIAL (Core done, TOML parsing incomplete)
+**Status:** ✅ COMPLETE (v0.29.0)
 
-**Goal:** Modular system for integrating external CLI tools (pdftotext, tesseract, exiftool, etc.) instead of embedding Rust crates.
+**Goal:** Secure external CLI tool integration with sandboxing.
 
-**Problem:** Adding Rust dependencies for PDF parsing, image processing, and OCR significantly increases binary size and maintenance burden. CLI tools offer:
-- Smaller binary (-2 to 10MB vs embedding crates)
-- Better OCR support (tesseract + pdftoppm for scanned PDFs)
-- Delegated maintenance (system package managers)
-- User flexibility (install only needed tools)
+**Implementation:**
+- External module with types, config, platform detection
+- `check_tool_availability()` - Check installed tools
+- `run_command()` - Secure command execution with:
+  - No shell features (pipes, redirects blocked)
+  - Mandatory whitelist validation
+  - head/tail parameters for LLM-controlled output
+  - Landlock sandbox (Linux 5.13+, enabled by default)
+  - Platform-specific handling (Termux, macOS documented)
 
-**Architecture:** See [Skills System Design](./skills-system-design.md) and [CLI Tools Research](./cli-tools-research.md).
+**Security:**
+- Pattern validation blocks: `|`, `;`, `&&`, `||`, `$()`, backticks, redirects
+- Landlock filesystem isolation on Linux
+- Graceful degradation on older kernels / non-Linux platforms
+- User can disable sandbox via `enable_sandbox = false`
 
-**Components:**
+**Documentation:** See [run_command Redesign](./run-command-redesign.md)
 
-1. **External Tool Types** (`src/external/types.rs`) ✅ COMPLETE
-   - `Platform` enum with detection
-   - `ExternalTool` struct (enabled, timeout, binary, sandbox, install_hints)
-   - `ExternalToolsConfig` with defaults
+---
 
-2. **Tools Configuration** (`~/.config/ask-ai/tools.toml`) ⚠️ INCOMPLETE
-   - Global settings parsed: `default_timeout`, `enable_sandbox`
-   - Per-tool settings NOT parsed: `[external.tools.*]` sections ignored
-   - See `src/external/config.rs:106-119` for FIXME
+### CLI Tools Infrastructure (Phase 2)
 
-3. **New Tools:** ✅ COMPLETE
-   - `check_tool_availability(tool: String)` - Check if tool is installed
-   - `run_command(command: String, args: Vec<String>, timeout: Option<u32>)` - Execute whitelisted command
+**Priority:** MEDIUM
+**Status:** NOT STARTED
 
-**Dependencies:**
-```toml
-which = "8.0"        # Command detection ✅ ADDED
-```
+**Planned Features:**
+- [ ] PDF pipeline skill (pdftotext + pdftoppm + tesseract)
+- [ ] Image metadata skill (exiftool)
+- [ ] Image conversion skill (imagemagick)
+- [ ] Skills system integration
 
-**Tasks:**
-- [x] Create `src/external/mod.rs` module structure
-- [x] Implement `ExternalTool` types with defaults
-- [ ] Implement `CommandExecutor` with async + timeout
-- [ ] Create `tools.toml` parser and config
-- [ ] Implement `check_tool_availability` tool
-- [ ] Implement `run_command` tool
-- [ ] Write unit tests for tool detection
-- [ ] Write integration tests for command execution
-- [ ] Document installation instructions by platform
+**Dependencies:** Phase 1 (complete)
 
 ---
 
@@ -379,15 +372,23 @@ which = "8.0"        # Command detection ✅ ADDED
 
 ---
 
-### System Tools - run_command
+### Document Import Tool
 
-**Priority:** Medium  
-**Status:** Blocked by security concerns
+**Priority:** MEDIUM
+**Status:** BLOCKED (requires Skills System Phase 1)
 
-**Tasks:**
-- [ ] Research: Secure command execution
-- [ ] Design: Whitelist configuration
-- [ ] Implement: Security constraints
+**Goal:** Import documents for semantic search with external tool pipelines.
+
+**Dependencies:**
+- Skills System (for PDF pipeline definition)
+- CLI Tools Phase 2 (pdftotext, pdftoppm, tesseract integration)
+
+**Planned Features:**
+- TEXT/MD: Builtin support (import_text_file)
+- PDF: External tools (pdftotext) + skills
+- Scanned PDF: tesseract + pdftoppm pipeline
+- Chunking with overlap (512 tokens, 64 overlap)
+- `/import-doc`, `/list-docs`, `/remove-doc` commands
 
 ---
 
