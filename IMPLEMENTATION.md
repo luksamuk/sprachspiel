@@ -115,18 +115,83 @@
 
 ### 🚨 PRIORITY 1: SOUL.md - AI Personality System
 
-**Status:** ❌ NOT STARTED (file ready, needs integration)
+**Status:** 🔄 IN PROGRESS
 
-**Goal:** Define AI personality, behavior, and communication style.
+**Goal:** Define AI personality, behavior, and communication style via user-configurable file.
 
-**Implementation:**
-- Add SOUL.md to context injection (similar to AGENTS.md)
-- Define personality traits, tone, and interaction style
-- User can customize or override
+**Location:** `~/.config/ask-ai/SOUL.md`
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Prompt Assembly                          │
+├─────────────────────────────────────────────────────────────┤
+│  1. SOUL LAYER                                              │
+│     ├─ ~/.config/ask-ai/SOUL.md (if exists)                 │
+│     └─ PERSONALITY_DEFAULT (fallback when no SOUL.md)      │
+│     └─ EMPTY (when --soulless flag)                         │
+├─────────────────────────────────────────────────────────────┤
+│  2. OPERATION LAYER                                         │
+│     └─ Role + Behavior + Tool Usage                         │
+├─────────────────────────────────────────────────────────────┤
+│  3. CONTEXT LAYER                                            │
+│     ├─ Platform info                                        │
+│     ├─ System context                                        │
+│     └─ AGENTS.md                                             │
+├─────────────────────────────────────────────────────────────┤
+│  4. CAPABILITY LAYER                                        │
+│     ├─ Tools (if enabled)                                   │
+│     ├─ Memory (if enabled)                                  │
+│     └─ Examples (if tools)                                  │
+├─────────────────────────────────────────────────────────────┤
+│  5. FINAL INSTRUCTION                                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Tasks:**
+
+| Task | Status | File |
+|------|--------|------|
+| Create `src/soul.rs` module | ⬜ TODO | `src/soul.rs` |
+| Add `PERSONALITY_DEFAULT` constant | ⬜ TODO | `src/prompts/base.rs` |
+| Remove Pepe personality | ⬜ TODO | DELETE `src/prompts/personality.rs` |
+| Update prompt builder | ⬜ TODO | `src/prompts/builder.rs` |
+| Add `--soulless` flag | ⬜ TODO | `src/cli/chat.rs`, `src/cli/query.rs` |
+| Add module exports | ⬜ TODO | `src/main.rs`, `src/lib.rs`, `src/prompts/mod.rs` |
+| Create documentation | ⬜ TODO | `doc/src/SOUL.md` |
+| Add unit tests | ⬜ TODO | `src/soul.rs`, `src/prompts/builder.rs` |
+
+**SOUL Processing:**
+
+1. **Load:** Read `~/.config/ask-ai/SOUL.md` (or `XDG_CONFIG_HOME/ask-ai/SOUL.md`)
+2. **Clean:** Remove HTML comments (`<!-- ... -->`) using regex
+3. **Normalize:** Trim whitespace, collapse blank lines
+4. **Validate:** Must have at least one `## ` section
+5. **Fallback:** If file missing/invalid, use `PERSONALITY_DEFAULT`
+
+**PromptType Integration:**
+
+| PromptType | Uses SOUL? | Behavior |
+|------------|-----------|----------|
+| Default | ✅ Yes | SOUL + Role + Context |
+| ToolUser | ✅ Yes | SOUL + Role + Context + Tools |
+| Code | ❌ No | Role + File Tools only |
+| CodeWithTools | ❌ No | Role + File Tools only |
+| Summarize | ❌ No | Role (minimal) |
+
+**CLI Flags:**
+
+- `--soulless` - Skip SOUL.md loading, use empty personality layer
+- Only applies to `chat` and `query` commands
+
+**Removed:**
+
+- Pepe personality (`PERSONALITY_PEPE` in `src/prompts/personality.rs`) - Users can define their own SOUL.md for custom personalities
 
 **Dependencies:** None
 
-**Estimated effort:** 1 day
+**Estimated effort:** 5-8 hours
 
 ---
 
