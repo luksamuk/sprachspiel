@@ -23,9 +23,10 @@ src/
 │   ├── mod.rs           # Chat module exports
 │   ├── cli.rs           # ChatArgs (subcommand)
 │   ├── session.rs       # ChatSession, ConversationStorage
-│   ├── history.rs       # Project identification, persistence
+│   ├── history.rs       # Legacy JSON storage (for /restore)
 │   ├── commands.rs      # Internal commands (/quit, /clear, etc.)
 │   └── repl.rs          # REPL loop + rendering
+├── project.rs           # Project identification (get_project_id)
 ```
 
 ## Data Structures
@@ -48,6 +49,8 @@ pub struct ChatSession {
 
 ### ConversationStorage
 
+**DEPRECATED:** Only used for legacy `/restore` command. SQLite is the primary storage.
+
 ```rust
 pub struct ConversationStorage {
     base_path: PathBuf,  // ~/.local/share/ask-ai/conversations/
@@ -56,9 +59,11 @@ pub struct ConversationStorage {
 
 ## Project Identification
 
-The project ID is used to organize conversations by project:
+The project ID is used to organize conversations by project.
+**Note:** `get_project_id()` moved to `src/project.rs` in v0.28.0.
 
 ```rust
+// In src/project.rs
 pub fn get_project_id() -> Option<String> {
     // 1. Try git remote origin URL
     // 2. Fallback: current folder name

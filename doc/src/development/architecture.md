@@ -513,9 +513,10 @@ ask-ai/
 │   │   ├── mod.rs
 │   │   ├── repl.rs          # Interactive loop
 │   │   ├── session.rs       # Session state
-│   │   ├── history.rs        # Message storage
+│   │   ├── history.rs       # Legacy JSON storage (for /restore)
 │   │   ├── model_switch.rs  # Centralized switching
 │   │   └── compaction.rs    # Context management
+│   ├── project.rs           # Project identification
 │   ├── db/                  # Database operations
 │   │   ├── connection.rs
 │   │   ├── operations.rs

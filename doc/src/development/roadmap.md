@@ -272,8 +272,8 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 - [x] Move `get_project_id()` to separate module (`project.rs`) - DONE v0.28.0
 - [x] Update history.rs to be migration-only - DONE v0.28.0
+- [x] ~~Consider removing `history.rs` entirely~~ - DECISION: Keep indefinitely for `/restore` command
 - [ ] Update user documentation for storage model
-- [ ] Consider removing `history.rs` entirely after JSON migration is complete
 
 ---
 
