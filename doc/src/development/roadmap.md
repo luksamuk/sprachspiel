@@ -240,7 +240,7 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 ## SQLite as Single Storage
 
 **Priority:** HIGH  
-**Status:** 🟢 ~95% COMPLETE (v0.27.x)
+**Status:** 🟢 COMPLETE (v0.28.0)
 
 **Goal:** Migrate from dual storage (JSON + SQLite) to SQLite as the single source of truth.
 
@@ -253,27 +253,17 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 | Phase 3: Restore | ✅ Done | `/restore` command + auto-migration on startup |
 | Phase 4: Commands | ✅ Done | `/save`, `/load`, `/list` use SQLite |
 | Phase 5: Testing | ✅ Done | Basic tests pass |
-| Phase 6: Cleanup | 🔄 In Progress | `ConversationStorage` deprecated, `repl.rs` clean |
+| Phase 6: Cleanup | ✅ Done | Project identification moved to `project.rs` |
+| User Documentation | ✅ Done | Updated `chat.md` with SQLite storage model |
 
 ### Current State
 
-| Storage | Status | Content |
-|---------|--------|---------|
-| SQLite | 🟢 Primary | Full session state (messages + metadata + todos) |
-| JSON | 🟡 Legacy | Only used by `/restore` command for backup import |
+| Storage | Status | Description |
+|---------|--------|-------------|
+| SQLite | 🟢 Primary | `~/.local/share/ask-ai/embeddings.db` |
+| JSON | 🟡 Backup | Only for `/export json` and `/restore` command |
 
-### Recent Changes (v0.28.0)
-
-- `get_project_id()` and `normalize_git_url()` moved to `src/project.rs`
-- `history.rs` is now purely a migration module (deprecated)
-- Clear separation: project identification (`project.rs`) vs. legacy storage (`history.rs`)
-
-### Remaining Tasks
-
-- [x] Move `get_project_id()` to separate module (`project.rs`) - DONE v0.28.0
-- [x] Update history.rs to be migration-only - DONE v0.28.0
-- [x] ~~Consider removing `history.rs` entirely~~ - DECISION: Keep indefinitely for `/restore` command
-- [ ] Update user documentation for storage model
+**Note:** `/restore` command is kept indefinitely for disaster recovery from JSON backups.
 
 ---
 

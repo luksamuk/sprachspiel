@@ -55,6 +55,12 @@ All notable changes to Ask-AI will be documented in this file.
   - Clear separation: project identification vs. legacy storage
   - `history.rs` still contains `ConversationStorage` for `/restore` command
 
+- **User Documentation** - Updated storage model
+  - `doc/src/commands/chat.md`: Updated session storage documentation
+  - Clarified SQLite as primary storage, JSON for backup/restore only
+  - Added `/restore` command documentation
+  - Added database tables explanation
+
 ## [0.27.3] - 2026-03-09
 
 ### Added

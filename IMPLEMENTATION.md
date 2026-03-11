@@ -106,6 +106,8 @@
   - Created `src/project.rs` with `get_project_id()` and `normalize_git_url()`
   - Updated `history.rs` to be purely migration module (deprecated)
   - Clear separation: project identification vs. legacy storage
+  - `history.rs` kept for `/restore` command (disaster recovery)
+  - Updated user documentation: `doc/src/commands/chat.md` now explains SQLite storage
 
 ---
 
