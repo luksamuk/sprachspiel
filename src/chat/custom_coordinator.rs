@@ -387,26 +387,17 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     eprintln!("Tool response: {}", &result);
                 }
 
-                // Truncate large tool results to preserve context space
-                let (truncated_result, was_truncated, original_tokens) = 
-                    crate::context_overflow::truncate_tool_result(&result);
-                
-                if was_truncated && self.debug {
-                    eprintln!(
-                        "Tool result truncated: {} tokens -> {} token limit",
-                        original_tokens,
-                        crate::context_overflow::MAX_TOOL_RESULT_TOKENS
-                    );
-                }
+                // Use full result (no truncation - LLM controls via head/tail)
+                let result = result;
 
                 // Emit tool result event
                 self.emit_event(ChatEvent::ToolResult {
                     name: tool_name.clone(),
-                    result: truncated_result.clone(),
+                    result: result.clone(),
                 });
 
-                // Push truncated tool result to history
-                self.history.push(ChatMessage::tool(truncated_result));
+                // Push tool result to history
+                self.history.push(ChatMessage::tool(result));
             }
 
             // Recurse to get next response

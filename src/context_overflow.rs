@@ -55,30 +55,18 @@ pub fn estimate_chat_messages_tokens(messages: &[ChatMessage]) -> usize {
         .sum()
 }
 
-/// Maximum tokens for a tool result before truncation
-/// Tool results can be very large (e.g., file contents, web pages)
-/// Limit to 4000 tokens to preserve context space
+/// Maximum tokens for a tool result before truncation (no longer used).
+/// Tool results are now returned in full - LLM controls output via head/tail parameters.
+#[allow(dead_code)]
 pub const MAX_TOOL_RESULT_TOKENS: usize = 4000;
 
-/// Approximate characters per token (conservative estimate)
-/// Using 4 chars per token to account for word-based estimation variance
+/// Approximate characters per token (no longer used).
+#[allow(dead_code)]
 pub const CHARS_PER_TOKEN: usize = 4;
 
-/// Truncate a tool result to fit within token limit (Unicode-safe)
-///
-/// This function ensures that large tool results don't consume excessive
-/// context space. It truncates the result to MAX_TOOL_RESULT_TOKENS and
-/// appends a notice about the truncation.
-///
-/// # Arguments
-/// * `result` - The tool result string to potentially truncate
-///
-/// # Returns
-/// * A tuple of (truncated_result, was_truncated, original_tokens)
-///
-/// # Unicode Safety
-/// Uses `.chars()` iterator which handles multi-byte characters correctly.
-/// Never panics on Unicode boundaries.
+/// Truncate a tool result to fit within token limit (no longer used).
+/// LLM now controls output size via run_command(head, tail) parameters.
+#[allow(dead_code)]
 pub fn truncate_tool_result(result: &str) -> (String, bool, usize) {
     let original_tokens = estimate_tokens(result);
 
