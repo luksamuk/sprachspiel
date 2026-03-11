@@ -352,7 +352,7 @@ fn apply_sandbox_if_enabled(
     debug_log!("System read-only paths: {:?}", ro_paths);
 
     // Create ruleset
-    let ruleset_result = Ruleset::new()
+    let ruleset_result = Ruleset::default()
         .handle_access(AccessFs::from_all(abi))
         .map_err(|e| format!("Failed to create Landlock ruleset: {}", e))?
         .create();
