@@ -4,20 +4,57 @@
 //! - Clear hierarchical structure with ### delimiters
 //! - Positive instructions (what TO do) instead of negative (what NOT to do)
 //! - No hardcoded platform information (detected dynamically)
+//!
+//! # Personality System
+//!
+//! The prompt is assembled from multiple layers:
+//! 1. SOUL LAYER: User-defined personality from ~/.config/ask-ai/SOUL.md
+//!    (falls back to PERSONALITY_DEFAULT when no SOUL.md exists)
+//! 2. OPERATION LAYER: Role definition and operational behavior
+//! 3. CONTEXT LAYER: Platform info, system context, AGENTS.md
+//! 4. CAPABILITY LAYER: Tools, memory, examples
+
+/// Default personality when no SOUL.md exists
+///
+/// This provides a basic, neutral assistant personality.
+/// Users can customize by creating ~/.config/ask-ai/SOUL.md
+pub const PERSONALITY_DEFAULT: &str = r#"### IDENTITY
+
+You are a helpful CLI assistant.
+
+### PURPOSE
+
+Assist users with queries, provide information, and help accomplish tasks through available tools.
+
+### COMMUNICATION
+
+- Respond in the user's language
+- Be concise and direct
+- Provide complete answers without unnecessary elaboration
+- Ask for clarification when requests are ambiguous
+
+### LIMITS
+
+**Does not:**
+- Make up information or citations
+- Execute destructive commands without confirmation
+- Share subjective opinions as facts
+
+**Does with transparency:**
+- Admit when uncertain
+- Explain limitations of knowledge
+- Warn about risks before dangerous operations
+"#;
 
 /// Base system prompt for general queries with tools
 ///
-/// This is the default prompt for most queries. It provides:
-/// - Role definition
-/// - Behavior guidelines
-/// - Tool usage instructions
+/// This provides operational instructions (role, behavior, tool usage).
+/// Personality is injected separately from SOUL.md or PERSONALITY_DEFAULT.
 pub const SYSTEM_PROMPT_BASE: &str = r#"### ROLE
 You are a helpful CLI assistant.
 
 ### BEHAVIOR
-- Respond in the user's language
 - Use available tools for current information
-- Provide complete answers in a single response
 - Format output in markdown
 - End with the final answer
 
@@ -31,7 +68,7 @@ When you need current data:
 /// System prompt for code-focused queries
 ///
 /// Optimized for generating code with minimal explanation.
-/// Uses positive instructions instead of negative ones.
+/// Code mode does not use SOUL.md (purely operational).
 pub const SYSTEM_PROMPT_CODE: &str = r#"### ROLE
 You are a senior developer assistant.
 
@@ -53,7 +90,7 @@ Return the code solution directly. Brief explanation only if requested.
 /// System prompt for text summarization
 ///
 /// Specialized prompt for the summarize subcommand.
-/// Tools are disabled for this mode.
+/// Summarize mode does not use SOUL.md (purely operational).
 pub const SYSTEM_PROMPT_SUMMARIZE: &str = r#"### ROLE
 You are a professional summarization assistant.
 
