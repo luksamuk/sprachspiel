@@ -974,6 +974,8 @@ pub struct TokenMetrics {
 
 pub struct SendMessageResult {
     pub response: String,
+    pub pre_tool_content: Option<String>,
+    pub pre_tool_thinking: Option<String>,
     pub metrics: TokenMetrics,
     pub context_window: usize,
     pub system_prompt: String,
@@ -1194,8 +1196,18 @@ async fn send_message(
 
             let display_content = strip_thinking_tags(&content);
             markdown::print_markdown(&display_content);
+
+            // Extract pre-tool content from coordinator
+            let pre_tool = coordinator.take_pre_tool_content();
+            let (pre_tool_content, pre_tool_thinking) = match pre_tool {
+                Some(ptc) => (Some(ptc.content), ptc.thinking),
+                None => (None, None),
+            };
+
             Ok(SendMessageResult {
                 response: display_content,
+                pre_tool_content,
+                pre_tool_thinking,
                 metrics,
                 context_window,
                 system_prompt,
