@@ -486,7 +486,7 @@ async fn handle_chat(args: ChatArgs, cli: &Cli, settings: &Settings) -> AppResul
         cli.tools,
         cli.code,
         cli.ignore_agents,
-        cli.soulless,
+        args.soulless,  // Use chat-specific flag, not global CLI flag
     )
     .await
 }
