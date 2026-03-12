@@ -2,6 +2,62 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.29.0] - 2026-03-11
+
+### Breaking Changes
+
+- **SOUL.md Personality System** - User-configurable agent personality replaces hardcoded Pepe personality
+  - `~/.config/ask-ai/SOUL.md` defines agent identity, behavior, and limits
+  - Falls back to `PERSONALITY_DEFAULT` when no SOUL.md exists
+  - Use `--soulless` flag to skip personality entirely
+  - **Removed:** Pepe personality (`PERSONALITY_PEPE`) - users should create their own SOUL.md
+
+### Added
+
+- **SOUL.md Module** (`src/soul.rs`)
+  - Loads personality from `~/.config/ask-ai/SOUL.md` or `XDG_CONFIG_HOME/ask-ai/SOUL.md`
+  - Removes HTML comments (`<!-- ... -->`) for developer notes
+  - Normalizes whitespace
+  - Validates structure (requires at least one `## ` section)
+
+- **PERSONALITY_DEFAULT** - Fallback personality when SOUL.md is missing
+
+- **`--soulless` CLI Flag** - Skip personality layer for neutral responses
+  - Available for `chat` and `query` commands
+  - Useful for debugging or when personality is not desired
+
+- **Documentation** - New `doc/src/soul.md` with examples and best practices
+  - Updated `doc/src/commands/chat.md` and `doc/src/commands/query.md`
+
+### Changed
+
+- **Prompt Assembly** - New layered architecture:
+  1. SOUL LAYER (SOUL.md or PERSONALITY_DEFAULT or empty if --soulless)
+  2. OPERATION LAYER (Role + Behavior + Tool Usage)
+  3. CONTEXT LAYER (Platform + System + AGENTS.md)
+  4. CAPABILITY LAYER (Tools + Memory + Examples)
+  5. FINAL INSTRUCTION
+
+- **Removed `src/prompts/personality.rs`** - Pepe personality code deleted
+
+- **Updated `src/prompts/mod.rs`** - Removed personality exports, added PERSONALITY_DEFAULT export
+
+### Migration Guide
+
+If you used Pepe personality (models with "pepe" in the name), you can recreate similar behavior by creating `~/.config/ask-ai/SOUL.md`:
+
+```markdown
+# PEPE
+
+## Purpose
+Sarcastic but helpful assistant.
+
+## Behavior
+- Make light-hearted jokes about user questions
+- Be concise, helpful, and slightly snarky
+- Still provide accurate information
+```
+
 ## [0.28.0] - 2026-03-11
 
 ### Fixed

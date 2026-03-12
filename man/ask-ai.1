@@ -1,4 +1,4 @@
-.TH ASK-AI 1 "2026-03-11" "ask-ai 0.28.0" "User Commands"
+.TH ASK-AI 1 "2026-03-11" "ask-ai 0.29.0" "User Commands"
 .SH NAME
 ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
@@ -81,6 +81,9 @@ Code mode: optimize response for code output.
 .BR \-\-ignore\-agents
 Ignore AGENTS.md file in current directory (disable context injection).
 .TP
+.BR \-\-soulless
+Skip SOUL.md personality (use neutral personality).
+.TP
 .BR \-\-init\-config
 Initialize/create sample configuration file.
 .TP
@@ -111,6 +114,9 @@ Tool output verbosity: compact, full, hidden (default: compact).
 .TP
 .BR \-\-ignore\-agents
 Ignore AGENTS.md file in current directory.
+.TP
+.BR \-\-soulless
+Skip SOUL.md personality (use neutral personality).
 .PP
 Interactive commands available inside chat:
 .in +4
@@ -409,6 +415,9 @@ Thinking mode priority: CLI flags > subcommand config > global config > model de
 .TP
 .I ~/.config/ask-ai/models.toml
 User-defined model configurations. Add custom models or override built-in parameters.
+.TP
+.I ~/.config/ask-ai/SOUL.md
+User-defined agent personality. Defines identity, behavior, and limits. Falls back to PERSONALITY_DEFAULT when missing. Use --soulless to skip.
 .TP
 .I ./AGENTS.md
 Project context file automatically loaded when present in current directory. Provides project-specific instructions and context to the model. Can be disabled with --ignore-agents flag.
