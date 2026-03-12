@@ -197,6 +197,7 @@ pub async fn run_query(
     cli_code: bool,
     cli_prompt: &str,
     cli_ignore_agents: bool,
+    cli_soulless: bool,
     debug: Option<bool>,
     plain: Option<bool>,
     settings: &Settings,
@@ -283,7 +284,8 @@ pub async fn run_query(
             .with_blacklist(Some(&blacklist_set))
             .with_agents_md(agents_md.as_deref())
             .with_tools(use_tools)
-            .with_retrieval(retrieval_enabled),
+            .with_retrieval(retrieval_enabled)
+            .with_soulless(cli_soulless),
     );
 
     // Validate prompt type (only for legacy prompt names)

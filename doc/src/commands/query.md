@@ -51,6 +51,7 @@ These options must be placed **before** the `query` subcommand:
 | `--tools` | | Force enable tools | auto-detect |
 | `--code` | `-c` | Code mode (no retrieval) | disabled |
 | `--ignore-agents` | | Ignore AGENTS.md context | disabled |
+| `--soulless` | | Skip SOUL.md personality | disabled |
 | `--help` | `-h` | Show help | - |
 
 ## Prompt Modes

@@ -30,6 +30,7 @@ Start an interactive chat session with an Ollama model. Conversations are automa
 | `-t, --think` | Enable think mode for models that support it |
 | `--tools` | Force enable tools even if model doesn't advertise support |
 | `--ignore-agents` | Ignore AGENTS.md file if present |
+| `--soulless` | Skip SOUL.md personality (use neutral personality) |
 
 ## Interactive Commands
 

@@ -1,21 +1,22 @@
 //! Prompt builder - main orchestration module
 //!
 //! Builds complete system prompts by combining:
-//! 1. Personality prefix (if applicable)
-//! 2. Role definition
-//! 3. Context section (platform, date, cwd, git, AGENTS.md)
-//! 4. Tools section (if enabled)
-//! 5. Examples (if tools enabled)
-//! 6. Final instruction
+//! 1. SOUL LAYER: User-defined personality from SOUL.md or PERSONALITY_DEFAULT
+//! 2. OPERATION LAYER: Role definition and behavior
+//! 3. CONTEXT LAYER: Platform, date, cwd, git, AGENTS.md
+//! 4. CAPABILITY LAYER: Tools, memory, examples
+//! 5. FINAL INSTRUCTION
 
 use std::collections::HashSet;
 
-use super::base::{SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE};
+use super::base::{
+    PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE,
+};
 use super::examples::TOOL_EXAMPLES;
-use super::personality::get_personality_prefix;
 use super::tools::build_tool_context;
 use crate::context::get_system_context;
 use crate::platform::PlatformInfo;
+use crate::soul::load_soul;
 
 /// Prompt type determines which base prompt to use
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +46,7 @@ pub enum PromptType {
 pub struct PromptConfig<'a> {
     /// Type of prompt to generate
     pub prompt_type: PromptType,
-    /// Model ID (for personality detection)
+    /// Model ID (for personality detection) - retained for backward compatibility
     pub model_id: Option<&'a str>,
     /// Tools to exclude from the prompt
     pub blacklist: Option<&'a HashSet<&'a str>>,
@@ -55,6 +56,8 @@ pub struct PromptConfig<'a> {
     pub tools_enabled: bool,
     /// Whether retrieval is enabled (adds MEMORY section)
     pub retrieval_enabled: bool,
+    /// Whether to skip personality (SOUL.md and PERSONALITY_DEFAULT)
+    pub soulless: bool,
 }
 
 impl<'a> PromptConfig<'a> {
@@ -70,6 +73,7 @@ impl<'a> PromptConfig<'a> {
                 PromptType::ToolUser | PromptType::CodeWithTools
             ),
             retrieval_enabled: false,
+            soulless: false,
         }
     }
 
@@ -102,6 +106,12 @@ impl<'a> PromptConfig<'a> {
         self.retrieval_enabled = retrieval_enabled;
         self
     }
+
+    /// Set whether to skip personality (SOUL.md)
+    pub fn with_soulless(mut self, soulless: bool) -> Self {
+        self.soulless = soulless;
+        self
+    }
 }
 
 /// Build a complete system prompt
@@ -109,7 +119,7 @@ impl<'a> PromptConfig<'a> {
 /// This is the main entry point for generating system prompts.
 /// It assembles all components in the correct order:
 ///
-/// 1. Personality prefix (e.g., Pepe) - if applicable
+/// 1. SOUL layer (if not soulless and applicable prompt type)
 /// 2. Role definition (from base prompt)
 /// 3. Context section:
 ///    - Platform info (detected dynamically)
@@ -127,12 +137,17 @@ impl<'a> PromptConfig<'a> {
 pub fn build_system_prompt(config: PromptConfig) -> String {
     let mut prompt = String::new();
 
-    // 1. Personality prefix (if applicable) - FIRST
-    if let Some(model_id) = config.model_id {
-        let personality = get_personality_prefix(Some(model_id));
-        if !personality.is_empty() {
-            prompt.push_str(personality);
-            // Don't add newline - personality already ends with one
+    // 1. SOUL LAYER - Personality (if not soulless and applicable prompt type)
+    // Only Default and ToolUser use SOUL.md
+    let uses_soul = matches!(
+        config.prompt_type,
+        PromptType::Default | PromptType::ToolUser
+    );
+    if uses_soul && !config.soulless {
+        let soul = load_soul().unwrap_or_else(|| PERSONALITY_DEFAULT.to_string());
+        if !soul.is_empty() {
+            prompt.push_str(&soul);
+            prompt.push_str("\n\n");
         }
     }
 
@@ -379,17 +394,62 @@ mod tests {
     }
 
     #[test]
-    fn test_pepe_personality() {
-        let prompt = build_system_prompt(
-            PromptConfig::new(PromptType::ToolUser).with_model_id(Some("pepe:8b-64k")),
-        );
+    fn test_soul_default_or_user_soul() {
+        // When SOUL.md exists, uses that; otherwise uses PERSONALITY_DEFAULT
+        let prompt = build_system_prompt(PromptConfig::new(PromptType::ToolUser));
 
-        // Should have Pepe personality at start
+        // Should have some personality content - either SOUL.md or PERSONALITY_DEFAULT
+        // PERSONALITY_DEFAULT has "### IDENTITY", user SOUL.md has "## Purpose", etc.
+        let has_personality = prompt.contains("### IDENTITY")
+            || prompt.contains("## Purpose")
+            || prompt.contains("## Behavior");
         assert!(
-            prompt.starts_with("### PERSONALITY"),
-            "Pepe personality should be at start"
+            has_personality,
+            "Should contain personality content from either SOUL.md or PERSONALITY_DEFAULT"
         );
-        assert!(prompt.contains("Pepe"), "Should contain Pepe");
+    }
+
+    #[test]
+    fn test_soulless_skips_personality() {
+        // When --soulless is set, no personality is added
+        let prompt =
+            build_system_prompt(PromptConfig::new(PromptType::ToolUser).with_soulless(true));
+
+        // Should NOT start with personality section
+        assert!(
+            !prompt.contains("### IDENTITY"),
+            "Soulless prompt should not have IDENTITY"
+        );
+        // Should start directly with ROLE
+        assert!(prompt.contains("### ROLE"), "Should have ROLE section");
+    }
+
+    #[test]
+    fn test_code_prompt_ignores_soul() {
+        // Code prompts don't use SOUL regardless
+        let prompt = build_system_prompt(PromptConfig::new(PromptType::Code));
+
+        // Should NOT have personality
+        assert!(
+            !prompt.contains("### IDENTITY"),
+            "Code prompt should not have IDENTITY"
+        );
+        // Should have ROLE directly
+        assert!(prompt.contains("### ROLE"), "Should have ROLE section");
+    }
+
+    #[test]
+    fn test_summarize_prompt_ignores_soul() {
+        // Summarize prompts don't use SOUL regardless
+        let prompt = build_system_prompt(PromptConfig::new(PromptType::Summarize));
+
+        // Should NOT have personality
+        assert!(
+            !prompt.contains("### IDENTITY"),
+            "Summarize prompt should not have IDENTITY"
+        );
+        // Should have ROLE directly
+        assert!(prompt.contains("### ROLE"), "Should have ROLE section");
     }
 
     #[test]

@@ -16,6 +16,7 @@
   - [summarize](./commands/summarize.md)
 - [Models](./models.md)
 - [Prompts](./prompts.md)
+- [SOUL.md](./soul.md)
 - [Tools](./tools.md)
 - [Pipelines](./pipelines.md)
 - [Configuration](./configuration.md)

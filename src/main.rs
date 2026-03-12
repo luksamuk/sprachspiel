@@ -106,6 +106,10 @@ struct Cli {
     #[arg(long)]
     ignore_agents: bool,
 
+    /// Skip SOUL.md personality (use neutral personality)
+    #[arg(long)]
+    soulless: bool,
+
     /// Initialize/create sample configuration file
     #[arg(long)]
     init_config: bool,
@@ -286,6 +290,7 @@ async fn handle_query_subcommand(args: QueryArgs, cli: &Cli, settings: &Settings
         cli.code,
         &cli.prompt,
         cli.ignore_agents,
+        cli.soulless,
         cli.debug,
         cli.plain,
         settings,
@@ -314,6 +319,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         cli.code,
         &cli.prompt,
         cli.ignore_agents,
+        cli.soulless,
         cli.debug,
         cli.plain,
         settings,
@@ -480,6 +486,7 @@ async fn handle_chat(args: ChatArgs, cli: &Cli, settings: &Settings) -> AppResul
         cli.tools,
         cli.code,
         cli.ignore_agents,
+        cli.soulless,
     )
     .await
 }

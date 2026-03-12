@@ -48,6 +48,7 @@ pub async fn run_chat_repl(
     cli_tools: bool,
     cli_code: bool,
     cli_ignore_agents: bool,
+    cli_soulless: bool,
 ) -> AppResult<()> {
     let use_debug = settings.output.debug_default;
 
@@ -534,6 +535,7 @@ pub async fn run_chat_repl(
                                         tools_active,
                                         agents_md.as_deref(),
                                         settings,
+                                        cli_soulless,
                                     );
                                     continue;
                                 }
@@ -569,6 +571,7 @@ pub async fn run_chat_repl(
                                             use_debug,
                                             db.as_ref(),
                                             embedding_client.as_ref(),
+                                            cli_soulless,
                                         )
                                         .await
                                         {
@@ -789,7 +792,8 @@ pub async fn run_chat_repl(
                         .with_blacklist(Some(&settings.blacklist_set()))
                         .with_agents_md(agents_md.as_deref())
                         .with_tools(tools_active)
-                        .with_retrieval(session.retrieval_enabled && !cli_code),
+                        .with_retrieval(session.retrieval_enabled && !cli_code)
+                        .with_soulless(cli_soulless),
                 );
 
                 if needs_pre_tool_compaction(&session, &system_prompt_for_check, context_window) {
@@ -832,6 +836,7 @@ pub async fn run_chat_repl(
                     use_debug,
                     db.as_ref(),
                     embedding_client.as_ref(),
+                    cli_soulless,
                 )
                 .await
                 {
@@ -899,7 +904,8 @@ pub async fn run_chat_repl(
                                     .with_blacklist(Some(&settings.blacklist_set()))
                                     .with_agents_md(agents_md.as_deref())
                                     .with_tools(tools_enabled)
-                                    .with_retrieval(session.retrieval_enabled && !cli_code),
+                                    .with_retrieval(session.retrieval_enabled && !cli_code)
+                                    .with_soulless(cli_soulless),
                             );
 
                             eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
@@ -987,6 +993,7 @@ async fn send_message(
     use_debug: bool,
     db: Option<&Arc<crate::db::Database>>,
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
+    cli_soulless: bool,
 ) -> AppResult<SendMessageResult> {
     let model_options = model_config.build_model_options();
 
@@ -1011,7 +1018,8 @@ async fn send_message(
                 .with_blacklist(Some(&blacklist_set))
                 .with_agents_md(agents_md)
                 .with_tools(tools_enabled)
-                .with_retrieval(session.retrieval_enabled && !cli_code), // Disable retrieval for code mode
+                .with_retrieval(session.retrieval_enabled && !cli_code) // Disable retrieval for code mode
+                .with_soulless(cli_soulless),
         )
     };
 
@@ -1442,6 +1450,7 @@ fn print_context_info(
     tools_enabled: bool,
     agents_md: Option<&str>,
     settings: &Settings,
+    soulless: bool,
 ) {
     let blacklist_set = settings.blacklist_set();
 
@@ -1457,7 +1466,8 @@ fn print_context_info(
             .with_blacklist(Some(&blacklist_set))
             .with_agents_md(agents_md)
             .with_tools(tools_enabled)
-            .with_retrieval(session.retrieval_enabled),
+            .with_retrieval(session.retrieval_enabled)
+            .with_soulless(soulless),
     );
 
     let history_messages = session.get_messages_for_llm(&system_prompt);
