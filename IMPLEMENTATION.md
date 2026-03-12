@@ -280,7 +280,64 @@ pub enum ChatEvent {
 
 ---
 
-### 🔴 PRIORITY 2: Notes System
+### 🔴 PRIORITY 2: File Write Tools
+
+**Status:** 📋 PLANNED
+
+**Goal:** Enable LLM to create, edit, and append to files safely.
+
+**Problem:**
+- Current file tools are read-only
+- `run_command` blocks pipes and redirects
+- No way to create or modify files
+- LLM cannot write code, configs, or output files
+
+**Solution:** Three new built-in tools with sandbox enforcement:
+
+| Tool | Purpose |
+|------|---------|
+| `write_file` | Create or overwrite files |
+| `edit_file` | Surgical edits (replace/insert/delete lines) |
+| `append_file` | Add content to existing files |
+
+**Security Model:**
+- **Sandbox ALWAYS enforced** for writes (ignoring `sandbox=false`)
+- **Blocked patterns** for sensitive files (`.env`, `secrets`, `.pem`, etc.)
+- **5MB size limit** per operation
+- **Atomic writes** (temp file + rename) to prevent corruption
+- **UTF-8 validation** - reject binary content
+
+**Design Decisions:**
+1. **Backup on edit:** Optional (`create_backup=true` parameter)
+2. **Size limit:** 5MB (increased from 1MB for reads)
+3. **Blocked patterns:** Hardcoded defaults + configurable via config.toml
+4. **Sandbox:** Mandatory for all write operations
+
+**Implementation Phases:**
+
+| Phase | Tool | Duration |
+|-------|------|----------|
+| 1 | `write_file` | 2-3 days |
+| 2 | `edit_file` | 2-3 days |
+| 3 | `append_file` | 1 day |
+
+**Key Files:**
+
+| File | Change |
+|------|--------|
+| `src/tools/files_write.rs` | New module for write operations |
+| `src/tools/mod.rs` | Export new module |
+| `src/tools/registry.rs` | Register new tools |
+| `src/external/config.rs` | Add `blocked_patterns` config section |
+| `doc/src/tools.md` | Document new tools |
+
+**Reference:** `doc/src/development/file-write-tools.md` - Full implementation plan
+
+**Dependencies:** None
+
+---
+
+### 🔴 PRIORITY 3: Notes System
 
 **Status:** ❌ NOT STARTED
 

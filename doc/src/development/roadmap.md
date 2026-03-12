@@ -62,6 +62,16 @@ This document outlines planned features and the current state of Ask-AI.
 
 *LED tools require `[led]` configuration in config.toml.
 
+**Planned: File Write Tools (Priority 2):**
+
+| Tool | Purpose | Status |
+|------|---------|--------|
+| `write_file` | Create or overwrite files | 📋 Planned |
+| `edit_file` | Edit existing files (replace/insert/delete) | 📋 Planned |
+| `append_file` | Add content to existing files | 📋 Planned |
+
+See `doc/src/development/file-write-tools.md` for implementation plan.
+
 **System Tools:**
 - `get_current_datetime` - Date, time, timezone, ISO 8601, Unix timestamp
 - `get_project_context` - Languages, git info, stack detection, key files

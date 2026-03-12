@@ -873,6 +873,102 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> Result<String, ...>
 | system-tools | 2 tools | ⚠️ Needs improvement |
 | search-tools | 3 tools | ⚠️ Needs improvement |
 
+### File Write Tools Security
+
+File write operations have additional security requirements that MUST be followed:
+
+**Mandatory Security Measures:**
+
+1. **Always sandboxed** - `sandbox=false` parameter is IGNORED for write operations
+2. **Blocked patterns** - Sensitive files are always blocked, regardless of configuration
+3. **Size limits** - Maximum 5MB per write operation
+4. **UTF-8 only** - Binary content is rejected
+5. **Atomic writes** - Use temp file + rename pattern to prevent corruption
+
+**Blocked patterns (always blocked):**
+
+```
+# Environment files
+".env", ".env.local", ".env.development", ".env.production", ".env.staging"
+
+# Secrets and credentials
+"secrets", "credentials", "secrets.json", "credentials.json", "secrets.yaml"
+
+# SSH keys
+"id_rsa", "id_dsa", "id_ed25519", "id_ecdsa"
+
+# Certificates and keys
+".pem", ".key"
+
+# SSH directory
+".ssh", "authorized_keys", "known_hosts"
+
+# GPG
+".gnupg"
+
+# Cloud credentials
+"credentials.json", "service-account.json"
+```
+
+**Implementation requirements for write tools:**
+
+```rust
+// MUST call validate_write_path() before ANY write operation
+fn validate_write_path(path: &Path, sandbox: bool) -> Result<PathBuf, String> {
+    // 1. Canonicalize path (resolve symlinks)
+    // 2. Enforce sandbox (ignore sandbox=false for writes)
+    // 3. Check is_blocked_path()
+    // 4. Verify parent directory exists
+    // 5. Verify write permissions
+}
+
+// MUST check blocked patterns after path resolution
+fn is_blocked_path(path: &Path) -> bool {
+    // Check against DEFAULT_BLOCKED_PATTERNS
+    // Check against configured blocked_patterns
+    // Case-insensitive matching
+}
+
+// MUST use atomic write pattern
+fn atomic_write(path: &Path, content: &str) -> Result<(), std::io::Error> {
+    let temp_path = path.with_extension("tmp");
+    std::fs::write(&temp_path, content)?;
+    std::fs::rename(&temp_path, path)?;
+    Ok(())
+}
+```
+
+**When implementing new write tools:**
+
+- Always call `validate_write_path()` before operations
+- Check `is_blocked_path()` after path resolution
+- Implement atomic writes to prevent corruption
+- Return meaningful error messages following AGENTS.md guidelines
+- Log operations in debug mode with `log_tool_call()` and `log_tool_result()`
+
+**Error message guidelines for write tools:**
+
+```rust
+// ✅ GOOD - Clear, actionable error
+let err_msg = format!(
+    "Error: '{}' matches a blocked pattern and cannot be written to. \
+     Blocked patterns protect sensitive files like secrets, keys, and credentials.",
+    filename
+);
+
+// ✅ GOOD - Helpful guidance
+let err_msg = format!(
+    "Error: File '{}' already exists. Use overwrite=true to replace it.",
+    path
+);
+
+// ❌ BAD - Vague error
+let err_msg = format!("Error: Cannot write file: {}", e);
+
+// ❌ BAD - Leaks sensitive information
+let err_msg = format!("Error: Cannot write to {}: {}", path, detailed_io_error);
+```
+
 ## Notes
 
 - The project is a CLI tool for interacting with local Ollama models
