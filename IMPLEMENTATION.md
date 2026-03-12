@@ -12,7 +12,7 @@
 
 ## Current Version
 
-**v0.29.0** - 2026-03-12
+**v0.31.0** - 2026-03-12
 
 ## Current Implementation Status
 
@@ -39,6 +39,7 @@
 - Embedding generation with Matryoshka truncation (768d → 256d)
 - AGENTS.md context injection with security sanitization
 - **SOUL.md personality system** - User-configurable agent personality
+- **Context Continuity with Graceful Interruption** - LLM pauses/resumes during overflow
 - Complete documentation with mdBook
 - Man page
 - Termux/Android builds
@@ -116,7 +117,7 @@
 
 ### 🔴 PRIORITY 0: Context Continuity with Graceful Interruption
 
-**Status:** 📋 PLANNED (awaiting implementation)
+**Status:** ✅ COMPLETED (v0.31.0)
 
 **Goal:** Enable LLM to gracefully pause reasoning when context fills up, then automatically continue after compaction.
 
@@ -126,71 +127,49 @@
 - No mechanism for LLM to signal "I need to pause and continue later"
 - Lost work when context overflow occurs during tool execution
 
-**Solution:** Tag-based continuation protocol:
-1. LLM receives context % in prompt
-2. LLM instructed to emit `<continuation_needed>` tag when pausing
-3. System detects tag, compacts, and injects continuation prompt
-4. LLM continues without user intervention
+**Solution (Implemented):** Tag-based continuation protocol:
+1. ✅ LLM receives context % in prompt (`with_context_status()`)
+2. ✅ LLM instructed to emit `<continuation_needed>` tag when pausing
+3. ✅ System detects tag, compacts, and injects continuation prompt via ephemeral
+4. ✅ LLM continues without user intervention
+5. ✅ Supports nested continuations (up to 3)
 
-**Architecture:**
+**Implementation Completed:**
 
-```
-User Input → add_user_message()
-     ↓
-check_context_status() → inject into prompt (e.g., "Context: 78%")
-     ↓
-send_message() → LLM generates response
-     ↓
-parse_continuation_tag()
-     ├─ No tag → normal flow (save, display, auto-compact)
-     │
-     └─ Tag detected → extract continuation info
-          ↓
-      Display response (strip tag)
-          ↓
-      Session.add_assistant_message(stripped_content)
-          ↓
-      auto_compact_if_needed()
-          ↓
-      inject_continuation_prompt() → ephemeral message
-          ↓
-      Continue send_message() loop
-```
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Context status in prompt | ✅ Done |
+| 2 | Continuation tag parsing | ✅ Done |
+| 3 | Ephemeral messages support | ✅ Done |
+| 4 | Continuation loop in REPL | ✅ Done |
+| 5 | Tests and documentation | ✅ Done |
 
-**Implementation Phases:**
+**Key Components Implemented:**
 
-| Phase | Description | File(s) |
-|-------|-------------|---------|
-| 1 | Context status in prompt | `prompts/builder.rs`, `prompts/base.rs` |
-| 2 | Continuation tag parsing | `chat/custom_coordinator.rs` |
-| 3 | Ephemeral messages support | `chat/custom_coordinator.rs` |
-| 4 | Continuation loop in REPL | `chat/repl.rs` |
-| 5 | Tests and documentation | Tests, CHANGELOG |
+1. **Context Status Section** (prompts/builder.rs)
+   - `PromptConfig.context_status` field
+   - Dynamic section showing usage % injected when >72%
+   - Warning when critical: `⚠️ CRITICAL: Context window is nearly full`
 
-**Key Components:**
+2. **CONTEXT MANAGEMENT Instructions** (prompts/base.rs)
+   - `CONTEXT_MANAGEMENT_INSTRUCTION` constant
+   - Instructs LLM on pause protocol
+   - Injected when context is overflow (>80%)
 
-1. **Context Status Section** (prompts)
-   - Dynamic section showing usage %: `Context usage: 78%`
-   - Warning when critical: `⚠️ Context is critically full`
-   - Injected before FINAL INSTRUCTION
+3. **ContinuationTag Parsing** (chat/custom_coordinator.rs)
+   - `ContinuationTag` struct with `paused_at` and `next_step`
+   - `parse_continuation_tag()` extracts and strips tag
+   - Ignores tags inside code blocks
 
-2. **CONTEXT MANAGEMENT Instructions** (prompts)
-   ```
-   If context reaches critical levels during your response:
-   1. PAUSE your reasoning at a logical checkpoint
-   2. Add <continuation_needed> with your checkpoint info
-   3. STOP generating and wait for continuation
-   
-   <continuation_needed>
-   Paused at: [brief description]
-   Next step: [what you were about to do]
-   </continuation_needed>
-   ```
+4. **Ephemeral Messages** (chat/custom_coordinator.rs)
+   - `push_ephemeral()` for continuation prompts
+   - Prepended to requests but never persisted
 
-3. **ContinuationTag Parsing** (custom_coordinator.rs)
-   - Extract tag content from LLM response
-   - Strip tag from displayed/saved content
-   - Return `(cleaned_content, Option<ContinuationTag>)`
+5. **Continuation Loop** (chat/repl.rs)
+   - `build_continuation_prompt()` creates resume instructions
+   - `send_message()` accepts optional continuation_tag
+   - Automatic continuation after compaction
+   - Token metrics accumulated across continuations
 
 4. **Ephemeral Messages** (custom_coordinator.rs)
    - `ephemeral_messages: Vec<ChatMessage>` - not saved to history

@@ -35,6 +35,7 @@
   - [Chat Mode Design](./development/chat-mode-design.md)
   - [Anatomy of Context](./development/context-anatomy.md)
   - [Context Composition Design](./development/context_composition_design.md)
+  - [Context Continuity](./development/context-continuity.md)
   - [Retrieval Design](./development/retrieval-design.md)
   - [Context Management Research](./development/context_management_research.md)
   - [Code Mode Research](./development/code_mode_research.md)

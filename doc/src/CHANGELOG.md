@@ -4,16 +4,20 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [0.31.0] - 2026-03-12
 
-### Added (In Progress)
+### Added
 
-- **Context Continuity with Graceful Interruption** - Infrastructure for LLM to pause during context overflow
-  - `ContextStatus` injected into prompts when approaching limits
+- **Context Continuity with Graceful Interruption** - Full implementation of LLM pause/resume during context overflow
+  - `ContextStatus` injected into prompts when approaching limits (>72% usage)
   - `CONTEXT_MANAGEMENT_INSTRUCTION` teaches LLM to emit `<continuation_needed>` tag
   - `ContinuationTag` struct for parsing pause/checkpoint information
-  - `parse_continuation_tag()` function extracts and strips continuation tags
+  - `parse_continuation_tag()` function extracts and strips continuation tags from responses
   - `ephemeral_messages` in `CustomCoordinator` for non-persisted continuation prompts
   - `ChatEvent::ContinuationNeeded` variant for event-based handling
   - `SendMessageResult.continuation_needed` field for continuation detection
+  - `build_continuation_prompt()` creates resume instructions from checkpoint
+  - Continuation loop in REPL automatically resumes after compaction
+  - Supports nested continuations (up to 3) for extreme context pressure
+  - Merges continuation responses with original for seamless output
 
 - **Prompt Configuration**
   - `PromptConfig.context_status` field for injecting context usage
@@ -24,6 +28,8 @@ All notable changes to Ask-AI will be documented in this file.
 
 - `ContextStatus::max_tokens()` - New method to get context window size
 - `build_request()` in `CustomCoordinator` now prepends ephemeral messages
+- `send_message()` now accepts optional `continuation_tag` parameter for resume
+- REPL continuation handling merges responses and accumulates token metrics
 
 ## [0.30.0] - 2026-03-12
 

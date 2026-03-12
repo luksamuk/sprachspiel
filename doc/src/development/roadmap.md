@@ -41,6 +41,11 @@ This document outlines planned features and the current state of Ask-AI.
 - Thinking output visible when enabled
 - Error recovery for tool/network errors
 - Context overflow protection during tool execution
+- **Context Continuity with Graceful Interruption** (v0.31.0)
+  - LLM can pause reasoning when context fills up
+  - Automatic continuation after compaction
+  - Nested continuations (up to 3 levels)
+  - Context status injected into prompts
 
 **Tools (28 total):**
 

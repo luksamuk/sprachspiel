@@ -572,6 +572,7 @@ pub async fn run_chat_repl(
                                             db.as_ref(),
                                             embedding_client.as_ref(),
                                             cli_soulless,
+                                            None,
                                         )
                                         .await
                                         {
@@ -836,9 +837,10 @@ pub async fn run_chat_repl(
                     agents_md.as_deref(),
                     use_debug,
                     db.as_ref(),
-                    embedding_client.as_ref(),
-                    cli_soulless,
-                )
+                                                embedding_client.as_ref(),
+                                            cli_soulless,
+                                            None,
+                                        )
                 .await
                 {
                     Ok(result) => {
@@ -857,17 +859,146 @@ pub async fn run_chat_repl(
                             }
                         }
 
+                        // Handle continuation if LLM paused for compaction
+                        let mut final_response = result.response.clone();
+                        let mut final_metrics = result.metrics.clone();
+                        let mut continuation_count = 0;
+                        
+                        if let Some(ref continuation_tag) = result.continuation_needed {
+                            continuation_count += 1;
+                            if use_debug {
+                                log_debug(&format!(
+                                    "Continuation requested: paused_at='{}', next_step='{}'",
+                                    continuation_tag.paused_at, continuation_tag.next_step
+                                ));
+                            }
+                            eprintln!("\n\x1B[33m⏳ Paused for context compaction, continuing...\x1B[0m");
+                            
+                            // Compact the context now
+                            let continuation_context_window = result.context_window;
+                            let continuation_system_prompt = result.system_prompt.clone();
+                            auto_compact_if_needed(
+                                &ollama,
+                                &model_config,
+                                &mut session,
+                                settings,
+                                agents_md.as_deref(),
+                                &continuation_system_prompt,
+                                continuation_context_window,
+                                use_debug,
+                            )
+                            .await;
+                            
+                            // Continue with continuation prompt
+                            
+                            // Send continuation request (empty user_input, continuation via ephemeral)
+                            let continuation_result = send_message(
+                                &ollama,
+                                &model_config,
+                                &mut session,
+                                "", // empty user_input - continuation via ephemeral message
+                                tools_active,
+                                think_enabled,
+                                cli_code,
+                                settings,
+                                agents_md.as_deref(),
+                                use_debug,
+                                db.as_ref(),
+                                embedding_client.as_ref(),
+                                cli_soulless,
+                                Some(continuation_tag),
+                            )
+                            .await;
+                            
+                            match continuation_result {
+                                Ok(mut cont_result) => {
+                                    // Append continuation response
+                                    final_response.push_str("\n\n");
+                                    final_response.push_str(&cont_result.response);
+                                    
+                                    // Update metrics
+                                    final_metrics.response_tokens += cont_result.metrics.response_tokens;
+                                    final_metrics.total_tokens += cont_result.metrics.total_tokens;
+                                    
+                                    eprintln!("\n\x1B[90m[Continuation complete]\x1B[0m");
+                                    
+                                    // Handle nested continuations (limit to 3)
+                                    while let Some(ref next_tag) = cont_result.continuation_needed {
+                                        if continuation_count >= 3 {
+                                            eprintln!("\x1B[33mWarning: Maximum continuations reached. Please continue manually.\x1B[0m");
+                                            break;
+                                        }
+                                        
+                                        continuation_count += 1;
+                                        eprintln!("\n\x1B[33m⏳ Paused again, continuing ({})...\x1B[0m", continuation_count);
+                                        
+                                        // Compact again
+                                        auto_compact_if_needed(
+                                            &ollama,
+                                            &model_config,
+                                            &mut session,
+                                            settings,
+                                            agents_md.as_deref(),
+                                            &cont_result.system_prompt,
+                                            cont_result.context_window,
+                                            use_debug,
+                                        )
+                                        .await;
+                                        
+                                        let next_result = send_message(
+                                            &ollama,
+                                            &model_config,
+                                            &mut session,
+                                            "", // empty user_input - continuation via ephemeral
+                                            tools_active,
+                                            think_enabled,
+                                            cli_code,
+                                            settings,
+                                            agents_md.as_deref(),
+                                            use_debug,
+                                            db.as_ref(),
+                                            embedding_client.as_ref(),
+                                            cli_soulless,
+                                            Some(next_tag),
+                                        ).await;
+                                        
+                                        match next_result {
+                                            Ok(n_result) => {
+                                                final_response.push_str("\n\n");
+                                                final_response.push_str(&n_result.response);
+                                                final_metrics.response_tokens += n_result.metrics.response_tokens;
+                                                final_metrics.total_tokens += n_result.metrics.total_tokens;
+                                                
+                                                eprintln!("\n\x1B[90m[Continuation complete]\x1B[0m");
+                                                
+                                                // Update cont_result for the while loop
+                                                cont_result = n_result;
+                                            }
+                                            Err(e) => {
+                                                eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+                                }
+                            }
+                        }
+
+                        // Save the final response (merged with continuations if any)
                         session.add_assistant_message(
-                            result.response,
-                            Some(result.metrics.prompt_tokens),
+                            final_response,
+                            Some(final_metrics.prompt_tokens),
                         );
 
-                        if result.metrics.total_tokens > 0 {
+                        if final_metrics.total_tokens > 0 {
                             eprintln!(
                                 "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-                                result.metrics.prompt_tokens,
-                                result.metrics.response_tokens,
-                                result.metrics.total_tokens
+                                final_metrics.prompt_tokens,
+                                final_metrics.response_tokens,
+                                final_metrics.total_tokens
                             );
                         }
 
@@ -999,6 +1130,24 @@ pub struct SendMessageResult {
     pub continuation_needed: Option<crate::chat::ContinuationTag>,
 }
 
+/// Build a continuation prompt from a continuation tag
+///
+/// Creates a system message that tells the LLM to resume from where it paused
+/// after context compaction.
+fn build_continuation_prompt(tag: &crate::chat::ContinuationTag) -> String {
+    format!(
+        "<continuation_prompt>\n\
+        Context has been compacted. Resume from the checkpoint.\n\
+        \n\
+        Reasoning paused at: {}\n\
+        Next step: {}\n\
+        \n\
+        Continue naturally from where you left off. Do not repeat completed work.\n\
+        </continuation_prompt>",
+        tag.paused_at, tag.next_step
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn send_message(
     ollama: &ollama_rs::Ollama,
@@ -1014,6 +1163,7 @@ async fn send_message(
     db: Option<&Arc<crate::db::Database>>,
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
     cli_soulless: bool,
+    continuation_tag: Option<&crate::chat::ContinuationTag>,
 ) -> AppResult<SendMessageResult> {
     let model_options = model_config.build_model_options();
 
@@ -1032,6 +1182,16 @@ async fn send_message(
         } else {
             PromptType::Default
         };
+        
+        // Check context overflow for status injection
+        let ctx_window = model_config.num_ctx as usize;
+        let ctx_status = check_context_overflow(
+            session,
+            "", // system_prompt computed below, we just need status
+            ctx_window,
+            DEFAULT_OVERFLOW_THRESHOLD,
+        );
+        
         build_system_prompt(
             PromptConfig::new(prompt_type)
                 .with_model_id(Some(&model_config.model_id))
@@ -1039,7 +1199,12 @@ async fn send_message(
                 .with_agents_md(agents_md)
                 .with_tools(tools_enabled)
                 .with_retrieval(session.retrieval_enabled && !cli_code) // Disable retrieval for code mode
-                .with_soulless(cli_soulless),
+                .with_soulless(cli_soulless)
+                .with_context_status(if ctx_status.needs_compaction() {
+                    Some(ctx_status.clone())
+                } else {
+                    None
+                }),
         )
     };
 
@@ -1123,6 +1288,15 @@ async fn send_message(
 
     // Add current user query at the end
     messages.push(ChatMessage::user(user_input.to_string()));
+    
+    // If this is a continuation, add ephemeral message to coordinator
+    if let Some(tag) = continuation_tag {
+        let continuation_prompt = build_continuation_prompt(tag);
+        coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
+        if use_debug {
+            log_debug("Injected continuation prompt as ephemeral message");
+        }
+    }
 
     if use_debug {
         log_debug(&format!("Sending {} messages to model", messages.len()));
