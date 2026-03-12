@@ -114,7 +114,135 @@
 
 ## Priority Roadmap
 
-### ✅ PRIORITY 0: PreToolContent Persistence & Context Enrichment (COMPLETED)
+### 🔴 PRIORITY 0: Context Continuity with Graceful Interruption
+
+**Status:** 📋 PLANNED (awaiting implementation)
+
+**Goal:** Enable LLM to gracefully pause reasoning when context fills up, then automatically continue after compaction.
+
+**Problem Statement:**
+- LLM can run out of context mid-task (complex multi-step operations)
+- Current auto-compaction happens AFTER response completes
+- No mechanism for LLM to signal "I need to pause and continue later"
+- Lost work when context overflow occurs during tool execution
+
+**Solution:** Tag-based continuation protocol:
+1. LLM receives context % in prompt
+2. LLM instructed to emit `<continuation_needed>` tag when pausing
+3. System detects tag, compacts, and injects continuation prompt
+4. LLM continues without user intervention
+
+**Architecture:**
+
+```
+User Input → add_user_message()
+     ↓
+check_context_status() → inject into prompt (e.g., "Context: 78%")
+     ↓
+send_message() → LLM generates response
+     ↓
+parse_continuation_tag()
+     ├─ No tag → normal flow (save, display, auto-compact)
+     │
+     └─ Tag detected → extract continuation info
+          ↓
+      Display response (strip tag)
+          ↓
+      Session.add_assistant_message(stripped_content)
+          ↓
+      auto_compact_if_needed()
+          ↓
+      inject_continuation_prompt() → ephemeral message
+          ↓
+      Continue send_message() loop
+```
+
+**Implementation Phases:**
+
+| Phase | Description | File(s) |
+|-------|-------------|---------|
+| 1 | Context status in prompt | `prompts/builder.rs`, `prompts/base.rs` |
+| 2 | Continuation tag parsing | `chat/custom_coordinator.rs` |
+| 3 | Ephemeral messages support | `chat/custom_coordinator.rs` |
+| 4 | Continuation loop in REPL | `chat/repl.rs` |
+| 5 | Tests and documentation | Tests, CHANGELOG |
+
+**Key Components:**
+
+1. **Context Status Section** (prompts)
+   - Dynamic section showing usage %: `Context usage: 78%`
+   - Warning when critical: `⚠️ Context is critically full`
+   - Injected before FINAL INSTRUCTION
+
+2. **CONTEXT MANAGEMENT Instructions** (prompts)
+   ```
+   If context reaches critical levels during your response:
+   1. PAUSE your reasoning at a logical checkpoint
+   2. Add <continuation_needed> with your checkpoint info
+   3. STOP generating and wait for continuation
+   
+   <continuation_needed>
+   Paused at: [brief description]
+   Next step: [what you were about to do]
+   </continuation_needed>
+   ```
+
+3. **ContinuationTag Parsing** (custom_coordinator.rs)
+   - Extract tag content from LLM response
+   - Strip tag from displayed/saved content
+   - Return `(cleaned_content, Option<ContinuationTag>)`
+
+4. **Ephemeral Messages** (custom_coordinator.rs)
+   - `ephemeral_messages: Vec<ChatMessage>` - not saved to history
+   - `push_ephemeral()` - add temporary message
+   - `take_ephemeral()` - retrieve and clear
+   - Prepended to request before history
+
+5. **Continuation Loop** (repl.rs)
+   - Detect continuation tag in response
+   - Compact context
+   - Inject continuation prompt as ephemeral message
+   - Continue generation loop
+   - Auto-retry until no continuation needed
+
+**Constants (Reused):**
+- `DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8` - Critical (80%)
+- `PRE_TOOL_THRESHOLD: f32 = 0.75` - Warning (75%)
+- Warning at 72% (90% of 80%)
+
+**Data Structures:**
+
+```rust
+pub struct ContinuationTag {
+    pub paused_at: String,   // Where reasoning stopped
+    pub next_step: String,   // What was about to be done
+}
+
+pub enum ChatEvent {
+    // ... existing variants ...
+    ContinuationNeeded { tag: ContinuationTag },
+}
+```
+
+**Edge Cases:**
+- Tag embedded in code block → Should NOT be parsed
+- Multiple tags → Parse first one only
+- Empty tag content → Treat as no continuation
+- Tag in pre-tool content → Parse and handle
+
+**Testing:**
+1. Unit tests for `parse_continuation_tag()`
+2. Integration test for continuation loop
+3. Edge case tests (empty, multiple, in code block)
+4. Manual testing with simulated context pressure
+
+**Dependencies:** None (all infrastructure exists)
+
+**Estimated effort:** 1-2 days
+
+---
+
+### ✅ PRIORITY 1: PreToolContent Persistence & Context Enrichment (COMPLETED)
 
 **Status:** ✅ COMPLETED (All phases done)
 
