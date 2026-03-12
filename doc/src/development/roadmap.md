@@ -360,6 +360,43 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ---
 
+### Parallel Tool Execution
+
+**Priority:** MEDIUM (PRIORITY 6 in implementation)  
+**Status:** Research needed
+
+**Goal:** Execute independent tool calls in parallel for faster response times.
+
+**Problem:**
+- Current implementation executes tool calls sequentially
+- LLM often requests multiple independent tools (e.g., `get_weather` + `get_current_datetime`)
+- Sequential execution unnecessarily increases latency
+
+**Proposed Solution:**
+- Detect independent tool calls using dependency analysis
+- Execute read-only tools in parallel using `futures::join_all`
+- Preserve sequential order for stateful tools (file writes, database ops)
+
+**Safe for Parallel (read-only):**
+- `get_weather`, `get_current_datetime`
+- `read_file`, `read_file_segment`, `count_lines`, `list_directory`, `search_files`
+- `web_search`, `search_duckduckgo`
+- `calculate`
+- `get_pokemon_*` (all Pokemon tools)
+- `get_system_info`
+
+**Requires Sequential (stateful/write):**
+- `run_command` (may have side effects)
+- `write_file`, `edit_file`, `append_file` (when implemented)
+- Database operations
+- File writes
+
+**Estimated effort:** 3-4 days
+
+**Implementation:** See `IMPLEMENTATION.md` - Priority 6
+
+---
+
 ### File Session State
 
 **Priority:** Medium  
