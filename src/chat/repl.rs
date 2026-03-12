@@ -775,7 +775,8 @@ pub async fn run_chat_repl(
                 }
 
                 // Save user message immediately before sending
-                session.add_user_message(line.to_string());
+                // Capture message ID for linking pre-tool content
+                let user_message_id = session.add_user_message(line.to_string());
                 if !session.anonymous
                     && let Err(e) = session.save_sqlite()
                     && use_debug
@@ -841,6 +842,21 @@ pub async fn run_chat_repl(
                 .await
                 {
                     Ok(result) => {
+                        // Save pre-tool content before final response
+                        if let Some(pre_content) = &result.pre_tool_content {
+                            session.add_pre_tool_message(
+                                pre_content.clone(),
+                                result.pre_tool_thinking.clone(),
+                                user_message_id,
+                            );
+                            if use_debug {
+                                log_debug(&format!(
+                                    "Saved pre-tool content ({} chars)",
+                                    pre_content.len()
+                                ));
+                            }
+                        }
+
                         session.add_assistant_message(
                             result.response,
                             Some(result.metrics.prompt_tokens),

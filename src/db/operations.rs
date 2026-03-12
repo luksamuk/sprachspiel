@@ -441,6 +441,23 @@ impl Database {
         })
     }
 
+    /// Update a message with its previous_message_id
+    ///
+    /// Used by pre_tool_content messages to link back to the user question.
+    pub fn update_message_previous_id(
+        &self,
+        message_id: i64,
+        previous_message_id: i64,
+    ) -> Result<()> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            conn.execute(
+                "UPDATE messages SET previous_message_id = ?1 WHERE id = ?2",
+                params![previous_message_id, message_id],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Search messages using full-text search (BM25)
     ///
     /// # Arguments
@@ -776,7 +793,7 @@ impl Database {
 
             match limit {
                 Some(lim) => {
-                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens FROM messages 
+                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens, message_type FROM messages 
                         WHERE conversation_id = ?1 ORDER BY timestamp ASC LIMIT ?2";
                     let mut stmt = conn.prepare(sql)?;
                     let rows = stmt.query_map(
@@ -794,7 +811,7 @@ impl Database {
                                 chunk_content: None,
                                 chunk_start: None,
                                 chunk_end: None,
-                                message_type: None,
+                                message_type: row.get(6)?,
                                 previous_message_id: None,
                                 subsequent_messages: vec![],
                                 prompt_tokens: row.get(5)?,
@@ -806,7 +823,7 @@ impl Database {
                     }
                 }
                 None => {
-                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens FROM messages 
+                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens, message_type FROM messages 
                         WHERE conversation_id = ?1 ORDER BY timestamp ASC";
                     let mut stmt = conn.prepare(sql)?;
                     let rows =
@@ -823,7 +840,7 @@ impl Database {
                                 chunk_content: None,
                                 chunk_start: None,
                                 chunk_end: None,
-                                message_type: None,
+                                message_type: row.get(6)?,
                                 previous_message_id: None,
                                 subsequent_messages: vec![],
                                 prompt_tokens: row.get(5)?,

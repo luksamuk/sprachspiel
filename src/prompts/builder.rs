@@ -216,13 +216,20 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         prompt.push_str("  Use when you see a relevant but truncated message in context.\n\n");
         prompt.push_str("- **remember(query=\"topic\")**: Search past discussions\n");
         prompt.push_str("  Use when the user asks about something not in current context.\n\n");
+        prompt.push_str("**Navigation:**\n");
+        prompt.push_str("Each message may include navigation fields:\n");
+        prompt.push_str(
+            "- `previous_message_id`: ID of the preceding message (for assistant messages)\n",
+        );
+        prompt.push_str("- `subsequent_messages`: Messages that follow a user question\n");
+        prompt.push_str("Use these to walk through conversation history contextually.\n\n");
         prompt.push_str("**Example:**\n");
         prompt.push_str(
             "Context shows: <message id='42'><content>What about...</content></message>\n",
         );
         prompt.push_str("You think: This looks relevant but incomplete.\n");
         prompt.push_str("You call: remember(id=\"42\")\n");
-        prompt.push_str("You receive: Full message content\n");
+        prompt.push_str("You receive: Full message content with navigation fields\n");
     }
 
     // 5. Examples (if tools enabled)

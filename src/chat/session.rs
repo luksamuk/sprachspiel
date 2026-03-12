@@ -129,6 +129,9 @@ pub struct SavedMessage {
     /// Prompt tokens used in this interaction (real count from Ollama)
     #[serde(default)]
     pub prompt_tokens: Option<u64>,
+    /// Message type: "normal" or "pre_tool_content"
+    #[serde(default)]
+    pub message_type: Option<String>,
 }
 
 impl Default for SavedMessage {
@@ -138,6 +141,7 @@ impl Default for SavedMessage {
             content: String::new(),
             timestamp: Utc::now(),
             prompt_tokens: None,
+            message_type: None,
         }
     }
 }
@@ -208,6 +212,7 @@ impl ChatSession {
                 timestamp: chrono::DateTime::from_timestamp(m.timestamp, 0)
                     .unwrap_or_else(Utc::now),
                 prompt_tokens: m.prompt_tokens.map(|t| t as u64),
+                message_type: m.message_type,
             })
             .collect();
 
@@ -272,7 +277,9 @@ impl ChatSession {
     ///
     /// If database is attached, saves to SQLite immediately and generates
     /// embedding asynchronously (fire-and-forget).
-    pub fn add_user_message(&mut self, content: String) {
+    ///
+    /// Returns the message ID if saved to database, None otherwise.
+    pub fn add_user_message(&mut self, content: String) -> Option<i64> {
         let now = Utc::now();
 
         // Add to memory (immediate)
@@ -353,6 +360,8 @@ impl ChatSession {
                 }
             }
         }
+
+        None
     }
 
     /// Add an assistant message to the session
@@ -368,6 +377,7 @@ impl ChatSession {
             content: content.clone(),
             timestamp: now,
             prompt_tokens,
+            message_type: None,
         });
         self.updated_at = now;
 
@@ -445,6 +455,99 @@ impl ChatSession {
                 Err(e) => {
                     eprintln!("Warning: Could not save message to database: {}", e);
                 }
+            }
+        }
+    }
+
+    /// Add a pre-tool content message to the database
+    ///
+    /// This stores intermediate assistant content generated before tool calls.
+    /// Unlike regular messages, these are stored only in the database for
+    /// semantic search, NOT in the in-memory session history.
+    ///
+    /// # Arguments
+    /// * `content` - The pre-tool content (thinking/intro text)
+    /// * `thinking_content` - Optional thinking content
+    /// * `previous_message_id` - ID of the user message this responds to
+    ///
+    /// # Returns
+    /// The message ID if saved successfully
+    pub fn add_pre_tool_message(
+        &mut self,
+        content: String,
+        thinking_content: Option<String>,
+        previous_message_id: Option<i64>,
+    ) -> Option<i64> {
+        if self.anonymous {
+            return None;
+        }
+
+        let now = Utc::now();
+        let db = self.db.as_ref()?;
+
+        // Ensure conversation exists
+        self.ensure_conversation_exists();
+
+        // Combine thinking and content for storage
+        let full_content = if let Some(thinking) = thinking_content {
+            format!("<thinking>\n{}\n</thinking>\n\n{}", thinking, content)
+        } else {
+            content
+        };
+
+        // Insert with message_type = "pre_tool_content"
+        match db.insert_message_with_type(
+            &self.id,
+            ROLE_ASSISTANT,
+            &full_content,
+            now,
+            "pre_tool_content",
+        ) {
+            Ok(message_id) => {
+                // Store previous_message_id if available
+                if let Some(prev_id) = previous_message_id
+                    && let Err(e) = db.update_message_previous_id(message_id, prev_id)
+                {
+                    eprintln!("Warning: Failed to save previous_message_id: {}", e);
+                }
+
+                // Generate embedding asynchronously
+                if let Some(ref client) = self.embedding_client {
+                    let client = Arc::clone(client);
+                    let db = Arc::clone(db);
+                    let conv_id = self.id.clone();
+                    let timestamp = now;
+                    let content_clone = full_content.clone();
+
+                    tokio::spawn(async move {
+                        if crate::embeddings::needs_chunking(&content_clone) {
+                            let chunks = crate::embeddings::chunk_text(&content_clone);
+                            for chunk in &chunks {
+                                if let Ok(chunk_id) = db.insert_chunk(
+                                    message_id,
+                                    chunk.index as i32,
+                                    &chunk.content,
+                                    chunk.start_offset as i32,
+                                    chunk.end_offset as i32,
+                                    timestamp,
+                                ) && let Ok(embedding) = client.embed(&chunk.content).await
+                                {
+                                    let _ = db.update_chunk_embedding(
+                                        chunk_id, &embedding, &conv_id, timestamp,
+                                    );
+                                }
+                            }
+                        } else if let Ok(embedding) = client.embed(&content_clone).await {
+                            let _ = db.update_message_embedding(message_id, &embedding, &conv_id, timestamp);
+                        }
+                    });
+                }
+
+                Some(message_id)
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not save pre-tool message: {}", e);
+                None
             }
         }
     }
