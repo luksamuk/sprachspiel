@@ -26,6 +26,15 @@ All notable changes to Ask-AI will be documented in this file.
   - Available for `chat` and `query` commands
   - Useful for debugging or when personality is not desired
 
+- **Multiple Personalities** - Documentation for switching between personality files
+  - See `doc/src/soul.md` for example personalities (PEPE, SPRACH, ANGEMON)
+  - Symlink or copy approach for switching
+
+- **Example Personalities** - Three complete example personalities in documentation:
+  - **SPRACH** - Cognitive companion for research and Zettelkasten work
+  - **PEPE** - Sarcastic senior developer (replaces hardcoded Pepe)
+  - **ANGEMON** - Guardian administrator for system protection
+
 - **Documentation** - New `doc/src/soul.md` with examples and best practices
   - Updated `doc/src/commands/chat.md` and `doc/src/commands/query.md`
 
@@ -44,19 +53,14 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Migration Guide
 
-If you used Pepe personality (models with "pepe" in the name), you can recreate similar behavior by creating `~/.config/ask-ai/SOUL.md`:
+If you used Pepe personality before, create `~/.config/ask-ai/SOUL.md` with your desired personality.
 
-```markdown
-# PEPE
+Example personalities are available in `doc/src/soul.md`:
+- **SPRACH** - Thoughtful research companion
+- **PEPE** - Sarcastic senior developer
+- **ANGEMON** - Guardian administrator
 
-## Purpose
-Sarcastic but helpful assistant.
-
-## Behavior
-- Make light-hearted jokes about user questions
-- Be concise, helpful, and slightly snarky
-- Still provide accurate information
-```
+See the [SOUL.md documentation](./soul.md) for complete examples and best practices.
 
 ## [0.28.0] - 2026-03-11
 
