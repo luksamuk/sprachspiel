@@ -2,6 +2,42 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.30.0] - 2026-03-12
+
+### Added
+
+- **PreToolContent Persistence** - Intermediate assistant messages (generated before tool calls) are now saved for semantic search
+  - `SavedMessage.message_type` field distinguishes `"normal"` vs `"pre_tool_content"` messages
+  - `previous_message_id` links pre-tool content back to the user question
+  - `subsequent_messages` in search results shows follow-up messages contextually
+  - Navigation hints in `remember` tool output
+
+- **Database Schema v5** - New columns for message metadata
+  - `message_type TEXT DEFAULT 'normal'` - Distinguishes normal vs intermediate messages
+  - `previous_message_id INTEGER` - Links assistant messages to preceding user message
+
+- **Session Methods**
+  - `add_pre_tool_message()` - Stores pre-tool content with `previous_message_id` linkage
+  - `add_user_message()` now returns `Option<i64>` (message ID) for linking
+
+- **Database Methods**
+  - `update_message_previous_id()` - Sets previous_message_id for navigation
+  - `get_conversation_messages()` now includes `message_type` column
+
+- **MEMORY TOOLS Navigation** - Enhanced prompt section with navigation instructions
+  - Explains `previous_message_id` and `subsequent_messages` fields
+  - Guides LLM on contextual message navigation
+
+### Changed
+
+- **`remember` Tool Output** - Shows `message_type` indicator for intermediate messages
+  - `[Intermediate]` prefix for `pre_tool_content` messages
+  - Subsequent messages displayed with proper indentation
+
+- **`get_conversation_messages()`** - Now retrieves `message_type` column from database
+
+- **Retrieval Enrichment** - `subsequent_messages` includes `message_type` for each message
+
 ## [0.29.0] - 2026-03-11
 
 ### Breaking Changes
