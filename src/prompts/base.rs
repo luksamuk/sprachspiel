@@ -103,3 +103,23 @@ You are a professional summarization assistant.
 ### OUTPUT
 Provide the summary directly without preamble.
 "#;
+
+/// Context management instructions for graceful interruption
+///
+/// Injected into prompts when context status indicates approaching limits.
+/// Instructs LLM on how to pause and continue after compaction.
+pub const CONTEXT_MANAGEMENT_INSTRUCTION: &str = r#"### CONTEXT MANAGEMENT
+If context reaches critical levels during your response:
+1. PAUSE your reasoning at a logical checkpoint
+2. Add a continuation marker with your checkpoint info
+3. STOP generating and wait for continuation
+
+Format for continuation:
+<continuation_needed>
+Reasoning paused: [brief description of where you stopped]
+Next step: [what you were about to do]
+</continuation_needed>
+
+When you see a <continuation_prompt> after context is compacted,
+continue naturally from the checkpoint without repeating completed work.
+"#;

@@ -10,11 +10,13 @@
 use std::collections::HashSet;
 
 use super::base::{
-    PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE,
+    CONTEXT_MANAGEMENT_INSTRUCTION, PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE,
+    SYSTEM_PROMPT_SUMMARIZE,
 };
 use super::examples::TOOL_EXAMPLES;
 use super::tools::build_tool_context;
 use crate::context::get_system_context;
+use crate::context_overflow::ContextStatus;
 use crate::platform::PlatformInfo;
 use crate::soul::load_soul;
 
@@ -58,6 +60,8 @@ pub struct PromptConfig<'a> {
     pub retrieval_enabled: bool,
     /// Whether to skip personality (SOUL.md and PERSONALITY_DEFAULT)
     pub soulless: bool,
+    /// Context status for awareness (injects usage % into prompt)
+    pub context_status: Option<ContextStatus>,
 }
 
 impl<'a> PromptConfig<'a> {
@@ -74,6 +78,7 @@ impl<'a> PromptConfig<'a> {
             ),
             retrieval_enabled: false,
             soulless: false,
+            context_status: None,
         }
     }
 
@@ -110,6 +115,12 @@ impl<'a> PromptConfig<'a> {
     /// Set whether to skip personality (SOUL.md)
     pub fn with_soulless(mut self, soulless: bool) -> Self {
         self.soulless = soulless;
+        self
+    }
+
+    /// Set context status for awareness injection
+    pub fn with_context_status(mut self, context_status: Option<ContextStatus>) -> Self {
+        self.context_status = context_status;
         self
     }
 }
@@ -232,6 +243,29 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         prompt.push_str("You receive: Full message content with navigation fields\n");
     }
 
+    // 4d. Context status (if status provided and needs compaction)
+    // Injected before examples so LLM is aware of context pressure
+    if let Some(ref status) = config.context_status
+        && status.needs_compaction()
+    {
+        prompt.push_str("\n### CONTEXT STATUS\n\n");
+        prompt.push_str(&format!(
+            "Context usage: {}% ({:.1}K / {:.0}K tokens)\n\n",
+            status.usage_percent(),
+            status.total_tokens() as f64 / 1000.0,
+            status.max_tokens() as f64 / 1000.0
+        ));
+
+        if status.is_overflow() {
+            prompt.push_str("⚠️ CRITICAL: Context window is nearly full.\n");
+            prompt.push_str("If you need to perform lengthy reasoning or multiple tool calls, ");
+            prompt.push_str("first inform the user, then use the continuation protocol.\n");
+        } else if status.is_warning() {
+            prompt.push_str("⚠️ WARNING: Context is approaching capacity.\n");
+            prompt.push_str("Consider completing current tasks before starting new ones.\n");
+        }
+    }
+
     // 5. Examples (if tools enabled)
     if config.tools_enabled {
         prompt.push_str("\n\n");
@@ -242,6 +276,14 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
     if !matches!(config.prompt_type, PromptType::Summarize) {
         prompt.push_str("\n### FINAL INSTRUCTION\n");
         prompt.push_str("Provide a complete response in the user's language. End when finished.\n");
+
+        // Add context management instruction if context is critical
+        if let Some(ref status) = config.context_status
+            && status.is_overflow()
+        {
+            prompt.push('\n');
+            prompt.push_str(CONTEXT_MANAGEMENT_INSTRUCTION);
+        }
     }
 
     prompt

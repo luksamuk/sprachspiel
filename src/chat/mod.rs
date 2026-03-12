@@ -16,6 +16,6 @@ pub mod thinking;
 pub mod todo_state;
 
 pub use cli::ChatArgs;
-pub use custom_coordinator::CustomCoordinator;
+pub use custom_coordinator::{ContinuationTag, CustomCoordinator, parse_continuation_tag};
 pub use repl::run_chat_repl;
 pub use thinking::{display_thinking, strip_thinking_tags};

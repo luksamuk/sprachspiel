@@ -995,6 +995,8 @@ pub struct SendMessageResult {
     pub metrics: TokenMetrics,
     pub context_window: usize,
     pub system_prompt: String,
+    /// Parsed continuation tag if LLM requested to continue after compaction
+    pub continuation_needed: Option<crate::chat::ContinuationTag>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1220,13 +1222,25 @@ async fn send_message(
                 None => (None, None),
             };
 
+            // Parse continuation tag from response
+            let (cleaned_response, continuation_needed) =
+                crate::chat::parse_continuation_tag(&display_content);
+
+            // If there was a continuation tag, re-print the cleaned content
+            if continuation_needed.is_some() {
+                // Clear previous output and reprint without the tag
+                eprint!("\x1B[2K\r"); // Clear current line
+                markdown::print_markdown(&cleaned_response);
+            }
+
             Ok(SendMessageResult {
-                response: display_content,
+                response: cleaned_response,
                 pre_tool_content,
                 pre_tool_thinking,
                 metrics,
                 context_window,
                 system_prompt,
+                continuation_needed,
             })
         }
         Err(e) => {

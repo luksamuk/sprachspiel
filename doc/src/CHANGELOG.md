@@ -2,6 +2,29 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.31.0] - 2026-03-12
+
+### Added (In Progress)
+
+- **Context Continuity with Graceful Interruption** - Infrastructure for LLM to pause during context overflow
+  - `ContextStatus` injected into prompts when approaching limits
+  - `CONTEXT_MANAGEMENT_INSTRUCTION` teaches LLM to emit `<continuation_needed>` tag
+  - `ContinuationTag` struct for parsing pause/checkpoint information
+  - `parse_continuation_tag()` function extracts and strips continuation tags
+  - `ephemeral_messages` in `CustomCoordinator` for non-persisted continuation prompts
+  - `ChatEvent::ContinuationNeeded` variant for event-based handling
+  - `SendMessageResult.continuation_needed` field for continuation detection
+
+- **Prompt Configuration**
+  - `PromptConfig.context_status` field for injecting context usage
+  - Context status section shows usage % and critical/warning indicators
+  - Context management instructions when overflow is detected
+
+### Changed
+
+- `ContextStatus::max_tokens()` - New method to get context window size
+- `build_request()` in `CustomCoordinator` now prepends ephemeral messages
+
 ## [0.30.0] - 2026-03-12
 
 ### Added

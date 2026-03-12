@@ -114,6 +114,88 @@ pub struct PreToolContent {
     pub thinking: Option<String>,
 }
 
+/// Continuation tag parsed from LLM response
+///
+/// When the LLM detects context is nearly full and needs to pause,
+/// it emits this tag with checkpoint information for resumption.
+#[derive(Debug, Clone)]
+pub struct ContinuationTag {
+    /// Where reasoning was paused
+    pub paused_at: String,
+    /// What the LLM was about to do next
+    pub next_step: String,
+}
+
+/// Parse continuation tag from LLM response
+///
+/// Extracts the <continuation_needed> tag content and returns
+/// both the cleaned response (without the tag) and the parsed tag.
+///
+/// Returns (cleaned_content, Some(tag)) if tag found and parsed,
+/// or (original_content, None) if no tag or invalid.
+pub fn parse_continuation_tag(content: &str) -> (String, Option<ContinuationTag>) {
+    // Find the tag
+    let start_tag = "<continuation_needed>";
+    let end_tag = "</continuation_needed>";
+
+    let start_pos = match content.find(start_tag) {
+        Some(pos) => pos,
+        None => return (content.to_string(), None),
+    };
+
+    // Check if tag is inside a code block (should NOT be parsed)
+    let before_tag = &content[..start_pos];
+    let code_block_count = before_tag.matches("```").count();
+    if code_block_count % 2 == 1 {
+        // Inside a code block, don't parse
+        return (content.to_string(), None);
+    }
+
+    let end_pos = match content.find(end_tag) {
+        Some(pos) => pos,
+        None => return (content.to_string(), None),
+    };
+
+    // Extract tag content
+    let tag_content = &content[start_pos + start_tag.len()..end_pos];
+
+    // Parse fields
+    let mut paused_at = String::new();
+    let mut next_step = String::new();
+
+    for line in tag_content.lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("Reasoning paused:") {
+            paused_at = value.trim().to_string();
+        } else if let Some(value) = line.strip_prefix("Next step:") {
+            next_step = value.trim().to_string();
+        }
+    }
+
+    // Create cleaned content by removing the tag
+    let cleaned = format!(
+        "{}{}",
+        &content[..start_pos],
+        &content[end_pos + end_tag.len()..]
+    );
+
+    // Normalize whitespace in cleaned content
+    let cleaned = cleaned.trim().to_string();
+
+    // Require at least one field to be filled
+    if paused_at.is_empty() && next_step.is_empty() {
+        return (content.to_string(), None);
+    }
+
+    (
+        cleaned,
+        Some(ContinuationTag {
+            paused_at,
+            next_step,
+        }),
+    )
+}
+
 /// Event emitted during chat processing
 #[derive(Debug, Clone)]
 pub enum ChatEvent {
@@ -134,6 +216,10 @@ pub enum ChatEvent {
     /// Final response (no more tool calls) - kept for future use
     #[allow(dead_code)]
     FinalResponse(ChatMessageResponse),
+    /// LLM requested continuation after context compaction
+    ContinuationNeeded {
+        tag: ContinuationTag,
+    },
 }
 
 /// A coordinator for managing chat interactions with event callbacks.
@@ -157,6 +243,9 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// Accumulated pre-tool content (text generated before tool calls)
     pre_tool_content: String,
     pre_tool_thinking: Option<String>,
+    /// Ephemeral messages (not persisted to history)
+    /// Used for continuation prompts after context compaction
+    ephemeral_messages: Vec<ChatMessage>,
 }
 
 impl<C: ChatHistory> CustomCoordinator<C> {
@@ -178,6 +267,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             system_prompt: None,
             pre_tool_content: String::new(),
             pre_tool_thinking: None,
+            ephemeral_messages: Vec::new(),
         }
     }
 
@@ -253,6 +343,31 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         })
     }
 
+    /// Add an ephemeral message (not persisted to history)
+    ///
+    /// Ephemeral messages are prepended to requests but never saved.
+    /// Used for continuation prompts after context compaction.
+    pub fn push_ephemeral(&mut self, message: ChatMessage) {
+        self.ephemeral_messages.push(message);
+    }
+
+    /// Take all ephemeral messages and clear the accumulator
+    ///
+    /// Returns ephemeral messages for inspection and clears the accumulator.
+    pub fn take_ephemeral(&mut self) -> Vec<ChatMessage> {
+        std::mem::take(&mut self.ephemeral_messages)
+    }
+
+    /// Check if there are pending ephemeral messages
+    pub fn has_ephemeral(&self) -> bool {
+        !self.ephemeral_messages.is_empty()
+    }
+
+    /// Clear all ephemeral messages
+    pub fn clear_ephemeral(&mut self) {
+        self.ephemeral_messages.clear();
+    }
+
     /// Emit an event if callback is set
     fn emit_event(&self, event: ChatEvent) {
         if let Some(ref callback) = self.event_callback {
@@ -313,11 +428,17 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         request
     }
 
-    /// Build a request from current history
+    /// Build a request from current history with ephemeral messages prepended
     fn build_request(&self) -> ChatMessageRequest {
+        // Build messages: ephemeral first, then history
+        let mut messages = Vec::with_capacity(
+            self.ephemeral_messages.len() + self.history.messages().len()
+        );
+        messages.extend(self.ephemeral_messages.iter().cloned());
+        messages.extend(self.history.messages().iter().cloned());
+
         let mut request =
-            ChatMessageRequest::new(self.model.clone(), self.history.messages().to_vec())
-                .options(self.options.clone());
+            ChatMessageRequest::new(self.model.clone(), messages).options(self.options.clone());
 
         // Add tools - need to convert our CustomToolInfo to ollama-rs's ToolInfo
         // We serialize ours and it's compatible
@@ -488,5 +609,126 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     #[allow(dead_code)]
     pub fn tool_count(&self) -> usize {
         self.tools.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_continuation_tag_basic() {
+        let content = r#"I've analyzed the first part. Let me continue.
+
+<continuation_needed>
+Reasoning paused: Analyzed file structure
+Next step: Examine the main function
+</continuation_needed>"#;
+
+        let (cleaned, tag) = parse_continuation_tag(content);
+
+        assert!(tag.is_some());
+        let tag = tag.unwrap();
+        assert_eq!(tag.paused_at, "Analyzed file structure");
+        assert_eq!(tag.next_step, "Examine the main function");
+        assert!(cleaned.contains("I've analyzed the first part"));
+        assert!(!cleaned.contains("<continuation_needed>"));
+    }
+
+    #[test]
+    fn test_parse_continuation_tag_multiline() {
+        let content = r#"Some response here.
+
+<continuation_needed>
+Reasoning paused: Completed step 1
+Next step: Process step 2
+</continuation_need>"#;
+
+        let (cleaned, tag) = parse_continuation_tag(content);
+
+        assert!(tag.is_none(), "Should not parse without closing tag");
+        assert_eq!(cleaned, content);
+    }
+
+    #[test]
+    fn test_parse_continuation_tag_in_code_block() {
+        let content = r#"Here's an example:
+
+```
+<continuation_needed>
+Reasoning paused: In code block
+Next step: Should not parse
+</continuation_needed>
+```
+
+This should not be parsed as a continuation tag."#;
+
+        let (cleaned, tag) = parse_continuation_tag(content);
+
+        assert!(tag.is_none(), "Tags inside code blocks should not be parsed");
+        assert!(cleaned.contains("<continuation_needed>"));
+    }
+
+    #[test]
+    fn test_parse_continuation_tag_empty_fields() {
+        let content = r#"<continuation_needed>
+Reasoning paused:
+Next step:
+</continuation_needed>"#;
+
+        let (cleaned, tag) = parse_continuation_tag(content);
+
+        // Empty fields should return None
+        assert!(tag.is_none());
+    }
+
+    #[test]
+    fn test_parse_continuation_tag_partial_fields() {
+        let content = r#"<continuation_needed>
+Reasoning paused: Half way through analysis
+Next step:
+</continuation_needed>"#;
+
+        let (cleaned, tag) = parse_continuation_tag(content);
+
+        // Should still parse if at least one field is filled
+        assert!(tag.is_some());
+        let tag = tag.unwrap();
+        assert_eq!(tag.paused_at, "Half way through analysis");
+        assert!(tag.next_step.is_empty());
+    }
+
+    #[test]
+    fn test_parse_continuation_tag_no_tag() {
+        let content = "This is a normal response without any continuation tag.";
+
+        let (cleaned, tag) = parse_continuation_tag(content);
+
+        assert!(tag.is_none());
+        assert_eq!(cleaned, content);
+    }
+
+    #[test]
+    fn test_parse_continuation_tag_nested_tags() {
+        // Nested tags shouldn't happen in practice, but if they do,
+        // we parse from first open to first close and take the last matching values
+        let content = r#"<continuation_needed>
+Reasoning paused: First level
+Next step: Second level
+<continuation_needed>
+Reasoning paused: Nested
+Next step: Should ignore
+</continuation_needed>
+</continuation_needed>"#;
+
+        let (cleaned, tag) = parse_continuation_tag(content);
+
+        // We find the first </continuation_needed> (after "ignore")
+        // and parse the content between, which includes all lines
+        // The last matching field values win
+        assert!(tag.is_some());
+        let tag = tag.unwrap();
+        assert_eq!(tag.paused_at, "Nested"); // Last "Reasoning paused:" wins
+        assert_eq!(tag.next_step, "Should ignore"); // Last "Next step:" wins
     }
 }

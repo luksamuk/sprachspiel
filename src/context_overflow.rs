@@ -3,7 +3,7 @@
 //! Implements auto-compaction when context reaches threshold.
 
 use crate::chat::session::ChatSession;
-use crate::tokens::{MESSAGE_OVERHEAD, estimate_tokens};
+use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Default overflow threshold (80% of context window)
@@ -162,6 +162,15 @@ impl ContextStatus {
             ContextStatus::Ok { total_tokens, .. } => *total_tokens,
             ContextStatus::Warning { total_tokens, .. } => *total_tokens,
             ContextStatus::Overflow { total_tokens, .. } => *total_tokens,
+        }
+    }
+
+    /// Get max tokens (context window size)
+    pub fn max_tokens(&self) -> usize {
+        match self {
+            ContextStatus::Ok { max_tokens, .. } => *max_tokens,
+            ContextStatus::Warning { max_tokens, .. } => *max_tokens,
+            ContextStatus::Overflow { max_tokens, .. } => *max_tokens,
         }
     }
 }

@@ -126,6 +126,10 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
             }
         }
         ChatEvent::FinalResponse(_) => {}
+        ChatEvent::ContinuationNeeded { .. } => {
+            // Continuation events are handled by the REPL loop, not displayed
+            // This is for query mode which doesn't support continuation
+        }
     }
 }
 
