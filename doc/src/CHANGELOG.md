@@ -24,6 +24,14 @@ All notable changes to Ask-AI will be documented in this file.
   - Context status section shows usage % and critical/warning indicators
   - Context management instructions when overflow is detected
 
+### Fixed
+
+- **Landlock Sandbox E2BIG Error** - Fixed crash when running multiple commands
+  - Added thread-local tracking to prevent stacking Landlock rulesets
+  - E2BIG error now treated as success (thread already sandboxed)
+  - Documented 16-layer limit in Kernel Landlock API
+  - Prevents "Argument list too long" errors after ~16 command executions
+
 ### Changed
 
 - `ContextStatus::max_tokens()` - New method to get context window size

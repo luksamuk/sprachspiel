@@ -300,6 +300,19 @@ fn apply_head_tail(output: String, head: Option<usize>, tail: Option<usize>) -> 
     }
 }
 
+/// Thread-local flag to track if Landlock sandbox has been applied.
+///
+/// Landlock creates stacked rulesets per thread. Each call to `restrict_self()`
+/// adds a new layer. The kernel limits this to 16 layers. Once applied, we
+/// don't need to apply again in the same thread.
+///
+/// E2BIG error means the thread already has maximum layers (16), which implies
+/// it's already well-sandboxed (either by us or by a parent process).
+#[cfg(all(feature = "sandbox", target_os = "linux"))]
+std::thread_local! {
+    static LANDLOCK_APPLIED: std::cell::Cell<bool> = std::cell::Cell::new(false);
+}
+
 /// Apply Landlock sandbox if enabled (Linux only).
 ///
 /// Design based on landlock sandboxer example:
@@ -307,6 +320,23 @@ fn apply_head_tail(output: String, head: Option<usize>, tail: Option<usize>) -> 
 ///
 /// Key insight: from_read(abi) includes Execute, ReadFile, ReadDir
 /// So RO paths with from_read() can execute binaries and read files.
+///
+/// # Layer Stacking
+///
+/// Landlock rulesets are stacked per-thread. The kernel limits this to 16 layers.
+/// Once applied, subsequent calls would add new layers, eventually hitting E2BIG.
+/// We use thread-local tracking to apply sandbox only once per thread.
+///
+/// # E2BIG Handling
+///
+/// E2BIG from `restrict_self()` means the maximum number of stacked rulesets
+/// (16) has been reached for the current thread. This indicates the thread is
+/// already sandboxed - either by a previous call or by inheritance from a
+/// parent process. We treat this as success, not an error.
+///
+/// Reference: https://docs.kernel.org/userspace-api/landlock.html
+/// "There is a limit of 16 layers of stacked rulesets... E2BIG: The maximum
+/// number of stacked rulesets is reached for the current thread."
 #[cfg(all(feature = "sandbox", target_os = "linux"))]
 fn apply_sandbox_if_enabled(
     config: &ExternalToolsConfig,
@@ -314,6 +344,12 @@ fn apply_sandbox_if_enabled(
 ) -> Result<(), String> {
     if !config.enable_sandbox {
         debug_log!("Sandbox disabled in config");
+        return Ok(());
+    }
+
+    // Check if already applied in this thread
+    if LANDLOCK_APPLIED.get() {
+        debug_log!("Landlock already applied in this thread, skipping");
         return Ok(());
     }
 
@@ -420,9 +456,24 @@ fn apply_sandbox_if_enabled(
 
     // Apply restrictions
     debug_log!("Calling restrict_self()...");
-    let status = ruleset_created
-        .restrict_self()
-        .map_err(|e| format!("Failed to apply Landlock sandbox: {}", e))?;
+    let status = match ruleset_created.restrict_self() {
+        Ok(status) => {
+            LANDLOCK_APPLIED.set(true);
+            status
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            // E2BIG means maximum number of stacked rulesets reached (16 layers)
+            // This indicates the thread is already sandboxed - either by us
+            // or by inheritance from a parent process. Treat as success.
+            if err_str.contains("E2BIG") || err_str.contains("Argument list too long") {
+                debug_log!("Landlock layers limit reached (E2BIG), thread already sandboxed");
+                LANDLOCK_APPLIED.set(true);
+                return Ok(());
+            }
+            return Err(format!("Failed to apply Landlock sandbox: {}", e));
+        }
+    };
 
     debug_log!("Sandbox status: {:?}", status.ruleset);
 
