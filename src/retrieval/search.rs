@@ -182,7 +182,7 @@ pub async fn run_search(
     log_debug("Enriching results with assistant responses...");
     let enriched_results = match db.enrich_with_context(results) {
         Ok(r) => {
-            let enriched_count = r.iter().filter(|msg| msg.next_message.is_some()).count();
+            let enriched_count = r.iter().filter(|msg| !msg.subsequent_messages.is_empty()).count();
             log_debug(&format!(
                 "Enriched {} results with assistant responses",
                 enriched_count
@@ -200,12 +200,18 @@ pub async fn run_search(
     let formatted: Vec<FormattedResult> = enriched_results
         .into_iter()
         .map(|msg| {
-            // If this message has a context (assistant response), include it
-            let content_with_context = if let Some(ref answer) = msg.next_message {
-                format!(
-                    "{}\n\n--- Assistant Response ---\n{}",
-                    msg.content, answer.content
-                )
+            // If this message has subsequent messages, include them
+            let content_with_context = if !msg.subsequent_messages.is_empty() {
+                let mut content = msg.content.clone();
+                for sub_msg in &msg.subsequent_messages {
+                    let type_prefix = match sub_msg.message_type.as_deref() {
+                        Some("pre_tool_content") => "\n\n--- Intermediate ---\n",
+                        _ => "\n\n--- Assistant Response ---\n",
+                    };
+                    content.push_str(type_prefix);
+                    content.push_str(&sub_msg.content);
+                }
+                content
             } else {
                 msg.content.clone()
             };

@@ -9,7 +9,7 @@
 //! - session_todos table (for task tracking)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 4;
+pub const SCHEMA_VERSION: i32 = 5;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     tool_output_level TEXT DEFAULT 'compact'
 );
 
--- Messages table (with prompt_tokens)
+-- Messages table (with prompt_tokens and message_type)
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     conversation_id TEXT NOT NULL,
@@ -42,6 +42,10 @@ CREATE TABLE IF NOT EXISTS messages (
     has_embedding INTEGER DEFAULT 0,
     -- Real token count from Ollama (added in v4)
     prompt_tokens INTEGER,
+    -- Message type for distinguishing intermediate vs final (added in v5)
+    message_type TEXT DEFAULT 'normal',
+    -- Previous message ID for navigation (added in v5)
+    previous_message_id INTEGER REFERENCES messages(id),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
 );
 
@@ -52,6 +56,10 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation
 -- Index for timestamp ordering
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp 
     ON messages(timestamp DESC);
+
+-- Index for previous message lookup (added in v5)
+CREATE INDEX IF NOT EXISTS idx_messages_previous 
+    ON messages(previous_message_id) WHERE previous_message_id IS NOT NULL;
 
 -- Message chunks for long messages (>1024 chars)
 CREATE TABLE IF NOT EXISTS message_chunks (

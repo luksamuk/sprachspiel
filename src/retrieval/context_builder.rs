@@ -97,17 +97,22 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
             timestamp
         ));
 
-        // If user message has an assistant response, include it
-        if let Some(ref answer) = msg.next_message {
-            let answer_timestamp = format_timestamp(answer.timestamp);
-            let answer_prefix = answer.source_type.prefix();
+        // If user message has assistant responses, include them
+        for sub_msg in &msg.subsequent_messages {
+            let type_prefix = match sub_msg.message_type.as_deref() {
+                Some("pre_tool_content") => " [Intermediate]",
+                _ => "",
+            };
+            let sub_timestamp = format_timestamp(sub_msg.timestamp);
+            let sub_prefix = sub_msg.source_type.prefix();
             text.push_str(&format!(
-                "<message id=\"{}:{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
-                answer_prefix,
-                answer.message_id,
-                answer.role,
-                answer.content,
-                answer_timestamp
+                "<message id=\"{}:{}\"{}>\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
+                sub_prefix,
+                sub_msg.message_id,
+                type_prefix,
+                sub_msg.role,
+                sub_msg.content,
+                sub_timestamp
             ));
         }
     }
@@ -272,7 +277,7 @@ pub async fn build_context(
                         if use_debug {
                             let enriched_count = enriched_results
                                 .iter()
-                                .filter(|r| r.next_message.is_some())
+                                .filter(|r| !r.subsequent_messages.is_empty())
                                 .count();
                             log_debug(&format!(
                                 "Added {} retrieved messages to context ({} enriched with responses)",
@@ -460,7 +465,7 @@ pub async fn build_query_context(
                         if use_debug {
                             let enriched_count = enriched_results
                                 .iter()
-                                .filter(|r| r.next_message.is_some())
+                                .filter(|r| !r.subsequent_messages.is_empty())
                                 .count();
                             log_debug(&format!(
                                 "Added {} retrieved messages to context ({} enriched with responses)",

@@ -939,7 +939,6 @@ mod tests {
     #[test]
     fn test_to_rows_and_from_rows() {
         use crate::chat::todo_state::TaskStatus;
-        use crate::db::TodoRow;
 
         let mut todos = super::TodoState::new();
         todos.add("Task 1".to_string());

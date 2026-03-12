@@ -189,22 +189,25 @@ async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id
                 msg.content
             );
 
-            // If user message, also fetch the assistant response
-            if msg.role == ROLE_USER
-                && let Ok(Some(answer)) = db.get_next_message_by_role(
+            // If user message, also fetch subsequent assistant messages
+            if msg.role == ROLE_USER {
+                // Get subsequent messages
+                // For now, use get_next_message_by_role for the first assistant message
+                // This will be updated to use get_subsequent_assistant_messages later
+                if let Ok(Some(answer)) = db.get_next_message_by_role(
                     msg.message_id,
                     &msg.conversation_id,
                     ROLE_ASSISTANT,
-                )
-            {
-                let answer_timestamp = chrono::DateTime::from_timestamp(answer.timestamp, 0)
-                    .unwrap_or_else(chrono::Utc::now);
-                output.push_str(&format!(
-                    "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
-                    answer.message_id,
-                    answer_timestamp.format("%Y-%m-%d %H:%M"),
-                    answer.content
-                ));
+                ) {
+                    let answer_timestamp = chrono::DateTime::from_timestamp(answer.timestamp, 0)
+                        .unwrap_or_else(chrono::Utc::now);
+                    output.push_str(&format!(
+                        "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
+                        answer.message_id,
+                        answer_timestamp.format("%Y-%m-%d %H:%M"),
+                        answer.content
+                    ));
+                }
             }
 
             output
@@ -304,21 +307,26 @@ async fn remember_by_query(
             msg.message_id, role_label, msg.score, content
         ));
 
-        // If user message has an assistant response, show it
-        if let Some(ref answer) = msg.next_message {
-            let answer_label = format_role_label(ROLE_ASSISTANT);
-            let answer_content = if answer.content.chars().count() > 200 {
-                format!(
-                    "{}...",
-                    answer.content.chars().take(200).collect::<String>()
-                )
+        // Show subsequent assistant messages (for user messages)
+        for sub_msg in &msg.subsequent_messages {
+            let type_prefix = match sub_msg.message_type.as_deref() {
+                Some("pre_tool_content") => "[Intermediate] ",
+                _ => "",
+            };
+            let sub_content = if sub_msg.content.chars().count() > 100 {
+                format!("{}...", sub_msg.content.chars().take(100).collect::<String>())
             } else {
-                answer.content.clone()
+                sub_msg.content.clone()
             };
             output.push_str(&format!(
-                "  └─ **[id={}]** {}\n     {}\n\n",
-                answer.message_id, answer_label, answer_content
+                "  └─ **[id={}]** {}{}\n",
+                sub_msg.message_id,
+                type_prefix,
+                sub_content.trim()
             ));
+        }
+        if !msg.subsequent_messages.is_empty() {
+            output.push('\n');
         }
     }
 
