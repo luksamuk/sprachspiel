@@ -1146,6 +1146,192 @@ pub struct SendMessageResult {
     pub continuation_needed: Option<crate::chat::ContinuationTag>,
 }
 
+/// Build system prompt for the session
+fn build_session_system_prompt(
+    session: &ChatSession,
+    tools_enabled: bool,
+    cli_code: bool,
+    cli_soulless: bool,
+    model_config: &ModelConfig,
+    blacklist_set: &std::collections::HashSet<&str>,
+    agents_md: Option<&str>,
+) -> String {
+    if let Some(ref custom_prompt) = session.system_prompt {
+        return custom_prompt.clone();
+    }
+
+    let prompt_type = if cli_code && tools_enabled {
+        PromptType::CodeWithTools
+    } else if cli_code {
+        PromptType::Code
+    } else if tools_enabled {
+        PromptType::ToolUser
+    } else {
+        PromptType::Default
+    };
+
+    let ctx_window = model_config.num_ctx as usize;
+    let ctx_status = check_context_overflow(session, "", ctx_window, DEFAULT_OVERFLOW_THRESHOLD);
+
+    build_system_prompt(
+        PromptConfig::new(prompt_type)
+            .with_model_id(Some(&model_config.model_id))
+            .with_blacklist(Some(blacklist_set))
+            .with_agents_md(agents_md)
+            .with_tools(tools_enabled)
+            .with_retrieval(session.retrieval_enabled && !cli_code)
+            .with_soulless(cli_soulless)
+            .with_context_status(if ctx_status.needs_compaction() {
+                Some(ctx_status.clone())
+            } else {
+                None
+            }),
+    )
+}
+
+/// Setup coordinator with optional tools
+#[allow(clippy::too_many_arguments)]
+fn setup_coordinator(
+    ollama: ollama_rs::Ollama,
+    model_config: &ModelConfig,
+    model_options: ollama_rs::models::ModelOptions,
+    think_enabled: bool,
+    use_debug: bool,
+    tools_enabled: bool,
+    settings: &Settings,
+    system_prompt: String,
+) -> CustomCoordinator<Vec<ChatMessage>> {
+    let coordinator = ChatContext {
+        ollama,
+        model_id: model_config.model_id.clone(),
+        model_options,
+        use_think: think_enabled,
+        use_debug,
+        use_plain: false,
+        context_window: Some(model_config.num_ctx as usize),
+        system_prompt: Some(system_prompt),
+    }
+    .build_coordinator();
+
+    let mut coordinator = coordinator;
+    if tools_enabled {
+        let (coord_new, tool_count) = register_tools(coordinator, settings, use_debug);
+        coordinator = coord_new;
+        if use_debug {
+            log_debug(&format!("{} tools active", tool_count));
+        }
+    }
+    coordinator
+}
+
+/// Prepare messages with retrieval and optional continuation
+#[allow(clippy::too_many_arguments)]
+async fn prepare_messages(
+    session: &mut ChatSession,
+    db: Option<&Arc<crate::db::Database>>,
+    embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
+    user_input: &str,
+    system_prompt: &str,
+    use_debug: bool,
+    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
+    continuation_tag: Option<&crate::chat::ContinuationTag>,
+) -> Vec<ChatMessage> {
+    let retrieval_config = if session.retrieval_enabled {
+        RetrievalConfig::default()
+    } else {
+        RetrievalConfig {
+            enabled: false,
+            ..RetrievalConfig::default()
+        }
+    };
+
+    let context_result = build_context(
+        session,
+        db,
+        embedding_client,
+        user_input,
+        system_prompt,
+        &retrieval_config,
+        use_debug,
+    )
+    .await;
+
+    if context_result.retrieval_performed {
+        update_retrieval_time(session);
+        if use_debug {
+            log_debug(&format!(
+                "Retrieved {} relevant messages",
+                context_result.retrieved_count
+            ));
+        }
+    }
+
+    let mut messages = context_result.messages;
+    messages.push(ChatMessage::user(user_input.to_string()));
+
+    if let Some(tag) = continuation_tag {
+        let continuation_prompt = build_continuation_prompt(tag);
+        coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
+        if use_debug {
+            log_debug("Injected continuation prompt as ephemeral message");
+        }
+    }
+
+    messages
+}
+
+/// Process chat response into SendMessageResult
+fn process_chat_response(
+    response: ollama_rs::generation::chat::ChatMessageResponse,
+    think_enabled: bool,
+    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
+    context_window: usize,
+    system_prompt: String,
+) -> SendMessageResult {
+    let content = response.message.content.clone();
+
+    let metrics = if let Some(ref final_data) = response.final_data {
+        TokenMetrics {
+            prompt_tokens: final_data.prompt_eval_count,
+            response_tokens: final_data.eval_count,
+            total_tokens: final_data.prompt_eval_count + final_data.eval_count,
+        }
+    } else {
+        TokenMetrics::default()
+    };
+
+    if think_enabled {
+        display_thinking(&content, response.message.thinking.as_ref(), true);
+    }
+
+    let display_content = strip_thinking_tags(&content);
+    markdown::print_markdown(&display_content);
+
+    let pre_tool = coordinator.take_pre_tool_content();
+    let (pre_tool_content, pre_tool_thinking) = match pre_tool {
+        Some(ptc) => (Some(ptc.content), ptc.thinking),
+        None => (None, None),
+    };
+
+    let (cleaned_response, continuation_needed) =
+        crate::chat::parse_continuation_tag(&display_content);
+
+    if continuation_needed.is_some() {
+        eprint!("\x1B[2K\r");
+        markdown::print_markdown(&cleaned_response);
+    }
+
+    SendMessageResult {
+        response: cleaned_response,
+        pre_tool_content,
+        pre_tool_thinking,
+        metrics,
+        context_window,
+        system_prompt,
+        continuation_needed,
+    }
+}
+
 /// Build a continuation prompt from a continuation tag
 ///
 /// Creates a system message that tells the LLM to resume from where it paused
@@ -1182,47 +1368,18 @@ async fn send_message(
     continuation_tag: Option<&crate::chat::ContinuationTag>,
 ) -> AppResult<SendMessageResult> {
     let model_options = model_config.build_model_options();
-
     let blacklist_set = settings.blacklist_set();
 
-    let system_prompt = if let Some(ref custom_prompt) = session.system_prompt {
-        custom_prompt.clone()
-    } else {
-        // Determine prompt type based on code mode and tools
-        let prompt_type = if cli_code && tools_enabled {
-            PromptType::CodeWithTools
-        } else if cli_code {
-            PromptType::Code
-        } else if tools_enabled {
-            PromptType::ToolUser
-        } else {
-            PromptType::Default
-        };
-
-        // Check context overflow for status injection
-        let ctx_window = model_config.num_ctx as usize;
-        let ctx_status = check_context_overflow(
-            session,
-            "", // system_prompt computed below, we just need status
-            ctx_window,
-            DEFAULT_OVERFLOW_THRESHOLD,
-        );
-
-        build_system_prompt(
-            PromptConfig::new(prompt_type)
-                .with_model_id(Some(&model_config.model_id))
-                .with_blacklist(Some(&blacklist_set))
-                .with_agents_md(agents_md)
-                .with_tools(tools_enabled)
-                .with_retrieval(session.retrieval_enabled && !cli_code) // Disable retrieval for code mode
-                .with_soulless(cli_soulless)
-                .with_context_status(if ctx_status.needs_compaction() {
-                    Some(ctx_status.clone())
-                } else {
-                    None
-                }),
-        )
-    };
+    // Build system prompt
+    let system_prompt = build_session_system_prompt(
+        session,
+        tools_enabled,
+        cli_code,
+        cli_soulless,
+        model_config,
+        &blacklist_set,
+        agents_md,
+    );
 
     // Check context overflow
     let context_window = model_config.num_ctx as usize;
@@ -1247,72 +1404,30 @@ async fn send_message(
         ));
     }
 
-    let coordinator = ChatContext {
-        ollama: ollama.clone(),
-        model_id: model_config.model_id.clone(),
+    // Setup coordinator with optional tools
+    let mut coordinator = setup_coordinator(
+        ollama.clone(),
+        model_config,
         model_options,
-        use_think: think_enabled,
+        think_enabled,
         use_debug,
-        use_plain: false,
-        context_window: Some(model_config.num_ctx as usize),
-        system_prompt: Some(system_prompt.clone()),
-    }
-    .build_coordinator();
+        tools_enabled,
+        settings,
+        system_prompt.clone(),
+    );
 
-    let mut coordinator = coordinator;
-    if tools_enabled {
-        let (coord_new, tool_count) = register_tools(coordinator, settings, use_debug);
-        coordinator = coord_new;
-        if use_debug {
-            log_debug(&format!("{} tools active", tool_count));
-        }
-    }
-
-    // Build context with retrieval if enabled and available
-    let retrieval_config = if session.retrieval_enabled {
-        RetrievalConfig::default()
-    } else {
-        RetrievalConfig {
-            enabled: false,
-            ..RetrievalConfig::default()
-        }
-    };
-
-    let context_result = build_context(
+    // Prepare messages with retrieval and continuation
+    let mut messages = prepare_messages(
         session,
         db,
         embedding_client,
         user_input,
         &system_prompt,
-        &retrieval_config,
         use_debug,
+        &mut coordinator,
+        continuation_tag,
     )
     .await;
-
-    // Update last_retrieval_time if retrieval was performed
-    if context_result.retrieval_performed {
-        update_retrieval_time(session);
-        if use_debug {
-            log_debug(&format!(
-                "Retrieved {} relevant messages",
-                context_result.retrieved_count
-            ));
-        }
-    }
-
-    let mut messages = context_result.messages;
-
-    // Add current user query at the end
-    messages.push(ChatMessage::user(user_input.to_string()));
-
-    // If this is a continuation, add ephemeral message to coordinator
-    if let Some(tag) = continuation_tag {
-        let continuation_prompt = build_continuation_prompt(tag);
-        coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
-        if use_debug {
-            log_debug("Injected continuation prompt as ephemeral message");
-        }
-    }
 
     if use_debug {
         log_debug(&format!("Sending {} messages to model", messages.len()));
@@ -1332,10 +1447,9 @@ async fn send_message(
         vec![]
     };
 
+    // Execute with retry logic
     let mut attempts = 0;
-    let mut messages = messages;
     let result = loop {
-        // Run chat with context if DB and embedding client are available
         let current_result = if let (Some(db), Some(embedding)) = (db, embedding_client) {
             crate::tools::context::with_context(
                 db.clone(),
@@ -1385,58 +1499,14 @@ async fn send_message(
     finish_spinner(spinner);
 
     match result {
-        Ok(response) => {
-            let content = response.message.content.clone();
-
-            let metrics = if let Some(ref final_data) = response.final_data {
-                TokenMetrics {
-                    prompt_tokens: final_data.prompt_eval_count,
-                    response_tokens: final_data.eval_count,
-                    total_tokens: final_data.prompt_eval_count + final_data.eval_count,
-                }
-            } else {
-                TokenMetrics::default()
-            };
-
-            if think_enabled {
-                display_thinking(&content, response.message.thinking.as_ref(), true);
-            }
-
-            let display_content = strip_thinking_tags(&content);
-            markdown::print_markdown(&display_content);
-
-            // Extract pre-tool content from coordinator
-            let pre_tool = coordinator.take_pre_tool_content();
-            let (pre_tool_content, pre_tool_thinking) = match pre_tool {
-                Some(ptc) => (Some(ptc.content), ptc.thinking),
-                None => (None, None),
-            };
-
-            // Parse continuation tag from response
-            let (cleaned_response, continuation_needed) =
-                crate::chat::parse_continuation_tag(&display_content);
-
-            // If there was a continuation tag, re-print the cleaned content
-            if continuation_needed.is_some() {
-                // Clear previous output and reprint without the tag
-                eprint!("\x1B[2K\r"); // Clear current line
-                markdown::print_markdown(&cleaned_response);
-            }
-
-            Ok(SendMessageResult {
-                response: cleaned_response,
-                pre_tool_content,
-                pre_tool_thinking,
-                metrics,
-                context_window,
-                system_prompt,
-                continuation_needed,
-            })
-        }
-        Err(e) => {
-            // Error will be formatted and printed by the caller (REPL loop)
-            Err(e.into())
-        }
+        Ok(response) => Ok(process_chat_response(
+            response,
+            think_enabled,
+            &mut coordinator,
+            context_window,
+            system_prompt,
+        )),
+        Err(e) => Err(e.into()),
     }
 }
 
