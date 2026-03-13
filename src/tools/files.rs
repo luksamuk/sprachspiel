@@ -1,4 +1,4 @@
-use super::files_blocklist::{is_blocked_for_read, BlocklistConfig};
+use super::files_blocklist::{is_blocked_for_list, is_blocked_for_read, BlocklistConfig};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{format_size, parse_bool, parse_u32};
 use regex::Regex;
@@ -418,6 +418,26 @@ pub async fn count_lines(
 /// - File sizes for regular files
 /// - Tree structure for recursive listings
 ///
+/// List contents of a directory.
+///
+/// Returns a formatted list of files and directories.
+/// Use this to explore project structure or find files.
+///
+/// # Arguments
+/// * `path` - Directory path (default: current directory). Optional.
+///   - Examples: ".", "src", "/home/user/projects"
+/// * `recursive` - List subdirectories (default: false). Optional.
+///   - "true": List all subdirectories up to 10 levels deep
+///   - "false": List only immediate children
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
+///
+/// # Returns
+/// Formatted list with [type] prefix (file/dir/symlink) and sizes.
+///
+/// # Security
+/// - Respects `block_list` configuration (blocked filenames shown as "[BLOCKED]")
+/// - Blocked patterns from tools.toml are applied to hide sensitive filenames
+///
 /// # Errors
 /// Returns error message if directory doesn't exist or is not accessible.
 #[ollama_rs::function]
@@ -436,6 +456,9 @@ pub async fn list_directory(
             ("recursive".to_string(), recursive_parsed.to_string()),
         ],
     );
+
+    // Load blocklist configuration
+    let config = BlocklistConfig::load();
 
     // Validate and canonicalize path (also checks if exists)
     let path_buf = PathBuf::from(&path);
@@ -464,7 +487,7 @@ pub async fn list_directory(
 
     if recursive_parsed {
         if let Err(e) =
-            collect_entries_recursive(&canonical_path, &canonical_path, &mut entries, 0, 10)
+            collect_entries_recursive(&canonical_path, &canonical_path, &mut entries, 0, 10, &config)
         {
             let err_msg = format!("Error: Failed to list directory recursively: {}", e);
             log_tool_result("list_directory", &err_msg);
@@ -491,21 +514,29 @@ pub async fn list_directory(
                 Err(_) => continue, // Skip entries without metadata
             };
             let name = entry.file_name().to_string_lossy().to_string();
-            let entry_type = if metadata.is_dir() {
-                "dir"
-            } else if metadata.is_file() {
-                "file"
-            } else if metadata.is_symlink() {
-                "symlink"
+            
+            // Check blocklist for list operations
+            let entry_path = entry.path();
+            let display_name = if is_blocked_for_list(&entry_path, &config) {
+                "[BLOCKED]".to_string()
             } else {
-                "other"
+                let entry_type = if metadata.is_dir() {
+                    "dir"
+                } else if metadata.is_file() {
+                    "file"
+                } else if metadata.is_symlink() {
+                    "symlink"
+                } else {
+                    "other"
+                };
+                let size = if metadata.is_file() {
+                    format!(" ({})", format_size(metadata.len()))
+                } else {
+                    String::new()
+                };
+                format!("[{}] {}{}", entry_type, name, size)
             };
-            let size = if metadata.is_file() {
-                format!(" ({})", format_size(metadata.len()))
-            } else {
-                String::new()
-            };
-            entries.push(format!("[{}] {}{}", entry_type, name, size));
+            entries.push(display_name);
         }
     }
 
@@ -528,6 +559,7 @@ fn collect_entries_recursive(
     entries: &mut Vec<String>,
     depth: usize,
     max_depth: usize,
+    config: &BlocklistConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if depth > max_depth {
         entries.push(format!("{}... (max depth reached)", "  ".repeat(depth)));
@@ -551,6 +583,14 @@ fn collect_entries_recursive(
 
         // Calculate relative path from base
         let full_path = entry.path();
+        
+        // Check blocklist for list operations
+        if is_blocked_for_list(&full_path, config) {
+            let indent = "  ".repeat(depth);
+            entries.push(format!("{}[BLOCKED]", indent));
+            continue;
+        }
+        
         let relative_path = full_path
             .strip_prefix(base_path)
             .map(|p| p.to_path_buf())
@@ -581,7 +621,7 @@ fn collect_entries_recursive(
 
         // Recurse into subdirectories
         if metadata.is_dir() {
-            let _ = collect_entries_recursive(base_path, &full_path, entries, depth + 1, max_depth);
+            let _ = collect_entries_recursive(base_path, &full_path, entries, depth + 1, max_depth, config);
         }
     }
 

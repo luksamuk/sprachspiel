@@ -5,9 +5,9 @@
 mod config;
 mod types;
 
-pub use types::{CommandOutput, ExternalTool, ExternalToolsConfig, Platform};
+pub use types::{CommandOutput, ExternalTool, ExternalToolsConfig, FileToolsConfig, Platform};
 
-pub use config::load_tools_config;
+pub use config::{load_file_tools_config, load_tools_config};
 
 /// Get the sandbox status for display.
 ///

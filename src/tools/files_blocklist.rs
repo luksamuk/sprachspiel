@@ -15,11 +15,14 @@
 //!
 //! ```toml
 //! [file-tools]
+//! max_file_size = 5242880  # 5MB
 //! blocked_patterns = [".env.*", "*secret*", "*.pem"]
 //! block_read = true
 //! block_list = false
+//! # Note: block_write is always true and cannot be configured
 //! ```
 
+use crate::external::load_file_tools_config;
 use once_cell::sync::Lazy;
 use regex::RegexSet;
 use std::path::Path;
@@ -137,9 +140,7 @@ pub struct BlocklistConfig {
     patterns: RegexSet,
     /// Whether to block read operations for sensitive files
     pub block_read: bool,
-    /// Whether to block list operations (hide filenames)
-    #[allow(dead_code)]
-    // Intentionally unused: Will be used when list_directory blocklist integration is complete
+    /// Whether to block list operations (hide filenames in directory listings)
     pub block_list: bool,
 }
 
@@ -158,10 +159,30 @@ impl BlocklistConfig {
     ///
     /// Falls back to defaults if configuration is not available.
     pub fn load() -> Self {
-        // For now, use defaults. Configuration loading will be added
-        // when FileToolsConfig parsing is fully integrated.
-        // TODO: Load from crate::external::config::load_file_tools_config()
-        Self::default()
+        let config = load_file_tools_config();
+
+        // Build combined patterns: defaults + user-configured
+        let mut all_patterns: Vec<String> = DEFAULT_BLOCKED_PATTERNS
+            .iter()
+            .map(|p| pattern_to_regex(p))
+            .collect();
+
+        // Add user-configured patterns
+        for pattern in &config.blocked_patterns {
+            all_patterns.push(pattern_to_regex(pattern));
+        }
+
+        // Compile regex set
+        let patterns = RegexSet::new(&all_patterns).unwrap_or_else(|_| {
+            // Fall back to defaults if user patterns are invalid
+            DEFAULT_BLOCKED_REGEX.clone()
+        });
+
+        Self {
+            patterns,
+            block_read: config.block_read,
+            block_list: config.block_list,
+        }
     }
 
     /// Check if a path matches any blocked pattern.
@@ -182,6 +203,15 @@ impl BlocklistConfig {
 #[inline]
 pub fn is_blocked_for_read(path: &Path, config: &BlocklistConfig) -> bool {
     config.block_read && config.is_blocked(path)
+}
+
+/// Check if a filename should be hidden in directory listings.
+///
+/// Returns true if the path matches a blocked pattern and `block_list` is enabled.
+/// When enabled, blocked filenames are replaced with "[BLOCKED]" in listings.
+#[inline]
+pub fn is_blocked_for_list(path: &Path, config: &BlocklistConfig) -> bool {
+    config.block_list && config.is_blocked(path)
 }
 
 /// Check if a path is blocked for write operations.
