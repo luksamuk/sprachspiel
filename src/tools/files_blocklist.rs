@@ -170,6 +170,7 @@ impl BlocklistConfig {
     }
 
     /// Create config from FileToolsConfig.
+    #[allow(dead_code)]
     pub fn from_config(config: &FileToolsConfig) -> Self {
         // Build combined patterns: defaults + user-configured
         let mut all_patterns: Vec<String> = DEFAULT_BLOCKED_PATTERNS

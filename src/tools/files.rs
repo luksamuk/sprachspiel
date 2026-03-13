@@ -1,3 +1,4 @@
+use super::files_blocklist::{is_blocked_for_read, BlocklistConfig};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{format_size, parse_bool, parse_u32};
 use regex::Regex;
@@ -60,6 +61,19 @@ pub async fn read_file(
             return Ok(err_msg);
         }
     };
+
+    // Check blocklist for sensitive files
+    let config = BlocklistConfig::load();
+    if is_blocked_for_read(&canonical_path, &config) {
+        let err_msg = format!(
+            "Error: BLOCKED - '{}' matches a protected file pattern. \
+             This file may contain sensitive information (credentials, secrets, keys). \
+             Reading such files is restricted for security.",
+            path
+        );
+        log_tool_result("read_file", &err_msg);
+        return Ok(err_msg);
+    }
 
     // Check if it's a file (validate_path already confirmed it exists)
     if !canonical_path.is_file() {
@@ -203,6 +217,19 @@ pub async fn read_file_segment(
         }
     };
 
+    // Check blocklist for sensitive files
+    let config = BlocklistConfig::load();
+    if is_blocked_for_read(&canonical_path, &config) {
+        let err_msg = format!(
+            "Error: BLOCKED - '{}' matches a protected file pattern. \
+             This file may contain sensitive information (credentials, secrets, keys). \
+             Reading such files is restricted for security.",
+            path
+        );
+        log_tool_result("read_file_segment", &err_msg);
+        return Ok(err_msg);
+    }
+
     // Check if it's a file (validate_path already confirmed it exists)
     if !canonical_path.is_file() {
         let err_msg = format!(
@@ -321,6 +348,19 @@ pub async fn count_lines(
             return Ok(err_msg);
         }
     };
+
+    // Check blocklist for sensitive files
+    let config = BlocklistConfig::load();
+    if is_blocked_for_read(&canonical_path, &config) {
+        let err_msg = format!(
+            "Error: BLOCKED - '{}' matches a protected file pattern. \
+             This file may contain sensitive information (credentials, secrets, keys). \
+             Reading such files is restricted for security.",
+            path
+        );
+        log_tool_result("count_lines", &err_msg);
+        return Ok(err_msg);
+    }
 
     // Check if it's a file (validate_path already confirmed it exists)
     if !canonical_path.is_file() {
@@ -631,6 +671,13 @@ pub async fn search_files(
             }
         }
     };
+
+    // Filter out blocked files
+    let config = BlocklistConfig::load();
+    let files_to_search: Vec<_> = files_to_search
+        .into_iter()
+        .filter(|f| !is_blocked_for_read(f, &config))
+        .collect();
 
     // Search for pattern
     let mut matches = Vec::new();
