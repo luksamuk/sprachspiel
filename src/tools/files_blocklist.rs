@@ -84,29 +84,13 @@ static DEFAULT_BLOCKED_REGEX: Lazy<RegexSet> = Lazy::new(|| {
 ///
 /// # Examples
 ///
-/// - `.env` -> `\.(?:env)(?:\..*)?$` (matches `.env`, `.env.local`)
-/// - `secrets` -> `secrets` (substring match)
-/// - `.pem` -> `\.pem$` (extension match)
-/// - `id_rsa` -> `(^|/)id_rsa$` (exact filename match)
+/// - `.env` -> matches `\.env`, `\.env.local`, `path/\.env`
+/// - `secrets` -> matches `secrets`, `path/secrets` (exact filename)
+/// - `.pem` -> matches `\.pem$` (extension match)
+/// - `id_rsa` -> matches `(^|/)id_rsa$` (exact filename match)
 fn pattern_to_regex(pattern: &str) -> String {
-    // Check if it's an extension pattern (starts with dot, like ".pem")
-    if pattern.starts_with('.') && pattern.len() > 1 && !pattern.contains('*') {
-        // .pem -> \.pem$ (extension match)
-        format!(r"\.{}$", &pattern[1..])
-    }
-    // Check if it's a directory pattern (like ".ssh")
-    else if pattern.starts_with('.') && !pattern.contains('*') && pattern.len() > 1 {
-        // .ssh -> matches directory name anywhere in path
-        format!(r"(^|/)\{}/?", &pattern[1..])
-    }
-    // Check if it's an exact filename (no wildcards, no extension at start)
-    else if !pattern.contains('*') && !pattern.contains('.') {
-        // id_rsa -> matches exact filename
-        format!(r"(^|/){}$", pattern)
-    }
-    // Wildcard patterns (like ".env.*")
-    else {
-        // Convert glob-style pattern to regex
+    // Wildcard patterns (contains *)
+    if pattern.contains('*') {
         let mut regex = String::new();
         for ch in pattern.chars() {
             match ch {
@@ -115,12 +99,42 @@ fn pattern_to_regex(pattern: &str) -> String {
                 _ => regex.push(ch),
             }
         }
-        regex
+        return regex;
     }
+
+    // Exact filename (no dots, no wildcards)
+    if !pattern.contains('.') {
+        return format!(r"(?:^|/){}$", pattern);
+    }
+
+    // Extension or directory pattern (starts with dot)
+    if pattern.starts_with('.') {
+        let name = &pattern[1..]; // Remove leading dot
+
+        // Known directory patterns
+        if name == "ssh" || name == "gnupg" {
+            return format!(r"(?:^|/)\.{}/?", name);
+        }
+
+        // Extension pattern (.pem, .key, .env)
+        return format!(r"\.{}(?:\..*)?$", name);
+    }
+
+    // Pattern with dots but not starting with dot (like secrets.json)
+    // Treat as exact filename with escaped dots
+    let mut regex = String::new();
+    for ch in pattern.chars() {
+        match ch {
+            '.' => regex.push_str(r"\."),
+            _ => regex.push(ch),
+        }
+    }
+    format!(r"(?:^|/){}$", regex)
 }
 
 /// Configuration for blocked patterns loaded from tools.toml.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BlocklistConfig {
     /// Regex set of all blocked patterns (default + user-configured)
     patterns: RegexSet,
@@ -166,6 +180,7 @@ impl BlocklistConfig {
 /// Check if a path is blocked for read operations.
 ///
 /// Returns true if the path matches a blocked pattern and `block_read` is enabled.
+#[allow(dead_code)]
 #[inline]
 pub fn is_blocked_for_read(path: &Path, config: &BlocklistConfig) -> bool {
     config.block_read && config.is_blocked(path)
@@ -174,6 +189,7 @@ pub fn is_blocked_for_read(path: &Path, config: &BlocklistConfig) -> bool {
 /// Check if a path is blocked for list operations.
 ///
 /// Returns true if the path matches a blocked pattern and `block_list` is enabled.
+#[allow(dead_code)]
 #[inline]
 pub fn is_blocked_for_list(path: &Path, config: &BlocklistConfig) -> bool {
     config.block_list && config.is_blocked(path)
@@ -189,6 +205,7 @@ pub fn is_blocked_for_write(path: &Path, config: &BlocklistConfig) -> bool {
 }
 
 /// Get the list of default blocked patterns (for documentation/debugging).
+#[allow(dead_code)]
 pub fn get_default_blocked_patterns() -> &'static [&'static str] {
     DEFAULT_BLOCKED_PATTERNS
 }
@@ -200,22 +217,35 @@ mod tests {
 
     #[test]
     fn test_pattern_to_regex_extension() {
-        // Extension patterns
-        assert_eq!(pattern_to_regex(".pem"), r"\.pem$");
-        assert_eq!(pattern_to_regex(".key"), r"\.key$");
+        // Extension patterns (.pem, .key, .env)
+        // .pem -> matches .pem, .pem.local, etc.
+        assert_eq!(pattern_to_regex(".pem"), r"\.pem(?:\..*)?$");
+        assert_eq!(pattern_to_regex(".key"), r"\.key(?:\..*)?$");
     }
 
     #[test]
     fn test_pattern_to_regex_exact_filename() {
-        // Exact filename patterns
-        assert_eq!(pattern_to_regex("id_rsa"), r"(^|/)id_rsa$");
-        assert_eq!(pattern_to_regex("secrets.json"), r"(^|/)secrets\.json$");
+        // Exact filename patterns (no dots, no wildcards)
+        // "id_rsa" -> matches exact filename
+        assert_eq!(pattern_to_regex("id_rsa"), r"(?:^|/)id_rsa$");
+        // "secrets" -> matches exact filename
+        assert_eq!(pattern_to_regex("secrets"), r"(?:^|/)secrets$");
     }
 
     #[test]
-    fn test_pattern_to_regex_substring() {
-        // Substring match patterns (no wildcards, no leading dot)
-        assert_eq!(pattern_to_regex("secrets"), "secrets");
+    fn test_pattern_to_regex_with_dots() {
+        // Patterns with dots but not starting with dot
+        // "secrets.json" -> treated as exact filename with escaped dots
+        assert_eq!(pattern_to_regex("secrets.json"), r"(?:^|/)secrets\.json$");
+    }
+
+    #[test]
+    fn test_pattern_to_regex_wildcard() {
+        // Wildcard patterns are converted to regex
+        // "." becomes "\."
+        // "*" becomes ".*"
+        assert_eq!(pattern_to_regex("*.json"), r".*\.json");
+        assert_eq!(pattern_to_regex("test.*"), r"test\..*");
     }
 
     #[test]

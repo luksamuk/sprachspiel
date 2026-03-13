@@ -6,6 +6,9 @@ use serde::Deserialize;
 pub mod calc;
 pub mod context;
 pub mod files;
+pub mod files_blocklist;
+#[cfg(feature = "file-tools")]
+pub mod files_write;
 #[cfg(feature = "finance-tools")]
 pub mod finance;
 #[cfg(feature = "led-tools")]
@@ -32,6 +35,8 @@ pub mod tool_check;
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
 pub use files::*;
+#[cfg(feature = "file-tools")]
+pub use files_write::*;
 #[cfg(feature = "finance-tools")]
 pub use finance::*;
 #[cfg(feature = "led-tools")]
