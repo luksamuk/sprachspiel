@@ -12,7 +12,7 @@
 
 ## Current Version
 
-**v0.28.0** - 2026-03-11
+**v0.31.0** - 2026-03-12
 
 ## Current Implementation Status
 
@@ -38,6 +38,8 @@
 - SQLite storage with sqlite-vec extension
 - Embedding generation with Matryoshka truncation (768d → 256d)
 - AGENTS.md context injection with security sanitization
+- **SOUL.md personality system** - User-configurable agent personality
+- **Context Continuity with Graceful Interruption** - LLM pauses/resumes during overflow
 - Complete documentation with mdBook
 - Man page
 - Termux/Android builds
@@ -113,89 +115,227 @@
 
 ## Priority Roadmap
 
-### 🚨 PRIORITY 1: SOUL.md - AI Personality System
+### 🔴 PRIORITY 0: Context Continuity with Graceful Interruption
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.31.0)
 
-**Goal:** Define AI personality, behavior, and communication style via user-configurable file.
+**Goal:** Enable LLM to gracefully pause reasoning when context fills up, then automatically continue after compaction.
 
-**Location:** `~/.config/ask-ai/SOUL.md`
+**Problem Statement:**
+- LLM can run out of context mid-task (complex multi-step operations)
+- Current auto-compaction happens AFTER response completes
+- No mechanism for LLM to signal "I need to pause and continue later"
+- Lost work when context overflow occurs during tool execution
 
-**Architecture:**
+**Solution (Implemented):** Tag-based continuation protocol:
+1. ✅ LLM receives context % in prompt (`with_context_status()`)
+2. ✅ LLM instructed to emit `<continuation_needed>` tag when pausing
+3. ✅ System detects tag, compacts, and injects continuation prompt via ephemeral
+4. ✅ LLM continues without user intervention
+5. ✅ Supports nested continuations (up to 3)
 
+**Implementation Completed:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Context status in prompt | ✅ Done |
+| 2 | Continuation tag parsing | ✅ Done |
+| 3 | Ephemeral messages support | ✅ Done |
+| 4 | Continuation loop in REPL | ✅ Done |
+| 5 | Tests and documentation | ✅ Done |
+
+**Key Components Implemented:**
+
+1. **Context Status Section** (prompts/builder.rs)
+   - `PromptConfig.context_status` field
+   - Dynamic section showing usage % injected when >72%
+   - Warning when critical: `⚠️ CRITICAL: Context window is nearly full`
+
+2. **CONTEXT MANAGEMENT Instructions** (prompts/base.rs)
+   - `CONTEXT_MANAGEMENT_INSTRUCTION` constant
+   - Instructs LLM on pause protocol
+   - Injected when context is overflow (>80%)
+
+3. **ContinuationTag Parsing** (chat/custom_coordinator.rs)
+   - `ContinuationTag` struct with `paused_at` and `next_step`
+   - `parse_continuation_tag()` extracts and strips tag
+   - Ignores tags inside code blocks
+
+4. **Ephemeral Messages** (chat/custom_coordinator.rs)
+   - `push_ephemeral()` for continuation prompts
+   - Prepended to requests but never persisted
+
+5. **Continuation Loop** (chat/repl.rs)
+   - `build_continuation_prompt()` creates resume instructions
+   - `send_message()` accepts optional continuation_tag
+   - Automatic continuation after compaction
+   - Token metrics accumulated across continuations
+
+4. **Ephemeral Messages** (custom_coordinator.rs)
+   - `ephemeral_messages: Vec<ChatMessage>` - not saved to history
+   - `push_ephemeral()` - add temporary message
+   - `take_ephemeral()` - retrieve and clear
+   - Prepended to request before history
+
+5. **Continuation Loop** (repl.rs)
+   - Detect continuation tag in response
+   - Compact context
+   - Inject continuation prompt as ephemeral message
+   - Continue generation loop
+   - Auto-retry until no continuation needed
+
+**Constants (Reused):**
+- `DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8` - Critical (80%)
+- `PRE_TOOL_THRESHOLD: f32 = 0.75` - Warning (75%)
+- Warning at 72% (90% of 80%)
+
+**Data Structures:**
+
+```rust
+pub struct ContinuationTag {
+    pub paused_at: String,   // Where reasoning stopped
+    pub next_step: String,   // What was about to be done
+}
+
+// Note: Continuation is detected via SendMessageResult.continuation_needed field,
+// not via ChatEvent. The ChatEvent enum only has PreToolContent, ToolCall, ToolResult.
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Prompt Assembly                          │
-├─────────────────────────────────────────────────────────────┤
-│  1. SOUL LAYER                                              │
-│     ├─ ~/.config/ask-ai/SOUL.md (if exists)                 │
-│     └─ PERSONALITY_DEFAULT (fallback when no SOUL.md)      │
-│     └─ EMPTY (when --soulless flag)                         │
-├─────────────────────────────────────────────────────────────┤
-│  2. OPERATION LAYER                                         │
-│     └─ Role + Behavior + Tool Usage                         │
-├─────────────────────────────────────────────────────────────┤
-│  3. CONTEXT LAYER                                            │
-│     ├─ Platform info                                        │
-│     ├─ System context                                        │
-│     └─ AGENTS.md                                             │
-├─────────────────────────────────────────────────────────────┤
-│  4. CAPABILITY LAYER                                        │
-│     ├─ Tools (if enabled)                                   │
-│     ├─ Memory (if enabled)                                  │
-│     └─ Examples (if tools)                                  │
-├─────────────────────────────────────────────────────────────┤
-│  5. FINAL INSTRUCTION                                        │
-└─────────────────────────────────────────────────────────────┘
-```
 
-**Implementation Tasks:**
+**Edge Cases:**
+- Tag embedded in code block → Should NOT be parsed
+- Multiple tags → Parse first one only
+- Empty tag content → Treat as no continuation
+- Tag in pre-tool content → Parse and handle
 
-| Task | Status | File |
-|------|--------|------|
-| Create `src/soul.rs` module | ⬜ TODO | `src/soul.rs` |
-| Add `PERSONALITY_DEFAULT` constant | ⬜ TODO | `src/prompts/base.rs` |
-| Remove Pepe personality | ⬜ TODO | DELETE `src/prompts/personality.rs` |
-| Update prompt builder | ⬜ TODO | `src/prompts/builder.rs` |
-| Add `--soulless` flag | ⬜ TODO | `src/cli/chat.rs`, `src/cli/query.rs` |
-| Add module exports | ⬜ TODO | `src/main.rs`, `src/lib.rs`, `src/prompts/mod.rs` |
-| Create documentation | ⬜ TODO | `doc/src/SOUL.md` |
-| Add unit tests | ⬜ TODO | `src/soul.rs`, `src/prompts/builder.rs` |
+**Testing:**
+1. Unit tests for `parse_continuation_tag()`
+2. Integration test for continuation loop
+3. Edge case tests (empty, multiple, in code block)
+4. Manual testing with simulated context pressure
 
-**SOUL Processing:**
+**Dependencies:** None (all infrastructure exists)
 
-1. **Load:** Read `~/.config/ask-ai/SOUL.md` (or `XDG_CONFIG_HOME/ask-ai/SOUL.md`)
-2. **Clean:** Remove HTML comments (`<!-- ... -->`) using regex
-3. **Normalize:** Trim whitespace, collapse blank lines
-4. **Validate:** Must have at least one `## ` section
-5. **Fallback:** If file missing/invalid, use `PERSONALITY_DEFAULT`
-
-**PromptType Integration:**
-
-| PromptType | Uses SOUL? | Behavior |
-|------------|-----------|----------|
-| Default | ✅ Yes | SOUL + Role + Context |
-| ToolUser | ✅ Yes | SOUL + Role + Context + Tools |
-| Code | ❌ No | Role + File Tools only |
-| CodeWithTools | ❌ No | Role + File Tools only |
-| Summarize | ❌ No | Role (minimal) |
-
-**CLI Flags:**
-
-- `--soulless` - Skip SOUL.md loading, use empty personality layer
-- Only applies to `chat` and `query` commands
-
-**Removed:**
-
-- Pepe personality (`PERSONALITY_PEPE` in `src/prompts/personality.rs`) - Users can define their own SOUL.md for custom personalities
-
-**Dependencies:** None
-
-**Estimated effort:** 5-8 hours
+**Estimated effort:** 1-2 days
 
 ---
 
-### 🔴 PRIORITY 2: Notes System
+### ✅ PRIORITY 1: PreToolContent Persistence & Context Enrichment (COMPLETED)
+
+**Status:** ✅ COMPLETED (All phases done)
+
+**Implementation:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Schema v5 (message_type, previous_message_id) | ✅ Done |
+| 1 | insert_message_with_type() | ✅ Done |
+| 1 | get_subsequent_assistant_messages() | ✅ Done |
+| 1 | get_previous_message_id() | ✅ Done |
+| 1 | enrich_with_context() for multiple messages | ✅ Done |
+| 1 | SearchResult struct updated | ✅ Done |
+| 1 | All queries updated with message_type | ✅ Done |
+| 2 | PreToolContent struct | ✅ Done |
+| 2 | CustomCoordinator accumulators | ✅ Done |
+| 2 | take_pre_tool_content() | ✅ Done |
+| 2 | process_response() accumulation | ✅ Done |
+| 2 | SendMessageResult updated | ✅ Done |
+| 3 | SavedMessage.message_type | ✅ Done |
+| 3 | add_pre_tool_message() | ✅ Done |
+| 3 | add_user_message() returns message_id | ✅ Done |
+| 3 | update_message_previous_id() | ✅ Done |
+| 3 | get_conversation_messages includes message_type | ✅ Done |
+| 4 | format_retrieved_context() | ✅ Done |
+| 4 | Prompts MEMORY TOOLS navigation section | ✅ Done |
+| 4 | remember.rs shows message_type | ✅ Done |
+
+**Key Files Modified:**
+- `src/db/schema.rs` - Schema v5 definition
+- `src/db/connection.rs` - Migration v4→5
+- `src/db/operations.rs` - New methods, updated SearchResult
+- `src/chat/session.rs` - SavedMessage.message_type, add_pre_tool_message()
+- `src/chat/custom_coordinator.rs` - PreToolContent accumulation
+- `src/chat/repl.rs` - PreToolContent extraction and saving
+- `src/prompts/builder.rs` - MEMORY TOOLS navigation instructions
+- `src/tools/remember.rs` - Shows subsequent_messages with type
+
+**Commits:**
+- `0f9a6d2 feat(db): add message_type and previous_message_id columns (schema v5)`
+- `7b91c47 feat(chat): accumulate PreToolContent in CustomCoordinator`
+
+### ✅ PRIORITY 1: SOUL.md - AI Personality System (COMPLETED)
+
+**Status:** ✅ COMPLETED (v0.29.0)
+
+**Implementation:**
+- `src/soul.rs` - Module for loading and processing SOUL.md
+- `src/prompts/base.rs` - Added `PERSONALITY_DEFAULT` fallback
+- `src/prompts/builder.rs` - Integrated SOUL layer into prompt assembly
+- `src/prompts/personality.rs` - REMOVED (Pepe personality)
+- CLI flags: `--soulless` for `chat` and `query` commands
+- Documentation: `doc/src/soul.md`
+
+**Breaking Change:** Pepe personality removed. Users should create their own `~/.config/ask-ai/SOUL.md` for custom personalities.
+
+---
+
+### 🔴 PRIORITY 2: File Write Tools
+
+**Status:** 📋 PLANNED
+
+**Goal:** Enable LLM to create, edit, and append to files safely.
+
+**Problem:**
+- Current file tools are read-only
+- `run_command` blocks pipes and redirects
+- No way to create or modify files
+- LLM cannot write code, configs, or output files
+
+**Solution:** Three new built-in tools with sandbox enforcement:
+
+| Tool | Purpose |
+|------|---------|
+| `write_file` | Create or overwrite files |
+| `edit_file` | Surgical edits (replace/insert/delete lines) |
+| `append_file` | Add content to existing files |
+
+**Security Model:**
+- **Sandbox ALWAYS enforced** for writes (ignoring `sandbox=false`)
+- **Blocked patterns** for sensitive files (`.env`, `secrets`, `.pem`, etc.)
+- **5MB size limit** per operation
+- **Atomic writes** (temp file + rename) to prevent corruption
+- **UTF-8 validation** - reject binary content
+
+**Design Decisions:**
+1. **Backup on edit:** Optional (`create_backup=true` parameter)
+2. **Size limit:** 5MB (increased from 1MB for reads)
+3. **Blocked patterns:** Hardcoded defaults + configurable via config.toml
+4. **Sandbox:** Mandatory for all write operations
+
+**Implementation Phases:**
+
+| Phase | Tool | Duration |
+|-------|------|----------|
+| 1 | `write_file` | 2-3 days |
+| 2 | `edit_file` | 2-3 days |
+| 3 | `append_file` | 1 day |
+
+**Key Files:**
+
+| File | Change |
+|------|--------|
+| `src/tools/files_write.rs` | New module for write operations |
+| `src/tools/mod.rs` | Export new module |
+| `src/tools/registry.rs` | Register new tools |
+| `src/external/config.rs` | Add `blocked_patterns` config section |
+| `doc/src/tools.md` | Document new tools |
+
+**Reference:** `doc/src/development/file-write-tools.md` - Full implementation plan
+
+**Dependencies:** None
+
+---
+
+### 🔴 PRIORITY 3: Notes System
 
 **Status:** ❌ NOT STARTED
 
@@ -215,7 +355,43 @@
 
 ---
 
-### 🔴 PRIORITY 3: Skills System Phase 1
+### 🟡 PRIORITY 3: Code Quality - run_chat_repl Refactoring
+
+**Status:** 📋 PLANNED
+
+**Goal:** Refactor the oversized `run_chat_repl` function (~1100 lines) into smaller, testable units.
+
+**Problem:**
+- `run_chat_repl` is 1100+ lines and hard to maintain
+- Complex command handling with 20+ branches
+- Difficult to test individual command behaviors
+- High cognitive load for code reviewers
+
+**Solution:** Extract logical sections into dedicated functions:
+
+| Proposed Function | Lines | Purpose |
+|-------------------|-------|---------|
+| `setup_repl_session()` | ~180 | DB init, session loading, model resolution |
+| `handle_slash_command()` | ~350 | Process `/model`, `/compact`, `/retry`, etc. |
+| `handle_user_message()` | ~280 | Pre-tool check, send_message, continuation |
+| `process_continuation()` | ~100 | Nested continuation loop |
+
+**Benefits:**
+- Each function under 200 lines
+- Individual behaviors testable in isolation
+- Clearer separation of concerns
+- Easier code review for changes
+
+**Challenges:**
+- Commands have different signatures (async/sync, db/no-db)
+- Mutable state shared across functions (session, capabilities)
+- Some commands need early return/exit
+
+**Estimate:** 1-2 days
+
+---
+
+### 🔴 PRIORITY 4: Skills System Phase 1
 
 **Status:** ❌ NOT STARTED
 
@@ -236,7 +412,7 @@
 
 ---
 
-### 🟡 PRIORITY 4: Document Import Tool
+### 🟡 PRIORITY 5: Document Import Tool
 
 **Status:** ❌ BLOCKED (requires Skills System Phase 1)
 
@@ -256,7 +432,7 @@
 
 ---
 
-### 🟡 PRIORITY 5: Chat Module Integration
+### 🟡 PRIORITY 6: Chat Module Integration
 
 **Status:** ❌ NOT STARTED
 
@@ -270,6 +446,71 @@
 **Dependencies:** None
 
 **Estimated effort:** 3-5 days
+
+---
+
+### 🟡 PRIORITY 7: Parallel Tool Execution
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Execute independent tool calls in parallel for faster response times.
+
+**Problem:**
+- Current implementation executes tool calls sequentially
+- LLM often requests multiple independent tools (e.g., `get_weather` + `get_current_datetime`)
+- Sequential execution unnecessarily increases latency
+- User waits longer for responses with multiple tools
+
+**Solution:** Detect independent tool calls and execute concurrently using `tokio::join!` or `futures::join_all`.
+
+**Architecture:**
+
+```rust
+// Current: Sequential execution
+for tool_call in tool_calls {
+    let result = execute_tool(&tool_call).await;
+    results.push(result);
+}
+
+// Proposed: Parallel execution
+let futures: Vec<_> = tool_calls.iter()
+    .map(|tc| execute_tool(tc))
+    .collect();
+let results = futures::future::join_all(futures).await;
+```
+
+**Dependencies Analysis:**
+- Tools are independent if they don't modify shared state
+- Read-only tools (weather, calc, search) can run in parallel
+- Tools that modify state (file writes, database) need sequential execution
+
+**Implementation Phases:**
+
+| Phase | Task | Duration |
+|-------|------|----------|
+| 1 | Identify which tools are safe for parallel execution | 0.5 day |
+| 2 | Implement dependency analysis in CustomCoordinator | 1 day |
+| 3 | Parallel execution with `join_all` | 1 day |
+| 4 | Preserve sequential order for stateful tools | 0.5 day |
+| 5 | Tests and benchmarks | 1 day |
+
+**Safe for Parallel (read-only):**
+- `get_weather`, `get_current_datetime`
+- `read_file`, `read_file_segment`, `count_lines`, `list_directory`, `search_files`
+- `web_search`, `search_duckduckgo`
+- `calculate`
+- `get_pokemon_*` (all Pokemon tools)
+- `get_system_info`
+
+**Requires Sequential (stateful/write):**
+- `run_command` (may have side effects)
+- `write_file`, `edit_file`, `append_file` (when implemented)
+- Database operations
+- File writes
+
+**Dependencies:** None
+
+**Estimated effort:** 3-4 days
 
 ---
 

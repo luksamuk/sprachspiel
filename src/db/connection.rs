@@ -6,7 +6,7 @@ use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use super::schema::{set_version_sql, SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL};
+use super::schema::{SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL, set_version_sql};
 
 /// Thread-safe database wrapper
 #[derive(Clone)]
@@ -174,6 +174,52 @@ impl Database {
                 CREATE INDEX IF NOT EXISTS idx_todos_conversation 
                     ON session_todos(conversation_id);
                 "#,
+            )?;
+        }
+
+        // Migration v4 -> v5: Add message_type and previous_message_id
+        if from_version < 5 {
+            // Add message_type column to messages table
+            let message_type_exists: bool = {
+                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                names.contains(&"message_type".to_string())
+            };
+
+            if !message_type_exists {
+                conn.execute(
+                    "ALTER TABLE messages ADD COLUMN message_type TEXT DEFAULT 'normal'",
+                    [],
+                )?;
+            }
+
+            // Add previous_message_id column to messages table
+            let previous_id_exists: bool = {
+                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                names.contains(&"previous_message_id".to_string())
+            };
+
+            if !previous_id_exists {
+                conn.execute(
+                    "ALTER TABLE messages ADD COLUMN previous_message_id INTEGER REFERENCES messages(id)",
+                    [],
+                )?;
+            }
+
+            // Create index for previous_message_id lookups
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_messages_previous 
+                 ON messages(previous_message_id) WHERE previous_message_id IS NOT NULL",
+                [],
             )?;
         }
 

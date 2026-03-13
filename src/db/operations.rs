@@ -6,12 +6,12 @@
 //! - Hybrid search (BM25 + semantic + RRF)
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Result};
+use rusqlite::{Result, params};
 use serde::{Deserialize, Serialize};
 use zerocopy::IntoBytes;
 
 use super::Database;
-use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
+use crate::consts::roles::ROLE_USER;
 
 /// Escape a string for FTS5 MATCH queries.
 ///
@@ -59,10 +59,16 @@ pub struct SearchResult {
     pub chunk_start: Option<i32>,
     /// Chunk end offset in original message
     pub chunk_end: Option<i32>,
-    /// Next message in conversation (for user messages, this is the assistant response)
-    /// This enables conversation-aware retrieval where questions are paired with answers
+    /// Message type: "normal" or "pre_tool_content"
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_message: Option<Box<SearchResult>>,
+    pub message_type: Option<String>,
+    /// Previous message ID (for navigation, only for assistant messages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_message_id: Option<i64>,
+    /// Subsequent assistant messages (for conversation context)
+    /// Renamed from `next_message` to support multiple messages
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub subsequent_messages: Vec<SearchResult>,
     /// Token count from Ollama's prompt_eval_count (cumulative - includes all prompt tokens)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_tokens: Option<i64>,
@@ -243,15 +249,39 @@ impl Database {
         content: &str,
         timestamp: DateTime<Utc>,
     ) -> Result<i64> {
+        // Use insert_message_with_type with default type "normal"
+        self.insert_message_with_type(conversation_id, role, content, timestamp, "normal")
+    }
+
+    /// Insert a message with a specific type
+    ///
+    /// # Arguments
+    /// * `conversation_id` - The conversation ID
+    /// * `role` - Message role (user, assistant, system, tool)
+    /// * `content` - Message content
+    /// * `timestamp` - Message timestamp
+    /// * `message_type` - Message type ("normal" or "pre_tool_content")
+    ///
+    /// # Returns
+    /// The message ID of the inserted row
+    pub fn insert_message_with_type(
+        &self,
+        conversation_id: &str,
+        role: &str,
+        content: &str,
+        timestamp: DateTime<Utc>,
+        message_type: &str,
+    ) -> Result<i64> {
         self.with_connection(|conn: &rusqlite::Connection| {
             conn.execute(
-                "INSERT INTO messages (conversation_id, role, content, timestamp, importance, has_embedding)
-                 VALUES (?1, ?2, ?3, ?4, 0.5, 0)",
+                "INSERT INTO messages (conversation_id, role, content, timestamp, importance, has_embedding, message_type)
+                 VALUES (?1, ?2, ?3, ?4, 0.5, 0, ?5)",
                 params![
                     conversation_id,
                     role,
                     content,
                     timestamp.timestamp(),
+                    message_type,
                 ],
             )?;
             Ok(conn.last_insert_rowid())
@@ -317,7 +347,6 @@ impl Database {
                     .filter_map(|r| r.ok())
                     .collect()
             };
-            
             // Delete embeddings and chunks for each message
             for msg_id in &message_ids {
                 // Delete message embeddings
@@ -325,7 +354,7 @@ impl Database {
                     "DELETE FROM message_embeddings WHERE message_id = ?1",
                     params![msg_id],
                 )?;
-                
+
                 // Get chunk IDs
                 let chunk_ids: Vec<i64> = {
                     let mut stmt = conn.prepare(
@@ -335,7 +364,7 @@ impl Database {
                         .filter_map(|r| r.ok())
                         .collect()
                 };
-                
+
                 // Delete chunk embeddings
                 for chunk_id in &chunk_ids {
                     conn.execute(
@@ -343,14 +372,14 @@ impl Database {
                         params![chunk_id],
                     )?;
                 }
-                
+
                 // Delete chunks
                 conn.execute(
                     "DELETE FROM message_chunks WHERE message_id = ?1",
                     params![msg_id],
                 )?;
             }
-            
+
             // Delete messages
             let deleted = conn.execute(
                 "DELETE FROM messages WHERE conversation_id = ?1 AND id IN (
@@ -358,7 +387,7 @@ impl Database {
                 )",
                 params![conversation_id, count as i64],
             )?;
-            
+
             Ok(deleted)
         })
     }
@@ -411,6 +440,23 @@ impl Database {
         })
     }
 
+    /// Update a message with its previous_message_id
+    ///
+    /// Used by pre_tool_content messages to link back to the user question.
+    pub fn update_message_previous_id(
+        &self,
+        message_id: i64,
+        previous_message_id: i64,
+    ) -> Result<()> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            conn.execute(
+                "UPDATE messages SET previous_message_id = ?1 WHERE id = ?2",
+                params![previous_message_id, message_id],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Search messages using full-text search (BM25)
     ///
     /// # Arguments
@@ -454,7 +500,9 @@ impl Database {
                         chunk_content: None,
                         chunk_start: None,
                         chunk_end: None,
-                        next_message: None,
+                        message_type: None,
+                        previous_message_id: None,
+                        subsequent_messages: vec![],
                         prompt_tokens: None,
                     })
                 })?;
@@ -487,7 +535,9 @@ impl Database {
                         chunk_content: None,
                         chunk_start: None,
                         chunk_end: None,
-                        next_message: None,
+                        message_type: None,
+                        previous_message_id: None,
+                        subsequent_messages: vec![],
                         prompt_tokens: None,
                     })
                 })?;
@@ -518,7 +568,9 @@ impl Database {
                     chunk_content: None,
                     chunk_start: None,
                     chunk_end: None,
-                    next_message: None,
+                    message_type: None,
+                    previous_message_id: None,
+                    subsequent_messages: vec![],
                     prompt_tokens: None,
                 })
             })?;
@@ -581,7 +633,9 @@ impl Database {
                     chunk_content: row.get(6)?,
                     chunk_start: row.get(7)?,
                     chunk_end: row.get(8)?,
-                    next_message: None,
+                    message_type: None,
+                    previous_message_id: None,
+                    subsequent_messages: vec![],
                     prompt_tokens: None,
                 })
             })?;
@@ -611,7 +665,9 @@ impl Database {
                     chunk_content: row.get(6)?,
                     chunk_start: row.get(7)?,
                     chunk_end: row.get(8)?,
-                    next_message: None,
+                    message_type: None,
+                    previous_message_id: None,
+                    subsequent_messages: vec![],
                     prompt_tokens: None,
                 })
             })?;
@@ -651,10 +707,10 @@ impl Database {
                 if conv_ids.is_empty() {
                     return Ok(Vec::new());
                 }
-                
+
                 let placeholders: Vec<String> = conv_ids.iter().map(|_| "?".to_string()).collect();
                 let placeholders = placeholders.join(",");
-                
+
                 let sql_project = format!(
                     "SELECT id, project_id FROM conversations WHERE id IN ({})",
                     placeholders
@@ -667,7 +723,7 @@ impl Database {
                     })?
                     .filter_map(|r| r.ok())
                     .collect();
-                
+
                 results.retain(|r| {
                     project_map
                         .get(&r.conversation_id)
@@ -736,7 +792,7 @@ impl Database {
 
             match limit {
                 Some(lim) => {
-                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens FROM messages 
+                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens, message_type FROM messages 
                         WHERE conversation_id = ?1 ORDER BY timestamp ASC LIMIT ?2";
                     let mut stmt = conn.prepare(sql)?;
                     let rows = stmt.query_map(
@@ -754,7 +810,9 @@ impl Database {
                                 chunk_content: None,
                                 chunk_start: None,
                                 chunk_end: None,
-                                next_message: None,
+                                message_type: row.get(6)?,
+                                previous_message_id: None,
+                                subsequent_messages: vec![],
                                 prompt_tokens: row.get(5)?,
                             })
                         },
@@ -764,7 +822,7 @@ impl Database {
                     }
                 }
                 None => {
-                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens FROM messages 
+                    let sql = "SELECT id, conversation_id, role, content, timestamp, prompt_tokens, message_type FROM messages 
                         WHERE conversation_id = ?1 ORDER BY timestamp ASC";
                     let mut stmt = conn.prepare(sql)?;
                     let rows =
@@ -781,7 +839,9 @@ impl Database {
                                 chunk_content: None,
                                 chunk_start: None,
                                 chunk_end: None,
-                                next_message: None,
+                                message_type: row.get(6)?,
+                                previous_message_id: None,
+                                subsequent_messages: vec![],
                                 prompt_tokens: row.get(5)?,
                             })
                         })?;
@@ -851,7 +911,9 @@ impl Database {
                     chunk_content: None,
                     chunk_start: None,
                     chunk_end: None,
-                    next_message: None,
+                    message_type: None,
+                    previous_message_id: None,
+                    subsequent_messages: vec![],
                     prompt_tokens: row.get(5)?,
                 })
             })?;
@@ -902,7 +964,9 @@ impl Database {
                         chunk_content: None,
                         chunk_start: None,
                         chunk_end: None,
-                        next_message: None,
+                        message_type: None,
+                        previous_message_id: None,
+                        subsequent_messages: vec![],
                         prompt_tokens: None,
                     })
                 },
@@ -912,34 +976,140 @@ impl Database {
         })
     }
 
+    /// Get all subsequent assistant messages after a given message
+    ///
+    /// Used for conversation-aware retrieval: when a user message is found,
+    /// retrieve all assistant messages that follow until:
+    /// - Up to 5 messages (limit)
+    /// - End of conversation
+    ///
+    /// # Arguments
+    /// * `after_message_id` - The message ID to search after
+    /// * `conversation_id` - The conversation ID
+    ///
+    /// # Returns
+    /// Vector of subsequent assistant messages (may be empty)
+    pub fn get_subsequent_assistant_messages(
+        &self,
+        after_message_id: i64,
+        conversation_id: &str,
+    ) -> Result<Vec<SearchResult>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let sql =
+                "SELECT id, conversation_id, role, content, timestamp, message_type, prompt_tokens
+                       FROM messages 
+                       WHERE conversation_id = ?1 
+                         AND id > ?2 
+                         AND role = 'assistant'
+                       ORDER BY id ASC
+                       LIMIT 5";
+            let mut stmt = conn.prepare(sql)?;
+            let rows = stmt.query_map(
+                params![conversation_id, after_message_id],
+                |row: &rusqlite::Row<'_>| {
+                    Ok(SearchResult {
+                        message_id: row.get(0)?,
+                        conversation_id: row.get(1)?,
+                        role: row.get(2)?,
+                        content: row.get(3)?,
+                        timestamp: row.get(4)?,
+                        source_type: SourceType::Conversation,
+                        score: 1.0,
+                        search_type: SearchType::Keyword,
+                        chunk_content: None,
+                        chunk_start: None,
+                        chunk_end: None,
+                        message_type: row.get(5)?,
+                        previous_message_id: None,
+                        subsequent_messages: vec![],
+                        prompt_tokens: row.get(6)?,
+                    })
+                },
+            )?;
+
+            let mut results = Vec::new();
+            for r in rows {
+                results.push(r?);
+            }
+            Ok(results)
+        })
+    }
+
+    /// Get the ID of the previous message in a conversation
+    ///
+    /// # Arguments
+    /// * `message_id` - The current message ID
+    /// * `conversation_id` - The conversation ID
+    ///
+    /// # Returns
+    /// The ID of the previous message, or None if this is the first message
+    #[allow(dead_code)]
+    pub fn get_previous_message_id(
+        &self,
+        message_id: i64,
+        conversation_id: &str,
+    ) -> Result<Option<i64>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let sql = "SELECT id FROM messages 
+                       WHERE conversation_id = ?1 
+                         AND id < ?2 
+                       ORDER BY id DESC 
+                       LIMIT 1";
+            let mut stmt = conn.prepare(sql)?;
+            let mut rows = stmt.query_map(
+                params![conversation_id, message_id],
+                |row: &rusqlite::Row<'_>| row.get(0),
+            )?;
+
+            rows.next().transpose()
+        })
+    }
+
     /// Enrich search results with conversation context
     ///
-    /// For user messages, attaches the next assistant message from the same conversation.
+    /// For user messages, attaches all subsequent assistant messages (up to 5).
     /// This ensures question-answer pairs are retrieved together, addressing the issue
     /// where short questions have high similarity but long answers have low similarity.
+    ///
+    /// For isolated assistant messages (found directly in search), no enrichment is done.
     ///
     /// # Arguments
     /// * `results` - Search results from hybrid search
     ///
     /// # Returns
-    /// Results with next_message populated for user messages
+    /// Results with subsequent_messages populated for user messages
     pub fn enrich_with_context(&self, results: Vec<SearchResult>) -> Result<Vec<SearchResult>> {
         let mut enriched = Vec::with_capacity(results.len());
+        let mut seen_ids = std::collections::HashSet::new();
 
         for result in results {
-            let next_message = if result.role == ROLE_USER {
-                self.get_next_message_by_role(
+            seen_ids.insert(result.message_id);
+
+            let subsequent_messages = if result.role == ROLE_USER {
+                // Get all subsequent assistant messages
+                let messages = self.get_subsequent_assistant_messages(
                     result.message_id,
                     &result.conversation_id,
-                    ROLE_ASSISTANT,
-                )?
-                .map(Box::new)
+                )?;
+
+                // Filter out duplicates
+                messages
+                    .into_iter()
+                    .filter(|m| !seen_ids.contains(&m.message_id))
+                    .take(5)
+                    .collect()
             } else {
-                None
+                // Isolated assistant message: no enrichment
+                vec![]
             };
 
+            // Mark as seen
+            for msg in &subsequent_messages {
+                seen_ids.insert(msg.message_id);
+            }
+
             enriched.push(SearchResult {
-                next_message,
+                subsequent_messages,
                 ..result
             });
         }
@@ -1207,7 +1377,9 @@ impl Database {
                     chunk_content: None,
                     chunk_start: None,
                     chunk_end: None,
-                    next_message: None,
+                    message_type: None,
+                    previous_message_id: None,
+                    subsequent_messages: vec![],
                     prompt_tokens: None,
                 })
             })?;
@@ -1456,6 +1628,8 @@ mod tests {
 
     #[test]
     fn test_search_keyword() {
+        use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
+
         let db = Database::in_memory().expect("Failed to create database");
 
         db.insert_conversation("test-conv", None, None, "llama3.1", Utc::now(), Utc::now())
@@ -1493,7 +1667,9 @@ mod tests {
             chunk_content: None,
             chunk_start: None,
             chunk_end: None,
-            next_message: None,
+            message_type: None,
+            previous_message_id: None,
+            subsequent_messages: vec![],
             prompt_tokens: None,
         };
 
@@ -1585,9 +1761,10 @@ mod tests {
 
         // Check exists
         assert!(db.conversation_exists(conv_id).expect("Failed to check"));
-        assert!(!db
-            .conversation_exists("nonexistent")
-            .expect("Failed to check"));
+        assert!(
+            !db.conversation_exists("nonexistent")
+                .expect("Failed to check")
+        );
     }
 
     #[test]
@@ -1623,6 +1800,7 @@ mod tests {
 
     #[test]
     fn test_list_sessions() {
+        use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
         let db = Database::in_memory().expect("Failed to create database");
 
         // Insert multiple conversations

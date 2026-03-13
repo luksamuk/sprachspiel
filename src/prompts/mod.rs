@@ -10,11 +10,16 @@
 //!
 //! # Structure
 //!
-//! - `base` - Core system prompts (default, code, summarize)
+//! - `base` - Core system prompts (default, code, summarize) + PERSONALITY_DEFAULT
 //! - `tools` - Tool context builder
 //! - `examples` - Few-shot examples for tool usage
-//! - `personality` - Personality overlays (Pepe)
 //! - `builder` - Main prompt builder function
+//!
+//! # SOUL System
+//!
+//! Personality comes from ~/.config/ask-ai/SOUL.md (user-defined),
+//! falling back to PERSONALITY_DEFAULT when missing.
+//! Use --soulless to skip personality entirely.
 //!
 //! # Usage
 //!
@@ -33,17 +38,16 @@
 pub mod base;
 pub mod builder;
 pub mod examples;
-pub mod personality;
 pub mod tools;
 
 // Re-export commonly used items for external access (tests, etc.)
 // These may trigger unused_imports warnings in the binary but are used by tests/prompt_benchmark.rs
 #[allow(unused_imports)]
-pub use base::{SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE};
+pub use base::{
+    PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE,
+};
 #[allow(unused_imports)]
 pub use builder::{PromptConfig, PromptType, build_system_prompt, build_tool_user_prompt};
-#[allow(unused_imports)]
-pub use personality::{PERSONALITY_PEPE, get_personality_prefix, is_pepe_model};
 #[allow(unused_imports)]
 pub use tools::build_tool_context;
 
@@ -55,6 +59,5 @@ pub fn list_prompts() -> Vec<&'static str> {
         "code",
         "code_with_tools",
         "summarize",
-        "pepe",
     ]
 }

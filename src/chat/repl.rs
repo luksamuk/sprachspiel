@@ -48,6 +48,7 @@ pub async fn run_chat_repl(
     cli_tools: bool,
     cli_code: bool,
     cli_ignore_agents: bool,
+    cli_soulless: bool,
 ) -> AppResult<()> {
     let use_debug = settings.output.debug_default;
 
@@ -534,6 +535,7 @@ pub async fn run_chat_repl(
                                         tools_active,
                                         agents_md.as_deref(),
                                         settings,
+                                        cli_soulless,
                                     );
                                     continue;
                                 }
@@ -569,6 +571,8 @@ pub async fn run_chat_repl(
                                             use_debug,
                                             db.as_ref(),
                                             embedding_client.as_ref(),
+                                            cli_soulless,
+                                            None,
                                         )
                                         .await
                                         {
@@ -772,7 +776,8 @@ pub async fn run_chat_repl(
                 }
 
                 // Save user message immediately before sending
-                session.add_user_message(line.to_string());
+                // Capture message ID for linking pre-tool content
+                let user_message_id = session.add_user_message(line.to_string());
                 if !session.anonymous
                     && let Err(e) = session.save_sqlite()
                     && use_debug
@@ -789,7 +794,8 @@ pub async fn run_chat_repl(
                         .with_blacklist(Some(&settings.blacklist_set()))
                         .with_agents_md(agents_md.as_deref())
                         .with_tools(tools_active)
-                        .with_retrieval(session.retrieval_enabled && !cli_code),
+                        .with_retrieval(session.retrieval_enabled && !cli_code)
+                        .with_soulless(cli_soulless),
                 );
 
                 if needs_pre_tool_compaction(&session, &system_prompt_for_check, context_window) {
@@ -832,21 +838,183 @@ pub async fn run_chat_repl(
                     use_debug,
                     db.as_ref(),
                     embedding_client.as_ref(),
+                    cli_soulless,
+                    None,
                 )
                 .await
                 {
                     Ok(result) => {
+                        // Save pre-tool content before final response
+                        if let Some(pre_content) = &result.pre_tool_content {
+                            session.add_pre_tool_message(
+                                pre_content.clone(),
+                                result.pre_tool_thinking.clone(),
+                                user_message_id,
+                            );
+                            if use_debug {
+                                log_debug(&format!(
+                                    "Saved pre-tool content ({} chars)",
+                                    pre_content.len()
+                                ));
+                            }
+                        }
+
+                        // Handle continuation if LLM paused for compaction
+                        let mut final_response = result.response.clone();
+                        let mut final_metrics = result.metrics.clone();
+                        let mut continuation_count = 0;
+
+                        if let Some(ref continuation_tag) = result.continuation_needed {
+                            continuation_count += 1;
+                            if use_debug {
+                                log_debug(&format!(
+                                    "Continuation requested: paused_at='{}', next_step='{}'",
+                                    continuation_tag.paused_at, continuation_tag.next_step
+                                ));
+                            }
+                            eprintln!(
+                                "\n\x1B[33m⏳ Paused for context compaction, continuing...\x1B[0m"
+                            );
+
+                            // Compact the context now
+                            let continuation_context_window = result.context_window;
+                            let continuation_system_prompt = result.system_prompt.clone();
+                            auto_compact_if_needed(
+                                &ollama,
+                                &model_config,
+                                &mut session,
+                                settings,
+                                agents_md.as_deref(),
+                                &continuation_system_prompt,
+                                continuation_context_window,
+                                use_debug,
+                            )
+                            .await;
+
+                            // Continue with continuation prompt
+
+                            // Send continuation request (empty user_input, continuation via ephemeral)
+                            let continuation_result = send_message(
+                                &ollama,
+                                &model_config,
+                                &mut session,
+                                "", // empty user_input - continuation via ephemeral message
+                                tools_active,
+                                think_enabled,
+                                cli_code,
+                                settings,
+                                agents_md.as_deref(),
+                                use_debug,
+                                db.as_ref(),
+                                embedding_client.as_ref(),
+                                cli_soulless,
+                                Some(continuation_tag),
+                            )
+                            .await;
+
+                            match continuation_result {
+                                Ok(mut cont_result) => {
+                                    // Append continuation response
+                                    final_response.push_str("\n\n");
+                                    final_response.push_str(&cont_result.response);
+
+                                    // Update metrics
+                                    final_metrics.response_tokens +=
+                                        cont_result.metrics.response_tokens;
+                                    final_metrics.total_tokens += cont_result.metrics.total_tokens;
+
+                                    eprintln!("\n\x1B[90m[Continuation complete]\x1B[0m");
+
+                                    // Handle nested continuations (limit to 3)
+                                    while let Some(ref next_tag) = cont_result.continuation_needed {
+                                        if continuation_count >= 3 {
+                                            eprintln!(
+                                                "\x1B[33mWarning: Maximum continuations reached. Please continue manually.\x1B[0m"
+                                            );
+                                            break;
+                                        }
+
+                                        continuation_count += 1;
+                                        eprintln!(
+                                            "\n\x1B[33m⏳ Paused again, continuing ({})...\x1B[0m",
+                                            continuation_count
+                                        );
+
+                                        // Compact again
+                                        auto_compact_if_needed(
+                                            &ollama,
+                                            &model_config,
+                                            &mut session,
+                                            settings,
+                                            agents_md.as_deref(),
+                                            &cont_result.system_prompt,
+                                            cont_result.context_window,
+                                            use_debug,
+                                        )
+                                        .await;
+
+                                        let next_result = send_message(
+                                            &ollama,
+                                            &model_config,
+                                            &mut session,
+                                            "", // empty user_input - continuation via ephemeral
+                                            tools_active,
+                                            think_enabled,
+                                            cli_code,
+                                            settings,
+                                            agents_md.as_deref(),
+                                            use_debug,
+                                            db.as_ref(),
+                                            embedding_client.as_ref(),
+                                            cli_soulless,
+                                            Some(next_tag),
+                                        )
+                                        .await;
+
+                                        match next_result {
+                                            Ok(n_result) => {
+                                                final_response.push_str("\n\n");
+                                                final_response.push_str(&n_result.response);
+                                                final_metrics.response_tokens +=
+                                                    n_result.metrics.response_tokens;
+                                                final_metrics.total_tokens +=
+                                                    n_result.metrics.total_tokens;
+
+                                                eprintln!(
+                                                    "\n\x1B[90m[Continuation complete]\x1B[0m"
+                                                );
+
+                                                // Update cont_result for the while loop
+                                                cont_result = n_result;
+                                            }
+                                            Err(e) => {
+                                                eprintln!(
+                                                    "\x1B[31mContinuation failed: {}\x1B[0m",
+                                                    e
+                                                );
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+                                }
+                            }
+                        }
+
+                        // Save the final response (merged with continuations if any)
                         session.add_assistant_message(
-                            result.response,
-                            Some(result.metrics.prompt_tokens),
+                            final_response,
+                            Some(final_metrics.prompt_tokens),
                         );
 
-                        if result.metrics.total_tokens > 0 {
+                        if final_metrics.total_tokens > 0 {
                             eprintln!(
                                 "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-                                result.metrics.prompt_tokens,
-                                result.metrics.response_tokens,
-                                result.metrics.total_tokens
+                                final_metrics.prompt_tokens,
+                                final_metrics.response_tokens,
+                                final_metrics.total_tokens
                             );
                         }
 
@@ -899,7 +1067,8 @@ pub async fn run_chat_repl(
                                     .with_blacklist(Some(&settings.blacklist_set()))
                                     .with_agents_md(agents_md.as_deref())
                                     .with_tools(tools_enabled)
-                                    .with_retrieval(session.retrieval_enabled && !cli_code),
+                                    .with_retrieval(session.retrieval_enabled && !cli_code)
+                                    .with_soulless(cli_soulless),
                             );
 
                             eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
@@ -968,9 +1137,217 @@ pub struct TokenMetrics {
 
 pub struct SendMessageResult {
     pub response: String,
+    pub pre_tool_content: Option<String>,
+    pub pre_tool_thinking: Option<String>,
     pub metrics: TokenMetrics,
     pub context_window: usize,
     pub system_prompt: String,
+    /// Parsed continuation tag if LLM requested to continue after compaction
+    pub continuation_needed: Option<crate::chat::ContinuationTag>,
+}
+
+/// Build system prompt for the session
+fn build_session_system_prompt(
+    session: &ChatSession,
+    tools_enabled: bool,
+    cli_code: bool,
+    cli_soulless: bool,
+    model_config: &ModelConfig,
+    blacklist_set: &std::collections::HashSet<&str>,
+    agents_md: Option<&str>,
+) -> String {
+    if let Some(ref custom_prompt) = session.system_prompt {
+        return custom_prompt.clone();
+    }
+
+    let prompt_type = if cli_code && tools_enabled {
+        PromptType::CodeWithTools
+    } else if cli_code {
+        PromptType::Code
+    } else if tools_enabled {
+        PromptType::ToolUser
+    } else {
+        PromptType::Default
+    };
+
+    let ctx_window = model_config.num_ctx as usize;
+    let ctx_status = check_context_overflow(session, "", ctx_window, DEFAULT_OVERFLOW_THRESHOLD);
+
+    build_system_prompt(
+        PromptConfig::new(prompt_type)
+            .with_model_id(Some(&model_config.model_id))
+            .with_blacklist(Some(blacklist_set))
+            .with_agents_md(agents_md)
+            .with_tools(tools_enabled)
+            .with_retrieval(session.retrieval_enabled && !cli_code)
+            .with_soulless(cli_soulless)
+            .with_context_status(if ctx_status.needs_compaction() {
+                Some(ctx_status.clone())
+            } else {
+                None
+            }),
+    )
+}
+
+/// Setup coordinator with optional tools
+#[allow(clippy::too_many_arguments)]
+fn setup_coordinator(
+    ollama: ollama_rs::Ollama,
+    model_config: &ModelConfig,
+    model_options: ollama_rs::models::ModelOptions,
+    think_enabled: bool,
+    use_debug: bool,
+    tools_enabled: bool,
+    settings: &Settings,
+    system_prompt: String,
+) -> CustomCoordinator<Vec<ChatMessage>> {
+    let coordinator = ChatContext {
+        ollama,
+        model_id: model_config.model_id.clone(),
+        model_options,
+        use_think: think_enabled,
+        use_debug,
+        use_plain: false,
+        context_window: Some(model_config.num_ctx as usize),
+        system_prompt: Some(system_prompt),
+    }
+    .build_coordinator();
+
+    let mut coordinator = coordinator;
+    if tools_enabled {
+        let (coord_new, tool_count) = register_tools(coordinator, settings, use_debug);
+        coordinator = coord_new;
+        if use_debug {
+            log_debug(&format!("{} tools active", tool_count));
+        }
+    }
+    coordinator
+}
+
+/// Prepare messages with retrieval and optional continuation
+#[allow(clippy::too_many_arguments)]
+async fn prepare_messages(
+    session: &mut ChatSession,
+    db: Option<&Arc<crate::db::Database>>,
+    embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
+    user_input: &str,
+    system_prompt: &str,
+    use_debug: bool,
+    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
+    continuation_tag: Option<&crate::chat::ContinuationTag>,
+) -> Vec<ChatMessage> {
+    let retrieval_config = if session.retrieval_enabled {
+        RetrievalConfig::default()
+    } else {
+        RetrievalConfig {
+            enabled: false,
+            ..RetrievalConfig::default()
+        }
+    };
+
+    let context_result = build_context(
+        session,
+        db,
+        embedding_client,
+        user_input,
+        system_prompt,
+        &retrieval_config,
+        use_debug,
+    )
+    .await;
+
+    if context_result.retrieval_performed {
+        update_retrieval_time(session);
+        if use_debug {
+            log_debug(&format!(
+                "Retrieved {} relevant messages",
+                context_result.retrieved_count
+            ));
+        }
+    }
+
+    let mut messages = context_result.messages;
+    messages.push(ChatMessage::user(user_input.to_string()));
+
+    if let Some(tag) = continuation_tag {
+        let continuation_prompt = build_continuation_prompt(tag);
+        coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
+        if use_debug {
+            log_debug("Injected continuation prompt as ephemeral message");
+        }
+    }
+
+    messages
+}
+
+/// Process chat response into SendMessageResult
+fn process_chat_response(
+    response: ollama_rs::generation::chat::ChatMessageResponse,
+    think_enabled: bool,
+    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
+    context_window: usize,
+    system_prompt: String,
+) -> SendMessageResult {
+    let content = response.message.content.clone();
+
+    let metrics = if let Some(ref final_data) = response.final_data {
+        TokenMetrics {
+            prompt_tokens: final_data.prompt_eval_count,
+            response_tokens: final_data.eval_count,
+            total_tokens: final_data.prompt_eval_count + final_data.eval_count,
+        }
+    } else {
+        TokenMetrics::default()
+    };
+
+    if think_enabled {
+        display_thinking(&content, response.message.thinking.as_ref(), true);
+    }
+
+    let display_content = strip_thinking_tags(&content);
+    markdown::print_markdown(&display_content);
+
+    let pre_tool = coordinator.take_pre_tool_content();
+    let (pre_tool_content, pre_tool_thinking) = match pre_tool {
+        Some(ptc) => (Some(ptc.content), ptc.thinking),
+        None => (None, None),
+    };
+
+    let (cleaned_response, continuation_needed) =
+        crate::chat::parse_continuation_tag(&display_content);
+
+    if continuation_needed.is_some() {
+        eprint!("\x1B[2K\r");
+        markdown::print_markdown(&cleaned_response);
+    }
+
+    SendMessageResult {
+        response: cleaned_response,
+        pre_tool_content,
+        pre_tool_thinking,
+        metrics,
+        context_window,
+        system_prompt,
+        continuation_needed,
+    }
+}
+
+/// Build a continuation prompt from a continuation tag
+///
+/// Creates a system message that tells the LLM to resume from where it paused
+/// after context compaction.
+fn build_continuation_prompt(tag: &crate::chat::ContinuationTag) -> String {
+    format!(
+        "<continuation_prompt>\n\
+        Context has been compacted. Resume from the checkpoint.\n\
+        \n\
+        Reasoning paused at: {}\n\
+        Next step: {}\n\
+        \n\
+        Continue naturally from where you left off. Do not repeat completed work.\n\
+        </continuation_prompt>",
+        tag.paused_at, tag.next_step
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -987,33 +1364,22 @@ async fn send_message(
     use_debug: bool,
     db: Option<&Arc<crate::db::Database>>,
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
+    cli_soulless: bool,
+    continuation_tag: Option<&crate::chat::ContinuationTag>,
 ) -> AppResult<SendMessageResult> {
     let model_options = model_config.build_model_options();
-
     let blacklist_set = settings.blacklist_set();
 
-    let system_prompt = if let Some(ref custom_prompt) = session.system_prompt {
-        custom_prompt.clone()
-    } else {
-        // Determine prompt type based on code mode and tools
-        let prompt_type = if cli_code && tools_enabled {
-            PromptType::CodeWithTools
-        } else if cli_code {
-            PromptType::Code
-        } else if tools_enabled {
-            PromptType::ToolUser
-        } else {
-            PromptType::Default
-        };
-        build_system_prompt(
-            PromptConfig::new(prompt_type)
-                .with_model_id(Some(&model_config.model_id))
-                .with_blacklist(Some(&blacklist_set))
-                .with_agents_md(agents_md)
-                .with_tools(tools_enabled)
-                .with_retrieval(session.retrieval_enabled && !cli_code), // Disable retrieval for code mode
-        )
-    };
+    // Build system prompt
+    let system_prompt = build_session_system_prompt(
+        session,
+        tools_enabled,
+        cli_code,
+        cli_soulless,
+        model_config,
+        &blacklist_set,
+        agents_md,
+    );
 
     // Check context overflow
     let context_window = model_config.num_ctx as usize;
@@ -1038,63 +1404,30 @@ async fn send_message(
         ));
     }
 
-    let coordinator = ChatContext {
-        ollama: ollama.clone(),
-        model_id: model_config.model_id.clone(),
+    // Setup coordinator with optional tools
+    let mut coordinator = setup_coordinator(
+        ollama.clone(),
+        model_config,
         model_options,
-        use_think: think_enabled,
+        think_enabled,
         use_debug,
-        use_plain: false,
-        context_window: Some(model_config.num_ctx as usize),
-        system_prompt: Some(system_prompt.clone()),
-    }
-    .build_coordinator();
+        tools_enabled,
+        settings,
+        system_prompt.clone(),
+    );
 
-    let mut coordinator = coordinator;
-    if tools_enabled {
-        let (coord_new, tool_count) = register_tools(coordinator, settings, use_debug);
-        coordinator = coord_new;
-        if use_debug {
-            log_debug(&format!("{} tools active", tool_count));
-        }
-    }
-
-    // Build context with retrieval if enabled and available
-    let retrieval_config = if session.retrieval_enabled {
-        RetrievalConfig::default()
-    } else {
-        RetrievalConfig {
-            enabled: false,
-            ..RetrievalConfig::default()
-        }
-    };
-
-    let context_result = build_context(
+    // Prepare messages with retrieval and continuation
+    let mut messages = prepare_messages(
         session,
         db,
         embedding_client,
         user_input,
         &system_prompt,
-        &retrieval_config,
         use_debug,
+        &mut coordinator,
+        continuation_tag,
     )
     .await;
-
-    // Update last_retrieval_time if retrieval was performed
-    if context_result.retrieval_performed {
-        update_retrieval_time(session);
-        if use_debug {
-            log_debug(&format!(
-                "Retrieved {} relevant messages",
-                context_result.retrieved_count
-            ));
-        }
-    }
-
-    let mut messages = context_result.messages;
-
-    // Add current user query at the end
-    messages.push(ChatMessage::user(user_input.to_string()));
 
     if use_debug {
         log_debug(&format!("Sending {} messages to model", messages.len()));
@@ -1114,10 +1447,9 @@ async fn send_message(
         vec![]
     };
 
+    // Execute with retry logic
     let mut attempts = 0;
-    let mut messages = messages;
     let result = loop {
-        // Run chat with context if DB and embedding client are available
         let current_result = if let (Some(db), Some(embedding)) = (db, embedding_client) {
             crate::tools::context::with_context(
                 db.clone(),
@@ -1167,36 +1499,14 @@ async fn send_message(
     finish_spinner(spinner);
 
     match result {
-        Ok(response) => {
-            let content = response.message.content.clone();
-
-            let metrics = if let Some(ref final_data) = response.final_data {
-                TokenMetrics {
-                    prompt_tokens: final_data.prompt_eval_count,
-                    response_tokens: final_data.eval_count,
-                    total_tokens: final_data.prompt_eval_count + final_data.eval_count,
-                }
-            } else {
-                TokenMetrics::default()
-            };
-
-            if think_enabled {
-                display_thinking(&content, response.message.thinking.as_ref(), true);
-            }
-
-            let display_content = strip_thinking_tags(&content);
-            markdown::print_markdown(&display_content);
-            Ok(SendMessageResult {
-                response: display_content,
-                metrics,
-                context_window,
-                system_prompt,
-            })
-        }
-        Err(e) => {
-            // Error will be formatted and printed by the caller (REPL loop)
-            Err(e.into())
-        }
+        Ok(response) => Ok(process_chat_response(
+            response,
+            think_enabled,
+            &mut coordinator,
+            context_window,
+            system_prompt,
+        )),
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -1442,6 +1752,7 @@ fn print_context_info(
     tools_enabled: bool,
     agents_md: Option<&str>,
     settings: &Settings,
+    soulless: bool,
 ) {
     let blacklist_set = settings.blacklist_set();
 
@@ -1457,7 +1768,8 @@ fn print_context_info(
             .with_blacklist(Some(&blacklist_set))
             .with_agents_md(agents_md)
             .with_tools(tools_enabled)
-            .with_retrieval(session.retrieval_enabled),
+            .with_retrieval(session.retrieval_enabled)
+            .with_soulless(soulless),
     );
 
     let history_messages = session.get_messages_for_llm(&system_prompt);

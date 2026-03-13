@@ -23,6 +23,7 @@ mod prompts;
 mod query;
 mod retrieval;
 mod settings;
+mod soul;
 mod spinner;
 mod summarize;
 mod tokens;
@@ -104,6 +105,10 @@ struct Cli {
     /// Ignore AGENTS.md file if present in current directory
     #[arg(long)]
     ignore_agents: bool,
+
+    /// Skip SOUL.md personality (use neutral personality)
+    #[arg(long)]
+    soulless: bool,
 
     /// Initialize/create sample configuration file
     #[arg(long)]
@@ -285,6 +290,7 @@ async fn handle_query_subcommand(args: QueryArgs, cli: &Cli, settings: &Settings
         cli.code,
         &cli.prompt,
         cli.ignore_agents,
+        cli.soulless,
         cli.debug,
         cli.plain,
         settings,
@@ -313,6 +319,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         cli.code,
         &cli.prompt,
         cli.ignore_agents,
+        cli.soulless,
         cli.debug,
         cli.plain,
         settings,
@@ -479,6 +486,7 @@ async fn handle_chat(args: ChatArgs, cli: &Cli, settings: &Settings) -> AppResul
         cli.tools,
         cli.code,
         cli.ignore_agents,
+        args.soulless, // Use chat-specific flag, not global CLI flag
     )
     .await
 }

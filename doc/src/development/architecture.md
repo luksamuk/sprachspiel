@@ -383,10 +383,10 @@ sequenceDiagram
 
 ### 2. Context Window Management
 
-**Decision:** "Lost in the middle" mitigation
+**Decision:** "Lost in the middle" mitigation + Graceful Interruption
 
 **Rationale:**
-Research shows LLMs perform better when important information is at the **beginning** or **end** of context.
+Research shows LLMs perform better when important information is at the **beginning** or **end** of context. When context fills during complex multi-step tasks, the LLM should be able to pause and resume.
 
 **Implementation:**
 ```mermaid
@@ -395,7 +395,58 @@ graph TD
     B --> C[Preserved Messages]
     C --> D[Recent Messages]
     D --> E[Current Query]
+    
+    F[Context Status] --> G{Usage > 72%?}
+    G -->|Yes| H[Inject Warning]
+    G -->|No| I[Skip]
+    H --> J{Usage > 80%?}
+    J -->|Yes| K[Inject Continuation Protocol]
+    J -->|No| I
 ```
+
+**Context Continuity (v0.31.0):**
+
+When approaching context limits, the LLM is instructed to pause gracefully:
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant R as REPL
+    participant L as LLM
+    participant C as Compaction
+    
+    U->>R: Question
+    R->>R: Check context status (72%+)
+    R->>L: Prompt with context status
+    L->>L: Realizes context is tight
+    L->>R: Response + <continuation_needed>
+    Note over R: Parse continuation tag
+    R->>C: Auto-compact
+    C->>R: Context cleared
+    R->>R: Build continuation prompt
+    R->>L: Continue from checkpoint
+    L->>R: Continue response
+    R->>R: Merge responses
+    R->>U: Complete answer
+```
+
+**Components:**
+
+| Component | Purpose |
+|-----------|---------|
+| `ContextStatus` | Tracks usage % and thresholds |
+| `CONTEXT_MANAGEMENT_INSTRUCTION` | Teaches LLM to pause |
+| `ContinuationTag` | Checkpoint info from LLM |
+| `ephemeral_messages` | Non-persisted continuation prompts |
+| `build_continuation_prompt()` | Creates resume instructions |
+
+**Behavior by Threshold:**
+
+| Usage | Behavior |
+|-------|----------|
+| < 72% | Normal operation |
+| 72-80% | Context status warning in prompt |
+| > 80% | Continuation protocol active |
 
 ### 3. Conversation Persistence
 
@@ -515,6 +566,7 @@ ask-ai/
 │   │   ├── session.rs       # Session state
 │   │   ├── history.rs       # Legacy JSON storage (for /restore)
 │   │   ├── model_switch.rs  # Centralized switching
+│   │   ├── custom_coordinator.rs  # Pre-tool content + ephemeral messages
 │   │   └── compaction.rs    # Context management
 │   ├── project.rs           # Project identification
 │   ├── db/                  # Database operations

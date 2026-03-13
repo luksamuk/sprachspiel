@@ -41,6 +41,11 @@ This document outlines planned features and the current state of Ask-AI.
 - Thinking output visible when enabled
 - Error recovery for tool/network errors
 - Context overflow protection during tool execution
+- **Context Continuity with Graceful Interruption** (v0.31.0)
+  - LLM can pause reasoning when context fills up
+  - Automatic continuation after compaction
+  - Nested continuations (up to 3 levels)
+  - Context status injected into prompts
 
 **Tools (28 total):**
 
@@ -56,6 +61,16 @@ This document outlines planned features and the current state of Ask-AI.
 | LED Control | 5 | `led-tools` | ❌ Disabled* |
 
 *LED tools require `[led]` configuration in config.toml.
+
+**Planned: File Write Tools (Priority 2):**
+
+| Tool | Purpose | Status |
+|------|---------|--------|
+| `write_file` | Create or overwrite files | 📋 Planned |
+| `edit_file` | Edit existing files (replace/insert/delete) | 📋 Planned |
+| `append_file` | Add content to existing files | 📋 Planned |
+
+See `doc/src/development/file-write-tools.md` for implementation plan.
 
 **System Tools:**
 - `get_current_datetime` - Date, time, timezone, ISO 8601, Unix timestamp
@@ -342,6 +357,43 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 - [ ] Skill versioning
 
 **Research Complete:** See [CLI Tools Research](./cli-tools-research.md) and [Skills System Design](./skills-system-design.md) for full details.
+
+---
+
+### Parallel Tool Execution
+
+**Priority:** MEDIUM (PRIORITY 6 in implementation)  
+**Status:** Research needed
+
+**Goal:** Execute independent tool calls in parallel for faster response times.
+
+**Problem:**
+- Current implementation executes tool calls sequentially
+- LLM often requests multiple independent tools (e.g., `get_weather` + `get_current_datetime`)
+- Sequential execution unnecessarily increases latency
+
+**Proposed Solution:**
+- Detect independent tool calls using dependency analysis
+- Execute read-only tools in parallel using `futures::join_all`
+- Preserve sequential order for stateful tools (file writes, database ops)
+
+**Safe for Parallel (read-only):**
+- `get_weather`, `get_current_datetime`
+- `read_file`, `read_file_segment`, `count_lines`, `list_directory`, `search_files`
+- `web_search`, `search_duckduckgo`
+- `calculate`
+- `get_pokemon_*` (all Pokemon tools)
+- `get_system_info`
+
+**Requires Sequential (stateful/write):**
+- `run_command` (may have side effects)
+- `write_file`, `edit_file`, `append_file` (when implemented)
+- Database operations
+- File writes
+
+**Estimated effort:** 3-4 days
+
+**Implementation:** See `IMPLEMENTATION.md` - Priority 6
 
 ---
 

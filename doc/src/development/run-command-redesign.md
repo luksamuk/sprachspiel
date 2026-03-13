@@ -134,6 +134,44 @@ fn apply_sandbox_if_enabled(config: &ExternalToolsConfig) -> Result<(), String> 
 }
 ```
 
+### Layer Stacking Limit
+
+Landlock rulesets are stacked per-thread. The kernel limits this to **16 layers**. Each call to `restrict_self()` adds a new layer. Once the limit is reached, `restrict_self()` returns `E2BIG`.
+
+**Problem:** If `run_command` is called multiple times in the same session, the sandbox would be applied repeatedly, eventually hitting the 16-layer limit and failing.
+
+**Solution:** Thread-local tracking prevents re-application:
+
+```rust
+std::thread_local! {
+    static LANDLOCK_APPLIED: Cell<bool> = Cell::new(false);
+}
+
+fn apply_sandbox_if_enabled(...) -> Result<(), String> {
+    // Already applied in this thread
+    if LANDLOCK_APPLIED.get() {
+        return Ok(());
+    }
+    
+    // Apply sandbox...
+    match ruleset_created.restrict_self() {
+        Ok(status) => {
+            LANDLOCK_APPLIED.set(true);
+            Ok(())
+        }
+        Err(e) if e.to_string().contains("E2BIG") => {
+            // Thread already has 16 layers (inherited or previous)
+            // Already sandboxed - treat as success
+            LANDLOCK_APPLIED.set(true);
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed: {}", e)),
+    }
+}
+```
+
+**Reference:** [Kernel Landlock Documentation](https://docs.kernel.org/userspace-api/landlock.html) - "There is a limit of 16 layers of stacked rulesets"
+
 ## Threat Model
 
 ### What Landlock Prevents

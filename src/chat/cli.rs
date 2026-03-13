@@ -62,6 +62,10 @@ pub struct ChatArgs {
     #[arg(long)]
     pub ignore_agents: bool,
 
+    /// Skip SOUL.md personality (use neutral personality)
+    #[arg(long)]
+    pub soulless: bool,
+
     /// Tool output verbosity level (compact, full, hidden)
     #[arg(long, value_name = "LEVEL", default_value = "compact")]
     pub tools_output: ToolOutputLevel,

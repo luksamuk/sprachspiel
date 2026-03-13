@@ -359,9 +359,7 @@ pub async fn migrate_all_legacy_sessions(
                 })
                 .unwrap_or(false);
 
-            if should_remove
-                && let Err(e) = fs::remove_dir_all(&project_path)
-            {
+            if should_remove && let Err(e) = fs::remove_dir_all(&project_path) {
                 stats.errors.push(format!(
                     "Failed to remove empty directory {:?}: {}",
                     project_path, e

@@ -11,7 +11,18 @@ Prompt modes are system prompts that guide how the model responds. Different mod
 | `code` | Code output | Programming tasks |
 | `code_with_tools` | Code + research | Programming with web search |
 | `summarize` | Summarization | Document summaries |
-| `pepe` | Personality | Easter egg sarcastic responses |
+
+## Personality System
+
+All prompts include a personality layer from SOUL.md:
+
+- **SOUL.md** - User-defined personality at `~/.config/ask-ai/SOUL.md`
+- **PERSONALITY_DEFAULT** - Fallback when no SOUL.md exists
+- **`--soulless` flag** - Skip personality entirely
+
+See [SOUL.md](./soul.md) for details on creating custom personalities.
+
+**Note:** Code modes (`code`, `code_with_tools`) and `summarize` mode do not use SOUL.md - they are purely operational.
 
 ## Mode Details
 
@@ -113,25 +124,6 @@ ask-ai summarize --style academic "Text..."
 - Professional contexts
 - Academic or business documents
 
-### pepe
-
-Sarcastic personality mode (Easter egg).
-
-```bash
-ask-ai -m pepe "Your question"
-```
-
-**Characteristics:**
-- Sarcastic personality
-- Makes fun of the user
-- Still provides helpful answers
-- Activated automatically for pepe model
-
-**When to use:**
-- When using pepe model
-- For entertainment
-- Not for professional contexts
-
 ## Usage Examples
 
 ### Basic Usage
@@ -183,9 +175,7 @@ graph TD
     C -->|No> E[code]
     B -->|No> F{Tools?}
     F -->|Yes> G[tool_user]
-    F -->|No> H{Pepe model?}
-    H -->|Yes> I[pepe]
-    H -->|No> J[default]
+    F -->|No> J[default]
 ```
 
 ## Best Practices

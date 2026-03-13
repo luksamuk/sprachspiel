@@ -2,6 +2,156 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.32.0] - 2026-03-13
+
+### Changed
+
+- **Code Cleanup** - Removed dead code and improved maintainability
+  - Removed unused `ChatEvent::FinalResponse` and `ChatEvent::ContinuationNeeded` variants
+  - Removed unused ephemeral methods (`take_ephemeral`, `has_ephemeral`, `clear_ephemeral`)
+  - Fixed indentation issues in `send_message` function
+  - Extracted helper functions from `send_message` to reduce complexity:
+    - `build_session_system_prompt()` - constructs system prompts
+    - `setup_coordinator()` - creates and configures coordinator
+    - `prepare_messages()` - builds message context with retrieval
+    - `process_chat_response()` - converts response to result
+
+### Technical Debt
+
+- `run_chat_repl` function remains large (~1100 lines) - refactoring planned for Priority 3
+
+## [0.31.0] - 2026-03-12
+
+### Added
+
+- **Context Continuity with Graceful Interruption** - Full implementation of LLM pause/resume during context overflow
+  - `ContextStatus` injected into prompts when approaching limits (>72% usage)
+  - `CONTEXT_MANAGEMENT_INSTRUCTION` teaches LLM to emit `<continuation_needed>` tag
+  - `ContinuationTag` struct for parsing pause/checkpoint information
+  - `parse_continuation_tag()` function extracts and strips continuation tags from responses
+  - `ephemeral_messages` in `CustomCoordinator` for non-persisted continuation prompts
+  - `SendMessageResult.continuation_needed` field for continuation detection
+  - `build_continuation_prompt()` creates resume instructions from checkpoint
+  - Continuation loop in REPL automatically resumes after compaction
+  - Supports nested continuations (up to 3) for extreme context pressure
+  - Merges continuation responses with original for seamless output
+
+- **Prompt Configuration**
+  - `PromptConfig.context_status` field for injecting context usage
+  - Context status section shows usage % and critical/warning indicators
+  - Context management instructions when overflow is detected
+
+### Fixed
+
+- **Landlock Sandbox E2BIG Error** - Fixed crash when running multiple commands
+  - Added thread-local tracking to prevent stacking Landlock rulesets
+  - E2BIG error now treated as success (thread already sandboxed)
+  - Documented 16-layer limit in Kernel Landlock API
+  - Prevents "Argument list too long" errors after ~16 command executions
+
+### Changed
+
+- `ContextStatus::max_tokens()` - New method to get context window size
+- `build_request()` in `CustomCoordinator` now prepends ephemeral messages
+- `send_message()` now accepts optional `continuation_tag` parameter for resume
+- REPL continuation handling merges responses and accumulates token metrics
+
+## [0.30.0] - 2026-03-12
+
+### Added
+
+- **PreToolContent Persistence** - Intermediate assistant messages (generated before tool calls) are now saved for semantic search
+  - `SavedMessage.message_type` field distinguishes `"normal"` vs `"pre_tool_content"` messages
+  - `previous_message_id` links pre-tool content back to the user question
+  - `subsequent_messages` in search results shows follow-up messages contextually
+  - Navigation hints in `remember` tool output
+
+- **Database Schema v5** - New columns for message metadata
+  - `message_type TEXT DEFAULT 'normal'` - Distinguishes normal vs intermediate messages
+  - `previous_message_id INTEGER` - Links assistant messages to preceding user message
+
+- **Session Methods**
+  - `add_pre_tool_message()` - Stores pre-tool content with `previous_message_id` linkage
+  - `add_user_message()` now returns `Option<i64>` (message ID) for linking
+
+- **Database Methods**
+  - `update_message_previous_id()` - Sets previous_message_id for navigation
+  - `get_conversation_messages()` now includes `message_type` column
+
+- **MEMORY TOOLS Navigation** - Enhanced prompt section with navigation instructions
+  - Explains `previous_message_id` and `subsequent_messages` fields
+  - Guides LLM on contextual message navigation
+
+### Changed
+
+- **`remember` Tool Output** - Shows `message_type` indicator for intermediate messages
+  - `[Intermediate]` prefix for `pre_tool_content` messages
+  - Subsequent messages displayed with proper indentation
+
+- **`get_conversation_messages()`** - Now retrieves `message_type` column from database
+
+- **Retrieval Enrichment** - `subsequent_messages` includes `message_type` for each message
+
+## [0.29.0] - 2026-03-11
+
+### Breaking Changes
+
+- **SOUL.md Personality System** - User-configurable agent personality replaces hardcoded Pepe personality
+  - `~/.config/ask-ai/SOUL.md` defines agent identity, behavior, and limits
+  - Falls back to `PERSONALITY_DEFAULT` when no SOUL.md exists
+  - Use `--soulless` flag to skip personality entirely
+  - **Removed:** Pepe personality (`PERSONALITY_PEPE`) - users should create their own SOUL.md
+
+### Added
+
+- **SOUL.md Module** (`src/soul.rs`)
+  - Loads personality from `~/.config/ask-ai/SOUL.md` or `XDG_CONFIG_HOME/ask-ai/SOUL.md`
+  - Removes HTML comments (`<!-- ... -->`) for developer notes
+  - Normalizes whitespace
+  - Validates structure (requires at least one `## ` section)
+
+- **PERSONALITY_DEFAULT** - Fallback personality when SOUL.md is missing
+
+- **`--soulless` CLI Flag** - Skip personality layer for neutral responses
+  - Available for `chat` and `query` commands
+  - Useful for debugging or when personality is not desired
+
+- **Multiple Personalities** - Documentation for switching between personality files
+  - See `doc/src/soul.md` for example personalities (PEPE, SPRACH, ANGEMON)
+  - Symlink or copy approach for switching
+
+- **Example Personalities** - Three complete example personalities in documentation:
+  - **SPRACH** - Cognitive companion for research and Zettelkasten work
+  - **PEPE** - Sarcastic senior developer (replaces hardcoded Pepe)
+  - **ANGEMON** - Guardian administrator for system protection
+
+- **Documentation** - New `doc/src/soul.md` with examples and best practices
+  - Updated `doc/src/commands/chat.md` and `doc/src/commands/query.md`
+
+### Changed
+
+- **Prompt Assembly** - New layered architecture:
+  1. SOUL LAYER (SOUL.md or PERSONALITY_DEFAULT or empty if --soulless)
+  2. OPERATION LAYER (Role + Behavior + Tool Usage)
+  3. CONTEXT LAYER (Platform + System + AGENTS.md)
+  4. CAPABILITY LAYER (Tools + Memory + Examples)
+  5. FINAL INSTRUCTION
+
+- **Removed `src/prompts/personality.rs`** - Pepe personality code deleted
+
+- **Updated `src/prompts/mod.rs`** - Removed personality exports, added PERSONALITY_DEFAULT export
+
+### Migration Guide
+
+If you used Pepe personality before, create `~/.config/ask-ai/SOUL.md` with your desired personality.
+
+Example personalities are available in `doc/src/soul.md`:
+- **SPRACH** - Thoughtful research companion
+- **PEPE** - Sarcastic senior developer
+- **ANGEMON** - Guardian administrator
+
+See the [SOUL.md documentation](./soul.md) for complete examples and best practices.
+
 ## [0.28.0] - 2026-03-11
 
 ### Fixed
@@ -1326,7 +1476,7 @@ Added 3 new LED tool examples to demonstrate:
 
 - **Custom Coordinator** - New `CustomCoordinator` implementation
   - Pre-tool content forwarding - model's thinking/intro text before tool calls is now displayed
-  - Event callbacks for `PreToolContent`, `ToolCall`, `ToolResult`, `FinalResponse`
+  - Event callbacks for `PreToolContent`, `ToolCall`, `ToolResult`
   - Replaces ollama-rs Coordinator for full control over tool execution flow
 
 - **Thinking Display Improvements**

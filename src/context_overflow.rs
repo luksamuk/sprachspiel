@@ -164,6 +164,15 @@ impl ContextStatus {
             ContextStatus::Overflow { total_tokens, .. } => *total_tokens,
         }
     }
+
+    /// Get max tokens (context window size)
+    pub fn max_tokens(&self) -> usize {
+        match self {
+            ContextStatus::Ok { max_tokens, .. } => *max_tokens,
+            ContextStatus::Warning { max_tokens, .. } => *max_tokens,
+            ContextStatus::Overflow { max_tokens, .. } => *max_tokens,
+        }
+    }
 }
 
 /// Check if context has overflowed the threshold
