@@ -20,6 +20,7 @@
 //! block_list = false
 //! ```
 
+use crate::external::FileToolsConfig;
 use once_cell::sync::Lazy;
 use regex::RegexSet;
 use std::path::Path;
@@ -160,9 +161,39 @@ impl Default for BlocklistConfig {
 impl BlocklistConfig {
     /// Load configuration from tools.toml.
     ///
-    /// Currently returns defaults. TODO: Load from actual config file.
+    /// Falls back to defaults if configuration is not available.
     pub fn load() -> Self {
+        // For now, use defaults. Configuration loading will be added
+        // when FileToolsConfig parsing is fully integrated.
+        // TODO: Load from crate::external::config::load_file_tools_config()
         Self::default()
+    }
+
+    /// Create config from FileToolsConfig.
+    pub fn from_config(config: &FileToolsConfig) -> Self {
+        // Build combined patterns: defaults + user-configured
+        let mut all_patterns: Vec<String> = DEFAULT_BLOCKED_PATTERNS
+            .iter()
+            .map(|p| pattern_to_regex(p))
+            .collect();
+
+        // Add user-configured patterns
+        for pattern in &config.blocked_patterns {
+            all_patterns.push(pattern_to_regex(pattern));
+        }
+
+        // Compile regex set
+        let patterns = RegexSet::new(&all_patterns).unwrap_or_else(|_| {
+            // Fall back to defaults if user patterns are invalid
+            DEFAULT_BLOCKED_REGEX.clone()
+        });
+
+        Self {
+            patterns,
+            block_read: config.block_read,
+            block_list: config.block_list,
+            block_write: config.block_write,
+        }
     }
 
     /// Check if a path matches any blocked pattern.

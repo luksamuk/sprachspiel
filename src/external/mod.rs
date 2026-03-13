@@ -5,7 +5,7 @@
 mod config;
 mod types;
 
-pub use types::{CommandOutput, ExternalTool, ExternalToolsConfig, Platform};
+pub use types::{CommandOutput, ExternalTool, ExternalToolsConfig, FileToolsConfig, Platform};
 
 pub use config::load_tools_config;
 

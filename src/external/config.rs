@@ -9,9 +9,12 @@ use super::types::{ExternalTool, ExternalToolsConfig, Platform};
 
 /// TOML configuration structure for tools.toml.
 #[derive(Debug, Clone, Deserialize, Default)]
+#[allow(dead_code)]
 struct ToolsToml {
     #[serde(default)]
     external: Option<ExternalSection>,
+    #[serde(default)]
+    file_tools: Option<FileToolsSection>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -45,6 +48,37 @@ fn default_enabled() -> bool {
 
 fn default_enable_sandbox() -> bool {
     true // Enabled by default on Linux
+}
+
+/// File tools configuration section.
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+struct FileToolsSection {
+    /// Maximum file size for operations in bytes (default: 5MB)
+    #[serde(default = "default_max_file_size")]
+    max_file_size: usize,
+    /// Additional blocked patterns (added to defaults)
+    #[serde(default)]
+    blocked_patterns: Vec<String>,
+    /// Whether to block read operations for sensitive files
+    #[serde(default = "default_true")]
+    block_read: bool,
+    /// Whether to block list operations (hide filenames)
+    #[serde(default = "default_false")]
+    block_list: bool,
+    // Note: block_write is always true and cannot be configured
+}
+
+fn default_max_file_size() -> usize {
+    5_242_880 // 5MB
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_false() -> bool {
+    false
 }
 
 impl Default for ExternalSection {
