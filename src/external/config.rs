@@ -5,13 +5,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::types::{ExternalTool, ExternalToolsConfig, Platform};
+use super::types::{ExternalTool, ExternalToolsConfig, FileToolsConfig, Platform};
+
+/// Default file size limit: 5MB
+const DEFAULT_MAX_FILE_SIZE: usize = 5_242_880;
 
 /// TOML configuration structure for tools.toml.
 #[derive(Debug, Clone, Deserialize, Default)]
 struct ToolsToml {
     #[serde(default)]
     external: Option<ExternalSection>,
+    #[serde(default)]
+    file_tools: Option<FileToolsSection>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -35,6 +40,34 @@ struct ToolToml {
     binary: Option<String>,
 }
 
+/// File tools configuration section.
+#[derive(Debug, Clone, Deserialize)]
+struct FileToolsSection {
+    /// Maximum file size for operations in bytes (default: 5MB)
+    #[serde(default = "default_max_file_size")]
+    max_file_size: usize,
+    /// Additional blocked patterns (added to defaults)
+    #[serde(default)]
+    blocked_patterns: Vec<String>,
+    /// Whether to block read operations for sensitive files
+    #[serde(default = "default_true")]
+    block_read: bool,
+    /// Whether to block list operations (hide filenames)
+    #[serde(default)]
+    block_list: bool,
+    // Note: block_write is always true and cannot be configured
+}
+
+// ============================================================================
+// Serde default value functions
+// ============================================================================
+// These functions are required by serde's #[serde(default = "...")] attribute.
+// Serde requires a function pointer, not a constant or inline value.
+// For simple boolean defaults, we still need functions because:
+//   #[serde(default = "true")]  // ERROR: expected function, found `true`
+//   #[serde(default)]           // Uses Default trait, which returns false
+// So default_true/default_false are needed for non-false boolean defaults.
+
 fn default_timeout() -> u64 {
     30
 }
@@ -45,6 +78,17 @@ fn default_enabled() -> bool {
 
 fn default_enable_sandbox() -> bool {
     true // Enabled by default on Linux
+}
+
+fn default_max_file_size() -> usize {
+    DEFAULT_MAX_FILE_SIZE
+}
+
+/// Returns `true` for serde defaults.
+/// Required because serde's #[serde(default = "...")] needs a function,
+/// and #[serde(default)] uses Default trait which returns false.
+fn default_true() -> bool {
+    true
 }
 
 impl Default for ExternalSection {
@@ -70,6 +114,42 @@ pub fn load_tools_config() -> ExternalToolsConfig {
     match config_path {
         Some(path) => load_from_file(&path),
         None => create_default_config(),
+    }
+}
+
+/// Load file tools configuration from tools.toml.
+///
+/// Checks for the config file in:
+/// 1. $XDG_CONFIG_HOME/ask-ai/tools.toml
+/// 2. ~/.config/ask-ai/tools.toml
+///
+/// Returns default configuration if file doesn't exist or section is missing.
+pub fn load_file_tools_config() -> FileToolsConfig {
+    let config_path = find_tools_config();
+
+    match config_path {
+        Some(path) => match std::fs::read_to_string(&path) {
+            Ok(content) => match toml::from_str::<ToolsToml>(&content) {
+                Ok(toml_config) => toml_config
+                    .file_tools
+                    .map(|f| FileToolsConfig {
+                        max_file_size: f.max_file_size,
+                        blocked_patterns: f.blocked_patterns,
+                        block_read: f.block_read,
+                        block_list: f.block_list,
+                    })
+                    .unwrap_or_default(),
+                Err(e) => {
+                    eprintln!("Warning: Failed to parse tools.toml: {}", e);
+                    FileToolsConfig::default()
+                }
+            },
+            Err(e) => {
+                eprintln!("Warning: Failed to read tools.toml: {}", e);
+                FileToolsConfig::default()
+            }
+        },
+        None => FileToolsConfig::default(),
     }
 }
 

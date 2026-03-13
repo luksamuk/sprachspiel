@@ -237,6 +237,19 @@ where
             coordinator = coordinator.register_tool(search_files);
             tool_count += 1;
         }
+        // File write tools
+        if is_tool_allowed("write_file") {
+            coordinator = coordinator.register_tool(write_file);
+            tool_count += 1;
+        }
+        if is_tool_allowed("edit_file") {
+            coordinator = coordinator.register_tool(edit_file);
+            tool_count += 1;
+        }
+        if is_tool_allowed("append_file") {
+            coordinator = coordinator.register_tool(append_file);
+            tool_count += 1;
+        }
     }
 
     // LED tools (requires configuration)

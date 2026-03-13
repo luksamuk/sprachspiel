@@ -4,7 +4,47 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [0.32.0] - 2026-03-13
 
+### Added
+
+- **File Write Tools** - Three new tools for creating, editing, and appending to files
+  - `write_file` - Create or overwrite files with sandbox enforcement
+  - `edit_file` - Surgical edits (replace text, insert lines, delete lines)
+  - `append_file` - Append content to existing files
+  - Security: Sandbox parameter respected, but blocked patterns ALWAYS enforced
+  - Security: Blocked patterns for sensitive files (`.env`, `secrets`, SSH keys, certificates)
+  - Security: Maximum 5MB per write operation
+  - Security: Atomic writes using temp file + rename pattern
+  - Optional `create_backup` parameter for `edit_file`
+
+- **Blocklist Module** - Shared security module for file operations
+  - `is_blocked_for_read()` - Check if path matches blocked patterns for read operations
+  - `is_blocked_for_write()` - Check if path is blocked for write operations (always enforced)
+  - `is_blocked_for_list()` - Check if filename should be hidden in directory listings
+  - `BlocklistConfig` - Loads configuration from `tools.toml`
+  - Integrated into all file operations: `read_file`, `read_file_segment`, `count_lines`, `search_files`, `list_directory`
+
+- **File Tools Configuration** - Full TOML configuration integration
+  - `[file-tools]` section in `~/.config/ask-ai/tools.toml`
+  - `max_file_size` - Maximum file size (default: 5MB)
+  - `blocked_patterns` - Additional glob patterns to block
+  - `block_read` - Block reading sensitive files (default: true)
+  - `block_list` - Hide blocked filenames in listings (default: false)
+  - `load_file_tools_config()` - Fully implemented configuration loader
+
+- **Positive Framing in Prompts** - Updated all prompts to use positive instructions
+  - `PERSONALITY_DEFAULT` converted from "**Does not:**" to "**Maintains:**" format
+  - All SOUL.md example personalities updated (SPRACH, PEPE, ANGEMON)
+  - Added documentation section on positive framing best practices
+
 ### Changed
+
+- **File Operations** - Now 8 tools instead of 5 (3 new write tools added)
+- **Tool Count** - Updated from 28 tools to 31 tools (8 file + 9 pokemon + 3 weather + 1 calc + 2 serper + 2 system + 3 search + 1 finance + 2 run_command)
+- **Documentation** - Updated `doc/src/tools.md` with write tool documentation and security section
+- **Documentation** - Added "Use Positive Framing" section to `doc/src/soul.md`
+- **Tests** - `test_negative_instructions_in_prompts` now uses `with_soulless(true)` to test only built-in prompts
+
+### Technical Debt
 
 - **Code Cleanup** - Removed dead code and improved maintainability
   - Removed unused `ChatEvent::FinalResponse` and `ChatEvent::ContinuationNeeded` variants
@@ -16,9 +56,7 @@ All notable changes to Ask-AI will be documented in this file.
     - `prepare_messages()` - builds message context with retrieval
     - `process_chat_response()` - converts response to result
 
-### Technical Debt
-
-- `run_chat_repl` function remains large (~1100 lines) - refactoring planned for Priority 3
+- **`run_chat_repl` function** remains large (~1100 lines) - refactoring planned for Priority 3
 
 ## [0.31.0] - 2026-03-12
 

@@ -13,7 +13,7 @@
 
 ## Current Version
 
-**v0.31.0** - 2026-03-12
+**v0.32.0** - 2026-03-13
 
 ## Current Implementation Status
 
@@ -279,25 +279,41 @@ pub struct ContinuationTag {
 
 ---
 
-### 🔴 PRIORITY 2: File Write Tools
+### ✅ PRIORITY 2: File Write Tools (COMPLETED)
 
-**Status:** 📋 PLANNED
+**Status:** ✅ COMPLETED (v0.32.0)
 
 **Goal:** Enable LLM to create, edit, and append to files safely.
 
-**Problem:**
-- Current file tools are read-only
-- `run_command` blocks pipes and redirects
-- No way to create or modify files
-- LLM cannot write code, configs, or output files
+**Implementation:**
 
-**Solution:** Three new built-in tools with sandbox enforcement:
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | `write_file` tool | ✅ Done |
+| 2 | `edit_file` tool | ✅ Done |
+| 3 | `append_file` tool | ✅ Done |
+| 4 | Blocklist module | ✅ Done |
+| 5 | Integration into read tools | ✅ Done |
+| 6 | Documentation | ✅ Done |
 
-| Tool | Purpose |
-|------|---------|
-| `write_file` | Create or overwrite files |
-| `edit_file` | Surgical edits (replace/insert/delete lines) |
-| `append_file` | Add content to existing files |
+**Key Files Modified:**
+- `src/tools/files_blocklist.rs` - Shared security module with blocked patterns
+- `src/tools/files_write.rs` - Write operations module (write_file, edit_file, append_file)
+- `src/tools/files.rs` - Added blocklist checks to read operations
+- `src/tools/mod.rs` - Export new modules
+- `src/tools/registry.rs` - Register new tools
+- `src/external/types.rs` - Added `FileToolsConfig` struct
+- `src/external/config.rs` - Added `FileToolsSection` for TOML parsing
+- `src/external/mod.rs` - Export `FileToolsConfig`
+- `Cargo.toml` - Added `tempfile = "3"` as dev dependency
+- `doc/src/tools.md` - Documented all 8 file tools
+
+**Commits:**
+- `f0e9481 feat: add files_blocklist module with shared security logic`
+- `e8dfabe feat: add write_file, edit_file, and append_file tools`
+- `82fa9e5 feat: add file-tools config section for blocked patterns`
+- `fed4a9e feat: integrate blocklist into read operations`
+- `4a08cb0 fix: use strip_prefix instead of manual slicing in clippy`
 
 **Security Model:**
 - **Sandbox ALWAYS enforced** for writes (ignoring `sandbox=false`)
@@ -306,33 +322,17 @@ pub struct ContinuationTag {
 - **Atomic writes** (temp file + rename) to prevent corruption
 - **UTF-8 validation** - reject binary content
 
-**Design Decisions:**
-1. **Backup on edit:** Optional (`create_backup=true` parameter)
-2. **Size limit:** 5MB (increased from 1MB for reads)
-3. **Blocked patterns:** Hardcoded defaults + configurable via config.toml
-4. **Sandbox:** Mandatory for all write operations
-
-**Implementation Phases:**
-
-| Phase | Tool | Duration |
-|-------|------|----------|
-| 1 | `write_file` | 2-3 days |
-| 2 | `edit_file` | 2-3 days |
-| 3 | `append_file` | 1 day |
-
-**Key Files:**
-
-| File | Change |
-|------|--------|
-| `src/tools/files_write.rs` | New module for write operations |
-| `src/tools/mod.rs` | Export new module |
-| `src/tools/registry.rs` | Register new tools |
-| `src/external/config.rs` | Add `blocked_patterns` config section |
-| `doc/src/tools.md` | Document new tools |
+**Configuration:**
+```toml
+[file-tools]
+max_file_size = 5242880  # 5MB
+blocked_patterns = [".env.*", "*secret*", "*.pem"]
+block_read = true   # Block reading sensitive files
+block_list = false  # Allow listing (filenames visible)
+# block_write is always true, not configurable
+```
 
 **Reference:** `doc/src/development/file-write-tools.md` - Full implementation plan
-
-**Dependencies:** None
 
 ---
 

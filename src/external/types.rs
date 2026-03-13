@@ -138,6 +138,33 @@ pub struct ExternalToolsConfig {
     pub tools: HashMap<String, ExternalTool>,
 }
 
+/// Configuration for file tools (read/write operations).
+///
+/// Loaded from `[file-tools]` section in tools.toml.
+/// Controls blocked patterns and size limits for file operations.
+#[derive(Debug, Clone)]
+pub struct FileToolsConfig {
+    /// Maximum file size for operations in bytes (default: 5MB).
+    pub max_file_size: usize,
+    /// Additional blocked patterns (added to defaults).
+    pub blocked_patterns: Vec<String>,
+    /// Whether to block read operations for sensitive files.
+    pub block_read: bool,
+    /// Whether to block list operations (hide filenames).
+    pub block_list: bool,
+}
+
+impl Default for FileToolsConfig {
+    fn default() -> Self {
+        Self {
+            max_file_size: 5_242_880, // 5MB
+            blocked_patterns: Vec::new(),
+            block_read: true,
+            block_list: false,
+        }
+    }
+}
+
 impl ExternalToolsConfig {
     /// Create a new configuration with defaults.
     pub fn new() -> Self {

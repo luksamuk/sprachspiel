@@ -138,8 +138,12 @@ fn test_negative_instructions_in_prompts() {
 
     let blacklist = HashSet::new();
 
-    // Check new prompts
-    let new_tool_user = ask_ai::prompts::build_tool_user_prompt(&blacklist);
+    // Check built-in prompts (excluding user SOUL.md which may have negative instructions)
+    let new_tool_user = ask_ai::prompts::build_system_prompt(
+        ask_ai::prompts::PromptConfig::new(ask_ai::prompts::PromptType::ToolUser)
+            .with_blacklist(Some(&blacklist))
+            .with_soulless(true),
+    );
     let new_code = ask_ai::prompts::SYSTEM_PROMPT_CODE;
     let new_summarize = ask_ai::prompts::SYSTEM_PROMPT_SUMMARIZE;
 
