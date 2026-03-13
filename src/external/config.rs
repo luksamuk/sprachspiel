@@ -7,13 +7,18 @@ use std::time::Duration;
 
 use super::types::{ExternalTool, ExternalToolsConfig, Platform};
 
+/// Default file size limit: 5MB
+const DEFAULT_MAX_FILE_SIZE: usize = 5_242_880;
+
 /// TOML configuration structure for tools.toml.
 #[derive(Debug, Clone, Deserialize, Default)]
-#[allow(dead_code)]
 struct ToolsToml {
     #[serde(default)]
     external: Option<ExternalSection>,
     #[serde(default)]
+    #[allow(dead_code)]
+    // Intentionally unused: Configuration loading for file-tools not yet integrated
+    // See: src/tools/files_blocklist.rs - BlocklistConfig::load() returns defaults
     file_tools: Option<FileToolsSection>,
 }
 
@@ -53,6 +58,8 @@ fn default_enable_sandbox() -> bool {
 /// File tools configuration section.
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
+// Intentionally unused: Configuration loading for file-tools not yet integrated
+// See: src/tools/files_blocklist.rs - BlocklistConfig::load() returns defaults
 struct FileToolsSection {
     /// Maximum file size for operations in bytes (default: 5MB)
     #[serde(default = "default_max_file_size")]
@@ -64,21 +71,17 @@ struct FileToolsSection {
     #[serde(default = "default_true")]
     block_read: bool,
     /// Whether to block list operations (hide filenames)
-    #[serde(default = "default_false")]
+    #[serde(default)]
     block_list: bool,
     // Note: block_write is always true and cannot be configured
 }
 
 fn default_max_file_size() -> usize {
-    5_242_880 // 5MB
+    DEFAULT_MAX_FILE_SIZE
 }
 
 fn default_true() -> bool {
     true
-}
-
-fn default_false() -> bool {
-    false
 }
 
 impl Default for ExternalSection {

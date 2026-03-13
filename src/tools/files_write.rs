@@ -42,22 +42,23 @@ const MAX_WRITE_SIZE: usize = 5_242_880;
 /// * `overwrite` - Whether to overwrite existing file (default: "false"). Optional.
 ///   - "false" (default): Return error if file exists (safer)
 ///   - "true": Overwrite existing file
-/// * `sandbox` - Ignored for write operations. Write operations are ALWAYS sandboxed.
-///   - Included for API consistency with read operations.
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
+///   - "true" (default): Only allow files within current directory tree
+///   - "false": Allow any absolute path (blocked patterns still enforced)
 ///
 /// # Returns
 /// Success message with file path and size, or error message.
 ///
 /// # Security
-/// - Always sandboxed to current directory tree
-/// - Blocked for sensitive file patterns (.env, secrets, .pem, etc.)
+/// - Blocked patterns ALWAYS enforced (cannot write to .env, secrets, etc.)
+/// - Sandbox restricts to CWD when enabled
 /// - Maximum file size: 5MB
 /// - Atomic write (temp file + rename) to prevent corruption
 ///
 /// # Errors
 /// - File exists and overwrite=false
-/// - Path is outside sandbox (even with sandbox=false)
-/// - File matches blocked pattern
+/// - Path matches blocked pattern (ALWAYS blocked, sandbox doesn't matter)
+/// - Path outside sandbox (when sandbox=true)
 /// - Content is not valid UTF-8
 /// - Content exceeds 5MB
 /// - Parent directory doesn't exist
@@ -72,10 +73,10 @@ pub async fn write_file(
     path: String,
     content: String,
     overwrite: Option<String>,
-    _sandbox: Option<String>,
+    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let overwrite = parse_bool(overwrite, false);
-    // sandbox parameter is ignored for write operations - always sandboxed
+    let sandbox_enabled = parse_bool(sandbox, true);
 
     log_tool_call(
         "write_file",
@@ -89,8 +90,8 @@ pub async fn write_file(
     // Load blocklist configuration
     let config = BlocklistConfig::load();
 
-    // Validate path (always sandboxed for writes)
-    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config) {
+    // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
+    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config, sandbox_enabled) {
         Ok(p) => p,
         Err(e) => {
             log_tool_result("write_file", &e);
@@ -169,15 +170,14 @@ pub async fn write_file(
 /// * `end_line` - Last line to delete (for "delete_lines" operation). Optional.
 ///   - Use same as start_line to delete single line.
 /// * `create_backup` - Create .bak file before editing (default: "false"). Optional.
-/// * `sandbox` - Ignored for write operations. Always sandboxed. Optional.
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
 ///
 /// # Returns
 /// Success message showing what was changed, or error message.
 ///
 /// # Security
-/// - File must exist before editing
-/// - Always sandboxed to current directory tree
-/// - Blocked for sensitive file patterns
+/// - Blocked patterns ALWAYS enforced (cannot edit .env, secrets, etc.)
+/// - Sandbox restricts to CWD when enabled
 /// - Creates backup file with .bak extension if requested
 ///
 /// # Example
@@ -202,10 +202,10 @@ pub async fn edit_file(
     start_line: Option<String>,
     end_line: Option<String>,
     create_backup: Option<String>,
-    _sandbox: Option<String>,
+    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let create_backup = parse_bool(create_backup, false);
-    // sandbox parameter is ignored for write operations
+    let sandbox_enabled = parse_bool(sandbox, true);
 
     log_tool_call(
         "edit_file",
@@ -219,8 +219,8 @@ pub async fn edit_file(
     // Load blocklist configuration
     let config = BlocklistConfig::load();
 
-    // Validate path
-    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config) {
+    // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
+    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config, sandbox_enabled) {
         Ok(p) => p,
         Err(e) => {
             log_tool_result("edit_file", &e);
@@ -339,14 +339,14 @@ pub async fn edit_file(
 /// * `create` - Create file if it doesn't exist (default: "false"). Optional.
 ///   - "false": Return error if file doesn't exist
 ///   - "true": Create file if it doesn't exist
-/// * `sandbox` - Ignored for write operations. Always sandboxed. Optional.
+/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
 ///
 /// # Returns
 /// Success message with total file size, or error message.
 ///
 /// # Security
-/// - Always sandboxed to current directory tree
-/// - Blocked for sensitive file patterns
+/// - Blocked patterns ALWAYS enforced (cannot append to .env, secrets, etc.)
+/// - Sandbox restricts to CWD when enabled
 /// - Maximum total file size: 5MB
 ///
 /// # Example
@@ -362,10 +362,10 @@ pub async fn append_file(
     path: String,
     content: String,
     create: Option<String>,
-    _sandbox: Option<String>,
+    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let create = parse_bool(create, false);
-    // sandbox parameter is ignored for write operations
+    let sandbox_enabled = parse_bool(sandbox, true);
 
     log_tool_call(
         "append_file",
@@ -379,8 +379,8 @@ pub async fn append_file(
     // Load blocklist configuration
     let config = BlocklistConfig::load();
 
-    // Validate path
-    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config) {
+    // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
+    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config, sandbox_enabled) {
         Ok(p) => p,
         Err(e) => {
             log_tool_result("append_file", &e);
@@ -482,10 +482,14 @@ pub async fn append_file(
 /// Validate path for write operations.
 ///
 /// This function enforces security requirements for all write operations:
-/// 1. Always sandboxed to current working directory
-/// 2. Path must not match blocked patterns
+/// 1. Blocked patterns ALWAYS enforced (cannot write sensitive files)
+/// 2. Sandbox enforced when sandbox_enabled=true
 /// 3. Parent directory must exist
-pub fn validate_write_path(path: &Path, config: &BlocklistConfig) -> Result<PathBuf, String> {
+pub fn validate_write_path(
+    path: &Path,
+    config: &BlocklistConfig,
+    sandbox_enabled: bool,
+) -> Result<PathBuf, String> {
     // 1. Get absolute path
     let abs_path = if path.is_absolute() {
         path.to_path_buf()
@@ -497,6 +501,7 @@ pub fn validate_write_path(path: &Path, config: &BlocklistConfig) -> Result<Path
 
     // 2. Check blocked patterns BEFORE any filesystem access
     // This prevents timing attacks on sensitive file names
+    // Blocked patterns are ALWAYS enforced, regardless of sandbox setting
     if is_blocked_for_write(&abs_path, config) {
         return Err(format!(
             "Error: Cannot write to '{}'. This path matches a protected pattern \
@@ -522,19 +527,21 @@ pub fn validate_write_path(path: &Path, config: &BlocklistConfig) -> Result<Path
         .canonicalize()
         .map_err(|e| format!("Cannot access parent directory: {}", e))?;
 
-    let cwd = std::env::current_dir()
-        .map_err(|_| "Could not determine current directory".to_string())?;
-    let canonical_cwd = cwd
-        .canonicalize()
-        .map_err(|_| "Could not determine current directory".to_string())?;
+    // 5. Enforce sandbox when enabled
+    if sandbox_enabled {
+        let cwd = std::env::current_dir()
+            .map_err(|_| "Could not determine current directory".to_string())?;
+        let canonical_cwd = cwd
+            .canonicalize()
+            .map_err(|_| "Could not determine current directory".to_string())?;
 
-    // 5. Enforce sandbox (ALWAYS for writes)
-    if !canonical_parent.starts_with(&canonical_cwd) {
-        return Err(format!(
-            "Error: Path '{}' is outside the allowed directory. \
-             Write operations are always sandboxed to the current working directory.",
-            path.display()
-        ));
+        if !canonical_parent.starts_with(&canonical_cwd) {
+            return Err(format!(
+                "Error: Path '{}' is outside the allowed directory. \
+                 Use sandbox=false to write outside current directory.",
+                path.display()
+            ));
+        }
     }
 
     // 6. Check if path is a symlink and resolve it
@@ -552,11 +559,19 @@ pub fn validate_write_path(path: &Path, config: &BlocklistConfig) -> Result<Path
         }
 
         // Re-check sandbox after resolving symlinks
-        if !canonical_path.starts_with(&canonical_cwd) {
-            return Err(format!(
-                "Error: Path '{}' (resolved from symlink) is outside the allowed directory.",
-                path.display()
-            ));
+        if sandbox_enabled {
+            let cwd = std::env::current_dir()
+                .map_err(|_| "Could not determine current directory".to_string())?;
+            let canonical_cwd = cwd
+                .canonicalize()
+                .map_err(|_| "Could not determine current directory".to_string())?;
+
+            if !canonical_path.starts_with(&canonical_cwd) {
+                return Err(format!(
+                    "Error: Path '{}' (resolved from symlink) is outside the allowed directory.",
+                    path.display()
+                ));
+            }
         }
 
         return Ok(canonical_path);
@@ -754,13 +769,13 @@ mod tests {
     fn test_validate_write_path_blocks_sensitive_files() {
         let config = BlocklistConfig::default();
 
-        // Should block .env files
-        let result = validate_write_path(&PathBuf::from(".env"), &config);
+        // Should block .env files (sandbox doesn't matter for blocked patterns)
+        let result = validate_write_path(&PathBuf::from(".env"), &config, true);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("protected pattern"));
 
         // Should block secrets files
-        let result = validate_write_path(&PathBuf::from("secrets.json"), &config);
+        let result = validate_write_path(&PathBuf::from("secrets.json"), &config, false);
         assert!(result.is_err());
     }
 

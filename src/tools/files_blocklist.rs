@@ -20,7 +20,6 @@
 //! block_list = false
 //! ```
 
-use crate::external::FileToolsConfig;
 use once_cell::sync::Lazy;
 use regex::RegexSet;
 use std::path::Path;
@@ -133,16 +132,15 @@ fn pattern_to_regex(pattern: &str) -> String {
 
 /// Configuration for blocked patterns loaded from tools.toml.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct BlocklistConfig {
     /// Regex set of all blocked patterns (default + user-configured)
     patterns: RegexSet,
     /// Whether to block read operations for sensitive files
     pub block_read: bool,
     /// Whether to block list operations (hide filenames)
+    #[allow(dead_code)]
+    // Intentionally unused: Will be used when list_directory blocklist integration is complete
     pub block_list: bool,
-    /// Block write operations (always true, cannot be disabled)
-    pub block_write: bool,
 }
 
 impl Default for BlocklistConfig {
@@ -151,7 +149,6 @@ impl Default for BlocklistConfig {
             patterns: DEFAULT_BLOCKED_REGEX.clone(),
             block_read: true,
             block_list: false,
-            block_write: true, // Always true for security
         }
     }
 }
@@ -165,34 +162,6 @@ impl BlocklistConfig {
         // when FileToolsConfig parsing is fully integrated.
         // TODO: Load from crate::external::config::load_file_tools_config()
         Self::default()
-    }
-
-    /// Create config from FileToolsConfig.
-    #[allow(dead_code)]
-    pub fn from_config(config: &FileToolsConfig) -> Self {
-        // Build combined patterns: defaults + user-configured
-        let mut all_patterns: Vec<String> = DEFAULT_BLOCKED_PATTERNS
-            .iter()
-            .map(|p| pattern_to_regex(p))
-            .collect();
-
-        // Add user-configured patterns
-        for pattern in &config.blocked_patterns {
-            all_patterns.push(pattern_to_regex(pattern));
-        }
-
-        // Compile regex set
-        let patterns = RegexSet::new(&all_patterns).unwrap_or_else(|_| {
-            // Fall back to defaults if user patterns are invalid
-            DEFAULT_BLOCKED_REGEX.clone()
-        });
-
-        Self {
-            patterns,
-            block_read: config.block_read,
-            block_list: config.block_list,
-            block_write: config.block_write,
-        }
     }
 
     /// Check if a path matches any blocked pattern.
@@ -210,19 +179,9 @@ impl BlocklistConfig {
 /// Check if a path is blocked for read operations.
 ///
 /// Returns true if the path matches a blocked pattern and `block_read` is enabled.
-#[allow(dead_code)]
 #[inline]
 pub fn is_blocked_for_read(path: &Path, config: &BlocklistConfig) -> bool {
     config.block_read && config.is_blocked(path)
-}
-
-/// Check if a path is blocked for list operations.
-///
-/// Returns true if the path matches a blocked pattern and `block_list` is enabled.
-#[allow(dead_code)]
-#[inline]
-pub fn is_blocked_for_list(path: &Path, config: &BlocklistConfig) -> bool {
-    config.block_list && config.is_blocked(path)
 }
 
 /// Check if a path is blocked for write operations.
@@ -232,12 +191,6 @@ pub fn is_blocked_for_list(path: &Path, config: &BlocklistConfig) -> bool {
 #[inline]
 pub fn is_blocked_for_write(path: &Path, config: &BlocklistConfig) -> bool {
     config.is_blocked(path)
-}
-
-/// Get the list of default blocked patterns (for documentation/debugging).
-#[allow(dead_code)]
-pub fn get_default_blocked_patterns() -> &'static [&'static str] {
-    DEFAULT_BLOCKED_PATTERNS
 }
 
 #[cfg(test)]

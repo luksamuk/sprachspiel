@@ -511,7 +511,7 @@ Write content to a file, creating or overwriting it.
 
 ```
 Function: write_file
-Args: path (string), content (string), overwrite (string, optional), sandbox (ignored)
+Args: path (string), content (string), overwrite (string, optional), sandbox (string, optional)
 Example: write_file(path: "output.txt", content: "Hello, World!")
 Example: write_file(path: "config.json", content: json_data, overwrite: "true")
 ```
@@ -519,8 +519,8 @@ Example: write_file(path: "config.json", content: json_data, overwrite: "true")
 **Note:** `overwrite` accepts "true", "false", "1", "0". Default is "false".
 
 **Security:**
-- **Always sandboxed** - `sandbox=false` is ignored for write operations
-- **Blocked patterns** - Cannot write to `.env`, `secrets`, SSH keys, certificates
+- **Blocked patterns ALWAYS enforced** - Cannot write to `.env`, `secrets`, SSH keys, certificates
+- **Sandbox respected** - `sandbox=false` allows writing outside CWD, but still enforces blocked patterns
 - **Size limit** - Maximum 5MB per write
 - **Atomic writes** - Uses temp file + rename for corruption safety
 
@@ -528,6 +528,7 @@ Example: write_file(path: "config.json", content: json_data, overwrite: "true")
 - Returns error if file exists and `overwrite=false`
 - Creates parent directories must exist
 - Only writes valid UTF-8 text content
+- Program's own config files (ask-ai config) are always blocked - user must edit manually
 
 ### edit_file
 
@@ -545,35 +546,13 @@ Args:
   - start_line (string, optional): First line to delete (for "delete_lines")
   - end_line (string, optional): Last line to delete (for "delete_lines")
   - create_backup (string, optional): Create .bak file first
-```
-
-**Operations:**
-
-| Operation | Required Parameters | Description |
-|-----------|---------------------|-------------|
-| `replace` | `search`, `replace` | Find and replace all occurrences |
-| `insert` | `after_line`, `content` | Insert content after line N |
-| `delete_lines` | `start_line`, `end_line` | Delete range of lines |
-
-**Examples:**
-```bash
-# Replace text
-edit_file(path: "config.yml", operation: "replace", search: "old_value", replace: "new_value")
-
-# Insert after line 10
-edit_file(path: "README.md", operation: "insert", after_line: "10", content: "## New Section\n\nContent.")
-
-# Delete lines 5-10
-edit_file(path: "script.py", operation: "delete_lines", start_line: "5", end_line: "10")
-
-# Backup before editing
-edit_file(path: "important.txt", operation: "replace", search: "foo", replace: "bar", create_backup: "true")
+  - sandbox (string, optional): Restrict to CWD (default: true)
 ```
 
 **Security:**
-- File must exist (use `write_file` to create new files)
-- Always sandboxed, blocked patterns enforced
-- Creates `.bak` file if `create_backup=true`
+- **Blocked patterns ALWAYS enforced** - Cannot edit `.env`, `secrets`, SSH keys, certificates
+- **Sandbox respected** - `sandbox=false` allows editing outside CWD, but blocked patterns still enforced
+- Program's own config files (`~/.config/ask-ai/`) are always blocked - user must edit manually for security
 
 ### append_file
 
