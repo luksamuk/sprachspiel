@@ -1113,6 +1113,87 @@ Documentation should:
 - Be **maintained** (updated with code changes)
 - Include **examples** (practical usage)
 
+## Project Management
+
+### GitHub Project Board
+
+The project uses a GitHub Project board for task tracking. When working on tasks:
+
+**When starting a task:**
+1. Find the issue on the Project board
+2. Update the issue's status to "In Progress"
+3. Assign yourself to the issue if appropriate
+
+**When completing a task:**
+1. Update the issue's status to "Done"
+2. Close the issue with a reference to the commit/PR
+3. Update `IMPLEMENTATION.md` status for the feature
+
+**When a task is blocked:**
+1. Update the issue's status to reflect current state
+2. Add a comment explaining the blocker
+3. Add the `status:blocked` label if not already present
+
+### Updating Roadmap
+
+**CRITICAL:** After completing ANY roadmap item, update `IMPLEMENTATION.md`:
+
+1. **Find the relevant section** in `IMPLEMENTATION.md`
+2. **Update status markers:**
+   - `❌ NOT STARTED` → `✅ COMPLETED` or `📋 IN PROGRESS`
+   - `🟡 PLANNED` → `🟢 ACTIVE` (when work begins)
+   - Update version number for completed work
+3. **For completed phases:** Add implementation summary with:
+   - Key files modified
+   - Commits (with short hash)
+   - Any deviations from original plan
+4. **Move completed items** from "Priority Roadmap" to appropriate version history
+
+**Example status update:**
+
+```markdown
+### ✅ PRIORITY 1: Feature Name (COMPLETED)
+
+**Status:** ✅ COMPLETED (v0.32.0)
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Implementation | ✅ Done |
+| 2 | Testing | ✅ Done |
+
+**Implementation:**
+- Created `src/tools/new_tool.rs`
+- Updated `src/tools/mod.rs`
+- Commits: `abc1234 feat: add new tool`
+```
+
+### Issue Management Guidelines
+
+**Creating new issues:**
+- Use descriptive titles with priority tag: `[P#] Feature Name`
+- Add appropriate labels:
+  - `priority:critical`, `priority:high`, `priority:medium`, `priority:low`
+  - `status:planned`, `status:in-progress`, `status:blocked`
+  - `enhancement` or `bug`
+  - Phase labels if applicable: `phase:1`, `phase:2`, `phase:3`
+- Reference related issues in description
+- Reference `IMPLEMENTATION.md` section when applicable
+
+**Closing issues:**
+- Reference the commit that resolves the issue: `Fixes #123`
+- Update roadmap status before closing
+- Ensure documentation is updated
+
+### Board Columns (Scrum Status)
+
+| Column | Meaning |
+|--------|---------|
+| Backlog | Not yet prioritized, needs review |
+| Ready | Prioritized, ready to start |
+| In Progress | Currently being worked on |
+| In Review | PR submitted or awaiting review |
+| Done | Completed and verified |
+
 ## Never Leave Things for Later
 
 **CRITICAL RULE:** If you cannot complete something now, you MUST document it somewhere:
@@ -1121,6 +1202,7 @@ Documentation should:
 2. **Roadmap** - Update `IMPLEMENTATION.md` for larger features
 3. **Code comments** - If leaving TODO/FIXME, add issue reference or context
 4. **Changelog** - Note incomplete work in version notes
+5. **GitHub Issue** - Create/update issue on the Project board
 
 **Why this matters:** The user cannot read your mind. If you "leave something for later" without documenting it, it will be forgotten and may cause confusion, bugs, or security issues.
 
