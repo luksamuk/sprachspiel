@@ -344,26 +344,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         self.ephemeral_messages.push(message);
     }
 
-    /// Take all ephemeral messages and clear the accumulator
-    ///
-    /// Returns ephemeral messages for inspection and clears the accumulator.
-    #[allow(dead_code)]
-    pub fn take_ephemeral(&mut self) -> Vec<ChatMessage> {
-        std::mem::take(&mut self.ephemeral_messages)
-    }
-
-    /// Check if there are pending ephemeral messages
-    #[allow(dead_code)]
-    pub fn has_ephemeral(&self) -> bool {
-        !self.ephemeral_messages.is_empty()
-    }
-
-    /// Clear all ephemeral messages
-    #[allow(dead_code)]
-    pub fn clear_ephemeral(&mut self) {
-        self.ephemeral_messages.clear();
-    }
-
     /// Emit an event if callback is set
     fn emit_event(&self, event: ChatEvent) {
         if let Some(ref callback) = self.event_callback {
