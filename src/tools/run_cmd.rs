@@ -300,14 +300,14 @@ fn apply_head_tail(output: String, head: Option<usize>, tail: Option<usize>) -> 
     }
 }
 
-/// Thread-local flag to track if Landlock sandbox has been applied.
-///
-/// Landlock creates stacked rulesets per thread. Each call to `restrict_self()`
-/// adds a new layer. The kernel limits this to 16 layers. Once applied, we
-/// don't need to apply again in the same thread.
-///
-/// E2BIG error means the thread already has maximum layers (16), which implies
-/// it's already well-sandboxed (either by us or by a parent process).
+// Thread-local flag to track if Landlock sandbox has been applied.
+//
+// Landlock creates stacked rulesets per thread. Each call to `restrict_self()`
+// adds a new layer. The kernel limits this to 16 layers. Once applied, we
+// don't need to apply again in the same thread.
+//
+// E2BIG error means the thread already has maximum layers (16), which implies
+// it's already well-sandboxed (either by us or by a parent process).
 #[cfg(all(feature = "sandbox", target_os = "linux"))]
 std::thread_local! {
     static LANDLOCK_APPLIED: std::cell::Cell<bool> = std::cell::Cell::new(false);
