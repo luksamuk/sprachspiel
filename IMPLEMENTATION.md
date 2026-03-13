@@ -355,7 +355,43 @@ pub struct ContinuationTag {
 
 ---
 
-### 🔴 PRIORITY 3: Skills System Phase 1
+### 🟡 PRIORITY 3: Code Quality - run_chat_repl Refactoring
+
+**Status:** 📋 PLANNED
+
+**Goal:** Refactor the oversized `run_chat_repl` function (~1100 lines) into smaller, testable units.
+
+**Problem:**
+- `run_chat_repl` is 1100+ lines and hard to maintain
+- Complex command handling with 20+ branches
+- Difficult to test individual command behaviors
+- High cognitive load for code reviewers
+
+**Solution:** Extract logical sections into dedicated functions:
+
+| Proposed Function | Lines | Purpose |
+|-------------------|-------|---------|
+| `setup_repl_session()` | ~180 | DB init, session loading, model resolution |
+| `handle_slash_command()` | ~350 | Process `/model`, `/compact`, `/retry`, etc. |
+| `handle_user_message()` | ~280 | Pre-tool check, send_message, continuation |
+| `process_continuation()` | ~100 | Nested continuation loop |
+
+**Benefits:**
+- Each function under 200 lines
+- Individual behaviors testable in isolation
+- Clearer separation of concerns
+- Easier code review for changes
+
+**Challenges:**
+- Commands have different signatures (async/sync, db/no-db)
+- Mutable state shared across functions (session, capabilities)
+- Some commands need early return/exit
+
+**Estimate:** 1-2 days
+
+---
+
+### 🔴 PRIORITY 4: Skills System Phase 1
 
 **Status:** ❌ NOT STARTED
 
@@ -376,7 +412,7 @@ pub struct ContinuationTag {
 
 ---
 
-### 🟡 PRIORITY 4: Document Import Tool
+### 🟡 PRIORITY 5: Document Import Tool
 
 **Status:** ❌ BLOCKED (requires Skills System Phase 1)
 
@@ -396,7 +432,7 @@ pub struct ContinuationTag {
 
 ---
 
-### 🟡 PRIORITY 5: Chat Module Integration
+### 🟡 PRIORITY 6: Chat Module Integration
 
 **Status:** ❌ NOT STARTED
 
@@ -413,7 +449,7 @@ pub struct ContinuationTag {
 
 ---
 
-### 🟡 PRIORITY 6: Parallel Tool Execution
+### 🟡 PRIORITY 7: Parallel Tool Execution
 
 **Status:** ❌ NOT STARTED
 

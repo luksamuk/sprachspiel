@@ -2,6 +2,24 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.32.0] - 2026-03-13
+
+### Changed
+
+- **Code Cleanup** - Removed dead code and improved maintainability
+  - Removed unused `ChatEvent::FinalResponse` and `ChatEvent::ContinuationNeeded` variants
+  - Removed unused ephemeral methods (`take_ephemeral`, `has_ephemeral`, `clear_ephemeral`)
+  - Fixed indentation issues in `send_message` function
+  - Extracted helper functions from `send_message` to reduce complexity:
+    - `build_session_system_prompt()` - constructs system prompts
+    - `setup_coordinator()` - creates and configures coordinator
+    - `prepare_messages()` - builds message context with retrieval
+    - `process_chat_response()` - converts response to result
+
+### Technical Debt
+
+- `run_chat_repl` function remains large (~1100 lines) - refactoring planned for Priority 3
+
 ## [0.31.0] - 2026-03-12
 
 ### Added
