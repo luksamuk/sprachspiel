@@ -9,6 +9,7 @@
 - [Skills System Design](./doc/src/development/skills-system-design.md) - Skills architecture and implementation
 - [CLI Tools Research](./doc/src/development/cli-tools-research.md) - External tools reference
 - [Contributing](./doc/src/development/contributing.md) - How to contribute to the project
+- [GitHub Project Board](https://github.com/luksamuk?tab=projects) - Kanban board for task tracking
 
 ## Current Version
 
