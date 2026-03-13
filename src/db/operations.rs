@@ -6,7 +6,7 @@
 //! - Hybrid search (BM25 + semantic + RRF)
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Result};
+use rusqlite::{Result, params};
 use serde::{Deserialize, Serialize};
 use zerocopy::IntoBytes;
 
@@ -347,7 +347,6 @@ impl Database {
                     .filter_map(|r| r.ok())
                     .collect()
             };
-            
             // Delete embeddings and chunks for each message
             for msg_id in &message_ids {
                 // Delete message embeddings
@@ -355,7 +354,7 @@ impl Database {
                     "DELETE FROM message_embeddings WHERE message_id = ?1",
                     params![msg_id],
                 )?;
-                
+
                 // Get chunk IDs
                 let chunk_ids: Vec<i64> = {
                     let mut stmt = conn.prepare(
@@ -365,7 +364,7 @@ impl Database {
                         .filter_map(|r| r.ok())
                         .collect()
                 };
-                
+
                 // Delete chunk embeddings
                 for chunk_id in &chunk_ids {
                     conn.execute(
@@ -373,14 +372,14 @@ impl Database {
                         params![chunk_id],
                     )?;
                 }
-                
+
                 // Delete chunks
                 conn.execute(
                     "DELETE FROM message_chunks WHERE message_id = ?1",
                     params![msg_id],
                 )?;
             }
-            
+
             // Delete messages
             let deleted = conn.execute(
                 "DELETE FROM messages WHERE conversation_id = ?1 AND id IN (
@@ -388,7 +387,7 @@ impl Database {
                 )",
                 params![conversation_id, count as i64],
             )?;
-            
+
             Ok(deleted)
         })
     }
@@ -708,10 +707,10 @@ impl Database {
                 if conv_ids.is_empty() {
                     return Ok(Vec::new());
                 }
-                
+
                 let placeholders: Vec<String> = conv_ids.iter().map(|_| "?".to_string()).collect();
                 let placeholders = placeholders.join(",");
-                
+
                 let sql_project = format!(
                     "SELECT id, project_id FROM conversations WHERE id IN ({})",
                     placeholders
@@ -724,7 +723,7 @@ impl Database {
                     })?
                     .filter_map(|r| r.ok())
                     .collect();
-                
+
                 results.retain(|r| {
                     project_map
                         .get(&r.conversation_id)
@@ -1762,9 +1761,10 @@ mod tests {
 
         // Check exists
         assert!(db.conversation_exists(conv_id).expect("Failed to check"));
-        assert!(!db
-            .conversation_exists("nonexistent")
-            .expect("Failed to check"));
+        assert!(
+            !db.conversation_exists("nonexistent")
+                .expect("Failed to check")
+        );
     }
 
     #[test]

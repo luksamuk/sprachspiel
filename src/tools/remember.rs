@@ -314,7 +314,10 @@ async fn remember_by_query(
                 _ => "",
             };
             let sub_content = if sub_msg.content.chars().count() > 100 {
-                format!("{}...", sub_msg.content.chars().take(100).collect::<String>())
+                format!(
+                    "{}...",
+                    sub_msg.content.chars().take(100).collect::<String>()
+                )
             } else {
                 sub_msg.content.clone()
             };

@@ -407,9 +407,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// Build a request from current history with ephemeral messages prepended
     fn build_request(&self) -> ChatMessageRequest {
         // Build messages: ephemeral first, then history
-        let mut messages = Vec::with_capacity(
-            self.ephemeral_messages.len() + self.history.messages().len()
-        );
+        let mut messages =
+            Vec::with_capacity(self.ephemeral_messages.len() + self.history.messages().len());
         messages.extend(self.ephemeral_messages.iter().cloned());
         messages.extend(self.history.messages().iter().cloned());
 
@@ -638,7 +637,10 @@ This should not be parsed as a continuation tag."#;
 
         let (cleaned, tag) = parse_continuation_tag(content);
 
-        assert!(tag.is_none(), "Tags inside code blocks should not be parsed");
+        assert!(
+            tag.is_none(),
+            "Tags inside code blocks should not be parsed"
+        );
         assert!(cleaned.contains("<continuation_needed>"));
     }
 

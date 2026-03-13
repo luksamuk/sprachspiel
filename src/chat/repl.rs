@@ -837,10 +837,10 @@ pub async fn run_chat_repl(
                     agents_md.as_deref(),
                     use_debug,
                     db.as_ref(),
-                                                embedding_client.as_ref(),
-                                            cli_soulless,
-                                            None,
-                                        )
+                    embedding_client.as_ref(),
+                    cli_soulless,
+                    None,
+                )
                 .await
                 {
                     Ok(result) => {
@@ -863,7 +863,7 @@ pub async fn run_chat_repl(
                         let mut final_response = result.response.clone();
                         let mut final_metrics = result.metrics.clone();
                         let mut continuation_count = 0;
-                        
+
                         if let Some(ref continuation_tag) = result.continuation_needed {
                             continuation_count += 1;
                             if use_debug {
@@ -872,8 +872,10 @@ pub async fn run_chat_repl(
                                     continuation_tag.paused_at, continuation_tag.next_step
                                 ));
                             }
-                            eprintln!("\n\x1B[33m⏳ Paused for context compaction, continuing...\x1B[0m");
-                            
+                            eprintln!(
+                                "\n\x1B[33m⏳ Paused for context compaction, continuing...\x1B[0m"
+                            );
+
                             // Compact the context now
                             let continuation_context_window = result.context_window;
                             let continuation_system_prompt = result.system_prompt.clone();
@@ -888,9 +890,9 @@ pub async fn run_chat_repl(
                                 use_debug,
                             )
                             .await;
-                            
+
                             // Continue with continuation prompt
-                            
+
                             // Send continuation request (empty user_input, continuation via ephemeral)
                             let continuation_result = send_message(
                                 &ollama,
@@ -909,29 +911,35 @@ pub async fn run_chat_repl(
                                 Some(continuation_tag),
                             )
                             .await;
-                            
+
                             match continuation_result {
                                 Ok(mut cont_result) => {
                                     // Append continuation response
                                     final_response.push_str("\n\n");
                                     final_response.push_str(&cont_result.response);
-                                    
+
                                     // Update metrics
-                                    final_metrics.response_tokens += cont_result.metrics.response_tokens;
+                                    final_metrics.response_tokens +=
+                                        cont_result.metrics.response_tokens;
                                     final_metrics.total_tokens += cont_result.metrics.total_tokens;
-                                    
+
                                     eprintln!("\n\x1B[90m[Continuation complete]\x1B[0m");
-                                    
+
                                     // Handle nested continuations (limit to 3)
                                     while let Some(ref next_tag) = cont_result.continuation_needed {
                                         if continuation_count >= 3 {
-                                            eprintln!("\x1B[33mWarning: Maximum continuations reached. Please continue manually.\x1B[0m");
+                                            eprintln!(
+                                                "\x1B[33mWarning: Maximum continuations reached. Please continue manually.\x1B[0m"
+                                            );
                                             break;
                                         }
-                                        
+
                                         continuation_count += 1;
-                                        eprintln!("\n\x1B[33m⏳ Paused again, continuing ({})...\x1B[0m", continuation_count);
-                                        
+                                        eprintln!(
+                                            "\n\x1B[33m⏳ Paused again, continuing ({})...\x1B[0m",
+                                            continuation_count
+                                        );
+
                                         // Compact again
                                         auto_compact_if_needed(
                                             &ollama,
@@ -944,7 +952,7 @@ pub async fn run_chat_repl(
                                             use_debug,
                                         )
                                         .await;
-                                        
+
                                         let next_result = send_message(
                                             &ollama,
                                             &model_config,
@@ -960,22 +968,30 @@ pub async fn run_chat_repl(
                                             embedding_client.as_ref(),
                                             cli_soulless,
                                             Some(next_tag),
-                                        ).await;
-                                        
+                                        )
+                                        .await;
+
                                         match next_result {
                                             Ok(n_result) => {
                                                 final_response.push_str("\n\n");
                                                 final_response.push_str(&n_result.response);
-                                                final_metrics.response_tokens += n_result.metrics.response_tokens;
-                                                final_metrics.total_tokens += n_result.metrics.total_tokens;
-                                                
-                                                eprintln!("\n\x1B[90m[Continuation complete]\x1B[0m");
-                                                
+                                                final_metrics.response_tokens +=
+                                                    n_result.metrics.response_tokens;
+                                                final_metrics.total_tokens +=
+                                                    n_result.metrics.total_tokens;
+
+                                                eprintln!(
+                                                    "\n\x1B[90m[Continuation complete]\x1B[0m"
+                                                );
+
                                                 // Update cont_result for the while loop
                                                 cont_result = n_result;
                                             }
                                             Err(e) => {
-                                                eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+                                                eprintln!(
+                                                    "\x1B[31mContinuation failed: {}\x1B[0m",
+                                                    e
+                                                );
                                                 break;
                                             }
                                         }
@@ -1182,7 +1198,7 @@ async fn send_message(
         } else {
             PromptType::Default
         };
-        
+
         // Check context overflow for status injection
         let ctx_window = model_config.num_ctx as usize;
         let ctx_status = check_context_overflow(
@@ -1191,7 +1207,7 @@ async fn send_message(
             ctx_window,
             DEFAULT_OVERFLOW_THRESHOLD,
         );
-        
+
         build_system_prompt(
             PromptConfig::new(prompt_type)
                 .with_model_id(Some(&model_config.model_id))
@@ -1288,7 +1304,7 @@ async fn send_message(
 
     // Add current user query at the end
     messages.push(ChatMessage::user(user_input.to_string()));
-    
+
     // If this is a continuation, add ephemeral message to coordinator
     if let Some(tag) = continuation_tag {
         let continuation_prompt = build_continuation_prompt(tag);

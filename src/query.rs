@@ -14,8 +14,7 @@ use crate::chat::{
         MAX_RETRIES, classify_error_str, format_recovery_message, is_error_str_recoverable,
     },
     custom_coordinator::{ChatEvent, CustomCoordinator},
-    display_thinking,
-    strip_thinking_tags,
+    display_thinking, strip_thinking_tags,
 };
 use crate::config::ModelConfig;
 use crate::db::Database;

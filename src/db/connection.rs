@@ -6,7 +6,7 @@ use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use super::schema::{set_version_sql, SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL};
+use super::schema::{SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL, set_version_sql};
 
 /// Thread-safe database wrapper
 #[derive(Clone)]

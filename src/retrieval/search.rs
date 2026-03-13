@@ -182,7 +182,10 @@ pub async fn run_search(
     log_debug("Enriching results with assistant responses...");
     let enriched_results = match db.enrich_with_context(results) {
         Ok(r) => {
-            let enriched_count = r.iter().filter(|msg| !msg.subsequent_messages.is_empty()).count();
+            let enriched_count = r
+                .iter()
+                .filter(|msg| !msg.subsequent_messages.is_empty())
+                .count();
             log_debug(&format!(
                 "Enriched {} results with assistant responses",
                 enriched_count

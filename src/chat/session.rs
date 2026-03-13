@@ -538,7 +538,9 @@ impl ChatSession {
                                 }
                             }
                         } else if let Ok(embedding) = client.embed(&content_clone).await {
-                            let _ = db.update_message_embedding(message_id, &embedding, &conv_id, timestamp);
+                            let _ = db.update_message_embedding(
+                                message_id, &embedding, &conv_id, timestamp,
+                            );
                         }
                     });
                 }

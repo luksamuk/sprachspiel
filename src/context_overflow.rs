@@ -3,7 +3,7 @@
 //! Implements auto-compaction when context reaches threshold.
 
 use crate::chat::session::ChatSession;
-use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
+use crate::tokens::{MESSAGE_OVERHEAD, estimate_tokens};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Default overflow threshold (80% of context window)
