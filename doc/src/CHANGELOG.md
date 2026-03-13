@@ -4,7 +4,38 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [0.32.0] - 2026-03-13
 
+### Added
+
+- **File Write Tools** - Three new tools for creating, editing, and appending to files
+  - `write_file` - Create or overwrite files with sandbox enforcement
+  - `edit_file` - Surgical edits (replace text, insert lines, delete lines)
+  - `append_file` - Append content to existing files
+  - Security: All write operations ALWAYS sandboxed to current working directory
+  - Security: Blocked patterns for sensitive files (`.env`, `secrets`, SSH keys, certificates)
+  - Security: Maximum 5MB per write operation
+  - Security: Atomic writes using temp file + rename pattern
+  - Optional `create_backup` parameter for `edit_file`
+
+- **Blocklist Module** - Shared security module for file operations
+  - `is_blocked_for_read()` - Check if path matches blocked patterns
+  - `is_blocked_for_write()` - Check if path is blocked for write operations
+  - `BlocklistConfig` - Configurable blocked patterns via config.toml
+  - Integrated into all file read operations (`read_file`, `read_file_segment`, `count_lines`, `search_files`)
+
+- **File Tools Configuration** - New TOML configuration section
+  - `[file-tools]` section in `~/.config/ask-ai/config.toml`
+  - `max_file_size` - Maximum file size (default: 5MB)
+  - `blocked_patterns` - Additional glob patterns to block
+  - `block_read` - Block reading sensitive files (default: true)
+  - `block_list` - Allow listing blocked files (default: false)
+
 ### Changed
+
+- **File Operations** - Now 8 tools instead of 5 (3 new write tools added)
+- **Tool Count** - Updated from 28 tools to 31 tools (8 file + 9 pokemon + 3 weather + 1 calc + 2 serper + 2 system + 3 search + 1 finance + 2 run_command)
+- **Documentation** - Updated `doc/src/tools.md` with write tool documentation and security section
+
+### Technical Debt
 
 - **Code Cleanup** - Removed dead code and improved maintainability
   - Removed unused `ChatEvent::FinalResponse` and `ChatEvent::ContinuationNeeded` variants
@@ -16,9 +47,7 @@ All notable changes to Ask-AI will be documented in this file.
     - `prepare_messages()` - builds message context with retrieval
     - `process_chat_response()` - converts response to result
 
-### Technical Debt
-
-- `run_chat_repl` function remains large (~1100 lines) - refactoring planned for Priority 3
+- **`run_chat_repl` function** remains large (~1100 lines) - refactoring planned for Priority 3
 
 ## [0.31.0] - 2026-03-12
 

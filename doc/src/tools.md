@@ -45,7 +45,7 @@ The default build includes:
 | `search-tools` | DuckDuckGo + Web scraper | web_search, web_search_news, web_scrape | ❌ No |
 | `finance-tools` | Stock quotes | get_stock_quote | ❌ No |
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
-| `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files | ✅ Yes |
+| `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files, write_file, edit_file, append_file | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
@@ -398,11 +398,13 @@ Example: get_project_context()
 - Ignores `.env` files and secrets
 - Scoped to max 3 directory levels
 
-## File Operation Tools (5)
+## File Operation Tools (8)
 
 Perform local filesystem operations. **Sandboxed by default** to current working directory for security.
 
 **Important:** For large files, use `count_lines` first to check size, then `read_file_segment` to read only what you need. Avoid polluting context with entire large files.
+
+**Security:** All file operations check a blocklist for sensitive files (`.env`, `secrets`, SSH keys, certificates). These files cannot be read or written.
 
 ### read_file
 
@@ -503,9 +505,107 @@ Example: search_files(pattern: "TODO|FIXME", path: "src", file_pattern: "*.rs")
 - Limited to 100 results and 1MB files
 - Searches files within 5 directory levels
 
+### write_file
+
+Write content to a file, creating or overwriting it.
+
+```
+Function: write_file
+Args: path (string), content (string), overwrite (string, optional), sandbox (ignored)
+Example: write_file(path: "output.txt", content: "Hello, World!")
+Example: write_file(path: "config.json", content: json_data, overwrite: "true")
+```
+
+**Note:** `overwrite` accepts "true", "false", "1", "0". Default is "false".
+
+**Security:**
+- **Always sandboxed** - `sandbox=false` is ignored for write operations
+- **Blocked patterns** - Cannot write to `.env`, `secrets`, SSH keys, certificates
+- **Size limit** - Maximum 5MB per write
+- **Atomic writes** - Uses temp file + rename for corruption safety
+
+**Behavior:**
+- Returns error if file exists and `overwrite=false`
+- Creates parent directories must exist
+- Only writes valid UTF-8 text content
+
+### edit_file
+
+Surgically edit an existing file without rewriting entire content.
+
+```
+Function: edit_file
+Args:
+  - path (string): File to edit
+  - operation (string): "replace", "insert", or "delete_lines"
+  - search (string, optional): Text to find (for "replace")
+  - replace (string, optional): Text to replace with (for "replace")
+  - after_line (string, optional): Line number to insert after (for "insert")
+  - content (string, optional): Content to insert (for "insert")
+  - start_line (string, optional): First line to delete (for "delete_lines")
+  - end_line (string, optional): Last line to delete (for "delete_lines")
+  - create_backup (string, optional): Create .bak file first
+```
+
+**Operations:**
+
+| Operation | Required Parameters | Description |
+|-----------|---------------------|-------------|
+| `replace` | `search`, `replace` | Find and replace all occurrences |
+| `insert` | `after_line`, `content` | Insert content after line N |
+| `delete_lines` | `start_line`, `end_line` | Delete range of lines |
+
+**Examples:**
+```bash
+# Replace text
+edit_file(path: "config.yml", operation: "replace", search: "old_value", replace: "new_value")
+
+# Insert after line 10
+edit_file(path: "README.md", operation: "insert", after_line: "10", content: "## New Section\n\nContent.")
+
+# Delete lines 5-10
+edit_file(path: "script.py", operation: "delete_lines", start_line: "5", end_line: "10")
+
+# Backup before editing
+edit_file(path: "important.txt", operation: "replace", search: "foo", replace: "bar", create_backup: "true")
+```
+
+**Security:**
+- File must exist (use `write_file` to create new files)
+- Always sandboxed, blocked patterns enforced
+- Creates `.bak` file if `create_backup=true`
+
+### append_file
+
+Append content to the end of an existing file.
+
+```
+Function: append_file
+Args:
+  - path (string): File to append to
+  - content (string): Content to append
+  - create (string, optional): Create file if not exists (default: "false")
+```
+
+**Examples:**
+```bash
+# Append to existing log file
+append_file(path: "log.txt", content: "2024-01-15: New entry\n")
+
+# Create and append (if file doesn't exist)
+append_file(path: "output.txt", content: "First line\n", create: "true")
+```
+
+**Security:**
+- Always sandboxed and blocked patterns enforced
+- Maximum total file size: 5MB
+- Cannot append to `.env`, secrets, keys, etc.
+
 ### File Tool Security
 
-File tools are sandboxed by default:
+File tools have multiple security layers:
+
+#### Sandbox
 
 ```toml
 # ~/.config/ask-ai/config.toml
@@ -519,14 +619,54 @@ file_sandbox = true  # Only allow access to CWD and subdirectories
 - ❌ Blocked: System directories (`/etc`, `/usr`, etc.)
 - ❌ Blocked: Symlinks pointing outside sandbox
 
-**Disabling sandbox** (not recommended):
+**Important:** Write operations (`write_file`, `edit_file`, `append_file`) are **always sandboxed** regardless of this setting. Only read operations respect `file_sandbox = false`.
+
+#### Blocked Patterns
+
+Sensitive files are blocked for both reading and writing:
+
+| Category | Patterns |
+|----------|----------|
+| Environment files | `.env`, `.env.local`, `.env.*` |
+| Secrets/credentials | `*secret*`, `*credential*`, `secrets.json`, `credentials.json` |
+| SSH keys | `id_rsa`, `id_dsa`, `id_ed25519`, `id_ecdsa`, `.ssh/` |
+| Certificates | `*.pem`, `*.key` |
+| GPG | `.gnupg/` |
+| Cloud credentials | `service-account.json`, `*-credentials.json` |
+
+Configuration:
+
+```toml
+# ~/.config/ask-ai/config.toml
+[file-tools]
+max_file_size = 5242880  # 5MB default
+blocked_patterns = [".env.*", "*secret*", "*.pem"]
+block_read = true   # Block reading sensitive files
+block_list = false  # Allow listing (filenames visible)
+# block_write is always true, not configurable
+```
+
+#### Security Summary
+
+| Operation | Sandbox | Blocked Patterns |
+|-----------|---------|------------------|
+| `read_file` | Configurable | Yes (if `block_read=true`) |
+| `read_file_segment` | Configurable | Yes (if `block_read=true`) |
+| `count_lines` | Configurable | Yes (if `block_read=true`) |
+| `list_directory` | Configurable | Filenames visible (not content) |
+| `search_files` | Configurable | Yes (if `block_read=true`) |
+| `write_file` | **Always enforced** | **Always enforced** |
+| `edit_file` | **Always enforced** | **Always enforced** |
+| `append_file` | **Always enforced** | **Always enforced** |
+
+**Disabling read sandbox** (not recommended for writes):
 
 ```toml
 [tools]
 file_sandbox = false
 ```
 
-**Warning:** Disabling the sandbox allows the AI to access any file your user account can read. Only disable if you fully trust the AI and understand the security implications.
+**Warning:** Disabling sandbox for reads allows the AI to read any accessible file. Write sandbox cannot be disabled.
 
 ## LED Control Tools (5)
 

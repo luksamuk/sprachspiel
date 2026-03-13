@@ -866,7 +866,7 @@ pub async fn fetch_pokemon_basic(pokemon_name: String) -> Result<String, ...>
 | Tool Category | Tools | Documentation Quality |
 |--------------|-------|----------------------|
 | weather-tools | 3 tools | ⚠️ Needs improvement |
-| file-tools | 5 tools | ⚠️ Needs improvement |
+| file-tools | 8 tools | ✅ Good (write tools well documented) |
 | pokemon-tools | 9 tools | ⚠️ Minimal docstrings |
 | calc-tools | 1 tool | ⚠️ Needs improvement |
 | serper-tools | 2 tools | ✅ Good |
