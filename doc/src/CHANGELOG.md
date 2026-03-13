@@ -12,7 +12,6 @@ All notable changes to Ask-AI will be documented in this file.
   - `ContinuationTag` struct for parsing pause/checkpoint information
   - `parse_continuation_tag()` function extracts and strips continuation tags from responses
   - `ephemeral_messages` in `CustomCoordinator` for non-persisted continuation prompts
-  - `ChatEvent::ContinuationNeeded` variant for event-based handling
   - `SendMessageResult.continuation_needed` field for continuation detection
   - `build_continuation_prompt()` creates resume instructions from checkpoint
   - Continuation loop in REPL automatically resumes after compaction
@@ -1459,7 +1458,7 @@ Added 3 new LED tool examples to demonstrate:
 
 - **Custom Coordinator** - New `CustomCoordinator` implementation
   - Pre-tool content forwarding - model's thinking/intro text before tool calls is now displayed
-  - Event callbacks for `PreToolContent`, `ToolCall`, `ToolResult`, `FinalResponse`
+  - Event callbacks for `PreToolContent`, `ToolCall`, `ToolResult`
   - Replaces ollama-rs Coordinator for full control over tool execution flow
 
 - **Thinking Display Improvements**

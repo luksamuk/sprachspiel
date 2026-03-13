@@ -213,14 +213,6 @@ pub enum ChatEvent {
     /// Tool execution result (name kept for future debugging use)
     #[allow(dead_code)]
     ToolResult { name: String, result: String },
-    /// Final response (no more tool calls) - kept for future use
-    #[allow(dead_code)]
-    FinalResponse(ChatMessageResponse),
-    /// LLM requested continuation after context compaction
-    #[allow(dead_code)]
-    ContinuationNeeded {
-        tag: ContinuationTag,
-    },
 }
 
 /// A coordinator for managing chat interactions with event callbacks.
@@ -573,9 +565,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             // No tool calls - this is the final response
             // Push to history
             self.history.push(resp.message.clone());
-
-            // Emit final response event
-            self.emit_event(ChatEvent::FinalResponse(resp.clone()));
 
             Ok(resp)
         }

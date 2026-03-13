@@ -197,10 +197,8 @@ pub struct ContinuationTag {
     pub next_step: String,   // What was about to be done
 }
 
-pub enum ChatEvent {
-    // ... existing variants ...
-    ContinuationNeeded { tag: ContinuationTag },
-}
+// Note: Continuation is detected via SendMessageResult.continuation_needed field,
+// not via ChatEvent. The ChatEvent enum only has PreToolContent, ToolCall, ToolResult.
 ```
 
 **Edge Cases:**
