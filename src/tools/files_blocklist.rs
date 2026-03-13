@@ -109,9 +109,7 @@ fn pattern_to_regex(pattern: &str) -> String {
     }
 
     // Extension or directory pattern (starts with dot)
-    if pattern.starts_with('.') {
-        let name = &pattern[1..]; // Remove leading dot
-
+    if let Some(name) = pattern.strip_prefix('.') {
         // Known directory patterns
         if name == "ssh" || name == "gnupg" {
             return format!(r"(?:^|/)\.{}/?", name);
