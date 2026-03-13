@@ -13,7 +13,7 @@
 
 ## Current Version
 
-**v0.31.0** - 2026-03-12
+**v0.32.0** - 2026-03-13
 
 ## Current Implementation Status
 
