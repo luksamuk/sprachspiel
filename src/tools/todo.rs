@@ -192,59 +192,38 @@ pub async fn todo_clear_all() -> Result<String, Box<dyn std::error::Error + Send
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chat::todo_state::TodoState;
 
     #[test]
     fn test_todo_add() {
-        reset_todo_state();
-
-        // This would be async in real usage, but we can test the state directly
-        let state = get_todo_state();
-        let mut guard = state.lock().unwrap();
-        let id = guard.add("Test task".to_string());
+        let mut state = TodoState::new();
+        let id = state.add("Test task".to_string());
 
         assert_eq!(id, 1);
-        assert_eq!(guard.count(), 1);
+        assert_eq!(state.count(), 1);
     }
 
     #[test]
     fn test_todo_update() {
-        reset_todo_state();
+        let mut state = TodoState::new();
+        state.add("Test task".to_string());
 
-        let state = get_todo_state();
-        {
-            let mut guard = state.lock().unwrap();
-            guard.add("Test task".to_string());
-        }
-
-        {
-            let mut guard = state.lock().unwrap();
-            let result = guard.update_status(1, TaskStatus::InProgress);
-            assert!(result.is_ok());
-        }
-
-        let guard = state.lock().unwrap();
-        assert_eq!(guard.get(1).unwrap().status, TaskStatus::InProgress);
+        let result = state.update_status(1, TaskStatus::InProgress);
+        assert!(result.is_ok());
+        assert_eq!(state.get(1).unwrap().status, TaskStatus::InProgress);
     }
 
     #[test]
     fn test_todo_clear_done() {
-        reset_todo_state();
+        let mut state = TodoState::new();
+        state.add("Task 1".to_string());
+        state.add("Task 2".to_string());
+        state.add("Task 3".to_string());
+        state.update_status(1, TaskStatus::Done).unwrap();
+        state.update_status(2, TaskStatus::Done).unwrap();
 
-        let state = get_todo_state();
-        {
-            let mut guard = state.lock().unwrap();
-            guard.add("Task 1".to_string());
-            guard.add("Task 2".to_string());
-            guard.add("Task 3".to_string());
-            guard.update_status(1, TaskStatus::Done).unwrap();
-            guard.update_status(2, TaskStatus::Done).unwrap();
-        }
-
-        {
-            let mut guard = state.lock().unwrap();
-            let removed = guard.clear_done();
-            assert_eq!(removed, 2);
-            assert_eq!(guard.count(), 1);
-        }
+        let removed = state.clear_done();
+        assert_eq!(removed, 2);
+        assert_eq!(state.count(), 1);
     }
 }
