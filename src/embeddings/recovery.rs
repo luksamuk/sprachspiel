@@ -22,7 +22,7 @@ use chrono::Utc;
 use std::sync::Arc;
 
 use crate::db::Database;
-use crate::embeddings::EmbeddingClient;
+use crate::embeddings::{chunk_text, needs_chunking, EmbeddingClient};
 
 /// Recover missing embeddings for a conversation
 ///
@@ -76,25 +76,74 @@ pub async fn recover_missing_embeddings(
 
         let timestamp = chrono::DateTime::from_timestamp(msg.timestamp, 0).unwrap_or_else(Utc::now);
 
-        match embedding_client.embed(&msg.content).await {
-            Ok(embedding) => {
-                if db
-                    .update_message_embedding(
-                        msg.message_id,
-                        &embedding,
-                        &msg.conversation_id,
-                        timestamp,
-                    )
-                    .is_ok()
-                {
-                    recovered += 1;
+        // Check if message already has chunks (long message that was partially processed)
+        // If so, skip message embedding - chunks are handled separately
+        if db.message_has_chunks(msg.message_id).unwrap_or(false) {
+            continue;
+        }
+
+        // Check if message needs chunking (long message without chunks)
+        if needs_chunking(&msg.content) {
+            // Long message - create chunks and embed each chunk
+            let chunks = chunk_text(&msg.content);
+
+            for chunk in &chunks {
+                // Insert chunk into database
+                let chunk_id = match db.insert_chunk(
+                    msg.message_id,
+                    chunk.index as i32,
+                    &chunk.content,
+                    chunk.start_offset as i32,
+                    chunk.end_offset as i32,
+                    timestamp,
+                ) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        eprintln!("Warning: Failed to insert chunk {}: {}", chunk.index, e);
+                        continue;
+                    }
+                };
+
+                // Generate embedding for chunk
+                match embedding_client.embed(&chunk.content).await {
+                    Ok(embedding) => {
+                        if db
+                            .update_chunk_embedding(chunk_id, &embedding, conversation_id, timestamp)
+                            .is_ok()
+                        {
+                            recovered += 1;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to recover embedding for chunk {}: {}",
+                            chunk_id, e
+                        );
+                    }
                 }
             }
-            Err(e) => {
-                eprintln!(
-                    "Warning: Failed to recover embedding for message {}: {}",
-                    msg.message_id, e
-                );
+        } else {
+            // Short message - embed directly
+            match embedding_client.embed(&msg.content).await {
+                Ok(embedding) => {
+                    if db
+                        .update_message_embedding(
+                            msg.message_id,
+                            &embedding,
+                            &msg.conversation_id,
+                            timestamp,
+                        )
+                        .is_ok()
+                    {
+                        recovered += 1;
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to recover embedding for message {}: {}",
+                        msg.message_id, e
+                    );
+                }
             }
         }
     }

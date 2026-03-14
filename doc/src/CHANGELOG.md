@@ -2,6 +2,16 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.32.1] - 2026-03-13
+
+### Fixed
+
+- **Embedding Recovery for Long Messages** - Fixed crash when recovering embeddings
+  - Recovery now checks if message needs chunking before embedding
+  - Long messages are split into chunks, each chunk gets its own embedding
+  - Messages that already have chunks are skipped (embeddings in chunks)
+  - Prevents "input length exceeds context length" errors on startup
+
 ## [0.32.0] - 2026-03-13
 
 ### Added

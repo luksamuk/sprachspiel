@@ -6,7 +6,7 @@
 //! - Hybrid search (BM25 + semantic + RRF)
 
 use chrono::{DateTime, Utc};
-use rusqlite::{Result, params};
+use rusqlite::{params, Result};
 use serde::{Deserialize, Serialize};
 use zerocopy::IntoBytes;
 
@@ -1500,6 +1500,22 @@ impl Database {
             rows.collect::<Result<Vec<_>>>()
         })
     }
+
+    /// Check if a message has chunks (for long messages)
+    ///
+    /// Used by recovery manager to determine if a message without embedding
+    /// is a long message represented by its chunks, or a short message that
+    /// needs direct embedding.
+    pub fn message_has_chunks(&self, message_id: i64) -> Result<bool> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM message_chunks WHERE message_id = ?1",
+                params![message_id],
+                |row| row.get(0),
+            )?;
+            Ok(count > 0)
+        })
+    }
 }
 
 /// Reciprocal Rank Fusion algorithm
@@ -1761,10 +1777,9 @@ mod tests {
 
         // Check exists
         assert!(db.conversation_exists(conv_id).expect("Failed to check"));
-        assert!(
-            !db.conversation_exists("nonexistent")
-                .expect("Failed to check")
-        );
+        assert!(!db
+            .conversation_exists("nonexistent")
+            .expect("Failed to check"));
     }
 
     #[test]
