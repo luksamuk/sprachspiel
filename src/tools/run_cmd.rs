@@ -310,7 +310,7 @@ fn apply_head_tail(output: String, head: Option<usize>, tail: Option<usize>) -> 
 // it's already well-sandboxed (either by us or by a parent process).
 #[cfg(all(feature = "sandbox", target_os = "linux"))]
 std::thread_local! {
-    static LANDLOCK_APPLIED: std::cell::Cell<bool> = std::cell::Cell::new(false);
+    static LANDLOCK_APPLIED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Apply Landlock sandbox if enabled (Linux only).

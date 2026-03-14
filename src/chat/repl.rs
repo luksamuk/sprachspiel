@@ -4,36 +4,29 @@
 
 use std::sync::Arc;
 
-use ollama_rs::generation::chat::ChatMessage;
 use rustyline::Config;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::context_overflow::{
-    DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_THRESHOLD, check_context_overflow,
-    needs_pre_tool_compaction,
-};
+use crate::context_overflow::{PRE_TOOL_THRESHOLD, check_context_overflow, needs_pre_tool_compaction};
 use crate::debug_tools::{enable_debug, log_debug};
-use crate::markdown;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
-use crate::query::ChatContext;
-use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
-use crate::spinner::{create_spinner, finish_spinner};
 use crate::tokens::{calculate_context_metrics, estimate_tokens};
 use crate::tool_robustness::format_tool_error;
-use crate::tools::{get_available_tool_names, register_tools};
+use crate::tools::get_available_tool_names;
 
 use super::commands::{CommandResult, execute_command, parse_command};
-use super::completion::ChatCompleter;
-use super::coordinator::{
-    MAX_RETRIES, classify_error_str, format_recovery_message, is_error_str_recoverable,
+use super::command_handlers::{
+    handle_think_toggled, handle_tools_toggled, handle_retrieval_toggled,
+    handle_tool_output_changed, handle_debug_toggled, handle_undo,
+    handle_search, handle_restore, handle_reindex, handle_compact, handle_retry,
 };
-use super::custom_coordinator::CustomCoordinator;
+use super::completion::ChatCompleter;
+use super::core::{auto_compact_if_needed, send_message};
 use super::session::ChatSession;
-use super::thinking::{display_thinking, strip_thinking_tags};
 use crate::project::get_project_id;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -236,10 +229,10 @@ pub async fn run_chat_repl(
         }
     }
 
-    let mut current_model_name = session.model.clone();
-    let mut model_config = crate::user_models::resolve_model_config(&current_model_name);
+    let current_model_name = session.model.clone();
+    let model_config = crate::user_models::resolve_model_config(&current_model_name);
 
-    let mut capabilities =
+    let capabilities =
         ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // Attach database to session
@@ -310,7 +303,7 @@ pub async fn run_chat_repl(
 
     print_welcome(&session, &model_config, &capabilities);
 
-    let mut tools_active = session.tools && capabilities.tools;
+    let tools_active = session.tools && capabilities.tools;
 
     if session.tools && !capabilities.tools {
         eprintln!(
@@ -319,6 +312,27 @@ pub async fn run_chat_repl(
         );
         eprintln!("         Tools have been disabled for this session. Use /tools to toggle.");
     }
+
+    // Phase 8: Create ReplState to consolidate mutable state
+    // Created AFTER initialization, right before the loop
+    // We pass cloned/copied values for incremental migration.
+    // Immutable values (use_debug, cli_code, cli_soulless, agents_md) are accessed via state.
+    // Mutable values (session, model_config, capabilities, tools_active) currently have
+    // BOTH local variables AND state fields - migration is in progress.
+    let mut state = super::repl_state::ReplStateBuilder::new()
+        .session(session.clone()) // Clone for state; session var still primary
+        .model_config(model_config.clone()) // Clone for state
+        .capabilities(capabilities.clone()) // Clone for state
+        .tools_active(tools_active) // Copy (bool) - now accessible as state.tools_active
+        .agents_md(agents_md.clone()) // Clone for state
+        .use_debug(use_debug) // Copy (bool) - now accessible as state.use_debug
+        .cli_code(cli_code) // Copy (bool) - now accessible as state.cli_code
+        .cli_soulless(cli_soulless) // Copy (bool) - now accessible as state.cli_soulless
+        .ollama(ollama.clone()) // Clone for state
+        .db(db.clone()) // Arc clone (cheap)
+        .embedding_client(embedding_client.clone()) // Arc clone (cheap)
+        .settings(settings.clone()) // Clone for state
+        .build()?;
 
     let config = Config::default();
     let model_names: Vec<String> = crate::user_models::list_all_model_names();
@@ -330,11 +344,11 @@ pub async fn run_chat_repl(
     let _ = rl.load_history(&history_path());
 
     loop {
-        let mut prompt = current_model_name.clone();
-        if session.think && capabilities.thinking {
+        let mut prompt = state.current_model_name.clone();
+        if state.session.think && state.capabilities.thinking {
             prompt.push_str("[t]");
         }
-        if tools_active {
+        if state.tools_active {
             prompt.push_str("[T]");
         }
         prompt.push_str("> ");
@@ -356,22 +370,22 @@ pub async fn run_chat_repl(
                             if let super::commands::ChatCommand::Model { name } = &cmd {
                                 match super::model_switch::switch_model(
                                     name,
-                                    &ollama,
+                                    &state.ollama,
                                     &capabilities,
-                                    session.think,
-                                    session.tools,
+                                    state.session.think,
+                                    state.session.tools,
                                 )
                                 .await
                                 {
                                     Ok(result) => {
-                                        session.set_model(result.model_name.clone());
-                                        session.think = result.think_active;
-                                        session.tools = result.tools_active;
+                                        state.session.set_model(result.model_name.clone());
+                                        state.session.think = result.think_active;
+                                        state.session.tools = result.tools_active;
 
-                                        current_model_name = result.model_name.clone();
-                                        model_config = result.model_config;
-                                        capabilities = result.capabilities;
-                                        tools_active = result.tools_active;
+                                        state.current_model_name = result.model_name.clone();
+                                        state.model_config = result.model_config;
+                                        state.capabilities = result.capabilities;
+                                        state.tools_active = result.tools_active;
 
                                         for warning in &result.warnings {
                                             eprintln!("{}", warning);
@@ -379,11 +393,11 @@ pub async fn run_chat_repl(
 
                                         println!(
                                             "Model switched to: {} ({})",
-                                            result.model_name, model_config.model_id
+                                            result.model_name, state.model_config.model_id
                                         );
 
-                                        if !session.anonymous {
-                                            let _ = session.save_sqlite();
+                                        if !state.session.anonymous {
+                                            let _ = state.session.save_sqlite();
                                         }
                                     }
                                     Err(e) => {
@@ -393,12 +407,12 @@ pub async fn run_chat_repl(
                                 continue;
                             }
 
-                            match execute_command(cmd, &mut session) {
+                            match execute_command(cmd, &mut state.session) {
                                 CommandResult::Continue => continue,
                                 CommandResult::Exit => {
                                     let _ = rl.save_history(&history_path());
-                                    if !session.anonymous {
-                                        let _ = session.save_sqlite();
+                                    if !state.session.anonymous {
+                                        let _ = state.session.save_sqlite();
                                     }
                                     return Ok(());
                                 }
@@ -407,362 +421,58 @@ pub async fn run_chat_repl(
                                     continue;
                                 }
                                 CommandResult::ThinkToggled(new_state) => {
-                                    if new_state && !capabilities.thinking {
-                                        eprintln!(
-                                            "Warning: Model '{}' does not support think mode.",
-                                            model_config.model_id
-                                        );
-                                        session.think = false;
-                                    } else {
-                                        println!(
-                                            "Think mode: {}",
-                                            if new_state { "enabled" } else { "disabled" }
-                                        );
-                                        tools_active = session.tools && capabilities.tools;
-                                    }
+                                    handle_think_toggled(&mut state, new_state);
                                     continue;
                                 }
                                 CommandResult::ToolsToggled(new_state) => {
-                                    if new_state && !capabilities.tools {
-                                        eprintln!(
-                                            "Warning: Model '{}' does not support tools.",
-                                            model_config.model_id
-                                        );
-                                        session.tools = false;
-                                        tools_active = false;
-                                    } else {
-                                        println!(
-                                            "Tools: {}",
-                                            if new_state { "enabled" } else { "disabled" }
-                                        );
-                                        tools_active = new_state && capabilities.tools;
-                                    }
+                                    handle_tools_toggled(&mut state, new_state);
                                     continue;
                                 }
                                 CommandResult::Compact => {
-                                    if session.messages.is_empty() {
-                                        println!("No messages to compact.");
-                                        continue;
-                                    }
-
-                                    let msg_count = session.messages.len();
-                                    println!(
-                                        "\x1B[33m⏳ Compacting {} messages...\x1B[0m",
-                                        msg_count
-                                    );
-
-                                    match compact_conversation(
-                                        &ollama,
-                                        &model_config,
-                                        &session,
-                                        settings,
-                                        agents_md.as_deref(),
-                                    )
-                                    .await
-                                    {
-                                        Ok((summary, range)) => {
-                                            let (first_preserved, last_preserved_start) =
-                                                range.unwrap_or((0, session.messages.len()));
-                                            let compacted_count =
-                                                last_preserved_start - first_preserved;
-
-                                            session.set_compacted_summary_with_range(
-                                                summary.clone(),
-                                                range,
-                                            );
-
-                                            if first_preserved > 0
-                                                || last_preserved_start < session.messages.len()
-                                            {
-                                                // Middle compaction
-                                                println!(
-                                                    "\x1B[32m✓ Compacted {} messages\x1B[0m (preserved {} first, {} last).",
-                                                    compacted_count,
-                                                    first_preserved,
-                                                    session.messages.len() - last_preserved_start
-                                                );
-                                            } else {
-                                                // Full compaction (backward compatible)
-                                                println!(
-                                                    "\x1B[32m✓ Compacted all {} messages.\x1B[0m",
-                                                    compacted_count
-                                                );
-                                            }
-
-                                            println!();
-                                            println!("\x1B[90m--- Summary ---\x1B[0m");
-                                            markdown::print_markdown(&summary);
-                                            println!("\x1B[90m---------------\x1B[0m");
-
-                                            if !session.anonymous {
-                                                let _ = session.save_sqlite();
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("\x1B[31m✗ Compaction failed: {}\x1B[0m", e);
-                                        }
-                                    }
+                                    handle_compact(&mut state).await;
                                     continue;
                                 }
                                 CommandResult::ToolOutputChanged(level) => {
-                                    println!("Tool output level: {}", level);
+                                    handle_tool_output_changed(level);
                                     continue;
                                 }
                                 CommandResult::DebugToggled(new_state) => {
-                                    println!("Debug mode: {}", new_state);
+                                    handle_debug_toggled(new_state);
                                     continue;
                                 }
                                 CommandResult::RetrievalToggled(new_state) => {
-                                    if new_state {
-                                        println!(
-                                            "Semantic retrieval enabled. Messages will be retrieved from history for context."
-                                        );
-                                        if session.messages.len() < 20 {
-                                            println!(
-                                                "Note: Retrieval activates after 20 messages (current: {})",
-                                                session.messages.len()
-                                            );
-                                        }
-                                    } else {
-                                        println!("Semantic retrieval disabled.");
-                                    }
+                                    handle_retrieval_toggled(&state, new_state);
                                     continue;
                                 }
                                 CommandResult::Context => {
                                     print_context_info(
-                                        &session,
-                                        &model_config,
-                                        tools_active,
-                                        agents_md.as_deref(),
-                                        settings,
-                                        cli_soulless,
+                                        &state.session,
+                                        &state.model_config,
+                                        state.tools_active,
+                                        state.agents_md.as_deref(),
+                                        &state.settings,
+                                        state.cli_soulless,
                                     );
                                     continue;
                                 }
                                 CommandResult::Retry => {
-                                    // Remove last assistant messages
-                                    let removed = session.remove_last_assistant_messages();
-                                    if removed > 0 {
-                                        println!(
-                                            "Removed {} assistant message(s). Ready to retry.",
-                                            removed
-                                        );
-                                    } else {
-                                        println!("No assistant messages to remove.");
-                                    }
-
-                                    // Get the last user message
-                                    if let Some(user_msg) = session.get_last_user_message() {
-                                        let user_content = user_msg.content.clone();
-                                        println!("Retrying: {}", user_content);
-
-                                        // Send the message again
-                                        let think_enabled = session.think;
-                                        match send_message(
-                                            &ollama,
-                                            &model_config,
-                                            &mut session,
-                                            &user_content,
-                                            tools_active,
-                                            think_enabled,
-                                            false, // cli_code: false for retry (use existing config)
-                                            settings,
-                                            agents_md.as_deref(),
-                                            use_debug,
-                                            db.as_ref(),
-                                            embedding_client.as_ref(),
-                                            cli_soulless,
-                                            None,
-                                        )
-                                        .await
-                                        {
-                                            Ok(result) => {
-                                                session.add_assistant_message(
-                                                    result.response,
-                                                    Some(result.metrics.prompt_tokens),
-                                                );
-
-                                                if result.metrics.total_tokens > 0 {
-                                                    eprintln!(
-                                                        "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-                                                        result.metrics.prompt_tokens,
-                                                        result.metrics.response_tokens,
-                                                        result.metrics.total_tokens
-                                                    );
-                                                }
-
-                                                // Auto-compact if needed (after response, before next input)
-                                                auto_compact_if_needed(
-                                                    &ollama,
-                                                    &model_config,
-                                                    &mut session,
-                                                    settings,
-                                                    agents_md.as_deref(),
-                                                    &result.system_prompt,
-                                                    result.context_window,
-                                                    use_debug,
-                                                )
-                                                .await;
-
-                                                if !session.anonymous
-                                                    && let Err(e) = session.save_sqlite()
-                                                    && use_debug
-                                                {
-                                                    log_debug(&format!(
-                                                        "Warning: Could not save session: {}",
-                                                        e
-                                                    ));
-                                                }
-                                            }
-                                            Err(e) => {
-                                                let error_str = e.to_string();
-                                                eprintln!(
-                                                    "\x1B[31m{}\x1B[0m",
-                                                    format_tool_error(&error_str)
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        println!("No user message to retry.");
-                                    }
+                                    handle_retry(&mut state).await;
                                     continue;
                                 }
                                 CommandResult::Undo => {
-                                    // Remove last assistant messages (includes preceding user message)
-                                    let (removed, _) =
-                                        session.remove_last_assistant_messages_with_content();
-                                    if removed > 0 {
-                                        // Also delete from database if not anonymous
-                                        if !session.anonymous
-                                            && !session.id.is_empty()
-                                            && let Ok(db) = crate::db::Database::new()
-                                            && let Err(e) =
-                                                db.delete_last_messages(&session.id, removed)
-                                        {
-                                            eprintln!(
-                                                "Warning: Failed to delete from database: {}",
-                                                e
-                                            );
-                                        }
-                                        println!("Removed {} message(s) from session.", removed);
-                                    } else {
-                                        println!("No messages to remove.");
-                                    }
-
-                                    // Get and display the last user message
-                                    if let Some(user_msg) = session.get_last_user_message() {
-                                        println!("Last message: \"{}\"", user_msg.content);
-                                        println!(
-                                            "(Press \u{2191} to retrieve and edit, or type a new message)"
-                                        );
-                                    } else {
-                                        println!("No user message to show.");
-                                    }
+                                    handle_undo(&mut state);
                                     continue;
                                 }
                                 CommandResult::Search { query, limit } => {
-                                    // Get the database
-                                    let db = match crate::db::Database::new() {
-                                        Ok(db) => db,
-                                        Err(e) => {
-                                            eprintln!("Error: Failed to open database: {}", e);
-                                            continue;
-                                        }
-                                    };
-
-                                    // Search in current conversation
-                                    let conversation_id = session.id.clone();
-
-                                    if use_debug {
-                                        log_debug(&format!(
-                                            "Searching in conversation: {}",
-                                            conversation_id
-                                        ));
-                                    }
-
-                                    // Run search
-                                    crate::retrieval::run_search(
-                                        &db,
-                                        &ollama,
-                                        &query,
-                                        Some(&conversation_id),
-                                        limit,
-                                    )
-                                    .await;
+                                    handle_search(&state, query, limit).await;
                                     continue;
                                 }
                                 CommandResult::Restore { session_id } => {
-                                    // Check if database is available
-                                    let db = match &db {
-                                        Some(d) => Arc::clone(d),
-                                        None => {
-                                            eprintln!(
-                                                "Error: Database not initialized. Run chat without --anonymous."
-                                            );
-                                            continue;
-                                        }
-                                    };
-
-                                    println!("Restoring session: {}", session_id);
-                                    match crate::db::restore_session(
-                                        &db,
-                                        &session.project_id,
-                                        &session_id,
-                                    ) {
-                                        Ok(restored) => {
-                                            println!(
-                                                "Session restored: {} ({} messages)",
-                                                session_id,
-                                                restored.messages.len()
-                                            );
-                                            // Switch to the restored session
-                                            session = restored;
-                                        }
-                                        Err(e) => eprintln!("Error: {}", e),
-                                    }
+                                    handle_restore(&mut state, session_id);
                                     continue;
                                 }
                                 CommandResult::Reindex { conversation_id } => {
-                                    // Check if database is available
-                                    let db = match &db {
-                                        Some(d) => Arc::clone(d),
-                                        None => {
-                                            eprintln!(
-                                                "Error: Database not initialized. Run chat without --anonymous."
-                                            );
-                                            continue;
-                                        }
-                                    };
-
-                                    let embedding_client =
-                                        crate::embeddings::EmbeddingClient::new(ollama.clone());
-                                    let embedding_client = Arc::new(embedding_client);
-
-                                    let conv_id =
-                                        conversation_id.unwrap_or_else(|| session.id.clone());
-
-                                    println!("Reindexing conversation: {}", conv_id);
-                                    match crate::db::reindex_conversation(
-                                        &db,
-                                        &embedding_client,
-                                        &conv_id,
-                                    )
-                                    .await
-                                    {
-                                        Ok(stats) => {
-                                            println!(
-                                                "Reindex complete: {} messages, {} embeddings",
-                                                stats.messages_migrated, stats.embeddings_generated
-                                            );
-                                            if !stats.errors.is_empty() {
-                                                eprintln!("Errors:");
-                                                for e in stats.errors {
-                                                    eprintln!("  - {}", e);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => eprintln!("Error: {}", e),
-                                    }
+                                    handle_reindex(&mut state, conversation_id).await;
                                     continue;
                                 }
                             }
@@ -777,30 +487,30 @@ pub async fn run_chat_repl(
 
                 // Save user message immediately before sending
                 // Capture message ID for linking pre-tool content
-                let user_message_id = session.add_user_message(line.to_string());
-                if !session.anonymous
-                    && let Err(e) = session.save_sqlite()
-                    && use_debug
+                let user_message_id = state.session.add_user_message(line.to_string());
+                if !state.session.anonymous
+                    && let Err(e) = state.session.save_sqlite()
+                    && state.use_debug
                 {
                     log_debug(&format!("Warning: Could not save session: {}", e));
                 }
 
                 // Pre-tool context check: Auto-compact BEFORE tool execution if context is high
                 // This prevents context exhaustion during multi-tool turns
-                let context_window = model_config.num_ctx as usize;
+                let context_window = state.model_config.num_ctx as usize;
                 let system_prompt_for_check = build_system_prompt(
                     PromptConfig::new(PromptType::ToolUser)
-                        .with_model_id(Some(&model_config.model_id))
-                        .with_blacklist(Some(&settings.blacklist_set()))
-                        .with_agents_md(agents_md.as_deref())
-                        .with_tools(tools_active)
-                        .with_retrieval(session.retrieval_enabled && !cli_code)
-                        .with_soulless(cli_soulless),
+                        .with_model_id(Some(&state.model_config.model_id))
+                        .with_blacklist(Some(&state.settings.blacklist_set()))
+                        .with_agents_md(state.agents_md.as_deref())
+                        .with_tools(state.tools_active)
+                        .with_retrieval(state.session.retrieval_enabled && !state.cli_code)
+                        .with_soulless(state.cli_soulless),
                 );
 
-                if needs_pre_tool_compaction(&session, &system_prompt_for_check, context_window) {
+                if needs_pre_tool_compaction(&state.session, &system_prompt_for_check, context_window) {
                     let usage_pct = check_context_overflow(
-                        &session,
+                        &state.session,
                         &system_prompt_for_check,
                         context_window,
                         PRE_TOOL_THRESHOLD,
@@ -812,33 +522,33 @@ pub async fn run_chat_repl(
                     );
 
                     auto_compact_if_needed(
-                        &ollama,
-                        &model_config,
-                        &mut session,
-                        settings,
-                        agents_md.as_deref(),
+                        &state.ollama,
+                        &state.model_config,
+                        &mut state.session,
+                        &state.settings,
+                        state.agents_md.as_deref(),
                         &system_prompt_for_check,
                         context_window,
-                        use_debug,
+                        state.use_debug,
                     )
                     .await;
                 }
 
-                let think_enabled = session.think;
+                let think_enabled = state.session.think;
                 match send_message(
-                    &ollama,
-                    &model_config,
-                    &mut session,
+                    &state.ollama,
+                    &state.model_config,
+                    &mut state.session,
                     line,
-                    tools_active,
+                    state.tools_active,
                     think_enabled,
-                    cli_code, // from function parameter
-                    settings,
-                    agents_md.as_deref(),
-                    use_debug,
-                    db.as_ref(),
-                    embedding_client.as_ref(),
-                    cli_soulless,
+                    state.cli_code, // from function parameter
+                    &state.settings,
+                    state.agents_md.as_deref(),
+                    state.use_debug,
+                    state.db.as_ref(),
+                    state.embedding_client.as_ref(),
+                    state.cli_soulless,
                     None,
                 )
                 .await
@@ -846,12 +556,12 @@ pub async fn run_chat_repl(
                     Ok(result) => {
                         // Save pre-tool content before final response
                         if let Some(pre_content) = &result.pre_tool_content {
-                            session.add_pre_tool_message(
+                            state.session.add_pre_tool_message(
                                 pre_content.clone(),
                                 result.pre_tool_thinking.clone(),
                                 user_message_id,
                             );
-                            if use_debug {
+                            if state.use_debug {
                                 log_debug(&format!(
                                     "Saved pre-tool content ({} chars)",
                                     pre_content.len()
@@ -866,7 +576,7 @@ pub async fn run_chat_repl(
 
                         if let Some(ref continuation_tag) = result.continuation_needed {
                             continuation_count += 1;
-                            if use_debug {
+                            if state.use_debug {
                                 log_debug(&format!(
                                     "Continuation requested: paused_at='{}', next_step='{}'",
                                     continuation_tag.paused_at, continuation_tag.next_step
@@ -880,14 +590,14 @@ pub async fn run_chat_repl(
                             let continuation_context_window = result.context_window;
                             let continuation_system_prompt = result.system_prompt.clone();
                             auto_compact_if_needed(
-                                &ollama,
-                                &model_config,
-                                &mut session,
-                                settings,
-                                agents_md.as_deref(),
+                                &state.ollama,
+                                &state.model_config,
+                                &mut state.session,
+                                &state.settings,
+                                state.agents_md.as_deref(),
                                 &continuation_system_prompt,
                                 continuation_context_window,
-                                use_debug,
+                                state.use_debug,
                             )
                             .await;
 
@@ -895,19 +605,19 @@ pub async fn run_chat_repl(
 
                             // Send continuation request (empty user_input, continuation via ephemeral)
                             let continuation_result = send_message(
-                                &ollama,
-                                &model_config,
-                                &mut session,
+                                &state.ollama,
+                                &state.model_config,
+                                &mut state.session,
                                 "", // empty user_input - continuation via ephemeral message
-                                tools_active,
+                                state.tools_active,
                                 think_enabled,
-                                cli_code,
-                                settings,
-                                agents_md.as_deref(),
-                                use_debug,
-                                db.as_ref(),
-                                embedding_client.as_ref(),
-                                cli_soulless,
+                                state.cli_code,
+                                &state.settings,
+                                state.agents_md.as_deref(),
+                                state.use_debug,
+                                state.db.as_ref(),
+                                state.embedding_client.as_ref(),
+                                state.cli_soulless,
                                 Some(continuation_tag),
                             )
                             .await;
@@ -942,31 +652,31 @@ pub async fn run_chat_repl(
 
                                         // Compact again
                                         auto_compact_if_needed(
-                                            &ollama,
-                                            &model_config,
-                                            &mut session,
-                                            settings,
-                                            agents_md.as_deref(),
+                                            &state.ollama,
+                                            &state.model_config,
+                                            &mut state.session,
+                                            &state.settings,
+                                            state.agents_md.as_deref(),
                                             &cont_result.system_prompt,
                                             cont_result.context_window,
-                                            use_debug,
+                                            state.use_debug,
                                         )
                                         .await;
 
                                         let next_result = send_message(
-                                            &ollama,
-                                            &model_config,
-                                            &mut session,
+                                            &state.ollama,
+                                            &state.model_config,
+                                            &mut state.session,
                                             "", // empty user_input - continuation via ephemeral
-                                            tools_active,
+                                            state.tools_active,
                                             think_enabled,
-                                            cli_code,
-                                            settings,
-                                            agents_md.as_deref(),
-                                            use_debug,
-                                            db.as_ref(),
-                                            embedding_client.as_ref(),
-                                            cli_soulless,
+                                            state.cli_code,
+                                            &state.settings,
+                                            state.agents_md.as_deref(),
+                                            state.use_debug,
+                                            state.db.as_ref(),
+                                            state.embedding_client.as_ref(),
+                                            state.cli_soulless,
                                             Some(next_tag),
                                         )
                                         .await;
@@ -1004,7 +714,7 @@ pub async fn run_chat_repl(
                         }
 
                         // Save the final response (merged with continuations if any)
-                        session.add_assistant_message(
+                        state.session.add_assistant_message(
                             final_response,
                             Some(final_metrics.prompt_tokens),
                         );
@@ -1022,20 +732,20 @@ pub async fn run_chat_repl(
                         let context_window = result.context_window;
                         let system_prompt = result.system_prompt.clone();
                         auto_compact_if_needed(
-                            &ollama,
-                            &model_config,
-                            &mut session,
-                            settings,
-                            agents_md.as_deref(),
+                            &state.ollama,
+                            &state.model_config,
+                            &mut state.session,
+                            &state.settings,
+                            state.agents_md.as_deref(),
                             &system_prompt,
                             context_window,
-                            use_debug,
+                            state.use_debug,
                         )
                         .await;
 
-                        if !session.anonymous
-                            && let Err(e) = session.save_sqlite()
-                            && use_debug
+                        if !state.session.anonymous
+                            && let Err(e) = state.session.save_sqlite()
+                            && state.use_debug
                         {
                             log_debug(&format!("Warning: Could not save session: {}", e));
                         }
@@ -1051,8 +761,8 @@ pub async fn run_chat_repl(
 
                             // Remove the failed message
                             let (removed, _) =
-                                session.remove_last_assistant_messages_with_content();
-                            if use_debug {
+                                state.session.remove_last_assistant_messages_with_content();
+                            if state.use_debug {
                                 log_debug(&format!(
                                     "Removed {} messages after overflow error",
                                     removed
@@ -1060,34 +770,34 @@ pub async fn run_chat_repl(
                             }
 
                             // Auto-compact to free space
-                            let overflow_context_window = model_config.num_ctx as usize;
+                            let overflow_context_window = state.model_config.num_ctx as usize;
                             let overflow_system_prompt = build_system_prompt(
                                 PromptConfig::new(PromptType::ToolUser)
-                                    .with_model_id(Some(&model_config.model_id))
-                                    .with_blacklist(Some(&settings.blacklist_set()))
-                                    .with_agents_md(agents_md.as_deref())
-                                    .with_tools(tools_enabled)
-                                    .with_retrieval(session.retrieval_enabled && !cli_code)
-                                    .with_soulless(cli_soulless),
+                                    .with_model_id(Some(&state.model_config.model_id))
+                                    .with_blacklist(Some(&state.settings.blacklist_set()))
+                                    .with_agents_md(state.agents_md.as_deref())
+                                    .with_tools(state.tools_active)
+                                    .with_retrieval(state.session.retrieval_enabled && !state.cli_code)
+                                    .with_soulless(state.cli_soulless),
                             );
 
                             eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
                             auto_compact_if_needed(
-                                &ollama,
-                                &model_config,
-                                &mut session,
-                                settings,
-                                agents_md.as_deref(),
+                                &state.ollama,
+                                &state.model_config,
+                                &mut state.session,
+                                &state.settings,
+                                state.agents_md.as_deref(),
                                 &overflow_system_prompt,
                                 overflow_context_window,
-                                use_debug,
+                                state.use_debug,
                             )
                             .await;
 
                             // Save session after compaction
-                            if !session.anonymous
-                                && let Err(save_err) = session.save_sqlite()
-                                && use_debug
+                            if !state.session.anonymous
+                                && let Err(save_err) = state.session.save_sqlite()
+                                && state.use_debug
                             {
                                 log_debug(&format!(
                                     "Warning: Could not save session after recovery: {}",
@@ -1112,8 +822,8 @@ pub async fn run_chat_repl(
             Err(ReadlineError::Eof) => {
                 println!("^D");
                 let _ = rl.save_history(&history_path());
-                if !session.anonymous {
-                    let _ = session.save_sqlite();
+                if !state.session.anonymous {
+                    let _ = state.session.save_sqlite();
                 }
                 return Ok(());
             }
@@ -1128,489 +838,7 @@ pub async fn run_chat_repl(
     Ok(())
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct TokenMetrics {
-    pub prompt_tokens: u64,
-    pub response_tokens: u64,
-    pub total_tokens: u64,
-}
-
-pub struct SendMessageResult {
-    pub response: String,
-    pub pre_tool_content: Option<String>,
-    pub pre_tool_thinking: Option<String>,
-    pub metrics: TokenMetrics,
-    pub context_window: usize,
-    pub system_prompt: String,
-    /// Parsed continuation tag if LLM requested to continue after compaction
-    pub continuation_needed: Option<crate::chat::ContinuationTag>,
-}
-
-/// Build system prompt for the session
-fn build_session_system_prompt(
-    session: &ChatSession,
-    tools_enabled: bool,
-    cli_code: bool,
-    cli_soulless: bool,
-    model_config: &ModelConfig,
-    blacklist_set: &std::collections::HashSet<&str>,
-    agents_md: Option<&str>,
-) -> String {
-    if let Some(ref custom_prompt) = session.system_prompt {
-        return custom_prompt.clone();
-    }
-
-    let prompt_type = if cli_code && tools_enabled {
-        PromptType::CodeWithTools
-    } else if cli_code {
-        PromptType::Code
-    } else if tools_enabled {
-        PromptType::ToolUser
-    } else {
-        PromptType::Default
-    };
-
-    let ctx_window = model_config.num_ctx as usize;
-    let ctx_status = check_context_overflow(session, "", ctx_window, DEFAULT_OVERFLOW_THRESHOLD);
-
-    build_system_prompt(
-        PromptConfig::new(prompt_type)
-            .with_model_id(Some(&model_config.model_id))
-            .with_blacklist(Some(blacklist_set))
-            .with_agents_md(agents_md)
-            .with_tools(tools_enabled)
-            .with_retrieval(session.retrieval_enabled && !cli_code)
-            .with_soulless(cli_soulless)
-            .with_context_status(if ctx_status.needs_compaction() {
-                Some(ctx_status.clone())
-            } else {
-                None
-            }),
-    )
-}
-
-/// Setup coordinator with optional tools
-#[allow(clippy::too_many_arguments)]
-fn setup_coordinator(
-    ollama: ollama_rs::Ollama,
-    model_config: &ModelConfig,
-    model_options: ollama_rs::models::ModelOptions,
-    think_enabled: bool,
-    use_debug: bool,
-    tools_enabled: bool,
-    settings: &Settings,
-    system_prompt: String,
-) -> CustomCoordinator<Vec<ChatMessage>> {
-    let coordinator = ChatContext {
-        ollama,
-        model_id: model_config.model_id.clone(),
-        model_options,
-        use_think: think_enabled,
-        use_debug,
-        use_plain: false,
-        context_window: Some(model_config.num_ctx as usize),
-        system_prompt: Some(system_prompt),
-    }
-    .build_coordinator();
-
-    let mut coordinator = coordinator;
-    if tools_enabled {
-        let (coord_new, tool_count) = register_tools(coordinator, settings, use_debug);
-        coordinator = coord_new;
-        if use_debug {
-            log_debug(&format!("{} tools active", tool_count));
-        }
-    }
-    coordinator
-}
-
-/// Prepare messages with retrieval and optional continuation
-#[allow(clippy::too_many_arguments)]
-async fn prepare_messages(
-    session: &mut ChatSession,
-    db: Option<&Arc<crate::db::Database>>,
-    embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
-    user_input: &str,
-    system_prompt: &str,
-    use_debug: bool,
-    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
-    continuation_tag: Option<&crate::chat::ContinuationTag>,
-) -> Vec<ChatMessage> {
-    let retrieval_config = if session.retrieval_enabled {
-        RetrievalConfig::default()
-    } else {
-        RetrievalConfig {
-            enabled: false,
-            ..RetrievalConfig::default()
-        }
-    };
-
-    let context_result = build_context(
-        session,
-        db,
-        embedding_client,
-        user_input,
-        system_prompt,
-        &retrieval_config,
-        use_debug,
-    )
-    .await;
-
-    if context_result.retrieval_performed {
-        update_retrieval_time(session);
-        if use_debug {
-            log_debug(&format!(
-                "Retrieved {} relevant messages",
-                context_result.retrieved_count
-            ));
-        }
-    }
-
-    let mut messages = context_result.messages;
-    messages.push(ChatMessage::user(user_input.to_string()));
-
-    if let Some(tag) = continuation_tag {
-        let continuation_prompt = build_continuation_prompt(tag);
-        coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
-        if use_debug {
-            log_debug("Injected continuation prompt as ephemeral message");
-        }
-    }
-
-    messages
-}
-
-/// Process chat response into SendMessageResult
-fn process_chat_response(
-    response: ollama_rs::generation::chat::ChatMessageResponse,
-    think_enabled: bool,
-    coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
-    context_window: usize,
-    system_prompt: String,
-) -> SendMessageResult {
-    let content = response.message.content.clone();
-
-    let metrics = if let Some(ref final_data) = response.final_data {
-        TokenMetrics {
-            prompt_tokens: final_data.prompt_eval_count,
-            response_tokens: final_data.eval_count,
-            total_tokens: final_data.prompt_eval_count + final_data.eval_count,
-        }
-    } else {
-        TokenMetrics::default()
-    };
-
-    if think_enabled {
-        display_thinking(&content, response.message.thinking.as_ref(), true);
-    }
-
-    let display_content = strip_thinking_tags(&content);
-    markdown::print_markdown(&display_content);
-
-    let pre_tool = coordinator.take_pre_tool_content();
-    let (pre_tool_content, pre_tool_thinking) = match pre_tool {
-        Some(ptc) => (Some(ptc.content), ptc.thinking),
-        None => (None, None),
-    };
-
-    let (cleaned_response, continuation_needed) =
-        crate::chat::parse_continuation_tag(&display_content);
-
-    if continuation_needed.is_some() {
-        eprint!("\x1B[2K\r");
-        markdown::print_markdown(&cleaned_response);
-    }
-
-    SendMessageResult {
-        response: cleaned_response,
-        pre_tool_content,
-        pre_tool_thinking,
-        metrics,
-        context_window,
-        system_prompt,
-        continuation_needed,
-    }
-}
-
-/// Build a continuation prompt from a continuation tag
-///
-/// Creates a system message that tells the LLM to resume from where it paused
-/// after context compaction.
-fn build_continuation_prompt(tag: &crate::chat::ContinuationTag) -> String {
-    format!(
-        "<continuation_prompt>\n\
-        Context has been compacted. Resume from the checkpoint.\n\
-        \n\
-        Reasoning paused at: {}\n\
-        Next step: {}\n\
-        \n\
-        Continue naturally from where you left off. Do not repeat completed work.\n\
-        </continuation_prompt>",
-        tag.paused_at, tag.next_step
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn send_message(
-    ollama: &ollama_rs::Ollama,
-    model_config: &ModelConfig,
-    session: &mut ChatSession,
-    user_input: &str,
-    tools_enabled: bool,
-    think_enabled: bool,
-    cli_code: bool,
-    settings: &Settings,
-    agents_md: Option<&str>,
-    use_debug: bool,
-    db: Option<&Arc<crate::db::Database>>,
-    embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
-    cli_soulless: bool,
-    continuation_tag: Option<&crate::chat::ContinuationTag>,
-) -> AppResult<SendMessageResult> {
-    let model_options = model_config.build_model_options();
-    let blacklist_set = settings.blacklist_set();
-
-    // Build system prompt
-    let system_prompt = build_session_system_prompt(
-        session,
-        tools_enabled,
-        cli_code,
-        cli_soulless,
-        model_config,
-        &blacklist_set,
-        agents_md,
-    );
-
-    // Check context overflow
-    let context_window = model_config.num_ctx as usize;
-    let overflow_status = check_context_overflow(
-        session,
-        &system_prompt,
-        context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    );
-
-    if overflow_status.needs_compaction() {
-        eprintln!(
-            "\x1B[33m⚠ Context {}% full. Consider using /compact to summarize old messages.\x1B[0m",
-            overflow_status.usage_percent()
-        );
-    } else if use_debug {
-        log_debug(&format!(
-            "Context usage: {} / {} tokens ({:.1}%)",
-            overflow_status.total_tokens(),
-            context_window,
-            overflow_status.usage_percent() as f32
-        ));
-    }
-
-    // Setup coordinator with optional tools
-    let mut coordinator = setup_coordinator(
-        ollama.clone(),
-        model_config,
-        model_options,
-        think_enabled,
-        use_debug,
-        tools_enabled,
-        settings,
-        system_prompt.clone(),
-    );
-
-    // Prepare messages with retrieval and continuation
-    let mut messages = prepare_messages(
-        session,
-        db,
-        embedding_client,
-        user_input,
-        &system_prompt,
-        use_debug,
-        &mut coordinator,
-        continuation_tag,
-    )
-    .await;
-
-    if use_debug {
-        log_debug(&format!("Sending {} messages to model", messages.len()));
-        if session.has_compacted_messages() {
-            log_debug(&format!(
-                "(includes compacted summary of {} messages)",
-                session.compacted_message_count()
-            ));
-        }
-    }
-
-    let spinner = create_spinner("Thinking...");
-
-    let tool_names: Vec<String> = if tools_enabled {
-        get_available_tool_names(settings)
-    } else {
-        vec![]
-    };
-
-    // Execute with retry logic
-    let mut attempts = 0;
-    let result = loop {
-        let current_result = if let (Some(db), Some(embedding)) = (db, embedding_client) {
-            crate::tools::context::with_context(
-                db.clone(),
-                embedding.clone(),
-                coordinator.chat(messages.clone()),
-            )
-            .await
-        } else {
-            coordinator.chat(messages.clone()).await
-        };
-
-        match current_result {
-            Ok(response) => break Ok(response),
-            Err(e) => {
-                let error_str = e.to_string();
-
-                if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
-                    attempts += 1;
-
-                    let recovery_err = classify_error_str(&error_str, &tool_names);
-                    let error_msg = format_recovery_message(&recovery_err);
-
-                    if use_debug {
-                        log_debug(&format!(
-                            "🔧 [Recovery] Attempt {}/{} - {}",
-                            attempts,
-                            MAX_RETRIES,
-                            recovery_err.description()
-                        ));
-                    }
-
-                    messages.push(ChatMessage::tool(error_msg));
-
-                    if attempts == 1 {
-                        finish_spinner(spinner.clone());
-                        eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
-                    }
-
-                    continue;
-                } else {
-                    break Err(error_str);
-                }
-            }
-        }
-    };
-
-    finish_spinner(spinner);
-
-    match result {
-        Ok(response) => Ok(process_chat_response(
-            response,
-            think_enabled,
-            &mut coordinator,
-            context_window,
-            system_prompt,
-        )),
-        Err(e) => Err(e.into()),
-    }
-}
-
-async fn compact_conversation(
-    ollama: &ollama_rs::Ollama,
-    model_config: &ModelConfig,
-    session: &ChatSession,
-    _settings: &Settings,
-    _agents_md: Option<&str>,
-) -> AppResult<(String, Option<(usize, usize)>)> {
-    use crate::context_overflow::get_compaction_range_default;
-
-    if session.messages.is_empty() {
-        return Err("No messages to compact.".into());
-    }
-
-    // Determine which messages to summarize (middle compaction)
-    let (messages_to_summarize, range) = match get_compaction_range_default(session) {
-        Some(suggestion) => {
-            // Middle compaction: preserve first N + last N, summarize middle
-            let middle: Vec<_> = session.messages[suggestion.middle_indices.clone()].to_vec();
-            let range = Some((
-                suggestion.keep_first,
-                session.messages.len() - suggestion.keep_last,
-            ));
-            (middle, range)
-        }
-        None => {
-            // Not enough messages for middle compaction, summarize all
-            let all = session.messages.clone();
-            let range = Some((0, session.messages.len()));
-            (all, range)
-        }
-    };
-
-    // Build conversation text for summarization
-    let mut conversation_text = String::new();
-    for msg in &messages_to_summarize {
-        match msg.role {
-            super::session::MessageRole::User => {
-                conversation_text.push_str(&format!("User: {}\n", msg.content));
-            }
-            super::session::MessageRole::Assistant => {
-                conversation_text.push_str(&format!("Assistant: {}\n", msg.content));
-            }
-            super::session::MessageRole::System => {}
-            super::session::MessageRole::Tool => {
-                conversation_text.push_str(&format!("Tool call: {}\n", msg.content));
-            }
-        }
-    }
-
-    let compact_prompt = format!(
-        r#"Summarize the following conversation concisely in MARKDOWN format.
-
-Use this structure:
-**Key Topics:**
-- Topic 1
-- Topic 2
-
-**Decisions Made:**
-- Decision 1
-- Decision 2
-
-**Technical Details:**
-- Important code/technical info
-
-**Action Items:**
-- [ ] Pending task 1
-- [ ] Pending task 2
-
-Conversation:
-{}
-
-Provide a structured markdown summary that captures the essential context."#,
-        conversation_text
-    );
-
-    let mut model_cfg = model_config.clone();
-    model_cfg.temperature = 0.3;
-    model_cfg.top_p = Some(0.9);
-    let model_options = model_cfg.build_model_options();
-
-    let mut coordinator =
-        CustomCoordinator::new(ollama.clone(), model_config.model_id.clone(), vec![])
-            .options(model_options);
-
-    let messages = vec![
-        ChatMessage::system("You are a helpful assistant that summarizes conversations in clean Markdown format. Always use headers, bullets, and formatting to make the summary readable and scannable.".to_string()),
-        ChatMessage::user(compact_prompt),
-    ];
-
-    let spinner = create_spinner("Compacting...");
-    let result = coordinator.chat(messages).await;
-    finish_spinner(spinner);
-
-    match result {
-        Ok(response) => {
-            let summary = strip_thinking_tags(&response.message.content);
-            Ok((summary, range))
-        }
-        Err(e) => Err(format!("Failed to compact: {}", e).into()),
-    }
-}
+// Helper functions (REPL-specific, not moved to core.rs)
 
 fn print_welcome(
     session: &ChatSession,
@@ -1679,70 +907,6 @@ fn history_path() -> std::path::PathBuf {
         path.join("chat_history.txt")
     } else {
         std::path::PathBuf::from(".chat_history.txt")
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn auto_compact_if_needed(
-    ollama: &ollama_rs::Ollama,
-    model_config: &ModelConfig,
-    session: &mut ChatSession,
-    settings: &Settings,
-    agents_md: Option<&str>,
-    system_prompt: &str,
-    context_window: usize,
-    use_debug: bool,
-) {
-    let status = check_context_overflow(
-        session,
-        system_prompt,
-        context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    );
-
-    if !status.needs_compaction() {
-        return;
-    }
-
-    // Show indicator before starting compaction
-    let urgency = if status.is_overflow() {
-        "urgent"
-    } else {
-        "auto"
-    };
-    eprintln!(
-        "\x1B[33m⏳ Compacting context ({}% full)...\x1B[0m",
-        status.usage_percent()
-    );
-
-    // Attempt auto-compaction
-    match compact_conversation(ollama, model_config, session, settings, agents_md).await {
-        Ok((summary, range)) => {
-            session.set_compacted_summary_with_range(summary, range);
-
-            // Get compacted count
-            let (first_preserved, last_preserved_start) =
-                range.unwrap_or((0, session.messages.len()));
-            let compacted_count = last_preserved_start - first_preserved;
-
-            eprintln!(
-                "\x1B[90m[{}-compacted: {} messages summarized]\x1B[0m",
-                urgency, compacted_count
-            );
-
-            if !session.anonymous
-                && let Err(e) = session.save_sqlite()
-                && use_debug
-            {
-                log_debug(&format!(
-                    "Warning: Could not save session after auto-compact: {}",
-                    e
-                ));
-            }
-        }
-        Err(e) => {
-            eprintln!("\x1B[31mAuto-compaction failed: {}\x1B[0m", e);
-        }
     }
 }
 
