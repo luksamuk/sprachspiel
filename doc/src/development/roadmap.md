@@ -518,15 +518,25 @@ User-defined tools via dynamic loading or compilation.
 ### TUI (Terminal User Interface)
 
 **Priority:** Low  
-**Status:** Research & Planning needed
+**Status:** 🟡 IN PROGRESS (Architecture refactoring)
 
 **Goal:** Build a responsive TUI using Ratatui-rs.
 
-**Tasks:**
+**Architecture Preparation (Current Phase):**
+- ✅ `InputBackend` trait - abstracts input handling (Phase 1-5 complete)
+- ✅ `ChatView` trait - abstracts output rendering
+- ✅ `ReplState` struct - separates state from I/O
+- ✅ `core.rs` - business logic isolated from I/O
+- 📋 Phase 7-9: Command handlers extraction, refactoring, tests
+
+**Future Tasks:**
 - [ ] Research: Ratatui-rs best practices
 - [ ] Research: Terminal resize handling patterns
 - [ ] Design: UX wireframes for main views
-- [ ] Prototype: Basic TUI skeleton
+- [ ] Prototype: `TuiInput` implementing `InputBackend`
+- [ ] Prototype: `TuiView` implementing `ChatView`
+
+**Reference:** See `IMPLEMENTATION.md` - Priority 3 for refactoring progress.
 
 ---
 

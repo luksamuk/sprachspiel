@@ -1,14 +1,27 @@
 # Implementation Plan for ask-ai
 
-**Note**: This document has been reorganized. Detailed technical documentation is now in `doc/src/development/`.
+**Note**: This document tracks implementation status. For strategic direction, see:
 
 ## Quick Links
 
-- [Architecture](./doc/src/development/architecture.md) - Design decisions and system architecture
-- [Roadmap](./doc/src/development/roadmap.md) - Future features and planned improvements
-- [Skills System Design](./doc/src/development/skills-system-design.md) - Skills architecture and implementation
-- [CLI Tools Research](./doc/src/development/cli-tools-research.md) - External tools reference
-- [Contributing](./doc/src/development/contributing.md) - How to contribute to the project
+### Canonical Documents
+
+| Document | Purpose |
+|----------|---------|
+| **[Implementation Directive](./doc/src/development/implementation-directive.md)** | Definitive direction for continuous learning feature |
+| [Architecture](./doc/src/development/architecture.md) | Design decisions and system architecture |
+| [Roadmap](./doc/src/development/roadmap.md) | Current development status and future plans |
+
+### Reference Documents
+
+| Document | Description |
+|----------|-------------|
+| [Skills System Design](./doc/src/development/skills-system-design.md) | Skills architecture |
+| [Research Synthesis](./doc/src/development/research/research-appendix.md) | Complete research synthesis |
+| [Papers Reference](./doc/src/development/research/papers-reference.md) | arXiv links for MemOS, OpenClaw-RL, MemGPT |
+
+### External
+
 - [GitHub Project Board](https://github.com/luksamuk?tab=projects) - Kanban board for task tracking
 
 ## Current Version
@@ -356,39 +369,257 @@ block_list = false  # Allow listing (filenames visible)
 
 ---
 
-### 🟡 PRIORITY 3: Code Quality - run_chat_repl Refactoring
+### 🔴 PRIORITY 3: Code Quality - run_chat_repl Refactoring
 
-**Status:** 📋 PLANNED
+**Status:** ✅ COMPLETED (v0.32.2)
 
-**Goal:** Refactor the oversized `run_chat_repl` function (~1100 lines) into smaller, testable units.
+**Goal:** Refactor the oversized `run_chat_repl` function (~1100 lines) into smaller, testable units with abstractions for future TUI migration.
 
 **Problem:**
 - `run_chat_repl` is 1100+ lines and hard to maintain
 - Complex command handling with 20+ branches
 - Difficult to test individual command behaviors
 - High cognitive load for code reviewers
+- Tight coupling to rustyline (blocks future TUI migration)
 
-**Solution:** Extract logical sections into dedicated functions:
+**Solution:** Extract into layered architecture with traits for input/output abstraction.
 
-| Proposed Function | Lines | Purpose |
-|-------------------|-------|---------|
-| `setup_repl_session()` | ~180 | DB init, session loading, model resolution |
-| `handle_slash_command()` | ~350 | Process `/model`, `/compact`, `/retry`, etc. |
-| `handle_user_message()` | ~280 | Pre-tool check, send_message, continuation |
-| `process_continuation()` | ~100 | Nested continuation loop |
+### Architecture
+
+```
+Layer 0 (Base): input.rs (trait), view.rs (trait) - NO dependencies
+Layer 1 (Session): session.rs, cli.rs
+Layer 2 (Implementations): input/rustyline.rs, view/terminal.rs
+Layer 3 (State): repl_state.rs
+Layer 4 (Core): core.rs, command_handlers.rs
+Layer 5 (Entry): repl.rs (coordinator)
+```
+
+### New Modules
+
+| File | Purpose | Status |
+|------|---------|--------|
+| `src/chat/input/mod.rs` | `InputBackend` trait, `InputResult` | ✅ Done |
+| `src/chat/input/rustyline.rs` | `RustylineInput` implementation | ✅ Done |
+| `src/chat/view/mod.rs` | `ChatView` trait, `TokenMetrics`, `WelcomeInfo` | ✅ Done |
+| `src/chat/view/terminal.rs` | `TerminalView` implementation | ✅ Done |
+| `src/chat/repl_state.rs` | `ReplState` struct, `ReplStateBuilder` | ✅ Done |
+| `src/chat/core.rs` | `send_message`, `compact_conversation`, etc. | ✅ Done |
+| `src/chat/command_handlers.rs` | Command handlers using ReplState | ✅ Done |
+
+### Implementation Phases
+
+| Phase | Module | Description | Status |
+|-------|--------|-------------|--------|
+| 1 | `input/mod.rs` | `InputBackend` trait (empty, for TUI) | ✅ Done |
+| 2 | `view/mod.rs` | `ChatView` trait (empty, for TUI) | ✅ Done |
+| 3 | `repl_state.rs` | Consolidate state variables | ✅ Done |
+| 4 | `input/rustyline.rs` | Implement RustylineInput | ✅ Done |
+| 5 | `view/terminal.rs` | Implement TerminalView | ✅ Done |
+| 6 | `core.rs` | Extract send_message, compact_conversation, etc. | ✅ Done |
+| 7 | `command_handlers.rs` | Extract command handlers | ✅ Done |
+| 8 | `repl.rs` | Refactor to use ReplState + abstractions | ✅ Done |
+| 9 | Tests | Unit tests for refactored modules | ✅ Done |
+
+### Phase Order Rationale
+
+**Why Phase 8 comes before Phase 7:**
+
+The async command handlers in `repl.rs` need ~8 parameters each (session, ollama, model_config, db, embedding_client, etc.). Extracting them now would require:
+
+```rust
+// Before Phase 8 - messy with many parameters
+pub async fn handle_compact(
+    ollama: &Ollama,
+    model_config: &ModelConfig,
+    session: &mut ChatSession,
+    settings: &Settings,
+    agents_md: Option<&str>,
+) -> Result<(), String>
+```
+
+**After Phase 8**, we'll have `ReplState` populated in the REPL loop:
+
+```rust
+// After Phase 8 - clean single parameter
+pub async fn handle_compact(state: &mut ReplState) -> Result<(), String>
+```
+
+`ReplState` (from Phase 3) already contains all the necessary fields. Phase 8 populates it in the REPL loop, then Phase 7 extracts handlers with clean signatures.
+
+### Checkpoint 1 (2026-03-13)
+
+**Completed:** Phases 1-5
+- Input abstraction layer (`InputBackend` trait)
+- Output abstraction layer (`ChatView` trait)
+- RustylineInput implementation with history/completion
+- TerminalView implementation with all output methods
+- ReplState struct with builder pattern
+
+### Checkpoint 2 (2026-03-13)
+
+**Completed:** Phase 6
+- Created `src/chat/core.rs` with:
+  - `TokenMetrics` struct (moved from repl.rs)
+  - `SendMessageResult` struct (moved from repl.rs)
+  - `send_message()` async function
+  - `setup_coordinator()` function
+  - `prepare_messages()` async function
+  - `process_chat_response()` function
+  - `build_session_system_prompt()` function
+  - `build_continuation_prompt()` function
+  - `auto_compact_if_needed()` async function
+  - `compact_conversation()` async function
+- Removed ~600 lines of duplicated code from `repl.rs`
+- Updated `view/mod.rs` to re-export `TokenMetrics` from core
+
+**Next:** Phase 7 - Extract command handlers using `ReplState`
+
+### Checkpoint 3 (2026-03-13)
+
+**Completed:** ReplState extended + Phase order finalized
+- Added `Settings` to `ReplState` struct and `ReplStateBuilder`
+- Documented why Phase 8 comes before Phase 7 (ReplState enables cleaner handler extraction)
+- `repl.rs` reduced from ~1916 to ~1359 lines (557 lines moved to core.rs)
+
+### Checkpoint 4 (2026-03-14) - Phase 8 COMPLETE
+
+**Completed:** Variable migration to ReplState
+- Created `ReplState` at start of `run_chat_repl` (line 318)
+- Migrated all variables to `state.*` references:
+  - [x] `use_debug` → `state.use_debug`
+  - [x] `cli_code` → `state.cli_code`
+  - [x] `cli_soulless` → `state.cli_soulless`
+  - [x] `agents_md` → `state.agents_md`
+  - [x] `tools_active` → `state.tools_active`
+  - [x] `capabilities` → `state.capabilities`
+  - [x] `model_config` → `state.model_config`
+  - [x] `current_model_name` → `state.current_model_name`
+  - [x] `session` → `state.session.*` (fields and methods)
+  - [x] `ollama` → `state.ollama`
+  - [x] `db` → `state.db`
+  - [x] `embedding_client` → `state.embedding_client`
+  - [x] `settings` → `state.settings`
+
+**Commits:**
+- `7a9e3a3` - Add command_handlers.rs placeholder
+- `06b1f8a` - Migrate use_debug, cli_code, cli_soulless, agents_md
+- `0d80f57` - Migrate settings
+- `c3f9c2f` - Migrate ollama, db, embedding_client
+- `038039a` - Migrate tools_active
+- `12b4dcf` - Migrate current_model_name
+- `19ea48c` - Migrate model_config and capabilities
+- `08d6101` - Migrate session
+
+**Phase Order Rationale:**
+- Phase 8 populates `ReplState` in the REPL loop
+- Phase 7 then extracts handlers with clean 1-parameter signatures: `fn handle_xxx(state: &mut ReplState)`
+- Without ReplState, handlers would need 8+ parameters each
+
+**Current State:**
+- Phases 1-8 complete
+- `repl.rs` reduced from ~1916 to ~1080 lines
+- Phase 7 COMPLETE (all handlers extracted)
+
+### Checkpoint 5 (2026-03-14) - Phase 7 COMPLETE ✅
+
+**Completed:** Handler extraction from repl.rs to command_handlers.rs
+- [x] Phase 0: Fixed variable references (`session`, `ollama`, `db`, `agents_md` → `state.*`)
+- [x] Phase 1: Simple handlers (think, tools, retrieval, debug, tool-output)
+- [x] Phase 2: Sync handlers (undo)
+- [x] Phase 3: Async handlers (search, restore, reindex)
+- [x] Phase 4: Complex async handler (compact)
+- [x] Phase 5: Most complex handler (retry)
+
+**Handlers Extracted (11/11 - ALL COMPLETE):**
+| Handler | Type | Status |
+|---------|------|--------|
+| `handle_think_toggled` | sync | ✅ |
+| `handle_tools_toggled` | sync | ✅ |
+| `handle_retrieval_toggled` | sync | ✅ |
+| `handle_tool_output_changed` | sync | ✅ |
+| `handle_debug_toggled` | sync | ✅ |
+| `handle_undo` | sync | ✅ |
+| `handle_search` | async | ✅ |
+| `handle_restore` | sync | ✅ |
+| `handle_reindex` | async | ✅ |
+| `handle_compact` | async | ✅ |
+| `handle_retry` | async | ✅ |
+
+**File Size Reduction:**
+- `repl.rs`: 1380 → 1080 lines (300 lines reduced, 22% reduction)
+- `command_handlers.rs`: 48 → 424 lines (new functionality)
+
+**Commits in this session:**
+- `e37a6c2` - Complete ReplState migration in repl.rs loop
+- `bdc5d5b` - Extract simple command handlers to command_handlers.rs
+- `3758238` - Extract handle_undo to command_handlers.rs
+- `4eb2f48` - Extract async handlers (search, restore, reindex)
+- `96eb775` - Progress update - 9 handlers extracted
+- `66510ee` - Extract handle_compact to command_handlers.rs
+- `aa076eb` - Extract handle_retry to command_handlers.rs
+
+**Phase 7 Complete!** All command handlers have been extracted with clean signatures.
+
+### Checkpoint 6 (2026-03-14) - Phase 9 COMPLETE ✅
+
+**Completed:** Unit tests for command handlers
+- Added 10 unit tests for `command_handlers.rs`
+- Tests cover: think_toggle, tools_toggle, retrieval_toggle, debug_toggle, tool_output_changed, undo
+- All tests pass with `--all-features`
+- Clippy passes with `-D warnings`
+
+**Tests Added:**
+| Test | Coverage |
+|------|----------|
+| `test_handle_think_toggled_unsupported` | Model doesn't support thinking |
+| `test_handle_think_toggled_enabled` | Model supports thinking |
+| `test_handle_tools_toggled_unsupported` | Model doesn't support tools |
+| `test_handle_tools_toggled_supported` | Model supports tools, enable |
+| `test_handle_tools_toggled_disables_when_false` | Disable tools |
+| `test_handle_retrieval_toggled_enabled` | Enable retrieval |
+| `test_handle_retrieval_toggled_disabled` | Disable retrieval |
+| `test_handle_debug_toggled` | Toggle debug mode |
+| `test_handle_tool_output_changed` | Change output level |
+| `test_handle_undo_empty_session` | Undo with empty session |
+
+**Quality Checks:**
+- [x] `cargo build --all-features` - compiles without errors
+- [x] `cargo clippy --all-features -- -D warnings` - no warnings
+- [x] `cargo test --all-features` - 362 tests pass
+- [x] Functional behavior unchanged (handlers extracted, not modified)
+
+**Final File Sizes:**
+| File | Before | After | Change |
+|------|--------|-------|--------|
+| `repl.rs` | 1380 lines | 1080 lines | -300 (22%) |
+| `command_handlers.rs` | 48 lines | 490 lines | +442 (new) |
+
+### TUI Preparation
+
+This refactoring prepares for future `ratatui.rs` TUI:
+
+- `InputBackend` trait enables swapping rustyline for TUI input widget
+- `ChatView` trait enables swapping println for TUI rendering
+- `ReplState` separates state from I/O layer
+- `ChatCore` makes business logic reusable across UIs
+
+See `doc/src/development/roadmap.md` - TUI section for future work.
 
 **Benefits:**
 - Each function under 200 lines
 - Individual behaviors testable in isolation
 - Clearer separation of concerns
+- Input/output abstraction for TUI migration
 - Easier code review for changes
 
-**Challenges:**
-- Commands have different signatures (async/sync, db/no-db)
-- Mutable state shared across functions (session, capabilities)
-- Some commands need early return/exit
+**Estimate:** 16-24 hours → **COMPLETE** (24h total)
 
-**Estimate:** 1-2 days
+**Branch:** `refactor/run-chat-repl-decoupling`
+
+**PR:** [#19](https://github.com/luksamuk/ask-ai-rs/pull/19)
+
+**Issue:** [#7](https://github.com/luksamuk/ask-ai-rs/issues/7)
 
 ---
 

@@ -228,6 +228,24 @@ pub struct SearchResult {
 
 ### 6. Chat Mode
 
+#### Architecture (Layers)
+
+The chat REPL follows a layered architecture for maintainability and future TUI compatibility:
+
+```
+Layer 5: repl.rs           - Entry point, coordinator
+Layer 4: core.rs           - Business logic (send_message, compact)
+Layer 3: repl_state.rs     - State management (ReplState)
+Layer 2: input/rustyline.rs, view/terminal.rs - I/O implementations
+Layer 1: session.rs, cli.rs - Session and CLI handling
+Layer 0: input/mod.rs, view/mod.rs - Traits (abstractions)
+```
+
+This separation enables:
+- **Testing**: Each layer can be tested in isolation
+- **TUI Migration**: Swap rustyline for ratatui input/output
+- **Maintainability**: 200-400 line modules vs 1100+ line function
+
 #### Session Management (`src/chat/session.rs`)
 
 ```rust
@@ -562,8 +580,16 @@ ask-ai/
 │   │   └── personality.rs
 │   ├── chat/                # Chat mode
 │   │   ├── mod.rs
-│   │   ├── repl.rs          # Interactive loop
+│   │   ├── repl.rs          # Interactive loop (coordinator)
+│   │   ├── core.rs          # Core business logic
 │   │   ├── session.rs       # Session state
+│   │   ├── repl_state.rs    # ReplState struct (state management)
+│   │   ├── input/           # Input abstraction layer
+│   │   │   ├── mod.rs       # InputBackend trait
+│   │   │   └── rustyline.rs # RustylineInput implementation
+│   │   ├── view/            # Output abstraction layer
+│   │   │   ├── mod.rs       # ChatView trait
+│   │   │   └── terminal.rs  # TerminalView implementation
 │   │   ├── history.rs       # Legacy JSON storage (for /restore)
 │   │   ├── model_switch.rs  # Centralized switching
 │   │   ├── custom_coordinator.rs  # Pre-tool content + ephemeral messages

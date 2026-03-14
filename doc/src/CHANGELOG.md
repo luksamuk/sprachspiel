@@ -2,6 +2,18 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Chat Architecture Refactoring** - Preparing for TUI migration
+  - `InputBackend` trait - abstracts input handling (rustyline/ratatui)
+  - `ChatView` trait - abstracts output rendering
+  - `ReplState` struct - consolidates mutable REPL state
+  - `core.rs` module - extracted business logic from `repl.rs`
+  - Layers: Input/View traits → Session → Implementations → State → Core → REPL
+  - Moved ~600 lines from `repl.rs` to `core.rs` for maintainability
+
 ## [0.32.1] - 2026-03-13
 
 ### Fixed

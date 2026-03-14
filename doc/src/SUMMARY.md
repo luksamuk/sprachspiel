@@ -24,25 +24,37 @@
 
 # Development
 
-- [Development](./development/README.md)
-  - [Architecture](./development/architecture.md)
-  - [Roadmap](./development/roadmap.md)
-  - [Skills System Design](./development/skills-system-design.md)
-  - [File Write Tools](./development/file-write-tools.md)
-  - [CLI Tools Research](./development/cli-tools-research.md)
-  - [Planning Session: CLI Tools](./development/planning-session-cli-tools.md)
-  - [run_command Redesign](./development/run-command-redesign.md)
-  - [Implementation History](./development/implementation-history.md)
-  - [Chat Mode Design](./development/chat-mode-design.md)
-  - [Anatomy of Context](./development/context-anatomy.md)
-  - [Context Composition Design](./development/context_composition_design.md)
-  - [Context Continuity](./development/context-continuity.md)
-  - [Retrieval Design](./development/retrieval-design.md)
-  - [Context Management Research](./development/context_management_research.md)
-  - [Code Mode Research](./development/code_mode_research.md)
-  - [Prompt Refactoring](./development/prompt-refactor.md)
-  - [Effective Agents Analysis](./development/effective-agents-analysis.md)
-  - [Contributing](./development/contributing.md)
+- [Overview](./development/README.md)
+- [Implementation Directive](./development/implementation-directive.md)
+- [Architecture](./development/architecture.md)
+- [Roadmap](./development/roadmap.md)
+- [Skills System Design](./development/skills-system-design.md)
+- [File Write Tools](./development/file-write-tools.md)
+- [Context Continuity](./development/context-continuity.md)
+- [Chat Mode Design](./development/chat-mode-design.md)
+- [Contributing](./development/contributing.md)
+
+## Research Background
+
+- [Research Index](./development/research/index.md)
+  - [Papers Reference](./development/research/papers-reference.md)
+  - [Research Synthesis](./development/research/research-appendix.md)
+  - [OpenClaw-RL Analysis](./development/research/openclaw-rl-analysis.md)
+  - [Effective Agents Analysis](./development/research/effective-agents-analysis.md)
+  - [Context Management Research](./development/research/context_management_research.md)
+
+## Additional Documentation
+
+- [CLI Tools Research](./development/cli-tools-research.md)
+- [Run Command Redesign](./development/run-command-redesign.md)
+- [Planning Session: CLI Tools](./development/planning-session-cli-tools.md)
+- [Context Anatomy](./development/context-anatomy.md)
+- [Context Composition Design](./development/context_composition_design.md)
+- [Retrieval Design](./development/retrieval-design.md)
+- [Code Mode Research](./development/code_mode_research.md)
+- [Prompt Refactoring](./development/prompt-refactor.md)
+- [Source Attribution Plan](./development/plan-source-attribution.md)
+- [Implementation History](./development/implementation-history.md)
 
 ---
 
