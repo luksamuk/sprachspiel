@@ -1215,34 +1215,62 @@ The project uses a GitHub Project board for task tracking. When working on tasks
 
 ## Pull Request Review Process
 
-### Responding to Review Comments
+### Before Responding to Reviews
 
-When responding to PR review comments, **always reply to each thread individually**, not in a single summary comment.
+1. **Fetch the latest code state** - Ensure local code matches the PR branch
+2. **Read the changed files** - Understand context before responding
+3. **Verify the comments match the code** - Line numbers may shift between commits
 
-**Why this matters:**
-- Each comment needs its own reply for the reviewer to mark as "resolved"
-- A single summary comment cannot be marked as resolved per-thread
-- Thread-specific replies keep the review organized and actionable
+### Getting All Review Threads
 
-**How to reply to review threads using GitHub API:**
+**CRITICAL:** Always use `last: 50` (not `first: 30`) to get ALL threads. Using `first` may miss newer comments.
 
 ```bash
-# Get review thread IDs
+# Get ALL review thread IDs (use 'last' not 'first')
 gh api graphql -f query='
 query {
   repository(owner: "OWNER", name: "REPO") {
     pullRequest(number: PR_NUMBER) {
-      reviewThreads(first: 30) {
+      reviewThreads(last: 50) {
+        totalCount
         nodes {
           id
           path
+          line
           comments(first: 1) { nodes { body } }
         }
       }
     }
   }
 }'
+```
 
+**Verify thread count:** Check that `totalCount` matches the number of nodes returned. If `first: 30` was used and there are 35 threads, 5 would be missed!
+
+### Responding to Each Thread
+
+**Always reply to each thread individually**, not in a single summary comment.
+
+**Why this matters:**
+- Each comment needs its own reply for the reviewer to mark as "resolved"
+- A single summary comment cannot be marked as resolved per-thread
+- Thread-specific replies keep the review organized and actionable
+
+### Response Types
+
+Use the appropriate prefix based on the disposition:
+
+| Prefix | Meaning | When to Use |
+|--------|---------|-------------|
+| ✅ Resolvido | Code fixed/removed | Changed code to address the comment |
+| ✅ Verificado | Code is correct as-is | Confirmed the code behavior is intentional |
+| 📋 | Acknowledged, deferred | Good suggestion, will address in future PR |
+| ❌ | Declined | Suggestion not applicable, with explanation |
+| ❓ | Clarification needed | Question about the comment |
+
+### Reply Command
+
+```bash
 # Reply to a specific thread
 gh api graphql -f query='
 mutation {
@@ -1255,13 +1283,7 @@ mutation {
 }'
 ```
 
-**Response format:**
-- Start with ✅ or ❌ to indicate resolution status
-- Briefly explain what was done (removed, fixed, documented, etc.)
-- Reference specific commit if applicable
-- If declining a suggestion, explain why clearly
-
-**Example responses:**
+### Example Responses
 
 ```
 ✅ Resolvido. O campo `agents_md` é usado em `repl.rs` via `state.agents_md.as_deref()`.
@@ -1270,8 +1292,29 @@ mutation {
 
 ✅ Verificado. `#[allow(clippy::too_many_arguments)]` é necessário - a função tem 8 parâmetros e o limite do Clippy é 7.
 
-❌ Não aplicável. Este padrão `const { Cell::new(false) }` é válido desde Rust 1.79+.
+📋 Boa sugestão! Mover para `prompts.rs` é uma melhoria de organização. Pode ser feito em uma refatoração subsequente.
+
+❌ Não aplicável. Este padrão `const { Cell::new(false) }` é válido desde Rust 1.79+ - é a forma recomendada para thread_local.
+
+❓ Você pode elaborar? Não entendi bem o que está sugerindo aqui.
 ```
+
+### After Responding to All Threads
+
+1. **Verify count:** Ensure all `totalCount` threads have been replied to
+2. **Check for missed files:** Reviewers may comment on files you didn't check
+3. **Commit changes if needed:** If code was modified, commit and push
+4. **Inform the user:** Let them know all threads have been responded to
+
+### Common Review Comment Categories
+
+| Category | Response Type | Example |
+|----------|---------------|---------|
+| `#[allow(dead_code)]` removal | ✅ Resolvido | "Code removed/found usage" |
+| Code simplification | ✅ Resolvido or 📋 | "Refactored" or "Deferred to future PR" |
+| Architecture improvement | 📋 | "Good suggestion, will address separately" |
+| Bug fix | ✅ Resolvido | "Fixed in commit abc1234" |
+| Question/clarification | ❓ or ✅ Verificado | "Answer is..." or "Verified behavior is correct" |
 
 ## Never Leave Things for Later
 
