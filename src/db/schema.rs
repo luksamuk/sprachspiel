@@ -7,9 +7,10 @@
 //! - message_embeddings virtual table (vec0)
 //! - messages_fts virtual table (FTS5)
 //! - session_todos table (for task tracking)
+//! - facts table (factual memory system, v6)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 5;
+pub const SCHEMA_VERSION: i32 = 6;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -135,6 +136,66 @@ CREATE TABLE IF NOT EXISTS session_todos (
 -- Index for todo lookup by conversation
 CREATE INDEX IF NOT EXISTS idx_todos_conversation 
     ON session_todos(conversation_id);
+
+-- Facts table (factual memory system, added in v6)
+CREATE TABLE IF NOT EXISTS facts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    
+    -- Classification
+    scope TEXT NOT NULL CHECK(scope IN ('project', 'global')),
+    category TEXT NOT NULL CHECK(category IN ('preference', 'fact')),
+    
+    -- Content (application validates <= 500 chars)
+    content TEXT NOT NULL,
+    
+    -- Decay parameters
+    importance REAL DEFAULT 0.5 CHECK(importance BETWEEN 0 AND 1),
+    access_count INTEGER DEFAULT 0,
+    decay_score REAL DEFAULT 1.0,
+    
+    -- Timestamps (INTEGER = Unix epoch seconds)
+    created_at INTEGER NOT NULL,
+    last_accessed INTEGER NOT NULL,
+    
+    -- Source tracking
+    source TEXT DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+    
+    -- Conflict resolution (soft delete)
+    invalidated_at INTEGER,
+    
+    -- Project association (NULL for global facts)
+    project_id TEXT
+);
+
+-- Full-text search for facts (keyword matching)
+CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
+    content,
+    content='facts',
+    content_rowid='id',
+    tokenize='porter unicode61'
+);
+
+-- Triggers to keep FTS in sync
+CREATE TRIGGER IF NOT EXISTS facts_ai AFTER INSERT ON facts BEGIN
+    INSERT INTO facts_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
+    INSERT INTO facts_fts(facts_fts, rowid, content) 
+    VALUES('delete', old.id, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS facts_au AFTER UPDATE ON facts BEGIN
+    INSERT INTO facts_fts(facts_fts, rowid, content) 
+    VALUES('delete', old.id, old.content);
+    INSERT INTO facts_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+-- Indexes for facts
+CREATE INDEX IF NOT EXISTS idx_facts_scope_category ON facts(scope, category);
+CREATE INDEX IF NOT EXISTS idx_facts_decay ON facts(decay_score) WHERE invalidated_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 'project';
+CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
 "#;
 
 /// Version check query
