@@ -5,18 +5,12 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::facts::classify::classify_fact;
-use crate::facts::conflict::{detect_conflicts, resolve_conflict};
-use crate::facts::types::{Category, Fact, Scope, Source};
+use crate::facts::conflict::{detect_conflicts, resolve_conflict, CONFLICT_THRESHOLD};
+use crate::facts::types::{Category, Fact, Scope, Source, MAX_FACT_CONTENT_SIZE};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
 use crate::utils::parse_bounded_number;
 use ollama_rs::function;
-
-/// Maximum content length for facts
-const MAX_CONTENT_LENGTH: usize = 500;
-
-/// Similarity threshold for conflict detection (0.0 to 1.0)
-const CONFLICT_THRESHOLD: f32 = 0.8;
 
 /// Parse fact ID from various formats ("42" or "fact:42")
 fn parse_fact_id(id: &str) -> Result<i64, String> {
@@ -87,11 +81,11 @@ pub async fn fact_add(
         return Ok(err.to_string());
     }
 
-    if content.len() > MAX_CONTENT_LENGTH {
+    if content.len() > MAX_FACT_CONTENT_SIZE {
         let err = format!(
             "Error: Fact content exceeds {} characters (got {} characters). \
              Please shorten your fact or split it into multiple facts.",
-            MAX_CONTENT_LENGTH,
+            MAX_FACT_CONTENT_SIZE,
             content.len()
         );
         log_tool_result("fact_add", &err);

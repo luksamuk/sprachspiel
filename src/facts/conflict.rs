@@ -6,6 +6,9 @@
 use super::db::FactSearchResult;
 use super::types::{Category, Fact};
 
+/// Default threshold for conflict detection (similarity score 0.0-1.0)
+pub const CONFLICT_THRESHOLD: f32 = 0.8;
+
 /// Type of conflict detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictType {

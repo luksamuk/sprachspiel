@@ -23,20 +23,20 @@ Ask-AI has four layers of memory that work together to provide context-aware res
 
 ```mermaid
 graph TB
-    subgraph Layer1["Layer 1: Session Memory (Volatile)"]
+    subgraph Layer1["Layer 1: Session Memory"]
         A1["Messages in RAM"]
         A2["Lost on exit"]
         A3["Current conversation only"]
     end
     
-    subgraph Layer2["Layer 2: Conversation Memory (Persistent)"]
+    subgraph Layer2["Layer 2: Conversation Memory"]
         B1["SQLite Database"]
         B2["Message Embeddings"]
         B3["FTS5 Keyword Index"]
         B4["Semantic Retrieval"]
     end
     
-    subgraph Layer3["Layer 3: Factual Memory (Long-term)"]
+    subgraph Layer3["Layer 3: Factual Memory"]
         C1["Facts Table"]
         C2["FTS5 Facts Index"]
         C3["Decay System"]
@@ -53,9 +53,9 @@ graph TB
         D7["Current Query"]
     end
     
-    Layer1 -->|"persist"| Layer2
-    Layer2 -->|"retrieve"| Layer4
-    Layer3 -->|"inject"| Layer4
+    Layer1 --> Layer2
+    Layer2 --> Layer4
+    Layer3 --> Layer4
     
     style Layer1 fill:#ffcdd2,stroke:#c62828,color:#b71c1c
     style Layer2 fill:#fff3e0,stroke:#ef6c00,color:#e65100
@@ -279,8 +279,8 @@ Retention = e^(-t / half_life)
 graph LR
     A[New Fact] --> B[Search Similar FTS5]
     B --> C{Similarity Score}
-    C -->|> 0.95| D{Contradiction?}
-    C -->|< 0.95| E[Insert New]
+    C -->|Greater than 0.95| D{Contradiction?}
+    C -->|Less than 0.95| E[Insert New]
     D -->|Yes| F[Update Existing]
     D -->|No| G[Skip Duplicate]
     

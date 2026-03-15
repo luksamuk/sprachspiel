@@ -401,11 +401,9 @@ pub fn handle_fact_prune(state: &ReplState) {
 /// Adds a new fact to the database.
 /// Includes conflict detection (Phase 0.7).
 pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
-    use crate::facts::types::{Category, Fact, Scope, Source};
+    use crate::facts::types::{Category, Fact, Scope, Source, MAX_FACT_CONTENT_SIZE};
     use crate::facts::classify::classify_fact;
-    use crate::facts::conflict::{detect_conflicts, resolve_conflict};
-
-    const CONFLICT_THRESHOLD: f32 = 0.8;
+    use crate::facts::conflict::{detect_conflicts, resolve_conflict, CONFLICT_THRESHOLD};
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
@@ -421,8 +419,8 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
     }
 
     // Validate content length
-    if content.len() > 500 {
-        eprintln!("\x1B[31m✗ Fact content exceeds 500 character limit.\x1B[0m");
+    if content.len() > MAX_FACT_CONTENT_SIZE {
+        eprintln!("\x1B[31m✗ Fact content exceeds {} character limit.\x1B[0m", MAX_FACT_CONTENT_SIZE);
         println!("  Current length: {} characters", content.len());
         println!("  Use shorter content or split into multiple facts.");
         return;

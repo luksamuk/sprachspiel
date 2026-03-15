@@ -3,8 +3,9 @@
 //! Provides a simple todo list for tracking tasks during a chat session.
 //! The model can use todo tools to manage tasks explicitly, reducing the
 //! need to search through conversation history.
-
-#![allow(dead_code)]
+//!
+//! NOTE: This module is implemented but not yet integrated into the chat flow.
+//! See GitHub issue for activation details.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -144,30 +145,25 @@ impl TodoState {
     }
 
     /// Get a task by ID
-    ///
-    /// Part of the public API for external consumers, even though
-    /// currently only used in tests.
+    #[allow(dead_code)]
     pub fn get(&self, id: usize) -> Option<&Task> {
         self.tasks.iter().find(|t| t.id == id)
     }
 
     /// Count tasks by status
+    #[allow(dead_code)]
     pub fn count_by_status(&self, status: TaskStatus) -> usize {
         self.tasks.iter().filter(|t| t.status == status).count()
     }
 
     /// Count total tasks
-    ///
-    /// Part of the public API for external consumers, even though
-    /// currently only used in tests.
+    #[allow(dead_code)]
     pub fn count(&self) -> usize {
         self.tasks.len()
     }
 
     /// Check if the list is empty
-    ///
-    /// Part of the public API for external consumers, even though
-    /// currently only used in tests.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
     }

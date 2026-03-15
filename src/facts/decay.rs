@@ -2,10 +2,11 @@
 //!
 //! Based on Ebbinghaus forgetting curve with access reinforcement.
 //!
-//! NOTE: This module is used in Phase 0.5 (Decay startup + /fact prune).
-//! Functions here are intentionally kept for future use.
-
-#![allow(dead_code)]
+//! NOTE: Some functions in this module are kept for future use:
+//! - `get_half_life`: Used in tests and public API
+//! - `compute_retention`: Used in tests and public API
+//! - `should_prune`: Used in db.rs for decay cycle
+//! - Test functions: Kept for future debugging
 
 use super::types::{Category, Fact};
 use chrono::{DateTime, Utc};
@@ -92,6 +93,7 @@ pub fn should_prune(fact: &Fact, now: DateTime<Utc>) -> bool {
 }
 
 /// Update fact access (increment count and update timestamp).
+#[allow(dead_code)]
 pub fn on_fact_access(fact: &mut Fact) {
     fact.access_count += 1;
     fact.last_accessed = Utc::now();

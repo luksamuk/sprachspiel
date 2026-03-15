@@ -257,11 +257,11 @@ Based on the [Ebbinghaus forgetting curve](https://en.wikipedia.org/wiki/Forgett
 graph LR
     A[Fact Created] --> B[decay_score = 1.0]
     B --> C{Time Passes}
-    C --> D[Decay: R = 2^(-t/half_life)]
-    D --> E{R < 5%?}
+    C --> D[Decay calculation]
+    D --> E{Retention less than 5%?}
     E -->|Yes| F[Prune]
     E -->|No| G{Accessed?}
-    G -->|Yes| H[Boost: +10% per access]
+    G -->|Yes| H[Boost: 10% per access]
     G -->|No| C
     H --> C
     

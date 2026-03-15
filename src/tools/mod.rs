@@ -57,9 +57,7 @@ pub use system::*;
 pub use todo::*;
 pub use weather::*;
 
-// Fact tools (always available)
-#[allow(unused_imports)]
-pub use fact_tools::*;
+// Fact tools are imported directly by tools/registry.rs
 
 // External tool wrappers (always available)
 pub use run_cmd::run_command;
