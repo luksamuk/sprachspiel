@@ -358,6 +358,44 @@ pub async fn handle_retry(state: &mut ReplState) {
     }
 }
 
+/// Handle fact prune command
+///
+/// Runs the decay cycle and prunes old facts.
+pub fn handle_fact_prune(state: &ReplState) {
+    use crate::facts::db::DecayStats;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot prune facts in anonymous mode.");
+        return;
+    }
+
+    println!("\x1B[33m⏳ Running facts decay cycle...\x1B[0m");
+
+    match db.run_decay_cycle() {
+        Ok(DecayStats { pruned, remaining }) => {
+            if pruned > 0 {
+                println!(
+                    "\x1B[32m✓ Pruned {} old fact(s), {} remaining.\x1B[0m",
+                    pruned, remaining
+                );
+            } else {
+                println!("\x1B[32m✓ No facts to prune. {} fact(s) remaining.\x1B[0m", remaining);
+            }
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to prune facts: {}\x1B[0m", e);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::session::ChatSession;

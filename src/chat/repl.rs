@@ -19,12 +19,14 @@ use super::command_handlers::{
     handle_think_toggled, handle_tools_toggled, handle_retrieval_toggled,
     handle_tool_output_changed, handle_debug_toggled, handle_undo,
     handle_search, handle_restore, handle_reindex, handle_compact, handle_retry,
+    handle_fact_prune,
 };
 use super::core::{auto_compact_if_needed, send_message};
 use super::input::{InputBackend, InputResult, RustylineInput};
 use super::session::ChatSession;
 use super::view::TerminalView;
 use crate::project::get_project_id;
+use crate::facts::db::DecayStats;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -113,6 +115,25 @@ pub async fn run_chat_repl(
                 "Migrated {} session(s) from JSON to SQLite",
                 migration_stats.sessions_migrated
             ));
+        }
+    }
+
+    // Run facts decay cycle on startup (prune old facts)
+    if let Some(db_ref) = &db
+        && !args.anonymous
+    {
+        match db_ref.run_decay_cycle() {
+            Ok(DecayStats { pruned, remaining }) => {
+                if pruned > 0 {
+                    log_debug(&format!(
+                        "Facts decay: pruned {} old facts, {} remaining",
+                        pruned, remaining
+                    ));
+                }
+            }
+            Err(e) => {
+                log_debug(&format!("Warning: Facts decay cycle failed: {}", e));
+            }
         }
     }
 
@@ -465,6 +486,10 @@ pub async fn run_chat_repl(
                                 }
                                 CommandResult::Reindex { conversation_id } => {
                                     handle_reindex(&mut state, conversation_id).await;
+                                    continue;
+                                }
+                                CommandResult::FactPrune => {
+                                    handle_fact_prune(&state);
                                     continue;
                                 }
                             }

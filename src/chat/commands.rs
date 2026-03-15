@@ -39,6 +39,8 @@ pub enum CommandResult {
     Reindex { conversation_id: Option<String> },
     /// Toggle retrieval mode (returns new state)
     RetrievalToggled(bool),
+    /// Prune old facts using decay cycle
+    FactPrune,
 }
 
 /// Parsed chat command
@@ -95,6 +97,8 @@ pub enum ChatCommand {
     Reindex { conversation_id: Option<String> },
     /// Toggle retrieval mode
     Retrieval,
+    /// Prune old facts using decay cycle
+    FactPrune,
 }
 
 /// Export format for /export command
@@ -220,6 +224,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             ChatCommand::Reindex { conversation_id }
         }
         "retrieval" => ChatCommand::Retrieval,
+        "fact prune" | "fp" => ChatCommand::FactPrune,
         _ => return Some(Err(format!("Unknown command: /{}", cmd))),
     };
 
@@ -460,6 +465,8 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
             session.retrieval_enabled = !session.retrieval_enabled;
             CommandResult::RetrievalToggled(session.retrieval_enabled)
         }
+
+        ChatCommand::FactPrune => CommandResult::FactPrune,
     }
 }
 
@@ -489,13 +496,14 @@ fn print_help() {
   /restore <id>    Restore session from JSON to SQLite
   /reindex [id]    Rebuild embeddings for semantic search
   /retrieval       Toggle semantic retrieval from conversation history
+  /fact prune      Prune old facts using decay cycle
 
 Shortcuts:
   /q = /quit, /c = /clear, /h = /help
   /m = /model, /s = /system, /l = /load
   /t = /think, /e = /export, /ls = /list, /i = /info
   /r = /retry, /to = /tools-output, /u = /undo
-  /ctx = /context, /f = /search"#
+  /ctx = /context, /f = /search, /fp = /fact prune"#
     );
 }
 

@@ -1,6 +1,6 @@
 # Factual Memory System Design
 
-**Status:** IN PROGRESS  
+**Status:** IN PROGRESS (Phase 0.5 complete)  
 **Priority:** P0 (before Feedback System)  
 **Created:** 2026-03-14  
 **Updated:** 2026-03-15  
@@ -615,11 +615,13 @@ if let Some(facts) = &self.facts {
 - Ordering: preferences first, then facts, by creation date
 - Truncated to MAX_TOTAL_FACTS_CHARS (2200) with Unicode-safe truncation
 
-### Phase 0.5: Decay & Prune (0.5 day) 📋
+### Phase 0.5: Decay & Prune (0.5 day) ✅ DONE
 
-- Startup decay run
-- `/fact prune` command
-- Decay statistics logging
+- Startup decay run in `src/chat/repl.rs` after database initialization
+- `/fact prune` command (shortcut `/fp`) for manual decay trigger
+- Decay statistics logged in debug mode
+- `CommandResult::FactPrune` and `ChatCommand::FactPrune` added
+- `handle_fact_prune()` handler in `command_handlers.rs`
 
 ### Phase 0.6: User Commands (0.5 day) 📋
 
@@ -641,7 +643,7 @@ if let Some(facts) = &self.facts {
 - Update `IMPLEMENTATION.md`
 - Update user documentation
 
-**Total Estimate:** 5 days **(2.5 days completed)**
+**Total Estimate:** 5 days **(3 days completed)**
 
 ---
 
