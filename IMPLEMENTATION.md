@@ -196,17 +196,98 @@ fact_remove(id)                       // LLM removes incorrect facts
 /fact search <query>          // Find facts
 ```
 
-**Related:** Issue #7, Roadmap: TUI (Priority: Low)
+**Related:** Issue #20
 
 ---
 
-### 🔴 PRIORITY 1: Feedback Infrastructure
+### 🔴 PRIORITY 1: Code Quality - Prompts Centralization
+
+**Status:** 📋 PLANNED
+
+**Goal:** Centralize all prompts in `prompts.rs` for maintainability.
+
+**Problem:**
+- Prompts for compaction and continuation are embedded in `core.rs`
+- Difficult to find and modify prompts scattered across files
+- Inconsistent prompt management
+
+**Solution:** Move prompts to centralized location in `prompts.rs`.
+
+**Tasks:**
+
+| Task | File | Line | Status |
+|------|------|------|--------|
+| Move compaction prompt | `core.rs` | ~555 | ❌ |
+| Move continuation prompt | `core.rs` | ~591 | ❌ |
+| Create prompt builder functions | `prompts.rs` | - | ❌ |
+| Update core.rs to use centralized prompts | `core.rs` | - | ❌ |
+
+**Estimated effort:** 0.5 day
+
+**Related:** Issue #21
+
+---
+
+### 🔴 PRIORITY 1: Code Quality - REPL Complexity Reduction
+
+**Status:** 📋 PLANNED
+
+**Goal:** Reduce cyclomatic complexity of `run_chat_repl` function.
+
+**Problem:**
+- `run_chat_repl` still has high cyclomatic complexity
+- Multiple responsibilities in single function
+- Long function with many branches
+- Difficult to test individual behaviors
+
+**Solution:** Continue refactoring with Command/Handler pattern and proper separation.
+
+**Tasks:**
+
+| Task | Description | Status |
+|------|-------------|--------|
+| Extract processing logic | Move input processing to separate function | ❌ |
+| Simplify main loop | Reduce branches in REPL loop | ❌ |
+| Consider middleware pattern | For logging, metrics, compaction hooks | ❌ |
+| Evaluate Command pattern | For cleaner dispatch of handlers | ❌ |
+
+**Estimated effort:** 2-3 days
+
+**Related:** Issue #22
+
+---
+
+### 🔴 PRIORITY 2: Notes System
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Persistent notes with semantic search.
+
+**Features:**
+- `/note add/list/show/edit/delete` commands
+- Note storage with embeddings
+- Update context builder for note results
+- Add `SourceType::Note` to retrieval system
+
+**Dependencies:** None
+
+**Estimated effort:** 2-3 days
+
+**Reference:** `doc/src/development/planning-session-cli-tools.md` lines 157-160, 303-311
+
+**Related:** Issue #6
+
+---
+
+### 🔴 PRIORITY 2: Feedback Infrastructure
 
 **Status:** 📋 PLANNED (depends on: Factual Memory)
 
 **Goal:** Capture explicit and implicit feedback signals.
 
 **Documentation:** See [Implementation Directive](./doc/src/development/implementation-directive.md) for complete design.
+
+**Related:** Issue #23
 
 **Key Insight:** Feedback improves *how we retrieve* past messages. Factual Memory provides *what we know* about the user. Both layers work together:
 
@@ -233,11 +314,11 @@ Context Assembly:
 | 1.6 | Decay implementation | 1 day |
 | **Total** | | **8.5 days** |
 
-**Related:** [Implementation Directive](./doc/src/development/implementation-directive.md)
+**Related:** Issue #23
 
 ---
 
-**Status:** ✅ COMPLETED (v0.31.0)
+### ✅ PRIORITY 2: Context Continuation (COMPLETED)
 
 **Goal:** Enable LLM to gracefully pause reasoning when context fills up, then automatically continue after compaction.
 
@@ -398,7 +479,7 @@ pub struct ContinuationTag {
 
 ---
 
-### ✅ PRIORITY 2: File Write Tools (COMPLETED)
+### 🔴 PRIORITY 2: File Write Tools (COMPLETED)
 
 **Status:** ✅ COMPLETED (v0.32.0)
 
@@ -455,29 +536,9 @@ block_list = false  # Allow listing (filenames visible)
 
 ---
 
-### 🔴 PRIORITY 3: Notes System
-
-**Status:** ❌ NOT STARTED
-
-**Goal:** Persistent notes with semantic search.
-
-**Features:**
-- `/note add/list/show/edit/delete` commands
-- Note storage with embeddings
-- Update context builder for note results
-- Add `SourceType::Note` to retrieval system
-
-**Dependencies:** None
-
-**Estimated effort:** 2-3 days
-
-**Reference:** `doc/src/development/planning-session-cli-tools.md` lines 157-160, 303-311
-
----
-
 ### 🔴 PRIORITY 3: Code Quality - run_chat_repl Refactoring
 
-**Status:** ✅ COMPLETED (v0.32.2)
+**Status:** 🔄 IN PROGRESS (PR #19 under review)
 
 **Goal:** Refactor the oversized `run_chat_repl` function (~1100 lines) into smaller, testable units with abstractions for future TUI migration.
 
