@@ -47,7 +47,7 @@ This document outlines planned features and the current state of Ask-AI.
   - Nested continuations (up to 3 levels)
   - Context status injected into prompts
 
-**Tools (28 total):**
+**Tools (31 total):**
 
 | Category | Count | Feature Flag | Default |
 |----------|-------|--------------|---------|
@@ -58,9 +58,21 @@ This document outlines planned features and the current state of Ask-AI.
 | Web Search (Serper) | 2 | `serper-tools` | ✅ Enabled |
 | Web Search (DDG) | 3 | `search-tools` | ❌ Disabled |
 | System | 2 | `system-tools` | ✅ Enabled |
+| Factual Memory | 3 | (always on) | ✅ Enabled |
 | LED Control | 5 | `led-tools` | ❌ Disabled* |
 
 *LED tools require `[led]` configuration in config.toml.
+
+**Factual Memory (v0.33.0):**
+- Persistent fact storage across sessions
+- User commands: `/fact add`, `/fact list`, `/fact search`, `/fact remove`, `/fact prune`
+- LLM tools: `fact_add`, `fact_search`, `fact_remove` for autonomous fact management
+- Heuristic classification: preferences vs facts
+- Scope: project-specific vs global facts
+- Conflict resolution: duplicate detection, contradiction handling
+- Automatic decay: Ebbinghaus forgetting curve (180d preferences, 30d facts)
+- FTS5 full-text search with BM25 scoring
+- Prompt injection: Facts injected into system prompt (max 2200 chars)
 
 **Planned: File Write Tools (Priority 2):**
 
