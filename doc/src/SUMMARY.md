@@ -46,10 +46,11 @@
   - [Effective Agents Analysis](./development/research/effective-agents-analysis.md)
   - [Context Management Research](./development/research/context_management_research.md)
 
-## Archived Documentation
+## Legacy Documentation
 
-- [Context Composition Design (LEGACY)](./development/context_composition_design.md)
-- [Retrieval Design (LEGACY)](./development/retrieval-design.md)
+- [Legacy Overview](./development/legacy.md) — What is legacy documentation and when to use it
+  - [Context Composition Design](./development/context_composition_design.md)
+  - [Retrieval Design](./development/retrieval-design.md)
 
 ## Additional Documentation
 

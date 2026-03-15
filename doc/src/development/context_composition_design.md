@@ -1,10 +1,8 @@
 # Context Composition Design (v0.21.0)
 
-**Status:** ⚠️ LEGACY  
-**Archived:** 2026-03-15  
-**Replaced by:** [Memory Architecture](./memory-architecture.md) and [Context Anatomy](./context-anatomy.md)
+**Status:** Archived — See [Legacy Documentation](./legacy.md)
 
-> This document has been superseded. The context composition design is now documented in:
+> This document has been archived. The context composition design is now documented in:
 > - **[Memory Architecture](./memory-architecture.md)** — Unified overview of all memory systems
 > - **[Context Anatomy](./context-anatomy.md)** — Current context composition details
 

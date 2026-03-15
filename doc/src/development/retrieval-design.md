@@ -1,10 +1,8 @@
 # Retrieval System Design
 
-**Status:** ⚠️ LEGACY  
-**Archived:** 2026-03-15  
-**Replaced by:** [Memory Architecture](./memory-architecture.md)
+**Status:** Archived — See [Legacy Documentation](./legacy.md)
 
-> This document has been superseded. The retrieval system is now documented as part of **Layer 2: Conversation Memory** in the unified [Memory Architecture](./memory-architecture.md) document.
+> This document has been archived. The retrieval system is now documented as **Layer 2: Conversation Memory** in the unified [Memory Architecture](./memory-architecture.md) document.
 
 ---
 
