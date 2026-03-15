@@ -184,7 +184,7 @@
 | 0.3 | LLM tools (fact_add/search/remove) | ✅ DONE | 1 day |
 | 0.4 | Prompt injection (## User Facts section) | ✅ DONE | 0.5 day |
 | 0.5 | Decay startup + /fact prune command | ✅ DONE | 0.5 day |
-| 0.6 | User commands (/fact add/list/remove/search) | 📋 | 0.5 day |
+| 0.6 | User commands (/fact add/list/remove/search) | ✅ DONE | 0.5 day |
 | 0.7 | Conflict resolution (detect + resolve) | 📋 | 0.5 day |
 | 0.8 | Testing & documentation | 📋 | 0.5 day |
 | **Total** | | | **5 days** |

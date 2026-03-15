@@ -396,6 +396,246 @@ pub fn handle_fact_prune(state: &ReplState) {
     }
 }
 
+/// Handle fact add command
+///
+/// Adds a new fact to the database.
+pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
+    use crate::facts::types::{Category, Fact, Scope, Source};
+    use crate::facts::classify::classify_fact;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot add facts in anonymous mode.");
+        return;
+    }
+
+    // Validate content length
+    if content.len() > 500 {
+        eprintln!("\x1B[31m✗ Fact content exceeds 500 character limit.\x1B[0m");
+        println!("  Current length: {} characters", content.len());
+        println!("  Use shorter content or split into multiple facts.");
+        return;
+    }
+
+    // Classify the fact
+    let category = classify_fact(&content);
+
+    // Determine scope
+    let scope = if global {
+        Scope::Global
+    } else {
+        Scope::Project
+    };
+
+    // Get project ID for project-scoped facts
+    let project_id = if global {
+        None
+    } else {
+        state.session.project_id.clone()
+    };
+
+    // Create the fact
+    let fact = match Fact::new(content.clone(), category, scope, project_id, Source::User) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to create fact: {}\x1B[0m", e);
+            return;
+        }
+    };
+
+    // Insert into database
+    match db.insert_fact(&fact) {
+        Ok(id) => {
+            let scope_str = if global { "global" } else { "project" };
+            let category_str = match category {
+                Category::Preference => "preference",
+                Category::Fact => "fact",
+            };
+            println!(
+                "\x1B[32m✓ Added {} fact #{} (scope: {}, category: {})\x1B[0m",
+                category_str, id, scope_str, category_str
+            );
+            println!("  {}", content);
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to add fact: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle fact list command
+///
+/// Lists all facts for the current scope.
+pub fn handle_fact_list(state: &ReplState, global: bool) {
+    use crate::facts::types::{Category, Scope};
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot list facts in anonymous mode.");
+        return;
+    }
+
+    let scope = if global {
+        Scope::Global
+    } else {
+        Scope::Project
+    };
+
+    let project_id = if global {
+        None
+    } else {
+        state.session.project_id.clone()
+    };
+
+    match db.list_facts(Some(scope), None, project_id.as_deref()) {
+        Ok(facts) => {
+            let scope_str = if global { "global" } else { "project" };
+            println!("\x1B[36mFacts ({scope_str}):\x1B[0m");
+
+            if facts.is_empty() {
+                println!("  No facts stored.");
+                return;
+            }
+
+            // Group by category
+            let preferences: Vec<_> = facts.iter().filter(|f| f.category == Category::Preference).collect();
+            let regular_facts: Vec<_> = facts.iter().filter(|f| f.category == Category::Fact).collect();
+
+            if !preferences.is_empty() {
+                println!("\n  \x1B[33mPreferences:\x1B[0m");
+                for f in preferences {
+                    let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                    println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                }
+            }
+
+            if !regular_facts.is_empty() {
+                println!("\n  \x1B[33mFacts:\x1B[0m");
+                for f in regular_facts {
+                    let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                    println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                }
+            }
+
+            println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle fact remove command
+///
+/// Removes a fact by ID.
+pub fn handle_fact_remove(state: &ReplState, id: i64) {
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot remove facts in anonymous mode.");
+        return;
+    }
+
+    // Get fact first to show content
+    match db.get_fact(id) {
+        Ok(Some(fact)) => {
+            match db.delete_fact(id) {
+                Ok(()) => {
+                    println!(
+                        "\x1B[32m✓ Removed fact #{}: {}\x1B[0m",
+                        id, fact.content
+                    );
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to remove fact: {}\x1B[0m", e);
+                }
+            }
+        }
+        Ok(None) => {
+            eprintln!("\x1B[31m✗ Fact #{} not found.\x1B[0m", id);
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Error retrieving fact: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle fact search command
+///
+/// Searches facts using FTS5.
+pub fn handle_fact_search(state: &ReplState, query: String, global: bool, limit: usize) {
+    use crate::facts::types::Scope;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot search facts in anonymous mode.");
+        return;
+    }
+
+    let scope = if global {
+        Some(Scope::Global)
+    } else {
+        Some(Scope::Project)
+    };
+
+    match db.search_facts(&query, scope, limit) {
+        Ok(results) => {
+            let scope_str = if global { "global" } else { "project" };
+            println!("\x1B[36mSearch results for '{}' (scope: {}):\x1B[0m", query, scope_str);
+
+            if results.is_empty() {
+                println!("  No matching facts found.");
+                return;
+            }
+
+            for result in &results {
+                let f = &result.fact;
+                let category_str = match f.category {
+                    crate::facts::types::Category::Preference => "pref",
+                    crate::facts::types::Category::Fact => "fact",
+                };
+                let score = result.score;
+                println!(
+                    "  #{} [{}] {} \x1B[90m(score: {:.2})\x1B[0m",
+                    f.id, category_str, f.content, score
+                );
+            }
+
+            println!("\n  \x1B[90mFound {} result(s)\x1B[0m", results.len());
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Search failed: {}\x1B[0m", e);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::session::ChatSession;

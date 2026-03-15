@@ -19,7 +19,8 @@ use super::command_handlers::{
     handle_think_toggled, handle_tools_toggled, handle_retrieval_toggled,
     handle_tool_output_changed, handle_debug_toggled, handle_undo,
     handle_search, handle_restore, handle_reindex, handle_compact, handle_retry,
-    handle_fact_prune,
+    handle_fact_prune, handle_fact_add, handle_fact_list, handle_fact_remove,
+    handle_fact_search,
 };
 use super::core::{auto_compact_if_needed, send_message};
 use super::input::{InputBackend, InputResult, RustylineInput};
@@ -490,6 +491,22 @@ pub async fn run_chat_repl(
                                 }
                                 CommandResult::FactPrune => {
                                     handle_fact_prune(&state);
+                                    continue;
+                                }
+                                CommandResult::FactAdd { content, global } => {
+                                    handle_fact_add(&state, content, global);
+                                    continue;
+                                }
+                                CommandResult::FactList { global } => {
+                                    handle_fact_list(&state, global);
+                                    continue;
+                                }
+                                CommandResult::FactRemove { id } => {
+                                    handle_fact_remove(&state, id);
+                                    continue;
+                                }
+                                CommandResult::FactSearch { query, global, limit } => {
+                                    handle_fact_search(&state, query, global, limit);
                                     continue;
                                 }
                             }

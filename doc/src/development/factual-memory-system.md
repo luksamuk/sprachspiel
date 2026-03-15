@@ -1,6 +1,6 @@
 # Factual Memory System Design
 
-**Status:** IN PROGRESS (Phase 0.5 complete)  
+**Status:** IN PROGRESS (Phase 0.6 complete)  
 **Priority:** P0 (before Feedback System)  
 **Created:** 2026-03-14  
 **Updated:** 2026-03-15  
@@ -623,11 +623,14 @@ if let Some(facts) = &self.facts {
 - `CommandResult::FactPrune` and `ChatCommand::FactPrune` added
 - `handle_fact_prune()` handler in `command_handlers.rs`
 
-### Phase 0.6: User Commands (0.5 day) 📋
+### Phase 0.6: User Commands (0.5 day) ✅ DONE
 
-- `/fact add`, `/fact list`, `/fact remove`, `/fact search`
-- Command parsing in `repl.rs`
+- `/fact add <content> [--global]` - Add fact (shortcut `/fa`)
+- `/fact list [--global]` - List facts (shortcut `/fl`)
+- `/fact remove <id>` - Remove fact (shortcut `/fr`)
+- `/fact search <query> [--global] [limit]` - Search facts (shortcut `/fs`)
 - Handlers in `command_handlers.rs`
+- Command routing in `repl.rs`
 
 ### Phase 0.7: Conflict Resolution (0.5 day) 📋
 
@@ -643,7 +646,7 @@ if let Some(facts) = &self.facts {
 - Update `IMPLEMENTATION.md`
 - Update user documentation
 
-**Total Estimate:** 5 days **(3 days completed)**
+**Total Estimate:** 5 days **(3.5 days completed)**
 
 ---
 
