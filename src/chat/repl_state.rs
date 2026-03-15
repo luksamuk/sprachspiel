@@ -37,21 +37,6 @@ use super::session::ChatSession;
 /// - **Model**: current model, capabilities, config
 /// - **Tools**: tools active, think mode
 /// - **Context**: debug mode, agents.md, etc.
-///
-/// # Example
-///
-/// ```ignore
-/// let mut state = ReplState::new(
-///     session,
-///     model_config,
-///     capabilities,
-///     settings,
-/// );
-///
-/// // State changes during REPL loop
-/// state.switch_model("llama3.1".to_string());
-/// state.toggle_think();
-/// ```
 pub struct ReplState {
     // Session state
     pub session: ChatSession,
@@ -65,7 +50,6 @@ pub struct ReplState {
     pub tools_active: bool,
 
     // Context state
-    #[allow(dead_code)] // Used via state.agents_md in command handlers
     pub agents_md: Option<String>,
     pub use_debug: bool,
 
@@ -209,88 +193,6 @@ impl ReplStateBuilder {
 impl Default for ReplStateBuilder {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl ReplState {
-    /// Create a builder for ReplState
-    #[allow(dead_code)] // Will be used in Phase 7 (handler extraction)
-    pub fn builder() -> ReplStateBuilder {
-        ReplStateBuilder::new()
-    }
-
-    /// Build the prompt string for the REPL
-    ///
-    /// Format: `model_name[t][T]> ` where:
-    /// - `[t]` appears if think mode is enabled and model supports it
-    /// - `[T]` appears if tools are active
-    #[allow(dead_code)] // Will be used in Phase 7 (handler extraction)
-    pub fn build_prompt(&self) -> String {
-        let mut prompt = self.current_model_name.clone();
-        if self.session.think && self.capabilities.thinking {
-            prompt.push_str("[t]");
-        }
-        if self.tools_active {
-            prompt.push_str("[T]");
-        }
-        prompt.push_str("> ");
-        prompt
-    }
-
-    /// Switch to a different model
-    ///
-    /// Updates the session and all model-related state.
-    #[allow(dead_code)] // Will be used in Phase 7 (handler extraction)
-    pub fn switch_model(
-        &mut self,
-        model_name: String,
-        model_config: ModelConfig,
-        capabilities: ModelCapabilities,
-    ) {
-        self.session.set_model(model_name.clone());
-        self.current_model_name = model_name;
-        self.model_config = model_config;
-        self.capabilities = capabilities;
-    }
-
-    /// Toggle think mode
-    ///
-    /// Returns the new state, or None if the model doesn't support thinking.
-    #[allow(dead_code)] // Will be used in Phase 7 (handler extraction)
-    pub fn toggle_think(&mut self) -> Option<bool> {
-        if !self.capabilities.thinking {
-            return None;
-        }
-        self.session.think = !self.session.think;
-        Some(self.session.think)
-    }
-
-    /// Toggle tools
-    ///
-    /// Returns the new state, or None if the model doesn't support tools.
-    #[allow(dead_code)] // Will be used in Phase 7 (handler extraction)
-    pub fn toggle_tools(&mut self) -> Option<bool> {
-        if !self.capabilities.tools {
-            return None;
-        }
-        self.session.tools = !self.session.tools;
-        self.tools_active = self.session.tools;
-        Some(self.tools_active)
-    }
-
-    /// Check if this is an anonymous session
-    #[allow(dead_code)] // Will be used in Phase 7 (handler extraction)
-    pub fn is_anonymous(&self) -> bool {
-        self.session.anonymous
-    }
-
-    /// Save session to database (if not anonymous)
-    #[allow(dead_code)] // Will be used in Phase 7 (handler extraction)
-    pub fn save_session(&self) -> Result<(), String> {
-        if self.session.anonymous {
-            return Ok(());
-        }
-        self.session.save_sqlite().map_err(|e| e.to_string())
     }
 }
 

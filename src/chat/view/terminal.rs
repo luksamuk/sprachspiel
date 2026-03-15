@@ -16,12 +16,10 @@ use super::{ChatView, TokenMetrics, WelcomeInfo};
 /// - Token metrics display
 /// - Context warnings (yellow colored)
 /// - Compaction progress/complete messages
-#[allow(dead_code)] // Will be used when ChatView is integrated in repl.rs (Phase 7)
 pub struct TerminalView;
 
 impl TerminalView {
     /// Create a new TerminalView instance
-    #[allow(dead_code)] // Will be used when ChatView is integrated (Phase 7)
     pub fn new() -> Self {
         Self
     }
@@ -95,7 +93,6 @@ impl TerminalView {
     ///
     /// This is a convenience method that uses WelcomeInfo internally.
     #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)] // Will be used when ChatView is integrated (Phase 7)
     pub fn show_welcome(
         &mut self,
         model_id: &str,
@@ -116,41 +113,6 @@ impl TerminalView {
             is_anonymous,
         };
         println!("{}", info.to_boxed_string());
-    }
-
-    /// Display context utilization bar
-    ///
-    /// Shows a visual bar indicating context window usage.
-    #[allow(dead_code)] // Will be used when ChatView is integrated (Phase 7)
-    pub fn show_context_bar(&mut self, percent: u8, total_tokens: usize, context_window: usize) {
-        let bar_width = 20;
-        let filled = ((percent as usize).min(100) * bar_width) / 100;
-        let empty = bar_width - filled;
-
-        // Color code based on usage
-        let (color_code, reset_code) = if percent < 72 {
-            ("\x1B[32m", "\x1B[0m") // Green
-        } else if percent < 80 {
-            ("\x1B[33m", "\x1B[0m") // Yellow
-        } else {
-            ("\x1B[31m", "\x1B[0m") // Red
-        };
-
-        println!();
-        println!("  Context Utilization:");
-        println!(
-            "    {}{}{}{} {}{}",
-            color_code,
-            "█".repeat(filled),
-            "░".repeat(empty),
-            reset_code,
-            color_code,
-            percent
-        );
-        println!(
-            "    {}{} / {} tokens{}\x1B[0m",
-            color_code, total_tokens, context_window, reset_code
-        );
     }
 }
 

@@ -311,6 +311,25 @@ Only use `#[allow(dead_code)]` with justification:
 **Not acceptable:**
 - "Might be useful later" without concrete plan
 - Dead code that should be removed
+- "Preparation for future features" - implement when needed, not before
+
+### TUI Preparation Code Policy
+
+**CRITICAL: Do not declare unused code "for future TUI implementation".**
+
+When implementing TUI (ratatui.rs) in the future:
+1. Implement code when the feature is actually being worked on
+2. The `InputBackend` and `ChatView` traits already exist as abstractions
+3. Add methods to traits only when they are needed
+4. Review and remove any dead code after TUI is implemented
+
+**Current TUI abstractions:**
+- `src/chat/input/mod.rs` - `InputBackend` trait for input handling
+- `src/chat/view/mod.rs` - `ChatView` trait for output rendering
+- `src/chat/input/rustyline.rs` - `RustylineInput` implementation (in use)
+- `src/chat/view/terminal.rs` - `TerminalView` implementation (in use)
+
+These abstractions are documented and ready for TUI migration. **Do not add more unused code.**
 
 Before adding `#[allow(dead_code)]`, verify the code is truly unused:
 ```bash

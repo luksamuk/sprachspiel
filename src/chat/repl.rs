@@ -4,10 +4,6 @@
 
 use std::sync::Arc;
 
-use rustyline::Config;
-use rustyline::error::ReadlineError;
-use rustyline::history::DefaultHistory;
-
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::context_overflow::{PRE_TOOL_THRESHOLD, check_context_overflow, needs_pre_tool_compaction};
@@ -24,9 +20,10 @@ use super::command_handlers::{
     handle_tool_output_changed, handle_debug_toggled, handle_undo,
     handle_search, handle_restore, handle_reindex, handle_compact, handle_retry,
 };
-use super::completion::ChatCompleter;
 use super::core::{auto_compact_if_needed, send_message};
+use super::input::{InputBackend, InputResult, RustylineInput};
 use super::session::ChatSession;
+use super::view::TerminalView;
 use crate::project::get_project_id;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -334,14 +331,9 @@ pub async fn run_chat_repl(
         .settings(settings.clone()) // Clone for state
         .build()?;
 
-    let config = Config::default();
+    // Initialize input backend using RustylineInput abstraction
     let model_names: Vec<String> = crate::user_models::list_all_model_names();
-    let completer = ChatCompleter::new(model_names);
-
-    let mut rl: rustyline::Editor<ChatCompleter, DefaultHistory> =
-        rustyline::Editor::with_config(config)?;
-    rl.set_helper(Some(completer));
-    let _ = rl.load_history(&history_path());
+    let mut input = RustylineInput::new(model_names);
 
     loop {
         let mut prompt = state.current_model_name.clone();
@@ -353,16 +345,16 @@ pub async fn run_chat_repl(
         }
         prompt.push_str("> ");
 
-        let readline = rl.readline(&prompt);
+        let readline = input.read_line(&prompt);
 
         match readline {
-            Ok(line) => {
+            InputResult::Line(ref line) => {
                 let line = line.trim();
                 if line.is_empty() {
                     continue;
                 }
 
-                let _ = rl.add_history_entry(line.to_string());
+                input.add_history(line);
 
                 if line.starts_with('/') {
                     match parse_command(line) {
@@ -410,7 +402,7 @@ pub async fn run_chat_repl(
                             match execute_command(cmd, &mut state.session) {
                                 CommandResult::Continue => continue,
                                 CommandResult::Exit => {
-                                    let _ = rl.save_history(&history_path());
+                                    let _ = input.save_history();
                                     if !state.session.anonymous {
                                         let _ = state.session.save_sqlite();
                                     }
@@ -815,26 +807,26 @@ pub async fn run_chat_repl(
                     }
                 }
             }
-            Err(ReadlineError::Interrupted) => {
+            InputResult::Interrupted => {
                 println!("^C");
                 continue;
             }
-            Err(ReadlineError::Eof) => {
+            InputResult::Eof => {
                 println!("^D");
-                let _ = rl.save_history(&history_path());
+                let _ = input.save_history();
                 if !state.session.anonymous {
                     let _ = state.session.save_sqlite();
                 }
                 return Ok(());
             }
-            Err(err) => {
+            InputResult::Error(err) => {
                 eprintln!("Error: {}", err);
                 break;
             }
         }
     }
 
-    let _ = rl.save_history(&history_path());
+    let _ = input.save_history();
     Ok(())
 }
 
@@ -846,68 +838,19 @@ fn print_welcome(
     capabilities: &ModelCapabilities,
 ) {
     let project = session.project_id.as_deref().unwrap_or("anonymous");
-    let session_display = if session.anonymous {
-        "anonymous (no persistence)"
-    } else {
-        session.name.as_deref().unwrap_or(&session.id)
-    };
-
-    // Get sandbox status
+    let session_name = session.name.as_deref().unwrap_or(&session.id);
     let sandbox_status = crate::external::get_sandbox_status();
 
-    println!();
-    println!("+==============================================================+");
-    println!("|  Ask-AI Chat                                                 |");
-    println!("+==============================================================+");
-    println!("|  Model: {:52} |", model_config.model_id);
-
-    if capabilities.tools {
-        println!(
-            "|  Tools: {:52} |",
-            if session.tools { "enabled" } else { "disabled" }
-        );
-    }
-
-    if capabilities.thinking {
-        println!(
-            "|  Think: {:52} |",
-            if session.think { "enabled" } else { "disabled" }
-        );
-    }
-
-    // Show sandbox status if run_command tool is available
-    {
-        println!("|  Sandbox: {:51} |", sandbox_status);
-    }
-
-    println!("|  Project: {:50} |", truncate_str(project, 50));
-    println!("|  Session: {:50} |", truncate_str(session_display, 49));
-    println!("+==============================================================+");
-    println!("|  Type /help for commands, /quit to exit                      |");
-    println!("+==============================================================+");
-    println!();
-}
-
-fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
-    }
-}
-
-fn history_path() -> std::path::PathBuf {
-    if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
-        let path = std::path::PathBuf::from(data_home).join("ask-ai");
-        let _ = std::fs::create_dir_all(&path);
-        path.join("chat_history.txt")
-    } else if let Some(home_dir) = dirs::home_dir() {
-        let path = home_dir.join(".local").join("share").join("ask-ai");
-        let _ = std::fs::create_dir_all(&path);
-        path.join("chat_history.txt")
-    } else {
-        std::path::PathBuf::from(".chat_history.txt")
-    }
+    let mut view = TerminalView::new();
+    view.show_welcome(
+        &model_config.model_id,
+        session.tools && capabilities.tools,
+        session.think && capabilities.thinking,
+        sandbox_status,
+        project,
+        session_name,
+        session.anonymous,
+    );
 }
 
 fn print_context_info(

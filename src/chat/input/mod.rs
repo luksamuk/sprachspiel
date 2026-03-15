@@ -19,16 +19,16 @@
 //! - Add methods to trait as needed (history, completion, etc.)
 //! - Implement `TuiInput` struct in `src/chat/input/tui.rs`
 //! - Update `repl.rs` to use the new implementation
+//!
+//! IMPORTANT: Review and remove any dead code after TUI is implemented.
 
 use std::path::PathBuf;
 
 mod rustyline;
 
-#[allow(unused_imports)] // Will be used when InputBackend is implemented in repl.rs (Phase 7)
 pub use rustyline::RustylineInput;
 
 /// Result of reading a line from input
-#[allow(dead_code)] // Will be used when InputBackend is implemented in repl.rs (Phase 7)
 #[derive(Debug, Clone)]
 pub enum InputResult {
     /// User entered a line of text
@@ -60,7 +60,6 @@ pub enum InputResult {
 ///     InputResult::Error(e) => { /* handle error */ }
 /// }
 /// ```
-#[allow(dead_code)] // Will be used when integrated in repl.rs (Phase 7)
 pub trait InputBackend {
     /// Read a line from input with the given prompt
     ///
@@ -93,11 +92,6 @@ pub trait InputBackend {
     ///
     /// Returns an error string if saving fails.
     fn save_history(&mut self) -> Result<(), String>;
-
-    /// Load history from persistent storage
-    ///
-    /// Returns an error string if loading fails.
-    fn load_history(&mut self) -> Result<(), String>;
 }
 
 /// Returns the default history file path for the chat REPL
@@ -106,7 +100,6 @@ pub trait InputBackend {
 /// 1. `$XDG_DATA_HOME/ask-ai/chat_history.txt` (if XDG_DATA_HOME is set)
 /// 2. `~/.local/share/ask-ai/chat_history.txt` (fallback)
 /// 3. `.chat_history.txt` (current directory, last resort)
-#[allow(dead_code)] // Will be used when InputBackend is integrated in repl.rs (Phase 7)
 pub fn default_history_path() -> PathBuf {
     if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
         let path = PathBuf::from(data_home).join("ask-ai");

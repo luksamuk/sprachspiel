@@ -142,7 +142,9 @@ impl TodoState {
     }
 
     /// Get a task by ID
-    #[allow(dead_code)]
+    ///
+    /// Part of the public API for external consumers, even though
+    /// currently only used in tests.
     pub fn get(&self, id: usize) -> Option<&Task> {
         self.tasks.iter().find(|t| t.id == id)
     }
@@ -153,13 +155,17 @@ impl TodoState {
     }
 
     /// Count total tasks
-    #[allow(dead_code)]
+    ///
+    /// Part of the public API for external consumers, even though
+    /// currently only used in tests.
     pub fn count(&self) -> usize {
         self.tasks.len()
     }
 
     /// Check if the list is empty
-    #[allow(dead_code)]
+    ///
+    /// Part of the public API for external consumers, even though
+    /// currently only used in tests.
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
     }

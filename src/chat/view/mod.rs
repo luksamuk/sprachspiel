@@ -20,11 +20,10 @@
 //! - Implement `TuiView` struct in `src/chat/view/tui.rs`
 //! - Update `repl.rs` to use the new implementation
 //!
-//! Methods are added incrementally as needed during refactoring.
+//! IMPORTANT: Review and remove any dead code after TUI is implemented.
 
 mod terminal;
 
-#[allow(unused_imports)] // Will be used when ChatView is implemented in repl.rs (Phase 7)
 pub use terminal::TerminalView;
 
 // Re-export TokenMetrics from core for consumers of this module
@@ -36,6 +35,10 @@ pub use crate::chat::core::TokenMetrics;
 /// - `TerminalView`: Current implementation using println!/eprintln!
 /// - `TuiView`: Future implementation for ratatui.rs TUI
 ///
+/// **Note:** This trait is part of the TUI migration architecture (see AGENTS.md).
+/// It provides the abstraction layer for switching between terminal output and
+/// future TUI rendering. Currently used via TerminalView in repl.rs.
+///
 /// # Example
 ///
 /// ```ignore
@@ -46,7 +49,6 @@ pub use crate::chat::core::TokenMetrics;
 /// view.show_assistant_response(&content, thinking, &metrics);
 /// view.show_error("Something went wrong");
 /// ```
-#[allow(dead_code)] // Will be used when ChatView is integrated in repl.rs (Phase 7)
 pub trait ChatView {
     /// Display a system message (info, status, welcome)
     ///
@@ -105,7 +107,6 @@ pub trait ChatView {
 /// Contains all the data needed to render a welcome banner.
 /// This is deliberately a struct to allow different rendering strategies
 /// (ASCII box for terminal, widgets for TUI).
-#[allow(dead_code)] // Will be used when ChatView is integrated in repl.rs (Phase 7)
 pub struct WelcomeInfo {
     pub model_id: String,
     pub tools_enabled: bool,
@@ -118,7 +119,6 @@ pub struct WelcomeInfo {
 
 impl WelcomeInfo {
     /// Format the welcome banner as an ASCII box for terminal display
-    #[allow(dead_code)] // Will be used when ChatView is integrated (Phase 7)
     pub fn to_boxed_string(&self) -> String {
         let mut output = String::new();
         output.push('\n');
@@ -170,7 +170,6 @@ impl WelcomeInfo {
 }
 
 /// Truncate a string to a maximum length, adding ellipsis if truncated
-#[allow(dead_code)] // Used by WelcomeInfo::to_boxed_string (Phase 7)
 fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
