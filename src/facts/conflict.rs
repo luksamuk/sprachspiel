@@ -25,15 +25,15 @@ pub struct Conflict {
     pub existing_fact: Fact,
     /// Type of conflict
     pub conflict_type: ConflictType,
-    /// Similarity score (0.0 to 1.0, higher = more similar)
-    #[allow(dead_code)]
-    pub similarity: f32,
 }
 
 /// Resolution action for a conflict
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolutionAction {
-    /// No conflict, add the new fact
+    /// No conflict, add the new fact.
+    /// This variant exists for enum completeness but is never instantiated
+    /// in production code - when there's no conflict, we simply insert without
+    /// returning an action.
     #[allow(dead_code)]
     Add,
     /// Duplicate, skip adding
@@ -162,7 +162,6 @@ pub fn detect_conflicts(
             conflicts.push(Conflict {
                 existing_fact: result.fact.clone(),
                 conflict_type,
-                similarity,
             });
         }
     }
@@ -247,7 +246,6 @@ mod tests {
                 project_id: None,
             },
             conflict_type: ConflictType::Duplicate,
-            similarity: 0.98,
         };
 
         assert!(matches!(resolve_conflict(conflict), ResolutionAction::Skip));
@@ -271,7 +269,6 @@ mod tests {
                 project_id: None,
             },
             conflict_type: ConflictType::Contradiction,
-            similarity: 0.9,
         };
 
         assert!(matches!(

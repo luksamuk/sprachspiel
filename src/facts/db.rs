@@ -256,44 +256,6 @@ impl Database {
         })
     }
 
-    /// Update fact access (increment count and update timestamp)
-    #[allow(dead_code)]
-    pub fn update_fact_access(&self, id: i64) -> Result<()> {
-        self.with_connection(|conn| {
-            conn.execute(
-                "UPDATE facts SET access_count = access_count + 1, last_accessed = ?1 \
-                 WHERE id = ?2",
-                params![Utc::now().timestamp(), id],
-            )?;
-            Ok(())
-        })
-    }
-
-    /// Invalidate a fact (soft delete)
-    #[allow(dead_code)]
-    pub fn invalidate_fact(&self, id: i64) -> Result<()> {
-        self.with_connection(|conn| {
-            conn.execute(
-                "UPDATE facts SET invalidated_at = ?1 WHERE id = ?2",
-                params![Utc::now().timestamp(), id],
-            )?;
-            Ok(())
-        })
-    }
-
-    /// Count total facts
-    #[allow(dead_code)]
-    pub fn count_facts(&self) -> Result<usize> {
-        self.with_connection(|conn| {
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM facts WHERE invalidated_at IS NULL",
-                [],
-                |row| row.get(0),
-            )?;
-            Ok(count as usize)
-        })
-    }
-
     /// Run decay cycle and prune old facts
     pub fn run_decay_cycle(&self) -> Result<DecayStats> {
         let now = Utc::now();
