@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.32.0** - 2026-03-13
+**v0.33.0** - 2026-03-15
 
 ## Current Implementation Status
 
@@ -38,7 +38,7 @@
 - Built-in models: llama3.1, translategemma, glm-ocr (user models in config)
 - Thinking support for cloud models (configurable via `thinking = true`)
 - Dynamic model selection with capability detection
-- Tool integration with error recovery (28 tools in 8 categories)
+- Tool integration with error recovery (31 tools in 9 categories)
 - Translation (50+ languages)
 - OCR with multiple modes
 - Summarization with styles
@@ -54,6 +54,7 @@
 - AGENTS.md context injection with security sanitization
 - **SOUL.md personality system** - User-configurable agent personality
 - **Context Continuity with Graceful Interruption** - LLM pauses/resumes during overflow
+- **Factual Memory System** - Persistent fact storage with decay and conflict resolution
 - Complete documentation with mdBook
 - Man page
 - Termux/Android builds

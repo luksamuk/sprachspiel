@@ -191,6 +191,10 @@ Add facts that the AI should remember:
 - `--global` - Store as global fact (applies to all projects)
 - Without flag - Store as project-specific fact
 
+**Limits:**
+- Maximum content size: 500 characters
+- Facts exceeding this limit will be rejected with an error
+
 **Auto-classification:** Facts are automatically classified as:
 - `preference` - User preferences ("I prefer...", "I like...")
 - `fact` - Objective information ("The API is...", "Database uses...")
@@ -275,6 +279,16 @@ Run manual cleanup:
 ### LLM Integration
 
 The LLM can also store facts autonomously using the `fact_add`, `fact_search`, and `fact_remove` tools. These tools are available to models with tool support.
+
+### Anonymous Mode
+
+Facts are **disabled in anonymous mode** (`--anonymous` flag). The `/fact` commands will show an error:
+
+```
+Error: Cannot add facts in anonymous mode.
+```
+
+Facts are only available in persistent sessions where they can be stored across conversations. In anonymous mode, no data is persisted, so fact storage is unavailable.
 
 ## Prompt Indicators
 

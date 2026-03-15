@@ -14,6 +14,8 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Finance | 1 | Google Finance | ✅ Working | ❌ Disabled |
 | System | 2 | Local system | ✅ Working | ✅ Enabled |
 | File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
+| Factual Memory | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
+| Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).

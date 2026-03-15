@@ -47,7 +47,7 @@ This document outlines planned features and the current state of Ask-AI.
   - Nested continuations (up to 3 levels)
   - Context status injected into prompts
 
-**Tools (31 total):**
+**Tools (32 total):**
 
 | Category | Count | Feature Flag | Default |
 |----------|-------|--------------|---------|
@@ -59,6 +59,8 @@ This document outlines planned features and the current state of Ask-AI.
 | Web Search (DDG) | 3 | `search-tools` | ❌ Disabled |
 | System | 2 | `system-tools` | ✅ Enabled |
 | Factual Memory | 3 | (always on) | ✅ Enabled |
+| Memory Retrieval | 1 | (always on) | ✅ Enabled |
+| Run Command | 1 | (always on) | ✅ Enabled |
 | LED Control | 5 | `led-tools` | ❌ Disabled* |
 
 *LED tools require `[led]` configuration in config.toml.
