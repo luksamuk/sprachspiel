@@ -1,8 +1,9 @@
 # Anatomy of Context
 
 **Status:** Implemented  
-**Version:** v0.21.0+  
+**Version:** v0.33.0+  
 **File:** `src/retrieval/context_builder.rs`
+**See also:** [Memory Architecture](./memory-architecture.md) — Unified overview of all memory systems
 
 This document explains how ask-ai composes the LLM context window, following research-based principles to avoid "lost in the middle" issues.
 
@@ -17,19 +18,22 @@ Research from Liu et al. (2023) shows that language models perform significantly
 - **End**: Critical for current query understanding
 - **Middle**: Information gets "lost" or poorly recalled
 
+For more details, see the ["Lost in the Middle" paper](https://arxiv.org/abs/2307.03172).
+
 ---
 
 ## Context Composition
 
-The context window has 6 sections assembled in order:
+The context window has 7 sections assembled in order:
 
 ```mermaid
 graph TB
     subgraph P1["SYSTEM PROMPT"]
-        S1["Identity and personality"]
-        S2["Available tools"]
-        S3["Platform info"]
-        S4["AGENTS.md content"]
+        S0["SOUL.md (personality)"]
+        S1["AGENTS.md (project)"]
+        S2["USER FACTS"]
+        S3["Available tools"]
+        S4["Platform info"]
     end
     
     subgraph P2["RETRIEVED CONTEXT"]
@@ -58,8 +62,10 @@ graph TB
         Q1["User question"]
     end
     
+    S0 --> S1 --> S2 --> S3 --> S4
     P1 --> P2 --> P3 --> P4 --> P5 --> P6
     
+    style S2 fill:#fff3e0,stroke:#ef6c00,color:#e65100
     style P1 fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
     style P2 fill:#fff3e0,stroke:#ef6c00,color:#e65100
     style P3 fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
@@ -73,6 +79,7 @@ graph TB
 | Section | Tokens | Priority |
 |---------|--------|----------|
 | System Prompt | 500-2000 | Critical |
+| User Facts | ~2200 max | High |
 | Retrieved Context | 1000-5000 | High |
 | First Preserved | Variable | Medium |
 | Compacted Summary | 500-1000 | Medium |
@@ -81,7 +88,9 @@ graph TB
 
 ### Section Details
 
-**System Prompt** — Always first. Contains identity, tools, behavior, platform info, AGENTS.md.
+**System Prompt** — Always first. Contains SOUL.md (personality), AGENTS.md (project), **USER FACTS**, tools, platform info.
+
+**User Facts** — Injected after AGENTS.md. Contains user preferences and project facts from the Factual Memory system. Limited to 2200 characters total.
 
 **Retrieved Context** — Semantically relevant messages from history. Active when session has 5+ messages and retrieval is enabled.
 
@@ -92,6 +101,37 @@ graph TB
 **Recent Messages** — Last 10 message pairs. Always included, chronological order.
 
 **Current Query** — User's question. Always at very end for best comprehension.
+
+---
+
+## User Facts Section
+
+When the Factual Memory system is active, facts are injected after AGENTS.md:
+
+**Order (by priority):**
+1. Global preferences (e.g., "User prefers Portuguese")
+2. Project preferences
+3. Global facts (e.g., "API uses port 8080")
+4. Project facts (e.g., "Database is SQLite")
+
+**Format:**
+```markdown
+## User Facts
+
+### Preferences
+- prefiro respostas em português
+- gosto de respostas curtas
+
+### Facts
+- o projeto usa SQLite para armazenamento
+- a API está na porta 8080
+```
+
+**Limits:**
+- Hard limit: 500 characters per fact (rejected at insert)
+- Soft limit: 2200 characters total (truncated with Unicode-safe function)
+
+For more details, see [Factual Memory System](./factual-memory-system.md).
 
 ---
 

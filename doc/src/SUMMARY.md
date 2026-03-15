@@ -27,8 +27,10 @@
 - [Overview](./development/README.md)
 - [Implementation Directive](./development/implementation-directive.md)
 - [Architecture](./development/architecture.md)
-- [Roadmap](./development/roadmap.md)
+- [Memory Architecture](./development/memory-architecture.md)
+- [Context Anatomy](./development/context-anatomy.md)
 - [Factual Memory System](./development/factual-memory-system.md)
+- [Roadmap](./development/roadmap.md)
 - [Skills System Design](./development/skills-system-design.md)
 - [File Write Tools](./development/file-write-tools.md)
 - [Context Continuity](./development/context-continuity.md)
@@ -44,14 +46,16 @@
   - [Effective Agents Analysis](./development/research/effective-agents-analysis.md)
   - [Context Management Research](./development/research/context_management_research.md)
 
+## Archived Documentation
+
+- [Context Composition Design (LEGACY)](./development/context_composition_design.md)
+- [Retrieval Design (LEGACY)](./development/retrieval-design.md)
+
 ## Additional Documentation
 
 - [CLI Tools Research](./development/cli-tools-research.md)
 - [Run Command Redesign](./development/run-command-redesign.md)
 - [Planning Session: CLI Tools](./development/planning-session-cli-tools.md)
-- [Context Anatomy](./development/context-anatomy.md)
-- [Context Composition Design](./development/context_composition_design.md)
-- [Retrieval Design](./development/retrieval-design.md)
 - [Code Mode Research](./development/code_mode_research.md)
 - [Prompt Refactoring](./development/prompt-refactor.md)
 - [Source Attribution Plan](./development/plan-source-attribution.md)

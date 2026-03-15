@@ -5,6 +5,7 @@
 **Created:** 2026-03-14  
 **Updated:** 2026-03-15  
 **Depends on:** None (standalone feature)
+**See also:** [Memory Architecture](./memory-architecture.md) — Unified overview of all memory systems
 
 ---
 
@@ -18,6 +19,65 @@ This document defines the implementation plan for a **Factual Memory System** th
 
 ---
 
+## Architecture
+
+```mermaid
+graph TB
+    subgraph Input["Input Sources"]
+        U[User Command<br/>/fact add]
+        L[LLM Tool<br/>fact_add]
+    end
+    
+    subgraph Classification["Classification"]
+        C[Heuristic Classifier]
+        C1["preference" if prefer/like/hate]
+        C2["fact" otherwise]
+    end
+    
+    subgraph Conflict["Conflict Resolution"]
+        S[FTS5 Similarity Search]
+        D{Duplicate?}
+        E{Contradiction?}
+    end
+    
+    subgraph Storage["Storage"]
+        DB[(SQLite)]
+        FTS[FTS5 Index]
+        DC[Decay Scores]
+    end
+    
+    subgraph Retrieval["Context Injection"]
+        G[Get Global Facts]
+        P[Get Project Facts]
+        M[Merge + Truncate]
+        X[Inject into Prompt]
+    end
+    
+    U --> C
+    L --> C
+    C --> C1
+    C --> C2
+    C1 --> S
+    C2 --> S
+    S --> D
+    D -->|> 0.95| E
+    D -->|< 0.95| DB
+    E -->|Yes| UPD[Update Existing]
+    E -->|No| SKIP[Skip Duplicate]
+    UPD --> DB
+    DB --> FTS
+    DB --> DC
+    G --> M
+    P --> M
+    M --> X
+    
+    style Input fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    style Storage fill:#fff3e0,stroke:#ef6c00,color:#e65100
+    style Retrieval fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+```
+
+---
+
 ## Design Decisions (Simplified)
 
 | Decision | Choice | Rationale |
@@ -28,55 +88,12 @@ This document defines the implementation plan for a **Factual Memory System** th
 | Storage | **Same DB (`embeddings.db`)** | No separate database |
 | Per-fact limit | **500 chars (hard limit)** | Rejected at DB insert |
 | Total prompt limit | **2200 chars (soft limit)** | Truncated with Unicode-safe `truncate_chars` |
-| Conflict resolution | **Heuristic → FTS5 → LLM** | LLM only for ambiguous contradictions |
+| Conflict resolution | **Heuristic + FTS5** | Duplicate → Skip, Contradiction → Update |
 | Decay | **Startup synchronous** | Background optional later |
 
 ---
 
-## 1. Problem Statement
-
-### Current State
-
-- ask-ai has session-based conversation memory (SQLite + embeddings)
-- No persistent storage for user/project facts
-- Users must repeat preferences and environment details each session
-- AGENTS.md is static and project-level only
-
-### Desired State
-
-- LLM autonomously learns and stores facts about user/project
-- Facts persist across sessions and projects
-- Decay system prevents stale information
-- User can inspect/correct via commands
-- Project facts + global facts with proper merging
-
----
-
-## 2. Architecture Overview
-
-### 2.1 Simplified Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    FACTUAL MEMORY SYSTEM                    │
-│                    (SIMPLIFIED)                             │
-├─────────────────────────────────────────────────────────────┤
-│  Storage:                                                    │
-│  - Same SQLite DB (embeddings.db)                           │
-│  - facts table + FTS5 virtual table                          │
-│                                                             │
-│  Categories: preference (180d), fact (30d)                  │
-│  Classification: Heuristic only (no LLM)                     │
-│  Search: FTS5 keyword search (no embeddings)                │
-│  Conflict: Heuristic → FTS5 → LLM fallback                  │
-│                                                             │
-│  Limits:                                                     │
-│  - 500 chars per fact (hard limit, rejected at insert)      │
-│  - 2200 chars total in prompt (soft limit, truncated)       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 2.2 Categories (Simplified to 2)
+## Categories (Simplified to 2)
 
 | Category | Description | Half-Life | Examples |
 |----------|-------------|-----------|----------|
@@ -85,7 +102,9 @@ This document defines the implementation plan for a **Factual Memory System** th
 
 **Note:** The `context` category was removed. Temporary conversation state ("we're working on issue #7") is handled by the existing RAG system - no need to duplicate.
 
-### 2.3 Scopes
+---
+
+## Scopes
 
 | Scope | Description | Storage |
 |-------|-------------|---------|
@@ -94,28 +113,50 @@ This document defines the implementation plan for a **Factual Memory System** th
 
 **Note:** Both use the same database (`embeddings.db`), not separate files.
 
-### 2.4 Interaction with Feedback System
+---
 
-Factual Memory and Feedback System are **orthogonal**:
+## Context Injection
 
+Facts are injected into the system prompt after AGENTS.md:
+
+```mermaid
+graph LR
+    subgraph SystemPrompt["SYSTEM PROMPT"]
+        S1["SOUL.md"] --> S2["AGENTS.md"]
+        S2 --> S3["USER FACTS"]
+        S3 --> S4["Tools"]
+        S4 --> S5["Platform"]
+    end
+    
+    style S3 fill:#fff3e0,stroke:#ef6c00,color:#e65100
 ```
-Context Assembly:
-├── Layer 1: SYSTEM PROMPT
-│   ├── SOUL.md (personality)
-│   ├── AGENTS.md (project context)
-│   └── [FACTUAL MEMORY]  ←── Injects facts here
-│       "User prefers Portuguese"
-│       "Docs are in ~/docs"
-│
-├── Layer 2: RETRIEVED CONTEXT (past messages)
-│   └── [FEEDBACK WEIGHT]  ←── Feedback acts here
-│
-└── Response combines both layers
+
+**Order (by priority):**
+1. Global preferences (e.g., "User prefers Portuguese")
+2. Project preferences
+3. Global facts (e.g., "API uses port 8080")
+4. Project facts (e.g., "Database is SQLite")
+
+**Format:**
+```markdown
+## User Facts
+
+### Preferences
+- prefiro respostas em português
+- gosto de respostas curtas
+
+### Facts
+- o projeto usa SQLite para armazenamento
+- a API está na porta 8080
 ```
+
+**Limits:**
+- Hard limit: 500 characters per fact
+- Soft limit: 2200 characters total (truncated with Unicode-safe function)
 
 ---
 
-## 3. Database Schema
+## Database Schema
 
 ### 3.1 Facts Table
 
@@ -210,9 +251,26 @@ fn classify_fact(content: &str) -> Category {
 
 ## 5. Decay System
 
-### 5.1 Decay Formula
+Based on the [Ebbinghaus forgetting curve](https://en.wikipedia.org/wiki/Forgetting_curve) with access reinforcement:
 
-Based on Ebbinghaus forgetting curve with access reinforcement:
+```mermaid
+graph LR
+    A[Fact Created] --> B[decay_score = 1.0]
+    B --> C{Time Passes}
+    C --> D[Decay: R = 2^(-t/half_life)]
+    D --> E{R < 5%?}
+    E -->|Yes| F[Prune]
+    E -->|No| G{Accessed?}
+    G -->|Yes| H[Boost: +10% per access]
+    G -->|No| C
+    H --> C
+    
+    style A fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    style F fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style H fill:#fff3e0,stroke:#ef6c00,color:#e65100
+```
+
+### 5.1 Decay Formula
 
 ```rust
 const HALF_LIFE_PREFERENCE: f32 = 180.0;  // days
