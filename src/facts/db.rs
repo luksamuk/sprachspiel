@@ -257,6 +257,7 @@ impl Database {
     }
 
     /// Update fact access (increment count and update timestamp)
+    #[allow(dead_code)]
     pub fn update_fact_access(&self, id: i64) -> Result<()> {
         self.with_connection(|conn| {
             conn.execute(
@@ -269,6 +270,7 @@ impl Database {
     }
 
     /// Invalidate a fact (soft delete)
+    #[allow(dead_code)]
     pub fn invalidate_fact(&self, id: i64) -> Result<()> {
         self.with_connection(|conn| {
             conn.execute(
@@ -280,6 +282,7 @@ impl Database {
     }
 
     /// Count total facts
+    #[allow(dead_code)]
     pub fn count_facts(&self) -> Result<usize> {
         self.with_connection(|conn| {
             let count: i64 = conn.query_row(

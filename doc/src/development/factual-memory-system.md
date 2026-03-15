@@ -1,6 +1,6 @@
 # Factual Memory System Design
 
-**Status:** IN PROGRESS (Phase 0.6 complete)  
+**Status:** IN PROGRESS (Phase 0.7 complete)  
 **Priority:** P0 (before Feedback System)  
 **Created:** 2026-03-14  
 **Updated:** 2026-03-15  
@@ -632,12 +632,13 @@ if let Some(facts) = &self.facts {
 - Handlers in `command_handlers.rs`
 - Command routing in `repl.rs`
 
-### Phase 0.7: Conflict Resolution (0.5 day) 📋
+### Phase 0.7: Conflict Resolution (0.5 day) ✅ DONE
 
-- `src/facts/conflict.rs`
-- Detection via FTS5
-- Resolution heuristics
-- LLM fallback prompt
+- Conflict detection via FTS5 similarity search (`detect_conflicts`)
+- Heuristic resolution: Skip (duplicate) or Update (contradiction)
+- Integration in `fact_add` LLM tool and `/fact add` user command
+- Contradiction patterns: "like" vs "hate", negation detection
+- Configured threshold: 0.8 similarity for conflict detection
 
 ### Phase 0.8: Testing & Documentation (0.5 day) 📋
 
@@ -646,7 +647,7 @@ if let Some(facts) = &self.facts {
 - Update `IMPLEMENTATION.md`
 - Update user documentation
 
-**Total Estimate:** 5 days **(3.5 days completed)**
+**Total Estimate:** 5 days **(4 days completed)**
 
 ---
 

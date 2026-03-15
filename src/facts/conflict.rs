@@ -2,11 +2,6 @@
 //!
 //! Detects conflicts between new facts and existing facts using FTS5 search,
 //! and resolves them using heuristics.
-//!
-//! NOTE: This module is used in Phase 0.7 (Conflict Resolution).
-//! Functions here are intentionally kept for future use.
-
-#![allow(dead_code)]
 
 use super::db::FactSearchResult;
 use super::types::{Category, Fact};
@@ -28,6 +23,7 @@ pub struct Conflict {
     /// Type of conflict
     pub conflict_type: ConflictType,
     /// Similarity score (0.0 to 1.0, higher = more similar)
+    #[allow(dead_code)]
     pub similarity: f32,
 }
 
@@ -35,6 +31,7 @@ pub struct Conflict {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolutionAction {
     /// No conflict, add the new fact
+    #[allow(dead_code)]
     Add,
     /// Duplicate, skip adding
     Skip,

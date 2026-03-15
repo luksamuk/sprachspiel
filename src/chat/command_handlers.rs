@@ -399,9 +399,13 @@ pub fn handle_fact_prune(state: &ReplState) {
 /// Handle fact add command
 ///
 /// Adds a new fact to the database.
+/// Includes conflict detection (Phase 0.7).
 pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
     use crate::facts::types::{Category, Fact, Scope, Source};
     use crate::facts::classify::classify_fact;
+    use crate::facts::conflict::{detect_conflicts, resolve_conflict};
+
+    const CONFLICT_THRESHOLD: f32 = 0.8;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
@@ -441,7 +445,79 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
         state.session.project_id.clone()
     };
 
-    // Create the fact
+    // Check for conflicts (Phase 0.7)
+    let scope_for_search = if global {
+        Some(Scope::Global)
+    } else {
+        Some(Scope::Project)
+    };
+
+    let conflicts = match db.search_facts(&content, scope_for_search, 5) {
+        Ok(results) => {
+            detect_conflicts(&content, &results, CONFLICT_THRESHOLD)
+        }
+        Err(_) => Vec::new(),
+    };
+
+    // Handle conflicts
+    if !conflicts.is_empty() {
+        let conflict = &conflicts[0];
+
+        match resolve_conflict(conflict.clone()) {
+            crate::facts::conflict::ResolutionAction::Skip => {
+                println!(
+                    "\x1B[33m⏭ Skipped: Duplicate fact exists (#{})\x1B[0m",
+                    conflict.existing_fact.id
+                );
+                println!("  Existing: {}", conflict.existing_fact.content);
+                println!("  New: {}", content);
+                println!("\n  Use /fact remove {} first if you want to replace it.", conflict.existing_fact.id);
+                return;
+            }
+            crate::facts::conflict::ResolutionAction::Update => {
+                // Delete old fact
+                if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
+                    eprintln!("\x1B[31m✗ Error resolving conflict: {}\x1B[0m", e);
+                    return;
+                }
+
+                // Create new fact
+                let fact = match Fact::new(content.clone(), category, scope, project_id.clone(), Source::User) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!("\x1B[31m✗ Failed to create fact: {}\x1B[0m", e);
+                        return;
+                    }
+                };
+
+                // Insert new fact
+                match db.insert_fact(&fact) {
+                    Ok(id) => {
+                        let scope_str = if global { "global" } else { "project" };
+                        let category_str = match category {
+                            Category::Preference => "preference",
+                            Category::Fact => "fact",
+                        };
+                        println!(
+                            "\x1B[32m✓ Updated fact #{} (scope: {}, category: {})\x1B[0m",
+                            id, scope_str, category_str
+                        );
+                        println!("  Replaced: {}", conflict.existing_fact.content);
+                        println!("  With: {}", content);
+                    }
+                    Err(e) => {
+                        eprintln!("\x1B[31m✗ Failed to store fact: {}\x1B[0m", e);
+                    }
+                }
+                return;
+            }
+            crate::facts::conflict::ResolutionAction::Add => {
+                // No conflict - continue to insert below
+            }
+        }
+    }
+
+    // Create the fact (no conflicts)
     let fact = match Fact::new(content.clone(), category, scope, project_id, Source::User) {
         Ok(f) => f,
         Err(e) => {

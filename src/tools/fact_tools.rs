@@ -5,6 +5,7 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::facts::classify::classify_fact;
+use crate::facts::conflict::{detect_conflicts, resolve_conflict};
 use crate::facts::types::{Category, Fact, Scope, Source};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
@@ -13,6 +14,9 @@ use ollama_rs::function;
 
 /// Maximum content length for facts
 const MAX_CONTENT_LENGTH: usize = 500;
+
+/// Similarity threshold for conflict detection (0.0 to 1.0)
+const CONFLICT_THRESHOLD: f32 = 0.8;
 
 /// Parse fact ID from various formats ("42" or "fact:42")
 fn parse_fact_id(id: &str) -> Result<i64, String> {
@@ -164,7 +168,80 @@ pub async fn fact_add(
         }
     };
 
-    // Insert into database
+    // Check for conflicts (Phase 0.7)
+    // Search for similar facts
+    let conflicts = match db.search_facts(&content, parsed_scope.into(), 5) {
+        Ok(results) => detect_conflicts(&content, &results, CONFLICT_THRESHOLD),
+        Err(_) => {
+            // If search fails, continue without conflict check
+            Vec::new()
+        }
+    };
+
+    // Handle conflicts
+    if !conflicts.is_empty() {
+        let conflict = &conflicts[0]; // Take the most similar conflict
+
+        match resolve_conflict(conflict.clone()) {
+            crate::facts::conflict::ResolutionAction::Skip => {
+                // Duplicate - skip adding
+                let result = format!(
+                    "Skipped: Similar fact already exists (fact:{}).\n\n\
+                     Existing: {}\n\
+                     New: {}\n\n\
+                     Use fact_remove(id=\"{}\") first if you want to replace it.",
+                    conflict.existing_fact.id,
+                    conflict.existing_fact.content,
+                    content,
+                    conflict.existing_fact.id
+                );
+                log_tool_result("fact_add", &result);
+                return Ok(result);
+            }
+            crate::facts::conflict::ResolutionAction::Update => {
+                // Contradiction - update existing fact
+                // Delete old fact first
+                if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
+                    let err = format!("Error resolving conflict: {}", e);
+                    log_tool_result("fact_add", &err);
+                    return Ok(err);
+                }
+
+                // Insert new fact
+                let id = match db.insert_fact(&fact) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        let err = format!("Error storing fact: {}", e);
+                        log_tool_result("fact_add", &err);
+                        return Ok(err);
+                    }
+                };
+
+                let scope_label = match parsed_scope {
+                    Scope::Global => "global",
+                    Scope::Project => "project",
+                };
+                let category_label = match parsed_category {
+                    Category::Preference => "preference",
+                    Category::Fact => "fact",
+                };
+
+                let result = format!(
+                    "Updated fact:{} (category: {}, scope: {})\n\
+                     Replaced conflicting fact with: {}\n\
+                     Previously: {}",
+                    id, category_label, scope_label, content, conflict.existing_fact.content
+                );
+                log_tool_result("fact_add", &result);
+                return Ok(result);
+            }
+            crate::facts::conflict::ResolutionAction::Add => {
+                // No conflict - continue with insert below
+            }
+        }
+    }
+
+    // Insert into database (no conflicts)
     let id = match db.insert_fact(&fact) {
         Ok(id) => id,
         Err(e) => {
