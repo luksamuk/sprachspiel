@@ -4,6 +4,8 @@
 //! The model can use todo tools to manage tasks explicitly, reducing the
 //! need to search through conversation history.
 
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

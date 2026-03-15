@@ -1,6 +1,11 @@
 //! Decay calculations for the Factual Memory System
 //!
 //! Based on Ebbinghaus forgetting curve with access reinforcement.
+//!
+//! NOTE: This module is used in Phase 0.5 (Decay startup + /fact prune).
+//! Functions here are intentionally kept for future use.
+
+#![allow(dead_code)]
 
 use super::types::{Category, Fact};
 use chrono::{DateTime, Utc};
@@ -58,7 +63,7 @@ pub fn compute_retention(fact: &Fact, now: DateTime<Utc>) -> f32 {
         1.0
     };
 
-    (decay * importance_mult * access_mult).min(1.0).max(0.0)
+    (decay * importance_mult * access_mult).clamp(0.0, 1.0)
 }
 
 /// Check if a fact should be pruned.

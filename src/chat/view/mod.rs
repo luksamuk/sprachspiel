@@ -13,6 +13,12 @@
 //! TerminalView (current) ─── TuiView (future)
 //! ```
 //!
+//! NOTE: The `ChatView` trait is intentionally kept for future TUI implementation.
+//! See AGENTS.md "TUI Preparation Code Policy" for details.
+
+#![allow(dead_code)]
+
+//!
 //! # TUI Migration
 //!
 //! When implementing ratatui.rs TUI:

@@ -2,6 +2,9 @@
 //!
 //! Constructs the "## User Facts" section that gets injected into the system prompt,
 //! with Unicode-safe truncation if the total exceeds the limit.
+//!
+//! NOTE: This module is used in Phase 0.4 (Prompt injection).
+//! Functions here are intentionally kept for future use.
 
 use super::types::{Category, Fact, MAX_TOTAL_FACTS_CHARS};
 use crate::utils::truncate_chars;

@@ -2,6 +2,11 @@
 //!
 //! Detects conflicts between new facts and existing facts using FTS5 search,
 //! and resolves them using heuristics.
+//!
+//! NOTE: This module is used in Phase 0.7 (Conflict Resolution).
+//! Functions here are intentionally kept for future use.
+
+#![allow(dead_code)]
 
 use super::db::FactSearchResult;
 use super::types::{Category, Fact};

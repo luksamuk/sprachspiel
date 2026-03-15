@@ -572,61 +572,76 @@ if let Some(facts) = &self.facts {
 
 ## 10. Implementation Phases
 
-### Phase 0.1: Schema (0.5 day)
+### Phase 0.1: Schema (0.5 day) ✅ DONE
 
 - Update `SCHEMA_VERSION` to 6
 - Add `facts` table and `facts_fts` virtual table
 - Add indexes
 - Migration v5→v6 in `connection.rs`
 
-### Phase 0.2: Core Module (1 day)
+**Commit:** `6042394 feat(facts): add core module for factual memory system (Phase 0.2)`
+
+### Phase 0.2: Core Module (1 day) ✅ DONE
 
 - `src/facts/mod.rs`, `types.rs`, `db.rs`, `decay.rs`
 - `Fact` struct, `Category` enum, `Scope` enum
 - CRUD operations: `insert_fact`, `search_facts`, `list_facts`, `delete_fact`
 - Decay calculations and `run_decay_cycle`
 
-### Phase 0.3: LLM Tools (1 day)
+**Commit:** `6042394 feat(facts): add core module for factual memory system (Phase 0.2)`
 
-- `src/tools/facts.rs`
+### Phase 0.3: LLM Tools (1 day) ✅ DONE
+
+- `src/tools/fact_tools.rs`
 - `fact_add()`, `fact_search()`, `fact_remove()`
-- Tool registration with feature flag
+- Tool registration (no feature flag - always enabled)
 - Integration tests
 
-### Phase 0.4: Prompt Injection (0.5 day)
+**Implementation Notes:**
+- Tools use `get_db()` from `tools::context` for database access
+- Scope defaults to `global`, LLM must specify `scope="project"` for project facts
+- Hard delete (no soft delete with `invalidated_at`)
+
+### Phase 0.4: Prompt Injection (0.5 day) ✅ DONE
 
 - `src/facts/prompt.rs`
 - `build_facts_section()` with Unicode-safe truncation
-- Load facts on session start
-- Inject into system prompt
+- `Database::get_facts_for_prompt()` loads facts for current project
+- Inject into system prompt via `PromptConfig::with_facts_section()`
 
-### Phase 0.5: Decay & Prune (0.5 day)
+**Implementation Notes:**
+- Facts loaded in `send_message()` from `db.get_facts_for_prompt(project_id)`
+- Facts merged: global facts + project facts (if project_id exists)
+- Ordering: preferences first, then facts, by creation date
+- Truncated to MAX_TOTAL_FACTS_CHARS (2200) with Unicode-safe truncation
+
+### Phase 0.5: Decay & Prune (0.5 day) 📋
 
 - Startup decay run
 - `/fact prune` command
 - Decay statistics logging
 
-### Phase 0.6: User Commands (0.5 day)
+### Phase 0.6: User Commands (0.5 day) 📋
 
 - `/fact add`, `/fact list`, `/fact remove`, `/fact search`
 - Command parsing in `repl.rs`
 - Handlers in `command_handlers.rs`
 
-### Phase 0.7: Conflict Resolution (0.5 day)
+### Phase 0.7: Conflict Resolution (0.5 day) 📋
 
 - `src/facts/conflict.rs`
 - Detection via FTS5
 - Resolution heuristics
 - LLM fallback prompt
 
-### Phase 0.8: Testing & Documentation (0.5 day)
+### Phase 0.8: Testing & Documentation (0.5 day) 📋
 
 - Unit tests for classification, decay, conflict
 - Integration tests for CRUD
 - Update `IMPLEMENTATION.md`
 - Update user documentation
 
-**Total Estimate:** 5 days
+**Total Estimate:** 5 days **(2.5 days completed)**
 
 ---
 

@@ -211,7 +211,7 @@ impl Database {
                      FROM facts WHERE invalidated_at IS NULL ORDER BY created_at DESC",
             };
 
-            let mut stmt = conn.prepare(&sql)?;
+            let mut stmt = conn.prepare(sql)?;
             
             let rows = match (&scope, &category, &project_id) {
                 (Some(s), Some(c), Some(p)) => {
@@ -319,6 +319,54 @@ impl Database {
         let remaining = facts.len() - pruned;
 
         Ok(DecayStats { pruned, remaining })
+    }
+
+    /// Get facts for the system prompt.
+    ///
+    /// Returns facts that should be injected into the system prompt:
+    /// - Global facts (scope = global)
+    /// - Project facts (scope = project AND project_id matches)
+    ///
+    /// Ordered by: preferences first, then facts, by creation date.
+    pub fn get_facts_for_prompt(&self, project_id: Option<&str>) -> Result<Vec<Fact>> {
+        self.with_connection(|conn| {
+            let mut results = Vec::new();
+
+            // Get all non-invalidated facts
+            let sql = match project_id {
+                Some(_pid) => {
+                    // Get global facts + project facts
+                    "SELECT id, scope, category, content, importance, access_count, \
+                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
+                     FROM facts WHERE (scope = 'global' OR project_id = ?1) \
+                     AND invalidated_at IS NULL ORDER BY \
+                     CASE WHEN category = 'preference' THEN 0 ELSE 1 END, \
+                     created_at DESC"
+                }
+                None => {
+                    // Get only global facts
+                    "SELECT id, scope, category, content, importance, access_count, \
+                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
+                     FROM facts WHERE scope = 'global' \
+                     AND invalidated_at IS NULL ORDER BY \
+                     CASE WHEN category = 'preference' THEN 0 ELSE 1 END, \
+                     created_at DESC"
+                }
+            };
+
+            let mut stmt = conn.prepare(sql)?;
+
+            let rows = match project_id {
+                Some(pid) => stmt.query_map(params![pid], row_to_fact)?,
+                None => stmt.query_map(params![], row_to_fact)?,
+            };
+
+            for r in rows {
+                results.push(r?);
+            }
+
+            Ok(results)
+        })
     }
 }
 

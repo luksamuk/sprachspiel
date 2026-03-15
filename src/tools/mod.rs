@@ -28,6 +28,9 @@ pub mod system;
 pub mod todo;
 pub mod weather;
 
+// Fact tools (always available)
+pub mod fact_tools;
+
 // External tool wrappers (always available)
 pub mod run_cmd;
 pub mod tool_check;
@@ -53,6 +56,10 @@ pub use system::*;
 #[cfg(feature = "todo-tools")]
 pub use todo::*;
 pub use weather::*;
+
+// Fact tools (always available)
+#[allow(unused_imports)]
+pub use fact_tools::*;
 
 // External tool wrappers (always available)
 pub use run_cmd::run_command;

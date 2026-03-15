@@ -179,10 +179,10 @@
 
 | Phase | Description | Status | Effort |
 |-------|-------------|--------|--------|
-| 0.1 | Schema (facts table + FTS5, migration v5→v6) | 📋 | 0.5 day |
-| 0.2 | Core module (types, CRUD, decay) | 📋 | 1 day |
-| 0.3 | LLM tools (fact_add/search/remove) | 📋 | 1 day |
-| 0.4 | Prompt injection (## User Facts section) | 📋 | 0.5 day |
+| 0.1 | Schema (facts table + FTS5, migration v5→v6) | ✅ DONE | 0.5 day |
+| 0.2 | Core module (types, CRUD, decay) | ✅ DONE | 1 day |
+| 0.3 | LLM tools (fact_add/search/remove) | ✅ DONE | 1 day |
+| 0.4 | Prompt injection (## User Facts section) | ✅ DONE | 0.5 day |
 | 0.5 | Decay startup + /fact prune command | 📋 | 0.5 day |
 | 0.6 | User commands (/fact add/list/remove/search) | 📋 | 0.5 day |
 | 0.7 | Conflict resolution (detect + resolve) | 📋 | 0.5 day |

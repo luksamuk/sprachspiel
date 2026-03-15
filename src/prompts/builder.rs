@@ -62,6 +62,8 @@ pub struct PromptConfig<'a> {
     pub soulless: bool,
     /// Context status for awareness (injects usage % into prompt)
     pub context_status: Option<ContextStatus>,
+    /// Facts section to inject after context (from Factual Memory System)
+    pub facts_section: Option<&'a str>,
 }
 
 impl<'a> PromptConfig<'a> {
@@ -79,6 +81,7 @@ impl<'a> PromptConfig<'a> {
             retrieval_enabled: false,
             soulless: false,
             context_status: None,
+            facts_section: None,
         }
     }
 
@@ -121,6 +124,12 @@ impl<'a> PromptConfig<'a> {
     /// Set context status for awareness injection
     pub fn with_context_status(mut self, context_status: Option<ContextStatus>) -> Self {
         self.context_status = context_status;
+        self
+    }
+
+    /// Set facts section (from Factual Memory System)
+    pub fn with_facts_section(mut self, facts_section: Option<&'a str>) -> Self {
+        self.facts_section = facts_section;
         self
     }
 }
@@ -198,6 +207,13 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
             prompt.push_str("\n#### Project Guidelines\n");
             prompt.push_str(agents);
             prompt.push('\n');
+        }
+
+        // 3d. Facts section (from Factual Memory System)
+        if let Some(facts) = config.facts_section
+            && !facts.is_empty()
+        {
+            prompt.push_str(facts);
         }
     }
 
