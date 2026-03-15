@@ -1,6 +1,6 @@
 # Factual Memory System Design
 
-**Status:** IN PROGRESS (Phase 0.7 complete)  
+**Status:** ✅ COMPLETED  
 **Priority:** P0 (before Feedback System)  
 **Created:** 2026-03-14  
 **Updated:** 2026-03-15  
@@ -640,14 +640,15 @@ if let Some(facts) = &self.facts {
 - Contradiction patterns: "like" vs "hate", negation detection
 - Configured threshold: 0.8 similarity for conflict detection
 
-### Phase 0.8: Testing & Documentation (0.5 day) 📋
+### Phase 0.8: Testing & Documentation (0.5 day) ✅ DONE
 
-- Unit tests for classification, decay, conflict
-- Integration tests for CRUD
-- Update `IMPLEMENTATION.md`
-- Update user documentation
+- Integration tests for db operations (list_facts, decay_cycle, get_facts_for_prompt)
+- Integration tests for conflict detection (contradiction, no_conflict)
+- User documentation updated (doc/src/commands/chat.md)
+- CHANGELOG.md updated
+- All 41 facts module tests passing
 
-**Total Estimate:** 5 days **(4 days completed)**
+**Total Estimate:** 5 days **(5 days completed)**
 
 ---
 

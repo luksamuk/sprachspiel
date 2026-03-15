@@ -186,8 +186,8 @@
 | 0.5 | Decay startup + /fact prune command | ✅ DONE | 0.5 day |
 | 0.6 | User commands (/fact add/list/remove/search) | ✅ DONE | 0.5 day |
 | 0.7 | Conflict resolution (detect + resolve) | ✅ DONE | 0.5 day |
-| 0.8 | Testing & documentation | 📋 | 0.5 day |
-| **Total** | | | **5 days** |
+| 0.8 | Testing & documentation | ✅ DONE | 0.5 day |
+| **Total** | | ✅ **COMPLETED** | **5 days** |
 
 **Files to Create:**
 - `src/facts/mod.rs` - Module exports

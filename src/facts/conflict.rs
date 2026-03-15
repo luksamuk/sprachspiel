@@ -276,4 +276,64 @@ mod tests {
             ResolutionAction::Update
         ));
     }
+
+    #[test]
+    fn test_detect_conflicts_contradiction() {
+        // Test contradiction detection
+        let existing = FactSearchResult {
+            fact: Fact {
+                id: 1,
+                scope: Scope::Project,
+                category: Category::Preference,
+                content: "I like verbose responses".to_string(),
+                importance: 0.5,
+                access_count: 0,
+                decay_score: 1.0,
+                created_at: Utc::now(),
+                last_accessed: Utc::now(),
+                source: Source::User,
+                invalidated_at: None,
+                project_id: None,
+            },
+            score: 0.9,
+        };
+        let results = vec![existing];
+
+        let conflicts = detect_conflicts("I hate verbose responses", &results, 0.8);
+
+        // Should detect contradiction because "like" vs "hate"
+        assert_eq!(conflicts.len(), 1);
+        assert!(matches!(
+            conflicts[0].conflict_type,
+            ConflictType::Contradiction
+        ));
+    }
+
+    #[test]
+    fn test_detect_conflicts_no_conflict() {
+        // Test no conflict when similarity is below threshold
+        let existing = FactSearchResult {
+            fact: Fact {
+                id: 1,
+                scope: Scope::Project,
+                category: Category::Fact,
+                content: "The project uses SQLite".to_string(),
+                importance: 0.5,
+                access_count: 0,
+                decay_score: 1.0,
+                created_at: Utc::now(),
+                last_accessed: Utc::now(),
+                source: Source::User,
+                invalidated_at: None,
+                project_id: None,
+            },
+            score: 0.5, // Below threshold
+        };
+        let results = vec![existing];
+
+        let conflicts = detect_conflicts("The project uses PostgreSQL", &results, 0.8);
+
+        // No conflict because similarity is below threshold
+        assert!(conflicts.is_empty());
+    }
 }

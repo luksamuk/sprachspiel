@@ -492,4 +492,144 @@ mod tests {
         // Verify it's gone
         assert!(db.get_fact(id).expect("Failed to get fact").is_none());
     }
+
+    #[test]
+    fn test_list_facts_with_scope() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert global fact
+        let global_fact = Fact::new(
+            "Global preference".to_string(),
+            Category::Preference,
+            Scope::Global,
+            None,
+            Source::User,
+        )
+        .expect("Failed to create fact");
+
+        // Insert project fact
+        let project_fact = Fact::new(
+            "Project fact".to_string(),
+            Category::Fact,
+            Scope::Project,
+            Some("my-project".to_string()),
+            Source::User,
+        )
+        .expect("Failed to create fact");
+
+        db.insert_fact(&global_fact)
+            .expect("Failed to insert global");
+        db.insert_fact(&project_fact)
+            .expect("Failed to insert project");
+
+        // List global facts
+        let global_facts = db
+            .list_facts(Some(Scope::Global), None, None)
+            .expect("Failed to list global");
+        assert_eq!(global_facts.len(), 1);
+        assert!(matches!(global_facts[0].scope, Scope::Global));
+
+        // List project facts
+        let project_facts = db
+            .list_facts(Some(Scope::Project), None, Some("my-project"))
+            .expect("Failed to list project");
+        assert_eq!(project_facts.len(), 1);
+        assert!(matches!(project_facts[0].scope, Scope::Project));
+
+        // List all facts
+        let all_facts = db.list_facts(None, None, None).expect("Failed to list all");
+        assert_eq!(all_facts.len(), 2);
+    }
+
+    #[test]
+    fn test_run_decay_cycle() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a fact that will be pruned (very old with low importance)
+        let old_fact = Fact {
+            id: 0,
+            scope: Scope::Global,
+            category: Category::Fact,
+            content: "Old fact to prune".to_string(),
+            importance: 0.1,
+            access_count: 0,
+            decay_score: 1.0,
+            created_at: chrono::Utc::now() - chrono::Duration::days(365),
+            last_accessed: chrono::Utc::now() - chrono::Duration::days(365),
+            source: Source::User,
+            invalidated_at: None,
+            project_id: None,
+        };
+
+        // Insert a fact that will be kept (recent)
+        let new_fact = Fact::new(
+            "New fact to keep".to_string(),
+            Category::Fact,
+            Scope::Global,
+            None,
+            Source::User,
+        )
+        .expect("Failed to create fact");
+
+        db.insert_fact(&old_fact)
+            .expect("Failed to insert old fact");
+        db.insert_fact(&new_fact)
+            .expect("Failed to insert new fact");
+
+        // Run decay cycle
+        let stats = db.run_decay_cycle().expect("Failed to run decay cycle");
+
+        // Old fact should be pruned, new fact should remain
+        assert!(stats.pruned >= 1, "At least one fact should be pruned");
+        assert!(stats.remaining >= 1, "At least one fact should remain");
+
+        // Verify the new fact still exists
+        let remaining = db.list_facts(None, None, None).expect("Failed to list");
+        assert!(remaining.iter().any(|f| f.content == "New fact to keep"));
+    }
+
+    #[test]
+    fn test_get_facts_for_prompt() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert preference
+        let pref = Fact::new(
+            "I prefer concise responses".to_string(),
+            Category::Preference,
+            Scope::Global,
+            None,
+            Source::User,
+        )
+        .expect("Failed to create preference");
+
+        // Insert fact
+        let fact = Fact::new(
+            "Project uses Rust".to_string(),
+            Category::Fact,
+            Scope::Project,
+            Some("test-project".to_string()),
+            Source::User,
+        )
+        .expect("Failed to create fact");
+
+        db.insert_fact(&pref).expect("Failed to insert preference");
+        db.insert_fact(&fact).expect("Failed to insert fact");
+
+        // Get facts for prompt (with project_id)
+        let facts = db
+            .get_facts_for_prompt(Some("test-project"))
+            .expect("Failed to get facts for prompt");
+
+        // Both global and project facts should be returned
+        assert_eq!(facts.len(), 2);
+
+        // Preferences should come first
+        assert!(matches!(facts[0].category, Category::Preference));
+        assert!(matches!(facts[1].category, Category::Fact));
+
+        // Get facts without project_id (global only)
+        let global_only = db.get_facts_for_prompt(None).expect("Failed to get global");
+        assert_eq!(global_only.len(), 1);
+        assert!(matches!(global_only[0].category, Category::Preference));
+    }
 }

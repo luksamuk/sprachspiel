@@ -6,6 +6,16 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Factual Memory System** - Persistent fact storage with automatic decay and conflict resolution
+  - LLM tools: `fact_add`, `fact_search`, `fact_remove` for autonomous fact management
+  - User commands: `/fact add`, `/fact list`, `/fact search`, `/fact remove`, `/fact prune`
+  - Auto-classification: Preferences vs facts detected by heuristics
+  - Conflict resolution: Duplicate detection and contradiction handling
+  - Decay: Ebbinghaus forgetting curve (180d preferences, 30d facts)
+  - Scope: Project-specific vs global facts
+  - FTS5: Full-text search for facts
+  - Prompt injection: Facts injected into system prompt (max 2200 chars)
+
 - **Chat Architecture Refactoring** - Preparing for TUI migration
   - `InputBackend` trait - abstracts input handling (rustyline/ratatui)
   - `ChatView` trait - abstracts output rendering
