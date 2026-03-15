@@ -131,9 +131,9 @@
 
 ### 🔴 PRIORITY 0: Factual Memory System
 
-**Status:** 📋 PLANNED
+**Status:** 🔄 IN PROGRESS
 
-**Goal:** Enable ask-ai to remember user preferences, project facts, and environment details across sessions.
+**Goal:** Enable ask-ai to remember user preferences and project facts across sessions.
 
 **Problem Statement:**
 - Users must repeat contextual information every session (e.g., "my docs are in ~/docs")
@@ -155,45 +155,77 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    FACTUAL MEMORY SYSTEM                    │
+│                    (SIMPLIFIED)                             │
 ├─────────────────────────────────────────────────────────────┤
-│  Storage: SQLite (facts table + FTS5)                       │
+│  Storage: SQLite (facts table + FTS5, same DB)             │
 │  Scope: project (default) + global (override)               │
-│  Categories: preference (180d), fact (30d), context (7d)    │
-│  Classification: Heuristic (90%) + LLM fallback (10%)       │
+│  Categories: preference (180d), fact (30d)                  │
+│  Classification: Heuristic only (no LLM)                   │
+│  Search: FTS5 keyword search (no embeddings)                 │
+│  Conflict Resolution: Heuristic → FTS5 → LLM fallback      │
 │  Decay: Ebbinghaus curve with access reinforcement          │
-│  Conflict Resolution: Recency + scope priority              │
+│  Limits: 500 chars/fact, 2200 chars total in prompt         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Design Decisions:**
+- **Only 2 categories:** `preference` (180d) and `fact` (30d). No `context` category (handled by RAG).
+- **No embeddings:** FTS5 keyword search only, simpler and faster.
+- **Heuristic classification:** No LLM for classification (pattern matching), LLM only for conflict resolution.
+- **Hard limit:** 500 chars per fact (rejected at DB), 2200 chars total (truncated in prompt with Unicode-safe truncation).
+- **Same DB:** Uses existing `embeddings.db`, no separate storage.
+
 **Implementation Phases:**
 
-| Phase | Description | Effort |
-|-------|-------------|--------|
-| 0.1 | Schema (facts table + FTS5) | 0.5 day |
-| 0.2 | Core module (CRUD, decay) | 1 day |
-| 0.3 | LLM tools (fact_add/search/remove) | 1 day |
-| 0.4 | Prompt injection (## User Facts) | 0.5 day |
-| 0.5 | Decay maintenance (background task) | 1 day |
-| 0.6 | User commands (/fact add/list/remove) | 0.5 day |
-| 0.7 | Conflict resolution | 1 day |
-| 0.8 | Testing & documentation | 0.5 day |
-| **Total** | | **6 days** |
+| Phase | Description | Status | Effort |
+|-------|-------------|--------|--------|
+| 0.1 | Schema (facts table + FTS5, migration v5→v6) | 📋 | 0.5 day |
+| 0.2 | Core module (types, CRUD, decay) | 📋 | 1 day |
+| 0.3 | LLM tools (fact_add/search/remove) | 📋 | 1 day |
+| 0.4 | Prompt injection (## User Facts section) | 📋 | 0.5 day |
+| 0.5 | Decay startup + /fact prune command | 📋 | 0.5 day |
+| 0.6 | User commands (/fact add/list/remove/search) | 📋 | 0.5 day |
+| 0.7 | Conflict resolution (detect + resolve) | 📋 | 0.5 day |
+| 0.8 | Testing & documentation | 📋 | 0.5 day |
+| **Total** | | | **5 days** |
+
+**Files to Create:**
+- `src/facts/mod.rs` - Module exports
+- `src/facts/types.rs` - Category, Scope, Source, Fact structs
+- `src/facts/db.rs` - CRUD operations
+- `src/facts/classify.rs` - Heuristic classification
+- `src/facts/decay.rs` - Ebbinghaus decay calculations
+- `src/facts/conflict.rs` - Conflict detection and resolution
+- `src/facts/prompt.rs` - Build "## User Facts" section
+- `src/tools/facts.rs` - LLM tools
+
+**Files to Modify:**
+- `src/db/schema.rs` - Add facts table (v6)
+- `src/db/connection.rs` - Migration v5→v6
+- `src/prompts/builder.rs` - Add `with_facts()`
+- `src/chat/core.rs` - Load facts on session start
+- `src/chat/repl.rs` - Add /fact command parsing
+- `src/chat/command_handlers.rs` - Add /fact handlers
+- `Cargo.toml` - Add `fact-tools` feature
 
 **LLM Tools (autonomous):**
 
 ```rust
-fact_add(content, category?, scope?) // LLM calls autonomously
-fact_search(query, scope?)            // LLM searches facts
-fact_remove(id)                       // LLM removes incorrect facts
+fact_add(content, scope?)   // LLM calls autonomously, auto-classified
+fact_search(query, scope?)  // LLM searches facts (FTS5)
+fact_remove(id)             // LLM removes incorrect facts
 ```
 
-**User Commands (control/correction):**
+**User Commands:**
 
 ```
-/fact add <text>              // Force-add fact
-/fact list                    // Show all facts
-/fact remove <id>             // Remove incorrect fact
-/fact search <query>          // Find facts
+/fact add <text>            // Add project fact (auto-classified)
+/fact add --global <text>   // Add global fact
+/fact list                  // List all facts
+/fact list --global         // List global facts only
+/fact remove <id>           // Remove a fact
+/fact search <query>        // Search facts
+/fact prune                 // Manual decay run
 ```
 
 **Related:** Issue #20
