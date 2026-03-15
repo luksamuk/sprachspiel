@@ -106,7 +106,8 @@ pub fn build_session_system_prompt(
             } else {
                 None
             })
-            .with_facts_section(facts_section),
+            .with_facts_section(facts_section)
+            .with_anonymous(session.anonymous),
     )
 }
 
