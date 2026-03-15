@@ -25,9 +25,37 @@ src/
 │   ├── session.rs       # ChatSession, ConversationStorage
 │   ├── history.rs       # Legacy JSON storage (for /restore)
 │   ├── commands.rs      # Internal commands (/quit, /clear, etc.)
-│   └── repl.rs          # REPL loop + rendering
+│   ├── core.rs          # Core business logic (send_message, compact)
+│   ├── repl_state.rs    # ReplState - consolidated state management
+│   ├── model_switch.rs  # Centralized model switching
+│   ├── custom_coordinator.rs  # Pre-tool content + ephemeral messages
+│   ├── input/           # Input abstraction layer
+│   │   ├── mod.rs       # InputBackend trait
+│   │   └── rustyline.rs # RustylineInput implementation
+│   ├── view/            # Output abstraction layer
+│   │   ├── mod.rs       # ChatView trait
+│   │   └── terminal.rs  # TerminalView implementation
+│   └── repl.rs          # REPL coordinator (entry point)
 ├── project.rs           # Project identification (get_project_id)
 ```
+
+### Architecture Layers
+
+The chat module follows a layered architecture for maintainability and future TUI migration:
+
+```
+Layer 5: repl.rs           - Entry point, coordinator
+Layer 4: core.rs           - Business logic (send_message, compact)
+Layer 3: repl_state.rs     - State management (ReplState)
+Layer 2: input/, view/     - I/O implementations (rustyline, terminal)
+Layer 1: session.rs, cli.rs - Session and CLI handling
+Layer 0: input/mod.rs, view/mod.rs - Traits (abstractions)
+```
+
+This separation enables:
+- **Testing**: Each layer can be tested in isolation
+- **TUI Migration**: Swap rustyline for ratatui input/output
+- **Maintainability**: 200-400 line modules vs 1100+ line function
 
 ## Data Structures
 

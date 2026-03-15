@@ -311,6 +311,25 @@ Only use `#[allow(dead_code)]` with justification:
 **Not acceptable:**
 - "Might be useful later" without concrete plan
 - Dead code that should be removed
+- "Preparation for future features" - implement when needed, not before
+
+### TUI Preparation Code Policy
+
+**CRITICAL: Do not declare unused code "for future TUI implementation".**
+
+When implementing TUI (ratatui.rs) in the future:
+1. Implement code when the feature is actually being worked on
+2. The `InputBackend` and `ChatView` traits already exist as abstractions
+3. Add methods to traits only when they are needed
+4. Review and remove any dead code after TUI is implemented
+
+**Current TUI abstractions:**
+- `src/chat/input/mod.rs` - `InputBackend` trait for input handling
+- `src/chat/view/mod.rs` - `ChatView` trait for output rendering
+- `src/chat/input/rustyline.rs` - `RustylineInput` implementation (in use)
+- `src/chat/view/terminal.rs` - `TerminalView` implementation (in use)
+
+These abstractions are documented and ready for TUI migration. **Do not add more unused code.**
 
 Before adding `#[allow(dead_code)]`, verify the code is truly unused:
 ```bash
@@ -1193,6 +1212,109 @@ The project uses a GitHub Project board for task tracking. When working on tasks
 | In Progress | Currently being worked on |
 | In Review | PR submitted or awaiting review |
 | Done | Completed and verified |
+
+## Pull Request Review Process
+
+### Before Responding to Reviews
+
+1. **Fetch the latest code state** - Ensure local code matches the PR branch
+2. **Read the changed files** - Understand context before responding
+3. **Verify the comments match the code** - Line numbers may shift between commits
+
+### Getting All Review Threads
+
+**CRITICAL:** Always use `last: 50` (not `first: 30`) to get ALL threads. Using `first` may miss newer comments.
+
+```bash
+# Get ALL review thread IDs (use 'last' not 'first')
+gh api graphql -f query='
+query {
+  repository(owner: "OWNER", name: "REPO") {
+    pullRequest(number: PR_NUMBER) {
+      reviewThreads(last: 50) {
+        totalCount
+        nodes {
+          id
+          path
+          line
+          comments(first: 1) { nodes { body } }
+        }
+      }
+    }
+  }
+}'
+```
+
+**Verify thread count:** Check that `totalCount` matches the number of nodes returned. If `first: 30` was used and there are 35 threads, 5 would be missed!
+
+### Responding to Each Thread
+
+**Always reply to each thread individually**, not in a single summary comment.
+
+**Why this matters:**
+- Each comment needs its own reply for the reviewer to mark as "resolved"
+- A single summary comment cannot be marked as resolved per-thread
+- Thread-specific replies keep the review organized and actionable
+
+### Response Types
+
+Use the appropriate prefix based on the disposition:
+
+| Prefix | Meaning | When to Use |
+|--------|---------|-------------|
+| ✅ Resolvido | Code fixed/removed | Changed code to address the comment |
+| ✅ Verificado | Code is correct as-is | Confirmed the code behavior is intentional |
+| 📋 | Acknowledged, deferred | Good suggestion, will address in future PR |
+| ❌ | Declined | Suggestion not applicable, with explanation |
+| ❓ | Clarification needed | Question about the comment |
+
+### Reply Command
+
+```bash
+# Reply to a specific thread
+gh api graphql -f query='
+mutation {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: "THREAD_ID",
+    body: "✅ Resolvido. Explicação da resolução..."
+  }) {
+    comment { id }
+  }
+}'
+```
+
+### Example Responses
+
+```
+✅ Resolvido. O campo `agents_md` é usado em `repl.rs` via `state.agents_md.as_deref()`.
+
+✅ Resolvido. Este método foi removido no commit bf99ecc - era código morto (YAGNI).
+
+✅ Verificado. `#[allow(clippy::too_many_arguments)]` é necessário - a função tem 8 parâmetros e o limite do Clippy é 7.
+
+📋 Boa sugestão! Mover para `prompts.rs` é uma melhoria de organização. Pode ser feito em uma refatoração subsequente.
+
+❌ Não aplicável. Este padrão `const { Cell::new(false) }` é válido desde Rust 1.79+ - é a forma recomendada para thread_local.
+
+❓ Você pode elaborar? Não entendi bem o que está sugerindo aqui.
+```
+
+### After Responding to All Threads
+
+1. **Verify count:** Ensure all `totalCount` threads have been replied to
+2. **Check for missed files:** Reviewers may comment on files you didn't check
+3. **Commit changes if needed:** If code was modified, commit and push
+4. **Inform the user:** Let them know all threads have been responded to
+
+### Common Review Comment Categories
+
+| Category | Response Type | Example |
+|----------|---------------|---------|
+| `#[allow(dead_code)]` removal | ✅ Resolvido | "Code removed/found usage" |
+| Code simplification | ✅ Resolvido or 📋 | "Refactored" or "Deferred to future PR" |
+| Architecture improvement | 📋 | "Good suggestion, will address separately" |
+| Bug fix | ✅ Resolvido | "Fixed in commit abc1234" |
+| Question/clarification | ❓ or ✅ Verificado | "Answer is..." or "Verified behavior is correct" |
 
 ## Never Leave Things for Later
 

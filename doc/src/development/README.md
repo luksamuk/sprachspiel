@@ -2,11 +2,58 @@
 
 Welcome to the Ask-AI development documentation. This section contains technical information for contributors and developers.
 
-## Contents
+## Quick Navigation
 
-- [Architecture](./architecture.md) - Design decisions and patterns
-- [Roadmap](./roadmap.md) - Future plans and roadmap
-- [Contributing](./contributing.md) - How to contribute
+### Canonical Documents
+
+| Document | Purpose | Status |
+|----------|---------|--------|
+| **[Implementation Directive](./implementation-directive.md)** | Definitive implementation direction for continuous learning | CANONICAL |
+| **[Roadmap](./roadmap.md)** | Current development status and future plans | ACTIVE |
+| **[Architecture](./architecture.md)** | Design decisions and patterns | ACTIVE |
+| **[Contributing](./contributing.md)** | How to contribute | ACTIVE |
+
+### Design Documents
+
+| Document | Description |
+|----------|-------------|
+| [Skills System Design](./skills-system-design.md) | Skills architecture and implementation |
+| [Context Continuity](./context-continuity.md) | Graceful interruption handling |
+| [File Write Tools](./file-write-tools.md) | Planned file write tools |
+| [Run Command Redesign](./run-command-redesign.md) | Security redesign for shell commands |
+| [Chat Mode Design](./chat-mode-design.md) | Chat UX improvements |
+| [Context Anatomy](./context-anatomy.md) | Context components breakdown |
+
+### Research Background
+
+| Document | Description |
+|----------|-------------|
+| [Research Index](./research/index.md) | Overview of research documents |
+| [Papers Reference](./research/papers-reference.md) | arXiv links for MemOS, OpenClaw-RL, MemGPT |
+| [Research Synthesis](./research/research-appendix.md) | Complete research synthesis |
+
+## Current Development Focus
+
+See **[Implementation Directive](./implementation-directive.md)** for the canonical implementation direction.
+
+### Phase 1 (Current Priority)
+
+1. `/feedback` command (good/bad/correction)
+2. Feedback signal storage
+3. Weight propagation
+4. Context statistics enhancement
+
+### Phase 2 (Next)
+
+1. Feedback-weighted retrieval
+2. Temporal decay implementation
+3. Context composition improvements
+
+### Phase 3 (Future)
+
+1. Tool outcome tracking
+2. Skill success tracking
+3. User pattern learning
 
 ## Project Structure
 
@@ -19,94 +66,34 @@ ask-ai/
 ├── doc/
 │   ├── book.toml          # mdBook configuration
 │   └── src/               # Documentation source
-│       ├── README.md
-│       ├── introduction.md
-│       ├── installation.md
+│       ├── development/   # <-- You are here
+│       │   ├── implementation-directive.md  # CANONICAL
+│       │   ├── roadmap.md
+│       │   ├── architecture.md
+│       │   ├── research/  # Research background
+│       │   └── ...
 │       └── ...
 ├── src/
 │   ├── main.rs            # Entry point
 │   ├── config.rs          # Model configurations
 │   ├── prompts.rs         # System prompts
 │   ├── capabilities.rs    # Model capability detection
-│   ├── spinner.rs         # Progress spinners
-│   ├── debug_tools.rs     # Debug utilities
-│   ├── tools/
-│   │   ├── mod.rs
-│   │   ├── pokemon.rs
-│   │   ├── weather.rs
-│   │   └── search.rs
-│   ├── ocr/
-│   │   ├── cli.rs
-│   │   ├── processor.rs
-│   │   └── ...
-│   ├── summarize/
-│   │   ├── cli.rs
-│   │   ├── processor.rs
-│   │   └── ...
-│   └── translate/
-│       ├── cli.rs
-│       └── ...
+│   ├── chat/              # Chat module
+│   ├── tools/             # Tool implementations
+│   └── ...
 ├── AGENTS.md              # Development guidelines
-├── IMPLEMENTATION.md        # Implementation details
-├── README.md               # Project readme
-└── LICENSE.txt            # MIT License
-```
-
-## Architecture Overview
-
-Ask-AI is built with:
-
-- **Rust** - Systems programming language
-- **Tokio** - Async runtime
-- **ollama-rs** - Ollama API client
-- **clap** - CLI argument parsing
-- **termimad** - Markdown terminal rendering
-
-```mermaid
-graph TD
-    A[CLI Args] --> B[Subcommand Router]
-    B --> C[Query Handler]
-    B --> D[Translate Handler]
-    B --> E[OCR Handler]
-    B --> F[Summarize Handler]
-    C --> G[Ollama API]
-    D --> G
-    E --> G
-    F --> G
-    G --> H[Model Response]
-    H --> I[Markdown Render]
-    I --> J[Terminal Output]
-```
-
-## Development Setup
-
-```bash
-# Clone repository
-git clone <repo-url>
-cd ask-ai
-
-# Install dependencies
-cargo build
-
-# Run tests
-cargo test
-
-# Run with debug
-cargo run -- "Query"
+├── IMPLEMENTATION.md      # Implementation status
+└── README.md              # Project readme
 ```
 
 ## Build Commands
-
-See [AGENTS.md](../../AGENTS.md) for detailed build commands.
-
-Quick reference:
 
 ```bash
 # Build
 cargo build
 
 # Build release
-cargo build --release
+cargo build --release --features all-tools
 
 # Run
 cargo run -- "Query"
@@ -129,13 +116,8 @@ Build documentation:
 cd doc
 mdbook serve          # Development server
 mdbook build          # Build static site
-mdbook-mermaid install # Install mermaid support
 ```
 
 ## Contributing
 
 See [Contributing Guide](./contributing.md).
-
-## License
-
-MIT License - See [LICENSE](../../LICENSE.txt)
