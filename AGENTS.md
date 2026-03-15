@@ -1213,6 +1213,66 @@ The project uses a GitHub Project board for task tracking. When working on tasks
 | In Review | PR submitted or awaiting review |
 | Done | Completed and verified |
 
+## Pull Request Review Process
+
+### Responding to Review Comments
+
+When responding to PR review comments, **always reply to each thread individually**, not in a single summary comment.
+
+**Why this matters:**
+- Each comment needs its own reply for the reviewer to mark as "resolved"
+- A single summary comment cannot be marked as resolved per-thread
+- Thread-specific replies keep the review organized and actionable
+
+**How to reply to review threads using GitHub API:**
+
+```bash
+# Get review thread IDs
+gh api graphql -f query='
+query {
+  repository(owner: "OWNER", name: "REPO") {
+    pullRequest(number: PR_NUMBER) {
+      reviewThreads(first: 30) {
+        nodes {
+          id
+          path
+          comments(first: 1) { nodes { body } }
+        }
+      }
+    }
+  }
+}'
+
+# Reply to a specific thread
+gh api graphql -f query='
+mutation {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewThreadId: "THREAD_ID",
+    body: "✅ Resolvido. Explicação da resolução..."
+  }) {
+    comment { id }
+  }
+}'
+```
+
+**Response format:**
+- Start with ✅ or ❌ to indicate resolution status
+- Briefly explain what was done (removed, fixed, documented, etc.)
+- Reference specific commit if applicable
+- If declining a suggestion, explain why clearly
+
+**Example responses:**
+
+```
+✅ Resolvido. O campo `agents_md` é usado em `repl.rs` via `state.agents_md.as_deref()`.
+
+✅ Resolvido. Este método foi removido no commit bf99ecc - era código morto (YAGNI).
+
+✅ Verificado. `#[allow(clippy::too_many_arguments)]` é necessário - a função tem 8 parâmetros e o limite do Clippy é 7.
+
+❌ Não aplicável. Este padrão `const { Cell::new(false) }` é válido desde Rust 1.79+.
+```
+
 ## Never Leave Things for Later
 
 **CRITICAL RULE:** If you cannot complete something now, you MUST document it somewhere:
