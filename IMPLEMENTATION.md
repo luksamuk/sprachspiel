@@ -129,7 +129,113 @@
 
 ## Priority Roadmap
 
-### 🔴 PRIORITY 0: Context Continuity with Graceful Interruption
+### 🔴 PRIORITY 0: Factual Memory System
+
+**Status:** 📋 PLANNED
+
+**Goal:** Enable ask-ai to remember user preferences, project facts, and environment details across sessions.
+
+**Problem Statement:**
+- Users must repeat contextual information every session (e.g., "my docs are in ~/docs")
+- No persistent storage for facts about user/project
+- AGENTS.md is static and project-level only
+- LLM doesn't learn from interactions
+
+**Solution:** Persistent fact storage with automatic decay, LLM-autonomous management, and intelligent conflict resolution.
+
+**Documentation:** See [Factual Memory System Design](./doc/src/development/factual-memory-system.md) for complete design.
+
+**Key Insight:** Factual Memory and Feedback System (PRIORITY 1) are **orthogonal** and **complementary**:
+- Factual Memory → "What do I know about the user/project?"
+- Feedback System → "How should I weight retrieved messages?"
+- They operate at different layers and don't conflict.
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FACTUAL MEMORY SYSTEM                    │
+├─────────────────────────────────────────────────────────────┤
+│  Storage: SQLite (facts table + FTS5)                       │
+│  Scope: project (default) + global (override)               │
+│  Categories: preference (180d), fact (30d), context (7d)    │
+│  Classification: Heuristic (90%) + LLM fallback (10%)       │
+│  Decay: Ebbinghaus curve with access reinforcement          │
+│  Conflict Resolution: Recency + scope priority              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Implementation Phases:**
+
+| Phase | Description | Effort |
+|-------|-------------|--------|
+| 0.1 | Schema (facts table + FTS5) | 0.5 day |
+| 0.2 | Core module (CRUD, decay) | 1 day |
+| 0.3 | LLM tools (fact_add/search/remove) | 1 day |
+| 0.4 | Prompt injection (## User Facts) | 0.5 day |
+| 0.5 | Decay maintenance (background task) | 1 day |
+| 0.6 | User commands (/fact add/list/remove) | 0.5 day |
+| 0.7 | Conflict resolution | 1 day |
+| 0.8 | Testing & documentation | 0.5 day |
+| **Total** | | **6 days** |
+
+**LLM Tools (autonomous):**
+
+```rust
+fact_add(content, category?, scope?) // LLM calls autonomously
+fact_search(query, scope?)            // LLM searches facts
+fact_remove(id)                       // LLM removes incorrect facts
+```
+
+**User Commands (control/correction):**
+
+```
+/fact add <text>              // Force-add fact
+/fact list                    // Show all facts
+/fact remove <id>             // Remove incorrect fact
+/fact search <query>          // Find facts
+```
+
+**Related:** Issue #7, Roadmap: TUI (Priority: Low)
+
+---
+
+### 🔴 PRIORITY 1: Feedback Infrastructure
+
+**Status:** 📋 PLANNED (depends on: Factual Memory)
+
+**Goal:** Capture explicit and implicit feedback signals.
+
+**Documentation:** See [Implementation Directive](./doc/src/development/implementation-directive.md) for complete design.
+
+**Key Insight:** Feedback improves *how we retrieve* past messages. Factual Memory provides *what we know* about the user. Both layers work together:
+
+```
+Context Assembly:
+├── System Prompt
+│   └── [FACTUAL MEMORY] ← "User prefers Portuguese"
+│       "Docs are in ~/docs"
+├── Retrieved Context (messages)
+│   └── [FEEDBACK WEIGHT] ← Message #42: +1.2 (good feedback)
+│       Message #15: -0.3 (bad feedback)
+└── Response
+```
+
+**Implementation Phases:**
+
+| Phase | Description | Effort |
+|-------|-------------|--------|
+| 1.1 | `/feedback` command + schema | 2 days |
+| 1.2 | Weight propagation | 1 day |
+| 1.3 | `/context` enhancement | 0.5 day |
+| 1.4 | Implicit signal capture | 1 day |
+| 1.5 | Weighted retrieval | 3 days |
+| 1.6 | Decay implementation | 1 day |
+| **Total** | | **8.5 days** |
+
+**Related:** [Implementation Directive](./doc/src/development/implementation-directive.md)
+
+---
 
 **Status:** ✅ COMPLETED (v0.31.0)
 

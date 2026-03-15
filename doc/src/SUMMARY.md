@@ -28,6 +28,7 @@
 - [Implementation Directive](./development/implementation-directive.md)
 - [Architecture](./development/architecture.md)
 - [Roadmap](./development/roadmap.md)
+- [Factual Memory System](./development/factual-memory-system.md)
 - [Skills System Design](./development/skills-system-design.md)
 - [File Write Tools](./development/file-write-tools.md)
 - [Context Continuity](./development/context-continuity.md)
