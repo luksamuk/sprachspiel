@@ -130,9 +130,9 @@
 
 ## Priority Roadmap
 
-### 🔴 PRIORITY 0: Factual Memory System
+### ✅ PRIORITY 0: Factual Memory System (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 
 **Goal:** Enable ask-ai to remember user preferences and project facts across sessions.
 
