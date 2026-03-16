@@ -68,12 +68,13 @@ After documentation is committed:
 9. Create PR as DRAFT:
    gh pr create --draft --title "<type>: <description>" --body "..."
 
-10. Move GitHub Project card to "In Review" (both Status and Scrum Status)
-
-11. STOP AND WAIT for user authorization
+10. STOP AND WAIT for user authorization
 
     DO NOT proceed to Phase 3 (Implementation) until authorized.
     The user will enter "planning mode" to discuss implementation approach.
+    
+    DO NOT move card to "In Review" yet - the PR is still in DRAFT status.
+    Card stays in "In Progress" until Phase 4 (ready for review).
 ```
 
 **Why this stop point exists:**
