@@ -28,6 +28,9 @@ This document describes the mandatory workflow for implementing features and fix
 2. Verify you're on the correct branch
 
 3. Read IMPLEMENTATION.md to understand the task status
+
+4. Move GitHub Project card to "In Progress" (both Status and Scrum Status)
+   This signals that work has begun on the task
 ```
 
 ### Phase 2: Documentation FIRST

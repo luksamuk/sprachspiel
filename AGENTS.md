@@ -19,15 +19,16 @@ This is a Rust project that uses the ollama-rs library to interact with Ollama L
 
 ```
 1. Create branch     → git checkout -b feat/feature-name
-2. Update docs        → CHANGELOG.md, IMPLEMENTATION.md (mark as IN PROGRESS)
-3. Implement         → code changes
-4. Test               → cargo test --all-features && cargo clippy
-5. Commit             → conventional commits (feat:, fix:, refactor:)
-6. Push               → git push -u origin branch
-7. Create DRAFT PR    → gh pr create --draft
-8. Move to In Review  → update GitHub Project card
-9. Mark ready         → gh pr ready PR_NUMBER
-10. WAIT for review   → do not merge or close until approved
+2. Move to In Progress → update GitHub Project card
+3. Update docs        → CHANGELOG.md, IMPLEMENTATION.md (mark as IN PROGRESS)
+4. Implement         → code changes
+5. Test               → cargo test --all-features && cargo clippy
+6. Commit             → conventional commits (feat:, fix:, refactor:)
+7. Push               → git push -u origin branch
+8. Create DRAFT PR    → gh pr create --draft
+9. Move to In Review  → update GitHub Project card
+10. Mark ready         → gh pr ready PR_NUMBER
+11. WAIT for review   → do not merge or close until approved
 ```
 
 ### Status Flow
