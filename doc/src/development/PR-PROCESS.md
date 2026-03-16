@@ -2,6 +2,15 @@
 
 This document describes the mandatory workflow for implementing features and fixes.
 
+## ⚠️ CRITICAL: FOLLOW STEPS IN ORDER
+
+**DO NOT skip steps. DO NOT jump ahead. Each step must be completed before the next.**
+
+- ❌ DO NOT start implementing before Phase 2 is complete
+- ❌ DO NOT create PR before Phase 3 is complete
+- ❌ DO NOT mark PR "ready for review" before Phase 4 is complete
+- ✅ DO read this document BEFORE starting ANY implementation
+
 ## ⚠️ CRITICAL RULES
 
 ### NEVER Do These
