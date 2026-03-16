@@ -356,17 +356,18 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔴 PRIORITY 1: Code Quality - REPL Complexity Reduction
+### 🟡 PRIORITY 1: Code Quality - REPL Complexity Reduction (Follow-up)
 
 **Status:** 📋 PLANNED
 
-**Goal:** Reduce cyclomatic complexity of `run_chat_repl` function.
+**Goal:** Continue reducing cyclomatic complexity of `run_chat_repl` after Phase 1 refactoring.
+
+**Context:** Phase 1 (Issue #7) completed the initial refactoring, extracting 600+ lines into separate modules. Issue #22 tracks follow-up improvements.
 
 **Problem:**
-- `run_chat_repl` still has high cyclomatic complexity
-- Multiple responsibilities in single function
-- Long function with many branches
-- Difficult to test individual behaviors
+- `run_chat_repl` still has some cyclomatic complexity
+- May need further simplification of remaining logic
+- Middleware pattern for hooks not yet evaluated
 
 **Solution:** Continue refactoring with Command/Handler pattern and proper separation.
 
@@ -664,9 +665,9 @@ block_list = false  # Allow listing (filenames visible)
 
 ---
 
-### 🔴 PRIORITY 3: Code Quality - run_chat_repl Refactoring
+### ✅ PRIORITY 3: Code Quality - run_chat_repl Refactoring (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS (PR #19 under review)
+**Status:** ✅ COMPLETED (PR #19 merged)
 
 **Goal:** Refactor the oversized `run_chat_repl` function (~1100 lines) into smaller, testable units with abstractions for future TUI migration.
 
@@ -908,13 +909,13 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 - Input/output abstraction for TUI migration
 - Easier code review for changes
 
-**Estimate:** 16-24 hours → **COMPLETE** (24h total)
+**Estimate:** 16-24 hours → **Actual: 24h**
 
 **Branch:** `refactor/run-chat-repl-decoupling`
 
-**PR:** [#19](https://github.com/luksamuk/ask-ai-rs/pull/19)
+**PR:** [#19](https://github.com/luksamuk/ask-ai-rs/pull/19) (MERGED)
 
-**Issue:** [#7](https://github.com/luksamuk/ask-ai-rs/issues/7)
+**Issues:** [#7](https://github.com/luksamuk/ask-ai-rs/issues/7) (CLOSED), [#22](https://github.com/luksamuk/ask-ai-rs/issues/22) (OPEN - follow-up)
 
 ---
 
