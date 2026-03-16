@@ -166,10 +166,16 @@ After all review comments are resolved, the reviewer performs manual testing.
     d. Agent implements fixes
     e. Agent documents bugs fixed in PR body
     f. Agent pushes changes
-    g. Return to Step 19 (review iteration)
+    g. **Return to Step 19 (review iteration)** - new commits need review
 
 28. If testing passes:
     - Proceed to Phase 7 (merge)
+
+**IMPORTANT:** Every time the agent pushes commits (whether fixing review comments, 
+bugs from testing, or any other changes), the PR returns to Step 19 for a new 
+review iteration. The reviewer must review the new commits and either:
+- Add more comments → continue iteration
+- Approve → proceed to Phase 7
 ```
 
 ### Phase 7: Merge (AGENT, after authorization)
@@ -192,13 +198,71 @@ After all review comments are resolved, the reviewer performs manual testing.
 ```
 Todo → In Progress → In Review → Done
           ↑            ↑           ↑
-      (start)     (PR created)  (approved)
+      (start)     (PR created)  (merged)
 ```
 
 - **Todo**: Task is planned but not started
 - **In Progress**: Task is being implemented
 - **In Review**: PR created, awaiting review
-- **Done**: PR merged (REVIEWER ONLY)
+- **Done**: PR merged (after merge)
+
+## Review Loop Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    REVIEW ITERATION                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Step 17: Reviewer adds comments                            │
+│           ↓                                                  │
+│   Step 18: Agent fetches ALL comments                        │
+│           ↓                                                  │
+│   Step 19: Agent responds to each comment                    │
+│           ↓                                                  │
+│   Step 20-22: Implementation if needed                       │
+│           ↓                                                  │
+│   Step 23: Agent pushes changes →──────────┐                 │
+│           ↓                                │                 │
+│   Step 24: User reviews                    │                 │
+│           ↓                                │                 │
+│   ┌─────────────────────┐                 │                 │
+│   │ Need more changes?  │──── Yes ────────┘                 │
+│   └─────────────────────┘                                   │
+│           ↓ No (all resolved)                                │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    MANUAL TESTING                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Step 25-26: Reviewer tests application                     │
+│           ↓                                                  │
+│   ┌─────────────────────┐                                    │
+│   │ Bugs found?         │──── Yes ──→ Document bugs in PR   │
+│   └─────────────────────┘                 ↓                 │
+│           ↓ No                            Agent fixes        │
+│           ↓                                ↓                 │
+│           ↓                         Agent pushes ────────────┐│
+│           ↓                                           ↓     ││
+│           ↓                               Return to Step 19 ─┘│
+│           ↓ No bugs                                               │
+├─────────────────────────────────────────────────────────────┤
+│                          ↓                                    │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│                         MERGE                                │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Step 29: User authorizes merge                             │
+│           ↓                                                  │
+│   Step 30: Agent runs: gh pr merge N --merge                 │
+│           ↓                                                  │
+│   Step 31-32: Cleanup (branch deleted, PR closed)            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Review Comment Response Prefixes
 

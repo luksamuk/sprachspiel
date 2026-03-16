@@ -77,11 +77,17 @@ Todo → In Progress → In Review → Done
 7. **Loop until all comments resolved:**
    - Check for unresolved comments again
    - If found → respond and implement
-   - If none → inform user and wait for approval
+   - If none → inform user and wait review of new commits
+
+**IMPORTANT:** Every push of new commits returns the PR to Phase 5 (review iteration). 
+The reviewer must review new commits before proceeding.
 
 ### Merge (after authorization)
 
-- User authorizes merge after all comments resolved and testing passed
+- User authorizes merge after:
+  - All review comments resolved
+  - Manual testing passed
+  - New commits reviewed and approved
 - Agent merges using **regular merge** (NOT squash): `gh pr merge PR_NUMBER --merge`
 - Branch is automatically deleted
 - PR is automatically closed
