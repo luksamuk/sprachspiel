@@ -18,6 +18,7 @@ pub mod cli;
 pub mod command_handlers;
 pub mod commands;
 pub mod completion;
+pub mod continuation;
 pub mod coordinator;
 pub mod core;
 pub mod custom_coordinator;

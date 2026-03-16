@@ -2,6 +2,40 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.35.0] - TBD
+
+### Fixed
+
+- **Context Display After Compaction** - Correct token count after session reload
+  - `prompt_tokens` is now cleared in database after compaction
+  - Previously, old token counts persisted causing incorrect context display (e.g., 92% instead of 1%)
+  - Added `clear_conversation_prompt_tokens()` method to database operations
+  - Applies to both auto-compact and manual `/compact` commands
+
+### Changed
+
+- **REPL Complexity Reduction** - Major refactoring of `run_chat_repl` for maintainability
+  - Cognitive complexity reduced from **78/25 to eliminated** (no warning)
+  - Extracted `handle_command_result()` - dispatches all command results (~100 lines)
+  - Extracted `handle_model_switch()` - centralized model switching logic (~30 lines)
+  - Moved `print_context_info()` from `repl.rs` to `command_handlers.rs` (~165 lines)
+  - Extracted `handle_user_message()` - user input processing (~50 lines)
+  - Extracted `create_session()` - session initialization (~75 lines)
+  - Extracted `resolve_session_model()` - model validation (~25 lines)
+  - Extracted `resolve_thinking_mode()` - thinking mode logic (~30 lines)
+  - Extracted `init_database()` - database/embedding client init (~25 lines)
+  - Extracted `run_startup_tasks()` - migration and decay cycle (~30 lines)
+  - New module `src/chat/continuation.rs` with continuation handling functions
+  - `repl.rs` reduced from ~1090 lines to ~540 lines
+  - `command_handlers.rs` now includes `HandleResult` enum for dispatch
+
+### Refactoring
+
+- **Code Organization** - Improved module structure
+  - All command handlers now use `ReplState` consistently
+  - Command dispatch centralized in `handle_command_result()`
+  - Removed duplicate code patterns from main REPL loop
+
 ## [0.34.0] - 2026-03-16
 
 ### Added
