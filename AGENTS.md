@@ -4,6 +4,40 @@ This is a Rust project that uses the ollama-rs library to interact with Ollama L
 
 **IMPORTANT: See `IMPLEMENTATION.md` for the detailed feature roadmap and implementation phases.**
 
+## ⚠️ Pull Request Process (MANDATORY)
+
+**Read `doc/src/development/PR-PROCESS.md` for the complete workflow.**
+
+### Critical Rules
+
+1. **NEVER close issues before PR merge** - Issues close automatically when PR is merged
+2. **NEVER move cards to "Done"** - Only the REVIEWER moves cards to Done after approval
+3. **ALWAYS create PR as DRAFT first** - Implement, then mark "ready for review"
+4. **ALWAYS move card to "In Review"** - After creating PR
+
+### Workflow Summary
+
+```
+1. Create branch     → git checkout -b feat/feature-name
+2. Update docs        → CHANGELOG.md, IMPLEMENTATION.md (mark as IN PROGRESS)
+3. Implement         → code changes
+4. Test               → cargo test --all-features && cargo clippy
+5. Commit             → conventional commits (feat:, fix:, refactor:)
+6. Push               → git push -u origin branch
+7. Create DRAFT PR    → gh pr create --draft
+8. Move to In Review  → update GitHub Project card
+9. Mark ready         → gh pr ready PR_NUMBER
+10. WAIT for review   → do not merge or close until approved
+```
+
+### Status Flow
+
+```
+Todo → In Progress → In Review → Done
+           ↑            ↑          ↑
+       (you start)  (PR created) (REVIEWER ONLY)
+```
+
 ## Build Commands
 
 ```bash
