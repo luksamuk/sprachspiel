@@ -400,6 +400,11 @@ pub async fn handle_compact(state: &mut ReplState) {
 
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();
+
+                // Clear prompt_tokens in database since compaction invalidates old cumulative counts
+                if let Some(db) = state.session.db.as_ref() {
+                    let _ = db.clear_conversation_prompt_tokens(&state.session.id);
+                }
             }
         }
         Err(e) => {

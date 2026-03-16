@@ -4,6 +4,14 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [0.35.0] - TBD
 
+### Fixed
+
+- **Context Display After Compaction** - Correct token count after session reload
+  - `prompt_tokens` is now cleared in database after compaction
+  - Previously, old token counts persisted causing incorrect context display (e.g., 92% instead of 1%)
+  - Added `clear_conversation_prompt_tokens()` method to database operations
+  - Applies to both auto-compact and manual `/compact` commands
+
 ### Changed
 
 - **REPL Complexity Reduction** - Major refactoring of `run_chat_repl` for maintainability

@@ -440,6 +440,20 @@ impl Database {
         })
     }
 
+    /// Clear prompt_tokens for all messages in a conversation.
+    ///
+    /// Called after compaction to invalidate old cumulative token counts.
+    /// The next message sent to the LLM will have fresh prompt_tokens.
+    pub fn clear_conversation_prompt_tokens(&self, conversation_id: &str) -> Result<()> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            conn.execute(
+                "UPDATE messages SET prompt_tokens = NULL WHERE conversation_id = ?1",
+                params![conversation_id],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Update a message with its previous_message_id
     ///
     /// Used by pre_tool_content messages to link back to the user question.
@@ -1977,5 +1991,57 @@ mod tests {
         assert_eq!(retrieved.len(), 1);
         assert_eq!(retrieved[0].description, "Updated Task");
         assert_eq!(retrieved[0].status, "in_progress");
+    }
+
+    #[test]
+    fn test_clear_conversation_prompt_tokens() {
+        use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
+
+        let db = Database::in_memory().expect("Failed to create database");
+
+        db.insert_conversation("test-conv", None, None, "llama3.1", Utc::now(), Utc::now())
+            .expect("Failed to insert conversation");
+
+        // Insert messages with prompt_tokens
+        let msg1 = db
+            .insert_message("test-conv", ROLE_USER, "Hello", Utc::now())
+            .expect("Failed to insert message");
+        let msg2 = db
+            .insert_message("test-conv", ROLE_ASSISTANT, "Hi there", Utc::now())
+            .expect("Failed to insert message");
+
+        // Set prompt_tokens
+        db.update_message_prompt_tokens(msg1, 100)
+            .expect("Failed to update prompt_tokens");
+        db.update_message_prompt_tokens(msg2, 250)
+            .expect("Failed to update prompt_tokens");
+
+        // Verify prompt_tokens are set
+        let tokens_before: Vec<Option<i64>> = db
+            .with_connection(|conn: &rusqlite::Connection| {
+                let mut stmt = conn.prepare(
+                    "SELECT prompt_tokens FROM messages WHERE conversation_id = ?1 ORDER BY id",
+                )?;
+                let rows = stmt.query_map(params!["test-conv"], |row| row.get(0))?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .expect("Failed to query prompt_tokens");
+        assert_eq!(tokens_before, vec![Some(100), Some(250)]);
+
+        // Clear prompt_tokens
+        db.clear_conversation_prompt_tokens("test-conv")
+            .expect("Failed to clear prompt_tokens");
+
+        // Verify prompt_tokens are cleared
+        let tokens_after: Vec<Option<i64>> = db
+            .with_connection(|conn: &rusqlite::Connection| {
+                let mut stmt = conn.prepare(
+                    "SELECT prompt_tokens FROM messages WHERE conversation_id = ?1 ORDER BY id",
+                )?;
+                let rows = stmt.query_map(params!["test-conv"], |row| row.get(0))?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .expect("Failed to query prompt_tokens");
+        assert_eq!(tokens_after, vec![None, None]);
     }
 }

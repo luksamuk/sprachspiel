@@ -463,7 +463,7 @@ pub async fn auto_compact_if_needed(
     agents_md: Option<&str>,
     system_prompt: &str,
     context_window: usize,
-    use_debug: bool,
+    _use_debug: bool,
 ) {
     let status = check_context_overflow(
         session,
@@ -502,14 +502,13 @@ pub async fn auto_compact_if_needed(
                 urgency, compacted_count
             );
 
-            if !session.anonymous
-                && let Err(e) = session.save_sqlite()
-                && use_debug
-            {
-                log_debug(&format!(
-                    "Warning: Could not save session after auto-compact: {}",
-                    e
-                ));
+            if !session.anonymous {
+                let _ = session.save_sqlite();
+
+                // Clear prompt_tokens in database since compaction invalidates old cumulative counts
+                if let Some(db) = session.db.as_ref() {
+                    let _ = db.clear_conversation_prompt_tokens(&session.id);
+                }
             }
         }
         Err(e) => {
