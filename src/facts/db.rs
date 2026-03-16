@@ -16,6 +16,24 @@ fn fts5_escape(query: &str) -> String {
     format!("\"{}\"", escaped)
 }
 
+/// Normalize a BM25 score to [0, 1) range.
+///
+/// BM25 scores from FTS5 are negative values where more negative = better match.
+/// This function transforms them to [0, 1) where higher = better match.
+///
+/// Formula: (-score) / (1 - score)
+/// - Score -10 (strong match) → 0.91
+/// - Score -5 (good match) → 0.83
+/// - Score -1 (weak match) → 0.50
+/// - Score 0 (no match) → 0.00
+fn normalize_bm25_score(score: f32) -> f32 {
+    if score >= 0.0 {
+        0.0
+    } else {
+        (-score) / (1.0 - score)
+    }
+}
+
 /// Search result from facts search
 #[derive(Debug, Clone)]
 pub struct FactSearchResult {
@@ -120,10 +138,9 @@ impl Database {
                 let mut stmt = conn.prepare(sql)?;
                 let rows = stmt.query_map(params![escaped_query, s.to_string(), limit as i32], |row| {
                     let score: f32 = row.get(12)?;
-                    let normalized_score = (-score).max(0.0);
                     Ok(FactSearchResult {
                         fact: row_to_fact(row)?,
-                        score: normalized_score,
+                        score: normalize_bm25_score(score),
                     })
                 })?;
 
@@ -143,10 +160,9 @@ impl Database {
                 let mut stmt = conn.prepare(sql)?;
                 let rows = stmt.query_map(params![escaped_query, limit as i32], |row| {
                     let score: f32 = row.get(12)?;
-                    let normalized_score = (-score).max(0.0);
                     Ok(FactSearchResult {
                         fact: row_to_fact(row)?,
-                        score: normalized_score,
+                        score: normalize_bm25_score(score),
                     })
                 })?;
 
@@ -593,5 +609,60 @@ mod tests {
         let global_only = db.get_facts_for_prompt(None).expect("Failed to get global");
         assert_eq!(global_only.len(), 1);
         assert!(matches!(global_only[0].category, Category::Preference));
+    }
+
+    #[test]
+    fn test_bm25_normalization() {
+        // Test the normalize_bm25_score helper function
+        // BM25 scores are negative; more negative = better match
+        // Formula: (-score) / (1 - score) maps (-inf, 0] to [0, 1)
+
+        // Strong match (score -10) → ~0.91
+        let normalized = super::normalize_bm25_score(-10.0);
+        assert!(
+            (normalized - 0.909).abs() < 0.01,
+            "Expected ~0.91 for score -10, got {}",
+            normalized
+        );
+
+        // Good match (score -5) → ~0.83
+        let normalized = super::normalize_bm25_score(-5.0);
+        assert!(
+            (normalized - 0.833).abs() < 0.01,
+            "Expected ~0.83 for score -5, got {}",
+            normalized
+        );
+
+        // Weak match (score -1) → 0.50
+        let normalized = super::normalize_bm25_score(-1.0);
+        assert!(
+            (normalized - 0.5).abs() < 0.01,
+            "Expected 0.5 for score -1, got {}",
+            normalized
+        );
+
+        // Very weak match (score -0.5) → ~0.33
+        let normalized = super::normalize_bm25_score(-0.5);
+        assert!(
+            (normalized - 0.333).abs() < 0.01,
+            "Expected ~0.33 for score -0.5, got {}",
+            normalized
+        );
+
+        // No match (score 0) → 0.00
+        let normalized = super::normalize_bm25_score(0.0);
+        assert!(
+            normalized == 0.0,
+            "Expected 0.0 for score 0, got {}",
+            normalized
+        );
+
+        // Edge case: positive score (shouldn't happen with FTS5) → 0.00
+        let normalized = super::normalize_bm25_score(1.0);
+        assert!(
+            normalized == 0.0,
+            "Expected 0.0 for positive score, got {}",
+            normalized
+        );
     }
 }

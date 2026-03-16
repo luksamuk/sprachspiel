@@ -7,7 +7,8 @@ use super::db::FactSearchResult;
 use super::types::{Category, Fact};
 
 /// Default threshold for conflict detection (similarity score 0.0-1.0)
-pub const CONFLICT_THRESHOLD: f32 = 0.8;
+/// After proper BM25 normalization, 0.85 corresponds to strong matches (score ~-7)
+pub const CONFLICT_THRESHOLD: f32 = 0.85;
 
 /// Type of conflict detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,9 +146,8 @@ pub fn detect_conflicts(
     let mut conflicts = Vec::new();
 
     for result in search_results {
-        // Normalize score to 0.0 - 1.0 range
-        // FTS5 BM25 scores are negative, we negate and cap
-        let similarity = result.score.clamp(0.0, 1.0);
+        // Score is already normalized to [0, 1) by search_facts using reciprocal transform
+        let similarity = result.score;
 
         if similarity >= threshold {
             let conflict_type = if is_contradiction(new_content, &result.fact.content) {
@@ -218,7 +218,7 @@ mod tests {
         existing.score = 0.96; // High enough to be detected as duplicate
         let results = vec![existing];
 
-        let conflicts = detect_conflicts("The project uses SQLite", &results, 0.8);
+        let conflicts = detect_conflicts("The project uses SQLite", &results, CONFLICT_THRESHOLD);
 
         // With similarity > 0.95 and no contradiction, should be detected as duplicate
         assert_eq!(conflicts.len(), 1);
@@ -295,11 +295,11 @@ mod tests {
                 invalidated_at: None,
                 project_id: None,
             },
-            score: 0.9,
+            score: 0.90,
         };
         let results = vec![existing];
 
-        let conflicts = detect_conflicts("I hate verbose responses", &results, 0.8);
+        let conflicts = detect_conflicts("I hate verbose responses", &results, CONFLICT_THRESHOLD);
 
         // Should detect contradiction because "like" vs "hate"
         assert_eq!(conflicts.len(), 1);
@@ -327,11 +327,12 @@ mod tests {
                 invalidated_at: None,
                 project_id: None,
             },
-            score: 0.5, // Below threshold
+            score: 0.50, // Below threshold (0.85)
         };
         let results = vec![existing];
 
-        let conflicts = detect_conflicts("The project uses PostgreSQL", &results, 0.8);
+        let conflicts =
+            detect_conflicts("The project uses PostgreSQL", &results, CONFLICT_THRESHOLD);
 
         // No conflict because similarity is below threshold
         assert!(conflicts.is_empty());
