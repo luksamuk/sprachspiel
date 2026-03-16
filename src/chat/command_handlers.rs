@@ -23,6 +23,9 @@ use std::sync::Arc;
 use super::commands::CommandResult;
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
+
+/// Approximate token overhead per tool definition in the system prompt.
+const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::log_debug;
@@ -1050,7 +1053,6 @@ pub fn print_context_info(
         0
     };
 
-    const TOKENS_PER_TOOL: usize = 50;
     let tools_tokens = if tools_enabled && tool_count > 0 {
         tool_count * TOKENS_PER_TOOL
     } else {
