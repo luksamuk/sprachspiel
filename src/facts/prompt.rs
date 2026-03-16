@@ -24,7 +24,7 @@ pub fn build_facts_section(facts: &[Fact]) -> String {
         return String::new();
     }
 
-    let mut section = String::from("\n## User Facts\n\n");
+    let mut section = String::new();
 
     // Group by category (preferences first)
     let preferences: Vec<&Fact> = facts
@@ -148,7 +148,6 @@ mod tests {
         let result = build_facts_section(&facts);
 
         // Result should be well-formed
-        assert!(result.starts_with("\n## User Facts"));
         assert!(result.contains("### Facts"));
 
         // Should end at valid char boundary
@@ -164,7 +163,8 @@ mod tests {
 
         let result = build_facts_section(&facts);
 
-        let expected = "\n## User Facts\n\n### Preferences\n- I prefer Portuguese\n\n### Facts\n- The project uses Rust\n";
+        let expected =
+            "### Preferences\n- I prefer Portuguese\n\n### Facts\n- The project uses Rust\n";
 
         assert_eq!(result, expected);
     }

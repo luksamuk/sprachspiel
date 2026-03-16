@@ -222,6 +222,10 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         if let Some(facts) = config.facts_section
             && !facts.is_empty()
         {
+            prompt.push_str("\n### USER FACTS\n\n");
+            prompt.push_str("The following are persistent facts and preferences about the user/project.\n\n");
+            prompt.push_str("**Preferences** → Apply to personalize tone and style.\n");
+            prompt.push_str("**Facts** → Reference when relevant to the topic.\n\n");
             prompt.push_str(facts);
         }
     }
