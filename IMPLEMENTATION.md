@@ -360,29 +360,40 @@ todo_clear_all()             // Clear all tasks
 
 **Status:** 🔄 IN PROGRESS
 
-**Goal:** Continue reducing cyclomatic complexity of `run_chat_repl` after Phase 1 refactoring.
+**Goal:** Reduce cyclomatic complexity of `run_chat_repl` from 78/25 to <25/25.
 
 **Context:** Phase 1 (Issue #7) completed the initial refactoring, extracting 600+ lines into separate modules. Issue #22 tracks follow-up improvements.
 
-**Problem:**
-- `run_chat_repl` still has some cyclomatic complexity
-- May need further simplification of remaining logic
-- Middleware pattern for hooks not yet evaluated
+**Current State:**
+- Cognitive complexity: 78/25 (triples the limit!)
+- Main offenders: continuation handling (140 lines), overflow recovery (60 lines)
+- `ReplState` already consolidates all mutable state - can be used for simpler signatures
 
-**Solution:** Continue refactoring with Command/Handler pattern and proper separation.
+**Solution:** Extract continuation handling and overflow recovery to `src/chat/continuation.rs`.
 
-**Tasks:**
+**Implementation Plan:**
 
-| Task | Description | Status |
-|------|-------------|--------|
-| Extract processing logic | Move input processing to separate function | ❌ |
-| Simplify main loop | Reduce branches in REPL loop | ❌ |
-| Consider middleware pattern | For logging, metrics, compaction hooks | ❌ |
-| Evaluate Command pattern | For cleaner dispatch of handlers | ❌ |
+| Phase | File | Task | Lines | Status |
+|-------|------|------|-------|--------|
+| 1 | `src/chat/continuation.rs` (NEW) | Create file with `ContinuationResult` struct | ~20 | ❌ |
+| 2 | `src/chat/continuation.rs` | Implement `handle_continuation(&mut ReplState, SendMessageResult)` | ~100 | ❌ |
+| 3 | `src/chat/continuation.rs` | Implement `handle_overflow_error(&mut ReplState, &str)` | ~50 | ❌ |
+| 4 | `src/chat/mod.rs` | Add `pub mod continuation;` | ~2 | ❌ |
+| 5 | `src/chat/repl.rs` | Use `handle_continuation()` instead of inline code | -80 | ❌ |
+| 6 | `src/chat/repl.rs` | Use `handle_overflow_error()` instead of inline code | -40 | ❌ |
+| 7 | - | Run tests: `cargo test --all-features` | - | ❌ |
+| 8 | - | Run clippy: `cargo clippy --all-features -- -W clippy::cognitive_complexity` | - | ❌ |
+| 9 | - | Verify complexity <25 | - | ❌ |
+
+**Key Design Decisions:**
+- Use `&mut ReplState` instead of many parameters (all state already consolidated)
+- Functions return `AppResult<ContinuationResult>`
+- Module name: `continuation.rs` (new file, separate concern)
+- Max 3 nested continuations (existing limit preserved)
 
 **Estimated effort:** 2-3 days
 
-**Related:** Issue #22
+**Related:** Issue #22, PR #28
 
 ---
 
