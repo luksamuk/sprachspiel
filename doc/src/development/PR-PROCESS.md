@@ -65,11 +65,17 @@ After documentation is committed:
 ```
 8. Push branch: git push -u origin <branch>
 
-9. Create PR as DRAFT:
+9. Create PR as DRAFT with issue reference:
    gh pr create --draft --title "<type>: <description>" --body "..."
+   
+   IMPORTANT: Include "Closes #N" or "Related #N" in PR body to:
+   - Link PR to Issue automatically
+   - Auto-close Issue when PR is merged (Closes #N)
 
-10. Link PR to issue:
-    gh issue comment <issue_number> --body "PR #<pr_number> criado (draft)."
+10. Link PR to Issue (Development field):
+    gh issue comment <issue_number> --body "PR #<pr_number> criado para resolver esta issue."
+    
+   This creates a visible link in the Issue's "Development" section.
 
 11. STOP AND WAIT for user authorization
 
