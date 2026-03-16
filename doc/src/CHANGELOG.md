@@ -2,7 +2,7 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [Unreleased]
+## [0.33.0] - 2026-03-16
 
 ### Added
 
@@ -35,7 +35,7 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **BM25 Score Normalization for Conflict Detection** - Fixed incorrect similarity scoring
   - Previous formula `(-score).max(0.0)` didn't normalize to [0,1] range
-  - New formula `(-score)/(1-score)` properly maps BM25 scores to [0,1)
+  - New formula `(-score)/(1-score)` properly maps BM25 scores to [0,1]
   - Score -10 (strong match) → 0.91, score -1 (weak match) → 0.50
   - Adjusted CONFLICT_THRESHOLD from 0.8 to 0.85 after proper normalization
   - Added `normalize_bm25_score()` helper function
