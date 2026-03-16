@@ -123,3 +123,40 @@ Next step: [what you were about to do]
 When you see a <continuation_prompt> after context is compacted,
 continue naturally from the checkpoint without repeating completed work.
 "#;
+
+/// System prompt for conversation compaction
+///
+/// Used when summarizing old messages during context overflow.
+/// Produces structured markdown summaries.
+pub const COMPACTION_PROMPT: &str = r#"Summarize the following conversation concisely in MARKDOWN format.
+
+Use this structure:
+**Key Topics:**
+- Topic 1
+- Topic 2
+
+**Decisions Made:**
+- Decision 1
+- Decision 2
+
+**Technical Details:**
+- Important code/technical info
+
+**Action Items:**
+- [ ] Pending task 1
+- [ ] Pending task 2
+
+Provide a structured markdown summary that captures the essential context."#;
+
+/// Template for continuation prompts
+///
+/// Used to format continuation prompts after context compaction.
+/// Placeholders: {paused_at}, {next_step}
+pub const CONTINUATION_PROMPT_TEMPLATE: &str = r#"<continuation_prompt>
+Context has been compacted. Resume from the checkpoint.
+
+Reasoning paused at: {paused_at}
+Next step: {next_step}
+
+Continue naturally from where you left off. Do not repeat completed work.
+</continuation_prompt>"#;

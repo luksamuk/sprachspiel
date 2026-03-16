@@ -36,6 +36,7 @@
 - [Context Continuity](./development/context-continuity.md)
 - [Chat Mode Design](./development/chat-mode-design.md)
 - [Contributing](./development/contributing.md)
+- [Pull Request Process](./development/PR-PROCESS.md)
 
 ## Research Background
 

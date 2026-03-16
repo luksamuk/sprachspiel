@@ -24,6 +24,16 @@ All notable changes to Ask-AI will be documented in this file.
   - Layers: Input/View traits → Session → Implementations → State → Core → REPL
   - Moved ~600 lines from `repl.rs` to `core.rs` for maintainability
 
+### Changed
+
+- **Prompts Centralization** - All prompts now centralized in `src/prompts/`
+  - Moved `build_continuation_prompt()` from `core.rs` to `prompts/builder.rs`
+  - Added `COMPACTION_PROMPT` constant for conversation summarization
+  - Added `CONTINUATION_PROMPT_TEMPLATE` for continuation after compaction
+  - New functions: `build_compaction_prompt()`, `build_continuation_prompt()`
+  - Eliminated ~50 lines of duplicated prompt templates from `core.rs`
+  - Easier maintenance: all prompt templates in one location
+
 ### Fixed
 
 - **Error Recovery for Tool Calls** - LLM now receives parsing errors for self-correction

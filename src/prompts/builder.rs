@@ -10,8 +10,8 @@
 use std::collections::HashSet;
 
 use super::base::{
-    CONTEXT_MANAGEMENT_INSTRUCTION, PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE,
-    SYSTEM_PROMPT_SUMMARIZE,
+    COMPACTION_PROMPT, CONTEXT_MANAGEMENT_INSTRUCTION, CONTINUATION_PROMPT_TEMPLATE,
+    PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE,
 };
 use super::examples::TOOL_EXAMPLES;
 use super::tools::build_tool_context;
@@ -354,6 +354,40 @@ fn build_file_tools_context(blacklist: &HashSet<&str>) -> String {
     }
 
     lines.join("\n")
+}
+
+/// Build a continuation prompt from checkpoint information
+///
+/// Creates a user message that tells the LLM to resume from where it paused
+/// after context compaction.
+///
+/// # Arguments
+/// * `paused_at` - Description of where reasoning stopped
+/// * `next_step` - What was about to be done
+///
+/// # Returns
+/// Formatted continuation prompt string
+pub fn build_continuation_prompt(paused_at: &str, next_step: &str) -> String {
+    CONTINUATION_PROMPT_TEMPLATE
+        .replace("{paused_at}", paused_at)
+        .replace("{next_step}", next_step)
+}
+
+/// Build a compaction prompt for summarizing conversation messages
+///
+/// Takes pre-formatted conversation text and combines it with the compaction
+/// prompt template to create a complete summarization request.
+///
+/// # Arguments
+/// * `conversation_text` - Pre-formatted conversation (e.g., "User: ...\nAssistant: ...")
+///
+/// # Returns
+/// Complete prompt for LLM summarization
+pub fn build_compaction_prompt(conversation_text: &str) -> String {
+    format!(
+        "{}\n\nConversation:\n{}\n\n{}",
+        SYSTEM_PROMPT_SUMMARIZE, conversation_text, COMPACTION_PROMPT
+    )
 }
 
 // ============================================================================

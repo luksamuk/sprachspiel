@@ -40,14 +40,18 @@ pub mod builder;
 pub mod examples;
 pub mod tools;
 
-// Re-export commonly used items for external access (tests, etc.)
+// Re-export commonly used items for external access (tests, core.rs, etc.)
 // These may trigger unused_imports warnings in the binary but are used by tests/prompt_benchmark.rs
 #[allow(unused_imports)]
 pub use base::{
+    COMPACTION_PROMPT, CONTEXT_MANAGEMENT_INSTRUCTION, CONTINUATION_PROMPT_TEMPLATE,
     PERSONALITY_DEFAULT, SYSTEM_PROMPT_BASE, SYSTEM_PROMPT_CODE, SYSTEM_PROMPT_SUMMARIZE,
 };
 #[allow(unused_imports)]
-pub use builder::{PromptConfig, PromptType, build_system_prompt, build_tool_user_prompt};
+pub use builder::{
+    build_compaction_prompt, build_continuation_prompt, build_system_prompt, build_tool_user_prompt,
+    PromptConfig, PromptType,
+};
 #[allow(unused_imports)]
 pub use tools::build_tool_context;
 
@@ -59,5 +63,7 @@ pub fn list_prompts() -> Vec<&'static str> {
         "code",
         "code_with_tools",
         "summarize",
+        "compaction",
+        "continuation",
     ]
 }

@@ -233,29 +233,37 @@ fact_remove(id)             // LLM removes incorrect facts
 
 ---
 
-### 🔴 PRIORITY 1: Code Quality - Prompts Centralization
+### ✅ PRIORITY 1: Code Quality - Prompts Centralization (COMPLETED)
 
-**Status:** 📋 PLANNED
+**Status:** ✅ COMPLETED (v0.33.0)
 
-**Goal:** Centralize all prompts in `prompts.rs` for maintainability.
+**Goal:** Centralize all prompts in `prompts/` module for maintainability.
 
 **Problem:**
-- Prompts for compaction and continuation are embedded in `core.rs`
+- Prompts for compaction and continuation were embedded in `core.rs`
 - Difficult to find and modify prompts scattered across files
 - Inconsistent prompt management
 
-**Solution:** Move prompts to centralized location in `prompts.rs`.
+**Solution:** Move prompts to centralized location in `prompts/` module.
 
-**Tasks:**
+**Tasks Completed:**
 
-| Task | File | Line | Status |
-|------|------|------|--------|
-| Move compaction prompt | `core.rs` | ~555 | ❌ |
-| Move continuation prompt | `core.rs` | ~591 | ❌ |
-| Create prompt builder functions | `prompts.rs` | - | ❌ |
-| Update core.rs to use centralized prompts | `core.rs` | - | ❌ |
+| Task | File | Status |
+|------|------|--------|
+| Add `COMPACTION_PROMPT` constant | `prompts/base.rs` | ✅ |
+| Add `CONTINUATION_PROMPT_TEMPLATE` constant | `prompts/base.rs` | ✅ |
+| Create `build_compaction_prompt()` function | `prompts/builder.rs` | ✅ |
+| Move `build_continuation_prompt()` | `prompts/builder.rs` | ✅ |
+| Update exports in `prompts/mod.rs` | `prompts/mod.rs` | ✅ |
+| Refactor `core.rs` to use centralized prompts | `chat/core.rs` | ✅ |
 
-**Estimated effort:** 0.5 day
+**Files Modified:**
+- `src/prompts/base.rs` - Added `COMPACTION_PROMPT` and `CONTINUATION_PROMPT_TEMPLATE`
+- `src/prompts/builder.rs` - Added `build_compaction_prompt()`, moved `build_continuation_prompt()`
+- `src/prompts/mod.rs` - Updated exports
+- `src/chat/core.rs` - Removed ~50 lines of prompt templates, now uses centralized functions
+
+**Estimated effort:** 0.5 day → **Actual:** 0.5 day
 
 **Related:** Issue #21
 
