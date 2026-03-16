@@ -358,42 +358,98 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔄 PRIORITY 1: Code Quality - REPL Complexity Reduction (Follow-up)
 
-**Status:** 🔄 IN PROGRESS
+### ✅ PRIORITY 1: Code Quality - run_chat_repl Complexity (COMPLETED)
+
+**Status:** ✅ COMPLETED (v0.35.0)
 
 **Goal:** Reduce cyclomatic complexity of `run_chat_repl` from 78/25 to <25/25.
 
 **Context:** Phase 1 (Issue #7) completed the initial refactoring, extracting 600+ lines into separate modules. Issue #22 tracks follow-up improvements.
 
-**Current State:**
-- Cognitive complexity: 78/25 (triples the limit!)
-- Main offenders: continuation handling (140 lines), overflow recovery (60 lines)
-- `ReplState` already consolidates all mutable state - can be used for simpler signatures
+**Result:** Cognitive complexity reduced from 78/25 to **eliminated** (no Clippy warning for `run_chat_repl`).
 
-**Solution:** Extract continuation handling and overflow recovery to `src/chat/continuation.rs`.
-
-**Implementation Plan:**
+**Implementation:**
 
 | Phase | File | Task | Lines | Status |
 |-------|------|------|-------|--------|
-| 1 | `src/chat/continuation.rs` (NEW) | Create file with `ContinuationResult` struct | ~20 | ❌ |
-| 2 | `src/chat/continuation.rs` | Implement `handle_continuation(&mut ReplState, SendMessageResult)` | ~100 | ❌ |
-| 3 | `src/chat/continuation.rs` | Implement `handle_overflow_error(&mut ReplState, &str)` | ~50 | ❌ |
-| 4 | `src/chat/mod.rs` | Add `pub mod continuation;` | ~2 | ❌ |
-| 5 | `src/chat/repl.rs` | Use `handle_continuation()` instead of inline code | -80 | ❌ |
-| 6 | `src/chat/repl.rs` | Use `handle_overflow_error()` instead of inline code | -40 | ❌ |
-| 7 | - | Run tests: `cargo test --all-features` | - | ❌ |
-| 8 | - | Run clippy: `cargo clippy --all-features -- -W clippy::cognitive_complexity` | - | ❌ |
-| 9 | - | Verify complexity <25 | - | ❌ |
+| 1 | `src/chat/continuation.rs` (NEW) | Create file with `ContinuationResult` struct | ~320 | ✅ |
+| 2 | `src/chat/command_handlers.rs` | Add `handle_command_result()`, `handle_model_switch()`, `print_context_info()` | ~400 | ✅ |
+| 3 | `src/chat/repl.rs` | Extract `create_session()`, `resolve_session_model()`, `resolve_thinking_mode()`, `init_database()`, `run_startup_tasks()`, `handle_user_message()` | ~300 | ✅ |
+| 4 | Tests | `cargo test --all-features` | - | ✅ |
+| 5 | Clippy | `cargo clippy --all-features -- -W clippy::cognitive_complexity` | - | ✅ |
 
-**Key Design Decisions:**
-- Use `&mut ReplState` instead of many parameters (all state already consolidated)
-- Functions return `AppResult<ContinuationResult>`
-- Module name: `continuation.rs` (new file, separate concern)
-- Max 3 nested continuations (existing limit preserved)
+**Files Modified:**
+- `src/chat/repl.rs`: 1090 → 540 lines (~550 lines removed)
+- `src/chat/command_handlers.rs`: Added dispatch functions
+- `src/chat/continuation.rs`: NEW, continuation handling
+- `src/chat/mod.rs`: Updated exports
 
-**Estimated effort:** 2-3 days
+**Commits:** Part of PR #28
 
 **Related:** Issue #22, PR #28
+
+---
+
+### 🔵 PRIORITY 4: Code Quality - query.rs Complexity
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Reduce cognitive complexity of `run_query` from 32/25 to <25/25.
+
+**Context:** Non-interactive mode function (CLI query mode).
+
+**Proposed Solution:**
+- Extract `create_query_session()`
+- Extract `resolve_query_model()`
+- Extract `init_query_database()`
+- Extract `run_query_startup_tasks()`
+
+**Estimated effort:** 1-2 days
+
+**Related:** Issue #29
+
+---
+
+### 🔵 PRIORITY 4: Code Quality - context_builder.rs Complexity
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Reduce cognitive complexity of `build_context` from 27/25 to <25/25.
+
+**Context:** Retrieval context building function.
+
+**Proposed Solution:**
+- Extract `build_doc_context()`
+- Extract `build_note_context()`
+- Extract `build_message_context()`
+- Extract `combine_contexts()`
+
+**Estimated effort:** 1 day
+
+**Related:** Issue #30
+
+---
+
+### 🔵 PRIORITY 4: Code Quality - registry.rs Complexity
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Reduce cognitive complexity of `register_tools` from 52/25 to <25/25.
+
+**Context:** Tool registration function - largest complexity in codebase.
+
+**Proposed Solution:**
+- Extract `register_weather_tools()`
+- Extract `register_file_tools()`
+- Extract `register_pokemon_tools()`
+- Extract `register_calc_tools()`
+- Extract `register_serper_tools()`
+- Extract `register_system_tools()`
+- Extract `register_search_tools()`
+
+**Estimated effort:** 1-2 days
+
+**Related:** Issue #31
 
 ---
 

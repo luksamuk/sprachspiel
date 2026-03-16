@@ -20,9 +20,144 @@
 
 use std::sync::Arc;
 
+use super::commands::CommandResult;
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
+use crate::capabilities::ModelCapabilities;
+use crate::config::ModelConfig;
 use crate::debug_tools::log_debug;
+use crate::settings::Settings;
+use crate::tokens::{calculate_context_metrics, estimate_tokens};
+
+pub use super::session::ChatSession;
+
+/// Result of handling a command in the REPL loop.
+pub enum HandleResult {
+    /// Continue the REPL loop
+    Continue,
+    /// Exit the REPL
+    Exit,
+}
+
+/// Handle a command result in the REPL loop.
+///
+/// Dispatches to the appropriate handler based on the command type.
+/// Returns `HandleResult::Exit` for exit commands, `HandleResult::Continue` otherwise.
+pub async fn handle_command_result(
+    result: CommandResult,
+    state: &mut ReplState,
+    input: &mut (dyn super::input::InputBackend + Send),
+) -> HandleResult {
+    match result {
+        CommandResult::Continue => HandleResult::Continue,
+        CommandResult::Exit => {
+            let _ = input.save_history();
+            if !state.session.anonymous {
+                let _ = state.session.save_sqlite();
+            }
+            HandleResult::Exit
+        }
+        CommandResult::Error(e) => {
+            eprintln!("Error: {}", e);
+            HandleResult::Continue
+        }
+        CommandResult::ThinkToggled(new_state) => {
+            handle_think_toggled(state, new_state);
+            HandleResult::Continue
+        }
+        CommandResult::ToolsToggled(new_state) => {
+            handle_tools_toggled(state, new_state);
+            HandleResult::Continue
+        }
+        CommandResult::Compact => {
+            handle_compact(state).await;
+            HandleResult::Continue
+        }
+        CommandResult::ToolOutputChanged(level) => {
+            handle_tool_output_changed(level);
+            HandleResult::Continue
+        }
+        CommandResult::DebugToggled(new_state) => {
+            handle_debug_toggled(new_state);
+            HandleResult::Continue
+        }
+        CommandResult::RetrievalToggled(new_state) => {
+            handle_retrieval_toggled(state, new_state);
+            HandleResult::Continue
+        }
+        CommandResult::Context => {
+            print_context_info(
+                &state.session,
+                &state.model_config,
+                state.tools_active,
+                state.agents_md.as_deref(),
+                &state.settings,
+                state.cli_soulless,
+            );
+            HandleResult::Continue
+        }
+        CommandResult::Retry => {
+            handle_retry(state).await;
+            HandleResult::Continue
+        }
+        CommandResult::Undo => {
+            handle_undo(state);
+            HandleResult::Continue
+        }
+        CommandResult::Search { query, limit } => {
+            handle_search(state, query, limit).await;
+            HandleResult::Continue
+        }
+        CommandResult::Restore { session_id } => {
+            handle_restore(state, session_id);
+            HandleResult::Continue
+        }
+        CommandResult::Reindex { conversation_id } => {
+            handle_reindex(state, conversation_id).await;
+            HandleResult::Continue
+        }
+        CommandResult::FactPrune => {
+            handle_fact_prune(state);
+            HandleResult::Continue
+        }
+        CommandResult::FactAdd { content, global } => {
+            handle_fact_add(state, content, global);
+            HandleResult::Continue
+        }
+        CommandResult::FactList { global } => {
+            handle_fact_list(state, global);
+            HandleResult::Continue
+        }
+        CommandResult::FactRemove { id } => {
+            handle_fact_remove(state, id);
+            HandleResult::Continue
+        }
+        CommandResult::FactSearch { query, global, limit } => {
+            handle_fact_search(state, query, global, limit);
+            HandleResult::Continue
+        }
+        CommandResult::TodoAdd { description } => {
+            handle_todo_add(description, &mut state.session);
+            HandleResult::Continue
+        }
+        CommandResult::TodoList => {
+            handle_todo_list();
+            HandleResult::Continue
+        }
+        CommandResult::TodoUpdate { id, status } => {
+            handle_todo_update(id, status, &mut state.session);
+            HandleResult::Continue
+        }
+        CommandResult::TodoClearDone => {
+            handle_todo_clear_done(&mut state.session);
+            HandleResult::Continue
+        }
+        CommandResult::TodoClearAll => {
+            handle_todo_clear_all(&mut state.session);
+            HandleResult::Continue
+        }
+    }
+}
 
 /// Handle think mode toggle
 ///
@@ -834,6 +969,209 @@ pub fn handle_todo_clear_all(session: &mut super::session::ChatSession) {
     {
         eprintln!("Warning: Could not save session: {}", e);
     }
+}
+
+/// Handle model switch command.
+///
+/// Uses the centralized `model_switch::switch_model` function to switch
+/// to a new model and updates the REPL state accordingly.
+pub async fn handle_model_switch(
+    state: &mut ReplState,
+    model_name: &str,
+    current_capabilities: &ModelCapabilities,
+) -> Result<(), String> {
+    use super::model_switch::switch_model;
+
+    let result = switch_model(
+        model_name,
+        &state.ollama,
+        current_capabilities,
+        state.session.think,
+        state.tools_active,
+    )
+    .await?;
+
+    state.current_model_name = result.model_name.clone();
+    state.model_config = result.model_config;
+    state.capabilities = result.capabilities.clone();
+    state.session.think = result.think_active;
+    state.tools_active = result.tools_active;
+
+    for warning in result.warnings {
+        eprintln!("{}", warning);
+    }
+
+    println!(
+        "Switched to model: {}",
+        state.model_config.model_id
+    );
+
+    Ok(())
+}
+
+/// Print context information about the current session.
+///
+/// Shows token usage, message count, and context window utilization.
+pub fn print_context_info(
+    session: &ChatSession,
+    model_config: &ModelConfig,
+    tools_enabled: bool,
+    agents_md: Option<&str>,
+    settings: &Settings,
+    soulless: bool,
+) {
+    use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+    use crate::tools::get_available_tool_names;
+
+    let blacklist_set = settings.blacklist_set();
+
+    let prompt_type = if tools_enabled {
+        PromptType::ToolUser
+    } else {
+        PromptType::Default
+    };
+
+    let system_prompt = build_system_prompt(
+        PromptConfig::new(prompt_type)
+            .with_model_id(Some(&model_config.model_id))
+            .with_blacklist(Some(&blacklist_set))
+            .with_agents_md(agents_md)
+            .with_tools(tools_enabled)
+            .with_retrieval(session.retrieval_enabled)
+            .with_soulless(soulless),
+    );
+
+    let history_messages = session.get_messages_for_llm(&system_prompt);
+    let context_window = model_config.num_ctx as usize;
+
+    let tool_count = if tools_enabled {
+        get_available_tool_names(settings).len()
+    } else {
+        0
+    };
+
+    const TOKENS_PER_TOOL: usize = 50;
+    let tools_tokens = if tools_enabled && tool_count > 0 {
+        tool_count * TOKENS_PER_TOOL
+    } else {
+        0
+    };
+
+    let real_history_tokens = session.history_real_tokens();
+    let real_tokens_opt = if real_history_tokens > 0 {
+        Some(real_history_tokens)
+    } else {
+        None
+    };
+
+    let metrics = calculate_context_metrics(
+        &history_messages,
+        context_window,
+        &system_prompt,
+        tools_tokens,
+        real_tokens_opt,
+    );
+
+    let context_window_k = context_window / 1024;
+    let usage_percent = (metrics.utilization * 100.0) as u8;
+
+    let bar_width = 20;
+    let filled = ((usage_percent as usize).min(100) * bar_width) / 100;
+    let empty = bar_width - filled;
+
+    let (color_code, reset_code, status_text) = if usage_percent < 72 {
+        ("\x1B[32m", "\x1B[0m", "OK")
+    } else if usage_percent < 80 {
+        ("\x1B[33m", "\x1B[0m", "MODERATE")
+    } else {
+        ("\x1B[31m", "\x1B[0m", "CRITICAL")
+    };
+
+    println!();
+    println!("Context Information:");
+    println!(
+        "  Model:          {} ({}K context)",
+        model_config.model_id, context_window_k
+    );
+    println!();
+    println!("  Context Utilization:");
+    println!(
+        "    {}{}{}{} {}{}",
+        color_code,
+        "█".repeat(filled),
+        "░".repeat(empty),
+        reset_code,
+        color_code,
+        usage_percent
+    );
+    println!(
+        "    {}{} / {} tokens{}\x1B[0m",
+        color_code, metrics.total_tokens, context_window, reset_code
+    );
+    println!();
+    println!("  Status: {}", status_text);
+    println!();
+    println!("  Token Breakdown:");
+    println!("    System prompt:    ~{} tokens", metrics.system_tokens);
+    if tools_enabled && tool_count > 0 {
+        println!(
+            "    Tool definitions: ~{} tokens ({} tools)",
+            metrics.tools_tokens, tool_count
+        );
+    }
+
+    let active_messages = if session.has_compacted_messages() {
+        session.messages.len() - session.messages_sent_to_llm
+    } else {
+        session.messages.len()
+    };
+
+    if metrics.total_tokens > 0 {
+        println!("    History:          ~{} tokens", metrics.history_tokens);
+        if session.has_compacted_messages() {
+            println!(
+                "                      ({} active messages + summary)",
+                active_messages
+            );
+        } else {
+            println!("                      ({} messages)", active_messages);
+        }
+    } else {
+        if session.has_compacted_messages() {
+            println!(
+                "    Summary:          ~{} tokens",
+                estimate_tokens(session.compacted_summary.as_deref().unwrap_or("")) + 4
+            );
+            println!(
+                "    Conversation:     ~{} tokens ({} active messages)",
+                metrics.history_tokens, active_messages
+            );
+        } else {
+            println!(
+                "    Conversation:     ~{} tokens ({} messages)",
+                metrics.history_tokens, active_messages
+            );
+        }
+    }
+
+    println!("    {}", "─".repeat(40));
+    println!("    Total used:       ~{} tokens", metrics.total_tokens);
+    println!("    Available:        ~{} tokens", metrics.available());
+    println!();
+
+    if session.has_compacted_messages() {
+        println!("  Session:");
+        println!(
+            "    Compacted:        {} messages summarized",
+            session.compacted_message_count()
+        );
+        println!("    Active:           {} messages", active_messages);
+        println!("    Total:            {} messages", session.messages.len());
+    } else {
+        println!("  Session:");
+        println!("    Total:            {} messages", session.messages.len());
+    }
+    println!();
 }
 
 #[cfg(test)]

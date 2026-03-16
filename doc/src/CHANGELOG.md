@@ -6,12 +6,27 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Changed
 
-- **REPL Complexity Reduction** - Refactoring `run_chat_repl` for maintainability
-  - Extracted `handle_continuation()` - continuation handling (~140 lines)
-  - Extracted `handle_overflow_error()` - overflow recovery (~60 lines)
-  - Extracted `process_user_input()` - input processing (~330 lines)
-  - Cognitive complexity reduced from 78/25 to target <25
-  - Continues work from Issue #7 (PR #19)
+- **REPL Complexity Reduction** - Major refactoring of `run_chat_repl` for maintainability
+  - Cognitive complexity reduced from **78/25 to eliminated** (no warning)
+  - Extracted `handle_command_result()` - dispatches all command results (~100 lines)
+  - Extracted `handle_model_switch()` - centralized model switching logic (~30 lines)
+  - Moved `print_context_info()` from `repl.rs` to `command_handlers.rs` (~165 lines)
+  - Extracted `handle_user_message()` - user input processing (~50 lines)
+  - Extracted `create_session()` - session initialization (~75 lines)
+  - Extracted `resolve_session_model()` - model validation (~25 lines)
+  - Extracted `resolve_thinking_mode()` - thinking mode logic (~30 lines)
+  - Extracted `init_database()` - database/embedding client init (~25 lines)
+  - Extracted `run_startup_tasks()` - migration and decay cycle (~30 lines)
+  - New module `src/chat/continuation.rs` with continuation handling functions
+  - `repl.rs` reduced from ~1090 lines to ~540 lines
+  - `command_handlers.rs` now includes `HandleResult` enum for dispatch
+
+### Refactoring
+
+- **Code Organization** - Improved module structure
+  - All command handlers now use `ReplState` consistently
+  - Command dispatch centralized in `handle_command_result()`
+  - Removed duplicate code patterns from main REPL loop
 
 ## [0.34.0] - 2026-03-16
 

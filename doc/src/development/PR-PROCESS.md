@@ -25,6 +25,7 @@ This document describes the mandatory workflow for implementing features and fix
 2. **ALWAYS move card to "In Review"** - After creating PR and before marking ready
 3. **ALWAYS update CHANGELOG and IMPLEMENTATION.md** - Before committing code changes
 4. **ALWAYS reference the issue in PR body** - Use "Closes #N" or "Related #N"
+5. **ALWAYS add new issues to roadmap** - When creating new issues, add them to IMPLEMENTATION.md with priority label
 
 ## Workflow: Step by Step
 
