@@ -79,9 +79,10 @@ Todo → In Progress → In Review → Done
    - If found → respond and implement
    - If none → inform user and wait for approval
 
-### Merge
+### Merge (after authorization)
 
-- Reviewer merges using **regular merge** (NOT squash)
+- User authorizes merge after all comments resolved and testing passed
+- Agent merges using **regular merge** (NOT squash): `gh pr merge PR_NUMBER --merge`
 - Branch is automatically deleted
 - PR is automatically closed
 - Card moves to "Done" automatically (if PR references it)

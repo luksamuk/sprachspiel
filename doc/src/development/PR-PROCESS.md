@@ -172,16 +172,19 @@ After all review comments are resolved, the reviewer performs manual testing.
     - Proceed to Phase 7 (merge)
 ```
 
-### Phase 7: Merge (REVIEWER ONLY)
+### Phase 7: Merge (AGENT, after authorization)
 
 ```
-29. Reviewer merges PR using regular merge (NOT squash):
+29. User authorizes merge (all comments resolved, testing passed)
+
+30. Agent merges PR using regular merge (NOT squash):
+    gh pr merge PR_NUMBER --merge
     - Branch is automatically deleted
     - PR is automatically closed
 
-30. Card moves to "Done" automatically (if PR references the card)
+31. Card moves to "Done" automatically (if PR references the card)
 
-31. Issue is closed automatically (via "Closes #N" in PR body)
+32. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
