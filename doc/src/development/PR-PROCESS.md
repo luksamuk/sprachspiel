@@ -56,35 +56,58 @@ This document describes the mandatory workflow for implementing features and fix
 7. Commit documentation: git commit -m "docs: update CHANGELOG for <feature>"
 ```
 
-### Phase 3: Implementation
+### ⚠️ STOP POINT: Create Draft PR and Wait for Authorization
+
+**CRITICAL: After completing Phase 2, you MUST create the draft PR and STOP.**
+
+After documentation is committed:
 
 ```
-8. Implement the feature/fix
+8. Push branch: git push -u origin <branch>
 
-9. Run tests: cargo test --all-features
+9. Create PR as DRAFT:
+   gh pr create --draft --title "<type>: <description>" --body "..."
 
-10. Run clippy: cargo clippy --all-features -- -D warnings
+10. Move GitHub Project card to "In Review" (both Status and Scrum Status)
 
-11. Commit code changes (conventional commits):
+11. STOP AND WAIT for user authorization
+
+    DO NOT proceed to Phase 3 (Implementation) until authorized.
+    The user will enter "planning mode" to discuss implementation approach.
+```
+
+**Why this stop point exists:**
+- Allows user to review planned changes before code is written
+- Provides opportunity for architecture discussion
+- Prevents wasted effort on wrong approach
+- Enables course correction early
+
+### Phase 3: Implementation (AFTER Authorization)
+
+**Only start Phase 3 after user authorizes continuation.**
+
+```
+12. Implement the feature/fix
+
+13. Run tests: cargo test --all-features
+
+14. Run clippy: cargo clippy --all-features -- -D warnings
+
+15. Commit code changes (conventional commits):
     feat: <description>
     fix: <description>
     refactor: <description>
 
-12. Push branch: git push -u origin <branch>
+16. Push commits: git push
 ```
 
-### Phase 4: Pull Request
+### Phase 4: Mark PR Ready for Review
 
 ```
-13. Create PR as DRAFT:
-    gh pr create --draft --title "<type>: <description>" --body "..."
-
-14. Move GitHub Project card to "In Review" (both Status and Scrum Status)
-
-15. Mark PR as "ready for review":
+17. Mark PR as "ready for review":
     gh pr ready <number>
 
-16. Add comment to issue: "PR #N ready for review"
+18. Add comment to issue: "PR #N ready for review"
 ```
 
 ### Phase 5: Review & Iteration (COLLABORATIVE)
@@ -92,9 +115,9 @@ This document describes the mandatory workflow for implementing features and fix
 This phase repeats until all review comments are resolved.
 
 ```
-17. Reviewer adds comments to PR
+19. Reviewer adds comments to PR
 
-18. Agent fetches ALL unresolved review comments:
+20. Agent fetches ALL unresolved review comments:
     gh api graphql -f query='
     query {
       repository(owner: "OWNER", name: "REPO") {
@@ -116,7 +139,7 @@ This phase repeats until all review comments are resolved.
     IMPORTANT: Use 'last: 50' (not 'first: 30') to get ALL threads.
     Verify thread count matches totalCount.
 
-19. Agent responds to EACH unresolved comment individually:
+21. Agent responds to EACH unresolved comment individually:
     - Use response prefixes:
       ✅ Resolvido (for fixed code)
       ✅ Verificado (for confirmed correct behavior)
@@ -133,26 +156,26 @@ This phase repeats until all review comments are resolved.
       }) { comment { id } }
     }'
 
-20. If implementation changes needed:
+22. If implementation changes needed:
     a. Create a todo list overview of changes
     b. Wait for user confirmation before implementing
     c. Implement approved changes
     d. Update documentation as needed
     e. Push changes
 
-21. If scope creep detected:
+23. If scope creep detected:
     - Discuss with user
     - May need to open separate issues
 
-22. Update PR description and documentation if changes were made
+24. Update PR description and documentation if changes were made
 
-23. Agent checks for unresolved comments again:
-    - If unresolved comments exist → return to step 19
+25. Agent checks for unresolved comments again:
+    - If unresolved comments exist → return to step 21
     - If all resolved → inform user and wait for approval
 
-24. User reviews and either:
+26. User reviews and either:
     - Approves and proceeds to Phase 6 (manual testing)
-    - Adds more comments → return to step 19
+    - Adds more comments → return to step 21
 ```
 
 ### Phase 6: Manual Testing (REVIEWER)
@@ -160,29 +183,30 @@ This phase repeats until all review comments are resolved.
 After all review comments are resolved, the reviewer performs manual testing.
 
 ```
-25. Reviewer marks all review comments as resolved
+27. Reviewer marks all review comments as resolved
 
-26. Reviewer tests the application manually:
+28. Reviewer tests the application manually:
     - Build and run: cargo build --all-features && cargo run
     - Test the specific feature/fix
     - Verify edge cases
     - Check for regressions
 
-27. If bugs found during testing:
+29. If bugs found during testing:
     a. Reviewer documents bugs in PR comments
     b. Agent creates todo list of fixes
     c. User confirms fixes
     d. Agent implements fixes
     e. Agent documents bugs fixed in PR body
     f. Agent pushes changes
-    g. **Return to Step 19 (review iteration)** - new commits need review
+    g. **Return to Step 21 (review iteration)** - new commits need review
 
-28. If testing passes:
+30. If testing passes:
     - Proceed to Phase 7 (merge)
 
 **IMPORTANT:** Every time the agent pushes commits (whether fixing review comments, 
-bugs from testing, or any other changes), the PR returns to Step 19 for a new 
+bugs from testing, or any other changes), the PR returns to Step 21 for a new 
 review iteration. The reviewer must review the new commits and either:
+- Add more comments → continue iteration
 - Add more comments → continue iteration
 - Approve → proceed to Phase 7
 
@@ -196,16 +220,16 @@ Before informing the reviewer that changes are ready, the agent MUST ensure:
 ### Phase 7: Merge (AGENT, after authorization)
 
 ```
-29. User authorizes merge (all comments resolved, testing passed)
+31. User authorizes merge (all comments resolved, testing passed)
 
-30. Agent merges PR using regular merge (NOT squash):
+32. Agent merges PR using regular merge (NOT squash):
     gh pr merge PR_NUMBER --merge
     - Branch is automatically deleted
     - PR is automatically closed
 
-31. Card moves to "Done" automatically (if PR references the card)
+33. Card moves to "Done" automatically (if PR references the card)
 
-32. Issue is closed automatically (via "Closes #N" in PR body)
+34. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
