@@ -68,7 +68,10 @@ After documentation is committed:
 9. Create PR as DRAFT:
    gh pr create --draft --title "<type>: <description>" --body "..."
 
-10. STOP AND WAIT for user authorization
+10. Link PR to issue:
+    gh issue comment <issue_number> --body "PR #<pr_number> criado (draft)."
+
+11. STOP AND WAIT for user authorization
 
     DO NOT proceed to Phase 3 (Implementation) until authorized.
     The user will enter "planning mode" to discuss implementation approach.
