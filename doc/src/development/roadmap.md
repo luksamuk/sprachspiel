@@ -40,6 +40,9 @@ This document outlines planned features and the current state of Ask-AI.
 - Token metrics display
 - Thinking output visible when enabled
 - Error recovery for tool/network errors
+  - Typed error classification with `OllamaError` (not string heuristics)
+  - `JsonError` (parsing failures) now recoverable - LLM can self-correct malformed tool calls
+  - Network errors, unknown tools, invalid arguments remain recoverable
 - Context overflow protection during tool execution
 - **Context Continuity with Graceful Interruption** (v0.31.0)
   - LLM can pause reasoning when context fills up

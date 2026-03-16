@@ -14,7 +14,7 @@ All notable changes to Ask-AI will be documented in this file.
   - Decay: Ebbinghaus forgetting curve (180d preferences, 30d facts)
   - Scope: Project-specific vs global facts
   - FTS5: Full-text search for facts
-  - Prompt injection: Facts injected into system prompt (max 2200 chars)
+  - Prompt injection: Facts injected into system prompt with usage instructions (max 2200 chars)
 
 - **Chat Architecture Refactoring** - Preparing for TUI migration
   - `InputBackend` trait - abstracts input handling (rustyline/ratatui)
@@ -23,6 +23,15 @@ All notable changes to Ask-AI will be documented in this file.
   - `core.rs` module - extracted business logic from `repl.rs`
   - Layers: Input/View traits → Session → Implementations → State → Core → REPL
   - Moved ~600 lines from `repl.rs` to `core.rs` for maintainability
+
+### Fixed
+
+- **Error Recovery for Tool Calls** - LLM now receives parsing errors for self-correction
+  - Replaced string-based error classification with typed `OllamaError` matching
+  - `JsonError` (JSON/XML parsing failures) now marked as recoverable
+  - Errors from malformed tool calls are sent back to LLM as Tool messages
+  - LLM can self-correct when it generates invalid tool call syntax
+  - Removed unreliable heuristics (`is_error_str_recoverable`) in favor of types
 
 ## [0.32.1] - 2026-03-13
 
