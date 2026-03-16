@@ -22,17 +22,17 @@ use std::sync::Arc;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
-use crate::context_overflow::{DEFAULT_OVERFLOW_THRESHOLD, check_context_overflow};
+use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD};
 use crate::debug_tools::log_debug;
 use crate::facts::prompt::build_facts_section;
-use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
-use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
+use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::tools::{get_available_tool_names, register_tools};
 
 use super::coordinator::{
-    MAX_RETRIES, classify_error_str, format_recovery_message, is_error_str_recoverable,
+    classify_ollama_error, format_recovery_message, is_ollama_error_recoverable, MAX_RETRIES,
 };
 use super::custom_coordinator::CustomCoordinator;
 use super::session::ChatSession;
@@ -417,12 +417,10 @@ pub async fn send_message(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                let error_str = e.to_string();
-
-                if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
                     attempts += 1;
 
-                    let recovery_err = classify_error_str(&error_str, &tool_names);
+                    let recovery_err = classify_ollama_error(&e, &tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
                     if use_debug {
@@ -443,6 +441,7 @@ pub async fn send_message(
 
                     continue;
                 } else {
+                    let error_str = e.to_string();
                     break Err(error_str);
                 }
             }

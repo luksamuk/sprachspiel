@@ -47,26 +47,9 @@ impl RecoverableError {
             }
         }
     }
-
-    /// Check if this error is recoverable (model can retry)
-    #[allow(dead_code)]
-    pub fn is_recoverable(&self) -> bool {
-        matches!(
-            self,
-            RecoverableError::UnknownTool { .. }
-                | RecoverableError::InvalidArguments { .. }
-                | RecoverableError::NetworkError { .. }
-        )
-    }
-}
-
-/// Check if an error string matches a pattern (case insensitive)
-fn error_matches(error_str: &str, pattern: &str) -> bool {
-    error_str.to_lowercase().contains(&pattern.to_lowercase())
 }
 
 /// Classify an OllamaError for recovery
-#[allow(dead_code)]
 pub fn classify_ollama_error(error: &OllamaError, available_tools: &[String]) -> RecoverableError {
     match error {
         OllamaError::ToolCallError(e) => match e {
@@ -98,39 +81,6 @@ pub fn classify_ollama_error(error: &OllamaError, available_tools: &[String]) ->
         OllamaError::Other(msg) => RecoverableError::OllamaError {
             message: msg.clone(),
         },
-    }
-}
-
-/// Classify an error string for recovery (for non-OllamaError cases)
-pub fn classify_error_str(error_str: &str, available_tools: &[String]) -> RecoverableError {
-    if error_matches(error_str, "unknown tool")
-        || (error_matches(error_str, "tool") && error_matches(error_str, "not found"))
-    {
-        RecoverableError::UnknownTool {
-            tool_name: "unknown".to_string(),
-            available_tools: available_tools.to_vec(),
-        }
-    } else if error_matches(error_str, "invalid") && error_matches(error_str, "argument") {
-        RecoverableError::InvalidArguments {
-            tool_name: "unknown".to_string(),
-            error: error_str.to_string(),
-        }
-    } else if error_matches(error_str, "network")
-        || error_matches(error_str, "timeout")
-        || error_matches(error_str, "connection")
-        || error_matches(error_str, "reqwest")
-    {
-        RecoverableError::NetworkError {
-            message: error_str.to_string(),
-        }
-    } else if error_matches(error_str, "json") || error_matches(error_str, "parse") {
-        RecoverableError::JsonError {
-            message: error_str.to_string(),
-        }
-    } else {
-        RecoverableError::OllamaError {
-            message: error_str.to_string(),
-        }
     }
 }
 
@@ -183,9 +133,9 @@ pub fn format_recovery_message(error: &RecoverableError) -> String {
         }
         RecoverableError::JsonError { message } => {
             format!(
-                "Error: Could not parse response: {}. \
-                 This might be a malformed tool call. \
-                 Please try again with correct formatting, or provide a direct response.",
+                "Error: Could not parse tool call: {}. \
+                 The tool call syntax was malformed (JSON/XML parsing error). \
+                 Please check the syntax and try again, or provide a direct response.",
                 message
             )
         }
@@ -193,7 +143,6 @@ pub fn format_recovery_message(error: &RecoverableError) -> String {
 }
 
 /// Check if an OllamaError is recoverable
-#[allow(dead_code)]
 pub fn is_ollama_error_recoverable(error: &OllamaError) -> bool {
     match error {
         OllamaError::ToolCallError(e) => matches!(
@@ -206,35 +155,6 @@ pub fn is_ollama_error_recoverable(error: &OllamaError) -> bool {
         OllamaError::JsonError(_) => true,
         OllamaError::Other(_) => false,
     }
-}
-
-/// Check if an error string indicates a recoverable error
-pub fn is_error_str_recoverable(error_str: &str) -> bool {
-    let lower = error_str.to_lowercase();
-
-    // Network and timeout errors are recoverable
-    if lower.contains("network")
-        || lower.contains("timeout")
-        || lower.contains("connection")
-        || lower.contains("reqwest")
-    {
-        return true;
-    }
-
-    // Tool errors are recoverable
-    if lower.contains("unknown tool")
-        || (lower.contains("tool") && lower.contains("not found"))
-        || (lower.contains("invalid") && lower.contains("argument"))
-    {
-        return true;
-    }
-
-    // JSON parse errors might be recoverable
-    if lower.contains("json") || lower.contains("parse") {
-        return true;
-    }
-
-    false
 }
 
 #[cfg(test)]
@@ -274,39 +194,27 @@ mod tests {
     }
 
     #[test]
-    fn test_recoverable_error_is_recoverable() {
-        assert!(
-            RecoverableError::UnknownTool {
-                tool_name: "test".to_string(),
-                available_tools: vec![],
-            }
-            .is_recoverable()
-        );
+    fn test_is_ollama_error_recoverable() {
+        use ollama_rs::error::{OllamaError, ToolCallError};
 
-        assert!(
-            RecoverableError::NetworkError {
-                message: "test".to_string(),
-            }
-            .is_recoverable()
-        );
+        // ToolCallError::UnknownToolName is recoverable
+        let err = OllamaError::ToolCallError(ToolCallError::UnknownToolName);
+        assert!(is_ollama_error_recoverable(&err));
 
-        assert!(
-            !RecoverableError::OllamaError {
-                message: "test".to_string(),
-            }
-            .is_recoverable()
-        );
-    }
+        // ToolCallError::InvalidToolArguments is recoverable
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
+        let err = OllamaError::ToolCallError(ToolCallError::InvalidToolArguments(json_err));
+        assert!(is_ollama_error_recoverable(&err));
 
-    #[test]
-    fn test_is_error_str_recoverable() {
-        assert!(is_error_str_recoverable(
-            "Network error: connection refused"
-        ));
-        assert!(is_error_str_recoverable("Request timeout after 30s"));
-        assert!(is_error_str_recoverable("Unknown tool not found"));
-        assert!(is_error_str_recoverable("Invalid arguments for tool"));
-        assert!(is_error_str_recoverable("JSON parse error"));
-        assert!(!is_error_str_recoverable("Internal server error"));
+        // JsonError is recoverable
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
+        let err = OllamaError::JsonError(json_err);
+        assert!(is_ollama_error_recoverable(&err));
+
+        // InternalError is NOT recoverable
+        let err = OllamaError::InternalError(ollama_rs::error::InternalOllamaError {
+            message: "test".to_string(),
+        });
+        assert!(!is_ollama_error_recoverable(&err));
     }
 }
