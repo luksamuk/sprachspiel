@@ -473,7 +473,54 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔴 PRIORITY 2: Feedback Infrastructure
+### 🟡 PRIORITY 3: Skills System Phase 1
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Markdown-defined AI behaviors for tool pipelines.
+
+**Features:**
+- SkillsLoader for `.md` files
+- Builtin skills (pdf-processing, ocr-images)
+- User skills (`~/.config/ask-ai/skills/`)
+- Project skills (`.ask-ai/skills/`)
+- Prompt injection integration
+
+**Dependencies:** None
+
+**Estimated effort:** 3-5 days
+
+**Reference:** `doc/src/development/skills-system-design.md`
+
+**Related:** Issue #8
+
+---
+
+### 🟡 PRIORITY 3: Document Import Tool
+
+**Status:** ❌ BLOCKED (requires Skills System Phase 1)
+
+**Goal:** Import documents for semantic search.
+
+**Features:**
+- TEXT/MD: Builtin support (import_text_file)
+- PDF: External tools (pdftotext) + skills
+- Scanned PDF: tesseract + pdftoppm pipeline
+- Chunking with overlap (512 tokens, 64 overlap)
+- `/import-doc`, `/list-docs`, `/remove-doc` commands
+- Update `search_hybrid()` for document chunks
+
+**Dependencies:** Skills System Phase 1 (for PDF pipeline definition)
+
+**Estimated effort:** 5-7 days
+
+**Reference:** `doc/src/development/planning-session-cli-tools.md` lines 151-156, 287-302
+
+**Related:** Issue #9
+
+---
+
+### 🔵 PRIORITY 4: Feedback Infrastructure
 
 **Status:** 📋 PLANNED (depends on: Factual Memory)
 
@@ -984,48 +1031,7 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🔴 PRIORITY 4: Skills System Phase 1
-
-**Status:** ❌ NOT STARTED
-
-**Goal:** Markdown-defined AI behaviors for tool pipelines.
-
-**Features:**
-- SkillsLoader for `.md` files
-- Builtin skills (pdf-processing, ocr-images)
-- User skills (`~/.config/ask-ai/skills/`)
-- Project skills (`.ask-ai/skills/`)
-- Prompt injection integration
-
-**Dependencies:** None
-
-**Estimated effort:** 3-5 days
-
-**Reference:** `doc/src/development/skills-system-design.md`
-
----
-
-### 🟡 PRIORITY 5: Document Import Tool
-
-**Status:** ❌ BLOCKED (requires Skills System Phase 1)
-
-**Goal:** Import documents for semantic search.
-
-**Features:**
-- TEXT/MD: Builtin support (import_text_file)
-- PDF: External tools (pdftotext) + skills
-- Scanned PDF: tesseract + pdftoppm pipeline
-- Chunking with overlap (512 tokens, 64 overlap)
-- `/import-doc`, `/list-docs`, `/remove-doc` commands
-- Update `search_hybrid()` for document chunks
-
-**Dependencies:** Skills System Phase 1 (for PDF pipeline definition)
-
-**Estimated effort:** 5-7 days
-
----
-
-### 🟡 PRIORITY 6: Chat Module Integration
+### 🟡 PRIORITY 4: Chat Module Integration
 
 **Status:** ❌ NOT STARTED
 
@@ -1042,7 +1048,7 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🟡 PRIORITY 7: Parallel Tool Execution
+### 🟡 PRIORITY 5: Parallel Tool Execution
 
 **Status:** ❌ NOT STARTED
 
