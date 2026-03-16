@@ -142,18 +142,46 @@ This phase repeats until all review comments are resolved.
     - If all resolved → inform user and wait for approval
 
 24. User reviews and either:
-    - Approves and proceeds to Phase 6 (merge)
+    - Approves and proceeds to Phase 6 (manual testing)
     - Adds more comments → return to step 19
 ```
 
-### Phase 6: After Approval (REVIEWER ONLY)
+### Phase 6: Manual Testing (REVIEWER)
+
+After all review comments are resolved, the reviewer performs manual testing.
 
 ```
-25. Reviewer approves and merges PR
+25. Reviewer marks all review comments as resolved
 
-26. Reviewer moves card to "Done"
+26. Reviewer tests the application manually:
+    - Build and run: cargo build --all-features && cargo run
+    - Test the specific feature/fix
+    - Verify edge cases
+    - Check for regressions
 
-27. Issue is closed automatically (via "Closes #N" in PR body)
+27. If bugs found during testing:
+    a. Reviewer documents bugs in PR comments
+    b. Agent creates todo list of fixes
+    c. User confirms fixes
+    d. Agent implements fixes
+    e. Agent documents bugs fixed in PR body
+    f. Agent pushes changes
+    g. Return to Step 19 (review iteration)
+
+28. If testing passes:
+    - Proceed to Phase 7 (merge)
+```
+
+### Phase 7: Merge (REVIEWER ONLY)
+
+```
+29. Reviewer merges PR using regular merge (NOT squash):
+    - Branch is automatically deleted
+    - PR is automatically closed
+
+30. Card moves to "Done" automatically (if PR references the card)
+
+31. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
@@ -216,6 +244,30 @@ During review, several scenarios may occur:
 2. Discusses with user
 3. May split into multiple issues/PRs
 4. Documents remaining work in IMPLEMENTATION.md
+
+### Scenario: Bugs Found During Manual Testing
+
+1. Reviewer documents bugs in PR comments during testing
+2. Agent creates todo list of fixes needed
+3. User confirms the fixes are appropriate
+4. Agent implements fixes
+5. Agent updates PR body to document bugs fixed
+6. Agent pushes changes
+7. Return to Step 19 (review iteration)
+
+### Scenario: Scope Creep in PR
+
+Sometimes additional work is needed within a PR that wasn't in the original scope,
+but is appropriate to include (e.g., defining guidelines during implementation).
+
+1. Agent identifies out-of-scope work needed
+2. Discusses with user and gets approval
+3. Agent implements the additional work
+4. Agent documents ALL work in PR body:
+   - Original scope work
+   - Additional out-of-scope work (clearly marked)
+5. Agent updates CHANGELOG/IMPLEMENTATION.md as needed
+6. Continue with normal review process
 
 ## Conventional Commits
 

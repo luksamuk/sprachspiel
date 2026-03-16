@@ -29,7 +29,9 @@ This is a Rust project that uses the ollama-rs library to interact with Ollama L
 9. Move to In Review  → update GitHub Project card
 10. Mark ready         → gh pr ready PR_NUMBER
 11. Review iteration   → fetch ALL comments, respond to each, implement fixes
-12. WAIT for review   → do not merge or close until approved
+12. Manual testing     → reviewer tests application manually
+13. Bug fixes          → if bugs found, document and fix, then return to step 11
+14. WAIT for approval  → do not merge until reviewer approves
 ```
 
 ### Status Flow
@@ -37,7 +39,7 @@ This is a Rust project that uses the ollama-rs library to interact with Ollama L
 ```
 Todo → In Progress → In Review → Done
            ↑            ↑          ↑
-       (you start)  (PR created) (REVIEWER ONLY)
+       (you start)  (PR created) (merged)
 ```
 
 ### Review Iteration Phase
@@ -60,10 +62,30 @@ Todo → In Progress → In Review → Done
    - Update documentation
    - Push changes
 
-5. **Loop until all comments resolved:**
+5. **If bugs found during manual testing:**
+   - Document bugs in PR comments
+   - Create todo list of fixes
+   - Wait for confirmation
+   - Implement fixes
+   - Document bugs fixed in PR body
+   - Push changes and return to review
+
+6. **If out-of-scope work needed:**
+   - Document ALL work in PR body (original + additional)
+   - Update CHANGELOG/IMPLEMENTATION.md
+
+7. **Loop until all comments resolved:**
    - Check for unresolved comments again
    - If found → respond and implement
    - If none → inform user and wait for approval
+
+### Merge
+
+- Reviewer merges using **regular merge** (NOT squash)
+- Branch is automatically deleted
+- PR is automatically closed
+- Card moves to "Done" automatically (if PR references it)
+- Issue is closed automatically (via "Closes #N" in PR body)
 
 ## Build Commands
 
