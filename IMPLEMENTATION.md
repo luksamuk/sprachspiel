@@ -453,7 +453,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔴 PRIORITY 2: Notes System
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Persistent notes with semantic search.
 
@@ -462,6 +462,7 @@ todo_clear_all()             // Clear all tasks
 - Note storage with embeddings
 - Update context builder for note results
 - Add `SourceType::Note` to retrieval system
+- Hybrid search includes notes
 
 **Dependencies:** None
 
@@ -470,6 +471,18 @@ todo_clear_all()             // Clear all tasks
 **Reference:** `doc/src/development/planning-session-cli-tools.md` lines 157-160, 303-311
 
 **Related:** Issue #6
+
+**Implementation Plan:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Schema v7 (notes table + FTS5) | ⏳ Pending |
+| 2 | CRUD operations in src/db/notes.rs | ⏳ Pending |
+| 3 | SourceType::Note in retrieval | ⏳ Pending |
+| 4 | /note commands in REPL | ⏳ Pending |
+| 5 | Embeddings for notes | ⏳ Pending |
+| 6 | Context builder integration | ⏳ Pending |
+| 7 | Tests and documentation | ⏳ Pending |
 
 ---
 

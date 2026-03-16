@@ -2,6 +2,18 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.36.0] - TBD
+
+### Added
+
+- **Notes System** - Persistent notes with semantic search
+  - User commands: `/note add`, `/note list`, `/note show`, `/note edit`, `/note delete`
+  - Notes stored with embeddings for semantic search
+  - FTS5 full-text search for keyword matching
+  - `SourceType::Note` added to retrieval system
+  - Hybrid search (BM25 + vector) includes notes in results
+  - Schema v7: `notes` and `notes_fts` tables
+
 ## [0.35.0] - TBD
 
 ### Fixed
