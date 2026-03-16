@@ -33,6 +33,13 @@ All notable changes to Ask-AI will be documented in this file.
   - LLM can self-correct when it generates invalid tool call syntax
   - Removed unreliable heuristics (`is_error_str_recoverable`) in favor of types
 
+- **BM25 Score Normalization for Conflict Detection** - Fixed incorrect similarity scoring
+  - Previous formula `(-score).max(0.0)` didn't normalize to [0,1] range
+  - New formula `(-score)/(1-score)` properly maps BM25 scores to [0,1)
+  - Score -10 (strong match) → 0.91, score -1 (weak match) → 0.50
+  - Adjusted CONFLICT_THRESHOLD from 0.8 to 0.85 after proper normalization
+  - Added `normalize_bm25_score()` helper function
+
 ## [0.32.1] - 2026-03-13
 
 ### Fixed

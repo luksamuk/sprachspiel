@@ -371,10 +371,11 @@ fn detect_conflicts(content: &str, db: &Database, project_id: Option<&str>) -> R
     // 2. For each similar fact, check for contradiction
     let mut conflicts = Vec::new();
     for result in similar {
-        // BM25 score normalized (higher = more similar)
+        // BM25 score normalized to [0, 1) using: (-score) / (1 - score)
+        // Higher = more similar. Threshold 0.85 corresponds to strong matches.
         let similarity = result.score;
         
-        if similarity > 0.8 {
+        if similarity > 0.85 {
             let conflict_type = if is_contradiction(content, &result.fact.content) {
                 ConflictType::Contradiction
             } else {
@@ -696,7 +697,7 @@ if let Some(facts) = &self.facts {
 - Heuristic resolution: Skip (duplicate) or Update (contradiction)
 - Integration in `fact_add` LLM tool and `/fact add` user command
 - Contradiction patterns: "like" vs "hate", negation detection
-- Configured threshold: 0.8 similarity for conflict detection
+- Configured threshold: 0.85 similarity for conflict detection (BM25 scores normalized to [0,1))
 
 ### Phase 0.8: Testing & Documentation (0.5 day) ✅ DONE
 
