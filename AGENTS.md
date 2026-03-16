@@ -4,100 +4,19 @@ This is a Rust project that uses the ollama-rs library to interact with Ollama L
 
 **IMPORTANT: See `IMPLEMENTATION.md` for the detailed feature roadmap and implementation phases.**
 
-## ⚠️ Pull Request Process (MANDATORY)
+## ⚠️ BEFORE IMPLEMENTING ANYTHING
 
-**Read `doc/src/development/PR-PROCESS.md` for the complete workflow.**
+**READ `doc/src/development/PR-PROCESS.md` COMPLETELY.**
 
-### Critical Rules
+This is MANDATORY. The PR process document describes the exact workflow:
+1. When to create branches
+2. When to update documentation
+3. When to implement code
+4. When to create PRs
+5. When to move cards
+6. How to handle reviews
 
-1. **NEVER close issues before PR merge** - Issues close automatically when PR is merged
-2. **NEVER move cards to "Done"** - Only the REVIEWER moves cards to Done after approval
-3. **ALWAYS create PR as DRAFT first** - Implement, then mark "ready for review"
-4. **ALWAYS move card to "In Review"** - After creating PR
-
-### Workflow Summary
-
-```
-1. Create branch     → git checkout -b feat/feature-name
-2. Move to In Progress → update GitHub Project card
-3. Update docs        → CHANGELOG.md, IMPLEMENTATION.md (mark as IN PROGRESS)
-4. Implement         → code changes
-5. Test               → cargo test --all-features && cargo clippy
-6. Commit             → conventional commits (feat:, fix:, refactor:)
-7. Push               → git push -u origin branch
-8. Create DRAFT PR    → gh pr create --draft
-9. Move to In Review  → update GitHub Project card
-10. Mark ready         → gh pr ready PR_NUMBER
-11. Review iteration   → fetch ALL comments, respond to each, implement fixes
-12. Manual testing     → reviewer tests application manually
-13. Bug fixes          → if bugs found, document and fix, then return to step 11
-14. WAIT for approval  → do not merge until reviewer approves
-```
-
-### Status Flow
-
-```
-Todo → In Progress → In Review → Done
-           ↑            ↑          ↑
-       (you start)  (PR created) (merged)
-```
-
-### Review Iteration Phase
-
-**CRITICAL:** When responding to review comments:
-
-1. **Fetch ALL unresolved threads** using `last: 50` (not `first: 30`)
-2. **Respond to EACH thread individually** - not in a single summary comment
-3. **Use proper prefixes** in responses:
-   - ✅ **Resolvido** - Code fixed/removed
-   - ✅ **Verificado** - Code is correct as-is
-   - 📋 **Acknowledged, deferred** - Good suggestion, future work
-   - ❌ **Declined** - With explanation
-   - ❓ **Clarification needed** - Question about the comment
-
-4. **If implementation changes needed:**
-   - Create todo list overview
-   - Wait for user confirmation
-   - Implement approved changes
-   - Update documentation
-   - Push changes
-
-5. **If bugs found during manual testing:**
-   - Document bugs in PR comments
-   - Create todo list of fixes
-   - Wait for confirmation
-   - Implement fixes
-   - Document bugs fixed in PR body
-   - Push changes and return to review
-
-6. **If out-of-scope work needed:**
-   - Document ALL work in PR body (original + additional)
-   - Update CHANGELOG/IMPLEMENTATION.md
-
-7. **Loop until all comments resolved:**
-   - Check for unresolved comments again
-   - If found → respond and implement
-   - If none → inform user and wait review of new commits
-
-**IMPORTANT:** Every push of new commits returns the PR to Phase 5 (review iteration). 
-The reviewer must review new commits before proceeding.
-
-**CRITICAL:** Before informing the reviewer that changes are ready:
-- Run `git status` to verify branch is up to date with origin
-- Run `git push` to ensure ALL commits are on remote
-- Never ask for review while local commits remain unpushed
-
-### Merge (after authorization)
-
-- User authorizes merge after:
-  - All review comments resolved
-  - Manual testing passed
-  - New commits reviewed and approved
-- Agent merges using **regular merge** (NOT squash): `gh pr merge PR_NUMBER --merge`
-- Branch is automatically deleted
-- PR is automatically closed
-- Card moves to "Done" automatically (if PR references it)
-- Issue is closed automatically (via "Closes #N" in PR body)
+**DO NOT skip this step. DO NOT assume you know the workflow. READ THE DOCUMENT.**
 
 ## Build Commands
 

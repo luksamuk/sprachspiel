@@ -78,6 +78,7 @@ pub fn build_session_system_prompt(
     blacklist_set: &std::collections::HashSet<&str>,
     agents_md: Option<&str>,
     facts_section: Option<&str>,
+    todos_section: Option<&str>,
 ) -> String {
     if let Some(ref custom_prompt) = session.system_prompt {
         return custom_prompt.clone();
@@ -110,7 +111,8 @@ pub fn build_session_system_prompt(
                 None
             })
             .with_facts_section(facts_section)
-            .with_anonymous(session.anonymous),
+            .with_anonymous(session.anonymous)
+            .with_todos(todos_section),
     )
 }
 
@@ -308,6 +310,9 @@ pub async fn send_message(
     };
 
     // Build system prompt
+    // Get todos section from global state
+    let todos_section = crate::tools::todo::format_todos_for_prompt();
+
     let system_prompt = build_session_system_prompt(
         session,
         tools_enabled,
@@ -317,6 +322,7 @@ pub async fn send_message(
         &blacklist_set,
         agents_md,
         facts_section.as_deref(),
+        todos_section.as_deref(),
     );
 
     // Check context overflow

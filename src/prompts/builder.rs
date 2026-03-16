@@ -66,6 +66,8 @@ pub struct PromptConfig<'a> {
     pub facts_section: Option<&'a str>,
     /// Whether this is an anonymous session (no persistence)
     pub is_anonymous: bool,
+    /// Todo list section to inject (from TodoState)
+    pub todos: Option<&'a str>,
 }
 
 impl<'a> PromptConfig<'a> {
@@ -85,6 +87,7 @@ impl<'a> PromptConfig<'a> {
             context_status: None,
             facts_section: None,
             is_anonymous: false,
+            todos: None,
         }
     }
 
@@ -139,6 +142,12 @@ impl<'a> PromptConfig<'a> {
     /// Set anonymous mode
     pub fn with_anonymous(mut self, is_anonymous: bool) -> Self {
         self.is_anonymous = is_anonymous;
+        self
+    }
+
+    /// Set todos section (from TodoState)
+    pub fn with_todos(mut self, todos: Option<&'a str>) -> Self {
+        self.todos = todos;
         self
     }
 }
@@ -227,6 +236,14 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
             prompt.push_str("**Preferences** → Apply to personalize tone and style.\n");
             prompt.push_str("**Facts** → Reference when relevant to the topic.\n\n");
             prompt.push_str(facts);
+        }
+
+        // 3e. Active tasks section (from TodoState)
+        if let Some(todos) = config.todos
+            && !todos.is_empty()
+        {
+            prompt.push('\n');
+            prompt.push_str(todos);
         }
     }
 

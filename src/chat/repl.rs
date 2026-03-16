@@ -21,6 +21,8 @@ use super::command_handlers::{
     handle_search, handle_restore, handle_reindex, handle_compact, handle_retry,
     handle_fact_prune, handle_fact_add, handle_fact_list, handle_fact_remove,
     handle_fact_search,
+    handle_todo_add, handle_todo_list, handle_todo_update,
+    handle_todo_clear_done, handle_todo_clear_all,
 };
 use super::core::{auto_compact_if_needed, send_message};
 use super::input::{InputBackend, InputResult, RustylineInput};
@@ -353,6 +355,9 @@ pub async fn run_chat_repl(
         .settings(settings.clone()) // Clone for state
         .build()?;
 
+    // Initialize global todo state from session
+    crate::tools::todo::load_from_session(&state.session.todos);
+
     // Initialize input backend using RustylineInput abstraction
     let model_names: Vec<String> = crate::user_models::list_all_model_names();
     let mut input = RustylineInput::new(model_names);
@@ -507,6 +512,26 @@ pub async fn run_chat_repl(
                                 }
                                 CommandResult::FactSearch { query, global, limit } => {
                                     handle_fact_search(&state, query, global, limit);
+                                    continue;
+                                }
+                                CommandResult::TodoAdd { description } => {
+                                    handle_todo_add(description, &mut state.session);
+                                    continue;
+                                }
+                                CommandResult::TodoList => {
+                                    handle_todo_list();
+                                    continue;
+                                }
+                                CommandResult::TodoUpdate { id, status } => {
+                                    handle_todo_update(id, status, &mut state.session);
+                                    continue;
+                                }
+                                CommandResult::TodoClearDone => {
+                                    handle_todo_clear_done(&mut state.session);
+                                    continue;
+                                }
+                                CommandResult::TodoClearAll => {
+                                    handle_todo_clear_all(&mut state.session);
                                     continue;
                                 }
                             }
