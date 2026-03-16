@@ -82,6 +82,11 @@ Todo → In Progress → In Review → Done
 **IMPORTANT:** Every push of new commits returns the PR to Phase 5 (review iteration). 
 The reviewer must review new commits before proceeding.
 
+**CRITICAL:** Before informing the reviewer that changes are ready:
+- Run `git status` to verify branch is up to date with origin
+- Run `git push` to ensure ALL commits are on remote
+- Never ask for review while local commits remain unpushed
+
 ### Merge (after authorization)
 
 - User authorizes merge after:

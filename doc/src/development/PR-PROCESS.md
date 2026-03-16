@@ -176,6 +176,12 @@ bugs from testing, or any other changes), the PR returns to Step 19 for a new
 review iteration. The reviewer must review the new commits and either:
 - Add more comments → continue iteration
 - Approve → proceed to Phase 7
+
+**CRITICAL:** The reviewer can only review after the agent has pushed ALL commits.
+Before informing the reviewer that changes are ready, the agent MUST ensure:
+- All commits are pushed to the remote branch
+- `git status` shows "up to date with 'origin/<branch>'"
+- No local commits remain unpushed
 ```
 
 ### Phase 7: Merge (AGENT, after authorization)
