@@ -233,6 +233,93 @@ fact_remove(id)             // LLM removes incorrect facts
 
 ---
 
+### ✅ PRIORITY 0: TODO System Activation (COMPLETED)
+
+**Status:** ✅ COMPLETED (v0.34.0)
+
+**Goal:** Activate the existing TODO system to enable task tracking for both LLM and users.
+
+**Problem Statement:**
+- TODO system (`src/chat/todo_state.rs` and `src/tools/todo.rs`) was implemented but not integrated
+- LLM tools registered but no synchronization with session state
+- No user commands to manage TODOs interactively
+- Tasks not persisted across sessions
+
+**Solution:** Activate the TODO system with full integration.
+
+**Implementation:**
+
+| Component | Description | Status |
+|-----------|-------------|--------|
+| Tools sync | `load_from_session()` / `save_to_session()` functions | ✅ |
+| User commands | `/todo add/list/update/clear-done/clear-all` | ✅ |
+| Command handlers | `handle_todo_*` functions | ✅ |
+| Prompt integration | `format_todos_for_prompt()` in system prompt | ✅ |
+| Session persistence | Load/save todos with session in `repl.rs` | ✅ |
+
+**Files Modified:**
+- `src/tools/todo.rs` - Added `load_from_session()`, `save_to_session()`, `format_todos_for_prompt()`
+- `src/chat/commands.rs` - Added `ChatCommand::TodoAdd/TodoList/TodoUpdate/TodoClearDone/TodoClearAll`
+- `src/chat/command_handlers.rs` - Added `handle_todo_*` functions
+- `src/chat/repl.rs` - Added command handling and session sync
+- `src/prompts/builder.rs` - Added `todos` field to `PromptConfig`
+- `src/chat/core.rs` - Added `todos_section` parameter to `build_session_system_prompt()`
+
+**LLM Tools (already registered):**
+
+```
+todo_add(description)       // Add a new task
+todo_list()                 // List all tasks
+todo_update(id, status)     // Update task status
+todo_clear_done()            // Clear completed tasks
+todo_clear_all()             // Clear all tasks
+```
+
+**User Commands:**
+
+```
+/todo add <description>            // Add a new task
+/todo list                          // List all tasks
+/todo update <id> <status>          // Update task status (pending|in_progress|done)
+/todo clear-done                    // Clear completed tasks
+/todo clear-all                      // Clear all tasks
+/ta <description>                   // Shortcut: add task
+/tl                                   // Shortcut: list tasks
+/tu <id> <status>                    // Shortcut: update task
+```
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────┐
+│           TODO SYSTEM FLOW              │
+├─────────────────────────────────────────┤
+│  Session Start                          │
+│  └── load_from_session(session.todos)   │
+│      └── Copies to global TODO_STATE    │
+│                                         │
+│  During Session                         │
+│  ├── LLM calls todo_* tools            │
+│  │   └── Operates on TODO_STATE        │
+│  ├── User runs /todo commands          │
+│  │   └── Operates on TODO_STATE        │
+│  │   └── Syncs to session.todos       │
+│  └── System prompt includes todos      │
+│      └── format_todos_for_prompt()    │
+│                                         │
+│  Session End                            │
+│  └── save_sqlite()                     │
+│      └── session.todos.to_rows()      │
+│          └── Database persistence      │
+└─────────────────────────────────────────┘
+```
+
+**Estimated effort:** 0.5 day → **Actual:** 0.5 day
+
+**Related:** Issue #25
+
+---
+
 ### ✅ PRIORITY 1: Code Quality - Prompts Centralization (COMPLETED)
 
 **Status:** ✅ COMPLETED (v0.33.0)

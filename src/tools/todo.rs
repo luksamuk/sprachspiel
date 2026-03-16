@@ -7,15 +7,15 @@ use std::sync::{Arc, Mutex};
 
 use once_cell::sync::OnceCell;
 
-use crate::chat::todo_state::TaskStatus;
+use crate::chat::todo_state::{TaskStatus, TodoState};
 
 /// Global todo state shared between tools
-static TODO_STATE: OnceCell<Arc<Mutex<crate::chat::todo_state::TodoState>>> = OnceCell::new();
+static TODO_STATE: OnceCell<Arc<Mutex<TodoState>>> = OnceCell::new();
 
 /// Get or initialize the global todo state
-fn get_todo_state() -> Arc<Mutex<crate::chat::todo_state::TodoState>> {
+pub fn get_todo_state() -> Arc<Mutex<TodoState>> {
     TODO_STATE
-        .get_or_init(|| Arc::new(Mutex::new(crate::chat::todo_state::TodoState::new())))
+        .get_or_init(|| Arc::new(Mutex::new(TodoState::new())))
         .clone()
 }
 
@@ -24,7 +24,57 @@ fn get_todo_state() -> Arc<Mutex<crate::chat::todo_state::TodoState>> {
 pub fn reset_todo_state() {
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
-    *guard = crate::chat::todo_state::TodoState::new();
+    *guard = TodoState::new();
+}
+
+/// Load todos from a session into the global state.
+///
+/// Call this at the start of the REPL to restore the session's todo list.
+pub fn load_from_session(session_todos: &TodoState) {
+    let state = get_todo_state();
+    let mut guard = state.lock().unwrap();
+    *guard = session_todos.clone();
+}
+
+/// Save the global todo state to a session.
+///
+/// Call this before persisting the session to save any changes made by tools.
+pub fn save_to_session() -> TodoState {
+    let state = get_todo_state();
+    let guard = state.lock().unwrap();
+    guard.clone()
+}
+
+/// Format the current todo list for display in the system prompt.
+///
+/// Returns None if the list is empty, otherwise returns the formatted string.
+pub fn format_todos_for_prompt() -> Option<String> {
+    let state = get_todo_state();
+    let guard = state.lock().unwrap();
+
+    if guard.tasks.is_empty() {
+        return None;
+    }
+
+    let mut output = String::new();
+    output.push_str("### ACTIVE TASKS\n\n");
+    output.push_str("You have tasks to track. Use todo tools to manage them:\n\n");
+
+    for task in &guard.tasks {
+        let status_icon = match task.status {
+            TaskStatus::Pending => "☐",
+            TaskStatus::InProgress => "►",
+            TaskStatus::Done => "✓",
+        };
+        output.push_str(&format!(
+            "{} {} - {} [{}]\n",
+            status_icon, task.id, task.description, task.status
+        ));
+    }
+
+    output.push_str("\nUse `todo_list()` to see the full list with descriptions.\n");
+
+    Some(output)
 }
 
 /// Add a new task to the todo list.

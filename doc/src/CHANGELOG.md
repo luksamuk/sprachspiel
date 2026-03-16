@@ -2,6 +2,19 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.34.0] - 2026-03-16
+
+### Added
+
+- **TODO System Activation** - Task tracking for LLM and users
+  - LLM tools: `todo_add`, `todo_list`, `todo_update`, `todo_clear_done`, `todo_clear_all`
+  - User commands: `/todo add`, `/todo list`, `/todo update`, `/todo clear-done`, `/todo clear-all`
+  - Shortcuts: `/ta`, `/tl`, `/tu` for quick access
+  - Task statuses: `pending`, `in_progress`, `done`
+  - Session persistence: TODOs saved/restored with chat session
+  - System prompt integration: Active tasks injected into LLM context
+  - Global state sync: Tools and commands share same TodoState
+
 ## [0.33.0] - 2026-03-16
 
 ### Added

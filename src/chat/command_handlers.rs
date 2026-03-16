@@ -710,6 +710,132 @@ pub fn handle_fact_search(state: &ReplState, query: String, global: bool, limit:
     }
 }
 
+/// Handle todo add command
+///
+/// Adds a new task to the todo list.
+pub fn handle_todo_add(description: String, session: &mut super::session::ChatSession) {
+    use crate::tools::todo;
+
+    let id = {
+        let state = todo::get_todo_state();
+        let mut guard = state.lock().unwrap();
+        guard.add(description.clone())
+    };
+
+    session.todos = todo::save_to_session();
+
+    println!("Added task {}: {} [pending]", id, description);
+
+    if !session.anonymous
+        && let Err(e) = session.save_sqlite()
+    {
+        eprintln!("Warning: Could not save session: {}", e);
+    }
+}
+
+/// Handle todo list command
+///
+/// Lists all tasks in the todo list.
+pub fn handle_todo_list() {
+    use crate::tools::todo;
+
+    let state = todo::get_todo_state();
+    let guard = state.lock().unwrap();
+    println!("{}", guard.format_list());
+}
+
+/// Handle todo update command
+///
+/// Updates the status of a task.
+pub fn handle_todo_update(id: usize, status: String, session: &mut super::session::ChatSession) {
+    use crate::chat::todo_state::TaskStatus;
+    use crate::tools::todo;
+
+    let new_status: TaskStatus = match status.parse() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{}", e);
+            return;
+        }
+    };
+
+    let state = todo::get_todo_state();
+    let mut guard = state.lock().unwrap();
+
+    match guard.update_status(id, new_status) {
+        Ok(()) => {
+            println!("Task {} marked as {}", id, new_status);
+            drop(guard);
+            session.todos = todo::save_to_session();
+
+            if !session.anonymous
+                && let Err(e) = session.save_sqlite()
+            {
+                eprintln!("Warning: Could not save session: {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+        }
+    }
+}
+
+/// Handle todo clear-done command
+///
+/// Clears all completed tasks from the list.
+pub fn handle_todo_clear_done(session: &mut super::session::ChatSession) {
+    use crate::tools::todo;
+
+    let state = todo::get_todo_state();
+    let mut guard = state.lock().unwrap();
+    let removed = guard.clear_done();
+
+    if removed == 0 {
+        println!("No completed tasks to remove.");
+    } else if removed == 1 {
+        println!("Removed 1 completed task.");
+    } else {
+        println!("Removed {} completed tasks.", removed);
+    }
+
+    drop(guard);
+    session.todos = todo::save_to_session();
+
+    if !session.anonymous
+        && let Err(e) = session.save_sqlite()
+    {
+        eprintln!("Warning: Could not save session: {}", e);
+    }
+}
+
+/// Handle todo clear-all command
+///
+/// Clears all tasks from the list.
+pub fn handle_todo_clear_all(session: &mut super::session::ChatSession) {
+    use crate::tools::todo;
+
+    let state = todo::get_todo_state();
+    let mut guard = state.lock().unwrap();
+    let count = guard.clear_all();
+
+    if count == 0 {
+        println!("The task list was already empty.");
+    } else if count == 1 {
+        println!("Cleared 1 task from the list.");
+    } else {
+        println!("Cleared {} tasks from the list.", count);
+    }
+
+    drop(guard);
+    session.todos = todo::save_to_session();
+
+    if !session.anonymous
+        && let Err(e) = session.save_sqlite()
+    {
+        eprintln!("Warning: Could not save session: {}", e);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::session::ChatSession;

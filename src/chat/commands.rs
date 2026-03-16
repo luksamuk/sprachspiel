@@ -58,6 +58,16 @@ pub enum CommandResult {
         global: bool,
         limit: usize,
     },
+    /// Add a new todo task
+    TodoAdd { description: String },
+    /// List todo tasks
+    TodoList,
+    /// Update todo task status
+    TodoUpdate { id: usize, status: String },
+    /// Clear completed todo tasks
+    TodoClearDone,
+    /// Clear all todo tasks
+    TodoClearAll,
 }
 
 /// Parsed chat command
@@ -133,6 +143,16 @@ pub enum ChatCommand {
         global: bool,
         limit: usize,
     },
+    /// Add a new todo task
+    TodoAdd { description: String },
+    /// List todo tasks
+    TodoList,
+    /// Update todo task status
+    TodoUpdate { id: usize, status: String },
+    /// Clear completed todo tasks
+    TodoClearDone,
+    /// Clear all todo tasks
+    TodoClearAll,
 }
 
 /// Export format for /export command
@@ -354,6 +374,59 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 return Some(Err("Usage: /fs <query> [--global] [limit]".to_string()));
             }
             ChatCommand::FactSearch { query, global, limit }
+        }
+        "todo" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+
+            match *subcmd {
+                "add" | "a" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /todo add <description>".to_string()));
+                    }
+                    ChatCommand::TodoAdd {
+                        description: subargs.trim().to_string(),
+                    }
+                }
+                "list" | "l" => ChatCommand::TodoList,
+                "update" | "u" => {
+                    let update_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
+                    if update_parts.len() < 2 {
+                        return Some(Err("Usage: /todo update <id> <status>".to_string()));
+                    }
+                    let id: usize = match update_parts[0].trim().parse() {
+                        Ok(id) => id,
+                        Err(_) => return Some(Err("Invalid task ID. Must be a number.".to_string())),
+                    };
+                    let status = update_parts[1].trim().to_string();
+                    ChatCommand::TodoUpdate { id, status }
+                }
+                "clear-done" | "cd" => ChatCommand::TodoClearDone,
+                "clear-all" | "ca" => ChatCommand::TodoClearAll,
+                _ => return Some(Err("Usage: /todo <add|list|update|clear-done|clear-all>".to_string())),
+            }
+        }
+        "ta" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /ta <description>".to_string()));
+            }
+            ChatCommand::TodoAdd {
+                description: args.trim().to_string(),
+            }
+        }
+        "tl" => ChatCommand::TodoList,
+        "tu" => {
+            let parts: Vec<&str> = args.splitn(2, ' ').collect();
+            if parts.len() < 2 {
+                return Some(Err("Usage: /tu <id> <status>".to_string()));
+            }
+            let id: usize = match parts[0].trim().parse() {
+                Ok(id) => id,
+                Err(_) => return Some(Err("Invalid task ID. Must be a number.".to_string())),
+            };
+            let status = parts[1].trim().to_string();
+            ChatCommand::TodoUpdate { id, status }
         }
         _ => return Some(Err(format!("Unknown command: /{}", cmd))),
     };
@@ -609,6 +682,16 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
         ChatCommand::FactSearch { query, global, limit } => {
             CommandResult::FactSearch { query, global, limit }
         }
+
+        ChatCommand::TodoAdd { description } => CommandResult::TodoAdd { description },
+
+        ChatCommand::TodoList => CommandResult::TodoList,
+
+        ChatCommand::TodoUpdate { id, status } => CommandResult::TodoUpdate { id, status },
+
+        ChatCommand::TodoClearDone => CommandResult::TodoClearDone,
+
+        ChatCommand::TodoClearAll => CommandResult::TodoClearAll,
     }
 }
 
@@ -647,6 +730,15 @@ Factual Memory:
   /fact prune      Prune old facts using decay cycle
 
   Subcommand shortcuts: /fact a, /fact l, /fact r, /fact s, /fact p
+
+Todo List:
+  /todo add <description>    Add a new task
+  /todo list                 List all tasks
+  /todo update <id> <status> Update task status (pending|in_progress|done)
+  /todo clear-done           Clear completed tasks
+  /todo clear-all            Clear all tasks
+
+  Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
 
 Shortcuts:
   /q = /quit, /c = /clear, /h = /help
