@@ -36,46 +36,46 @@ This document describes the mandatory workflow for implementing features and fix
 ### Phase 2: Documentation FIRST
 
 ```
-4. Update CHANGELOG.md:
+5. Update CHANGELOG.md:
    - Add entry under appropriate version
    - Use "Added", "Changed", "Fixed", "Removed" sections
 
-5. Update IMPLEMENTATION.md:
+6. Update IMPLEMENTATION.md:
    - Mark task status as 🔄 IN PROGRESS when starting
    - Will mark as ✅ COMPLETED only after merge
 
-6. Commit documentation: git commit -m "docs: update CHANGELOG for <feature>"
+7. Commit documentation: git commit -m "docs: update CHANGELOG for <feature>"
 ```
 
 ### Phase 3: Implementation
 
 ```
-7. Implement the feature/fix
+8. Implement the feature/fix
 
-8. Run tests: cargo test --all-features
+9. Run tests: cargo test --all-features
 
-9. Run clippy: cargo clippy --all-features -- -D warnings
+10. Run clippy: cargo clippy --all-features -- -D warnings
 
-10. Commit code changes (conventional commits):
+11. Commit code changes (conventional commits):
     feat: <description>
     fix: <description>
     refactor: <description>
 
-11. Push branch: git push -u origin <branch>
+12. Push branch: git push -u origin <branch>
 ```
 
 ### Phase 4: Pull Request
 
 ```
-12. Create PR as DRAFT:
+13. Create PR as DRAFT:
     gh pr create --draft --title "<type>: <description>" --body "..."
 
-13. Move GitHub Project card to "In Review" (both Status and Scrum Status)
+14. Move GitHub Project card to "In Review" (both Status and Scrum Status)
 
-14. Mark PR as "ready for review":
+15. Mark PR as "ready for review":
     gh pr ready <number>
 
-15. Add comment to issue: "PR #N ready for review"
+16. Add comment to issue: "PR #N ready for review"
 ```
 
 ### Phase 5: Review & Iteration (COLLABORATIVE)
@@ -83,9 +83,9 @@ This document describes the mandatory workflow for implementing features and fix
 This phase repeats until all review comments are resolved.
 
 ```
-16. Reviewer adds comments to PR
+17. Reviewer adds comments to PR
 
-17. Agent fetches ALL unresolved review comments:
+18. Agent fetches ALL unresolved review comments:
     gh api graphql -f query='
     query {
       repository(owner: "OWNER", name: "REPO") {
@@ -107,7 +107,7 @@ This phase repeats until all review comments are resolved.
     IMPORTANT: Use 'last: 50' (not 'first: 30') to get ALL threads.
     Verify thread count matches totalCount.
 
-18. Agent responds to EACH unresolved comment individually:
+19. Agent responds to EACH unresolved comment individually:
     - Use response prefixes:
       ✅ Resolvido (for fixed code)
       ✅ Verificado (for confirmed correct behavior)
@@ -124,38 +124,36 @@ This phase repeats until all review comments are resolved.
       }) { comment { id } }
     }'
 
-19. If implementation changes needed:
+20. If implementation changes needed:
     a. Create a todo list overview of changes
     b. Wait for user confirmation before implementing
     c. Implement approved changes
     d. Update documentation as needed
     e. Push changes
 
-20. If scope creep detected:
+21. If scope creep detected:
     - Discuss with user
     - May need to open separate issues
 
-21. Update PR description and documentation if changes were made
+22. Update PR description and documentation if changes were made
 
-22. Agent checks for unresolved comments again:
-    - If unresolved comments exist → return to step 18
+23. Agent checks for unresolved comments again:
+    - If unresolved comments exist → return to step 19
     - If all resolved → inform user and wait for approval
 
-23. User reviews and either:
+24. User reviews and either:
     - Approves and proceeds to Phase 6 (merge)
-    - Adds more comments → return to step 18
+    - Adds more comments → return to step 19
 ```
 
 ### Phase 6: After Approval (REVIEWER ONLY)
 
 ```
-24. Reviewer approves and merges PR
+25. Reviewer approves and merges PR
 
-24. Reviewer approves and merges PR
+26. Reviewer moves card to "Done"
 
-25. Reviewer moves card to "Done"
-
-26. Issue is closed automatically (via "Closes #N" in PR body)
+27. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
