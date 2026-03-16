@@ -258,10 +258,63 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             ChatCommand::Reindex { conversation_id }
         }
         "retrieval" => ChatCommand::Retrieval,
-        "fact prune" | "fp" => ChatCommand::FactPrune,
-        "fact add" | "fa" => {
+        "fact" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+
+            match *subcmd {
+                "prune" | "p" => ChatCommand::FactPrune,
+                "add" | "a" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /fact add <content> [--global]".to_string()));
+                    }
+                    let global = subargs.trim().ends_with(" --global");
+                    let content = if global {
+                        subargs.trim().strip_suffix("--global").unwrap_or(subargs.trim()).trim().to_string()
+                    } else {
+                        subargs.trim().to_string()
+                    };
+                    if content.is_empty() {
+                        return Some(Err("Usage: /fact add <content> [--global]".to_string()));
+                    }
+                    ChatCommand::FactAdd { content, global }
+                }
+                "list" | "l" => {
+                    let global = subargs.trim() == "--global";
+                    ChatCommand::FactList { global }
+                }
+                "remove" | "r" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /fact remove <id>".to_string()));
+                    }
+                    match subargs.trim().parse::<i64>() {
+                        Ok(id) => ChatCommand::FactRemove { id },
+                        Err(_) => return Some(Err("Invalid fact ID. Must be a number.".to_string())),
+                    }
+                }
+                "search" | "s" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /fact search <query> [--global] [limit]".to_string()));
+                    }
+                    let global = subargs.contains("--global");
+                    let args_without_global = subargs.replace("--global", "");
+                    let args_trimmed = args_without_global.trim();
+                    let parts: Vec<&str> = args_trimmed.splitn(2, ' ').collect();
+                    let query = parts.first().unwrap_or(&"").to_string();
+                    let limit: usize = parts.get(1).and_then(|s| s.trim().parse().ok()).unwrap_or(10);
+                    if query.is_empty() {
+                        return Some(Err("Usage: /fact search <query> [--global] [limit]".to_string()));
+                    }
+                    ChatCommand::FactSearch { query, global, limit }
+                }
+                _ => return Some(Err("Usage: /fact <add|list|remove|search|prune>".to_string())),
+            }
+        }
+        "fp" => ChatCommand::FactPrune,
+        "fa" => {
             if args.is_empty() {
-                return Some(Err("Usage: /fact add <content> [--global]".to_string()));
+                return Some(Err("Usage: /fa <content> [--global]".to_string()));
             }
             let global = args.trim().ends_with(" --global");
             let content = if global {
@@ -270,26 +323,26 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 args.trim().to_string()
             };
             if content.is_empty() {
-                return Some(Err("Usage: /fact add <content> [--global]".to_string()));
+                return Some(Err("Usage: /fa <content> [--global]".to_string()));
             }
             ChatCommand::FactAdd { content, global }
         }
-        "fact list" | "fl" => {
+        "fl" => {
             let global = args.trim() == "--global";
             ChatCommand::FactList { global }
         }
-        "fact remove" | "fr" => {
+        "fr" => {
             if args.is_empty() {
-                return Some(Err("Usage: /fact remove <id>".to_string()));
+                return Some(Err("Usage: /fr <id>".to_string()));
             }
             match args.trim().parse::<i64>() {
                 Ok(id) => ChatCommand::FactRemove { id },
                 Err(_) => return Some(Err("Invalid fact ID. Must be a number.".to_string())),
             }
         }
-        "fact search" | "fs" => {
+        "fs" => {
             if args.is_empty() {
-                return Some(Err("Usage: /fact search <query> [--global] [limit]".to_string()));
+                return Some(Err("Usage: /fs <query> [--global] [limit]".to_string()));
             }
             let global = args.contains("--global");
             let args_without_global = args.replace("--global", "");
@@ -298,7 +351,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let query = parts.first().unwrap_or(&"").to_string();
             let limit: usize = parts.get(1).and_then(|s| s.trim().parse().ok()).unwrap_or(10);
             if query.is_empty() {
-                return Some(Err("Usage: /fact search <query> [--global] [limit]".to_string()));
+                return Some(Err("Usage: /fs <query> [--global] [limit]".to_string()));
             }
             ChatCommand::FactSearch { query, global, limit }
         }
@@ -585,6 +638,8 @@ fn print_help() {
   /restore <id>    Restore session from JSON to SQLite
   /reindex [id]    Rebuild embeddings for semantic search
   /retrieval       Toggle semantic retrieval from conversation history
+
+Factual Memory:
   /fact add <text> [--global]   Add a fact (project scope by default)
   /fact list [--global]         List facts (project scope by default)
   /fact remove <id>             Remove a fact by ID
@@ -596,8 +651,9 @@ Shortcuts:
   /m = /model, /s = /system, /l = /load
   /t = /think, /e = /export, /ls = /list, /i = /info
   /r = /retry, /to = /tools-output, /u = /undo
-  /ctx = /context, /f = /search, /fp = /fact prune
-  /fa = /fact add, /fl = /fact list, /fr = /fact remove, /fs = /fact search"#
+  /ctx = /context, /f = /search (find)
+  /fp = /fact prune, /fa = /fact add
+  /fl = /fact list, /fr = /fact remove, /fs = /fact search"#
     );
 }
 
