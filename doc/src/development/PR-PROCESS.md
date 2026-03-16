@@ -67,7 +67,7 @@ After documentation is committed:
 
 9. Create PR as DRAFT with issue reference:
    gh pr create --draft --title "<type>: <description>" --body "..."
-   
+    
    IMPORTANT: Include "Closes #N" or "Related #N" in PR body to:
    - Link PR to Issue automatically
    - Auto-close Issue when PR is merged (Closes #N)
@@ -92,32 +92,78 @@ After documentation is committed:
 - Prevents wasted effort on wrong approach
 - Enables course correction early
 
-### Phase 3: Implementation (AFTER Authorization)
+### Phase 2.5: Planning Mode (AFTER Authorization)
 
-**Only start Phase 3 after user authorizes continuation.**
+**After user authorizes continuation, enter planning mode:**
 
 ```
-12. Implement the feature/fix
+12. Analyze codebase to understand the implementation context
+    - Read relevant files (READ-ONLY, no modifications)
+    - Identify patterns and conventions
+    - Check for existing abstractions to reuse
 
-13. Run tests: cargo test --all-features
+13. Create implementation plan:
+    - Specific files to modify/create
+    - Function signatures
+    - Estimated line counts
+    - Complexity reduction targets
 
-14. Run clippy: cargo clippy --all-features -- -D warnings
+14. Ask user questions to clarify approach:
+    - File location preferences
+    - Priority order
+    - Any constraints or preferences
 
-15. Commit code changes (conventional commits):
+15. WAIT for user approval of plan
+
+    DO NOT make any file modifications during planning mode.
+    The plan is discussed and approved before implementation begins.
+    
+    User will then authorize implementation.
+    
+16. After user approves plan:
+    a. Update IMPLEMENTATION.md with detailed plan
+    b. Update PR body with implementation plan
+    c. Update TODO list with implementation tasks
+    d. Commit documentation changes
+    e. Push changes
+    f. Proceed to Phase 3 (Implementation)
+```
+
+**Why this step exists:**
+- Ensures implementation follows agreed architecture
+- Catches issues before code is written
+- Creates clear record of what will be changed
+- Allows user to course-correct the plan
+- **READ-ONLY during planning** - no file modifications until approved
+
+### Phase 3: Implementation (AFTER Plan Approval)
+
+**Only start Phase 3 after plan is approved and documentation updated.**
+
+```
+17. Implement tasks from TODO list in order
+
+18. Run tests: cargo test --all-features
+
+19. Run clippy: cargo clippy --all-features -- -D warnings
+
+20. Commit code changes (conventional commits):
     feat: <description>
     fix: <description>
     refactor: <description>
 
-16. Push commits: git push
+21. Push commits: git push
 ```
 
 ### Phase 4: Mark PR Ready for Review
 
 ```
-17. Mark PR as "ready for review":
+22. Mark PR as "ready for review":
     gh pr ready <number>
 
-18. Add comment to issue: "PR #N ready for review"
+23. Move GitHub Project card to "In Review" (both Status and Scrum Status)
+
+24. Add comment to issue: "PR #N ready for review"
 ```
 
 ### Phase 5: Review & Iteration (COLLABORATIVE)
@@ -125,9 +171,9 @@ After documentation is committed:
 This phase repeats until all review comments are resolved.
 
 ```
-19. Reviewer adds comments to PR
+25. Reviewer adds comments to PR
 
-20. Agent fetches ALL unresolved review comments:
+26. Agent fetches ALL unresolved review comments:
     gh api graphql -f query='
     query {
       repository(owner: "OWNER", name: "REPO") {
@@ -149,7 +195,7 @@ This phase repeats until all review comments are resolved.
     IMPORTANT: Use 'last: 50' (not 'first: 30') to get ALL threads.
     Verify thread count matches totalCount.
 
-21. Agent responds to EACH unresolved comment individually:
+27. Agent responds to EACH unresolved comment individually:
     - Use response prefixes:
       ✅ Resolvido (for fixed code)
       ✅ Verificado (for confirmed correct behavior)
@@ -166,26 +212,26 @@ This phase repeats until all review comments are resolved.
       }) { comment { id } }
     }'
 
-22. If implementation changes needed:
+28. If implementation changes needed:
     a. Create a todo list overview of changes
     b. Wait for user confirmation before implementing
     c. Implement approved changes
     d. Update documentation as needed
     e. Push changes
 
-23. If scope creep detected:
+29. If scope creep detected:
     - Discuss with user
     - May need to open separate issues
 
-24. Update PR description and documentation if changes were made
+30. Update PR description and documentation if changes were made
 
-25. Agent checks for unresolved comments again:
-    - If unresolved comments exist → return to step 21
+31. Agent checks for unresolved comments again:
+    - If unresolved comments exist → return to step 27
     - If all resolved → inform user and wait for approval
 
-26. User reviews and either:
+32. User reviews and either:
     - Approves and proceeds to Phase 6 (manual testing)
-    - Adds more comments → return to step 21
+    - Adds more comments → return to step 27
 ```
 
 ### Phase 6: Manual Testing (REVIEWER)
@@ -193,30 +239,29 @@ This phase repeats until all review comments are resolved.
 After all review comments are resolved, the reviewer performs manual testing.
 
 ```
-27. Reviewer marks all review comments as resolved
+33. Reviewer marks all review comments as resolved
 
-28. Reviewer tests the application manually:
+34. Reviewer tests the application manually:
     - Build and run: cargo build --all-features && cargo run
     - Test the specific feature/fix
     - Verify edge cases
     - Check for regressions
 
-29. If bugs found during testing:
+35. If bugs found during testing:
     a. Reviewer documents bugs in PR comments
     b. Agent creates todo list of fixes
     c. User confirms fixes
     d. Agent implements fixes
     e. Agent documents bugs fixed in PR body
     f. Agent pushes changes
-    g. **Return to Step 21 (review iteration)** - new commits need review
+    g. **Return to Step 27 (review iteration)** - new commits need review
 
-30. If testing passes:
+36. If testing passes:
     - Proceed to Phase 7 (merge)
 
 **IMPORTANT:** Every time the agent pushes commits (whether fixing review comments, 
-bugs from testing, or any other changes), the PR returns to Step 21 for a new 
+bugs from testing, or any other changes), the PR returns to Step 27 for a new 
 review iteration. The reviewer must review the new commits and either:
-- Add more comments → continue iteration
 - Add more comments → continue iteration
 - Approve → proceed to Phase 7
 
@@ -230,29 +275,29 @@ Before informing the reviewer that changes are ready, the agent MUST ensure:
 ### Phase 7: Merge (AGENT, after authorization)
 
 ```
-31. User authorizes merge (all comments resolved, testing passed)
+38. User authorizes merge (all comments resolved, testing passed)
 
-32. Agent merges PR using regular merge (NOT squash):
+39. Agent merges PR using regular merge (NOT squash):
     gh pr merge PR_NUMBER --merge
     - Branch is automatically deleted
     - PR is automatically closed
 
-33. Card moves to "Done" automatically (if PR references the card)
+40. Card moves to "Done" automatically (if PR references the card)
 
-34. Issue is closed automatically (via "Closes #N" in PR body)
+41. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
 
 ```
 Todo → In Progress → In Review → Done
-          ↑            ↑           ↑
-      (start)     (PR created)  (merged)
+           ↑            ↑           ↑
+       (start)     (PR ready)    (merged)
 ```
 
 - **Todo**: Task is planned but not started
 - **In Progress**: Task is being implemented
-- **In Review**: PR created, awaiting review
+- **In Review**: PR ready for review (not draft)
 - **Done**: PR merged (after merge)
 
 ## Review Loop Flow
@@ -262,17 +307,17 @@ Todo → In Progress → In Review → Done
 │                    REVIEW ITERATION                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Step 17: Reviewer adds comments                            │
+│   Step 25: Reviewer adds comments                            │
 │           ↓                                                  │
-│   Step 18: Agent fetches ALL comments                        │
+│   Step 26: Agent fetches ALL comments                        │
 │           ↓                                                  │
-│   Step 19: Agent responds to each comment                    │
+│   Step 27: Agent responds to each comment                    │
 │           ↓                                                  │
-│   Step 20-22: Implementation if needed                       │
+│   Step 28-30: Implementation if needed                       │
 │           ↓                                                  │
-│   Step 23: Agent pushes changes →──────────┐                 │
+│   Step 31: Agent pushes changes →──────────┐                 │
 │           ↓                                │                 │
-│   Step 24: User reviews                    │                 │
+│   Step 32: User reviews                    │                 │
 │           ↓                                │                 │
 │   ┌─────────────────────┐                 │                 │
 │   │ Need more changes?  │──── Yes ────────┘                 │
@@ -285,11 +330,33 @@ Todo → In Progress → In Review → Done
 │                    MANUAL TESTING                            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Step 25-26: Reviewer tests application                     │
+│   Step 33-34: Reviewer tests application                     │
 │           ↓                                                  │
 │   ┌─────────────────────┐                                    │
 │   │ Bugs found?         │──── Yes ──→ Document bugs in PR   │
 │   └─────────────────────┘                 ↓                 │
+│           ↓                            Agent fixes          │
+│           ↓                                ↓                 │
+│           ↓                         Agent pushes ────────────┐│
+│           ↓                                           ↓     ││
+│           ↓                               Return to Step 27 ─┘│
+│           ↓ No bugs                                               │
+├─────────────────────────────────────────────────────────────┤
+│                          ↓                                    │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│                         MERGE                                │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Step 38: User authorizes merge                             │
+│           ↓                                                  │
+│   Step 39: Agent runs: gh pr merge N --merge                 │
+│           ↓                                                  │
+│   Step 40-41: Cleanup (branch deleted, PR closed)            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
 │           ↓ No                            Agent fixes        │
 │           ↓                                ↓                 │
 │           ↓                         Agent pushes ────────────┐│
