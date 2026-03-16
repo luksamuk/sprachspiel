@@ -14,6 +14,7 @@ mod db;
 mod debug_tools;
 mod embeddings;
 pub mod external;
+mod facts;
 mod macros;
 mod markdown;
 mod ocr;

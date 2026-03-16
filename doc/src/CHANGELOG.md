@@ -6,6 +6,16 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Factual Memory System** - Persistent fact storage with automatic decay and conflict resolution
+  - LLM tools: `fact_add`, `fact_search`, `fact_remove` for autonomous fact management
+  - User commands: `/fact add`, `/fact list`, `/fact search`, `/fact remove`, `/fact prune`
+  - Auto-classification: Preferences vs facts detected by heuristics
+  - Conflict resolution: Duplicate detection and contradiction handling
+  - Decay: Ebbinghaus forgetting curve (180d preferences, 30d facts)
+  - Scope: Project-specific vs global facts
+  - FTS5: Full-text search for facts
+  - Prompt injection: Facts injected into system prompt with usage instructions (max 2200 chars)
+
 - **Chat Architecture Refactoring** - Preparing for TUI migration
   - `InputBackend` trait - abstracts input handling (rustyline/ratatui)
   - `ChatView` trait - abstracts output rendering
@@ -13,6 +23,22 @@ All notable changes to Ask-AI will be documented in this file.
   - `core.rs` module - extracted business logic from `repl.rs`
   - Layers: Input/View traits → Session → Implementations → State → Core → REPL
   - Moved ~600 lines from `repl.rs` to `core.rs` for maintainability
+
+### Fixed
+
+- **Error Recovery for Tool Calls** - LLM now receives parsing errors for self-correction
+  - Replaced string-based error classification with typed `OllamaError` matching
+  - `JsonError` (JSON/XML parsing failures) now marked as recoverable
+  - Errors from malformed tool calls are sent back to LLM as Tool messages
+  - LLM can self-correct when it generates invalid tool call syntax
+  - Removed unreliable heuristics (`is_error_str_recoverable`) in favor of types
+
+- **BM25 Score Normalization for Conflict Detection** - Fixed incorrect similarity scoring
+  - Previous formula `(-score).max(0.0)` didn't normalize to [0,1] range
+  - New formula `(-score)/(1-score)` properly maps BM25 scores to [0,1)
+  - Score -10 (strong match) → 0.91, score -1 (weak match) → 0.50
+  - Adjusted CONFLICT_THRESHOLD from 0.8 to 0.85 after proper normalization
+  - Added `normalize_bm25_score()` helper function
 
 ## [0.32.1] - 2026-03-13
 

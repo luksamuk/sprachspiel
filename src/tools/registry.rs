@@ -20,6 +20,9 @@ use super::*;
 // Remember tool is always available (checks context internally)
 use super::remember;
 
+// Fact tools (always available)
+use super::fact_tools::{fact_add, fact_remove, fact_search};
+
 // External tool wrappers (always available)
 use super::{check_tool_availability, run_command};
 
@@ -325,6 +328,20 @@ where
         tool_count += 1;
     }
 
+    // Fact tools - always available (checks context internally)
+    if is_tool_allowed("fact_add") {
+        coordinator = coordinator.register_tool(fact_add);
+        tool_count += 1;
+    }
+    if is_tool_allowed("fact_search") {
+        coordinator = coordinator.register_tool(fact_search);
+        tool_count += 1;
+    }
+    if is_tool_allowed("fact_remove") {
+        coordinator = coordinator.register_tool(fact_remove);
+        tool_count += 1;
+    }
+
     // External tool wrappers (always available)
     // These tools check for external CLI tools like pdftotext, tesseract, etc.
     if is_tool_allowed("check_tool_availability") {
@@ -347,6 +364,11 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
     tools.push("test_tool".to_string());
     // Remember tool - always available (checks context internally)
     tools.push("remember".to_string());
+
+    // Fact tools - always available (checks context internally)
+    tools.push("fact_add".to_string());
+    tools.push("fact_search".to_string());
+    tools.push("fact_remove".to_string());
 
     // External tool wrappers (always available)
     tools.push("check_tool_availability".to_string());

@@ -1,8 +1,15 @@
 # Context Composition Design (v0.21.0)
 
-**Status:** Planning Complete  
-**Date:** 2026-03-03  
-**Version:** 0.21.0
+**Status:** Archived — See [Legacy Documentation](./legacy.md)
+
+> This document has been archived. The context composition design is now documented in:
+> - **[Memory Architecture](./memory-architecture.md)** — Unified overview of all memory systems
+> - **[Context Anatomy](./context-anatomy.md)** — Current context composition details
+
+---
+
+**Original Version:** 0.21.0  
+**Date:** 2026-03-03
 
 ---
 

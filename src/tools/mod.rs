@@ -28,6 +28,9 @@ pub mod system;
 pub mod todo;
 pub mod weather;
 
+// Fact tools (always available)
+pub mod fact_tools;
+
 // External tool wrappers (always available)
 pub mod run_cmd;
 pub mod tool_check;
@@ -54,7 +57,6 @@ pub use system::*;
 pub use todo::*;
 pub use weather::*;
 
-// External tool wrappers (always available)
 pub use run_cmd::run_command;
 pub use tool_check::check_tool_availability;
 
@@ -63,7 +65,6 @@ pub use tool_check::check_tool_availability;
 #[derive(Debug, Deserialize)]
 pub struct NamedApiResource {
     pub name: String,
-    /// URL is needed for JSON deserialization and is used in pokemon.rs
     #[allow(dead_code)]
     pub url: String,
 }

@@ -14,6 +14,8 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Finance | 1 | Google Finance | ✅ Working | ❌ Disabled |
 | System | 2 | Local system | ✅ Working | ✅ Enabled |
 | File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
+| Factual Memory | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
+| Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
@@ -397,6 +399,79 @@ Example: get_project_context()
 - No environment variables exposed
 - Ignores `.env` files and secrets
 - Scoped to max 3 directory levels
+
+## Factual Memory Tools (3)
+
+Tools for storing and retrieving user/project facts across sessions.
+
+These tools are **always enabled** (no feature flag needed) and allow the LLM to remember preferences and facts.
+
+### fact_add
+
+Store a fact or preference about the user or project.
+
+```
+Function: fact_add
+Args:
+  - content (string, required): The fact to store (max 500 chars)
+  - category (string, optional): "preference" or "fact" (auto-detected if omitted)
+  - scope (string, optional): "global" or "project" (default: "global")
+Example: fact_add(content="I prefer concise responses")
+Example: fact_add(content="Project uses PostgreSQL", scope="project")
+```
+
+**Auto-classification:**
+- "I prefer...", "I like...", "Prefiro...", "Gosto de..." → preference
+- Other content → fact
+
+**Conflict Resolution:**
+- Duplicate (very similar content) → Skipped
+- Contradiction ("I like X" vs "I hate X") → Replaces old fact
+
+### fact_search
+
+Search stored facts using keyword search (FTS5).
+
+```
+Function: fact_search
+Args:
+  - query (string, required): Search query
+  - category (string, optional): "preference" or "fact"
+  - scope (string, optional): "global" or "project"
+  - limit (string, optional): Max results (default: 5, max: 20)
+Example: fact_search(query="database")
+Example: fact_search(query="prefer", category="preference")
+```
+
+### fact_remove
+
+Remove a stored fact by its ID.
+
+```
+Function: fact_remove
+Args:
+  - id (string, required): Fact ID (format: "N" or "fact:N")
+Example: fact_remove(id="42")
+Example: fact_remove(id="fact:42")
+```
+
+**User Commands:**
+
+Users can also manage facts via chat commands:
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| `/fact add <text> [--global]` | `/fa` | Add fact |
+| `/fact list [--global]` | `/fl` | List facts |
+| `/fact search <query>` | `/fs` | Search facts |
+| `/fact remove <id>` | `/fr` | Remove fact |
+| `/fact prune` | `/fp` | Run decay manually |
+
+**Decay:**
+- Preferences: 180-day half-life
+- Facts: 30-day half-life
+- High-importance preferences: Never pruned
+- Automatic decay on startup
 
 ## File Operation Tools (8)
 

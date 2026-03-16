@@ -12,6 +12,7 @@ pub mod db;
 pub mod debug_tools;
 pub mod embeddings;
 pub mod external;
+pub mod facts;
 pub mod macros;
 pub mod markdown;
 pub mod ocr;

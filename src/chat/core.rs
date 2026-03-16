@@ -22,16 +22,17 @@ use std::sync::Arc;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
-use crate::context_overflow::{DEFAULT_OVERFLOW_THRESHOLD, check_context_overflow};
+use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD};
 use crate::debug_tools::log_debug;
-use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
-use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
+use crate::facts::prompt::build_facts_section;
+use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::tools::{get_available_tool_names, register_tools};
 
 use super::coordinator::{
-    MAX_RETRIES, classify_error_str, format_recovery_message, is_error_str_recoverable,
+    classify_ollama_error, format_recovery_message, is_ollama_error_recoverable, MAX_RETRIES,
 };
 use super::custom_coordinator::CustomCoordinator;
 use super::session::ChatSession;
@@ -73,6 +74,7 @@ pub fn build_session_system_prompt(
     model_config: &ModelConfig,
     blacklist_set: &std::collections::HashSet<&str>,
     agents_md: Option<&str>,
+    facts_section: Option<&str>,
 ) -> String {
     if let Some(ref custom_prompt) = session.system_prompt {
         return custom_prompt.clone();
@@ -103,7 +105,9 @@ pub fn build_session_system_prompt(
                 Some(ctx_status.clone())
             } else {
                 None
-            }),
+            })
+            .with_facts_section(facts_section)
+            .with_anonymous(session.anonymous),
     )
 }
 
@@ -296,6 +300,28 @@ pub async fn send_message(
     let model_options = model_config.build_model_options();
     let blacklist_set = settings.blacklist_set();
 
+    // Load facts from Factual Memory System
+    let facts_section = if let Some(db_ref) = db {
+        match db_ref.get_facts_for_prompt(session.project_id.as_deref()) {
+            Ok(facts) if !facts.is_empty() => {
+                let section = build_facts_section(&facts);
+                if use_debug && !section.is_empty() {
+                    log_debug(&format!("Loaded {} facts for prompt", facts.len()));
+                }
+                Some(section)
+            }
+            Ok(_) => None,
+            Err(e) => {
+                if use_debug {
+                    log_debug(&format!("Warning: Failed to load facts: {}", e));
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Build system prompt
     let system_prompt = build_session_system_prompt(
         session,
@@ -305,6 +331,7 @@ pub async fn send_message(
         model_config,
         &blacklist_set,
         agents_md,
+        facts_section.as_deref(),
     );
 
     // Check context overflow
@@ -390,12 +417,10 @@ pub async fn send_message(
         match current_result {
             Ok(response) => break Ok(response),
             Err(e) => {
-                let error_str = e.to_string();
-
-                if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
                     attempts += 1;
 
-                    let recovery_err = classify_error_str(&error_str, &tool_names);
+                    let recovery_err = classify_ollama_error(&e, &tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
                     if use_debug {
@@ -416,6 +441,7 @@ pub async fn send_message(
 
                     continue;
                 } else {
+                    let error_str = e.to_string();
                     break Err(error_str);
                 }
             }

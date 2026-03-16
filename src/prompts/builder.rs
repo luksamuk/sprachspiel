@@ -62,6 +62,10 @@ pub struct PromptConfig<'a> {
     pub soulless: bool,
     /// Context status for awareness (injects usage % into prompt)
     pub context_status: Option<ContextStatus>,
+    /// Facts section to inject after context (from Factual Memory System)
+    pub facts_section: Option<&'a str>,
+    /// Whether this is an anonymous session (no persistence)
+    pub is_anonymous: bool,
 }
 
 impl<'a> PromptConfig<'a> {
@@ -79,6 +83,8 @@ impl<'a> PromptConfig<'a> {
             retrieval_enabled: false,
             soulless: false,
             context_status: None,
+            facts_section: None,
+            is_anonymous: false,
         }
     }
 
@@ -121,6 +127,18 @@ impl<'a> PromptConfig<'a> {
     /// Set context status for awareness injection
     pub fn with_context_status(mut self, context_status: Option<ContextStatus>) -> Self {
         self.context_status = context_status;
+        self
+    }
+
+    /// Set facts section (from Factual Memory System)
+    pub fn with_facts_section(mut self, facts_section: Option<&'a str>) -> Self {
+        self.facts_section = facts_section;
+        self
+    }
+
+    /// Set anonymous mode
+    pub fn with_anonymous(mut self, is_anonymous: bool) -> Self {
+        self.is_anonymous = is_anonymous;
         self
     }
 }
@@ -199,6 +217,28 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
             prompt.push_str(agents);
             prompt.push('\n');
         }
+
+        // 3d. Facts section (from Factual Memory System)
+        if let Some(facts) = config.facts_section
+            && !facts.is_empty()
+        {
+            prompt.push_str("\n### USER FACTS\n\n");
+            prompt.push_str("The following are persistent facts and preferences about the user/project.\n\n");
+            prompt.push_str("**Preferences** → Apply to personalize tone and style.\n");
+            prompt.push_str("**Facts** → Reference when relevant to the topic.\n\n");
+            prompt.push_str(facts);
+        }
+    }
+
+    // 3e. Anonymous session warning
+    if config.is_anonymous {
+        prompt.push_str("\n### ANONYMOUS SESSION\n");
+        prompt.push_str("**Important:** You are in an anonymous session.\n");
+        prompt.push_str("- This conversation will NOT be saved or persisted.\n");
+        prompt.push_str("- Fact storage tools (fact_add, fact_search, fact_remove) are DISABLED.\n");
+        prompt.push_str("- Session memory (remember tool) is DISABLED.\n");
+        prompt.push_str("- Any information the user shares will be lost when this session ends.\n");
+        prompt.push_str("- If the user wants persistent memory, they should start a regular session without --anonymous.\n");
     }
 
     // 4. Tools section (if enabled)

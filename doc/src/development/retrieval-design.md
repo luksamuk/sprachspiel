@@ -1,6 +1,14 @@
 # Retrieval System Design
 
-This document explains how Ask-AI's retrieval system works, enabling semantic search through conversation history.
+**Status:** Archived — See [Legacy Documentation](./legacy.md)
+
+> This document has been archived. The retrieval system is now documented as **Layer 2: Conversation Memory** in the unified [Memory Architecture](./memory-architecture.md) document.
+
+---
+
+**Original Topic:** Conversation Memory (Retrieval)
+
+---
 
 ## Overview
 

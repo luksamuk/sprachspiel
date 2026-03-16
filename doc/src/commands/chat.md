@@ -77,6 +77,18 @@ Once inside the chat, these commands are available:
 | `/context`, `/ctx` | Show context metrics and token usage |
 | `/search <query>`, `/find <query>`, `/f <query>` | Search conversation history (semantic search) |
 
+### Facts & Memory
+
+| Command | Description |
+|---------|-------------|
+| `/fact add <text> [--global]`, `/fa` | Add a fact (project scope by default) |
+| `/fact list [--global]`, `/fl` | List stored facts |
+| `/fact remove <id>`, `/fr` | Remove a fact by ID |
+| `/fact search <query>`, `/fs` | Search stored facts |
+| `/fact prune`, `/fp` | Prune old facts using decay |
+
+Subcommand shortcuts: `/fact a` (add), `/fact l` (list), `/fact r` (remove), `/fact s` (search), `/fact p` (prune)
+
 ## /context - Context Metrics
 
 Show token usage and context utilization for the current session:
@@ -162,6 +174,123 @@ Example: A 3000-character message creates 4 overlapping chunks, ensuring phrases
    ```
 
 2. **Messages indexed** - Messages are automatically indexed when saved to SQLite.
+
+## /fact - Factual Memory
+
+The factual memory system allows the AI to remember preferences and facts across sessions.
+
+### Adding Facts
+
+Add facts that the AI should remember:
+
+```bash
+/fact add I prefer concise responses
+/fact add Project uses SQLite for storage --global
+/fa The API rate limit is 100 req/min    # Shortcut
+```
+
+**Options:**
+- `--global` - Store as global fact (applies to all projects)
+- Without flag - Store as project-specific fact
+
+**Limits:**
+- Maximum content size: 500 characters
+- Facts exceeding this limit will be rejected with an error
+
+**Auto-classification:** Facts are automatically classified as:
+- `preference` - User preferences ("I prefer...", "I like...")
+- `fact` - Objective information ("The API is...", "Database uses...")
+
+**Conflict Resolution:** When adding a similar fact:
+- **Duplicate** (very similar, no contradiction): Skipped
+- **Contradiction** ("I like X" vs "I hate X"): Replaces old fact
+
+### Listing Facts
+
+View all stored facts:
+
+```bash
+/fact list           # Project facts
+/fact list --global  # Global facts
+/fl                  # Shortcut
+```
+
+**Output:**
+```
+Facts (project):
+
+  Preferences:
+    #1 I prefer short explanations (5d)
+    #2 I like code examples (3d)
+
+  Facts:
+    #3 Project uses SQLite (7d)
+    #5 API endpoint is /v1/users (2d)
+
+  Total: 4 fact(s)
+```
+
+### Searching Facts
+
+Search stored facts using keyword search:
+
+```bash
+/fact search database
+/fact search API --global 5    # Global scope, limit 5
+/fs prefer                      # Shortcut
+```
+
+### Removing Facts
+
+Remove a fact by its ID:
+
+```bash
+/fact remove 3
+/fr 5                          # Shortcut
+```
+
+### Pruning Old Facts
+
+Facts automatically decay based on age and importance:
+
+- **Preferences**: 180-day half-life
+- **Facts**: 30-day half-life
+- **High-importance preferences**: Never pruned
+
+Run manual cleanup:
+
+```bash
+/fact prune
+/fp                            # Shortcut
+```
+
+### How It Works
+
+1. **Storage**: Facts stored in SQLite with FTS5 full-text search
+2. **Prompt Injection**: Facts injected into system prompt (max 2200 chars)
+3. **Decay**: Ebbinghaus forgetting curve with access reinforcement
+4. **Conflict Detection**: Similar facts detected via FTS5, contradictions resolved
+
+### Fact Scope
+
+| Scope | Description | Use Case |
+|-------|-------------|----------|
+| `project` | Current project only | "API uses port 8080", "Database is SQLite" |
+| `global` | All projects | "I prefer Portuguese", "I like concise responses" |
+
+### LLM Integration
+
+The LLM can also store facts autonomously using the `fact_add`, `fact_search`, and `fact_remove` tools. These tools are available to models with tool support.
+
+### Anonymous Mode
+
+Facts are **disabled in anonymous mode** (`--anonymous` flag). The `/fact` commands will show an error:
+
+```
+Error: Cannot add facts in anonymous mode.
+```
+
+Facts are only available in persistent sessions where they can be stored across conversations. In anonymous mode, no data is persisted, so fact storage is unavailable.
 
 ## Prompt Indicators
 

@@ -4,14 +4,14 @@
 
 use std::sync::Arc;
 
-use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
+use ollama_rs::Ollama;
 
 use crate::capabilities::ModelCapabilities;
 use crate::chat::{
     coordinator::{
-        MAX_RETRIES, classify_error_str, format_recovery_message, is_error_str_recoverable,
+        classify_ollama_error, format_recovery_message, is_ollama_error_recoverable, MAX_RETRIES,
     },
     custom_coordinator::{ChatEvent, CustomCoordinator},
     display_thinking, strip_thinking_tags,
@@ -386,12 +386,10 @@ pub async fn run_query(
                 match current_result {
                     Ok(response) => break Ok(response),
                     Err(e) => {
-                        let error_str = e.to_string();
-
-                        if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                        if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
                             attempts += 1;
 
-                            let recovery_err = classify_error_str(&error_str, &tool_names);
+                            let recovery_err = classify_ollama_error(&e, &tool_names);
                             let error_msg = format_recovery_message(&recovery_err);
 
                             if output_flags.debug {
@@ -412,6 +410,7 @@ pub async fn run_query(
 
                             continue;
                         } else {
+                            let error_str = e.to_string();
                             break Err(error_str);
                         }
                     }
@@ -427,12 +426,10 @@ pub async fn run_query(
             match current_result {
                 Ok(response) => break Ok(response),
                 Err(e) => {
-                    let error_str = e.to_string();
-
-                    if is_error_str_recoverable(&error_str) && attempts < MAX_RETRIES {
+                    if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
                         attempts += 1;
 
-                        let recovery_err = classify_error_str(&error_str, &tool_names);
+                        let recovery_err = classify_ollama_error(&e, &tool_names);
                         let error_msg = format_recovery_message(&recovery_err);
 
                         if output_flags.debug {
@@ -453,6 +450,7 @@ pub async fn run_query(
 
                         continue;
                     } else {
+                        let error_str = e.to_string();
                         break Err(error_str);
                     }
                 }

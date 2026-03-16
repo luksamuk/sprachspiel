@@ -6,7 +6,7 @@ use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use super::schema::{SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL, set_version_sql};
+use super::schema::{set_version_sql, SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL};
 
 /// Thread-safe database wrapper
 #[derive(Clone)]
@@ -223,6 +223,56 @@ impl Database {
             )?;
         }
 
+        // Migration v5 -> v6: Add facts table (factual memory system)
+        if from_version < 6 {
+            // Create facts table
+            conn.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS facts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scope TEXT NOT NULL CHECK(scope IN ('project', 'global')),
+                    category TEXT NOT NULL CHECK(category IN ('preference', 'fact')),
+                    content TEXT NOT NULL,
+                    importance REAL DEFAULT 0.5 CHECK(importance BETWEEN 0 AND 1),
+                    access_count INTEGER DEFAULT 0,
+                    decay_score REAL DEFAULT 1.0,
+                    created_at INTEGER NOT NULL,
+                    last_accessed INTEGER NOT NULL,
+                    source TEXT DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+                    invalidated_at INTEGER,
+                    project_id TEXT
+                );
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
+                    content,
+                    content='facts',
+                    content_rowid='id',
+                    tokenize='porter unicode61'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS facts_ai AFTER INSERT ON facts BEGIN
+                    INSERT INTO facts_fts(rowid, content) VALUES (new.id, new.content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
+                    INSERT INTO facts_fts(facts_fts, rowid, content) 
+                    VALUES('delete', old.id, old.content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS facts_au AFTER UPDATE ON facts BEGIN
+                    INSERT INTO facts_fts(facts_fts, rowid, content) 
+                    VALUES('delete', old.id, old.content);
+                    INSERT INTO facts_fts(rowid, content) VALUES (new.id, new.content);
+                END;
+
+                CREATE INDEX IF NOT EXISTS idx_facts_scope_category ON facts(scope, category);
+                CREATE INDEX IF NOT EXISTS idx_facts_decay ON facts(decay_score) WHERE invalidated_at IS NULL;
+                CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 'project';
+                CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
+                "#,
+            )?;
+        }
+
         Ok(())
     }
 
@@ -319,6 +369,7 @@ mod tests {
         assert!(tables.contains(&"message_embeddings".to_string()));
         assert!(tables.contains(&"messages_fts".to_string()));
         assert!(tables.contains(&"session_todos".to_string()));
+        assert!(tables.contains(&"facts".to_string()));
     }
 
     #[test]
@@ -387,5 +438,60 @@ mod tests {
             .expect("Failed to get table info");
 
         assert!(columns.contains(&"prompt_tokens".to_string()));
+    }
+
+    #[test]
+    fn test_facts_table() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Check facts table exists
+        let tables: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")?;
+                let rows = stmt.query_map([], |row| row.get(0))?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to list tables");
+
+        assert!(tables.contains(&"facts".to_string()));
+
+        // Verify facts table structure
+        let columns: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(facts)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to get table info");
+
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"scope".to_string()));
+        assert!(columns.contains(&"category".to_string()));
+        assert!(columns.contains(&"content".to_string()));
+        assert!(columns.contains(&"importance".to_string()));
+        assert!(columns.contains(&"access_count".to_string()));
+        assert!(columns.contains(&"decay_score".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+        assert!(columns.contains(&"last_accessed".to_string()));
+        assert!(columns.contains(&"source".to_string()));
+        assert!(columns.contains(&"invalidated_at".to_string()));
+        assert!(columns.contains(&"project_id".to_string()));
+
+        // Check facts_fts virtual table exists
+        let vtables: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='facts_fts'",
+                )?;
+                let rows = stmt.query_map([], |row| row.get(0))?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to list virtual tables");
+
+        assert!(vtables.contains(&"facts_fts".to_string()));
     }
 }

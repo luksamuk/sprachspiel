@@ -1,4 +1,4 @@
-.TH ASK-AI 1 "2026-03-13" "ask-ai 0.32.1" "User Commands"
+.TH ASK-AI 1 "2026-03-15" "ask-ai 0.33.0" "User Commands"
 .SH NAME
 ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
@@ -155,6 +155,16 @@ Interactive commands available inside chat:
 /context, /ctx \- Show context metrics and token usage
 .br
 /search, /find, /f \- Search conversation history (semantic search)
+.br
+/fact add <text> [--global], /fa \- Add a fact (project scope by default)
+.br
+/fact list [--global], /fl \- List stored facts
+.br
+/fact search <query>, /fs \- Search stored facts
+.br
+/fact remove <id>, /fr \- Remove a fact by ID
+.br
+/fact prune, /fp \- Prune old facts using decay cycle
 .in -4
 .PP
 Tab completion available for commands and model names.
