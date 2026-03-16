@@ -646,6 +646,8 @@ Factual Memory:
   /fact search <query> [--global] [limit]   Search facts
   /fact prune      Prune old facts using decay cycle
 
+  Subcommand shortcuts: /fact a, /fact l, /fact r, /fact s, /fact p
+
 Shortcuts:
   /q = /quit, /c = /clear, /h = /help
   /m = /model, /s = /system, /l = /load

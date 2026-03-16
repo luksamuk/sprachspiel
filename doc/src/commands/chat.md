@@ -85,7 +85,9 @@ Once inside the chat, these commands are available:
 | `/fact list [--global]`, `/fl` | List stored facts |
 | `/fact remove <id>`, `/fr` | Remove a fact by ID |
 | `/fact search <query>`, `/fs` | Search stored facts |
-| `/fact prune` | Prune old facts using decay |
+| `/fact prune`, `/fp` | Prune old facts using decay |
+
+Subcommand shortcuts: `/fact a` (add), `/fact l` (list), `/fact r` (remove), `/fact s` (search), `/fact p` (prune)
 
 ## /context - Context Metrics
 
