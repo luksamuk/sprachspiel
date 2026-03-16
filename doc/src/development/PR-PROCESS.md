@@ -78,28 +78,146 @@ This document describes the mandatory workflow for implementing features and fix
 15. Add comment to issue: "PR #N ready for review"
 ```
 
-### Phase 5: After Approval (REVIEWER ONLY)
+### Phase 5: Review & Iteration (COLLABORATIVE)
+
+This phase repeats until all review comments are resolved.
 
 ```
-16. Reviewer approves and merges PR
+16. Reviewer adds comments to PR
 
-17. Reviewer moves card to "Done"
+17. Agent fetches ALL unresolved review comments:
+    gh api graphql -f query='
+    query {
+      repository(owner: "OWNER", name: "REPO") {
+        pullRequest(number: PR_NUMBER) {
+          reviewThreads(last: 50) {
+            totalCount
+            nodes {
+              id
+              path
+              line
+              isResolved
+              comments(first: 1) { nodes { body } }
+            }
+          }
+        }
+      }
+    }'
 
-18. Issue is closed automatically (via "Closes #N" in PR body)
+    IMPORTANT: Use 'last: 50' (not 'first: 30') to get ALL threads.
+    Verify thread count matches totalCount.
+
+18. Agent responds to EACH unresolved comment individually:
+    - Use response prefixes:
+      ✅ Resolvido (for fixed code)
+      ✅ Verificado (for confirmed correct behavior)
+      📋 Acknowledged, deferred (good suggestion, future work)
+      ❌ Declined (with explanation)
+      ❓ Clarification needed
+
+    Example:
+    gh api graphql -f query='
+    mutation {
+      addPullRequestReviewThreadReply(input: {
+        pullRequestReviewThreadId: "THREAD_ID",
+        body: "✅ Resolvido. Fixed in commit abc1234."
+      }) { comment { id } }
+    }'
+
+19. If implementation changes needed:
+    a. Create a todo list overview of changes
+    b. Wait for user confirmation before implementing
+    c. Implement approved changes
+    d. Update documentation as needed
+    e. Push changes
+
+20. If scope creep detected:
+    - Discuss with user
+    - May need to open separate issues
+
+21. Update PR description and documentation if changes were made
+
+22. Agent checks for unresolved comments again:
+    - If unresolved comments exist → return to step 18
+    - If all resolved → inform user and wait for approval
+
+23. User reviews and either:
+    - Approves and proceeds to Phase 6 (merge)
+    - Adds more comments → return to step 18
+```
+
+### Phase 6: After Approval (REVIEWER ONLY)
+
+```
+24. Reviewer approves and merges PR
+
+24. Reviewer approves and merges PR
+
+25. Reviewer moves card to "Done"
+
+26. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
 
 ```
 Todo → In Progress → In Review → Done
-                ↑         ↑         ↑
-            (start)   (PR created) (approved)
+          ↑            ↑           ↑
+      (start)     (PR created)  (approved)
 ```
 
 - **Todo**: Task is planned but not started
 - **In Progress**: Task is being implemented
 - **In Review**: PR created, awaiting review
 - **Done**: PR merged (REVIEWER ONLY)
+
+## Review Comment Response Prefixes
+
+When responding to review comments, use these prefixes:
+
+| Prefix | Meaning | When to Use |
+|--------|---------|-------------|
+| ✅ Resolvido | Code fixed/removed | Changed code to address the comment |
+| ✅ Verificado | Code is correct as-is | Confirmed the code behavior is intentional |
+| 📋 | Acknowledged, deferred | Good suggestion, will address in future PR |
+| ❌ | Declined | Suggestion not applicable, with explanation |
+| ❓ | Clarification needed | Question about the comment |
+
+**CRITICAL:** Respond to EACH thread individually, not in a single summary comment. Each comment needs its own reply for the reviewer to mark as resolved.
+
+## Iteration Scenarios
+
+During review, several scenarios may occur:
+
+### Scenario: Implementation Changes Needed
+
+1. Agent creates todo list overview of required changes
+2. User confirms or modifies the plan
+3. Agent implements changes
+4. Agent updates documentation (CHANGELOG, IMPLEMENTATION.md, etc.)
+5. Agent pushes changes
+6. Return to checking for unresolved comments
+
+### Scenario: Scope Creep Detected
+
+1. Agent identifies scope creep during implementation
+2. Discusses with user
+3. May open separate issues for additional work
+4. Defers to future PRs with user agreement
+
+### Scenario: YAGNI (You Ain't Gonna Need It)
+
+1. Agent identifies unnecessary code during review
+2. Explains why code should be removed
+3. Removes code with user agreement
+4. Documents removal in commit message
+
+### Scenario: Large Issue Detected
+
+1. Agent realizes issue is too large for single PR
+2. Discusses with user
+3. May split into multiple issues/PRs
+4. Documents remaining work in IMPLEMENTATION.md
 
 ## Conventional Commits
 

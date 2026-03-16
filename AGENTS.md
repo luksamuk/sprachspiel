@@ -28,7 +28,8 @@ This is a Rust project that uses the ollama-rs library to interact with Ollama L
 8. Create DRAFT PR    → gh pr create --draft
 9. Move to In Review  → update GitHub Project card
 10. Mark ready         → gh pr ready PR_NUMBER
-11. WAIT for review   → do not merge or close until approved
+11. Review iteration   → fetch ALL comments, respond to each, implement fixes
+12. WAIT for review   → do not merge or close until approved
 ```
 
 ### Status Flow
@@ -38,6 +39,31 @@ Todo → In Progress → In Review → Done
            ↑            ↑          ↑
        (you start)  (PR created) (REVIEWER ONLY)
 ```
+
+### Review Iteration Phase
+
+**CRITICAL:** When responding to review comments:
+
+1. **Fetch ALL unresolved threads** using `last: 50` (not `first: 30`)
+2. **Respond to EACH thread individually** - not in a single summary comment
+3. **Use proper prefixes** in responses:
+   - ✅ **Resolvido** - Code fixed/removed
+   - ✅ **Verificado** - Code is correct as-is
+   - 📋 **Acknowledged, deferred** - Good suggestion, future work
+   - ❌ **Declined** - With explanation
+   - ❓ **Clarification needed** - Question about the comment
+
+4. **If implementation changes needed:**
+   - Create todo list overview
+   - Wait for user confirmation
+   - Implement approved changes
+   - Update documentation
+   - Push changes
+
+5. **Loop until all comments resolved:**
+   - Check for unresolved comments again
+   - If found → respond and implement
+   - If none → inform user and wait for approval
 
 ## Build Commands
 
