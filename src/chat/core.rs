@@ -25,7 +25,10 @@ use crate::config::ModelConfig;
 use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD};
 use crate::debug_tools::log_debug;
 use crate::facts::prompt::build_facts_section;
-use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+use crate::prompts::builder::{
+    build_compaction_prompt, build_continuation_prompt, build_system_prompt, PromptConfig,
+    PromptType,
+};
 use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -192,7 +195,7 @@ pub async fn prepare_messages(
     messages.push(ChatMessage::user(user_input.to_string()));
 
     if let Some(tag) = continuation_tag {
-        let continuation_prompt = build_continuation_prompt(tag);
+        let continuation_prompt = build_continuation_prompt(&tag.paused_at, &tag.next_step);
         coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
         if use_debug {
             log_debug("Injected continuation prompt as ephemeral message");
@@ -251,24 +254,6 @@ pub fn process_chat_response(
         system_prompt,
         continuation_needed,
     }
-}
-
-/// Build a continuation prompt from a continuation tag
-///
-/// Creates a system message that tells the LLM to resume from where it paused
-/// after context compaction.
-pub fn build_continuation_prompt(tag: &ContinuationTag) -> String {
-    format!(
-        "<continuation_prompt>\n\
-        Context has been compacted. Resume from the checkpoint.\n\
-        \n\
-        Reasoning paused at: {}\n\
-        Next step: {}\n\
-        \n\
-        Continue naturally from where you left off. Do not repeat completed work.\n\
-        </continuation_prompt>",
-        tag.paused_at, tag.next_step
-    )
 }
 
 /// Send a message to the LLM and process the response
@@ -578,31 +563,7 @@ pub async fn compact_conversation(
         }
     }
 
-    let compact_prompt = format!(
-        r#"Summarize the following conversation concisely in MARKDOWN format.
-
-Use this structure:
-**Key Topics:**
-- Topic 1
-- Topic 2
-
-**Decisions Made:**
-- Decision 1
-- Decision 2
-
-**Technical Details:**
-- Important code/technical info
-
-**Action Items:**
-- [ ] Pending task 1
-- [ ] Pending task 2
-
-Conversation:
-{}
-
-Provide a structured markdown summary that captures the essential context."#,
-        conversation_text
-    );
+    let compact_prompt = build_compaction_prompt(&conversation_text);
 
     let mut model_cfg = model_config.clone();
     model_cfg.temperature = 0.3;
