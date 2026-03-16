@@ -2,6 +2,17 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.35.0] - TBD
+
+### Changed
+
+- **REPL Complexity Reduction** - Refactoring `run_chat_repl` for maintainability
+  - Extracted `handle_continuation()` - continuation handling (~140 lines)
+  - Extracted `handle_overflow_error()` - overflow recovery (~60 lines)
+  - Extracted `process_user_input()` - input processing (~330 lines)
+  - Cognitive complexity reduced from 78/25 to target <25
+  - Continues work from Issue #7 (PR #19)
+
 ## [0.34.0] - 2026-03-16
 
 ### Added

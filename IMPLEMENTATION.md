@@ -356,9 +356,9 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🟡 PRIORITY 1: Code Quality - REPL Complexity Reduction (Follow-up)
+### 🔄 PRIORITY 1: Code Quality - REPL Complexity Reduction (Follow-up)
 
-**Status:** 📋 PLANNED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Continue reducing cyclomatic complexity of `run_chat_repl` after Phase 1 refactoring.
 
