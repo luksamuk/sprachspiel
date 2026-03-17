@@ -479,12 +479,21 @@ todo_clear_all()             // Clear all tasks
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 0 | Fix TODO persistence bug (Issue #34) | ✅ Done |
-| 1 | Schema v7 + migration (preserve data) | ⏳ Pending |
-| 2 | Types + Operations (content module) | ⏳ Pending |
-| 3 | Unified search operations | ⏳ Pending |
-| 4 | Note commands | ⏳ Pending |
+| 1 | Schema v7 + migration (preserve data) | ✅ Done |
+| 2 | Types + Operations (content module) | ✅ Done |
+| 3 | Unified search operations | ✅ Done |
+| 4 | Note commands | ✅ Done |
 | 5 | Embeddings for notes | ⏳ Pending |
 | 6 | Tests and documentation | ⏳ Pending |
+
+**Commits:**
+- `be0b279` - docs: update roadmap priorities
+- `9f2a50b` - docs: update CHANGELOG and IMPLEMENTATION.md
+- `99c92e3` - fix(todo): sync TodoState to session after LLM interaction
+- `34f3c12` - feat(db): add schema v7 with content_items unified table
+- `0d66a05` - feat(content): add content module with Note CRUD operations
+- `c88e324` - feat(content): add unified search operations for content_items
+- `a416f42` - feat(notes): add /note commands for persistent notes
 
 ---
 
