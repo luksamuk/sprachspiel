@@ -814,6 +814,7 @@ fn row_to_content_item(row: &rusqlite::Row) -> Result<ContentItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const MAX_CONTENT: usize = 10000; // MAX_NOTE_CONTENT_SIZE from types.rs
 
     #[test]
     fn test_insert_and_get_note() {
@@ -921,5 +922,117 @@ mod tests {
 
         db.delete_note(id).expect("Failed to delete note");
         assert!(db.get_note(id).expect("Failed to get note").is_none());
+    }
+
+    #[test]
+    fn test_search_notes_keyword() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let note1 = Note::new(
+            "Rust programming language".to_string(),
+            ContentScope::Project,
+            Some("proj-a".to_string()),
+            ContentSource::User,
+            Some("Rust Notes".to_string()),
+        )
+        .expect("Failed to create note");
+
+        let note2 = Note::new(
+            "Python machine learning".to_string(),
+            ContentScope::Global,
+            None,
+            ContentSource::User,
+            Some("Python Notes".to_string()),
+        )
+        .expect("Failed to create note");
+
+        db.insert_note(&note1).expect("Failed to insert note1");
+        db.insert_note(&note2).expect("Failed to insert note2");
+
+        // Search for "Rust"
+        let results = db
+            .search_notes_keyword("Rust", None, None, 10)
+            .expect("Failed to search");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].item.title, Some("Rust Notes".to_string()));
+        assert!(results[0].item.content.contains("Rust"));
+
+        // Search for "programming"
+        let results = db
+            .search_notes_keyword("programming", None, None, 10)
+            .expect("Failed to search");
+        assert_eq!(results.len(), 1);
+
+        // Search for "machine" (in content, not title)
+        let results = db
+            .search_notes_keyword("machine", None, None, 10)
+            .expect("Failed to search");
+        assert_eq!(results.len(), 1);
+        assert!(results[0].item.content.contains("machine"));
+
+        // Search with project filter
+        let results = db
+            .search_notes_keyword("programming", None, Some("proj-a"), 10)
+            .expect("Failed to search");
+        assert_eq!(results.len(), 1);
+
+        // Search with scope filter
+        let results = db
+            .search_notes_keyword("Python", Some(ContentScope::Global), None, 10)
+            .expect("Failed to search");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].item.scope, Some(ContentScope::Global));
+    }
+
+    #[test]
+    fn test_get_content_items_without_embeddings() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Insert a note without embedding
+        let note = Note::new(
+            "Test note without embedding".to_string(),
+            ContentScope::Project,
+            None,
+            ContentSource::User,
+            None,
+        )
+        .expect("Failed to create note");
+
+        db.insert_note(&note).expect("Failed to insert note");
+
+        // Get items without embeddings
+        let items = db
+            .get_content_items_without_embeddings(Some(ContentType::Note), 10)
+            .expect("Failed to get items");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].content_type, ContentType::Note);
+        assert!(!items[0].has_embedding);
+    }
+
+    #[test]
+    fn test_note_content_validation() {
+        // Test max content size
+        let long_content = "x".repeat(MAX_CONTENT + 1);
+        let result = Note::new(
+            long_content,
+            ContentScope::Project,
+            None,
+            ContentSource::User,
+            None,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds"));
+
+        // Test valid content
+        let valid_content = "x".repeat(MAX_CONTENT);
+        let result = Note::new(
+            valid_content,
+            ContentScope::Project,
+            None,
+            ContentSource::User,
+            None,
+        );
+        assert!(result.is_ok());
     }
 }
