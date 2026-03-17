@@ -496,6 +496,10 @@ todo_clear_all()             // Clear all tasks
 - `a416f42` - feat(notes): add /note commands for persistent notes
 - `e5a8a57` - feat(content): add embedding support for notes
 - `d2544bc` - test(content): add tests for note operations
+- `9245699` - docs: update IMPLEMENTATION.md with completed phases
+- `7cf2fbf` - docs: update IMPLEMENTATION.md - Notes System complete
+- `b4b013b` - docs(chat): add /note commands documentation
+- `5694cd9` - feat(remember): integrate notes into retrieval system
 
 ---
 

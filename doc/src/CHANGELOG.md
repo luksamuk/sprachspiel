@@ -20,6 +20,15 @@ All notable changes to Ask-AI will be documented in this file.
   - `SourceType::Note` added to retrieval system
   - Schema v7: unified `content_items` table for messages, notes, and future documents
   - Unified search API: `search_content_keyword`, `search_content_semantic`, `search_content_hybrid`
+  - Async embedding generation for notes on creation
+  - Comprehensive test suite for note operations
+
+- **Remember Tool Integration** - Notes now accessible via LLM retrieval
+  - `remember(id="note:N")` retrieves specific notes
+  - `remember(query="topic")` searches across messages AND notes
+  - Results distinguish between content types (Messages vs Notes)
+  - Prompt engineering updated to document content types
+  - Unified `search_content_hybrid()` enables semantic search across all content
 
 ## [0.35.0] - TBD
 
