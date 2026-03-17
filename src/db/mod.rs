@@ -11,9 +11,10 @@ mod schema;
 pub use connection::Database;
 pub use legacy_check::{migrate_all_legacy_sessions, restore_session};
 pub use migration::reindex_conversation;
+#[allow(unused_imports)]
 pub use operations::{
-    ConversationMetadataParams, SearchParams, SearchResult, SearchType, SourceType, TodoRow,
-    reciprocal_rank_fusion,
+    fts5_escape, ConversationMetadataParams, SearchParams, SearchResult, SearchType, SourceType,
+    TodoRow, reciprocal_rank_fusion,
 };
 
 /// Initialize sqlite-vec extension globally.
