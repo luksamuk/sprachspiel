@@ -38,5 +38,5 @@ pub mod types;
 pub use db::ContentSearchParams;
 pub use types::{
     ContentChunk, ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource,
-    ContentType, Note,
+    ContentType, Note, MAX_NOTE_CONTENT_SIZE,
 };
