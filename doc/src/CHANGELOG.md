@@ -4,6 +4,12 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [0.36.0] - TBD
 
+### Fixed
+
+- **TODO List Persistence** - LLM tools now properly save TODO state to database
+  - Previously, tools like `todo_add`, `todo_update` modified global state but didn't sync to session
+  - Now synchronizes `TodoState` to `session.todos` after LLM interactions
+
 ### Added
 
 - **Notes System** - Persistent notes with semantic search
@@ -12,7 +18,7 @@ All notable changes to Ask-AI will be documented in this file.
   - FTS5 full-text search for keyword matching
   - `SourceType::Note` added to retrieval system
   - Hybrid search (BM25 + vector) includes notes in results
-  - Schema v7: `notes` and `notes_fts` tables
+  - Schema v7: unified `content_items` table
 
 ## [0.35.0] - TBD
 

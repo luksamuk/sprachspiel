@@ -459,30 +459,113 @@ todo_clear_all()             // Clear all tasks
 
 **Features:**
 - `/note add/list/show/edit/delete` commands
-- Note storage with embeddings
-- Update context builder for note results
-- Add `SourceType::Note` to retrieval system
-- Hybrid search includes notes
+- Notes stored with embeddings for semantic search
+- FTS5 full-text search for keyword matching
+- Hybrid search (BM25 + vector) includes notes in results
+- Project/global scope like facts
+
+**Architecture Decision:** Unified `content_items` table (see below)
 
 **Dependencies:** None
 
-**Estimated effort:** 2-3 days
+**Estimated effort:** 5 days
 
 **Reference:** `doc/src/development/planning-session-cli-tools.md` lines 157-160, 303-311
 
-**Related:** Issue #6
+**Related:** Issue #6, Issue #34
 
 **Implementation Plan:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Schema v7 (notes table + FTS5) | ⏳ Pending |
-| 2 | CRUD operations in src/db/notes.rs | ⏳ Pending |
-| 3 | SourceType::Note in retrieval | ⏳ Pending |
-| 4 | /note commands in REPL | ⏳ Pending |
+| 0 | Fix TODO persistence bug (Issue #34) | ✅ Done |
+| 1 | Schema v7 + migration (preserve data) | ⏳ Pending |
+| 2 | Types + Operations (content module) | ⏳ Pending |
+| 3 | Unified search operations | ⏳ Pending |
+| 4 | Note commands | ⏳ Pending |
 | 5 | Embeddings for notes | ⏳ Pending |
-| 6 | Context builder integration | ⏳ Pending |
-| 7 | Tests and documentation | ⏳ Pending |
+| 6 | Tests and documentation | ⏳ Pending |
+
+---
+
+### Architecture: Content Items (Schema v7)
+
+**Unified table approach** for messages, notes, and future documents.
+
+**Tables:**
+
+```sql
+-- Unified content storage
+CREATE TABLE content_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_type TEXT NOT NULL CHECK(content_type IN ('message', 'note', 'document')),
+    
+    -- Message fields (nullable)
+    conversation_id TEXT,
+    role TEXT CHECK(role IN ('user', 'assistant', 'system', 'tool')),
+    message_type TEXT DEFAULT 'normal',
+    previous_item_id INTEGER REFERENCES content_items(id),
+    prompt_tokens INTEGER,
+    
+    -- Note/Document fields (nullable)
+    scope TEXT CHECK(scope IN ('project', 'global')),
+    source TEXT CHECK(source IN ('user', 'llm')),
+    title TEXT,
+    
+    -- Common fields
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    project_id TEXT,
+    has_embedding INTEGER DEFAULT 0
+);
+
+-- Unified chunks for long content
+CREATE TABLE content_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    start_offset INTEGER NOT NULL,
+    end_offset INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    has_embedding INTEGER DEFAULT 0
+);
+
+-- Unified embeddings (vec0)
+CREATE VIRTUAL TABLE content_embeddings USING vec0(
+    item_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +content_type TEXT,
+    +conversation_id TEXT,
+    +project_id TEXT
+);
+
+CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
+    chunk_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +content_type TEXT,
+    +conversation_id TEXT,
+    +project_id TEXT
+);
+
+-- Unified FTS5
+CREATE VIRTUAL TABLE content_fts USING fts5(
+    content,
+    content='content_items',
+    content_rowid='id',
+    tokenize='porter unicode61'
+);
+```
+
+**Migration Strategy:**
+1. Create new tables
+2. Copy data from `messages` → `content_items`
+3. Copy data from `message_chunks` → `content_chunks`
+4. Copy embeddings from `message_embeddings` → `content_embeddings`
+5. Copy embeddings from `chunk_embeddings` → `chunk_embeddings` (new table)
+6. Populate FTS5
+7. Keep old tables renamed as backup
 
 ---
 
