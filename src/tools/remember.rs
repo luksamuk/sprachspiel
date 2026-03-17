@@ -90,12 +90,17 @@ pub async fn remember(
         ],
     );
 
-    // Validate parameters
-    if id.is_none() && query.is_none() {
+    // Validate parameters - treat empty strings as None
+    let id_is_empty = id.as_ref().map(|s| s.is_empty()).unwrap_or(true);
+    let query_is_empty = query.as_ref().map(|s| s.is_empty()).unwrap_or(true);
+
+    if id_is_empty && query_is_empty {
         let err = "Error: Provide either 'id' or 'query' parameter.\n\n\
                    Examples:\n\
-                   - remember(id=\"42\") to get a specific message\n\
-                   - remember(query=\"Wittgenstein\") to search by topic";
+                   - remember(id=\"msg:42\") to get a specific message\n\
+                   - remember(id=\"note:7\") to get a specific note\n\
+                   - remember(query=\"Wittgenstein\") to search by topic\n\n\
+                   Note: Use source prefix for IDs (msg:, note:, doc:)";
         log_tool_result("remember", err);
         return Ok(err.to_string());
     }
@@ -106,12 +111,16 @@ pub async fn remember(
         .unwrap_or(5)
         .clamp(1, 10);
 
+    // Filter empty strings from id and query
+    let id_val = id.filter(|s| !s.is_empty());
+    let query_val = query.filter(|s| !s.is_empty());
+
     // Get task-local context
     let result = match (get_db(), get_embedding()) {
         (Some(db), Some(embedding)) => {
-            if let Some(id_str) = id {
+            if let Some(id_str) = id_val {
                 remember_by_id(&db, &id_str).await
-            } else if let Some(q) = query {
+            } else if let Some(q) = query_val {
                 remember_by_query(&db, &embedding, &q, limit_num).await
             } else {
                 unreachable!() // Already validated above
@@ -121,8 +130,10 @@ pub async fn remember(
             let err = "Error: Conversation database not available.\n\n\
                        This can happen if:\n\
                        1. You're in an anonymous session (--anonymous flag)\n\
-                       2. The database is not initialized\n\n\
-                       Start a regular chat session to access conversation history.";
+                       2. Database initialization failed at startup\n\
+                       3. Database path is inaccessible\n\n\
+                       Check the startup messages for database errors.\n\
+                       Use 'ask-ai chat' without --anonymous, or check 'ask-ai.db' permissions.";
             err.to_string()
         }
     };

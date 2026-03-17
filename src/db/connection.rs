@@ -470,7 +470,7 @@ impl Database {
     }
 
     /// Get the default storage path (~/.local/share/ask-ai/embeddings.db)
-    fn get_storage_path() -> PathBuf {
+    pub fn get_storage_path() -> PathBuf {
         if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
             PathBuf::from(data_home)
                 .join("ask-ai")
