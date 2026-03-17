@@ -236,6 +236,125 @@ impl Database {
         })
     }
 
+    /// Update a note's embedding in content_embeddings
+    pub fn update_note_embedding(
+        &self,
+        note_id: i64,
+        embedding: &[f32],
+        project_id: Option<&str>,
+        timestamp: DateTime<Utc>,
+    ) -> Result<()> {
+        self.with_connection(|conn| {
+            let embedding_bytes = embedding.as_bytes();
+            let content_type = ContentType::Note.to_string();
+            let ts = timestamp.timestamp();
+
+            conn.execute(
+                "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp)
+                 VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+                params![
+                    note_id,
+                    embedding_bytes,
+                    content_type,
+                    project_id,
+                    ts,
+                ],
+            )?;
+
+            conn.execute(
+                "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
+                params![note_id],
+            )?;
+
+            Ok(())
+        })
+    }
+
+    /// Update a content item's embedding (works for messages, notes, documents)
+    pub fn update_content_embedding(
+        &self,
+        item_id: i64,
+        embedding: &[f32],
+        content_type: ContentType,
+        conversation_id: Option<&str>,
+        project_id: Option<&str>,
+        timestamp: DateTime<Utc>,
+    ) -> Result<()> {
+        self.with_connection(|conn| {
+            let embedding_bytes = embedding.as_bytes();
+            let ct = content_type.to_string();
+            let ts = timestamp.timestamp();
+
+            conn.execute(
+                "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    item_id,
+                    embedding_bytes,
+                    ct,
+                    conversation_id,
+                    project_id,
+                    ts,
+                ],
+            )?;
+
+            conn.execute(
+                "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
+                params![item_id],
+            )?;
+
+            Ok(())
+        })
+    }
+
+    /// Get content items that need embeddings (has_embedding = 0)
+    pub fn get_content_items_without_embeddings(
+        &self,
+        content_type: Option<ContentType>,
+        limit: usize,
+    ) -> Result<Vec<ContentItem>> {
+        self.with_connection(|conn| {
+            let mut results = Vec::new();
+
+            let sql = match content_type {
+                Some(ct) => {
+                    "SELECT id, content_type, conversation_id, role, message_type,
+                            previous_item_id, prompt_tokens, scope, source, title,
+                            content, importance, access_count, decay_score,
+                            created_at, updated_at, last_accessed, has_embedding, project_id
+                     FROM content_items
+                     WHERE has_embedding = 0 AND content_type = ?1
+                     ORDER BY created_at ASC
+                     LIMIT ?2"
+                }
+                None => {
+                    "SELECT id, content_type, conversation_id, role, message_type,
+                            previous_item_id, prompt_tokens, scope, source, title,
+                            content, importance, access_count, decay_score,
+                            created_at, updated_at, last_accessed, has_embedding, project_id
+                     FROM content_items
+                     WHERE has_embedding = 0
+                     ORDER BY created_at ASC
+                     LIMIT ?1"
+                }
+            };
+
+            let mut stmt = conn.prepare(sql)?;
+            let rows = match content_type {
+                Some(ct) => {
+                    stmt.query_map(params![ct.to_string(), limit as i32], row_to_content_item)?
+                }
+                None => stmt.query_map(params![limit as i32], row_to_content_item)?,
+            };
+
+            for r in rows {
+                results.push(r?);
+            }
+
+            Ok(results)
+        })
+    }
+
     /// Search notes using FTS5 keyword search
     pub fn search_notes_keyword(
         &self,

@@ -1208,6 +1208,7 @@ pub fn print_context_info(
 /// Handle note add command
 ///
 /// Adds a new note with the given content.
+/// Generates embedding asynchronously for semantic search.
 pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>, global: bool) {
     use crate::content::{ContentScope, ContentSource, Note, MAX_NOTE_CONTENT_SIZE};
 
@@ -1243,7 +1244,7 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
         state.session.project_id.clone()
     };
 
-    let note = match Note::new(content.clone(), scope, project_id, ContentSource::User, title.clone())
+    let note = match Note::new(content.clone(), scope, project_id.clone(), ContentSource::User, title.clone())
     {
         Ok(n) => n,
         Err(e) => {
@@ -1264,6 +1265,31 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
                 println!("\x1B[32m✓ Added note #{} (scope: {})\x1B[0m", id, scope_str);
             }
             println!("  {}", content);
+
+            // Generate embedding asynchronously (like messages in session.rs)
+            if let Some(ref embedding_client) = state.embedding_client {
+                let client = Arc::clone(embedding_client);
+                let db_clone = Arc::clone(&db);
+                let pid = project_id.clone();
+                let note_content = note.content.clone();
+                
+                tokio::spawn(async move {
+                    match client.embed(&note_content).await {
+                        Ok(embedding) => {
+                            let timestamp = chrono::Utc::now();
+                            let _ = db_clone.update_note_embedding(
+                                id,
+                                &embedding,
+                                pid.as_deref(),
+                                timestamp,
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to generate embedding for note: {}", e);
+                        }
+                    }
+                });
+            }
         }
         Err(e) => {
             eprintln!("\x1B[31m✗ Failed to store note: {}\x1B[0m", e);
