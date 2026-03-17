@@ -4,7 +4,9 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Result};
+use std::collections::HashMap;
 use std::str::FromStr;
+use zerocopy::IntoBytes;
 
 use super::types::{
     ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType,
@@ -13,6 +15,29 @@ use super::types::{
 use crate::db::fts5_escape;
 use crate::db::Database;
 
+/// Parameters for content hybrid search
+#[derive(Debug, Clone)]
+pub struct ContentSearchParams<'a> {
+    /// Search query
+    pub query: &'a str,
+    /// Query embedding for semantic search
+    pub embedding: &'a [f32],
+    /// Filter by content type (None = all types)
+    pub content_type: Option<ContentType>,
+    /// Filter by conversation ID (for messages)
+    pub conversation_id: Option<&'a str>,
+    /// Filter by project ID
+    pub project_id: Option<&'a str>,
+    /// Filter by scope (project or global)
+    pub scope: Option<ContentScope>,
+    /// Maximum results to return
+    pub limit: usize,
+    /// Weight for keyword search (BM25)
+    pub keyword_weight: f32,
+    /// Weight for semantic search (vector)
+    pub semantic_weight: f32,
+}
+
 /// Normalize BM25 score to [0, 1) range
 fn normalize_bm25_score(score: f32) -> f32 {
     if score >= 0.0 {
@@ -20,6 +45,52 @@ fn normalize_bm25_score(score: f32) -> f32 {
     } else {
         (-score) / (1.0 - score)
     }
+}
+
+/// Reciprocal Rank Fusion for content search results
+fn content_reciprocal_rank_fusion(
+    keyword_results: Vec<ContentSearchResult>,
+    semantic_results: Vec<ContentSearchResult>,
+    keyword_weight: f32,
+    semantic_weight: f32,
+    limit: usize,
+) -> Vec<ContentSearchResult> {
+    use std::collections::HashSet;
+
+    let k = 60.0;
+    let mut scores: HashMap<i64, (f32, ContentSearchResult)> = HashMap::new();
+    let mut seen_in_keyword: HashSet<i64> = HashSet::new();
+
+    for (rank, result) in keyword_results.into_iter().enumerate() {
+        let rank_f = (rank + 1) as f32;
+        let rrf_score = keyword_weight / (k + rank_f);
+        scores.insert(result.item.id, (rrf_score, result.clone()));
+        seen_in_keyword.insert(result.item.id);
+    }
+
+    for (rank, result) in semantic_results.into_iter().enumerate() {
+        let rank_f = (rank + 1) as f32;
+        let rrf_score = semantic_weight / (k + rank_f);
+
+        if let Some((existing_score, existing_result)) = scores.get_mut(&result.item.id) {
+            *existing_score += rrf_score;
+            existing_result.search_type = ContentSearchType::Hybrid;
+        } else {
+            scores.insert(result.item.id, (rrf_score, result));
+        }
+    }
+
+    let mut results: Vec<_> = scores.into_values().collect();
+    results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    results
+        .into_iter()
+        .map(|(score, mut result)| {
+            result.score = score;
+            result
+        })
+        .take(limit)
+        .collect()
 }
 
 impl Database {
@@ -269,6 +340,301 @@ impl Database {
 
             Ok(results)
         })
+    }
+
+    /// Search content items using FTS5 keyword search (all content types)
+    pub fn search_content_keyword(
+        &self,
+        query: &str,
+        content_type: Option<ContentType>,
+        conversation_id: Option<&str>,
+        project_id: Option<&str>,
+        scope: Option<ContentScope>,
+        limit: usize,
+    ) -> Result<Vec<ContentSearchResult>> {
+        let escaped_query = fts5_escape(query);
+
+        self.with_connection(|conn| {
+            let mut results = Vec::new();
+
+            let mut conditions = Vec::new();
+            conditions.push("content_fts MATCH ?".to_string());
+
+            if let Some(ct) = &content_type {
+                conditions.push(format!("ci.content_type = '{}'", ct));
+            }
+            if let Some(conv_id) = conversation_id {
+                conditions.push(format!("ci.conversation_id = '{}'", conv_id));
+            }
+            if let Some(proj_id) = project_id {
+                conditions.push(format!("ci.project_id = '{}'", proj_id));
+            }
+            if let Some(s) = &scope {
+                conditions.push(format!("ci.scope = '{}'", s));
+            }
+
+            let where_clause = conditions.join(" AND ");
+
+            let sql = format!(
+                "SELECT ci.id, ci.content_type, ci.conversation_id, ci.role, ci.message_type,
+                        ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
+                        ci.content, ci.importance, ci.access_count, ci.decay_score,
+                        ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
+                        ci.project_id, bm25(content_fts) as score
+                 FROM content_fts fts
+                 JOIN content_items ci ON fts.rowid = ci.id
+                 WHERE {}
+                 ORDER BY score ASC
+                 LIMIT ?",
+                where_clause
+            );
+
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt
+                .query_map(params![escaped_query, limit as i32], |row| {
+                    Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for (item, score) in rows {
+                results.push(ContentSearchResult {
+                    item,
+                    score: normalize_bm25_score(score),
+                    search_type: ContentSearchType::Keyword,
+                    chunk_content: None,
+                    chunk_offsets: None,
+                });
+            }
+
+            Ok(results)
+        })
+    }
+
+    /// Search content items using vector similarity
+    pub fn search_content_semantic(
+        &self,
+        embedding: &[f32],
+        content_type: Option<ContentType>,
+        conversation_id: Option<&str>,
+        project_id: Option<&str>,
+        scope: Option<ContentScope>,
+        limit: usize,
+    ) -> Result<Vec<ContentSearchResult>> {
+        self.with_connection(|conn| {
+            let embedding_bytes = embedding.as_bytes();
+
+            let fetch_limit = if conversation_id.is_some() || project_id.is_some() {
+                limit * 3
+            } else {
+                limit
+            };
+
+            let mut results: Vec<ContentSearchResult> = Vec::new();
+
+            let sql_items = r#"SELECT ce.item_id, ce.distance, ci.id, ci.content_type, ci.conversation_id,
+                ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
+                ci.title, ci.content, ci.importance, ci.access_count, ci.decay_score,
+                ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
+                FROM content_embeddings ce
+                JOIN content_items ci ON ce.item_id = ci.id
+                WHERE ce.embedding MATCH ?1 AND ce.k = ?2"#;
+
+            let mut stmt = conn.prepare(sql_items)?;
+            let rows = stmt
+                .query_map(params![embedding_bytes, fetch_limit as i32], |row| {
+                    let item_id: i64 = row.get(0)?;
+                    let distance: f32 = row.get(1)?;
+                    let item = ContentItem {
+                        id: row.get(2)?,
+                        content_type: ContentType::from_str(&row.get::<_, String>(3)?)
+                            .map_err(rusqlite::Error::InvalidParameterName)?,
+                        conversation_id: row.get(4)?,
+                        role: row.get(5)?,
+                        message_type: row.get(6)?,
+                        previous_item_id: row.get(7)?,
+                        prompt_tokens: row.get(8)?,
+                        scope: row
+                            .get::<_, Option<String>>(9)?
+                            .map(|s| ContentScope::from_str(&s))
+                            .transpose()
+                            .map_err(rusqlite::Error::InvalidParameterName)?,
+                        source: row
+                            .get::<_, Option<String>>(10)?
+                            .map(|s| ContentSource::from_str(&s))
+                            .transpose()
+                            .map_err(rusqlite::Error::InvalidParameterName)?,
+                        title: row.get(11)?,
+                        content: row.get(12)?,
+                        importance: row.get(13)?,
+                        access_count: row.get::<_, i32>(14)? as u32,
+                        decay_score: row.get(15)?,
+                        created_at: DateTime::from_timestamp(row.get::<_, i64>(16)?, 0)
+                            .unwrap_or_else(Utc::now),
+                        updated_at: DateTime::from_timestamp(row.get::<_, i64>(17)?, 0)
+                            .unwrap_or_else(Utc::now),
+                        last_accessed: DateTime::from_timestamp(row.get::<_, i64>(18)?, 0)
+                            .unwrap_or_else(Utc::now),
+                        has_embedding: row.get::<_, i32>(19)? != 0,
+                        project_id: row.get(20)?,
+                    };
+                    Ok((item_id, item, distance))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for (_item_id, item, distance) in rows {
+                results.push(ContentSearchResult {
+                    item,
+                    score: distance,
+                    search_type: ContentSearchType::Semantic,
+                    chunk_content: None,
+                    chunk_offsets: None,
+                });
+            }
+
+            let sql_chunks = r#"SELECT cc.id, ce.distance, cc.item_id, cc.chunk_index, cc.content, 
+                cc.start_offset, cc.end_offset, ci.id, ci.content_type, ci.conversation_id,
+                ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
+                ci.title, ci.content as full_content, ci.importance, ci.access_count, ci.decay_score,
+                ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
+                FROM chunk_embeddings_v2 ce
+                JOIN content_chunks cc ON ce.chunk_id = cc.id
+                JOIN content_items ci ON cc.item_id = ci.id
+                WHERE ce.embedding MATCH ?1 AND ce.k = ?2"#;
+
+            let mut stmt = conn.prepare(sql_chunks)?;
+            let rows = stmt
+                .query_map(params![embedding_bytes, fetch_limit as i32], |row| {
+                    let _chunk_id: i64 = row.get(0)?;
+                    let distance: f32 = row.get(1)?;
+                    let item_id: i64 = row.get(2)?;
+                    let _chunk_index: i32 = row.get(3)?;
+                    let chunk_content: String = row.get(4)?;
+                    let start_offset: i32 = row.get(5)?;
+                    let end_offset: i32 = row.get(6)?;
+
+                    let item = ContentItem {
+                        id: row.get(7)?,
+                        content_type: ContentType::from_str(&row.get::<_, String>(8)?)
+                            .map_err(rusqlite::Error::InvalidParameterName)?,
+                        conversation_id: row.get(9)?,
+                        role: row.get(10)?,
+                        message_type: row.get(11)?,
+                        previous_item_id: row.get(12)?,
+                        prompt_tokens: row.get(13)?,
+                        scope: row
+                            .get::<_, Option<String>>(14)?
+                            .map(|s| ContentScope::from_str(&s))
+                            .transpose()
+                            .map_err(rusqlite::Error::InvalidParameterName)?,
+                        source: row
+                            .get::<_, Option<String>>(15)?
+                            .map(|s| ContentSource::from_str(&s))
+                            .transpose()
+                            .map_err(rusqlite::Error::InvalidParameterName)?,
+                        title: row.get(16)?,
+                        content: row.get(17)?,
+                        importance: row.get(18)?,
+                        access_count: row.get::<_, i32>(19)? as u32,
+                        decay_score: row.get(20)?,
+                        created_at: DateTime::from_timestamp(row.get::<_, i64>(21)?, 0)
+                            .unwrap_or_else(Utc::now),
+                        updated_at: DateTime::from_timestamp(row.get::<_, i64>(22)?, 0)
+                            .unwrap_or_else(Utc::now),
+                        last_accessed: DateTime::from_timestamp(row.get::<_, i64>(23)?, 0)
+                            .unwrap_or_else(Utc::now),
+                        has_embedding: row.get::<_, i32>(24)? != 0,
+                        project_id: row.get(25)?,
+                    };
+
+                    Ok((
+                        item_id,
+                        item,
+                        distance,
+                        Some(chunk_content),
+                        Some((start_offset, end_offset)),
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for (_item_id, item, distance, chunk_content, chunk_offsets) in rows {
+                results.push(ContentSearchResult {
+                    item,
+                    score: distance,
+                    search_type: ContentSearchType::Semantic,
+                    chunk_content,
+                    chunk_offsets,
+                });
+            }
+
+            let mut best_results: HashMap<i64, ContentSearchResult> = HashMap::new();
+            for result in results {
+                let entry = best_results.entry(result.item.id);
+                match entry {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        if result.score < e.get().score {
+                            e.insert(result);
+                        }
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(result);
+                    }
+                }
+            }
+
+            let mut results: Vec<ContentSearchResult> = best_results.into_values().collect();
+            results.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
+
+            if let Some(ct) = &content_type {
+                results.retain(|r| &r.item.content_type == ct);
+            }
+            if let Some(conv_id) = conversation_id {
+                results.retain(|r| r.item.conversation_id.as_deref() == Some(conv_id));
+            }
+            if let Some(proj_id) = project_id {
+                results.retain(|r| r.item.project_id.as_deref() == Some(proj_id));
+            }
+            if let Some(s) = &scope {
+                results.retain(|r| r.item.scope.as_ref() == Some(s));
+            }
+
+            results.truncate(limit);
+            Ok(results)
+        })
+    }
+
+    /// Hybrid search using Reciprocal Rank Fusion
+    pub fn search_content_hybrid(
+        &self,
+        params: &ContentSearchParams<'_>,
+    ) -> Result<Vec<ContentSearchResult>> {
+        let keyword_results = self.search_content_keyword(
+            params.query,
+            params.content_type,
+            params.conversation_id,
+            params.project_id,
+            params.scope,
+            params.limit * 2,
+        )?;
+
+        let semantic_results = self.search_content_semantic(
+            params.embedding,
+            params.content_type,
+            params.conversation_id,
+            params.project_id,
+            params.scope,
+            params.limit * 2,
+        )?;
+
+        let mut results = content_reciprocal_rank_fusion(
+            keyword_results,
+            semantic_results,
+            params.keyword_weight,
+            params.semantic_weight,
+            params.limit * 2,
+        );
+
+        results.truncate(params.limit);
+        Ok(results)
     }
 }
 

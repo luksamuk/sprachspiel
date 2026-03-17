@@ -35,6 +35,7 @@
 pub mod db;
 pub mod types;
 
+pub use db::ContentSearchParams;
 pub use types::{
     ContentChunk, ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource,
     ContentType, Note,
