@@ -89,6 +89,21 @@ Once inside the chat, these commands are available:
 
 Subcommand shortcuts: `/fact a` (add), `/fact l` (list), `/fact r` (remove), `/fact s` (search), `/fact p` (prune)
 
+### Notes
+
+| Command | Description |
+|---------|-------------|
+| `/note add <content> [--title <title>] [--global]`, `/na` | Add a note (project scope by default) |
+| `/note list [--global]`, `/nl` | List stored notes |
+| `/note show <id>`, `/ns` | Show a note by ID |
+| `/note edit <id> [--title <title>] [--content <content>]` | Edit a note |
+| `/note delete <id>`, `/nd` | Delete a note by ID |
+| `/note search <query> [--global] [limit]` | Search stored notes |
+
+Subcommand shortcuts: `/no` (note), `/na` (add), `/nl` (list), `/ns` (show), `/nd` (delete)
+
+Notes support project-level (default) and global scope. Global notes are visible across all projects on the same machine.
+
 ## /context - Context Metrics
 
 Show token usage and context utilization for the current session:
