@@ -451,6 +451,25 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
+### 🔵 PRIORITY 4: Code Quality - commands.rs Complexity (parse_command)
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Reduce cyclomatic complexity of `parse_command` from ~450 lines to manageable size.
+
+**Context:** Command parsing function in `src/chat/commands.rs` (lines 218-671). Single monolithic function with giant `match` statement handling all commands and their aliases.
+
+**Proposed Solution:**
+- Extract individual parsers for command groups (model, todo, note, fact)
+- Use derive-based pattern matching for structured commands
+- Maintain identical public API
+
+**Estimated effort:** 2-3 days
+
+**Related:** Issue #35
+
+---
+
 ### 🔴 PRIORITY 2: Notes System
 
 **Status:** ✅ COMPLETED

@@ -14,6 +14,42 @@ use super::types::{
 };
 use crate::db::fts5_escape;
 use crate::db::Database;
+use crate::db::WhereBuilder;
+
+// === SQL Constants ===
+// Extracted from inline to improve maintainability and reduce duplication
+
+const LIST_NOTES_SQL: &str = "
+    SELECT id, scope, source, title, content, importance, access_count,
+           decay_score, created_at, updated_at, last_accessed, project_id
+    FROM content_items";
+
+const SEARCH_NOTES_FTS_SQL: &str = "
+    SELECT ci.id, ci.content_type, ci.conversation_id, ci.role, ci.message_type,
+           ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
+           ci.content, ci.importance, ci.access_count, ci.decay_score,
+           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
+           ci.project_id, bm25(content_fts) as score
+    FROM content_fts fts
+    JOIN content_items ci ON fts.rowid = ci.id";
+
+const SEMANTIC_SEARCH_ITEMS_SQL: &str = "
+    SELECT ce.item_id, ce.distance, ci.id, ci.content_type, ci.conversation_id,
+           ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
+           ci.title, ci.content, ci.importance, ci.access_count, ci.decay_score,
+           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
+    FROM content_embeddings ce
+    JOIN content_items ci ON ce.item_id = ci.id";
+
+const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
+    SELECT cc.id, ce.distance, cc.item_id, cc.chunk_index, cc.content, 
+           cc.start_offset, cc.end_offset, ci.id, ci.content_type, ci.conversation_id,
+           ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
+           ci.title, ci.content as full_content, ci.importance, ci.access_count, ci.decay_score,
+           ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
+    FROM chunk_embeddings_v2 ce
+    JOIN content_chunks cc ON ce.chunk_id = cc.id
+    JOIN content_items ci ON cc.item_id = ci.id";
 
 /// Parameters for content hybrid search
 #[derive(Debug, Clone)]
@@ -146,51 +182,26 @@ impl Database {
         project_id: Option<&str>,
     ) -> Result<Vec<Note>> {
         self.with_connection(|conn| {
+            let mut builder = WhereBuilder::new();
+            builder
+                .add("content_type = 'note'")
+                .add_option("scope = ?", scope.map(|s| s.to_string()))
+                .add_option_str("project_id = ?", project_id);
+
+            let sql = format!(
+                "{} {} ORDER BY created_at DESC",
+                LIST_NOTES_SQL.trim(),
+                builder.build_where()
+            );
+            let params = builder.into_params();
+
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_note)?;
+
             let mut results = Vec::new();
-
-            let sql = match (&scope, &project_id) {
-                (Some(_), Some(_)) => {
-                    "SELECT id, scope, source, title, content, importance, access_count,
-                            decay_score, created_at, updated_at, last_accessed, project_id
-                     FROM content_items WHERE content_type = 'note' 
-                     AND scope = ?1 AND project_id = ?2
-                     ORDER BY created_at DESC"
-                }
-                (Some(_), None) => {
-                    "SELECT id, scope, source, title, content, importance, access_count,
-                            decay_score, created_at, updated_at, last_accessed, project_id
-                     FROM content_items WHERE content_type = 'note' 
-                     AND scope = ?1
-                     ORDER BY created_at DESC"
-                }
-                (None, Some(_)) => {
-                    "SELECT id, scope, source, title, content, importance, access_count,
-                            decay_score, created_at, updated_at, last_accessed, project_id
-                     FROM content_items WHERE content_type = 'note' 
-                     AND project_id = ?1
-                     ORDER BY created_at DESC"
-                }
-                (None, None) => {
-                    "SELECT id, scope, source, title, content, importance, access_count,
-                            decay_score, created_at, updated_at, last_accessed, project_id
-                     FROM content_items WHERE content_type = 'note'
-                     ORDER BY created_at DESC"
-                }
-            };
-
-            let mut stmt = conn.prepare(sql)?;
-
-            let rows = match (&scope, &project_id) {
-                (Some(s), Some(p)) => stmt.query_map(params![s.to_string(), p], row_to_note)?,
-                (Some(s), None) => stmt.query_map(params![s.to_string()], row_to_note)?,
-                (None, Some(p)) => stmt.query_map(params![p], row_to_note)?,
-                (None, None) => stmt.query_map(params![], row_to_note)?,
-            };
-
             for r in rows {
                 results.push(r?);
             }
-
             Ok(results)
         })
     }
@@ -281,87 +292,31 @@ impl Database {
         let escaped_query = fts5_escape(query);
 
         self.with_connection(|conn| {
+            let mut builder = WhereBuilder::new();
+            builder
+                .add("content_fts MATCH ?")
+                .add("ci.content_type = 'note'")
+                .add_option("ci.scope = ?", scope.map(|s| s.to_string()))
+                .add_option_str("ci.project_id = ?", project_id);
+
+            let sql = format!(
+                "{} {} ORDER BY score ASC LIMIT ?",
+                SEARCH_NOTES_FTS_SQL.trim(),
+                builder.build_where()
+            );
+
+            let mut params = builder.into_params();
+            params.insert(0, Box::new(escaped_query));
+            params.push(Box::new(limit as i32));
+
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt
+                .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                    Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
             let mut results = Vec::new();
-
-            let sql = match (&scope, &project_id) {
-                (Some(_), Some(_)) => {
-                    "SELECT ci.id, ci.content_type, ci.conversation_id, ci.role, ci.message_type,
-                            ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
-                            ci.content, ci.importance, ci.access_count, ci.decay_score,
-                            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
-                            ci.project_id, bm25(content_fts) as score
-                     FROM content_fts fts
-                     JOIN content_items ci ON fts.rowid = ci.id
-                     WHERE content_fts MATCH ?1 AND ci.content_type = 'note'
-                     AND ci.scope = ?2 AND ci.project_id = ?3
-                     ORDER BY score ASC
-                     LIMIT ?4"
-                }
-                (Some(_), None) => {
-                    "SELECT ci.id, ci.content_type, ci.conversation_id, ci.role, ci.message_type,
-                            ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
-                            ci.content, ci.importance, ci.access_count, ci.decay_score,
-                            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
-                            ci.project_id, bm25(content_fts) as score
-                     FROM content_fts fts
-                     JOIN content_items ci ON fts.rowid = ci.id
-                     WHERE content_fts MATCH ?1 AND ci.content_type = 'note'
-                     AND ci.scope = ?2
-                     ORDER BY score ASC
-                     LIMIT ?3"
-                }
-                (None, Some(_)) => {
-                    "SELECT ci.id, ci.content_type, ci.conversation_id, ci.role, ci.message_type,
-                            ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
-                            ci.content, ci.importance, ci.access_count, ci.decay_score,
-                            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
-                            ci.project_id, bm25(content_fts) as score
-                     FROM content_fts fts
-                     JOIN content_items ci ON fts.rowid = ci.id
-                     WHERE content_fts MATCH ?1 AND ci.content_type = 'note'
-                     AND ci.project_id = ?2
-                     ORDER BY score ASC
-                     LIMIT ?3"
-                }
-                (None, None) => {
-                    "SELECT ci.id, ci.content_type, ci.conversation_id, ci.role, ci.message_type,
-                            ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source, ci.title,
-                            ci.content, ci.importance, ci.access_count, ci.decay_score,
-                            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding,
-                            ci.project_id, bm25(content_fts) as score
-                     FROM content_fts fts
-                     JOIN content_items ci ON fts.rowid = ci.id
-                     WHERE content_fts MATCH ?1 AND ci.content_type = 'note'
-                     ORDER BY score ASC
-                     LIMIT ?2"
-                }
-            };
-
-            let mut stmt = conn.prepare(sql)?;
-            let rows = match (&scope, &project_id) {
-                (Some(s), Some(p)) => stmt
-                    .query_map(
-                        params![escaped_query, s.to_string(), p, limit as i32],
-                        |row| Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?)),
-                    )?
-                    .collect::<Result<Vec<_>, _>>()?,
-                (Some(s), None) => stmt
-                    .query_map(params![escaped_query, s.to_string(), limit as i32], |row| {
-                        Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?,
-                (None, Some(p)) => stmt
-                    .query_map(params![escaped_query, p, limit as i32], |row| {
-                        Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?,
-                (None, None) => stmt
-                    .query_map(params![escaped_query, limit as i32], |row| {
-                        Ok((row_to_content_item(row)?, row.get::<_, f32>(19)?))
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?,
-            };
-
             for (item, score) in rows {
                 results.push(ContentSearchResult {
                     item,
@@ -465,15 +420,7 @@ impl Database {
 
             let mut results: Vec<ContentSearchResult> = Vec::new();
 
-            let sql_items = r#"SELECT ce.item_id, ce.distance, ci.id, ci.content_type, ci.conversation_id,
-                ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
-                ci.title, ci.content, ci.importance, ci.access_count, ci.decay_score,
-                ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
-                FROM content_embeddings ce
-                JOIN content_items ci ON ce.item_id = ci.id
-                WHERE ce.embedding MATCH ?1 AND ce.k = ?2"#;
-
-            let mut stmt = conn.prepare(sql_items)?;
+            let mut stmt = conn.prepare(SEMANTIC_SEARCH_ITEMS_SQL.trim())?;
             let rows = stmt
                 .query_map(params![embedding_bytes, fetch_limit as i32], |row| {
                     let item_id: i64 = row.get(0)?;
@@ -525,17 +472,7 @@ impl Database {
                 });
             }
 
-            let sql_chunks = r#"SELECT cc.id, ce.distance, cc.item_id, cc.chunk_index, cc.content, 
-                cc.start_offset, cc.end_offset, ci.id, ci.content_type, ci.conversation_id,
-                ci.role, ci.message_type, ci.previous_item_id, ci.prompt_tokens, ci.scope, ci.source,
-                ci.title, ci.content as full_content, ci.importance, ci.access_count, ci.decay_score,
-                ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
-                FROM chunk_embeddings_v2 ce
-                JOIN content_chunks cc ON ce.chunk_id = cc.id
-                JOIN content_items ci ON cc.item_id = ci.id
-                WHERE ce.embedding MATCH ?1 AND ce.k = ?2"#;
-
-            let mut stmt = conn.prepare(sql_chunks)?;
+            let mut stmt = conn.prepare(SEMANTIC_SEARCH_CHUNKS_SQL.trim())?;
             let rows = stmt
                 .query_map(params![embedding_bytes, fetch_limit as i32], |row| {
                     let _chunk_id: i64 = row.get(0)?;
@@ -616,7 +553,11 @@ impl Database {
             }
 
             let mut results: Vec<ContentSearchResult> = best_results.into_values().collect();
-            results.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
+            results.sort_by(|a, b| {
+                a.score
+                    .partial_cmp(&b.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
             if let Some(ct) = &content_type {
                 results.retain(|r| &r.item.content_type == ct);
