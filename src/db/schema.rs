@@ -8,9 +8,11 @@
 //! - messages_fts virtual table (FTS5)
 //! - session_todos table (for task tracking)
 //! - facts table (factual memory system, v6)
+//! - content_items table (unified storage, v7)
+//! - content_chunks, content_embeddings, content_fts (v7)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 6;
+pub const SCHEMA_VERSION: i32 = 7;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -196,6 +198,108 @@ CREATE INDEX IF NOT EXISTS idx_facts_scope_category ON facts(scope, category);
 CREATE INDEX IF NOT EXISTS idx_facts_decay ON facts(decay_score) WHERE invalidated_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 'project';
 CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
+
+-- Content items table (unified storage for messages, notes, documents, v7)
+-- Stores messages, notes, and future documents in a unified schema
+CREATE TABLE IF NOT EXISTS content_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    
+    -- Content type discriminator
+    content_type TEXT NOT NULL CHECK(content_type IN ('message', 'note', 'document')),
+    
+    -- Message fields (nullable, only for content_type='message')
+    conversation_id TEXT,
+    role TEXT CHECK(role IN ('user', 'assistant', 'system', 'tool')),
+    message_type TEXT DEFAULT 'normal',
+    previous_item_id INTEGER REFERENCES content_items(id),
+    prompt_tokens INTEGER,
+    
+    -- Note/Document fields (nullable, only for content_type in ('note', 'document'))
+    scope TEXT CHECK(scope IN ('project', 'global')),
+    source TEXT CHECK(source IN ('user', 'llm')),
+    title TEXT,
+    
+    -- Common fields (all content types)
+    content TEXT NOT NULL,
+    importance REAL DEFAULT 0.5,
+    access_count INTEGER DEFAULT 0,
+    decay_score REAL DEFAULT 1.0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_accessed INTEGER NOT NULL,
+    has_embedding INTEGER DEFAULT 0,
+    
+    -- Project association (NULL for global scope)
+    project_id TEXT
+);
+
+-- Indexes for content_items
+CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(content_type);
+CREATE INDEX IF NOT EXISTS idx_content_items_conversation ON content_items(conversation_id) WHERE conversation_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_content_items_project ON content_items(project_id) WHERE project_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_content_items_scope ON content_items(scope) WHERE scope IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_content_items_timestamp ON content_items(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_items_previous ON content_items(previous_item_id) WHERE previous_item_id IS NOT NULL;
+
+-- Content chunks for long content (v7)
+CREATE TABLE IF NOT EXISTS content_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    start_offset INTEGER NOT NULL,
+    end_offset INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    has_embedding INTEGER DEFAULT 0
+);
+
+-- Indexes for content_chunks
+CREATE INDEX IF NOT EXISTS idx_content_chunks_item ON content_chunks(item_id);
+CREATE INDEX IF NOT EXISTS idx_content_chunks_order ON content_chunks(item_id, chunk_index);
+
+-- Vector embeddings for content items (256-dim Matryoshka, v7)
+CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
+    item_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +content_type TEXT,
+    +conversation_id TEXT,
+    +project_id TEXT,
+    +timestamp INTEGER
+);
+
+-- Vector embeddings for content chunks (v7)
+CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
+    chunk_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +content_type TEXT,
+    +conversation_id TEXT,
+    +project_id TEXT,
+    +timestamp INTEGER
+);
+
+-- Full-text search for content items (v7)
+CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
+    content,
+    content='content_items',
+    content_rowid='id',
+    tokenize='porter unicode61'
+);
+
+-- Triggers to keep content_fts in sync
+CREATE TRIGGER IF NOT EXISTS content_items_ai AFTER INSERT ON content_items BEGIN
+    INSERT INTO content_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS content_items_ad AFTER DELETE ON content_items BEGIN
+    INSERT INTO content_fts(content_fts, rowid, content) 
+    VALUES('delete', old.id, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS content_items_au AFTER UPDATE ON content_items BEGIN
+    INSERT INTO content_fts(content_fts, rowid, content) 
+    VALUES('delete', old.id, old.content);
+    INSERT INTO content_fts(rowid, content) VALUES (new.id, new.content);
+END;
 "#;
 
 /// Version check query

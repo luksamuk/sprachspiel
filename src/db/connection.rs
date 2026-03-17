@@ -273,6 +273,188 @@ impl Database {
             )?;
         }
 
+        // Migration v6 -> v7: Add content_items unified table
+        if from_version < 7 {
+            // Create content_items table
+            conn.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS content_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content_type TEXT NOT NULL CHECK(content_type IN ('message', 'note', 'document')),
+                    conversation_id TEXT,
+                    role TEXT CHECK(role IN ('user', 'assistant', 'system', 'tool')),
+                    message_type TEXT DEFAULT 'normal',
+                    previous_item_id INTEGER REFERENCES content_items(id),
+                    prompt_tokens INTEGER,
+                    scope TEXT CHECK(scope IN ('project', 'global')),
+                    source TEXT CHECK(source IN ('user', 'llm')),
+                    title TEXT,
+                    content TEXT NOT NULL,
+                    importance REAL DEFAULT 0.5,
+                    access_count INTEGER DEFAULT 0,
+                    decay_score REAL DEFAULT 1.0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    last_accessed INTEGER NOT NULL,
+                    has_embedding INTEGER DEFAULT 0,
+                    project_id TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(content_type);
+                CREATE INDEX IF NOT EXISTS idx_content_items_conversation ON content_items(conversation_id) WHERE conversation_id IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_content_items_project ON content_items(project_id) WHERE project_id IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_content_items_scope ON content_items(scope) WHERE scope IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_content_items_timestamp ON content_items(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_content_items_previous ON content_items(previous_item_id) WHERE previous_item_id IS NOT NULL;
+
+                CREATE TABLE IF NOT EXISTS content_chunks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+                    chunk_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    start_offset INTEGER NOT NULL,
+                    end_offset INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    has_embedding INTEGER DEFAULT 0
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_content_chunks_item ON content_chunks(item_id);
+                CREATE INDEX IF NOT EXISTS idx_content_chunks_order ON content_chunks(item_id, chunk_index);
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
+                    item_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256],
+                    +content_type TEXT,
+                    +conversation_id TEXT,
+                    +project_id TEXT,
+                    +timestamp INTEGER
+                );
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
+                    chunk_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256],
+                    +content_type TEXT,
+                    +conversation_id TEXT,
+                    +project_id TEXT,
+                    +timestamp INTEGER
+                );
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
+                    content,
+                    content='content_items',
+                    content_rowid='id',
+                    tokenize='porter unicode61'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS content_items_ai AFTER INSERT ON content_items BEGIN
+                    INSERT INTO content_fts(rowid, content) VALUES (new.id, new.content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS content_items_ad AFTER DELETE ON content_items BEGIN
+                    INSERT INTO content_fts(content_fts, rowid, content) 
+                    VALUES('delete', old.id, old.content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS content_items_au AFTER UPDATE ON content_items BEGIN
+                    INSERT INTO content_fts(content_fts, rowid, content) 
+                    VALUES('delete', old.id, old.content);
+                    INSERT INTO content_fts(rowid, content) VALUES (new.id, new.content);
+                END;
+                "#,
+            )?;
+
+            // Migrate existing messages to content_items
+            // Copy all messages with content_type='message'
+            conn.execute(
+                r#"
+                INSERT INTO content_items (
+                    content_type, conversation_id, role, message_type, previous_item_id,
+                    prompt_tokens, content, importance, created_at, updated_at, 
+                    last_accessed, has_embedding, project_id
+                )
+                SELECT 
+                    'message' as content_type,
+                    conversation_id,
+                    role,
+                    COALESCE(message_type, 'normal') as message_type,
+                    previous_message_id as previous_item_id,
+                    prompt_tokens,
+                    content,
+                    importance,
+                    timestamp as created_at,
+                    timestamp as updated_at,
+                    timestamp as last_accessed,
+                    has_embedding,
+                    (SELECT project_id FROM conversations WHERE id = m.conversation_id) as project_id
+                FROM messages m
+                "#,
+                [],
+            )?;
+
+            // Migrate message_chunks to content_chunks
+            // First, we need to map old message_id to new content_items.id
+            // This requires a subquery to get the correct item_id
+            conn.execute(
+                r#"
+                INSERT INTO content_chunks (item_id, chunk_index, content, start_offset, end_offset, created_at, has_embedding)
+                SELECT 
+                    ci.id as item_id,
+                    mc.chunk_index,
+                    mc.content,
+                    mc.start_offset,
+                    mc.end_offset,
+                    mc.created_at,
+                    mc.has_embedding
+                FROM message_chunks mc
+                JOIN content_items ci ON ci.content_type = 'message' 
+                    AND ci.conversation_id = (SELECT conversation_id FROM messages WHERE id = mc.message_id)
+                    AND ci.content = (SELECT content FROM messages WHERE id = mc.message_id)
+                "#,
+                [],
+            )?;
+
+            // Migrate message_embeddings to content_embeddings
+            conn.execute(
+                r#"
+                INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, timestamp)
+                SELECT 
+                    ci.id as item_id,
+                    me.embedding,
+                    'message' as content_type,
+                    me.conversation_id,
+                    me.timestamp
+                FROM message_embeddings me
+                JOIN content_items ci ON ci.content_type = 'message' 
+                    AND ci.conversation_id = me.conversation_id
+                    AND ci.content = (SELECT content FROM messages WHERE id = me.message_id)
+                "#,
+                [],
+            )?;
+
+            // Migrate chunk_embeddings to chunk_embeddings_v2
+            conn.execute(
+                r#"
+                INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, timestamp)
+                SELECT 
+                    cc.id as chunk_id,
+                    ce.embedding,
+                    'message' as content_type,
+                    ce.conversation_id,
+                    ce.timestamp
+                FROM chunk_embeddings ce
+                JOIN content_chunks cc ON cc.has_embedding = 1
+                WHERE ce.chunk_id IN (SELECT id FROM message_chunks)
+                "#,
+                [],
+            )?;
+
+            // Populate content_fts from content_items
+            conn.execute(
+                "INSERT INTO content_fts(rowid, content) SELECT id, content FROM content_items",
+                [],
+            )?;
+        }
+
         Ok(())
     }
 
@@ -493,5 +675,69 @@ mod tests {
             .expect("Failed to list virtual tables");
 
         assert!(vtables.contains(&"facts_fts".to_string()));
+    }
+
+    #[test]
+    fn test_content_items_table() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Check content_items table exists
+        let tables: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")?;
+                let rows = stmt.query_map([], |row| row.get(0))?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to list tables");
+
+        assert!(tables.contains(&"content_items".to_string()));
+        assert!(tables.contains(&"content_chunks".to_string()));
+
+        // Verify content_items table structure
+        let columns: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(content_items)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to get table info");
+
+        // Common fields
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"content_type".to_string()));
+        assert!(columns.contains(&"content".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+        assert!(columns.contains(&"updated_at".to_string()));
+        assert!(columns.contains(&"has_embedding".to_string()));
+
+        // Message fields
+        assert!(columns.contains(&"conversation_id".to_string()));
+        assert!(columns.contains(&"role".to_string()));
+        assert!(columns.contains(&"message_type".to_string()));
+        assert!(columns.contains(&"previous_item_id".to_string()));
+        assert!(columns.contains(&"prompt_tokens".to_string()));
+
+        // Note/Document fields
+        assert!(columns.contains(&"scope".to_string()));
+        assert!(columns.contains(&"source".to_string()));
+        assert!(columns.contains(&"title".to_string()));
+
+        // Check content_embeddings virtual table exists
+        let vtables: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('content_embeddings', 'content_fts')",
+                )?;
+                let rows = stmt.query_map([], |row| row.get(0))?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to list virtual tables");
+
+        assert!(vtables.contains(&"content_embeddings".to_string()));
+        assert!(vtables.contains(&"content_fts".to_string()));
     }
 }
