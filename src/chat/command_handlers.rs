@@ -1439,12 +1439,12 @@ pub fn handle_note_edit(state: &ReplState, id: i64, title: Option<String>, conte
         return;
     }
 
-    if let Some(ref c) = content {
-        if c.len() > MAX_NOTE_CONTENT_SIZE {
-            eprintln!("\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m", MAX_NOTE_CONTENT_SIZE);
-            println!("  Current length: {} characters", c.len());
-            return;
-        }
+    if let Some(ref c) = content
+        && c.len() > MAX_NOTE_CONTENT_SIZE
+    {
+        eprintln!("\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m", MAX_NOTE_CONTENT_SIZE);
+        println!("  Current length: {} characters", c.len());
+        return;
     }
 
     match db.get_note(id) {
@@ -1452,11 +1452,11 @@ pub fn handle_note_edit(state: &ReplState, id: i64, title: Option<String>, conte
             match db.update_note(id, title.as_deref(), content.as_deref()) {
                 Ok(()) => {
                     println!("\x1B[32m✓ Updated note #{}\x1B[0m", id);
-                    if title.is_some() {
-                        println!("  Title: {}", title.unwrap());
+                    if let Some(t) = &title {
+                        println!("  Title: {}", t);
                     }
-                    if let Some(c) = content {
-                        println!("  Content: {}", if c.len() > 80 { format!("{}...", &c[..80]) } else { c });
+                    if let Some(c) = &content {
+                        println!("  Content: {}", if c.len() > 80 { format!("{}...", &c[..80]) } else { c.clone() });
                     }
                 }
                 Err(e) => {
@@ -1477,8 +1477,6 @@ pub fn handle_note_edit(state: &ReplState, id: i64, title: Option<String>, conte
 ///
 /// Deletes a note by ID.
 pub fn handle_note_delete(state: &ReplState, id: i64) {
-    use chrono::Utc;
-
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {

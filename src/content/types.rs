@@ -218,27 +218,6 @@ pub struct ContentItem {
     pub project_id: Option<String>,
 }
 
-/// Content chunk for long content
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContentChunk {
-    /// Chunk ID
-    pub id: i64,
-    /// Parent item ID
-    pub item_id: i64,
-    /// Chunk index
-    pub chunk_index: i32,
-    /// Chunk content
-    pub content: String,
-    /// Start offset in original content
-    pub start_offset: i32,
-    /// End offset in original content
-    pub end_offset: i32,
-    /// Creation timestamp
-    pub created_at: DateTime<Utc>,
-    /// Has embedding
-    pub has_embedding: bool,
-}
-
 /// Search result from content search
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentSearchResult {

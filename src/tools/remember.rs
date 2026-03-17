@@ -339,13 +339,7 @@ async fn remember_by_query(
     };
 
     // Enrich message results with assistant responses
-    let enriched_messages = match db.enrich_with_context(message_results) {
-        Ok(r) => r,
-        Err(_) => {
-            // Continue with un-enriched results on error
-            vec![]
-        }
-    };
+    let enriched_messages = db.enrich_with_context(message_results).unwrap_or_default();
 
     // Check if we have any results
     if note_results.is_empty() && enriched_messages.is_empty() {
