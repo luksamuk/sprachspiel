@@ -1,7 +1,7 @@
-//! Remember tool for conversation history access
+//! Remember tool for conversation history and notes access
 //!
 //! Provides the LLM with explicit access to search and retrieve
-//! messages from conversation history.
+//! messages from conversation history and user-created notes.
 
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER, format_role_label};
 use crate::db::SourceType;
@@ -45,27 +45,30 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
     }
 }
 
-/// Recall messages from your conversation history.
+/// Recall content from your stored history (messages, notes, documents).
 ///
 /// Use this tool to:
-/// 1. Get the full content of a specific message (by ID from retrieved context)
+/// 1. Get the full content of a specific item (by ID from retrieved context)
 /// 2. Search for topics not in the current context (by query)
 ///
 /// # Arguments
-/// * `id` - ID of message to retrieve (MUST include prefix). Optional.
+/// * `id` - ID of content to retrieve (MUST include prefix). Optional.
 ///   - Example: "msg:42" for conversation message
+///   - Example: "note:7" for user-created note
 ///   - Example: "doc:13" for document (when implemented)
 /// * `query` - Search query for semantic search. Optional.
-///   - Example: "Wittgenstein" to find messages about that topic
+///   - Example: "Wittgenstein" to find content about that topic
+///   - Searches across messages AND notes
 /// * `limit` - Max results for query (default: 5, max: 10). Optional.
 ///
 /// # Returns
-/// - For id: Full message content with metadata
-/// - For query: List of matching messages with IDs and excerpts
+/// - For id: Full content with metadata
+/// - For query: List of matching items with IDs and excerpts
 ///
 /// # Examples
 /// ```ignore
 /// remember(id="msg:42")              // Get conversation message 42
+/// remember(id="note:7")              // Get note 7
 /// remember(query="Wittgenstein")     // Search by topic
 /// remember(query="philosophy", limit="10")
 /// ```
@@ -149,22 +152,16 @@ async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) 
         SourceType::Document => {
             // Phase 5: Document ingestion not yet implemented
             let err = "Error: Document retrieval not yet implemented.\n\n\
-                       Only conversation messages are supported at this time. \
-                       Use remember(id=\"N\") or remember(id=\"msg:N\") to retrieve messages.";
+                       Only conversation messages and notes are supported at this time. \
+                       Use remember(id=\"msg:N\") for messages or remember(id=\"note:N\") for notes.";
             log_tool_result("remember", err);
             err.to_string()
         }
-        SourceType::Note => {
-            // Future: Note support
-            let err = "Error: Note retrieval not yet implemented.\n\n\
-                       Only conversation messages are supported at this time.";
-            log_tool_result("remember", err);
-            err.to_string()
-        }
+        SourceType::Note => fetch_note(db, numeric_id).await,
         SourceType::Web => {
             // Future: Web source support
             let err = "Error: Web retrieval not yet implemented.\n\n\
-                       Only conversation messages are supported at this time.";
+                       Only conversation messages and notes are supported at this time.";
             log_tool_result("remember", err);
             err.to_string()
         }
@@ -226,7 +223,57 @@ async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id
     }
 }
 
-/// Search for messages by semantic query
+/// Fetch a note by ID
+async fn fetch_note(db: &std::sync::Arc<crate::db::Database>, id: i64) -> String {
+    match db.get_note(id) {
+        Ok(Some(note)) => {
+            let scope_str = match note.scope {
+                crate::content::ContentScope::Global => "global",
+                crate::content::ContentScope::Project => "project",
+            };
+            
+            let source_str = match note.source {
+                crate::content::ContentSource::User => "user",
+                crate::content::ContentSource::Llm => "llm",
+            };
+
+            let mut output = format!(
+                "**Note {}**\nScope: {}\nSource: {}\nCreated: {}\n",
+                note.id,
+                scope_str,
+                source_str,
+                note.created_at.format("%Y-%m-%d %H:%M")
+            );
+
+            if let Some(ref title) = note.title {
+                output.push_str(&format!("Title: {}\n", title));
+            }
+
+            if let Some(ref project_id) = note.project_id {
+                output.push_str(&format!("Project: {}\n", project_id));
+            }
+
+            output.push_str("\n---\n");
+            output.push_str(&note.content);
+            output.push_str("\n---");
+
+            output
+        }
+        Ok(None) => format!(
+            "Error: Note {} not found.\n\n\
+             The note may have been deleted or does not exist.\n\
+             Try using remember(query=\"...\") to search for notes.",
+            id
+        ),
+        Err(e) => format!(
+            "Error: Failed to retrieve note {}.\n\n\
+             Details: {}",
+            id, e
+        ),
+    }
+}
+
+/// Search for content (messages and notes) by semantic query
 async fn remember_by_query(
     db: &std::sync::Arc<crate::db::Database>,
     embedding_client: &std::sync::Arc<crate::embeddings::EmbeddingClient>,
@@ -246,8 +293,32 @@ async fn remember_by_query(
         }
     };
 
-    // Perform hybrid search (no ID exclusion for remember tool)
-    let results = match db.search_hybrid(&crate::db::SearchParams {
+    // First, search for notes using unified content search
+    let note_params = crate::content::ContentSearchParams {
+        query,
+        embedding: &embedding,
+        content_type: Some(crate::content::ContentType::Note),
+        conversation_id: None,
+        project_id: None,
+        scope: None,
+        limit,
+        keyword_weight: 0.4,
+        semantic_weight: 0.6,
+    };
+
+    let note_results = match db.search_content_hybrid(&note_params) {
+        Ok(r) => r,
+        Err(e) => {
+            return format!(
+                "Error: Note search failed.\n\n\
+                 Details: {}",
+                e
+            );
+        }
+    };
+
+    // Then, search for messages using existing hybrid search
+    let message_results = match db.search_hybrid(&crate::db::SearchParams {
         query,
         embedding: &embedding,
         conversation_id: None,
@@ -260,82 +331,107 @@ async fn remember_by_query(
         Ok(r) => r,
         Err(e) => {
             return format!(
-                "Error: Search failed.\n\n\
+                "Error: Message search failed.\n\n\
                  Details: {}",
                 e
             );
         }
     };
 
-    if results.is_empty() {
-        return "No messages found matching your query.\n\n\
-               Tips:\n\
-               - Try different keywords\n\
-               - Use broader search terms\n\
-               - Check if you've discussed this topic before"
-            .to_string();
-    }
-
-    // Enrich results with assistant responses
-    let enriched_results = match db.enrich_with_context(results) {
+    // Enrich message results with assistant responses
+    let enriched_messages = match db.enrich_with_context(message_results) {
         Ok(r) => r,
-        Err(e) => {
-            // Continue with un-enriched results
-            return format!(
-                "Warning: Could not enrich results: {}\n\n\
-                 Use message IDs to retrieve full content.",
-                e
-            );
+        Err(_) => {
+            // Continue with un-enriched results on error
+            vec![]
         }
     };
 
+    // Check if we have any results
+    if note_results.is_empty() && enriched_messages.is_empty() {
+        return "No content found matching your query.\n\n\
+               Tips:\n\
+               - Try different keywords\n\
+               - Use broader search terms\n\
+               - Content includes messages and notes"
+            .to_string();
+    }
+
     // Format results
-    let mut output = format!("**Found {} message(s)**\n\n", enriched_results.len());
+    let note_count = note_results.len();
+    let message_count = enriched_messages.len();
+    let mut output = format!(
+        "**Found {} result(s)** ({} message(s), {} note(s))\n\n",
+        note_count + message_count,
+        message_count,
+        note_count
+    );
 
-    for msg in enriched_results {
-        let role_label = format_role_label(&msg.role);
-
-        // Truncate content for display (respect UTF-8 boundaries)
-        let content = if msg.content.chars().count() > 200 {
-            format!("{}...", msg.content.chars().take(200).collect::<String>())
-        } else {
-            msg.content.clone()
-        };
-
-        output.push_str(&format!(
-            "**[id={}]** {} (score: {:.2})\n{}\n\n",
-            msg.message_id, role_label, msg.score, content
-        ));
-
-        // Show subsequent assistant messages (for user messages)
-        for sub_msg in &msg.subsequent_messages {
-            let type_prefix = match sub_msg.message_type.as_deref() {
-                Some("pre_tool_content") => "[Intermediate] ",
-                _ => "",
-            };
-            let sub_content = if sub_msg.content.chars().count() > 100 {
-                format!(
-                    "{}...",
-                    sub_msg.content.chars().take(100).collect::<String>()
-                )
+    // Format notes first (if any)
+    if !note_results.is_empty() {
+        output.push_str("**Notes:**\n\n");
+        for result in &note_results {
+            let title = result.item.title.as_deref().unwrap_or("Untitled");
+            let content = if result.item.content.chars().count() > 150 {
+                format!("{}...", result.item.content.chars().take(150).collect::<String>())
             } else {
-                sub_msg.content.clone()
+                result.item.content.clone()
             };
+            
             output.push_str(&format!(
-                "  └─ **[id={}]** {}{}\n",
-                sub_msg.message_id,
-                type_prefix,
-                sub_content.trim()
+                "**[id=note:{}]** {} (score: {:.2})\n{}\n\n",
+                result.item.id, title, result.score, content
             ));
-        }
-        if !msg.subsequent_messages.is_empty() {
-            output.push('\n');
         }
     }
 
-    output.push_str(&format!(
-        "Use message IDs to retrieve full content: remember(id=\"{}:N\")",
-        SourceType::Conversation.prefix()
-    ));
+    // Format messages (if any)
+    if !enriched_messages.is_empty() {
+        output.push_str("**Messages:**\n\n");
+        for msg in &enriched_messages {
+            let role_label = format_role_label(&msg.role);
+
+            // Truncate content for display (respect UTF-8 boundaries)
+            let content = if msg.content.chars().count() > 200 {
+                format!("{}...", msg.content.chars().take(200).collect::<String>())
+            } else {
+                msg.content.clone()
+            };
+
+            output.push_str(&format!(
+                "**[id={}]** {} (score: {:.2})\n{}\n\n",
+                msg.message_id, role_label, msg.score, content
+            ));
+
+            // Show subsequent assistant messages (for user messages)
+            for sub_msg in &msg.subsequent_messages {
+                let type_prefix = match sub_msg.message_type.as_deref() {
+                    Some("pre_tool_content") => "[Intermediate] ",
+                    _ => "",
+                };
+                let sub_content = if sub_msg.content.chars().count() > 100 {
+                    format!(
+                        "{}...",
+                        sub_msg.content.chars().take(100).collect::<String>()
+                    )
+                } else {
+                    sub_msg.content.clone()
+                };
+                output.push_str(&format!(
+                    "  └─ **[id={}]** {}{}\n",
+                    sub_msg.message_id,
+                    type_prefix,
+                    sub_content.trim()
+                ));
+            }
+            if !msg.subsequent_messages.is_empty() {
+                output.push('\n');
+            }
+        }
+    }
+
+    output.push_str("Use IDs to retrieve full content:\n");
+    output.push_str("- remember(id=\"msg:N\") for messages\n");
+    output.push_str("- remember(id=\"note:N\") for notes\n");
     output
 }

@@ -279,11 +279,17 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
     // 4c. Memory tools section (if retrieval and tools are both enabled)
     if config.retrieval_enabled && config.tools_enabled {
         prompt.push_str("\n### MEMORY TOOLS\n");
-        prompt.push_str("You have access to your conversation history via the remember tool:\n\n");
-        prompt.push_str("- **remember(id=\"N\")**: Get full message by ID\n");
-        prompt.push_str("  Use when you see a relevant but truncated message in context.\n\n");
-        prompt.push_str("- **remember(query=\"topic\")**: Search past discussions\n");
-        prompt.push_str("  Use when the user asks about something not in current context.\n\n");
+        prompt.push_str("Retrieve stored content (messages, notes, documents) using the remember tool:\n\n");
+        prompt.push_str("**By ID** (for exact retrieval):\n");
+        prompt.push_str("- **remember(id=\"msg:N\")**: Get conversation message\n");
+        prompt.push_str("- **remember(id=\"note:N\")**: Get user-created note\n");
+        prompt.push_str("- **remember(id=\"doc:N\")**: Get imported document (when available)\n\n");
+        prompt.push_str("**By Query** (for semantic search):\n");
+        prompt.push_str("- **remember(query=\"topic\")**: Search across all stored content\n\n");
+        prompt.push_str("**Content Types:**\n");
+        prompt.push_str("- **Messages**: Conversation history (auto-archived)\n");
+        prompt.push_str("- **Notes**: User-created reference notes (see `/note` commands)\n");
+        prompt.push_str("- **Documents**: Imported files (when available)\n\n");
         prompt.push_str("**Navigation:**\n");
         prompt.push_str("Each message may include navigation fields:\n");
         prompt.push_str(
@@ -296,7 +302,7 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
             "Context shows: <message id='42'><content>What about...</content></message>\n",
         );
         prompt.push_str("You think: This looks relevant but incomplete.\n");
-        prompt.push_str("You call: remember(id=\"42\")\n");
+        prompt.push_str("You call: remember(id=\"msg:42\")\n");
         prompt.push_str("You receive: Full message content with navigation fields\n");
     }
 
