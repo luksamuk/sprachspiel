@@ -30,6 +30,17 @@ All notable changes to Ask-AI will be documented in this file.
   - Prompt engineering updated to document content types
   - Unified `search_content_hybrid()` enables semantic search across all content
 
+### Changed
+
+- **Query Pattern Refactoring** - Dynamic SQL WHERE clause construction
+  - Created `WhereBuilder` utility for parameterized queries
+  - Eliminated 4-8 SQL variants per function into single dynamic query
+  - `list_notes`: 4 variants → 1 query (50 lines → 20 lines)
+  - `search_notes_keyword`: 4 variants → 1 query (95 lines → 35 lines)
+  - `list_facts`: 8 variants → 1 query (80 lines → 25 lines)
+  - SQL constants extracted to centralized locations for maintainability
+  - Removed `#[allow(unused_imports)]` - `fts5_escape` actively used in 3 modules
+
 ## [0.35.0] - TBD
 
 ### Fixed

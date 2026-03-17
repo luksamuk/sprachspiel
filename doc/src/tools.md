@@ -473,6 +473,49 @@ Users can also manage facts via chat commands:
 - High-importance preferences: Never pruned
 - Automatic decay on startup
 
+## Memory Retrieval Tool (1)
+
+Retrieve conversation messages and notes by ID or search query. This tool provides explicit access to stored content, complementing the automatic retrieval that happens during chat.
+
+### remember
+
+Retrieve content from conversation history and notes.
+
+```
+Function: remember
+Args:
+  - id (string, optional): Specific item ID with prefix (e.g., "msg:42", "note:7")
+  - query (string, optional): Search query for semantic search
+  - limit (string, optional): Max results (default: 5, max: 10)
+Example: remember(id="msg:42")
+Example: remember(id="note:7")
+Example: remember(query="authentication")
+Example: remember(query="database design", limit="10")
+```
+
+**Source Types:**
+| Prefix | Content Type | Description |
+|--------|---------------|-------------|
+| `msg:N` | Conversation | Chat message from history |
+| `note:N` | Note | User-created note |
+| `doc:N` | Document | Imported document (future) |
+| `web:N` | Web | Web-scraped content (future) |
+
+**Use Cases:**
+- **By ID**: Get full content when you only have an excerpt from search results
+- **By Query**: Find topics not in current context window
+- **Hybrid Search**: Combines BM25 (keyword) and semantic (vector) search with RRF fusion
+
+**Output Format:**
+```
+📄 Note #7: My Research Notes
+Source: Note | Created: 2026-03-15 14:30
+────────────────────────────────────────
+[Full note content here...]
+```
+
+**Note:** This tool is for explicit retrieval. The AI automatically retrieves relevant context on each message, so you only need to call this when you're looking for something specific that isn't in the current context.
+
 ## File Operation Tools (8)
 
 Perform local filesystem operations. **Sandboxed by default** to current working directory for security.
