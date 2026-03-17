@@ -453,7 +453,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔴 PRIORITY 2: Notes System
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 
 **Goal:** Persistent notes with semantic search.
 
@@ -483,8 +483,8 @@ todo_clear_all()             // Clear all tasks
 | 2 | Types + Operations (content module) | ✅ Done |
 | 3 | Unified search operations | ✅ Done |
 | 4 | Note commands | ✅ Done |
-| 5 | Embeddings for notes | ⏳ Pending |
-| 6 | Tests and documentation | ⏳ Pending |
+| 5 | Embeddings for notes | ✅ Done |
+| 6 | Tests and documentation | ✅ Done |
 
 **Commits:**
 - `be0b279` - docs: update roadmap priorities
@@ -494,6 +494,8 @@ todo_clear_all()             // Clear all tasks
 - `0d66a05` - feat(content): add content module with Note CRUD operations
 - `c88e324` - feat(content): add unified search operations for content_items
 - `a416f42` - feat(notes): add /note commands for persistent notes
+- `e5a8a57` - feat(content): add embedding support for notes
+- `d2544bc` - test(content): add tests for note operations
 
 ---
 
