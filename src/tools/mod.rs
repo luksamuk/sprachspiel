@@ -60,11 +60,8 @@ pub use system::*;
 pub use todo::*;
 pub use weather::*;
 
-// Fact tools (always available)
-pub use fact_tools::*;
-
-// Notes tools (always available)
-pub use notes::*;
+// Fact tools are imported directly in registry.rs
+// Notes tools are imported directly in registry.rs
 
 pub use run_cmd::run_command;
 pub use tool_check::check_tool_availability;

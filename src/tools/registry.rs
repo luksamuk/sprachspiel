@@ -23,6 +23,9 @@ use super::remember;
 // Fact tools (always available)
 use super::fact_tools::{fact_add, fact_remove, fact_search};
 
+// Notes tools (always available)
+use super::notes::note_add;
+
 // External tool wrappers (always available)
 use super::{check_tool_availability, run_command};
 
