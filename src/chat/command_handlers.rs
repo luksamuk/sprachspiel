@@ -1375,16 +1375,23 @@ pub fn handle_note_show(state: &ReplState, id: i64) {
             };
             let age_days = (Utc::now() - note.created_at).num_days();
 
-            println!("\x1B[36mNote #{}\x1B[0m", note.id);
+            // Build metadata header
+            let mut header = format!("\x1B[36m## Note #{}\x1B[0m\n", note.id);
             if let Some(t) = &note.title {
-                println!("Title: {}", t);
+                header.push_str(&format!("**Title:** {}\n", t));
             }
-            println!("Scope: {} | Source: {} | Age: {}d", scope_str, source_str, age_days);
+            header.push_str(&format!(
+                "**Scope:** {} | **Source:** {} | **Age:** {}d\n",
+                scope_str, source_str, age_days
+            ));
             if let Some(pid) = &note.project_id {
-                println!("Project: {}", pid);
+                header.push_str(&format!("**Project:** {}\n", pid));
             }
-            println!();
-            println!("{}", note.content);
+            header.push_str("\n---\n");
+            print!("{}", header);
+
+            // Render content as markdown
+            crate::markdown::print_markdown(&note.content);
         }
         Ok(None) => {
             eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
