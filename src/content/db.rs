@@ -853,6 +853,13 @@ impl Database {
         })
     }
 
+    /// Count all content items in database (across all conversations)
+    pub fn count_all_content_items(&self) -> Result<i64> {
+        self.with_connection(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM content_items", [], |row| row.get(0))
+        })
+    }
+
     /// Delete the last N content items from a conversation
     ///
     /// Returns the number of items actually deleted.

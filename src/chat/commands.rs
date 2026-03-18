@@ -1,6 +1,6 @@
 //! Chat commands - handles internal REPL commands
 //!
-//! Parses and executes commands like /quit, /clear, /model, etc.
+//! Parses and executes commands like /quit, /new, /model, etc.
 
 use super::session::ChatSession;
 use crate::debug_tools::toggle_debug;
@@ -99,8 +99,8 @@ pub enum CommandResult {
 pub enum ChatCommand {
     /// Exit the chat session
     Quit,
-    /// Clear conversation history
-    Clear,
+    /// Start a new conversation session
+    New,
     /// Forget everything (clear + delete from database)
     Forget,
     /// Show help message
@@ -225,7 +225,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 
     let command = match *cmd {
         "quit" | "exit" | "q" => ChatCommand::Quit,
-        "clear" | "c" | "new" | "n" => ChatCommand::Clear,
+        "new" | "n" => ChatCommand::New,
         "forget" | "f" => ChatCommand::Forget,
         "help" | "h" | "?" => ChatCommand::Help,
         "model" | "m" => {
@@ -661,38 +661,41 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
             CommandResult::Exit
         }
 
-        ChatCommand::Clear => {
-            let has_summary = session.compacted_summary.is_some();
-
-            // Check if there are messages in DB for retrieval after clear
-            let has_db_messages = if let Some(ref db) = session.db {
-                !session.anonymous
-                    && !session.id.is_empty()
-                    && db
-                        .count_conversation_items(&session.id)
-                        .map(|count| count > 0)
-                        .unwrap_or(false)
+        ChatCommand::New => {
+            // Check if there are searchable messages in database (any conversation)
+            let has_searchable_messages = if let Some(ref db) = session.db {
+                db.count_all_content_items()
+                    .map(|count| count > 0)
+                    .unwrap_or(false)
             } else {
                 false
             };
 
-            session.clear_messages();
+            // Clear session state
+            session.compacted_summary = None;
+            session.messages.clear();
+            session.messages_sent_to_llm = 0;
+            session.compacted_range = None;
+            session.name = None;
 
-            if !session.anonymous
-                && let Err(e) = session.save_sqlite()
-            {
-                eprintln!("Warning: Could not save session: {}", e);
+            // Generate new session ID
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            session.id = format!("session-{}", timestamp);
+
+            // Save new empty session
+            if !session.anonymous {
+                if let Err(e) = session.save_sqlite() {
+                    eprintln!("Warning: Could not save session: {}", e);
+                }
             }
 
-            if has_summary {
-                println!("Conversation history cleared.");
-                println!("Context summary preserved for retrieval.");
-                println!("\x1B[90m[i] You may ask about previous topics.\x1B[0m");
-            } else if has_db_messages {
-                println!("Conversation history cleared.");
-                println!("\x1B[90m[i] You may ask about previous topics.\x1B[0m");
-            } else {
-                println!("Conversation history cleared.");
+            println!("New session started.");
+            if has_searchable_messages {
+                println!("\x1B[90m[i] Previous conversations remain searchable via /search or remember().\x1B[0m");
             }
             CommandResult::Continue
         }
@@ -929,8 +932,8 @@ fn print_help() {
     println!(
         r#"Available commands:
   /quit, /exit     Exit the chat session
-  /clear, /new     Clear messages (preserves context for retrieval)
-  /forget          Forget everything, start fresh (removes from database)
+  /new, /n         Start a new conversation (previous messages remain searchable)
+  /forget          Delete conversation completely and start fresh
   /help            Show this help message
   /model <name>    Switch to a different model
   /system <text>   Change the system prompt
@@ -980,7 +983,7 @@ Todo List:
   Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
 
 Shortcuts:
-  /q = /quit, /c = /clear, /h = /help
+  /q = /quit, /n = /new, /h = /help
   /m = /model, /s = /system, /l = /load
   /t = /think, /e = /export, /ls = /list, /i = /info
   /r = /retry, /to = /tools-output, /u = /undo

@@ -659,6 +659,7 @@ impl ChatSession {
     ///
     /// # Preserved
     /// - compacted_summary (for RAG to still work)
+    #[allow(dead_code)] // Used in tests
     pub fn clear_messages(&mut self) {
         self.messages.clear();
         // Reset compacted_range since we no longer have those messages

@@ -576,6 +576,26 @@ This ensures:
 - All search functionality works correctly after first startup
 - Second startup is instant (0 items to regenerate)
 
+**Bug #15: `/clear` Reloaded Old Messages from Database**
+
+The `/clear` command was intended to "clear messages (preserves context for retrieval)" but:
+- It only cleared `session.messages` in memory
+- On session reload (`load_sqlite`), ALL messages from database were restored
+- Sessions appeared to "undo" the clear after app restart
+
+**Solution:**
+- Renamed `/clear` to `/new` to better reflect behavior
+- `/new` now generates a NEW `session.id` (e.g., `session-1712345678`)
+- Old messages stay in database (searchable via `/search` and `remember()`)
+- New session starts empty
+- Added `count_all_content_items()` to check if database has searchable content
+
+**Difference from `/forget`:**
+| Command | Session ID | Database | Searchable |
+|---------|-------------|----------|------------|
+| `/new` | New | Preserved | Yes |
+| `/forget` | New | Deleted | No |
+
 ---
 
 ### Architecture: Content Items (Schema v7)

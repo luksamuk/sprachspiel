@@ -4,6 +4,15 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [0.36.0] - TBD
 
+### Changed
+
+- **`/clear` renamed to `/new`** - Command now starts a new conversation session
+  - Previous behavior: Cleared in-memory messages but reloaded from database on restart
+  - New behavior: Creates new session ID, clears all session state
+  - Previous conversations remain searchable via `/search` and `remember()`
+  - `/new` generates session ID: `session-{timestamp}`
+  - Alias: `/n`
+
 ### Fixed
 
 - **Database Initialization Failure** - Fail fast with detailed error when database cannot be initialized
@@ -22,9 +31,17 @@ All notable changes to Ask-AI will be documented in this file.
   - LLM sometimes passes `id=""` instead of omitting the parameter
   - Tool now validates and filters empty strings before processing
 
-- **TODO List Persistence** - LLM tools now properly save TODO state to database
-  - Previously, tools like `todo_add`, `todo_update` modified global state but didn't sync to session
-  - Now synchronizes `TodoState` to `session.todos` after LLM interactions
+- **SQLite-vec Parameter Mismatch** - Fixed semantic search query
+  - `SEMANTIC_SEARCH_ITEMS_SQL` and `SEMANTIC_SEARCH_CHUNKS_SQL` constants were missing WHERE clause
+  - sqlite-vec requires `WHERE embedding MATCH ? AND k = ?` for KNN queries
+  - Fixed "Wrong number of parameters passed to query" error in `remember()` tool
+
+- **YAGNI Code Removal** - Removed unused methods from DynamicChunkConfig
+  - Removed: `with_percentages()`, `context_length()`, `prefix_margin()`, `chars_per_token()`
+  - These were test-only or never used
+  - Kept: `new()`, `max_chars()`, `overlap_chars()`, `min_chunk_chars()` (all production)
+
+- **YAGNI Variable Removal** - Removed unused `chunks_failed_before` variable in regenerate.rs
 
 ### Added
 

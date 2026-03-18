@@ -41,8 +41,8 @@ Once inside the chat, these commands are available:
 | Command | Description |
 |---------|-------------|
 | `/quit`, `/exit`, `/q` | Exit the chat session |
-| `/clear`, `/c` | Clear conversation history (keeps session) |
-| `/forget` | Delete session completely from database |
+| `/new`, `/n` | Start a new conversation (previous messages remain searchable) |
+| `/forget` | Delete conversation completely and start fresh |
 | `/help`, `/h`, `/?` | Show available commands |
 | `/save [name]` | Save current session (optionally named) |
 | `/load <name>`, `/l <name>` | Load a saved session |
