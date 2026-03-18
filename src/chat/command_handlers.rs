@@ -1388,23 +1388,34 @@ pub fn handle_note_show(state: &ReplState, id: i64) {
             };
             let age_days = (Utc::now() - note.created_at).num_days();
 
-            // Build complete markdown output
-            let mut md = format!("## Note #{}\n\n", note.id);
+            // Build header (rendered as markdown)
+            let mut header = format!("## Note #{}\n\n", note.id);
             if let Some(t) = &note.title {
-                md.push_str(&format!("**Title:** {}\n\n", t));
+                header.push_str(&format!("**Title:** {}\n\n", t));
             }
-            md.push_str(&format!(
+            header.push_str(&format!(
                 "**Scope:** {} | **Source:** {} | **Age:** {}d\n\n",
                 scope_str, source_str, age_days
             ));
             if let Some(pid) = &note.project_id {
-                md.push_str(&format!("**Project:** {}\n\n", pid));
+                header.push_str(&format!("**Project:** {}\n\n", pid));
             }
-            md.push_str("---\n\n");
-            md.push_str(&note.content);
+            header.push_str("---\n");
 
-            // Render everything as markdown
-            crate::markdown::print_markdown(&md);
+            // Print header with markdown
+            crate::markdown::print_markdown(&header);
+
+            // Print content lines with tree-style prefix
+            for (i, line) in note.content.lines().enumerate() {
+                if i == 0 {
+                    // First line - just print (already had header context)
+                    crate::markdown::print_markdown(line);
+                } else {
+                    // Subsequent lines - prefix with │
+                    print!("│ ");
+                    crate::markdown::print_markdown(line);
+                }
+            }
         }
         Ok(None) => {
             eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);

@@ -258,11 +258,11 @@ fn parse_note_add(args: &str) -> Result<(String, Option<String>, bool), String> 
                         if current_token.contains('\n') || current_token.contains("\\n") {
                             return Err("Error: Title cannot contain newlines. Remove \\n or line breaks from title.".to_string());
                         }
-                        title = Some(current_token.replace("\\-", "--"));
+                        title = Some(current_token.clone());
                     }
                     current_param = None;
                 } else {
-                    content_parts.push(current_token.clone().replace("\\n", "\n").replace("\\-", "--"));
+                    content_parts.push(current_token.clone().replace("\\n", "\n"));
                 }
                 current_token.clear();
             } else if c == '\\' && i + 1 < chars.len() {
@@ -278,7 +278,7 @@ fn parse_note_add(args: &str) -> Result<(String, Option<String>, bool), String> 
                     current_token.push('"');
                     i += 1;
                 } else if next == '-' {
-                    current_token.push_str("\\-"); // Keep \-\- for later conversion
+                    current_token.push('-'); // Just push the dash, not \-
                     i += 1;
                 } else {
                     current_token.push(c);
@@ -319,10 +319,10 @@ fn parse_note_add(args: &str) -> Result<(String, Option<String>, bool), String> 
                     if current_token.contains('\n') {
                         return Err("Error: Title cannot contain newlines. Remove line breaks from title.".to_string());
                     }
-                    title = Some(current_token.replace("\\-", "--"));
+                    title = Some(current_token.clone());
                     current_param = None;
                 } else {
-                    content_parts.push(current_token.clone().replace("\\-", "--"));
+                    content_parts.push(current_token.clone());
                 }
                 current_token.clear();
             }
@@ -346,9 +346,9 @@ fn parse_note_add(args: &str) -> Result<(String, Option<String>, bool), String> 
             if current_token.contains('\n') {
                 return Err("Error: Title cannot contain newlines. Remove line breaks from title.".to_string());
             }
-            title = Some(current_token.replace("\\-", "--"));
+            title = Some(current_token.clone());
         } else {
-            content_parts.push(current_token.replace("\\-", "--"));
+            content_parts.push(current_token.clone());
         }
     }
     
@@ -645,9 +645,10 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                         if part == "--global" {
                             global = true;
                         } else if let Ok(p) = part.parse::<usize>() {
-                            if p > 0 {
-                                page = Some(p);
+                            if p == 0 {
+                                return Some(Err("Error: Page must be >= 1. Use /note list 1 for first page.".to_string()));
                             }
+                            page = Some(p);
                         }
                     }
                     ChatCommand::NoteList { global, page }
@@ -759,9 +760,10 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 if part == "--global" {
                     global = true;
                 } else if let Ok(p) = part.parse::<usize>() {
-                    if p > 0 {
-                        page = Some(p);
+                    if p == 0 {
+                        return Some(Err("Error: Page must be >= 1. Use /note list 1 for first page.".to_string()));
                     }
+                    page = Some(p);
                 }
             }
             ChatCommand::NoteList { global, page }
