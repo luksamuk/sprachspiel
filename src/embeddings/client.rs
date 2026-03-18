@@ -4,11 +4,16 @@
 
 use ollama_rs::Ollama;
 use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
+use ollama_rs::models::ModelInfo;
 
 use super::truncate::{FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, truncate_and_normalize};
 
 /// Default embedding model (nomic-embed-text-v2-moe)
 pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
+
+/// Default context length when model info is unavailable
+/// Conservative value suitable for most embedding models
+const DEFAULT_CONTEXT_LENGTH: usize = 512;
 
 /// Client for generating embeddings via Ollama
 pub struct EmbeddingClient {
@@ -29,6 +34,32 @@ impl EmbeddingClient {
     #[allow(dead_code)]
     pub fn with_model(ollama: Ollama, model: String) -> Self {
         Self { ollama, model }
+    }
+
+    /// Get the context length for the embedding model from Ollama API.
+    ///
+    /// Queries the model info and extracts the context_length from the
+    /// model_info field (e.g., "nomic-bert-moe.context_length": 512).
+    ///
+    /// Returns DEFAULT_CONTEXT_LENGTH (512) if unable to determine.
+    pub async fn get_context_length(&self) -> Result<usize, EmbeddingError> {
+        let info: ModelInfo = self
+            .ollama
+            .show_model_info(self.model.clone())
+            .await
+            .map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
+
+        // Look for "*.context_length" in model_info
+        for (key, value) in info.model_info.iter() {
+            if key.ends_with(".context_length") {
+                if let Some(ctx) = value.as_u64() {
+                    return Ok(ctx as usize);
+                }
+            }
+        }
+
+        // Fallback to conservative default
+        Ok(DEFAULT_CONTEXT_LENGTH)
     }
 
     /// Generate embedding for a single text

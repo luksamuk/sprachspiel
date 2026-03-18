@@ -3,7 +3,7 @@
 //! Provides the LLM with explicit access to search and retrieve
 //! messages from conversation history and user-created notes.
 
-use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER, format_role_label};
+use crate::consts::roles::{ROLE_USER, format_role_label};
 use crate::db::SourceType;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::tools::context::{get_db, get_embedding};
@@ -182,39 +182,40 @@ async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) 
 /// Fetch a conversation message by ID
 async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id: i64) -> String {
     // Get message from database
-    match db.get_message_by_id(id) {
-        Ok(Some(msg)) => {
-            let role_label = format_role_label(&msg.role);
+    match db.get_content_item_by_id(id) {
+        Ok(Some(item)) => {
+            let role = item.role.as_deref().unwrap_or("unknown");
+            let role_label = format_role_label(role);
 
-            let timestamp =
-                chrono::DateTime::from_timestamp(msg.timestamp, 0).unwrap_or_else(chrono::Utc::now);
+            let timestamp = item.created_at;
 
             let mut output = format!(
                 "**Message {}**\nRole: {}\nTimestamp: {}\n\n---\n{}\n---",
-                msg.message_id,
+                item.id,
                 role_label,
                 timestamp.format("%Y-%m-%d %H:%M"),
-                msg.content
+                item.content
             );
 
             // If user message, also fetch subsequent assistant messages
-            if msg.role == ROLE_USER {
-                // Get subsequent messages
-                // For now, use get_next_message_by_role for the first assistant message
-                // This will be updated to use get_subsequent_assistant_messages later
-                if let Ok(Some(answer)) = db.get_next_message_by_role(
-                    msg.message_id,
-                    &msg.conversation_id,
-                    ROLE_ASSISTANT,
-                ) {
-                    let answer_timestamp = chrono::DateTime::from_timestamp(answer.timestamp, 0)
-                        .unwrap_or_else(chrono::Utc::now);
-                    output.push_str(&format!(
-                        "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
-                        answer.message_id,
-                        answer_timestamp.format("%Y-%m-%d %H:%M"),
-                        answer.content
-                    ));
+            if role == ROLE_USER {
+                if let Some(conv_id) = &item.conversation_id {
+                    // Get subsequent messages
+                    match db.get_content_subsequent_assistant(item.id, conv_id) {
+                        Ok(assistant_msgs) => {
+                            for answer in assistant_msgs {
+                                output.push_str(&format!(
+                                    "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
+                                    answer.id,
+                                    answer.created_at.format("%Y-%m-%d %H:%M"),
+                                    answer.content
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            output.push_str(&format!("\n\n*Failed to fetch assistant response: {}*", e));
+                        }
+                    }
                 }
             }
 
@@ -328,17 +329,16 @@ async fn remember_by_query(
         }
     };
 
-    // Then, search for messages using existing hybrid search
-    let message_results = match db.search_hybrid(&crate::db::SearchParams {
+    // Then, search for messages using V7 search
+    let message_results = match db.search_messages_hybrid(
         query,
-        embedding: &embedding,
-        conversation_id: None,
-        project_id: None,
+        &embedding,
+        None,  // conversation_id
+        None,  // project_id
         limit,
-        keyword_weight: 0.4,
-        semantic_weight: 0.6,
-        exclude_ids: None,
-    }) {
+        0.4,   // keyword_weight
+        0.6,   // semantic_weight
+    ) {
         Ok(r) => r,
         Err(e) => {
             return format!(
@@ -350,7 +350,7 @@ async fn remember_by_query(
     };
 
     // Enrich message results with assistant responses
-    let enriched_messages = db.enrich_with_context(message_results).unwrap_or_default();
+    let enriched_messages = db.enrich_content_results_with_context(message_results).unwrap_or_default();
 
     // Check if we have any results
     if note_results.is_empty() && enriched_messages.is_empty() {
@@ -393,43 +393,45 @@ async fn remember_by_query(
     // Format messages (if any)
     if !enriched_messages.is_empty() {
         output.push_str("**Messages:**\n\n");
-        for msg in &enriched_messages {
-            let role_label = format_role_label(&msg.role);
+        for result in &enriched_messages {
+            let item = &result.item;
+            let role = item.role.as_deref().unwrap_or("unknown");
+            let role_label = format_role_label(role);
 
             // Truncate content for display (respect UTF-8 boundaries)
-            let content = if msg.content.chars().count() > 200 {
-                format!("{}...", msg.content.chars().take(200).collect::<String>())
+            let content = if item.content.chars().count() > 200 {
+                format!("{}...", item.content.chars().take(200).collect::<String>())
             } else {
-                msg.content.clone()
+                item.content.clone()
             };
 
             output.push_str(&format!(
                 "**[id={}]** {} (score: {:.2})\n{}\n\n",
-                msg.message_id, role_label, msg.score, content
+                item.id, role_label, result.score, content
             ));
 
             // Show subsequent assistant messages (for user messages)
-            for sub_msg in &msg.subsequent_messages {
-                let type_prefix = match sub_msg.message_type.as_deref() {
+            for sub_item in &result.subsequent_items {
+                let type_prefix = match sub_item.item.message_type.as_deref() {
                     Some("pre_tool_content") => "[Intermediate] ",
                     _ => "",
                 };
-                let sub_content = if sub_msg.content.chars().count() > 100 {
+                let sub_content = if sub_item.item.content.chars().count() > 100 {
                     format!(
                         "{}...",
-                        sub_msg.content.chars().take(100).collect::<String>()
+                        sub_item.item.content.chars().take(100).collect::<String>()
                     )
                 } else {
-                    sub_msg.content.clone()
+                    sub_item.item.content.clone()
                 };
                 output.push_str(&format!(
                     "  └─ **[id={}]** {}{}\n",
-                    sub_msg.message_id,
+                    sub_item.item.id,
                     type_prefix,
                     sub_content.trim()
                 ));
             }
-            if !msg.subsequent_messages.is_empty() {
+            if !result.subsequent_items.is_empty() {
                 output.push('\n');
             }
         }

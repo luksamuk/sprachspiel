@@ -143,19 +143,27 @@ impl Database {
                 }
             }
 
-            // Add prompt_tokens column to messages table
-            let prompt_tokens_exists: bool = {
-                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
-                let rows = stmt.query_map([], |row| {
-                    let name: String = row.get(1)?;
-                    Ok(name)
-                })?;
-                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
-                names.contains(&"prompt_tokens".to_string())
-            };
+            // Add prompt_tokens column to messages table (only if table exists - V2 legacy)
+            let messages_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )? > 0;
 
-            if !prompt_tokens_exists {
-                conn.execute("ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER", [])?;
+            if messages_exists {
+                let prompt_tokens_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                    let rows = stmt.query_map([], |row| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&"prompt_tokens".to_string())
+                };
+
+                if !prompt_tokens_exists {
+                    conn.execute("ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER", [])?;
+                }
             }
 
             // Create session_todos table if not exists
@@ -179,48 +187,57 @@ impl Database {
 
         // Migration v4 -> v5: Add message_type and previous_message_id
         if from_version < 5 {
-            // Add message_type column to messages table
-            let message_type_exists: bool = {
-                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
-                let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
-                    let name: String = row.get(1)?;
-                    Ok(name)
-                })?;
-                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
-                names.contains(&"message_type".to_string())
-            };
-
-            if !message_type_exists {
-                conn.execute(
-                    "ALTER TABLE messages ADD COLUMN message_type TEXT DEFAULT 'normal'",
-                    [],
-                )?;
-            }
-
-            // Add previous_message_id column to messages table
-            let previous_id_exists: bool = {
-                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
-                let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
-                    let name: String = row.get(1)?;
-                    Ok(name)
-                })?;
-                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
-                names.contains(&"previous_message_id".to_string())
-            };
-
-            if !previous_id_exists {
-                conn.execute(
-                    "ALTER TABLE messages ADD COLUMN previous_message_id INTEGER REFERENCES messages(id)",
-                    [],
-                )?;
-            }
-
-            // Create index for previous_message_id lookups
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_messages_previous 
-                 ON messages(previous_message_id) WHERE previous_message_id IS NOT NULL",
+            // Only apply migrations if messages table exists (V2 legacy)
+            let messages_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'",
                 [],
-            )?;
+                |row| row.get::<_, i32>(0),
+            )? > 0;
+
+            if messages_exists {
+                // Add message_type column to messages table
+                let message_type_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                    let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&"message_type".to_string())
+                };
+
+                if !message_type_exists {
+                    conn.execute(
+                        "ALTER TABLE messages ADD COLUMN message_type TEXT DEFAULT 'normal'",
+                        [],
+                    )?;
+                }
+
+                // Add previous_message_id column to messages table
+                let previous_id_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                    let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&"previous_message_id".to_string())
+                };
+
+                if !previous_id_exists {
+                    conn.execute(
+                        "ALTER TABLE messages ADD COLUMN previous_message_id INTEGER REFERENCES messages(id)",
+                        [],
+                    )?;
+                }
+
+                // Create index for previous_message_id lookups
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_previous 
+                     ON messages(previous_message_id) WHERE previous_message_id IS NOT NULL",
+                    [],
+                )?;
+            }
         }
 
         // Migration v5 -> v6: Add facts table (factual memory system)
@@ -363,74 +380,81 @@ impl Database {
                 "#,
             )?;
 
-            // Migrate existing messages to content_items
-            // Copy all messages with content_type='message'
-            conn.execute(
-                r#"
-                INSERT INTO content_items (
-                    content_type, conversation_id, role, message_type, previous_item_id,
-                    prompt_tokens, content, importance, created_at, updated_at, 
-                    last_accessed, has_embedding, project_id
-                )
-                SELECT 
-                    'message' as content_type,
-                    conversation_id,
-                    role,
-                    COALESCE(message_type, 'normal') as message_type,
-                    previous_message_id as previous_item_id,
-                    prompt_tokens,
-                    content,
-                    importance,
-                    timestamp as created_at,
-                    timestamp as updated_at,
-                    timestamp as last_accessed,
-                    has_embedding,
-                    (SELECT project_id FROM conversations WHERE id = m.conversation_id) as project_id
-                FROM messages m
-                "#,
+            // Only migrate data if V2 tables exist (upgrading from v6)
+            let messages_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'",
                 [],
-            )?;
+                |row| row.get::<_, i32>(0),
+            )? > 0;
 
-            // Migrate message_chunks to content_chunks
-            // First, we need to map old message_id to new content_items.id
-            // This requires a subquery to get the correct item_id
-            conn.execute(
-                r#"
-                INSERT INTO content_chunks (item_id, chunk_index, content, start_offset, end_offset, created_at, has_embedding)
-                SELECT 
-                    ci.id as item_id,
-                    mc.chunk_index,
-                    mc.content,
-                    mc.start_offset,
-                    mc.end_offset,
-                    mc.created_at,
-                    mc.has_embedding
-                FROM message_chunks mc
-                JOIN content_items ci ON ci.content_type = 'message' 
-                    AND ci.conversation_id = (SELECT conversation_id FROM messages WHERE id = mc.message_id)
-                    AND ci.content = (SELECT content FROM messages WHERE id = mc.message_id)
-                "#,
-                [],
-            )?;
+            if messages_exists {
+                // Migrate existing messages to content_items
+                // Copy all messages with content_type='message'
+                conn.execute(
+                    r#"
+                    INSERT INTO content_items (
+                        content_type, conversation_id, role, message_type, previous_item_id,
+                        prompt_tokens, content, importance, created_at, updated_at, 
+                        last_accessed, has_embedding, project_id
+                    )
+                    SELECT 
+                        'message' as content_type,
+                        conversation_id,
+                        role,
+                        COALESCE(message_type, 'normal') as message_type,
+                        previous_message_id as previous_item_id,
+                        prompt_tokens,
+                        content,
+                        importance,
+                        timestamp as created_at,
+                        timestamp as updated_at,
+                        timestamp as last_accessed,
+                        has_embedding,
+                        (SELECT project_id FROM conversations WHERE id = m.conversation_id) as project_id
+                    FROM messages m
+                    "#,
+                    [],
+                )?;
 
-            // Populate content_fts from content_items
-            conn.execute(
-                "INSERT INTO content_fts(rowid, content) SELECT id, content FROM content_items",
-                [],
-            )?;
+                // Do NOT migrate message_chunks to content_chunks.
+                // The old migration had a broken JOIN that created orphan chunks
+                // (item_id pointing to non-existent items).
+                // Chunks are derived data - they will be regenerated during recovery
+                // for any content > 1024 characters.
+                //
+                // Clear any chunks from previous migration attempts
+                conn.execute("DELETE FROM content_chunks", [])?;
 
-            // Clear embeddings tables (will be regenerated after migration)
-            // This is safer than trying to migrate embeddings which can cause UNIQUE constraint errors
-            // when multiple messages have the same content in the same conversation.
-            // Embeddings are derived data and can be regenerated from content.
-            conn.execute("DELETE FROM content_embeddings", [])?;
-            conn.execute("DELETE FROM chunk_embeddings_v2", [])?;
+                // Populate content_fts from content_items
+                conn.execute(
+                    "INSERT INTO content_fts(rowid, content) SELECT id, content FROM content_items",
+                    [],
+                )?;
 
-            // Mark all content_items as needing embedding regeneration
-            conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
+                // Clear embeddings tables (will be regenerated after migration)
+                // This is safer than trying to migrate embeddings which can cause UNIQUE constraint errors
+                // when multiple messages have the same content in the same conversation.
+                // Embeddings are derived data and can be regenerated from content.
+                conn.execute("DELETE FROM content_embeddings", [])?;
+                conn.execute("DELETE FROM chunk_embeddings_v2", [])?;
 
-            // Mark all content_chunks as needing embedding regeneration
-            conn.execute("UPDATE content_chunks SET has_embedding = 0", [])?;
+                // Mark all content_items as needing embedding regeneration
+                conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
+
+                // Drop old V2 tables - no longer needed after migration
+                // Note: SQLite uses DROP TABLE for virtual tables too (FTS5, vec0)
+                // IMPORTANT: chunk_embeddings_v2 is a V7 table (new), not V2!
+                // The old V2 chunk table was "chunk_embeddings" (without _v2 suffix)
+                conn.execute_batch(
+                    r#"
+                    DROP TABLE IF EXISTS messages;
+                    DROP TABLE IF EXISTS message_chunks;
+                    DROP TABLE IF EXISTS message_embeddings;
+                    DROP TABLE IF EXISTS chunk_embeddings;
+                    DROP TABLE IF EXISTS messages_fts;
+                    "#,
+                )?;
+            }
         }
 
         Ok(())
@@ -525,9 +549,9 @@ mod tests {
             .expect("Failed to list tables");
 
         assert!(tables.contains(&"conversations".to_string()));
-        assert!(tables.contains(&"messages".to_string()));
-        assert!(tables.contains(&"message_embeddings".to_string()));
-        assert!(tables.contains(&"messages_fts".to_string()));
+        assert!(tables.contains(&"content_items".to_string()));
+        assert!(tables.contains(&"content_embeddings".to_string()));
+        assert!(tables.contains(&"content_fts".to_string()));
         assert!(tables.contains(&"session_todos".to_string()));
         assert!(tables.contains(&"facts".to_string()));
     }
@@ -582,13 +606,13 @@ mod tests {
     }
 
     #[test]
-    fn test_messages_prompt_tokens_column() {
+    fn test_content_items_prompt_tokens_column() {
         let db = Database::in_memory().expect("Failed to create database");
 
-        // Verify messages table has prompt_tokens column
+        // Verify content_items table has prompt_tokens column
         let columns: Vec<String> = db
             .with_connection(|conn| {
-                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                let mut stmt = conn.prepare("PRAGMA table_info(content_items)")?;
                 let rows = stmt.query_map([], |row| {
                     let name: String = row.get(1)?;
                     Ok(name)

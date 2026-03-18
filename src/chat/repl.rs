@@ -95,24 +95,12 @@ fn init_database(
     (db, embedding_client, ollama, error_detail)
 }
 
-/// Run startup tasks (migration and decay cycle).
+/// Run startup tasks (decay cycle).
 async fn run_startup_tasks(
     db: &Option<Arc<crate::db::Database>>,
-    embedding_client: &Option<Arc<crate::embeddings::EmbeddingClient>>,
+    _embedding_client: &Option<Arc<crate::embeddings::EmbeddingClient>>,
     anonymous: bool,
 ) {
-    if let (Some(db_ref), Some(client)) = (db, embedding_client)
-        && !anonymous
-    {
-        let migration_stats = crate::db::migrate_all_legacy_sessions(db_ref, client).await;
-        if migration_stats.sessions_migrated > 0 {
-            log_debug(&format!(
-                "Migrated {} session(s) from JSON to SQLite",
-                migration_stats.sessions_migrated
-            ));
-        }
-    }
-
     if let Some(db_ref) = db
         && !anonymous
     {
@@ -432,7 +420,7 @@ pub async fn run_chat_repl(
 
         // Recover any missing embeddings from previous session
         let recovered =
-            crate::embeddings::recover_missing_embeddings(db_ref, client, &session.id).await;
+            crate::embeddings::recover_missing_embeddings(db_ref, client).await;
         if recovered > 0 {
             log_debug(&format!("Recovered {} missing embedding(s)", recovered));
         }

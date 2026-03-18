@@ -1,7 +1,10 @@
 //! Text chunking for long messages
 //!
-//! Splits messages >1024 characters into overlapping chunks for better
-//! semantic search granularity using RAG-style chunking.
+//! Splits messages into overlapping chunks for better semantic search granularity
+//! using RAG-style chunking. Chunk size is determined dynamically by the
+//! embedding model's context length.
+
+use super::chunk_config::DynamicChunkConfig;
 
 /// Default maximum chunk size in characters
 #[allow(dead_code)]
@@ -32,6 +35,16 @@ impl Default for ChunkConfig {
             max_chars: DEFAULT_CHUNK_SIZE,
             overlap_chars: DEFAULT_CHUNK_OVERLAP,
             min_chunk_size: DEFAULT_CHUNK_MIN_SIZE,
+        }
+    }
+}
+
+impl From<&DynamicChunkConfig> for ChunkConfig {
+    fn from(config: &DynamicChunkConfig) -> Self {
+        Self {
+            max_chars: config.max_chars(),
+            overlap_chars: config.overlap_chars(),
+            min_chunk_size: config.min_chunk_chars(),
         }
     }
 }
@@ -172,22 +185,29 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
     }
 
     // Merge last chunk if it's too small
+    // But only if the merged result doesn't exceed max_chars
     if chunks.len() >= 2 {
         let last_chunk = chunks.last().unwrap();
         if last_chunk.content.len() < config.min_chunk_size {
-            // Merge with previous chunk
             let prev_chunk = chunks[chunks.len() - 2].clone();
-            let merged_content = format!("{}{}", prev_chunk.content, last_chunk.content);
-            let merged = Chunk::new(
-                prev_chunk.index,
-                merged_content,
-                prev_chunk.start_offset,
-                last_chunk.end_offset,
-            );
+            let merged_len = prev_chunk.content.len() + last_chunk.content.len();
+            
+            // Only merge if the result fits within max_chars
+            if merged_len <= config.max_chars {
+                let merged_content = format!("{}{}", prev_chunk.content, last_chunk.content);
+                let merged = Chunk::new(
+                    prev_chunk.index,
+                    merged_content,
+                    prev_chunk.start_offset,
+                    last_chunk.end_offset,
+                );
 
-            chunks.pop(); // Remove last
-            chunks.pop(); // Remove previous
-            chunks.push(merged); // Add merged
+                chunks.pop(); // Remove last
+                chunks.pop(); // Remove previous
+                chunks.push(merged); // Add merged
+            }
+            // If merged would exceed max_chars, keep the small chunk
+            // Better to have a small chunk than one that exceeds context limit
         }
     }
 

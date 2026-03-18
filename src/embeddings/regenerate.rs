@@ -12,7 +12,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
 
 use crate::db::Database;
-use crate::embeddings::EmbeddingClient;
+use crate::embeddings::{chunk_text_with_config, ChunkConfig, DynamicChunkConfig, EmbeddingClient};
 
 /// Result of embedding regeneration
 #[derive(Debug, Clone, Copy)]
@@ -50,6 +50,10 @@ impl RegenerationStats {
 /// embeddings that were lost during migration. Embeddings are derived
 /// data and can be safely regenerated from source content.
 ///
+/// Uses dynamic chunk sizing based on the embedding model's context length.
+/// For models with smaller contexts (e.g., nomic-embed-text-v2-moe with 512 tokens),
+/// long content is automatically chunked before embedding.
+///
 /// Shows a progress bar with ETA during regeneration.
 ///
 /// # Arguments
@@ -65,6 +69,22 @@ pub async fn regenerate_all_embeddings(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
 ) -> RegenerationStats {
+    // Note: V2 orphan chunks are cleaned by recover_missing_embeddings(), not here.
+    // We don't clean ALL chunks because items with successful embeddings have has_embedding=1.
+
+    // Get dynamic context length from embedding model
+    let context_length = match embedding_client.get_context_length().await {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            eprintln!("Warning: Could not get embedding model context length: {}", e);
+            eprintln!("Using conservative default of 512 tokens.");
+            512
+        }
+    };
+
+    let chunk_config = DynamicChunkConfig::new(context_length);
+    let max_chars = chunk_config.max_chars();
+
     // Get all items and chunks without embeddings
     let items = match db.get_content_items_for_reindex() {
         Ok(i) => i,
@@ -104,7 +124,10 @@ pub async fn regenerate_all_embeddings(
         };
     }
 
-    println!("Regenerating embeddings for {} items...", total);
+    println!(
+        "Regenerating embeddings for {} items (context: {} tokens)...",
+        items.len(), context_length
+    );
 
     // Setup progress bar with ETA
     let progress = ProgressBar::new(total as u64);
@@ -132,67 +155,145 @@ pub async fn regenerate_all_embeddings(
             continue;
         }
 
-        match embedding_client.embed(content).await {
-            Ok(embedding) => {
+        // Check if content needs chunking based on dynamic config
+        if content.len() > max_chars {
+            // Long content - create chunks and embed each chunk
+            let chunks_list = chunk_text_with_config(content, &ChunkConfig::from(&chunk_config));
+            let chunks_before = stats.chunks_processed;
+            let chunks_failed_before = stats.chunks_failed;
+
+            for chunk in &chunks_list {
+                // Insert chunk into database
                 let timestamp = Utc::now();
+                let chunk_id = match db.insert_content_chunk(
+                    *item_id,
+                    chunk.index as i32,
+                    &chunk.content,
+                    chunk.start_offset as i32,
+                    chunk.end_offset as i32,
+                    timestamp,
+                ) {
+                    Ok(id) => id,
+                    Err(e) => {
+                        eprintln!("Warning: Failed to insert chunk {}: {}", chunk.index, e);
+                        stats.chunks_failed += 1;
+                        continue;
+                    }
+                };
 
-                // Extract conversation_id from content_items based on content_type
-                // For 'message' type, we need to get the conversation_id from the item
-                let conversation_id: Option<String> = db
-                    .with_connection(|conn| {
-                        conn.query_row(
-                            "SELECT conversation_id FROM content_items WHERE id = ?1",
-                            rusqlite::params![item_id],
-                            |row| row.get(0),
-                        )
-                    })
-                    .ok()
-                    .flatten();
+                // Get item metadata for embedding
+                let (conv_id, proj_id) = match db.get_content_item_by_id(*item_id) {
+                    Ok(Some(item)) => (item.conversation_id, item.project_id),
+                    _ => (None, None),
+                };
 
-                let project_id: Option<String> = db
-                    .with_connection(|conn| {
-                        conn.query_row(
-                            "SELECT project_id FROM content_items WHERE id = ?1",
-                            rusqlite::params![item_id],
-                            |row| row.get(0),
-                        )
-                    })
-                    .ok()
-                    .flatten();
-
-                if db
-                    .update_content_item_embedding(
-                        *item_id,
-                        &embedding,
-                        content_type,
-                        conversation_id.as_deref(),
-                        project_id.as_deref(),
-                        timestamp,
-                    )
-                    .is_ok()
-                {
-                    stats.items_processed += 1;
-                } else {
-                    stats.items_failed += 1;
+                // Generate embedding for chunk
+                match embedding_client.embed(&chunk.content).await {
+                    Ok(embedding) => {
+                        match db
+                            .update_content_chunk_embedding(
+                                chunk_id,
+                                &embedding,
+                                content_type,
+                                conv_id.as_deref(),
+                                proj_id.as_deref(),
+                                timestamp,
+                            )
+                        {
+                            Ok(_) => {
+                                stats.chunks_processed += 1;
+                            }
+                            Err(e) => {
+                                stats.chunks_failed += 1;
+                                eprintln!("Warning: Failed to update chunk {} embedding in DB: {}", chunk_id, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to generate embedding for chunk {}: {}",
+                            chunk_id, e
+                        );
+                        stats.chunks_failed += 1;
+                    }
                 }
             }
-            Err(e) => {
-                eprintln!(
-                    "Failed to generate embedding for item {}: {}",
-                    item_id, e
-                );
-                stats.items_failed += 1;
 
-                // If Ollama is down or unreachable, abort completely
-                if e.to_string().contains("connection refused")
-                    || e.to_string().contains("network")
-                    || e.to_string().contains("timeout")
-                {
-                    progress.finish_and_clear();
-                    println!("\nError: Cannot connect to Ollama for embedding generation.");
-                    println!("Please ensure Ollama is running and try again.");
-                    println!("Progress saved: {}/{} items processed.", stats.items_processed, items.len());
-                    panic!("Embedding generation failed - Ollama unreachable");
+            // Mark item as having embeddings if at least one chunk succeeded
+            // This prevents re-processing on next startup
+            let chunks_succeeded = stats.chunks_processed - chunks_before;
+            if chunks_succeeded > 0 {
+                let _ = db.with_connection(|conn| {
+                    conn.execute(
+                        "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
+                        rusqlite::params![item_id],
+                    )
+                });
+            }
+            stats.items_processed += 1;
+        } else {
+            // Short content - embed directly
+            match embedding_client.embed(content).await {
+                Ok(embedding) => {
+                    let timestamp = Utc::now();
+
+                    // Extract conversation_id from content_items based on content_type
+                    let conversation_id: Option<String> = db
+                        .with_connection(|conn| {
+                            conn.query_row(
+                                "SELECT conversation_id FROM content_items WHERE id = ?1",
+                                rusqlite::params![item_id],
+                                |row| row.get(0),
+                            )
+                        })
+                        .ok()
+                        .flatten();
+
+                    let project_id: Option<String> = db
+                        .with_connection(|conn| {
+                            conn.query_row(
+                                "SELECT project_id FROM content_items WHERE id = ?1",
+                                rusqlite::params![item_id],
+                                |row| row.get(0),
+                            )
+                        })
+                        .ok()
+                        .flatten();
+
+                    if db
+                        .update_content_item_embedding(
+                            *item_id,
+                            &embedding,
+                            content_type,
+                            conversation_id.as_deref(),
+                            project_id.as_deref(),
+                            timestamp,
+                        )
+                        .is_ok()
+                    {
+                        stats.items_processed += 1;
+                    } else {
+                        stats.items_failed += 1;
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Failed to generate embedding for item {}: {}",
+                        item_id, e
+                    );
+                    stats.items_failed += 1;
+
+                    // If Ollama is down or unreachable, abort completely
+                    if e.to_string().contains("connection refused")
+                        || e.to_string().contains("network")
+                        || e.to_string().contains("timeout")
+                    {
+                        progress.finish_and_clear();
+                        println!("\nError: Cannot connect to Ollama for embedding generation.");
+                        println!("Please ensure Ollama is running and try again.");
+                        println!("Progress saved: {}/{} items processed.", stats.items_processed, items.len());
+                        panic!("Embedding generation failed - Ollama unreachable");
+                    }
                 }
             }
         }

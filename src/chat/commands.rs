@@ -33,10 +33,8 @@ pub enum CommandResult {
     Context,
     /// Search conversation history (handled in REPL)
     Search { query: String, limit: usize },
-    /// Restore session from JSON to SQLite (handled in REPL)
-    Restore { session_id: String },
     /// Reindex embeddings (handled in REPL)
-    Reindex { conversation_id: Option<String> },
+    Reindex,
     /// Toggle retrieval mode (returns new state)
     RetrievalToggled(bool),
     /// Prune old facts using decay cycle
@@ -144,10 +142,8 @@ pub enum ChatCommand {
     Undo,
     /// Search conversation history
     Search { query: String, limit: usize },
-    /// Restore session from JSON to SQLite
-    Restore { session_id: String },
-    /// Reindex embeddings
-    Reindex { conversation_id: Option<String> },
+    /// Reindex embeddings for all content
+    Reindex,
     /// Toggle retrieval mode
     Retrieval,
     /// Prune old facts using decay cycle
@@ -313,21 +309,8 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let limit: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
             ChatCommand::Search { query, limit }
         }
-        "restore" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /restore <session-id>".to_string()));
-            }
-            ChatCommand::Restore {
-                session_id: args.trim().to_string(),
-            }
-        }
         "reindex" => {
-            let conversation_id = if args.is_empty() {
-                None
-            } else {
-                Some(args.trim().to_string())
-            };
-            ChatCommand::Reindex { conversation_id }
+            ChatCommand::Reindex
         }
         "retrieval" => ChatCommand::Retrieval,
         "fact" => {
@@ -686,7 +669,7 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                 !session.anonymous
                     && !session.id.is_empty()
                     && db
-                        .count_conversation_messages(&session.id)
+                        .count_conversation_items(&session.id)
                         .map(|count| count > 0)
                         .unwrap_or(false)
             } else {
@@ -896,9 +879,7 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
 
         ChatCommand::Search { query, limit } => CommandResult::Search { query, limit },
 
-        ChatCommand::Restore { session_id } => CommandResult::Restore { session_id },
-
-        ChatCommand::Reindex { conversation_id } => CommandResult::Reindex { conversation_id },
+        ChatCommand::Reindex => CommandResult::Reindex,
 
         ChatCommand::Retrieval => {
             session.retrieval_enabled = !session.retrieval_enabled;
@@ -966,8 +947,7 @@ fn print_help() {
   /info            Show current session information
   /context         Show context metrics and token usage
   /search <query>  Search current conversation (keyword + semantic)
-  /restore <id>    Restore session from JSON to SQLite
-  /reindex [id]    Rebuild embeddings for semantic search
+  /reindex         Regenerate embeddings for all content
   /retrieval       Toggle semantic retrieval from conversation history
 
 Factual Memory:

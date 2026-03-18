@@ -218,6 +218,15 @@ pub struct ContentItem {
     pub project_id: Option<String>,
 }
 
+/// Subsequent message for context enrichment
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubsequentItem {
+    /// Content item
+    pub item: ContentItem,
+    /// Source type (always Conversation for messages)
+    pub source_type: crate::db::SourceType,
+}
+
 /// Search result from content search
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentSearchResult {
@@ -231,6 +240,9 @@ pub struct ContentSearchResult {
     pub chunk_content: Option<String>,
     /// Chunk offsets (if matched a chunk)
     pub chunk_offsets: Option<(i32, i32)>,
+    /// Subsequent assistant messages (for user messages)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub subsequent_items: Vec<SubsequentItem>,
 }
 
 /// Search type

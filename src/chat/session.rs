@@ -8,9 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
 
-#[allow(unused_imports)]
-#[allow(deprecated)]
-use super::history::SessionInfo;
 use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 use crate::db::Database;
@@ -195,24 +192,27 @@ impl ChatSession {
         conversation_id: &str,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let meta = db.get_conversation_metadata(conversation_id)?;
-        let messages = db.get_conversation_messages(conversation_id, None)?;
+        let items = db.get_conversation_items(conversation_id)?;
         let todo_rows = db.get_todos(conversation_id)?;
 
-        // Convert database rows to session structures
-        let saved_messages: Vec<SavedMessage> = messages
+        let saved_messages: Vec<SavedMessage> = items
             .into_iter()
-            .map(|m| SavedMessage {
-                role: match m.role.as_str() {
-                    "user" => MessageRole::User,
-                    "assistant" => MessageRole::Assistant,
-                    "system" => MessageRole::System,
-                    _ => MessageRole::Tool,
-                },
-                content: m.content,
-                timestamp: chrono::DateTime::from_timestamp(m.timestamp, 0)
-                    .unwrap_or_else(Utc::now),
-                prompt_tokens: m.prompt_tokens.map(|t| t as u64),
-                message_type: m.message_type,
+            .filter_map(|item| {
+                if item.content_type != crate::content::types::ContentType::Message {
+                    return None;
+                }
+                Some(SavedMessage {
+                    role: match item.role.as_deref()? {
+                        "user" => MessageRole::User,
+                        "assistant" => MessageRole::Assistant,
+                        "system" => MessageRole::System,
+                        _ => MessageRole::Tool,
+                    },
+                    content: item.content,
+                    timestamp: item.created_at,
+                    prompt_tokens: item.prompt_tokens.map(|t| t as u64),
+                    message_type: item.message_type,
+                })
             })
             .collect();
 
@@ -275,8 +275,8 @@ impl ChatSession {
 
     /// Add a user message to the session
     ///
-    /// If database is attached, saves to SQLite immediately and generates
-    /// embedding asynchronously (fire-and-forget).
+    /// If database is attached, saves to SQLite immediately.
+    /// Applies chunking for long messages (>1024 chars).
     ///
     /// Returns the message ID if saved to database, None otherwise.
     pub fn add_user_message(&mut self, content: String) -> Option<i64> {
@@ -298,8 +298,22 @@ impl ChatSession {
             // Ensure conversation exists before inserting message
             self.ensure_conversation_exists();
 
-            match db.insert_message(&self.id, ROLE_USER, &content, now) {
-                Ok(message_id) => {
+            match db.insert_content_item(
+                "message",
+                Some(&self.id),
+                Some(ROLE_USER),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                &content,
+                0.5,
+                self.project_id.as_deref(),
+                now,
+            ) {
+                Ok(item_id) => {
                     // Insert chunks synchronously (guaranteed persistence)
                     // Generate embeddings asynchronously (can be recovered on restart)
                     if let Some(ref client) = self.embedding_client {
@@ -308,14 +322,15 @@ impl ChatSession {
                         let conv_id = self.id.clone();
                         let timestamp = now;
                         let content = content.clone();
+                        let project_id = self.project_id.clone();
 
                         // Check if chunking needed and insert chunks synchronously
                         let chunk_data = if crate::embeddings::needs_chunking(&content) {
                             let chunks = crate::embeddings::chunk_text(&content);
                             let mut data = Vec::new();
                             for chunk in &chunks {
-                                match db.insert_chunk(
-                                    message_id,
+                                match db.insert_content_chunk(
+                                    item_id,
                                     chunk.index as i32,
                                     &chunk.content,
                                     chunk.start_offset as i32,
@@ -340,15 +355,25 @@ impl ChatSession {
                             if !chunk_data.is_empty() {
                                 for (chunk_id, content) in chunk_data {
                                     if let Ok(embedding) = client.embed(&content).await {
-                                        let _ = db.update_chunk_embedding(
-                                            chunk_id, &embedding, &conv_id, timestamp,
+                                        let _ = db.update_content_chunk_embedding(
+                                            chunk_id,
+                                            &embedding,
+                                            "message",
+                                            Some(&conv_id),
+                                            project_id.as_deref(),
+                                            timestamp,
                                         );
                                     }
                                 }
                             } else {
                                 if let Ok(embedding) = client.embed(&content).await {
-                                    let _ = db.update_message_embedding(
-                                        message_id, &embedding, &conv_id, timestamp,
+                                    let _ = db.update_content_item_embedding(
+                                        item_id,
+                                        &embedding,
+                                        "message",
+                                        Some(&conv_id),
+                                        project_id.as_deref(),
+                                        timestamp,
                                     );
                                 }
                             }
@@ -388,15 +413,22 @@ impl ChatSession {
             // Ensure conversation exists before inserting message
             self.ensure_conversation_exists();
 
-            match db.insert_message(&self.id, ROLE_ASSISTANT, &content, now) {
-                Ok(message_id) => {
-                    // Save prompt_tokens if available
-                    if let Some(tokens) = prompt_tokens
-                        && let Err(e) = db.update_message_prompt_tokens(message_id, tokens)
-                    {
-                        eprintln!("Warning: Failed to save prompt_tokens: {}", e);
-                    }
-
+            match db.insert_content_item(
+                "message",
+                Some(&self.id),
+                Some(ROLE_ASSISTANT),
+                None,
+                None,
+                prompt_tokens.map(|t| t as i64),
+                None,
+                None,
+                None,
+                &content,
+                0.5,
+                self.project_id.as_deref(),
+                now,
+            ) {
+                Ok(item_id) => {
                     // Insert chunks synchronously (guaranteed persistence)
                     // Generate embeddings asynchronously (can be recovered on restart)
                     if let Some(ref client) = self.embedding_client {
@@ -405,14 +437,15 @@ impl ChatSession {
                         let conv_id = self.id.clone();
                         let timestamp = now;
                         let content = content.clone();
+                        let project_id = self.project_id.clone();
 
                         // Check if chunking needed and insert chunks synchronously
                         let chunk_data = if crate::embeddings::needs_chunking(&content) {
                             let chunks = crate::embeddings::chunk_text(&content);
                             let mut data = Vec::new();
                             for chunk in &chunks {
-                                match db.insert_chunk(
-                                    message_id,
+                                match db.insert_content_chunk(
+                                    item_id,
                                     chunk.index as i32,
                                     &chunk.content,
                                     chunk.start_offset as i32,
@@ -437,15 +470,25 @@ impl ChatSession {
                             if !chunk_data.is_empty() {
                                 for (chunk_id, content) in chunk_data {
                                     if let Ok(embedding) = client.embed(&content).await {
-                                        let _ = db.update_chunk_embedding(
-                                            chunk_id, &embedding, &conv_id, timestamp,
+                                        let _ = db.update_content_chunk_embedding(
+                                            chunk_id,
+                                            &embedding,
+                                            "message",
+                                            Some(&conv_id),
+                                            project_id.as_deref(),
+                                            timestamp,
                                         );
                                     }
                                 }
                             } else {
                                 if let Ok(embedding) = client.embed(&content).await {
-                                    let _ = db.update_message_embedding(
-                                        message_id, &embedding, &conv_id, timestamp,
+                                    let _ = db.update_content_item_embedding(
+                                        item_id,
+                                        &embedding,
+                                        "message",
+                                        Some(&conv_id),
+                                        project_id.as_deref(),
+                                        timestamp,
                                     );
                                 }
                             }
@@ -496,21 +539,22 @@ impl ChatSession {
         };
 
         // Insert with message_type = "pre_tool_content"
-        match db.insert_message_with_type(
-            &self.id,
-            ROLE_ASSISTANT,
+        match db.insert_content_item(
+            "message",
+            Some(&self.id),
+            Some(ROLE_ASSISTANT),
+            Some("pre_tool_content"),
+            previous_message_id,
+            None,
+            None,
+            None,
+            None,
             &full_content,
+            0.5,
+            self.project_id.as_deref(),
             now,
-            "pre_tool_content",
         ) {
-            Ok(message_id) => {
-                // Store previous_message_id if available
-                if let Some(prev_id) = previous_message_id
-                    && let Err(e) = db.update_message_previous_id(message_id, prev_id)
-                {
-                    eprintln!("Warning: Failed to save previous_message_id: {}", e);
-                }
-
+            Ok(item_id) => {
                 // Generate embedding asynchronously
                 if let Some(ref client) = self.embedding_client {
                     let client = Arc::clone(client);
@@ -518,13 +562,14 @@ impl ChatSession {
                     let conv_id = self.id.clone();
                     let timestamp = now;
                     let content_clone = full_content.clone();
+                    let project_id = self.project_id.clone();
 
                     tokio::spawn(async move {
                         if crate::embeddings::needs_chunking(&content_clone) {
                             let chunks = crate::embeddings::chunk_text(&content_clone);
                             for chunk in &chunks {
-                                if let Ok(chunk_id) = db.insert_chunk(
-                                    message_id,
+                                if let Ok(chunk_id) = db.insert_content_chunk(
+                                    item_id,
                                     chunk.index as i32,
                                     &chunk.content,
                                     chunk.start_offset as i32,
@@ -532,20 +577,30 @@ impl ChatSession {
                                     timestamp,
                                 ) && let Ok(embedding) = client.embed(&chunk.content).await
                                 {
-                                    let _ = db.update_chunk_embedding(
-                                        chunk_id, &embedding, &conv_id, timestamp,
+                                    let _ = db.update_content_chunk_embedding(
+                                        chunk_id,
+                                        &embedding,
+                                        "message",
+                                        Some(&conv_id),
+                                        project_id.as_deref(),
+                                        timestamp,
                                     );
                                 }
                             }
                         } else if let Ok(embedding) = client.embed(&content_clone).await {
-                            let _ = db.update_message_embedding(
-                                message_id, &embedding, &conv_id, timestamp,
+                            let _ = db.update_content_item_embedding(
+                                item_id,
+                                &embedding,
+                                "message",
+                                Some(&conv_id),
+                                project_id.as_deref(),
+                                timestamp,
                             );
                         }
                     });
                 }
 
-                Some(message_id)
+                Some(item_id)
             }
             Err(e) => {
                 eprintln!("Warning: Could not save pre-tool message: {}", e);
@@ -797,21 +852,6 @@ impl ChatSession {
         }
 
         messages
-    }
-
-    /// Convert to SessionInfo for listing
-    #[allow(dead_code)]
-    #[allow(deprecated)]
-    pub fn to_info(&self) -> SessionInfo {
-        #[allow(deprecated)]
-        SessionInfo {
-            id: self.id.clone(),
-            name: self.name.clone(),
-            model: self.model.clone(),
-            message_count: self.messages.len(),
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        }
     }
 
     /// Update the model

@@ -2,14 +2,10 @@
 //!
 //! Includes:
 //! - conversations table (with session metadata)
-//! - messages table (with prompt_tokens)
-//! - message_chunks table (for long messages)
-//! - message_embeddings virtual table (vec0)
-//! - messages_fts virtual table (FTS5)
+//! - content_items table (unified storage for messages, notes, documents)
+//! - content_chunks, content_embeddings, content_fts
 //! - session_todos table (for task tracking)
-//! - facts table (factual memory system, v6)
-//! - content_items table (unified storage, v7)
-//! - content_chunks, content_embeddings, content_fts (v7)
+//! - facts table (factual memory system)
 
 /// Schema version for migrations
 pub const SCHEMA_VERSION: i32 = 7;
@@ -33,96 +29,6 @@ CREATE TABLE IF NOT EXISTS conversations (
     tools INTEGER DEFAULT 1,
     tool_output_level TEXT DEFAULT 'compact'
 );
-
--- Messages table (with prompt_tokens and message_type)
-CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system', 'tool')),
-    content TEXT NOT NULL,
-    timestamp INTEGER NOT NULL,
-    importance REAL DEFAULT 0.5,
-    has_embedding INTEGER DEFAULT 0,
-    -- Real token count from Ollama (added in v4)
-    prompt_tokens INTEGER,
-    -- Message type for distinguishing intermediate vs final (added in v5)
-    message_type TEXT DEFAULT 'normal',
-    -- Previous message ID for navigation (added in v5)
-    previous_message_id INTEGER REFERENCES messages(id),
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-);
-
--- Index for conversation lookup
-CREATE INDEX IF NOT EXISTS idx_messages_conversation 
-    ON messages(conversation_id);
-
--- Index for timestamp ordering
-CREATE INDEX IF NOT EXISTS idx_messages_timestamp 
-    ON messages(timestamp DESC);
-
--- Index for previous message lookup (added in v5)
-CREATE INDEX IF NOT EXISTS idx_messages_previous 
-    ON messages(previous_message_id) WHERE previous_message_id IS NOT NULL;
-
--- Message chunks for long messages (>1024 chars)
-CREATE TABLE IF NOT EXISTS message_chunks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    message_id INTEGER NOT NULL,
-    chunk_index INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    start_offset INTEGER NOT NULL,
-    end_offset INTEGER NOT NULL,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
-);
-
--- Index for chunk lookup by message
-CREATE INDEX IF NOT EXISTS idx_chunks_message 
-    ON message_chunks(message_id);
-
--- Index for chunk ordering
-CREATE INDEX IF NOT EXISTS idx_chunks_order 
-    ON message_chunks(message_id, chunk_index);
-
--- Vector embeddings for short messages (256-dim Matryoshka)
-CREATE VIRTUAL TABLE IF NOT EXISTS message_embeddings USING vec0(
-    message_id INTEGER PRIMARY KEY,
-    embedding FLOAT[256],
-    +conversation_id TEXT,
-    +timestamp INTEGER
-);
-
--- Vector embeddings for message chunks
-CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings USING vec0(
-    chunk_id INTEGER PRIMARY KEY,
-    embedding FLOAT[256],
-    +conversation_id TEXT,
-    +timestamp INTEGER
-);
-
--- Full-text search for keyword matching
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-    content,
-    content='messages',
-    content_rowid='id',
-    tokenize='porter unicode61'
-);
-
--- Triggers to keep FTS in sync
-CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, content) 
-    VALUES('delete', old.id, old.content);
-END;
-
-CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, content) 
-    VALUES('delete', old.id, old.content);
-    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
-END;
 
 -- Session todos table (for task tracking)
 CREATE TABLE IF NOT EXISTS session_todos (

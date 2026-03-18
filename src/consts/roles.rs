@@ -27,18 +27,6 @@ pub const ROLE_LABEL_SYSTEM: &str = "⚙️ System";
 /// Display label for tool role (with emoji)
 pub const ROLE_LABEL_TOOL: &str = "🔧 Tool";
 
-/// Display label for user role in Markdown format (bold)
-pub const ROLE_LABEL_USER_MD: &str = "👤 **User**";
-
-/// Display label for assistant role in Markdown format (bold)
-pub const ROLE_LABEL_ASSISTANT_MD: &str = "🤖 **Assistant**";
-
-/// Display label for system role in Markdown format (bold)
-pub const ROLE_LABEL_SYSTEM_MD: &str = "⚙️ **System**";
-
-/// Display label for tool role in Markdown format (bold)
-pub const ROLE_LABEL_TOOL_MD: &str = "🔧 **Tool**";
-
 /// Format a role string into a human-readable label with emoji.
 ///
 /// # Arguments
@@ -62,23 +50,6 @@ pub fn format_role_label(role: &str) -> String {
     }
 }
 
-/// Format a role string into a Markdown label with emoji and bold formatting.
-///
-/// # Arguments
-/// * `role` - The role string ("user", "assistant", "system", "tool")
-///
-/// # Returns
-/// A string with emoji and bold formatting (e.g., "👤 **User**")
-pub fn format_role_label_md(role: &str) -> String {
-    match role {
-        ROLE_USER => ROLE_LABEL_USER_MD.to_string(),
-        ROLE_ASSISTANT => ROLE_LABEL_ASSISTANT_MD.to_string(),
-        ROLE_SYSTEM => ROLE_LABEL_SYSTEM_MD.to_string(),
-        ROLE_TOOL => ROLE_LABEL_TOOL_MD.to_string(),
-        _ => role.to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,11 +69,5 @@ mod tests {
         assert_eq!(format_role_label("system"), "⚙️ System");
         assert_eq!(format_role_label("tool"), "🔧 Tool");
         assert_eq!(format_role_label("unknown"), "unknown");
-    }
-
-    #[test]
-    fn test_format_role_label_md() {
-        assert_eq!(format_role_label_md("user"), "👤 **User**");
-        assert_eq!(format_role_label_md("assistant"), "🤖 **Assistant**");
     }
 }

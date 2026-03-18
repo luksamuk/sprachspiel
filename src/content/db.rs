@@ -436,6 +436,7 @@ impl Database {
                     search_type: ContentSearchType::Keyword,
                     chunk_content: None,
                     chunk_offsets: None,
+                    subsequent_items: Vec::new(),
                 });
             }
 
@@ -504,6 +505,7 @@ impl Database {
                     search_type: ContentSearchType::Keyword,
                     chunk_content: None,
                     chunk_offsets: None,
+                    subsequent_items: Vec::new(),
                 });
             }
 
@@ -581,6 +583,7 @@ impl Database {
                     search_type: ContentSearchType::Semantic,
                     chunk_content: None,
                     chunk_offsets: None,
+                    subsequent_items: Vec::new(),
                 });
             }
 
@@ -646,6 +649,7 @@ impl Database {
                     search_type: ContentSearchType::Semantic,
                     chunk_content,
                     chunk_offsets,
+                    subsequent_items: Vec::new(),
                 });
             }
 
@@ -722,6 +726,380 @@ impl Database {
 
         results.truncate(params.limit);
         Ok(results)
+    }
+
+    // ============================================================
+    // Content Item CRUD Operations (Phase 1 - unified storage)
+    // ============================================================
+
+    /// Insert a content item (message, note, or document)
+    ///
+    /// Returns the item ID.
+    pub fn insert_content_item(
+        &self,
+        content_type: &str,
+        conversation_id: Option<&str>,
+        role: Option<&str>,
+        message_type: Option<&str>,
+        previous_item_id: Option<i64>,
+        prompt_tokens: Option<i64>,
+        scope: Option<&str>,
+        source: Option<&str>,
+        title: Option<&str>,
+        content: &str,
+        importance: f32,
+        project_id: Option<&str>,
+        timestamp: DateTime<Utc>,
+    ) -> Result<i64> {
+        self.with_connection(|conn| {
+            let now = timestamp.timestamp();
+            conn.execute(
+                "INSERT INTO content_items (
+                    content_type, conversation_id, role, message_type, previous_item_id,
+                    prompt_tokens, scope, source, title, content, importance,
+                    access_count, decay_score, created_at, updated_at, last_accessed,
+                    has_embedding, project_id
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, 1.0, ?12, ?12, ?12, 0, ?13)",
+                params![
+                    content_type,
+                    conversation_id,
+                    role,
+                    message_type,
+                    previous_item_id,
+                    prompt_tokens,
+                    scope,
+                    source,
+                    title,
+                    content,
+                    importance,
+                    now,
+                    project_id,
+                ],
+            )?;
+            Ok(conn.last_insert_rowid())
+        })
+    }
+
+    /// Insert a chunk for a content item
+    ///
+    /// Returns the chunk ID.
+    pub fn insert_content_chunk(
+        &self,
+        item_id: i64,
+        chunk_index: i32,
+        content: &str,
+        start_offset: i32,
+        end_offset: i32,
+        timestamp: DateTime<Utc>,
+    ) -> Result<i64> {
+        self.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO content_chunks (item_id, chunk_index, content, start_offset, end_offset, created_at, has_embedding)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+                params![
+                    item_id,
+                    chunk_index,
+                    content,
+                    start_offset,
+                    end_offset,
+                    timestamp.timestamp(),
+                ],
+            )?;
+            Ok(conn.last_insert_rowid())
+        })
+    }
+
+    /// Check if a content item has chunks
+    pub fn content_item_has_chunks(&self, item_id: i64) -> Result<bool> {
+        self.with_connection(|conn| {
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM content_chunks WHERE item_id = ?1",
+                params![item_id],
+                |row| row.get(0),
+            )?;
+            Ok(count > 0)
+        })
+    }
+
+    /// Get content items for a conversation
+    ///
+    /// Returns items ordered by creation time (oldest first).
+    pub fn get_conversation_items(&self, conversation_id: &str) -> Result<Vec<ContentItem>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, content_type, conversation_id, role, message_type,
+                        previous_item_id, prompt_tokens, scope, source, title,
+                        content, importance, access_count, decay_score,
+                        created_at, updated_at, last_accessed, has_embedding, project_id
+                 FROM content_items
+                 WHERE conversation_id = ?1
+                 ORDER BY created_at ASC",
+            )?;
+            let rows = stmt.query_map(params![conversation_id], row_to_content_item)?;
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Count content items for a conversation
+    pub fn count_conversation_items(&self, conversation_id: &str) -> Result<i64> {
+        self.with_connection(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM content_items WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| row.get(0),
+            )
+        })
+    }
+
+    /// Delete the last N content items from a conversation
+    ///
+    /// Returns the number of items actually deleted.
+    pub fn delete_last_content_items(&self, conversation_id: &str, count: usize) -> Result<usize> {
+        if count == 0 {
+            return Ok(0);
+        }
+
+        self.with_connection(|conn| {
+            // Get item IDs to delete
+            let item_ids: Vec<i64> = {
+                let mut stmt = conn.prepare(
+                    "SELECT id FROM content_items 
+                     WHERE conversation_id = ?1 
+                     ORDER BY created_at DESC LIMIT ?2",
+                )?;
+                stmt.query_map(params![conversation_id, count as i64], |row| row.get(0))?
+                    .filter_map(|r| r.ok())
+                    .collect()
+            };
+
+            // Delete each item (and its chunks/embeddings)
+            for item_id in &item_ids {
+                // Delete chunk embeddings
+                let chunk_ids: Vec<i64> = {
+                    let mut stmt = conn.prepare("SELECT id FROM content_chunks WHERE item_id = ?1")?;
+                    stmt.query_map(params![item_id], |row| row.get(0))?
+                        .filter_map(|r| r.ok())
+                        .collect()
+                };
+
+                for chunk_id in &chunk_ids {
+                    let _ = conn.execute(
+                        "DELETE FROM chunk_embeddings_v2 WHERE chunk_id = ?1",
+                        params![chunk_id],
+                    );
+                }
+
+                // Delete content embedding
+                let _ = conn.execute(
+                    "DELETE FROM content_embeddings WHERE item_id = ?1",
+                    params![item_id],
+                );
+
+                // Delete chunks
+                conn.execute("DELETE FROM content_chunks WHERE item_id = ?1", params![item_id])?;
+            }
+
+            // Delete items
+            let deleted = conn.execute(
+                "DELETE FROM content_items WHERE conversation_id = ?1 AND id IN (
+                    SELECT id FROM content_items WHERE conversation_id = ?1 ORDER BY created_at DESC LIMIT ?2
+                )",
+                params![conversation_id, count as i64],
+            )?;
+
+            Ok(deleted)
+        })
+    }
+
+    /// Delete a conversation and all its content items
+    ///
+    /// Used by /forget command to completely remove conversation history.
+    pub fn delete_conversation(&self, conversation_id: &str) -> Result<()> {
+        self.with_connection(|conn| {
+            // Delete chunk embeddings for all items in the conversation
+            let item_ids: Vec<i64> = {
+                let mut stmt =
+                    conn.prepare("SELECT id FROM content_items WHERE conversation_id = ?1")?;
+                stmt.query_map(params![conversation_id], |row| row.get(0))?
+                    .filter_map(|r| r.ok())
+                    .collect()
+            };
+
+            for item_id in &item_ids {
+                // Get chunk IDs
+                let chunk_ids: Vec<i64> = {
+                    let mut stmt =
+                        conn.prepare("SELECT id FROM content_chunks WHERE item_id = ?1")?;
+                    stmt.query_map(params![item_id], |row| row.get(0))?
+                        .filter_map(|r| r.ok())
+                        .collect()
+                };
+
+                // Delete chunk embeddings
+                for chunk_id in &chunk_ids {
+                    let _ = conn.execute(
+                        "DELETE FROM chunk_embeddings_v2 WHERE chunk_id = ?1",
+                        params![chunk_id],
+                    );
+                }
+            }
+
+            // Delete content embeddings (vec0 requires explicit deletion)
+            for item_id in &item_ids {
+                let _ = conn.execute(
+                    "DELETE FROM content_embeddings WHERE rowid = ?1",
+                    params![item_id],
+                );
+            }
+
+            // Delete FTS entries
+            conn.execute(
+                "DELETE FROM content_fts WHERE conversation_id = ?1",
+                params![conversation_id],
+            )?;
+
+            // Delete content_items (chunks cascade)
+            conn.execute(
+                "DELETE FROM content_items WHERE conversation_id = ?1",
+                params![conversation_id],
+            )?;
+
+            // Delete conversation metadata
+            conn.execute(
+                "DELETE FROM conversations WHERE id = ?1",
+                params![conversation_id],
+            )?;
+
+            Ok(())
+        })
+    }
+
+    /// Get a content item by ID
+    pub fn get_content_item_by_id(&self, item_id: i64) -> Result<Option<ContentItem>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, content_type, conversation_id, role, message_type,
+                        previous_item_id, prompt_tokens, scope, source, title,
+                        content, importance, access_count, decay_score,
+                        created_at, updated_at, last_accessed, has_embedding, project_id
+                 FROM content_items
+                 WHERE id = ?1",
+            )?;
+            let mut rows = stmt.query_map(params![item_id], row_to_content_item)?;
+            rows.next().transpose()
+        })
+    }
+
+    // ============================================================
+    // Message Search Functions (for content_type='message')
+    // ============================================================
+
+    /// Hybrid search for messages using RRF (convenience wrapper for content_type=message)
+    pub fn search_messages_hybrid(
+        &self,
+        query: &str,
+        embedding: &[f32],
+        conversation_id: Option<&str>,
+        project_id: Option<&str>,
+        limit: usize,
+        keyword_weight: f32,
+        semantic_weight: f32,
+    ) -> Result<Vec<ContentSearchResult>> {
+        let params = ContentSearchParams {
+            query,
+            embedding,
+            content_type: Some(ContentType::Message),
+            conversation_id,
+            project_id,
+            scope: None,
+            limit,
+            keyword_weight,
+            semantic_weight,
+        };
+        self.search_content_hybrid(&params)
+    }
+
+    /// Get subsequent assistant messages for a content item (for context enrichment)
+    ///
+    /// For messages with message_type='normal', returns all subsequent assistant messages
+    /// in the same conversation until the next user message.
+    pub fn get_content_subsequent_assistant(
+        &self,
+        item_id: i64,
+        conversation_id: &str,
+    ) -> Result<Vec<ContentItem>> {
+        self.with_connection(|conn| {
+            let sql = "
+                SELECT id, content_type, conversation_id, role, message_type,
+                       previous_item_id, prompt_tokens, scope, source, title,
+                       content, importance, access_count, decay_score,
+                       created_at, updated_at, last_accessed, has_embedding, project_id
+                FROM content_items
+                WHERE conversation_id = ?1
+                  AND role = 'assistant'
+                  AND id > ?2
+                  AND message_type = 'normal'
+                ORDER BY id ASC
+                LIMIT 5";
+            let mut stmt = conn.prepare(sql)?;
+            let rows = stmt.query_map(params![conversation_id, item_id], row_to_content_item)?;
+            let mut results = Vec::new();
+            for r in rows {
+                results.push(r?);
+            }
+            Ok(results)
+        })
+    }
+
+    /// Enrich search results with conversation context
+    ///
+    /// For user messages, attaches all subsequent assistant messages (up to 5).
+    pub fn enrich_content_results_with_context(
+        &self,
+        results: Vec<ContentSearchResult>,
+    ) -> Result<Vec<ContentSearchResult>> {
+        let mut enriched = Vec::with_capacity(results.len());
+        let mut seen_ids = std::collections::HashSet::new();
+
+        for mut result in results {
+            seen_ids.insert(result.item.id);
+
+            // Only enrich user messages
+            if result.item.role.as_deref() == Some("user") {
+                if let Some(conv_id) = &result.item.conversation_id {
+                    let subsequent =
+                        self.get_content_subsequent_assistant(result.item.id, conv_id)?;
+
+                    for msg in subsequent {
+                        if !seen_ids.contains(&msg.id) {
+                            seen_ids.insert(msg.id);
+                            result.subsequent_items.push(super::types::SubsequentItem {
+                                item: msg,
+                                source_type: crate::db::SourceType::Conversation,
+                            });
+                        }
+                    }
+                }
+            }
+
+            enriched.push(result);
+        }
+
+        Ok(enriched)
+    }
+
+    /// Clear prompt_tokens for all content items in a conversation.
+    ///
+    /// Called after compaction to invalidate old cumulative token counts.
+    /// The next message sent to the LLM will have fresh prompt_tokens.
+    pub fn clear_conversation_prompt_tokens(&self, conversation_id: &str) -> Result<()> {
+        self.with_connection(|conn| {
+            conn.execute(
+                "UPDATE content_items SET prompt_tokens = NULL WHERE conversation_id = ?1",
+                params![conversation_id],
+            )?;
+            Ok(())
+        })
     }
 }
 

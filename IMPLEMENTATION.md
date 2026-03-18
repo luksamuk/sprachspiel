@@ -530,10 +530,51 @@ The schema migration from v6 to v7 includes a breaking change for embeddings:
 2. **Embeddings are regenerated** - After migration completes, all embeddings are regenerated from source content with a progress bar.
 3. **User data preserved** - Messages, notes, and facts are preserved. Only embeddings (derived data) are rebuilt.
 
+**Critical Bugs Fixed During Unification:**
+
+| Bug | Description | Fix |
+|-----|-------------|-----|
+| #12 | Migration dropped wrong table (`chunk_embeddings_v2` is V7, not V2) | Changed to `DROP TABLE IF EXISTS chunk_embeddings` |
+| #13 | Items with chunks never marked `has_embedding=1` | Added marking logic after successful chunk embedding |
+| #14 | `regenerate_all_embeddings()` deleted all chunks on startup | Removed chunk cleanup, only clean orphan chunks |
+| #7 | Embedding context length exceeded (512 tokens vs 1024 chars) | Dynamic chunk sizing based on model context |
+| #8 | Orphan chunks caused infinite recovery loops | Clean orphan chunks at startup |
+
+**Dynamic Chunking Architecture:**
+
+The embedding system now dynamically calculates chunk sizes based on the model's context length:
+
+```rust
+// src/embeddings/chunk_config.rs
+pub struct DynamicChunkConfig {
+    context_length: usize,      // From Ollama API (e.g., 512)
+    chunk_percent: f32,         // 0.90 (90% of available context)
+    overlap_percent: f32,       // 0.20 (20% overlap between chunks)
+    prefix_margin: usize,       // 30 tokens for "search_document: "
+    chars_per_token: f32,       // 3.0 (conservative for Portuguese/code)
+}
+```
+
+**Key Parameters:**
+- `chunk_percent`: 90% - Reserve 10% for tokenizer variance
+- `overlap_percent`: 20% - RAG best practice for context preservation
+- `prefix_margin`: 30 tokens - "search_document: " prefix (~20 tokens) + safety margin
+- `chars_per_token`: 3.0 - Conservative for mixed Portuguese/code content
+
+**Migration to v0.34.0:**
+
+When upgrading from v6 to v7:
+1. Backup your v6 database: `cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.v6`
+2. Run the new version - migration happens automatically
+3. All 283 messages will be migrated to `content_items`
+4. Embeddings are regenerated (first startup takes ~2 minutes)
+5. V2 tables (`messages`, `message_chunks`, etc.) are dropped
+
 This ensures:
 - No UNIQUE constraint failures during migration
 - Clean embedding state after schema upgrade
 - All search functionality works correctly after first startup
+- Second startup is instant (0 items to regenerate)
 
 ---
 

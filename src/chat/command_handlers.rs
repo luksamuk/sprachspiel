@@ -111,12 +111,8 @@ pub async fn handle_command_result(
             handle_search(state, query, limit).await;
             HandleResult::Continue
         }
-        CommandResult::Restore { session_id } => {
-            handle_restore(state, session_id);
-            HandleResult::Continue
-        }
-        CommandResult::Reindex { conversation_id } => {
-            handle_reindex(state, conversation_id).await;
+        CommandResult::Reindex => {
+            handle_reindex(state).await;
             HandleResult::Continue
         }
         CommandResult::FactPrune => {
@@ -267,7 +263,7 @@ pub fn handle_undo(state: &mut ReplState) {
         if !state.session.anonymous
             && !state.session.id.is_empty()
             && let Ok(db) = crate::db::Database::new()
-            && let Err(e) = db.delete_last_messages(&state.session.id, removed)
+            && let Err(e) = db.delete_last_content_items(&state.session.id, removed)
         {
             eprintln!("Warning: Failed to delete from database: {}", e);
         }
@@ -305,36 +301,10 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) {
     crate::retrieval::run_search(&db, &state.ollama, &query, Some(&conversation_id), limit).await;
 }
 
-/// Handle restore command
-///
-/// Restores a session from the database.
-pub fn handle_restore(state: &mut ReplState, session_id: String) {
-    let db = match &state.db {
-        Some(d) => Arc::clone(d),
-        None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
-        }
-    };
-
-    println!("Restoring session: {}", session_id);
-    match crate::db::restore_session(&db, &state.session.project_id, &session_id) {
-        Ok(restored) => {
-            println!(
-                "Session restored: {} ({} messages)",
-                session_id,
-                restored.messages.len()
-            );
-            state.session = restored;
-        }
-        Err(e) => eprintln!("Error: {}", e),
-    }
-}
-
 /// Handle reindex command (async)
 ///
-/// Rebuilds embeddings for semantic search.
-pub async fn handle_reindex(state: &mut ReplState, conversation_id: Option<String>) {
+/// Regenerates embeddings for ALL content in the database.
+pub async fn handle_reindex(state: &mut ReplState) {
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
@@ -346,24 +316,13 @@ pub async fn handle_reindex(state: &mut ReplState, conversation_id: Option<Strin
     let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
     let embedding_client = Arc::new(embedding_client);
 
-    let conv_id = conversation_id.unwrap_or_else(|| state.session.id.clone());
+    println!("Regenerating embeddings for all content...");
+    let stats = crate::embeddings::regenerate_all_embeddings(&db, &embedding_client).await;
 
-    println!("Reindexing conversation: {}", conv_id);
-    match crate::db::reindex_conversation(&db, &embedding_client, &conv_id).await {
-        Ok(stats) => {
-            println!(
-                "Reindex complete: {} messages, {} embeddings",
-                stats.messages_migrated, stats.embeddings_generated
-            );
-            if !stats.errors.is_empty() {
-                eprintln!("Errors:");
-                for e in stats.errors {
-                    eprintln!("  - {}", e);
-                }
-            }
-        }
-        Err(e) => eprintln!("Error: {}", e),
-    }
+    println!(
+        "Reindex complete: {} items processed ({} failed), {} chunks processed ({} failed)",
+        stats.items_processed, stats.items_failed, stats.chunks_processed, stats.chunks_failed
+    );
 }
 
 /// Handle compact command (async)
