@@ -652,8 +652,17 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             ChatCommand::NoteAdd { content, title, global }
         }
         "nl" => {
-            let global = args.trim() == "--global";
-            let page = if global { None } else { args.trim().parse::<usize>().ok() };
+            let mut global = false;
+            let mut page: Option<usize> = None;
+            for part in args.split_whitespace() {
+                if part == "--global" {
+                    global = true;
+                } else if let Ok(p) = part.parse::<usize>() {
+                    if p > 0 {
+                        page = Some(p);
+                    }
+                }
+            }
             ChatCommand::NoteList { global, page }
         }
         "ns" => {
