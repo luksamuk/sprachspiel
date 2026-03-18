@@ -51,6 +51,18 @@ Once inside the chat, these commands are available:
 | `/restore <file>` | Restore session from JSON backup |
 | `/export <format> [file]` | Export conversation (md, json) |
 
+#### Session Command Group
+
+The `/session` command provides an alternative syntax for session management:
+
+| Command | Description |
+|---------|-------------|
+| `/session new` | Same as `/new` - start a new conversation |
+| `/session load <name>` | Same as `/load` - load a saved session |
+| `/session list` | Same as `/list` - list saved sessions |
+| `/session save [name]` | Same as `/save` - save current session |
+| `/session forget` | Same as `/forget` - delete and start fresh |
+
 ### Model & Mode
 
 | Command | Description |

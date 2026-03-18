@@ -224,31 +224,40 @@ fn create_session(
         );
     }
 
+    // Try to load the most recent session by updated_at
     if let Some(db_ref) = db {
-        let default_id = "default";
-        if let Ok(true) = db_ref.conversation_exists(default_id) {
-            match ChatSession::load_sqlite(db_ref, default_id) {
-                Ok(s) => {
-                    println!(
-                        "Resumed session: {} ({} messages)",
-                        default_id,
-                        s.messages.len()
-                    );
-                    return s;
+        match db_ref.get_last_session_id(project_id.as_deref()) {
+            Ok(Some(last_id)) => {
+                match ChatSession::load_sqlite(db_ref, &last_id) {
+                    Ok(s) => {
+                        let display_name = s.name.as_deref().unwrap_or(&s.id);
+                        println!(
+                            "Resumed session: {} ({} messages)",
+                            display_name,
+                            s.messages.len()
+                        );
+                        return s;
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Could not load session '{}': {}", last_id, e);
+                        println!("Starting new session...");
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Warning: Could not load default session: {}", e);
-                    println!("Starting new session...");
-                    return ChatSession::new(
-                        model_override.unwrap_or(default_model).to_string(),
-                        project_id.clone(),
-                        false,
-                    );
+            }
+            Ok(None) => {
+                // No sessions exist - create new session (not persisted yet)
+                if use_debug {
+                    log_debug("No existing sessions found, creating new session");
                 }
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not query sessions: {}", e);
+                println!("Starting new session...");
             }
         }
     }
 
+    // Create new session (not persisted until first message)
     ChatSession::new(
         model_override.unwrap_or(default_model).to_string(),
         project_id.clone(),

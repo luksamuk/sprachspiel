@@ -13,7 +13,23 @@ All notable changes to Ask-AI will be documented in this file.
   - `/new` generates session ID: `session-{timestamp}`
   - Alias: `/n`
 
-### Fixed
+- **`/load` Auto-save** - Automatically saves current session before loading another
+  - If current session has messages, it's saved before switching
+  - Prevents accidental loss of conversation when switching sessions
+
+- **Session Auto-Load** - Automatically loads the most recent session on startup
+  - Sessions are ordered by `updated_at DESC` to find the most recent
+  - If no sessions exist, starts a fresh session in memory
+
+### Added
+
+- **`/session` Command Group** - Unified session management interface
+  - `/session new` - Same as `/new`
+  - `/session load <name>` - Same as `/load`
+  - `/session list` - Same as `/list`
+  - `/session save [name]` - Same as `/save`
+  - `/session forget` - Same as `/forget`
+  - Intended for users who prefer noun-verb command structure
 
 - **Database Initialization Failure** - Fail fast with detailed error when database cannot be initialized
   - Previously, database errors were silently ignored, creating inconsistent state
@@ -62,6 +78,13 @@ All notable changes to Ask-AI will be documented in this file.
   - Results distinguish between content types (Messages vs Notes)
   - Prompt engineering updated to document content types
   - Unified `search_content_hybrid()` enables semantic search across all content
+
+- **`note_add` Tool for LLMs** - LLMs can now create notes autonomously
+  - New tool: `note_add(content, title)` creates persistent notes
+  - Notes are project-scoped (not global) and marked as LLM-created
+  - Distinguishes from `fact_add`: notes for longer documents (up to 10K chars), facts for short info (500 chars)
+  - Notes are NOT in system prompt (use `remember()` to retrieve)
+  - Prompt engineering guides LLM on when to use notes vs facts
 
 - **Embedding Regeneration System** - Post-migration embedding recovery
   - New `regenerate_all_embeddings()` function for schema migrations

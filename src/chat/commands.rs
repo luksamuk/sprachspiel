@@ -120,6 +120,8 @@ pub enum ChatCommand {
     },
     /// List saved sessions
     List,
+    /// Session management commands
+    Session { subcommand: SessionSubcommand },
     /// Show session information
     Info,
     /// Show context metrics and token usage
@@ -208,6 +210,16 @@ pub enum ChatCommand {
 pub enum ExportFormat {
     Markdown,
     Json,
+}
+
+/// Session subcommands for /session command
+#[derive(Debug, Clone, PartialEq)]
+pub enum SessionSubcommand {
+    New,
+    Load { name: String },
+    List,
+    Save { name: Option<String> },
+    Forget,
 }
 
 /// Parse a command string
@@ -647,6 +659,32 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(_) => return Some(Err("Invalid note ID. Must be a number.".to_string())),
             }
         }
+        "session" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+
+            match *subcmd {
+                "new" => ChatCommand::Session { subcommand: SessionSubcommand::New },
+                "load" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /session load <name>".to_string()));
+                    }
+                    ChatCommand::Session { subcommand: SessionSubcommand::Load { name: subargs.trim().to_string() } }
+                }
+                "list" => ChatCommand::Session { subcommand: SessionSubcommand::List },
+                "save" => {
+                    let name = if subargs.is_empty() {
+                        None
+                    } else {
+                        Some(subargs.trim().to_string())
+                    };
+                    ChatCommand::Session { subcommand: SessionSubcommand::Save { name } }
+                }
+                "forget" => ChatCommand::Session { subcommand: SessionSubcommand::Forget },
+                _ => return Some(Err("Usage: /session <new|load|list|save|forget>".to_string())),
+            }
+        }
         _ => return Some(Err(format!("Unknown command: /{}", cmd))),
     };
 
@@ -686,12 +724,13 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                 .unwrap_or(0);
             session.id = format!("session-{}", timestamp);
 
-            // Save new empty session
-            if !session.anonymous {
-                if let Err(e) = session.save_sqlite() {
-                    eprintln!("Warning: Could not save session: {}", e);
-                }
-            }
+            // Reset timestamps
+            let now = chrono::Utc::now();
+            session.created_at = now;
+            session.updated_at = now;
+
+            // Note: Session is NOT saved here - will be persisted on first message
+            // This allows creating new sessions without polluting the database with empty sessions
 
             println!("New session started.");
             if has_searchable_messages {
@@ -780,6 +819,13 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                 }
             };
 
+            // Save current session if it has messages
+            if !session.anonymous && !session.messages.is_empty() {
+                if let Err(e) = session.save_sqlite() {
+                    eprintln!("Warning: Could not save current session: {}", e);
+                }
+            }
+
             match ChatSession::load_sqlite(&db, &name) {
                 Ok(loaded) => {
                     *session = loaded;
@@ -832,22 +878,167 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                     if sessions.is_empty() {
                         println!("No saved sessions for this project.");
                     } else {
-                        println!("Saved sessions:");
+                        println!("Sessions for this project:");
                         for info in sessions {
-                            let name = info.name.as_deref().unwrap_or(&info.id);
                             let time = info.updated_at.format("%Y-%m-%d %H:%M");
-                            println!(
-                                "  {} - {} messages, {} (model: {})",
-                                name, info.message_count, time, info.model
-                            );
+                            let name = info.name.as_deref().unwrap_or(&info.id);
+                            println!("  {} - {} ({} messages) {}", name, info.model, info.message_count, time);
                         }
                     }
                 }
-                Err(e) => {
-                    eprintln!("Error listing sessions: {}", e);
-                }
+                Err(e) => eprintln!("Warning: Could not list sessions: {}", e),
             }
             CommandResult::Continue
+        }
+
+        ChatCommand::Session { subcommand } => {
+            // Delegate session subcommands to their respective handlers
+            match subcommand {
+                SessionSubcommand::New => {
+                    // Same as ChatCommand::New
+                    let has_searchable_messages = if let Some(ref db) = session.db {
+                        db.count_all_content_items()
+                            .map(|count| count > 0)
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    };
+
+                    session.compacted_summary = None;
+                    session.messages.clear();
+                    session.messages_sent_to_llm = 0;
+                    session.compacted_range = None;
+                    session.name = None;
+
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    session.id = format!("session-{}", timestamp);
+
+                    let now = chrono::Utc::now();
+                    session.created_at = now;
+                    session.updated_at = now;
+
+                    println!("New session started.");
+                    if has_searchable_messages {
+                        println!("\x1B[90m[i] Previous conversations remain searchable via /search or remember().\x1B[0m");
+                    }
+                    CommandResult::Continue
+                }
+                SessionSubcommand::Load { name } => {
+                    // Same as ChatCommand::Load
+                    let db = match &session.db {
+                        Some(d) => std::sync::Arc::clone(d),
+                        None => {
+                            return CommandResult::Error(
+                                "Cannot load session: database not initialized.".to_string(),
+                            );
+                        }
+                    };
+
+                    if !session.anonymous && !session.messages.is_empty() {
+                        if let Err(e) = session.save_sqlite() {
+                            eprintln!("Warning: Could not save current session: {}", e);
+                        }
+                    }
+
+                    match ChatSession::load_sqlite(&db, &name) {
+                        Ok(loaded) => {
+                            *session = loaded;
+                            let display_name = session.name.as_deref().unwrap_or(&session.id);
+                            println!(
+                                "Loaded session: {} ({} messages)",
+                                display_name,
+                                session.messages.len()
+                            );
+                            CommandResult::Continue
+                        }
+                        Err(e) => CommandResult::Error(format!("Failed to load session: {}", e)),
+                    }
+                }
+                SessionSubcommand::List => {
+                    // Same as ChatCommand::List
+                    let db = match &session.db {
+                        Some(d) => std::sync::Arc::clone(d),
+                        None => {
+                            return CommandResult::Error(
+                                "Cannot list sessions: database not initialized.".to_string(),
+                            );
+                        }
+                    };
+
+                    match db.list_sessions(session.project_id.as_deref()) {
+                        Ok(sessions) => {
+                            if sessions.is_empty() {
+                                println!("No saved sessions for this project.");
+                            } else {
+                                println!("Sessions for this project:");
+                                for info in sessions {
+                                    let time = info.updated_at.format("%Y-%m-%d %H:%M");
+                                    let name = info.name.as_deref().unwrap_or(&info.id);
+                                    println!("  {} - {} ({} messages) {}", name, info.model, info.message_count, time);
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("Warning: Could not list sessions: {}", e),
+                    }
+                    CommandResult::Continue
+                }
+                SessionSubcommand::Save { name } => {
+                    // Same as ChatCommand::Save
+                    if session.anonymous {
+                        return CommandResult::Error(
+                            "Cannot save anonymous session. Use /save without --anonymous flag.".to_string(),
+                        );
+                    }
+
+                    if let Some(n) = name {
+                        session.rename(n);
+                    }
+
+                    match session.save_sqlite() {
+                        Ok(()) => {
+                            let session_name = session.name.as_deref().unwrap_or(&session.id);
+                            println!("Session saved: {}", session_name);
+                            CommandResult::Continue
+                        }
+                        Err(e) => CommandResult::Error(format!("Failed to save session: {}", e)),
+                    }
+                }
+                SessionSubcommand::Forget => {
+                    // Same as ChatCommand::Forget
+                    session.forget_session();
+
+                    if let Some(ref db) = session.db
+                        && !session.anonymous
+                        && !session.id.is_empty()
+                    {
+                        print!("Removing conversation from database... ");
+                        std::io::Write::flush(&mut std::io::stdout()).ok();
+                        match db.delete_conversation(&session.id) {
+                            Ok(_) => println!("Done."),
+                            Err(e) => eprintln!("\nWarning: Could not delete conversation: {}", e),
+                        }
+                    }
+
+                    if !session.anonymous {
+                        use std::time::{SystemTime, UNIX_EPOCH};
+                        let timestamp = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        session.id = format!("session-{}", timestamp);
+                        if let Err(e) = session.save_sqlite() {
+                            eprintln!("Warning: Could not save new session: {}", e);
+                        }
+                    }
+
+                    println!("Session forgotten. Starting fresh conversation.");
+                    CommandResult::Continue
+                }
+            }
         }
 
         ChatCommand::Info => {
@@ -945,6 +1136,12 @@ fn print_help() {
   /undo            Undo last message (remove response, show last input)
   /save [name]     Save current session (optionally named)
   /load <name>     Load a saved session
+  /session        Session management commands:
+    /session new     Same as /new
+    /session load <name>  Same as /load
+    /session list    Same as /list
+    /session save [name]  Same as /save
+    /session forget  Same as /forget
   /export <fmt>    Export conversation (md, json)
   /list            List saved sessions for this project
   /info            Show current session information

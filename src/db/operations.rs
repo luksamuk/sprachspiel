@@ -167,15 +167,35 @@ impl Database {
         })
     }
 
-    /// Check if a conversation exists
-    pub fn conversation_exists(&self, conversation_id: &str) -> Result<bool> {
+    /// Get the most recent session ID for a project
+    ///
+    /// Returns the session ID with the highest `updated_at` timestamp.
+    /// Returns None if no sessions exist for the project.
+    pub fn get_last_session_id(&self, project_id: Option<&str>) -> Result<Option<String>> {
         self.with_connection(|conn: &rusqlite::Connection| {
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM conversations WHERE id = ?1",
-                params![conversation_id],
-                |row| row.get(0),
-            )?;
-            Ok(count > 0)
+            let sql = if project_id.is_some() {
+                "SELECT id FROM conversations WHERE project_id = ?1 ORDER BY updated_at DESC LIMIT 1"
+            } else {
+                "SELECT id FROM conversations ORDER BY updated_at DESC LIMIT 1"
+            };
+
+            let mut stmt = conn.prepare(sql)?;
+
+            if let Some(pid) = project_id {
+                let result = stmt.query_row(params![pid], |row| row.get::<_, String>(0));
+                match result {
+                    Ok(id) => Ok(Some(id)),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            } else {
+                let result = stmt.query_row([], |row| row.get::<_, String>(0));
+                match result {
+                    Ok(id) => Ok(Some(id)),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            }
         })
     }
 
