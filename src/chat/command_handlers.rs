@@ -1302,7 +1302,20 @@ pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
 
             let total_notes = notes.len();
             let total_pages = (total_notes + NOTES_PER_PAGE - 1) / NOTES_PER_PAGE;
-            let current_page = page.unwrap_or(1).max(1).min(total_pages);
+            
+            // Validate page number
+            let requested_page = page.unwrap_or(1);
+            if requested_page < 1 {
+                eprintln!("\x1B[31mError: Page must be >= 1. Use /note list 1 for first page.\x1B[0m");
+                return;
+            }
+            if requested_page > total_pages {
+                eprintln!("\x1B[31mError: Page {} does not exist. Total pages: {}. Use /note list {}.\x1B[0m", 
+                    requested_page, total_pages, total_pages);
+                return;
+            }
+            
+            let current_page = requested_page;
             let start_idx = (current_page - 1) * NOTES_PER_PAGE;
             let end_idx = start_idx + NOTES_PER_PAGE.min(total_notes - start_idx);
 

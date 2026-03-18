@@ -91,6 +91,34 @@ All notable changes to Ask-AI will be documented in this file.
   - Use `/note list 2` to see page 2, `/note list 3` for page 3, etc.
   - Displays current page and total pages at the bottom
   - Preview shows only first line with `│` prefix for clarity
+  - Validates page number and shows error for invalid pages
+
+- **Note Show Markdown Rendering** - `/note show` now renders markdown content
+  - Uses termimad for proper markdown formatting
+  - Header metadata formatted as markdown with bold labels
+  - Content rendered with full markdown support
+
+- **Note Add Parsing Fixed** - `/note add` now handles complex arguments correctly
+  - Multi-word titles with quotes: `/note add content --title "Title with spaces"`
+  - Escaped dashes: `\-\-` is converted to `--` literal
+  - Newlines in quoted content: `"Line 1\nLine 2"` expands `\n` to real newlines
+  - Title validation: rejects newlines in title field
+  - Quote stripping: removes surrounding quotes from content properly
+
+- **Session Load by Name** - `/session load` now finds sessions by name or ID
+  - First tries exact ID match
+  - Falls back to name (title) match
+  - Fixes "Query returned no rows" error after `/session save <name>`
+
+- **Session List Current Marker** - `/session list` now shows current session
+  - Current session marked with `→` arrow
+  - Other sessions shown with space prefix
+  - Helps identify which session is active
+
+- **Page Number Validation** - `/note list` validates page numbers
+  - Shows error for page < 1: "Page must be >= 1"
+  - Shows error for page > total: "Page X does not exist. Total pages: Y."
+  - Provides guidance: "Use /note list Y."
 
 - **Embedding Regeneration System** - Post-migration embedding recovery
   - New `regenerate_all_embeddings()` function for schema migrations

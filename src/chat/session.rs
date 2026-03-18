@@ -186,14 +186,16 @@ impl ChatSession {
         }
     }
 
-    /// Load a session from SQLite database
+    /// Load a session from SQLite database by ID or name.
+    ///
+    /// First tries exact ID match. If not found, tries name (title) match.
     pub fn load_sqlite(
         db: &Arc<Database>,
         conversation_id: &str,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let meta = db.get_conversation_metadata(conversation_id)?;
-        let items = db.get_conversation_items(conversation_id)?;
-        let todo_rows = db.get_todos(conversation_id)?;
+        let meta = db.get_conversation_by_id_or_name(conversation_id)?;
+        let items = db.get_conversation_items(&meta.id)?;
+        let todo_rows = db.get_todos(&meta.id)?;
 
         let saved_messages: Vec<SavedMessage> = items
             .into_iter()

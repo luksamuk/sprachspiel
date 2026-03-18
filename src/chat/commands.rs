@@ -224,6 +224,143 @@ pub enum SessionSubcommand {
     Forget,
 }
 
+/// Parse note add command with proper quote handling
+///
+/// Handles:
+/// - `/note add content --title "Title with spaces"`
+/// - `/note add "content with spaces" --title Title`
+/// - `/note add --title "Title" content`
+/// - `/note add "test\nmultiline" --title Test` (expands \n inside quotes)
+/// - Escaped -- as \-\-
+fn parse_note_add(args: &str) -> Result<(String, Option<String>, bool), String> {
+    let mut content_parts: Vec<String> = Vec::new();
+    let mut title: Option<String> = None;
+    let mut global = false;
+    
+    // State machine for parsing
+    let chars: Vec<char> = args.chars().collect();
+    let mut i = 0;
+    let mut current_token = String::new();
+    let mut in_quotes = false;
+    let mut current_param: Option<&str> = None; // "title" when inside --title
+    
+    while i < chars.len() {
+        let c = chars[i];
+        
+        if in_quotes {
+            // Inside quotes - accumulate until closing quote
+            if c == '"' {
+                in_quotes = false;
+                // Token complete
+                if let Some(param) = current_param {
+                    if param == "title" {
+                        // Check for newlines in title
+                        if current_token.contains('\n') || current_token.contains("\\n") {
+                            return Err("Error: Title cannot contain newlines. Remove \\n or line breaks from title.".to_string());
+                        }
+                        title = Some(current_token.replace("\\-", "--"));
+                    }
+                    current_param = None;
+                } else {
+                    content_parts.push(current_token.clone().replace("\\n", "\n").replace("\\-", "--"));
+                }
+                current_token.clear();
+            } else if c == '\\' && i + 1 < chars.len() {
+                // Handle escapes inside quotes
+                let next = chars[i + 1];
+                if next == 'n' {
+                    current_token.push('\n');
+                    i += 1;
+                } else if next == '\\' {
+                    current_token.push('\\');
+                    i += 1;
+                } else if next == '"' {
+                    current_token.push('"');
+                    i += 1;
+                } else if next == '-' {
+                    current_token.push_str("\\-"); // Keep \-\- for later conversion
+                    i += 1;
+                } else {
+                    current_token.push(c);
+                }
+            } else {
+                current_token.push(c);
+            }
+            i += 1;
+            continue;
+        }
+        
+        // Not in quotes
+        if c == '"' {
+            in_quotes = true;
+            i += 1;
+            continue;
+        }
+        
+        if c == '\\' && i + 1 < chars.len() && chars[i + 1] == '-' {
+            // Escaped dash outside quotes - keep as literal
+            current_token.push_str("\\-");
+            i += 2;
+            continue;
+        }
+        
+        if c == ' ' || c == '\t' {
+            // Token boundary
+            if current_token == "--global" {
+                global = true;
+                current_token.clear();
+            } else if current_token == "--title" {
+                current_param = Some("title");
+                current_token.clear();
+            } else if !current_token.is_empty() {
+                if let Some(_param) = current_param {
+                    // Title token (unquoted)
+                    // Check for newlines in title
+                    if current_token.contains('\n') {
+                        return Err("Error: Title cannot contain newlines. Remove line breaks from title.".to_string());
+                    }
+                    title = Some(current_token.replace("\\-", "--"));
+                    current_param = None;
+                } else {
+                    content_parts.push(current_token.clone().replace("\\-", "--"));
+                }
+                current_token.clear();
+            }
+            i += 1;
+            continue;
+        }
+        
+        // Regular character
+        current_token.push(c);
+        i += 1;
+    }
+    
+    // Handle last token
+    if current_token == "--global" {
+        global = true;
+    } else if current_token == "--title" {
+        return Err("Error: --title requires a value. Usage: --title <title>".to_string());
+    } else if !current_token.is_empty() {
+        if let Some(_param) = current_param {
+            // Unquoted title at end
+            if current_token.contains('\n') {
+                return Err("Error: Title cannot contain newlines. Remove line breaks from title.".to_string());
+            }
+            title = Some(current_token.replace("\\-", "--"));
+        } else {
+            content_parts.push(current_token.replace("\\-", "--"));
+        }
+    }
+    
+    // If we were expecting a title parameter but didn't get it
+    if current_param.is_some() && title.is_none() {
+        return Err("Error: --title requires a value. Usage: --title <title>".to_string());
+    }
+    
+    let content = content_parts.join(" ");
+    Ok((content, title, global))
+}
+
 /// Parse a command string
 pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let input = input.trim();
@@ -487,34 +624,17 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                     if subargs.is_empty() {
                         return Some(Err("Usage: /note add <content> [--title <title>] [--global]".to_string()));
                     }
-                    let global = subargs.contains("--global");
-                    let has_title = subargs.contains("--title");
                     
-                    let (content, title) = if has_title {
-                        let title_idx = subargs.find("--title").unwrap();
-                        let after_title = &subargs[title_idx + 7..].trim();
-                        let end_idx = after_title.find(' ').unwrap_or(after_title.len());
-                        let title = Some(after_title[..end_idx].to_string());
-                        let content = subargs[..title_idx].trim();
-                        let content = if global {
-                            content.strip_suffix("--global").unwrap_or(content).trim()
-                        } else {
-                            content
-                        };
-                        (content.to_string(), title)
-                    } else {
-                        let content = if global {
-                            subargs.trim().strip_suffix("--global").unwrap_or(subargs.trim()).trim()
-                        } else {
-                            subargs.trim()
-                        };
-                        (content.to_string(), None)
-                    };
-                    
-                    if content.is_empty() {
-                        return Some(Err("Usage: /note add <content> [--title <title>] [--global]".to_string()));
+                    // Parse note arguments with proper quote handling
+                    match parse_note_add(subargs) {
+                        Ok((content, title, global)) => {
+                            if content.is_empty() {
+                                return Some(Err("Usage: /note add <content> [--title <title>] [--global]".to_string()));
+                            }
+                            ChatCommand::NoteAdd { content, title, global }
+                        }
+                        Err(e) => return Some(Err(e)),
                     }
-                    ChatCommand::NoteAdd { content, title, global }
                 }
                 "list" | "l" => {
                     let mut global = false;
@@ -622,34 +742,15 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             if args.is_empty() {
                 return Some(Err("Usage: /na <content> [--title <title>] [--global]".to_string()));
             }
-            let global = args.contains("--global");
-            let has_title = args.contains("--title");
-            
-            let (content, title) = if has_title {
-                let title_idx = args.find("--title").unwrap();
-                let after_title = &args[title_idx + 7..].trim();
-                let end_idx = after_title.find(' ').unwrap_or(after_title.len());
-                let title = Some(after_title[..end_idx].to_string());
-                let content = args[..title_idx].trim();
-                let content = if global {
-                    content.strip_suffix("--global").unwrap_or(content).trim()
-                } else {
-                    content
-                };
-                (content.to_string(), title)
-            } else {
-                let content = if global {
-                    args.trim().strip_suffix("--global").unwrap_or(args.trim()).trim()
-                } else {
-                    args.trim()
-                };
-                (content.to_string(), None)
-            };
-            
-            if content.is_empty() {
-                return Some(Err("Usage: /na <content> [--title <title>] [--global]".to_string()));
+            match parse_note_add(args) {
+                Ok((content, title, global)) => {
+                    if content.is_empty() {
+                        return Some(Err("Usage: /na <content> [--title <title>] [--global]".to_string()));
+                    }
+                    ChatCommand::NoteAdd { content, title, global }
+                }
+                Err(e) => return Some(Err(e)),
             }
-            ChatCommand::NoteAdd { content, title, global }
         }
         "nl" => {
             let mut global = false;
@@ -906,7 +1007,9 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                         for info in sessions {
                             let time = info.updated_at.format("%Y-%m-%d %H:%M");
                             let name = info.name.as_deref().unwrap_or(&info.id);
-                            println!("  {} - {} ({} messages) {}", name, info.model, info.message_count, time);
+                            // Mark current session with arrow
+                            let marker = if info.id == session.id { "→" } else { " " };
+                            println!("{} {} - {} ({} messages) {}", marker, name, info.model, info.message_count, time);
                         }
                     }
                 }
@@ -1002,7 +1105,9 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                                 for info in sessions {
                                     let time = info.updated_at.format("%Y-%m-%d %H:%M");
                                     let name = info.name.as_deref().unwrap_or(&info.id);
-                                    println!("  {} - {} ({} messages) {}", name, info.model, info.message_count, time);
+                                    // Mark current session with arrow
+                                    let marker = if info.id == session.id { "→" } else { " " };
+                                    println!("{} {} - {} ({} messages) {}", marker, name, info.model, info.message_count, time);
                                 }
                             }
                         }

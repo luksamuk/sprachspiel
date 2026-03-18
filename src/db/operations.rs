@@ -350,6 +350,53 @@ impl Database {
         })
     }
 
+    /// Find conversation by ID or name (title).
+    ///
+    /// First tries exact ID match. If not found, tries name match.
+    /// Returns the conversation ID if found, or None if not found.
+    pub fn find_conversation(&self, id_or_name: &str) -> Result<Option<String>> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            // Try exact ID match first
+            let id_exists: bool = conn.query_row(
+                "SELECT COUNT(*) > 0 FROM conversations WHERE id = ?1",
+                params![id_or_name],
+                |row| row.get(0),
+            )?;
+
+            if id_exists {
+                return Ok(Some(id_or_name.to_string()));
+            }
+
+            // Try name (title) match
+            let found_id: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM conversations WHERE title = ?1 LIMIT 1",
+                    params![id_or_name],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            Ok(found_id)
+        })
+    }
+
+    /// Get conversation metadata by ID or name.
+    ///
+    /// First tries exact ID match. If not found, tries name match.
+    pub fn get_conversation_by_id_or_name(&self, id_or_name: &str) -> Result<ConversationMetadata> {
+        // Try exact ID first
+        match self.get_conversation_metadata(id_or_name) {
+            Ok(meta) => Ok(meta),
+            Err(_) => {
+                // Try name match
+                let id = self
+                    .find_conversation(id_or_name)?
+                    .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
+                self.get_conversation_metadata(&id)
+            }
+        }
+    }
+
     /// Save todos for a conversation
     ///
     /// Replaces all existing todos for the conversation.
