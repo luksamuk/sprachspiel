@@ -1311,12 +1311,14 @@ pub fn handle_note_list(state: &ReplState, global: bool) {
                         note.id, age_days
                     );
                 }
-                let preview = if note.content.len() > 80 {
-                    format!("{}...", &note.content[..80])
+                // Get first line only for preview, truncated if too long
+                let first_line = note.content.lines().next().unwrap_or(&note.content);
+                let preview = if first_line.len() > 76 {
+                    format!("{}...", &first_line[..76])
                 } else {
-                    note.content.clone()
+                    first_line.to_string()
                 };
-                println!("    {}", preview);
+                println!("  │ {}", preview);
             }
 
             println!("\n  \x1B[90mTotal: {} note(s)\x1B[0m", notes.len());
