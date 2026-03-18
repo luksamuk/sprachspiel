@@ -160,7 +160,6 @@ pub async fn regenerate_all_embeddings(
             // Long content - create chunks and embed each chunk
             let chunks_list = chunk_text_with_config(content, &ChunkConfig::from(&chunk_config));
             let chunks_before = stats.chunks_processed;
-            let chunks_failed_before = stats.chunks_failed;
 
             for chunk in &chunks_list {
                 // Insert chunk into database

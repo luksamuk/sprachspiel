@@ -55,28 +55,6 @@ impl DynamicChunkConfig {
         }
     }
 
-    /// Create with custom percentages.
-    pub fn with_percentages(
-        context_length: usize,
-        chunk_percent: f32,
-        overlap_percent: f32,
-        min_chunk_percent: f32,
-    ) -> Self {
-        Self {
-            context_length,
-            chunk_percent: chunk_percent.clamp(0.5, 0.95),
-            overlap_percent: overlap_percent.clamp(0.0, 0.5),
-            min_chunk_percent: min_chunk_percent.clamp(0.1, 0.5),
-            prefix_margin: DEFAULT_PREFIX_MARGIN,
-            chars_per_token: DEFAULT_CHARS_PER_TOKEN,
-        }
-    }
-
-    /// Get the context length this config was created with.
-    pub fn context_length(&self) -> usize {
-        self.context_length
-    }
-
     /// Calculate maximum chunk size in characters.
     ///
     /// Formula: (context_length - prefix_margin) × chunk_percent × chars_per_token
@@ -98,16 +76,6 @@ impl DynamicChunkConfig {
     pub fn min_chunk_chars(&self) -> usize {
         (self.max_chars() as f32 * self.min_chunk_percent) as usize
     }
-
-    /// Get the prefix margin in tokens.
-    pub fn prefix_margin(&self) -> usize {
-        self.prefix_margin
-    }
-
-    /// Get the characters per token ratio.
-    pub fn chars_per_token(&self) -> f32 {
-        self.chars_per_token
-    }
 }
 
 impl Default for DynamicChunkConfig {
@@ -124,7 +92,6 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = DynamicChunkConfig::default();
-        assert_eq!(config.context_length(), 512);
         // (512 - 30) * 0.90 * 3.0 = 482 * 0.90 * 3.0 = 1301.4 → 1301
         assert_eq!(config.max_chars(), 1301);
         assert_eq!(config.overlap_chars(), 260); // 1301 * 0.20
@@ -144,26 +111,6 @@ mod tests {
         let config = DynamicChunkConfig::new(8192);
         // (8192 - 30) * 0.90 * 3.0 = 8162 * 0.90 * 3.0 = 22037.4 → 22037
         assert_eq!(config.max_chars(), 22037);
-    }
-
-    #[test]
-    fn test_custom_percentages() {
-        let config = DynamicChunkConfig::with_percentages(512, 0.80, 0.15, 0.20);
-        // (512 - 30) * 0.80 * 3.0 = 482 * 0.80 * 3.0 = 1156.8 → 1156
-        assert_eq!(config.max_chars(), 1156);
-        assert_eq!(config.overlap_chars(), 173); // 1156 * 0.15
-        assert_eq!(config.min_chunk_chars(), 231); // 1156 * 0.20
-    }
-
-    #[test]
-    fn test_clamped_percentages() {
-        // chunk_percent clamped to 0.95
-        let config = DynamicChunkConfig::with_percentages(512, 1.5, 0.0, 0.1);
-        assert_eq!(config.chunk_percent, 0.95);
-
-        // overlap_percent clamped to 0.5
-        let config = DynamicChunkConfig::with_percentages(512, 0.9, 0.7, 0.1);
-        assert_eq!(config.overlap_percent, 0.5);
     }
 
     #[test]
