@@ -72,9 +72,10 @@ pub enum CommandResult {
         title: Option<String>,
         global: bool,
     },
-    /// List notes
+    /// List notes (with optional page)
     NoteList {
         global: bool,
+        page: Option<usize>,
     },
     /// Show a note by ID
     NoteShow { id: i64 },
@@ -183,9 +184,10 @@ pub enum ChatCommand {
         title: Option<String>,
         global: bool,
     },
-    /// List notes
+    /// List notes (with optional page)
     NoteList {
         global: bool,
+        page: Option<usize>,
     },
     /// Show a note by ID
     NoteShow { id: i64 },
@@ -515,8 +517,20 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                     ChatCommand::NoteAdd { content, title, global }
                 }
                 "list" | "l" => {
-                    let global = subargs.trim() == "--global";
-                    ChatCommand::NoteList { global }
+                    let mut global = false;
+                    let mut page: Option<usize> = None;
+                    
+                    // Parse arguments: [--global] [page]
+                    for part in subargs.split_whitespace() {
+                        if part == "--global" {
+                            global = true;
+                        } else if let Ok(p) = part.parse::<usize>() {
+                            if p > 0 {
+                                page = Some(p);
+                            }
+                        }
+                    }
+                    ChatCommand::NoteList { global, page }
                 }
                 "show" | "s" => {
                     if subargs.is_empty() {
@@ -639,7 +653,8 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         }
         "nl" => {
             let global = args.trim() == "--global";
-            ChatCommand::NoteList { global }
+            let page = if global { None } else { args.trim().parse::<usize>().ok() };
+            ChatCommand::NoteList { global, page }
         }
         "ns" => {
             if args.is_empty() {
@@ -1106,7 +1121,7 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
 
         ChatCommand::NoteAdd { content, title, global } => CommandResult::NoteAdd { content, title, global },
 
-        ChatCommand::NoteList { global } => CommandResult::NoteList { global },
+        ChatCommand::NoteList { global, page } => CommandResult::NoteList { global, page },
 
         ChatCommand::NoteShow { id } => CommandResult::NoteShow { id },
 
@@ -1161,7 +1176,7 @@ Factual Memory:
 
 Notes:
   /note add <content> [--title <title>] [--global]   Add a note
-  /note list [--global]                              List notes
+  /note list [--global] [page]                        List notes (8 per page)
   /note show <id>                                    Show a note
   /note edit <id> [--title <title>] [--content <content>]   Edit a note
   /note delete <id>                                  Delete a note

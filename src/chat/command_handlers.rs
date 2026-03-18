@@ -159,8 +159,8 @@ pub async fn handle_command_result(
             handle_note_add(state, content, title, global);
             HandleResult::Continue
         }
-        CommandResult::NoteList { global } => {
-            handle_note_list(state, global);
+        CommandResult::NoteList { global, page } => {
+            handle_note_list(state, global, page);
             HandleResult::Continue
         }
         CommandResult::NoteShow { id } => {
@@ -1258,10 +1258,12 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
 
 /// Handle note list command
 ///
-/// Lists all notes for the current scope.
-pub fn handle_note_list(state: &ReplState, global: bool) {
+/// Lists notes for the current scope with pagination (8 per page).
+pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
     use crate::content::ContentScope;
     use chrono::Utc;
+
+    const NOTES_PER_PAGE: usize = 8;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
@@ -1291,14 +1293,22 @@ pub fn handle_note_list(state: &ReplState, global: bool) {
     match db.list_notes(scope, project_id.as_deref()) {
         Ok(notes) => {
             let scope_str = if global { "global" } else { "project" };
-            println!("\x1B[36mNotes ({scope_str}):\x1B[0m");
 
             if notes.is_empty() {
+                println!("\x1B[36mNotes ({scope_str}):\x1B[0m");
                 println!("  No notes stored.");
                 return;
             }
 
-            for note in &notes {
+            let total_notes = notes.len();
+            let total_pages = (total_notes + NOTES_PER_PAGE - 1) / NOTES_PER_PAGE;
+            let current_page = page.unwrap_or(1).max(1).min(total_pages);
+            let start_idx = (current_page - 1) * NOTES_PER_PAGE;
+            let end_idx = start_idx + NOTES_PER_PAGE.min(total_notes - start_idx);
+
+            println!("\x1B[36mNotes ({scope_str}) - Page {} of {}:\x1B[0m", current_page, total_pages);
+
+            for note in &notes[start_idx..end_idx] {
                 let age_days = (Utc::now() - note.created_at).num_days();
                 if let Some(t) = &note.title {
                     println!(
@@ -1321,7 +1331,11 @@ pub fn handle_note_list(state: &ReplState, global: bool) {
                 println!("  │ {}", preview);
             }
 
-            println!("\n  \x1B[90mTotal: {} note(s)\x1B[0m", notes.len());
+            println!("\n  \x1B[90mTotal: {} note(s), Page {}/{}\x1B[0m", total_notes, current_page, total_pages);
+            if total_pages > 1 {
+                println!("  \x1B[90mUse /note list {} to see page {}, or /note list --global {} for global\x1B[0m", 
+                    current_page + 1, current_page + 1, current_page + 1);
+            }
         }
         Err(e) => {
             eprintln!("\x1B[31m✗ Failed to list notes: {}\x1B[0m", e);

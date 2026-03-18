@@ -106,7 +106,7 @@ Subcommand shortcuts: `/fact a` (add), `/fact l` (list), `/fact r` (remove), `/f
 | Command | Description |
 |---------|-------------|
 | `/note add <content> [--title <title>] [--global]`, `/na` | Add a note (project scope by default) |
-| `/note list [--global]`, `/nl` | List stored notes |
+| `/note list [--global] [page]`, `/nl` | List stored notes (8 per page) |
 | `/note show <id>`, `/ns` | Show a note by ID |
 | `/note edit <id> [--title <title>] [--content <content>]` | Edit a note |
 | `/note delete <id>`, `/nd` | Delete a note by ID |
@@ -115,6 +115,8 @@ Subcommand shortcuts: `/fact a` (add), `/fact l` (list), `/fact r` (remove), `/f
 Subcommand shortcuts: `/no` (note), `/na` (add), `/nl` (list), `/ns` (show), `/nd` (delete)
 
 Notes support project-level (default) and global scope. Global notes are visible across all projects on the same machine.
+
+**Pagination:** `/note list` shows 8 notes per page. Use `/note list 2` to see page 2, `/note list 3` for page 3, etc.
 
 ## /context - Context Metrics
 

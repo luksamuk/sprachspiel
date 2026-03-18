@@ -86,6 +86,12 @@ All notable changes to Ask-AI will be documented in this file.
   - Notes are NOT in system prompt (use `remember()` to retrieve)
   - Prompt engineering guides LLM on when to use notes vs facts
 
+- **Note List Pagination** - `/note list` now paginates results
+  - Shows 8 notes per page by default
+  - Use `/note list 2` to see page 2, `/note list 3` for page 3, etc.
+  - Displays current page and total pages at the bottom
+  - Preview shows only first line with `│` prefix for clarity
+
 - **Embedding Regeneration System** - Post-migration embedding recovery
   - New `regenerate_all_embeddings()` function for schema migrations
   - `RegenerationStats` struct tracks processed/failed items
