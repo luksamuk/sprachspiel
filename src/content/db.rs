@@ -913,69 +913,6 @@ impl Database {
         })
     }
 
-    /// Clear all content items from a conversation (for /clear command)
-    ///
-    /// Deletes all items, chunks, and embeddings, but keeps the conversation metadata.
-    /// Returns the number of items deleted.
-    pub fn clear_conversation_items(&self, conversation_id: &str) -> Result<usize> {
-        self.with_connection(|conn| {
-            // Get all item IDs for this conversation
-            let item_ids: Vec<i64> = {
-                let mut stmt = conn.prepare("SELECT id FROM content_items WHERE conversation_id = ?1")?;
-                stmt.query_map(params![conversation_id], |row| row.get(0))?
-                    .filter_map(|r| r.ok())
-                    .collect()
-            };
-
-            if item_ids.is_empty() {
-                return Ok(0);
-            }
-
-            // Delete chunk embeddings for all items
-            for item_id in &item_ids {
-                let chunk_ids: Vec<i64> = {
-                    let mut stmt = conn.prepare("SELECT id FROM content_chunks WHERE item_id = ?1")?;
-                    stmt.query_map(params![item_id], |row| row.get(0))?
-                        .filter_map(|r| r.ok())
-                        .collect()
-                };
-
-                for chunk_id in &chunk_ids {
-                    let _ = conn.execute(
-                        "DELETE FROM chunk_embeddings_v2 WHERE chunk_id = ?1",
-                        params![chunk_id],
-                    );
-                }
-            }
-
-            // Delete FTS entries
-            conn.execute(
-                "DELETE FROM content_fts WHERE rowid IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
-                params![conversation_id],
-            )?;
-
-            // Delete all content embeddings
-            conn.execute(
-                "DELETE FROM content_embeddings WHERE item_id IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
-                params![conversation_id],
-            )?;
-
-            // Delete all chunks
-            conn.execute(
-                "DELETE FROM content_chunks WHERE item_id IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
-                params![conversation_id],
-            )?;
-
-            // Delete all items
-            let deleted = conn.execute(
-                "DELETE FROM content_items WHERE conversation_id = ?1",
-                params![conversation_id],
-            )?;
-
-            Ok(deleted)
-        })
-    }
-
     /// Delete a conversation and all its content items
     ///
     /// Used by /forget command to completely remove conversation history.
