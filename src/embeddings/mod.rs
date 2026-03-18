@@ -5,14 +5,17 @@
 //! - Matryoshka truncation (768d → 256d)
 //! - Text chunking for long messages
 //! - Embedding recovery for interrupted processes
+//! - Embedding regeneration after schema migration
 
 mod chunker;
 mod client;
+mod regenerate;
 mod recovery;
 mod truncate;
 
 pub use chunker::{chunk_text, needs_chunking};
 pub use client::EmbeddingClient;
+pub use regenerate::regenerate_all_embeddings;
 pub use recovery::recover_missing_embeddings;
 #[allow(unused_imports)]
 pub use truncate::truncate_and_normalize;

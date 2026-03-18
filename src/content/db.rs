@@ -281,6 +281,118 @@ impl Database {
         })
     }
 
+    /// Get all content items without embeddings for regeneration
+    ///
+    /// Returns (item_id, content_type, content) for items that need embedding generation.
+    /// Used during migration to regenerate embeddings from content.
+    pub fn get_content_items_for_reindex(&self) -> Result<Vec<(i64, String, String)>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, content_type, content FROM content_items 
+                 WHERE has_embedding = 0 
+                 ORDER BY created_at ASC",
+            )?;
+
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Get all content chunks without embeddings for regeneration
+    ///
+    /// Returns (chunk_id, content) for chunks that need embedding generation.
+    /// Used during migration to regenerate embeddings from chunk content.
+    pub fn get_content_chunks_for_reindex(&self) -> Result<Vec<(i64, String)>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, content FROM content_chunks 
+                 WHERE has_embedding = 0 
+                 ORDER BY created_at ASC",
+            )?;
+
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Update content item embedding after generation
+    ///
+    /// Inserts the embedding into content_embeddings and marks the item as having embedding.
+    pub fn update_content_item_embedding(
+        &self,
+        item_id: i64,
+        embedding: &[f32],
+        content_type: &str,
+        conversation_id: Option<&str>,
+        project_id: Option<&str>,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
+        self.with_connection(|conn| {
+            let embedding_bytes = embedding.as_bytes();
+            let ts = timestamp.timestamp();
+
+            conn.execute(
+                "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    item_id,
+                    embedding_bytes,
+                    content_type,
+                    conversation_id,
+                    project_id,
+                    ts,
+                ],
+            )?;
+
+            conn.execute(
+                "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
+                params![item_id],
+            )?;
+
+            Ok(())
+        })
+    }
+
+    /// Update content chunk embedding after generation
+    ///
+    /// Inserts the embedding into chunk_embeddings_v2 and marks the chunk as having embedding.
+    pub fn update_content_chunk_embedding(
+        &self,
+        chunk_id: i64,
+        embedding: &[f32],
+        content_type: &str,
+        conversation_id: Option<&str>,
+        project_id: Option<&str>,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
+        self.with_connection(|conn| {
+            let embedding_bytes = embedding.as_bytes();
+            let ts = timestamp.timestamp();
+
+            conn.execute(
+                "INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, project_id, timestamp)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    chunk_id,
+                    embedding_bytes,
+                    content_type,
+                    conversation_id,
+                    project_id,
+                    ts,
+                ],
+            )?;
+
+            conn.execute(
+                "UPDATE content_chunks SET has_embedding = 1 WHERE id = ?1",
+                params![chunk_id],
+            )?;
+
+            Ok(())
+        })
+    }
+
     /// Search notes using FTS5 keyword search
     pub fn search_notes_keyword(
         &self,

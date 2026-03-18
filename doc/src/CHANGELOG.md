@@ -6,6 +6,22 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **Database Initialization Failure** - Fail fast with detailed error when database cannot be initialized
+  - Previously, database errors were silently ignored, creating inconsistent state
+  - Now shows detailed diagnostic message with storage path and possible causes
+  - Suggests solutions (check Ollama, permissions, or use --anonymous)
+
+- **Schema Migration v6→v7 UNIQUE Constraint Error** - Fixed embedding migration duplicate key error
+  - Removed broken embedding migration that caused "UNIQUE constraint failed on content_embeddings primary key"
+  - Embeddings are now regenerated from source content after migration
+  - Added progress bar with ETA during regeneration (uses indicatif crate)
+  - Preserves all user data (messages, notes, facts) - only embeddings are regenerated
+  - Migration runs synchronously before app becomes usable
+
+- **Remember Tool Empty Parameters** - Treat empty strings as None
+  - LLM sometimes passes `id=""` instead of omitting the parameter
+  - Tool now validates and filters empty strings before processing
+
 - **TODO List Persistence** - LLM tools now properly save TODO state to database
   - Previously, tools like `todo_add`, `todo_update` modified global state but didn't sync to session
   - Now synchronizes `TodoState` to `session.todos` after LLM interactions
@@ -30,6 +46,12 @@ All notable changes to Ask-AI will be documented in this file.
   - Prompt engineering updated to document content types
   - Unified `search_content_hybrid()` enables semantic search across all content
 
+- **Embedding Regeneration System** - Post-migration embedding recovery
+  - New `regenerate_all_embeddings()` function for schema migrations
+  - `RegenerationStats` struct tracks processed/failed items
+  - Shows progress bar during regeneration with ETA
+  - Aborts gracefully on Ollama connection errors with recovery instructions
+
 ### Changed
 
 - **Query Pattern Refactoring** - Dynamic SQL WHERE clause construction
@@ -40,6 +62,8 @@ All notable changes to Ask-AI will be documented in this file.
   - `list_facts`: 8 variants → 1 query (80 lines → 25 lines)
   - SQL constants extracted to centralized locations for maintainability
   - Removed `#[allow(unused_imports)]` - `fts5_escape` actively used in 3 modules
+
+- **Database Module** - `get_storage_path()` made public for error diagnostics
 
 ## [0.35.0] - TBD
 

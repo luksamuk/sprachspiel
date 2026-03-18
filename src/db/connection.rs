@@ -413,46 +413,24 @@ impl Database {
                 [],
             )?;
 
-            // Migrate message_embeddings to content_embeddings
-            conn.execute(
-                r#"
-                INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, timestamp)
-                SELECT 
-                    ci.id as item_id,
-                    me.embedding,
-                    'message' as content_type,
-                    me.conversation_id,
-                    me.timestamp
-                FROM message_embeddings me
-                JOIN content_items ci ON ci.content_type = 'message' 
-                    AND ci.conversation_id = me.conversation_id
-                    AND ci.content = (SELECT content FROM messages WHERE id = me.message_id)
-                "#,
-                [],
-            )?;
-
-            // Migrate chunk_embeddings to chunk_embeddings_v2
-            conn.execute(
-                r#"
-                INSERT INTO chunk_embeddings_v2 (chunk_id, embedding, content_type, conversation_id, timestamp)
-                SELECT 
-                    cc.id as chunk_id,
-                    ce.embedding,
-                    'message' as content_type,
-                    ce.conversation_id,
-                    ce.timestamp
-                FROM chunk_embeddings ce
-                JOIN content_chunks cc ON cc.has_embedding = 1
-                WHERE ce.chunk_id IN (SELECT id FROM message_chunks)
-                "#,
-                [],
-            )?;
-
             // Populate content_fts from content_items
             conn.execute(
                 "INSERT INTO content_fts(rowid, content) SELECT id, content FROM content_items",
                 [],
             )?;
+
+            // Clear embeddings tables (will be regenerated after migration)
+            // This is safer than trying to migrate embeddings which can cause UNIQUE constraint errors
+            // when multiple messages have the same content in the same conversation.
+            // Embeddings are derived data and can be regenerated from content.
+            conn.execute("DELETE FROM content_embeddings", [])?;
+            conn.execute("DELETE FROM chunk_embeddings_v2", [])?;
+
+            // Mark all content_items as needing embedding regeneration
+            conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
+
+            // Mark all content_chunks as needing embedding regeneration
+            conn.execute("UPDATE content_chunks SET has_embedding = 0", [])?;
         }
 
         Ok(())

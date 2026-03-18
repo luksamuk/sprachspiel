@@ -412,6 +412,24 @@ pub async fn run_chat_repl(
     if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
         session.attach_db(Arc::clone(db_ref), Arc::clone(client));
 
+        // Regenerate embeddings if needed (after schema migration)
+        // This runs once after v6→v7 migration to rebuild embeddings from content
+        let stats = crate::embeddings::regenerate_all_embeddings(db_ref, client).await;
+        if stats.total_processed() > 0 {
+            println!(
+                "Regenerated {} embedding(s) ({} items, {} chunks)",
+                stats.total_processed(),
+                stats.items_processed,
+                stats.chunks_processed
+            );
+            if stats.has_errors() {
+                println!(
+                    "Warning: {} embedding(s) failed to generate. They will be retried on next startup.",
+                    stats.total_failed()
+                );
+            }
+        }
+
         // Recover any missing embeddings from previous session
         let recovered =
             crate::embeddings::recover_missing_embeddings(db_ref, client, &session.id).await;

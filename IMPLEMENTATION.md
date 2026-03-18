@@ -504,6 +504,7 @@ todo_clear_all()             // Clear all tasks
 | 4 | Note commands | ✅ Done |
 | 5 | Embeddings for notes | ✅ Done |
 | 6 | Tests and documentation | ✅ Done |
+| 7 | Embedding regeneration after migration | ✅ Done |
 
 **Commits:**
 - `be0b279` - docs: update roadmap priorities
@@ -519,6 +520,20 @@ todo_clear_all()             // Clear all tasks
 - `7cf2fbf` - docs: update IMPLEMENTATION.md - Notes System complete
 - `b4b013b` - docs(chat): add /note commands documentation
 - `5694cd9` - feat(remember): integrate notes into retrieval system
+- `cf3abe1` - fix: fail fast on database initialization failure
+
+**Migration Note (v6→v7):**
+
+The schema migration from v6 to v7 includes a breaking change for embeddings:
+
+1. **Removed broken embedding migration** - The attempt to migrate embeddings from `message_embeddings` to `content_embeddings` caused UNIQUE constraint errors when multiple messages had the same content.
+2. **Embeddings are regenerated** - After migration completes, all embeddings are regenerated from source content with a progress bar.
+3. **User data preserved** - Messages, notes, and facts are preserved. Only embeddings (derived data) are rebuilt.
+
+This ensures:
+- No UNIQUE constraint failures during migration
+- Clean embedding state after schema upgrade
+- All search functionality works correctly after first startup
 
 ---
 
