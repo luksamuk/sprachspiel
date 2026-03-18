@@ -39,7 +39,8 @@ const SEMANTIC_SEARCH_ITEMS_SQL: &str = "
            ci.title, ci.content, ci.importance, ci.access_count, ci.decay_score,
            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
     FROM content_embeddings ce
-    JOIN content_items ci ON ce.item_id = ci.id";
+    JOIN content_items ci ON ce.item_id = ci.id
+    WHERE ce.embedding MATCH ? AND ce.k = ?";
 
 const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
     SELECT cc.id, ce.distance, cc.item_id, cc.chunk_index, cc.content, 
@@ -49,7 +50,8 @@ const SEMANTIC_SEARCH_CHUNKS_SQL: &str = "
            ci.created_at, ci.updated_at, ci.last_accessed, ci.has_embedding, ci.project_id
     FROM chunk_embeddings_v2 ce
     JOIN content_chunks cc ON ce.chunk_id = cc.id
-    JOIN content_items ci ON cc.item_id = ci.id";
+    JOIN content_items ci ON cc.item_id = ci.id
+    WHERE ce.embedding MATCH ? AND ce.k = ?";
 
 /// Parameters for content hybrid search
 #[derive(Debug, Clone)]
@@ -905,6 +907,69 @@ impl Database {
                     SELECT id FROM content_items WHERE conversation_id = ?1 ORDER BY created_at DESC LIMIT ?2
                 )",
                 params![conversation_id, count as i64],
+            )?;
+
+            Ok(deleted)
+        })
+    }
+
+    /// Clear all content items from a conversation (for /clear command)
+    ///
+    /// Deletes all items, chunks, and embeddings, but keeps the conversation metadata.
+    /// Returns the number of items deleted.
+    pub fn clear_conversation_items(&self, conversation_id: &str) -> Result<usize> {
+        self.with_connection(|conn| {
+            // Get all item IDs for this conversation
+            let item_ids: Vec<i64> = {
+                let mut stmt = conn.prepare("SELECT id FROM content_items WHERE conversation_id = ?1")?;
+                stmt.query_map(params![conversation_id], |row| row.get(0))?
+                    .filter_map(|r| r.ok())
+                    .collect()
+            };
+
+            if item_ids.is_empty() {
+                return Ok(0);
+            }
+
+            // Delete chunk embeddings for all items
+            for item_id in &item_ids {
+                let chunk_ids: Vec<i64> = {
+                    let mut stmt = conn.prepare("SELECT id FROM content_chunks WHERE item_id = ?1")?;
+                    stmt.query_map(params![item_id], |row| row.get(0))?
+                        .filter_map(|r| r.ok())
+                        .collect()
+                };
+
+                for chunk_id in &chunk_ids {
+                    let _ = conn.execute(
+                        "DELETE FROM chunk_embeddings_v2 WHERE chunk_id = ?1",
+                        params![chunk_id],
+                    );
+                }
+            }
+
+            // Delete FTS entries
+            conn.execute(
+                "DELETE FROM content_fts WHERE rowid IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
+                params![conversation_id],
+            )?;
+
+            // Delete all content embeddings
+            conn.execute(
+                "DELETE FROM content_embeddings WHERE item_id IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
+                params![conversation_id],
+            )?;
+
+            // Delete all chunks
+            conn.execute(
+                "DELETE FROM content_chunks WHERE item_id IN (SELECT id FROM content_items WHERE conversation_id = ?1)",
+                params![conversation_id],
+            )?;
+
+            // Delete all items
+            let deleted = conn.execute(
+                "DELETE FROM content_items WHERE conversation_id = ?1",
+                params![conversation_id],
             )?;
 
             Ok(deleted)

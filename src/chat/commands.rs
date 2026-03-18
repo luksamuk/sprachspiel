@@ -664,17 +664,21 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
         ChatCommand::Clear => {
             let has_summary = session.compacted_summary.is_some();
 
-            // Check if there are messages in DB for retrieval after clear
-            let has_db_messages = if let Some(ref db) = session.db {
-                !session.anonymous
-                    && !session.id.is_empty()
-                    && db
-                        .count_conversation_items(&session.id)
-                        .map(|count| count > 0)
-                        .unwrap_or(false)
-            } else {
-                false
-            };
+            // Delete all messages from database before clearing in-memory session
+            if !session.anonymous
+                && !session.id.is_empty()
+            {
+                if let Some(ref db) = session.db {
+                    match db.clear_conversation_items(&session.id) {
+                        Ok(_) => {
+                            // Successfully cleared database items
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Could not clear database: {}", e);
+                        }
+                    }
+                }
+            }
 
             session.clear_messages();
 
@@ -687,9 +691,6 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
             if has_summary {
                 println!("Conversation history cleared.");
                 println!("Context summary preserved for retrieval.");
-                println!("\x1B[90m[i] You may ask about previous topics.\x1B[0m");
-            } else if has_db_messages {
-                println!("Conversation history cleared.");
                 println!("\x1B[90m[i] You may ask about previous topics.\x1B[0m");
             } else {
                 println!("Conversation history cleared.");
