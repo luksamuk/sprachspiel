@@ -4,6 +4,13 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Unicode Panic in note_add** - Fixed panic when creating notes with Unicode content
+  - `note_add` tool now uses `truncate_chars()` for character-aware truncation
+  - Previously used byte slicing (`&content[..200]`) which panicked on multi-byte characters
+  - Box-drawing characters (`─`, `┌`, `└`) and other Unicode now work correctly
+
 ### Removed
 
 - **Dead Code Cleanup** - Removed unused code from `context_overflow.rs`
