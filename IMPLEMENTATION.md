@@ -794,6 +794,50 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
+### 🟠 PRIORITY 2: Context Overflow During Multi-Tool Execution
+
+**Status:** 🔄 IN PROGRESS
+
+**Goal:** Prevent context overflow when LLM calls multiple tools in sequence.
+
+**Problem:** Auto-compaction only happens BEFORE the first message. When tools execute sequentially, results accumulate in history without token checks. Large tool outputs (file reads, command outputs) can overflow context during multi-tool chains.
+
+**Current Gap:**
+```
+check_and_compact_before_tool()  ← ONLY verification
+        ↓
+    send_message()
+        ↓
+    tool_1 → result_1 → history.push()  ← No check
+        ↓
+    tool_2 → result_2 → history.push()  ← No check
+        ↓
+    overflow! 💥
+```
+
+**Solution:** Add pre-tool token budget check in `custom_coordinator.rs` before each tool execution.
+
+**Implementation:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add `TOOL_TOKEN_BUDGETS` constant in `src/tools/registry.rs` | ❌ |
+| 2 | Add `calculate_remaining_budget()` in `src/context_overflow.rs` | ❌ |
+| 3 | Add pre-tool check in `custom_coordinator.rs::process_response()` | ❌ |
+| 4 | Define token budgets per tool | ❌ |
+| 5 | Add tests for budget calculation | ❌ |
+
+**Files:**
+- `src/tools/registry.rs` - Token budgets per tool
+- `src/context_overflow.rs` - Budget calculation
+- `src/chat/custom_coordinator.rs` - Pre-tool check
+
+**Estimated effort:** 1 day
+
+**Related:** Issue #43
+
+---
+
 ### 🔵 PRIORITY 4: Feedback Infrastructure
 
 **Status:** 📋 PLANNED (depends on: Factual Memory)

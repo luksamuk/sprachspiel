@@ -6,6 +6,12 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **Context Overflow During Multi-Tool Execution** - Added pre-tool token budget check
+  - Token budget verification before each tool execution in multi-tool chains
+  - Prevents context overflow when LLM calls multiple tools sequentially
+  - Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
+  - Smart truncation for large tool results
+
 - **Unicode Panic in note_add** - Fixed panic when creating notes with Unicode content
   - `note_add` tool now uses `truncate_chars()` for character-aware truncation
   - Previously used byte slicing (`&content[..200]`) which panicked on multi-byte characters
