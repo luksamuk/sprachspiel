@@ -726,6 +726,45 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
+### 🟡 PRIORITY 3: Embedding Fallback for Oversized Content
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Handle content that exceeds embedding model's context window.
+
+**Problem:** During startup, embeddings generation fails when input text has more tokens than the embedding model's context window (e.g., 512 tokens for nomic-embed-text). The current implementation uses `DynamicChunkConfig` but doesn't handle cases where content still exceeds the limit.
+
+**Symptoms:**
+- Embedding generation fails silently during startup
+- Messages/notes/documents with long content never get embeddings
+- Semantic search fails to find relevant content
+
+**Solution:** Implement fallback chunking strategy:
+1. Detect oversized content before API call
+2. Recursive chunking if content exceeds context
+3. Generate embeddings per chunk
+4. Store chunks properly in `content_chunks` table
+
+**Implementation:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Detect oversized inputs before API call | ❌ |
+| 2 | Implement fallback chunking | ❌ |
+| 3 | Update chunk storage logic | ❌ |
+| 4 | Add tests and logging | ❌ |
+
+**Files:**
+- `src/embeddings/client.rs` - Add size detection and fallback
+- `src/embeddings/chunker.rs` - Recursive chunking support
+- `src/embeddings/regenerate.rs` - Update regeneration logic
+
+**Estimated effort:** 2.5 days
+
+**Related:** Issue #40
+
+---
+
 ### 🔵 PRIORITY 4: Feedback Infrastructure
 
 **Status:** 📋 PLANNED (depends on: Factual Memory)
