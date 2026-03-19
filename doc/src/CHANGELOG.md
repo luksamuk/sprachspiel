@@ -4,6 +4,16 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [0.36.0] - TBD
 
+### Added
+
+- **Welcome Banner Redesign** - New ASCII art banner with Extended Mind concept
+  - Logo using `toilet` "future" font with metallic blue colors
+  - ASCII art generated from custom image via `jp2a` (True Color ANSI)
+  - Session info (Model, Think, Tools, Sandbox, Project, Session) aligned to ASCII art
+  - Clean Unicode line separators (`─`) instead of double lines
+  - Assets stored in `assets/` directory for reproducibility
+  - See `assets/README.md` for regeneration instructions
+
 ### Changed
 
 - **`/clear` renamed to `/new`** - Command now starts a new conversation session
