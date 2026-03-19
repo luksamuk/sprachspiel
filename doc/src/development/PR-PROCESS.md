@@ -278,9 +278,13 @@ Before informing the reviewer that changes are ready, the agent MUST ensure:
 ```
 38. User authorizes merge (all comments resolved, testing passed)
 
-39. Agent merges PR using regular merge (NOT squash):
-    gh pr merge PR_NUMBER --merge
-    - Branch is automatically deleted
+39. Agent merges PR using regular merge (NOT squash) with branch deletion:
+    gh pr merge PR_NUMBER --merge --delete-branch
+    
+    IMPORTANT: 
+    - Use --merge (NOT --squash) to preserve commit history
+    - Use --delete-branch to clean up after merge
+    - Branch is deleted after merge
     - PR is automatically closed
 
 40. Card moves to "Done" automatically (if PR references the card)
@@ -352,7 +356,7 @@ Todo → In Progress → In Review → Done
 │                                                              │
 │   Step 38: User authorizes merge                             │
 │           ↓                                                  │
-│   Step 39: Agent runs: gh pr merge N --merge                 │
+│   Step 39: Agent runs: gh pr merge N --merge --delete-branch │
 │           ↓                                                  │
 │   Step 40-41: Cleanup (branch deleted, PR closed)            │
 │                                                              │
@@ -362,7 +366,7 @@ Todo → In Progress → In Review → Done
 │           ↓                                ↓                 │
 │           ↓                         Agent pushes ────────────┐│
 │           ↓                                           ↓     ││
-│           ↓                               Return to Step 19 ─┘│
+│           ↓                               Return to Step 27 ─┘│
 │           ↓ No bugs                                               │
 ├─────────────────────────────────────────────────────────────┤
 │                          ↓                                    │
@@ -372,11 +376,11 @@ Todo → In Progress → In Review → Done
 │                         MERGE                                │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Step 29: User authorizes merge                             │
+│   Step 38: User authorizes merge                             │
 │           ↓                                                  │
-│   Step 30: Agent runs: gh pr merge N --merge                 │
+│   Step 39: Agent runs: gh pr merge N --merge --delete-branch │
 │           ↓                                                  │
-│   Step 31-32: Cleanup (branch deleted, PR closed)            │
+│   Step 40-41: Cleanup (branch deleted, PR closed)            │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
