@@ -53,7 +53,7 @@ pub enum InputResult {
 /// use chat::input::{InputBackend, InputResult};
 ///
 /// let mut input = RustylineInput::new(model_names);
-/// match input.read_line("model[t][T]> ") {
+/// match input.read_line("model🧠🔧> ") {
 ///     InputResult::Line(line) => { /* handle input */ }
 ///     InputResult::Interrupted => { /* handle Ctrl+C */ }
 ///     InputResult::Eof => { /* handle Ctrl+D, exit */ }
