@@ -219,7 +219,8 @@ pub enum ChatEvent {
         name: String,
         arguments: serde_json::Value,
     },
-    /// Tool execution result (name kept for future debugging use)
+    /// Tool execution result
+    /// Name field kept for future debugging use
     #[allow(dead_code)]
     ToolResult { name: String, result: String },
     /// Context is near limit after tool execution (80% threshold)
@@ -237,6 +238,18 @@ pub enum ChatEvent {
         new_tokens: usize,
         context_window: usize,
     },
+}
+
+/// Result of checking context overflow after tool execution
+struct ContextCheckResult {
+    /// The result to use (possibly truncated)
+    result: String,
+    /// Whether context is near limit (80% threshold)
+    is_near_limit: bool,
+    /// Whether result was truncated (90% threshold)
+    was_truncated: bool,
+    /// Tokens used (for events)
+    tokens_used: usize,
 }
 
 /// A coordinator for managing chat interactions with event callbacks.
@@ -285,6 +298,79 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             pre_tool_content: String::new(),
             pre_tool_thinking: None,
             ephemeral_messages: Vec::new(),
+        }
+    }
+
+    /// Check context overflow and handle truncation if needed
+    ///
+    /// Returns a ContextCheckResult with the (possibly truncated) result and status flags.
+    fn check_and_handle_context_overflow(
+        &self,
+        _tool_name: &str,
+        result: String,
+    ) -> ContextCheckResult {
+        let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) else {
+            return ContextCheckResult {
+                result,
+                is_near_limit: false,
+                was_truncated: false,
+                tokens_used: 0,
+            };
+        };
+
+        // Calculate tokens BEFORE adding result to history
+        let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
+        let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
+        let result_tokens = estimate_tokens(&result);
+        let total_after_add = history_tokens + system_tokens + result_tokens;
+
+        // Emergency check (90%): Truncate result to fit
+        if is_emergency_context(history_tokens + result_tokens, system_tokens, ctx_window) {
+            let available = calculate_available_budget(history_tokens, system_tokens, ctx_window);
+
+            if self.debug {
+                eprintln!(
+                    "\x1B[33m[WARN] Context emergency at {}% ({} tokens). Truncating result...\x1B[0m",
+                    (total_after_add) * 100 / ctx_window,
+                    total_after_add
+                );
+            }
+
+            // Truncate the result to fit available budget
+            let truncated = truncate_to_budget(&result, available);
+
+            ContextCheckResult {
+                result: truncated,
+                is_near_limit: true,
+                was_truncated: true,
+                tokens_used: total_after_add,
+            }
+        }
+        // Inter-tool check (80%): Signal need for compaction
+        else if needs_inter_tool_compaction(history_tokens + result_tokens, system_tokens, ctx_window) {
+            if self.debug {
+                eprintln!(
+                    "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool compaction may be needed.\x1B[0m",
+                    (total_after_add) * 100 / ctx_window,
+                    total_after_add
+                );
+            }
+
+            ContextCheckResult {
+                result,
+                is_near_limit: true,
+                was_truncated: false,
+                tokens_used: total_after_add,
+            }
+        }
+        // Normal operation - context within limits
+        else {
+            ContextCheckResult {
+                result,
+                is_near_limit: false,
+                was_truncated: false,
+                tokens_used: total_after_add,
+            }
         }
     }
 
@@ -558,70 +644,28 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     result: result.clone(),
                 });
 
-                // Inter-tool context check: detect overflow between tool calls
-                let mut final_result = result;
+                // Inter-tool context check: detect overflow and truncate if needed
+                let check_result = self.check_and_handle_context_overflow(&tool_name, result);
                 
-                if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
-                    // Calculate tokens BEFORE adding result to history (history still has previous items)
-                    let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
-                    let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
-                    let result_tokens = estimate_tokens(&final_result);
-                    let total_after_add = history_tokens + system_tokens + result_tokens;
-                    
-                    // Emergency check (90%): Truncate result to fit
-                    if is_emergency_context(history_tokens + result_tokens, system_tokens, ctx_window) {
-                        let available = calculate_available_budget(history_tokens, system_tokens, ctx_window);
-                        
-                        if self.debug {
-                            eprintln!(
-                                "\x1B[33m[WARN] Context emergency at {}% ({} tokens). Truncating result...\x1B[0m",
-                                (total_after_add) * 100 / ctx_window,
-                                total_after_add
-                            );
-                        }
-                        
-                        // Truncate the result to fit available budget
-                        let truncated = truncate_to_budget(&final_result, available);
-                        let new_tokens = estimate_tokens(&truncated);
-                        
-                        // Emit truncation event
-                        self.emit_event(ChatEvent::ContextTruncated {
-                            tool_name: tool_name.clone(),
-                            original_tokens: result_tokens,
-                            new_tokens,
-                            context_window: ctx_window,
-                        });
-                        
-                        if self.debug {
-                            eprintln!(
-                                "\x1B[90m[DEBUG] Truncated result from {} to {} tokens (budget: {})\x1B[0m",
-                                result_tokens, new_tokens, available
-                            );
-                        }
-                        
-                        final_result = truncated;
-                    }
-                    // Inter-tool check (80%): Signal need for compaction
-                    else if needs_inter_tool_compaction(history_tokens + result_tokens, system_tokens, ctx_window) {
-                        if self.debug {
-                            eprintln!(
-                                "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool compaction may be needed.\x1B[0m",
-                                (total_after_add) * 100 / ctx_window,
-                                total_after_add
-                            );
-                        }
-                        
-                        // Emit context near limit event (caller can send nudge)
-                        self.emit_event(ChatEvent::ContextNearLimit {
-                            tool_name: tool_name.clone(),
-                            tokens_used: total_after_add,
-                            context_window: ctx_window,
-                        });
-                    }
+                // Emit context events
+                if check_result.was_truncated {
+                    let result_tokens = estimate_tokens(&check_result.result);
+                    self.emit_event(ChatEvent::ContextTruncated {
+                        tool_name: tool_name.clone(),
+                        original_tokens: check_result.tokens_used,
+                        new_tokens: result_tokens,
+                        context_window: self.context_window.unwrap_or(0),
+                    });
+                } else if check_result.is_near_limit {
+                    self.emit_event(ChatEvent::ContextNearLimit {
+                        tool_name: tool_name.clone(),
+                        tokens_used: check_result.tokens_used,
+                        context_window: self.context_window.unwrap_or(0),
+                    });
                 }
 
-                // Push tool result to history (potentially truncated)
-                self.history.push(ChatMessage::tool(final_result));
+                // Push (possibly truncated) result to history
+                self.history.push(ChatMessage::tool(check_result.result));
             }
 
             // Recurse to get next response
