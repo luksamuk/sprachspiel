@@ -1224,21 +1224,16 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
                 println!("\x1B[32m✓ Added note #{} (scope: {})\x1B[0m", id, scope_str);
             }
             
-            // Print content preview with proper formatting (like note list)
+            // Print content preview with │ prefix on every line
             let lines: Vec<&str> = content.lines().collect();
             let max_lines = 5;
-            for (i, line) in lines.iter().take(max_lines).enumerate() {
+            for line in lines.iter().take(max_lines) {
                 let truncated = if line.len() > 76 {
                     format!("{}...", &line[..76])
                 } else {
                     line.to_string()
                 };
-                
-                if i == 0 {
-                    println!("  {}", truncated);
-                } else {
-                    println!("  │ {}", truncated);
-                }
+                println!("  │ {}", truncated);
             }
             
             // Show indication if content was truncated
@@ -1426,16 +1421,10 @@ pub fn handle_note_show(state: &ReplState, id: i64) {
             // Print header with markdown
             crate::markdown::print_markdown(&header);
 
-            // Print content lines with tree-style prefix
-            for (i, line) in note.content.lines().enumerate() {
-                if i == 0 {
-                    // First line - just print (already had header context)
-                    crate::markdown::print_markdown(line);
-                } else {
-                    // Subsequent lines - prefix with │
-                    print!("│ ");
-                    crate::markdown::print_markdown(line);
-                }
+            // Print content lines with │ prefix on every line, rendered as markdown
+            for line in note.content.lines() {
+                print!("│ ");
+                crate::markdown::print_markdown(line);
             }
         }
         Ok(None) => {
