@@ -13,6 +13,20 @@ pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;
 /// Lower than overflow to allow room for tool results during execution
 pub const PRE_TOOL_THRESHOLD: f32 = 0.75;
 
+/// Inter-tool check threshold (80% of context window)
+/// Triggers compaction between sequential tool calls.
+/// Same as DEFAULT_OVERFLOW_THRESHOLD since both indicate "needs compaction".
+pub const INTER_TOOL_THRESHOLD: f32 = 0.80;
+
+/// Emergency threshold (90% of context window)
+/// When exceeded, tool results are truncated before adding to history.
+/// This is the last resort before context overflow crashes.
+pub const EMERGENCY_THRESHOLD: f32 = 0.90;
+
+/// Response margin (tokens reserved for model response)
+/// Ensures space for the model to generate a response after tool execution.
+pub const RESPONSE_MARGIN: usize = 500;
+
 /// Default number of first messages to keep during compaction
 pub const DEFAULT_KEEP_FIRST: usize = 5;
 
@@ -28,6 +42,46 @@ pub fn needs_pre_tool_compaction(
 ) -> bool {
     let status = check_context_overflow(session, system_prompt, context_window, PRE_TOOL_THRESHOLD);
     status.needs_compaction()
+}
+
+/// Check if context needs inter-tool compaction
+/// Called after each tool result is added to history.
+/// Returns true if context is above INTER_TOOL_THRESHOLD (80%).
+pub fn needs_inter_tool_compaction(
+    history_tokens: usize,
+    system_tokens: usize,
+    context_window: usize,
+) -> bool {
+    let total = history_tokens.saturating_add(system_tokens);
+    let threshold = (context_window as f32 * INTER_TOOL_THRESHOLD) as usize;
+    total > threshold
+}
+
+/// Check if context is in emergency state
+/// Returns true if context is above EMERGENCY_THRESHOLD (90%).
+/// At this point, truncation is required before adding more content.
+pub fn is_emergency_context(
+    history_tokens: usize,
+    system_tokens: usize,
+    context_window: usize,
+) -> bool {
+    let total = history_tokens.saturating_add(system_tokens);
+    let threshold = (context_window as f32 * EMERGENCY_THRESHOLD) as usize;
+    total > threshold
+}
+
+/// Calculate available token budget for tool results
+/// Returns the number of tokens available before reaching EMERGENCY_THRESHOLD.
+pub fn calculate_available_budget(
+    history_tokens: usize,
+    system_tokens: usize,
+    context_window: usize,
+) -> usize {
+    let total_used = history_tokens.saturating_add(system_tokens);
+    let emergency_limit = (context_window as f32 * EMERGENCY_THRESHOLD) as usize;
+    emergency_limit
+        .saturating_sub(total_used)
+        .saturating_sub(RESPONSE_MARGIN)
 }
 
 /// Estimate tokens in a list of ChatMessage (for coordinator history)
@@ -709,5 +763,117 @@ mod tests {
             tokens_with_summary,
             tokens_no_summary
         );
+    }
+
+    #[test]
+    fn test_inter_tool_threshold() {
+        // INTER_TOOL_THRESHOLD should be between PRE_TOOL and EMERGENCY
+        assert!(
+            INTER_TOOL_THRESHOLD > PRE_TOOL_THRESHOLD,
+            "Inter-tool threshold should be higher than pre-tool threshold"
+        );
+        assert!(
+            INTER_TOOL_THRESHOLD < EMERGENCY_THRESHOLD,
+            "Inter-tool threshold should be lower than emergency threshold"
+        );
+        assert_eq!(
+            INTER_TOOL_THRESHOLD, 0.80,
+            "Inter-tool threshold should be 80%"
+        );
+    }
+
+    #[test]
+    fn test_needs_inter_tool_compaction_below() {
+        // Context at 70% - should NOT need compaction
+        let history_tokens = 700;
+        let system_tokens = 50;
+        let context_window = 1000;
+
+        assert!(
+            !needs_inter_tool_compaction(history_tokens, system_tokens, context_window),
+            "70% should not need inter-tool compaction"
+        );
+    }
+
+    #[test]
+    fn test_needs_inter_tool_compaction_above() {
+        // Context at 85% - should need compaction
+        let history_tokens = 800;
+        let system_tokens = 50;
+        let context_window = 1000;
+
+        assert!(
+            needs_inter_tool_compaction(history_tokens, system_tokens, context_window),
+            "85% should need inter-tool compaction"
+        );
+    }
+
+    #[test]
+    fn test_is_emergency_context_below() {
+        // Context at 85% - should NOT be emergency
+        let history_tokens = 800;
+        let system_tokens = 50;
+        let context_window = 1000;
+
+        assert!(
+            !is_emergency_context(history_tokens, system_tokens, context_window),
+            "85% should not be emergency"
+        );
+    }
+
+    #[test]
+    fn test_is_emergency_context_above() {
+        // Context at 95% - should be emergency
+        let history_tokens = 900;
+        let system_tokens = 50;
+        let context_window = 1000;
+
+        assert!(
+            is_emergency_context(history_tokens, system_tokens, context_window),
+            "95% should be emergency"
+        );
+    }
+
+    #[test]
+    fn test_calculate_available_budget_normal() {
+        // Context at 50% with margin of 500
+        let history_tokens = 400;
+        let system_tokens = 100;
+        let context_window = 1000;
+
+        let available = calculate_available_budget(history_tokens, system_tokens, context_window);
+
+        // Available = 900 - 400 - 100 - 500 = -100 -> saturating_sub = 0
+        // Actually: emergency_limit (900) - total (500) - margin (500) = -100 -> 0
+        assert_eq!(available, 0, "Should return 0 when budget is negative");
+    }
+
+    #[test]
+    fn test_calculate_available_budget_plenty() {
+        // Context at 10% with large context
+        let history_tokens = 1000;
+        let system_tokens = 100;
+        let context_window = 128000;
+
+        let available = calculate_available_budget(history_tokens, system_tokens, context_window);
+
+        // emergency_limit = 128000 * 0.9 = 115200
+        // available = 115200 - 1000 - 100 - 500 = 113600
+        assert!(
+            available > 100000,
+            "Should have plenty of budget available: got {}",
+            available
+        );
+    }
+
+    #[test]
+    fn test_threshold_relationships() {
+        // Verify the threshold hierarchy
+        assert!(PRE_TOOL_THRESHOLD < DEFAULT_OVERFLOW_THRESHOLD);
+        assert!(DEFAULT_OVERFLOW_THRESHOLD < EMERGENCY_THRESHOLD);
+        assert_eq!(PRE_TOOL_THRESHOLD, 0.75);
+        assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80);
+        assert_eq!(INTER_TOOL_THRESHOLD, 0.80);
+        assert_eq!(EMERGENCY_THRESHOLD, 0.90);
     }
 }

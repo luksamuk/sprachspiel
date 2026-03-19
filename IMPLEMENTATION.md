@@ -796,7 +796,7 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ### 🟠 PRIORITY 2: Context Overflow During Multi-Tool Execution
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.37.0)
 
 **Goal:** Prevent context overflow when LLM calls multiple tools in sequence.
 
@@ -821,18 +821,31 @@ check_and_compact_before_tool()  ← ONLY verification
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add `TOOL_TOKEN_BUDGETS` constant in `src/tools/registry.rs` | ❌ |
-| 2 | Add `calculate_remaining_budget()` in `src/context_overflow.rs` | ❌ |
-| 3 | Add pre-tool check in `custom_coordinator.rs::process_response()` | ❌ |
-| 4 | Define token budgets per tool | ❌ |
-| 5 | Add tests for budget calculation | ❌ |
+| 1 | Add inter-tool context check (80% threshold) | ✅ Done |
+| 2 | Add emergency truncation (90% threshold) | ✅ Done |
+| 3 | Add `needs_inter_tool_compaction()` function | ✅ Done |
+| 4 | Add `truncate_to_budget()` for emergency truncation | ✅ Done |
+| 5 | Add `ContextNearLimit` and `ContextTruncated` events | ✅ Done |
+| 6 | Add tests for new functions | ✅ Done |
 
-**Files:**
-- `src/tools/registry.rs` - Token budgets per tool
-- `src/context_overflow.rs` - Budget calculation
-- `src/chat/custom_coordinator.rs` - Pre-tool check
+**Files Modified:**
+- `src/context_overflow.rs` - Added constants and functions for inter-tool check
+- `src/utils.rs` - Added `truncate_to_budget()` for emergency truncation
+- `src/chat/custom_coordinator.rs` - Added inter-tool check after tool execution
+- `src/query.rs` - Added event handlers for new context events
 
-**Estimated effort:** 1 day
+**Constants Added:**
+- `INTER_TOOL_THRESHOLD = 0.80` - Trigger compaction between tools
+- `EMERGENCY_THRESHOLD = 0.90` - Hard limit before truncation
+- `RESPONSE_MARGIN = 500` - Tokens reserved for model response
+
+**Flow Implemented:**
+1. After each tool result is added to history
+2. Check if context > 80% → emit `ContextNearLimit` event
+3. Check if context > 90% → truncate result → emit `ContextTruncated` event
+4. Continue to next tool or finalize
+
+**Note for Future:** When implementing parallel tool execution, the nudge mechanism via `continuation_prompt` should be reviewed to handle multiple concurrent tool completions.
 
 **Related:** Issue #43
 

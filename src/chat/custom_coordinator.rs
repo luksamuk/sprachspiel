@@ -4,6 +4,7 @@
 //! - Pre-tool content callbacks (content before tool calls)
 //! - Thinking content callbacks
 //! - Full control over tool execution flow
+//! - Inter-tool context overflow detection
 
 use std::{collections::HashMap, future::Future, pin::Pin};
 
@@ -20,6 +21,14 @@ use ollama_rs::{
     re_exports::schemars::{JsonSchema, Schema, generate::SchemaSettings},
 };
 use serde_json::Value;
+
+use crate::context_overflow::{
+    calculate_available_budget, estimate_chat_messages_tokens,
+    is_emergency_context, needs_inter_tool_compaction,
+    EMERGENCY_THRESHOLD,
+};
+use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
+use crate::utils::truncate_to_budget;
 
 /// Result type for tool execution
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
@@ -213,6 +222,21 @@ pub enum ChatEvent {
     /// Tool execution result (name kept for future debugging use)
     #[allow(dead_code)]
     ToolResult { name: String, result: String },
+    /// Context is near limit after tool execution (80% threshold)
+    /// Indicates compaction may be needed before next tool
+    ContextNearLimit {
+        tool_name: String,
+        tokens_used: usize,
+        context_window: usize,
+    },
+    /// Context was truncated during tool execution (90%+ emergency)
+    /// Indicates last tool result was truncated to fit
+    ContextTruncated {
+        tool_name: String,
+        original_tokens: usize,
+        new_tokens: usize,
+        context_window: usize,
+    },
 }
 
 /// A coordinator for managing chat interactions with event callbacks.
@@ -534,8 +558,70 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     result: result.clone(),
                 });
 
-                // Push tool result to history
-                self.history.push(ChatMessage::tool(result));
+                // Inter-tool context check: detect overflow between tool calls
+                let mut final_result = result;
+                
+                if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
+                    // Calculate tokens BEFORE adding result to history (history still has previous items)
+                    let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
+                    let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
+                    let result_tokens = estimate_tokens(&final_result);
+                    let total_after_add = history_tokens + system_tokens + result_tokens;
+                    
+                    // Emergency check (90%): Truncate result to fit
+                    if is_emergency_context(history_tokens + result_tokens, system_tokens, ctx_window) {
+                        let available = calculate_available_budget(history_tokens, system_tokens, ctx_window);
+                        
+                        if self.debug {
+                            eprintln!(
+                                "\x1B[33m[WARN] Context emergency at {}% ({} tokens). Truncating result...\x1B[0m",
+                                (total_after_add) * 100 / ctx_window,
+                                total_after_add
+                            );
+                        }
+                        
+                        // Truncate the result to fit available budget
+                        let truncated = truncate_to_budget(&final_result, available);
+                        let new_tokens = estimate_tokens(&truncated);
+                        
+                        // Emit truncation event
+                        self.emit_event(ChatEvent::ContextTruncated {
+                            tool_name: tool_name.clone(),
+                            original_tokens: result_tokens,
+                            new_tokens,
+                            context_window: ctx_window,
+                        });
+                        
+                        if self.debug {
+                            eprintln!(
+                                "\x1B[90m[DEBUG] Truncated result from {} to {} tokens (budget: {})\x1B[0m",
+                                result_tokens, new_tokens, available
+                            );
+                        }
+                        
+                        final_result = truncated;
+                    }
+                    // Inter-tool check (80%): Signal need for compaction
+                    else if needs_inter_tool_compaction(history_tokens + result_tokens, system_tokens, ctx_window) {
+                        if self.debug {
+                            eprintln!(
+                                "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool compaction may be needed.\x1B[0m",
+                                (total_after_add) * 100 / ctx_window,
+                                total_after_add
+                            );
+                        }
+                        
+                        // Emit context near limit event (caller can send nudge)
+                        self.emit_event(ChatEvent::ContextNearLimit {
+                            tool_name: tool_name.clone(),
+                            tokens_used: total_after_add,
+                            context_window: ctx_window,
+                        });
+                    }
+                }
+
+                // Push tool result to history (potentially truncated)
+                self.history.push(ChatMessage::tool(final_result));
             }
 
             // Recurse to get next response
@@ -553,14 +639,12 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
         // Check context overflow before sending to Ollama
         if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
-            let history_tokens =
-                crate::context_overflow::estimate_chat_messages_tokens(&self.history.messages());
-            let system_tokens =
-                crate::tokens::estimate_tokens(prompt) + crate::tokens::MESSAGE_OVERHEAD;
+            let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
+            let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
             let total_tokens = history_tokens + system_tokens;
 
-            // Use 90% threshold to detect overflow early
-            let threshold = (ctx_window as f64 * 0.9) as usize;
+            // Use EMERGENCY_THRESHOLD (90%) to detect overflow
+            let threshold = (ctx_window as f32 * EMERGENCY_THRESHOLD) as usize;
 
             if total_tokens > threshold {
                 // Return error that will be caught by caller

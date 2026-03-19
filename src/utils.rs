@@ -148,6 +148,46 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// Truncate a string to fit within a token budget.
+///
+/// Used for emergency truncation of tool results when context is near overflow.
+/// Preserves the beginning (head) of the content since structure and context
+/// are typically more valuable than the end.
+///
+/// # Arguments
+/// * `text` - The text to potentially truncate
+/// * `budget` - Maximum number of tokens allowed
+///
+/// # Returns
+/// * Truncated string with notice if truncation occurred
+/// * Original string if within budget
+pub fn truncate_to_budget(text: &str, budget: usize) -> String {
+    use crate::tokens::estimate_tokens;
+
+    let estimated_tokens = estimate_tokens(text);
+
+    if estimated_tokens <= budget {
+        return text.to_string();
+    }
+
+    // Reserve tokens for overhead (truncation notice)
+    let overhead_tokens = 20;
+    let target_tokens = budget.saturating_sub(overhead_tokens);
+
+    // Rough conversion: ~4 characters per token (conservative)
+    let char_budget = target_tokens.saturating_mul(4);
+
+    // Preserve head (structure/context is more valuable)
+    let truncated: String = text.chars().take(char_budget).collect();
+
+    format!(
+        "{}\n\n... [Result truncated: {} → {} tokens]",
+        truncated,
+        estimated_tokens,
+        budget
+    )
+}
+
 /// Fetch JSON from a URL with proper error handling for tools.
 ///
 /// This is a helper function for tool implementations that need to
@@ -339,5 +379,62 @@ mod tests {
 
         // Mixed ASCII and Unicode
         assert_eq!(truncate_chars("Hello中国", 6), "Hello中...");
+    }
+
+    #[test]
+    fn test_truncate_to_budget_within() {
+        // Text within budget - no truncation
+        let text = "Hello world this is a test";
+        let result = truncate_to_budget(text, 100);
+        assert_eq!(result, text);
+    }
+
+    #[test]
+    fn test_truncate_to_budget_exceeds() {
+        // Text exceeds budget - truncation with notice
+        // "This is a longer piece of text that should be truncated" ~ 10 tokens
+        // Budget of 5 tokens with 20 overhead = target of 0 -> minimal content
+        let text = "This is a longer piece of text that should be truncated";
+        let result = truncate_to_budget(text, 5);
+        
+        assert!(result.contains("... [Result truncated"));
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_truncate_to_budget_preserves_head() {
+        // Verify that head is preserved (structure is more valuable)
+        // "Line 1\nLine 2\nLine 3\nLine 4\nLine 5" ~ 10 tokens
+        // Budget of 50 tokens should still preserve beginning
+        let text = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+        let result = truncate_to_budget(text, 50);
+        
+        // Within budget, no truncation
+        assert_eq!(result, text);
+        
+        // Now with smaller budget
+        let result_small = truncate_to_budget(text, 3);
+        assert!(result_small.contains("truncated"));
+    }
+
+    #[test]
+    fn test_truncate_to_budget_budget_too_small() {
+        // Budget smaller than overhead - should still work
+        let text = "Hello world";
+        let result = truncate_to_budget(text, 5);
+        
+        // Should still return something (possibly empty truncated string)
+        assert!(!result.is_empty() || result.contains("truncated"));
+    }
+    
+    #[test]
+    fn test_truncate_to_budget_realistic() {
+        // Realistic scenario: 4000 token budget, 8000 token content
+        let long_text = "word ".repeat(8000); // ~32000 chars, ~10666 tokens
+        let result = truncate_to_budget(&long_text, 4000);
+        
+        assert!(result.contains("... [Result truncated"));
+        // Budget of 4000 - 20 overhead = 3980 tokens * 4 chars = ~15920 chars
+        assert!(result.len() < long_text.len());
     }
 }

@@ -124,6 +124,26 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
                 });
             }
         }
+        ChatEvent::ContextNearLimit { tool_name, tokens_used, context_window } => {
+            if use_debug {
+                eprintln!(
+                    "\x1B[33m[INFO] Context at {:.0}% after tool '{}' ({} / {} tokens)\x1B[0m",
+                    (tokens_used * 100) / context_window,
+                    tool_name,
+                    tokens_used,
+                    context_window
+                );
+            }
+        }
+        ChatEvent::ContextTruncated { tool_name, original_tokens, new_tokens, context_window } => {
+            eprintln!(
+                "\x1B[33m[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)\x1B[0m",
+                tool_name,
+                original_tokens,
+                new_tokens,
+                context_window
+            );
+        }
     }
 }
 
