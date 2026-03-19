@@ -198,23 +198,23 @@ async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id
             );
 
             // If user message, also fetch subsequent assistant messages
-            if role == ROLE_USER {
-                if let Some(conv_id) = &item.conversation_id {
-                    // Get subsequent messages
-                    match db.get_content_subsequent_assistant(item.id, conv_id) {
-                        Ok(assistant_msgs) => {
-                            for answer in assistant_msgs {
-                                output.push_str(&format!(
-                                    "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
-                                    answer.id,
-                                    answer.created_at.format("%Y-%m-%d %H:%M"),
-                                    answer.content
-                                ));
-                            }
+            if role == ROLE_USER
+                && let Some(conv_id) = &item.conversation_id
+            {
+                // Get subsequent messages
+                match db.get_content_subsequent_assistant(item.id, conv_id) {
+                    Ok(assistant_msgs) => {
+                        for answer in assistant_msgs {
+                            output.push_str(&format!(
+                                "\n\n**Assistant Response (id={})**\nTimestamp: {}\n\n---\n{}\n---",
+                                answer.id,
+                                answer.created_at.format("%Y-%m-%d %H:%M"),
+                                answer.content
+                            ));
                         }
-                        Err(e) => {
-                            output.push_str(&format!("\n\n*Failed to fetch assistant response: {}*", e));
-                        }
+                    }
+                    Err(e) => {
+                        output.push_str(&format!("\n\n*Failed to fetch assistant response: {}*", e));
                     }
                 }
             }

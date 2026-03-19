@@ -567,6 +567,7 @@ The schema migration from v6 to v7 includes a breaking change for embeddings:
 | #14 | `regenerate_all_embeddings()` deleted all chunks on startup | Removed chunk cleanup, only clean orphan chunks |
 | #7 | Embedding context length exceeded (512 tokens vs 1024 chars) | Dynamic chunk sizing based on model context |
 | #8 | Orphan chunks caused infinite recovery loops | Clean orphan chunks at startup |
+| #42 | `note_add` panics with Unicode content | Use `truncate_chars()` for character-aware slicing |
 
 **Dynamic Chunking Architecture:**
 

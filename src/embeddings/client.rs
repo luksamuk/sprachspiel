@@ -51,10 +51,10 @@ impl EmbeddingClient {
 
         // Look for "*.context_length" in model_info
         for (key, value) in info.model_info.iter() {
-            if key.ends_with(".context_length") {
-                if let Some(ctx) = value.as_u64() {
-                    return Ok(ctx as usize);
-                }
+            if key.ends_with(".context_length")
+                && let Some(ctx) = value.as_u64()
+            {
+                return Ok(ctx as usize);
             }
         }
 

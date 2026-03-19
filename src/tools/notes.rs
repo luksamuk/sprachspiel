@@ -19,6 +19,7 @@ use crate::content::types::{ContentScope, ContentSource, Note, MAX_NOTE_CONTENT_
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
+use crate::utils::truncate_chars;
 
 /// Create a note for longer documents that should persist across sessions.
 ///
@@ -120,11 +121,7 @@ pub async fn note_add(
 
     // Build response
     let title_str = title.as_deref().unwrap_or("Untitled");
-    let preview = if content.len() > 200 {
-        format!("{}...", &content[..200])
-    } else {
-        content.clone()
-    };
+    let preview = truncate_chars(&content, 200);
 
     let result = format!(
         "Created note {} (project-scoped)\n\n**Title:** {}\n\n**Preview:**\n{}\n\n\
