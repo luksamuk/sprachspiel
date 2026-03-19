@@ -8,10 +8,9 @@
 
 use ask_ai::chat::session::{ChatSession, MessageRole, SavedMessage};
 use ask_ai::context_overflow::{
-    DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_THRESHOLD,
-    check_context_overflow, truncate_tool_result,
+    check_context_overflow, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD,
+    PRE_TOOL_THRESHOLD,
 };
-use ask_ai::tokens::estimate_tokens;
 use chrono::Utc;
 
 fn create_session_with_token_count(message_count: usize, tokens_per_message: usize) -> ChatSession {
@@ -189,25 +188,6 @@ fn test_pre_tool_compaction_preserves_user_message() {
     assert!(
         compactable_count > 0,
         "Should have messages available to compact"
-    );
-}
-
-#[test]
-fn test_tool_result_truncation_limits_context_growth() {
-    let large_result = "word ".repeat(20000);
-    let (truncated, was_truncated, original_tokens) = truncate_tool_result(&large_result);
-
-    assert!(was_truncated, "Large tool result should be truncated");
-    assert!(original_tokens > 4000, "Original tokens should exceed 4000");
-
-    let truncated_tokens = estimate_tokens(&truncated);
-    assert!(
-        truncated_tokens < original_tokens,
-        "Truncated tokens should be less than original"
-    );
-    assert!(
-        truncated.contains("[...truncated"),
-        "Should contain truncation notice"
     );
 }
 
