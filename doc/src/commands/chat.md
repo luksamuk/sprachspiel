@@ -323,12 +323,12 @@ Facts are only available in persistent sessions where they can be stored across 
 
 ## Prompt Indicators
 
-The prompt shows active modes:
+The prompt shows active modes with emojis:
 
 - `lfm>` - Normal mode
-- `lfm[t]>` - Think mode enabled
-- `lfm[T]>` - Tools enabled
-- `lfm[t][T]>` - Both think and tools enabled
+- `lfm🧠>` - Think mode enabled
+- `lfm🔧>` - Tools enabled
+- `lfm🧠🔧>` - Both think and tools enabled
 
 ## Tab Completion
 

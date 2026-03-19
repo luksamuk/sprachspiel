@@ -14,6 +14,11 @@ All notable changes to Ask-AI will be documented in this file.
   - Assets stored in `assets/` directory for reproducibility
   - See `assets/README.md` for regeneration instructions
 
+- **Prompt Emojis** - Replaced `[t][T]` indicators with emojis
+  - `🧠` = think mode active
+  - `🔧` = tools active
+  - Example: `model🧠🔧>` instead of `model[t][T]>`
+
 ### Changed
 
 - **`/clear` renamed to `/new`** - Command now starts a new conversation session
@@ -1954,7 +1959,7 @@ If upgrading from v0.13.0:
 
 - **UI Improvements**:
   - Welcome message only shows available features (think/tools hidden if unsupported)
-  - Prompt shows active modes: `lfm[t][T]>` when think and tools enabled
+  - Prompt shows active modes with emojis: `lfm🧠🔧>` when think and tools enabled
   - `/info` shows compacted message count if applicable
 
 ### Removed
