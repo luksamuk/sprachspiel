@@ -2,6 +2,17 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [Unreleased]
+
+### Removed
+
+- **Dead Code Cleanup** - Removed unused code from `context_overflow.rs`
+  - `estimate_messages_tokens()` - replaced by `estimate_chat_messages_tokens()`
+  - `MAX_TOOL_RESULT_TOKENS` constant - no longer used
+  - `CHARS_PER_TOKEN` constant - no longer used
+  - `truncate_tool_result()` function - no longer used
+  - All were marked "no longer used" with explicit comments
+
 ## [0.36.0] - 2026-03-19
 
 ### Added
