@@ -6,6 +6,14 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **Context Overflow Compaction Loop** - Fixed infinite compaction loop caused by oversized summaries
+  - Root cause: Compaction summaries had no size limit, generating ~18K token summaries
+  - Combined with late trigger (95%+), summaries caused immediate re-compaction
+  - Solution: 3,000 token limit on summaries + 15,000 token buffer before overflow
+  - New structured summary template inspired by OpenCode's approach
+  - Template includes: Goal, Instructions, Progress, Discoveries, Relevant Files
+  - Automatic truncation if LLM ignores token limit
+
 - **Context Overflow During Multi-Tool Execution** - Added pre-tool token budget check
   - Token budget verification before each tool execution in multi-tool chains
   - Prevents context overflow when LLM calls multiple tools sequentially
@@ -23,6 +31,20 @@ All notable changes to Ask-AI will be documented in this file.
   - Changed `push_str("🧠")` to `push('🧠')` for single chars
   - Simplified `!x.is_none()` to `x.is_some()`
   - Added `#[allow(clippy::too_many_arguments)]` for functions that need many args
+
+### Changed
+
+- **Compaction Thresholds** - Adjusted to prevent overflow loops
+  - Added `COMPACTION_BUFFER` (15,000 tokens) - reserve space before overflow
+  - Added `MAX_SUMMARY_TOKENS` (3,000 tokens) - hard limit on summary size
+  - Compaction now triggers when context reaches `context_window - COMPACTION_BUFFER`
+  - Summary is automatically truncated if it exceeds `MAX_SUMMARY_TOKENS`
+
+- **Compaction Summary Template** - Restructured for better context preservation
+  - Old: Generic markdown with Key Topics, Decisions, Technical Details, Action Items
+  - New: Structured template with Goal, Instructions, Progress (Completed/Pending), Discoveries, Relevant Files
+  - Inspired by OpenCode's compaction template for better context continuation
+  - Explicit token limit warning in prompt to prevent oversized summaries
 
 ### Removed
 

@@ -127,26 +127,44 @@ continue naturally from the checkpoint without repeating completed work.
 /// System prompt for conversation compaction
 ///
 /// Used when summarizing old messages during context overflow.
-/// Produces structured markdown summaries.
-pub const COMPACTION_PROMPT: &str = r#"Summarize the following conversation concisely in MARKDOWN format.
+/// Produces structured markdown summaries with explicit token limit.
+///
+/// Design inspiration: OpenCode's compaction template for context preservation.
+/// Key differences from previous template:
+/// - Explicit token limit (3,000 tokens max)
+/// - Structured sections for better context continuation
+/// - Negative constraints to prevent verbose output
+/// - Maximum item counts per section for brevity
+pub const COMPACTION_PROMPT: &str = r#"Summarize the following conversation CONCISELY in MARKDOWN format.
+
+CRITICAL: The output MUST NOT exceed 3000 tokens. Be extremely concise.
 
 Use this structure:
-**Key Topics:**
-- Topic 1
-- Topic 2
 
-**Decisions Made:**
-- Decision 1
-- Decision 2
+## Goal
+[1-2 sentences: What is the user trying to accomplish?]
 
-**Technical Details:**
-- Important code/technical info
+## Instructions
+- [Important user constraints and preferences, max 3 items]
 
-**Action Items:**
-- [ ] Pending task 1
-- [ ] Pending task 2
+## Progress
+**Completed:** [Work done, max 5 items]
+**Pending:** [Work remaining, max 3 items]
 
-Provide a structured markdown summary that captures the essential context."#;
+## Discoveries
+[Key insights learned, max 3 items]
+
+## Relevant Files
+- [Files read/edited/concerned, max 5 items]
+- Root path: [Project root if relevant]
+
+DO NOT include:
+- Full message transcripts
+- Repeated information
+- Conversational filler
+- Technical implementation details (unless critical)
+
+Focus on ESSENTIAL context for continuing the conversation."#;
 
 /// Template for continuation prompts
 ///

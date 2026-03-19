@@ -798,24 +798,42 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 **Status:** ✅ COMPLETED (v0.37.0)
 
-**Goal:** Prevent context overflow when LLM calls multiple tools in sequence.
+**Goal:** Prevent context overflow when LLM calls multiple tools in sequence AND fix infinite compaction loop caused by oversized summaries.
 
-**Problem:** Auto-compaction only happens BEFORE the first message. When tools execute sequentially, results accumulate in history without token checks. Large tool outputs (file reads, command outputs) can overflow context during multi-tool chains.
+**Problems:**
 
-**Current Gap:**
+1. **Multi-Tool Overflow:** Auto-compaction only happens BEFORE the first message. When tools execute sequentially, results accumulate in history without token checks. Large tool outputs (file reads, command outputs) can overflow context during multi-tool chains.
+
+2. **Compaction Loop (Critical Bug):** Compaction summaries had no size limit. With 368 messages being summarized, the LLM generated ~18,000 token summaries, causing immediate re-compaction in an infinite loop.
+
+**Root Cause Analysis:**
+- Trigger was too late (95%+ context usage)
+- No buffer reserved before overflow
+- Summary had no token limit, generating massive summaries
+- Template was generic, not structured for context preservation
+
+**Solution:** Three-layer protection:
+
+**Layer 1: Early Trigger with Buffer**
 ```
-check_and_compact_before_tool()  ← ONLY verification
-        ↓
-    send_message()
-        ↓
-    tool_1 → result_1 → history.push()  ← No check
-        ↓
-    tool_2 → result_2 → history.push()  ← No check
-        ↓
-    overflow! 💥
+COMPACTION_BUFFER = 15,000 tokens
+Trigger when: tokens >= context_window - COMPACTION_BUFFER
+NOT at: percentual threshold (80%, 90%)
 ```
 
-**Solution:** Add pre-tool token budget check in `custom_coordinator.rs` before each tool execution.
+**Layer 2: Structured Summary with Hard Limit**
+```
+MAX_SUMMARY_TOKENS = 3,000 tokens
+Template: Goal, Instructions, Progress, Discoveries, Relevant Files
+Auto-truncate if LLM ignores limit
+```
+
+**Layer 3: Inter-Tool Protection** (from Phase 1 implementation)
+```
+PRE_TOOL_THRESHOLD = 75%  → Warning before first tool
+INTER_TOOL_THRESHOLD = 80% → Compaction between tools
+EMERGENCY_THRESHOLD = 90% → Truncate result as last resort
+```
 
 **Implementation:**
 
@@ -827,23 +845,55 @@ check_and_compact_before_tool()  ← ONLY verification
 | 4 | Add `truncate_to_budget()` for emergency truncation | ✅ Done |
 | 5 | Add `ContextNearLimit` and `ContextTruncated` events | ✅ Done |
 | 6 | Add tests for new functions | ✅ Done |
+| 7 | Add `COMPACTION_BUFFER` and `MAX_SUMMARY_TOKENS` constants | ✅ Done |
+| 8 | Restructure `COMPACTION_PROMPT` with structured template | ✅ Done |
+| 9 | Add summary truncation in `compact_conversation()` | ✅ Done |
 
 **Files Modified:**
-- `src/context_overflow.rs` - Added constants and functions for inter-tool check
+- `src/context_overflow.rs` - Added constants: `COMPACTION_BUFFER`, `MAX_SUMMARY_TOKENS`, inter-tool functions
+- `src/prompts/base.rs` - Restructured `COMPACTION_PROMPT` with Goal/Instructions/Progress/Discoveries/Files sections
 - `src/utils.rs` - Added `truncate_to_budget()` for emergency truncation
+- `src/chat/core.rs` - Added summary truncation in `compact_conversation()`
 - `src/chat/custom_coordinator.rs` - Added inter-tool check after tool execution
 - `src/query.rs` - Added event handlers for new context events
 
 **Constants Added:**
+- `COMPACTION_BUFFER = 15,000` - Reserve space before overflow (OpenCode-inspired)
+- `MAX_SUMMARY_TOKENS = 3,000` - Hard limit on summary size
 - `INTER_TOOL_THRESHOLD = 0.80` - Trigger compaction between tools
 - `EMERGENCY_THRESHOLD = 0.90` - Hard limit before truncation
 - `RESPONSE_MARGIN = 500` - Tokens reserved for model response
 
+**New Compaction Template:**
+```markdown
+## Goal
+[1-2 sentences: What is the user trying to accomplish?]
+
+## Instructions
+- [Important user constraints and preferences, max 3 items]
+
+## Progress
+**Completed:** [Work done, max 5 items]
+**Pending:** [Work remaining, max 3 items]
+
+## Discoveries
+[Key insights learned, max 3 items]
+
+## Relevant Files
+- [Files read/edited/concerned, max 5 items]
+- Root path: [Project root if relevant]
+```
+
 **Flow Implemented:**
-1. After each tool result is added to history
-2. Check if context > 80% → emit `ContextNearLimit` event
-3. Check if context > 90% → truncate result → emit `ContextTruncated` event
-4. Continue to next tool or finalize
+1. Before first message: Check if context needs compaction (trigger at `context - COMPACTION_BUFFER`)
+2. Between tools: Check if context > 80% → emit `ContextNearLimit` event
+3. Emergency: If context > 90% → truncate result → emit `ContextTruncated` event
+4. After compaction: Generate summary with template, truncate if > MAX_SUMMARY_TOKENS
+
+**Research Sources:**
+- OpenCode compaction.ts: `COMPACTION_BUFFER = 20,000`, structured template
+- LangChain: Token-based triggers, summary best practices
+- ask-ai-rs context: Zettelkasten and learning focus (smaller buffer than code agents)
 
 **Note for Future:** When implementing parallel tool execution, the nudge mechanism via `continuation_prompt` should be reviewed to handle multiple concurrent tool completions.
 

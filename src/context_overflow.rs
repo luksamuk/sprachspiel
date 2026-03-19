@@ -27,6 +27,25 @@ pub const EMERGENCY_THRESHOLD: f32 = 0.90;
 /// Ensures space for the model to generate a response after tool execution.
 pub const RESPONSE_MARGIN: usize = 500;
 
+/// Compaction buffer - reserve space before compaction trigger
+/// Ensures compaction happens BEFORE context fills, not after overflow.
+/// Inspired by OpenCode's approach (they use 20K for code agents).
+/// ask-ai uses 15K since it's primarily for Zettelkasten and learning,
+/// not code generation, so we need less buffer for response space.
+///
+/// TODO: This should replace percentage-based triggers in auto_compact_if_needed
+/// for a more predictable overflow prevention. Currently we use DEFAULT_OVERFLOW_THRESHOLD
+/// (80%), but triggering at (context - COMPACTION_BUFFER) is cleaner.
+/// See: https://github.com/luksamuk/ask-ai-rs/issues/43
+#[allow(dead_code)]
+pub const COMPACTION_BUFFER: usize = 15_000;
+
+/// Maximum tokens for compacted summary
+/// Prevents summary from becoming large enough to cause overflow again.
+/// Based on research: 10-15% of original content, capped for safety.
+/// For 368 messages (~18K tokens original), 3K is ~17% - aggressive but safe.
+pub const MAX_SUMMARY_TOKENS: usize = 3_000;
+
 /// Default number of first messages to keep during compaction
 pub const DEFAULT_KEEP_FIRST: usize = 5;
 
@@ -42,6 +61,25 @@ pub fn needs_pre_tool_compaction(
 ) -> bool {
     let status = check_context_overflow(session, system_prompt, context_window, PRE_TOOL_THRESHOLD);
     status.needs_compaction()
+}
+
+/// Check if context needs compaction based on buffer (not percentages)
+/// Inspired by OpenCode's approach: trigger when tokens >= context_window - COMPACTION_BUFFER
+/// This ensures compaction happens BEFORE overflow, not after.
+///
+/// TODO: This should be integrated into auto_compact_if_needed to replace
+/// percentage-based triggers. Currently experimental.
+/// See: https://github.com/luksamuk/ask-ai-rs/issues/43
+#[allow(dead_code)]
+#[allow(unused_variables)]
+pub fn needs_buffered_compaction(
+    session: &ChatSession,
+    system_prompt: &str,
+    context_window: usize,
+) -> bool {
+    let real_tokens = session.history_real_tokens();
+    let threshold = context_window.saturating_sub(COMPACTION_BUFFER);
+    real_tokens >= threshold
 }
 
 /// Check if context needs inter-tool compaction

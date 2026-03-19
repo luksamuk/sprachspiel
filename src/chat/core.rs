@@ -22,7 +22,7 @@ use std::sync::Arc;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
-use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD};
+use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD, MAX_SUMMARY_TOKENS};
 use crate::debug_tools::log_debug;
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
@@ -32,7 +32,9 @@ use crate::prompts::builder::{
 use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
+use crate::tokens::estimate_tokens;
 use crate::tools::{get_available_tool_names, register_tools};
+use crate::utils::truncate_to_budget;
 
 use super::coordinator::{
     classify_ollama_error, format_recovery_message, is_ollama_error_recoverable, MAX_RETRIES,
@@ -591,6 +593,19 @@ pub async fn compact_conversation(
     match result {
         Ok(response) => {
             let summary = strip_thinking_tags(&response.message.content);
+            
+            // Truncate summary if it exceeds MAX_SUMMARY_TOKENS
+            // This prevents infinite compaction loops caused by oversized summaries
+            let summary = if estimate_tokens(&summary) > MAX_SUMMARY_TOKENS {
+                eprintln!(
+                    "\x1B[33m⚠ Summary exceeds {} tokens, truncating...\x1B[0m",
+                    MAX_SUMMARY_TOKENS
+                );
+                truncate_to_budget(&summary, MAX_SUMMARY_TOKENS)
+            } else {
+                summary
+            };
+            
             Ok((summary, range))
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),
