@@ -9,6 +9,7 @@ use std::str::FromStr;
 use super::decay::should_prune;
 use super::types::{Category, Fact, Scope, Source};
 use crate::db::Database;
+use crate::db::WhereBuilder;
 
 /// Escape a string for FTS5 MATCH queries.
 fn fts5_escape(query: &str) -> String {
@@ -51,6 +52,13 @@ pub struct DecayStats {
     /// Number of facts remaining
     pub remaining: usize,
 }
+
+// === SQL Constants ===
+
+const LIST_FACTS_SQL: &str = "
+    SELECT id, scope, category, content, importance, access_count,
+           decay_score, created_at, last_accessed, source, invalidated_at, project_id
+    FROM facts";
 
 impl Database {
     /// Insert a new fact
@@ -183,83 +191,28 @@ impl Database {
         project_id: Option<&str>,
     ) -> Result<Vec<Fact>> {
         self.with_connection(|conn| {
+            let mut builder = WhereBuilder::new();
+            builder
+                .add("invalidated_at IS NULL")
+                .add_option("scope = ?", scope.map(|s| s.to_string()))
+                .add_option("category = ?", category.map(|c| c.to_string()))
+                .add_option_str("project_id = ?", project_id);
+
+            let sql = format!(
+                "{} {} ORDER BY created_at DESC",
+                LIST_FACTS_SQL.trim(),
+                builder.build_where()
+            );
+            let params = builder.into_params();
+
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_fact)?;
+
             let mut results = Vec::new();
-            
-            let sql = match (&scope, &category, &project_id) {
-                (Some(_), Some(_), Some(_)) => 
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE scope = ?1 AND category = ?2 AND project_id = ?3 \
-                     AND invalidated_at IS NULL ORDER BY created_at DESC",
-                (Some(_), Some(_), None) => 
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE scope = ?1 AND category = ?2 \
-                     AND invalidated_at IS NULL ORDER BY created_at DESC",
-                (Some(_), None, Some(_)) => 
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE scope = ?1 AND project_id = ?2 \
-                     AND invalidated_at IS NULL ORDER BY created_at DESC",
-                (None, Some(_), Some(_)) => 
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE category = ?1 AND project_id = ?2 \
-                     AND invalidated_at IS NULL ORDER BY created_at DESC",
-                (Some(_), None, None) => 
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE scope = ?1 \
-                     AND invalidated_at IS NULL ORDER BY created_at DESC",
-                (None, Some(_), None) => 
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE category = ?1 \
-                     AND invalidated_at IS NULL ORDER BY created_at DESC",
-                (None, None, Some(_)) => 
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE project_id = ?1 \
-                     AND invalidated_at IS NULL ORDER BY created_at DESC",
-                (None, None, None) => 
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE invalidated_at IS NULL ORDER BY created_at DESC",
-            };
-
-            let mut stmt = conn.prepare(sql)?;
-            
-            let rows = match (&scope, &category, &project_id) {
-                (Some(s), Some(c), Some(p)) => {
-                    stmt.query_map(params![s.to_string(), c.to_string(), p], row_to_fact)?
-                }
-                (Some(s), Some(c), None) => {
-                    stmt.query_map(params![s.to_string(), c.to_string()], row_to_fact)?
-                }
-                (Some(s), None, Some(p)) => {
-                    stmt.query_map(params![s.to_string(), p], row_to_fact)?
-                }
-                (None, Some(c), Some(p)) => {
-                    stmt.query_map(params![c.to_string(), p], row_to_fact)?
-                }
-                (Some(s), None, None) => {
-                    stmt.query_map(params![s.to_string()], row_to_fact)?
-                }
-                (None, Some(c), None) => {
-                    stmt.query_map(params![c.to_string()], row_to_fact)?
-                }
-                (None, None, Some(p)) => {
-                    stmt.query_map(params![p], row_to_fact)?
-                }
-                (None, None, None) => {
-                    stmt.query_map(params![], row_to_fact)?
-                }
-            };
-
             for r in rows {
                 results.push(r?);
             }
-            
+
             Ok(results)
         })
     }

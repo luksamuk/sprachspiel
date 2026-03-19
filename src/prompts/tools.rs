@@ -237,6 +237,42 @@ Status values: pending, in_progress, done"#
         }
     }
 
+    // Notes tools (always available)
+    {
+        if !blacklist.contains("note_add") {
+            sections.push(
+                r#"### NOTES TOOLS
+Use for storing longer documents that should persist across sessions.
+Available: note_add
+
+**When to use note_add vs fact_add:**
+
+Use **note_add** for:
+- Architecture decisions and their rationale
+- Implementation notes and summaries
+- How-to guides and tutorials
+- Extended code explanations
+- Meeting notes and decisions
+- Longer documents (up to 10,000 characters)
+
+Use **fact_add** for:
+- Short preferences ("I prefer dark mode", "Use snake_case")
+- Quick facts ("Database is PostgreSQL 15", "API on port 8080")
+- Settings and small configuration facts
+- Single-sentence information (max 500 characters)
+
+**How notes work:**
+- Notes are stored in the database, NOT injected into the system prompt
+- Retrieve notes with remember(id="note:N") or remember(query="topic")
+- Notes are project-scoped (not global)
+
+**Example:**
+note_add("Decision: We chose PostgreSQL because:\n1. Better JSON support\n2. Native full-text search", "Architecture: Database Choice")"#
+                    .to_string(),
+            );
+        }
+    }
+
     // External CLI tools (always available, no feature flag)
     {
         let external_tools = ["check_tool_availability", "run_command"];

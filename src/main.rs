@@ -8,6 +8,7 @@ mod capabilities;
 mod chat;
 mod config;
 mod consts;
+mod content;
 mod context;
 mod context_overflow;
 mod db;

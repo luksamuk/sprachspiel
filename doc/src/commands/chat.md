@@ -41,8 +41,8 @@ Once inside the chat, these commands are available:
 | Command | Description |
 |---------|-------------|
 | `/quit`, `/exit`, `/q` | Exit the chat session |
-| `/clear`, `/c` | Clear conversation history (keeps session) |
-| `/forget` | Delete session completely from database |
+| `/new`, `/n` | Start a new conversation (previous messages remain searchable) |
+| `/forget` | Delete conversation completely and start fresh |
 | `/help`, `/h`, `/?` | Show available commands |
 | `/save [name]` | Save current session (optionally named) |
 | `/load <name>`, `/l <name>` | Load a saved session |
@@ -50,6 +50,18 @@ Once inside the chat, these commands are available:
 | `/info`, `/i` | Show current session information |
 | `/restore <file>` | Restore session from JSON backup |
 | `/export <format> [file]` | Export conversation (md, json) |
+
+#### Session Command Group
+
+The `/session` command provides an alternative syntax for session management:
+
+| Command | Description |
+|---------|-------------|
+| `/session new` | Same as `/new` - start a new conversation |
+| `/session load <name>` | Same as `/load` - load a saved session |
+| `/session list` | Same as `/list` - list saved sessions |
+| `/session save [name]` | Same as `/save` - save current session |
+| `/session forget` | Same as `/forget` - delete and start fresh |
 
 ### Model & Mode
 
@@ -88,6 +100,23 @@ Once inside the chat, these commands are available:
 | `/fact prune`, `/fp` | Prune old facts using decay |
 
 Subcommand shortcuts: `/fact a` (add), `/fact l` (list), `/fact r` (remove), `/fact s` (search), `/fact p` (prune)
+
+### Notes
+
+| Command | Description |
+|---------|-------------|
+| `/note add <content> [--title <title>] [--global]`, `/na` | Add a note (project scope by default) |
+| `/note list [--global] [page]`, `/nl` | List stored notes (8 per page) |
+| `/note show <id>`, `/ns` | Show a note by ID |
+| `/note edit <id> [--title <title>] [--content <content>]` | Edit a note |
+| `/note delete <id>`, `/nd` | Delete a note by ID |
+| `/note search <query> [--global] [limit]` | Search stored notes |
+
+Subcommand shortcuts: `/no` (note), `/na` (add), `/nl` (list), `/ns` (show), `/nd` (delete)
+
+Notes support project-level (default) and global scope. Global notes are visible across all projects on the same machine.
+
+**Pagination:** `/note list` shows 8 notes per page. Use `/note list 2` to see page 2, `/note list 3` for page 3, etc.
 
 ## /context - Context Metrics
 
@@ -294,12 +323,12 @@ Facts are only available in persistent sessions where they can be stored across 
 
 ## Prompt Indicators
 
-The prompt shows active modes:
+The prompt shows active modes with emojis:
 
 - `lfm>` - Normal mode
-- `lfm[t]>` - Think mode enabled
-- `lfm[T]>` - Tools enabled
-- `lfm[t][T]>` - Both think and tools enabled
+- `lfm🧠>` - Think mode enabled
+- `lfm🔧>` - Tools enabled
+- `lfm🧠🔧>` - Both think and tools enabled
 
 ## Tab Completion
 

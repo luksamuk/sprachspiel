@@ -451,25 +451,231 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔴 PRIORITY 2: Notes System
+### 🔵 PRIORITY 4: Code Quality - commands.rs Complexity (parse_command)
 
 **Status:** ❌ NOT STARTED
+
+**Goal:** Reduce cyclomatic complexity of `parse_command` from ~450 lines to manageable size.
+
+**Context:** Command parsing function in `src/chat/commands.rs` (lines 218-671). Single monolithic function with giant `match` statement handling all commands and their aliases.
+
+**Proposed Solution:**
+- Extract individual parsers for command groups (model, todo, note, fact)
+- Use derive-based pattern matching for structured commands
+- Maintain identical public API
+
+**Estimated effort:** 2-3 days
+
+**Related:** Issue #35
+
+---
+
+### 🔴 PRIORITY 2: Notes System
+
+**Status:** ✅ COMPLETED
 
 **Goal:** Persistent notes with semantic search.
 
 **Features:**
 - `/note add/list/show/edit/delete` commands
-- Note storage with embeddings
-- Update context builder for note results
-- Add `SourceType::Note` to retrieval system
+- Notes stored with embeddings for semantic search
+- FTS5 full-text search for keyword matching
+- Hybrid search (BM25 + vector) includes notes in results
+- Project/global scope like facts
+
+**Architecture Decision:** Unified `content_items` table (see below)
 
 **Dependencies:** None
 
-**Estimated effort:** 2-3 days
+**Estimated effort:** 5 days
 
 **Reference:** `doc/src/development/planning-session-cli-tools.md` lines 157-160, 303-311
 
-**Related:** Issue #6
+**Related:** Issue #6, Issue #34
+
+**Implementation Plan:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 0 | Fix TODO persistence bug (Issue #34) | ✅ Done |
+| 1 | Schema v7 + migration (preserve data) | ✅ Done |
+| 2 | Types + Operations (content module) | ✅ Done |
+| 3 | Unified search operations | ✅ Done |
+| 4 | Note commands | ✅ Done |
+| 5 | Embeddings for notes | ✅ Done |
+| 6 | Tests and documentation | ✅ Done |
+| 7 | Embedding regeneration after migration | ✅ Done |
+
+**Commits:**
+- `be0b279` - docs: update roadmap priorities
+- `9f2a50b` - docs: update CHANGELOG and IMPLEMENTATION.md
+- `99c92e3` - fix(todo): sync TodoState to session after LLM interaction
+- `34f3c12` - feat(db): add schema v7 with content_items unified table
+- `0d66a05` - feat(content): add content module with Note CRUD operations
+- `c88e324` - feat(content): add unified search operations for content_items
+- `a416f42` - feat(notes): add /note commands for persistent notes
+- `e5a8a57` - feat(content): add embedding support for notes
+- `d2544bc` - test(content): add tests for note operations
+- `9245699` - docs: update IMPLEMENTATION.md with completed phases
+- `7cf2fbf` - docs: update IMPLEMENTATION.md - Notes System complete
+- `b4b013b` - docs(chat): add /note commands documentation
+- `5694cd9` - feat(remember): integrate notes into retrieval system
+- `cf3abe1` - fix: fail fast on database initialization failure
+
+**Migration Note (v6→v7):**
+
+The schema migration from v6 to v7 includes a breaking change for embeddings:
+
+1. **Removed broken embedding migration** - The attempt to migrate embeddings from `message_embeddings` to `content_embeddings` caused UNIQUE constraint errors when multiple messages had the same content.
+2. **Embeddings are regenerated** - After migration completes, all embeddings are regenerated from source content with a progress bar.
+3. **User data preserved** - Messages, notes, and facts are preserved. Only embeddings (derived data) are rebuilt.
+
+**Critical Bugs Fixed During Unification:**
+
+| Bug | Description | Fix |
+|-----|-------------|-----|
+| #12 | Migration dropped wrong table (`chunk_embeddings_v2` is V7, not V2) | Changed to `DROP TABLE IF EXISTS chunk_embeddings` |
+| #13 | Items with chunks never marked `has_embedding=1` | Added marking logic after successful chunk embedding |
+| #14 | `regenerate_all_embeddings()` deleted all chunks on startup | Removed chunk cleanup, only clean orphan chunks |
+| #7 | Embedding context length exceeded (512 tokens vs 1024 chars) | Dynamic chunk sizing based on model context |
+| #8 | Orphan chunks caused infinite recovery loops | Clean orphan chunks at startup |
+
+**Dynamic Chunking Architecture:**
+
+The embedding system now dynamically calculates chunk sizes based on the model's context length:
+
+```rust
+// src/embeddings/chunk_config.rs
+pub struct DynamicChunkConfig {
+    context_length: usize,      // From Ollama API (e.g., 512)
+    chunk_percent: f32,         // 0.90 (90% of available context)
+    overlap_percent: f32,       // 0.20 (20% overlap between chunks)
+    prefix_margin: usize,       // 30 tokens for "search_document: "
+    chars_per_token: f32,       // 3.0 (conservative for Portuguese/code)
+}
+```
+
+**Key Parameters:**
+- `chunk_percent`: 90% - Reserve 10% for tokenizer variance
+- `overlap_percent`: 20% - RAG best practice for context preservation
+- `prefix_margin`: 30 tokens - "search_document: " prefix (~20 tokens) + safety margin
+- `chars_per_token`: 3.0 - Conservative for mixed Portuguese/code content
+
+**Migration to v0.34.0:**
+
+When upgrading from v6 to v7:
+1. Backup your v6 database: `cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.v6`
+2. Run the new version - migration happens automatically
+3. All 283 messages will be migrated to `content_items`
+4. Embeddings are regenerated (first startup takes ~2 minutes)
+5. V2 tables (`messages`, `message_chunks`, etc.) are dropped
+
+This ensures:
+- No UNIQUE constraint failures during migration
+- Clean embedding state after schema upgrade
+- All search functionality works correctly after first startup
+- Second startup is instant (0 items to regenerate)
+
+**Bug #15: `/clear` Reloaded Old Messages from Database**
+
+The `/clear` command was intended to "clear messages (preserves context for retrieval)" but:
+- It only cleared `session.messages` in memory
+- On session reload (`load_sqlite`), ALL messages from database were restored
+- Sessions appeared to "undo" the clear after app restart
+
+**Solution:**
+- Renamed `/clear` to `/new` to better reflect behavior
+- `/new` now generates a NEW `session.id` (e.g., `session-1712345678`)
+- Old messages stay in database (searchable via `/search` and `remember()`)
+- New session starts empty
+- Added `count_all_content_items()` to check if database has searchable content
+
+**Difference from `/forget`:**
+| Command | Session ID | Database | Searchable |
+|---------|-------------|----------|------------|
+| `/new` | New | Preserved | Yes |
+| `/forget` | New | Deleted | No |
+
+---
+
+### Architecture: Content Items (Schema v7)
+
+**Unified table approach** for messages, notes, and future documents.
+
+**Tables:**
+
+```sql
+-- Unified content storage
+CREATE TABLE content_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_type TEXT NOT NULL CHECK(content_type IN ('message', 'note', 'document')),
+    
+    -- Message fields (nullable)
+    conversation_id TEXT,
+    role TEXT CHECK(role IN ('user', 'assistant', 'system', 'tool')),
+    message_type TEXT DEFAULT 'normal',
+    previous_item_id INTEGER REFERENCES content_items(id),
+    prompt_tokens INTEGER,
+    
+    -- Note/Document fields (nullable)
+    scope TEXT CHECK(scope IN ('project', 'global')),
+    source TEXT CHECK(source IN ('user', 'llm')),
+    title TEXT,
+    
+    -- Common fields
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    project_id TEXT,
+    has_embedding INTEGER DEFAULT 0
+);
+
+-- Unified chunks for long content
+CREATE TABLE content_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    start_offset INTEGER NOT NULL,
+    end_offset INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    has_embedding INTEGER DEFAULT 0
+);
+
+-- Unified embeddings (vec0)
+CREATE VIRTUAL TABLE content_embeddings USING vec0(
+    item_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +content_type TEXT,
+    +conversation_id TEXT,
+    +project_id TEXT
+);
+
+CREATE VIRTUAL TABLE chunk_embeddings USING vec0(
+    chunk_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +content_type TEXT,
+    +conversation_id TEXT,
+    +project_id TEXT
+);
+
+-- Unified FTS5
+CREATE VIRTUAL TABLE content_fts USING fts5(
+    content,
+    content='content_items',
+    content_rowid='id',
+    tokenize='porter unicode61'
+);
+```
+
+**Migration Strategy:**
+1. Create new tables
+2. Copy data from `messages` → `content_items`
+3. Copy data from `message_chunks` → `content_chunks`
+4. Copy embeddings from `message_embeddings` → `content_embeddings`
+5. Copy embeddings from `chunk_embeddings` → `chunk_embeddings` (new table)
+6. Populate FTS5
+7. Keep old tables renamed as backup
 
 ---
 

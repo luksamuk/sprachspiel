@@ -3,18 +3,13 @@
 //! Provides SQLite storage with sqlite-vec extension for vector embeddings.
 
 mod connection;
-mod legacy_check;
-mod migration;
 mod operations;
+mod query;
 mod schema;
 
 pub use connection::Database;
-pub use legacy_check::{migrate_all_legacy_sessions, restore_session};
-pub use migration::reindex_conversation;
-pub use operations::{
-    ConversationMetadataParams, SearchParams, SearchResult, SearchType, SourceType, TodoRow,
-    reciprocal_rank_fusion,
-};
+pub use operations::{fts5_escape, ConversationMetadataParams, SourceType, TodoRow};
+pub use query::WhereBuilder;
 
 /// Initialize sqlite-vec extension globally.
 /// Must be called once at startup before any database operations.

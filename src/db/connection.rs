@@ -143,19 +143,27 @@ impl Database {
                 }
             }
 
-            // Add prompt_tokens column to messages table
-            let prompt_tokens_exists: bool = {
-                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
-                let rows = stmt.query_map([], |row| {
-                    let name: String = row.get(1)?;
-                    Ok(name)
-                })?;
-                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
-                names.contains(&"prompt_tokens".to_string())
-            };
+            // Add prompt_tokens column to messages table (only if table exists - V2 legacy)
+            let messages_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )? > 0;
 
-            if !prompt_tokens_exists {
-                conn.execute("ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER", [])?;
+            if messages_exists {
+                let prompt_tokens_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                    let rows = stmt.query_map([], |row| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&"prompt_tokens".to_string())
+                };
+
+                if !prompt_tokens_exists {
+                    conn.execute("ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER", [])?;
+                }
             }
 
             // Create session_todos table if not exists
@@ -179,48 +187,57 @@ impl Database {
 
         // Migration v4 -> v5: Add message_type and previous_message_id
         if from_version < 5 {
-            // Add message_type column to messages table
-            let message_type_exists: bool = {
-                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
-                let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
-                    let name: String = row.get(1)?;
-                    Ok(name)
-                })?;
-                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
-                names.contains(&"message_type".to_string())
-            };
-
-            if !message_type_exists {
-                conn.execute(
-                    "ALTER TABLE messages ADD COLUMN message_type TEXT DEFAULT 'normal'",
-                    [],
-                )?;
-            }
-
-            // Add previous_message_id column to messages table
-            let previous_id_exists: bool = {
-                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
-                let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
-                    let name: String = row.get(1)?;
-                    Ok(name)
-                })?;
-                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
-                names.contains(&"previous_message_id".to_string())
-            };
-
-            if !previous_id_exists {
-                conn.execute(
-                    "ALTER TABLE messages ADD COLUMN previous_message_id INTEGER REFERENCES messages(id)",
-                    [],
-                )?;
-            }
-
-            // Create index for previous_message_id lookups
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_messages_previous 
-                 ON messages(previous_message_id) WHERE previous_message_id IS NOT NULL",
+            // Only apply migrations if messages table exists (V2 legacy)
+            let messages_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'",
                 [],
-            )?;
+                |row| row.get::<_, i32>(0),
+            )? > 0;
+
+            if messages_exists {
+                // Add message_type column to messages table
+                let message_type_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                    let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&"message_type".to_string())
+                };
+
+                if !message_type_exists {
+                    conn.execute(
+                        "ALTER TABLE messages ADD COLUMN message_type TEXT DEFAULT 'normal'",
+                        [],
+                    )?;
+                }
+
+                // Add previous_message_id column to messages table
+                let previous_id_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                    let rows = stmt.query_map([], |row: &rusqlite::Row<'_>| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&"previous_message_id".to_string())
+                };
+
+                if !previous_id_exists {
+                    conn.execute(
+                        "ALTER TABLE messages ADD COLUMN previous_message_id INTEGER REFERENCES messages(id)",
+                        [],
+                    )?;
+                }
+
+                // Create index for previous_message_id lookups
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_previous 
+                     ON messages(previous_message_id) WHERE previous_message_id IS NOT NULL",
+                    [],
+                )?;
+            }
         }
 
         // Migration v5 -> v6: Add facts table (factual memory system)
@@ -273,6 +290,173 @@ impl Database {
             )?;
         }
 
+        // Migration v6 -> v7: Add content_items unified table
+        if from_version < 7 {
+            // Create content_items table
+            conn.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS content_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content_type TEXT NOT NULL CHECK(content_type IN ('message', 'note', 'document')),
+                    conversation_id TEXT,
+                    role TEXT CHECK(role IN ('user', 'assistant', 'system', 'tool')),
+                    message_type TEXT DEFAULT 'normal',
+                    previous_item_id INTEGER REFERENCES content_items(id),
+                    prompt_tokens INTEGER,
+                    scope TEXT CHECK(scope IN ('project', 'global')),
+                    source TEXT CHECK(source IN ('user', 'llm')),
+                    title TEXT,
+                    content TEXT NOT NULL,
+                    importance REAL DEFAULT 0.5,
+                    access_count INTEGER DEFAULT 0,
+                    decay_score REAL DEFAULT 1.0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    last_accessed INTEGER NOT NULL,
+                    has_embedding INTEGER DEFAULT 0,
+                    project_id TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(content_type);
+                CREATE INDEX IF NOT EXISTS idx_content_items_conversation ON content_items(conversation_id) WHERE conversation_id IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_content_items_project ON content_items(project_id) WHERE project_id IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_content_items_scope ON content_items(scope) WHERE scope IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_content_items_timestamp ON content_items(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_content_items_previous ON content_items(previous_item_id) WHERE previous_item_id IS NOT NULL;
+
+                CREATE TABLE IF NOT EXISTS content_chunks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id INTEGER NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+                    chunk_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    start_offset INTEGER NOT NULL,
+                    end_offset INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    has_embedding INTEGER DEFAULT 0
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_content_chunks_item ON content_chunks(item_id);
+                CREATE INDEX IF NOT EXISTS idx_content_chunks_order ON content_chunks(item_id, chunk_index);
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
+                    item_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256],
+                    +content_type TEXT,
+                    +conversation_id TEXT,
+                    +project_id TEXT,
+                    +timestamp INTEGER
+                );
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
+                    chunk_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256],
+                    +content_type TEXT,
+                    +conversation_id TEXT,
+                    +project_id TEXT,
+                    +timestamp INTEGER
+                );
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
+                    content,
+                    content='content_items',
+                    content_rowid='id',
+                    tokenize='porter unicode61'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS content_items_ai AFTER INSERT ON content_items BEGIN
+                    INSERT INTO content_fts(rowid, content) VALUES (new.id, new.content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS content_items_ad AFTER DELETE ON content_items BEGIN
+                    INSERT INTO content_fts(content_fts, rowid, content) 
+                    VALUES('delete', old.id, old.content);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS content_items_au AFTER UPDATE ON content_items BEGIN
+                    INSERT INTO content_fts(content_fts, rowid, content) 
+                    VALUES('delete', old.id, old.content);
+                    INSERT INTO content_fts(rowid, content) VALUES (new.id, new.content);
+                END;
+                "#,
+            )?;
+
+            // Only migrate data if V2 tables exist (upgrading from v6)
+            let messages_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )? > 0;
+
+            if messages_exists {
+                // Migrate existing messages to content_items
+                // Copy all messages with content_type='message'
+                conn.execute(
+                    r#"
+                    INSERT INTO content_items (
+                        content_type, conversation_id, role, message_type, previous_item_id,
+                        prompt_tokens, content, importance, created_at, updated_at, 
+                        last_accessed, has_embedding, project_id
+                    )
+                    SELECT 
+                        'message' as content_type,
+                        conversation_id,
+                        role,
+                        COALESCE(message_type, 'normal') as message_type,
+                        previous_message_id as previous_item_id,
+                        prompt_tokens,
+                        content,
+                        importance,
+                        timestamp as created_at,
+                        timestamp as updated_at,
+                        timestamp as last_accessed,
+                        has_embedding,
+                        (SELECT project_id FROM conversations WHERE id = m.conversation_id) as project_id
+                    FROM messages m
+                    "#,
+                    [],
+                )?;
+
+                // Do NOT migrate message_chunks to content_chunks.
+                // The old migration had a broken JOIN that created orphan chunks
+                // (item_id pointing to non-existent items).
+                // Chunks are derived data - they will be regenerated during recovery
+                // for any content > 1024 characters.
+                //
+                // Clear any chunks from previous migration attempts
+                conn.execute("DELETE FROM content_chunks", [])?;
+
+                // Populate content_fts from content_items
+                conn.execute(
+                    "INSERT INTO content_fts(rowid, content) SELECT id, content FROM content_items",
+                    [],
+                )?;
+
+                // Clear embeddings tables (will be regenerated after migration)
+                // This is safer than trying to migrate embeddings which can cause UNIQUE constraint errors
+                // when multiple messages have the same content in the same conversation.
+                // Embeddings are derived data and can be regenerated from content.
+                conn.execute("DELETE FROM content_embeddings", [])?;
+                conn.execute("DELETE FROM chunk_embeddings_v2", [])?;
+
+                // Mark all content_items as needing embedding regeneration
+                conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
+
+                // Drop old V2 tables - no longer needed after migration
+                // Note: SQLite uses DROP TABLE for virtual tables too (FTS5, vec0)
+                // IMPORTANT: chunk_embeddings_v2 is a V7 table (new), not V2!
+                // The old V2 chunk table was "chunk_embeddings" (without _v2 suffix)
+                conn.execute_batch(
+                    r#"
+                    DROP TABLE IF EXISTS messages;
+                    DROP TABLE IF EXISTS message_chunks;
+                    DROP TABLE IF EXISTS message_embeddings;
+                    DROP TABLE IF EXISTS chunk_embeddings;
+                    DROP TABLE IF EXISTS messages_fts;
+                    "#,
+                )?;
+            }
+        }
+
         Ok(())
     }
 
@@ -288,7 +472,7 @@ impl Database {
     }
 
     /// Get the default storage path (~/.local/share/ask-ai/embeddings.db)
-    fn get_storage_path() -> PathBuf {
+    pub fn get_storage_path() -> PathBuf {
         if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
             PathBuf::from(data_home)
                 .join("ask-ai")
@@ -365,9 +549,9 @@ mod tests {
             .expect("Failed to list tables");
 
         assert!(tables.contains(&"conversations".to_string()));
-        assert!(tables.contains(&"messages".to_string()));
-        assert!(tables.contains(&"message_embeddings".to_string()));
-        assert!(tables.contains(&"messages_fts".to_string()));
+        assert!(tables.contains(&"content_items".to_string()));
+        assert!(tables.contains(&"content_embeddings".to_string()));
+        assert!(tables.contains(&"content_fts".to_string()));
         assert!(tables.contains(&"session_todos".to_string()));
         assert!(tables.contains(&"facts".to_string()));
     }
@@ -422,13 +606,13 @@ mod tests {
     }
 
     #[test]
-    fn test_messages_prompt_tokens_column() {
+    fn test_content_items_prompt_tokens_column() {
         let db = Database::in_memory().expect("Failed to create database");
 
-        // Verify messages table has prompt_tokens column
+        // Verify content_items table has prompt_tokens column
         let columns: Vec<String> = db
             .with_connection(|conn| {
-                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                let mut stmt = conn.prepare("PRAGMA table_info(content_items)")?;
                 let rows = stmt.query_map([], |row| {
                     let name: String = row.get(1)?;
                     Ok(name)
@@ -493,5 +677,69 @@ mod tests {
             .expect("Failed to list virtual tables");
 
         assert!(vtables.contains(&"facts_fts".to_string()));
+    }
+
+    #[test]
+    fn test_content_items_table() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        // Check content_items table exists
+        let tables: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn
+                    .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")?;
+                let rows = stmt.query_map([], |row| row.get(0))?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to list tables");
+
+        assert!(tables.contains(&"content_items".to_string()));
+        assert!(tables.contains(&"content_chunks".to_string()));
+
+        // Verify content_items table structure
+        let columns: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(content_items)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to get table info");
+
+        // Common fields
+        assert!(columns.contains(&"id".to_string()));
+        assert!(columns.contains(&"content_type".to_string()));
+        assert!(columns.contains(&"content".to_string()));
+        assert!(columns.contains(&"created_at".to_string()));
+        assert!(columns.contains(&"updated_at".to_string()));
+        assert!(columns.contains(&"has_embedding".to_string()));
+
+        // Message fields
+        assert!(columns.contains(&"conversation_id".to_string()));
+        assert!(columns.contains(&"role".to_string()));
+        assert!(columns.contains(&"message_type".to_string()));
+        assert!(columns.contains(&"previous_item_id".to_string()));
+        assert!(columns.contains(&"prompt_tokens".to_string()));
+
+        // Note/Document fields
+        assert!(columns.contains(&"scope".to_string()));
+        assert!(columns.contains(&"source".to_string()));
+        assert!(columns.contains(&"title".to_string()));
+
+        // Check content_embeddings virtual table exists
+        let vtables: Vec<String> = db
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('content_embeddings', 'content_fts')",
+                )?;
+                let rows = stmt.query_map([], |row| row.get(0))?;
+                rows.collect::<Result<Vec<_>>>()
+            })
+            .expect("Failed to list virtual tables");
+
+        assert!(vtables.contains(&"content_embeddings".to_string()));
+        assert!(vtables.contains(&"content_fts".to_string()));
     }
 }

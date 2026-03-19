@@ -22,7 +22,6 @@ pub mod continuation;
 pub mod coordinator;
 pub mod core;
 pub mod custom_coordinator;
-pub mod history;
 pub mod input;
 pub mod model_switch;
 pub mod repl;

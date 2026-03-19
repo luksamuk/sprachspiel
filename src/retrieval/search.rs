@@ -1,41 +1,42 @@
 //! Search command implementation
 //!
 //! Provides hybrid search functionality for conversation history.
+//! Uses the unified content_items table (V7 architecture).
 
 use chrono::{DateTime, Utc};
 use ollama_rs::Ollama;
 
-use crate::consts::roles::format_role_label_md;
-use crate::db::{Database, SearchResult, SearchType, reciprocal_rank_fusion};
+use crate::content::{ContentSearchResult, ContentSearchType};
+use crate::db::Database;
 use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
 use crate::markdown;
 
 /// Search result with formatted output
 pub struct FormattedResult {
-    pub message_id: i64,
-    pub conversation_id: String,
-    pub role: String,
+    pub item_id: i64,
+    pub conversation_id: Option<String>,
+    pub role: Option<String>,
     pub content: String,
     pub chunk_content: Option<String>,
     pub chunk_start: Option<i32>,
     pub chunk_end: Option<i32>,
     pub timestamp: DateTime<Utc>,
     pub score: f32,
-    pub search_type: SearchType,
+    pub search_type: ContentSearchType,
 }
 
-impl From<SearchResult> for FormattedResult {
-    fn from(result: SearchResult) -> Self {
+impl From<ContentSearchResult> for FormattedResult {
+    fn from(result: ContentSearchResult) -> Self {
         FormattedResult {
-            message_id: result.message_id,
-            conversation_id: result.conversation_id,
-            role: result.role,
-            content: result.content,
+            item_id: result.item.id,
+            conversation_id: result.item.conversation_id,
+            role: result.item.role,
+            content: result.item.content,
             chunk_content: result.chunk_content,
-            chunk_start: result.chunk_start,
-            chunk_end: result.chunk_end,
-            timestamp: DateTime::from_timestamp(result.timestamp, 0).unwrap_or_else(Utc::now),
+            chunk_start: result.chunk_offsets.map(|(s, _)| s),
+            chunk_end: result.chunk_offsets.map(|(_, e)| e),
+            timestamp: result.item.created_at,
             score: result.score,
             search_type: result.search_type,
         }
@@ -54,19 +55,28 @@ pub fn display_results(results: &[FormattedResult]) {
 
     for (i, result) in results.iter().enumerate() {
         let type_str = match result.search_type {
-            SearchType::Keyword => "🔍 Keyword",
-            SearchType::Semantic => "🧠 Semantic",
-            SearchType::Hybrid => "🔗 Hybrid",
+            ContentSearchType::Keyword => "🔍 Keyword",
+            ContentSearchType::Semantic => "🧠 Semantic",
+            ContentSearchType::Hybrid => "🔗 Hybrid",
         };
 
-        let role_str = format_role_label_md(&result.role);
+        let role_str = result.role.as_deref().unwrap_or("unknown");
+        let role_label = match role_str {
+            "user" => "👤 User",
+            "assistant" => "🤖 Assistant",
+            "system" => "⚙️ System",
+            "tool" => "🔧 Tool",
+            _ => role_str,
+        };
+
+        let conv_id = result.conversation_id.as_deref().unwrap_or("unknown");
 
         output.push_str(&format!(
             "{}. [id={}] {} — {} (score: {:.4})\n",
             i + 1,
-            result.message_id,
+            result.item_id,
             type_str,
-            role_str,
+            role_label,
             result.score
         ));
 
@@ -110,7 +120,7 @@ pub fn display_results(results: &[FormattedResult]) {
         output.push_str("```\n");
         output.push_str(&format!(
             "_{} — {}_\n\n",
-            result.conversation_id,
+            conv_id,
             result.timestamp.format("%Y-%m-%d %H:%M")
         ));
     }
@@ -147,92 +157,43 @@ pub async fn run_search(
         }
     };
 
-    // Perform keyword search (BM25)
-    log_debug("Running keyword search (BM25)...");
-    let keyword_results = match db.search_keyword(query, conversation_id, None, limit) {
-        Ok(results) => {
-            log_debug(&format!("Keyword search found {} results", results.len()));
-            results
-        }
-        Err(e) => {
-            eprintln!("\x1B[31mError: Keyword search failed: {}\x1B[0m", e);
-            Vec::new()
-        }
-    };
-
-    // Perform semantic search (vector similarity)
-    log_debug("Running semantic search (vector)...");
-    let semantic_results = match db.search_semantic(&embedding, conversation_id, None, limit) {
-        Ok(results) => {
-            log_debug(&format!("Semantic search found {} results", results.len()));
-            results
-        }
-        Err(e) => {
-            eprintln!("\x1B[31mError: Semantic search failed: {}\x1B[0m", e);
-            Vec::new()
-        }
-    };
-
-    // Combine with RRF
-    log_debug("Combining results with RRF (keyword=0.4, semantic=0.6)...");
-    let results = reciprocal_rank_fusion(keyword_results, semantic_results, 0.4, 0.6, limit);
-    log_debug(&format!("Final combined results: {}", results.len()));
-
-    // Enrich results with conversation context
-    log_debug("Enriching results with assistant responses...");
-    let enriched_results = match db.enrich_with_context(results) {
+    // Perform hybrid search using content_items (V7)
+    log_debug("Running hybrid search on content_items...");
+    let results = match db.search_messages_hybrid(
+        query,
+        &embedding,
+        conversation_id,
+        None,
+        limit * 2,
+        0.4,
+        0.6,
+    ) {
         Ok(r) => {
-            let enriched_count = r
-                .iter()
-                .filter(|msg| !msg.subsequent_messages.is_empty())
-                .count();
-            log_debug(&format!(
-                "Enriched {} results with assistant responses",
-                enriched_count
-            ));
+            log_debug(&format!("Hybrid search found {} results", r.len()));
             r
         }
         Err(e) => {
-            eprintln!("\x1B[33mWarning: Failed to enrich results: {}\x1B[0m", e);
-            // Return early on error - can't use results after move
+            eprintln!("\x1B[31mError: Hybrid search failed: {}\x1B[0m", e);
             return;
         }
     };
 
-    // Convert to formatted results with context
-    let formatted: Vec<FormattedResult> = enriched_results
-        .into_iter()
-        .map(|msg| {
-            // If this message has subsequent messages, include them
-            let content_with_context = if !msg.subsequent_messages.is_empty() {
-                let mut content = msg.content.clone();
-                for sub_msg in &msg.subsequent_messages {
-                    let type_prefix = match sub_msg.message_type.as_deref() {
-                        Some("pre_tool_content") => "\n\n--- Intermediate ---\n",
-                        _ => "\n\n--- Assistant Response ---\n",
-                    };
-                    content.push_str(type_prefix);
-                    content.push_str(&sub_msg.content);
-                }
-                content
-            } else {
-                msg.content.clone()
-            };
+    // Enrich results with assistant responses
+    log_debug("Enriching results with assistant responses...");
+    let enriched_results = match db.enrich_content_results_with_context(results) {
+        Ok(r) => {
+            let enriched_count = r.iter().filter(|res| !res.chunk_content.is_none()).count();
+            log_debug(&format!("Enriched {} results", enriched_count));
+            r
+        }
+        Err(e) => {
+            eprintln!("\x1B[33mWarning: Failed to enrich results: {}\x1B[0m", e);
+            return;
+        }
+    };
 
-            FormattedResult {
-                message_id: msg.message_id,
-                conversation_id: msg.conversation_id,
-                role: msg.role,
-                content: content_with_context,
-                timestamp: DateTime::from_timestamp(msg.timestamp, 0).unwrap_or_else(Utc::now),
-                score: msg.score,
-                search_type: msg.search_type,
-                chunk_content: msg.chunk_content,
-                chunk_start: msg.chunk_start,
-                chunk_end: msg.chunk_end,
-            }
-        })
-        .collect();
+    // Convert to formatted results
+    let formatted: Vec<FormattedResult> = enriched_results.into_iter().map(|r| r.into()).collect();
 
     display_results(&formatted);
 }

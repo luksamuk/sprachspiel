@@ -2,6 +2,158 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.36.0] - TBD
+
+### Added
+
+- **Welcome Banner Redesign** - New ASCII art banner with Extended Mind concept
+  - Logo using `toilet` "future" font with metallic blue colors
+  - ASCII art generated from custom image via `jp2a` (True Color ANSI)
+  - Session info (Model, Think, Tools, Sandbox, Project, Session) aligned to ASCII art
+  - Clean Unicode line separators (`─`) instead of double lines
+  - Assets stored in `assets/` directory for reproducibility
+  - See `assets/README.md` for regeneration instructions
+
+- **Prompt Emojis** - Replaced `[t][T]` indicators with emojis
+  - `🧠` = think mode active
+  - `🔧` = tools active
+  - Example: `model🧠🔧>` instead of `model[t][T]>`
+
+### Changed
+
+- **`/clear` renamed to `/new`** - Command now starts a new conversation session
+  - Previous behavior: Cleared in-memory messages but reloaded from database on restart
+  - New behavior: Creates new session ID, clears all session state
+  - Previous conversations remain searchable via `/search` and `remember()`
+  - `/new` generates session ID: `session-{timestamp}`
+  - Alias: `/n`
+
+- **`/load` Auto-save** - Automatically saves current session before loading another
+  - If current session has messages, it's saved before switching
+  - Prevents accidental loss of conversation when switching sessions
+
+- **Session Auto-Load** - Automatically loads the most recent session on startup
+  - Sessions are ordered by `updated_at DESC` to find the most recent
+  - If no sessions exist, starts a fresh session in memory
+
+### Added
+
+- **`/session` Command Group** - Unified session management interface
+  - `/session new` - Same as `/new`
+  - `/session load <name>` - Same as `/load`
+  - `/session list` - Same as `/list`
+  - `/session save [name]` - Same as `/save`
+  - `/session forget` - Same as `/forget`
+  - Intended for users who prefer noun-verb command structure
+
+- **Database Initialization Failure** - Fail fast with detailed error when database cannot be initialized
+  - Previously, database errors were silently ignored, creating inconsistent state
+  - Now shows detailed diagnostic message with storage path and possible causes
+  - Suggests solutions (check Ollama, permissions, or use --anonymous)
+
+- **Schema Migration v6→v7 UNIQUE Constraint Error** - Fixed embedding migration duplicate key error
+  - Removed broken embedding migration that caused "UNIQUE constraint failed on content_embeddings primary key"
+  - Embeddings are now regenerated from source content after migration
+  - Added progress bar with ETA during regeneration (uses indicatif crate)
+  - Preserves all user data (messages, notes, facts) - only embeddings are regenerated
+  - Migration runs synchronously before app becomes usable
+
+- **Remember Tool Empty Parameters** - Treat empty strings as None
+  - LLM sometimes passes `id=""` instead of omitting the parameter
+  - Tool now validates and filters empty strings before processing
+
+- **SQLite-vec Parameter Mismatch** - Fixed semantic search query
+  - `SEMANTIC_SEARCH_ITEMS_SQL` and `SEMANTIC_SEARCH_CHUNKS_SQL` constants were missing WHERE clause
+  - sqlite-vec requires `WHERE embedding MATCH ? AND k = ?` for KNN queries
+  - Fixed "Wrong number of parameters passed to query" error in `remember()` tool
+
+- **YAGNI Code Removal** - Removed unused methods from DynamicChunkConfig
+  - Removed: `with_percentages()`, `context_length()`, `prefix_margin()`, `chars_per_token()`
+  - These were test-only or never used
+  - Kept: `new()`, `max_chars()`, `overlap_chars()`, `min_chunk_chars()` (all production)
+
+- **YAGNI Variable Removal** - Removed unused `chunks_failed_before` variable in regenerate.rs
+
+### Added
+
+- **Notes System** - Persistent notes with semantic search
+  - User commands: `/note add`, `/note list`, `/note show`, `/note edit`, `/note delete`, `/note search`
+  - Shortcuts: `/na` (add), `/nl` (list), `/ns` (show), `/nd` (delete)
+  - Notes support optional titles and project/global scope
+  - FTS5 keyword search for finding notes
+  - `SourceType::Note` added to retrieval system
+  - Schema v7: unified `content_items` table for messages, notes, and future documents
+  - Unified search API: `search_content_keyword`, `search_content_semantic`, `search_content_hybrid`
+  - Async embedding generation for notes on creation
+  - Comprehensive test suite for note operations
+
+- **Remember Tool Integration** - Notes now accessible via LLM retrieval
+  - `remember(id="note:N")` retrieves specific notes
+  - `remember(query="topic")` searches across messages AND notes
+  - Results distinguish between content types (Messages vs Notes)
+  - Prompt engineering updated to document content types
+  - Unified `search_content_hybrid()` enables semantic search across all content
+
+- **`note_add` Tool for LLMs** - LLMs can now create notes autonomously
+  - New tool: `note_add(content, title)` creates persistent notes
+  - Notes are project-scoped (not global) and marked as LLM-created
+  - Distinguishes from `fact_add`: notes for longer documents (up to 10K chars), facts for short info (500 chars)
+  - Notes are NOT in system prompt (use `remember()` to retrieve)
+  - Prompt engineering guides LLM on when to use notes vs facts
+
+- **Note List Pagination** - `/note list` now paginates results
+  - Shows 8 notes per page by default
+  - Use `/note list 2` to see page 2, `/note list 3` for page 3, etc.
+  - Displays current page and total pages at the bottom
+  - Preview shows only first line with `│` prefix for clarity
+  - Validates page number and shows error for invalid pages
+
+- **Note Show Markdown Rendering** - `/note show` now renders markdown content
+  - Uses termimad for proper markdown formatting
+  - Header metadata formatted as markdown with bold labels
+  - Content rendered with full markdown support
+
+- **Note Add Parsing Fixed** - `/note add` now handles complex arguments correctly
+  - Multi-word titles with quotes: `/note add content --title "Title with spaces"`
+  - Escaped dashes: `\-\-` is converted to `--` literal
+  - Newlines in quoted content: `"Line 1\nLine 2"` expands `\n` to real newlines
+  - Title validation: rejects newlines in title field
+  - Quote stripping: removes surrounding quotes from content properly
+
+- **Session Load by Name** - `/session load` now finds sessions by name or ID
+  - First tries exact ID match
+  - Falls back to name (title) match
+  - Fixes "Query returned no rows" error after `/session save <name>`
+
+- **Session List Current Marker** - `/session list` now shows current session
+  - Current session marked with `→` arrow
+  - Other sessions shown with space prefix
+  - Helps identify which session is active
+
+- **Page Number Validation** - `/note list` validates page numbers
+  - Shows error for page < 1: "Page must be >= 1"
+  - Shows error for page > total: "Page X does not exist. Total pages: Y."
+  - Provides guidance: "Use /note list Y."
+
+- **Embedding Regeneration System** - Post-migration embedding recovery
+  - New `regenerate_all_embeddings()` function for schema migrations
+  - `RegenerationStats` struct tracks processed/failed items
+  - Shows progress bar during regeneration with ETA
+  - Aborts gracefully on Ollama connection errors with recovery instructions
+
+### Changed
+
+- **Query Pattern Refactoring** - Dynamic SQL WHERE clause construction
+  - Created `WhereBuilder` utility for parameterized queries
+  - Eliminated 4-8 SQL variants per function into single dynamic query
+  - `list_notes`: 4 variants → 1 query (50 lines → 20 lines)
+  - `search_notes_keyword`: 4 variants → 1 query (95 lines → 35 lines)
+  - `list_facts`: 8 variants → 1 query (80 lines → 25 lines)
+  - SQL constants extracted to centralized locations for maintainability
+  - Removed `#[allow(unused_imports)]` - `fts5_escape` actively used in 3 modules
+
+- **Database Module** - `get_storage_path()` made public for error diagnostics
+
 ## [0.35.0] - TBD
 
 ### Fixed
@@ -1807,7 +1959,7 @@ If upgrading from v0.13.0:
 
 - **UI Improvements**:
   - Welcome message only shows available features (think/tools hidden if unsupported)
-  - Prompt shows active modes: `lfm[t][T]>` when think and tools enabled
+  - Prompt shows active modes with emojis: `lfm🧠🔧>` when think and tools enabled
   - `/info` shows compacted message count if applicable
 
 ### Removed

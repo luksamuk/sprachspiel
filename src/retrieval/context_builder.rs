@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::chat::session::{ChatSession, MessageRole};
+use crate::content::ContentSearchResult;
 use crate::db::Database;
 use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
@@ -61,7 +62,7 @@ fn format_timestamp(timestamp: i64) -> String {
 }
 
 /// Format retrieved messages into context string
-fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
+fn format_retrieved_context(results: &[ContentSearchResult]) -> String {
     use crate::db::SourceType;
 
     let mut text = String::from("<retrieved_context>\n");
@@ -85,33 +86,34 @@ fn format_retrieved_context(results: &[crate::db::SearchResult]) -> String {
         SourceType::Conversation.prefix()
     ));
 
-    for msg in results {
-        let timestamp = format_timestamp(msg.timestamp);
-        let prefix = msg.source_type.prefix();
+    for result in results {
+        let item = &result.item;
+        let timestamp = format_timestamp(item.created_at.timestamp());
+        let prefix = SourceType::Conversation.prefix();
         text.push_str(&format!(
             "<message id=\"{}:{}\">\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
             prefix,
-            msg.message_id,
-            msg.role,
-            msg.content,
+            item.id,
+            item.role.as_deref().unwrap_or("unknown"),
+            item.content,
             timestamp
         ));
 
         // If user message has assistant responses, include them
-        for sub_msg in &msg.subsequent_messages {
-            let type_prefix = match sub_msg.message_type.as_deref() {
+        for sub_item in &result.subsequent_items {
+            let type_prefix = match sub_item.item.message_type.as_deref() {
                 Some("pre_tool_content") => " [Intermediate]",
                 _ => "",
             };
-            let sub_timestamp = format_timestamp(sub_msg.timestamp);
-            let sub_prefix = sub_msg.source_type.prefix();
+            let sub_timestamp = format_timestamp(sub_item.item.created_at.timestamp());
+            let sub_prefix = sub_item.source_type.prefix();
             text.push_str(&format!(
                 "<message id=\"{}:{}\"{}>\n<role>{}</role>\n<content>{}</content>\n<timestamp>{}</timestamp>\n</message>\n",
                 sub_prefix,
-                sub_msg.message_id,
+                sub_item.item.id,
                 type_prefix,
-                sub_msg.role,
-                sub_msg.content,
+                sub_item.item.role.as_deref().unwrap_or("unknown"),
+                sub_item.item.content,
                 sub_timestamp
             ));
         }
@@ -225,78 +227,77 @@ pub async fn build_context(
                 log_debug("Generating embedding for query...");
             }
 
-            if let Ok(embedding) = client.embed(user_query).await {
-                if use_debug {
-                    log_debug(&format!(
-                        "Searching for relevant messages in conversation: {}",
-                        session.id
-                    ));
-                }
-
-                // Note: We don't exclude the current message from search because:
-                // 1. Messages don't have DB IDs in memory
-                // 2. The current message hasn't been saved to DB yet when search runs
-                // 3. Search only finds historical messages, not current prompt
-
-                if let Ok(results) = db.search_hybrid(&crate::db::SearchParams {
-                    query: user_query,
-                    embedding: &embedding,
-                    conversation_id: Some(&session.id),
-                    project_id: session.project_id.as_deref(),
-                    limit: config.relevant_count,
-                    keyword_weight: config.keyword_weight,
-                    semantic_weight: config.semantic_weight,
-                    exclude_ids: None, // No IDs to exclude - current message not in DB yet
-                }) {
-                    // Enrich results with conversation context (attach assistant responses to user questions)
-                    let enriched_results = match db.enrich_with_context(results) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            if use_debug {
-                                log_debug(&format!("Warning: Failed to enrich results: {}", e));
-                            }
-                            // Return empty on error - the original `results` is consumed by enrich_with_context
-                            Vec::new()
-                        }
-                    };
-
+                if let Ok(embedding) = client.embed(user_query).await {
                     if use_debug {
                         log_debug(&format!(
-                            "Search returned {} results",
-                            enriched_results.len()
+                            "Searching for relevant messages in conversation: {}",
+                            session.id
                         ));
                     }
 
-                    if !enriched_results.is_empty() {
-                        retrieved_count = enriched_results.len();
-                        retrieval_performed = true;
+                    // Note: We don't exclude the current message from search because:
+                    // 1. Messages don't have DB IDs in memory
+                    // 2. The current message hasn't been saved to DB yet when search runs
+                    // 3. Search only finds historical messages, not current prompt
 
-                        let retrieved_text = format_retrieved_context(&enriched_results);
-                        messages.push(ChatMessage::system(retrieved_text));
+                    if let Ok(results) = db.search_messages_hybrid(
+                        user_query,
+                        &embedding,
+                        Some(&session.id),
+                        session.project_id.as_deref(),
+                        config.relevant_count,
+                        config.keyword_weight,
+                        config.semantic_weight,
+                    ) {
+                        // Enrich results with conversation context (attach assistant responses to user questions)
+                        let enriched_results = match db.enrich_content_results_with_context(results) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                if use_debug {
+                                    log_debug(&format!("Warning: Failed to enrich results: {}", e));
+                                }
+                                // Return empty on error - the original `results` is consumed by enrich_with_context
+                                Vec::new()
+                            }
+                        };
 
                         if use_debug {
-                            let enriched_count = enriched_results
-                                .iter()
-                                .filter(|r| !r.subsequent_messages.is_empty())
-                                .count();
                             log_debug(&format!(
-                                "Added {} retrieved messages to context ({} enriched with responses)",
-                                retrieved_count, enriched_count
+                                "Search returned {} results",
+                                enriched_results.len()
                             ));
                         }
+
+                        if !enriched_results.is_empty() {
+                            retrieved_count = enriched_results.len();
+                            retrieval_performed = true;
+
+                            let retrieved_text = format_retrieved_context(&enriched_results);
+                            messages.push(ChatMessage::system(retrieved_text));
+
+                            if use_debug {
+                                let enriched_count = enriched_results
+                                    .iter()
+                                    .filter(|r| !r.subsequent_items.is_empty())
+                                    .count();
+                                log_debug(&format!(
+                                    "Added {} retrieved messages to context ({} enriched with responses)",
+                                    retrieved_count, enriched_count
+                                ));
+                            }
+                        }
+                    } else if use_debug {
+                        log_debug("Search returned no results");
                     }
                 } else if use_debug {
-                    log_debug("Search returned no results");
+                    log_debug("Failed to generate embedding for query");
                 }
             } else if use_debug {
-                log_debug("Failed to generate embedding for query");
+                log_debug("Skipping retrieval: db or embedding_client not available");
             }
         } else if use_debug {
-            log_debug("Skipping retrieval: db or embedding_client not available");
+            log_debug("Skipping retrieval: conditions not met");
         }
-    } else if use_debug {
-        log_debug("Skipping retrieval: conditions not met");
-    }
 
     // 3. First preserved messages (if middle compaction)
     // According to "lost in the middle" research, important content should be
@@ -427,18 +428,17 @@ pub async fn build_query_context(
                 }
 
                 // Search by project_id only (no conversation_id)
-                if let Ok(results) = db.search_hybrid(&crate::db::SearchParams {
-                    query: user_query,
-                    embedding: &embedding,
-                    conversation_id: None, // No conversation_id - search all in project
-                    project_id,            // Search by project
-                    limit: config.relevant_count,
-                    keyword_weight: config.keyword_weight,
-                    semantic_weight: config.semantic_weight,
-                    exclude_ids: None, // No exclusion for query mode
-                }) {
+                if let Ok(results) = db.search_messages_hybrid(
+                    user_query,
+                    &embedding,
+                    None,        // No conversation_id - search all in project
+                    project_id,  // Search by project
+                    config.relevant_count,
+                    config.keyword_weight,
+                    config.semantic_weight,
+                ) {
                     // Enrich results with conversation context
-                    let enriched_results = match db.enrich_with_context(results) {
+                    let enriched_results = match db.enrich_content_results_with_context(results) {
                         Ok(r) => r,
                         Err(e) => {
                             if use_debug {
@@ -465,7 +465,7 @@ pub async fn build_query_context(
                         if use_debug {
                             let enriched_count = enriched_results
                                 .iter()
-                                .filter(|r| !r.subsequent_messages.is_empty())
+                                .filter(|r| !r.subsequent_items.is_empty())
                                 .count();
                             log_debug(&format!(
                                 "Added {} retrieved messages to context ({} enriched with responses)",
@@ -520,9 +520,9 @@ pub fn get_effective_message_count(session: &ChatSession, db: Option<&Arc<Databa
     // (messages were cleared but context persists)
     if session.compacted_summary.is_some()
         && let Some(db) = db
-        && let Ok(count) = db.count_conversation_messages(&session.id)
+        && let Ok(count) = db.count_conversation_items(&session.id)
     {
-        return count;
+        return count as usize;
     }
 
     0
@@ -540,14 +540,14 @@ pub fn should_force_retrieve(session: &ChatSession, db: Option<&Arc<Database>>) 
     if let Some(db) = db
         && !session.anonymous
         && !session.id.is_empty()
-        && let Ok(db_count) = db.count_conversation_messages(&session.id)
+        && let Ok(db_count) = db.count_conversation_items(&session.id)
     {
         // If DB has more messages than session, retrieval should happen
         // This covers:
         // - After /clear: DB has old messages, session has 0-1 new messages
         // - During conversation: DB and session are in sync
         let session_count = session.messages.len();
-        if db_count > session_count {
+        if db_count as usize > session_count {
             return true;
         }
     }

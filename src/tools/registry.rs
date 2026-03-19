@@ -23,6 +23,9 @@ use super::remember;
 // Fact tools (always available)
 use super::fact_tools::{fact_add, fact_remove, fact_search};
 
+// Notes tools (always available)
+use super::notes::note_add;
+
 // External tool wrappers (always available)
 use super::{check_tool_availability, run_command};
 
@@ -342,6 +345,12 @@ where
         tool_count += 1;
     }
 
+    // Notes tools - always available (checks context internally)
+    if is_tool_allowed("note_add") {
+        coordinator = coordinator.register_tool(note_add);
+        tool_count += 1;
+    }
+
     // External tool wrappers (always available)
     // These tools check for external CLI tools like pdftotext, tesseract, etc.
     if is_tool_allowed("check_tool_availability") {
@@ -369,6 +378,9 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
     tools.push("fact_add".to_string());
     tools.push("fact_search".to_string());
     tools.push("fact_remove".to_string());
+
+    // Notes tools - always available (checks context internally)
+    tools.push("note_add".to_string());
 
     // External tool wrappers (always available)
     tools.push("check_tool_availability".to_string());

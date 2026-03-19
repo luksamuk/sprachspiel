@@ -6,6 +6,7 @@ pub mod capabilities;
 pub mod chat;
 pub mod config;
 pub mod consts;
+pub mod content;
 pub mod context;
 pub mod context_overflow;
 pub mod db;

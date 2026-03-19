@@ -31,6 +31,9 @@ pub mod weather;
 // Fact tools (always available)
 pub mod fact_tools;
 
+// Notes tools (always available)
+pub mod notes;
+
 // External tool wrappers (always available)
 pub mod run_cmd;
 pub mod tool_check;
@@ -56,6 +59,9 @@ pub use system::*;
 #[cfg(feature = "todo-tools")]
 pub use todo::*;
 pub use weather::*;
+
+// Fact tools are imported directly in registry.rs
+// Notes tools are imported directly in registry.rs
 
 pub use run_cmd::run_command;
 pub use tool_check::check_tool_availability;

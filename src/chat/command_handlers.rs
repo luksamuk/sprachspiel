@@ -61,7 +61,7 @@ pub async fn handle_command_result(
             HandleResult::Exit
         }
         CommandResult::Error(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("\x1B[31mError: {}\x1B[0m", e);
             HandleResult::Continue
         }
         CommandResult::ThinkToggled(new_state) => {
@@ -111,12 +111,8 @@ pub async fn handle_command_result(
             handle_search(state, query, limit).await;
             HandleResult::Continue
         }
-        CommandResult::Restore { session_id } => {
-            handle_restore(state, session_id);
-            HandleResult::Continue
-        }
-        CommandResult::Reindex { conversation_id } => {
-            handle_reindex(state, conversation_id).await;
+        CommandResult::Reindex => {
+            handle_reindex(state).await;
             HandleResult::Continue
         }
         CommandResult::FactPrune => {
@@ -157,6 +153,30 @@ pub async fn handle_command_result(
         }
         CommandResult::TodoClearAll => {
             handle_todo_clear_all(&mut state.session);
+            HandleResult::Continue
+        }
+        CommandResult::NoteAdd { content, title, global } => {
+            handle_note_add(state, content, title, global);
+            HandleResult::Continue
+        }
+        CommandResult::NoteList { global, page } => {
+            handle_note_list(state, global, page);
+            HandleResult::Continue
+        }
+        CommandResult::NoteShow { id } => {
+            handle_note_show(state, id);
+            HandleResult::Continue
+        }
+        CommandResult::NoteEdit { id, title, content } => {
+            handle_note_edit(state, id, title, content);
+            HandleResult::Continue
+        }
+        CommandResult::NoteDelete { id } => {
+            handle_note_delete(state, id);
+            HandleResult::Continue
+        }
+        CommandResult::NoteSearch { query, global, limit } => {
+            handle_note_search(state, query, global, limit);
             HandleResult::Continue
         }
     }
@@ -243,7 +263,7 @@ pub fn handle_undo(state: &mut ReplState) {
         if !state.session.anonymous
             && !state.session.id.is_empty()
             && let Ok(db) = crate::db::Database::new()
-            && let Err(e) = db.delete_last_messages(&state.session.id, removed)
+            && let Err(e) = db.delete_last_content_items(&state.session.id, removed)
         {
             eprintln!("Warning: Failed to delete from database: {}", e);
         }
@@ -281,36 +301,10 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) {
     crate::retrieval::run_search(&db, &state.ollama, &query, Some(&conversation_id), limit).await;
 }
 
-/// Handle restore command
-///
-/// Restores a session from the database.
-pub fn handle_restore(state: &mut ReplState, session_id: String) {
-    let db = match &state.db {
-        Some(d) => Arc::clone(d),
-        None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
-        }
-    };
-
-    println!("Restoring session: {}", session_id);
-    match crate::db::restore_session(&db, &state.session.project_id, &session_id) {
-        Ok(restored) => {
-            println!(
-                "Session restored: {} ({} messages)",
-                session_id,
-                restored.messages.len()
-            );
-            state.session = restored;
-        }
-        Err(e) => eprintln!("Error: {}", e),
-    }
-}
-
 /// Handle reindex command (async)
 ///
-/// Rebuilds embeddings for semantic search.
-pub async fn handle_reindex(state: &mut ReplState, conversation_id: Option<String>) {
+/// Regenerates embeddings for ALL content in the database.
+pub async fn handle_reindex(state: &mut ReplState) {
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
@@ -322,24 +316,13 @@ pub async fn handle_reindex(state: &mut ReplState, conversation_id: Option<Strin
     let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
     let embedding_client = Arc::new(embedding_client);
 
-    let conv_id = conversation_id.unwrap_or_else(|| state.session.id.clone());
+    println!("Regenerating embeddings for all content...");
+    let stats = crate::embeddings::regenerate_all_embeddings(&db, &embedding_client).await;
 
-    println!("Reindexing conversation: {}", conv_id);
-    match crate::db::reindex_conversation(&db, &embedding_client, &conv_id).await {
-        Ok(stats) => {
-            println!(
-                "Reindex complete: {} messages, {} embeddings",
-                stats.messages_migrated, stats.embeddings_generated
-            );
-            if !stats.errors.is_empty() {
-                eprintln!("Errors:");
-                for e in stats.errors {
-                    eprintln!("  - {}", e);
-                }
-            }
-        }
-        Err(e) => eprintln!("Error: {}", e),
-    }
+    println!(
+        "Reindex complete: {} items processed ({} failed), {} chunks processed ({} failed)",
+        stats.items_processed, stats.items_failed, stats.chunks_processed, stats.chunks_failed
+    );
 }
 
 /// Handle compact command (async)
@@ -1179,6 +1162,440 @@ pub fn print_context_info(
         println!("    Total:            {} messages", session.messages.len());
     }
     println!();
+}
+
+/// Handle note add command
+///
+/// Adds a new note with the given content.
+/// Generates embedding asynchronously for semantic search.
+pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>, global: bool) {
+    use crate::content::{ContentScope, ContentSource, Note, MAX_NOTE_CONTENT_SIZE};
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot add notes in anonymous mode.");
+        return;
+    }
+
+    if content.len() > MAX_NOTE_CONTENT_SIZE {
+        eprintln!("\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m", MAX_NOTE_CONTENT_SIZE);
+        println!("  Current length: {} characters", content.len());
+        println!("  Use shorter content or split into multiple notes.");
+        return;
+    }
+
+    let scope = if global {
+        ContentScope::Global
+    } else {
+        ContentScope::Project
+    };
+
+    let project_id = if global {
+        None
+    } else {
+        state.session.project_id.clone()
+    };
+
+    let note = match Note::new(content.clone(), scope, project_id.clone(), ContentSource::User, title.clone())
+    {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to create note: {}\x1B[0m", e);
+            return;
+        }
+    };
+
+    match db.insert_note(&note) {
+        Ok(id) => {
+            let scope_str = if global { "global" } else { "project" };
+            if let Some(t) = &title {
+                println!(
+                    "\x1B[32m✓ Added note #{} (scope: {}): {}\x1B[0m",
+                    id, scope_str, t
+                );
+            } else {
+                println!("\x1B[32m✓ Added note #{} (scope: {})\x1B[0m", id, scope_str);
+            }
+            
+            // Print content preview with │ prefix on every line
+            let lines: Vec<&str> = content.lines().collect();
+            let max_lines = 5;
+            for line in lines.iter().take(max_lines) {
+                let truncated = if line.len() > 76 {
+                    format!("{}...", &line[..76])
+                } else {
+                    line.to_string()
+                };
+                println!("  │ {}", truncated);
+            }
+            
+            // Show indication if content was truncated
+            if lines.len() > max_lines {
+                println!("  │ ... ({} more lines)", lines.len() - max_lines);
+            }
+
+            // Generate embedding asynchronously (like messages in session.rs)
+            if let Some(ref embedding_client) = state.embedding_client {
+                let client = Arc::clone(embedding_client);
+                let db_clone = Arc::clone(&db);
+                let pid = project_id.clone();
+                let note_content = note.content.clone();
+                
+                tokio::spawn(async move {
+                    match client.embed(&note_content).await {
+                        Ok(embedding) => {
+                            let timestamp = chrono::Utc::now();
+                            let _ = db_clone.update_note_embedding(
+                                id,
+                                &embedding,
+                                pid.as_deref(),
+                                timestamp,
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to generate embedding for note: {}", e);
+                        }
+                    }
+                });
+            }
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to store note: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle note list command
+///
+/// Lists notes for the current scope with pagination (8 per page).
+pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
+    use crate::content::ContentScope;
+    use chrono::Utc;
+
+    const NOTES_PER_PAGE: usize = 8;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot list notes in anonymous mode.");
+        return;
+    }
+
+    let scope = if global {
+        Some(ContentScope::Global)
+    } else {
+        Some(ContentScope::Project)
+    };
+
+    let project_id = if global {
+        None
+    } else {
+        state.session.project_id.clone()
+    };
+
+    match db.list_notes(scope, project_id.as_deref()) {
+        Ok(notes) => {
+            let scope_str = if global { "global" } else { "project" };
+
+            if notes.is_empty() {
+                println!("\x1B[36mNotes ({scope_str}):\x1B[0m");
+                println!("  No notes stored.");
+                return;
+            }
+
+            let total_notes = notes.len();
+            let total_pages = (total_notes + NOTES_PER_PAGE - 1) / NOTES_PER_PAGE;
+            
+            // Validate page number
+            let requested_page = page.unwrap_or(1);
+            if requested_page < 1 {
+                eprintln!("\x1B[31mPage must be >= 1. Use /note list 1 for first page.\x1B[0m");
+                return;
+            }
+            if requested_page > total_pages {
+                eprintln!("\x1B[31mPage {} does not exist. Total pages: {}. Use /note list {}.\x1B[0m", 
+                    requested_page, total_pages, total_pages);
+                return;
+            }
+            
+            let current_page = requested_page;
+            let start_idx = (current_page - 1) * NOTES_PER_PAGE;
+            let end_idx = start_idx + NOTES_PER_PAGE.min(total_notes - start_idx);
+
+            println!("\x1B[36mNotes ({scope_str}) - Page {} of {}:\x1B[0m", current_page, total_pages);
+
+            for note in &notes[start_idx..end_idx] {
+                let age_days = (Utc::now() - note.created_at).num_days();
+                if let Some(t) = &note.title {
+                    println!(
+                        "  \x1B[33m#{} {} \x1B[90m({}d)\x1B[0m",
+                        note.id, t, age_days
+                    );
+                } else {
+                    println!(
+                        "  \x1B[33m#{}\x1B[0m \x1B[90m({}d)\x1B[0m",
+                        note.id, age_days
+                    );
+                }
+                // Get first line only for preview, truncated if too long
+                let first_line = note.content.lines().next().unwrap_or(&note.content);
+                let preview = if first_line.len() > 76 {
+                    format!("{}...", &first_line[..76])
+                } else {
+                    first_line.to_string()
+                };
+                println!("  │ {}", preview);
+            }
+
+            println!("\n  \x1B[90mTotal: {} note(s), Page {}/{}\x1B[0m", total_notes, current_page, total_pages);
+            if total_pages > 1 {
+                println!("  \x1B[90mUse /note list {} to see page {}, or /note list --global {} for global\x1B[0m", 
+                    current_page + 1, current_page + 1, current_page + 1);
+            }
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to list notes: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle note show command
+///
+/// Shows a single note by ID.
+pub fn handle_note_show(state: &ReplState, id: i64) {
+    use crate::content::{ContentScope, ContentSource};
+    use chrono::Utc;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot show notes in anonymous mode.");
+        return;
+    }
+
+    match db.get_note(id) {
+        Ok(Some(note)) => {
+            let scope_str = match note.scope {
+                ContentScope::Global => "global",
+                ContentScope::Project => "project",
+            };
+            let source_str = match note.source {
+                ContentSource::User => "user",
+                ContentSource::Llm => "llm",
+            };
+            let age_days = (Utc::now() - note.created_at).num_days();
+
+            // Build header (rendered as markdown)
+            let mut header = format!("## Note #{}\n\n", note.id);
+            if let Some(t) = &note.title {
+                header.push_str(&format!("**Title:** {}\n\n", t));
+            }
+            header.push_str(&format!(
+                "**Scope:** {} | **Source:** {} | **Age:** {}d\n\n",
+                scope_str, source_str, age_days
+            ));
+            if let Some(pid) = &note.project_id {
+                header.push_str(&format!("**Project:** {}\n\n", pid));
+            }
+            header.push_str("---\n");
+
+            // Print header with markdown
+            crate::markdown::print_markdown(&header);
+
+            // Print content as markdown (no prefix, let termimad handle it)
+            crate::markdown::print_markdown(&note.content);
+        }
+        Ok(None) => {
+            eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to retrieve note: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle note edit command
+///
+/// Edits a note's title and/or content.
+pub fn handle_note_edit(state: &ReplState, id: i64, title: Option<String>, content: Option<String>) {
+    use crate::content::MAX_NOTE_CONTENT_SIZE;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot edit notes in anonymous mode.");
+        return;
+    }
+
+    if let Some(ref c) = content
+        && c.len() > MAX_NOTE_CONTENT_SIZE
+    {
+        eprintln!("\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m", MAX_NOTE_CONTENT_SIZE);
+        println!("  Current length: {} characters", c.len());
+        return;
+    }
+
+    match db.get_note(id) {
+        Ok(Some(_)) => {
+            match db.update_note(id, title.as_deref(), content.as_deref()) {
+                Ok(()) => {
+                    println!("\x1B[32m✓ Updated note #{}\x1B[0m", id);
+                    if let Some(t) = &title {
+                        println!("  Title: {}", t);
+                    }
+                    if let Some(c) = &content {
+                        println!("  Content: {}", if c.len() > 80 { format!("{}...", &c[..80]) } else { c.clone() });
+                    }
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to update note: {}\x1B[0m", e);
+                }
+            }
+        }
+        Ok(None) => {
+            eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to retrieve note: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle note delete command
+///
+/// Deletes a note by ID.
+pub fn handle_note_delete(state: &ReplState, id: i64) {
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot delete notes in anonymous mode.");
+        return;
+    }
+
+    match db.get_note(id) {
+        Ok(Some(note)) => {
+            match db.delete_note(id) {
+                Ok(()) => {
+                    if let Some(t) = &note.title {
+                        println!("\x1B[32m✓ Deleted note #{}: {}\x1B[0m", id, t);
+                    } else {
+                        println!("\x1B[32m✓ Deleted note #{}\x1B[0m", id);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to delete note: {}\x1B[0m", e);
+                }
+            }
+        }
+        Ok(None) => {
+            eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to retrieve note: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle note search command
+///
+/// Searches notes by keyword.
+pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit: usize) {
+    use crate::content::ContentScope;
+    use chrono::Utc;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot search notes in anonymous mode.");
+        return;
+    }
+
+    let scope = if global {
+        Some(ContentScope::Global)
+    } else {
+        Some(ContentScope::Project)
+    };
+
+    let project_id = if global {
+        None
+    } else {
+        state.session.project_id.clone()
+    };
+
+    match db.search_notes_keyword(&query, scope, project_id.as_deref(), limit) {
+        Ok(results) => {
+            let scope_str = if global { "global" } else { "project" };
+            println!("\x1B[36mSearch results for \"{}\" ({scope_str}):\x1B[0m", query);
+
+            if results.is_empty() {
+                println!("  No notes found.");
+                return;
+            }
+
+            for result in &results {
+                let age_days = (Utc::now() - result.item.created_at).num_days();
+                if let Some(t) = &result.item.title {
+                    println!(
+                        "  \x1B[33m#{} {} \x1B[90m(score: {:.2}, {}d)\x1B[0m",
+                        result.item.id, t, result.score, age_days
+                    );
+                } else {
+                    println!(
+                        "  \x1B[33m#{}\x1B[0m \x1B[90m(score: {:.2}, {}d)\x1B[0m",
+                        result.item.id, result.score, age_days
+                    );
+                }
+                let preview = if result.item.content.len() > 80 {
+                    format!("{}...", &result.item.content[..80])
+                } else {
+                    result.item.content.clone()
+                };
+                println!("    {}", preview);
+            }
+
+            println!("\n  \x1B[90mFound: {} note(s)\x1B[0m", results.len());
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Search failed: {}\x1B[0m", e);
+        }
+    }
 }
 
 #[cfg(test)]
