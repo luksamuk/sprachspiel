@@ -26,7 +26,9 @@
 
 ## Current Version
 
-**v0.33.0** - 2026-03-15
+**v0.36.0** - 2026-03-19
+
+**v0.37.0** - In Development (Context Overflow Fix)
 
 ## Current Implementation Status
 

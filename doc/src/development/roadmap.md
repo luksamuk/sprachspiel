@@ -112,7 +112,49 @@ See `doc/src/development/file-write-tools.md` for implementation plan.
 
 ---
 
+## Upcoming Release
+
+### v0.37.0 (In Development)
+
+**Context Overflow Compaction Loop Fix:**
+- Fixed infinite compaction loop caused by oversized summaries
+- Root cause: Compaction summaries had no size limit (18K+ tokens)
+- Combined with late trigger (95%+), caused immediate re-compaction
+- Added `COMPACTION_BUFFER` (15,000 tokens) for early trigger
+- Added `MAX_SUMMARY_TOKENS` (3,000 tokens) hard limit
+- Restructured compaction prompt with Goal/Instructions/Progress/Discoveries/Files template
+- Automatic summary truncation if LLM ignores limit
+- New structured template inspired by OpenCode's compaction approach
+
+**Context Overflow During Multi-Tool Execution:**
+- Token budget verification before each tool execution
+- Inter-tool context check (80% threshold)
+- Emergency truncation (90% threshold)
+- Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
+
+---
+
 ## Recent Releases
+
+### v0.36.0 (2026-03-19)
+
+**Features:**
+- Welcome banner redesign with Extended Mind ASCII art
+- Prompt emojis (`🧠🔧`) replacing `[t][T]` indicators
+- `/new` command for new conversation session
+- `/session` command group for unified session management
+- Session auto-load on startup
+- Database initialization failure diagnostics
+- Schema migration v6→v7 fix for embedding duplicates
+
+**Changes:**
+- `/clear` renamed to `/new`
+- `/load` auto-saves current session before switching
+
+### v0.35.0 (TBD)
+
+**Fixes:**
+- Context display after compaction - correct token count after session reload
 
 ### v0.26.7 (2026-03-09)
 
