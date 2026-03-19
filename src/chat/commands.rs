@@ -646,7 +646,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                             global = true;
                         } else if let Ok(p) = part.parse::<usize>() {
                             if p == 0 {
-                                return Some(Err("Error: Page must be >= 1. Use /note list 1 for first page.".to_string()));
+                                return Some(Err("Page must be >= 1. Use /note list 1 for first page.".to_string()));
                             }
                             page = Some(p);
                         }
@@ -761,7 +761,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                     global = true;
                 } else if let Ok(p) = part.parse::<usize>() {
                     if p == 0 {
-                        return Some(Err("Error: Page must be >= 1. Use /note list 1 for first page.".to_string()));
+                        return Some(Err("Page must be >= 1. Use /note list 1 for first page.".to_string()));
                     }
                     page = Some(p);
                 }

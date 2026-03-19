@@ -61,7 +61,7 @@ pub async fn handle_command_result(
             HandleResult::Exit
         }
         CommandResult::Error(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("\x1B[31mError: {}\x1B[0m", e);
             HandleResult::Continue
         }
         CommandResult::ThinkToggled(new_state) => {
@@ -1223,7 +1223,28 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
             } else {
                 println!("\x1B[32m✓ Added note #{} (scope: {})\x1B[0m", id, scope_str);
             }
-            println!("  {}", content);
+            
+            // Print content preview with proper formatting (like note list)
+            let lines: Vec<&str> = content.lines().collect();
+            let max_lines = 5;
+            for (i, line) in lines.iter().take(max_lines).enumerate() {
+                let truncated = if line.len() > 76 {
+                    format!("{}...", &line[..76])
+                } else {
+                    line.to_string()
+                };
+                
+                if i == 0 {
+                    println!("  {}", truncated);
+                } else {
+                    println!("  │ {}", truncated);
+                }
+            }
+            
+            // Show indication if content was truncated
+            if lines.len() > max_lines {
+                println!("  │ ... ({} more lines)", lines.len() - max_lines);
+            }
 
             // Generate embedding asynchronously (like messages in session.rs)
             if let Some(ref embedding_client) = state.embedding_client {
@@ -1306,11 +1327,11 @@ pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
             // Validate page number
             let requested_page = page.unwrap_or(1);
             if requested_page < 1 {
-                eprintln!("\x1B[31mError: Page must be >= 1. Use /note list 1 for first page.\x1B[0m");
+                eprintln!("\x1B[31mPage must be >= 1. Use /note list 1 for first page.\x1B[0m");
                 return;
             }
             if requested_page > total_pages {
-                eprintln!("\x1B[31mError: Page {} does not exist. Total pages: {}. Use /note list {}.\x1B[0m", 
+                eprintln!("\x1B[31mPage {} does not exist. Total pages: {}. Use /note list {}.\x1B[0m", 
                     requested_page, total_pages, total_pages);
                 return;
             }
