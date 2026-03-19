@@ -1421,11 +1421,8 @@ pub fn handle_note_show(state: &ReplState, id: i64) {
             // Print header with markdown
             crate::markdown::print_markdown(&header);
 
-            // Print content lines with │ prefix on every line, rendered as markdown
-            for line in note.content.lines() {
-                print!("│ ");
-                crate::markdown::print_markdown(line);
-            }
+            // Print content as markdown (no prefix, let termimad handle it)
+            crate::markdown::print_markdown(&note.content);
         }
         Ok(None) => {
             eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
