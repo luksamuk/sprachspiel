@@ -947,10 +947,11 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
             };
 
             // Save current session if it has messages
-            if !session.anonymous && !session.messages.is_empty() {
-                if let Err(e) = session.save_sqlite() {
-                    eprintln!("Warning: Could not save current session: {}", e);
-                }
+            if !session.anonymous
+                && !session.messages.is_empty()
+                && let Err(e) = session.save_sqlite()
+            {
+                eprintln!("Warning: Could not save current session: {}", e);
             }
 
             match ChatSession::load_sqlite(&db, &name) {
@@ -1067,10 +1068,11 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
                         }
                     };
 
-                    if !session.anonymous && !session.messages.is_empty() {
-                        if let Err(e) = session.save_sqlite() {
-                            eprintln!("Warning: Could not save current session: {}", e);
-                        }
+                    if !session.anonymous
+                        && !session.messages.is_empty()
+                        && let Err(e) = session.save_sqlite()
+                    {
+                        eprintln!("Warning: Could not save current session: {}", e);
                     }
 
                     match ChatSession::load_sqlite(&db, &name) {

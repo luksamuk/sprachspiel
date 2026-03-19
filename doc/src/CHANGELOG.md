@@ -11,6 +11,13 @@ All notable changes to Ask-AI will be documented in this file.
   - Previously used byte slicing (`&content[..200]`) which panicked on multi-byte characters
   - Box-drawing characters (`─`, `┌`, `└`) and other Unicode now work correctly
 
+- **Clippy Warnings** - Fixed all clippy warnings across codebase
+  - Used `div_ceil()` instead of manual ceiling division
+  - Collapsed nested `if let` patterns
+  - Changed `push_str("🧠")` to `push('🧠')` for single chars
+  - Simplified `!x.is_none()` to `x.is_some()`
+  - Added `#[allow(clippy::too_many_arguments)]` for functions that need many args
+
 ### Removed
 
 - **Dead Code Cleanup** - Removed unused code from `context_overflow.rs`

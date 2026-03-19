@@ -1317,7 +1317,7 @@ pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
             }
 
             let total_notes = notes.len();
-            let total_pages = (total_notes + NOTES_PER_PAGE - 1) / NOTES_PER_PAGE;
+            let total_pages = total_notes.div_ceil(NOTES_PER_PAGE);
             
             // Validate page number
             let requested_page = page.unwrap_or(1);

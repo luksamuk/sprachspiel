@@ -510,10 +510,10 @@ pub async fn run_chat_repl(
     loop {
         let mut prompt = state.current_model_name.clone();
         if state.session.think && state.capabilities.thinking {
-            prompt.push_str("🧠");
+            prompt.push('🧠');
         }
         if state.tools_active {
-            prompt.push_str("🔧");
+            prompt.push('🔧');
         }
         prompt.push_str("> ");
 

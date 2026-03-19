@@ -737,6 +737,7 @@ impl Database {
     /// Insert a content item (message, note, or document)
     ///
     /// Returns the item ID.
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_content_item(
         &self,
         content_type: &str,
@@ -1004,6 +1005,7 @@ impl Database {
     // ============================================================
 
     /// Hybrid search for messages using RRF (convenience wrapper for content_type=message)
+    #[allow(clippy::too_many_arguments)]
     pub fn search_messages_hybrid(
         &self,
         query: &str,
@@ -1074,19 +1076,19 @@ impl Database {
             seen_ids.insert(result.item.id);
 
             // Only enrich user messages
-            if result.item.role.as_deref() == Some("user") {
-                if let Some(conv_id) = &result.item.conversation_id {
-                    let subsequent =
-                        self.get_content_subsequent_assistant(result.item.id, conv_id)?;
+            if result.item.role.as_deref() == Some("user")
+                && let Some(conv_id) = &result.item.conversation_id
+            {
+                let subsequent =
+                    self.get_content_subsequent_assistant(result.item.id, conv_id)?;
 
-                    for msg in subsequent {
-                        if !seen_ids.contains(&msg.id) {
-                            seen_ids.insert(msg.id);
-                            result.subsequent_items.push(super::types::SubsequentItem {
-                                item: msg,
-                                source_type: crate::db::SourceType::Conversation,
-                            });
-                        }
+                for msg in subsequent {
+                    if !seen_ids.contains(&msg.id) {
+                        seen_ids.insert(msg.id);
+                        result.subsequent_items.push(super::types::SubsequentItem {
+                            item: msg,
+                            source_type: crate::db::SourceType::Conversation,
+                        });
                     }
                 }
             }

@@ -182,7 +182,7 @@ pub async fn run_search(
     log_debug("Enriching results with assistant responses...");
     let enriched_results = match db.enrich_content_results_with_context(results) {
         Ok(r) => {
-            let enriched_count = r.iter().filter(|res| !res.chunk_content.is_none()).count();
+            let enriched_count = r.iter().filter(|res| res.chunk_content.is_some()).count();
             log_debug(&format!("Enriched {} results", enriched_count));
             r
         }
