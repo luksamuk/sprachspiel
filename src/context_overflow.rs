@@ -3,7 +3,7 @@
 //! Implements auto-compaction when context reaches threshold.
 
 use crate::chat::session::ChatSession;
-use crate::tokens::{MESSAGE_OVERHEAD, estimate_tokens};
+use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Default overflow threshold (80% of context window)
@@ -30,19 +30,6 @@ pub fn needs_pre_tool_compaction(
     status.needs_compaction()
 }
 
-/// Estimate tokens in a list of SavedMessage
-/// Includes message overhead for each message
-#[allow(dead_code)]
-pub fn estimate_messages_tokens(messages: &[crate::chat::session::SavedMessage]) -> usize {
-    if messages.is_empty() {
-        return 0;
-    }
-    messages
-        .iter()
-        .map(|msg| MESSAGE_OVERHEAD + estimate_tokens(&msg.content))
-        .sum()
-}
-
 /// Estimate tokens in a list of ChatMessage (for coordinator history)
 /// Includes message overhead for each message
 pub fn estimate_chat_messages_tokens(messages: &[ChatMessage]) -> usize {
@@ -53,38 +40,6 @@ pub fn estimate_chat_messages_tokens(messages: &[ChatMessage]) -> usize {
         .iter()
         .map(|msg| MESSAGE_OVERHEAD + estimate_tokens(&msg.content))
         .sum()
-}
-
-/// Maximum tokens for a tool result before truncation (no longer used).
-/// Tool results are now returned in full - LLM controls output via head/tail parameters.
-#[allow(dead_code)]
-pub const MAX_TOOL_RESULT_TOKENS: usize = 4000;
-
-/// Approximate characters per token (no longer used).
-#[allow(dead_code)]
-pub const CHARS_PER_TOKEN: usize = 4;
-
-/// Truncate a tool result to fit within token limit (no longer used).
-/// LLM now controls output size via run_command(head, tail) parameters.
-#[allow(dead_code)]
-pub fn truncate_tool_result(result: &str) -> (String, bool, usize) {
-    let original_tokens = estimate_tokens(result);
-
-    if original_tokens <= MAX_TOOL_RESULT_TOKENS {
-        return (result.to_string(), false, original_tokens);
-    }
-
-    // Calculate max characters (conservative estimate)
-    let max_chars = MAX_TOOL_RESULT_TOKENS * CHARS_PER_TOKEN;
-    let truncation_notice = format!(
-        "\n\n[...truncated from {:?} tokens to {:?}...]",
-        original_tokens, MAX_TOOL_RESULT_TOKENS
-    );
-
-    // Truncate using chars() for Unicode safety
-    let truncated: String = result.chars().take(max_chars).collect();
-
-    (truncated + &truncation_notice, true, original_tokens)
 }
 
 /// Context overflow status
@@ -553,151 +508,6 @@ mod tests {
     }
 
     #[test]
-    fn test_estimate_messages_tokens() {
-        // Empty messages
-        let empty: Vec<SavedMessage> = Vec::new();
-        assert_eq!(estimate_messages_tokens(&empty), 0);
-
-        // Single message
-        let single = vec![SavedMessage {
-            role: MessageRole::User,
-            content: "Hello world".to_string(), // ~2 tokens + 4 overhead = 6
-            timestamp: Utc::now(),
-            ..Default::default()
-        }];
-        let single_tokens = estimate_messages_tokens(&single);
-        assert!(single_tokens >= 4, "Should have at least overhead");
-        assert!(single_tokens < 20, "Should be small for short message");
-
-        // Multiple messages
-        let multiple: Vec<SavedMessage> = (0..10)
-            .map(|i| SavedMessage {
-                role: if i % 2 == 0 {
-                    MessageRole::User
-                } else {
-                    MessageRole::Assistant
-                },
-                content: format!("Message {}", i),
-                timestamp: Utc::now(),
-                ..Default::default()
-            })
-            .collect();
-        let multiple_tokens = estimate_messages_tokens(&multiple);
-        assert!(
-            multiple_tokens > single_tokens,
-            "More messages should have more tokens"
-        );
-
-        // Each message should contribute roughly same amount
-        // 10 messages with ~2 tokens each + 4 overhead = ~60 tokens
-        assert!(
-            multiple_tokens > 40,
-            "10 short messages should have ~60 tokens"
-        );
-        assert!(
-            multiple_tokens < 100,
-            "10 short messages should have ~60 tokens"
-        );
-    }
-
-    #[test]
-    fn test_estimate_messages_tokens_with_long_content() {
-        // Long message content
-        let long_content = "word ".repeat(100); // 100 words
-        let long_message = vec![SavedMessage {
-            role: MessageRole::User,
-            content: long_content.clone(),
-            timestamp: Utc::now(),
-            ..Default::default()
-        }];
-
-        let long_tokens = estimate_messages_tokens(&long_message);
-        // 100 words / 0.75 = ~133 tokens + 4 overhead = ~137
-        assert!(long_tokens > 100, "Should estimate more than 100 tokens");
-        assert!(long_tokens < 200, "Should estimate less than 200 tokens");
-    }
-
-    #[test]
-    fn test_truncate_tool_result_no_truncation_needed() {
-        // Short result should not be truncated
-        let short_result = "Hello world";
-        let (truncated, was_truncated, original_tokens) = truncate_tool_result(short_result);
-
-        assert!(!was_truncated, "Short result should not be truncated");
-        assert_eq!(truncated, short_result);
-        assert!(original_tokens < MAX_TOOL_RESULT_TOKENS);
-    }
-
-    #[test]
-    fn test_truncate_tool_result_long_result() {
-        // Long result should be truncated
-        let long_result = "word ".repeat(10000); // ~10000 words = ~13333 tokens
-        let (truncated, was_truncated, original_tokens) = truncate_tool_result(&long_result);
-
-        assert!(was_truncated, "Long result should be truncated");
-        assert!(original_tokens > MAX_TOOL_RESULT_TOKENS);
-        assert!(
-            truncated.contains("[...truncated"),
-            "Should contain truncation notice"
-        );
-
-        // Check length is approximately correct
-        // MAX_TOOL_RESULT_TOKENS * CHARS_PER_TOKEN = 4000 * 4 = 16000 chars max
-        assert!(
-            truncated.len() <= 20000,
-            "Truncated result should be within bounds"
-        );
-    }
-
-    #[test]
-    fn test_truncate_tool_result_unicode_safe() {
-        // Result with multi-byte Unicode characters
-        let unicode_result = "こんにちは世界 ".repeat(10000); // Japanese: "Hello world "
-        let (truncated, was_truncated, _) = truncate_tool_result(&unicode_result);
-
-        assert!(was_truncated, "Unicode result should be truncated");
-
-        // Should not panic and should produce valid UTF-8
-        // If chars() was used correctly, no panic occurs
-        assert!(
-            truncated.is_char_boundary(truncated.len()),
-            "Should end at char boundary"
-        );
-    }
-
-    #[test]
-    fn test_truncate_tool_result_exactly_at_limit() {
-        // Result exactly at the limit should not be truncated
-        let at_limit = "word ".repeat(3000); // ~3000 words = ~4000 tokens
-        let tokens = estimate_tokens(&at_limit);
-
-        // This might or might not be at exactly MAX_TOOL_RESULT_TOKENS
-        // depending on estimation, so we test both cases
-        let (truncated, was_truncated, _) = truncate_tool_result(&at_limit);
-
-        if tokens <= MAX_TOOL_RESULT_TOKENS {
-            assert!(
-                !was_truncated,
-                "Result at or under limit should not be truncated"
-            );
-            assert_eq!(truncated, at_limit);
-        } else {
-            assert!(was_truncated, "Result over limit should be truncated");
-        }
-    }
-
-    #[test]
-    fn test_truncate_tool_result_empty() {
-        // Empty result should not panic
-        let empty = "";
-        let (truncated, was_truncated, original_tokens) = truncate_tool_result(empty);
-
-        assert!(!was_truncated);
-        assert_eq!(truncated, "");
-        assert_eq!(original_tokens, 0);
-    }
-
-    #[test]
     fn test_pre_tool_threshold() {
         // PRE_TOOL_THRESHOLD should be lower than DEFAULT_OVERFLOW_THRESHOLD
         assert!(
@@ -819,19 +629,6 @@ mod tests {
         assert!(
             multiple_tokens > single_tokens,
             "More messages should have more tokens"
-        );
-    }
-
-    #[test]
-    fn test_max_tool_result_tokens() {
-        // MAX_TOOL_RESULT_TOKENS should be reasonable
-        assert!(
-            MAX_TOOL_RESULT_TOKENS >= 1000,
-            "Should allow at least 1000 tokens for tool results"
-        );
-        assert!(
-            MAX_TOOL_RESULT_TOKENS <= 10000,
-            "Should not exceed 10000 tokens for tool results"
         );
     }
 

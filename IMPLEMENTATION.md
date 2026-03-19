@@ -470,6 +470,34 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
+### ✅ PRIORITY 4: Code Quality - Dead Code Cleanup (COMPLETED)
+
+**Status:** ✅ COMPLETED (v0.37.0)
+
+**Goal:** Remove explicitly marked dead code and document justifications for retained `#[allow(dead_code)]` annotations.
+
+**Context:** Codebase had 80 `#[allow(dead_code)]` annotations. Some are legitimate (future use, enum completeness, serde fields), but others are clearly dead code marked "no longer used".
+
+**Removed (4 items):**
+
+| File | Line | Code | Reason |
+|------|------|------|--------|
+| `src/context_overflow.rs` | 35 | `estimate_messages_tokens()` | Replaced by `estimate_chat_messages_tokens()` |
+| `src/context_overflow.rs` | 60 | `MAX_TOOL_RESULT_TOKENS` | No longer used |
+| `src/context_overflow.rs` | 64 | `CHARS_PER_TOKEN` | No longer used |
+| `src/context_overflow.rs` | 69 | `truncate_tool_result()` | No longer used |
+
+**Retained with Justification (~76 items):**
+- Future use: `normalize()`, `cosine_similarity()`, `estimate_tokens_code()`
+- Enum completeness: `ContextStatus` variants, `ResolutionAction::Add`
+- Serde/API fields: Weather, Serper, Vision, OCR response structs
+- Test-only: `Database::in_memory()`, test helper methods
+- Feature-gated: LED methods (used with `led-tools` feature)
+
+**Related:** Issue #37
+
+---
+
 ### 🔴 PRIORITY 2: Notes System
 
 **Status:** ✅ COMPLETED
