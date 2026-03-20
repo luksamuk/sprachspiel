@@ -848,27 +848,40 @@ impl ChatSession {
                 // This happens when loading from DB before first interaction
                 // or when prompt_tokens is 0 or None
                 // 
-                // IMPORTANT: Estimate ALL messages, not just pending ones.
-                // The `messages_sent_to_llm` counter is for tracking which messages
-                // to send to LLM, but history_real_tokens should return TOTAL history
-                // size for context overflow detection.
+                // IMPORTANT: If there's a compacted summary, only count:
+                // - Summary tokens
+                // - Active messages (from messages_sent_to_llm onwards)
+                // NOT the compacted messages (they're already in the summary)
+                
+                // If compacted, count only active messages + summary
+                // If not compacted, count ALL messages
+                let (active_start, has_summary) = if self.has_compacted_messages() {
+                    (self.messages_sent_to_llm, true)
+                } else {
+                    (0, false)
+                };
+                
                 let messages_tokens: usize = self
                     .messages
                     .iter()
+                    .skip(active_start)
                     .map(|m| {
                         crate::tokens::estimate_tokens(&m.content) + crate::tokens::MESSAGE_OVERHEAD
                     })
                     .sum();
 
                 // Add estimated tokens from compacted summary if present
-                let summary_tokens = self
-                    .compacted_summary
-                    .as_ref()
-                    .map(|s| {
-                        let word_count = s.split_whitespace().count();
-                        (word_count as f32 * 1.3).ceil() as usize + crate::tokens::MESSAGE_OVERHEAD
-                    })
-                    .unwrap_or(0);
+                let summary_tokens = if has_summary {
+                    self.compacted_summary
+                        .as_ref()
+                        .map(|s| {
+                            let word_count = s.split_whitespace().count();
+                            (word_count as f32 * 1.3).ceil() as usize + crate::tokens::MESSAGE_OVERHEAD
+                        })
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
 
                 messages_tokens + summary_tokens
             }
@@ -1090,15 +1103,15 @@ mod tests {
         session.set_compacted_summary_with_range("Summary".into(), Some((2, 3)));
 
         // After compaction, prompt_tokens are cleared, so fallback estimation is used
-        // history_real_tokens estimates: ALL messages + summary (not just pending ones)
-        // This ensures accurate total for context overflow detection
+        // history_real_tokens estimates: active messages + summary (NOT compacted messages)
+        // messages_sent_to_llm = 3, so messages[3..] + summary
         let tokens = session.history_real_tokens();
 
-        // Fallback: estimate all messages + summary
-        // 5 messages (~40 tokens) + summary (~7 tokens) = ~47 tokens
+        // Fallback: estimate only active messages + summary (NOT compacted ones)
+        // messages_sent_to_llm = 3, so messages 3 and 4 (~14 tokens) + summary (~7 tokens) = ~21 tokens
         assert!(
-            tokens > 40 && tokens < 100,
-            "Should estimate all messages + summary, got {}",
+            tokens > 10 && tokens < 50,
+            "Should estimate active messages + summary only, got {}",
             tokens
         );
     }

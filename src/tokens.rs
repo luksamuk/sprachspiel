@@ -81,20 +81,19 @@ pub fn calculate_context_metrics(
     context_window: usize,
     system_prompt: &str,
     tools_tokens: usize,
-    real_prompt_tokens: Option<usize>,
+    real_history_tokens: Option<usize>,
 ) -> ContextMetrics {
     let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
 
-    // When real_prompt_tokens is provided, it's the TOTAL prompt size from Ollama
-    // (system + tools + history). We use it directly.
-    // Otherwise, we estimate from message content only (no system/tools included).
-    let (total_tokens, history_tokens) = match real_prompt_tokens {
-        Some(total) => {
-            // real_prompt_tokens is the total prompt size
-            // history_tokens is derived by subtracting system + tools
-            let history = total
-                .saturating_sub(system_tokens)
-                .saturating_sub(tools_tokens);
+    // When real_history_tokens is provided, it's the HISTORY size only (not total)
+    // We need to add system + tools to get total.
+    // Otherwise, we estimate from message content.
+    let (total_tokens, history_tokens) = match real_history_tokens {
+        Some(history) => {
+            // real_history_tokens is history ONLY, need to add system + tools
+            let total = system_tokens
+                .saturating_add(tools_tokens)
+                .saturating_add(history);
             (total, history)
         }
         None => {
