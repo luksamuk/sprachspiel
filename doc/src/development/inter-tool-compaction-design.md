@@ -513,8 +513,8 @@ Continue if you have next steps...
 | 4 | Add `CONTINUATION_PROMPT_INTER_TOOL` constant | ✅ DONE |
 | 5 | Integrate automatic continuation in `handle_user_message()` | ✅ DONE |
 | 5 | Add MAX_COMPACTION_CYCLES limit (3) | ✅ DONE |
-| Test | Unit tests for new functions | PENDING (future work) |
-| Test | Integration test for multi-tool flow | PENDING (future work) |
+| Test | Unit tests for parsing functions | ✅ DONE |
+| Test | Integration test for multi-tool flow | PENDING (manual testing) |
 | Docs | Update architecture.md | ✅ DONE |
 | Docs | Update CHANGELOG | ✅ DONE |
 

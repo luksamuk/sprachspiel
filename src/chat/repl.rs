@@ -194,12 +194,19 @@ async fn handle_user_message(
                         }
 
                         if state.use_debug {
+                            let remaining_cycles = MAX_COMPACTION_CYCLES - compaction_cycles;
                             log_debug(&format!(
-                                "Inter-tool compaction cycle {}/{} ({} tools executed)",
+                                "[Inter-tool Compaction] Cycle {}/{} ({} tools executed before pause)",
                                 compaction_cycles,
                                 MAX_COMPACTION_CYCLES,
                                 tools_executed.len()
                             ));
+                            if remaining_cycles > 0 {
+                                log_debug(&format!(
+                                    "[Inter-tool Compaction] {} compaction(s) remaining before manual intervention",
+                                    remaining_cycles
+                                ));
+                            }
                         }
 
                         eprintln!("\x1B[33m\x1B[33mContinuing...\x1B[0m");

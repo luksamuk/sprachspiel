@@ -21,6 +21,7 @@ use crate::context_overflow::{
 use crate::debug_tools::log_debug;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::prompts::CONTINUATION_PROMPT_INTER_TOOL;
+use std::time::Instant;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -473,10 +474,28 @@ async fn handle_inter_tool_compaction_error(
         return OverflowHandleResult::NotOverflow;
     };
 
+    let start_time = Instant::now();
+    let tokens_before = state.session.history_real_tokens();
+    let messages_before = state.session.messages.len();
+
     eprintln!(
         "\x1B[33m⏳ Context limit reached during tool execution ({} tools executed). Compacting...\x1B[0m",
         tools_executed.len()
     );
+
+    if state.use_debug {
+        log_debug(&format!(
+            "[Inter-tool Compaction] Starting: {}K/{}K tokens ({}%), {} messages in history",
+            tokens_used / 1000,
+            context_window / 1000,
+            (tokens_used * 100) / context_window,
+            messages_before
+        ));
+        log_debug(&format!(
+            "[Inter-tool Compaction] Tools executed before pause: {}",
+            tools_executed.join(", ")
+        ));
+    }
 
     let system_prompt = build_pre_tool_prompt(state);
 
@@ -492,12 +511,30 @@ async fn handle_inter_tool_compaction_error(
     )
     .await;
 
+    let tokens_after = state.session.history_real_tokens();
+    let messages_after = state.session.messages.len();
+    let elapsed = start_time.elapsed();
+
     if state.use_debug {
+        let tokens_saved = tokens_before.saturating_sub(tokens_after);
+        let _messages_removed = messages_before.saturating_sub(messages_after);
+        
         log_debug(&format!(
-            "Inter-tool compaction: {}K tokens used, {} tools executed",
-            tokens_used / 1000,
-            tools_executed.len()
+            "[Inter-tool Compaction] Completed in {:.2}s: {}K → {}K tokens (saved {}K), {} → {} messages",
+            elapsed.as_secs_f64(),
+            tokens_before / 1000,
+            tokens_after / 1000,
+            tokens_saved / 1000,
+            messages_before,
+            messages_after
         ));
+        
+        if let Some(summary) = &state.session.compacted_summary {
+            log_debug(&format!(
+                "[Inter-tool Compaction] Summary length: {} chars",
+                summary.len()
+            ));
+        }
     }
 
     OverflowHandleResult::InterToolCompaction {
