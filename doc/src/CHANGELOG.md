@@ -24,14 +24,31 @@ All notable changes to Ask-AI will be documented in this file.
   - Cycle tracking with remaining cycles warning
   - Tools executed before pause logged for debugging
 
+- **Debug Logging for Inter-Tool Check** - Permanent logging for troubleshooting
+  - `[INTER-TOOL-CHECK]` logs showing history/tools/system/result tokens
+  - Shows remaining buffer vs COMPACTION_BUFFER comparison
+
 ### Fixed
 
-- **CRITICAL: Token Estimation Caused Silent Overflow** - Fixed inter-tool compaction not triggering
-  - Root cause: Estimation-based tokens undercounted by 20-30% vs real Ollama tokens
-  - Context could show 6.8K remaining (real) but estimation showed 8K+ (above threshold)
-  - Fix: Use `session.history_real_tokens()` (Ollama's `prompt_eval_count`) for accurate detection
-  - Estimation is now only a fallback when real tokens unavailable
-  - Added debug logging to show token count source: "Using real history tokens: 25K" vs "Using estimated"
+- **CRITICAL: Token Estimation Missing Tool Definitions** - Fixed massive undercount
+  - Root cause: Tool definitions (~2000 tokens for 40 tools) were NOT counted
+  - `/context` showed "Tool definitions: ~2000 tokens" separately
+  - But intertool check only counted: history + system + result
+  - Actual context was 100%+, but check saw only 94% (missing tool tokens)
+  - Fix: Added tool tokens estimation in `check_and_handle_context_overflow()`
+  - Result: Now correctly triggers compaction when context truly fills
+
+- **CRITICAL: History Not Growing During Multi-Tool Execution**
+  - Root cause: `real_history_tokens` was fixed at start of request
+  - History grows during tool execution (assistant message + each tool result)
+  - But check used fixed value from start, underestimating actual usage
+  - Fix: Always use estimation of CURRENT history (which includes growth)
+
+- **Token Estimation Undercounting vs Real Ollama Tokens**
+  - Estimation word-based can undercount by 20-30%
+  - Combined with missing tool tokens, total undercount was 25-35%
+  - Context could be at 100% real capacity while check saw only 65-70%
+  - Combined fixes now accurately detect overflow
 
 - **Context Overflow Compaction Loop** - Fixed infinite compaction loop caused by oversized summaries
   - Root cause: Compaction summaries had no size limit, generating ~18K token summaries
