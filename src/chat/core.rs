@@ -129,6 +129,7 @@ pub fn setup_coordinator(
     tools_enabled: bool,
     settings: &Settings,
     system_prompt: String,
+    real_history_tokens: Option<usize>,
 ) -> CustomCoordinator<Vec<ChatMessage>> {
     let coordinator = crate::query::ChatContext {
         ollama,
@@ -143,6 +144,12 @@ pub fn setup_coordinator(
     .build_coordinator();
 
     let mut coordinator = coordinator;
+    
+    // Set real token count for accurate overflow detection
+    if let Some(tokens) = real_history_tokens {
+        coordinator = coordinator.real_history_tokens(tokens);
+    }
+    
     if tools_enabled {
         let (coord_new, tool_count) = register_tools(coordinator, settings, use_debug);
         coordinator = coord_new;
@@ -351,6 +358,9 @@ pub async fn send_message(
     }
 
     // Setup coordinator with optional tools
+    // Get real token count from session for accurate overflow detection
+    let real_history_tokens = Some(session.history_real_tokens());
+    
     let mut coordinator = setup_coordinator(
         ollama.clone(),
         model_config,
@@ -360,6 +370,7 @@ pub async fn send_message(
         tools_enabled,
         settings,
         system_prompt.clone(),
+        real_history_tokens,
     );
 
     // Prepare messages with retrieval and continuation

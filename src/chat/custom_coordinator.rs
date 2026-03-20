@@ -314,6 +314,10 @@ pub struct CustomCoordinator<C: ChatHistory> {
     context_window: Option<usize>,
     /// System prompt for token estimation
     system_prompt: Option<String>,
+    /// Real token count from Ollama's prompt_eval_count (if available)
+    /// This is the ACTUAL token count, not an estimation.
+    /// Should always be used when available for accurate overflow detection.
+    real_history_tokens: Option<usize>,
     /// Accumulated pre-tool content (text generated before tool calls)
     pre_tool_content: String,
     pre_tool_thinking: Option<String>,
@@ -339,6 +343,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             event_callback: None,
             context_window: None,
             system_prompt: None,
+            real_history_tokens: None,
             pre_tool_content: String::new(),
             pre_tool_thinking: None,
             ephemeral_messages: Vec::new(),
@@ -363,7 +368,27 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             };
         };
 
-        let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
+        // Use real token count from Ollama when available (accurate)
+        // Fall back to estimation only when real count is not available
+        let history_tokens = if let Some(real_tokens) = self.real_history_tokens {
+            if self.debug {
+                eprintln!(
+                    "\x1B[90m[DEBUG] Using real history tokens: {}K\x1B[0m",
+                    real_tokens / 1000
+                );
+            }
+            real_tokens
+        } else {
+            let estimated = estimate_chat_messages_tokens(&self.history.messages());
+            if self.debug {
+                eprintln!(
+                    "\x1B[90m[DEBUG] Using estimated history tokens: {}K (no real count available)\x1B[0m",
+                    estimated / 1000
+                );
+            }
+            estimated
+        };
+
         let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
         let result_tokens = estimate_tokens(&result);
         let total_after_add = history_tokens + system_tokens + result_tokens;
@@ -446,6 +471,14 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// Set the system prompt for token estimation
     pub fn system_prompt(mut self, system_prompt: String) -> Self {
         self.system_prompt = Some(system_prompt);
+        self
+    }
+
+    /// Set the real history token count from Ollama's prompt_eval_count.
+    /// This should ALWAYS be used when available for accurate overflow detection.
+    /// Estimation is a fallback when real tokens are not available.
+    pub fn real_history_tokens(mut self, tokens: usize) -> Self {
+        self.real_history_tokens = Some(tokens);
         self
     }
 
