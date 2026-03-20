@@ -22,7 +22,7 @@ use std::sync::Arc;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
-use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD, MAX_SUMMARY_TOKENS};
+use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD, MAX_SUMMARY_TOKENS, needs_buffered_compaction};
 use crate::debug_tools::log_debug;
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
@@ -455,7 +455,8 @@ pub async fn send_message(
     }
 }
 
-/// Auto-compact conversation if context overflow threshold reached
+/// Auto-compact conversation if context reaches buffer threshold
+/// Uses buffer-based approach (15K tokens remaining) for predictable overflow prevention.
 #[allow(clippy::too_many_arguments)]
 pub async fn auto_compact_if_needed(
     ollama: &ollama_rs::Ollama,
@@ -463,30 +464,30 @@ pub async fn auto_compact_if_needed(
     session: &mut ChatSession,
     settings: &Settings,
     agents_md: Option<&str>,
-    system_prompt: &str,
+    _system_prompt: &str,
     context_window: usize,
     _use_debug: bool,
 ) {
-    let status = check_context_overflow(
-        session,
-        system_prompt,
-        context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    );
-
-    if !status.needs_compaction() {
+    // Use buffer-based compaction trigger (more predictable than percentages)
+    // Compacts when there are only COMPACTION_BUFFER tokens remaining
+    if !needs_buffered_compaction(session, context_window) {
         return;
     }
 
+    // Calculate usage percentage for display purposes
+    let real_tokens = session.history_real_tokens();
+    let usage_percent = ((real_tokens as f32 / context_window as f32) * 100.0).min(100.0) as u8;
+
     // Show indicator before starting compaction
-    let urgency = if status.is_overflow() {
+    let urgency = if usage_percent >= 95 {
         "urgent"
     } else {
         "auto"
     };
     eprintln!(
-        "\x1B[33m⏳ Compacting context ({}% full)...\x1B[0m",
-        status.usage_percent()
+        "\x1B[33m⏳ Compacting context ({}% full, {}K remaining)...\x1B[0m",
+        usage_percent,
+        (context_window.saturating_sub(real_tokens)) / 1000
     );
 
     // Attempt auto-compaction

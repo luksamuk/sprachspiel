@@ -816,22 +816,27 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 **Solution:** Three-layer protection:
 
-**Layer 1: Early Trigger with Buffer**
-```
-COMPACTION_BUFFER = 15,000 tokens
+**Layer 1: Buffer-Based Compaction Trigger**
+```rust
+COMPACTION_BUFFER = 15_000 tokens
 Trigger when: tokens >= context_window - COMPACTION_BUFFER
 NOT at: percentual threshold (80%, 90%)
+
+// Why buffer-based is better:
+// - 32K context: 80% = compact at 25,600 tokens (6,400 remaining)
+// - 32K context: 15K buffer = compact at 17,000 tokens (15,000 remaining)
+// - Buffer approach ensures consistent space for responses
 ```
 
 **Layer 2: Structured Summary with Hard Limit**
-```
-MAX_SUMMARY_TOKENS = 3,000 tokens
+```rust
+MAX_SUMMARY_TOKENS = 3_000 tokens
 Template: Goal, Instructions, Progress, Discoveries, Relevant Files
 Auto-truncate if LLM ignores limit
 ```
 
 **Layer 3: Inter-Tool Protection** (from Phase 1 implementation)
-```
+```rust
 PRE_TOOL_THRESHOLD = 75%  → Warning before first tool
 INTER_TOOL_THRESHOLD = 80% → Compaction between tools
 EMERGENCY_THRESHOLD = 90% → Truncate result as last resort
@@ -850,19 +855,21 @@ EMERGENCY_THRESHOLD = 90% → Truncate result as last resort
 | 7 | Add `COMPACTION_BUFFER` and `MAX_SUMMARY_TOKENS` constants | ✅ Done |
 | 8 | Restructure `COMPACTION_PROMPT` with structured template | ✅ Done |
 | 9 | Add summary truncation in `compact_conversation()` | ✅ Done |
+| 10 | Replace percentage triggers with buffer-based in `auto_compact_if_needed()` | ✅ Done |
+| 11 | Add `needs_buffered_compaction()` function | ✅ Done |
 
 **Files Modified:**
-- `src/context_overflow.rs` - Added constants: `COMPACTION_BUFFER`, `MAX_SUMMARY_TOKENS`, inter-tool functions
+- `src/context_overflow.rs` - Added constants: `COMPACTION_BUFFER`, `MAX_SUMMARY_TOKENS`, `needs_buffered_compaction()`
 - `src/prompts/base.rs` - Restructured `COMPACTION_PROMPT` with Goal/Instructions/Progress/Discoveries/Files sections
 - `src/utils.rs` - Added `truncate_to_budget()` for emergency truncation
-- `src/chat/core.rs` - Added summary truncation in `compact_conversation()`
+- `src/chat/core.rs` - Replaced percentage-based trigger with buffer-based in `auto_compact_if_needed()`, added summary truncation
 - `src/chat/custom_coordinator.rs` - Added inter-tool check after tool execution
 - `src/query.rs` - Added event handlers for new context events
 
-**Constants Added:**
-- `COMPACTION_BUFFER = 15,000` - Reserve space before overflow (OpenCode-inspired)
-- `MAX_SUMMARY_TOKENS = 3,000` - Hard limit on summary size
-- `INTER_TOOL_THRESHOLD = 0.80` - Trigger compaction between tools
+**Constants:**
+- `COMPACTION_BUFFER = 15_000` - Reserve space before overflow (OpenCode-inspired)
+- `MAX_SUMMARY_TOKENS = 3_000` - Hard limit on summary size
+- `INTER_TOOL_THRESHOLD = 0.80` - Trigger compaction between tools (display only)
 - `EMERGENCY_THRESHOLD = 0.90` - Hard limit before truncation
 - `RESPONSE_MARGIN = 500` - Tokens reserved for model response
 

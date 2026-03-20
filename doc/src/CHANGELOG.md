@@ -20,6 +20,12 @@ All notable changes to Ask-AI will be documented in this file.
   - Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
   - Smart truncation for large tool results
 
+- **Buffer-Based Compaction Trigger** - Replaced percentage-based triggers with buffer
+  - Old: Compact at 80% of context window (varies with window size)
+  - New: Compact when 15,000 tokens remaining (constant for all window sizes)
+  - More predictable overflow prevention across different context window sizes
+  - `needs_buffered_compaction()` replaces percentage-based check in `auto_compact_if_needed()`
+
 - **Unicode Panic in note_add** - Fixed panic when creating notes with Unicode content
   - `note_add` tool now uses `truncate_chars()` for character-aware truncation
   - Previously used byte slicing (`&content[..200]`) which panicked on multi-byte characters

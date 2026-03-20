@@ -32,12 +32,6 @@ pub const RESPONSE_MARGIN: usize = 500;
 /// Inspired by OpenCode's approach (they use 20K for code agents).
 /// ask-ai uses 15K since it's primarily for Zettelkasten and learning,
 /// not code generation, so we need less buffer for response space.
-///
-/// TODO: This should replace percentage-based triggers in auto_compact_if_needed
-/// for a more predictable overflow prevention. Currently we use DEFAULT_OVERFLOW_THRESHOLD
-/// (80%), but triggering at (context - COMPACTION_BUFFER) is cleaner.
-/// See: https://github.com/luksamuk/ask-ai-rs/issues/43
-#[allow(dead_code)]
 pub const COMPACTION_BUFFER: usize = 15_000;
 
 /// Maximum tokens for compacted summary
@@ -67,16 +61,16 @@ pub fn needs_pre_tool_compaction(
 /// Inspired by OpenCode's approach: trigger when tokens >= context_window - COMPACTION_BUFFER
 /// This ensures compaction happens BEFORE overflow, not after.
 ///
-/// TODO: This should be integrated into auto_compact_if_needed to replace
-/// percentage-based triggers. Currently experimental.
-/// See: https://github.com/luksamuk/ask-ai-rs/issues/43
-#[allow(dead_code)]
-#[allow(unused_variables)]
-pub fn needs_buffered_compaction(
-    session: &ChatSession,
-    system_prompt: &str,
-    context_window: usize,
-) -> bool {
+/// This is more predictable than percentage-based triggers:
+/// - Percentage: "compact at 80%" varies with context window size
+/// - Buffer: "compact when 15K tokens remaining" is constant
+///
+/// For a 32K context window:
+/// - 80% trigger = compact at 25,600 tokens (6,400 remaining)
+/// - 15K buffer = compact at 17,000 tokens (15,000 remaining)
+///
+/// The buffer approach ensures consistent space for responses regardless of context size.
+pub fn needs_buffered_compaction(session: &ChatSession, context_window: usize) -> bool {
     let real_tokens = session.history_real_tokens();
     let threshold = context_window.saturating_sub(COMPACTION_BUFFER);
     real_tokens >= threshold
