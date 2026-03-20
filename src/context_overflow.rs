@@ -1,53 +1,50 @@
 //! Context overflow detection and handling
 //!
 //! Implements auto-compaction when context reaches threshold.
-//! Uses buffer-based thresholds (absolute token counts) instead of percentages
-//! for predictable overflow prevention across different context window sizes.
+//! Uses percentage-based thresholds that scale with context window size,
+//! with absolute minimum buffers for small contexts.
 //!
-//! # Buffer Hierarchy (Aggressive Settings)
+//! # Percentage-Based Thresholds
 //!
-//! For a 32K context window:
+//! Research shows LLMs degrade significantly above 75-88% context usage
+//! (LongICLBench study). Our thresholds adapt to context size:
 //!
-//! | Buffer | Tokens | Usage | Trigger |
-//! |--------|--------|-------|---------|
-//! | PRE_TOOL | 5K remaining | ~84% used | Warning before tool |
-//! | COMPACTION | 2K remaining | ~94% used | Auto-compact |
-//! | INTER_TOOL | 1.5K remaining | ~95% used | Compact during tools |
-//! | EMERGENCY | 500 remaining | ~98% used | Truncate results |
+//! | Threshold | Percentage | 32K Context | 128K Context | Trigger |
+//! |-----------|------------|-------------|---------------|---------|
+//! | PRE_TOOL | 75% used | 8K remaining | 32K remaining | Warning |
+//! | COMPACTION | 88% used | 4K remaining | 15K remaining | Auto-compact |
+//! | INTER_TOOL | 94% used | 2K remaining | 8K remaining | Warning during tools |
+//! | EMERGENCY | 97% used | 1K remaining | 4K remaining | Truncate |
+//!
+//! # Absolute Minimum Buffers
+//!
+//! For small contexts (< 8K), we use absolute minimums to ensure safety:
+//! - PRE_TOOL_MIN: 2K tokens
+//! - COMPACTION_MIN: 1K tokens
+//! - INTER_TOOL_MIN: 512 tokens
+//! - EMERGENCY_MIN: 256 tokens
 
 use crate::chat::session::ChatSession;
 use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
 use ollama_rs::generation::chat::ChatMessage;
 
-/// Default overflow threshold (80% of context window)
-/// Kept for display purposes and backward compatibility in status messages.
-pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;
+/// Percentage thresholds (as fractions of context window)
+/// Based on LongICLBench research showing LLM degradation patterns.
+pub const MODERATE_USAGE_PERCENT: f32 = 0.75; // 75% - Warning threshold
+pub const CRITICAL_USAGE_PERCENT: f32 = 0.88; // 88% - Compaction threshold
+pub const INTER_TOOL_USAGE_PERCENT: f32 = 0.94; // 94% - Warning during tools
+pub const EMERGENCY_USAGE_PERCENT: f32 = 0.97; // 97% - Emergency truncation
 
-/// Pre-tool warning buffer (5,000 tokens remaining)
-/// Warns user when context is approaching limits before tool execution.
-/// Must be larger than COMPACTION_BUFFER to fire first.
-/// At 32K context: fires when ~84% used.
-pub const PRE_TOOL_BUFFER: usize = 5_000;
-
-/// Compaction buffer (2,000 tokens remaining)
-/// Auto-compacts when this many tokens remain in context window.
-/// Aggressive setting for maximum context utilization.
-/// At 32K context: fires when ~94% used.
-pub const COMPACTION_BUFFER: usize = 2_000;
-
-/// Inter-tool warning buffer (1,500 tokens remaining)
-/// Warns during multi-tool execution when context is tight.
-/// Must be smaller than COMPACTION_BUFFER to only fire after compaction starts.
-pub const INTER_TOOL_BUFFER: usize = 1_500;
-
-/// Emergency buffer (500 tokens remaining)
-/// Truncates tool results when context critically low.
-/// Last resort before context overflow crashes.
-pub const EMERGENCY_BUFFER: usize = 500;
+/// Absolute minimum buffers (for small contexts)
+/// These ensure safety even when percentage-based calculations are too small.
+pub const PRE_TOOL_MIN: usize = 2_000;
+pub const COMPACTION_MIN: usize = 1_000;
+pub const INTER_TOOL_MIN: usize = 512;
+pub const EMERGENCY_MIN: usize = 256;
 
 /// Response margin (tokens reserved for model response)
-/// Ensures space for the model to generate a response after tool execution.
-pub const RESPONSE_MARGIN: usize = 500;
+/// Increased from 500 to 2000 based on typical response lengths.
+pub const RESPONSE_MARGIN: usize = 2_000;
 
 /// Maximum tokens for compacted summary
 /// Prevents summary from becoming large enough to cause overflow again.
@@ -61,46 +58,58 @@ pub const DEFAULT_KEEP_FIRST: usize = 5;
 /// Default number of last messages to keep during compaction
 pub const DEFAULT_KEEP_LAST: usize = 5;
 
-/// Check if context needs pre-tool warning (20K remaining)
-/// Returns true when context is getting tight but before auto-compaction.
+/// Default overflow threshold for display purposes
+/// Shows "OK" below 75%, "MODERATE" 75-88%, "CRITICAL" above 88%
+pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = MODERATE_USAGE_PERCENT;
+
+/// Calculate threshold values for a given context window
+/// Returns (pre_tool, compaction, inter_tool, emergency) buffers
+pub fn calculate_thresholds(context_window: usize) -> (usize, usize, usize, usize) {
+    let pre_tool =
+        ((context_window as f32 * (1.0 - MODERATE_USAGE_PERCENT)) as usize).max(PRE_TOOL_MIN);
+    let compaction =
+        ((context_window as f32 * (1.0 - CRITICAL_USAGE_PERCENT)) as usize).max(COMPACTION_MIN);
+    let inter_tool =
+        ((context_window as f32 * (1.0 - INTER_TOOL_USAGE_PERCENT)) as usize).max(INTER_TOOL_MIN);
+    let emergency =
+        ((context_window as f32 * (1.0 - EMERGENCY_USAGE_PERCENT)) as usize).max(EMERGENCY_MIN);
+
+    (pre_tool, compaction, inter_tool, emergency)
+}
+
+/// Check if context needs pre-tool warning
+/// Returns true when usage exceeds MODERATE_THRESHOLD (75%).
 pub fn needs_pre_tool_compaction(session: &ChatSession, context_window: usize) -> bool {
     let real_tokens = session.history_real_tokens();
-    let threshold = context_window.saturating_sub(PRE_TOOL_BUFFER);
+    let (pre_tool, _, _, _) = calculate_thresholds(context_window);
+    let threshold = context_window.saturating_sub(pre_tool);
     real_tokens >= threshold
 }
 
-/// Check if context needs compaction (15K remaining)
-/// Triggers auto-compaction to free up space.
-///
-/// This is more predictable than percentage-based triggers:
-/// - Percentage: "compact at 80%" varies with context window size
-/// - Buffer: "compact when 15K tokens remaining" is constant
-///
-/// For a 32K context window:
-/// - 80% trigger = compact at 25,600 tokens (6,400 remaining)
-/// - 15K buffer = compact at 17,000 tokens (15,000 remaining)
-///
-/// The buffer approach ensures consistent space for responses regardless of context size.
+/// Check if context needs compaction
+/// Triggers auto-compaction when usage exceeds CRITICAL_THRESHOLD (88%).
 pub fn needs_buffered_compaction(session: &ChatSession, context_window: usize) -> bool {
     let real_tokens = session.history_real_tokens();
-    let threshold = context_window.saturating_sub(COMPACTION_BUFFER);
+    let (_, compaction, _, _) = calculate_thresholds(context_window);
+    let threshold = context_window.saturating_sub(compaction);
     real_tokens >= threshold
 }
 
-/// Check if context needs inter-tool warning (6K remaining)
-/// Called after each tool result is added to history during multi-tool execution.
-/// Returns true when context is tight and compaction might be needed soon.
+/// Check if context needs inter-tool warning
+/// Called after each tool result during multi-tool execution.
+/// Returns true when usage exceeds INTER_TOOL_THRESHOLD (94%).
 pub fn needs_inter_tool_compaction(
     history_tokens: usize,
     system_tokens: usize,
     context_window: usize,
 ) -> bool {
     let total = history_tokens.saturating_add(system_tokens);
-    let threshold = context_window.saturating_sub(INTER_TOOL_BUFFER);
+    let (_, _, inter_tool, _) = calculate_thresholds(context_window);
+    let threshold = context_window.saturating_sub(inter_tool);
     total >= threshold
 }
 
-/// Check if context is in emergency state (3K remaining)
+/// Check if context is in emergency state
 /// At this point, tool results must be truncated before adding to history.
 pub fn is_emergency_context(
     history_tokens: usize,
@@ -108,19 +117,21 @@ pub fn is_emergency_context(
     context_window: usize,
 ) -> bool {
     let total = history_tokens.saturating_add(system_tokens);
-    let threshold = context_window.saturating_sub(EMERGENCY_BUFFER);
+    let (_, _, _, emergency) = calculate_thresholds(context_window);
+    let threshold = context_window.saturating_sub(emergency);
     total >= threshold
 }
 
 /// Calculate available token budget for tool results
-/// Returns the number of tokens available before reaching EMERGENCY_BUFFER.
+/// Returns the number of tokens available before reaching emergency limit.
 pub fn calculate_available_budget(
     history_tokens: usize,
     system_tokens: usize,
     context_window: usize,
 ) -> usize {
     let total_used = history_tokens.saturating_add(system_tokens);
-    let emergency_limit = context_window.saturating_sub(EMERGENCY_BUFFER);
+    let (_, _, _, emergency) = calculate_thresholds(context_window);
+    let emergency_limit = context_window.saturating_sub(emergency);
     emergency_limit
         .saturating_sub(total_used)
         .saturating_sub(RESPONSE_MARGIN)
@@ -604,18 +615,109 @@ mod tests {
     }
 
     #[test]
-    fn test_buffer_values() {
-        // Verify buffer values are reasonable
-        assert_eq!(PRE_TOOL_BUFFER, 5_000, "Pre-tool buffer should be 5K");
-        assert_eq!(COMPACTION_BUFFER, 2_000, "Compaction buffer should be 2K");
-        assert_eq!(INTER_TOOL_BUFFER, 1_500, "Inter-tool buffer should be 1.5K");
-        assert_eq!(EMERGENCY_BUFFER, 500, "Emergency buffer should be 500");
-
-        // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes
-        assert_eq!(
-            DEFAULT_OVERFLOW_THRESHOLD, 0.80,
-            "Overflow threshold should be 80%"
+    fn test_threshold_values() {
+        // Verify percentage thresholds
+        assert!(
+            (MODERATE_USAGE_PERCENT - 0.75).abs() < 0.01,
+            "Moderate should be 75%"
         );
+        assert!(
+            (CRITICAL_USAGE_PERCENT - 0.88).abs() < 0.01,
+            "Critical should be 88%"
+        );
+        assert!(
+            (INTER_TOOL_USAGE_PERCENT - 0.94).abs() < 0.01,
+            "Inter-tool should be 94%"
+        );
+        assert!(
+            (EMERGENCY_USAGE_PERCENT - 0.97).abs() < 0.01,
+            "Emergency should be 97%"
+        );
+
+        // Verify minimum buffers for small contexts
+        assert_eq!(PRE_TOOL_MIN, 2_000, "Pre-tool min should be 2K");
+        assert_eq!(COMPACTION_MIN, 1_000, "Compaction min should be 1K");
+        assert_eq!(INTER_TOOL_MIN, 512, "Inter-tool min should be 512");
+        assert_eq!(EMERGENCY_MIN, 256, "Emergency min should be 256");
+
+        // DEFAULT_OVERFLOW_THRESHOLD should match MODERATE_USAGE_PERCENT
+        assert!((DEFAULT_OVERFLOW_THRESHOLD - MODERATE_USAGE_PERCENT).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_thresholds_32k() {
+        // For 32K context:
+        // - Moderate (75%): remaining = 25% of 32K = 8192
+        // - Critical (88%): remaining = 12% of 32K = 3932
+        // - Inter-tool (94%): remaining = 6% of 32K = 1966
+        // - Emergency (97%): remaining = 3% of 32K = 983
+        let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(32768);
+
+        assert_eq!(
+            pre_tool, 8192,
+            "32K: pre_tool should be 8192 (25%% remaining)"
+        );
+        assert_eq!(
+            compaction, 3932,
+            "32K: compaction should be 3932 (12%% remaining)"
+        );
+        assert_eq!(
+            inter_tool, 1966,
+            "32K: inter_tool should be 1966 (6%% remaining)"
+        );
+        assert_eq!(
+            emergency, 983,
+            "32K: emergency should be 983 (3%% remaining)"
+        );
+    }
+
+    #[test]
+    fn test_calculate_thresholds_128k() {
+        // For 128K context:
+        // - Moderate (75%): remaining = 25% of 131072 = 32768
+        // - Critical (88%): remaining = 12% of 131072 = 15728
+        // - Inter-tool (94%): remaining = 6% of 131072 = 7864
+        // - Emergency (97%): remaining = 3% of 131072 = 3932
+        let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(131072);
+
+        assert_eq!(
+            pre_tool, 32768,
+            "128K: pre_tool should be 32K (25%% remaining)"
+        );
+        assert_eq!(
+            compaction, 15728,
+            "128K: compaction should be ~15K (12%% remaining)"
+        );
+        assert_eq!(
+            inter_tool, 7864,
+            "128K: inter_tool should be ~8K (6%% remaining)"
+        );
+
+        // Allow small rounding differences
+        assert!(
+            emergency >= 3900 && emergency <= 4000,
+            "128K: emergency should be ~4K (3%% remaining), got {}",
+            emergency
+        );
+    }
+
+    #[test]
+    fn test_calculate_thresholds_small_context() {
+        // For small context (4K), minimum buffers should apply
+        // - Without mins: pre_tool = 1K, compaction = 480, etc.
+        // - With mins: use absolute minimums
+        let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(4096);
+
+        assert_eq!(pre_tool, PRE_TOOL_MIN, "4K: should use minimum pre_tool");
+        assert_eq!(
+            compaction, COMPACTION_MIN,
+            "4K: should use minimum compaction"
+        );
+        assert_eq!(
+            inter_tool, INTER_TOOL_MIN,
+            "4K: should use minimum inter_tool"
+        );
+        assert_eq!(emergency, EMERGENCY_MIN, "4K: should use minimum emergency");
     }
 
     #[test]
@@ -817,92 +919,84 @@ mod tests {
 
     #[test]
     fn test_buffer_hierarchy() {
-        // Buffer hierarchy should be: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
-        // This ensures correct trigger order:
-        // 1. Pre-tool warning fires first (5K remaining)
-        // 2. Auto-compaction fires second (2K remaining)
-        // 3. Inter-tool warning fires third (1.5K remaining)
-        // 4. Emergency truncation fires last (500 remaining)
-        assert!(
-            PRE_TOOL_BUFFER > COMPACTION_BUFFER,
-            "Pre-tool buffer ({}) should be larger than compaction buffer ({})",
-            PRE_TOOL_BUFFER,
-            COMPACTION_BUFFER
-        );
-        assert!(
-            COMPACTION_BUFFER > INTER_TOOL_BUFFER,
-            "Compaction buffer ({}) should be larger than inter-tool buffer ({})",
-            COMPACTION_BUFFER,
-            INTER_TOOL_BUFFER
-        );
-        assert!(
-            INTER_TOOL_BUFFER > EMERGENCY_BUFFER,
-            "Inter-tool buffer ({}) should be larger than emergency buffer ({})",
-            INTER_TOOL_BUFFER,
-            EMERGENCY_BUFFER
-        );
+        // Threshold hierarchy should be: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
+        // This ensures correct trigger order for any context size
+        let context_32k = 32768;
+        let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(context_32k);
 
-        // Verify actual values
-        assert_eq!(PRE_TOOL_BUFFER, 5_000);
-        assert_eq!(COMPACTION_BUFFER, 2_000);
-        assert_eq!(INTER_TOOL_BUFFER, 1_500);
-        assert_eq!(EMERGENCY_BUFFER, 500);
+        assert!(
+            pre_tool > compaction,
+            "Pre-tool buffer ({}) should be larger than compaction buffer ({})",
+            pre_tool,
+            compaction
+        );
+        assert!(
+            compaction > inter_tool,
+            "Compaction buffer ({}) should be larger than inter-tool buffer ({})",
+            compaction,
+            inter_tool
+        );
+        assert!(
+            inter_tool > emergency,
+            "Inter-tool buffer ({}) should be larger than emergency buffer ({})",
+            inter_tool,
+            emergency
+        );
     }
 
     #[test]
     fn test_needs_inter_tool_compaction_below() {
-        // Context with plenty of room (100K context, 80K used = 20K remaining)
-        // 20K remaining > INTER_TOOL_BUFFER (6K), so should NOT trigger
-        let history_tokens = 75_000;
+        // Context with plenty of room (100K context, 75K used = 25K remaining)
+        // 25K remaining > inter_tool threshold (6% of 100K = 6K), so should NOT trigger
+        let history_tokens = 70_000;
         let system_tokens = 5_000;
         let context_window = 100_000;
 
         assert!(
             !needs_inter_tool_compaction(history_tokens, system_tokens, context_window),
-            "Should not need inter-tool compaction when 20K tokens remaining"
+            "Should not need inter-tool compaction when 25K tokens remaining"
         );
     }
 
     #[test]
     fn test_needs_inter_tool_compaction_above() {
-        // Context near limit (100K context, 98.5K used = 1.5K remaining)
-        // 1.5K remaining <= INTER_TOOL_BUFFER (1.5K), so SHOULD trigger
-        let history_tokens = 92_000;
-        let system_tokens = 6_500;
+        // Context near limit (100K context, 95K used = 5K remaining)
+        // 5K remaining < inter_tool threshold (6% of 100K = 6K), so SHOULD trigger
+        let history_tokens = 89_000;
+        let system_tokens = 6_000;
         let context_window = 100_000;
 
         assert!(
             needs_inter_tool_compaction(history_tokens, system_tokens, context_window),
-            "Should need inter-tool compaction when only 1.5K tokens remaining"
+            "Should need inter-tool compaction when only 5K tokens remaining"
         );
     }
 
     #[test]
     fn test_is_emergency_context_below() {
-        // Context above emergency (100K context, 98K used = 2K remaining)
-        // 2K remaining > EMERGENCY_BUFFER (500), so should NOT be emergency
-        let history_tokens = 92_000;
+        // Context above emergency (100K context, 96K used = 4K remaining)
+        // 4K remaining > emergency threshold (3% of 100K = 3K), so should NOT be emergency
+        let history_tokens = 90_000;
         let system_tokens = 6_000;
         let context_window = 100_000;
 
         assert!(
             !is_emergency_context(history_tokens, system_tokens, context_window),
-            "Should not be emergency when 2K tokens remaining"
+            "Should not be emergency when 4K tokens remaining"
         );
     }
 
     #[test]
     fn test_is_emergency_context_above() {
-        // Context at emergency (100K context, 99.5K used = 500 remaining)
-        // 500 remaining <= EMERGENCY_BUFFER (500), so SHOULD be emergency
-        // Let's use history=94K + system=5.5K = 99.5K
-        let history_tokens = 94_500;
-        let system_tokens = 5_000;
+        // Context at emergency (100K context, 98K used = 2K remaining)
+        // 2K remaining < emergency threshold (3% of 100K = 3K), so SHOULD be emergency
+        let history_tokens = 92_000;
+        let system_tokens = 6_000;
         let context_window = 100_000;
 
         assert!(
             is_emergency_context(history_tokens, system_tokens, context_window),
-            "Should be emergency when only ~500 tokens remaining"
+            "Should be emergency when only 2K tokens remaining"
         );
     }
 
@@ -915,11 +1009,14 @@ mod tests {
 
         let available = calculate_available_budget(history_tokens, system_tokens, context_window);
 
-        // emergency_limit = context_window - EMERGENCY_BUFFER = 100K - 500 = 99.5K
-        // available = 99.5K - 40K - 10K - 500 = 49K
-        assert_eq!(
-            available, 49_000,
-            "Should calculate available budget correctly"
+        // emergency_threshold (3%) = 3% of 100K = 3000
+        // emergency_limit = 100K - 3000 = 97K
+        // available = 97K - 40K - 10K - 2K (response margin) = 45K
+        // Note: Small rounding differences are acceptable
+        assert!(
+            available >= 44_990 && available <= 45_010,
+            "Should calculate available budget correctly, got {}",
+            available
         );
     }
 
@@ -932,10 +1029,11 @@ mod tests {
 
         let available = calculate_available_budget(history_tokens, system_tokens, context_window);
 
-        // emergency_limit = 200K - 500 = 199.5K
-        // available = 199.5K - 10K - 2K - 500 = 187K
+        // emergency_threshold = 3% of 200K = 6K
+        // emergency_limit = 200K - 6K = 194K
+        // available = 194K - 10K - 2K - 2K = 180K
         assert!(
-            available > 185_000,
+            available > 175_000,
             "Should have plenty of budget available: got {}",
             available
         );
@@ -943,19 +1041,35 @@ mod tests {
 
     #[test]
     fn test_threshold_relationships() {
-        // Verify the buffer hierarchy (all in tokens remaining, not percentages)
-        // PRE_TOOL_BUFFER > COMPACTION_BUFFER > INTER_TOOL_BUFFER > EMERGENCY_BUFFER
-        assert!(PRE_TOOL_BUFFER > COMPACTION_BUFFER);
-        assert!(COMPACTION_BUFFER > INTER_TOOL_BUFFER);
-        assert!(INTER_TOOL_BUFFER > EMERGENCY_BUFFER);
+        // Verify the buffer hierarchy using calculate_thresholds
+        let context_window = 32768; // 32K
+        let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(context_window);
 
-        // Verify specific values (aggressive settings)
-        assert_eq!(PRE_TOOL_BUFFER, 5_000);
-        assert_eq!(COMPACTION_BUFFER, 2_000);
-        assert_eq!(INTER_TOOL_BUFFER, 1_500);
-        assert_eq!(EMERGENCY_BUFFER, 500);
+        // Verify hierarchy: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
+        assert!(pre_tool > compaction);
+        assert!(compaction > inter_tool);
+        assert!(inter_tool > emergency);
 
-        // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes only
-        assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80);
+        // Verify specific values for 32K context
+        // 75% usage = 8192 remaining (25%)
+        // 88% usage = 3932 remaining (12%)
+        // 94% usage = 1966 remaining (6%)
+        // 97% usage = 983 remaining (3%)
+        assert_eq!(
+            pre_tool, 8192,
+            "32K: pre_tool should be 8192 (25%% remaining)"
+        );
+        assert_eq!(
+            compaction, 3932,
+            "32K: compaction should be 3932 (12%% remaining)"
+        );
+        assert_eq!(
+            inter_tool, 1966,
+            "32K: inter_tool should be 1966 (6%% remaining)"
+        );
+        assert_eq!(
+            emergency, 983,
+            "32K: emergency should be 983 (3%% remaining)"
+        );
     }
 }

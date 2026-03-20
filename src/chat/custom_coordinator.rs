@@ -23,9 +23,8 @@ use ollama_rs::{
 use serde_json::Value;
 
 use crate::context_overflow::{
-    calculate_available_budget, estimate_chat_messages_tokens,
+    calculate_available_budget, calculate_thresholds, estimate_chat_messages_tokens,
     is_emergency_context, needs_inter_tool_compaction,
-    COMPACTION_BUFFER, EMERGENCY_BUFFER,
 };
 use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
 use crate::utils::truncate_to_budget;
@@ -417,6 +416,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             }
         }
 
+        let (_, compaction_buffer, _, _) = calculate_thresholds(ctx_window);
+        
         eprintln!(
             "\x1B[90m[INTER-TOOL-CHECK] base={} growth={} tools={} sys={} result={} total={}/{} remaining={} buffer={}\x1b[0m",
             fmt_tokens(base_tokens),
@@ -427,14 +428,14 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             fmt_tokens(total_after_add),
             fmt_tokens(ctx_window),
             fmt_tokens(ctx_window.saturating_sub(total_after_add)),
-            fmt_tokens(COMPACTION_BUFFER)
+            fmt_tokens(compaction_buffer)
         );
 
         if is_emergency_context(base_tokens + growth_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
             let available = calculate_available_budget(base_tokens + growth_tokens + tool_tokens, system_tokens, ctx_window);
 
             eprintln!(
-                "\x1B[31m[EMERGENCY] Context at {}% ({} tokens). Truncating result...\x1B[0m",
+                "\x1B[31m[EMERGENCY] Context at {}% ({} tokens). Truncating result...\x1b[0m",
                 (total_after_add) * 100 / ctx_window,
                 total_after_add
             );
@@ -451,7 +452,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         }
 
         let remaining = ctx_window.saturating_sub(total_after_add);
-        if remaining < COMPACTION_BUFFER {
+        if remaining < compaction_buffer {
             // Only trigger compaction if there's history to compact
             // base_tokens == 0 means fresh session with no messages to summarize
             if base_tokens == 0 {
@@ -479,7 +480,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 ctx_window / 1000,
                 (total_after_add * 100) / ctx_window,
                 remaining / 1000,
-                COMPACTION_BUFFER / 1000
+                compaction_buffer / 1000
             );
 
             return ContextCheckResult {
@@ -864,8 +865,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
             let total_tokens = history_tokens + system_tokens;
 
-            // Use EMERGENCY_BUFFER (3K remaining) to detect overflow
-            let threshold = ctx_window.saturating_sub(EMERGENCY_BUFFER);
+            // Use emergency threshold to detect overflow
+            let (_, _, _, emergency_threshold) = calculate_thresholds(ctx_window);
+            let threshold = ctx_window.saturating_sub(emergency_threshold);
 
             if total_tokens > threshold {
                 // Return error that will be caught by caller
