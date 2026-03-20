@@ -3,6 +3,17 @@
 //! Implements auto-compaction when context reaches threshold.
 //! Uses buffer-based thresholds (absolute token counts) instead of percentages
 //! for predictable overflow prevention across different context window sizes.
+//!
+//! # Buffer Hierarchy (Aggressive Settings)
+//!
+//! For a 32K context window:
+//!
+//! | Buffer | Tokens | Usage | Trigger |
+//! |--------|--------|-------|---------|
+//! | PRE_TOOL | 5K remaining | ~84% used | Warning before tool |
+//! | COMPACTION | 2K remaining | ~94% used | Auto-compact |
+//! | INTER_TOOL | 1.5K remaining | ~95% used | Compact during tools |
+//! | EMERGENCY | 500 remaining | ~98% used | Truncate results |
 
 use crate::chat::session::ChatSession;
 use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
@@ -12,26 +23,27 @@ use ollama_rs::generation::chat::ChatMessage;
 /// Kept for display purposes and backward compatibility in status messages.
 pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;
 
-/// Pre-tool warning buffer (20,000 tokens remaining)
+/// Pre-tool warning buffer (5,000 tokens remaining)
 /// Warns user when context is approaching limits before tool execution.
 /// Must be larger than COMPACTION_BUFFER to fire first.
-pub const PRE_TOOL_BUFFER: usize = 20_000;
+/// At 32K context: fires when ~84% used.
+pub const PRE_TOOL_BUFFER: usize = 5_000;
 
-/// Compaction buffer (15,000 tokens remaining)
+/// Compaction buffer (2,000 tokens remaining)
 /// Auto-compacts when this many tokens remain in context window.
-/// Inspired by OpenCode's approach (they use 20K for code agents).
-/// ask-ai uses 15K since it's primarily for Zettelkasten and learning.
-pub const COMPACTION_BUFFER: usize = 15_000;
+/// Aggressive setting for maximum context utilization.
+/// At 32K context: fires when ~94% used.
+pub const COMPACTION_BUFFER: usize = 2_000;
 
-/// Inter-tool warning buffer (6,000 tokens remaining)
+/// Inter-tool warning buffer (1,500 tokens remaining)
 /// Warns during multi-tool execution when context is tight.
 /// Must be smaller than COMPACTION_BUFFER to only fire after compaction starts.
-pub const INTER_TOOL_BUFFER: usize = 6_000;
+pub const INTER_TOOL_BUFFER: usize = 1_500;
 
-/// Emergency buffer (3,000 tokens remaining)
+/// Emergency buffer (500 tokens remaining)
 /// Truncates tool results when context critically low.
 /// Last resort before context overflow crashes.
-pub const EMERGENCY_BUFFER: usize = 3_000;
+pub const EMERGENCY_BUFFER: usize = 500;
 
 /// Response margin (tokens reserved for model response)
 /// Ensures space for the model to generate a response after tool execution.
@@ -594,10 +606,10 @@ mod tests {
     #[test]
     fn test_buffer_values() {
         // Verify buffer values are reasonable
-        assert_eq!(PRE_TOOL_BUFFER, 20_000, "Pre-tool buffer should be 20K");
-        assert_eq!(COMPACTION_BUFFER, 15_000, "Compaction buffer should be 15K");
-        assert_eq!(INTER_TOOL_BUFFER, 6_000, "Inter-tool buffer should be 6K");
-        assert_eq!(EMERGENCY_BUFFER, 3_000, "Emergency buffer should be 3K");
+        assert_eq!(PRE_TOOL_BUFFER, 5_000, "Pre-tool buffer should be 5K");
+        assert_eq!(COMPACTION_BUFFER, 2_000, "Compaction buffer should be 2K");
+        assert_eq!(INTER_TOOL_BUFFER, 1_500, "Inter-tool buffer should be 1.5K");
+        assert_eq!(EMERGENCY_BUFFER, 500, "Emergency buffer should be 500");
 
         // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes
         assert_eq!(
@@ -807,10 +819,10 @@ mod tests {
     fn test_buffer_hierarchy() {
         // Buffer hierarchy should be: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
         // This ensures correct trigger order:
-        // 1. Pre-tool warning fires first (20K remaining)
-        // 2. Auto-compaction fires second (15K remaining)
-        // 3. Inter-tool warning fires third (6K remaining)
-        // 4. Emergency truncation fires last (3K remaining)
+        // 1. Pre-tool warning fires first (5K remaining)
+        // 2. Auto-compaction fires second (2K remaining)
+        // 3. Inter-tool warning fires third (1.5K remaining)
+        // 4. Emergency truncation fires last (500 remaining)
         assert!(
             PRE_TOOL_BUFFER > COMPACTION_BUFFER,
             "Pre-tool buffer ({}) should be larger than compaction buffer ({})",
@@ -831,10 +843,10 @@ mod tests {
         );
 
         // Verify actual values
-        assert_eq!(PRE_TOOL_BUFFER, 20_000);
-        assert_eq!(COMPACTION_BUFFER, 15_000);
-        assert_eq!(INTER_TOOL_BUFFER, 6_000);
-        assert_eq!(EMERGENCY_BUFFER, 3_000);
+        assert_eq!(PRE_TOOL_BUFFER, 5_000);
+        assert_eq!(COMPACTION_BUFFER, 2_000);
+        assert_eq!(INTER_TOOL_BUFFER, 1_500);
+        assert_eq!(EMERGENCY_BUFFER, 500);
     }
 
     #[test]
@@ -853,43 +865,44 @@ mod tests {
 
     #[test]
     fn test_needs_inter_tool_compaction_above() {
-        // Context near limit (100K context, 96K used = 4K remaining)
-        // 4K remaining < INTER_TOOL_BUFFER (6K), so SHOULD trigger
-        let history_tokens = 90_000;
-        let system_tokens = 6_000;
+        // Context near limit (100K context, 98.5K used = 1.5K remaining)
+        // 1.5K remaining <= INTER_TOOL_BUFFER (1.5K), so SHOULD trigger
+        let history_tokens = 92_000;
+        let system_tokens = 6_500;
         let context_window = 100_000;
 
         assert!(
             needs_inter_tool_compaction(history_tokens, system_tokens, context_window),
-            "Should need inter-tool compaction when only 4K tokens remaining"
+            "Should need inter-tool compaction when only 1.5K tokens remaining"
         );
     }
 
     #[test]
     fn test_is_emergency_context_below() {
-        // Context above inter-tool but below emergency (100K context, 93K used = 7K remaining)
-        // 7K remaining > EMERGENCY_BUFFER (3K), so should NOT be emergency
-        let history_tokens = 88_000;
-        let system_tokens = 5_000;
+        // Context above emergency (100K context, 98K used = 2K remaining)
+        // 2K remaining > EMERGENCY_BUFFER (500), so should NOT be emergency
+        let history_tokens = 92_000;
+        let system_tokens = 6_000;
         let context_window = 100_000;
 
         assert!(
             !is_emergency_context(history_tokens, system_tokens, context_window),
-            "Should not be emergency when 7K tokens remaining"
+            "Should not be emergency when 2K tokens remaining"
         );
     }
 
     #[test]
     fn test_is_emergency_context_above() {
-        // Context at emergency (100K context, 98K used = 2K remaining)
-        // 2K remaining < EMERGENCY_BUFFER (3K), so SHOULD be emergency
-        let history_tokens = 93_000;
+        // Context at emergency (100K context, 99.5K used = 500 remaining)
+        // 500 remaining <= EMERGENCY_BUFFER (500), so SHOULD be emergency
+        // Let's use history=94K + system=5.5K = 99.5K
+        let history_tokens = 94_500;
         let system_tokens = 5_000;
         let context_window = 100_000;
 
         assert!(
             is_emergency_context(history_tokens, system_tokens, context_window),
-            "Should be emergency when only 2K tokens remaining"
+            "Should be emergency when only ~500 tokens remaining"
         );
     }
 
@@ -902,11 +915,10 @@ mod tests {
 
         let available = calculate_available_budget(history_tokens, system_tokens, context_window);
 
-        // emergency_limit = context_window - EMERGENCY_BUFFER = 100K - 3K = 97K
-        // available = 97K - 40K - 10K - 500 = 46.5K
+        // emergency_limit = context_window - EMERGENCY_BUFFER = 100K - 500 = 99.5K
+        // available = 99.5K - 40K - 10K - 500 = 49K
         assert_eq!(
-            available,
-            100_000 - 3_000 - 40_000 - 10_000 - 500,
+            available, 49_000,
             "Should calculate available budget correctly"
         );
     }
@@ -920,10 +932,10 @@ mod tests {
 
         let available = calculate_available_budget(history_tokens, system_tokens, context_window);
 
-        // emergency_limit = 200K - 3K = 197K
-        // available = 197K - 10K - 2K - 500 = 184.5K
+        // emergency_limit = 200K - 500 = 199.5K
+        // available = 199.5K - 10K - 2K - 500 = 187K
         assert!(
-            available > 180_000,
+            available > 185_000,
             "Should have plenty of budget available: got {}",
             available
         );
@@ -937,11 +949,11 @@ mod tests {
         assert!(COMPACTION_BUFFER > INTER_TOOL_BUFFER);
         assert!(INTER_TOOL_BUFFER > EMERGENCY_BUFFER);
 
-        // Verify specific values
-        assert_eq!(PRE_TOOL_BUFFER, 20_000);
-        assert_eq!(COMPACTION_BUFFER, 15_000);
-        assert_eq!(INTER_TOOL_BUFFER, 6_000);
-        assert_eq!(EMERGENCY_BUFFER, 3_000);
+        // Verify specific values (aggressive settings)
+        assert_eq!(PRE_TOOL_BUFFER, 5_000);
+        assert_eq!(COMPACTION_BUFFER, 2_000);
+        assert_eq!(INTER_TOOL_BUFFER, 1_500);
+        assert_eq!(EMERGENCY_BUFFER, 500);
 
         // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes only
         assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80);

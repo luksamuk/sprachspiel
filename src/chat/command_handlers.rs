@@ -1069,9 +1069,17 @@ pub fn print_context_info(
     let filled = ((usage_percent as usize).min(100) * bar_width) / 100;
     let empty = bar_width - filled;
 
-    let (color_code, reset_code, status_text) = if usage_percent < 72 {
+    // Calculate thresholds based on buffer constants
+    // OK: remaining > PRE_TOOL_BUFFER (plenty of space)
+    // MODERATE: PRE_TOOL_BUFFER > remaining > COMPACTION_BUFFER (approaching limits)
+    // CRITICAL: remaining <= COMPACTION_BUFFER (will trigger compaction)
+    let remaining = context_window.saturating_sub(metrics.total_tokens);
+    let pre_tool_buffer = crate::context_overflow::PRE_TOOL_BUFFER;
+    let compaction_buffer = crate::context_overflow::COMPACTION_BUFFER;
+
+    let (color_code, reset_code, status_text) = if remaining > pre_tool_buffer {
         ("\x1B[32m", "\x1B[0m", "OK")
-    } else if usage_percent < 80 {
+    } else if remaining > compaction_buffer {
         ("\x1B[33m", "\x1B[0m", "MODERATE")
     } else {
         ("\x1B[31m", "\x1B[0m", "CRITICAL")
