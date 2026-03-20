@@ -443,8 +443,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             );
         }
         
-        if is_emergency_context(base_tokens + growth_tokens + result_tokens, system_tokens, ctx_window) {
-            let available = calculate_available_budget(base_tokens + growth_tokens, system_tokens, ctx_window);
+        if is_emergency_context(total_after_add, ctx_window) {
+            let available = calculate_available_budget(base_tokens + growth_tokens, ctx_window);
             let original_tokens = estimate_tokens(&result);
             let truncated = truncate_to_budget(&result, available);
             let truncated_tokens = estimate_tokens(&truncated);
@@ -511,7 +511,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             };
         }
 
-        if needs_inter_tool_compaction(base_tokens + growth_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
+        if needs_inter_tool_compaction(total_after_add, ctx_window) {
             if self.debug {
                 eprintln!(
                     "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool warning.\x1B[0m",

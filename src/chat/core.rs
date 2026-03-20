@@ -343,7 +343,10 @@ pub async fn send_message(
         DEFAULT_OVERFLOW_THRESHOLD,
     );
 
-    if overflow_status.needs_compaction() {
+    // Show context warning only if tools are disabled.
+    // When tools are enabled, check_and_compact_before_tool in continuation.rs
+    // will show a more informative warning with remaining tokens.
+    if overflow_status.needs_compaction() && !tools_enabled {
         eprintln!(
             "\x1B[33m⚠ Context {}% full. Consider using /compact to summarize old messages.\x1B[0m",
             overflow_status.usage_percent()

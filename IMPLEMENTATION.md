@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.37.0** - 2026-03-20 (Context Overflow Fix)
+**v0.37.0** - 2026-03-20 (Context Overflow Token Calculation Fix)
 
 ## Current Implementation Status
 
@@ -812,18 +812,21 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 - Summary had no token limit, generating massive summaries
 - Template was generic, not structured for context preservation
 
-**Solution:** Three-layer protection:
+**Solution:** Three-layer protection with percentage-based thresholds:
 
-**Layer 1: Buffer-Based Compaction Trigger**
+**Layer 1: Percentage-Based Compaction Triggers**
 ```rust
-COMPACTION_BUFFER = 15_000 tokens
-Trigger when: tokens >= context_window - COMPACTION_BUFFER
-NOT at: percentual threshold (80%, 90%)
+// Scales with context window size (32K, 128K, 200K)
+MODERATE_USAGE_PERCENT = 0.75  // Warning at 75% (8K remaining for 32K)
+CRITICAL_USAGE_PERCENT = 0.88  // Auto-compact at 88% (4K remaining for 32K)
+INTER_TOOL_USAGE_PERCENT = 0.94 // Inter-tool warning at 94% (2K remaining)
+EMERGENCY_USAGE_PERCENT = 0.97  // Emergency truncation at 97% (1K remaining)
 
-// Why buffer-based is better:
-// - 32K context: 80% = compact at 25,600 tokens (6,400 remaining)
-// - 32K context: 15K buffer = compact at 17,000 tokens (15,000 remaining)
-// - Buffer approach ensures consistent space for responses
+// Absolute minimums for small contexts:
+PRE_TOOL_MIN = 2_000 tokens
+COMPACTION_MIN = 1_000 tokens
+INTER_TOOL_MIN = 512 tokens
+EMERGENCY_MIN = 256 tokens
 ```
 
 **Layer 2: Structured Summary with Hard Limit**
@@ -836,9 +839,33 @@ Auto-truncate if LLM ignores limit
 **Layer 3: Inter-Tool Protection** (from Phase 1 implementation)
 ```rust
 PRE_TOOL_THRESHOLD = 75%  → Warning before first tool
-INTER_TOOL_THRESHOLD = 80% → Compaction between tools
-EMERGENCY_THRESHOLD = 90% → Truncate result as last resort
+INTER_TOOL_THRESHOLD = 88% → Compaction between tools
+EMERGENCY_THRESHOLD = 97% → Truncate result as last resort
 ```
+
+**Critical Token Calculation Bugs Fixed (v0.38.0):**
+
+Three separate double-counting bugs were discovered and fixed:
+
+1. **`calculate_context_metrics()` double-counted system + tools**
+   - Comments said `real_history_tokens` was "history only"
+   - But it's actually the TOTAL from Ollama's `prompt_eval_count`
+   - Function was adding system + tools again, causing double-count
+   - Fix: Use total directly, derive history by subtraction
+
+2. **`needs_inter_tool_compaction()` and related functions**
+   - Received `history_tokens + system_tokens` and summed them again
+   - Fix: Accept single `total_tokens` parameter
+
+3. **Pre-tool warning showed wrong remaining tokens**
+   - Used `context_window - history_real_tokens()` 
+   - Missing system + tools in remaining calculation
+   - Fix: Use `total_tokens` from `ContextStatus`
+
+4. **Pre-tool warning said "Auto-compacting..." but didn't compact**
+   - Logic showed warning at 75%, called `auto_compact_if_needed()`
+   - But `auto_compact_if_needed()` only compacts at 88%
+   - Fix: Split logic - warning at 75%, compact at 88%
 
 **Implementation:**
 
@@ -850,28 +877,40 @@ EMERGENCY_THRESHOLD = 90% → Truncate result as last resort
 | 4 | Add `truncate_to_budget()` for emergency truncation | ✅ Done |
 | 5 | Add `ContextNearLimit` and `ContextTruncated` events | ✅ Done |
 | 6 | Add tests for new functions | ✅ Done |
-| 7 | Add `COMPACTION_BUFFER` and `MAX_SUMMARY_TOKENS` constants | ✅ Done |
+| 7 | Add percentage-based thresholds | ✅ Done |
 | 8 | Restructure `COMPACTION_PROMPT` with structured template | ✅ Done |
 | 9 | Add summary truncation in `compact_conversation()` | ✅ Done |
 | 10 | Replace percentage triggers with buffer-based in `auto_compact_if_needed()` | ✅ Done |
 | 11 | Add `needs_buffered_compaction()` function | ✅ Done |
+| 12 | Fix `calculate_context_metrics()` double-counting | ✅ Done |
+| 13 | Fix `needs_inter_tool_compaction()` signature | ✅ Done |
+| 14 | Fix pre-tool warning remaining calculation | ✅ Done |
+| 15 | Split warning vs compact logic in continuation.rs | ✅ Done |
+| 16 | Remove duplicate warning in core.rs | ✅ Done |
 
 **Files Modified:**
-- `src/context_overflow.rs` - Added constants: `COMPACTION_BUFFER`, `MAX_SUMMARY_TOKENS`, `needs_buffered_compaction()`
-- `src/prompts/base.rs` - Restructured `COMPACTION_PROMPT` with Goal/Instructions/Progress/Discoveries/Files sections
+- `src/context_overflow.rs` - Percentage thresholds, `calculate_thresholds()`, fixed function signatures
+- `src/tokens.rs` - Fixed `calculate_context_metrics()` to not double-count
+- `src/chat/continuation.rs` - Split warning/compact logic, fixed remaining calculation
+- `src/chat/core.rs` - Removed duplicate warning when tools enabled
+- `src/chat/custom_coordinator.rs` - Updated function calls for new signatures
+- `src/prompts/base.rs` - Restructured `COMPACTION_PROMPT` with structured template
 - `src/utils.rs` - Added `truncate_to_budget()` for emergency truncation
-- `src/chat/core.rs` - Replaced percentage-based trigger with buffer-based in `auto_compact_if_needed()`, added summary truncation
-- `src/chat/custom_coordinator.rs` - Added inter-tool check after tool execution
-- `src/query.rs` - Added event handlers for new context events
+- `tests/context_tool_overflow.rs` - Updated for percentage-based thresholds
+- `tests/context_recovery_flow.rs` - Updated for percentage-based thresholds
 
 **Constants:**
-- `PRE_TOOL_BUFFER = 20_000` - Warning before tools (20K tokens remaining)
-- `COMPACTION_BUFFER = 15_000` - Auto-compact trigger (15K tokens remaining)
-- `INTER_TOOL_BUFFER = 6_000` - Inter-tool warning (6K tokens remaining)
-- `EMERGENCY_BUFFER = 3_000` - Emergency truncation (3K tokens remaining)
-- `RESPONSE_MARGIN = 500` - Tokens reserved for model response
+- `MODERATE_USAGE_PERCENT = 0.75` - Warning threshold (75%)
+- `CRITICAL_USAGE_PERCENT = 0.88` - Auto-compact threshold (88%)
+- `INTER_TOOL_USAGE_PERCENT = 0.94` - Inter-tool warning (94%)
+- `EMERGENCY_USAGE_PERCENT = 0.97` - Emergency truncation (97%)
+- `PRE_TOOL_MIN = 2_000` - Minimum buffer for warning
+- `COMPACTION_MIN = 1_000` - Minimum buffer for compaction
+- `INTER_TOOL_MIN = 512` - Minimum buffer for inter-tool
+- `EMERGENCY_MIN = 256` - Minimum buffer for emergency
+- `RESPONSE_MARGIN = 2_000` - Tokens reserved for model response
 - `MAX_SUMMARY_TOKENS = 3_000` - Hard limit on summary size
-- `DEFAULT_OVERFLOW_THRESHOLD = 0.80` - Kept for display purposes only
+- `DEFAULT_OVERFLOW_THRESHOLD = 0.75` - For display purposes
 
 **New Compaction Template:**
 ```markdown

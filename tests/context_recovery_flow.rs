@@ -8,8 +8,8 @@
 
 use ask_ai::chat::session::{ChatSession, MessageRole, SavedMessage};
 use ask_ai::context_overflow::{
-    check_context_overflow, COMPACTION_BUFFER, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST,
-    DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_BUFFER,
+    calculate_thresholds, check_context_overflow, COMPACTION_MIN, DEFAULT_KEEP_FIRST,
+    DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_MIN,
 };
 use chrono::Utc;
 
@@ -43,16 +43,42 @@ fn create_session_with_token_count(message_count: usize, tokens_per_message: usi
 fn test_buffer_hierarchy_for_recovery() {
     // Buffer hierarchy: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
     // This ensures correct trigger order
+    // For a 32K context:
+    // - Pre-tool: 8K remaining (75% used)
+    // - Compaction: 4K remaining (88% used)
+    // - Inter-tool: 2K remaining (94% used)
+    // - Emergency: 1K remaining (97% used)
+    let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(32_768);
 
     assert!(
-        PRE_TOOL_BUFFER > COMPACTION_BUFFER,
+        pre_tool > compaction,
         "Pre-tool buffer ({}) should be larger than compaction buffer ({})",
-        PRE_TOOL_BUFFER,
-        COMPACTION_BUFFER
+        pre_tool,
+        compaction
+    );
+    assert!(
+        compaction > inter_tool,
+        "Compaction buffer ({}) should be larger than inter-tool buffer ({})",
+        compaction,
+        inter_tool
+    );
+    assert!(
+        inter_tool > emergency,
+        "Inter-tool buffer ({}) should be larger than emergency buffer ({})",
+        inter_tool,
+        emergency
     );
 
     // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes
-    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80);
+    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.75);
+
+    // Verify minimum buffers (for small contexts)
+    assert!(
+        PRE_TOOL_MIN > COMPACTION_MIN,
+        "PRE_TOOL_MIN ({}) should be larger than COMPACTION_MIN ({})",
+        PRE_TOOL_MIN,
+        COMPACTION_MIN
+    );
 }
 
 #[test]

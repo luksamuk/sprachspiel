@@ -6,7 +6,8 @@
 //! 3. Error recovery
 
 use ask_ai::context_overflow::{
-    COMPACTION_BUFFER, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_BUFFER,
+    calculate_thresholds, COMPACTION_MIN, CRITICAL_USAGE_PERCENT, DEFAULT_KEEP_LAST,
+    DEFAULT_OVERFLOW_THRESHOLD, MODERATE_USAGE_PERCENT, PRE_TOOL_MIN,
 };
 use ask_ai::tokens::estimate_tokens;
 
@@ -17,18 +18,31 @@ const MIN_PRESERVE_LAST: usize = 1;
 fn test_buffer_hierarchy() {
     // Pre-tool buffer should be larger than compaction buffer
     // This ensures warning fires before auto-compaction
+    // For a 32K context window:
+    // - Pre-tool: 32K * 0.25 = 8K remaining (75% used) - triggers warning
+    // - Compaction: 32K * 0.12 = 4K remaining (88% used) - triggers auto-compact
+    let (pre_tool, compaction, _, _) = calculate_thresholds(32_768);
+
     assert!(
-        PRE_TOOL_BUFFER > COMPACTION_BUFFER,
+        pre_tool > compaction,
         "Pre-tool buffer ({}) must be larger than compaction buffer ({})",
-        PRE_TOOL_BUFFER,
-        COMPACTION_BUFFER
+        pre_tool,
+        compaction
     );
 
-    // Pre-tool at 20K remaining, compaction at 15K remaining
-    // This gives 5K buffer for warning before auto-compact
-    assert_eq!(PRE_TOOL_BUFFER, 20_000);
-    assert_eq!(COMPACTION_BUFFER, 15_000);
-    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80); // Kept for display only
+    // Verify percentage-based thresholds
+    assert_eq!(MODERATE_USAGE_PERCENT, 0.75); // 75% - Warning threshold
+    assert_eq!(CRITICAL_USAGE_PERCENT, 0.88); // 88% - Compaction threshold
+    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.75);
+
+    // Verify minimum buffers (for small contexts)
+    // Must have PRE_TOOL_MIN > COMPACTION_MIN to ensure warning before auto-compact
+    assert!(
+        PRE_TOOL_MIN > COMPACTION_MIN,
+        "PRE_TOOL_MIN ({}) must be larger than COMPACTION_MIN ({})",
+        PRE_TOOL_MIN,
+        COMPACTION_MIN
+    );
 }
 
 #[test]
@@ -112,20 +126,39 @@ fn test_whitespace_content() {
 
 #[test]
 fn test_threshold_calculations() {
-    // Verify warning threshold is 90% of overflow (for display purposes)
-    let overflow = DEFAULT_OVERFLOW_THRESHOLD;
-    let warning = overflow * 0.9;
+    // Verify warning threshold is 75% (MODERATE_USAGE_PERCENT)
+    // Display shows: OK < 75%, MODERATE 75-88%, CRITICAL > 88%
+    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.75);
 
-    // At 1000 token context with 80% threshold = 800 tokens overflow
-    // Warning at 90% of 80% = 72% = 720 tokens
+    // Calculate thresholds for a 32K context
+    let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(32_768);
+
+    // Pre-tool: 32K * (1 - 0.75) = 8K remaining
+    // Compaction: 32K * (1 - 0.88) = ~4K remaining
+    // Inter-tool: 32K * (1 - 0.94) = ~2K remaining
+    // Emergency: 32K * (1 - 0.97) = ~1K remaining
+
     assert!(
-        (warning - 0.72).abs() < 0.01,
-        "Warning threshold should be 72%"
+        pre_tool >= 8_000,
+        "Pre-tool buffer should be ~8K for 32K context"
+    );
+    assert!(
+        compaction >= 3_900,
+        "Compaction buffer should be ~4K for 32K context"
+    );
+    assert!(
+        inter_tool >= 1_900,
+        "Inter-tool buffer should be ~2K for 32K context"
+    );
+    assert!(
+        emergency >= 900,
+        "Emergency buffer should be ~1K for 32K context"
     );
 
-    // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes only
-    // Buffer-based thresholds are now used for actual triggering
-    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80);
+    // Hierarchy: pre_tool > compaction > inter_tool > emergency
+    assert!(pre_tool > compaction);
+    assert!(compaction > inter_tool);
+    assert!(inter_tool > emergency);
 }
 
 #[test]

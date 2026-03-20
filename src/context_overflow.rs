@@ -98,42 +98,36 @@ pub fn needs_buffered_compaction(session: &ChatSession, context_window: usize) -
 /// Check if context needs inter-tool warning
 /// Called after each tool result during multi-tool execution.
 /// Returns true when usage exceeds INTER_TOOL_THRESHOLD (94%).
-pub fn needs_inter_tool_compaction(
-    history_tokens: usize,
-    system_tokens: usize,
-    context_window: usize,
-) -> bool {
-    let total = history_tokens.saturating_add(system_tokens);
+///
+/// IMPORTANT: total_tokens should be the FULL prompt size from Ollama's prompt_eval_count
+/// (includes system + tools + history). Do NOT add system_tokens again.
+pub fn needs_inter_tool_compaction(total_tokens: usize, context_window: usize) -> bool {
     let (_, _, inter_tool, _) = calculate_thresholds(context_window);
     let threshold = context_window.saturating_sub(inter_tool);
-    total >= threshold
+    total_tokens >= threshold
 }
 
 /// Check if context is in emergency state
 /// At this point, tool results must be truncated before adding to history.
-pub fn is_emergency_context(
-    history_tokens: usize,
-    system_tokens: usize,
-    context_window: usize,
-) -> bool {
-    let total = history_tokens.saturating_add(system_tokens);
+///
+/// IMPORTANT: total_tokens should be the FULL prompt size from Ollama's prompt_eval_count
+/// (includes system + tools + history). Do NOT add system_tokens again.
+pub fn is_emergency_context(total_tokens: usize, context_window: usize) -> bool {
     let (_, _, _, emergency) = calculate_thresholds(context_window);
     let threshold = context_window.saturating_sub(emergency);
-    total >= threshold
+    total_tokens >= threshold
 }
 
 /// Calculate available token budget for tool results
 /// Returns the number of tokens available before reaching emergency limit.
-pub fn calculate_available_budget(
-    history_tokens: usize,
-    system_tokens: usize,
-    context_window: usize,
-) -> usize {
-    let total_used = history_tokens.saturating_add(system_tokens);
+///
+/// IMPORTANT: total_tokens should be the FULL prompt size from Ollama's prompt_eval_count
+/// (includes system + tools + history). Do NOT add system_tokens again.
+pub fn calculate_available_budget(total_tokens: usize, context_window: usize) -> usize {
     let (_, _, _, emergency) = calculate_thresholds(context_window);
     let emergency_limit = context_window.saturating_sub(emergency);
     emergency_limit
-        .saturating_sub(total_used)
+        .saturating_sub(total_tokens)
         .saturating_sub(RESPONSE_MARGIN)
 }
 
@@ -670,28 +664,26 @@ mod tests {
 
     #[test]
     fn test_needs_inter_tool_compaction_below() {
-        // Context with plenty of room (100K context, 75K used = 25K remaining)
+        // Context with plenty of room (100K context, 75K total = 25K remaining)
         // 25K remaining > inter_tool threshold (6% of 100K = 6K), so should NOT trigger
-        let history_tokens = 70_000;
-        let system_tokens = 5_000;
+        let total_tokens = 75_000;
         let context_window = 100_000;
 
         assert!(
-            !needs_inter_tool_compaction(history_tokens, system_tokens, context_window),
+            !needs_inter_tool_compaction(total_tokens, context_window),
             "Should not need inter-tool compaction when 25K tokens remaining"
         );
     }
 
     #[test]
     fn test_needs_inter_tool_compaction_above() {
-        // Context near limit (100K context, 95K used = 5K remaining)
+        // Context near limit (100K context, 95K total = 5K remaining)
         // 5K remaining < inter_tool threshold (6% of 100K = 6K), so SHOULD trigger
-        let history_tokens = 89_000;
-        let system_tokens = 6_000;
+        let total_tokens = 95_000;
         let context_window = 100_000;
 
         assert!(
-            needs_inter_tool_compaction(history_tokens, system_tokens, context_window),
+            needs_inter_tool_compaction(total_tokens, context_window),
             "Should need inter-tool compaction when only 5K tokens remaining"
         );
     }
@@ -722,14 +714,13 @@ mod tests {
 
     #[test]
     fn test_is_emergency_context_above() {
-        // Context at emergency (100K context, 98K used = 2K remaining)
+        // Context at emergency (100K context, 98K total = 2K remaining)
         // 2K remaining < emergency threshold (3% of 100K = 3K), so SHOULD be emergency
-        let history_tokens = 92_000;
-        let system_tokens = 6_000;
+        let total_tokens = 98_000;
         let context_window = 100_000;
 
         assert!(
-            is_emergency_context(history_tokens, system_tokens, context_window),
+            is_emergency_context(total_tokens, context_window),
             "Should be emergency when only 2K tokens remaining"
         );
     }
@@ -737,15 +728,14 @@ mod tests {
     #[test]
     fn test_calculate_available_budget_normal() {
         // Context at 50% with emergency buffer and margin
-        let history_tokens = 40_000;
-        let system_tokens = 10_000;
+        let total_tokens = 50_000;
         let context_window = 100_000;
 
-        let available = calculate_available_budget(history_tokens, system_tokens, context_window);
+        let available = calculate_available_budget(total_tokens, context_window);
 
         // emergency_threshold (3%) = 3% of 100K = 3000
         // emergency_limit = 100K - 3000 = 97K
-        // available = 97K - 40K - 10K - 2K (response margin) = 45K
+        // available = 97K - 50K - 2K (response margin) = 45K
         // Note: Small rounding differences are acceptable
         assert!(
             available >= 44_990 && available <= 45_010,
@@ -757,15 +747,14 @@ mod tests {
     #[test]
     fn test_calculate_available_budget_plenty() {
         // Context at 10% with large context
-        let history_tokens = 10_000;
-        let system_tokens = 2_000;
+        let total_tokens = 12_000;
         let context_window = 200_000;
 
-        let available = calculate_available_budget(history_tokens, system_tokens, context_window);
+        let available = calculate_available_budget(total_tokens, context_window);
 
         // emergency_threshold = 3% of 200K = 6K
         // emergency_limit = 200K - 6K = 194K
-        // available = 194K - 10K - 2K - 2K = 180K
+        // available = 194K - 12K - 2K = 180K
         assert!(
             available > 175_000,
             "Should have plenty of budget available: got {}",

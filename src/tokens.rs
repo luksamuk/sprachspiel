@@ -77,9 +77,10 @@ impl ContextMetrics {
 /// * `context_window` - Maximum context window size in tokens
 /// * `system_prompt` - System prompt text
 /// * `tools_tokens` - Estimated tokens for tool definitions
-/// * `real_prompt_tokens` - Optional real token count from Ollama's prompt_eval_count
-///   IMPORTANT: This is CUMULATIVE - it includes system prompt + tools + ALL history
-///   When provided, we use it directly as total_tokens (no need to add system + tools again)
+/// * `real_history_tokens` - Optional real token count from Ollama's prompt_eval_count
+///   IMPORTANT: This is the TOTAL prompt size (system + tools + ALL history)
+///   When provided, we use it directly as total_tokens (no need to add system + tools again).
+///   We then DERIVE history_tokens by subtracting system + tools from the total.
 pub fn calculate_context_metrics(
     history_messages: &[ChatMessage],
     context_window: usize,
@@ -89,15 +90,16 @@ pub fn calculate_context_metrics(
 ) -> ContextMetrics {
     let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
 
-    // When real_history_tokens is provided, it's the HISTORY size only (not total)
-    // We need to add system + tools to get total.
-    // Otherwise, we estimate from message content.
+    // When real_history_tokens is provided, it's the TOTAL from Ollama (system + tools + history)
+    // Use it directly and derive history_tokens by subtraction.
+    // Otherwise, estimate from message content.
     let (total_tokens, history_tokens) = match real_history_tokens {
-        Some(history) => {
-            // real_history_tokens is history ONLY, need to add system + tools
-            let total = system_tokens
-                .saturating_add(tools_tokens)
-                .saturating_add(history);
+        Some(total) => {
+            // total is the full prompt size from Ollama (system + tools + history)
+            // Derive history_tokens by subtracting system + tools
+            let history = total
+                .saturating_sub(system_tokens)
+                .saturating_sub(tools_tokens);
             (total, history)
         }
         None => {

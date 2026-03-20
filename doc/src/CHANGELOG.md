@@ -28,21 +28,43 @@ All notable changes to Ask-AI will be documented in this file.
   - `[INTER-TOOL-CHECK]` logs showing history/tools/system/result tokens
   - Shows remaining buffer vs COMPACTION_BUFFER comparison
 
+- **Percentage-Based Context Thresholds** - Replaced fixed buffer constants with percentage-based thresholds
+  - Scales correctly with different context window sizes (32K, 128K, 200K)
+  - `MODERATE_USAGE_PERCENT = 0.75` - Warning at 75% usage
+  - `CRITICAL_USAGE_PERCENT = 0.88` - Auto-compact at 88% usage
+  - `INTER_TOOL_USAGE_PERCENT = 0.94` - Inter-tool warning at 94% usage
+  - `EMERGENCY_USAGE_PERCENT = 0.97` - Emergency truncation at 97% usage
+  - Absolute minimums ensure safety even for small contexts:
+    - `PRE_TOOL_MIN = 2_000` tokens
+    - `COMPACTION_MIN = 1_000` tokens
+    - `INTER_TOOL_MIN = 512` tokens
+    - `EMERGENCY_MIN = 256` tokens
+
 ### Fixed
 
-- **CRITICAL: Token Estimation Missing Tool Definitions** - Fixed massive undercount
-  - Root cause: Tool definitions (~2000 tokens for 40 tools) were NOT counted
-  - `/context` showed "Tool definitions: ~2000 tokens" separately
-  - But intertool check only counted: history + system + result
-  - Actual context was 100%+, but check saw only 94% (missing tool tokens)
-  - Fix: Added tool tokens estimation in `check_and_handle_context_overflow()`
-  - Result: Now correctly triggers compaction when context truly fills
+- **CRITICAL: Multiple Token Calculation Bugs** - Fixed three separate double-counting bugs
 
-- **CRITICAL: History Not Growing During Multi-Tool Execution**
-  - Root cause: `real_history_tokens` was fixed at start of request
-  - History grows during tool execution (assistant message + each tool result)
-  - But check used fixed value from start, underestimating actual usage
-  - Fix: Always use estimation of CURRENT history (which includes growth)
+  1. **Double-counting system + tools in `calculate_context_metrics()`**
+     - Root cause: Comments said `real_history_tokens` was "history only" but it was actually "total from Ollama"
+     - The function added system + tools again to get total, causing double-count
+     - Fix: Recognize `real_history_tokens` as TOTAL, derive history by subtraction
+  
+  2. **Double-counting system_tokens in `needs_inter_tool_compaction()` and related functions**
+     - Root cause: Functions received total and added system_tokens again with `.saturating_add(system_tokens)`
+     - Fix: Accept single `total_tokens` parameter since Ollama already includes system + tools
+  
+  3. **Missing system + tools in pre-tool warning remaining tokens**
+     - Root cause: `remaining = context_window - history_real_tokens()` missed system + tools
+     - Fix: Use `total_tokens` from `ContextStatus` for correct remaining calculation
+
+- **CRITICAL: Pre-Tool Warning Message False Advertising**
+  - Root cause: Message said "Auto-compacting..." at 75% threshold, but auto-compact only triggers at 88%
+  - Users saw "Auto-compacting..." but context wasn't actually compacted
+  - Fix: Split logic - show warning at 75%, auto-compact only at 88%
+  
+- **Duplicate Context Warnings** - Fixed two warnings shown for same condition
+  - Root cause: Both `send_message()` in core.rs and `check_and_compact_before_tool()` in continuation.rs showed warnings
+  - Fix: Only show warning in core.rs when tools are disabled (continuation.rs has more informative message)
 
 - **Token Estimation Undercounting vs Real Ollama Tokens**
   - Estimation word-based can undercount by 20-30%

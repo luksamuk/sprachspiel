@@ -16,7 +16,8 @@
 use super::core::{auto_compact_if_needed, send_message, SendMessageResult, TokenMetrics};
 use super::repl_state::ReplState;
 use crate::context_overflow::{
-    check_context_overflow, needs_pre_tool_compaction, DEFAULT_OVERFLOW_THRESHOLD,
+    check_context_overflow, needs_buffered_compaction, needs_pre_tool_compaction,
+    DEFAULT_OVERFLOW_THRESHOLD,
 };
 use crate::debug_tools::log_debug;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
@@ -150,39 +151,55 @@ pub async fn check_and_compact_before_tool(
     system_prompt: &str,
     context_window: usize,
 ) {
-    if !needs_pre_tool_compaction(&state.session, context_window) {
-        return;
+    // First check if we need actual compaction (88% threshold)
+    if needs_buffered_compaction(&state.session, context_window) {
+        let ctx_status = check_context_overflow(
+            &state.session,
+            system_prompt,
+            context_window,
+            DEFAULT_OVERFLOW_THRESHOLD,
+        );
+
+        let usage_pct = ctx_status.usage_percent();
+        let total_tokens = ctx_status.total_tokens();
+        let remaining = context_window.saturating_sub(total_tokens);
+
+        eprintln!(
+            "\x1B[33m⏳ Context {}% full ({}K remaining). Auto-compacting before tool execution...\x1B[0m",
+            usage_pct,
+            remaining / 1000
+        );
+
+        auto_compact_if_needed(
+            &state.ollama,
+            &state.model_config,
+            &mut state.session,
+            &state.settings,
+            state.agents_md.as_deref(),
+            system_prompt,
+            context_window,
+            state.use_debug,
+        )
+        .await;
+    } else if needs_pre_tool_compaction(&state.session, context_window) {
+        // At 75%: just show warning, don't compact yet
+        let ctx_status = check_context_overflow(
+            &state.session,
+            system_prompt,
+            context_window,
+            DEFAULT_OVERFLOW_THRESHOLD,
+        );
+
+        let usage_pct = ctx_status.usage_percent();
+        let total_tokens = ctx_status.total_tokens();
+        let remaining = context_window.saturating_sub(total_tokens);
+
+        eprintln!(
+            "\x1B[33m⚠ Context {}% full ({}K remaining). Consider using /compact to summarize old messages.\x1B[0m",
+            usage_pct,
+            remaining / 1000
+        );
     }
-
-    // Calculate usage percentage for display (uses DEFAULT_OVERFLOW_THRESHOLD as reference)
-    let usage_pct = check_context_overflow(
-        &state.session,
-        system_prompt,
-        context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    )
-    .usage_percent();
-    
-    // Calculate remaining tokens for more informative display
-    let remaining = context_window.saturating_sub(state.session.history_real_tokens());
-    
-    eprintln!(
-        "\x1B[33m⏳ Context {}% full ({}K remaining). Auto-compacting before tool execution...\x1B[0m",
-        usage_pct,
-        remaining / 1000
-    );
-
-    auto_compact_if_needed(
-        &state.ollama,
-        &state.model_config,
-        &mut state.session,
-        &state.settings,
-        state.agents_md.as_deref(),
-        system_prompt,
-        context_window,
-        state.use_debug,
-    )
-    .await;
 }
 
 /// Build system prompt for pre-tool check
