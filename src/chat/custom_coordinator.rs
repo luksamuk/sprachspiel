@@ -25,7 +25,7 @@ use serde_json::Value;
 use crate::context_overflow::{
     calculate_available_budget, estimate_chat_messages_tokens,
     is_emergency_context, needs_inter_tool_compaction,
-    EMERGENCY_BUFFER,
+    COMPACTION_BUFFER, EMERGENCY_BUFFER,
 };
 use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
 use crate::utils::truncate_to_budget;
@@ -223,14 +223,14 @@ pub enum ChatEvent {
     /// Name field kept for future debugging use
     #[allow(dead_code)]
     ToolResult { name: String, result: String },
-    /// Context is near limit after tool execution (80% threshold)
+    /// Context is near limit after tool execution (inter-tool threshold)
     /// Indicates compaction may be needed before next tool
     ContextNearLimit {
         tool_name: String,
         tokens_used: usize,
         context_window: usize,
     },
-    /// Context was truncated during tool execution (90%+ emergency)
+    /// Context was truncated during tool execution (emergency threshold)
     /// Indicates last tool result was truncated to fit
     ContextTruncated {
         tool_name: String,
@@ -238,18 +238,62 @@ pub enum ChatEvent {
         new_tokens: usize,
         context_window: usize,
     },
+    /// Context needs compaction during tool execution (compaction threshold)
+    /// Signals that tool execution should pause for compaction
+    ContextNeedsCompaction {
+        tokens_used: usize,
+        context_window: usize,
+        tools_executed: Vec<String>,
+    },
 }
+
+/// Error type for coordinator operations during tool execution
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum CoordinatorError {
+    /// Context needs compaction before continuing
+    /// Contains: (tokens_used, context_window, tools_executed)
+    ContextNeedsCompact {
+        tokens_used: usize,
+        context_window: usize,
+        tools_executed: Vec<String>,
+    },
+}
+
+impl std::fmt::Display for CoordinatorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ContextNeedsCompact {
+                tokens_used,
+                context_window,
+                tools_executed,
+            } => {
+                write!(
+                    f,
+                    "Context needs compaction: {} / {} tokens used, {} tools executed",
+                    tokens_used,
+                    context_window,
+                    tools_executed.len()
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for CoordinatorError {}
 
 /// Result of checking context overflow after tool execution
 struct ContextCheckResult {
     /// The result to use (possibly truncated)
     result: String,
-    /// Whether context is near limit (80% threshold)
+    /// Whether context is near limit (inter-tool threshold)
     is_near_limit: bool,
-    /// Whether result was truncated (90% threshold)
+    /// Whether result was truncated (emergency threshold)
     was_truncated: bool,
     /// Tokens used (for events)
     tokens_used: usize,
+    /// Whether compaction is needed before continuing
+    needs_compaction: bool,
 }
 
 /// A coordinator for managing chat interactions with event callbacks.
@@ -315,16 +359,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 is_near_limit: false,
                 was_truncated: false,
                 tokens_used: 0,
+                needs_compaction: false,
             };
         };
 
-        // Calculate tokens BEFORE adding result to history
         let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
         let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
         let result_tokens = estimate_tokens(&result);
         let total_after_add = history_tokens + system_tokens + result_tokens;
 
-        // Emergency check (3K remaining): Truncate result to fit
         if is_emergency_context(history_tokens + result_tokens, system_tokens, ctx_window) {
             let available = calculate_available_budget(history_tokens, system_tokens, ctx_window);
 
@@ -336,7 +379,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 );
             }
 
-            // Truncate the result to fit available budget
             let truncated = truncate_to_budget(&result, available);
 
             return ContextCheckResult {
@@ -344,14 +386,34 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 is_near_limit: true,
                 was_truncated: true,
                 tokens_used: total_after_add,
+                needs_compaction: false,
             };
         }
 
-        // Inter-tool check (6K remaining): Signal need for compaction
+        let remaining = ctx_window.saturating_sub(total_after_add);
+        if remaining < COMPACTION_BUFFER {
+            if self.debug {
+                eprintln!(
+                    "\x1B[33m[INFO] Context at {}% ({} tokens, {}K remaining). Inter-tool compaction needed.\x1B[0m",
+                    (total_after_add) * 100 / ctx_window,
+                    total_after_add,
+                    remaining / 1000
+                );
+            }
+
+            return ContextCheckResult {
+                result,
+                is_near_limit: true,
+                was_truncated: false,
+                tokens_used: total_after_add,
+                needs_compaction: true,
+            };
+        }
+
         if needs_inter_tool_compaction(history_tokens + result_tokens, system_tokens, ctx_window) {
             if self.debug {
                 eprintln!(
-                    "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool compaction may be needed.\x1B[0m",
+                    "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool warning.\x1B[0m",
                     (total_after_add) * 100 / ctx_window,
                     total_after_add
                 );
@@ -362,15 +424,16 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 is_near_limit: true,
                 was_truncated: false,
                 tokens_used: total_after_add,
+                needs_compaction: false,
             };
         }
 
-        // Normal operation - context within limits
         ContextCheckResult {
             result,
             is_near_limit: false,
             was_truncated: false,
             tokens_used: total_after_add,
+            needs_compaction: false,
         }
     }
 
@@ -588,7 +651,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             self.history.push(resp.message.clone());
 
             // Execute each tool call
-            for call in resp.message.tool_calls {
+            let mut tools_executed = Vec::new();
+
+            for call in resp.message.tool_calls.clone() {
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
 
@@ -646,7 +711,30 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
                 // Inter-tool context check: detect overflow and truncate if needed
                 let check_result = self.check_and_handle_context_overflow(&tool_name, result);
-                
+
+                // Check if compaction is needed - stop and emit event
+                if check_result.needs_compaction {
+                    // Push the current result to history before stopping
+                    self.history.push(ChatMessage::tool(check_result.result));
+                    tools_executed.push(tool_name);
+
+                    // Emit compaction needed event
+                    self.emit_event(ChatEvent::ContextNeedsCompaction {
+                        tokens_used: check_result.tokens_used,
+                        context_window: self.context_window.unwrap_or(0),
+                        tools_executed: tools_executed.clone(),
+                    });
+
+                    // Return error to signal compaction needed
+                    let tools_str = tools_executed.join(", ");
+                    return Err(ollama_rs::error::OllamaError::Other(format!(
+                        "CONTEXT_NEEDS_COMPACT:{}:{}:{}",
+                        check_result.tokens_used,
+                        self.context_window.unwrap_or(0),
+                        tools_str
+                    )));
+                }
+
                 // Emit context events
                 if check_result.was_truncated {
                     let result_tokens = estimate_tokens(&check_result.result);
@@ -666,6 +754,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
                 // Push (possibly truncated) result to history
                 self.history.push(ChatMessage::tool(check_result.result));
+                tools_executed.push(tool_name);
             }
 
             // Recurse to get next response

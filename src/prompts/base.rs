@@ -178,3 +178,17 @@ Next step: {next_step}
 
 Continue naturally from where you left off. Do not repeat completed work.
 </continuation_prompt>"#;
+
+/// Inter-tool compaction continuation prompt
+///
+/// Used when context compaction interrupts multi-tool execution.
+/// Instructs the LLM to continue from where it stopped after compaction.
+#[allow(dead_code)]
+pub const CONTINUATION_PROMPT_INTER_TOOL: &str = r#"Context was compacted during multi-tool execution.
+
+Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.
+
+Remember:
+- Previous tool results are preserved in the conversation summary
+- You can reference results from tools executed before compaction
+- Continue from where you left off, or summarize results if complete"#;

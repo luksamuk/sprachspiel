@@ -6,12 +6,14 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
-- **Inter-Tool Compaction Design** - Comprehensive design document for handling context overflow during multi-tool execution
+- **Inter-Tool Compaction** - Automatic context compaction during multi-tool execution
+  - Detects when context reaches `COMPACTION_BUFFER` during tool execution
+  - Stops tool execution and triggers auto-compaction before overflow
+  - Shows clear message: "Context limit reached (executed N tools). Compacting..."
+  - Continuation prompt infrastructure for future automatic resumption
+  - `ChatEvent::ContextNeedsCompaction` event for coordination
+  - `is_inter_tool_compaction_error()` and `parse_inter_tool_compaction_error()` utilities
   - Design document at `doc/src/development/inter-tool-compaction-design.md`
-  - Proposes continuation-based approach for pausing multi-tool execution
-  - When context reaches `COMPACTION_BUFFER` during tool execution, pause and compact
-  - Uses continuation prompts to resume LLM after compaction
-  - Not yet implemented - design phase only
 
 ### Fixed
 

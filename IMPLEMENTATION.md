@@ -906,6 +906,29 @@ EMERGENCY_THRESHOLD = 90% → Truncate result as last resort
 
 **Note for Future:** When implementing parallel tool execution, the nudge mechanism via `continuation_prompt` should be reviewed to handle multiple concurrent tool completions.
 
+**v0.37.0 Addition - Inter-Tool Compaction:**
+
+Automatic context compaction during multi-tool execution (implemented in PR #45):
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add `ChatEvent::ContextNeedsCompaction` | ✅ Done |
+| 2 | Add `needs_compaction` flag to `ContextCheckResult` | ✅ Done |
+| 3 | Modify `process_response()` to stop tool execution on compaction needed | ✅ Done |
+| 4 | Add `handle_inter_tool_compaction_error()` in continuation.rs | ✅ Done |
+| 5 | Integrate with `handle_overflow_error()` for automatic recovery | ✅ Done |
+
+**New Files/Functions:**
+- `src/chat/custom_coordinator.rs`: Added `CoordinatorError::ContextNeedsCompact`, `ChatEvent::ContextNeedsCompaction`
+- `src/chat/continuation.rs`: Added `is_inter_tool_compaction_error()`, `parse_inter_tool_compaction_error()`, `handle_inter_tool_compaction_error()`
+- `src/prompts/base.rs`: Added `CONTINUATION_PROMPT_INTER_TOOL` for continuation after compaction
+
+**Flow:**
+1. During multi-tool execution, check if `remaining < COMPACTION_BUFFER` after each tool
+2. If true, emit `ContextNeedsCompaction` event and return error with `CONTEXT_NEEDS_COMPACT:` prefix
+3. `handle_overflow_error()` detects the error, calls `handle_inter_tool_compaction_error()`
+4. Auto-compact, show message to user, ask for retry
+
 **Related:** Issue #43
 
 ---

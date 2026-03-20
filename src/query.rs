@@ -144,6 +144,16 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
                 context_window
             );
         }
+        ChatEvent::ContextNeedsCompaction { tokens_used, context_window, tools_executed } => {
+            if use_debug {
+                eprintln!(
+                    "\x1B[33m[INFO] Context needs compaction: {}K / {}K tokens ({} tools executed)\x1B[0m",
+                    tokens_used / 1000,
+                    context_window / 1000,
+                    tools_executed.len()
+                );
+            }
+        }
     }
 }
 

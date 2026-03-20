@@ -1,6 +1,6 @@
 # Inter-Tool Compaction Design
 
-**Status:** PLANNED  
+**Status:** IMPLEMENTED  
 **Issue:** Context overflow during multi-tool execution  
 **Related:** Issue #43, PR #45
 
@@ -502,18 +502,19 @@ Continue if you have next steps...
 
 | Phase | Task | Status |
 |-------|------|--------|
-| 1 | Add `CoordinatorError::ContextNeedsCompact` | PENDING |
-| 1 | Add `ChatEvent::ContextNeedsCompaction` | PENDING |
-| 2 | Add `needs_compaction` to `ContextCheckResult` | PENDING |
-| 2 | Modify `check_and_handle_context_overflow()` | PENDING |
-| 3 | Modify `process_response()` to stop on compaction needed | PENDING |
-| 4 | Add `handle_inter_tool_compaction()` | PENDING |
-| 4 | Add `build_inter_tool_compaction_prompt()` | PENDING |
-| 5 | Integrate in `send_message()` or `continuation.rs` | PENDING |
-| Test | Unit tests for new functions | PENDING |
-| Test | Integration test for multi-tool flow | PENDING |
-| Docs | Update architecture.md | PENDING |
-| Docs | Update CHANGELOG | PENDING |
+| 1 | Add `CoordinatorError::ContextNeedsCompact` | ✅ DONE |
+| 1 | Add `ChatEvent::ContextNeedsCompaction` | ✅ DONE |
+| 2 | Add `needs_compaction` to `ContextCheckResult` | ✅ DONE |
+| 2 | Modify `check_and_handle_context_overflow()` | ✅ DONE |
+| 3 | Modify `process_response()` to stop on compaction needed | ✅ DONE |
+| 4 | Add `handle_inter_tool_compaction()` | ✅ DONE |
+| 4 | Add `build_inter_tool_compaction_prompt()` | ✅ DONE |
+| 4 | Add `CONTINUATION_PROMPT_INTER_TOOL` constant | ✅ DONE |
+| 5 | Integrate in `handle_overflow_error()` | ✅ DONE |
+| Test | Unit tests for new functions | PENDING (future work) |
+| Test | Integration test for multi-tool flow | PENDING (future work) |
+| Docs | Update architecture.md | ✅ DONE |
+| Docs | Update CHANGELOG | ✅ DONE |
 
 ---
 

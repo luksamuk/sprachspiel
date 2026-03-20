@@ -15,11 +15,34 @@
 
 use super::core::{auto_compact_if_needed, send_message, SendMessageResult, TokenMetrics};
 use super::repl_state::ReplState;
-use crate::context_overflow::{check_context_overflow, needs_pre_tool_compaction, DEFAULT_OVERFLOW_THRESHOLD};
+use crate::context_overflow::{
+    check_context_overflow, needs_pre_tool_compaction, DEFAULT_OVERFLOW_THRESHOLD,
+};
 use crate::debug_tools::log_debug;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// Parse inter-tool compaction error from OllamaError
+///
+/// Returns (tokens_used, context_window, tools_executed) if the error is
+/// a context needs compaction error, None otherwise.
+pub fn parse_inter_tool_compaction_error(error_str: &str) -> Option<(usize, usize, Vec<String>)> {
+    let marker = "CONTEXT_NEEDS_COMPACT:";
+    let rest = error_str.strip_prefix(marker)?;
+
+    let mut parts = rest.splitn(3, ':');
+    let tokens_used: usize = parts.next()?.parse().ok()?;
+    let context_window: usize = parts.next()?.parse().ok()?;
+    let tools_str = parts.next()?;
+    let tools_executed: Vec<String> = if tools_str.is_empty() {
+        Vec::new()
+    } else {
+        tools_str.split(',').map(|s| s.trim().to_string()).collect()
+    };
+
+    Some((tokens_used, context_window, tools_executed))
+}
 
 /// Process a successful SendMessageResult
 ///
@@ -359,15 +382,20 @@ pub async fn handle_continuation(
 /// * `true` - Overflow was handled, caller should `continue` the loop
 /// * `false` - Not an overflow error, caller should handle differently
 pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bool {
-    if !error_str.contains("Context overflow during tool execution") {
+    if !error_str.contains("Context overflow during tool execution")
+        && !is_inter_tool_compaction_error(error_str)
+    {
         return false;
+    }
+
+    if is_inter_tool_compaction_error(error_str) {
+        return handle_inter_tool_compaction_error(state, error_str).await;
     }
 
     eprintln!(
         "\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m"
     );
 
-    // Remove the failed message
     let (removed, _) = state.session.remove_last_assistant_messages_with_content();
     if state.use_debug {
         log_debug(&format!(
@@ -376,7 +404,6 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bo
         ));
     }
 
-    // Auto-compact to free space
     let overflow_context_window = state.model_config.num_ctx as usize;
     let overflow_system_prompt = build_system_prompt(
         PromptConfig::new(PromptType::ToolUser)
@@ -401,7 +428,6 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bo
     )
     .await;
 
-    // Save session after compaction
     if !state.session.anonymous
         && let Err(save_err) = state.session.save_sqlite()
         && state.use_debug
@@ -417,4 +443,109 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bo
     );
 
     true
+}
+
+/// Handle inter-tool compaction error during multi-tool execution
+///
+/// Compacts context and prepares for continuation.
+/// Returns `true` if handled (caller should continue), `false` otherwise.
+async fn handle_inter_tool_compaction_error(state: &mut ReplState, error_str: &str) -> bool {
+    let Some((tokens_used, context_window, tools_executed)) =
+        parse_inter_tool_compaction_error(error_str)
+    else {
+        return false;
+    };
+
+    eprintln!(
+        "\x1B[33m⏳ Context limit reached during tool execution ({} tools executed). Compacting...\x1B[0m",
+        tools_executed.len()
+    );
+
+    let system_prompt = build_pre_tool_prompt(state);
+
+    auto_compact_if_needed(
+        &state.ollama,
+        &state.model_config,
+        &mut state.session,
+        &state.settings,
+        state.agents_md.as_deref(),
+        &system_prompt,
+        context_window,
+        state.use_debug,
+    )
+    .await;
+
+    if state.use_debug {
+        log_debug(&format!(
+            "Inter-tool compaction: {}K tokens used, {} tools executed",
+            tokens_used / 1000,
+            tools_executed.len()
+        ));
+    }
+
+    eprintln!(
+        "\x1B[33mContext compacted. Please retry your message.\x1B[0m"
+    );
+
+    true
+}
+
+/// Check if error is an inter-tool compaction error
+pub fn is_inter_tool_compaction_error(error_str: &str) -> bool {
+    error_str.starts_with("CONTEXT_NEEDS_COMPACT:")
+}
+
+/// Handle inter-tool compaction during multi-tool execution
+///
+/// Called when context reaches critical level during tool execution.
+/// Compacts context and returns a continuation prompt for the LLM.
+#[allow(dead_code)]
+pub async fn handle_inter_tool_compaction(
+    state: &mut ReplState,
+    tools_executed: &[String],
+    context_window: usize,
+) -> AppResult<()> {
+    eprintln!(
+        "\x1B[33m⏳ Context limit reached (executed {} tools). Compacting...\x1B[0m",
+        tools_executed.len()
+    );
+
+    let system_prompt = build_pre_tool_prompt(state);
+
+    auto_compact_if_needed(
+        &state.ollama,
+        &state.model_config,
+        &mut state.session,
+        &state.settings,
+        state.agents_md.as_deref(),
+        &system_prompt,
+        context_window,
+        state.use_debug,
+    )
+    .await;
+
+    if state.use_debug {
+        log_debug(&format!(
+            "Inter-tool compaction: {} tools executed before pause",
+            tools_executed.len()
+        ));
+    }
+
+    Ok(())
+}
+
+/// Build continuation prompt for inter-tool compaction
+#[allow(dead_code)]
+pub fn build_inter_tool_compaction_prompt(tools_executed: &[String]) -> String {
+    use crate::prompts::CONTINUATION_PROMPT_INTER_TOOL;
+
+    if tools_executed.is_empty() {
+        return CONTINUATION_PROMPT_INTER_TOOL.to_string();
+    }
+
+    format!(
+        "{}\n\nTools already executed: {}.",
+        CONTINUATION_PROMPT_INTER_TOOL,
+        tools_executed.join(", ")
+    )
 }
