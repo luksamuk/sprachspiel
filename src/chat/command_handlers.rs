@@ -1063,10 +1063,10 @@ pub fn print_context_info(
     );
 
     let context_window_k = context_window / 1024;
-    let usage_percent = (metrics.utilization * 100.0) as u8;
+    let usage_percent = metrics.utilization * 100.0;
 
     let bar_width = 20;
-    let filled = ((usage_percent as usize).min(100) * bar_width) / 100;
+    let filled = (usage_percent.min(100.0) as usize * bar_width) / 100;
     let empty = bar_width - filled;
 
     // Calculate thresholds based on buffer constants
@@ -1094,13 +1094,13 @@ pub fn print_context_info(
     println!();
     println!("  Context Utilization:");
     println!(
-        "    {}{}{}{} {}{}",
+        "    {}{}{}{} {:.1}%{}",
         color_code,
         "█".repeat(filled),
         "░".repeat(empty),
-        reset_code,
         color_code,
-        usage_percent
+        usage_percent,
+        reset_code
     );
     println!(
         "    {}{} / {} tokens{}\x1B[0m",
