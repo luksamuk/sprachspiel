@@ -841,14 +841,20 @@ impl ChatSession {
             .next();
 
         match last_prompt_tokens {
-            Some(tokens) => tokens as usize,
-            None => {
+            // Only use real tokens if non-zero (0 means invalid/not-set)
+            Some(tokens) if tokens > 0 => tokens as usize,
+            _ => {
                 // Fallback: estimate from message content when no real tokens available
                 // This happens when loading from DB before first interaction
+                // or when prompt_tokens is 0 or None
+                // 
+                // IMPORTANT: Estimate ALL messages, not just pending ones.
+                // The `messages_sent_to_llm` counter is for tracking which messages
+                // to send to LLM, but history_real_tokens should return TOTAL history
+                // size for context overflow detection.
                 let messages_tokens: usize = self
                     .messages
                     .iter()
-                    .skip(self.messages_sent_to_llm)
                     .map(|m| {
                         crate::tokens::estimate_tokens(&m.content) + crate::tokens::MESSAGE_OVERHEAD
                     })
@@ -1084,14 +1090,15 @@ mod tests {
         session.set_compacted_summary_with_range("Summary".into(), Some((2, 3)));
 
         // After compaction, prompt_tokens are cleared, so fallback estimation is used
-        // messages_sent_to_llm = 3, so messages[3..] are counted (messages 3 and 4)
+        // history_real_tokens estimates: ALL messages + summary (not just pending ones)
+        // This ensures accurate total for context overflow detection
         let tokens = session.history_real_tokens();
 
-        // Fallback: estimate from messages_sent_to_llm onwards + summary
-        // Message 3 and 4 have ~7-8 tokens each + 2*MESSAGE_OVERHEAD + summary tokens
+        // Fallback: estimate all messages + summary
+        // 5 messages (~40 tokens) + summary (~7 tokens) = ~47 tokens
         assert!(
-            tokens < 100,
-            "Should use fallback estimation after compaction, got {}",
+            tokens > 40 && tokens < 100,
+            "Should estimate all messages + summary, got {}",
             tokens
         );
     }

@@ -359,7 +359,7 @@ pub async fn send_message(
 
     // Setup coordinator with optional tools
     // Get real token count from session for accurate overflow detection
-    let real_history_tokens = Some(session.history_real_tokens());
+    let real_history_tokens = session.history_real_tokens();
     
     let mut coordinator = setup_coordinator(
         ollama.clone(),
@@ -370,7 +370,7 @@ pub async fn send_message(
         tools_enabled,
         settings,
         system_prompt.clone(),
-        real_history_tokens,
+        Some(real_history_tokens),
     );
 
     // Prepare messages with retrieval and continuation

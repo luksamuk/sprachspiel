@@ -430,6 +430,27 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
         let remaining = ctx_window.saturating_sub(total_after_add);
         if remaining < COMPACTION_BUFFER {
+            // Only trigger compaction if there's history to compact
+            // base_tokens == 0 means fresh session with no messages to summarize
+            if base_tokens == 0 {
+                // Fresh session - nothing to compact, just proceed
+                // Context will grow as conversation proceeds, future requests will have base > 0
+                if self.debug {
+                    eprintln!(
+                        "\x1B[90m[INTER-TOOL] Fresh session (base=0), nothing to compact. Proceeding... ({}K/{}K)\x1B[0m",
+                        total_after_add / 1000,
+                        ctx_window / 1000
+                    );
+                }
+                return ContextCheckResult {
+                    result,
+                    is_near_limit: true,
+                    was_truncated: false,
+                    tokens_used: total_after_add,
+                    needs_compaction: false,
+                };
+            }
+
             eprintln!(
                 "\x1B[33m⏳ [INTER-TOOL] Context: {}K/{}K ({}% used, {}K remaining). Buffer: {}K. NEEDS COMPACTION.\x1B[0m",
                 total_after_add / 1000,
