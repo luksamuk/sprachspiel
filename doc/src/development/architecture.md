@@ -271,6 +271,43 @@ Interactive command loop with:
 - Context compaction (`/compact`)
 - Session management (`/save`, `/load`)
 
+#### Context Overflow Management (`src/context_overflow.rs`)
+
+Buffer-based triggers for predictable overflow prevention:
+
+```rust
+// Buffer constants (v0.37.0+)
+PRE_TOOL_BUFFER = 20_000   // Warn before tools
+COMPACTION_BUFFER = 15_000 // Auto-compact trigger
+INTER_TOOL_BUFFER = 6_000  // Inter-tool warning
+EMERGENCY_BUFFER = 3_000   // Emergency truncation
+MAX_SUMMARY_TOKENS = 3_000 // Hard limit on summaries
+```
+
+**Why buffers instead of percentages?**
+
+| Context | 80% trigger | 15K buffer |
+|---------|-------------|------------|
+| 32K | Compact at 25.6K (6.4K remaining) | Compact at 17K (15K remaining) |
+| 128K | Compact at 102.4K (25.6K remaining) | Compact at 113K (15K remaining) |
+
+Buffer-based triggers ensure **consistent behavior** across all context sizes.
+
+**Compaction Flow:**
+
+```
+1. Pre-tool (20K remaining) → Warn user
+2. Auto-compact (15K remaining) → Summarize history
+3. Inter-tool (6K remaining) → Warn during execution
+4. Emergency (3K remaining) → Truncate results
+```
+
+**Key Files:**
+- `src/context_overflow.rs` - Buffer thresholds, compaction functions
+- `src/chat/core.rs` - `auto_compact_if_needed()`, `compact_conversation()`
+- `src/chat/continuation.rs` - Pre-tool compaction check
+- `src/chat/custom_coordinator.rs` - Inter-tool overflow detection
+
 ### 7. Tools (`src/tools/`)
 
 Tool implementations using the `ollama-rs` macro:

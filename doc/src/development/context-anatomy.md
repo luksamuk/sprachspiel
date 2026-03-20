@@ -194,20 +194,20 @@ sequenceDiagram
 
 ## Middle Compaction
 
-When context reaches 80% of the window:
+When context reaches the compaction buffer (15K tokens remaining):
 
 ```mermaid
 graph TB
-    subgraph Before["Before: 80%+ full"]
+    subgraph Before["Before: Near limit"]
         B1["System"] --> B2["Msgs 0-5"]
         B2 --> B3["Msgs 6-25"]
         B3 --> B4["Msgs 26-30"]
         B4 --> B5["Query"]
     end
 
-    subgraph After["After: 60% full"]
+    subgraph After["After: Room freed"]
         A1["System"] --> A2["Msgs 0-5"]
-        A2 --> A3["Summary"]
+        A2 --> A3["Summary (~3K tokens)"]
         A3 --> A4["Msgs 26-30"]
         A4 --> A5["Query"]
     end
@@ -220,19 +220,49 @@ graph TB
 
 **Key invariant:** Messages are NEVER deleted from SQLite. Compaction only affects what's sent to the LLM.
 
+### Buffer-Based Triggers (v0.37.0+)
+
+Compaction uses **buffer-based triggers** (absolute token counts) instead of percentages:
+
+| Trigger | Buffer | Action |
+|---------|--------|--------|
+| Pre-tool warning | 20K remaining | Warn user before tool execution |
+| Auto-compact | 15K remaining | Compact conversation history |
+| Inter-tool check | 6K remaining | Warn during multi-tool execution |
+| Emergency truncate | 3K remaining | Truncate tool results to fit |
+
+**Why buffers?** Percentages vary unpredictably with context window size:
+
+| Context | 80% trigger | 15K buffer |
+|---------|-------------|------------|
+| 32K | Compact at 25.6K (6.4K remaining) | Compact at 17K (15K remaining) |
+| 128K | Compact at 102.4K (25.6K remaining) | Compact at 113K (15K remaining) |
+
+Buffer-based triggers ensure **consistent behavior** across all context sizes.
+
+---
+
+## Summary Token Limit
+
+Compacted summaries are limited to **3,000 tokens** to prevent infinite compaction loops:
+
+- Previous issue: Summaries could grow to 18K+ tokens
+- Solution: Hard limit with automatic truncation
+- Template: Structured format (Goal, Instructions, Progress, Discoveries, Files)
+
 ---
 
 ## Token Budget
 
-| Context Window | Target | Tokens | Buffer |
-|----------------|--------|--------|--------|
-| 4K | 60-80% | 2.4K - 3.2K | 800+ |
-| 8K | 60-80% | 4.8K - 6.4K | 1.6K+ |
-| 16K | 60-80% | 9.6K - 12.8K | 3.2K+ |
-| 32K | 60-80% | 19K - 26K | 6K+ |
-| 128K | 60-80% | 77K - 102K | 26K+ |
+| Context Window | Pre-tool (20K) | Compact (15K) | Inter-tool (6K) | Emergency (3K) |
+|----------------|----------------|---------------|-----------------|----------------|
+| 4K | 2K used (50%) | 2.5K used | 3.5K used | 3.75K used |
+| 8K | 4K used (50%) | 5K used | 7K used | 7.75K used |
+| 16K | 8K used (50%) | 9K used | 13K used | 15K used |
+| 32K | 12K used (38%) | 17K used | 26K used | 29K used |
+| 128K | 108K used (84%) | 113K used | 122K used | 125K used |
 
-**Why 60-80%?** Leaves room for tool responses and prevents overflow.
+**Key insight:** Buffer triggers fire at consistent token counts regardless of context size.
 
 ---
 
