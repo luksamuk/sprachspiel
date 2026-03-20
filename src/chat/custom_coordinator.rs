@@ -379,6 +379,19 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Base: Real tokens from Ollama (includes all session history)
         let base_tokens = self.real_history_tokens.unwrap_or(0);
         
+        if self.debug {
+            eprintln!("\x1B[90m[INTER-TOOL-CHECK-DETAILS]\x1b[0m");
+            eprintln!("\x1B[90m  real_history_tokens(field)={:?}\x1b[0m", self.real_history_tokens);
+            eprintln!("\x1B[90m  base_tokens(used)={}\x1b[0m", base_tokens);
+            eprintln!("\x1B[90m  coordinator.history.len()={}\x1b[0m", self.history.messages().len());
+            if base_tokens == 0 {
+                eprintln!("\x1B[90m[DEBUG] base_tokens=0 possible causes:\x1b[0m");
+                eprintln!("\x1B[90m  1. Session loaded from DB before first LLM response\x1b[0m");
+                eprintln!("\x1B[90m  2. Messages have prompt_tokens=None or Some(0)\x1b[0m");
+                eprintln!("\x1B[90m  3. Session was just compacted (prompt_tokens cleared)\x1b[0m");
+            }
+        }
+        
         // Growth: Messages accumulated during this request (assistant message + tool results)
         let growth_tokens = estimate_chat_messages_tokens(&self.history.messages());
         

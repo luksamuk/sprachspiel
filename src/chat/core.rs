@@ -361,6 +361,36 @@ pub async fn send_message(
     // Get real token count from session for accurate overflow detection
     let real_history_tokens = session.history_real_tokens();
     
+    if use_debug {
+        // Collect prompt_tokens state for debugging
+        let prompt_tokens_state: Vec<(usize, Option<u64>)> = session.messages.iter()
+            .enumerate()
+            .map(|(i, m)| (i, m.prompt_tokens))
+            .take(10) // First 10
+            .collect();
+        let has_nonzero_tokens = session.messages.iter().any(|m| m.prompt_tokens.map(|t| t > 0).unwrap_or(false));
+        
+        log_debug(&format!(
+            "[setup_coordinator] real_history_tokens={} messages={} has_compacted={} messages_sent_to_llm={}",
+            real_history_tokens,
+            session.messages.len(),
+            session.has_compacted_messages(),
+            session.messages_sent_to_llm
+        ));
+        log_debug(&format!(
+            "[setup_coordinator] has_nonzero_prompt_tokens={} first_10_prompt_tokens={:?}",
+            has_nonzero_tokens,
+            prompt_tokens_state
+        ));
+        if session.has_compacted_messages() {
+            log_debug(&format!(
+                "[setup_coordinator] summary_len={} compacted_range={:?}",
+                session.compacted_summary.as_ref().map(|s| s.len()).unwrap_or(0),
+                session.compacted_range
+            ));
+        }
+    }
+    
     let mut coordinator = setup_coordinator(
         ollama.clone(),
         model_config,

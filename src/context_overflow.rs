@@ -781,14 +781,20 @@ mod tests {
         let status_no_summary = check_context_overflow(&session, "System", 1000, 0.8);
         let tokens_no_summary = status_no_summary.total_tokens();
 
-        // Add a summary
-        session.compacted_summary =
-            Some("This is a summary of the previous conversation about important topics".into());
+        // Add a summary with proper compaction state
+        // Use set_compacted_summary_with_range to properly set messages_sent_to_llm
+        session.set_compacted_summary_with_range(
+            "This is a summary of the previous conversation about important topics".into(),
+            None, // Full compaction
+        );
 
         let status_with_summary = check_context_overflow(&session, "System", 1000, 0.8);
         let tokens_with_summary = status_with_summary.total_tokens();
 
         // Summary should add tokens
+        // Note: After full compaction, messages_sent_to_llm == messages.len()
+        // so history_tokens from messages is 0, but summary_tokens is counted
+        // plus MESSAGE_OVERHEAD for the summary message
         assert!(
             tokens_with_summary > tokens_no_summary,
             "Summary should add tokens: {} > {}",
