@@ -20,6 +20,7 @@ use crate::context_overflow::{
 };
 use crate::debug_tools::log_debug;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+use crate::prompts::CONTINUATION_PROMPT_INTER_TOOL;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -366,11 +367,26 @@ pub async fn handle_continuation(
     }
 }
 
+/// Check if error is an inter-tool compaction error
+pub fn is_inter_tool_compaction_error(error_str: &str) -> bool {
+    error_str.starts_with("CONTEXT_NEEDS_COMPACT:")
+}
+
+/// Result of handling an overflow error
+#[derive(Debug)]
+pub enum OverflowHandleResult {
+    /// Error was not an overflow error, caller should handle
+    NotOverflow,
+    /// Overflow was handled, caller should continue the loop (no continuation)
+    HandledContinue,
+    /// Inter-tool compaction happened, caller should send continuation prompt
+    InterToolCompaction { tools_executed: Vec<String> },
+}
+
 /// Handle context overflow error during tool execution
 ///
 /// Attempts recovery by removing failed messages and compacting context.
-/// Returns `true` if overflow was handled (and caller should `continue`),
-/// `false` if this was not an overflow error.
+/// Returns appropriate result for caller to determine next action.
 ///
 /// # Arguments
 ///
@@ -379,17 +395,16 @@ pub async fn handle_continuation(
 ///
 /// # Returns
 ///
-/// * `true` - Overflow was handled, caller should `continue` the loop
-/// * `false` - Not an overflow error, caller should handle differently
-pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bool {
-    if !error_str.contains("Context overflow during tool execution")
-        && !is_inter_tool_compaction_error(error_str)
-    {
-        return false;
-    }
-
+/// * `NotOverflow` - Not an overflow error, caller should handle differently
+/// * `HandledContinue` - Overflow handled, caller should continue the loop
+/// * `InterToolCompaction` - Inter-tool compaction, caller should send continuation
+pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> OverflowHandleResult {
     if is_inter_tool_compaction_error(error_str) {
         return handle_inter_tool_compaction_error(state, error_str).await;
+    }
+
+    if !error_str.contains("Context overflow during tool execution") {
+        return OverflowHandleResult::NotOverflow;
     }
 
     eprintln!(
@@ -442,18 +457,20 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bo
         "\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m"
     );
 
-    true
+    OverflowHandleResult::HandledContinue
 }
 
 /// Handle inter-tool compaction error during multi-tool execution
 ///
-/// Compacts context and prepares for continuation.
-/// Returns `true` if handled (caller should continue), `false` otherwise.
-async fn handle_inter_tool_compaction_error(state: &mut ReplState, error_str: &str) -> bool {
+/// Compacts context and returns info for continuation.
+async fn handle_inter_tool_compaction_error(
+    state: &mut ReplState,
+    error_str: &str,
+) -> OverflowHandleResult {
     let Some((tokens_used, context_window, tools_executed)) =
         parse_inter_tool_compaction_error(error_str)
     else {
-        return false;
+        return OverflowHandleResult::NotOverflow;
     };
 
     eprintln!(
@@ -483,16 +500,9 @@ async fn handle_inter_tool_compaction_error(state: &mut ReplState, error_str: &s
         ));
     }
 
-    eprintln!(
-        "\x1B[33mContext compacted. Please retry your message.\x1B[0m"
-    );
-
-    true
-}
-
-/// Check if error is an inter-tool compaction error
-pub fn is_inter_tool_compaction_error(error_str: &str) -> bool {
-    error_str.starts_with("CONTEXT_NEEDS_COMPACT:")
+    OverflowHandleResult::InterToolCompaction {
+        tools_executed: tools_executed.clone(),
+    }
 }
 
 /// Handle inter-tool compaction during multi-tool execution
@@ -537,8 +547,6 @@ pub async fn handle_inter_tool_compaction(
 /// Build continuation prompt for inter-tool compaction
 #[allow(dead_code)]
 pub fn build_inter_tool_compaction_prompt(tools_executed: &[String]) -> String {
-    use crate::prompts::CONTINUATION_PROMPT_INTER_TOOL;
-
     if tools_executed.is_empty() {
         return CONTINUATION_PROMPT_INTER_TOOL.to_string();
     }

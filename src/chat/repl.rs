@@ -18,7 +18,8 @@ use super::command_handlers::{
 use super::continuation::{
     handle_overflow_error,
     check_and_compact_before_tool, build_pre_tool_prompt,
-    process_send_result, ProcessResult,
+    process_send_result, ProcessResult, OverflowHandleResult,
+    build_inter_tool_compaction_prompt,
 };
 use super::core::send_message;
 use super::input::{InputBackend, InputResult, RustylineInput};
@@ -138,36 +139,75 @@ async fn handle_user_message(
     check_and_compact_before_tool(state, &system_prompt_for_check, context_window).await;
 
     let think_enabled = state.session.think;
-    match send_message(
-        &state.ollama,
-        &state.model_config,
-        &mut state.session,
-        line,
-        state.tools_active,
-        think_enabled,
-        state.cli_code,
-        &state.settings,
-        state.agents_md.as_deref(),
-        state.use_debug,
-        state.db.as_ref(),
-        state.embedding_client.as_ref(),
-        state.cli_soulless,
-        None,
-    )
-    .await
-    {
-        Ok(result) => {
-            match process_send_result(state, result, user_message_id).await {
-                ProcessResult::Success => {}
-                ProcessResult::ContinuationError(e) => {
-                    eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+    let mut compaction_cycles = 0;
+    const MAX_COMPACTION_CYCLES: usize = 3;
+    let mut current_input = line.to_string();
+
+    loop {
+        match send_message(
+            &state.ollama,
+            &state.model_config,
+            &mut state.session,
+            &current_input,
+            state.tools_active,
+            think_enabled,
+            state.cli_code,
+            &state.settings,
+            state.agents_md.as_deref(),
+            state.use_debug,
+            state.db.as_ref(),
+            state.embedding_client.as_ref(),
+            state.cli_soulless,
+            None,
+        )
+        .await
+        {
+            Ok(result) => {
+                match process_send_result(state, result, user_message_id).await {
+                    ProcessResult::Success => {}
+                    ProcessResult::ContinuationError(e) => {
+                        eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+                    }
                 }
+                break;
             }
-        }
-        Err(e) => {
-            let error_str = e.to_string();
-            if !handle_overflow_error(state, &error_str).await {
-                eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
+            Err(e) => {
+                let error_str = e.to_string();
+                match handle_overflow_error(state, &error_str).await {
+                    OverflowHandleResult::NotOverflow => {
+                        eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
+                        break;
+                    }
+                    OverflowHandleResult::HandledContinue => {
+                        eprintln!("\x1B[33mPlease retry your message.\x1B[0m");
+                        break;
+                    }
+                    OverflowHandleResult::InterToolCompaction { tools_executed } => {
+                        compaction_cycles += 1;
+                        
+                        if compaction_cycles > MAX_COMPACTION_CYCLES {
+                            eprintln!(
+                                "\x1B[33mMaximum compaction cycles reached ({}). Please continue manually.\x1B[0m",
+                                MAX_COMPACTION_CYCLES
+                            );
+                            break;
+                        }
+
+                        if state.use_debug {
+                            log_debug(&format!(
+                                "Inter-tool compaction cycle {}/{} ({} tools executed)",
+                                compaction_cycles,
+                                MAX_COMPACTION_CYCLES,
+                                tools_executed.len()
+                            ));
+                        }
+
+                        eprintln!("\x1B[33m\x1B[33mContinuing...\x1B[0m");
+
+                        current_input = build_inter_tool_compaction_prompt(&tools_executed);
+                        continue;
+                    }
+                }
             }
         }
     }

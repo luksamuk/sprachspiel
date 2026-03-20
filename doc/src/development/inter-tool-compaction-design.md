@@ -507,10 +507,12 @@ Continue if you have next steps...
 | 2 | Add `needs_compaction` to `ContextCheckResult` | ✅ DONE |
 | 2 | Modify `check_and_handle_context_overflow()` | ✅ DONE |
 | 3 | Modify `process_response()` to stop on compaction needed | ✅ DONE |
-| 4 | Add `handle_inter_tool_compaction()` | ✅ DONE |
+| 4 | Add `OverflowHandleResult` enum | ✅ DONE |
+| 4 | Add `handle_inter_tool_compaction_error()` | ✅ DONE |
 | 4 | Add `build_inter_tool_compaction_prompt()` | ✅ DONE |
 | 4 | Add `CONTINUATION_PROMPT_INTER_TOOL` constant | ✅ DONE |
-| 5 | Integrate in `handle_overflow_error()` | ✅ DONE |
+| 5 | Integrate automatic continuation in `handle_user_message()` | ✅ DONE |
+| 5 | Add MAX_COMPACTION_CYCLES limit (3) | ✅ DONE |
 | Test | Unit tests for new functions | PENDING (future work) |
 | Test | Integration test for multi-tool flow | PENDING (future work) |
 | Docs | Update architecture.md | ✅ DONE |
