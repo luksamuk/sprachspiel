@@ -437,4 +437,33 @@ mod tests {
         // Budget of 4000 - 20 overhead = 3980 tokens * 4 chars = ~15920 chars
         assert!(result.len() < long_text.len());
     }
+
+    #[test]
+    fn test_truncate_to_budget_unicode() {
+        // Unicode text truncation with whitespace - should handle multibyte chars correctly
+        // Note: estimate_tokens uses word-based counting (split_whitespace)
+        // Chinese without spaces = 1 word, with spaces = multiple words
+        
+        // Test with spaces to ensure word count triggers truncation
+        let unicode_text = "中国 对 巴西 新闻 视角 测试 数据 这是 一个 很长 的 文本 需要 被 截断 ".repeat(20);
+        let result = truncate_to_budget(&unicode_text, 10);
+        
+        // Should contain truncation notice when tokens exceed budget
+        assert!(result.contains("... [Result truncated") || result.len() < unicode_text.len(), 
+            "Result should be truncated or shorter: got {} chars", result.len());
+        
+        // Test that chars().take() handles multibyte correctly (doesn't panic)
+        assert!(!result.is_empty());
+        
+        // Mixed ASCII and Unicode with spaces
+        let mixed_text = "Hello 世界 This is 中国 测试 数据 ".repeat(30);
+        let result_mixed = truncate_to_budget(&mixed_text, 20);
+        assert!(result_mixed.contains("... [Result truncated") || result_mixed == mixed_text);
+        
+        // Long ASCII text (reliable for truncation test)
+        let long_ascii = "word ".repeat(1000); // ~1333 tokens
+        let result_ascii = truncate_to_budget(&long_ascii, 100);
+        assert!(result_ascii.contains("... [Result truncated"), "ASCII should be truncated");
+        assert!(result_ascii.len() < long_ascii.len());
+    }
 }

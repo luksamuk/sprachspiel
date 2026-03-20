@@ -457,16 +457,15 @@ pub async fn send_message(
 
 /// Auto-compact conversation if context reaches buffer threshold
 /// Uses buffer-based approach (15K tokens remaining) for predictable overflow prevention.
-#[allow(clippy::too_many_arguments)]
 pub async fn auto_compact_if_needed(
     ollama: &ollama_rs::Ollama,
     model_config: &ModelConfig,
     session: &mut ChatSession,
     settings: &Settings,
     agents_md: Option<&str>,
-    _system_prompt: &str,
+    _system_prompt: &str,  // Kept for API compatibility, may be used in future
     context_window: usize,
-    _use_debug: bool,
+    _use_debug: bool,  // Kept for API compatibility, may be used for future debugging
 ) {
     // Use buffer-based compaction trigger (more predictable than percentages)
     // Compacts when there are only COMPACTION_BUFFER tokens remaining
