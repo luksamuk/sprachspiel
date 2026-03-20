@@ -379,7 +379,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Base: Real tokens from Ollama (includes all session history)
         let base_tokens = self.real_history_tokens.unwrap_or(0);
         
-        if self.debug {
+        if crate::debug_tools::is_debug_enabled() {
             eprintln!("\x1B[90m[INTER-TOOL-CHECK-DETAILS]\x1b[0m");
             eprintln!("\x1B[90m  real_history_tokens(field)={:?}\x1b[0m", self.real_history_tokens);
             eprintln!("\x1B[90m  base_tokens(used)={}\x1b[0m", base_tokens);
@@ -408,17 +408,26 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         
         let total_after_add = base_tokens + growth_tokens + system_tokens + tool_tokens + result_tokens;
         
+        // Format token values: show as raw number if < 1000, otherwise as NK (e.g., 113 -> "113", 11300 -> "11K")
+        fn fmt_tokens(v: usize) -> String {
+            if v >= 1000 {
+                format!("{}K", v / 1000)
+            } else {
+                format!("{}", v)
+            }
+        }
+
         eprintln!(
-            "\x1B[90m[INTER-TOOL-CHECK] base={}K growth={}K tools={}K sys={}K result={}K total={}K/{}K remaining={}K buffer={}K\x1b[0m",
-            base_tokens / 1000,
-            growth_tokens / 1000,
-            tool_tokens / 1000,
-            system_tokens / 1000,
-            result_tokens / 1000,
-            total_after_add / 1000,
-            ctx_window / 1000,
-            ctx_window.saturating_sub(total_after_add) / 1000,
-            COMPACTION_BUFFER / 1000
+            "\x1B[90m[INTER-TOOL-CHECK] base={} growth={} tools={} sys={} result={} total={}/{} remaining={} buffer={}\x1b[0m",
+            fmt_tokens(base_tokens),
+            fmt_tokens(growth_tokens),
+            fmt_tokens(tool_tokens),
+            fmt_tokens(system_tokens),
+            fmt_tokens(result_tokens),
+            fmt_tokens(total_after_add),
+            fmt_tokens(ctx_window),
+            fmt_tokens(ctx_window.saturating_sub(total_after_add)),
+            fmt_tokens(COMPACTION_BUFFER)
         );
 
         if is_emergency_context(base_tokens + growth_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
@@ -549,8 +558,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         self
     }
 
-    /// Enable debug mode (for future use)
-    #[allow(dead_code)]
+    /// Enable debug mode for verbose logging
     pub fn debug(mut self, debug: bool) -> Self {
         self.debug = debug;
         self

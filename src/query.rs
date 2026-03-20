@@ -77,6 +77,7 @@ impl ChatContext {
         let mut coordinator = CustomCoordinator::new(self.ollama, self.model_id, vec![])
             .options(self.model_options)
             .think(use_think)
+            .debug(use_debug)
             .on_event(move |event| {
                 handle_chat_event(event, use_think, use_plain, use_debug);
             });
