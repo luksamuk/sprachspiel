@@ -324,7 +324,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         let result_tokens = estimate_tokens(&result);
         let total_after_add = history_tokens + system_tokens + result_tokens;
 
-        // Emergency check (90%): Truncate result to fit
+        // Emergency check (3K remaining): Truncate result to fit
         if is_emergency_context(history_tokens + result_tokens, system_tokens, ctx_window) {
             let available = calculate_available_budget(history_tokens, system_tokens, ctx_window);
 
@@ -339,15 +339,16 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             // Truncate the result to fit available budget
             let truncated = truncate_to_budget(&result, available);
 
-            ContextCheckResult {
+            return ContextCheckResult {
                 result: truncated,
                 is_near_limit: true,
                 was_truncated: true,
                 tokens_used: total_after_add,
-            }
+            };
         }
-        // Inter-tool check (80%): Signal need for compaction
-        else if needs_inter_tool_compaction(history_tokens + result_tokens, system_tokens, ctx_window) {
+
+        // Inter-tool check (6K remaining): Signal need for compaction
+        if needs_inter_tool_compaction(history_tokens + result_tokens, system_tokens, ctx_window) {
             if self.debug {
                 eprintln!(
                     "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool compaction may be needed.\x1B[0m",
@@ -356,21 +357,20 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 );
             }
 
-            ContextCheckResult {
+            return ContextCheckResult {
                 result,
                 is_near_limit: true,
                 was_truncated: false,
                 tokens_used: total_after_add,
-            }
+            };
         }
+
         // Normal operation - context within limits
-        else {
-            ContextCheckResult {
-                result,
-                is_near_limit: false,
-                was_truncated: false,
-                tokens_used: total_after_add,
-            }
+        ContextCheckResult {
+            result,
+            is_near_limit: false,
+            was_truncated: false,
+            tokens_used: total_after_add,
         }
     }
 
