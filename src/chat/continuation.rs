@@ -557,3 +557,90 @@ pub fn build_inter_tool_compaction_prompt(tools_executed: &[String]) -> String {
         tools_executed.join(", ")
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_valid() {
+        let error = "CONTEXT_NEEDS_COMPACT:30000:32000:read_file,calculate,write_file";
+        let result = parse_inter_tool_compaction_error(error);
+        
+        assert!(result.is_some());
+        let (tokens, window, tools) = result.unwrap();
+        assert_eq!(tokens, 30000);
+        assert_eq!(window, 32000);
+        assert_eq!(tools, vec!["read_file", "calculate", "write_file"]);
+    }
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_empty_tools() {
+        let error = "CONTEXT_NEEDS_COMPACT:25000:32000:";
+        let result = parse_inter_tool_compaction_error(error);
+        
+        assert!(result.is_some());
+        let (tokens, window, tools) = result.unwrap();
+        assert_eq!(tokens, 25000);
+        assert_eq!(window, 32000);
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_invalid_prefix() {
+        let error = "OTHER_ERROR:something";
+        let result = parse_inter_tool_compaction_error(error);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_missing_fields() {
+        let error = "CONTEXT_NEEDS_COMPACT:30000";
+        let result = parse_inter_tool_compaction_error(error);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_invalid_token() {
+        let error = "CONTEXT_NEEDS_COMPACT:invalid:32000:tool";
+        let result = parse_inter_tool_compaction_error(error);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_is_inter_tool_compaction_error_true() {
+        assert!(is_inter_tool_compaction_error("CONTEXT_NEEDS_COMPACT:30000:32000:tool"));
+        assert!(is_inter_tool_compaction_error("CONTEXT_NEEDS_COMPACT:0:0:"));
+    }
+
+    #[test]
+    fn test_is_inter_tool_compaction_error_false() {
+        assert!(!is_inter_tool_compaction_error("Context overflow during tool execution"));
+        assert!(!is_inter_tool_compaction_error("Network error"));
+        assert!(!is_inter_tool_compaction_error(""));
+    }
+
+    #[test]
+    fn test_build_inter_tool_compaction_prompt_empty() {
+        let prompt = build_inter_tool_compaction_prompt(&[]);
+        assert!(prompt.contains("Context was compacted during multi-tool execution"));
+        assert!(!prompt.contains("Tools already executed"));
+    }
+
+    #[test]
+    fn test_build_inter_tool_compaction_prompt_with_tools() {
+        let tools = vec!["read_file".to_string(), "calculate".to_string()];
+        let prompt = build_inter_tool_compaction_prompt(&tools);
+        
+        assert!(prompt.contains("Context was compacted during multi-tool execution"));
+        assert!(prompt.contains("Tools already executed: read_file, calculate"));
+    }
+
+    #[test]
+    fn test_build_inter_tool_compaction_prompt_single_tool() {
+        let tools = vec!["search".to_string()];
+        let prompt = build_inter_tool_compaction_prompt(&tools);
+        
+        assert!(prompt.contains("Tools already executed: search"));
+    }
+}
