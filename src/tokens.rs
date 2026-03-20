@@ -36,8 +36,12 @@ pub fn count_messages_tokens(messages: &[ChatMessage]) -> usize {
     if messages.is_empty() {
         return 0;
     }
+    // Skip System messages - they're counted separately as system_tokens
+    // This is important because get_messages_for_llm() includes system prompt,
+    // but calculate_context_metrics() counts system_tokens separately.
     messages
         .iter()
+        .filter(|msg| !matches!(msg.role, ollama_rs::generation::chat::MessageRole::System))
         .map(|msg| MESSAGE_OVERHEAD + estimate_tokens(&msg.content))
         .sum()
 }
