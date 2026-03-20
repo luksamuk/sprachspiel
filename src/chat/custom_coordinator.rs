@@ -384,10 +384,13 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         
         // Growth: ONLY messages added during this request (avoid double-counting with base)
         // Messages from initial_message_count onwards are NEW in this request
+        let all_messages = self.history.messages().len();
         let growth_messages = &self.history.messages()[self.initial_message_count..];
         let growth_tokens = estimate_chat_messages_tokens(growth_messages);
         
         // Tool definitions (each tool: name + description + parameters + overhead)
+        // NOTE: These are already included in base_tokens from Ollama's prompt_eval_count
+        // We calculate them separately only for diagnostic purposes
         let tool_tokens: usize = self.tool_infos.iter().map(|info| {
             let name_tokens = estimate_tokens(&info.function.name);
             let desc_tokens = estimate_tokens(&info.function.description);
@@ -395,10 +398,20 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             name_tokens + desc_tokens + params_tokens + MESSAGE_OVERHEAD
         }).sum();
         
+        // System prompt tokens - also included in base_tokens from Ollama
         let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
+        
+        // Result tokens - the current tool result being processed
         let result_tokens = estimate_tokens(&result);
         
-        let total_after_add = base_tokens + growth_tokens + system_tokens + tool_tokens + result_tokens;
+        // IMPORTANT: base_tokens from Ollama's prompt_eval_count ALREADY includes:
+        // - System prompt tokens
+        // - Tool definition tokens
+        // - All history tokens
+        // 
+        // So we should NOT add tool_tokens and system_tokens again!
+        // Only add: growth_tokens (new in this request) + result_tokens (current result)
+        let total_after_add = base_tokens + growth_tokens + result_tokens;
         
         // Format token values: show as raw number if < 1000, otherwise as NK
         fn fmt_tokens(v: usize) -> String {
@@ -413,21 +426,25 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         
         // Debug log (only when debug enabled)
         if crate::debug_tools::is_debug_enabled() {
-            eprintln!("\x1B[90m[INTER-TOOL-CHECK] base={} growth={} tools={} sys={} result={} total={}/{} remaining={} buffer={}\x1b[0m",
-                fmt_tokens(base_tokens),
-                fmt_tokens(growth_tokens),
-                fmt_tokens(tool_tokens),
-                fmt_tokens(system_tokens),
-                fmt_tokens(result_tokens),
+            eprintln!("\x1B[90m[INTER-TOOL-CHECK-DETAILS]\x1b[0m");
+            eprintln!("\x1B[90m  base_tokens={} (from Ollama, includes sys+tools+history)\x1b[0m", base_tokens);
+            eprintln!("\x1B[90m  initial_message_count={}\x1b[0m", self.initial_message_count);
+            eprintln!("\x1B[90m  all_messages={}\x1b[0m", all_messages);
+            eprintln!("\x1B[90m  growth_messages={} (new this request)\x1b[0m", growth_messages.len());
+            eprintln!("\x1B[90m  growth_tokens={} (estimated)\x1b[0m", growth_tokens);
+            eprintln!("\x1B[90m  tool_tokens={} (diagnostic, already in base)\x1b[0m", tool_tokens);
+            eprintln!("\x1B[90m  system_tokens={} (diagnostic, already in base)\x1b[0m", system_tokens);
+            eprintln!("\x1B[90m  result_tokens={} (current tool result)\x1b[0m", result_tokens);
+            eprintln!("\x1B[90m[INTER-TOOL-CHECK] total={}/{} remaining={} buffer={}\x1b[0m",
                 fmt_tokens(total_after_add),
                 fmt_tokens(ctx_window),
                 fmt_tokens(ctx_window.saturating_sub(total_after_add)),
                 fmt_tokens(compaction_buffer)
             );
         }
-
-        if is_emergency_context(base_tokens + growth_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
-            let available = calculate_available_budget(base_tokens + growth_tokens + tool_tokens, system_tokens, ctx_window);
+        
+        if is_emergency_context(base_tokens + growth_tokens + result_tokens, system_tokens, ctx_window) {
+            let available = calculate_available_budget(base_tokens + growth_tokens, system_tokens, ctx_window);
             let original_tokens = estimate_tokens(&result);
             let truncated = truncate_to_budget(&result, available);
             let truncated_tokens = estimate_tokens(&truncated);
