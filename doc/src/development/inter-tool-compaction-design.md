@@ -517,6 +517,7 @@ Continue if you have next steps...
 | Test | Unit tests for context check flag | ⏳ Optional |
 | Test | Integration test for multi-tool flow | ⏳ Manual testing |
 | Test | Observability metrics logging | ✅ DONE |
+| Bugfix | Use real tokens instead of estimation | ✅ DONE |
 | Docs | Update architecture.md | ✅ DONE |
 | Docs | Update CHANGELOG | ✅ DONE |
 

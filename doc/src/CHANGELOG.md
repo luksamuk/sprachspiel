@@ -26,6 +26,13 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **CRITICAL: Token Estimation Caused Silent Overflow** - Fixed inter-tool compaction not triggering
+  - Root cause: Estimation-based tokens undercounted by 20-30% vs real Ollama tokens
+  - Context could show 6.8K remaining (real) but estimation showed 8K+ (above threshold)
+  - Fix: Use `session.history_real_tokens()` (Ollama's `prompt_eval_count`) for accurate detection
+  - Estimation is now only a fallback when real tokens unavailable
+  - Added debug logging to show token count source: "Using real history tokens: 25K" vs "Using estimated"
+
 - **Context Overflow Compaction Loop** - Fixed infinite compaction loop caused by oversized summaries
   - Root cause: Compaction summaries had no size limit, generating ~18K token summaries
   - Combined with late trigger (95%+), summaries caused immediate re-compaction
