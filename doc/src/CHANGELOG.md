@@ -16,6 +16,14 @@ All notable changes to Ask-AI will be documented in this file.
   - `OverflowHandleResult` enum to distinguish overflow types
   - `build_inter_tool_compaction_prompt()` for continuation messages
 
+- **Observability Metrics for Inter-Tool Compaction** - Detailed debug logging
+  - Token count before/after compaction (saved tokens)
+  - Message count before/after compaction
+  - Compaction duration in seconds
+  - Summary length after compaction
+  - Cycle tracking with remaining cycles warning
+  - Tools executed before pause logged for debugging
+
 ### Fixed
 
 - **Context Overflow Compaction Loop** - Fixed infinite compaction loop caused by oversized summaries

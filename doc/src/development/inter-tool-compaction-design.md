@@ -514,7 +514,9 @@ Continue if you have next steps...
 | 5 | Integrate automatic continuation in `handle_user_message()` | ✅ DONE |
 | 5 | Add MAX_COMPACTION_CYCLES limit (3) | ✅ DONE |
 | Test | Unit tests for parsing functions | ✅ DONE |
-| Test | Integration test for multi-tool flow | PENDING (manual testing) |
+| Test | Unit tests for context check flag | ⏳ Optional |
+| Test | Integration test for multi-tool flow | ⏳ Manual testing |
+| Test | Observability metrics logging | ✅ DONE |
 | Docs | Update architecture.md | ✅ DONE |
 | Docs | Update CHANGELOG | ✅ DONE |
 
