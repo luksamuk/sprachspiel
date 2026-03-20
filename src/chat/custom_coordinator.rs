@@ -25,7 +25,7 @@ use serde_json::Value;
 use crate::context_overflow::{
     calculate_available_budget, estimate_chat_messages_tokens,
     is_emergency_context, needs_inter_tool_compaction,
-    EMERGENCY_THRESHOLD,
+    EMERGENCY_BUFFER,
 };
 use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
 use crate::utils::truncate_to_budget;
@@ -687,8 +687,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
             let total_tokens = history_tokens + system_tokens;
 
-            // Use EMERGENCY_THRESHOLD (90%) to detect overflow
-            let threshold = (ctx_window as f32 * EMERGENCY_THRESHOLD) as usize;
+            // Use EMERGENCY_BUFFER (3K remaining) to detect overflow
+            let threshold = ctx_window.saturating_sub(EMERGENCY_BUFFER);
 
             if total_tokens > threshold {
                 // Return error that will be caught by caller

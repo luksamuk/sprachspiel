@@ -5,27 +5,30 @@
 //! 2. During-tool context check
 //! 3. Error recovery
 
-use ask_ai::context_overflow::{DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_THRESHOLD};
+use ask_ai::context_overflow::{
+    COMPACTION_BUFFER, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_BUFFER,
+};
 use ask_ai::tokens::estimate_tokens;
 
 /// Minimum messages to preserve (must match src/context_overflow.rs)
 const MIN_PRESERVE_LAST: usize = 1;
 
 #[test]
-fn test_threshold_hierarchy() {
-    // Pre-tool threshold should be lower than overflow threshold
-    // This ensures compaction happens BEFORE overflow
+fn test_buffer_hierarchy() {
+    // Pre-tool buffer should be larger than compaction buffer
+    // This ensures warning fires before auto-compaction
     assert!(
-        PRE_TOOL_THRESHOLD < DEFAULT_OVERFLOW_THRESHOLD,
-        "Pre-tool threshold ({}) must be lower than overflow threshold ({})",
-        PRE_TOOL_THRESHOLD,
-        DEFAULT_OVERFLOW_THRESHOLD
+        PRE_TOOL_BUFFER > COMPACTION_BUFFER,
+        "Pre-tool buffer ({}) must be larger than compaction buffer ({})",
+        PRE_TOOL_BUFFER,
+        COMPACTION_BUFFER
     );
 
-    // Pre-tool at 75%, overflow at 80%
-    // This gives 5% buffer for tool results during execution
-    assert_eq!(PRE_TOOL_THRESHOLD, 0.75);
-    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80);
+    // Pre-tool at 20K remaining, compaction at 15K remaining
+    // This gives 5K buffer for warning before auto-compact
+    assert_eq!(PRE_TOOL_BUFFER, 20_000);
+    assert_eq!(COMPACTION_BUFFER, 15_000);
+    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80); // Kept for display only
 }
 
 #[test]
@@ -109,7 +112,7 @@ fn test_whitespace_content() {
 
 #[test]
 fn test_threshold_calculations() {
-    // Verify warning threshold is 90% of overflow
+    // Verify warning threshold is 90% of overflow (for display purposes)
     let overflow = DEFAULT_OVERFLOW_THRESHOLD;
     let warning = overflow * 0.9;
 
@@ -120,11 +123,9 @@ fn test_threshold_calculations() {
         "Warning threshold should be 72%"
     );
 
-    // Pre-tool at 75% should trigger before warning at 72%
-    assert!(
-        PRE_TOOL_THRESHOLD > warning,
-        "Pre-tool threshold should be higher than warning threshold"
-    );
+    // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes only
+    // Buffer-based thresholds are now used for actual triggering
+    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80);
 }
 
 #[test]

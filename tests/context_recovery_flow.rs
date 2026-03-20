@@ -1,15 +1,15 @@
 //! Integration tests for context overflow recovery flow
 //!
 //! Tests the complete error recovery flow:
-//! 1. Context check during tool execution (90% threshold)
+//! 1. Context check during tool execution
 //! 2. Error detection and message removal
 //! 3. Auto-compaction after overflow error
 //! 4. User can retry after recovery
 
 use ask_ai::chat::session::{ChatSession, MessageRole, SavedMessage};
 use ask_ai::context_overflow::{
-    check_context_overflow, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD,
-    PRE_TOOL_THRESHOLD,
+    check_context_overflow, COMPACTION_BUFFER, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST,
+    DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_BUFFER,
 };
 use chrono::Utc;
 
@@ -40,22 +40,19 @@ fn create_session_with_token_count(message_count: usize, tokens_per_message: usi
 }
 
 #[test]
-fn test_threshold_hierarchy_for_recovery() {
-    let warning_threshold = DEFAULT_OVERFLOW_THRESHOLD * 0.9;
+fn test_buffer_hierarchy_for_recovery() {
+    // Buffer hierarchy: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
+    // This ensures correct trigger order
 
     assert!(
-        warning_threshold < PRE_TOOL_THRESHOLD,
-        "Warning ({}) should come before pre-tool ({})",
-        warning_threshold,
-        PRE_TOOL_THRESHOLD
+        PRE_TOOL_BUFFER > COMPACTION_BUFFER,
+        "Pre-tool buffer ({}) should be larger than compaction buffer ({})",
+        PRE_TOOL_BUFFER,
+        COMPACTION_BUFFER
     );
 
-    assert!(
-        PRE_TOOL_THRESHOLD < DEFAULT_OVERFLOW_THRESHOLD,
-        "Pre-tool ({}) should come before overflow ({})",
-        PRE_TOOL_THRESHOLD,
-        DEFAULT_OVERFLOW_THRESHOLD
-    );
+    // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes
+    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.80);
 }
 
 #[test]

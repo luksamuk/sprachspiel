@@ -867,11 +867,13 @@ EMERGENCY_THRESHOLD = 90% → Truncate result as last resort
 - `src/query.rs` - Added event handlers for new context events
 
 **Constants:**
-- `COMPACTION_BUFFER = 15_000` - Reserve space before overflow (OpenCode-inspired)
-- `MAX_SUMMARY_TOKENS = 3_000` - Hard limit on summary size
-- `INTER_TOOL_THRESHOLD = 0.80` - Trigger compaction between tools (display only)
-- `EMERGENCY_THRESHOLD = 0.90` - Hard limit before truncation
+- `PRE_TOOL_BUFFER = 20_000` - Warning before tools (20K tokens remaining)
+- `COMPACTION_BUFFER = 15_000` - Auto-compact trigger (15K tokens remaining)
+- `INTER_TOOL_BUFFER = 6_000` - Inter-tool warning (6K tokens remaining)
+- `EMERGENCY_BUFFER = 3_000` - Emergency truncation (3K tokens remaining)
 - `RESPONSE_MARGIN = 500` - Tokens reserved for model response
+- `MAX_SUMMARY_TOKENS = 3_000` - Hard limit on summary size
+- `DEFAULT_OVERFLOW_THRESHOLD = 0.80` - Kept for display purposes only
 
 **New Compaction Template:**
 ```markdown
