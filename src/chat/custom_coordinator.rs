@@ -359,7 +359,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         result: String,
     ) -> ContextCheckResult {
         let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) else {
-            // No context window set - skip overflow detection
             eprintln!("\x1B[90m[DEBUG] check_and_handle_context_overflow: no context_window or system_prompt\x1B[0m");
             return ContextCheckResult {
                 result,
@@ -370,62 +369,47 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             };
         };
 
-        // IMPORTANT: Always use estimation of CURRENT history for inter-tool check.
-        // The history grows during tool execution (assistant messages + tool results),
-        // so real_history_tokens from the start is outdated.
-        // 
-        // Real tokens from Ollama are accurate for the START of the request,
-        // but during multi-tool execution, history grows with:
-        //   1. Assistant message (with tool calls)
-        //   2. Each tool result
-        //
-        // Estimation on current history captures this growth.
-        let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
+        // Calculate total tokens:
+        // 1. real_history_tokens: Base from session (Ollama's prompt_eval_count)
+        // 2. coordinator.history: Growth during current request (assistant message + tool results)
+        // 3. system_tokens: System prompt
+        // 4. tool_tokens: Tool definitions  
+        // 5. result_tokens: Current tool result being processed
         
-        // CRITICAL: Also estimate tool definitions tokens!
-        // Ollama includes tool definitions in context, we must count them.
-        // Each tool has: name + description + parameters schema
+        // Base: Real tokens from Ollama (includes all session history)
+        let base_tokens = self.real_history_tokens.unwrap_or(0);
+        
+        // Growth: Messages accumulated during this request (assistant message + tool results)
+        let growth_tokens = estimate_chat_messages_tokens(&self.history.messages());
+        
+        // Tool definitions (each tool: name + description + parameters + overhead)
         let tool_tokens: usize = self.tool_infos.iter().map(|info| {
             let name_tokens = estimate_tokens(&info.function.name);
             let desc_tokens = estimate_tokens(&info.function.description);
             let params_tokens = estimate_tokens(&serde_json::to_string(&info.function.parameters).unwrap_or_default());
-            name_tokens + desc_tokens + params_tokens + MESSAGE_OVERHEAD // overhead for each tool
+            name_tokens + desc_tokens + params_tokens + MESSAGE_OVERHEAD
         }).sum();
         
-        // Always log token counts for debugging
-        eprintln!(
-            "\x1B[90m[INTER-TOOL-CHECK] history={}K tools={}K system=~{}K result=~{}K ctx={}K\x1b[0m",
-            history_tokens / 1000,
-            tool_tokens / 1000,
-            (estimate_tokens(prompt) + MESSAGE_OVERHEAD) / 1000,
-            estimate_tokens(&result) / 1000,
-            ctx_window / 1000
-        );
-        
-        if self.debug {
-            if let Some(real_tokens) = self.real_history_tokens {
-                let growth = history_tokens.saturating_sub(real_tokens);
-                eprintln!(
-                    "\x1B[90m[DEBUG] History tokens: {}K (real base: {}K, growth: {}K)\x1B[0m",
-                    history_tokens / 1000,
-                    real_tokens / 1000,
-                    growth / 1000
-                );
-            } else {
-                eprintln!(
-                    "\x1B[90m[DEBUG] History tokens: {}K (estimated, no real base)\x1B[0m",
-                    history_tokens / 1000
-                );
-            }
-        }
-
         let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
         let result_tokens = estimate_tokens(&result);
-        // CRITICAL: Include tool tokens in total! Ollama counts them in context.
-        let total_after_add = history_tokens + system_tokens + tool_tokens + result_tokens;
+        
+        let total_after_add = base_tokens + growth_tokens + system_tokens + tool_tokens + result_tokens;
+        
+        eprintln!(
+            "\x1B[90m[INTER-TOOL-CHECK] base={}K growth={}K tools={}K sys={}K result={}K total={}K/{}K remaining={}K buffer={}K\x1b[0m",
+            base_tokens / 1000,
+            growth_tokens / 1000,
+            tool_tokens / 1000,
+            system_tokens / 1000,
+            result_tokens / 1000,
+            total_after_add / 1000,
+            ctx_window / 1000,
+            ctx_window.saturating_sub(total_after_add) / 1000,
+            COMPACTION_BUFFER / 1000
+        );
 
-        if is_emergency_context(history_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
-            let available = calculate_available_budget(history_tokens + tool_tokens, system_tokens, ctx_window);
+        if is_emergency_context(base_tokens + growth_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
+            let available = calculate_available_budget(base_tokens + growth_tokens + tool_tokens, system_tokens, ctx_window);
 
             eprintln!(
                 "\x1B[31m[EMERGENCY] Context at {}% ({} tokens). Truncating result...\x1B[0m",
@@ -446,7 +430,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
         let remaining = ctx_window.saturating_sub(total_after_add);
         if remaining < COMPACTION_BUFFER {
-            // Always log this critical check (not just in debug mode)
             eprintln!(
                 "\x1B[33m⏳ [INTER-TOOL] Context: {}K/{}K ({}% used, {}K remaining). Buffer: {}K. NEEDS COMPACTION.\x1B[0m",
                 total_after_add / 1000,
@@ -465,7 +448,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             };
         }
 
-        if needs_inter_tool_compaction(history_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
+        if needs_inter_tool_compaction(base_tokens + growth_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
             if self.debug {
                 eprintln!(
                     "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool warning.\x1B[0m",
@@ -482,15 +465,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 needs_compaction: false,
             };
         }
-
-        // Log final check result
-        let remaining = ctx_window.saturating_sub(total_after_add);
-        eprintln!(
-            "\x1B[90m[INTER-TOOL-CHECK] remaining={}K buffer={}K needs_check={}\x1b[0m",
-            remaining / 1000,
-            COMPACTION_BUFFER / 1000,
-            remaining < COMPACTION_BUFFER
-        );
 
         ContextCheckResult {
             result,
