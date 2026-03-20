@@ -317,6 +317,9 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// This is the ACTUAL token count, not an estimation.
     /// Should always be used when available for accurate overflow detection.
     real_history_tokens: Option<usize>,
+    /// Number of messages in history at the start of this request.
+    /// Used to distinguish between session history (base) and new messages (growth).
+    initial_message_count: usize,
     /// Accumulated pre-tool content (text generated before tool calls)
     pre_tool_content: String,
     pre_tool_thinking: Option<String>,
@@ -343,6 +346,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             context_window: None,
             system_prompt: None,
             real_history_tokens: None,
+            initial_message_count: 0,
             pre_tool_content: String::new(),
             pre_tool_thinking: None,
             ephemeral_messages: Vec::new(),
@@ -369,30 +373,19 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         };
 
         // Calculate total tokens:
-        // 1. real_history_tokens: Base from session (Ollama's prompt_eval_count)
-        // 2. coordinator.history: Growth during current request (assistant message + tool results)
+        // 1. real_history_tokens: Base from session (Ollama's prompt_eval_count) - EXACT
+        // 2. growth_tokens: New messages during this request (assistant + tool results) - ESTIMATED
         // 3. system_tokens: System prompt
-        // 4. tool_tokens: Tool definitions  
+        // 4. tool_tokens: Tool definitions
         // 5. result_tokens: Current tool result being processed
         
         // Base: Real tokens from Ollama (includes all session history)
         let base_tokens = self.real_history_tokens.unwrap_or(0);
         
-        if crate::debug_tools::is_debug_enabled() {
-            eprintln!("\x1B[90m[INTER-TOOL-CHECK-DETAILS]\x1b[0m");
-            eprintln!("\x1B[90m  real_history_tokens(field)={:?}\x1b[0m", self.real_history_tokens);
-            eprintln!("\x1B[90m  base_tokens(used)={}\x1b[0m", base_tokens);
-            eprintln!("\x1B[90m  coordinator.history.len()={}\x1b[0m", self.history.messages().len());
-            if base_tokens == 0 {
-                eprintln!("\x1B[90m[DEBUG] base_tokens=0 possible causes:\x1b[0m");
-                eprintln!("\x1B[90m  1. Session loaded from DB before first LLM response\x1b[0m");
-                eprintln!("\x1B[90m  2. Messages have prompt_tokens=None or Some(0)\x1b[0m");
-                eprintln!("\x1B[90m  3. Session was just compacted (prompt_tokens cleared)\x1b[0m");
-            }
-        }
-        
-        // Growth: Messages accumulated during this request (assistant message + tool results)
-        let growth_tokens = estimate_chat_messages_tokens(&self.history.messages());
+        // Growth: ONLY messages added during this request (avoid double-counting with base)
+        // Messages from initial_message_count onwards are NEW in this request
+        let growth_messages = &self.history.messages()[self.initial_message_count..];
+        let growth_tokens = estimate_chat_messages_tokens(growth_messages);
         
         // Tool definitions (each tool: name + description + parameters + overhead)
         let tool_tokens: usize = self.tool_infos.iter().map(|info| {
@@ -407,7 +400,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         
         let total_after_add = base_tokens + growth_tokens + system_tokens + tool_tokens + result_tokens;
         
-        // Format token values: show as raw number if < 1000, otherwise as NK (e.g., 113 -> "113", 11300 -> "11K")
+        // Format token values: show as raw number if < 1000, otherwise as NK
         fn fmt_tokens(v: usize) -> String {
             if v >= 1000 {
                 format!("{}K", v / 1000)
@@ -418,34 +411,43 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
         let (_, compaction_buffer, _, _) = calculate_thresholds(ctx_window);
         
-        eprintln!(
-            "\x1B[90m[INTER-TOOL-CHECK] base={} growth={} tools={} sys={} result={} total={}/{} remaining={} buffer={}\x1b[0m",
-            fmt_tokens(base_tokens),
-            fmt_tokens(growth_tokens),
-            fmt_tokens(tool_tokens),
-            fmt_tokens(system_tokens),
-            fmt_tokens(result_tokens),
-            fmt_tokens(total_after_add),
-            fmt_tokens(ctx_window),
-            fmt_tokens(ctx_window.saturating_sub(total_after_add)),
-            fmt_tokens(compaction_buffer)
-        );
+        // Debug log (only when debug enabled)
+        if crate::debug_tools::is_debug_enabled() {
+            eprintln!("\x1B[90m[INTER-TOOL-CHECK] base={} growth={} tools={} sys={} result={} total={}/{} remaining={} buffer={}\x1b[0m",
+                fmt_tokens(base_tokens),
+                fmt_tokens(growth_tokens),
+                fmt_tokens(tool_tokens),
+                fmt_tokens(system_tokens),
+                fmt_tokens(result_tokens),
+                fmt_tokens(total_after_add),
+                fmt_tokens(ctx_window),
+                fmt_tokens(ctx_window.saturating_sub(total_after_add)),
+                fmt_tokens(compaction_buffer)
+            );
+        }
 
         if is_emergency_context(base_tokens + growth_tokens + tool_tokens + result_tokens, system_tokens, ctx_window) {
             let available = calculate_available_budget(base_tokens + growth_tokens + tool_tokens, system_tokens, ctx_window);
-
-            eprintln!(
-                "\x1B[31m[EMERGENCY] Context at {}% ({} tokens). Truncating result...\x1b[0m",
-                (total_after_add) * 100 / ctx_window,
-                total_after_add
-            );
-
+            let original_tokens = estimate_tokens(&result);
             let truncated = truncate_to_budget(&result, available);
+            let truncated_tokens = estimate_tokens(&truncated);
+            let reduction = original_tokens.saturating_sub(truncated_tokens);
+            
+            // Only show truncation warning if significant reduction
+            if reduction > 100 || (original_tokens > 1000 && reduction * 100 / original_tokens > 10) {
+                eprintln!(
+                    "\x1B[31m[EMERGENCY] Context at {}% ({} tokens). Truncated tool result: {} → {} tokens\x1b[0m",
+                    (total_after_add) * 100 / ctx_window,
+                    total_after_add,
+                    original_tokens,
+                    truncated_tokens
+                );
+            }
 
             return ContextCheckResult {
                 result: truncated,
                 is_near_limit: true,
-                was_truncated: true,
+                was_truncated: reduction > 0,
                 tokens_used: total_after_add,
                 needs_compaction: false,
             };
@@ -460,7 +462,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 // Context will grow as conversation proceeds, future requests will have base > 0
                 if self.debug {
                     eprintln!(
-                        "\x1B[90m[INTER-TOOL] Fresh session (base=0), nothing to compact. Proceeding... ({}K/{}K)\x1B[0m",
+                        "\x1B[90m[INTER-TOOL] Fresh session (base=0), nothing to compact. Proceeding... ({}K/{}K)\x1b[0m",
                         total_after_add / 1000,
                         ctx_window / 1000
                     );
@@ -635,6 +637,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         for m in request.messages.clone() {
             self.history.push(m);
         }
+        
+        // Store how many messages we started with (to distinguish base from growth)
+        self.initial_message_count = self.history.messages().len();
 
         // Make the request
         let resp = self.ollama.send_chat_messages(self.build_request()).await?;
