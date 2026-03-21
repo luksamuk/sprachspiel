@@ -131,38 +131,6 @@ pub struct SavedMessage {
     pub message_type: Option<String>,
 }
 
-/// Compaction statistics for observability
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct CompactionStats {
-    /// Total messages in session
-    pub total_messages: usize,
-    /// Messages preserved at start (never compacted)
-    pub preserved_start: usize,
-    /// Messages preserved at end (never compacted)
-    pub preserved_end: usize,
-    /// Messages that were compacted into summary
-    pub compacted_count: usize,
-    /// Whether a summary exists
-    pub has_summary: bool,
-    /// Length of summary in characters
-    pub summary_length: usize,
-}
-
-impl std::fmt::Display for CompactionStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "CompactionStats(total={}, preserved=[{}, {}], compacted={}, summary_len={})",
-            self.total_messages,
-            self.preserved_start,
-            self.preserved_end,
-            self.compacted_count,
-            self.summary_length
-        )
-    }
-}
-
 impl Default for SavedMessage {
     fn default() -> Self {
         Self {
@@ -800,24 +768,6 @@ impl ChatSession {
     /// Get the number of compacted messages
     pub fn compacted_message_count(&self) -> usize {
         self.messages_sent_to_llm
-    }
-
-    /// Get compaction statistics for observability
-    #[allow(dead_code)]
-    pub fn compaction_stats(&self) -> CompactionStats {
-        let (preserved_start, preserved_end) = self
-            .compacted_range
-            .map(|(start, end)| (start, self.messages.len().saturating_sub(end)))
-            .unwrap_or((0, 0));
-
-        CompactionStats {
-            total_messages: self.messages.len(),
-            preserved_start,
-            preserved_end,
-            compacted_count: self.messages_sent_to_llm,
-            has_summary: self.compacted_summary.is_some(),
-            summary_length: self.compacted_summary.as_ref().map(|s| s.len()).unwrap_or(0),
-        }
     }
 
     /// Get real token count from the most recent prompt evaluation

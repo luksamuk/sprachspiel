@@ -58,8 +58,7 @@ pub const DEFAULT_KEEP_FIRST: usize = 5;
 /// Default number of last messages to keep during compaction
 pub const DEFAULT_KEEP_LAST: usize = 5;
 
-/// Default overflow threshold for display purposes
-/// Shows "OK" below 75%, "MODERATE" 75-88%, "CRITICAL" above 88%
+/// Default overflow threshold (75%) - used for display and tests
 pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = MODERATE_USAGE_PERCENT;
 
 /// Calculate threshold values for a given context window
@@ -231,12 +230,11 @@ impl ContextStatus {
     }
 }
 
-/// Check if context has overflowed the threshold
+/// Check if context has overflowed the threshold (75% warning, 88% critical)
 pub fn check_context_overflow(
     session: &ChatSession,
     system_prompt: &str,
     context_window: usize,
-    _threshold: f32, // Deprecated: now uses percentage-based thresholds
 ) -> ContextStatus {
     // Try to get real token count from Ollama's last prompt_eval_count
     // This is already the TOTAL prompt size (system + tools + history)
@@ -302,24 +300,6 @@ pub fn check_context_overflow(
             max_tokens: context_window,
         }
     }
-}
-
-/// Check if context has overflowed using default threshold (75%)
-///
-/// Convenience function for code that doesn't need custom thresholds.
-/// Equivalent to `check_context_overflow(session, prompt, window, DEFAULT_OVERFLOW_THRESHOLD)`.
-#[allow(dead_code)]
-pub fn check_context_overflow_default(
-    session: &ChatSession,
-    system_prompt: &str,
-    context_window: usize,
-) -> ContextStatus {
-    check_context_overflow(
-        session,
-        system_prompt,
-        context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    )
 }
 
 /// Middle compaction result
@@ -565,14 +545,14 @@ mod tests {
             });
         }
 
-        let status_no_compact = check_context_overflow(&session, "System prompt", 1000, 0.8);
+        let status_no_compact = check_context_overflow(&session, "System prompt", 1000);
         let tokens_no_compact = status_no_compact.total_tokens();
 
         // Now compact first 5 messages
         session.messages_sent_to_llm = 5;
         session.compacted_summary = Some("This is a summary of the first 5 messages".into());
 
-        let status_with_compact = check_context_overflow(&session, "System prompt", 1000, 0.8);
+        let status_with_compact = check_context_overflow(&session, "System prompt", 1000);
         let tokens_with_compact = status_with_compact.total_tokens();
 
         // With compaction, should have fewer tokens
@@ -610,7 +590,7 @@ mod tests {
             ..Default::default()
         });
 
-        let status_no_summary = check_context_overflow(&session, "System", 1000, 0.8);
+        let status_no_summary = check_context_overflow(&session, "System", 1000);
         let tokens_no_summary = status_no_summary.total_tokens();
 
         // Add a summary with proper compaction state
@@ -620,7 +600,7 @@ mod tests {
             None, // Full compaction
         );
 
-        let status_with_summary = check_context_overflow(&session, "System", 1000, 0.8);
+        let status_with_summary = check_context_overflow(&session, "System", 1000);
         let tokens_with_summary = status_with_summary.total_tokens();
 
         // Summary should add tokens
@@ -692,8 +672,7 @@ mod tests {
     fn test_check_context_overflow() {
         // Test with default threshold (75% used = Warning)
         let session = create_test_session(100);
-        let status =
-            check_context_overflow(&session, "System prompt", 4096, DEFAULT_OVERFLOW_THRESHOLD);
+        let status = check_context_overflow(&session, "System prompt", 4096);
 
         // 100 messages should use significant context
         // The function returns a valid status (we just check it doesn't panic)
@@ -701,12 +680,7 @@ mod tests {
 
         // Small session should be Ok
         let small_session = create_test_session(5);
-        let small_status = check_context_overflow(
-            &small_session,
-            "System prompt",
-            4096,
-            DEFAULT_OVERFLOW_THRESHOLD,
-        );
+        let small_status = check_context_overflow(&small_session, "System prompt", 4096);
         // With fallback estimation, small session might still exceed 75% of 4K
         // Just verify the function works
         let _ = small_status.usage_percent();

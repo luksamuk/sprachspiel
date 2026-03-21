@@ -183,7 +183,6 @@ Continue naturally from where you left off. Do not repeat completed work.
 ///
 /// Used when context compaction interrupts multi-tool execution.
 /// Instructs the LLM to continue from where it stopped after compaction.
-#[allow(dead_code)]
 pub const CONTINUATION_PROMPT_INTER_TOOL: &str = r#"Context was compacted during multi-tool execution.
 
 Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.

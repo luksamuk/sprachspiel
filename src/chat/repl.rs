@@ -28,6 +28,9 @@ use super::view::TerminalView;
 use crate::project::get_project_id;
 use crate::facts::db::DecayStats;
 
+/// Maximum compaction cycles per message to prevent infinite loops
+const MAX_COMPACTION_CYCLES: usize = 3;
+
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// Initialize database and embedding client.
@@ -140,7 +143,6 @@ async fn handle_user_message(
 
     let think_enabled = state.session.think;
     let mut compaction_cycles = 0;
-    const MAX_COMPACTION_CYCLES: usize = 3;
     let mut current_input = line.to_string();
 
     loop {

@@ -103,12 +103,7 @@ fn test_context_overflow_detection_message_removal() {
         });
     }
 
-    let overflow_status = check_context_overflow(
-        &session,
-        system_prompt,
-        context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    );
+    let overflow_status = check_context_overflow(&session, system_prompt, context_window);
     assert!(
         overflow_status.needs_compaction(),
         "Context should need compaction after adding messages"
@@ -298,12 +293,7 @@ fn test_context_check_with_compaction_summary() {
         Some((0, 5)),
     );
 
-    let status = check_context_overflow(
-        &session,
-        "You are helpful.",
-        50000,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    );
+    let status = check_context_overflow(&session, "You are helpful.", 50000);
 
     assert!(
         !status.needs_compaction(),

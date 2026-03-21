@@ -246,41 +246,6 @@ pub enum ChatEvent {
     },
 }
 
-/// Error type for coordinator operations during tool execution
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum CoordinatorError {
-    /// Context needs compaction before continuing
-    /// Contains: (tokens_used, context_window, tools_executed)
-    ContextNeedsCompact {
-        tokens_used: usize,
-        context_window: usize,
-        tools_executed: Vec<String>,
-    },
-}
-
-impl std::fmt::Display for CoordinatorError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ContextNeedsCompact {
-                tokens_used,
-                context_window,
-                tools_executed,
-            } => {
-                write!(
-                    f,
-                    "Context needs compaction: {} / {} tokens used, {} tools executed",
-                    tokens_used,
-                    context_window,
-                    tools_executed.len()
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for CoordinatorError {}
-
 /// Result of checking context overflow after tool execution
 struct ContextCheckResult {
     /// The result to use (possibly truncated)

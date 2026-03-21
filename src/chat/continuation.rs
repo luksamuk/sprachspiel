@@ -17,7 +17,6 @@ use super::core::{auto_compact_if_needed, send_message, SendMessageResult, Token
 use super::repl_state::ReplState;
 use crate::context_overflow::{
     check_context_overflow, needs_buffered_compaction, needs_pre_tool_compaction,
-    DEFAULT_OVERFLOW_THRESHOLD,
 };
 use crate::debug_tools::log_debug;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
@@ -157,7 +156,6 @@ pub async fn check_and_compact_before_tool(
             &state.session,
             system_prompt,
             context_window,
-            DEFAULT_OVERFLOW_THRESHOLD,
         );
 
         let usage_pct = ctx_status.usage_percent();
@@ -187,7 +185,6 @@ pub async fn check_and_compact_before_tool(
             &state.session,
             system_prompt,
             context_window,
-            DEFAULT_OVERFLOW_THRESHOLD,
         );
 
         let usage_pct = ctx_status.usage_percent();
@@ -559,47 +556,7 @@ async fn handle_inter_tool_compaction_error(
     }
 }
 
-/// Handle inter-tool compaction during multi-tool execution
-///
-/// Called when context reaches critical level during tool execution.
-/// Compacts context and returns a continuation prompt for the LLM.
-#[allow(dead_code)]
-pub async fn handle_inter_tool_compaction(
-    state: &mut ReplState,
-    tools_executed: &[String],
-    context_window: usize,
-) -> AppResult<()> {
-    eprintln!(
-        "\x1B[33m⏳ Context limit reached (executed {} tools). Compacting...\x1B[0m",
-        tools_executed.len()
-    );
-
-    let system_prompt = build_pre_tool_prompt(state);
-
-    auto_compact_if_needed(
-        &state.ollama,
-        &state.model_config,
-        &mut state.session,
-        &state.settings,
-        state.agents_md.as_deref(),
-        &system_prompt,
-        context_window,
-        state.use_debug,
-    )
-    .await;
-
-    if state.use_debug {
-        log_debug(&format!(
-            "Inter-tool compaction: {} tools executed before pause",
-            tools_executed.len()
-        ));
-    }
-
-    Ok(())
-}
-
 /// Build continuation prompt for inter-tool compaction
-#[allow(dead_code)]
 pub fn build_inter_tool_compaction_prompt(tools_executed: &[String]) -> String {
     if tools_executed.is_empty() {
         return CONTINUATION_PROMPT_INTER_TOOL.to_string();

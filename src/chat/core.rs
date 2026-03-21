@@ -22,7 +22,7 @@ use std::sync::Arc;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
-use crate::context_overflow::{check_context_overflow, DEFAULT_OVERFLOW_THRESHOLD, MAX_SUMMARY_TOKENS, needs_buffered_compaction};
+use crate::context_overflow::{check_context_overflow, MAX_SUMMARY_TOKENS, needs_buffered_compaction};
 use crate::debug_tools::log_debug;
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
@@ -97,7 +97,7 @@ pub fn build_session_system_prompt(
     };
 
     let ctx_window = model_config.num_ctx as usize;
-    let ctx_status = check_context_overflow(session, "", ctx_window, DEFAULT_OVERFLOW_THRESHOLD);
+    let ctx_status = check_context_overflow(session, "", ctx_window);
 
     build_system_prompt(
         PromptConfig::new(prompt_type)
@@ -340,7 +340,6 @@ pub async fn send_message(
         session,
         &system_prompt,
         context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
     );
 
     // Show context warning only if tools are disabled.
