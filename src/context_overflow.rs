@@ -59,6 +59,8 @@ pub const DEFAULT_KEEP_FIRST: usize = 5;
 pub const DEFAULT_KEEP_LAST: usize = 5;
 
 /// Default overflow threshold (75%) - used for display and tests
+/// Shows "OK" below 75%, "MODERATE" 75-88%, "CRITICAL" above 88%
+#[allow(dead_code)]
 pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = MODERATE_USAGE_PERCENT;
 
 /// Calculate threshold values for a given context window

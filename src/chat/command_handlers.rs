@@ -461,9 +461,7 @@ pub async fn handle_retry(state: &mut ReplState) {
                     &mut state.session,
                     &state.settings,
                     state.agents_md.as_deref(),
-                    &result.system_prompt,
                     result.context_window,
-                    state.use_debug,
                 )
                 .await;
 

@@ -73,7 +73,7 @@ pub async fn process_send_result(
     }
 
     // Handle continuation if LLM paused for compaction
-    let (final_response, final_metrics, context_window, system_prompt) = 
+    let (final_response, final_metrics, context_window, _system_prompt) = 
         if result.continuation_needed.is_some() {
             match handle_continuation(state, result).await {
                 Ok(cont_result) => (
@@ -117,9 +117,7 @@ pub async fn process_send_result(
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        &system_prompt,
         context_window,
-        state.use_debug,
     )
     .await;
 
@@ -174,9 +172,7 @@ pub async fn check_and_compact_before_tool(
             &mut state.session,
             &state.settings,
             state.agents_md.as_deref(),
-            system_prompt,
             context_window,
-            state.use_debug,
         )
         .await;
     } else if needs_pre_tool_compaction(&state.session, context_window) {
@@ -260,16 +256,14 @@ pub async fn handle_continuation(
 
     // Compact context before first continuation
     let continuation_context_window = initial_result.context_window;
-    let continuation_system_prompt = initial_result.system_prompt.clone();
+    let _continuation_system_prompt = initial_result.system_prompt.clone();
     auto_compact_if_needed(
         &state.ollama,
         &state.model_config,
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        &continuation_system_prompt,
         continuation_context_window,
-        state.use_debug,
     )
     .await;
 
@@ -325,9 +319,7 @@ pub async fn handle_continuation(
                     &mut state.session,
                     &state.settings,
                     state.agents_md.as_deref(),
-                    &cont_result.system_prompt,
                     cont_result.context_window,
-                    state.use_debug,
                 )
                 .await;
 
@@ -435,7 +427,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
     }
 
     let overflow_context_window = state.model_config.num_ctx as usize;
-    let overflow_system_prompt = build_system_prompt(
+    let _overflow_system_prompt = build_system_prompt(
         PromptConfig::new(PromptType::ToolUser)
             .with_model_id(Some(&state.model_config.model_id))
             .with_blacklist(Some(&state.settings.blacklist_set()))
@@ -452,9 +444,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        &overflow_system_prompt,
         overflow_context_window,
-        state.use_debug,
     )
     .await;
 
@@ -511,7 +501,7 @@ async fn handle_inter_tool_compaction_error(
         ));
     }
 
-    let system_prompt = build_pre_tool_prompt(state);
+    let _system_prompt = build_pre_tool_prompt(state);
 
     auto_compact_if_needed(
         &state.ollama,
@@ -519,9 +509,7 @@ async fn handle_inter_tool_compaction_error(
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        &system_prompt,
         context_window,
-        state.use_debug,
     )
     .await;
 
