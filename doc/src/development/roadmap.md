@@ -116,20 +116,25 @@ See `doc/src/development/file-write-tools.md` for implementation plan.
 
 ### v0.37.0 (In Development)
 
-**Context Overflow Compaction Loop Fix:**
-- Fixed infinite compaction loop caused by oversized summaries
-- Root cause: Compaction summaries had no size limit (18K+ tokens)
-- Combined with late trigger (95%+), caused immediate re-compaction
-- Added `COMPACTION_BUFFER` (15,000 tokens) for early trigger
-- Added `MAX_SUMMARY_TOKENS` (3,000 tokens) hard limit
-- Restructured compaction prompt with Goal/Instructions/Progress/Discoveries/Files template
-- Automatic summary truncation if LLM ignores limit
-- New structured template inspired by OpenCode's compaction approach
+**Context Overflow Token Calculation Fixes:**
+- Fixed three separate double-counting bugs in token calculation
+- `calculate_context_metrics()` was double-counting system + tools
+- `needs_inter_tool_compaction()` and related functions fixed
+- Pre-tool warning showed wrong remaining tokens
+- Pre-tool warning said "Auto-compacting" but only warned (now split logic)
+- Duplicate warning removed when tools are enabled
+
+**Percentage-Based Context Thresholds:**
+- `MODERATE_USAGE_PERCENT = 0.75` - Warning at 75% usage
+- `CRITICAL_USAGE_PERCENT = 0.88` - Auto-compact at 88% usage
+- `INTER_TOOL_USAGE_PERCENT = 0.94` - Inter-tool warning at 94%
+- `EMERGENCY_USAGE_PERCENT = 0.97` - Emergency truncation at 97%
+- Absolute minimums for small contexts (2K, 1K, 512, 256 tokens)
 
 **Context Overflow During Multi-Tool Execution:**
 - Token budget verification before each tool execution
-- Inter-tool context check (80% threshold)
-- Emergency truncation (90% threshold)
+- Inter-tool context check with proper token counting
+- Emergency truncation when approaching limit
 - Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
 
 ---

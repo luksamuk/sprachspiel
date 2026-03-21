@@ -174,8 +174,9 @@ fn check_and_handle_context_overflow(&self, tool_name: &str, result: String) -> 
     
     // Inter-tool: check if compaction needed
     let remaining = context_window.saturating_sub(total_after_add);
-    if remaining < COMPACTION_BUFFER {
-        // Signal that compaction is needed
+    let (.., compaction_threshold, ..) = calculate_thresholds(context_window);
+    if remaining < compaction_threshold {
+        // Signal that compaction is needed (88% usage reached)
         return ContextCheckResult {
             result,
             is_near_limit: true,
@@ -408,12 +409,12 @@ if tools_executed.is_empty() {
 ```rust
 #[test]
 fn test_needs_compaction_threshold() {
-    // Context at 50K remaining (32K context, 32K used, 50K remaining)
+    // Context at 50% usage (plenty of room)
     // Should NOT trigger compaction
     let result = check_and_handle_context_overflow(...);
     assert!(!result.needs_compaction);
     
-    // Context at 10K remaining (below COMPACTION_BUFFER of 15K)
+    // Context at 90% usage (above CRITICAL_USAGE_PERCENT of 88%)
     // Should trigger compaction
     let result = check_and_handle_context_overflow(...);
     assert!(result.needs_compaction);

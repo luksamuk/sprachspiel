@@ -838,12 +838,13 @@ Auto-truncate if LLM ignores limit
 
 **Layer 3: Inter-Tool Protection** (from Phase 1 implementation)
 ```rust
-PRE_TOOL_THRESHOLD = 75%  → Warning before first tool
-INTER_TOOL_THRESHOLD = 88% → Compaction between tools
-EMERGENCY_THRESHOLD = 97% → Truncate result as last resort
+MODERATE_USAGE = 75%  → Warning before first tool
+CRITICAL_USAGE = 88%   → Auto-compact threshold
+INTER_TOOL_USAGE = 94% → Warning during tool execution
+EMERGENCY_USAGE = 97%  → Truncate result as last resort
 ```
 
-**Critical Token Calculation Bugs Fixed (v0.38.0):**
+**Critical Token Calculation Bugs Fixed (v0.37.0):**
 
 Three separate double-counting bugs were discovered and fixed:
 
@@ -880,7 +881,7 @@ Three separate double-counting bugs were discovered and fixed:
 | 7 | Add percentage-based thresholds | ✅ Done |
 | 8 | Restructure `COMPACTION_PROMPT` with structured template | ✅ Done |
 | 9 | Add summary truncation in `compact_conversation()` | ✅ Done |
-| 10 | Replace percentage triggers with buffer-based in `auto_compact_if_needed()` | ✅ Done |
+| 10 | Update `auto_compact_if_needed()` to use percentage thresholds | ✅ Done |
 | 11 | Add `needs_buffered_compaction()` function | ✅ Done |
 | 12 | Fix `calculate_context_metrics()` double-counting | ✅ Done |
 | 13 | Fix `needs_inter_tool_compaction()` signature | ✅ Done |

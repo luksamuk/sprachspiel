@@ -220,25 +220,30 @@ graph TB
 
 **Key invariant:** Messages are NEVER deleted from SQLite. Compaction only affects what's sent to the LLM.
 
-### Buffer-Based Triggers (v0.37.0+)
+### Percentage-Based Triggers (v0.37.0+)
 
-Compaction uses **buffer-based triggers** (absolute token counts) instead of percentages:
+Compaction uses **percentage-based thresholds** that scale with context window size:
 
-| Trigger | Buffer | Action |
-|---------|--------|--------|
-| Pre-tool warning | 20K remaining | Warn user before tool execution |
-| Auto-compact | 15K remaining | Compact conversation history |
-| Inter-tool check | 6K remaining | Warn during multi-tool execution |
-| Emergency truncate | 3K remaining | Truncate tool results to fit |
+| Trigger | Usage | Action |
+|---------|-------|--------|
+| Pre-tool warning | 75% | Warn user before tool execution |
+| Auto-compact | 88% | Compact conversation history |
+| Inter-tool check | 94% | Warn during multi-tool execution |
+| Emergency truncate | 97% | Truncate tool results to fit |
 
-**Why buffers?** Percentages vary unpredictably with context window size:
+**Why percentages?** They scale proportionally with larger context windows:
 
-| Context | 80% trigger | 15K buffer |
-|---------|-------------|------------|
-| 32K | Compact at 25.6K (6.4K remaining) | Compact at 17K (15K remaining) |
-| 128K | Compact at 102.4K (25.6K remaining) | Compact at 113K (15K remaining) |
+| Context | 75% warning | 88% compaction | 94% inter-tool |
+|---------|-------------|----------------|----------------|
+| 32K | 24K used (8K remaining) | 28K used (4K remaining) | 30K used (2K remaining) |
+| 128K | 96K used (32K remaining) | 113K used (15K remaining) | 120K used (8K remaining) |
+| 200K | 150K used (50K remaining) | 176K used (24K remaining) | 188K used (12K remaining) |
 
-Buffer-based triggers ensure **consistent behavior** across all context sizes.
+**Safety minimums** ensure protection even for small contexts:
+- `PRE_TOOL_MIN = 2,000` tokens
+- `COMPACTION_MIN = 1,000` tokens
+- `INTER_TOOL_MIN = 512` tokens
+- `EMERGENCY_MIN = 256` tokens
 
 ---
 
@@ -252,17 +257,19 @@ Compacted summaries are limited to **3,000 tokens** to prevent infinite compacti
 
 ---
 
-## Token Budget
+## Token Budget Example
 
-| Context Window | Pre-tool (20K) | Compact (15K) | Inter-tool (6K) | Emergency (3K) |
-|----------------|----------------|---------------|-----------------|----------------|
-| 4K | 2K used (50%) | 2.5K used | 3.5K used | 3.75K used |
-| 8K | 4K used (50%) | 5K used | 7K used | 7.75K used |
-| 16K | 8K used (50%) | 9K used | 13K used | 15K used |
-| 32K | 12K used (38%) | 17K used | 26K used | 29K used |
-| 128K | 108K used (84%) | 113K used | 122K used | 125K used |
+For a 32K context window:
 
-**Key insight:** Buffer triggers fire at consistent token counts regardless of context size.
+| Stage | Usage | Remaining | Action |
+|-------|-------|-----------|--------|
+| Normal | 0-75% | 8K+ | Normal operation |
+| Warning | 75-88% | 4-8K | Show warning |
+| Compaction | 88-94% | 2-4K | Auto-compact |
+| Inter-tool | 94-97% | 1-2K | Warn during tools |
+| Emergency | 97%+ | <1K | Truncate results |
+
+**Key insight:** Percentage triggers scale naturally with context size while minimums protect small contexts.
 
 ---
 
