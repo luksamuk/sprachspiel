@@ -960,16 +960,25 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 | 6 | Add MAX_COMPACTION_CYCLES limit (3) | ✅ Done |
 
 **New Files/Functions:**
-- `src/chat/custom_coordinator.rs`: Added `CoordinatorError::ContextNeedsCompact`, `ChatEvent::ContextNeedsCompaction`
+- `src/chat/custom_coordinator.rs`: Added `ChatEvent::ContextNeedsCompaction`, error string format with `CONTEXT_NEEDS_COMPACT:` prefix
 - `src/chat/continuation.rs`: Added `OverflowHandleResult`, `is_inter_tool_compaction_error()`, `parse_inter_tool_compaction_error()`, `handle_inter_tool_compaction_error()`, `build_inter_tool_compaction_prompt()`
 - `src/prompts/base.rs`: Added `CONTINUATION_PROMPT_INTER_TOOL` for continuation after compaction
+- `src/chat/repl.rs`: Added `MAX_COMPACTION_CYCLES` constant (module level)
 
 **Flow:**
 1. During multi-tool execution, check if `remaining < COMPACTION_BUFFER` after each tool
-2. If true, emit `ContextNeedsCompaction` event and return error with `CONTEXT_NEEDS_COMPACT:` prefix
+2. If true, emit `ContextNeedsCompaction` event and return error string with `CONTEXT_NEEDS_COMPACT:` prefix
 3. `handle_overflow_error()` detects the error, returns `OverflowHandleResult::InterToolCompaction`
 4. `handle_user_message()` detects `InterToolCompaction`, compacts, sends continuation prompt
 5. LLM continues automatically (max 3 compaction cycles per message)
+
+**Refactoring (v0.37.0):**
+- Removed unused `CoordinatorError` enum (never used)
+- Removed unused `CompactionStats` struct and `compaction_stats()` method
+- Removed unused `_threshold` parameter from `check_context_overflow()`
+- Removed unused `_system_prompt` and `_use_debug` parameters from `auto_compact_if_needed()`
+- Simplified `check_and_handle_context_overflow()` signature (removed `_tool_name`)
+- Moved `MAX_COMPACTION_CYCLES` to module level in `repl.rs`
 
 **Related:** Issue #43
 

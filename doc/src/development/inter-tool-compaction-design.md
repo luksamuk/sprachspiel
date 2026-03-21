@@ -60,7 +60,7 @@ Test with 32K context window:
 When context reaches critical level during tool execution:
 
 1. **Detect** - Inter-tool check identifies `needs_compaction` condition
-2. **Pause** - Stop processing more tools, return `CoordinatorError::NeedsCompact`
+2. **Pause** - Stop processing more tools, return error string with `CONTEXT_NEEDS_COMPACT:` prefix
 3. **Compact** - Upper level calls `auto_compact_if_needed()`
 4. **Resume** - Send continuation prompt to LLM, continue from interrupted point
 
@@ -119,20 +119,6 @@ sequenceDiagram
 **File:** `src/chat/custom_coordinator.rs`
 
 ```rust
-/// Error type for coordinator operations
-#[derive(Debug)]
-pub enum CoordinatorError {
-    /// Context needs compaction before continuing
-    ContextNeedsCompact {
-        tokens_used: usize,
-        context_window: usize,
-        tools_executed: Vec<String>,
-    },
-    /// Other errors
-    ToolError(String),
-    // ...
-}
-
 /// Event emitted during response processing
 #[derive(Debug, Clone)]
 pub enum ChatEvent {
@@ -142,6 +128,10 @@ pub enum ChatEvent {
     ContextTruncated { tool_name: String, original_tokens: usize, new_tokens: usize, context_window: usize },
     ContextNeedsCompaction { tokens_used: usize, context_window: usize, tools_executed: Vec<String> },
 }
+
+// Error string format for inter-tool compaction:
+// "CONTEXT_NEEDS_COMPACT:{tokens_used}:{context_window}:{tools_str}"
+// Parsed by parse_inter_tool_compaction_error() in continuation.rs
 ```
 
 ### Phase 2: Context Check Modification (30 min)
@@ -158,7 +148,7 @@ struct ContextCheckResult {
     needs_compaction: bool,  // NEW: signals compaction needed
 }
 
-fn check_and_handle_context_overflow(&self, tool_name: &str, result: String) -> ContextCheckResult {
+fn check_and_handle_context_overflow(&self, result: String) -> ContextCheckResult {
     // ... token calculation ...
     
     // Emergency: truncate result
@@ -254,12 +244,18 @@ pub async fn process_response(&mut self, response: ChatMessageResponse) -> Resul
 **File:** `src/chat/continuation.rs`
 
 ```rust
-/// Handle context needs compaction during tool execution
-pub async fn handle_inter_tool_compaction(
+/// Handle inter-tool compaction error during multi-tool execution
+async fn handle_inter_tool_compaction_error(
     state: &mut ReplState,
-    tools_executed: &[String],
-    context_window: usize,
-) -> AppResult<()> {
+    error_str: &str,
+) -> OverflowHandleResult {
+    // Parse error string: "CONTEXT_NEEDS_COMPACT:{tokens}:{window}:{tools}"
+    let Some((tokens_used, context_window, tools_executed)) =
+        parse_inter_tool_compaction_error(error_str)
+    else {
+        return OverflowHandleResult::NotOverflow;
+    };
+    
     // 1. Show indication to user
     eprintln!(
         "\x1B[33m⏳ Context limit reached (executed {} tools). Compacting...\x1B[0m",
@@ -267,27 +263,21 @@ pub async fn handle_inter_tool_compaction(
     );
     
     // 2. Compact context
-    let system_prompt = build_pre_tool_prompt(state);
     auto_compact_if_needed(
         &state.ollama,
         &state.model_config,
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        &system_prompt,
         context_window,
-        state.use_debug,
     ).await;
     
-    // 3. Log compacted tools
-    if state.use_debug {
-        log_debug(&format!(
-            "Inter-tool compaction: {} tools executed before pause",
-            tools_executed.len()
-        ));
+    // 3. Return continuation result
+    OverflowHandleResult::InterToolCompaction {
+        tokens_used,
+        context_window,
+        tools_executed: tools_executed.clone(),
     }
-    
-    Ok(())
 }
 
 /// Build continuation prompt for inter-tool compaction
@@ -327,24 +317,27 @@ Remember:
 match result {
     Ok(response) => {
         // ... handle normal response ...
+        }
+        Err(e) => {
+            // Check if this is an inter-tool compaction error
+            let error_str = e.to_string();
+            if let Some((tokens_used, context_window, tools_executed)) =
+                parse_inter_tool_compaction_error(&error_str)
+            {
+                // Handle inter-tool compaction
+                handle_inter_tool_compaction_error(&mut state, &error_str).await;
+                
+                // Build continuation prompt
+                let continuation_prompt = build_inter_tool_compaction_prompt(&tools_executed);
+                
+                // Push ephemeral and continue
+                coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
+                
+                // Process continuation
+                let continuation_response = coordinator.chat().await?;
+            }
+        }
     }
-    Err(CoordinatorError::ContextNeedsCompact { tokens_used, context_window, tools_executed }) => {
-        // Handle inter-tool compaction
-        handle_inter_tool_compaction(&mut state, &tools_executed, context_window).await?;
-        
-        // Build continuation prompt
-        let continuation_prompt = build_inter_tool_compaction_prompt(&tools_executed);
-        
-        // Push ephemeral and continue
-        coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
-        
-        // Process continuation
-        let continuation_response = coordinator.chat().await?;
-        
-        // Merge results
-        // ...
-    }
-    Err(e) => return Err(e.into()),
 }
 ```
 
@@ -357,25 +350,32 @@ match result {
 If context fills again during continuation after compaction:
 
 ```rust
-// Limit to 3 compaction cycles per message
-let mut compaction_count = 0;
+// Limit to 3 compaction cycles per message (defined at module level)
 const MAX_COMPACTION_CYCLES: usize = 3;
 
+// In handle_user_message()
+let mut compaction_cycles = 0;
 loop {
-    match coordinator.chat().await {
-        Err(CoordinatorError::ContextNeedsCompact { .. }) if compaction_count < MAX_COMPACTION_CYCLES => {
-            compaction_count += 1;
-            // Compact and continue
+    match send_message(...).await {
+        Ok(result) => break,
+        Err(e) => {
+            let error_str = e.to_string();
+            if let Some((_, _, _)) = parse_inter_tool_compaction_error(&error_str) {
+                if compaction_cycles < MAX_COMPACTION_CYCLES {
+                    compaction_cycles += 1;
+                    // Compact and continue
+                    let result = handle_inter_tool_compaction_error(&mut state, &error_str).await;
+                    if let OverflowHandleResult::InterToolCompaction { tools_executed, .. } = result {
+                        current_input = build_inter_tool_compaction_prompt(&tools_executed);
+                        continue;
+                    }
+                } else {
+                    eprintln!("Maximum compaction cycles reached. Please continue manually.");
+                    break;
+                }
+            }
+            return Err(e.into());
         }
-        Err(CoordinatorError::ContextNeedsCompact { .. }) => {
-            eprintln!("Maximum compaction cycles reached. Please continue manually.");
-            break;
-        }
-        Ok(response) => {
-            // Normal completion
-            break;
-        }
-        Err(e) => return Err(e.into()),
     }
 }
 ```
@@ -503,7 +503,6 @@ Continue if you have next steps...
 
 | Phase | Task | Status |
 |-------|------|--------|
-| 1 | Add `CoordinatorError::ContextNeedsCompact` | ✅ DONE |
 | 1 | Add `ChatEvent::ContextNeedsCompaction` | ✅ DONE |
 | 2 | Add `needs_compaction` to `ContextCheckResult` | ✅ DONE |
 | 2 | Modify `check_and_handle_context_overflow()` | ✅ DONE |
@@ -526,6 +525,10 @@ Continue if you have next steps...
 | Bugfix | Fix pre-tool warning remaining calculation | ✅ DONE |
 | Bugfix | Split warning vs compact logic | ✅ DONE |
 | Bugfix | Remove duplicate warning in core.rs | ✅ DONE |
+| Refactor | Remove unused CoordinatorError enum | ✅ DONE |
+| Refactor | Remove unused _threshold parameter | ✅ DONE |
+| Refactor | Remove unused _system_prompt/_use_debug params | ✅ DONE |
+| Refactor | Remove unused variables after refactoring | ✅ DONE |
 | Docs | Update architecture.md | ✅ DONE |
 | Docs | Update CHANGELOG | ✅ DONE |
 | Docs | Update IMPLEMENTATION.md | ✅ DONE |

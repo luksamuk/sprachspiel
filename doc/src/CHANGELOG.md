@@ -1591,7 +1591,6 @@ After v0.22.7, semantic retrieval was working correctly (session ID stable, mess
   - `RECENT_MESSAGES_COUNT`: 10 messages
 
 - **Future-use functions (documented with `#[allow(dead_code)]`):**
-  - `check_context_overflow_default()` - Auto-overflow detection
   - `get_compaction_range_default()` - Auto-compaction planning
   - `estimate_compaction_savings()` - Compaction benefit calculation
   - `should_position_summary_after_system()` - Summary placement
