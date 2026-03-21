@@ -1607,6 +1607,8 @@ let results = futures::future::join_all(futures).await;
 
 **Goal:** Add a dynamic status bar above the prompt input with real-time context information.
 
+**Inspired by:** Hermes Agent CLI status bar design.
+
 **Current State:**
 - Model name shown inline in rustyline prompt: `glm-5:cloud🧠🔧>`
 - Context info requires `/context` command
