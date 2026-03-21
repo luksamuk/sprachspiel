@@ -1600,7 +1600,58 @@ let results = futures::future::join_all(futures).await;
 - **File Session State** - Explicit file tracking with security constraints
 - **Skills System Extended** - YAML frontmatter, skill composition
 - **Plugin System** - User-defined tools via dynamic loading
-- **TUI (Terminal User Interface)** - Ratatui-rs based interface
+
+### 🟢 PRIORITY 4.5: Status Bar Above Prompt
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Add a dynamic status bar above the prompt input with real-time context information.
+
+**Current State:**
+- Model name shown inline in rustyline prompt: `glm-5:cloud🧠🔧>`
+- Context info requires `/context` command
+- Thinking/tools indicators mixed with model name
+
+**Proposed Design:**
+```
+────────────────────────────────────────────────────────────────────────────────
+ glm-5:cloud │ 47.2K/128K │ [████░░░░░░] 37% │ 🧠🔧
+────────────────────────────────────────────────────────────────────────────────
+🧠🔧> 
+```
+
+**Components:**
+- Model name
+- Context usage: `XX.XK/YYYK` tokens
+- Progress bar with colors (green < 50%, yellow 50-75%, red > 75%)
+- Think/Tools indicators
+
+**Implementation:**
+
+| File | Changes |
+|------|---------|
+| `src/chat/view/terminal.rs` | Add `render_status_bar()` method |
+| `src/chat/input/rustyline.rs` | Call status bar before prompt |
+| `src/context_overflow.rs` | Add `to_status_bar()` method |
+
+**Priority Rationale:**
+- Higher than TUI (Priority 5) because component can be reused
+- Lower than Code Quality (Priority 4) because not blocking
+- Immediate value without full TUI rewrite
+
+**Related:** Issue #47
+
+---
+
+### 🟢 PRIORITY 5: TUI (Terminal User Interface)
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Build a responsive TUI using Ratatui-rs.
+
+See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
+
+**Blocked by:** Status Bar (Priority 4.5) - component reuse
 
 ---
 
