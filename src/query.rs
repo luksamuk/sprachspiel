@@ -77,6 +77,7 @@ impl ChatContext {
         let mut coordinator = CustomCoordinator::new(self.ollama, self.model_id, vec![])
             .options(self.model_options)
             .think(use_think)
+            .debug(use_debug)
             .on_event(move |event| {
                 handle_chat_event(event, use_think, use_plain, use_debug);
             });
@@ -122,6 +123,36 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
                     let preview = crate::utils::truncate_chars(&result, 100);
                     eprintln!("\x1B[90m✓ Result: {}\x1B[0m", preview.replace('\n', " "));
                 });
+            }
+        }
+        ChatEvent::ContextNearLimit { tool_name, tokens_used, context_window } => {
+            if use_debug {
+                eprintln!(
+                    "\x1B[33m[INFO] Context at {:.0}% after tool '{}' ({} / {} tokens)\x1B[0m",
+                    (tokens_used * 100) / context_window,
+                    tool_name,
+                    tokens_used,
+                    context_window
+                );
+            }
+        }
+        ChatEvent::ContextTruncated { tool_name, original_tokens, new_tokens, context_window } => {
+            eprintln!(
+                "\x1B[33m[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)\x1B[0m",
+                tool_name,
+                original_tokens,
+                new_tokens,
+                context_window
+            );
+        }
+        ChatEvent::ContextNeedsCompaction { tokens_used, context_window, tools_executed } => {
+            if use_debug {
+                eprintln!(
+                    "\x1B[33m[INFO] Context needs compaction: {}K / {}K tokens ({} tools executed)\x1B[0m",
+                    tokens_used / 1000,
+                    context_window / 1000,
+                    tools_executed.len()
+                );
             }
         }
     }

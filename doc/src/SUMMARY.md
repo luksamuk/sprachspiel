@@ -34,6 +34,7 @@
 - [Skills System Design](./development/skills-system-design.md)
 - [File Write Tools](./development/file-write-tools.md)
 - [Context Continuity](./development/context-continuity.md)
+- [Inter-Tool Compaction](./development/inter-tool-compaction-design.md)
 - [Chat Mode Design](./development/chat-mode-design.md)
 - [Contributing](./development/contributing.md)
 - [Pull Request Process](./development/PR-PROCESS.md)

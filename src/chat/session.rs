@@ -791,28 +791,47 @@ impl ChatSession {
             .next();
 
         match last_prompt_tokens {
-            Some(tokens) => tokens as usize,
-            None => {
+            // Only use real tokens if non-zero (0 means invalid/not-set)
+            Some(tokens) if tokens > 0 => tokens as usize,
+            _ => {
                 // Fallback: estimate from message content when no real tokens available
                 // This happens when loading from DB before first interaction
+                // or when prompt_tokens is 0 or None
+                // 
+                // IMPORTANT: If there's a compacted summary, only count:
+                // - Summary tokens
+                // - Active messages (from messages_sent_to_llm onwards)
+                // NOT the compacted messages (they're already in the summary)
+                
+                // If compacted, count only active messages + summary
+                // If not compacted, count ALL messages
+                let (active_start, has_summary) = if self.has_compacted_messages() {
+                    (self.messages_sent_to_llm, true)
+                } else {
+                    (0, false)
+                };
+                
                 let messages_tokens: usize = self
                     .messages
                     .iter()
-                    .skip(self.messages_sent_to_llm)
+                    .skip(active_start)
                     .map(|m| {
                         crate::tokens::estimate_tokens(&m.content) + crate::tokens::MESSAGE_OVERHEAD
                     })
                     .sum();
 
                 // Add estimated tokens from compacted summary if present
-                let summary_tokens = self
-                    .compacted_summary
-                    .as_ref()
-                    .map(|s| {
-                        let word_count = s.split_whitespace().count();
-                        (word_count as f32 * 1.3).ceil() as usize + crate::tokens::MESSAGE_OVERHEAD
-                    })
-                    .unwrap_or(0);
+                let summary_tokens = if has_summary {
+                    self.compacted_summary
+                        .as_ref()
+                        .map(|s| {
+                            let word_count = s.split_whitespace().count();
+                            (word_count as f32 * 1.3).ceil() as usize + crate::tokens::MESSAGE_OVERHEAD
+                        })
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
 
                 messages_tokens + summary_tokens
             }
@@ -1034,14 +1053,15 @@ mod tests {
         session.set_compacted_summary_with_range("Summary".into(), Some((2, 3)));
 
         // After compaction, prompt_tokens are cleared, so fallback estimation is used
-        // messages_sent_to_llm = 3, so messages[3..] are counted (messages 3 and 4)
+        // history_real_tokens estimates: active messages + summary (NOT compacted messages)
+        // messages_sent_to_llm = 3, so messages[3..] + summary
         let tokens = session.history_real_tokens();
 
-        // Fallback: estimate from messages_sent_to_llm onwards + summary
-        // Message 3 and 4 have ~7-8 tokens each + 2*MESSAGE_OVERHEAD + summary tokens
+        // Fallback: estimate only active messages + summary (NOT compacted ones)
+        // messages_sent_to_llm = 3, so messages 3 and 4 (~14 tokens) + summary (~7 tokens) = ~21 tokens
         assert!(
-            tokens < 100,
-            "Should use fallback estimation after compaction, got {}",
+            tokens > 10 && tokens < 50,
+            "Should estimate active messages + summary only, got {}",
             tokens
         );
     }
@@ -1105,3 +1125,319 @@ mod tests {
         assert_eq!(restored.tasks.len(), 2);
     }
 }
+
+    #[test]
+    fn test_history_real_tokens_full_compaction() {
+        // Edge case: after full compaction, messages_sent_to_llm == messages.len()
+        // Should still return summary_tokens
+        let mut session = ChatSession::new("test-model".into(), None, false);
+
+        // Add messages
+        for i in 0..5 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {}", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            });
+        }
+
+        // Full compaction - this sets messages_sent_to_llm = messages.len()
+        session.set_compacted_summary_with_range("Summary of conversation".into(), None);
+
+        // After full compaction, prompt_tokens are cleared, so fallback estimation is used
+        // messages_sent_to_llm = 5 (equals messages.len()), so skip(5) returns empty iterator
+        // Should return summary_tokens only
+        let tokens = session.history_real_tokens();
+
+        // Summary has ~3 words, so ~4 tokens + 4 overhead = ~8 tokens
+        assert!(
+            tokens > 0 && tokens < 20,
+            "Should have summary tokens, got {}",
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_history_real_tokens_partial_compaction_preserves_first() {
+        // Test middle compaction that preserves first and last messages
+        let mut session = ChatSession::new("test-model".into(), None, false);
+
+        // Add 5 messages
+        for i in 0..5 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message number {}", i), // More words for better estimation
+                timestamp: Utc::now(),
+                prompt_tokens: None,
+                ..Default::default()
+            });
+        }
+
+        // Compact middle messages (0,1,2), preserve first (0) and last (4,5)
+        // This means messages_sent_to_llm should be 3
+        session.set_compacted_summary_with_range("Summary text here".into(), Some((0, 3)));
+
+        // history_real_tokens should estimate:
+        // - Summary tokens
+        // - Active messages from index 3 onwards (messages 3 and 4)
+        let tokens = session.history_real_tokens();
+
+        // Summary ~3 words = ~4 tokens + 4 overhead = ~8 tokens
+        // Message 3 and 4: each ~3 words = ~4 tokens + 4 overhead = ~8 tokens each = 16 tokens total
+        // Total should be ~24 tokens
+        assert!(
+            tokens > 15 && tokens < 40,
+            "Should have summary + active message tokens, got {}",
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_history_real_tokens_empty_session() {
+        // Edge case: empty session
+        let session = ChatSession::new("test-model".into(), None, false);
+        let tokens = session.history_real_tokens();
+        assert_eq!(tokens, 0, "Empty session should have 0 tokens");
+    }
+
+    #[test]
+    fn test_history_real_tokens_all_compacted_no_summary() {
+        // Edge case: all messages compacted but summary is somehow empty
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Add messages
+        for i in 0..5 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Message {}", i),
+                timestamp: Utc::now(),
+                ..Default::default()
+            });
+        }
+        
+        // Set an empty summary (shouldn't happen in practice, but test the edge case)
+        session.compacted_summary = Some("".to_string());
+        session.messages_sent_to_llm = 5; // All compacted
+        session.compacted_range = Some((0, 5));
+        
+        let tokens = session.history_real_tokens();
+        // Empty summary has 0 words but still adds MESSAGE_OVERHEAD (4 tokens)
+        // This is expected behavior - even empty messages have overhead
+        assert_eq!(tokens, 4, "Empty summary with all compacted should have MESSAGE_OVERHEAD tokens");
+    }
+
+    #[test]
+    fn test_history_real_tokens_prompts_tokens_zero_vs_none() {
+        // Test edge case: prompt_tokens can be Some(0) vs None
+        // Both should use fallback estimation
+        
+        let mut session1 = ChatSession::new("test-model".into(), None, false);
+        let mut session2 = ChatSession::new("test-model".into(), None, false);
+        
+        // Session 1: prompt_tokens = Some(0) (invalid)
+        session1.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Message content here".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(0), // Zero is invalid
+            ..Default::default()
+        });
+        
+        // Session 2: prompt_tokens = None (not set)
+        session2.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Message content here".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: None,
+            ..Default::default()
+        });
+        
+        // Both should fallback to estimation
+        let tokens1 = session1.history_real_tokens();
+        let tokens2 = session2.history_real_tokens();
+        
+        // Both estimates should be similar (same content)
+        assert!(tokens1 > 0, "Some(0) should use fallback estimation");
+        assert!(tokens2 > 0, "None should use fallback estimation");
+        
+        // Should be equal since same content
+        assert_eq!(tokens1, tokens2);
+    }
+
+    #[test]
+    fn test_history_real_tokens_cumulative_vs_zero() {
+        // Test: prompt_tokens is cumulative from Ollama
+        // Last non-zero value is the total
+        
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // First message: prompt_tokens = 100 (includes system + msg1)
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "First".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(100),
+            ..Default::default()
+        });
+        
+        // Second message: prompt_tokens = 105 (includes system + msg1 + msg2)
+        session.messages.push(SavedMessage {
+            role: MessageRole::Assistant,
+            content: "Second".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(105),
+            ..Default::default()
+        });
+        
+        // Third message: prompt_tokens = 110 (includes all 3 messages)
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Third".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(110),
+            ..Default::default()
+        });
+        
+        // history_real_tokens should return the LAST cumulative value
+        let tokens = session.history_real_tokens();
+        assert_eq!(tokens, 110, "Should return last cumulative prompt_tokens");
+    }
+
+    #[test]
+    fn test_history_real_tokens_first_nonzero() {
+        // Test reverse iteration finds FIRST non-zero prompt_tokens (which is the highest cumulative)
+        
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // Messages without prompt_tokens
+        for i in 0..3 {
+            session.messages.push(SavedMessage {
+                role: MessageRole::User,
+                content: format!("Msg {}", i),
+                timestamp: Utc::now(),
+                prompt_tokens: None,
+                ..Default::default()
+            });
+        }
+        
+        // Last two messages with prompt_tokens
+        session.messages.push(SavedMessage {
+            role: MessageRole::Assistant,
+            content: "Response 1".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(200),
+            ..Default::default()
+        });
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Query 2".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(250),
+            ..Default::default()
+        });
+        
+        // Should find the last (most recent) prompt_tokens = 250
+        let tokens = session.history_real_tokens();
+        assert_eq!(tokens, 250);
+    }
+
+    #[test]
+    fn test_history_real_tokens_after_multiple_responses() {
+        // Simulate a session with multiple responses
+        // Each response adds prompt_tokens (cumulative from Ollama)
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // First exchange
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Hello".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: None, // User messages don't have prompt_tokens
+            ..Default::default()
+        });
+        session.messages.push(SavedMessage {
+            role: MessageRole::Assistant,
+            content: "Hi there!".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(100), // First response: 100 tokens cumulative
+            ..Default::default()
+        });
+        
+        let tokens1 = session.history_real_tokens();
+        assert_eq!(tokens1, 100, "Should return cumulative tokens from last message");
+        
+        // Second exchange
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "How are you?".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: None,
+            ..Default::default()
+        });
+        session.messages.push(SavedMessage {
+            role: MessageRole::Assistant,
+            content: "I'm doing great!".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(150), // Second response: 150 tokens cumulative
+            ..Default::default()
+        });
+        
+        let tokens2 = session.history_real_tokens();
+        assert_eq!(tokens2, 150, "Should return updated cumulative tokens");
+        
+        // Third exchange
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "Good to hear".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: None,
+            ..Default::default()
+        });
+        session.messages.push(SavedMessage {
+            role: MessageRole::Assistant,
+            content: "Thanks!".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(200), // Third response: 200 tokens cumulative
+            ..Default::default()
+        });
+        
+        let tokens3 = session.history_real_tokens();
+        assert_eq!(tokens3, 200, "Should return latest cumulative tokens");
+    }
+
+    #[test]
+    fn test_history_real_tokens_with_tool_call_in_between() {
+        // Simulate session with tool calls (which don't have prompt_tokens)
+        let mut session = ChatSession::new("test-model".into(), None, false);
+        
+        // User message
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: "What's the weather?".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: None,
+            ..Default::default()
+        });
+        
+        // Tool call (no prompt_tokens - only assistant messages get them)
+        session.messages.push(SavedMessage {
+            role: MessageRole::Tool,
+            content: "{\"result\": \"sunny\"}".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: None,
+            ..Default::default()
+        });
+        
+        // Final assistant response
+        session.messages.push(SavedMessage {
+            role: MessageRole::Assistant,
+            content: "It's sunny!".into(),
+            timestamp: Utc::now(),
+            prompt_tokens: Some(500), // Includes system + tools + history
+            ..Default::default()
+        });
+        
+        let tokens = session.history_real_tokens();
+        assert_eq!(tokens, 500, "Should return cumulative tokens from assistant message");
+    }

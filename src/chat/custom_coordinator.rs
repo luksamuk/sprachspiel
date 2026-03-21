@@ -4,6 +4,7 @@
 //! - Pre-tool content callbacks (content before tool calls)
 //! - Thinking content callbacks
 //! - Full control over tool execution flow
+//! - Inter-tool context overflow detection
 
 use std::{collections::HashMap, future::Future, pin::Pin};
 
@@ -20,6 +21,13 @@ use ollama_rs::{
     re_exports::schemars::{JsonSchema, Schema, generate::SchemaSettings},
 };
 use serde_json::Value;
+
+use crate::context_overflow::{
+    calculate_available_budget, calculate_thresholds, estimate_chat_messages_tokens,
+    is_emergency_context, needs_inter_tool_compaction,
+};
+use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
+use crate::utils::truncate_to_budget;
 
 /// Result type for tool execution
 pub type ToolResult = std::result::Result<String, Box<dyn std::error::Error + Send + Sync>>;
@@ -210,9 +218,46 @@ pub enum ChatEvent {
         name: String,
         arguments: serde_json::Value,
     },
-    /// Tool execution result (name kept for future debugging use)
+    /// Tool execution result
+    /// Name field kept for future debugging use
     #[allow(dead_code)]
     ToolResult { name: String, result: String },
+    /// Context is near limit after tool execution (inter-tool threshold)
+    /// Indicates compaction may be needed before next tool
+    ContextNearLimit {
+        tool_name: String,
+        tokens_used: usize,
+        context_window: usize,
+    },
+    /// Context was truncated during tool execution (emergency threshold)
+    /// Indicates last tool result was truncated to fit
+    ContextTruncated {
+        tool_name: String,
+        original_tokens: usize,
+        new_tokens: usize,
+        context_window: usize,
+    },
+    /// Context needs compaction during tool execution (compaction threshold)
+    /// Signals that tool execution should pause for compaction
+    ContextNeedsCompaction {
+        tokens_used: usize,
+        context_window: usize,
+        tools_executed: Vec<String>,
+    },
+}
+
+/// Result of checking context overflow after tool execution
+struct ContextCheckResult {
+    /// The result to use (possibly truncated)
+    result: String,
+    /// Whether context is near limit (inter-tool threshold)
+    is_near_limit: bool,
+    /// Whether result was truncated (emergency threshold)
+    was_truncated: bool,
+    /// Tokens used (for events)
+    tokens_used: usize,
+    /// Whether compaction is needed before continuing
+    needs_compaction: bool,
 }
 
 /// A coordinator for managing chat interactions with event callbacks.
@@ -233,6 +278,13 @@ pub struct CustomCoordinator<C: ChatHistory> {
     context_window: Option<usize>,
     /// System prompt for token estimation
     system_prompt: Option<String>,
+    /// Real token count from Ollama's prompt_eval_count (if available)
+    /// This is the ACTUAL token count, not an estimation.
+    /// Should always be used when available for accurate overflow detection.
+    real_history_tokens: Option<usize>,
+    /// Number of messages in history at the start of this request.
+    /// Used to distinguish between session history (base) and new messages (growth).
+    initial_message_count: usize,
     /// Accumulated pre-tool content (text generated before tool calls)
     pre_tool_content: String,
     pre_tool_thinking: Option<String>,
@@ -258,9 +310,195 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             event_callback: None,
             context_window: None,
             system_prompt: None,
+            real_history_tokens: None,
+            initial_message_count: 0,
             pre_tool_content: String::new(),
             pre_tool_thinking: None,
             ephemeral_messages: Vec::new(),
+        }
+    }
+
+    /// Check context overflow and handle truncation if needed
+    ///
+    /// Returns a ContextCheckResult with the (possibly truncated) result and status flags.
+    fn check_and_handle_context_overflow(
+        &self,
+        result: String,
+    ) -> ContextCheckResult {
+        let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) else {
+            eprintln!("\x1B[90m[DEBUG] check_and_handle_context_overflow: no context_window or system_prompt\x1B[0m");
+            return ContextCheckResult {
+                result,
+                is_near_limit: false,
+                was_truncated: false,
+                tokens_used: 0,
+                needs_compaction: false,
+            };
+        };
+
+        // Calculate total tokens:
+        // 1. real_history_tokens: Base from session (Ollama's prompt_eval_count) - EXACT
+        // 2. growth_tokens: New messages during this request (assistant + tool results) - ESTIMATED
+        // 3. system_tokens: System prompt
+        // 4. tool_tokens: Tool definitions
+        // 5. result_tokens: Current tool result being processed
+        
+        // Base: Real tokens from Ollama (includes all session history)
+        let base_tokens = self.real_history_tokens.unwrap_or(0);
+        
+        // Growth: ONLY messages added during this request (avoid double-counting with base)
+        // Messages from initial_message_count onwards are NEW in this request
+        let all_messages = self.history.messages().len();
+        let growth_messages = &self.history.messages()[self.initial_message_count..];
+        let growth_tokens = estimate_chat_messages_tokens(growth_messages);
+        
+        // Tool definitions (each tool: name + description + parameters + overhead)
+        // NOTE: These are already included in base_tokens from Ollama's prompt_eval_count
+        // We calculate them separately only for diagnostic purposes
+        let tool_tokens: usize = self.tool_infos.iter().map(|info| {
+            let name_tokens = estimate_tokens(&info.function.name);
+            let desc_tokens = estimate_tokens(&info.function.description);
+            let params_tokens = estimate_tokens(&serde_json::to_string(&info.function.parameters).unwrap_or_default());
+            name_tokens + desc_tokens + params_tokens + MESSAGE_OVERHEAD
+        }).sum();
+        
+        // System prompt tokens - also included in base_tokens from Ollama
+        let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
+        
+        // Result tokens - the current tool result being processed
+        let result_tokens = estimate_tokens(&result);
+        
+        // IMPORTANT: base_tokens from Ollama's prompt_eval_count ALREADY includes:
+        // - System prompt tokens
+        // - Tool definition tokens
+        // - All history tokens
+        // 
+        // So we should NOT add tool_tokens and system_tokens again!
+        // Only add: growth_tokens (new in this request) + result_tokens (current result)
+        let total_after_add = base_tokens + growth_tokens + result_tokens;
+        
+        // Format token values: show as raw number if < 1000, otherwise as NK
+        fn fmt_tokens(v: usize) -> String {
+            if v >= 1000 {
+                format!("{}K", v / 1000)
+            } else {
+                format!("{}", v)
+            }
+        }
+
+        let (_, compaction_buffer, _, _) = calculate_thresholds(ctx_window);
+        
+        // Debug log (only when debug enabled)
+        if crate::debug_tools::is_debug_enabled() {
+            eprintln!("\x1B[90m[INTER-TOOL-CHECK-DETAILS]\x1b[0m");
+            eprintln!("\x1B[90m  base_tokens={} (from Ollama, includes sys+tools+history)\x1b[0m", base_tokens);
+            eprintln!("\x1B[90m  initial_message_count={}\x1b[0m", self.initial_message_count);
+            eprintln!("\x1B[90m  all_messages={}\x1b[0m", all_messages);
+            eprintln!("\x1B[90m  growth_messages={} (new this request)\x1b[0m", growth_messages.len());
+            eprintln!("\x1B[90m  growth_tokens={} (estimated)\x1b[0m", growth_tokens);
+            eprintln!("\x1B[90m  tool_tokens={} (diagnostic, already in base)\x1b[0m", tool_tokens);
+            eprintln!("\x1B[90m  system_tokens={} (diagnostic, already in base)\x1b[0m", system_tokens);
+            eprintln!("\x1B[90m  result_tokens={} (current tool result)\x1b[0m", result_tokens);
+            eprintln!("\x1B[90m[INTER-TOOL-CHECK] total={}/{} remaining={} buffer={}\x1b[0m",
+                fmt_tokens(total_after_add),
+                fmt_tokens(ctx_window),
+                fmt_tokens(ctx_window.saturating_sub(total_after_add)),
+                fmt_tokens(compaction_buffer)
+            );
+        }
+        
+        if is_emergency_context(total_after_add, ctx_window) {
+            let available = calculate_available_budget(base_tokens + growth_tokens, ctx_window);
+            let original_tokens = estimate_tokens(&result);
+            let truncated = truncate_to_budget(&result, available);
+            let truncated_tokens = estimate_tokens(&truncated);
+            let reduction = original_tokens.saturating_sub(truncated_tokens);
+            
+            // Only show truncation warning if significant reduction
+            if reduction > 100 || (original_tokens > 1000 && reduction * 100 / original_tokens > 10) {
+                eprintln!(
+                    "\x1B[31m[EMERGENCY] Context at {}% ({} tokens). Truncated tool result: {} → {} tokens\x1b[0m",
+                    (total_after_add) * 100 / ctx_window,
+                    total_after_add,
+                    original_tokens,
+                    truncated_tokens
+                );
+            }
+
+            return ContextCheckResult {
+                result: truncated,
+                is_near_limit: true,
+                was_truncated: reduction > 0,
+                tokens_used: total_after_add,
+                needs_compaction: false,
+            };
+        }
+
+        let remaining = ctx_window.saturating_sub(total_after_add);
+        if remaining < compaction_buffer {
+            // Only trigger compaction if there's history to compact
+            // base_tokens == 0 means fresh session with no messages to summarize
+            if base_tokens == 0 {
+                // Fresh session - nothing to compact, just proceed
+                // Context will grow as conversation proceeds, future requests will have base > 0
+                if self.debug {
+                    eprintln!(
+                        "\x1B[90m[INTER-TOOL] Fresh session (base=0), nothing to compact. Proceeding... ({}K/{}K)\x1b[0m",
+                        total_after_add / 1000,
+                        ctx_window / 1000
+                    );
+                }
+                return ContextCheckResult {
+                    result,
+                    is_near_limit: true,
+                    was_truncated: false,
+                    tokens_used: total_after_add,
+                    needs_compaction: false,
+                };
+            }
+
+            eprintln!(
+                "\x1B[33m⏳ [INTER-TOOL] Context: {}K/{}K ({}% used, {}K remaining). Buffer: {}K. NEEDS COMPACTION.\x1B[0m",
+                total_after_add / 1000,
+                ctx_window / 1000,
+                (total_after_add * 100) / ctx_window,
+                remaining / 1000,
+                compaction_buffer / 1000
+            );
+
+            return ContextCheckResult {
+                result,
+                is_near_limit: true,
+                was_truncated: false,
+                tokens_used: total_after_add,
+                needs_compaction: true,
+            };
+        }
+
+        if needs_inter_tool_compaction(total_after_add, ctx_window) {
+            if self.debug {
+                eprintln!(
+                    "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool warning.\x1B[0m",
+                    (total_after_add) * 100 / ctx_window,
+                    total_after_add
+                );
+            }
+
+            return ContextCheckResult {
+                result,
+                is_near_limit: false,
+                was_truncated: false,
+                tokens_used: total_after_add,
+                needs_compaction: false,
+            };
+        }
+
+        ContextCheckResult {
+            result,
+            is_near_limit: false,
+            was_truncated: false,
+            tokens_used: total_after_add,
+            needs_compaction: false,
         }
     }
 
@@ -273,6 +511,14 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// Set the system prompt for token estimation
     pub fn system_prompt(mut self, system_prompt: String) -> Self {
         self.system_prompt = Some(system_prompt);
+        self
+    }
+
+    /// Set the real history token count from Ollama's prompt_eval_count.
+    /// This should ALWAYS be used when available for accurate overflow detection.
+    /// Estimation is a fallback when real tokens are not available.
+    pub fn real_history_tokens(mut self, tokens: usize) -> Self {
+        self.real_history_tokens = Some(tokens);
         self
     }
 
@@ -296,8 +542,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         self
     }
 
-    /// Enable debug mode (for future use)
-    #[allow(dead_code)]
+    /// Enable debug mode for verbose logging
     pub fn debug(mut self, debug: bool) -> Self {
         self.debug = debug;
         self
@@ -373,6 +618,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         for m in request.messages.clone() {
             self.history.push(m);
         }
+        
+        // Store how many messages we started with (to distinguish base from growth)
+        self.initial_message_count = self.history.messages().len();
 
         // Make the request
         let resp = self.ollama.send_chat_messages(self.build_request()).await?;
@@ -478,7 +726,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             self.history.push(resp.message.clone());
 
             // Execute each tool call
-            for call in resp.message.tool_calls {
+            let mut tools_executed = Vec::new();
+
+            for call in resp.message.tool_calls.clone() {
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
 
@@ -534,8 +784,52 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     result: result.clone(),
                 });
 
-                // Push tool result to history
-                self.history.push(ChatMessage::tool(result));
+                // Inter-tool context check: detect overflow and truncate if needed
+                let check_result = self.check_and_handle_context_overflow(result);
+
+                // Check if compaction is needed - stop and emit event
+                if check_result.needs_compaction {
+                    // Push the current result to history before stopping
+                    self.history.push(ChatMessage::tool(check_result.result));
+                    tools_executed.push(tool_name);
+
+                    // Emit compaction needed event
+                    self.emit_event(ChatEvent::ContextNeedsCompaction {
+                        tokens_used: check_result.tokens_used,
+                        context_window: self.context_window.unwrap_or(0),
+                        tools_executed: tools_executed.clone(),
+                    });
+
+                    // Return error to signal compaction needed
+                    let tools_str = tools_executed.join(", ");
+                    return Err(ollama_rs::error::OllamaError::Other(format!(
+                        "CONTEXT_NEEDS_COMPACT:{}:{}:{}",
+                        check_result.tokens_used,
+                        self.context_window.unwrap_or(0),
+                        tools_str
+                    )));
+                }
+
+                // Emit context events
+                if check_result.was_truncated {
+                    let result_tokens = estimate_tokens(&check_result.result);
+                    self.emit_event(ChatEvent::ContextTruncated {
+                        tool_name: tool_name.clone(),
+                        original_tokens: check_result.tokens_used,
+                        new_tokens: result_tokens,
+                        context_window: self.context_window.unwrap_or(0),
+                    });
+                } else if check_result.is_near_limit {
+                    self.emit_event(ChatEvent::ContextNearLimit {
+                        tool_name: tool_name.clone(),
+                        tokens_used: check_result.tokens_used,
+                        context_window: self.context_window.unwrap_or(0),
+                    });
+                }
+
+                // Push (possibly truncated) result to history
+                self.history.push(ChatMessage::tool(check_result.result));
+                tools_executed.push(tool_name);
             }
 
             // Recurse to get next response
@@ -553,14 +847,13 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
         // Check context overflow before sending to Ollama
         if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
-            let history_tokens =
-                crate::context_overflow::estimate_chat_messages_tokens(&self.history.messages());
-            let system_tokens =
-                crate::tokens::estimate_tokens(prompt) + crate::tokens::MESSAGE_OVERHEAD;
+            let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
+            let system_tokens = estimate_tokens(prompt) + MESSAGE_OVERHEAD;
             let total_tokens = history_tokens + system_tokens;
 
-            // Use 90% threshold to detect overflow early
-            let threshold = (ctx_window as f64 * 0.9) as usize;
+            // Use emergency threshold to detect overflow
+            let (_, _, _, emergency_threshold) = calculate_thresholds(ctx_window);
+            let threshold = ctx_window.saturating_sub(emergency_threshold);
 
             if total_tokens > threshold {
                 // Return error that will be caught by caller

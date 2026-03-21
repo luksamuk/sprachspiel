@@ -271,6 +271,51 @@ Interactive command loop with:
 - Context compaction (`/compact`)
 - Session management (`/save`, `/load`)
 
+#### Context Overflow Management (`src/context_overflow.rs`)
+
+Percentage-based thresholds that scale with context window size:
+
+```rust
+// Percentage thresholds (v0.37.0+)
+MODERATE_USAGE_PERCENT = 0.75  // Warning at 75% (25% remaining)
+CRITICAL_USAGE_PERCENT = 0.88  // Auto-compact at 88% (12% remaining)
+INTER_TOOL_USAGE_PERCENT = 0.94 // Inter-tool warning at 94% (6% remaining)
+EMERGENCY_USAGE_PERCENT = 0.97  // Emergency truncation at 97% (3% remaining)
+
+// Absolute minimums (ensure safety for small contexts)
+PRE_TOOL_MIN = 2_000 tokens
+COMPACTION_MIN = 1_000 tokens
+INTER_TOOL_MIN = 512 tokens
+EMERGENCY_MIN = 256 tokens
+MAX_SUMMARY_TOKENS = 3_000 // Hard limit on summaries
+```
+
+**Why percentage-based thresholds?**
+
+| Context | 75% warning | 88% compaction | 94% inter-tool |
+|---------|-------------|----------------|----------------|
+| 32K | Warn at 24K (8K remaining) | Compact at 28K (4K remaining) | Warn at 30K (2K remaining) |
+| 128K | Warn at 96K (32K remaining) | Compact at 113K (15K remaining) | Warn at 120K (8K remaining) |
+| 200K | Warn at 150K (50K remaining) | Compact at 176K (24K remaining) | Warn at 188K (12K remaining) |
+
+Percentage-based triggers **scale proportionally** with larger context windows, while absolute minimums ensure safety for small contexts.
+
+**Compaction Flow:**
+
+```
+1. Pre-tool (75% usage) → Warn user
+2. Auto-compact (88% usage) → Summarize history
+3. Inter-tool (94% usage) → Warn during execution
+4. Emergency (97% usage) → Truncate results
+```
+
+**Key Files:**
+- `src/context_overflow.rs` - Percentage thresholds, compaction functions
+- `src/tokens.rs` - Token calculation with Ollama's `prompt_eval_count`
+- `src/chat/core.rs` - `auto_compact_if_needed()`, `compact_conversation()`
+- `src/chat/continuation.rs` - Pre-tool compaction check
+- `src/chat/custom_coordinator.rs` - Inter-tool overflow detection
+
 ### 7. Tools (`src/tools/`)
 
 Tool implementations using the `ollama-rs` macro:

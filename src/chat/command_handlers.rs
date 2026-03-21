@@ -461,9 +461,7 @@ pub async fn handle_retry(state: &mut ReplState) {
                     &mut state.session,
                     &state.settings,
                     state.agents_md.as_deref(),
-                    &result.system_prompt,
                     result.context_window,
-                    state.use_debug,
                 )
                 .await;
 
@@ -1063,15 +1061,22 @@ pub fn print_context_info(
     );
 
     let context_window_k = context_window / 1024;
-    let usage_percent = (metrics.utilization * 100.0) as u8;
+    let usage_percent = metrics.utilization * 100.0;
 
     let bar_width = 20;
-    let filled = ((usage_percent as usize).min(100) * bar_width) / 100;
+    let filled = (usage_percent.min(100.0) as usize * bar_width) / 100;
     let empty = bar_width - filled;
 
-    let (color_code, reset_code, status_text) = if usage_percent < 72 {
+    // Calculate thresholds based on percentage of context window
+    // OK: remaining > 25% of context (usage < 75%)
+    // MODERATE: remaining > 12% of context (usage < 88%)
+    // CRITICAL: remaining <= 12% of context (usage >= 88%)
+    let remaining = context_window.saturating_sub(metrics.total_tokens);
+    let (pre_tool, compaction, _, _) = crate::context_overflow::calculate_thresholds(context_window);
+
+    let (color_code, reset_code, status_text) = if remaining > pre_tool {
         ("\x1B[32m", "\x1B[0m", "OK")
-    } else if usage_percent < 80 {
+    } else if remaining > compaction {
         ("\x1B[33m", "\x1B[0m", "MODERATE")
     } else {
         ("\x1B[31m", "\x1B[0m", "CRITICAL")
@@ -1086,13 +1091,13 @@ pub fn print_context_info(
     println!();
     println!("  Context Utilization:");
     println!(
-        "    {}{}{}{} {}{}",
+        "    {}{}{}{} {:.1}%{}",
         color_code,
         "█".repeat(filled),
         "░".repeat(empty),
-        reset_code,
         color_code,
-        usage_percent
+        usage_percent,
+        reset_code
     );
     println!(
         "    {}{} / {} tokens{}\x1B[0m",

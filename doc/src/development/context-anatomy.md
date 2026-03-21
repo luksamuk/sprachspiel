@@ -194,20 +194,20 @@ sequenceDiagram
 
 ## Middle Compaction
 
-When context reaches 80% of the window:
+When context reaches the compaction buffer (15K tokens remaining):
 
 ```mermaid
 graph TB
-    subgraph Before["Before: 80%+ full"]
+    subgraph Before["Before: Near limit"]
         B1["System"] --> B2["Msgs 0-5"]
         B2 --> B3["Msgs 6-25"]
         B3 --> B4["Msgs 26-30"]
         B4 --> B5["Query"]
     end
 
-    subgraph After["After: 60% full"]
+    subgraph After["After: Room freed"]
         A1["System"] --> A2["Msgs 0-5"]
-        A2 --> A3["Summary"]
+        A2 --> A3["Summary (~3K tokens)"]
         A3 --> A4["Msgs 26-30"]
         A4 --> A5["Query"]
     end
@@ -220,19 +220,56 @@ graph TB
 
 **Key invariant:** Messages are NEVER deleted from SQLite. Compaction only affects what's sent to the LLM.
 
+### Percentage-Based Triggers (v0.37.0+)
+
+Compaction uses **percentage-based thresholds** that scale with context window size:
+
+| Trigger | Usage | Action |
+|---------|-------|--------|
+| Pre-tool warning | 75% | Warn user before tool execution |
+| Auto-compact | 88% | Compact conversation history |
+| Inter-tool check | 94% | Warn during multi-tool execution |
+| Emergency truncate | 97% | Truncate tool results to fit |
+
+**Why percentages?** They scale proportionally with larger context windows:
+
+| Context | 75% warning | 88% compaction | 94% inter-tool |
+|---------|-------------|----------------|----------------|
+| 32K | 24K used (8K remaining) | 28K used (4K remaining) | 30K used (2K remaining) |
+| 128K | 96K used (32K remaining) | 113K used (15K remaining) | 120K used (8K remaining) |
+| 200K | 150K used (50K remaining) | 176K used (24K remaining) | 188K used (12K remaining) |
+
+**Safety minimums** ensure protection even for small contexts:
+- `PRE_TOOL_MIN = 2,000` tokens
+- `COMPACTION_MIN = 1,000` tokens
+- `INTER_TOOL_MIN = 512` tokens
+- `EMERGENCY_MIN = 256` tokens
+
 ---
 
-## Token Budget
+## Summary Token Limit
 
-| Context Window | Target | Tokens | Buffer |
-|----------------|--------|--------|--------|
-| 4K | 60-80% | 2.4K - 3.2K | 800+ |
-| 8K | 60-80% | 4.8K - 6.4K | 1.6K+ |
-| 16K | 60-80% | 9.6K - 12.8K | 3.2K+ |
-| 32K | 60-80% | 19K - 26K | 6K+ |
-| 128K | 60-80% | 77K - 102K | 26K+ |
+Compacted summaries are limited to **3,000 tokens** to prevent infinite compaction loops:
 
-**Why 60-80%?** Leaves room for tool responses and prevents overflow.
+- Previous issue: Summaries could grow to 18K+ tokens
+- Solution: Hard limit with automatic truncation
+- Template: Structured format (Goal, Instructions, Progress, Discoveries, Files)
+
+---
+
+## Token Budget Example
+
+For a 32K context window:
+
+| Stage | Usage | Remaining | Action |
+|-------|-------|-----------|--------|
+| Normal | 0-75% | 8K+ | Normal operation |
+| Warning | 75-88% | 4-8K | Show warning |
+| Compaction | 88-94% | 2-4K | Auto-compact |
+| Inter-tool | 94-97% | 1-2K | Warn during tools |
+| Emergency | 97%+ | <1K | Truncate results |
+
+**Key insight:** Percentage triggers scale naturally with context size while minimums protect small contexts.
 
 ---
 

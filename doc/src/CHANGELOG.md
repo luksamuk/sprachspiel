@@ -4,7 +4,87 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Inter-Tool Compaction with Automatic Continuation** - Automatic context compaction during multi-tool execution
+  - Detects when context reaches `COMPACTION_BUFFER` during tool execution
+  - Stops tool execution and triggers auto-compaction
+  - Sends continuation prompt automatically after compaction
+  - LLM continues from where it stopped without user intervention
+  - Maximum 3 compaction cycles per message to prevent infinite loops
+  - `ChatEvent::ContextNeedsCompaction` event for coordination
+  - `OverflowHandleResult` enum to distinguish overflow types
+  - `build_inter_tool_compaction_prompt()` for continuation messages
+
+- **Observability Metrics for Inter-Tool Compaction** - Detailed debug logging
+  - Token count before/after compaction (saved tokens)
+  - Message count before/after compaction
+  - Compaction duration in seconds
+  - Summary length after compaction
+  - Cycle tracking with remaining cycles warning
+  - Tools executed before pause logged for debugging
+
+- **Debug Logging for Inter-Tool Check** - Permanent logging for troubleshooting
+  - `[INTER-TOOL-CHECK]` logs showing history/tools/system/result tokens
+  - Shows remaining buffer vs COMPACTION_BUFFER comparison
+
+- **Percentage-Based Context Thresholds** - Replaced fixed buffer constants with percentage-based thresholds
+  - Scales correctly with different context window sizes (32K, 128K, 200K)
+  - `MODERATE_USAGE_PERCENT = 0.75` - Warning at 75% usage
+  - `CRITICAL_USAGE_PERCENT = 0.88` - Auto-compact at 88% usage
+  - `INTER_TOOL_USAGE_PERCENT = 0.94` - Inter-tool warning at 94% usage
+  - `EMERGENCY_USAGE_PERCENT = 0.97` - Emergency truncation at 97% usage
+  - Absolute minimums ensure safety even for small contexts:
+    - `PRE_TOOL_MIN = 2_000` tokens
+    - `COMPACTION_MIN = 1_000` tokens
+    - `INTER_TOOL_MIN = 512` tokens
+    - `EMERGENCY_MIN = 256` tokens
+
 ### Fixed
+
+- **CRITICAL: Multiple Token Calculation Bugs** - Fixed three separate double-counting bugs
+
+  1. **Double-counting system + tools in `calculate_context_metrics()`**
+     - Root cause: Comments said `real_history_tokens` was "history only" but it was actually "total from Ollama"
+     - The function added system + tools again to get total, causing double-count
+     - Fix: Recognize `real_history_tokens` as TOTAL, derive history by subtraction
+  
+  2. **Double-counting system_tokens in `needs_inter_tool_compaction()` and related functions**
+     - Root cause: Functions received total and added system_tokens again with `.saturating_add(system_tokens)`
+     - Fix: Accept single `total_tokens` parameter since Ollama already includes system + tools
+  
+  3. **Missing system + tools in pre-tool warning remaining tokens**
+     - Root cause: `remaining = context_window - history_real_tokens()` missed system + tools
+     - Fix: Use `total_tokens` from `ContextStatus` for correct remaining calculation
+
+- **CRITICAL: Pre-Tool Warning Message False Advertising**
+  - Root cause: Message said "Auto-compacting..." at 75% threshold, but auto-compact only triggers at 88%
+  - Users saw "Auto-compacting..." but context wasn't actually compacted
+  - Fix: Split logic - show warning at 75%, auto-compact only at 88%
+  
+- **Duplicate Context Warnings** - Fixed two warnings shown for same condition
+  - Root cause: Both `send_message()` in core.rs and `check_and_compact_before_tool()` in continuation.rs showed warnings
+  - Fix: Only show warning in core.rs when tools are disabled (continuation.rs has more informative message)
+
+- **Token Estimation Undercounting vs Real Ollama Tokens**
+  - Estimation word-based can undercount by 20-30%
+  - Combined with missing tool tokens, total undercount was 25-35%
+  - Context could be at 100% real capacity while check saw only 65-70%
+  - Combined fixes now accurately detect overflow
+
+- **Context Overflow Compaction Loop** - Fixed infinite compaction loop caused by oversized summaries
+  - Root cause: Compaction summaries had no size limit, generating ~18K token summaries
+  - Combined with late trigger (95%+), summaries caused immediate re-compaction
+  - Solution: 3,000 token limit on summaries + 15,000 token buffer before overflow
+  - New structured summary template inspired by OpenCode's approach
+  - Template includes: Goal, Instructions, Progress, Discoveries, Relevant Files
+  - Automatic truncation if LLM ignores token limit
+
+- **Context Overflow During Multi-Tool Execution** - Added pre-tool token budget check
+  - Token budget verification before each tool execution in multi-tool chains
+  - Prevents context overflow when LLM calls multiple tools sequentially
+  - Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
+  - Smart truncation for large tool results
 
 - **Unicode Panic in note_add** - Fixed panic when creating notes with Unicode content
   - `note_add` tool now uses `truncate_chars()` for character-aware truncation
@@ -17,6 +97,20 @@ All notable changes to Ask-AI will be documented in this file.
   - Changed `push_str("🧠")` to `push('🧠')` for single chars
   - Simplified `!x.is_none()` to `x.is_some()`
   - Added `#[allow(clippy::too_many_arguments)]` for functions that need many args
+
+### Changed
+
+- **Compaction Thresholds** - Adjusted to prevent overflow loops
+  - Added `COMPACTION_BUFFER` (15,000 tokens) - reserve space before overflow
+  - Added `MAX_SUMMARY_TOKENS` (3,000 tokens) - hard limit on summary size
+  - Compaction now triggers when context reaches `context_window - COMPACTION_BUFFER`
+  - Summary is automatically truncated if it exceeds `MAX_SUMMARY_TOKENS`
+
+- **Compaction Summary Template** - Restructured for better context preservation
+  - Old: Generic markdown with Key Topics, Decisions, Technical Details, Action Items
+  - New: Structured template with Goal, Instructions, Progress (Completed/Pending), Discoveries, Relevant Files
+  - Inspired by OpenCode's compaction template for better context continuation
+  - Explicit token limit warning in prompt to prevent oversized summaries
 
 ### Removed
 
@@ -1497,7 +1591,6 @@ After v0.22.7, semantic retrieval was working correctly (session ID stable, mess
   - `RECENT_MESSAGES_COUNT`: 10 messages
 
 - **Future-use functions (documented with `#[allow(dead_code)]`):**
-  - `check_context_overflow_default()` - Auto-overflow detection
   - `get_compaction_range_default()` - Auto-compaction planning
   - `estimate_compaction_savings()` - Compaction benefit calculation
   - `should_position_summary_after_system()` - Summary placement

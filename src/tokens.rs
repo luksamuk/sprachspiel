@@ -36,8 +36,12 @@ pub fn count_messages_tokens(messages: &[ChatMessage]) -> usize {
     if messages.is_empty() {
         return 0;
     }
+    // Skip System messages - they're counted separately as system_tokens
+    // This is important because get_messages_for_llm() includes system prompt,
+    // but calculate_context_metrics() counts system_tokens separately.
     messages
         .iter()
+        .filter(|msg| !matches!(msg.role, ollama_rs::generation::chat::MessageRole::System))
         .map(|msg| MESSAGE_OVERHEAD + estimate_tokens(&msg.content))
         .sum()
 }
@@ -73,25 +77,26 @@ impl ContextMetrics {
 /// * `context_window` - Maximum context window size in tokens
 /// * `system_prompt` - System prompt text
 /// * `tools_tokens` - Estimated tokens for tool definitions
-/// * `real_prompt_tokens` - Optional real token count from Ollama's prompt_eval_count
-///   IMPORTANT: This is CUMULATIVE - it includes system prompt + tools + ALL history
-///   When provided, we use it directly as total_tokens (no need to add system + tools again)
+/// * `real_history_tokens` - Optional real token count from Ollama's prompt_eval_count
+///   IMPORTANT: This is the TOTAL prompt size (system + tools + ALL history)
+///   When provided, we use it directly as total_tokens (no need to add system + tools again).
+///   We then DERIVE history_tokens by subtracting system + tools from the total.
 pub fn calculate_context_metrics(
     history_messages: &[ChatMessage],
     context_window: usize,
     system_prompt: &str,
     tools_tokens: usize,
-    real_prompt_tokens: Option<usize>,
+    real_history_tokens: Option<usize>,
 ) -> ContextMetrics {
     let system_tokens = estimate_tokens(system_prompt) + MESSAGE_OVERHEAD;
 
-    // When real_prompt_tokens is provided, it's the TOTAL prompt size from Ollama
-    // (system + tools + history). We use it directly.
-    // Otherwise, we estimate from message content only (no system/tools included).
-    let (total_tokens, history_tokens) = match real_prompt_tokens {
+    // When real_history_tokens is provided, it's the TOTAL from Ollama (system + tools + history)
+    // Use it directly and derive history_tokens by subtraction.
+    // Otherwise, estimate from message content.
+    let (total_tokens, history_tokens) = match real_history_tokens {
         Some(total) => {
-            // real_prompt_tokens is the total prompt size
-            // history_tokens is derived by subtracting system + tools
+            // total is the full prompt size from Ollama (system + tools + history)
+            // Derive history_tokens by subtracting system + tools
             let history = total
                 .saturating_sub(system_tokens)
                 .saturating_sub(tools_tokens);

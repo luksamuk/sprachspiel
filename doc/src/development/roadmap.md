@@ -112,7 +112,54 @@ See `doc/src/development/file-write-tools.md` for implementation plan.
 
 ---
 
+## Upcoming Release
+
+### v0.37.0 (In Development)
+
+**Context Overflow Token Calculation Fixes:**
+- Fixed three separate double-counting bugs in token calculation
+- `calculate_context_metrics()` was double-counting system + tools
+- `needs_inter_tool_compaction()` and related functions fixed
+- Pre-tool warning showed wrong remaining tokens
+- Pre-tool warning said "Auto-compacting" but only warned (now split logic)
+- Duplicate warning removed when tools are enabled
+
+**Percentage-Based Context Thresholds:**
+- `MODERATE_USAGE_PERCENT = 0.75` - Warning at 75% usage
+- `CRITICAL_USAGE_PERCENT = 0.88` - Auto-compact at 88% usage
+- `INTER_TOOL_USAGE_PERCENT = 0.94` - Inter-tool warning at 94%
+- `EMERGENCY_USAGE_PERCENT = 0.97` - Emergency truncation at 97%
+- Absolute minimums for small contexts (2K, 1K, 512, 256 tokens)
+
+**Context Overflow During Multi-Tool Execution:**
+- Token budget verification before each tool execution
+- Inter-tool context check with proper token counting
+- Emergency truncation when approaching limit
+- Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
+
+---
+
 ## Recent Releases
+
+### v0.36.0 (2026-03-19)
+
+**Features:**
+- Welcome banner redesign with Extended Mind ASCII art
+- Prompt emojis (`🧠🔧`) replacing `[t][T]` indicators
+- `/new` command for new conversation session
+- `/session` command group for unified session management
+- Session auto-load on startup
+- Database initialization failure diagnostics
+- Schema migration v6→v7 fix for embedding duplicates
+
+**Changes:**
+- `/clear` renamed to `/new`
+- `/load` auto-saves current session before switching
+
+### v0.35.0 (TBD)
+
+**Fixes:**
+- Context display after compaction - correct token count after session reload
 
 ### v0.26.7 (2026-03-09)
 

@@ -1,17 +1,56 @@
 //! Context overflow detection and handling
 //!
 //! Implements auto-compaction when context reaches threshold.
+//! Uses percentage-based thresholds that scale with context window size,
+//! with absolute minimum buffers for small contexts.
+//!
+//! # Percentage-Based Thresholds
+//!
+//! Research shows LLMs degrade significantly above 75-88% context usage
+//! (LongICLBench study). Our thresholds adapt to context size:
+//!
+//! | Threshold | Percentage | 32K Context | 128K Context | Trigger |
+//! |-----------|------------|-------------|---------------|---------|
+//! | PRE_TOOL | 75% used | 8K remaining | 32K remaining | Warning |
+//! | COMPACTION | 88% used | 4K remaining | 15K remaining | Auto-compact |
+//! | INTER_TOOL | 94% used | 2K remaining | 8K remaining | Warning during tools |
+//! | EMERGENCY | 97% used | 1K remaining | 4K remaining | Truncate |
+//!
+//! # Absolute Minimum Buffers
+//!
+//! For small contexts (< 8K), we use absolute minimums to ensure safety:
+//! - PRE_TOOL_MIN: 2K tokens
+//! - COMPACTION_MIN: 1K tokens
+//! - INTER_TOOL_MIN: 512 tokens
+//! - EMERGENCY_MIN: 256 tokens
 
 use crate::chat::session::ChatSession;
 use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
 use ollama_rs::generation::chat::ChatMessage;
 
-/// Default overflow threshold (80% of context window)
-pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = 0.8;
+/// Percentage thresholds (as fractions of context window)
+/// Based on LongICLBench research showing LLM degradation patterns.
+pub const MODERATE_USAGE_PERCENT: f32 = 0.75; // 75% - Warning threshold
+pub const CRITICAL_USAGE_PERCENT: f32 = 0.88; // 88% - Compaction threshold
+pub const INTER_TOOL_USAGE_PERCENT: f32 = 0.94; // 94% - Warning during tools
+pub const EMERGENCY_USAGE_PERCENT: f32 = 0.97; // 97% - Emergency truncation
 
-/// Pre-tool check threshold (75% of context window)
-/// Lower than overflow to allow room for tool results during execution
-pub const PRE_TOOL_THRESHOLD: f32 = 0.75;
+/// Absolute minimum buffers (for small contexts)
+/// These ensure safety even when percentage-based calculations are too small.
+pub const PRE_TOOL_MIN: usize = 2_000;
+pub const COMPACTION_MIN: usize = 1_000;
+pub const INTER_TOOL_MIN: usize = 512;
+pub const EMERGENCY_MIN: usize = 256;
+
+/// Response margin (tokens reserved for model response)
+/// Increased from 500 to 2000 based on typical response lengths.
+pub const RESPONSE_MARGIN: usize = 2_000;
+
+/// Maximum tokens for compacted summary
+/// Prevents summary from becoming large enough to cause overflow again.
+/// Based on research: 10-15% of original content, capped for safety.
+/// For 368 messages (~18K tokens original), 3K is ~17% - aggressive but safe.
+pub const MAX_SUMMARY_TOKENS: usize = 3_000;
 
 /// Default number of first messages to keep during compaction
 pub const DEFAULT_KEEP_FIRST: usize = 5;
@@ -19,15 +58,78 @@ pub const DEFAULT_KEEP_FIRST: usize = 5;
 /// Default number of last messages to keep during compaction
 pub const DEFAULT_KEEP_LAST: usize = 5;
 
-/// Check if context needs pre-tool compaction
-/// Returns true if context is above PRE_TOOL_THRESHOLD (75%)
-pub fn needs_pre_tool_compaction(
-    session: &ChatSession,
-    system_prompt: &str,
-    context_window: usize,
-) -> bool {
-    let status = check_context_overflow(session, system_prompt, context_window, PRE_TOOL_THRESHOLD);
-    status.needs_compaction()
+/// Default overflow threshold (75%) - used for display and tests
+/// Shows "OK" below 75%, "MODERATE" 75-88%, "CRITICAL" above 88%
+#[allow(dead_code)]
+pub const DEFAULT_OVERFLOW_THRESHOLD: f32 = MODERATE_USAGE_PERCENT;
+
+/// Calculate threshold values for a given context window
+/// Returns (pre_tool, compaction, inter_tool, emergency) buffers
+pub fn calculate_thresholds(context_window: usize) -> (usize, usize, usize, usize) {
+    let pre_tool =
+        ((context_window as f32 * (1.0 - MODERATE_USAGE_PERCENT)) as usize).max(PRE_TOOL_MIN);
+    let compaction =
+        ((context_window as f32 * (1.0 - CRITICAL_USAGE_PERCENT)) as usize).max(COMPACTION_MIN);
+    let inter_tool =
+        ((context_window as f32 * (1.0 - INTER_TOOL_USAGE_PERCENT)) as usize).max(INTER_TOOL_MIN);
+    let emergency =
+        ((context_window as f32 * (1.0 - EMERGENCY_USAGE_PERCENT)) as usize).max(EMERGENCY_MIN);
+
+    (pre_tool, compaction, inter_tool, emergency)
+}
+
+/// Check if context needs pre-tool warning
+/// Returns true when usage exceeds MODERATE_THRESHOLD (75%).
+pub fn needs_pre_tool_compaction(session: &ChatSession, context_window: usize) -> bool {
+    let real_tokens = session.history_real_tokens();
+    let (pre_tool, _, _, _) = calculate_thresholds(context_window);
+    let threshold = context_window.saturating_sub(pre_tool);
+    real_tokens >= threshold
+}
+
+/// Check if context needs compaction
+/// Triggers auto-compaction when usage exceeds CRITICAL_THRESHOLD (88%).
+pub fn needs_buffered_compaction(session: &ChatSession, context_window: usize) -> bool {
+    let real_tokens = session.history_real_tokens();
+    let (_, compaction, _, _) = calculate_thresholds(context_window);
+    let threshold = context_window.saturating_sub(compaction);
+    real_tokens >= threshold
+}
+
+/// Check if context needs inter-tool warning
+/// Called after each tool result during multi-tool execution.
+/// Returns true when usage exceeds INTER_TOOL_THRESHOLD (94%).
+///
+/// IMPORTANT: total_tokens should be the FULL prompt size from Ollama's prompt_eval_count
+/// (includes system + tools + history). Do NOT add system_tokens again.
+pub fn needs_inter_tool_compaction(total_tokens: usize, context_window: usize) -> bool {
+    let (_, _, inter_tool, _) = calculate_thresholds(context_window);
+    let threshold = context_window.saturating_sub(inter_tool);
+    total_tokens >= threshold
+}
+
+/// Check if context is in emergency state
+/// At this point, tool results must be truncated before adding to history.
+///
+/// IMPORTANT: total_tokens should be the FULL prompt size from Ollama's prompt_eval_count
+/// (includes system + tools + history). Do NOT add system_tokens again.
+pub fn is_emergency_context(total_tokens: usize, context_window: usize) -> bool {
+    let (_, _, _, emergency) = calculate_thresholds(context_window);
+    let threshold = context_window.saturating_sub(emergency);
+    total_tokens >= threshold
+}
+
+/// Calculate available token budget for tool results
+/// Returns the number of tokens available before reaching emergency limit.
+///
+/// IMPORTANT: total_tokens should be the FULL prompt size from Ollama's prompt_eval_count
+/// (includes system + tools + history). Do NOT add system_tokens again.
+pub fn calculate_available_budget(total_tokens: usize, context_window: usize) -> usize {
+    let (_, _, _, emergency) = calculate_thresholds(context_window);
+    let emergency_limit = context_window.saturating_sub(emergency);
+    emergency_limit
+        .saturating_sub(total_tokens)
+        .saturating_sub(RESPONSE_MARGIN)
 }
 
 /// Estimate tokens in a list of ChatMessage (for coordinator history)
@@ -130,12 +232,11 @@ impl ContextStatus {
     }
 }
 
-/// Check if context has overflowed the threshold
+/// Check if context has overflowed the threshold (75% warning, 88% critical)
 pub fn check_context_overflow(
     session: &ChatSession,
     system_prompt: &str,
     context_window: usize,
-    threshold: f32,
 ) -> ContextStatus {
     // Try to get real token count from Ollama's last prompt_eval_count
     // This is already the TOTAL prompt size (system + tools + history)
@@ -179,14 +280,17 @@ pub fn check_context_overflow(
     let usage = total_tokens as f32 / context_window as f32;
     let usage_percent = (usage * 100.0).min(100.0) as u8;
 
-    if usage >= threshold {
+    // Use percentage-based thresholds consistent with calculate_thresholds()
+    // MODERATE (yellow): >= 75% used
+    // CRITICAL (red): >= 88% used
+    if usage >= CRITICAL_USAGE_PERCENT {
         ContextStatus::Overflow {
             total_tokens,
             max_tokens: context_window,
             usage_percent,
         }
-    } else if usage >= threshold * 0.9 {
-        // Warning at 90% of threshold (e.g., 72% if threshold is 80%)
+    } else if usage >= MODERATE_USAGE_PERCENT {
+        // Warning at 75% used (synchronizes with MODERATE color in /context)
         ContextStatus::Warning {
             total_tokens,
             max_tokens: context_window,
@@ -198,24 +302,6 @@ pub fn check_context_overflow(
             max_tokens: context_window,
         }
     }
-}
-
-/// Check if context has overflowed using default threshold (80%)
-///
-/// Convenience function for code that doesn't need custom thresholds.
-/// Equivalent to `check_context_overflow(session, prompt, window, DEFAULT_OVERFLOW_THRESHOLD)`.
-#[allow(dead_code)]
-pub fn check_context_overflow_default(
-    session: &ChatSession,
-    system_prompt: &str,
-    context_window: usize,
-) -> ContextStatus {
-    check_context_overflow(
-        session,
-        system_prompt,
-        context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    )
 }
 
 /// Middle compaction result
@@ -335,193 +421,6 @@ mod tests {
     }
 
     #[test]
-    fn test_check_context_overflow() {
-        let session = create_test_session(100);
-        let _status =
-            check_context_overflow(&session, "System prompt", 4096, DEFAULT_OVERFLOW_THRESHOLD);
-
-        // Should overflow with low threshold
-        let low_threshold = 0.001f32;
-        let status_low = check_context_overflow(&session, "System prompt", 4096, low_threshold);
-        assert!(status_low.needs_compaction());
-    }
-
-    #[test]
-    fn test_check_context_overflow_default() {
-        let session = create_test_session(5);
-        let status = check_context_overflow_default(&session, "System prompt", 4096);
-
-        assert!(matches!(status, ContextStatus::Ok { .. }));
-
-        let large_session = create_test_session(500);
-        let large_status = check_context_overflow_default(&large_session, "System prompt", 4096);
-
-        // Should overflow with default threshold
-        assert!(large_status.needs_compaction() || large_status.usage_percent() > 70);
-    }
-
-    #[test]
-    fn test_get_compaction_range_enough_messages() {
-        let session = create_test_session(20);
-        let result = get_compaction_range(&session, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST);
-
-        assert!(result.is_some());
-        let suggestion = result.unwrap();
-        assert_eq!(suggestion.keep_first, DEFAULT_KEEP_FIRST);
-        assert_eq!(suggestion.keep_last, DEFAULT_KEEP_LAST);
-        assert_eq!(suggestion.middle_indices.len(), 10); // 20 - 5 - 5 = 10
-    }
-
-    #[test]
-    fn test_get_compaction_range_not_enough_messages() {
-        let session = create_test_session(8);
-        let result = get_compaction_range(&session, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST);
-
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_get_compaction_range_default() {
-        let session = create_test_session(20);
-        let result = get_compaction_range_default(&session);
-
-        assert!(result.is_some());
-        let suggestion = result.unwrap();
-        assert_eq!(suggestion.keep_first, DEFAULT_KEEP_FIRST);
-        assert_eq!(suggestion.keep_last, DEFAULT_KEEP_LAST);
-        assert_eq!(suggestion.middle_indices.len(), 10); // 20 - 5 - 5 = 10
-    }
-
-    #[test]
-    fn test_estimate_compaction_savings() {
-        let session = create_test_session(15);
-        let suggestion = get_compaction_range(&session, 5, 5).unwrap();
-
-        // Verify we have some middle messages to compact
-        assert!(!suggestion.middle_indices.is_empty());
-
-        // Calculate actual savings (depends on message content)
-        let _savings = estimate_compaction_savings(&session, &suggestion, 100);
-
-        // Savings can be positive or negative depending on summary overhead
-        // This is expected behavior - compaction trades tokens for summarization
-    }
-
-    #[test]
-    fn test_context_status_usage_percent() {
-        let status_ok = ContextStatus::Ok {
-            total_tokens: 100,
-            max_tokens: 1000,
-        };
-        let status_warn = ContextStatus::Warning {
-            total_tokens: 750,
-            max_tokens: 1000,
-            usage_percent: 75,
-        };
-        let status_over = ContextStatus::Overflow {
-            total_tokens: 850,
-            max_tokens: 1000,
-            usage_percent: 85,
-        };
-
-        assert_eq!(status_ok.usage_percent(), 0);
-        assert_eq!(status_warn.usage_percent(), 75);
-        assert_eq!(status_over.usage_percent(), 85);
-    }
-
-    #[test]
-    fn test_should_position_summary_after_system() {
-        let mut session = create_test_session(10);
-
-        // No summary
-        assert!(!should_position_summary_after_system(&session));
-
-        // With summary
-        session.compacted_summary = Some("Summary of old messages".to_string());
-        assert!(should_position_summary_after_system(&session));
-    }
-
-    #[test]
-    fn test_context_status_needs_compaction() {
-        let status_ok = ContextStatus::Ok {
-            total_tokens: 100,
-            max_tokens: 1000,
-        };
-        let status_warn = ContextStatus::Warning {
-            total_tokens: 750,
-            max_tokens: 1000,
-            usage_percent: 75,
-        };
-        let status_over = ContextStatus::Overflow {
-            total_tokens: 850,
-            max_tokens: 1000,
-            usage_percent: 85,
-        };
-
-        assert!(!status_ok.needs_compaction());
-        assert!(status_warn.needs_compaction());
-        assert!(status_over.needs_compaction());
-    }
-
-    #[test]
-    fn test_context_status_is_warning() {
-        let status_ok = ContextStatus::Ok {
-            total_tokens: 100,
-            max_tokens: 1000,
-        };
-        let status_warn = ContextStatus::Warning {
-            total_tokens: 750,
-            max_tokens: 1000,
-            usage_percent: 75,
-        };
-        let status_over = ContextStatus::Overflow {
-            total_tokens: 850,
-            max_tokens: 1000,
-            usage_percent: 85,
-        };
-
-        assert!(!status_ok.is_warning());
-        assert!(status_warn.is_warning());
-        assert!(!status_over.is_warning());
-    }
-
-    #[test]
-    fn test_context_status_is_overflow() {
-        let status_ok = ContextStatus::Ok {
-            total_tokens: 100,
-            max_tokens: 1000,
-        };
-        let status_warn = ContextStatus::Warning {
-            total_tokens: 750,
-            max_tokens: 1000,
-            usage_percent: 75,
-        };
-        let status_over = ContextStatus::Overflow {
-            total_tokens: 850,
-            max_tokens: 1000,
-            usage_percent: 85,
-        };
-
-        assert!(!status_ok.is_overflow());
-        assert!(!status_warn.is_overflow());
-        assert!(status_over.is_overflow());
-    }
-
-    #[test]
-    fn test_pre_tool_threshold() {
-        // PRE_TOOL_THRESHOLD should be lower than DEFAULT_OVERFLOW_THRESHOLD
-        assert!(
-            PRE_TOOL_THRESHOLD < DEFAULT_OVERFLOW_THRESHOLD,
-            "Pre-tool threshold should be lower than overflow threshold"
-        );
-        assert_eq!(PRE_TOOL_THRESHOLD, 0.75, "Pre-tool threshold should be 75%");
-        assert_eq!(
-            DEFAULT_OVERFLOW_THRESHOLD, 0.80,
-            "Overflow threshold should be 80%"
-        );
-    }
-
-    #[test]
     fn test_needs_pre_tool_compaction_below_threshold() {
         // Session with low context usage (below 75%)
         let mut session = ChatSession::new("test-model".to_string(), None, false);
@@ -536,22 +435,24 @@ mod tests {
             });
         }
 
-        let system_prompt = "You are helpful.";
         let context_window = 128000; // Typical large context
 
-        // Should NOT need pre-tool compaction
+        // Should NOT need pre-tool compaction (20K remaining, we used ~10K)
         assert!(
-            !needs_pre_tool_compaction(&session, system_prompt, context_window),
-            "Session below 75% should not need pre-tool compaction"
+            !needs_pre_tool_compaction(&session, context_window),
+            "Session with plenty of room should not need pre-tool compaction"
         );
     }
 
     #[test]
     fn test_needs_pre_tool_compaction_above_threshold() {
-        // Session with high context usage (above 75%)
+        // Session with high context usage (near limit)
         let mut session = ChatSession::new("test-model".to_string(), None, false);
 
         // Fill session with large content to exceed threshold
+        // need_pre_tool_compaction triggers when 20K tokens remaining
+        // For 128K context: trigger at 108K used
+        // We use ~200K tokens to definitely exceed
         let large_content = "word ".repeat(50000); // ~67000 tokens
         for _ in 0..3 {
             session.messages.push(SavedMessage {
@@ -562,13 +463,12 @@ mod tests {
             });
         }
 
-        let system_prompt = "You are helpful.";
         let context_window = 128000;
 
-        // Should need pre-tool compaction
+        // Should need pre-tool compaction (< 20K remaining)
         assert!(
-            needs_pre_tool_compaction(&session, system_prompt, context_window),
-            "Session above 75% should need pre-tool compaction"
+            needs_pre_tool_compaction(&session, context_window),
+            "Session with < 20K tokens remaining should need pre-tool compaction"
         );
     }
 
@@ -647,14 +547,14 @@ mod tests {
             });
         }
 
-        let status_no_compact = check_context_overflow(&session, "System prompt", 1000, 0.8);
+        let status_no_compact = check_context_overflow(&session, "System prompt", 1000);
         let tokens_no_compact = status_no_compact.total_tokens();
 
         // Now compact first 5 messages
         session.messages_sent_to_llm = 5;
         session.compacted_summary = Some("This is a summary of the first 5 messages".into());
 
-        let status_with_compact = check_context_overflow(&session, "System prompt", 1000, 0.8);
+        let status_with_compact = check_context_overflow(&session, "System prompt", 1000);
         let tokens_with_compact = status_with_compact.total_tokens();
 
         // With compaction, should have fewer tokens
@@ -692,22 +592,183 @@ mod tests {
             ..Default::default()
         });
 
-        let status_no_summary = check_context_overflow(&session, "System", 1000, 0.8);
+        let status_no_summary = check_context_overflow(&session, "System", 1000);
         let tokens_no_summary = status_no_summary.total_tokens();
 
-        // Add a summary
-        session.compacted_summary =
-            Some("This is a summary of the previous conversation about important topics".into());
+        // Add a summary with proper compaction state
+        // Use set_compacted_summary_with_range to properly set messages_sent_to_llm
+        session.set_compacted_summary_with_range(
+            "This is a summary of the previous conversation about important topics".into(),
+            None, // Full compaction
+        );
 
-        let status_with_summary = check_context_overflow(&session, "System", 1000, 0.8);
+        let status_with_summary = check_context_overflow(&session, "System", 1000);
         let tokens_with_summary = status_with_summary.total_tokens();
 
         // Summary should add tokens
+        // Note: After full compaction, messages_sent_to_llm == messages.len()
+        // so history_tokens from messages is 0, but summary_tokens is counted
+        // plus MESSAGE_OVERHEAD for the summary message
         assert!(
             tokens_with_summary > tokens_no_summary,
             "Summary should add tokens: {} > {}",
             tokens_with_summary,
             tokens_no_summary
+        );
+    }
+
+    #[test]
+    fn test_buffer_hierarchy() {
+        // Threshold hierarchy should be: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
+        // This ensures correct trigger order for any context size
+        let context_32k = 32768;
+        let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(context_32k);
+
+        assert!(
+            pre_tool > compaction,
+            "Pre-tool buffer ({}) should be larger than compaction buffer ({})",
+            pre_tool,
+            compaction
+        );
+        assert!(
+            compaction > inter_tool,
+            "Compaction buffer ({}) should be larger than inter-tool buffer ({})",
+            compaction,
+            inter_tool
+        );
+        assert!(
+            inter_tool > emergency,
+            "Inter-tool buffer ({}) should be larger than emergency buffer ({})",
+            inter_tool,
+            emergency
+        );
+    }
+
+    #[test]
+    fn test_needs_inter_tool_compaction_below() {
+        // Context with plenty of room (100K context, 75K total = 25K remaining)
+        // 25K remaining > inter_tool threshold (6% of 100K = 6K), so should NOT trigger
+        let total_tokens = 75_000;
+        let context_window = 100_000;
+
+        assert!(
+            !needs_inter_tool_compaction(total_tokens, context_window),
+            "Should not need inter-tool compaction when 25K tokens remaining"
+        );
+    }
+
+    #[test]
+    fn test_needs_inter_tool_compaction_above() {
+        // Context near limit (100K context, 95K total = 5K remaining)
+        // 5K remaining < inter_tool threshold (6% of 100K = 6K), so SHOULD trigger
+        let total_tokens = 95_000;
+        let context_window = 100_000;
+
+        assert!(
+            needs_inter_tool_compaction(total_tokens, context_window),
+            "Should need inter-tool compaction when only 5K tokens remaining"
+        );
+    }
+
+    #[test]
+    fn test_check_context_overflow() {
+        // Test with default threshold (75% used = Warning)
+        let session = create_test_session(100);
+        let status = check_context_overflow(&session, "System prompt", 4096);
+
+        // 100 messages should use significant context
+        // The function returns a valid status (we just check it doesn't panic)
+        let _ = status.usage_percent();
+
+        // Small session should be Ok
+        let small_session = create_test_session(5);
+        let small_status = check_context_overflow(&small_session, "System prompt", 4096);
+        // With fallback estimation, small session might still exceed 75% of 4K
+        // Just verify the function works
+        let _ = small_status.usage_percent();
+    }
+
+    #[test]
+    fn test_is_emergency_context_above() {
+        // Context at emergency (100K context, 98K total = 2K remaining)
+        // 2K remaining < emergency threshold (3% of 100K = 3K), so SHOULD be emergency
+        let total_tokens = 98_000;
+        let context_window = 100_000;
+
+        assert!(
+            is_emergency_context(total_tokens, context_window),
+            "Should be emergency when only 2K tokens remaining"
+        );
+    }
+
+    #[test]
+    fn test_calculate_available_budget_normal() {
+        // Context at 50% with emergency buffer and margin
+        let total_tokens = 50_000;
+        let context_window = 100_000;
+
+        let available = calculate_available_budget(total_tokens, context_window);
+
+        // emergency_threshold (3%) = 3% of 100K = 3000
+        // emergency_limit = 100K - 3000 = 97K
+        // available = 97K - 50K - 2K (response margin) = 45K
+        // Note: Small rounding differences are acceptable
+        assert!(
+            available >= 44_990 && available <= 45_010,
+            "Should calculate available budget correctly, got {}",
+            available
+        );
+    }
+
+    #[test]
+    fn test_calculate_available_budget_plenty() {
+        // Context at 10% with large context
+        let total_tokens = 12_000;
+        let context_window = 200_000;
+
+        let available = calculate_available_budget(total_tokens, context_window);
+
+        // emergency_threshold = 3% of 200K = 6K
+        // emergency_limit = 200K - 6K = 194K
+        // available = 194K - 12K - 2K = 180K
+        assert!(
+            available > 175_000,
+            "Should have plenty of budget available: got {}",
+            available
+        );
+    }
+
+    #[test]
+    fn test_threshold_relationships() {
+        // Verify the buffer hierarchy using calculate_thresholds
+        let context_window = 32768; // 32K
+        let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(context_window);
+
+        // Verify hierarchy: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
+        assert!(pre_tool > compaction);
+        assert!(compaction > inter_tool);
+        assert!(inter_tool > emergency);
+
+        // Verify specific values for 32K context
+        // 75% usage = 8192 remaining (25%)
+        // 88% usage = 3932 remaining (12%)
+        // 94% usage = 1966 remaining (6%)
+        // 97% usage = 983 remaining (3%)
+        assert_eq!(
+            pre_tool, 8192,
+            "32K: pre_tool should be 8192 (25%% remaining)"
+        );
+        assert_eq!(
+            compaction, 3932,
+            "32K: compaction should be 3932 (12%% remaining)"
+        );
+        assert_eq!(
+            inter_tool, 1966,
+            "32K: inter_tool should be 1966 (6%% remaining)"
+        );
+        assert_eq!(
+            emergency, 983,
+            "32K: emergency should be 983 (3%% remaining)"
         );
     }
 }

@@ -15,11 +15,36 @@
 
 use super::core::{auto_compact_if_needed, send_message, SendMessageResult, TokenMetrics};
 use super::repl_state::ReplState;
-use crate::context_overflow::{check_context_overflow, needs_pre_tool_compaction, PRE_TOOL_THRESHOLD};
+use crate::context_overflow::{
+    check_context_overflow, needs_buffered_compaction, needs_pre_tool_compaction,
+};
 use crate::debug_tools::log_debug;
 use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+use crate::prompts::CONTINUATION_PROMPT_INTER_TOOL;
+use std::time::Instant;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// Parse inter-tool compaction error from OllamaError
+///
+/// Returns (tokens_used, context_window, tools_executed) if the error is
+/// a context needs compaction error, None otherwise.
+pub fn parse_inter_tool_compaction_error(error_str: &str) -> Option<(usize, usize, Vec<String>)> {
+    let marker = "CONTEXT_NEEDS_COMPACT:";
+    let rest = error_str.strip_prefix(marker)?;
+
+    let mut parts = rest.splitn(3, ':');
+    let tokens_used: usize = parts.next()?.parse().ok()?;
+    let context_window: usize = parts.next()?.parse().ok()?;
+    let tools_str = parts.next()?;
+    let tools_executed: Vec<String> = if tools_str.is_empty() {
+        Vec::new()
+    } else {
+        tools_str.split(',').map(|s| s.trim().to_string()).collect()
+    };
+
+    Some((tokens_used, context_window, tools_executed))
+}
 
 /// Process a successful SendMessageResult
 ///
@@ -48,7 +73,7 @@ pub async fn process_send_result(
     }
 
     // Handle continuation if LLM paused for compaction
-    let (final_response, final_metrics, context_window, system_prompt) = 
+    let (final_response, final_metrics, context_window, _system_prompt) = 
         if result.continuation_needed.is_some() {
             match handle_continuation(state, result).await {
                 Ok(cont_result) => (
@@ -92,9 +117,7 @@ pub async fn process_send_result(
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        &system_prompt,
         context_window,
-        state.use_debug,
     )
     .await;
 
@@ -125,34 +148,51 @@ pub async fn check_and_compact_before_tool(
     system_prompt: &str,
     context_window: usize,
 ) {
-    if !needs_pre_tool_compaction(&state.session, system_prompt, context_window) {
-        return;
+    // First check if we need actual compaction (88% threshold)
+    if needs_buffered_compaction(&state.session, context_window) {
+        let ctx_status = check_context_overflow(
+            &state.session,
+            system_prompt,
+            context_window,
+        );
+
+        let usage_pct = ctx_status.usage_percent();
+        let total_tokens = ctx_status.total_tokens();
+        let remaining = context_window.saturating_sub(total_tokens);
+
+        eprintln!(
+            "\x1B[33m⏳ Context {}% full ({}K remaining). Auto-compacting before tool execution...\x1B[0m",
+            usage_pct,
+            remaining / 1000
+        );
+
+        auto_compact_if_needed(
+            &state.ollama,
+            &state.model_config,
+            &mut state.session,
+            &state.settings,
+            state.agents_md.as_deref(),
+            context_window,
+        )
+        .await;
+    } else if needs_pre_tool_compaction(&state.session, context_window) {
+        // At 75%: just show warning, don't compact yet
+        let ctx_status = check_context_overflow(
+            &state.session,
+            system_prompt,
+            context_window,
+        );
+
+        let usage_pct = ctx_status.usage_percent();
+        let total_tokens = ctx_status.total_tokens();
+        let remaining = context_window.saturating_sub(total_tokens);
+
+        eprintln!(
+            "\x1B[33m⚠ Context {}% full ({}K remaining). Consider using /compact to summarize old messages.\x1B[0m",
+            usage_pct,
+            remaining / 1000
+        );
     }
-
-    let usage_pct = check_context_overflow(
-        &state.session,
-        system_prompt,
-        context_window,
-        PRE_TOOL_THRESHOLD,
-    )
-    .usage_percent();
-    
-    eprintln!(
-        "\x1B[33m⏳ Context {}% full. Auto-compacting before tool execution...\x1B[0m",
-        usage_pct
-    );
-
-    auto_compact_if_needed(
-        &state.ollama,
-        &state.model_config,
-        &mut state.session,
-        &state.settings,
-        state.agents_md.as_deref(),
-        system_prompt,
-        context_window,
-        state.use_debug,
-    )
-    .await;
 }
 
 /// Build system prompt for pre-tool check
@@ -216,16 +256,13 @@ pub async fn handle_continuation(
 
     // Compact context before first continuation
     let continuation_context_window = initial_result.context_window;
-    let continuation_system_prompt = initial_result.system_prompt.clone();
     auto_compact_if_needed(
         &state.ollama,
         &state.model_config,
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        &continuation_system_prompt,
         continuation_context_window,
-        state.use_debug,
     )
     .await;
 
@@ -281,9 +318,7 @@ pub async fn handle_continuation(
                     &mut state.session,
                     &state.settings,
                     state.agents_md.as_deref(),
-                    &cont_result.system_prompt,
                     cont_result.context_window,
-                    state.use_debug,
                 )
                 .await;
 
@@ -338,11 +373,26 @@ pub async fn handle_continuation(
     }
 }
 
+/// Check if error is an inter-tool compaction error
+pub fn is_inter_tool_compaction_error(error_str: &str) -> bool {
+    error_str.starts_with("CONTEXT_NEEDS_COMPACT:")
+}
+
+/// Result of handling an overflow error
+#[derive(Debug)]
+pub enum OverflowHandleResult {
+    /// Error was not an overflow error, caller should handle
+    NotOverflow,
+    /// Overflow was handled, caller should continue the loop (no continuation)
+    HandledContinue,
+    /// Inter-tool compaction happened, caller should send continuation prompt
+    InterToolCompaction { tools_executed: Vec<String> },
+}
+
 /// Handle context overflow error during tool execution
 ///
 /// Attempts recovery by removing failed messages and compacting context.
-/// Returns `true` if overflow was handled (and caller should `continue`),
-/// `false` if this was not an overflow error.
+/// Returns appropriate result for caller to determine next action.
 ///
 /// # Arguments
 ///
@@ -351,18 +401,22 @@ pub async fn handle_continuation(
 ///
 /// # Returns
 ///
-/// * `true` - Overflow was handled, caller should `continue` the loop
-/// * `false` - Not an overflow error, caller should handle differently
-pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bool {
+/// * `NotOverflow` - Not an overflow error, caller should handle differently
+/// * `HandledContinue` - Overflow handled, caller should continue the loop
+/// * `InterToolCompaction` - Inter-tool compaction, caller should send continuation
+pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> OverflowHandleResult {
+    if is_inter_tool_compaction_error(error_str) {
+        return handle_inter_tool_compaction_error(state, error_str).await;
+    }
+
     if !error_str.contains("Context overflow during tool execution") {
-        return false;
+        return OverflowHandleResult::NotOverflow;
     }
 
     eprintln!(
         "\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m"
     );
 
-    // Remove the failed message
     let (removed, _) = state.session.remove_last_assistant_messages_with_content();
     if state.use_debug {
         log_debug(&format!(
@@ -371,18 +425,6 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bo
         ));
     }
 
-    // Auto-compact to free space
-    let overflow_context_window = state.model_config.num_ctx as usize;
-    let overflow_system_prompt = build_system_prompt(
-        PromptConfig::new(PromptType::ToolUser)
-            .with_model_id(Some(&state.model_config.model_id))
-            .with_blacklist(Some(&state.settings.blacklist_set()))
-            .with_agents_md(state.agents_md.as_deref())
-            .with_tools(state.tools_active)
-            .with_retrieval(state.session.retrieval_enabled && !state.cli_code)
-            .with_soulless(state.cli_soulless),
-    );
-
     eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
     auto_compact_if_needed(
         &state.ollama,
@@ -390,13 +432,10 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bo
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        &overflow_system_prompt,
-        overflow_context_window,
-        state.use_debug,
+        state.model_config.num_ctx as usize,
     )
     .await;
 
-    // Save session after compaction
     if !state.session.anonymous
         && let Err(save_err) = state.session.save_sqlite()
         && state.use_debug
@@ -411,5 +450,182 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> bo
         "\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m"
     );
 
-    true
+    OverflowHandleResult::HandledContinue
+}
+
+/// Handle inter-tool compaction error during multi-tool execution
+///
+/// Compacts context and returns info for continuation.
+async fn handle_inter_tool_compaction_error(
+    state: &mut ReplState,
+    error_str: &str,
+) -> OverflowHandleResult {
+    let Some((tokens_used, context_window, tools_executed)) =
+        parse_inter_tool_compaction_error(error_str)
+    else {
+        return OverflowHandleResult::NotOverflow;
+    };
+
+    let start_time = Instant::now();
+    let tokens_before = state.session.history_real_tokens();
+    let messages_before = state.session.messages.len();
+
+    eprintln!(
+        "\x1B[33m⏳ Context limit reached during tool execution ({} tools executed). Compacting...\x1B[0m",
+        tools_executed.len()
+    );
+
+    if state.use_debug {
+        log_debug(&format!(
+            "[Inter-tool Compaction] Starting: {}K/{}K tokens ({}%), {} messages in history",
+            tokens_used / 1000,
+            context_window / 1000,
+            (tokens_used * 100) / context_window,
+            messages_before
+        ));
+        log_debug(&format!(
+            "[Inter-tool Compaction] Tools executed before pause: {}",
+            tools_executed.join(", ")
+        ));
+    }
+
+    auto_compact_if_needed(
+        &state.ollama,
+        &state.model_config,
+        &mut state.session,
+        &state.settings,
+        state.agents_md.as_deref(),
+        context_window,
+    )
+    .await;
+
+    let tokens_after = state.session.history_real_tokens();
+    let messages_after = state.session.messages.len();
+    let elapsed = start_time.elapsed();
+
+    if state.use_debug {
+        let tokens_saved = tokens_before.saturating_sub(tokens_after);
+        let _messages_removed = messages_before.saturating_sub(messages_after);
+        
+        log_debug(&format!(
+            "[Inter-tool Compaction] Completed in {:.2}s: {}K → {}K tokens (saved {}K), {} → {} messages",
+            elapsed.as_secs_f64(),
+            tokens_before / 1000,
+            tokens_after / 1000,
+            tokens_saved / 1000,
+            messages_before,
+            messages_after
+        ));
+        
+        if let Some(summary) = &state.session.compacted_summary {
+            log_debug(&format!(
+                "[Inter-tool Compaction] Summary length: {} chars",
+                summary.len()
+            ));
+        }
+    }
+
+    OverflowHandleResult::InterToolCompaction {
+        tools_executed: tools_executed.clone(),
+    }
+}
+
+/// Build continuation prompt for inter-tool compaction
+pub fn build_inter_tool_compaction_prompt(tools_executed: &[String]) -> String {
+    if tools_executed.is_empty() {
+        return CONTINUATION_PROMPT_INTER_TOOL.to_string();
+    }
+
+    format!(
+        "{}\n\nTools already executed: {}.",
+        CONTINUATION_PROMPT_INTER_TOOL,
+        tools_executed.join(", ")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_valid() {
+        let error = "CONTEXT_NEEDS_COMPACT:30000:32000:read_file,calculate,write_file";
+        let result = parse_inter_tool_compaction_error(error);
+        
+        assert!(result.is_some());
+        let (tokens, window, tools) = result.unwrap();
+        assert_eq!(tokens, 30000);
+        assert_eq!(window, 32000);
+        assert_eq!(tools, vec!["read_file", "calculate", "write_file"]);
+    }
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_empty_tools() {
+        let error = "CONTEXT_NEEDS_COMPACT:25000:32000:";
+        let result = parse_inter_tool_compaction_error(error);
+        
+        assert!(result.is_some());
+        let (tokens, window, tools) = result.unwrap();
+        assert_eq!(tokens, 25000);
+        assert_eq!(window, 32000);
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_invalid_prefix() {
+        let error = "OTHER_ERROR:something";
+        let result = parse_inter_tool_compaction_error(error);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_missing_fields() {
+        let error = "CONTEXT_NEEDS_COMPACT:30000";
+        let result = parse_inter_tool_compaction_error(error);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_inter_tool_compaction_error_invalid_token() {
+        let error = "CONTEXT_NEEDS_COMPACT:invalid:32000:tool";
+        let result = parse_inter_tool_compaction_error(error);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_is_inter_tool_compaction_error_true() {
+        assert!(is_inter_tool_compaction_error("CONTEXT_NEEDS_COMPACT:30000:32000:tool"));
+        assert!(is_inter_tool_compaction_error("CONTEXT_NEEDS_COMPACT:0:0:"));
+    }
+
+    #[test]
+    fn test_is_inter_tool_compaction_error_false() {
+        assert!(!is_inter_tool_compaction_error("Context overflow during tool execution"));
+        assert!(!is_inter_tool_compaction_error("Network error"));
+        assert!(!is_inter_tool_compaction_error(""));
+    }
+
+    #[test]
+    fn test_build_inter_tool_compaction_prompt_empty() {
+        let prompt = build_inter_tool_compaction_prompt(&[]);
+        assert!(prompt.contains("Context was compacted during multi-tool execution"));
+        assert!(!prompt.contains("Tools already executed"));
+    }
+
+    #[test]
+    fn test_build_inter_tool_compaction_prompt_with_tools() {
+        let tools = vec!["read_file".to_string(), "calculate".to_string()];
+        let prompt = build_inter_tool_compaction_prompt(&tools);
+        
+        assert!(prompt.contains("Context was compacted during multi-tool execution"));
+        assert!(prompt.contains("Tools already executed: read_file, calculate"));
+    }
+
+    #[test]
+    fn test_build_inter_tool_compaction_prompt_single_tool() {
+        let tools = vec!["search".to_string()];
+        let prompt = build_inter_tool_compaction_prompt(&tools);
+        
+        assert!(prompt.contains("Tools already executed: search"));
+    }
 }

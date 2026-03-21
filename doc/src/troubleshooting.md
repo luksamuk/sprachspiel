@@ -218,6 +218,59 @@ ask-ai -m llama3.2 "Question"  # 3B model
 ask-ai -m smollm3 "Question"   # 3B model
 ```
 
+## Context Issues
+
+### "Context keeps compacting in a loop"
+
+**Problem:** Infinite compaction loop caused by oversized summaries
+
+**Symptoms:**
+- Context shows 12% after compaction
+- Next message immediately triggers 95%+ compaction
+- Repeated "[urgent-compacted: N messages summarized]" messages
+
+**Root Cause:**
+- Compaction summaries were too large (~18K tokens)
+- Combined with late triggers, caused immediate re-compaction
+
+**Solution (v0.37.0+):**
+- Buffer-based triggers (15K tokens remaining, not 80%)
+- Summary token limit (3K tokens max)
+- Structured summary template (Goal, Instructions, Progress, Discoveries, Files)
+
+```bash
+# Check context utilization
+/context
+
+# If still looping, try:
+/compact   # Force manual compaction
+/new       # Start fresh session (preserves database)
+```
+
+### "Context fills up too quickly during tool execution"
+
+**Problem:** Tool results overflow context during multi-tool chains
+
+**Symptoms:**
+- "[WARN] Context emergency..." message appears
+- Tool results truncated mid-execution
+- Responses cut off unexpectedly
+
+**Solution:**
+- Buffer-based triggers warn at 20K remaining (pre-tool)
+- Auto-compact at 15K remaining
+- Inter-tool check at 6K remaining
+- Emergency truncate at 3K remaining
+
+**Workaround:**
+```bash
+# Use smaller context model for tool-heavy tasks
+/model llama3.2   # Smaller context, faster
+
+# Or reduce tool usage
+/tools off        # Disable tools temporarily
+```
+
 ## Debug Mode
 
 Use debug mode to diagnose issues:

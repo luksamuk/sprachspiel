@@ -1,15 +1,15 @@
 //! Integration tests for context overflow recovery flow
 //!
 //! Tests the complete error recovery flow:
-//! 1. Context check during tool execution (90% threshold)
+//! 1. Context check during tool execution
 //! 2. Error detection and message removal
 //! 3. Auto-compaction after overflow error
 //! 4. User can retry after recovery
 
 use ask_ai::chat::session::{ChatSession, MessageRole, SavedMessage};
 use ask_ai::context_overflow::{
-    check_context_overflow, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD,
-    PRE_TOOL_THRESHOLD,
+    calculate_thresholds, check_context_overflow, COMPACTION_MIN, DEFAULT_KEEP_FIRST,
+    DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_MIN,
 };
 use chrono::Utc;
 
@@ -40,21 +40,44 @@ fn create_session_with_token_count(message_count: usize, tokens_per_message: usi
 }
 
 #[test]
-fn test_threshold_hierarchy_for_recovery() {
-    let warning_threshold = DEFAULT_OVERFLOW_THRESHOLD * 0.9;
+fn test_buffer_hierarchy_for_recovery() {
+    // Buffer hierarchy: PRE_TOOL > COMPACTION > INTER_TOOL > EMERGENCY
+    // This ensures correct trigger order
+    // For a 32K context:
+    // - Pre-tool: 8K remaining (75% used)
+    // - Compaction: 4K remaining (88% used)
+    // - Inter-tool: 2K remaining (94% used)
+    // - Emergency: 1K remaining (97% used)
+    let (pre_tool, compaction, inter_tool, emergency) = calculate_thresholds(32_768);
 
     assert!(
-        warning_threshold < PRE_TOOL_THRESHOLD,
-        "Warning ({}) should come before pre-tool ({})",
-        warning_threshold,
-        PRE_TOOL_THRESHOLD
+        pre_tool > compaction,
+        "Pre-tool buffer ({}) should be larger than compaction buffer ({})",
+        pre_tool,
+        compaction
+    );
+    assert!(
+        compaction > inter_tool,
+        "Compaction buffer ({}) should be larger than inter-tool buffer ({})",
+        compaction,
+        inter_tool
+    );
+    assert!(
+        inter_tool > emergency,
+        "Inter-tool buffer ({}) should be larger than emergency buffer ({})",
+        inter_tool,
+        emergency
     );
 
+    // DEFAULT_OVERFLOW_THRESHOLD is kept for display purposes
+    assert_eq!(DEFAULT_OVERFLOW_THRESHOLD, 0.75);
+
+    // Verify minimum buffers (for small contexts)
     assert!(
-        PRE_TOOL_THRESHOLD < DEFAULT_OVERFLOW_THRESHOLD,
-        "Pre-tool ({}) should come before overflow ({})",
-        PRE_TOOL_THRESHOLD,
-        DEFAULT_OVERFLOW_THRESHOLD
+        PRE_TOOL_MIN > COMPACTION_MIN,
+        "PRE_TOOL_MIN ({}) should be larger than COMPACTION_MIN ({})",
+        PRE_TOOL_MIN,
+        COMPACTION_MIN
     );
 }
 
@@ -80,12 +103,7 @@ fn test_context_overflow_detection_message_removal() {
         });
     }
 
-    let overflow_status = check_context_overflow(
-        &session,
-        system_prompt,
-        context_window,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    );
+    let overflow_status = check_context_overflow(&session, system_prompt, context_window);
     assert!(
         overflow_status.needs_compaction(),
         "Context should need compaction after adding messages"
@@ -275,12 +293,7 @@ fn test_context_check_with_compaction_summary() {
         Some((0, 5)),
     );
 
-    let status = check_context_overflow(
-        &session,
-        "You are helpful.",
-        50000,
-        DEFAULT_OVERFLOW_THRESHOLD,
-    );
+    let status = check_context_overflow(&session, "You are helpful.", 50000);
 
     assert!(
         !status.needs_compaction(),
