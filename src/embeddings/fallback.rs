@@ -26,6 +26,9 @@
 //! - Chunk below MIN_CHUNK_TOKENS (32) and still fails
 
 use chrono::{DateTime, Utc};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use super::chunk_config::DynamicChunkConfig;
 use super::chunker::{chunk_text_with_config, ChunkConfig};
@@ -233,36 +236,38 @@ impl From<rusqlite::Error> for FallbackError {
 ///
 /// embed_chunk_with_fallback(ctx, &db, &client, 512, 0).await?;
 /// ```
-pub async fn embed_chunk_with_fallback(
-    ctx: EmbedContext<'_>,
-    db: &Database,
-    client: &EmbeddingClient,
+pub fn embed_chunk_with_fallback<'a>(
+    ctx: EmbedContext<'a>,
+    db: Arc<Database>,
+    client: Arc<EmbeddingClient>,
     context_length: usize,
     division_count: usize,
-) -> Result<EmbedResult, FallbackError> {
-    // Check limits before proceeding
-    check_limits(division_count, ctx.content.len(), MAX_FALLBACK_DIVISIONS, MAX_CHUNKS_PER_ITEM)?;
+) -> Pin<Box<dyn Future<Output = Result<EmbedResult, FallbackError>> + Send + 'a>> {
+    Box::pin(async move {
+        // Check limits before proceeding
+        check_limits(division_count, ctx.content.len(), MAX_FALLBACK_DIVISIONS, MAX_CHUNKS_PER_ITEM)?;
 
-    // Try direct embed first
-    match client.embed(ctx.content).await {
-        Ok(embedding) => {
-            // Success - save embedding to existing chunk
-            db.update_content_chunk_embedding(
-                ctx.chunk_id,
-                &embedding,
-                ctx.content_type,
-                ctx.conversation_id,
-                ctx.project_id,
-                ctx.timestamp,
-            )?;
-            return Ok(EmbedResult { chunks_created: 1 });
+        // Try direct embed first
+        match client.embed(ctx.content).await {
+            Ok(embedding) => {
+                // Success - save embedding to existing chunk
+                db.update_content_chunk_embedding(
+                    ctx.chunk_id,
+                    &embedding,
+                    ctx.content_type,
+                    ctx.conversation_id,
+                    ctx.project_id,
+                    ctx.timestamp,
+                )?;
+                Ok(EmbedResult { chunks_created: 1 })
+            }
+            Err(EmbeddingError::ApiError(ref msg)) if EmbeddingClient::is_context_exceeded(msg) => {
+                // Context exceeded - need to chunk
+                handle_chunk_context_exceeded(ctx, db, client, context_length, division_count).await
+            }
+            Err(e) => Err(FallbackError::from(e)),
         }
-        Err(EmbeddingError::ApiError(ref msg)) if EmbeddingClient::is_context_exceeded(msg) => {
-            // Context exceeded - need to chunk
-            handle_context_exceeded(ctx, db, client, context_length, division_count).await
-        }
-        Err(e) => Err(FallbackError::from(e)),
-    }
+    })
 }
 
 /// Check if limits are exceeded before attempting fallback.
@@ -294,10 +299,10 @@ fn check_limits(division_count: usize, content_len: usize, max_divisions: usize,
 }
 
 /// Handle context exceeded error by dividing content and creating chunks.
-async fn handle_context_exceeded(
+async fn handle_chunk_context_exceeded(
     ctx: EmbedContext<'_>,
-    db: &Database,
-    client: &EmbeddingClient,
+    db: Arc<Database>,
+    client: Arc<EmbeddingClient>,
     context_length: usize,
     division_count: usize,
 ) -> Result<EmbedResult, FallbackError> {
@@ -313,7 +318,6 @@ async fn handle_context_exceeded(
 
     // Calculate halved context length for chunking
     let halved_length = context_length / 2;
-    let halved_config = DynamicChunkConfig::halved(context_length);
     let halved_config = DynamicChunkConfig::new(halved_length);
     let chunks = chunk_text_with_config(ctx.content, &ChunkConfig::from(&halved_config));
 
@@ -333,11 +337,11 @@ async fn handle_context_exceeded(
     }
 
     // Create all chunks atomically
-    let chunk_ids = create_chunks_atomically(&ctx, &chunks, db)?;
+    let chunk_ids = create_chunks_atomically(&ctx, &chunks, &db)?;
 
     // Embed each chunk recursively
     let mut total_created = 0;
-    for (idx, (chunk_id, chunk_content)) in chunk_ids.iter().zip(chunks.iter()).enumerate() {
+    for (chunk_id, chunk_content) in chunk_ids.iter().zip(chunks.iter()) {
         let chunk_ctx = EmbedContext {
             content: &chunk_content.content,
             item_id: ctx.item_id,
@@ -348,7 +352,7 @@ async fn handle_context_exceeded(
             timestamp: ctx.timestamp,
         };
 
-        embed_chunk_with_fallback(chunk_ctx, db, client, halved_length, division_count + 1).await?;
+        embed_chunk_with_fallback(chunk_ctx, Arc::clone(&db), Arc::clone(&client), halved_length, division_count + 1).await?;
         total_created += 1;
     }
 
@@ -363,7 +367,7 @@ fn create_chunks_atomically(
     chunks: &[super::chunker::Chunk],
     db: &Database,
 ) -> Result<Vec<i64>, FallbackError> {
-    db.with_connection(|conn| {
+    db.with_connection_mut(|conn| {
         let tx = conn.transaction()?;
 
         let mut chunk_ids = Vec::with_capacity(chunks.len());
@@ -409,8 +413,8 @@ fn create_chunks_atomically(
 /// to the item directly.
 pub async fn embed_item_with_fallback(
     ctx: EmbedItemContext<'_>,
-    db: &Database,
-    client: &EmbeddingClient,
+    db: &Arc<Database>,
+    client: &Arc<EmbeddingClient>,
     context_length: usize,
 ) -> Result<EmbedResult, FallbackError> {
     // Check limits
@@ -428,7 +432,7 @@ pub async fn embed_item_with_fallback(
                 ctx.project_id,
                 ctx.timestamp,
             )?;
-            return Ok(EmbedResult { chunks_created: 0 });
+            Ok(EmbedResult { chunks_created: 0 })
         }
         Err(EmbeddingError::ApiError(ref msg)) if EmbeddingClient::is_context_exceeded(msg) => {
             // Context exceeded - need to create chunks first
@@ -439,10 +443,10 @@ pub async fn embed_item_with_fallback(
 }
 
 /// Handle context exceeded for item without existing chunks.
-async fn handle_item_context_exceeded(
-    ctx: EmbedItemContext<'_>,
-    db: &Database,
-    client: &EmbeddingClient,
+async fn handle_item_context_exceeded<'a>(
+    ctx: EmbedItemContext<'a>,
+    db: &Arc<Database>,
+    client: &Arc<EmbeddingClient>,
     context_length: usize,
 ) -> Result<EmbedResult, FallbackError> {
     // Check minimum size
@@ -475,8 +479,11 @@ async fn handle_item_context_exceeded(
         });
     }
 
-    // Create all chunks atomically
-    let chunk_ids = create_item_chunks_atomically(&ctx, &chunks, db)?;
+    // Create all chunks atomically (db is Arc<Database>, need to get inner ref)
+    let chunk_ids = {
+        let inner_db: &Database = db.as_ref();
+        create_item_chunks_atomically(&ctx, &chunks, inner_db)?
+    };
 
     // Embed each chunk recursively
     let mut total_created = 0;
@@ -491,12 +498,12 @@ async fn handle_item_context_exceeded(
             timestamp: ctx.timestamp,
         };
 
-        embed_chunk_with_fallback(chunk_ctx, db, client, halved_length, 1).await?;
+        embed_chunk_with_fallback(chunk_ctx, Arc::clone(db), Arc::clone(client), halved_length, 1).await?;
         total_created += 1;
     }
 
     // Mark item as having embeddings (via chunks)
-    db.with_connection::<_, _, rusqlite::Error>(|conn| {
+    db.with_connection(|conn| {
         conn.execute(
             "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
             rusqlite::params![ctx.item_id],
@@ -512,7 +519,7 @@ fn create_item_chunks_atomically(
     chunks: &[super::chunker::Chunk],
     db: &Database,
 ) -> Result<Vec<i64>, FallbackError> {
-    db.with_connection(|conn| {
+    db.with_connection_mut(|conn| {
         let tx = conn.transaction()?;
 
         let mut chunk_ids = Vec::with_capacity(chunks.len());
@@ -573,8 +580,14 @@ mod tests {
         // At division 0: 2^1 = 2 chunks
         assert!(check_limits(0, 1000, 4, 64).is_ok());
 
-        // At division 5: 2^6 = 64 chunks (at limit)
-        assert!(check_limits(5, 1000, 6, 64).is_err());
+        // At division 5: 2^6 = 64 chunks (exactly at limit, should pass)
+        assert!(check_limits(5, 1000, 6, 64).is_ok());
+
+        // At division 5: 2^6 = 64 chunks, but max is 63 (should fail)
+        assert!(check_limits(5, 1000, 6, 63).is_err());
+
+        // At division 6: 2^7 = 128 chunks (exceeds limit)
+        assert!(check_limits(6, 1000, 7, 64).is_err());
     }
 
     #[test]

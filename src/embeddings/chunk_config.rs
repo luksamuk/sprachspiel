@@ -87,6 +87,7 @@ impl DynamicChunkConfig {
     /// - Initial: 512 tokens → max_chars: 1301
     /// - Halved: 256 tokens → max_chars: 610
     /// - Halved again: 128 tokens → max_chars: 265
+    #[allow(dead_code)]
     pub fn halved(context_length: usize) -> Self {
         Self::new(context_length / 2)
     }

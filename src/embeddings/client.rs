@@ -15,8 +15,9 @@ use super::truncate::{FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, truncate_and_normal
 pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
 
 /// Default context length when model info is unavailable
-/// Conservative value suitable for most embedding models
-const DEFAULT_CONTEXT_LENGTH: usize = 512;
+/// Conservative value suitable for most embedding models.
+/// Use this for spawned tasks that can't await context_length.
+pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
 
 /// Client for generating embeddings via Ollama
 pub struct EmbeddingClient {
@@ -174,6 +175,7 @@ impl EmbeddingClient {
 
 /// Errors from embedding generation
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum EmbeddingError {
     /// API call failed
     ApiError(String),

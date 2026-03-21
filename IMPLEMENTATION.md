@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.37.0** - 2026-03-20 (Context Overflow Token Calculation Fix)
+**v0.37.2** - 2026-03-21 (Embedding Fallback Rewrite)
 
 ## Current Implementation Status
 
@@ -755,9 +755,9 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### 🔄 PRIORITY 3: Embedding Fallback for Oversized Content (IN PROGRESS - REWRITE)
+### ✅ PRIORITY 3: Embedding Fallback for Oversized Content (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS (Complete Rewrite Required)
+**Status:** ✅ COMPLETED (v0.37.2)
 
 **Goal:** Handle content that exceeds embedding model's context window.
 
@@ -765,13 +765,13 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 **Bugs Discovered:**
 
-1. **PRIMARY KEY Violation:** `chunk_embeddings_v2.chunk_id` is PRIMARY KEY, so only ONE embedding per chunk. Old code tried to insert multiple.
+1. **PRIMARY KEY Violation:** `chunk_embeddings.chunk_id` is PRIMARY KEY, so only ONE embedding per chunk. Old code tried to insert multiple.
 
 2. **`has_embedding` Marked Incorrectly:** Even when embeddings failed, `has_embedding` was set to 1, preventing recovery on next startup.
 
 3. **Dangling Chunks:** Chunks created in memory but never persisted to database.
 
-**New Design (Current):**
+**New Design (v0.37.2):**
 
 ```
 embed_chunk_with_fallback(ctx, db, client, context_length, division_count)
@@ -817,18 +817,18 @@ embed_chunk_with_fallback(ctx, db, client, context_length, division_count)
 | 4 | Add `embed_item_with_fallback()` | ✅ Done |
 | 5 | Add protection constants | ✅ Done |
 | 6 | Simplify `client.rs` - remove old `embed_with_fallback()` | ✅ Done |
-| 7 | Update `session.rs` callers | 🔄 In Progress |
-| 8 | Update `regenerate.rs` callers | 📋 Pending |
-| 9 | Update `recovery.rs` callers | 📋 Pending |
-| 10 | Update `command_handlers.rs` callers | 📋 Pending |
-| 11 | Add tests for fallback module | 📋 Pending |
-| 12 | Update documentation | 🔄 In Progress |
+| 7 | Update `session.rs` callers | ✅ Done |
+| 8 | Update `regenerate.rs` callers | ✅ Done |
+| 9 | Update `recovery.rs` callers | ✅ Done |
+| 10 | Update `command_handlers.rs` callers | ✅ Done |
+| 11 | Add tests for fallback module | ✅ Done |
+| 12 | Update documentation | ✅ Done |
 
 **New Files:**
 - `src/embeddings/fallback.rs` - Complete fallback logic with atomic transactions
 
 **Modified Files:**
-- `src/embeddings/client.rs` - Simplified to just `embed()` and `is_context_exceeded()`
+- `src/embeddings/client.rs` - Simplified, made `DEFAULT_CONTEXT_LENGTH` public
 - `src/embeddings/mod.rs` - Export new module
 - `src/chat/session.rs` - Use new fallback functions
 - `src/embeddings/regenerate.rs` - Use new fallback functions

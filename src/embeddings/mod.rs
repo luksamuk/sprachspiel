@@ -19,8 +19,8 @@ mod truncate;
 
 pub use chunk_config::DynamicChunkConfig;
 pub use chunker::{chunk_text, chunk_text_with_config, needs_chunking, ChunkConfig};
-pub use client::EmbeddingClient;
-pub use fallback::{embed_chunk_with_fallback, embed_item_with_fallback, EmbedContext, EmbedItemContext, EmbedResult, FallbackError};
+pub use client::{EmbeddingClient, DEFAULT_CONTEXT_LENGTH};
+pub use fallback::{embed_chunk_with_fallback, embed_item_with_fallback, EmbedContext, EmbedItemContext};
 pub use regenerate::regenerate_all_embeddings;
 pub use recovery::recover_missing_embeddings;
 #[allow(unused_imports)]

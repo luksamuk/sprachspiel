@@ -250,6 +250,7 @@ impl Database {
     }
 
     /// Update a note's embedding in content_embeddings
+    #[allow(dead_code)]
     pub fn update_note_embedding(
         &self,
         note_id: i64,
