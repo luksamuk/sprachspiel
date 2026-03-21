@@ -2,6 +2,17 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.37.1] - 2026-03-21
+
+### Fixed
+
+- **Embedding Fallback for Oversized Content** - Fixed embedding failures when content exceeds model context
+  - When embedding fails due to "context_length_exceeded", automatically retry with smaller chunks
+  - Recursive halving: 512 → 256 → 128 → 64 tokens
+  - Maximum 3 iterations before giving up with `ContextExceeded` error
+  - Updated all embedding call sites: `client.embed()` → `client.embed_with_fallback()`
+  - Files affected: `client.rs`, `regenerate.rs`, `recovery.rs`, `session.rs`, `command_handlers.rs`
+
 ## [Unreleased]
 
 ### Added
@@ -85,13 +96,6 @@ All notable changes to Ask-AI will be documented in this file.
   - Prevents context overflow when LLM calls multiple tools sequentially
   - Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
   - Smart truncation for large tool results
-
-- **Embedding Fallback for Oversized Content** - Fixed embedding failures when content exceeds model context
-  - Added token estimation before embedding API call
-  - Automatic recursive chunking when estimated tokens exceed context limit
-  - Retry mechanism with smaller chunks on embedding failure
-  - Proper error handling in `regenerate.rs` and `recovery.rs`
-  - Prevents silent failures during startup embedding generation
 
 - **Unicode Panic in note_add** - Fixed panic when creating notes with Unicode content
   - `note_add` tool now uses `truncate_chars()` for character-aware truncation

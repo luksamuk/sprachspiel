@@ -755,50 +755,46 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### 🟡 PRIORITY 3: Embedding Fallback for Oversized Content
+### ✅ PRIORITY 3: Embedding Fallback for Oversized Content (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.37.1)
 
 **Goal:** Handle content that exceeds embedding model's context window.
 
 **Problem:** During startup, embeddings generation fails when input text has more tokens than the embedding model's context window (e.g., 512 tokens for nomic-embed-text). The current implementation uses `DynamicChunkConfig` which estimates chunk size in characters, but the `chars_per_token = 3.0` ratio may underestimate token count for code/JSON content.
 
-**Root Cause Analysis:**
-- `chunk_config.rs` uses `chars_per_token = 3.0` for chunk size calculation
-- This is conservative for Portuguese text but can underestimate for code/JSON
-- Example: `{"key":"value"}` is few chars but many tokens
-- Even content < 1301 chars can exceed 512 tokens
-- API fails with "context_length_exceeded" error
-
-**Symptoms:**
-- Embedding generation fails silently during startup
-- Messages/notes/documents with long content never get embeddings
-- Semantic search fails to find relevant content
-
-**Solution:** Implement fallback strategy with token estimation:
-1. Estimate tokens before API call (conservative estimate)
-2. If estimated > context_length, use smaller chunks
-3. Retry embedding with smaller chunks on failure
-4. Store chunks properly in `content_chunks` table
+**Solution:** Reactive fallback strategy - retry with smaller chunks on API error:
+1. Try `embed()` first
+2. If API returns "context_length_exceeded", use `embed_with_fallback()` 
+3. Recursive halving: 512 → 256 → 128 → 64 tokens
+4. Maximum 3 iterations before returning `ContextExceeded` error
 
 **Implementation:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add `estimate_tokens()` in `client.rs` | 🔄 |
-| 2 | Add `check_context_fit()` with error type | 📋 |
-| 3 | Add fallback in `regenerate.rs` | 📋 |
-| 4 | Add fallback in `recovery.rs` | 📋 |
-| 5 | Add integration tests | 📋 |
+| 1 | Add `ContextExceeded` error in `client.rs` | ✅ |
+| 2 | Add `is_context_exceeded()` helper | ✅ |
+| 3 | Add `embed_with_fallback()` method | ✅ |
+| 4 | Add `halved()` to `DynamicChunkConfig` | ✅ |
+| 5 | Update `regenerate.rs` | ✅ |
+| 6 | Update `recovery.rs` | ✅ |
+| 7 | Update `session.rs` | ✅ |
+| 8 | Update `command_handlers.rs` | ✅ |
 
-**Files:**
-- `src/embeddings/client.rs` - Add `estimate_tokens()`, `check_context_fit()`, `ContextExceeded` error
-- `src/embeddings/regenerate.rs` - Use fallback when embed fails
-- `src/embeddings/recovery.rs` - Use fallback when embed fails
+**Files Modified:**
+- `src/embeddings/client.rs` - `ContextExceeded` error, `is_context_exceeded()`, `embed_with_fallback()`
+- `src/embeddings/chunk_config.rs` - `halved()`, `context_length()`
+- `src/embeddings/regenerate.rs` - Use `embed_with_fallback()`
+- `src/embeddings/recovery.rs` - Use `embed_with_fallback()`
+- `src/chat/session.rs` - Use `embed_with_fallback()` in 3 locations
+- `src/chat/command_handlers.rs` - Use `embed_with_fallback()` for notes
 
-**Estimated effort:** 2.5 days
+**Commits:**
+- `63cf219` docs: update CHANGELOG and IMPLEMENTATION.md for embedding fallback feature
+- `e32ddd4` fix: add embedding fallback for oversized content
 
-**Related:** Issue #40
+**Related:** Issue #40, PR #46
 
 ---
 
