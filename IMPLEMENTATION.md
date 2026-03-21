@@ -1612,21 +1612,26 @@ let results = futures::future::join_all(futures).await;
 **Current State:**
 - Model name shown inline in rustyline prompt: `glm-5:cloud🧠🔧>`
 - Context info requires `/context` command
-- Thinking/tools indicators mixed with model name
+- Thinking/tools indicators mixed with model name in prompt
+
+**Proposed State:**
+- Status bar shows: model, context usage, progress bar, think/tools indicators
+- Prompt line is just `>` (clean, minimal)
 
 **Proposed Design:**
 ```
 ────────────────────────────────────────────────────────────────────────────────
  glm-5:cloud │ 47.2K/128K │ [████░░░░░░] 37% │ 🧠🔧
 ────────────────────────────────────────────────────────────────────────────────
-🧠🔧> 
+> _
 ```
 
 **Components:**
 - Model name
 - Context usage: `XX.XK/YYYK` tokens
 - Progress bar with colors (green < 50%, yellow 50-75%, red > 75%)
-- Think/Tools indicators
+- Think/Tools indicators (in status bar)
+- Prompt: just `>` (clean, minimal)
 
 **Implementation:**
 
