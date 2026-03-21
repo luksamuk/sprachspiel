@@ -1,8 +1,8 @@
 # Memory Architecture
 
 **Status:** Active  
-**Version:** v0.33.0  
-**Updated:** 2026-03-15
+**Version:** v0.37.1  
+**Updated:** 2026-03-21
 
 This document provides a unified view of Ask-AI's memory systems and how they compose the LLM context.
 
@@ -175,6 +175,51 @@ sequenceDiagram
     Chat->>LLM: Send context + retrieved messages
     LLM-->>User: Response
 ```
+
+### Embedding Fallback (v0.37.1+)
+
+When embedding generation fails due to context overflow, the system automatically retries with smaller chunks:
+
+```mermaid
+sequenceDiagram
+    participant Chat
+    participant Embed as Embedding Client
+    participant Ollama
+    
+    Chat->>Embed: embed(text)
+    Embed->>Ollama: API request
+    Ollama-->>Embed: Error: context_length_exceeded
+    
+    Note over Embed: Fallback activated
+    
+    loop Halve context size (max 3 iterations)
+        Embed->>Embed: Split into smaller chunks
+        Embed->>Ollama: Retry with smaller chunks
+        alt Success
+            Ollama-->>Embed: Return embeddings
+        else Still exceeds
+            Note over Embed: Continue halving
+        end
+    end
+    
+    alt All iterations exhausted
+        Embed-->>Chat: ContextExceeded error
+        Note over Chat: Embedding skipped (recovered later)
+    else Success
+        Embed-->>Chat: Return embedding(s)
+    end
+```
+
+**Fallback progression:**
+- 512 tokens (default context for nomic-embed-text-v2-moe)
+- 256 tokens (first halving)
+- 128 tokens (second halving)
+- 64 tokens (third halving, minimum)
+
+**Implementation:**
+- `embed_with_fallback(text, max_iterations)` in `client.rs`
+- Uses `DynamicChunkConfig::halved()` for progressive size reduction
+- Called from `session.rs`, `regenerate.rs`, `recovery.rs`, `command_handlers.rs`
 
 **Commands:**
 - `/search <query>` — Search conversation history
