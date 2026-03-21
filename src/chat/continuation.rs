@@ -256,7 +256,6 @@ pub async fn handle_continuation(
 
     // Compact context before first continuation
     let continuation_context_window = initial_result.context_window;
-    let _continuation_system_prompt = initial_result.system_prompt.clone();
     auto_compact_if_needed(
         &state.ollama,
         &state.model_config,
@@ -426,17 +425,6 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
         ));
     }
 
-    let overflow_context_window = state.model_config.num_ctx as usize;
-    let _overflow_system_prompt = build_system_prompt(
-        PromptConfig::new(PromptType::ToolUser)
-            .with_model_id(Some(&state.model_config.model_id))
-            .with_blacklist(Some(&state.settings.blacklist_set()))
-            .with_agents_md(state.agents_md.as_deref())
-            .with_tools(state.tools_active)
-            .with_retrieval(state.session.retrieval_enabled && !state.cli_code)
-            .with_soulless(state.cli_soulless),
-    );
-
     eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
     auto_compact_if_needed(
         &state.ollama,
@@ -444,7 +432,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
         &mut state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        overflow_context_window,
+        state.model_config.num_ctx as usize,
     )
     .await;
 
@@ -500,8 +488,6 @@ async fn handle_inter_tool_compaction_error(
             tools_executed.join(", ")
         ));
     }
-
-    let _system_prompt = build_pre_tool_prompt(state);
 
     auto_compact_if_needed(
         &state.ollama,

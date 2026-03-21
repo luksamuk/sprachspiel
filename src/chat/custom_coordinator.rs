@@ -323,7 +323,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// Returns a ContextCheckResult with the (possibly truncated) result and status flags.
     fn check_and_handle_context_overflow(
         &self,
-        _tool_name: &str,
         result: String,
     ) -> ContextCheckResult {
         let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) else {
@@ -786,7 +785,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 });
 
                 // Inter-tool context check: detect overflow and truncate if needed
-                let check_result = self.check_and_handle_context_overflow(&tool_name, result);
+                let check_result = self.check_and_handle_context_overflow(result);
 
                 // Check if compaction is needed - stop and emit event
                 if check_result.needs_compaction {
