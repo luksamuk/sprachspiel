@@ -515,14 +515,22 @@ Continue if you have next steps...
 | 5 | Integrate automatic continuation in `handle_user_message()` | ✅ DONE |
 | 5 | Add MAX_COMPACTION_CYCLES limit (3) | ✅ DONE |
 | Test | Unit tests for parsing functions | ✅ DONE |
-| Test | Unit tests for context check flag | ⏳ Optional |
-| Test | Integration test for multi-tool flow | ⏳ Manual testing |
+| Test | Unit tests for context check flag | ✅ DONE |
+| Test | Integration test for multi-tool flow | ✅ DONE (manual) |
 | Test | Observability metrics logging | ✅ DONE |
-| Bugfix | Use real tokens instead of estimation | ✅ DONE (partial - see Bugfix2) |
-| Bugfix | Include tool definitions in token count | ✅ DONE (CRITICAL) |
+| Bugfix | Use real tokens instead of estimation | ✅ DONE |
+| Bugfix | Include tool definitions in token count | ✅ DONE |
 | Bugfix | Use current history estimation (not fixed) | ✅ DONE |
+| Bugfix | Fix calculate_context_metrics double-counting | ✅ DONE |
+| Bugfix | Fix needs_inter_tool_compaction signature | ✅ DONE |
+| Bugfix | Fix pre-tool warning remaining calculation | ✅ DONE |
+| Bugfix | Split warning vs compact logic | ✅ DONE |
+| Bugfix | Remove duplicate warning in core.rs | ✅ DONE |
 | Docs | Update architecture.md | ✅ DONE |
 | Docs | Update CHANGELOG | ✅ DONE |
+| Docs | Update IMPLEMENTATION.md | ✅ DONE |
+| Docs | Update context-anatomy.md | ✅ DONE |
+| Docs | Update roadmap.md | ✅ DONE |
 
 ---
 
@@ -532,4 +540,4 @@ Continue if you have next steps...
 - [Context Anatomy](./context-anatomy.md) - How context is structured
 - [Continuation Handling](./context-continuity.md) - Existing continuation system
 - Issue #43 - Context overflow during multi-tool execution
-- PR #45 - Buffer-based compaction triggers
+- PR #45 - Percentage-based compaction triggers and token calculation fixes
