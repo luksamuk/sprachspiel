@@ -127,22 +127,25 @@ pub async fn recover_missing_embeddings(
                     _ => (None, None),
                 };
 
-                // Generate embedding for chunk
-                match embedding_client.embed(&chunk.content).await {
-                    Ok(embedding) => {
-                        match db.update_content_chunk_embedding(
-                            chunk_id,
-                            &embedding,
-                            content_type,
-                            conv_id.as_deref(),
-                            proj_id.as_deref(),
-                            timestamp,
-                        ) {
-                            Ok(_) => {
-                                recovered += 1;
-                            }
-                            Err(e) => {
-                                eprintln!("Warning: Failed to update chunk {} in DB: {}", chunk_id, e);
+                // Generate embedding for chunk (with fallback for oversized content)
+                match embedding_client.embed_with_fallback(&chunk.content, 3).await {
+                    Ok(embeddings) => {
+                        // embed_with_fallback returns multiple embeddings if chunking was needed
+                        for embedding in embeddings {
+                            match db.update_content_chunk_embedding(
+                                chunk_id,
+                                &embedding,
+                                content_type,
+                                conv_id.as_deref(),
+                                proj_id.as_deref(),
+                                timestamp,
+                            ) {
+                                Ok(_) => {
+                                    recovered += 1;
+                                }
+                                Err(e) => {
+                                    eprintln!("Warning: Failed to update chunk {} in DB: {}", chunk_id, e);
+                                }
                             }
                         }
                     }
@@ -163,27 +166,30 @@ pub async fn recover_missing_embeddings(
                 });
             }
         } else {
-            // Short content - embed directly
+            // Short content - embed directly (with fallback for oversized content)
             // Get item's conversation_id and project_id for embedding metadata
             let (conv_id, proj_id) = match db.get_content_item_by_id(*item_id) {
                 Ok(Some(item)) => (item.conversation_id, item.project_id),
                 _ => (None, None),
             };
 
-            match embedding_client.embed(content).await {
-                Ok(embedding) => {
-                    if db
-                        .update_content_item_embedding(
-                            *item_id,
-                            &embedding,
-                            content_type,
-                            conv_id.as_deref(),
-                            proj_id.as_deref(),
-                            timestamp,
-                        )
-                        .is_ok()
-                    {
-                        recovered += 1;
+            match embedding_client.embed_with_fallback(content, 3).await {
+                Ok(embeddings) => {
+                    // embed_with_fallback returns multiple embeddings if chunking was needed
+                    for embedding in embeddings {
+                        if db
+                            .update_content_item_embedding(
+                                *item_id,
+                                &embedding,
+                                content_type,
+                                conv_id.as_deref(),
+                                proj_id.as_deref(),
+                                timestamp,
+                            )
+                            .is_ok()
+                        {
+                            recovered += 1;
+                        }
                     }
                 }
                 Err(e) => {
@@ -232,28 +238,30 @@ pub async fn recover_missing_embeddings(
                 }
             };
 
-            // Generate embedding for chunk
-            match embedding_client.embed(content).await {
-                Ok(embedding) => {
-                    match db.update_content_chunk_embedding(
-                        *chunk_id,
-                        &embedding,
-                        &content_type,
-                        conv_id.as_deref(),
-                        proj_id.as_deref(),
-                        now,
-                    ) {
-                        Ok(_) => {
-                            recovered += 1;
-                        }
-                        Err(e) => {
-                            eprintln!("Warning: Failed to update chunk {} in DB: {}", chunk_id, e);
+            // Generate embedding for chunk (with fallback for oversized content)
+            match embedding_client.embed_with_fallback(content, 3).await {
+                Ok(embeddings) => {
+                    // embed_with_fallback returns multiple embeddings if chunking was needed
+                    for embedding in embeddings {
+                        match db.update_content_chunk_embedding(
+                            *chunk_id,
+                            &embedding,
+                            &content_type,
+                            conv_id.as_deref(),
+                            proj_id.as_deref(),
+                            now,
+                        ) {
+                            Ok(_) => {
+                                recovered += 1;
+                            }
+                            Err(e) => {
+                                eprintln!("Warning: Failed to update chunk {} in DB: {}", chunk_id, e);
+                            }
                         }
                     }
                 }
                 Err(e) => {
-                    // Chunk may exceed context length - this is expected for long content
-                    // The embedding will fail naturally, and we just mark it as failed
+                    // Chunk may exceed context length - fallback didn't work
                     eprintln!(
                         "Warning: Failed to generate embedding for chunk {}: {}",
                         chunk_id, e

@@ -356,27 +356,43 @@ impl ChatSession {
                         tokio::spawn(async move {
                             if !chunk_data.is_empty() {
                                 for (chunk_id, content) in chunk_data {
-                                    if let Ok(embedding) = client.embed(&content).await {
-                                        let _ = db.update_content_chunk_embedding(
-                                            chunk_id,
-                                            &embedding,
-                                            "message",
-                                            Some(&conv_id),
-                                            project_id.as_deref(),
-                                            timestamp,
-                                        );
+                                    // Use embed_with_fallback for oversized content
+                                    match client.embed_with_fallback(&content, 3).await {
+                                        Ok(embeddings) => {
+                                            for embedding in embeddings {
+                                                let _ = db.update_content_chunk_embedding(
+                                                    chunk_id,
+                                                    &embedding,
+                                                    "message",
+                                                    Some(&conv_id),
+                                                    project_id.as_deref(),
+                                                    timestamp,
+                                                );
+                                            }
+                                        }
+                                        Err(_) => {
+                                            // Silent fail - will be recovered on restart
+                                        }
                                     }
                                 }
                             } else {
-                                if let Ok(embedding) = client.embed(&content).await {
-                                    let _ = db.update_content_item_embedding(
-                                        item_id,
-                                        &embedding,
-                                        "message",
-                                        Some(&conv_id),
-                                        project_id.as_deref(),
-                                        timestamp,
-                                    );
+                                // Use embed_with_fallback for oversized content
+                                match client.embed_with_fallback(&content, 3).await {
+                                    Ok(embeddings) => {
+                                        for embedding in embeddings {
+                                            let _ = db.update_content_item_embedding(
+                                                item_id,
+                                                &embedding,
+                                                "message",
+                                                Some(&conv_id),
+                                                project_id.as_deref(),
+                                                timestamp,
+                                            );
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // Silent fail - will be recovered on restart
+                                    }
                                 }
                             }
                         });
@@ -471,27 +487,43 @@ impl ChatSession {
                         tokio::spawn(async move {
                             if !chunk_data.is_empty() {
                                 for (chunk_id, content) in chunk_data {
-                                    if let Ok(embedding) = client.embed(&content).await {
-                                        let _ = db.update_content_chunk_embedding(
-                                            chunk_id,
-                                            &embedding,
-                                            "message",
-                                            Some(&conv_id),
-                                            project_id.as_deref(),
-                                            timestamp,
-                                        );
+                                    // Use embed_with_fallback for oversized content
+                                    match client.embed_with_fallback(&content, 3).await {
+                                        Ok(embeddings) => {
+                                            for embedding in embeddings {
+                                                let _ = db.update_content_chunk_embedding(
+                                                    chunk_id,
+                                                    &embedding,
+                                                    "message",
+                                                    Some(&conv_id),
+                                                    project_id.as_deref(),
+                                                    timestamp,
+                                                );
+                                            }
+                                        }
+                                        Err(_) => {
+                                            // Silent fail - will be recovered on restart
+                                        }
                                     }
                                 }
                             } else {
-                                if let Ok(embedding) = client.embed(&content).await {
-                                    let _ = db.update_content_item_embedding(
-                                        item_id,
-                                        &embedding,
-                                        "message",
-                                        Some(&conv_id),
-                                        project_id.as_deref(),
-                                        timestamp,
-                                    );
+                                // Use embed_with_fallback for oversized content
+                                match client.embed_with_fallback(&content, 3).await {
+                                    Ok(embeddings) => {
+                                        for embedding in embeddings {
+                                            let _ = db.update_content_item_embedding(
+                                                item_id,
+                                                &embedding,
+                                                "message",
+                                                Some(&conv_id),
+                                                project_id.as_deref(),
+                                                timestamp,
+                                            );
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // Silent fail - will be recovered on restart
+                                    }
                                 }
                             }
                         });
@@ -577,10 +609,28 @@ impl ChatSession {
                                     chunk.start_offset as i32,
                                     chunk.end_offset as i32,
                                     timestamp,
-                                ) && let Ok(embedding) = client.embed(&chunk.content).await
-                                {
-                                    let _ = db.update_content_chunk_embedding(
-                                        chunk_id,
+                                ) {
+                                    // Use embed_with_fallback for oversized content
+                                    if let Ok(embeddings) = client.embed_with_fallback(&chunk.content, 3).await {
+                                        for embedding in embeddings {
+                                            let _ = db.update_content_chunk_embedding(
+                                                chunk_id,
+                                                &embedding,
+                                                "message",
+                                                Some(&conv_id),
+                                                project_id.as_deref(),
+                                                timestamp,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Use embed_with_fallback for oversized content
+                            if let Ok(embeddings) = client.embed_with_fallback(&content_clone, 3).await {
+                                for embedding in embeddings {
+                                    let _ = db.update_content_item_embedding(
+                                        item_id,
                                         &embedding,
                                         "message",
                                         Some(&conv_id),
@@ -589,15 +639,6 @@ impl ChatSession {
                                     );
                                 }
                             }
-                        } else if let Ok(embedding) = client.embed(&content_clone).await {
-                            let _ = db.update_content_item_embedding(
-                                item_id,
-                                &embedding,
-                                "message",
-                                Some(&conv_id),
-                                project_id.as_deref(),
-                                timestamp,
-                            );
                         }
                     });
                 }

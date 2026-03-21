@@ -1254,15 +1254,18 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
                 let note_content = note.content.clone();
                 
                 tokio::spawn(async move {
-                    match client.embed(&note_content).await {
-                        Ok(embedding) => {
+                    // Use embed_with_fallback for oversized content
+                    match client.embed_with_fallback(&note_content, 3).await {
+                        Ok(embeddings) => {
                             let timestamp = chrono::Utc::now();
-                            let _ = db_clone.update_note_embedding(
-                                id,
-                                &embedding,
-                                pid.as_deref(),
-                                timestamp,
-                            );
+                            for embedding in embeddings {
+                                let _ = db_clone.update_note_embedding(
+                                    id,
+                                    &embedding,
+                                    pid.as_deref(),
+                                    timestamp,
+                                );
+                            }
                         }
                         Err(e) => {
                             eprintln!("Warning: Failed to generate embedding for note: {}", e);

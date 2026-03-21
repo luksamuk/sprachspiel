@@ -6,7 +6,12 @@ use ollama_rs::Ollama;
 use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 use ollama_rs::models::ModelInfo;
 
+use super::chunk_config::DynamicChunkConfig;
+use super::chunker::{chunk_text_with_config, ChunkConfig};
 use super::truncate::{FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, truncate_and_normalize};
+
+/// Type alias for boxed future returned by embed_with_fallback_inner
+type EmbedFallbackFuture<'a> = std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<Vec<f32>>, EmbeddingError>> + Send + 'a>>;
 
 /// Default embedding model (nomic-embed-text-v2-moe)
 pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
@@ -34,6 +39,22 @@ impl EmbeddingClient {
     #[allow(dead_code)]
     pub fn with_model(ollama: Ollama, model: String) -> Self {
         Self { ollama, model }
+    }
+
+    /// Check if an API error indicates context length exceeded.
+    ///
+    /// Ollama returns various error messages for context overflow:
+    /// - "context_length_exceeded"
+    /// - "maximum context length"
+    /// - "token limit"
+    /// - "sequence length"
+    fn is_context_exceeded(error: &str) -> bool {
+        let error_lower = error.to_lowercase();
+        error_lower.contains("context_length")
+            || error_lower.contains("context length")
+            || error_lower.contains("maximum context")
+            || error_lower.contains("token limit")
+            || error_lower.contains("sequence length")
     }
 
     /// Get the context length for the embedding model from Ollama API.
@@ -145,6 +166,73 @@ impl EmbeddingClient {
     pub fn embedding_dimension() -> usize {
         TRUNCATED_DIMENSIONS
     }
+
+    /// Generate embedding with automatic fallback for oversized content.
+    ///
+    /// If the text exceeds the model's context window, automatically
+    /// splits into smaller chunks and retries. Each chunk gets its own
+    /// embedding, and the result is a list of embeddings (one per chunk).
+    ///
+    /// # Arguments
+    /// * `text` - The text to embed
+    /// * `max_iterations` - Maximum recursion depth (3 recommended)
+    ///
+    /// # Returns
+    /// Vector of embeddings (one per chunk after fallback).
+    /// For normal-sized content, returns a single-element vector.
+    /// For oversized content that needed chunking, returns multiple embeddings.
+    ///
+    /// # Errors
+    /// Returns `EmbeddingError::ContextExceeded` if content still exceeds
+    /// context after maximum iterations.
+    pub async fn embed_with_fallback(
+        &self,
+        text: &str,
+        max_iterations: usize,
+    ) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+        self.embed_with_fallback_inner(text, max_iterations).await
+    }
+
+    /// Inner implementation that can be boxed for recursion.
+    #[allow(clippy::type_complexity)]
+    fn embed_with_fallback_inner<'a>(
+        &'a self,
+        text: &'a str,
+        max_iterations: usize,
+    ) -> EmbedFallbackFuture<'a> {
+        Box::pin(async move {
+            // Try direct embed first
+            match self.embed(text).await {
+                Ok(emb) => Ok(vec![emb]),
+                Err(EmbeddingError::ApiError(ref msg)) if Self::is_context_exceeded(msg) => {
+                    // Context exceeded - need to chunk
+                    if max_iterations == 0 {
+                        return Err(EmbeddingError::ContextExceeded {
+                            message: format!(
+                                "Content exceeds context even after maximum retries: {}",
+                                msg
+                            ),
+                        });
+                    }
+
+                    // Get context length and create halved config
+                    let context_length = self.get_context_length().await?;
+                    let smaller_config = DynamicChunkConfig::halved(context_length);
+                    let chunks = chunk_text_with_config(text, &ChunkConfig::from(&smaller_config));
+
+                    let mut results = Vec::new();
+                    for chunk in chunks {
+                        let embeddings = self
+                            .embed_with_fallback_inner(&chunk.content, max_iterations - 1)
+                            .await?;
+                        results.extend(embeddings);
+                    }
+                    Ok(results)
+                }
+                Err(e) => Err(e),
+            }
+        })
+    }
 }
 
 /// Errors from embedding generation
@@ -156,6 +244,8 @@ pub enum EmbeddingError {
     NoEmbedding,
     /// Invalid embedding dimensions
     InvalidDimensions { expected: usize, got: usize },
+    /// Content exceeds model's context window
+    ContextExceeded { message: String },
 }
 
 impl std::fmt::Display for EmbeddingError {
@@ -169,6 +259,9 @@ impl std::fmt::Display for EmbeddingError {
                     "Invalid embedding dimensions: expected {}, got {}",
                     expected, got
                 )
+            }
+            Self::ContextExceeded { message } => {
+                write!(f, "Content exceeds context limit: {}", message)
             }
         }
     }
@@ -198,5 +291,19 @@ mod tests {
     #[test]
     fn test_embedding_dimension_method() {
         assert_eq!(EmbeddingClient::embedding_dimension(), 256);
+    }
+
+    #[test]
+    fn test_is_context_exceeded() {
+        assert!(EmbeddingClient::is_context_exceeded(
+            "context_length exceeded"
+        ));
+        assert!(EmbeddingClient::is_context_exceeded(
+            "maximum context length exceeded"
+        ));
+        assert!(EmbeddingClient::is_context_exceeded("token limit exceeded"));
+        assert!(EmbeddingClient::is_context_exceeded("sequence length exceeded"));
+        assert!(!EmbeddingClient::is_context_exceeded("connection refused"));
+        assert!(!EmbeddingClient::is_context_exceeded("network error"));
     }
 }

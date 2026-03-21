@@ -76,6 +76,26 @@ impl DynamicChunkConfig {
     pub fn min_chunk_chars(&self) -> usize {
         (self.max_chars() as f32 * self.min_chunk_percent) as usize
     }
+
+    /// Create a config with half the context length.
+    ///
+    /// Used for fallback when embedding fails due to context overflow.
+    /// Each recursive call halves the context until embedding succeeds
+    /// or max iterations reached.
+    ///
+    /// Example:
+    /// - Initial: 512 tokens → max_chars: 1301
+    /// - Halved: 256 tokens → max_chars: 610
+    /// - Halved again: 128 tokens → max_chars: 265
+    pub fn halved(context_length: usize) -> Self {
+        Self::new(context_length / 2)
+    }
+
+    /// Get the context length used by this config.
+    #[allow(dead_code)]
+    pub fn context_length(&self) -> usize {
+        self.context_length
+    }
 }
 
 impl Default for DynamicChunkConfig {
@@ -120,5 +140,44 @@ mod tests {
         // (100 - 30) * 0.90 * 3.0 = 70 * 0.90 * 3.0 = 189 → 189
         assert!(config.max_chars() > 0);
         assert_eq!(config.max_chars(), 189);
+    }
+
+    #[test]
+    fn test_halved() {
+        // 512 / 2 = 256
+        let config = DynamicChunkConfig::halved(512);
+        assert_eq!(config.context_length(), 256);
+        // (256 - 30) * 0.90 * 3.0 = 226 * 0.90 * 3.0 = 610.2 → 610
+        assert_eq!(config.max_chars(), 610);
+
+        // 256 / 2 = 128
+        let config2 = DynamicChunkConfig::halved(256);
+        assert_eq!(config2.context_length(), 128);
+        // (128 - 30) * 0.90 * 3.0 = 98 * 0.90 * 3.0 = 264.6 → 264
+        assert_eq!(config2.max_chars(), 264);
+    }
+
+    #[test]
+    fn test_halved_progression() {
+        // Test the halving progression for fallback
+        let ctx = 512;
+        let c1 = DynamicChunkConfig::new(ctx);
+        assert_eq!(c1.max_chars(), 1301); // 512 tokens
+
+        let c2 = DynamicChunkConfig::halved(ctx);
+        assert_eq!(c2.max_chars(), 610); // 256 tokens
+
+        let c3 = DynamicChunkConfig::halved(ctx / 2);
+        assert_eq!(c3.max_chars(), 264); // 128 tokens
+
+        let c4 = DynamicChunkConfig::halved(ctx / 4);
+        // 64 tokens: (64 - 30) * 0.90 * 3.0 = 34 * 0.90 * 3.0 = 91.8 → 91
+        assert_eq!(c4.max_chars(), 91); // 64 tokens
+
+        // Minimum fallback would be ~32 tokens
+        let c5 = DynamicChunkConfig::halved(ctx / 8);
+        // (32 - 30) * 0.90 * 3.0 = 2 * 0.90 * 3.0 = 5.4 → 5
+        assert!(c5.max_chars() > 0);
+        assert_eq!(c5.max_chars(), 5);
     }
 }

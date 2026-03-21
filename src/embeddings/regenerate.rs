@@ -186,25 +186,28 @@ pub async fn regenerate_all_embeddings(
                     _ => (None, None),
                 };
 
-                // Generate embedding for chunk
-                match embedding_client.embed(&chunk.content).await {
-                    Ok(embedding) => {
-                        match db
-                            .update_content_chunk_embedding(
-                                chunk_id,
-                                &embedding,
-                                content_type,
-                                conv_id.as_deref(),
-                                proj_id.as_deref(),
-                                timestamp,
-                            )
-                        {
-                            Ok(_) => {
-                                stats.chunks_processed += 1;
-                            }
-                            Err(e) => {
-                                stats.chunks_failed += 1;
-                                eprintln!("Warning: Failed to update chunk {} embedding in DB: {}", chunk_id, e);
+                // Generate embedding for chunk (with fallback for oversized content)
+                match embedding_client.embed_with_fallback(&chunk.content, 3).await {
+                    Ok(embeddings) => {
+                        // embed_with_fallback returns multiple embeddings if chunking was needed
+                        for embedding in embeddings {
+                            match db
+                                .update_content_chunk_embedding(
+                                    chunk_id,
+                                    &embedding,
+                                    content_type,
+                                    conv_id.as_deref(),
+                                    proj_id.as_deref(),
+                                    timestamp,
+                                )
+                            {
+                                Ok(_) => {
+                                    stats.chunks_processed += 1;
+                                }
+                                Err(e) => {
+                                    stats.chunks_failed += 1;
+                                    eprintln!("Warning: Failed to update chunk {} embedding in DB: {}", chunk_id, e);
+                                }
                             }
                         }
                     }
@@ -231,9 +234,9 @@ pub async fn regenerate_all_embeddings(
             }
             stats.items_processed += 1;
         } else {
-            // Short content - embed directly
-            match embedding_client.embed(content).await {
-                Ok(embedding) => {
+            // Short content - embed directly (with fallback for oversized content)
+            match embedding_client.embed_with_fallback(content, 3).await {
+                Ok(embeddings) => {
                     let timestamp = Utc::now();
 
                     // Extract conversation_id from content_items based on content_type
@@ -259,20 +262,24 @@ pub async fn regenerate_all_embeddings(
                         .ok()
                         .flatten();
 
-                    if db
-                        .update_content_item_embedding(
-                            *item_id,
-                            &embedding,
-                            content_type,
-                            conversation_id.as_deref(),
-                            project_id.as_deref(),
-                            timestamp,
-                        )
-                        .is_ok()
-                    {
-                        stats.items_processed += 1;
-                    } else {
-                        stats.items_failed += 1;
+                    // embed_with_fallback returns multiple embeddings if chunking was needed
+                    // For short content, it should return a single embedding
+                    for embedding in embeddings {
+                        if db
+                            .update_content_item_embedding(
+                                *item_id,
+                                &embedding,
+                                content_type,
+                                conversation_id.as_deref(),
+                                project_id.as_deref(),
+                                timestamp,
+                            )
+                            .is_ok()
+                        {
+                            stats.items_processed += 1;
+                        } else {
+                            stats.items_failed += 1;
+                        }
                     }
                 }
                 Err(e) => {
@@ -309,8 +316,8 @@ pub async fn regenerate_all_embeddings(
             continue;
         }
 
-        match embedding_client.embed(content).await {
-            Ok(embedding) => {
+        match embedding_client.embed_with_fallback(content, 3).await {
+            Ok(embeddings) => {
                 let timestamp = Utc::now();
 
                 // Get conversation_id and project_id from the parent item
@@ -328,20 +335,23 @@ pub async fn regenerate_all_embeddings(
 
                 let (conversation_id, project_id) = result.unwrap_or((None, None));
 
-                if db
-                    .update_content_chunk_embedding(
-                        *chunk_id,
-                        &embedding,
-                        "message", // All existing chunks are messages
-                        conversation_id.as_deref(),
-                        project_id.as_deref(),
-                        timestamp,
-                    )
-                    .is_ok()
-                {
-                    stats.chunks_processed += 1;
-                } else {
-                    stats.chunks_failed += 1;
+                // embed_with_fallback returns multiple embeddings if chunking was needed
+                for embedding in embeddings {
+                    if db
+                        .update_content_chunk_embedding(
+                            *chunk_id,
+                            &embedding,
+                            "message", // All existing chunks are messages
+                            conversation_id.as_deref(),
+                            project_id.as_deref(),
+                            timestamp,
+                        )
+                        .is_ok()
+                    {
+                        stats.chunks_processed += 1;
+                    } else {
+                        stats.chunks_failed += 1;
+                    }
                 }
             }
             Err(e) => {
