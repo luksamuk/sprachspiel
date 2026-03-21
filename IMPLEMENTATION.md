@@ -757,36 +757,44 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ### 🟡 PRIORITY 3: Embedding Fallback for Oversized Content
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Handle content that exceeds embedding model's context window.
 
-**Problem:** During startup, embeddings generation fails when input text has more tokens than the embedding model's context window (e.g., 512 tokens for nomic-embed-text). The current implementation uses `DynamicChunkConfig` but doesn't handle cases where content still exceeds the limit.
+**Problem:** During startup, embeddings generation fails when input text has more tokens than the embedding model's context window (e.g., 512 tokens for nomic-embed-text). The current implementation uses `DynamicChunkConfig` which estimates chunk size in characters, but the `chars_per_token = 3.0` ratio may underestimate token count for code/JSON content.
+
+**Root Cause Analysis:**
+- `chunk_config.rs` uses `chars_per_token = 3.0` for chunk size calculation
+- This is conservative for Portuguese text but can underestimate for code/JSON
+- Example: `{"key":"value"}` is few chars but many tokens
+- Even content < 1301 chars can exceed 512 tokens
+- API fails with "context_length_exceeded" error
 
 **Symptoms:**
 - Embedding generation fails silently during startup
 - Messages/notes/documents with long content never get embeddings
 - Semantic search fails to find relevant content
 
-**Solution:** Implement fallback chunking strategy:
-1. Detect oversized content before API call
-2. Recursive chunking if content exceeds context
-3. Generate embeddings per chunk
+**Solution:** Implement fallback strategy with token estimation:
+1. Estimate tokens before API call (conservative estimate)
+2. If estimated > context_length, use smaller chunks
+3. Retry embedding with smaller chunks on failure
 4. Store chunks properly in `content_chunks` table
 
 **Implementation:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Detect oversized inputs before API call | ❌ |
-| 2 | Implement fallback chunking | ❌ |
-| 3 | Update chunk storage logic | ❌ |
-| 4 | Add tests and logging | ❌ |
+| 1 | Add `estimate_tokens()` in `client.rs` | 🔄 |
+| 2 | Add `check_context_fit()` with error type | 📋 |
+| 3 | Add fallback in `regenerate.rs` | 📋 |
+| 4 | Add fallback in `recovery.rs` | 📋 |
+| 5 | Add integration tests | 📋 |
 
 **Files:**
-- `src/embeddings/client.rs` - Add size detection and fallback
-- `src/embeddings/chunker.rs` - Recursive chunking support
-- `src/embeddings/regenerate.rs` - Update regeneration logic
+- `src/embeddings/client.rs` - Add `estimate_tokens()`, `check_context_fit()`, `ContextExceeded` error
+- `src/embeddings/regenerate.rs` - Use fallback when embed fails
+- `src/embeddings/recovery.rs` - Use fallback when embed fails
 
 **Estimated effort:** 2.5 days
 

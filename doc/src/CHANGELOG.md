@@ -86,6 +86,13 @@ All notable changes to Ask-AI will be documented in this file.
   - Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
   - Smart truncation for large tool results
 
+- **Embedding Fallback for Oversized Content** - Fixed embedding failures when content exceeds model context
+  - Added token estimation before embedding API call
+  - Automatic recursive chunking when estimated tokens exceed context limit
+  - Retry mechanism with smaller chunks on embedding failure
+  - Proper error handling in `regenerate.rs` and `recovery.rs`
+  - Prevents silent failures during startup embedding generation
+
 - **Unicode Panic in note_add** - Fixed panic when creating notes with Unicode content
   - `note_add` tool now uses `truncate_chars()` for character-aware truncation
   - Previously used byte slicing (`&content[..200]`) which panicked on multi-byte characters
