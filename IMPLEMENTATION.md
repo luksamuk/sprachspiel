@@ -755,44 +755,92 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### ✅ PRIORITY 3: Embedding Fallback for Oversized Content (COMPLETED)
+### 🔄 PRIORITY 3: Embedding Fallback for Oversized Content (IN PROGRESS - REWRITE)
 
-**Status:** ✅ COMPLETED (v0.37.1)
+**Status:** 🔄 IN PROGRESS (Complete Rewrite Required)
 
 **Goal:** Handle content that exceeds embedding model's context window.
 
-**Problem:** During startup, embeddings generation fails when input text has more tokens than the embedding model's context window (e.g., 512 tokens for nomic-embed-text). The current implementation uses `DynamicChunkConfig` which estimates chunk size in characters, but the `chars_per_token = 3.0` ratio may underestimate token count for code/JSON content.
+**Original Problem (v0.37.1):** When embedding fails due to context overflow, the old `embed_with_fallback()` returned `Vec<Vec<f32>>` (multiple embeddings), but callers tried to insert all of them with the same `chunk_id`, causing PRIMARY KEY constraint violations.
 
-**Solution:** Reactive fallback strategy - retry with smaller chunks on API error:
-1. Try `embed()` first
-2. If API returns "context_length_exceeded", use `embed_with_fallback()` 
-3. Recursive halving: 512 → 256 → 128 → 64 tokens
-4. Maximum 3 iterations before returning `ContextExceeded` error
+**Bugs Discovered:**
+
+1. **PRIMARY KEY Violation:** `chunk_embeddings_v2.chunk_id` is PRIMARY KEY, so only ONE embedding per chunk. Old code tried to insert multiple.
+
+2. **`has_embedding` Marked Incorrectly:** Even when embeddings failed, `has_embedding` was set to 1, preventing recovery on next startup.
+
+3. **Dangling Chunks:** Chunks created in memory but never persisted to database.
+
+**New Design (Current):**
+
+```
+embed_chunk_with_fallback(ctx, db, client, context_length, division_count)
+    │
+    ├─► Try client.embed(content)
+    │       │
+    │       ├─► Success → db.update_content_chunk_embedding() → return Ok
+    │       │
+    │       └─► Error: ContextExceeded → FALLBACK
+    │
+    └─► FALLBACK:
+            │
+            ├─► Check MAX_FALLBACK_DIVISIONS (4) - panic if exceeded
+            ├─► Check MAX_CHUNKS_PER_ITEM (64) - panic if exceeded
+            ├─► Check MIN_CHUNK_TOKENS (32) - panic if below
+            │
+            ├─► Divide content with halved config
+            │
+            ├─► db.transaction() - ATOMIC
+            │       ├─► UPDATE chunk 0 content (first chunk)
+            │       └─► INSERT chunks 1..N (new chunks)
+            │
+            └─► For each chunk: embed_chunk_with_fallback() recursively
+```
+
+**Key Changes:**
+
+| Old (v0.37.1) | New (v0.37.2) |
+|---------------|---------------|
+| `embed_with_fallback() -> Vec<Vec<f32>>` | `embed_chunk_with_fallback(ctx) -> Result<EmbedResult, FallbackError>` |
+| Multiple embeddings, same chunk_id | Creates new chunks atomically |
+| Caller manages embeddings | Function manages chunks + embeddings |
+| Silent failures with `let _ = ...` | Panics on limit exceeded (configuration error) |
+| No transaction protection | Atomic transactions for chunk creation |
 
 **Implementation:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add `ContextExceeded` error in `client.rs` | ✅ |
-| 2 | Add `is_context_exceeded()` helper | ✅ |
-| 3 | Add `embed_with_fallback()` method | ✅ |
-| 4 | Add `halved()` to `DynamicChunkConfig` | ✅ |
-| 5 | Update `regenerate.rs` | ✅ |
-| 6 | Update `recovery.rs` | ✅ |
-| 7 | Update `session.rs` | ✅ |
-| 8 | Update `command_handlers.rs` | ✅ |
+| 1 | Create `src/embeddings/fallback.rs` module | ✅ Done |
+| 2 | Add `EmbedContext`, `EmbedItemContext` structs | ✅ Done |
+| 3 | Add `embed_chunk_with_fallback()` | ✅ Done |
+| 4 | Add `embed_item_with_fallback()` | ✅ Done |
+| 5 | Add protection constants | ✅ Done |
+| 6 | Simplify `client.rs` - remove old `embed_with_fallback()` | ✅ Done |
+| 7 | Update `session.rs` callers | 🔄 In Progress |
+| 8 | Update `regenerate.rs` callers | 📋 Pending |
+| 9 | Update `recovery.rs` callers | 📋 Pending |
+| 10 | Update `command_handlers.rs` callers | 📋 Pending |
+| 11 | Add tests for fallback module | 📋 Pending |
+| 12 | Update documentation | 🔄 In Progress |
 
-**Files Modified:**
-- `src/embeddings/client.rs` - `ContextExceeded` error, `is_context_exceeded()`, `embed_with_fallback()`
-- `src/embeddings/chunk_config.rs` - `halved()`, `context_length()`
-- `src/embeddings/regenerate.rs` - Use `embed_with_fallback()`
-- `src/embeddings/recovery.rs` - Use `embed_with_fallback()`
-- `src/chat/session.rs` - Use `embed_with_fallback()` in 3 locations
-- `src/chat/command_handlers.rs` - Use `embed_with_fallback()` for notes
+**New Files:**
+- `src/embeddings/fallback.rs` - Complete fallback logic with atomic transactions
 
-**Commits:**
-- `63cf219` docs: update CHANGELOG and IMPLEMENTATION.md for embedding fallback feature
-- `e32ddd4` fix: add embedding fallback for oversized content
+**Modified Files:**
+- `src/embeddings/client.rs` - Simplified to just `embed()` and `is_context_exceeded()`
+- `src/embeddings/mod.rs` - Export new module
+- `src/chat/session.rs` - Use new fallback functions
+- `src/embeddings/regenerate.rs` - Use new fallback functions
+- `src/embeddings/recovery.rs` - Use new fallback functions
+- `src/chat/command_handlers.rs` - Use new fallback functions
+
+**Protection Constants:**
+```rust
+const MAX_FALLBACK_DIVISIONS: usize = 4;   // 512→256→128→64→32
+const MAX_CHUNKS_PER_ITEM: usize = 64;      // Prevent DB explosion
+const MIN_CHUNK_TOKENS: usize = 32;         // Minimum before aborting
+```
 
 **Related:** Issue #40, PR #46
 

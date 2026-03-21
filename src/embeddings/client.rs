@@ -1,17 +1,15 @@
 //! Embedding client for Ollama API
 //!
 //! Generates embeddings using nomic-embed-text-v2-moe model.
+//!
+//! For content that exceeds the model's context window, use the `fallback` module
+//! which provides `embed_chunk_with_fallback` and `embed_item_with_fallback`.
 
 use ollama_rs::Ollama;
 use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 use ollama_rs::models::ModelInfo;
 
-use super::chunk_config::DynamicChunkConfig;
-use super::chunker::{chunk_text_with_config, ChunkConfig};
 use super::truncate::{FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, truncate_and_normalize};
-
-/// Type alias for boxed future returned by embed_with_fallback_inner
-type EmbedFallbackFuture<'a> = std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<Vec<Vec<f32>>, EmbeddingError>> + Send + 'a>>;
 
 /// Default embedding model (nomic-embed-text-v2-moe)
 pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
@@ -48,7 +46,7 @@ impl EmbeddingClient {
     /// - "maximum context length"
     /// - "token limit"
     /// - "sequence length"
-    fn is_context_exceeded(error: &str) -> bool {
+    pub fn is_context_exceeded(error: &str) -> bool {
         let error_lower = error.to_lowercase();
         error_lower.contains("context_length")
             || error_lower.contains("context length")
@@ -87,6 +85,12 @@ impl EmbeddingClient {
     ///
     /// Uses the prefix "search_document: " for nomic-embed-text-v2-moe model.
     /// Truncates to 256 dimensions and normalizes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EmbeddingError::ContextExceeded` if the text exceeds the model's
+    /// context window. Use the `fallback` module's `embed_chunk_with_fallback`
+    /// for automatic chunking when context is exceeded.
     pub async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         // Add prefix for nomic-embed-text-v2-moe
         let prefixed_text = format!("search_document: {}", text);
@@ -165,73 +169,6 @@ impl EmbeddingClient {
     #[allow(dead_code)]
     pub fn embedding_dimension() -> usize {
         TRUNCATED_DIMENSIONS
-    }
-
-    /// Generate embedding with automatic fallback for oversized content.
-    ///
-    /// If the text exceeds the model's context window, automatically
-    /// splits into smaller chunks and retries. Each chunk gets its own
-    /// embedding, and the result is a list of embeddings (one per chunk).
-    ///
-    /// # Arguments
-    /// * `text` - The text to embed
-    /// * `max_iterations` - Maximum recursion depth (3 recommended)
-    ///
-    /// # Returns
-    /// Vector of embeddings (one per chunk after fallback).
-    /// For normal-sized content, returns a single-element vector.
-    /// For oversized content that needed chunking, returns multiple embeddings.
-    ///
-    /// # Errors
-    /// Returns `EmbeddingError::ContextExceeded` if content still exceeds
-    /// context after maximum iterations.
-    pub async fn embed_with_fallback(
-        &self,
-        text: &str,
-        max_iterations: usize,
-    ) -> Result<Vec<Vec<f32>>, EmbeddingError> {
-        self.embed_with_fallback_inner(text, max_iterations).await
-    }
-
-    /// Inner implementation that can be boxed for recursion.
-    #[allow(clippy::type_complexity)]
-    fn embed_with_fallback_inner<'a>(
-        &'a self,
-        text: &'a str,
-        max_iterations: usize,
-    ) -> EmbedFallbackFuture<'a> {
-        Box::pin(async move {
-            // Try direct embed first
-            match self.embed(text).await {
-                Ok(emb) => Ok(vec![emb]),
-                Err(EmbeddingError::ApiError(ref msg)) if Self::is_context_exceeded(msg) => {
-                    // Context exceeded - need to chunk
-                    if max_iterations == 0 {
-                        return Err(EmbeddingError::ContextExceeded {
-                            message: format!(
-                                "Content exceeds context even after maximum retries: {}",
-                                msg
-                            ),
-                        });
-                    }
-
-                    // Get context length and create halved config
-                    let context_length = self.get_context_length().await?;
-                    let smaller_config = DynamicChunkConfig::halved(context_length);
-                    let chunks = chunk_text_with_config(text, &ChunkConfig::from(&smaller_config));
-
-                    let mut results = Vec::new();
-                    for chunk in chunks {
-                        let embeddings = self
-                            .embed_with_fallback_inner(&chunk.content, max_iterations - 1)
-                            .await?;
-                        results.extend(embeddings);
-                    }
-                    Ok(results)
-                }
-                Err(e) => Err(e),
-            }
-        })
     }
 }
 

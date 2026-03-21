@@ -2,18 +2,21 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.37.1] - 2026-03-21
+## [Unreleased]
 
 ### Fixed
 
-- **Embedding Fallback for Oversized Content** - Fixed embedding failures when content exceeds model context
-  - When embedding fails due to "context_length_exceeded", automatically retry with smaller chunks
-  - Recursive halving: 512 → 256 → 128 → 64 tokens
-  - Maximum 3 iterations before giving up with `ContextExceeded` error
-  - Updated all embedding call sites: `client.embed()` → `client.embed_with_fallback()`
-  - Files affected: `client.rs`, `regenerate.rs`, `recovery.rs`, `session.rs`, `command_handlers.rs`
-
-## [Unreleased]
+- **Embedding Fallback for Oversized Content (Complete Rewrite)** - Fixed PRIMARY KEY constraint violation
+  - **Bug Discovered:** Previous `embed_with_fallback()` returned multiple embeddings for same chunk_id, causing database constraint violations
+  - **Bug Discovered:** `has_embedding` was marked as 1 even when embeddings failed, preventing recovery
+  - **New Design:** Function now manages chunk creation atomically with transaction support
+  - **New module:** `src/embeddings/fallback.rs` with `EmbedContext` and `EmbedItemContext` structs
+  - **Two functions:** `embed_chunk_with_fallback()` for existing chunks, `embed_item_with_fallback()` for new items
+  - **Atomic transactions:** Chunks are created and embeddings saved in single transaction
+  - **Protection limits:** `MAX_FALLBACK_DIVISIONS=4`, `MAX_CHUNKS_PER_ITEM=64`, `MIN_CHUNK_TOKENS=32`
+  - **Panics on misconfiguration:** Prevents database explosion from bad configs
+  - **Removed:** Old `embed_with_fallback()` that returned `Vec<Vec<f32>>`
+  - **Simplified:** `client.rs` now has simple `embed()` that returns error on context exceeded
 
 ### Added
 
