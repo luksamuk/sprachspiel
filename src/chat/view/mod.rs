@@ -340,10 +340,14 @@ impl StatusBarInfo {
     fn format_content_line(&self) -> String {
         let mut line = String::new();
 
+        // Start with dim color (will be reset at end)
         line.push_str(colors::DIM);
         line.push_str(&truncate_str(&self.model_name, 20));
-        line.push_str(&format!("{} │{} ", colors::RESET, colors::DIM));
 
+        // Separator: │ in dim
+        line.push_str(&format!("{}│{} ", colors::RESET, colors::DIM));
+
+        // Context usage
         let used_str = format_tokens(self.used_tokens);
         let max_str = format_tokens(self.max_tokens);
         line.push_str(&format!(
@@ -354,10 +358,14 @@ impl StatusBarInfo {
             colors::DIM
         ));
 
+        // Progress bar with percentage
         line.push_str(colors::RESET);
         line.push_str(&self.format_progress_bar());
-        line.push_str(&format!(" {}│{} ", colors::DIM, colors::RESET));
 
+        // Separator before indicators
+        line.push_str(&format!(" {}│", colors::DIM));
+
+        // Indicators (think/tools)
         if self.think_enabled {
             line.push('🧠');
         }
@@ -365,9 +373,12 @@ impl StatusBarInfo {
             line.push('🔧');
         }
 
+        // Padding to 80 columns
         let visual_width = self.calculate_visual_width(&line);
         let padding = 80_usize.saturating_sub(visual_width);
-        line.push_str(&" ".repeat(padding));
+        if padding > 0 {
+            line.push_str(&" ".repeat(padding));
+        }
         line.push_str(colors::RESET);
 
         line
