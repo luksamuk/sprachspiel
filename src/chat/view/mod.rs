@@ -199,20 +199,21 @@ impl WelcomeInfo {
 
         output.push('\n');
         output.push_str(&format!("{}{}\n", colors::DIM, "─".repeat(80)));
-        output.push('\n');
 
-        // Centered help text
+        output
+    }
+
+    /// Format only the help line (to be printed after all startup messages)
+    pub fn help_line() -> String {
         let help_msg = "Type /help for commands, /quit to exit";
         let padding = (80_usize.saturating_sub(help_msg.len())) / 2;
-        output.push_str(&format!(
-            "{}{}{}{}\n",
+        format!(
+            "\n{}{}{}{}\n",
             " ".repeat(padding),
             colors::DIM,
             help_msg,
             colors::RESET
-        ));
-
-        output
+        )
     }
 
     /// Format session info lines for right-side display
@@ -257,7 +258,7 @@ impl WelcomeInfo {
             colors::BOLD_CYAN,
             colors::RESET,
             colors::DIM,
-            truncate_str(&self.sandbox_status, 34),
+            truncate_str(&self.sandbox_status, 28),
             colors::RESET
         ));
 
