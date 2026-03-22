@@ -374,11 +374,12 @@ impl StatusBarInfo {
         let visual_width = strip_ansi_width(&content);
 
         // Truncate if too long, or add padding if too short
-        if visual_width > 80 {
-            truncate_visual(&content, 80)
+        // Use 77 to account for potential unicode width issues
+        if visual_width > 77 {
+            truncate_visual(&content, 77)
         } else {
-            // Add padding to reach 80 columns
-            let padding = 80 - visual_width;
+            // Add padding to reach 77 columns
+            let padding = 77 - visual_width;
             content.push_str(&" ".repeat(padding));
             content
         }
