@@ -4,31 +4,16 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [0.37.2] - 2026-03-22
 
-### Fixed
-
-- **Embedding Fallback for Oversized Content (Complete Rewrite)** - Fixed PRIMARY KEY constraint violation
-  - **Bug Discovered:** Previous `embed_with_fallback()` returned multiple embeddings for same chunk_id, causing database constraint violations
-  - **Bug Discovered:** `has_embedding` was marked as 1 even when embeddings failed, preventing recovery
-  - **New Design:** Function now manages chunk creation atomically with transaction support
-  - **New module:** `src/embeddings/fallback.rs` with `EmbedContext` and `EmbedItemContext` structs
-  - **Two functions:** `embed_chunk_with_fallback()` for existing chunks, `embed_item_with_fallback()` for new items
-  - **Atomic transactions:** Chunks are created and embeddings saved in single transaction
-  - **Protection limits:** `MAX_FALLBACK_DIVISIONS=4`, `MAX_CHUNKS_PER_ITEM=64`, `MIN_CHUNK_TOKENS=32`
-  - **Panics on misconfiguration:** Prevents database explosion from bad configs
-  - **Removed:** Old `embed_with_fallback()` that returned `Vec<Vec<f32>>`
-  - **Simplified:** `client.rs` now has simple `embed()` that returns error on context exceeded
-  - **Fixed:** Recovery embeddings now visible with `println!` instead of `log_debug!`
-
-### Changed
-
-- **Startup Output Reorder** - Improved visual flow for chat startup
-  - ASCII art banner now appears first, before any other output
-  - Session resume and regeneration messages appear after banner
-  - "Type /help for commands, /quit to exit" now appears at the end, after all startup messages
-  - Sandbox status strings now lowercase for consistency with other status fields
-  - "not compiled" sandbox status shortened to avoid exceeding column 80
-
 ### Added
+
+- **Status Bar Above Prompt** - Dynamic status bar showing context information
+  - Displays model name, context usage (XX.XK/YYYK), progress bar with percentage, and think/tools indicators
+  - Fixed width up to 80 columns matching welcome banner
+  - Colored progress bar: green (< 50%), yellow (50-75%), red (> 75%)
+  - Clean prompt: just `>` character, with all context moved to status bar
+  - Updates dynamically on each prompt cycle
+  - Status bar rendered above prompt in `TerminalView`
+  - Related: Issue #47
 
 - **Inter-Tool Compaction with Automatic Continuation** - Automatic context compaction during multi-tool execution
   - Detects when context reaches `COMPACTION_BUFFER` during tool execution

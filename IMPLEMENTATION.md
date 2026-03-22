@@ -498,6 +498,57 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
+### 🔵 PRIORITY 4: Status Bar Above Prompt
+
+**Status:** 🔄 IN PROGRESS
+
+**Goal:** Add a dynamic status bar above the prompt input showing real-time context information.
+
+**Problem Statement:**
+- Users need to run `/context` to see context usage
+- Model name and indicators are mixed with the prompt
+- No visual feedback on context pressure during chat
+
+**Proposed Solution:**
+
+A status bar rendered above the prompt with all context information:
+
+```
+────────────────────────────────────────────────────────────────────────────────
+ glm-5:cloud │ 47.2K/128K │ [████░░░░░░] 37% │ 🧠🔧
+────────────────────────────────────────────────────────────────────────────────
+> _
+```
+
+**Components:**
+- Model name
+- Context usage (XX.XK/YYYK tokens)
+- Progress bar with percentage
+- Think/Tools indicators
+- Clean prompt (just `>`)
+
+**Implementation:**
+
+| Phase | File | Description | Status |
+|-------|------|-------------|--------|
+| 1 | `src/chat/view/terminal.rs` | Add `render_status_bar()` method | ❌ Not started |
+| 2 | `src/chat/view/mod.rs` | Add `StatusBarInfo` struct | ❌ Not started |
+| 3 | `src/context_overflow.rs` | Add `to_status_bar()` method | ❌ Not started |
+| 4 | `src/chat/repl.rs` | Call status bar render before prompt | ❌ Not started |
+| 5 | Tests | Status bar output tests | ❌ Not started |
+
+**Design:**
+- Fixed width (80 cols) matching welcome banner
+- Colored progress bar: Green (< 50%), Yellow (50-75%), Red (> 75%)
+- Dynamic update on each prompt cycle
+- Simple prompt: just `>` (model and indicators in status bar)
+
+**Estimated effort:** 0.5 day
+
+**Related:** Issue #47
+
+---
+
 ### 🔴 PRIORITY 2: Notes System
 
 **Status:** ✅ COMPLETED
