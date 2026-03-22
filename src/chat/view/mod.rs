@@ -340,30 +340,27 @@ impl StatusBarInfo {
     fn format_content_line(&self) -> String {
         let mut line = String::new();
 
-        // Start with dim color (will be reset at end)
+        // Model name (dim color for consistency with separators)
         line.push_str(colors::DIM);
         line.push_str(&truncate_str(&self.model_name, 20));
+        line.push_str(colors::RESET);
 
-        // Separator: │ in dim
-        line.push_str(&format!("{}│{} ", colors::RESET, colors::DIM));
+        // First separator: │
+        line.push_str(&format!(" {}│{} ", colors::DIM, colors::RESET));
 
-        // Context usage
+        // Context usage: tokens
         let used_str = format_tokens(self.used_tokens);
         let max_str = format_tokens(self.max_tokens);
-        line.push_str(&format!(
-            "{}/{}{} │{} ",
-            used_str,
-            max_str,
-            colors::RESET,
-            colors::DIM
-        ));
+        line.push_str(&format!("{}/{}", used_str, max_str));
+
+        // Second separator: │
+        line.push_str(&format!(" {}│{} ", colors::DIM, colors::RESET));
 
         // Progress bar with percentage
-        line.push_str(colors::RESET);
         line.push_str(&self.format_progress_bar());
 
-        // Separator before indicators
-        line.push_str(&format!(" {}│", colors::DIM));
+        // Third separator: │ before indicators
+        line.push_str(&format!(" {}│ ", colors::DIM));
 
         // Indicators (think/tools)
         if self.think_enabled {
