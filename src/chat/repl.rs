@@ -599,8 +599,8 @@ pub async fn run_chat_repl(
         // Print status bar (3 lines total)
         print!("{}", status_bar);
 
-        // Simple prompt with just "> "
-        let readline = input.read_line("> ");
+        // Simple prompt with just ">>> "
+        let readline = input.read_line(">>> ");
 
         match readline {
             InputResult::Line(ref line) => {
@@ -612,7 +612,7 @@ pub async fn run_chat_repl(
 
                 input.add_history(line);
                 print!("{}", ANSI_CLEAR_STATUS_BAR);
-                println!("> {}", line);
+                println!(">>> {}", line);
 
                 if line.starts_with('/') {
                     match parse_command(line) {
