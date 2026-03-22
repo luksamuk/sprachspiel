@@ -11,7 +11,10 @@ use std::time::Instant;
 use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
 use crate::db::Database;
-use crate::embeddings::EmbeddingClient;
+use crate::embeddings::{
+    EmbeddingClient, EmbedContext, EmbedItemContext, DEFAULT_CONTEXT_LENGTH,
+    embed_chunk_with_fallback, embed_item_with_fallback,
+};
 
 /// Tool output verbosity level
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -356,28 +359,39 @@ impl ChatSession {
                         tokio::spawn(async move {
                             if !chunk_data.is_empty() {
                                 for (chunk_id, content) in chunk_data {
-                                    if let Ok(embedding) = client.embed(&content).await {
-                                        let _ = db.update_content_chunk_embedding(
-                                            chunk_id,
-                                            &embedding,
-                                            "message",
-                                            Some(&conv_id),
-                                            project_id.as_deref(),
-                                            timestamp,
-                                        );
-                                    }
+                                    // Use fallback for oversized content
+                                    let ctx = EmbedContext {
+                                        content: &content,
+                                        item_id,
+                                        chunk_id,
+                                        content_type: "message",
+                                        conversation_id: Some(&conv_id),
+                                        project_id: project_id.as_deref(),
+                                        timestamp,
+                                    };
+                                    let _ = embed_chunk_with_fallback(
+                                        ctx,
+                                        Arc::clone(&db),
+                                        Arc::clone(&client),
+                                        DEFAULT_CONTEXT_LENGTH,
+                                        0,
+                                    ).await;
                                 }
                             } else {
-                                if let Ok(embedding) = client.embed(&content).await {
-                                    let _ = db.update_content_item_embedding(
-                                        item_id,
-                                        &embedding,
-                                        "message",
-                                        Some(&conv_id),
-                                        project_id.as_deref(),
-                                        timestamp,
-                                    );
-                                }
+                                // Use fallback for oversized content
+                                let ctx = EmbedItemContext::new(
+                                    &content,
+                                    item_id,
+                                    "message",
+                                    Some(&conv_id),
+                                    project_id.as_deref(),
+                                );
+                                let _ = embed_item_with_fallback(
+                                    ctx,
+                                    &db,
+                                    &client,
+                                    DEFAULT_CONTEXT_LENGTH,
+                                ).await;
                             }
                         });
                     }
@@ -471,28 +485,39 @@ impl ChatSession {
                         tokio::spawn(async move {
                             if !chunk_data.is_empty() {
                                 for (chunk_id, content) in chunk_data {
-                                    if let Ok(embedding) = client.embed(&content).await {
-                                        let _ = db.update_content_chunk_embedding(
-                                            chunk_id,
-                                            &embedding,
-                                            "message",
-                                            Some(&conv_id),
-                                            project_id.as_deref(),
-                                            timestamp,
-                                        );
-                                    }
+                                    // Use fallback for oversized content
+                                    let ctx = EmbedContext {
+                                        content: &content,
+                                        item_id,
+                                        chunk_id,
+                                        content_type: "message",
+                                        conversation_id: Some(&conv_id),
+                                        project_id: project_id.as_deref(),
+                                        timestamp,
+                                    };
+                                    let _ = embed_chunk_with_fallback(
+                                        ctx,
+                                        Arc::clone(&db),
+                                        Arc::clone(&client),
+                                        DEFAULT_CONTEXT_LENGTH,
+                                        0,
+                                    ).await;
                                 }
                             } else {
-                                if let Ok(embedding) = client.embed(&content).await {
-                                    let _ = db.update_content_item_embedding(
-                                        item_id,
-                                        &embedding,
-                                        "message",
-                                        Some(&conv_id),
-                                        project_id.as_deref(),
-                                        timestamp,
-                                    );
-                                }
+                                // Use fallback for oversized content
+                                let ctx = EmbedItemContext::new(
+                                    &content,
+                                    item_id,
+                                    "message",
+                                    Some(&conv_id),
+                                    project_id.as_deref(),
+                                );
+                                let _ = embed_item_with_fallback(
+                                    ctx,
+                                    &db,
+                                    &client,
+                                    DEFAULT_CONTEXT_LENGTH,
+                                ).await;
                             }
                         });
                     }
@@ -577,27 +602,41 @@ impl ChatSession {
                                     chunk.start_offset as i32,
                                     chunk.end_offset as i32,
                                     timestamp,
-                                ) && let Ok(embedding) = client.embed(&chunk.content).await
-                                {
-                                    let _ = db.update_content_chunk_embedding(
+                                ) {
+                                    // Use fallback for oversized content
+                                    let ctx = EmbedContext {
+                                        content: &chunk.content,
+                                        item_id,
                                         chunk_id,
-                                        &embedding,
-                                        "message",
-                                        Some(&conv_id),
-                                        project_id.as_deref(),
+                                        content_type: "message",
+                                        conversation_id: Some(&conv_id),
+                                        project_id: project_id.as_deref(),
                                         timestamp,
-                                    );
+                                    };
+                                    let _ = embed_chunk_with_fallback(
+                                        ctx,
+                                        Arc::clone(&db),
+                                        Arc::clone(&client),
+                                        DEFAULT_CONTEXT_LENGTH,
+                                        0,
+                                    ).await;
                                 }
                             }
-                        } else if let Ok(embedding) = client.embed(&content_clone).await {
-                            let _ = db.update_content_item_embedding(
+                        } else {
+                            // Use fallback for oversized content
+                            let ctx = EmbedItemContext::new(
+                                &content_clone,
                                 item_id,
-                                &embedding,
                                 "message",
                                 Some(&conv_id),
                                 project_id.as_deref(),
-                                timestamp,
                             );
+                            let _ = embed_item_with_fallback(
+                                ctx,
+                                &db,
+                                &client,
+                                DEFAULT_CONTEXT_LENGTH,
+                            ).await;
                         }
                     });
                 }

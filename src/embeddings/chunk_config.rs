@@ -76,6 +76,12 @@ impl DynamicChunkConfig {
     pub fn min_chunk_chars(&self) -> usize {
         (self.max_chars() as f32 * self.min_chunk_percent) as usize
     }
+
+    /// Get the context length used by this config.
+    #[allow(dead_code)]
+    pub fn context_length(&self) -> usize {
+        self.context_length
+    }
 }
 
 impl Default for DynamicChunkConfig {
@@ -120,5 +126,37 @@ mod tests {
         // (100 - 30) * 0.90 * 3.0 = 70 * 0.90 * 3.0 = 189 → 189
         assert!(config.max_chars() > 0);
         assert_eq!(config.max_chars(), 189);
+    }
+
+    #[test]
+    fn test_context_length() {
+        let config = DynamicChunkConfig::new(512);
+        assert_eq!(config.context_length(), 512);
+
+        let config2 = DynamicChunkConfig::new(256);
+        assert_eq!(config2.context_length(), 256);
+    }
+
+    #[test]
+    fn test_halving_progression() {
+        // Test that halving works by creating configs manually
+        let ctx = 512;
+
+        // Full context
+        let c1 = DynamicChunkConfig::new(ctx);
+        assert_eq!(c1.max_chars(), 1301); // 512 tokens
+
+        // Halved: 256 tokens
+        let c2 = DynamicChunkConfig::new(ctx / 2);
+        assert_eq!(c2.max_chars(), 610); // 256 tokens
+
+        // Quarter: 128 tokens
+        let c3 = DynamicChunkConfig::new(ctx / 4);
+        assert_eq!(c3.max_chars(), 264); // 128 tokens
+
+        // Eighth: 64 tokens
+        let c4 = DynamicChunkConfig::new(ctx / 8);
+        // (64 - 30) * 0.90 * 3.0 = 34 * 0.90 * 3.0 = 91.8 → 91
+        assert_eq!(c4.max_chars(), 91); // 64 tokens
     }
 }

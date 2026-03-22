@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.37.0** - 2026-03-20 (Context Overflow Token Calculation Fix)
+**v0.37.2** - 2026-03-21 (Embedding Fallback Rewrite)
 
 ## Current Implementation Status
 
@@ -755,42 +755,94 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### 🟡 PRIORITY 3: Embedding Fallback for Oversized Content
+### ✅ PRIORITY 3: Embedding Fallback for Oversized Content (COMPLETED)
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED (v0.37.2)
 
 **Goal:** Handle content that exceeds embedding model's context window.
 
-**Problem:** During startup, embeddings generation fails when input text has more tokens than the embedding model's context window (e.g., 512 tokens for nomic-embed-text). The current implementation uses `DynamicChunkConfig` but doesn't handle cases where content still exceeds the limit.
+**Original Problem (v0.37.1):** When embedding fails due to context overflow, the old `embed_with_fallback()` returned `Vec<Vec<f32>>` (multiple embeddings), but callers tried to insert all of them with the same `chunk_id`, causing PRIMARY KEY constraint violations.
 
-**Symptoms:**
-- Embedding generation fails silently during startup
-- Messages/notes/documents with long content never get embeddings
-- Semantic search fails to find relevant content
+**Bugs Discovered:**
 
-**Solution:** Implement fallback chunking strategy:
-1. Detect oversized content before API call
-2. Recursive chunking if content exceeds context
-3. Generate embeddings per chunk
-4. Store chunks properly in `content_chunks` table
+1. **PRIMARY KEY Violation:** `chunk_embeddings.chunk_id` is PRIMARY KEY, so only ONE embedding per chunk. Old code tried to insert multiple.
+
+2. **`has_embedding` Marked Incorrectly:** Even when embeddings failed, `has_embedding` was set to 1, preventing recovery on next startup.
+
+3. **Dangling Chunks:** Chunks created in memory but never persisted to database.
+
+**New Design (v0.37.2):**
+
+```
+embed_chunk_with_fallback(ctx, db, client, context_length, division_count)
+    │
+    ├─► Try client.embed(content)
+    │       │
+    │       ├─► Success → db.update_content_chunk_embedding() → return Ok
+    │       │
+    │       └─► Error: ContextExceeded → FALLBACK
+    │
+    └─► FALLBACK:
+            │
+            ├─► Check MAX_FALLBACK_DIVISIONS (4) - panic if exceeded
+            ├─► Check MAX_CHUNKS_PER_ITEM (64) - panic if exceeded
+            ├─► Check MIN_CHUNK_TOKENS (32) - panic if below
+            │
+            ├─► Divide content with halved config
+            │
+            ├─► db.transaction() - ATOMIC
+            │       ├─► UPDATE chunk 0 content (first chunk)
+            │       └─► INSERT chunks 1..N (new chunks)
+            │
+            └─► For each chunk: embed_chunk_with_fallback() recursively
+```
+
+**Key Changes:**
+
+| Old (v0.37.1) | New (v0.37.2) |
+|---------------|---------------|
+| `embed_with_fallback() -> Vec<Vec<f32>>` | `embed_chunk_with_fallback(ctx) -> Result<EmbedResult, FallbackError>` |
+| Multiple embeddings, same chunk_id | Creates new chunks atomically |
+| Caller manages embeddings | Function manages chunks + embeddings |
+| Silent failures with `let _ = ...` | Panics on limit exceeded (configuration error) |
+| No transaction protection | Atomic transactions for chunk creation |
 
 **Implementation:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Detect oversized inputs before API call | ❌ |
-| 2 | Implement fallback chunking | ❌ |
-| 3 | Update chunk storage logic | ❌ |
-| 4 | Add tests and logging | ❌ |
+| 1 | Create `src/embeddings/fallback.rs` module | ✅ Done |
+| 2 | Add `EmbedContext`, `EmbedItemContext` structs | ✅ Done |
+| 3 | Add `embed_chunk_with_fallback()` | ✅ Done |
+| 4 | Add `embed_item_with_fallback()` | ✅ Done |
+| 5 | Add protection constants | ✅ Done |
+| 6 | Simplify `client.rs` - remove old `embed_with_fallback()` | ✅ Done |
+| 7 | Update `session.rs` callers | ✅ Done |
+| 8 | Update `regenerate.rs` callers | ✅ Done |
+| 9 | Update `recovery.rs` callers | ✅ Done |
+| 10 | Update `command_handlers.rs` callers | ✅ Done |
+| 11 | Add tests for fallback module | ✅ Done |
+| 12 | Update documentation | ✅ Done |
 
-**Files:**
-- `src/embeddings/client.rs` - Add size detection and fallback
-- `src/embeddings/chunker.rs` - Recursive chunking support
-- `src/embeddings/regenerate.rs` - Update regeneration logic
+**New Files:**
+- `src/embeddings/fallback.rs` - Complete fallback logic with atomic transactions
 
-**Estimated effort:** 2.5 days
+**Modified Files:**
+- `src/embeddings/client.rs` - Simplified, made `DEFAULT_CONTEXT_LENGTH` public
+- `src/embeddings/mod.rs` - Export new module
+- `src/chat/session.rs` - Use new fallback functions
+- `src/embeddings/regenerate.rs` - Use new fallback functions
+- `src/embeddings/recovery.rs` - Use new fallback functions
+- `src/chat/command_handlers.rs` - Use new fallback functions
 
-**Related:** Issue #40
+**Protection Constants:**
+```rust
+const MAX_FALLBACK_DIVISIONS: usize = 4;   // 512→256→128→64→32
+const MAX_CHUNKS_PER_ITEM: usize = 64;      // Prevent DB explosion
+const MIN_CHUNK_TOKENS: usize = 32;         // Minimum before aborting
+```
+
+**Related:** Issue #40, PR #46
 
 ---
 
@@ -1596,7 +1648,65 @@ let results = futures::future::join_all(futures).await;
 - **File Session State** - Explicit file tracking with security constraints
 - **Skills System Extended** - YAML frontmatter, skill composition
 - **Plugin System** - User-defined tools via dynamic loading
-- **TUI (Terminal User Interface)** - Ratatui-rs based interface
+
+### 🟢 PRIORITY 4.5: Status Bar Above Prompt
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Add a dynamic status bar above the prompt input with real-time context information.
+
+**Inspired by:** Hermes Agent CLI status bar design.
+
+**Current State:**
+- Model name shown inline in rustyline prompt: `glm-5:cloud🧠🔧>`
+- Context info requires `/context` command
+- Thinking/tools indicators mixed with model name in prompt
+
+**Proposed State:**
+- Status bar shows: model, context usage, progress bar, think/tools indicators
+- Prompt line is just `>` (clean, minimal)
+
+**Proposed Design:**
+```
+────────────────────────────────────────────────────────────────────────────────
+ glm-5:cloud │ 47.2K/128K │ [████░░░░░░] 37% │ 🧠🔧
+────────────────────────────────────────────────────────────────────────────────
+> _
+```
+
+**Components:**
+- Model name
+- Context usage: `XX.XK/YYYK` tokens
+- Progress bar with colors (green < 50%, yellow 50-75%, red > 75%)
+- Think/Tools indicators (in status bar)
+- Prompt: just `>` (clean, minimal)
+
+**Implementation:**
+
+| File | Changes |
+|------|---------|
+| `src/chat/view/terminal.rs` | Add `render_status_bar()` method |
+| `src/chat/input/rustyline.rs` | Call status bar before prompt |
+| `src/context_overflow.rs` | Add `to_status_bar()` method |
+
+**Priority Rationale:**
+- Higher than TUI (Priority 5) because component can be reused
+- Lower than Code Quality (Priority 4) because not blocking
+- Immediate value without full TUI rewrite
+
+**Related:** Issue #47
+
+---
+
+### 🟢 PRIORITY 5: TUI (Terminal User Interface)
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Build a responsive TUI using Ratatui-rs.
+
+See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
+
+**Blocked by:** Status Bar (Priority 4.5) - component reuse
 
 ---
 

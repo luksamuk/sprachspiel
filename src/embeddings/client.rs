@@ -1,6 +1,9 @@
 //! Embedding client for Ollama API
 //!
 //! Generates embeddings using nomic-embed-text-v2-moe model.
+//!
+//! For content that exceeds the model's context window, use the `fallback` module
+//! which provides `embed_chunk_with_fallback` and `embed_item_with_fallback`.
 
 use ollama_rs::Ollama;
 use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
@@ -12,8 +15,9 @@ use super::truncate::{FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, truncate_and_normal
 pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
 
 /// Default context length when model info is unavailable
-/// Conservative value suitable for most embedding models
-const DEFAULT_CONTEXT_LENGTH: usize = 512;
+/// Conservative value suitable for most embedding models.
+/// Use this for spawned tasks that can't await context_length.
+pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
 
 /// Client for generating embeddings via Ollama
 pub struct EmbeddingClient {
@@ -34,6 +38,22 @@ impl EmbeddingClient {
     #[allow(dead_code)]
     pub fn with_model(ollama: Ollama, model: String) -> Self {
         Self { ollama, model }
+    }
+
+    /// Check if an API error indicates context length exceeded.
+    ///
+    /// Ollama returns various error messages for context overflow:
+    /// - "context_length_exceeded"
+    /// - "maximum context length"
+    /// - "token limit"
+    /// - "sequence length"
+    pub fn is_context_exceeded(error: &str) -> bool {
+        let error_lower = error.to_lowercase();
+        error_lower.contains("context_length")
+            || error_lower.contains("context length")
+            || error_lower.contains("maximum context")
+            || error_lower.contains("token limit")
+            || error_lower.contains("sequence length")
     }
 
     /// Get the context length for the embedding model from Ollama API.
@@ -66,6 +86,12 @@ impl EmbeddingClient {
     ///
     /// Uses the prefix "search_document: " for nomic-embed-text-v2-moe model.
     /// Truncates to 256 dimensions and normalizes.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EmbeddingError::ContextExceeded` if the text exceeds the model's
+    /// context window. Use the `fallback` module's `embed_chunk_with_fallback`
+    /// for automatic chunking when context is exceeded.
     pub async fn embed(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
         // Add prefix for nomic-embed-text-v2-moe
         let prefixed_text = format!("search_document: {}", text);
@@ -149,6 +175,7 @@ impl EmbeddingClient {
 
 /// Errors from embedding generation
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum EmbeddingError {
     /// API call failed
     ApiError(String),
@@ -156,6 +183,8 @@ pub enum EmbeddingError {
     NoEmbedding,
     /// Invalid embedding dimensions
     InvalidDimensions { expected: usize, got: usize },
+    /// Content exceeds model's context window
+    ContextExceeded { message: String },
 }
 
 impl std::fmt::Display for EmbeddingError {
@@ -169,6 +198,9 @@ impl std::fmt::Display for EmbeddingError {
                     "Invalid embedding dimensions: expected {}, got {}",
                     expected, got
                 )
+            }
+            Self::ContextExceeded { message } => {
+                write!(f, "Content exceeds context limit: {}", message)
             }
         }
     }
@@ -198,5 +230,19 @@ mod tests {
     #[test]
     fn test_embedding_dimension_method() {
         assert_eq!(EmbeddingClient::embedding_dimension(), 256);
+    }
+
+    #[test]
+    fn test_is_context_exceeded() {
+        assert!(EmbeddingClient::is_context_exceeded(
+            "context_length exceeded"
+        ));
+        assert!(EmbeddingClient::is_context_exceeded(
+            "maximum context length exceeded"
+        ));
+        assert!(EmbeddingClient::is_context_exceeded("token limit exceeded"));
+        assert!(EmbeddingClient::is_context_exceeded("sequence length exceeded"));
+        assert!(!EmbeddingClient::is_context_exceeded("connection refused"));
+        assert!(!EmbeddingClient::is_context_exceeded("network error"));
     }
 }

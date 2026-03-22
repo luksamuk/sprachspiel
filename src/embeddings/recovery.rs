@@ -22,7 +22,10 @@ use chrono::Utc;
 use std::sync::Arc;
 
 use crate::db::Database;
-use crate::embeddings::{chunk_text_with_config, ChunkConfig, DynamicChunkConfig, EmbeddingClient};
+use crate::embeddings::{
+    chunk_text_with_config, ChunkConfig, DynamicChunkConfig, EmbeddingClient,
+    fallback::{EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback},
+};
 
 /// Recover missing embeddings for all content
 ///
@@ -99,9 +102,15 @@ pub async fn recover_missing_embeddings(
             continue;
         }
 
+        // Get item's conversation_id and project_id for embedding metadata
+        let (conv_id, proj_id) = match db.get_content_item_by_id(*item_id) {
+            Ok(Some(item)) => (item.conversation_id, item.project_id),
+            _ => (None, None),
+        };
+
         // Check if content needs chunking using dynamic threshold
         if content.len() > max_chars {
-            // Long content - create chunks and embed each chunk
+            // Long content - create chunks and embed each chunk with fallback
             let chunks_list = chunk_text_with_config(content, &ChunkConfig::from(&chunk_config));
 
             for chunk in &chunks_list {
@@ -121,30 +130,20 @@ pub async fn recover_missing_embeddings(
                     }
                 };
 
-                // Get item's conversation_id and project_id for embedding metadata
-                let (conv_id, proj_id) = match db.get_content_item_by_id(*item_id) {
-                    Ok(Some(item)) => (item.conversation_id, item.project_id),
-                    _ => (None, None),
+                // Embed chunk with fallback
+                let ctx = EmbedContext {
+                    content: &chunk.content,
+                    item_id: *item_id,
+                    chunk_id,
+                    content_type: content_type.as_str(),
+                    conversation_id: conv_id.as_deref(),
+                    project_id: proj_id.as_deref(),
+                    timestamp,
                 };
 
-                // Generate embedding for chunk
-                match embedding_client.embed(&chunk.content).await {
-                    Ok(embedding) => {
-                        match db.update_content_chunk_embedding(
-                            chunk_id,
-                            &embedding,
-                            content_type,
-                            conv_id.as_deref(),
-                            proj_id.as_deref(),
-                            timestamp,
-                        ) {
-                            Ok(_) => {
-                                recovered += 1;
-                            }
-                            Err(e) => {
-                                eprintln!("Warning: Failed to update chunk {} in DB: {}", chunk_id, e);
-                            }
-                        }
+                match embed_chunk_with_fallback(ctx, Arc::clone(db), Arc::clone(embedding_client), context_length, 0).await {
+                    Ok(result) => {
+                        recovered += result.chunks_created;
                     }
                     Err(e) => {
                         eprintln!("Warning: Failed to recover embedding for chunk {}: {}", chunk_id, e);
@@ -163,26 +162,21 @@ pub async fn recover_missing_embeddings(
                 });
             }
         } else {
-            // Short content - embed directly
-            // Get item's conversation_id and project_id for embedding metadata
-            let (conv_id, proj_id) = match db.get_content_item_by_id(*item_id) {
-                Ok(Some(item)) => (item.conversation_id, item.project_id),
-                _ => (None, None),
-            };
+            // Short content - embed directly with fallback
+            let ctx = EmbedItemContext::new(
+                content,
+                *item_id,
+                content_type.as_str(),
+                conv_id.as_deref(),
+                proj_id.as_deref(),
+            );
 
-            match embedding_client.embed(content).await {
-                Ok(embedding) => {
-                    if db
-                        .update_content_item_embedding(
-                            *item_id,
-                            &embedding,
-                            content_type,
-                            conv_id.as_deref(),
-                            proj_id.as_deref(),
-                            timestamp,
-                        )
-                        .is_ok()
-                    {
+            match embed_item_with_fallback(ctx, db, embedding_client, context_length).await {
+                Ok(result) => {
+                    if result.chunks_created > 0 {
+                        // Item was chunked due to fallback
+                        recovered += result.chunks_created;
+                    } else {
                         recovered += 1;
                     }
                 }
@@ -206,16 +200,16 @@ pub async fn recover_missing_embeddings(
     if !chunks.is_empty() {
         for (chunk_id, content) in &chunks {
             // Get the item for this chunk to get metadata
-            let item_info: Option<(String, Option<String>, Option<String>)> = match db
-                .with_connection::<_, _>(|conn| {
+            let item_info: Option<(i64, String, Option<String>, Option<String>)> = match db
+                .with_connection(|conn| {
                     let mut stmt = conn.prepare(
-                        "SELECT ci.content_type, ci.conversation_id, ci.project_id
+                        "SELECT cc.item_id, ci.content_type, ci.conversation_id, ci.project_id
                          FROM content_chunks cc
                          JOIN content_items ci ON cc.item_id = ci.id
                          WHERE cc.id = ?1",
                     )?;
                     let mut rows = stmt.query_map(rusqlite::params![chunk_id], |row| {
-                        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
                     })?;
                     rows.next().transpose()
                 }) {
@@ -223,8 +217,8 @@ pub async fn recover_missing_embeddings(
                 _ => None,
             };
 
-            let (content_type, conv_id, proj_id) = match item_info {
-                Some((ct, c, p)) => (ct, c, p),
+            let (parent_item_id, content_type, conv_id, proj_id) = match item_info {
+                Some((pid, ct, c, p)) => (pid, ct, c, p),
                 None => {
                     // Chunk was just created but item doesn't exist - shouldn't happen
                     eprintln!("Warning: Newly created chunk {} has no parent item", chunk_id);
@@ -232,28 +226,25 @@ pub async fn recover_missing_embeddings(
                 }
             };
 
-            // Generate embedding for chunk
-            match embedding_client.embed(content).await {
-                Ok(embedding) => {
-                    match db.update_content_chunk_embedding(
-                        *chunk_id,
-                        &embedding,
-                        &content_type,
-                        conv_id.as_deref(),
-                        proj_id.as_deref(),
-                        now,
-                    ) {
-                        Ok(_) => {
-                            recovered += 1;
-                        }
-                        Err(e) => {
-                            eprintln!("Warning: Failed to update chunk {} in DB: {}", chunk_id, e);
-                        }
-                    }
+            let timestamp = now;
+
+            // Embed chunk with fallback
+            let ctx = EmbedContext {
+                content,
+                item_id: parent_item_id,
+                chunk_id: *chunk_id,
+                content_type: &content_type,
+                conversation_id: conv_id.as_deref(),
+                project_id: proj_id.as_deref(),
+                timestamp,
+            };
+
+            match embed_chunk_with_fallback(ctx, Arc::clone(db), Arc::clone(embedding_client), context_length, 0).await {
+                Ok(result) => {
+                    recovered += result.chunks_created;
                 }
                 Err(e) => {
-                    // Chunk may exceed context length - this is expected for long content
-                    // The embedding will fail naturally, and we just mark it as failed
+                    // Chunk may exceed context length - fallback didn't work
                     eprintln!(
                         "Warning: Failed to generate embedding for chunk {}: {}",
                         chunk_id, e

@@ -222,6 +222,12 @@ async fn handle_user_message(
     }
 }
 
+/// Information about loaded session (for display after banner)
+pub struct SessionLoadResult {
+    pub session: ChatSession,
+    pub resume_message: Option<String>,
+}
+
 /// Load or create a chat session based on args.
 fn create_session(
     args: &super::ChatArgs,
@@ -230,28 +236,34 @@ fn create_session(
     model_override: Option<&str>,
     default_model: &str,
     use_debug: bool,
-) -> ChatSession {
+) -> SessionLoadResult {
     if args.anonymous {
         if use_debug {
             log_debug("Anonymous mode: starting fresh session without history");
         }
-        return ChatSession::new(
-            model_override.unwrap_or(default_model).to_string(),
-            None,
-            true,
-        );
+        return SessionLoadResult {
+            session: ChatSession::new(
+                model_override.unwrap_or(default_model).to_string(),
+                None,
+                true,
+            ),
+            resume_message: None,
+        };
     }
 
     if let Some(session_name) = &args.load {
         if let Some(db_ref) = db {
             match ChatSession::load_sqlite(db_ref, session_name) {
                 Ok(s) => {
-                    println!(
-                        "Loaded session: {} ({} messages)",
-                        session_name,
-                        s.messages.len()
-                    );
-                    return s;
+                    let msg_count = s.messages.len();
+                    return SessionLoadResult {
+                        session: s,
+                        resume_message: Some(format!(
+                            "Loaded session: {} ({} messages)",
+                            session_name,
+                            msg_count
+                        )),
+                    };
                 }
                 Err(e) => {
                     eprintln!("Warning: Could not load session '{}': {}", session_name, e);
@@ -262,15 +274,21 @@ fn create_session(
                         false,
                     );
                     new_session.id = session_name.clone();
-                    return new_session;
+                    return SessionLoadResult {
+                        session: new_session,
+                        resume_message: None,
+                    };
                 }
             }
         }
-        return ChatSession::new(
-            model_override.unwrap_or(default_model).to_string(),
-            project_id.clone(),
-            false,
-        );
+        return SessionLoadResult {
+            session: ChatSession::new(
+                model_override.unwrap_or(default_model).to_string(),
+                project_id.clone(),
+                false,
+            ),
+            resume_message: None,
+        };
     }
 
     // Try to load the most recent session by updated_at
@@ -279,13 +297,16 @@ fn create_session(
             Ok(Some(last_id)) => {
                 match ChatSession::load_sqlite(db_ref, &last_id) {
                     Ok(s) => {
-                        let display_name = s.name.as_deref().unwrap_or(&s.id);
-                        println!(
-                            "Resumed session: {} ({} messages)",
-                            display_name,
-                            s.messages.len()
-                        );
-                        return s;
+                        let display_name = s.name.as_deref().unwrap_or(&s.id).to_string();
+                        let msg_count = s.messages.len();
+                        return SessionLoadResult {
+                            session: s,
+                            resume_message: Some(format!(
+                                "Resumed session: {} ({} messages)",
+                                display_name,
+                                msg_count
+                            )),
+                        };
                     }
                     Err(e) => {
                         eprintln!("Warning: Could not load session '{}': {}", last_id, e);
@@ -307,11 +328,14 @@ fn create_session(
     }
 
     // Create new session (not persisted until first message)
-    ChatSession::new(
-        model_override.unwrap_or(default_model).to_string(),
-        project_id.clone(),
-        false,
-    )
+    SessionLoadResult {
+        session: ChatSession::new(
+            model_override.unwrap_or(default_model).to_string(),
+            project_id.clone(),
+            false,
+        ),
+        resume_message: None,
+    }
 }
 
 /// Validate and set the model for a session.
@@ -430,8 +454,8 @@ pub async fn run_chat_repl(
     
     run_startup_tasks(&db, &embedding_client, args.anonymous).await;
 
-    // Load or create session
-    let mut session = create_session(
+    // Load or create session (returns info without printing yet)
+    let session_load_result = create_session(
         args,
         &db,
         &project_id,
@@ -439,6 +463,8 @@ pub async fn run_chat_repl(
         default_model,
         use_debug,
     );
+    let mut session = session_load_result.session;
+    let resume_message = session_load_result.resume_message;
 
     // Apply CLI flags (CLI takes precedence over args)
     let ignore_agents = cli_ignore_agents || args.ignore_agents;
@@ -453,6 +479,14 @@ pub async fn run_chat_repl(
 
     let capabilities =
         ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
+
+    // PRINT BANNER FIRST (before any other output)
+    print_welcome(&session, &model_config, &capabilities);
+
+    // Print session info (if any)
+    if let Some(msg) = resume_message {
+        println!("{}", msg);
+    }
 
     // Attach database to session
     if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
@@ -480,7 +514,7 @@ pub async fn run_chat_repl(
         let recovered =
             crate::embeddings::recover_missing_embeddings(db_ref, client).await;
         if recovered > 0 {
-            log_debug(&format!("Recovered {} missing embedding(s)", recovered));
+            println!("Recovered {} missing embedding(s)", recovered);
         }
     }
 
@@ -516,7 +550,8 @@ pub async fn run_chat_repl(
         None
     };
 
-    print_welcome(&session, &model_config, &capabilities);
+    // Print help line AFTER all startup messages
+    print!("{}", super::view::WelcomeInfo::help_line());
 
     let tools_active = session.tools && capabilities.tools;
 

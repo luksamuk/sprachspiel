@@ -29,6 +29,9 @@ const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::log_debug;
+use crate::embeddings::{
+    EmbedItemContext, DEFAULT_CONTEXT_LENGTH, embed_item_with_fallback,
+};
 use crate::settings::Settings;
 use crate::tokens::{calculate_context_metrics, estimate_tokens};
 
@@ -1254,19 +1257,21 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
                 let note_content = note.content.clone();
                 
                 tokio::spawn(async move {
-                    match client.embed(&note_content).await {
-                        Ok(embedding) => {
-                            let timestamp = chrono::Utc::now();
-                            let _ = db_clone.update_note_embedding(
-                                id,
-                                &embedding,
-                                pid.as_deref(),
-                                timestamp,
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("Warning: Failed to generate embedding for note: {}", e);
-                        }
+                    // Use fallback for oversized content
+                    let ctx = EmbedItemContext::new(
+                        &note_content,
+                        id,
+                        "note",
+                        None,  // notes don't have conversation_id
+                        pid.as_deref(),
+                    );
+                    if let Err(e) = embed_item_with_fallback(
+                        ctx,
+                        &db_clone,
+                        &client,
+                        DEFAULT_CONTEXT_LENGTH,
+                    ).await {
+                        eprintln!("Warning: Failed to generate embedding for note: {}", e);
                     }
                 });
             }

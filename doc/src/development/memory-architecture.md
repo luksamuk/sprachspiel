@@ -1,8 +1,8 @@
 # Memory Architecture
 
 **Status:** Active  
-**Version:** v0.33.0  
-**Updated:** 2026-03-15
+**Version:** v0.37.2  
+**Updated:** 2026-03-21
 
 This document provides a unified view of Ask-AI's memory systems and how they compose the LLM context.
 
@@ -175,6 +175,57 @@ sequenceDiagram
     Chat->>LLM: Send context + retrieved messages
     LLM-->>User: Response
 ```
+
+### Embedding Fallback (v0.37.2+)
+
+When embedding generation fails due to context overflow, the system automatically retries with smaller chunks and creates new chunks atomically:
+
+```mermaid
+sequenceDiagram
+    participant Chat
+    participant Embed as Embedding Client
+    participant DB as Database
+    participant Ollama
+    
+    Chat->>Embed: embed(text)
+    Embed->>Ollama: API request
+    Ollama-->>Embed: Error: context_length_exceeded
+    
+    Note over Embed: Fallback activated
+    
+    loop Halve context size (max 4 iterations)
+        Embed->>Embed: Split into smaller chunks
+        Embed->>DB: Create chunks atomically (transaction)
+        Embed->>Ollama: Retry with smaller chunks
+        alt Success
+            Ollama-->>Embed: Return embedding
+            Embed->>DB: Save embeddings
+        else Still exceeds
+            Note over Embed: Continue halving
+        end
+    end
+    
+    alt All iterations exhausted
+        Embed-->>Chat: FallbackError
+        Note over Chat: Embedding skipped (recovered later)
+    else Success
+        Embed-->>Chat: Return EmbedResult
+    end
+```
+
+**Fallback progression:**
+- 512 tokens (default context for nomic-embed-text-v2-moe)
+- 256 tokens (first halving)
+- 128 tokens (second halving)
+- 64 tokens (third halving)
+- 32 tokens (fourth halving, minimum)
+
+**Implementation:**
+- `embed_chunk_with_fallback(ctx, db, client, context_length, division_count)` in `fallback.rs`
+- `embed_item_with_fallback(ctx, db, client, context_length)` for items without chunks
+- Uses `DynamicChunkConfig::new(context_length / 2)` for progressive halving
+- Atomic transactions for chunk creation
+- Protection limits: MAX_FALLBACK_DIVISIONS=4, MAX_CHUNKS_PER_ITEM=64, MIN_CHUNK_TOKENS=32
 
 **Commands:**
 - `/search <query>` — Search conversation history
