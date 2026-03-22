@@ -4,6 +4,9 @@
 
 use std::sync::Arc;
 
+use termimad::terminal_size;
+use unicode_width::UnicodeWidthStr;
+
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
@@ -28,13 +31,37 @@ use crate::project::get_project_id;
 /// Token overhead for each tool definition (approximate)
 const TOKENS_PER_TOOL: usize = 50;
 
-/// ANSI code to clear the status bar and prompt line
-/// Format: ESC[N A (move up N lines), ESC[J (clear to end of screen)
-/// We clear: STATUS_BAR_LINES (3) + 1 (prompt line) = 4 lines
-const ANSI_CLEAR_STATUS_BAR: &str = "\x1B[4A\x1B[J";
+/// Number of lines in the status bar (separator, content, separator)
+const STATUS_BAR_LINES: usize = 3;
+
+/// Prompt prefix displayed before user input
+const PROMPT_PREFIX: &str = ">>> ";
 
 /// Maximum compaction cycles per message to prevent infinite loops
 const MAX_COMPACTION_CYCLES: usize = 3;
+
+/// Calculate the number of visual lines a string will occupy in the terminal
+///
+/// Uses Unicode-aware width calculation to handle CJK and other wide characters.
+/// Returns at least 1 line.
+fn calculate_visual_lines(input: &str, prompt_len: usize, terminal_width: usize) -> usize {
+    if terminal_width == 0 {
+        return 1; // Fallback: assume single line (visual artifacts acceptable)
+    }
+    
+    // Unicode-aware width calculation
+    let input_width = input.width();
+    let total_width = prompt_len + input_width;
+    
+    // Ceiling division: how many lines does the input occupy?
+    total_width.div_ceil(terminal_width).max(1)
+}
+
+/// Build ANSI escape code to clear status bar and input lines
+fn build_clear_code(visual_lines: usize) -> String {
+    let lines_to_clear = STATUS_BAR_LINES + visual_lines;
+    format!("\x1B[{}A\x1B[J", lines_to_clear)
+}
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -606,12 +633,24 @@ pub async fn run_chat_repl(
             InputResult::Line(ref line) => {
                 let line = line.trim();
                 if line.is_empty() {
-                    print!("{}", ANSI_CLEAR_STATUS_BAR);
+                    // Clear status bar only (no input to clear)
+                    print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
                     continue;
                 }
 
                 input.add_history(line);
-                print!("{}", ANSI_CLEAR_STATUS_BAR);
+
+                // Calculate visual lines for proper ANSI clearing
+                let prompt_len = PROMPT_PREFIX.len();
+                let (cols, _) = terminal_size();
+                let visual_lines = if cols > 0 {
+                    calculate_visual_lines(line, prompt_len, cols as usize)
+                } else {
+                    1 // Fallback: assume 1 line
+                };
+
+                // Clear status bar and input lines
+                print!("{}", build_clear_code(visual_lines));
                 println!(">>> {}", line);
 
                 if line.starts_with('/') {
@@ -639,12 +678,14 @@ pub async fn run_chat_repl(
                 handle_user_message(line, &mut state).await;
             }
             InputResult::Interrupted => {
-                print!("{}", ANSI_CLEAR_STATUS_BAR);
+                // Clear status bar only
+                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
                 println!("^C");
                 continue;
             }
             InputResult::Eof => {
-                print!("{}", ANSI_CLEAR_STATUS_BAR);
+                // Clear status bar only
+                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
                 println!("^D");
                 let _ = input.save_history();
                 if !state.session.anonymous {
@@ -653,7 +694,8 @@ pub async fn run_chat_repl(
                 return Ok(());
             }
             InputResult::Error(err) => {
-                print!("{}", ANSI_CLEAR_STATUS_BAR);
+                // Clear status bar only
+                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
                 eprintln!("Error: {}", err);
                 break;
             }
