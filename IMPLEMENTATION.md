@@ -508,28 +508,36 @@ todo_clear_all()             // Clear all tasks
 
 | File | Changes |
 |------|---------|
-| `src/chat/view/mod.rs` | Added `StatusBarInfo` struct, `STATUS_BAR_LINES` constant, `format_status_bar()` method |
+| `src/chat/view/mod.rs` | Added `StatusBarInfo` struct, `STATUS_BAR_LINES` constant, `format_status_bar()` method, visual truncation |
 | `src/chat/repl_state.rs` | Added `get_status_bar_info()` method to ReplState |
-| `src/chat/repl.rs` | Integrated status bar rendering before prompt, simplified prompt to `>` |
+| `src/chat/repl.rs` | Integrated status bar rendering before prompt, ANSI clear codes, prompt set to `>>> ` |
 
 **Features:**
 - Model name, context usage (XX.XK/YYYK), progress bar with percentage
 - Think/Tools indicators (🧠🔧) in status bar
 - Colored progress bar: Green (< 50%), Yellow (50-75%), Red (> 75%)
-- Fixed width (80 columns) matching welcome banner
-- Clean prompt: just `>` (model and indicators moved to status bar)
-- ANSI codes clear status bar before user input scroll
+- Fixed width (77 visual characters) to prevent overflow
+- Clean prompt: `>>> ` (model and indicators moved to status bar)
+- ANSI codes clear status bar before user input appears
 - Dynamic calculation using `calculate_context_metrics()`
 
 **Files Modified:**
-- `src/chat/view/mod.rs` - `StatusBarInfo` struct with `format_status_bar()`
+- `src/chat/view/mod.rs` - `StatusBarInfo` struct with `format_status_bar()`, `truncate_visual()` helper
 - `src/chat/repl_state.rs` - `get_status_bar_info()` method
-- `src/chat/repl.rs` - `build_status_bar()` helper, loop integration
+- `src/chat/repl.rs` - `build_status_bar()` helper, `ANSI_CLEAR_STATUS_BAR` constant, loop integration
 
 **Commits:**
+- `8433736` docs: update CHANGELOG and IMPLEMENTATION for status bar feature
 - `c20e2d1` feat: add status bar above prompt
+- `a707f02` fix: correct spacing around separators in status bar
+- `4bf6a78` fix: remove extra whitespace from status bar content line
 - `fd7a28a` fix: use visual truncation for status bar content line
 - `d288e50` fix: reduce status bar content width to 77 columns
+- `3b51308` revert: remove status bar from spinner
+- `5e03f46` feat: change prompt from '>' to '>>>' for better visibility
+
+**Design Decision:**
+Status bar during spinner ("Thinking...") was attempted but caused display issues with ANSI codes across different terminals. Reverted to simpler approach where status bar appears only above prompt.
 
 **Related:** Issue #47
 

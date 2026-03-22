@@ -8,11 +8,12 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **Status Bar Above Prompt** - Dynamic status bar showing context information
   - Displays model name, context usage (XX.XK/YYYK), progress bar with percentage, and think/tools indicators
-  - Fixed width up to 80 columns matching welcome banner
+  - Fixed width of 77 visual characters to prevent overflow
   - Colored progress bar: green (< 50%), yellow (50-75%), red (> 75%)
-  - Clean prompt: just `>` character, with all context moved to status bar
+  - Clean prompt: `>>> ` with all context moved to status bar
   - Updates dynamically on each prompt cycle
-  - Status bar rendered above prompt in `TerminalView`
+  - Status bar rendered above prompt, cleared before user input appears
+  - Visual truncation handles Unicode characters correctly
   - Related: Issue #47
 
 - **Inter-Tool Compaction with Automatic Continuation** - Automatic context compaction during multi-tool execution
