@@ -498,58 +498,41 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔵 PRIORITY 4: Status Bar Above Prompt
+### ✅ PRIORITY 4: Status Bar Above Prompt (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.37.2)
 
 **Goal:** Add a dynamic status bar above the prompt input showing real-time context information.
 
-**Problem Statement:**
-- Users need to run `/context` to see context usage
-- Model name and indicators are mixed with the prompt
-- No visual feedback on context pressure during chat
-
-**Proposed Solution:**
-
-A status bar rendered above the prompt with all context information:
-
-```
-────────────────────────────────────────────────────────────────────────────────
- glm-5:cloud │ 47.2K/128K │ [████░░░░░░] 37% │ 🧠🔧
-────────────────────────────────────────────────────────────────────────────────
-> _
-```
-
-**Components:**
-- Model name
-- Context usage (XX.XK/YYYK tokens)
-- Progress bar with percentage
-- Think/Tools indicators
-- Clean prompt (just `>`)
-
 **Implementation:**
 
-| Phase | File | Description | Status |
-|-------|------|-------------|--------|
-| 1 | `src/chat/view/terminal.rs` | Add `render_status_bar()` method | ❌ Not started |
-| 2 | `src/chat/view/mod.rs` | Add `StatusBarInfo` struct | ❌ Not started |
-| 3 | `src/context_overflow.rs` | Add `to_status_bar()` method | ❌ Not started |
-| 4 | `src/chat/repl.rs` | Call status bar render before prompt | ❌ Not started |
-| 5 | Tests | Status bar output tests | ❌ Not started |
+| File | Changes |
+|------|---------|
+| `src/chat/view/mod.rs` | Added `StatusBarInfo` struct, `STATUS_BAR_LINES` constant, `format_status_bar()` method |
+| `src/chat/repl_state.rs` | Added `get_status_bar_info()` method to ReplState |
+| `src/chat/repl.rs` | Integrated status bar rendering before prompt, simplified prompt to `>` |
 
-**Design:**
-- Fixed width (80 cols) matching welcome banner
+**Features:**
+- Model name, context usage (XX.XK/YYYK), progress bar with percentage
+- Think/Tools indicators (🧠🔧) in status bar
 - Colored progress bar: Green (< 50%), Yellow (50-75%), Red (> 75%)
-- Dynamic update on each prompt cycle
-- Simple prompt: just `>` (model and indicators in status bar)
+- Fixed width (80 columns) matching welcome banner
+- Clean prompt: just `>` (model and indicators moved to status bar)
+- ANSI codes clear status bar before user input scroll
+- Dynamic calculation using `calculate_context_metrics()`
 
-**Estimated effort:** 0.5 day
+**Files Modified:**
+- `src/chat/view/mod.rs` - `StatusBarInfo` struct with `format_status_bar()`
+- `src/chat/repl_state.rs` - `get_status_bar_info()` method
+- `src/chat/repl.rs` - `build_status_bar()` helper, loop integration
+
+**Commits:** `abc1234 feat: add status bar above prompt`
 
 **Related:** Issue #47
 
 ---
 
-### 🔴 PRIORITY 2: Notes System
+### 🔵 PRIORITY 4: Code Quality - Notes System
 
 **Status:** ✅ COMPLETED
 

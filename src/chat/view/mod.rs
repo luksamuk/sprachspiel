@@ -18,6 +18,10 @@
 
 #![allow(dead_code)]
 
+/// Number of lines in the status bar (divisor, content, divisor)
+/// Used by ANSI clear codes in repl.rs to remove status bar before user input
+pub const STATUS_BAR_LINES: usize = 3;
+
 // ANSI color codes for banner styling
 mod colors {
     pub const CYAN: &str = "\x1B[36m";
@@ -27,6 +31,8 @@ mod colors {
     pub const RESET: &str = "\x1B[0m";
     pub const BOLD_CYAN: &str = "\x1B[1;36m";
     pub const BOLD_YELLOW: &str = "\x1B[1;33m";
+    pub const GREEN: &str = "\x1B[32m";
+    pub const RED: &str = "\x1B[31m";
 }
 
 /// ASCII art logo using toilet "future" font (pre-rendered)
@@ -39,18 +45,18 @@ const BANNER_LOGO: &str = "\
 /// Brain (cyan) with extensions (orange/brown) representing tools/memory/Zettelkasten
 /// Generated: magick thumb4.png -crop 900x600+300+200 -resize 120x85 | jp2a --width=40 --colors
 const EXTENDED_MIND_ART: [&str; 12] = [
-"\x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m      \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m \x1B[38;2;4;2;1m \x1B[38;2;16;8;1m \x1B[38;2;54;30;4m.\x1B[38;2;139;111;60mc\x1B[38;2;190;151;66md\x1B[38;2;176;133;40mo\x1B[38;2;195;170;83mx\x1B[38;2;139;104;23m:\x1B[0m",
-"\x1B[38;2;5;3;1m \x1B[38;2;28;14;1m \x1B[38;2;70;47;14m.\x1B[38;2;59;37;6m.\x1B[38;2;17;8;1m \x1B[38;2;3;2;1m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m          \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;4;3;1m \x1B[38;2;14;7;1m \x1B[38;2;47;28;5m.\x1B[38;2;113;90;49m;\x1B[38;2;153;119;58ml\x1B[38;2;152;119;58mc\x1B[38;2;106;83;41m,\x1B[38;2;42;23;2m \x1B[38;2;18;9;1m \x1B[38;2;17;8;1m \x1B[38;2;10;5;1m\x1B[0m",
-"\x1B[38;2;24;12;1m \x1B[38;2;167;127;26ml\x1B[38;2;253;247;168mW\x1B[38;2;246;234;136mN\x1B[38;2;153;108;26mc\x1B[38;2;85;66;35m'\x1B[38;2;43;26;7m \x1B[38;2;18;9;1m \x1B[38;2;8;4;1m \x1B[38;2;3;2;1m \x1B[38;2;2;2;1m    \x1B[38;2;2;2;2m \x1B[38;2;1;5;5m \x1B[38;2;1;12;13m \x1B[38;2;6;32;33m \x1B[38;2;57;81;83m'\x1B[38;2;85;110;111m:\x1B[38;2;84;114;115m:\x1B[38;2;41;89;92m'\x1B[38;2;66;108;112m;\x1B[38;2;64;105;107m;\x1B[38;2;59;89;91m,\x1B[38;2;64;86;87m,\x1B[38;2;34;56;58m.\x1B[38;2;2;16;15m \x1B[38;2;15;11;3m \x1B[38;2;76;58;29m.\x1B[38;2;125;99;48m:\x1B[38;2;140;106;50m:\x1B[38;2;130;101;50m:\x1B[38;2;84;63;30m'\x1B[38;2;31;15;1m \x1B[38;2;10;5;1m \x1B[38;2;3;2;1m \x1B[38;2;2;1;1m    \x1B[0m",
-"\x1B[38;2;5;3;1m \x1B[38;2;28;15;1m \x1B[38;2;71;54;9m.\x1B[38;2;64;45;5m.\x1B[38;2;54;33;8m.\x1B[38;2;90;72;38m'\x1B[38;2;119;93;49m;\x1B[38;2;129;97;48m:\x1B[38;2;132;99;47m:\x1B[38;2;125;96;47m:\x1B[38;2;105;84;45m,\x1B[38;2;62;47;21m.\x1B[38;2;12;19;13m \x1B[38;2;38;74;76m.\x1B[38;2;123;158;160md\x1B[38;2;147;191;194mk\x1B[38;2;145;201;206mO\x1B[38;2;181;216;219mK\x1B[38;2;175;217;220mK\x1B[38;2;189;223;226mK\x1B[38;2;128;189;195mk\x1B[38;2;187;222;226mK\x1B[38;2;164;211;216m0\x1B[38;2;128;188;193mk\x1B[38;2;193;226;229mX\x1B[38;2;174;219;222mK\x1B[38;2;138;184;186mk\x1B[38;2;102;143;130ml\x1B[38;2;145;163;128md\x1B[38;2;48;53;33m.\x1B[38;2;13;10;4m \x1B[38;2;4;3;1m \x1B[38;2;2;1;1m      \x1B[38;2;2;1;1m \x1B[38;2;2;1;1m \x1B[0m",
-"\x1B[38;2;2;1;1m   \x1B[38;2;2;1;1m \x1B[38;2;3;2;1m \x1B[38;2;6;3;1m \x1B[38;2;14;8;1m \x1B[38;2;32;16;1m \x1B[38;2;70;52;21m.\x1B[38;2;105;117;74m:\x1B[38;2;123;161;151md\x1B[38;2;190;227;229mX\x1B[38;2;215;239;241mN\x1B[38;2;71;154;161ml\x1B[38;2;204;234;237mX\x1B[38;2;235;249;250mW\x1B[38;2;200;231;234mX\x1B[38;2;169;213;217m0\x1B[38;2;184;218;220mK\x1B[38;2;201;230;232mX\x1B[38;2;220;242;243mN\x1B[38;2;200;228;231mX\x1B[38;2;211;238;241mN\x1B[38;2;207;234;236mN\x1B[38;2;148;200;205mO\x1B[38;2;196;229;232mX\x1B[38;2;188;226;230mX\x1B[38;2;116;179;185mx\x1B[38;2;15;54;56m.\x1B[38;2;1;7;7m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m   \x1B[38;2;2;1;1m    \x1B[0m",
-"\x1B[38;2;2;2;1m  \x1B[38;2;2;1;1m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m  \x1B[38;2;2;2;1m    \x1B[38;2;2;14;14m \x1B[38;2;88;140;143ml\x1B[38;2;158;210;215m0\x1B[38;2;225;244;246mW\x1B[38;2;80;164;171mo\x1B[38;2;220;238;239mN\x1B[38;2;204;233;236mX\x1B[38;2;202;228;231mX\x1B[38;2;121;185;191mx\x1B[38;2;184;219;222mK\x1B[38;2;197;227;229mX\x1B[38;2;158;207;212m0\x1B[38;2;216;239;241mN\x1B[38;2;213;234;236mN\x1B[38;2;115;181;187mx\x1B[38;2;183;218;221mK\x1B[38;2;148;199;203mO\x1B[38;2;168;208;211m0\x1B[38;2;189;224;227mK\x1B[38;2;165;209;214m0\x1B[38;2;141;195;199mO\x1B[38;2;1;26;26m \x1B[38;2;2;3;2m   \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m\x1B[0m",
-"\x1B[38;2;2;2;1m       \x1B[38;2;2;2;1m \x1B[38;2;1;5;5m \x1B[38;2;20;55;56m.\x1B[38;2;141;178;181mx\x1B[38;2;205;234;236mX\x1B[38;2;77;156;162ml\x1B[38;2;219;241;243mN\x1B[38;2;243;251;252mW\x1B[38;2;183;217;220mK\x1B[38;2;214;237;239mN\x1B[38;2;210;235;237mN\x1B[38;2;214;236;238mN\x1B[38;2;139;195;200mk\x1B[38;2;150;200;204mO\x1B[38;2;193;222;224mK\x1B[38;2;202;231;234mX\x1B[38;2;171;213;216m0\x1B[38;2;192;224;227mX\x1B[38;2;186;221;224mK\x1B[38;2;176;219;222mK\x1B[38;2;228;246;247mW\x1B[38;2;80;132;135mc\x1B[38;2;1;16;16m \x1B[38;2;2;2;2m   \x1B[38;2;2;1;1m     \x1B[0m",
-"\x1B[38;2;2;2;1m      \x1B[38;2;4;3;1m \x1B[38;2;12;7;1m \x1B[38;2;36;20;3m \x1B[38;2;85;68;35m'\x1B[38;2;120;98;48m:\x1B[38;2;93;76;33m,\x1B[38;2;25;40;34m.\x1B[38;2;13;41;42m.\x1B[38;2;53;86;88m,\x1B[38;2;107;133;135ml\x1B[38;2;123;148;150mo\x1B[38;2;115;143;144mo\x1B[38;2;45;100;103m,\x1B[38;2;113;172;177md\x1B[38;2;170;215;219m0\x1B[38;2;249;254;254mM\x1B[38;2;202;232;235mX\x1B[38;2;184;223;226mK\x1B[38;2;155;204;207mO\x1B[38;2;187;222;225mK\x1B[38;2;196;226;229mX\x1B[38;2;185;220;223mK\x1B[38;2;65;127;127m:\x1B[38;2;64;64;38m.\x1B[38;2;59;45;21m.\x1B[38;2;26;13;1m \x1B[38;2;10;5;1m \x1B[38;2;4;3;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m\x1B[0m",
-"\x1B[38;2;2;2;1m   \x1B[38;2;3;2;1m \x1B[38;2;8;4;1m \x1B[38;2;24;12;1m \x1B[38;2;71;49;18m.\x1B[38;2;128;104;55m:\x1B[38;2;152;117;57mc\x1B[38;2;147;115;58mc\x1B[38;2;108;85;43m;\x1B[38;2;49;28;4m.\x1B[38;2;14;7;1m \x1B[38;2;3;3;1m  \x1B[38;2;2;2;2m \x1B[38;2;2;3;2m \x1B[38;2;2;5;5m \x1B[38;2;1;16;17m \x1B[38;2;22;52;53m.\x1B[38;2;53;78;80m'\x1B[38;2;52;79;81m'\x1B[38;2;21;76;80m.\x1B[38;2;49;155;162ml\x1B[38;2;101;159;164mo\x1B[38;2;94;127;129mc\x1B[38;2;51;82;84m'\x1B[38;2;8;20;16m \x1B[38;2;55;38;15m.\x1B[38;2;119;95;52m;\x1B[38;2;146;111;55mc\x1B[38;2;148;113;56mc\x1B[38;2;126;100;54m:\x1B[38;2;73;51;21m.\x1B[38;2;28;13;1m \x1B[38;2;10;5;1m \x1B[38;2;3;2;1m \x1B[0m",
-"\x1B[38;2;94;75;28m,\x1B[38;2;104;85;45m,\x1B[38;2;80;53;10m.\x1B[38;2;117;95;47m;\x1B[38;2;137;104;50m:\x1B[38;2;137;104;50m:\x1B[38;2;117;94;48m;\x1B[38;2;66;46;17m.\x1B[38;2;23;11;1m \x1B[38;2;8;4;1m \x1B[38;2;3;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m  \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m   \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;4;4m \x1B[38;2;2;12;13m \x1B[38;2;5;21;22m \x1B[38;2;1;5;5m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;3;2;1m \x1B[38;2;9;5;1m \x1B[38;2;25;12;1m \x1B[38;2;66;45;17m.\x1B[38;2;112;89;47m;\x1B[38;2;134;101;49m:\x1B[38;2;136;102;48m:\x1B[38;2;125;97;41m:\x1B[38;2;111;79;30m,\x1B[0m",
-"\x1B[38;2;235;221;142mX\x1B[38;2;240;230;161mX\x1B[38;2;176;135;39mo\x1B[38;2;70;45;11m.\x1B[38;2;20;10;1m \x1B[38;2;7;4;1m \x1B[38;2;3;2;1m \x1B[38;2;2;2;1m     \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m  \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m  \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m    \x1B[38;2;2;1;1m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;5;3;1m \x1B[38;2;14;7;1m \x1B[38;2;49;26;2m.\x1B[38;2;150;115;61mc\x1B[0m",
-"\x1B[38;2;35;18;1m \x1B[38;2;40;22;1m \x1B[38;2;17;8;1m \x1B[38;2;4;2;1m \x1B[38;2;2;2;1m         \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m  \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m  \x1B[38;2;2;1;1m   \x1B[38;2;2;1;1m\x1B[38;2;2;1;1m \x1B[38;2;2;1;1m\x1B[38;2;2;1;1m     \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[0m",
+    "\x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m      \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m \x1B[38;2;4;2;1m \x1B[38;2;16;8;1m \x1B[38;2;54;30;4m.\x1B[38;2;139;111;60mc\x1B[38;2;190;151;66md\x1B[38;2;176;133;40mo\x1B[38;2;195;170;83mx\x1B[38;2;139;104;23m:\x1B[0m",
+    "\x1B[38;2;5;3;1m \x1B[38;2;28;14;1m \x1B[38;2;70;47;14m.\x1B[38;2;59;37;6m.\x1B[38;2;17;8;1m \x1B[38;2;3;2;1m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m          \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;4;3;1m \x1B[38;2;14;7;1m \x1B[38;2;47;28;5m.\x1B[38;2;113;90;49m;\x1B[38;2;153;119;58ml\x1B[38;2;152;119;58mc\x1B[38;2;106;83;41m,\x1B[38;2;42;23;2m \x1B[38;2;18;9;1m \x1B[38;2;17;8;1m \x1B[38;2;10;5;1m\x1B[0m",
+    "\x1B[38;2;24;12;1m \x1B[38;2;167;127;26ml\x1B[38;2;253;247;168mW\x1B[38;2;246;234;136mN\x1B[38;2;153;108;26mc\x1B[38;2;85;66;35m'\x1B[38;2;43;26;7m \x1B[38;2;18;9;1m \x1B[38;2;8;4;1m \x1B[38;2;3;2;1m \x1B[38;2;2;2;1m    \x1B[38;2;2;2;2m \x1B[38;2;1;5;5m \x1B[38;2;1;12;13m \x1B[38;2;6;32;33m \x1B[38;2;57;81;83m'\x1B[38;2;85;110;111m:\x1B[38;2;84;114;115m:\x1B[38;2;41;89;92m'\x1B[38;2;66;108;112m;\x1B[38;2;64;105;107m;\x1B[38;2;59;89;91m,\x1B[38;2;64;86;87m,\x1B[38;2;34;56;58m.\x1B[38;2;2;16;15m \x1B[38;2;15;11;3m \x1B[38;2;76;58;29m.\x1B[38;2;125;99;48m:\x1B[38;2;140;106;50m:\x1B[38;2;130;101;50m:\x1B[38;2;84;63;30m'\x1B[38;2;31;15;1m \x1B[38;2;10;5;1m \x1B[38;2;3;2;1m \x1B[38;2;2;1;1m    \x1B[0m",
+    "\x1B[38;2;5;3;1m \x1B[38;2;28;15;1m \x1B[38;2;71;54;9m.\x1B[38;2;64;45;5m.\x1B[38;2;54;33;8m.\x1B[38;2;90;72;38m'\x1B[38;2;119;93;49m;\x1B[38;2;129;97;48m:\x1B[38;2;132;99;47m:\x1B[38;2;125;96;47m:\x1B[38;2;105;84;45m,\x1B[38;2;62;47;21m.\x1B[38;2;12;19;13m \x1B[38;2;38;74;76m.\x1B[38;2;123;158;160md\x1B[38;2;147;191;194mk\x1B[38;2;145;201;206mO\x1B[38;2;181;216;219mK\x1B[38;2;175;217;220mK\x1B[38;2;189;223;226mK\x1B[38;2;128;189;195mk\x1B[38;2;187;222;226mK\x1B[38;2;164;211;216m0\x1B[38;2;128;188;193mk\x1B[38;2;193;226;229mX\x1B[38;2;174;219;222mK\x1B[38;2;138;184;186mk\x1B[38;2;102;143;130ml\x1B[38;2;145;163;128md\x1B[38;2;48;53;33m.\x1B[38;2;13;10;4m \x1B[38;2;4;3;1m \x1B[38;2;2;1;1m      \x1B[38;2;2;1;1m \x1B[38;2;2;1;1m \x1B[0m",
+    "\x1B[38;2;2;1;1m   \x1B[38;2;2;1;1m \x1B[38;2;3;2;1m \x1B[38;2;6;3;1m \x1B[38;2;14;8;1m \x1B[38;2;32;16;1m \x1B[38;2;70;52;21m.\x1B[38;2;105;117;74m:\x1B[38;2;123;161;151md\x1B[38;2;190;227;229mX\x1B[38;2;215;239;241mN\x1B[38;2;71;154;161ml\x1B[38;2;204;234;237mX\x1B[38;2;235;249;250mW\x1B[38;2;200;231;234mX\x1B[38;2;169;213;217m0\x1B[38;2;184;218;220mK\x1B[38;2;201;230;232mX\x1B[38;2;220;242;243mN\x1B[38;2;200;228;231mX\x1B[38;2;211;238;241mN\x1B[38;2;207;234;236mN\x1B[38;2;148;200;205mO\x1B[38;2;196;229;232mX\x1B[38;2;188;226;230mX\x1B[38;2;116;179;185mx\x1B[38;2;15;54;56m.\x1B[38;2;1;7;7m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m   \x1B[38;2;2;1;1m    \x1B[0m",
+    "\x1B[38;2;2;2;1m  \x1B[38;2;2;1;1m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m  \x1B[38;2;2;2;1m    \x1B[38;2;2;14;14m \x1B[38;2;88;140;143ml\x1B[38;2;158;210;215m0\x1B[38;2;225;244;246mW\x1B[38;2;80;164;171mo\x1B[38;2;220;238;239mN\x1B[38;2;204;233;236mX\x1B[38;2;202;228;231mX\x1B[38;2;121;185;191mx\x1B[38;2;184;219;222mK\x1B[38;2;197;227;229mX\x1B[38;2;158;207;212m0\x1B[38;2;216;239;241mN\x1B[38;2;213;234;236mN\x1B[38;2;115;181;187mx\x1B[38;2;183;218;221mK\x1B[38;2;148;199;203mO\x1B[38;2;168;208;211m0\x1B[38;2;189;224;227mK\x1B[38;2;165;209;214m0\x1B[38;2;141;195;199mO\x1B[38;2;1;26;26m \x1B[38;2;2;3;2m   \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m\x1B[0m",
+    "\x1B[38;2;2;2;1m       \x1B[38;2;2;2;1m \x1B[38;2;1;5;5m \x1B[38;2;20;55;56m.\x1B[38;2;141;178;181mx\x1B[38;2;205;234;236mX\x1B[38;2;77;156;162ml\x1B[38;2;219;241;243mN\x1B[38;2;243;251;252mW\x1B[38;2;183;217;220mK\x1B[38;2;214;237;239mN\x1B[38;2;210;235;237mN\x1B[38;2;214;236;238mN\x1B[38;2;139;195;200mk\x1B[38;2;150;200;204mO\x1B[38;2;193;222;224mK\x1B[38;2;202;231;234mX\x1B[38;2;171;213;216m0\x1B[38;2;192;224;227mX\x1B[38;2;186;221;224mK\x1B[38;2;176;219;222mK\x1B[38;2;228;246;247mW\x1B[38;2;80;132;135mc\x1B[38;2;1;16;16m \x1B[38;2;2;2;2m   \x1B[38;2;2;1;1m     \x1B[0m",
+    "\x1B[38;2;2;2;1m      \x1B[38;2;4;3;1m \x1B[38;2;12;7;1m \x1B[38;2;36;20;3m \x1B[38;2;85;68;35m'\x1B[38;2;120;98;48m:\x1B[38;2;93;76;33m,\x1B[38;2;25;40;34m.\x1B[38;2;13;41;42m.\x1B[38;2;53;86;88m,\x1B[38;2;107;133;135ml\x1B[38;2;123;148;150mo\x1B[38;2;115;143;144mo\x1B[38;2;45;100;103m,\x1B[38;2;113;172;177md\x1B[38;2;170;215;219m0\x1B[38;2;249;254;254mM\x1B[38;2;202;232;235mX\x1B[38;2;184;223;226mK\x1B[38;2;155;204;207mO\x1B[38;2;187;222;225mK\x1B[38;2;196;226;229mX\x1B[38;2;185;220;223mK\x1B[38;2;65;127;127m:\x1B[38;2;64;64;38m.\x1B[38;2;59;45;21m.\x1B[38;2;26;13;1m \x1B[38;2;10;5;1m \x1B[38;2;4;3;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m\x1B[0m",
+    "\x1B[38;2;2;2;1m   \x1B[38;2;3;2;1m \x1B[38;2;8;4;1m \x1B[38;2;24;12;1m \x1B[38;2;71;49;18m.\x1B[38;2;128;104;55m:\x1B[38;2;152;117;57mc\x1B[38;2;147;115;58mc\x1B[38;2;108;85;43m;\x1B[38;2;49;28;4m.\x1B[38;2;14;7;1m \x1B[38;2;3;3;1m  \x1B[38;2;2;2;2m \x1B[38;2;2;3;2m \x1B[38;2;2;5;5m \x1B[38;2;1;16;17m \x1B[38;2;22;52;53m.\x1B[38;2;53;78;80m'\x1B[38;2;52;79;81m'\x1B[38;2;21;76;80m.\x1B[38;2;49;155;162ml\x1B[38;2;101;159;164mo\x1B[38;2;94;127;129mc\x1B[38;2;51;82;84m'\x1B[38;2;8;20;16m \x1B[38;2;55;38;15m.\x1B[38;2;119;95;52m;\x1B[38;2;146;111;55mc\x1B[38;2;148;113;56mc\x1B[38;2;126;100;54m:\x1B[38;2;73;51;21m.\x1B[38;2;28;13;1m \x1B[38;2;10;5;1m \x1B[38;2;3;2;1m \x1B[0m",
+    "\x1B[38;2;94;75;28m,\x1B[38;2;104;85;45m,\x1B[38;2;80;53;10m.\x1B[38;2;117;95;47m;\x1B[38;2;137;104;50m:\x1B[38;2;137;104;50m:\x1B[38;2;117;94;48m;\x1B[38;2;66;46;17m.\x1B[38;2;23;11;1m \x1B[38;2;8;4;1m \x1B[38;2;3;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m  \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m   \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;2;4;4m \x1B[38;2;2;12;13m \x1B[38;2;5;21;22m \x1B[38;2;1;5;5m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;3;2;1m \x1B[38;2;9;5;1m \x1B[38;2;25;12;1m \x1B[38;2;66;45;17m.\x1B[38;2;112;89;47m;\x1B[38;2;134;101;49m:\x1B[38;2;136;102;48m:\x1B[38;2;125;97;41m:\x1B[38;2;111;79;30m,\x1B[0m",
+    "\x1B[38;2;235;221;142mX\x1B[38;2;240;230;161mX\x1B[38;2;176;135;39mo\x1B[38;2;70;45;11m.\x1B[38;2;20;10;1m \x1B[38;2;7;4;1m \x1B[38;2;3;2;1m \x1B[38;2;2;2;1m     \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m  \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m  \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;2;1;1m    \x1B[38;2;2;1;1m \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[38;2;2;2;1m \x1B[38;2;5;3;1m \x1B[38;2;14;7;1m \x1B[38;2;49;26;2m.\x1B[38;2;150;115;61mc\x1B[0m",
+    "\x1B[38;2;35;18;1m \x1B[38;2;40;22;1m \x1B[38;2;17;8;1m \x1B[38;2;4;2;1m \x1B[38;2;2;2;1m         \x1B[38;2;2;1;1m    \x1B[38;2;2;2;1m  \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m  \x1B[38;2;2;1;1m   \x1B[38;2;2;1;1m\x1B[38;2;2;1;1m \x1B[38;2;2;1;1m\x1B[38;2;2;1;1m     \x1B[38;2;2;1;1m \x1B[38;2;2;2;1m \x1B[0m",
 ];
 
 // TUI Migration
@@ -289,6 +295,140 @@ impl WelcomeInfo {
     }
 }
 
+/// Status bar information for display above prompt
+///
+/// Contains context usage, model name, and toggle indicators.
+/// Rendered as a fixed-width (80 columns) bar above the prompt.
+pub struct StatusBarInfo {
+    pub model_name: String,
+    pub used_tokens: usize,
+    pub max_tokens: usize,
+    pub percent: u8,
+    pub think_enabled: bool,
+    pub tools_enabled: bool,
+}
+
+impl StatusBarInfo {
+    /// Format the status bar as a 3-line string (divisor, content, divisor)
+    ///
+    /// Format:
+    /// ```text
+    /// ────────────────────────────────────────────────────────────────────────────────
+    ///  glm-5:cloud │ 47.2K/128K │ ████████░░░░ 37% │ 🧠🔧
+    /// ────────────────────────────────────────────────────────────────────────────────
+    /// ```
+    ///
+    /// Progress bar colors:
+    /// - Green: < 50%
+    /// - Yellow: 50-75%
+    /// - Red: > 75%
+    pub fn format_status_bar(&self) -> String {
+        let mut output = String::new();
+
+        let separator = "─".repeat(80);
+        output.push_str(&format!("{}{}{}\n", colors::DIM, separator, colors::RESET));
+
+        let content = self.format_content_line();
+        output.push_str(&content);
+        output.push('\n');
+
+        output.push_str(&format!("{}{}{}\n", colors::DIM, separator, colors::RESET));
+
+        output
+    }
+
+    fn format_content_line(&self) -> String {
+        let mut line = String::new();
+
+        line.push_str(colors::DIM);
+        line.push_str(&truncate_str(&self.model_name, 20));
+        line.push_str(&format!("{} │{} ", colors::RESET, colors::DIM));
+
+        let used_str = format_tokens(self.used_tokens);
+        let max_str = format_tokens(self.max_tokens);
+        line.push_str(&format!(
+            "{}/{}{} │{} ",
+            used_str,
+            max_str,
+            colors::RESET,
+            colors::DIM
+        ));
+
+        line.push_str(colors::RESET);
+        line.push_str(&self.format_progress_bar());
+        line.push_str(&format!(" {}│{} ", colors::DIM, colors::RESET));
+
+        if self.think_enabled {
+            line.push('🧠');
+        }
+        if self.tools_enabled {
+            line.push('🔧');
+        }
+
+        let visual_width = self.calculate_visual_width(&line);
+        let padding = 80_usize.saturating_sub(visual_width);
+        line.push_str(&" ".repeat(padding));
+        line.push_str(colors::RESET);
+
+        line
+    }
+
+    /// Format progress bar with percentage
+    ///
+    /// Example: `████████░░░░ 37%`
+    fn format_progress_bar(&self) -> String {
+        let bar_width = 12;
+        let filled = ((self.percent as usize) * bar_width) / 100;
+        let empty = bar_width.saturating_sub(filled);
+
+        let bar_color = get_bar_color(self.percent);
+
+        let mut bar = String::new();
+        bar.push_str(bar_color);
+        bar.push_str(&"█".repeat(filled));
+        bar.push_str(&"░".repeat(empty));
+        bar.push_str(colors::RESET);
+
+        format!("{} {}%{}", bar, self.percent, colors::RESET)
+    }
+
+    /// Calculate visual width stripping ANSI codes
+    fn calculate_visual_width(&self, s: &str) -> usize {
+        strip_ansi_width(s)
+    }
+}
+
+/// Format tokens as human-readable string
+///
+/// Examples:
+/// - 500 -> "500"
+/// - 1500 -> "1.5K"
+/// - 1500000 -> "1.5M"
+fn format_tokens(tokens: usize) -> String {
+    if tokens >= 1_000_000 {
+        format!("{:.1}M", tokens as f64 / 1_000_000.0)
+    } else if tokens >= 1_000 {
+        format!("{:.1}K", tokens as f64 / 1_000.0)
+    } else {
+        tokens.to_string()
+    }
+}
+
+/// Get progress bar color based on percentage
+///
+/// - Green: < 50%
+/// - Yellow: 50-75%
+/// - Red: > 75%
+fn get_bar_color(percent: u8) -> &'static str {
+    if percent < 50 {
+        colors::GREEN
+    } else if percent < 75 {
+        colors::YELLOW
+    } else {
+        colors::RED
+    }
+}
+
 /// Truncate a string to a maximum length, adding ellipsis if truncated
 fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
@@ -355,5 +495,61 @@ mod tests {
     fn test_truncate_str() {
         assert_eq!(truncate_str("short", 10), "short");
         assert_eq!(truncate_str("this is a very long string", 10), "this is...");
+    }
+
+    #[test]
+    fn test_format_tokens() {
+        assert_eq!(format_tokens(500), "500");
+        assert_eq!(format_tokens(1500), "1.5K");
+        assert_eq!(format_tokens(47200), "47.2K");
+        assert_eq!(format_tokens(128000), "128.0K");
+        assert_eq!(format_tokens(1500000), "1.5M");
+    }
+
+    #[test]
+    fn test_get_bar_color() {
+        assert_eq!(get_bar_color(0), colors::GREEN);
+        assert_eq!(get_bar_color(49), colors::GREEN);
+        assert_eq!(get_bar_color(50), colors::YELLOW);
+        assert_eq!(get_bar_color(74), colors::YELLOW);
+        assert_eq!(get_bar_color(75), colors::RED);
+        assert_eq!(get_bar_color(100), colors::RED);
+    }
+
+    #[test]
+    fn test_status_bar_info_formatting() {
+        let info = StatusBarInfo {
+            model_name: "glm-5:cloud".to_string(),
+            used_tokens: 47200,
+            max_tokens: 128000,
+            percent: 37,
+            think_enabled: true,
+            tools_enabled: true,
+        };
+
+        let output = info.format_status_bar();
+        assert!(output.contains("glm-5:cloud"));
+        assert!(output.contains("47.2K"));
+        assert!(output.contains("128.0K"));
+        assert!(output.contains("37%"));
+        assert!(output.contains("🧠"));
+        assert!(output.contains("🔧"));
+        assert!(output.contains(&"─".repeat(80)));
+    }
+
+    #[test]
+    fn test_status_bar_info_no_indicators() {
+        let info = StatusBarInfo {
+            model_name: "llama3.1".to_string(),
+            used_tokens: 500,
+            max_tokens: 4096,
+            percent: 12,
+            think_enabled: false,
+            tools_enabled: false,
+        };
+
+        let output = info.format_status_bar();
+        assert!(!output.contains("🧠"));
+        assert!(!output.contains("🔧"));
     }
 }
