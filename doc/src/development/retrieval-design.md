@@ -116,46 +116,6 @@ sequenceDiagram
     Chat->>DB: Save message
 ```
 
-### 2.1 Embedding Fallback (v0.37.1+)
-
-When content exceeds the embedding model's context window (512 tokens for nomic-embed-text-v2-moe), the system automatically retries with smaller chunks:
-
-```mermaid
-sequenceDiagram
-    participant Chat
-    participant Client as Embedding Client
-    participant Ollama
-    
-    Chat->>Client: embed(text)
-    Client->>Ollama: API request
-    
-    alt Context OK
-        Ollama-->>Client: Return embedding
-        Client-->>Chat: embedding
-    else Context exceeded
-        Ollama-->>Client: Error: context_length_exceeded
-        
-        loop Halve context (max 3 times)
-            Client->>Client: Split into smaller chunks
-            Client->>Ollama: Retry with halved context
-        end
-        
-        alt Success
-            Ollama-->>Client: Return embeddings
-            Client-->>Chat: Vec<embedding>
-        else All iterations failed
-            Client-->>Chat: ContextExceeded error
-            Note over Chat: Embedding skipped, recovered later
-        end
-    end
-```
-
-**Fallback progression:**
-1. 512 tokens (default context)
-2. 256 tokens (first halving)
-3. 128 tokens (second halving)
-4. 64 tokens (third halving, minimum)
-
 ### 3. Hybrid Search
 
 #### BM25 (Keyword Search)
