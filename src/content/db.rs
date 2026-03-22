@@ -249,41 +249,6 @@ impl Database {
         })
     }
 
-    /// Update a note's embedding in content_embeddings
-    #[allow(dead_code)]
-    pub fn update_note_embedding(
-        &self,
-        note_id: i64,
-        embedding: &[f32],
-        project_id: Option<&str>,
-        timestamp: DateTime<Utc>,
-    ) -> Result<()> {
-        self.with_connection(|conn| {
-            let embedding_bytes = embedding.as_bytes();
-            let content_type = ContentType::Note.to_string();
-            let ts = timestamp.timestamp();
-
-            conn.execute(
-                "INSERT INTO content_embeddings (item_id, embedding, content_type, conversation_id, project_id, timestamp)
-                 VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
-                params![
-                    note_id,
-                    embedding_bytes,
-                    content_type,
-                    project_id,
-                    ts,
-                ],
-            )?;
-
-            conn.execute(
-                "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
-                params![note_id],
-            )?;
-
-            Ok(())
-        })
-    }
-
     /// Get all content items without embeddings for regeneration
     ///
     /// Returns (item_id, content_type, content) for items that need embedding generation.
