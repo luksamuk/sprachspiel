@@ -526,7 +526,10 @@ todo_clear_all()             // Clear all tasks
 - `src/chat/repl_state.rs` - `get_status_bar_info()` method
 - `src/chat/repl.rs` - `build_status_bar()` helper, loop integration
 
-**Commits:** `abc1234 feat: add status bar above prompt`
+**Commits:**
+- `c20e2d1` feat: add status bar above prompt
+- `fd7a28a` fix: use visual truncation for status bar content line
+- `d288e50` fix: reduce status bar content width to 77 columns
 
 **Related:** Issue #47
 

@@ -7,6 +7,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::RwLock;
 
 static ACTIVE_SPINNER: RwLock<Option<ProgressBar>> = RwLock::new(None);
+static ACTIVE_STATUS_BAR: RwLock<Option<String>> = RwLock::new(None);
 
 /// RAII guard that automatically finishes the spinner when dropped
 ///
@@ -89,6 +90,9 @@ pub fn finish_spinner(spinner: ProgressBar) {
     spinner.finish_and_clear();
     // Clear from global state
     if let Ok(mut guard) = ACTIVE_SPINNER.write() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = ACTIVE_STATUS_BAR.write() {
         *guard = None;
     }
 }
