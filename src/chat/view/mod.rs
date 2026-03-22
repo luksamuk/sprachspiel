@@ -338,47 +338,50 @@ impl StatusBarInfo {
     }
 
     fn format_content_line(&self) -> String {
-        let mut line = String::new();
+        // Build content without ANSI colors first
+        let mut content = String::new();
 
-        // Model name (dim color for consistency with separators)
-        line.push_str(colors::DIM);
-        line.push_str(&truncate_str(&self.model_name, 20));
-        line.push_str(colors::RESET);
+        // Model name (truncated to 20 chars)
+        content.push_str(&truncate_str(&self.model_name, 20));
 
-        // First separator: │
-        line.push_str(&format!(" {}│{} ", colors::DIM, colors::RESET));
+        // First separator
+        content.push_str(" │ ");
 
         // Context usage: tokens
         let used_str = format_tokens(self.used_tokens);
         let max_str = format_tokens(self.max_tokens);
-        line.push_str(&format!("{}/{}", used_str, max_str));
+        content.push_str(&format!("{}/{}", used_str, max_str));
 
-        // Second separator: │
-        line.push_str(&format!(" {}│{} ", colors::DIM, colors::RESET));
+        // Second separator
+        content.push_str(" │ ");
 
-        // Progress bar with percentage
-        line.push_str(&self.format_progress_bar());
+        // Progress bar with percentage (with colors)
+        let bar_str = self.format_progress_bar();
+        content.push_str(&bar_str);
 
-        // Third separator: │ before indicators
-        line.push_str(&format!(" {}│ ", colors::DIM));
+        // Third separator
+        content.push_str(" │ ");
 
         // Indicators (think/tools)
         if self.think_enabled {
-            line.push('🧠');
+            content.push('🧠');
         }
         if self.tools_enabled {
-            line.push('🔧');
+            content.push('🔧');
         }
 
-        // Padding to 80 columns
-        let visual_width = self.calculate_visual_width(&line);
-        let padding = 80_usize.saturating_sub(visual_width);
-        if padding > 0 {
-            line.push_str(&" ".repeat(padding));
-        }
-        line.push_str(colors::RESET);
+        // Calculate visual width (excluding ANSI codes)
+        let visual_width = strip_ansi_width(&content);
 
-        line
+        // Truncate if too long, or add padding if too short
+        if visual_width > 80 {
+            truncate_visual(&content, 80)
+        } else {
+            // Add padding to reach 80 columns
+            let padding = 80 - visual_width;
+            content.push_str(&" ".repeat(padding));
+            content
+        }
     }
 
     /// Format progress bar with percentage
@@ -444,6 +447,47 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &s[..max_len.saturating_sub(3)])
     }
+}
+
+/// Truncate a string to a maximum visual width (Unicode-aware, ANSI-aware)
+/// Each Unicode character counts as 1 visual column, even multi-byte chars.
+/// ANSI escape codes are preserved but not counted.
+fn truncate_visual(s: &str, max_width: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut width = 0;
+    let mut result = String::new();
+    let mut i = 0;
+
+    while i < chars.len() && width <= max_width {
+        if chars[i] == '\x1B' {
+            // Include entire ANSI escape sequence
+            result.push(chars[i]);
+            i += 1;
+            if i < chars.len() && chars[i] == '[' {
+                result.push(chars[i]);
+                i += 1;
+                while i < chars.len() {
+                    result.push(chars[i]);
+                    i += 1;
+                    if chars[i - 1].is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else if chars[i] == '\n' {
+            // Skip newlines
+            i += 1;
+        } else {
+            // Count as 1 visual column
+            if width < max_width {
+                result.push(chars[i]);
+            }
+            width += 1;
+            i += 1;
+        }
+    }
+
+    result
 }
 
 /// Calculate visual width of a string, stripping ANSI escape codes
