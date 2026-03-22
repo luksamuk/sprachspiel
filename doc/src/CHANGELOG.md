@@ -17,6 +17,16 @@ All notable changes to Ask-AI will be documented in this file.
   - **Panics on misconfiguration:** Prevents database explosion from bad configs
   - **Removed:** Old `embed_with_fallback()` that returned `Vec<Vec<f32>>`
   - **Simplified:** `client.rs` now has simple `embed()` that returns error on context exceeded
+  - **Fixed:** Recovery embeddings now visible with `println!` instead of `log_debug!`
+
+### Changed
+
+- **Startup Output Reorder** - Improved visual flow for chat startup
+  - ASCII art banner now appears first, before any other output
+  - Session resume and regeneration messages appear after banner
+  - "Type /help for commands, /quit to exit" now appears at the end, after all startup messages
+  - Sandbox status strings now lowercase for consistency with other status fields
+  - "not compiled" sandbox status shortened to avoid exceeding column 80
 
 ### Added
 
