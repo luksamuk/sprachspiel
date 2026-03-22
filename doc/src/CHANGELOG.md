@@ -14,6 +14,8 @@ All notable changes to Ask-AI will be documented in this file.
   - Updates dynamically on each prompt cycle
   - Status bar rendered above prompt, cleared before user input appears
   - Visual truncation handles Unicode characters correctly
+  - Terminal width detection for proper ANSI clear codes
+  - Fallback to single line if terminal width unavailable
   - Related: Issue #47
 
 - **Inter-Tool Compaction with Automatic Continuation** - Automatic context compaction during multi-tool execution

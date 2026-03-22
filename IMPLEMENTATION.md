@@ -510,7 +510,7 @@ todo_clear_all()             // Clear all tasks
 |------|---------|
 | `src/chat/view/mod.rs` | Added `StatusBarInfo` struct, `STATUS_BAR_LINES` constant, `format_status_bar()` method, visual truncation |
 | `src/chat/repl_state.rs` | Added `get_status_bar_info()` method to ReplState |
-| `src/chat/repl.rs` | Integrated status bar rendering before prompt, ANSI clear codes, prompt set to `>>> ` |
+| `src/chat/repl.rs` | Integrated status bar rendering before prompt, ANSI clear codes with terminal width detection, prompt `>>> ` |
 
 **Features:**
 - Model name, context usage (XX.XK/YYYK), progress bar with percentage
@@ -518,13 +518,21 @@ todo_clear_all()             // Clear all tasks
 - Colored progress bar: Green (< 50%), Yellow (50-75%), Red (> 75%)
 - Fixed width (77 visual characters) to prevent overflow
 - Clean prompt: `>>> ` (model and indicators moved to status bar)
-- ANSI codes clear status bar before user input appears
+- ANSI codes clear status bar and input lines based on terminal width
 - Dynamic calculation using `calculate_context_metrics()`
+- Unicode-aware width calculation using `unicode-width` crate
 
 **Files Modified:**
 - `src/chat/view/mod.rs` - `StatusBarInfo` struct with `format_status_bar()`, `truncate_visual()` helper
 - `src/chat/repl_state.rs` - `get_status_bar_info()` method
-- `src/chat/repl.rs` - `build_status_bar()` helper, `ANSI_CLEAR_STATUS_BAR` constant, loop integration
+- `src/chat/repl.rs` - `build_status_bar()`, `calculate_visual_lines()`, `build_clear_code()` helpers
+
+**Technical Details:**
+- Uses `termimad::terminal_size()` to detect terminal width
+- Uses `unicode_width::UnicodeWidthStr` for proper character width (CJK, etc.)
+- Calculates visual lines: `total_width.div_ceil(terminal_width).max(1)`
+- Clears correct number of lines: 3 (status bar) + N (visual lines of input)
+- Fallback to 1 line if terminal width unavailable
 
 **Commits:**
 - `8433736` docs: update CHANGELOG and IMPLEMENTATION for status bar feature
@@ -534,10 +542,17 @@ todo_clear_all()             // Clear all tasks
 - `fd7a28a` fix: use visual truncation for status bar content line
 - `d288e50` fix: reduce status bar content width to 77 columns
 - `3b51308` revert: remove status bar from spinner
-- `5e03f46` feat: change prompt from '>' to '>>>' for better visibility
+- `5e03f46` feat: change prompt from '>' to '>>>'
+- `921bd6f` docs: update CHANGELOG and IMPLEMENTATION with final status bar details
+- `716fb50` feat: detect terminal width for ANSI clear codes
 
 **Design Decision:**
 Status bar during spinner ("Thinking...") was attempted but caused display issues with ANSI codes across different terminals. Reverted to simpler approach where status bar appears only above prompt.
+
+**Known Limitations:**
+- Emoji width may be imprecise (but user input typically doesn't contain emojis)
+- Terminal width detection may fail in some environments (fallback to 1 line)
+- Long input wrapping to many lines may still leave minor visual artifacts
 
 **Related:** Issue #47
 
