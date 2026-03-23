@@ -4,32 +4,64 @@
 
 use std::sync::Arc;
 
+use termimad::terminal_size;
+use unicode_width::UnicodeWidthStr;
+
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::{enable_debug, log_debug};
 use crate::settings::Settings;
+use crate::tokens::calculate_context_metrics;
 use crate::tool_robustness::format_tool_error;
+use crate::tools::get_available_tool_names;
 
+use super::command_handlers::{HandleResult, handle_command_result, handle_model_switch};
 use super::commands::{ChatCommand, execute_command, parse_command};
-use super::command_handlers::{
-    handle_command_result, HandleResult,
-    handle_model_switch,
-};
 use super::continuation::{
-    handle_overflow_error,
-    check_and_compact_before_tool, build_pre_tool_prompt,
-    process_send_result, ProcessResult, OverflowHandleResult,
-    build_inter_tool_compaction_prompt,
+    OverflowHandleResult, ProcessResult, build_inter_tool_compaction_prompt, build_pre_tool_prompt,
+    check_and_compact_before_tool, handle_overflow_error, process_send_result,
 };
 use super::core::send_message;
 use super::input::{InputBackend, InputResult, RustylineInput};
 use super::session::ChatSession;
 use super::view::TerminalView;
-use crate::project::get_project_id;
 use crate::facts::db::DecayStats;
+use crate::project::get_project_id;
+
+/// Token overhead for each tool definition (approximate)
+const TOKENS_PER_TOOL: usize = 50;
+
+/// Number of lines in the status bar (separator, content, separator)
+const STATUS_BAR_LINES: usize = 3;
+
+/// Prompt prefix displayed before user input
+const PROMPT_PREFIX: &str = ">>> ";
 
 /// Maximum compaction cycles per message to prevent infinite loops
 const MAX_COMPACTION_CYCLES: usize = 3;
+
+/// Calculate the number of visual lines a string will occupy in the terminal
+///
+/// Uses Unicode-aware width calculation to handle CJK and other wide characters.
+/// Returns at least 1 line.
+fn calculate_visual_lines(input: &str, prompt_len: usize, terminal_width: usize) -> usize {
+    if terminal_width == 0 {
+        return 1; // Fallback: assume single line (visual artifacts acceptable)
+    }
+    
+    // Unicode-aware width calculation
+    let input_width = input.width();
+    let total_width = prompt_len + input_width;
+    
+    // Ceiling division: how many lines does the input occupy?
+    total_width.div_ceil(terminal_width).max(1)
+}
+
+/// Build ANSI escape code to clear status bar and input lines
+fn build_clear_code(visual_lines: usize) -> String {
+    let lines_to_clear = STATUS_BAR_LINES + visual_lines;
+    format!("\x1B[{}A\x1B[J", lines_to_clear)
+}
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -41,10 +73,15 @@ fn init_database(
     args: &super::ChatArgs,
     use_debug: bool,
     settings: &Settings,
-) -> (Option<Arc<crate::db::Database>>, Option<Arc<crate::embeddings::EmbeddingClient>>, ollama_rs::Ollama, Option<String>) {
+) -> (
+    Option<Arc<crate::db::Database>>,
+    Option<Arc<crate::embeddings::EmbeddingClient>>,
+    ollama_rs::Ollama,
+    Option<String>,
+) {
     let ollama = settings.ollama_client();
     let mut error_detail: Option<String> = None;
-    
+
     let db = if !args.anonymous {
         match crate::db::Database::new() {
             Ok(database) => {
@@ -92,9 +129,9 @@ fn init_database(
         None
     };
 
-    let embedding_client = db.as_ref().map(|_| {
-        Arc::new(crate::embeddings::EmbeddingClient::new(ollama.clone()))
-    });
+    let embedding_client = db
+        .as_ref()
+        .map(|_| Arc::new(crate::embeddings::EmbeddingClient::new(ollama.clone())));
 
     (db, embedding_client, ollama, error_detail)
 }
@@ -125,10 +162,7 @@ async fn run_startup_tasks(
 }
 
 /// Handle user input that's not a command.
-async fn handle_user_message(
-    line: &str,
-    state: &mut super::repl_state::ReplState,
-) {
+async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplState) {
     let user_message_id = state.session.add_user_message(line.to_string());
     if !state.session.anonymous
         && let Err(e) = state.session.save_sqlite()
@@ -186,7 +220,7 @@ async fn handle_user_message(
                     }
                     OverflowHandleResult::InterToolCompaction { tools_executed } => {
                         compaction_cycles += 1;
-                        
+
                         if compaction_cycles > MAX_COMPACTION_CYCLES {
                             eprintln!(
                                 "\x1B[33mMaximum compaction cycles reached ({}). Please continue manually.\x1B[0m",
@@ -260,8 +294,7 @@ fn create_session(
                         session: s,
                         resume_message: Some(format!(
                             "Loaded session: {} ({} messages)",
-                            session_name,
-                            msg_count
+                            session_name, msg_count
                         )),
                     };
                 }
@@ -294,26 +327,23 @@ fn create_session(
     // Try to load the most recent session by updated_at
     if let Some(db_ref) = db {
         match db_ref.get_last_session_id(project_id.as_deref()) {
-            Ok(Some(last_id)) => {
-                match ChatSession::load_sqlite(db_ref, &last_id) {
-                    Ok(s) => {
-                        let display_name = s.name.as_deref().unwrap_or(&s.id).to_string();
-                        let msg_count = s.messages.len();
-                        return SessionLoadResult {
-                            session: s,
-                            resume_message: Some(format!(
-                                "Resumed session: {} ({} messages)",
-                                display_name,
-                                msg_count
-                            )),
-                        };
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Could not load session '{}': {}", last_id, e);
-                        println!("Starting new session...");
-                    }
+            Ok(Some(last_id)) => match ChatSession::load_sqlite(db_ref, &last_id) {
+                Ok(s) => {
+                    let display_name = s.name.as_deref().unwrap_or(&s.id).to_string();
+                    let msg_count = s.messages.len();
+                    return SessionLoadResult {
+                        session: s,
+                        resume_message: Some(format!(
+                            "Resumed session: {} ({} messages)",
+                            display_name, msg_count
+                        )),
+                    };
                 }
-            }
+                Err(e) => {
+                    eprintln!("Warning: Could not load session '{}': {}", last_id, e);
+                    println!("Starting new session...");
+                }
+            },
             Ok(None) => {
                 // No sessions exist - create new session (not persisted yet)
                 if use_debug {
@@ -441,7 +471,7 @@ pub async fn run_chat_repl(
     };
 
     let (db, embedding_client, ollama, db_error) = init_database(args, use_debug, settings);
-    
+
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {
         if db_error.is_some() {
@@ -451,7 +481,7 @@ pub async fn run_chat_repl(
         }
         return Ok(());
     }
-    
+
     run_startup_tasks(&db, &embedding_client, args.anonymous).await;
 
     // Load or create session (returns info without printing yet)
@@ -477,8 +507,7 @@ pub async fn run_chat_repl(
     let current_model_name = session.model.clone();
     let model_config = crate::user_models::resolve_model_config(&current_model_name);
 
-    let capabilities =
-        ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
+    let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // PRINT BANNER FIRST (before any other output)
     print_welcome(&session, &model_config, &capabilities);
@@ -511,8 +540,7 @@ pub async fn run_chat_repl(
         }
 
         // Recover any missing embeddings from previous session
-        let recovered =
-            crate::embeddings::recover_missing_embeddings(db_ref, client).await;
+        let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client).await;
         if recovered > 0 {
             println!("Recovered {} missing embedding(s)", recovered);
         }
@@ -592,25 +620,38 @@ pub async fn run_chat_repl(
     let mut input = RustylineInput::new(model_names);
 
     loop {
-        let mut prompt = state.current_model_name.clone();
-        if state.session.think && state.capabilities.thinking {
-            prompt.push('🧠');
-        }
-        if state.tools_active {
-            prompt.push('🔧');
-        }
-        prompt.push_str("> ");
+        // Build status bar info
+        let status_bar = build_status_bar(&state);
 
-        let readline = input.read_line(&prompt);
+        // Print status bar (3 lines total)
+        print!("{}", status_bar);
+
+        // Simple prompt with just ">>> "
+        let readline = input.read_line(">>> ");
 
         match readline {
             InputResult::Line(ref line) => {
                 let line = line.trim();
                 if line.is_empty() {
+                    // Clear status bar only (no input to clear)
+                    print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
                     continue;
                 }
 
                 input.add_history(line);
+
+                // Calculate visual lines for proper ANSI clearing
+                let prompt_len = PROMPT_PREFIX.len();
+                let (cols, _) = terminal_size();
+                let visual_lines = if cols > 0 {
+                    calculate_visual_lines(line, prompt_len, cols as usize)
+                } else {
+                    1 // Fallback: assume 1 line
+                };
+
+                // Clear status bar and input lines
+                print!("{}", build_clear_code(visual_lines));
+                println!(">>> {}", line);
 
                 if line.starts_with('/') {
                     match parse_command(line) {
@@ -637,10 +678,14 @@ pub async fn run_chat_repl(
                 handle_user_message(line, &mut state).await;
             }
             InputResult::Interrupted => {
+                // Clear status bar only
+                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
                 println!("^C");
                 continue;
             }
             InputResult::Eof => {
+                // Clear status bar only
+                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
                 println!("^D");
                 let _ = input.save_history();
                 if !state.session.anonymous {
@@ -649,6 +694,8 @@ pub async fn run_chat_repl(
                 return Ok(());
             }
             InputResult::Error(err) => {
+                // Clear status bar only
+                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
                 eprintln!("Error: {}", err);
                 break;
             }
@@ -660,6 +707,68 @@ pub async fn run_chat_repl(
 }
 
 // Helper functions (REPL-specific, not moved to core.rs)
+
+/// Build the status bar string for display above prompt
+///
+/// Includes model name, context usage, progress bar, and indicators.
+fn build_status_bar(state: &super::repl_state::ReplState) -> String {
+    use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
+
+    let blacklist_set = state.settings.blacklist_set();
+
+    let prompt_type = if state.tools_active {
+        PromptType::ToolUser
+    } else {
+        PromptType::Default
+    };
+
+    let system_prompt = build_system_prompt(
+        PromptConfig::new(prompt_type)
+            .with_model_id(Some(&state.model_config.model_id))
+            .with_blacklist(Some(&blacklist_set))
+            .with_agents_md(state.agents_md.as_deref())
+            .with_tools(state.tools_active)
+            .with_retrieval(state.session.retrieval_enabled)
+            .with_soulless(state.cli_soulless),
+    );
+
+    let context_window = state.model_config.num_ctx as usize;
+
+    // Get tool count
+    let tool_count = if state.tools_active {
+        get_available_tool_names(&state.settings).len()
+    } else {
+        0
+    };
+
+    let tools_tokens = if state.tools_active && tool_count > 0 {
+        tool_count * TOKENS_PER_TOOL
+    } else {
+        0
+    };
+
+    // Get real tokens if available, or use estimate
+    let real_history_tokens = state.session.history_real_tokens();
+    let real_tokens_opt = if real_history_tokens > 0 {
+        Some(real_history_tokens)
+    } else {
+        None
+    };
+
+    let history_messages = state.session.get_messages_for_llm(&system_prompt);
+
+    let metrics = calculate_context_metrics(
+        &history_messages,
+        context_window,
+        &system_prompt,
+        tools_tokens,
+        real_tokens_opt,
+    );
+
+    // Update cache
+    let info = state.get_status_bar_info(metrics);
+    info.format_status_bar()
+}
 
 fn print_welcome(
     session: &ChatSession,

@@ -29,9 +29,7 @@ const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::log_debug;
-use crate::embeddings::{
-    EmbedItemContext, DEFAULT_CONTEXT_LENGTH, embed_item_with_fallback,
-};
+use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
 use crate::settings::Settings;
 use crate::tokens::{calculate_context_metrics, estimate_tokens};
 
@@ -134,7 +132,11 @@ pub async fn handle_command_result(
             handle_fact_remove(state, id);
             HandleResult::Continue
         }
-        CommandResult::FactSearch { query, global, limit } => {
+        CommandResult::FactSearch {
+            query,
+            global,
+            limit,
+        } => {
             handle_fact_search(state, query, global, limit);
             HandleResult::Continue
         }
@@ -158,7 +160,11 @@ pub async fn handle_command_result(
             handle_todo_clear_all(&mut state.session);
             HandleResult::Continue
         }
-        CommandResult::NoteAdd { content, title, global } => {
+        CommandResult::NoteAdd {
+            content,
+            title,
+            global,
+        } => {
             handle_note_add(state, content, title, global);
             HandleResult::Continue
         }
@@ -178,7 +184,11 @@ pub async fn handle_command_result(
             handle_note_delete(state, id);
             HandleResult::Continue
         }
-        CommandResult::NoteSearch { query, global, limit } => {
+        CommandResult::NoteSearch {
+            query,
+            global,
+            limit,
+        } => {
             handle_note_search(state, query, global, limit);
             HandleResult::Continue
         }
@@ -340,10 +350,7 @@ pub async fn handle_compact(state: &mut ReplState) {
     }
 
     let msg_count = state.session.messages.len();
-    println!(
-        "\x1B[33m⏳ Compacting {} messages...\x1B[0m",
-        msg_count
-    );
+    println!("\x1B[33m⏳ Compacting {} messages...\x1B[0m", msg_count);
 
     match super::core::compact_conversation(
         &state.ollama,
@@ -409,10 +416,7 @@ pub async fn handle_retry(state: &mut ReplState) {
     // Remove last assistant messages
     let removed = state.session.remove_last_assistant_messages();
     if removed > 0 {
-        println!(
-            "Removed {} assistant message(s). Ready to retry.",
-            removed
-        );
+        println!("Removed {} assistant message(s). Ready to retry.", removed);
     } else {
         println!("No assistant messages to remove.");
     }
@@ -443,10 +447,9 @@ pub async fn handle_retry(state: &mut ReplState) {
         .await
         {
             Ok(result) => {
-                state.session.add_assistant_message(
-                    result.response,
-                    Some(result.metrics.prompt_tokens),
-                );
+                state
+                    .session
+                    .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
 
                 if result.metrics.total_tokens > 0 {
                     eprintln!(
@@ -514,7 +517,10 @@ pub fn handle_fact_prune(state: &ReplState) {
                     pruned, remaining
                 );
             } else {
-                println!("\x1B[32m✓ No facts to prune. {} fact(s) remaining.\x1B[0m", remaining);
+                println!(
+                    "\x1B[32m✓ No facts to prune. {} fact(s) remaining.\x1B[0m",
+                    remaining
+                );
             }
         }
         Err(e) => {
@@ -528,9 +534,9 @@ pub fn handle_fact_prune(state: &ReplState) {
 /// Adds a new fact to the database.
 /// Includes conflict detection (Phase 0.7).
 pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
-    use crate::facts::types::{Category, Fact, Scope, Source, MAX_FACT_CONTENT_SIZE};
     use crate::facts::classify::classify_fact;
-    use crate::facts::conflict::{detect_conflicts, resolve_conflict, CONFLICT_THRESHOLD};
+    use crate::facts::conflict::{CONFLICT_THRESHOLD, detect_conflicts, resolve_conflict};
+    use crate::facts::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
@@ -547,7 +553,10 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
 
     // Validate content length
     if content.len() > MAX_FACT_CONTENT_SIZE {
-        eprintln!("\x1B[31m✗ Fact content exceeds {} character limit.\x1B[0m", MAX_FACT_CONTENT_SIZE);
+        eprintln!(
+            "\x1B[31m✗ Fact content exceeds {} character limit.\x1B[0m",
+            MAX_FACT_CONTENT_SIZE
+        );
         println!("  Current length: {} characters", content.len());
         println!("  Use shorter content or split into multiple facts.");
         return;
@@ -578,9 +587,7 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
     };
 
     let conflicts = match db.search_facts(&content, scope_for_search, 5) {
-        Ok(results) => {
-            detect_conflicts(&content, &results, CONFLICT_THRESHOLD)
-        }
+        Ok(results) => detect_conflicts(&content, &results, CONFLICT_THRESHOLD),
         Err(_) => Vec::new(),
     };
 
@@ -596,7 +603,10 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
                 );
                 println!("  Existing: {}", conflict.existing_fact.content);
                 println!("  New: {}", content);
-                println!("\n  Use /fact remove {} first if you want to replace it.", conflict.existing_fact.id);
+                println!(
+                    "\n  Use /fact remove {} first if you want to replace it.",
+                    conflict.existing_fact.id
+                );
                 return;
             }
             crate::facts::conflict::ResolutionAction::Update => {
@@ -607,7 +617,13 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
                 }
 
                 // Create new fact
-                let fact = match Fact::new(content.clone(), category, scope, project_id.clone(), Source::User) {
+                let fact = match Fact::new(
+                    content.clone(),
+                    category,
+                    scope,
+                    project_id.clone(),
+                    Source::User,
+                ) {
                     Ok(f) => f,
                     Err(e) => {
                         eprintln!("\x1B[31m✗ Failed to create fact: {}\x1B[0m", e);
@@ -713,8 +729,14 @@ pub fn handle_fact_list(state: &ReplState, global: bool) {
             }
 
             // Group by category
-            let preferences: Vec<_> = facts.iter().filter(|f| f.category == Category::Preference).collect();
-            let regular_facts: Vec<_> = facts.iter().filter(|f| f.category == Category::Fact).collect();
+            let preferences: Vec<_> = facts
+                .iter()
+                .filter(|f| f.category == Category::Preference)
+                .collect();
+            let regular_facts: Vec<_> = facts
+                .iter()
+                .filter(|f| f.category == Category::Fact)
+                .collect();
 
             if !preferences.is_empty() {
                 println!("\n  \x1B[33mPreferences:\x1B[0m");
@@ -759,19 +781,14 @@ pub fn handle_fact_remove(state: &ReplState, id: i64) {
 
     // Get fact first to show content
     match db.get_fact(id) {
-        Ok(Some(fact)) => {
-            match db.delete_fact(id) {
-                Ok(()) => {
-                    println!(
-                        "\x1B[32m✓ Removed fact #{}: {}\x1B[0m",
-                        id, fact.content
-                    );
-                }
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Failed to remove fact: {}\x1B[0m", e);
-                }
+        Ok(Some(fact)) => match db.delete_fact(id) {
+            Ok(()) => {
+                println!("\x1B[32m✓ Removed fact #{}: {}\x1B[0m", id, fact.content);
             }
-        }
+            Err(e) => {
+                eprintln!("\x1B[31m✗ Failed to remove fact: {}\x1B[0m", e);
+            }
+        },
         Ok(None) => {
             eprintln!("\x1B[31m✗ Fact #{} not found.\x1B[0m", id);
         }
@@ -809,7 +826,10 @@ pub fn handle_fact_search(state: &ReplState, query: String, global: bool, limit:
     match db.search_facts(&query, scope, limit) {
         Ok(results) => {
             let scope_str = if global { "global" } else { "project" };
-            println!("\x1B[36mSearch results for '{}' (scope: {}):\x1B[0m", query, scope_str);
+            println!(
+                "\x1B[36mSearch results for '{}' (scope: {}):\x1B[0m",
+                query, scope_str
+            );
 
             if results.is_empty() {
                 println!("  No matching facts found.");
@@ -993,10 +1013,7 @@ pub async fn handle_model_switch(
         eprintln!("{}", warning);
     }
 
-    println!(
-        "Switched to model: {}",
-        state.model_config.model_id
-    );
+    println!("Switched to model: {}", state.model_config.model_id);
 
     Ok(())
 }
@@ -1012,7 +1029,7 @@ pub fn print_context_info(
     settings: &Settings,
     soulless: bool,
 ) {
-    use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+    use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
     use crate::tools::get_available_tool_names;
 
     let blacklist_set = settings.blacklist_set();
@@ -1075,7 +1092,8 @@ pub fn print_context_info(
     // MODERATE: remaining > 12% of context (usage < 88%)
     // CRITICAL: remaining <= 12% of context (usage >= 88%)
     let remaining = context_window.saturating_sub(metrics.total_tokens);
-    let (pre_tool, compaction, _, _) = crate::context_overflow::calculate_thresholds(context_window);
+    let (pre_tool, compaction, _, _) =
+        crate::context_overflow::calculate_thresholds(context_window);
 
     let (color_code, reset_code, status_text) = if remaining > pre_tool {
         ("\x1B[32m", "\x1B[0m", "OK")
@@ -1177,7 +1195,7 @@ pub fn print_context_info(
 /// Adds a new note with the given content.
 /// Generates embedding asynchronously for semantic search.
 pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>, global: bool) {
-    use crate::content::{ContentScope, ContentSource, Note, MAX_NOTE_CONTENT_SIZE};
+    use crate::content::{ContentScope, ContentSource, MAX_NOTE_CONTENT_SIZE, Note};
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
@@ -1193,7 +1211,10 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
     }
 
     if content.len() > MAX_NOTE_CONTENT_SIZE {
-        eprintln!("\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m", MAX_NOTE_CONTENT_SIZE);
+        eprintln!(
+            "\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m",
+            MAX_NOTE_CONTENT_SIZE
+        );
         println!("  Current length: {} characters", content.len());
         println!("  Use shorter content or split into multiple notes.");
         return;
@@ -1211,8 +1232,13 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
         state.session.project_id.clone()
     };
 
-    let note = match Note::new(content.clone(), scope, project_id.clone(), ContentSource::User, title.clone())
-    {
+    let note = match Note::new(
+        content.clone(),
+        scope,
+        project_id.clone(),
+        ContentSource::User,
+        title.clone(),
+    ) {
         Ok(n) => n,
         Err(e) => {
             eprintln!("\x1B[31m✗ Failed to create note: {}\x1B[0m", e);
@@ -1231,7 +1257,7 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
             } else {
                 println!("\x1B[32m✓ Added note #{} (scope: {})\x1B[0m", id, scope_str);
             }
-            
+
             // Print content preview with │ prefix on every line
             let lines: Vec<&str> = content.lines().collect();
             let max_lines = 5;
@@ -1243,7 +1269,7 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
                 };
                 println!("  │ {}", truncated);
             }
-            
+
             // Show indication if content was truncated
             if lines.len() > max_lines {
                 println!("  │ ... ({} more lines)", lines.len() - max_lines);
@@ -1255,22 +1281,20 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
                 let db_clone = Arc::clone(&db);
                 let pid = project_id.clone();
                 let note_content = note.content.clone();
-                
+
                 tokio::spawn(async move {
                     // Use fallback for oversized content
                     let ctx = EmbedItemContext::new(
                         &note_content,
                         id,
                         "note",
-                        None,  // notes don't have conversation_id
+                        None, // notes don't have conversation_id
                         pid.as_deref(),
                     );
-                    if let Err(e) = embed_item_with_fallback(
-                        ctx,
-                        &db_clone,
-                        &client,
-                        DEFAULT_CONTEXT_LENGTH,
-                    ).await {
+                    if let Err(e) =
+                        embed_item_with_fallback(ctx, &db_clone, &client, DEFAULT_CONTEXT_LENGTH)
+                            .await
+                    {
                         eprintln!("Warning: Failed to generate embedding for note: {}", e);
                     }
                 });
@@ -1328,7 +1352,7 @@ pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
 
             let total_notes = notes.len();
             let total_pages = total_notes.div_ceil(NOTES_PER_PAGE);
-            
+
             // Validate page number
             let requested_page = page.unwrap_or(1);
             if requested_page < 1 {
@@ -1336,16 +1360,21 @@ pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
                 return;
             }
             if requested_page > total_pages {
-                eprintln!("\x1B[31mPage {} does not exist. Total pages: {}. Use /note list {}.\x1B[0m", 
-                    requested_page, total_pages, total_pages);
+                eprintln!(
+                    "\x1B[31mPage {} does not exist. Total pages: {}. Use /note list {}.\x1B[0m",
+                    requested_page, total_pages, total_pages
+                );
                 return;
             }
-            
+
             let current_page = requested_page;
             let start_idx = (current_page - 1) * NOTES_PER_PAGE;
             let end_idx = start_idx + NOTES_PER_PAGE.min(total_notes - start_idx);
 
-            println!("\x1B[36mNotes ({scope_str}) - Page {} of {}:\x1B[0m", current_page, total_pages);
+            println!(
+                "\x1B[36mNotes ({scope_str}) - Page {} of {}:\x1B[0m",
+                current_page, total_pages
+            );
 
             for note in &notes[start_idx..end_idx] {
                 let age_days = (Utc::now() - note.created_at).num_days();
@@ -1370,10 +1399,17 @@ pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
                 println!("  │ {}", preview);
             }
 
-            println!("\n  \x1B[90mTotal: {} note(s), Page {}/{}\x1B[0m", total_notes, current_page, total_pages);
+            println!(
+                "\n  \x1B[90mTotal: {} note(s), Page {}/{}\x1B[0m",
+                total_notes, current_page, total_pages
+            );
             if total_pages > 1 {
-                println!("  \x1B[90mUse /note list {} to see page {}, or /note list --global {} for global\x1B[0m", 
-                    current_page + 1, current_page + 1, current_page + 1);
+                println!(
+                    "  \x1B[90mUse /note list {} to see page {}, or /note list --global {} for global\x1B[0m",
+                    current_page + 1,
+                    current_page + 1,
+                    current_page + 1
+                );
             }
         }
         Err(e) => {
@@ -1446,7 +1482,12 @@ pub fn handle_note_show(state: &ReplState, id: i64) {
 /// Handle note edit command
 ///
 /// Edits a note's title and/or content.
-pub fn handle_note_edit(state: &ReplState, id: i64, title: Option<String>, content: Option<String>) {
+pub fn handle_note_edit(
+    state: &ReplState,
+    id: i64,
+    title: Option<String>,
+    content: Option<String>,
+) {
     use crate::content::MAX_NOTE_CONTENT_SIZE;
 
     let db = match &state.db {
@@ -1465,28 +1506,36 @@ pub fn handle_note_edit(state: &ReplState, id: i64, title: Option<String>, conte
     if let Some(ref c) = content
         && c.len() > MAX_NOTE_CONTENT_SIZE
     {
-        eprintln!("\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m", MAX_NOTE_CONTENT_SIZE);
+        eprintln!(
+            "\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m",
+            MAX_NOTE_CONTENT_SIZE
+        );
         println!("  Current length: {} characters", c.len());
         return;
     }
 
     match db.get_note(id) {
-        Ok(Some(_)) => {
-            match db.update_note(id, title.as_deref(), content.as_deref()) {
-                Ok(()) => {
-                    println!("\x1B[32m✓ Updated note #{}\x1B[0m", id);
-                    if let Some(t) = &title {
-                        println!("  Title: {}", t);
-                    }
-                    if let Some(c) = &content {
-                        println!("  Content: {}", if c.len() > 80 { format!("{}...", &c[..80]) } else { c.clone() });
-                    }
+        Ok(Some(_)) => match db.update_note(id, title.as_deref(), content.as_deref()) {
+            Ok(()) => {
+                println!("\x1B[32m✓ Updated note #{}\x1B[0m", id);
+                if let Some(t) = &title {
+                    println!("  Title: {}", t);
                 }
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Failed to update note: {}\x1B[0m", e);
+                if let Some(c) = &content {
+                    println!(
+                        "  Content: {}",
+                        if c.len() > 80 {
+                            format!("{}...", &c[..80])
+                        } else {
+                            c.clone()
+                        }
+                    );
                 }
             }
-        }
+            Err(e) => {
+                eprintln!("\x1B[31m✗ Failed to update note: {}\x1B[0m", e);
+            }
+        },
         Ok(None) => {
             eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
         }
@@ -1514,20 +1563,18 @@ pub fn handle_note_delete(state: &ReplState, id: i64) {
     }
 
     match db.get_note(id) {
-        Ok(Some(note)) => {
-            match db.delete_note(id) {
-                Ok(()) => {
-                    if let Some(t) = &note.title {
-                        println!("\x1B[32m✓ Deleted note #{}: {}\x1B[0m", id, t);
-                    } else {
-                        println!("\x1B[32m✓ Deleted note #{}\x1B[0m", id);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Failed to delete note: {}\x1B[0m", e);
+        Ok(Some(note)) => match db.delete_note(id) {
+            Ok(()) => {
+                if let Some(t) = &note.title {
+                    println!("\x1B[32m✓ Deleted note #{}: {}\x1B[0m", id, t);
+                } else {
+                    println!("\x1B[32m✓ Deleted note #{}\x1B[0m", id);
                 }
             }
-        }
+            Err(e) => {
+                eprintln!("\x1B[31m✗ Failed to delete note: {}\x1B[0m", e);
+            }
+        },
         Ok(None) => {
             eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
         }
@@ -1572,7 +1619,10 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
     match db.search_notes_keyword(&query, scope, project_id.as_deref(), limit) {
         Ok(results) => {
             let scope_str = if global { "global" } else { "project" };
-            println!("\x1B[36mSearch results for \"{}\" ({scope_str}):\x1B[0m", query);
+            println!(
+                "\x1B[36mSearch results for \"{}\" ({scope_str}):\x1B[0m",
+                query
+            );
 
             if results.is_empty() {
                 println!("  No notes found.");

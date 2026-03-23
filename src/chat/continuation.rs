@@ -13,14 +13,14 @@
 //! Layer 2 (Core): core.rs (send_message, auto_compact_if_needed)
 //! ```
 
-use super::core::{auto_compact_if_needed, send_message, SendMessageResult, TokenMetrics};
+use super::core::{SendMessageResult, TokenMetrics, auto_compact_if_needed, send_message};
 use super::repl_state::ReplState;
 use crate::context_overflow::{
     check_context_overflow, needs_buffered_compaction, needs_pre_tool_compaction,
 };
 use crate::debug_tools::log_debug;
-use crate::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 use crate::prompts::CONTINUATION_PROMPT_INTER_TOOL;
+use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use std::time::Instant;
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -68,12 +68,15 @@ pub async fn process_send_result(
             user_message_id,
         );
         if state.use_debug {
-            log_debug(&format!("Saved pre-tool content ({} chars)", pre_content.len()));
+            log_debug(&format!(
+                "Saved pre-tool content ({} chars)",
+                pre_content.len()
+            ));
         }
     }
 
     // Handle continuation if LLM paused for compaction
-    let (final_response, final_metrics, context_window, _system_prompt) = 
+    let (final_response, final_metrics, context_window, _system_prompt) =
         if result.continuation_needed.is_some() {
             match handle_continuation(state, result).await {
                 Ok(cont_result) => (
@@ -96,17 +99,14 @@ pub async fn process_send_result(
         };
 
     // Save the final response (merged with continuations if any)
-    state.session.add_assistant_message(
-        final_response.clone(),
-        Some(final_metrics.prompt_tokens),
-    );
+    state
+        .session
+        .add_assistant_message(final_response.clone(), Some(final_metrics.prompt_tokens));
 
     if final_metrics.total_tokens > 0 {
         eprintln!(
             "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-            final_metrics.prompt_tokens,
-            final_metrics.response_tokens,
-            final_metrics.total_tokens
+            final_metrics.prompt_tokens, final_metrics.response_tokens, final_metrics.total_tokens
         );
     }
 
@@ -150,11 +150,7 @@ pub async fn check_and_compact_before_tool(
 ) {
     // First check if we need actual compaction (88% threshold)
     if needs_buffered_compaction(&state.session, context_window) {
-        let ctx_status = check_context_overflow(
-            &state.session,
-            system_prompt,
-            context_window,
-        );
+        let ctx_status = check_context_overflow(&state.session, system_prompt, context_window);
 
         let usage_pct = ctx_status.usage_percent();
         let total_tokens = ctx_status.total_tokens();
@@ -177,11 +173,7 @@ pub async fn check_and_compact_before_tool(
         .await;
     } else if needs_pre_tool_compaction(&state.session, context_window) {
         // At 75%: just show warning, don't compact yet
-        let ctx_status = check_context_overflow(
-            &state.session,
-            system_prompt,
-            context_window,
-        );
+        let ctx_status = check_context_overflow(&state.session, system_prompt, context_window);
 
         let usage_pct = ctx_status.usage_percent();
         let total_tokens = ctx_status.total_tokens();
@@ -250,9 +242,7 @@ pub async fn handle_continuation(
             continuation_tag.paused_at, continuation_tag.next_step
         ));
     }
-    eprintln!(
-        "\n\x1B[33m⏳ Paused for context compaction, continuing...\x1B[0m"
-    );
+    eprintln!("\n\x1B[33m⏳ Paused for context compaction, continuing...\x1B[0m");
 
     // Compact context before first continuation
     let continuation_context_window = initial_result.context_window;
@@ -413,9 +403,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
         return OverflowHandleResult::NotOverflow;
     }
 
-    eprintln!(
-        "\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m"
-    );
+    eprintln!("\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m");
 
     let (removed, _) = state.session.remove_last_assistant_messages_with_content();
     if state.use_debug {
@@ -446,9 +434,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
         ));
     }
 
-    eprintln!(
-        "\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m"
-    );
+    eprintln!("\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m");
 
     OverflowHandleResult::HandledContinue
 }
@@ -506,7 +492,7 @@ async fn handle_inter_tool_compaction_error(
     if state.use_debug {
         let tokens_saved = tokens_before.saturating_sub(tokens_after);
         let _messages_removed = messages_before.saturating_sub(messages_after);
-        
+
         log_debug(&format!(
             "[Inter-tool Compaction] Completed in {:.2}s: {}K → {}K tokens (saved {}K), {} → {} messages",
             elapsed.as_secs_f64(),
@@ -516,7 +502,7 @@ async fn handle_inter_tool_compaction_error(
             messages_before,
             messages_after
         ));
-        
+
         if let Some(summary) = &state.session.compacted_summary {
             log_debug(&format!(
                 "[Inter-tool Compaction] Summary length: {} chars",
@@ -551,7 +537,7 @@ mod tests {
     fn test_parse_inter_tool_compaction_error_valid() {
         let error = "CONTEXT_NEEDS_COMPACT:30000:32000:read_file,calculate,write_file";
         let result = parse_inter_tool_compaction_error(error);
-        
+
         assert!(result.is_some());
         let (tokens, window, tools) = result.unwrap();
         assert_eq!(tokens, 30000);
@@ -563,7 +549,7 @@ mod tests {
     fn test_parse_inter_tool_compaction_error_empty_tools() {
         let error = "CONTEXT_NEEDS_COMPACT:25000:32000:";
         let result = parse_inter_tool_compaction_error(error);
-        
+
         assert!(result.is_some());
         let (tokens, window, tools) = result.unwrap();
         assert_eq!(tokens, 25000);
@@ -594,13 +580,17 @@ mod tests {
 
     #[test]
     fn test_is_inter_tool_compaction_error_true() {
-        assert!(is_inter_tool_compaction_error("CONTEXT_NEEDS_COMPACT:30000:32000:tool"));
+        assert!(is_inter_tool_compaction_error(
+            "CONTEXT_NEEDS_COMPACT:30000:32000:tool"
+        ));
         assert!(is_inter_tool_compaction_error("CONTEXT_NEEDS_COMPACT:0:0:"));
     }
 
     #[test]
     fn test_is_inter_tool_compaction_error_false() {
-        assert!(!is_inter_tool_compaction_error("Context overflow during tool execution"));
+        assert!(!is_inter_tool_compaction_error(
+            "Context overflow during tool execution"
+        ));
         assert!(!is_inter_tool_compaction_error("Network error"));
         assert!(!is_inter_tool_compaction_error(""));
     }
@@ -616,7 +606,7 @@ mod tests {
     fn test_build_inter_tool_compaction_prompt_with_tools() {
         let tools = vec!["read_file".to_string(), "calculate".to_string()];
         let prompt = build_inter_tool_compaction_prompt(&tools);
-        
+
         assert!(prompt.contains("Context was compacted during multi-tool execution"));
         assert!(prompt.contains("Tools already executed: read_file, calculate"));
     }
@@ -625,7 +615,7 @@ mod tests {
     fn test_build_inter_tool_compaction_prompt_single_tool() {
         let tools = vec!["search".to_string()];
         let prompt = build_inter_tool_compaction_prompt(&tools);
-        
+
         assert!(prompt.contains("Tools already executed: search"));
     }
 }

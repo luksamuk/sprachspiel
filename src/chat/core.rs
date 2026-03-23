@@ -22,14 +22,16 @@ use std::sync::Arc;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
-use crate::context_overflow::{check_context_overflow, MAX_SUMMARY_TOKENS, needs_buffered_compaction};
+use crate::context_overflow::{
+    MAX_SUMMARY_TOKENS, check_context_overflow, needs_buffered_compaction,
+};
 use crate::debug_tools::log_debug;
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
-    build_compaction_prompt, build_continuation_prompt, build_system_prompt, PromptConfig,
-    PromptType,
+    PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
+    build_system_prompt,
 };
-use crate::retrieval::{build_context, update_retrieval_time, RetrievalConfig};
+use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::tokens::estimate_tokens;
@@ -37,12 +39,12 @@ use crate::tools::{get_available_tool_names, register_tools};
 use crate::utils::truncate_to_budget;
 
 use super::coordinator::{
-    classify_ollama_error, format_recovery_message, is_ollama_error_recoverable, MAX_RETRIES,
+    MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,
 };
 use super::custom_coordinator::CustomCoordinator;
 use super::session::ChatSession;
 use super::thinking::{display_thinking, strip_thinking_tags};
-use super::{parse_continuation_tag, ContinuationTag};
+use super::{ContinuationTag, parse_continuation_tag};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -144,12 +146,12 @@ pub fn setup_coordinator(
     .build_coordinator();
 
     let mut coordinator = coordinator;
-    
+
     // Set real token count for accurate overflow detection
     if let Some(tokens) = real_history_tokens {
         coordinator = coordinator.real_history_tokens(tokens);
     }
-    
+
     if tools_enabled {
         let (coord_new, tool_count) = register_tools(coordinator, settings, use_debug);
         coordinator = coord_new;
@@ -336,11 +338,7 @@ pub async fn send_message(
 
     // Check context overflow
     let context_window = model_config.num_ctx as usize;
-    let overflow_status = check_context_overflow(
-        session,
-        &system_prompt,
-        context_window,
-    );
+    let overflow_status = check_context_overflow(session, &system_prompt, context_window);
 
     // Show context warning only if tools are disabled.
     // When tools are enabled, check_and_compact_before_tool in continuation.rs
@@ -362,16 +360,21 @@ pub async fn send_message(
     // Setup coordinator with optional tools
     // Get real token count from session for accurate overflow detection
     let real_history_tokens = session.history_real_tokens();
-    
+
     if use_debug {
         // Collect prompt_tokens state for debugging
-        let prompt_tokens_state: Vec<(usize, Option<u64>)> = session.messages.iter()
+        let prompt_tokens_state: Vec<(usize, Option<u64>)> = session
+            .messages
+            .iter()
             .enumerate()
             .map(|(i, m)| (i, m.prompt_tokens))
             .take(10) // First 10
             .collect();
-        let has_nonzero_tokens = session.messages.iter().any(|m| m.prompt_tokens.map(|t| t > 0).unwrap_or(false));
-        
+        let has_nonzero_tokens = session
+            .messages
+            .iter()
+            .any(|m| m.prompt_tokens.map(|t| t > 0).unwrap_or(false));
+
         log_debug(&format!(
             "[setup_coordinator] real_history_tokens={} messages={} has_compacted={} messages_sent_to_llm={}",
             real_history_tokens,
@@ -381,18 +384,21 @@ pub async fn send_message(
         ));
         log_debug(&format!(
             "[setup_coordinator] has_nonzero_prompt_tokens={} first_10_prompt_tokens={:?}",
-            has_nonzero_tokens,
-            prompt_tokens_state
+            has_nonzero_tokens, prompt_tokens_state
         ));
         if session.has_compacted_messages() {
             log_debug(&format!(
                 "[setup_coordinator] summary_len={} compacted_range={:?}",
-                session.compacted_summary.as_ref().map(|s| s.len()).unwrap_or(0),
+                session
+                    .compacted_summary
+                    .as_ref()
+                    .map(|s| s.len())
+                    .unwrap_or(0),
                 session.compacted_range
             ));
         }
     }
-    
+
     let mut coordinator = setup_coordinator(
         ollama.clone(),
         model_config,
@@ -486,16 +492,19 @@ pub async fn send_message(
 
     finish_spinner(spinner);
 
-    match result {
-        Ok(response) => Ok(process_chat_response(
+    // Process response and display it
+    let processed_result = match result {
+        Ok(response) => process_chat_response(
             response,
             think_enabled,
             &mut coordinator,
             context_window,
             system_prompt,
-        )),
-        Err(e) => Err(e.into()),
-    }
+        ),
+        Err(e) => return Err(e.into()),
+    };
+
+    Ok(processed_result)
 }
 
 /// Auto-compact conversation if context reaches buffer threshold
@@ -634,7 +643,7 @@ pub async fn compact_conversation(
     match result {
         Ok(response) => {
             let summary = strip_thinking_tags(&response.message.content);
-            
+
             // Truncate summary if it exceeds MAX_SUMMARY_TOKENS
             // This prevents infinite compaction loops caused by oversized summaries
             let summary = if estimate_tokens(&summary) > MAX_SUMMARY_TOKENS {
@@ -646,7 +655,7 @@ pub async fn compact_conversation(
             } else {
                 summary
             };
-            
+
             Ok((summary, range))
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),
