@@ -2,6 +2,30 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.38.0] - 2026-03-24
+
+### Added
+
+- **Skills System Design Document Update** - Comprehensive design research and planning
+  - **Hermes Agent Analysis:** Researched skills system implementation from `~/.hermes/hermes-agent`
+  - **Progressive Disclosure:** INDEX in prompt + on-demand loading via `skill_view(name)`
+  - **Directory-based Skills:** `SKILL.md` format with YAML frontmatter
+  - **Deduplication Priority:** project > user > builtin
+  - **Simplified Frontmatter:** Only `name` and `description` required
+  - **Two Tools:** `skill_list()` for INDEX, `skill_view(name)` for content
+  - **Implementation Phases:** 5 phases estimated at 3.5 days total
+  - Related: Issue #8
+
+### Changed
+
+- **skills-system-design.md Complete Rewrite** - Updated from original design
+  - Removed Phase 1 (already completed in v0.28.x)
+  - Added Hermes Agent research findings
+  - Changed from "inject all skills" to "INDEX + on-demand" pattern
+  - Changed from `.md` files to `SKILL.md` in directory structure
+  - Changed from 8-10 days estimate to 3.5 days
+  - Added implementation status tracking
+
 ## [0.37.2] - 2026-03-22
 
 ### Fixed

@@ -146,7 +146,7 @@
 
 **Documentation:** See [Factual Memory System Design](./doc/src/development/factual-memory-system.md) for complete design.
 
-**Key Insight:** Factual Memory and Feedback System (PRIORITY 1) are **orthogonal** and **complementary**:
+**Key Insight:** Factual Memory and Feedback System (PRIORITY 5) are **orthogonal** and **complementary**:
 - Factual Memory → "What do I know about the user/project?"
 - Feedback System → "How should I weight retrieved messages?"
 - They operate at different layers and don't conflict.
@@ -558,7 +558,7 @@ Status bar during spinner ("Thinking...") was attempted but caused display issue
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - Notes System
+### 🔵 PRIORITY 4: Code Quality - Notes System (COMPLETED)
 
 **Status:** ✅ COMPLETED
 
@@ -768,22 +768,65 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### 🟡 PRIORITY 3: Skills System Phase 1
+### 🟡 PRIORITY 3: Skills System
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 
-**Goal:** Markdown-defined AI behaviors for tool pipelines.
+**Goal:** Markdown-defined AI behaviors with progressive disclosure.
+
+**Design Research (2026-03-24):**
+- Analyzed Hermes Agent skills system at `~/.hermes/hermes-agent`
+- Confirmed INDEX + on-demand loading pattern (not inject all skills)
+- Confirmed `SKILL.md` format with YAML frontmatter
+- Confirmed deduplication priority: project > user > builtin
+
+**Architecture:**
+```
+System Prompt
+├── SKILLS INDEX (names + descriptions)
+│   └── <available_skills> section
+└── Tools section
+
+On-demand Loading:
+├── LLM sees relevant skill in INDEX
+├── LLM calls skill_view(name="pdf-processing")
+└── System returns full SKILL.md content
+```
 
 **Features:**
-- SkillsLoader for `.md` files
-- Builtin skills (pdf-processing, ocr-images)
-- User skills (`~/.config/ask-ai/skills/`)
-- Project skills (`.ask-ai/skills/`)
-- Prompt injection integration
+- `skill_list()` tool - returns INDEX (names + descriptions)
+- `skill_view(name)` tool - loads full skill content
+- Builtin skills embedded in binary (`include_str!`)
+- User skills at `~/.config/ask-ai/skills/<name>/SKILL.md`
+- Project skills at `.ask-ai/skills/<name>/SKILL.md`
 
-**Dependencies:** None
+**Dependencies:** None (CLI Tools completed in v0.28.x)
 
-**Estimated effort:** 3-5 days
+**Estimated effort:** 3.5 days
+
+**Implementation Phases:**
+
+| Phase | Status | Description | Effort |
+|-------|--------|-------------|--------|
+| 1 | 🔄 IN PROGRESS | Skills Module (types, loader, mod) | 1.5 days |
+| 2 | ❌ NOT STARTED | Builtin Skills (4 .md files) | 0.5 days |
+| 3 | ❌ NOT STARTED | Skills Tools (skill_list, skill_view) | 0.5 days |
+| 4 | ❌ NOT STARTED | Prompt Integration (INDEX section) | 0.5 days |
+| 5 | ❌ NOT STARTED | Testing & Documentation | 0.5 days |
+
+**Files to Create:**
+- `src/skills/mod.rs` - Public API
+- `src/skills/types.rs` - Skill, SkillIndex, SkillSource, Frontmatter
+- `src/skills/loader.rs` - YAML parsing, directory scanning
+- `src/skills/builtin/*.md` - 4 builtin skills
+- `src/tools/skills.rs` - skill_list, skill_view tools
+
+**Files to Modify:**
+- `src/prompts/builder.rs` - Add SKILLS INDEX section
+- `src/chat/core.rs` - Call skills loading on session start
+- `src/tools/mod.rs` - Add skills module
+- `src/tools/registry.rs` - Register skills tools
+- `Cargo.toml` - Add serde_yaml, skills-tools feature
 
 **Reference:** `doc/src/development/skills-system-design.md`
 
@@ -793,7 +836,7 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ### 🟡 PRIORITY 3: Document Import Tool
 
-**Status:** ❌ BLOCKED (requires Skills System Phase 1)
+**Status:** ❌ BLOCKED (requires Skills System)
 
 **Goal:** Import documents for semantic search.
 
@@ -805,7 +848,7 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 - `/import-doc`, `/list-docs`, `/remove-doc` commands
 - Update `search_hybrid()` for document chunks
 
-**Dependencies:** Skills System Phase 1 (for PDF pipeline definition)
+**Dependencies:** Skills System (for PDF pipeline definition)
 
 **Estimated effort:** 5-7 days
 
@@ -906,7 +949,7 @@ const MIN_CHUNK_TOKENS: usize = 32;         // Minimum before aborting
 
 ---
 
-### 🟠 PRIORITY 2: Context Overflow During Multi-Tool Execution
+### 🟠 PRIORITY 2: Context Overflow During Multi-Tool Execution (COMPLETED)
 
 **Status:** ✅ COMPLETED (v0.37.0)
 
@@ -1096,7 +1139,7 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 
 ---
 
-### 🔵 PRIORITY 4: Feedback Infrastructure
+### 🟣 PRIORITY 5: Feedback Infrastructure
 
 **Status:** 📋 PLANNED (depends on: Factual Memory)
 
@@ -1687,78 +1730,94 @@ let results = futures::future::join_all(futures).await;
 
 **Estimated effort:** 3-4 days
 
----
-
-### 🟢 LOW PRIORITY: Memory Enhancement
-
-**Status:** ❌ BLOCKED (requires Document Import + Notes System)
-
-**Phases:**
-- **Phase 2:** Query routing (blocked by multiple source types)
-- **Phase 3:** Timestamp filtering (blocked by Phase 2)
-- **Phase 4-5:** Advanced memory features (blocked by Document Import + Notes)
-
-**Reference:** `doc/src/development/effective-agents-analysis.md` lines 196-226, 446-545
+**Related:** Issue #11
 
 ---
 
-### 🟢 LOW PRIORITY: Other Features
+## 🔵 LOW PRIORITY: Extended Features
 
-- **OCR/Vision Tools** - Image processing via CLI tools (tesseract, exiftool, imagemagick)
-- **File Session State** - Explicit file tracking with security constraints
-- **Skills System Extended** - YAML frontmatter, skill composition
-- **Plugin System** - User-defined tools via dynamic loading
+Features planned for future releases:
 
-### 🟢 PRIORITY 4.5: Status Bar Above Prompt
+| Priority | Feature | Description | Dependencies | Issue |
+|----------|---------|-------------|--------------|-------|
+| P8 | OCR/Vision Tools | Image processing via CLI tools | Skills System | #12 |
+| P9 | File Session State | Explicit file tracking | None | #13 |
+| P10 | Skills System Extended | YAML frontmatter, skill composition | Skills System | #14 |
+| P11 | File Staleness | Detect outdated file content | None | #50 |
+| P12 | Extended Personalities | Per-personality model config | None | #49 |
+| P13 | Plugin System | User-defined tools | None | #15 |
+| P14 | TUI | Ratatui-based terminal interface | None | #16 |
+| P15 | Memory Enhancement 2-5 | Query routing, filtering | Doc Import | #17 |
+
+---
+
+### 🔵 PRIORITY 8: OCR/Vision Tools Integration
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Add a dynamic status bar above the prompt input with real-time context information.
+**Goal:** Image processing via CLI tools.
 
-**Inspired by:** Hermes Agent CLI status bar design.
+**Features:**
+- OCR via tesseract
+- Image metadata via exiftool
+- Image conversion via imagemagick
 
-**Current State:**
-- Model name shown inline in rustyline prompt: `glm-5:cloud🧠🔧>`
-- Context info requires `/context` command
-- Thinking/tools indicators mixed with model name in prompt
+**Dependencies:** Skills System (P3)
 
-**Proposed State:**
-- Status bar shows: model, context usage, progress bar, think/tools indicators
-- Prompt line is just `>` (clean, minimal)
+**Estimated effort:** 3-5 days
 
-**Proposed Design:**
-```
-────────────────────────────────────────────────────────────────────────────────
- glm-5:cloud │ 47.2K/128K │ [████░░░░░░] 37% │ 🧠🔧
-────────────────────────────────────────────────────────────────────────────────
-> _
-```
-
-**Components:**
-- Model name
-- Context usage: `XX.XK/YYYK` tokens
-- Progress bar with colors (green < 50%, yellow 50-75%, red > 75%)
-- Think/Tools indicators (in status bar)
-- Prompt: just `>` (clean, minimal)
-
-**Implementation:**
-
-| File | Changes |
-|------|---------|
-| `src/chat/view/terminal.rs` | Add `render_status_bar()` method |
-| `src/chat/input/rustyline.rs` | Call status bar before prompt |
-| `src/context_overflow.rs` | Add `to_status_bar()` method |
-
-**Priority Rationale:**
-- Higher than TUI (Priority 5) because component can be reused
-- Lower than Code Quality (Priority 4) because not blocking
-- Immediate value without full TUI rewrite
-
-**Related:** Issue #47
+**Related:** Issue #12
 
 ---
 
-### 🟢 PRIORITY 5: TUI (Terminal User Interface)
+### 🔵 PRIORITY 11: File Staleness Detection
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Prevent file edits based on outdated content.
+
+**Problem:**
+When the LLM edits a file using `edit_file` or `write_file`, it may operate on outdated content if:
+1. The file was modified externally (by another process, user, or git operations)
+2. The LLM's context contains stale information about the file's structure
+
+**Proposed Solution:**
+- Track modification time (mtime) when a file is read
+- Before edit operations, compare current mtime with stored mtime
+- If different, return warning: "File has been modified since it was read."
+
+**Dependencies:** None
+
+**Estimated effort:** 1-2 days
+
+**Related:** Issue #50
+
+---
+
+### 🔵 PRIORITY 12: Extended Personalities System
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Per-personality model configuration and separate memory context.
+
+**Current State (SOUL.md):**
+- Multiple personality files supported via symlinks
+- Symlink approach: `ln -sf ~/.config/ask-ai/SPRACH.md ~/.config/ask-ai/SOUL.md`
+
+**What's MISSING:**
+- Per-personality model configuration
+- Separate memory context per personality
+- Personality directory support (`personalities/`)
+
+**Dependencies:** None
+
+**Estimated effort:** 2-3 days
+
+**Related:** Issue #49
+
+---
+
+### 🔵 PRIORITY 14: TUI (Terminal User Interface)
 
 **Status:** ❌ NOT STARTED
 
@@ -1766,7 +1825,15 @@ let results = futures::future::join_all(futures).await;
 
 See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
 
-**Blocked by:** Status Bar (Priority 4.5) - component reuse
+**Components:**
+- Chat pane with markdown rendering
+- Input pane with history
+- Status bar showing model, context usage, tokens
+- Sidebar for tools/messages (optional)
+
+**Estimated effort:** 3-4 weeks
+
+**Related:** Issue #17
 
 ---
 
