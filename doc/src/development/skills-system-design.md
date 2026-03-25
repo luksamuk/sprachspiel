@@ -1119,6 +1119,53 @@ These apply to skills that use `run_command` - skills cannot bypass these contro
 - [Prompt Injection Attacks (arXiv:2306.05499)](https://arxiv.org/abs/2306.05499)
 - [Indirect Prompt Injection (arXiv:2302.12173)](https://arxiv.org/abs/2302.12173)
 
+### Future Consideration: Multilingual Skill Sanitization
+
+**Problem:** Current sanitization uses English-only regex patterns. Skills in other languages can bypass injection detection.
+
+**Research Findings (2026-03-24):**
+
+| Source | Finding |
+|--------|---------|
+| HackerNoon (Feb 2026) | Bypassed Azure Content Filter using Thai and Arabic payloads - $37,500 in bug bounties |
+| arXiv:2512.23684 | Multilingual hidden prompt injection tested on 500 ICML papers - English, Japanese, Chinese successful |
+| arXiv:2410.21337v1 | XLM-RoBERTa fine-tuned achieves 99.13% accuracy for multilingual injection detection |
+
+**Root Cause:**
+- Safety training is disproportionately English-centric
+- Models understand instructions in many languages, but safety filters often don't
+- Tokenizers optimized for English/Latin scripts; other scripts fragment differently
+
+**Current Implementation (v1.0):**
+- English-only sanitization (regex patterns)
+- Warning logged if non-Latin characters detected in skill content
+- Documentation recommends English skills (not enforced)
+
+**Future Implementation (requires chat multi-mode support):**
+
+When chat multi-mode is implemented (allowing Translate mode within chat sessions), consider:
+
+1. **Translate-then-Detect approach:**
+   - Detect skill content language
+   - If not English, translate using existing `ask translate` infrastructure
+   - Apply English sanitization to translated content
+   - Log original language + translation for audit
+
+2. **Alternative: ML-based multilingual detection:**
+   - Fine-tune XLM-RoBERTa on prompt injection dataset
+   - Deploy as pre-filter before skill loading
+   - Higher accuracy but requires ML infrastructure
+
+**Implementation Dependency:**
+- Requires: Chat multi-mode (P6: Chat Module Integration in roadmap)
+- Existing: `ask translate` subcommand with `translategemma` model
+
+**References:**
+- [Multilingual Prompt Injection Bypasses (HackerNoon)](https://hackernoon.com/multilingual-prompt-injection-exposes-gaps-in-llm-safety-nets)
+- [Multilingual Hidden Prompt Injection (arXiv:2512.23684)](https://arxiv.org/abs/2512.23684)
+- [Fine-tuned LLMs for Detection (arXiv:2410.21337v1)](https://arxiv.org/html/2410.21337v1)
+- [OpenAI Moderation API (40 languages)](https://developers.openai.com/api/docs/guides/moderation)
+
 ## Testing Strategy
 
 ### Unit Tests
