@@ -16,6 +16,14 @@ All notable changes to Ask-AI will be documented in this file.
   - **Implementation Phases:** 5 phases estimated at 3.5 days total
   - Related: Issue #8
 
+- **Multilingual Prompt Injection Security Research** - Comprehensive security analysis
+  - **Documented Bypasses:** Azure Content Filter bypassed using Thai/Arabic payloads (HackerNoon)
+  - **Academic Research:** arXiv:2512.23684 multilingual hidden prompt injection on 500 papers
+  - **ML Detection:** XLM-RoBERTa fine-tuned achieves 99.13% accuracy (arXiv:2410.21337v1)
+  - **Future Consideration:** Translate-then-detect approach using existing `ask translate` infrastructure
+  - **Current Mitigation:** English-only sanitization + warning on non-Latin characters
+  - References added to skills-system-design.md
+
 ### Changed
 
 - **skills-system-design.md Complete Rewrite** - Updated from original design
@@ -25,6 +33,8 @@ All notable changes to Ask-AI will be documented in this file.
   - Changed from `.md` files to `SKILL.md` in directory structure
   - Changed from 8-10 days estimate to 3.5 days
   - Added implementation status tracking
+  - Added comprehensive security considerations (OWASP LLM Top 10)
+  - Added multilingual injection defense as future consideration
 
 ## [0.37.2] - 2026-03-22
 
