@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.37.2** - 2026-03-21 (Embedding Fallback Rewrite)
+**v0.38.0** - 2026-03-26 (Skills System)
 
 ## Current Implementation Status
 
@@ -2007,13 +2007,110 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Pluggable architecture for extending ask-ai functionality.
+**Goal:** Pluggable architecture for extending ask-ai functionality with external tools.
 
 **Dependencies:** TBD
 
 **Estimated effort:** TBD
 
 **Related:** Issue #15
+
+#### Background: Opt-in Tools
+
+The current architecture supports **feature flags** for optional tools:
+
+- `pokemon-tools` - Opt-in (not in default build)
+- `led-tools` - Opt-in (not in default build)
+- `finance-tools` - Opt-in (not in default build)
+- `search-tools` - Opt-in (not in default build)
+
+This is a precedent for the plugin system: tools that require:
+- External APIs (PokéAPI, Google Finance)
+- Specific hardware (LED control)
+- Opt-in due to size/complexity
+
+#### Architecture Direction
+
+The Plugin System should support two paradigms:
+
+**1. Native Plugins (Rust WASM/WebAssembly)**
+
+```rust
+// Future: ./plugins/my_plugin.wasm
+pub fn register_tools(registry: &mut ToolRegistry) {
+    registry.register(MyTool::new());
+}
+```
+
+**2. MCP (Model Context Protocol) Support**
+
+MCP is an open standard for connecting AI applications to external systems:
+
+- **Standardized interface**: JSON Schema for tool definitions
+- **Server-based**: External processes provide tools via MCP protocol
+- **Dynamic discovery**: Tools are listed at runtime, not compile-time
+- **Security**: Human-in-the-loop for sensitive operations
+
+**Reference:** https://modelcontextprotocol.io
+
+**Example MCP Tool Definition:**
+```json
+{
+  "name": "get_weather",
+  "description": "Get current weather for a location",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "location": { "type": "string" }
+    },
+    "required": ["location"]
+  }
+}
+```
+
+#### Research Summary
+
+| System | Approach | Type Safety | Security |
+|--------|----------|-------------|----------|
+| MCP | JSON Schema + server | Runtime validation | Human approval |
+| AI SDK (Vercel) | Zod Schema + execute | Compile-time | Needs approval |
+| Hermes Agent | Skills (Markdown) + Tools (Rust) | Compile-time for tools | Sanitization |
+| **ask-ai (current)** | Rust code + feature flags | Compile-time | Blacklist |
+
+#### Implementation Phases
+
+**Phase 1: MCP Client Integration**
+- Implement MCP client to connect to external tool servers
+- Support `tools/list` and `tools/call` operations
+- Human confirmation UI for tool invocations
+
+**Phase 2: Native Plugin System**
+- WASM module loading with sandbox
+- Plugin registry API
+- Hot-reload support
+
+**Phase 3: Plugin Distribution**
+- Plugin discovery mechanism
+- Version management
+- Security scanning
+
+#### Why Not Generic HTTP Tool
+
+A generic `http_request` tool has been considered and **rejected** for these reasons:
+
+1. **Security**: No input sanitization, can call ANY URL
+2. **Type Safety**: LLM must infer JSON schemas from responses
+3. **Error Handling**: Runtime errors only, no compile-time validation
+4. **Complexity**: LLMs struggle with complex nested APIs without typed schemas
+
+The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not raw HTTP.
+
+#### References
+
+- [Model Context Protocol](https://modelcontextprotocol.io)
+- [MCP Specification](https://spec.modelcontextprotocol.io)
+- [Vercel AI SDK Tools](https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling)
+- [OWASP LLM Top 10](https://genai.owasp.org/llm-top-10/)
 
 ---
 
@@ -2084,4 +2181,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-11 - v0.28.0: SQLite cleanup, run_command timeout fix, parameter type fix
+2026-03-26 - v0.38.0: Pokemon tools removed from default, Plugin System + MCP documentation

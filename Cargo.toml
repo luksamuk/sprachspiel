@@ -4,7 +4,7 @@ version = "0.38.0"
 edition = "2024"
 
 [features]
-default = ["weather-tools", "file-tools", "pokemon-tools", "calc-tools", "serper-tools", "system-tools", "todo-tools", "skills-tools"]
+default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "todo-tools", "skills-tools"]
 all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "skills-tools", "sandbox"]
 all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "skills-tools"]
 pokemon-tools = []

@@ -6,7 +6,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 
 | Category | Count | Source | Status | Default |
 |----------|-------|--------|--------|---------|
-| Pokémon | 9 | PokéAPI | ✅ Working | ✅ Enabled |
+| Pokémon | 9 | PokéAPI | ✅ Working | ❌ Opt-in |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
 | Calculator | 1 | ollama-rs built-in | ✅ Working | ✅ Enabled |
 | Web Search | 2 | Google via Serper | ✅ Working | ✅ Enabled* |
@@ -30,7 +30,6 @@ Tools are organized into feature flags that can be enabled or disabled at compil
 ### Default Features
 
 The default build includes:
-- `pokemon-tools` - Pokémon data tools (9 tools)
 - `weather-tools` - Weather lookup tools
 - `calc-tools` - Mathematical calculator
 - `serper-tools` - Google Search via Serper (requires API key)
@@ -42,7 +41,7 @@ The default build includes:
 
 | Feature | Description | Tools Included | Default |
 |---------|-------------|----------------|---------|
-| `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ✅ Yes |
+| `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ❌ No |
 | `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast | ✅ Yes |
 | `calc-tools` | Mathematical calculations | calculate | ✅ Yes |
 | `serper-tools` | Google Search via Serper API | web_search, web_search_news | ✅ Yes |
@@ -69,8 +68,8 @@ Get your free API key at [serper.dev](https://serper.dev) (2,500 free searches/m
 
 **Option 2: DuckDuckGo** - Free but may be blocked
 ```bash
-# Build with search-tools instead
-cargo build --release --no-default-features --features "pokemon-tools,weather-tools,calc-tools,search-tools,file-tools"
+# Build with search-tools instead of serper-tools
+cargo build --release --no-default-features --features "weather-tools,calc-tools,search-tools,file-tools,system-tools,skills-tools"
 ```
 
 ### Building with Custom Features
@@ -95,9 +94,14 @@ cargo build --release --features all-tools
 cargo build --release --no-default-features --features file-tools
 ```
 
-**Build without Pokémon tools:**
+**Enable Pokémon tools (opt-in):**
 ```bash
-cargo build --release --no-default-features --features "weather-tools,file-tools,search-tools,calc-tools"
+cargo build --release --features pokemon-tools
+```
+
+**Enable all optional tools:**
+```bash
+cargo build --release --features all-tools
 ```
 
 ### Runtime Filtering
@@ -113,6 +117,8 @@ blacklist = ["fetch_pokemon", "web_search"]
 When a tool is blacklisted, it won't be registered with the coordinator AND won't appear in the system prompt's tool descriptions. The model won't even know the tool exists.
 
 ## Pokémon Tools (9)
+
+**Note:** Pokémon tools are **opt-in** and not included in the default build. Enable with `--features pokemon-tools`.
 
 Powered by [PokéAPI](https://pokeapi.co/).
 

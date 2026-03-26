@@ -61,15 +61,17 @@ The following features are enabled by default:
 
 - `weather-tools` - Weather lookup tools (3 tools)
 - `file-tools` - File system operations (5 tools)
-- `pokemon-tools` - Pokémon data tools (9 tools)
 - `calc-tools` - Mathematical calculator (1 tool)
 - `serper-tools` - Serper API web search (2 tools, requires `SERPER_API_KEY`)
 - `system-tools` - System information tools (2 tools)
+- `skills-tools` - AI behavior skills (2 tools)
 
 ### Optional Features
 
+- `pokemon-tools` - Pokémon data tools (9 tools, disabled by default, opt-in)
 - `search-tools` - DuckDuckGo web search (3 tools, disabled by default, may fail due to CAPTCHA)
-- `finance-tools` - Stock quotes (planned, disabled by default)
+- `finance-tools` - Stock quotes (disabled by default)
+- `led-tools` - NeoPixel LED control (5 tools, disabled by default, requires hardware)
 - `all-tools` - Enable all tool categories
 
 ### Feature Usage in Code
