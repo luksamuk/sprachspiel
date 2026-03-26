@@ -811,6 +811,36 @@ On-demand Loading:
 | 3 | ✅ COMPLETED | Skills Tools (skill_list, skill_view) |
 | 4 | ✅ COMPLETED | Prompt Integration (INDEX section) |
 | 5 | ✅ COMPLETED | Testing (clippy, tests pass) |
+| 6 | 🔄 IN PROGRESS | Skills Slash Commands (activate skills via /skill-name) |
+
+### Phase 6: Skills Slash Commands
+
+**Goal:** Allow users to activate skills via slash commands (`/pdf-processing`).
+
+**Behavior:**
+```
+/pdf-processing                    → Loads skill, shows activation message
+/pdf-processing extrair texto.pdf  → Loads skill + sends user message
+/skill-list                        → Lists available skills
+```
+
+**Architecture:**
+- Dynamic slash command detection based on available skills
+- Skill content injected into session system prompt
+- Skills activated for current session only
+
+**Implementation:**
+
+| File | Change |
+|------|--------|
+| `src/chat/commands.rs` | Add `ChatCommand::Skill { name }` and `CommandResult::Skill` |
+| `src/chat/commands.rs` | Modify `parse_command()` to detect `/skill-name` dynamically |
+| `src/chat/session.rs` | Add `active_skill: Option<Skill>` field |
+| `src/prompts/builder.rs` | Inject active skill into system prompt |
+
+**Estimated effort:** 2 hours
+
+**Reference:** Hermes Agent `agent/skill_commands.py`
 
 **Files Created:**
 - `src/skills/mod.rs` - Public API
