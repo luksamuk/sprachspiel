@@ -1786,7 +1786,32 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 10: Multilingual Skill Sanitization
+### 🔵 PRIORITY 10: Extended Personalities System
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Per-personality model configuration and separate memory context.
+
+**Reason for Priority:** Didactic use case requires separate personalities soon.
+
+**Current State (SOUL.md):**
+- Multiple personality files supported via symlinks
+- Symlink approach: `ln -sf ~/.config/ask-ai/SPRACH.md ~/.config/ask-ai/SOUL.md`
+
+**What's MISSING:**
+- Per-personality model configuration
+- Separate memory context per personality
+- Personality directory support (`personalities/`)
+
+**Dependencies:** None
+
+**Estimated effort:** 2-3 days
+
+**Related:** Issue #49
+
+---
+
+### 🔵 PRIORITY 11: Multilingual Skill Sanitization
 
 **Status:** ❌ NOT STARTED
 
@@ -1829,9 +1854,11 @@ Features planned for future releases:
 
 **Related:** Issue #14
 
+**Related:** Issue #14
+
 ---
 
-### 🔵 PRIORITY 11: Skills Management Tool
+### 🔵 PRIORITY 12: Skills Management Tool
 
 **Status:** ❌ NOT STARTED
 
@@ -1894,11 +1921,11 @@ Priority for deletes: user only (cannot delete project from CLI)
 
 **Dependencies:** Requires P3 (Skills System) ✅ COMPLETED
 
-**Related:** Issue #17
+**Related:** Issue #52
 
 ---
 
-### 🔵 PRIORITY 12: File Staleness Detection
+### 🔵 PRIORITY 13: File Staleness Detection
 
 **Status:** ❌ NOT STARTED
 
@@ -1922,30 +1949,21 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
-### 🔵 PRIORITY 13: Extended Personalities System
+### 🔵 PRIORITY 14: Plugin System
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Per-personality model configuration and separate memory context.
+**Goal:** Pluggable architecture for extending ask-ai functionality.
 
-**Current State (SOUL.md):**
-- Multiple personality files supported via symlinks
-- Symlink approach: `ln -sf ~/.config/ask-ai/SPRACH.md ~/.config/ask-ai/SOUL.md`
+**Dependencies:** TBD
 
-**What's MISSING:**
-- Per-personality model configuration
-- Separate memory context per personality
-- Personality directory support (`personalities/`)
+**Estimated effort:** TBD
 
-**Dependencies:** None
-
-**Estimated effort:** 2-3 days
-
-**Related:** Issue #49
+**Related:** Issue #15
 
 ---
 
-### 🔵 PRIORITY 14: TUI (Terminal User Interface)
+### 🔵 PRIORITY 15: TUI (Terminal User Interface)
 
 **Status:** ❌ NOT STARTED
 
@@ -1961,7 +1979,7 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 
 **Estimated effort:** 3-4 weeks
 
-**Related:** Issue #17
+**Related:** Issue #16
 
 ---
 
