@@ -118,6 +118,33 @@ Notes support project-level (default) and global scope. Global notes are visible
 
 **Pagination:** `/note list` shows 8 notes per page. Use `/note list 2` to see page 2, `/note list 3` for page 3, etc.
 
+### Skills
+
+| Command | Description |
+|---------|-------------|
+| `/<skill-name>` | Activate a skill for the current session |
+
+Skills are Markdown files that define AI behaviors for specific tasks. When activated, a skill's instructions are injected into the system prompt.
+
+**Built-in Skills:**
+- `/pdf-processing` - Extract text from PDF files
+- `/ocr-images` - Process images with OCR
+- `/code-analysis` - Analyze code structure
+- `/web-scraping` - Scrape web content
+
+**User Skills:** Place custom skills in `~/.config/ask-ai/skills/<name>/SKILL.md`
+
+**Example:**
+```
+lfm> /pdf-processing
+✓ Skill activated: pdf-processing (builtin)
+  Extract text from PDF files
+
+The AI will now follow PDF processing instructions for this session.
+```
+
+Use `/skill-list` to see all available skills (this is a tool, not a command).
+
 ## /context - Context Metrics
 
 Show token usage and context utilization for the current session:

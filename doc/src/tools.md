@@ -16,6 +16,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
 | Factual Memory | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
+| Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
@@ -35,6 +36,7 @@ The default build includes:
 - `serper-tools` - Google Search via Serper (requires API key)
 - `system-tools` - Date/time and project context
 - `file-tools` - File system operations
+- `skills-tools` - AI behavior skills (skill_list, skill_view)
 
 ### Available Features
 
@@ -48,6 +50,7 @@ The default build includes:
 | `finance-tools` | Stock quotes | get_stock_quote | ❌ No |
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files, write_file, edit_file, append_file | ✅ Yes |
+| `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
@@ -399,6 +402,89 @@ Example: get_project_context()
 - No environment variables exposed
 - Ignores `.env` files and secrets
 - Scoped to max 3 directory levels
+
+## Skills Tools (2)
+
+Tools for discovering and loading AI behavior skills. Skills are Markdown files that define instructions for specific tasks (PDF processing, OCR, code analysis, etc.).
+
+These tools are **enabled by default** and provide progressive disclosure - the system prompt contains only skill names and descriptions, while full content is loaded on-demand when needed.
+
+### skill_list
+
+List all available skills with brief descriptions.
+
+```
+Function: skill_list
+Args: (none)
+Example: skill_list()
+```
+
+**Output includes:**
+- Skill name
+- Source (builtin, user, project)
+- Brief description
+
+**Example output:**
+```
+Available skills (4):
+
+- **pdf-processing** (builtin): Extract text from PDF files
+- **ocr-images** (builtin): Process images with OCR
+- **code-analysis** (builtin): Analyze code structure
+- **web-scraping** (builtin): Scrape web content
+
+Use skill_view(name="skill-name") to load a specific skill.
+```
+
+**Use case:** Discover available skills before loading one that matches your task.
+
+### skill_view
+
+Load and view the full content of a specific skill.
+
+```
+Function: skill_view
+Args: name (string, required): Skill name (e.g., "pdf-processing")
+Example: skill_view(name="pdf-processing")
+```
+
+**Returns:**
+- Skill name and source
+- Description
+- Full instructions and guidelines
+- Examples and patterns
+
+**Example output:**
+```
+# Skill: pdf-processing (builtin)
+
+**Description:** Extract text from PDF files
+
+---
+[Full skill content with instructions...]
+```
+
+**Error handling:**
+- Returns error if skill not found (use `skill_list` to see available skills)
+- Returns error if skill name is invalid
+- Returns error if skill content failed validation (contains injection patterns)
+
+**Skill Locations:**
+| Source | Location |
+|--------|----------|
+| builtin | Embedded in binary (always available) |
+| user | `~/.config/ask-ai/skills/<name>/SKILL.md` |
+| project | `.ask-ai/skills/<name>/SKILL.md` |
+
+**Priority:** project > user > builtin (project-level skills override user and builtin).
+
+**Example workflow:**
+```
+User: Extract text from document.pdf
+LLM: [Calls skill_list() to see available skills]
+     [Calls skill_view(name="pdf-processing") to load instructions]
+     [Follows skill instructions to process PDF]
+```
 
 ## Factual Memory Tools (3)
 
