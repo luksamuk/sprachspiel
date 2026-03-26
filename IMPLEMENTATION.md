@@ -1742,7 +1742,7 @@ Features planned for future releases:
 |----------|---------|-------------|--------------|-------|
 | P8 | OCR/Vision Tools | Image processing via CLI tools | Skills System | #12 |
 | P9 | File Session State | Explicit file tracking | None | #13 |
-| P10 | Skills System Extended | YAML frontmatter, skill composition | Skills System | #14 |
+| P10 | Skills System Extended | Multilingual sanitization, security enhancements | Skills System, Chat Module Integration | #14 |
 | P11 | File Staleness | Detect outdated file content | None | #50 |
 | P12 | Extended Personalities | Per-personality model config | None | #49 |
 | P13 | Plugin System | User-defined tools | None | #15 |
@@ -1767,6 +1767,54 @@ Features planned for future releases:
 **Estimated effort:** 3-5 days
 
 **Related:** Issue #12
+
+---
+
+### 🔵 PRIORITY 9: File Session State
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Explicit file tracking for session context.
+
+**Related:** Issue #13
+
+---
+
+### 🔵 PRIORITY 10: Skills System Extended
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Enhanced security and multilingual support for skills system.
+
+**Background:**
+- Skills System (P3) uses English-only sanitization
+- Multilingual prompt injection can bypass English-based detection (documented in research)
+- Chat Module Integration (P6) enables translate functionality within chat sessions
+
+**Features:**
+
+| Feature | Description | Dependency |
+|---------|-------------|------------|
+| **Multilingual Sanitization** | Translate-then-detect approach using `ask translate` | P6 (Chat Module) |
+| **Language Detection** | Detect non-Latin characters, log warnings | None (P3) |
+| **ML Detection** | XLM-RoBERTa fine-tuned for injection detection (optional) | ML infrastructure |
+| **LLM-as-Critic** | Second LLM reviews skill content before loading | Token costs |
+| **Community Skills Hub** | Trust levels, third-party skills | Infrastructure |
+
+**Research:**
+- HackerNoon: Multilingual prompt injection bypasses Azure Content Filter
+- arXiv:2512.23684: Hidden prompt injection in 500 ICML papers
+- arXiv:2410.21337v1: XLM-RoBERTa achieves 99% accuracy
+
+**Dependencies:**
+- **Skills System (P3):** Must be completed first
+- **Chat Module Integration (P6):** Required for translate-then-detect approach
+
+**Estimated effort:** TBD (needs dependency analysis)
+
+**Reference:** `doc/src/development/skills-system-design.md` → Future Consideration: Multilingual Skill Sanitization
+
+**Related:** Issue #14
 
 ---
 
