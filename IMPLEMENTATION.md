@@ -1949,21 +1949,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
-### 🔵 PRIORITY 14: Plugin System
-
-**Status:** ❌ NOT STARTED
-
-**Goal:** Pluggable architecture for extending ask-ai functionality.
-
-**Dependencies:** TBD
-
-**Estimated effort:** TBD
-
-**Related:** Issue #15
-
----
-
-### 🔵 PRIORITY 15: TUI (Terminal User Interface)
+### 🔵 PRIORITY 14: TUI (Terminal User Interface)
 
 **Status:** ❌ NOT STARTED
 
@@ -1980,6 +1966,20 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 **Estimated effort:** 3-4 weeks
 
 **Related:** Issue #16
+
+---
+
+### 🔵 PRIORITY 15: Plugin System
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Pluggable architecture for extending ask-ai functionality.
+
+**Dependencies:** TBD
+
+**Estimated effort:** TBD
+
+**Related:** Issue #15
 
 ---
 
