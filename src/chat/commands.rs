@@ -93,6 +93,11 @@ pub enum CommandResult {
         global: bool,
         limit: usize,
     },
+    /// Activate a skill (loaded skill content)
+    Skill {
+        name: String,
+        content: String,
+    },
 }
 
 /// Parsed chat command
@@ -205,6 +210,8 @@ pub enum ChatCommand {
         global: bool,
         limit: usize,
     },
+    /// Activate a skill by name
+    Skill { name: String },
 }
 
 /// Export format for /export command
@@ -812,7 +819,17 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 _ => return Some(Err("Usage: /session <new|load|list|save|forget>".to_string())),
             }
         }
-        _ => return Some(Err(format!("Unknown command: /{}", cmd))),
+        // Dynamic skill commands: /<skill-name> [args...]
+        // Check if command matches a skill name (e.g., /pdf-processing)
+        _ => {
+            // Try to match against available skill names
+            let skill_names = crate::skills::get_available_skill_names();
+            if skill_names.iter().any(|s| s == cmd) {
+                ChatCommand::Skill { name: cmd.to_string() }
+            } else {
+                return Some(Err(format!("Unknown command: /{}. Use /help for available commands.", cmd)));
+            }
+        }
     };
 
     Some(Ok(command))
@@ -1248,6 +1265,22 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
         ChatCommand::NoteDelete { id } => CommandResult::NoteDelete { id },
 
         ChatCommand::NoteSearch { query, global, limit } => CommandResult::NoteSearch { query, global, limit },
+
+        ChatCommand::Skill { name } => {
+            // Load skill content and return it for injection into session
+            let skill = crate::skills::get_skill_content(&name);
+            match skill {
+                Some(skill) => CommandResult::Skill {
+                    name: skill.name,
+                    content: skill.content,
+                },
+                None => CommandResult::Error(format!(
+                    "Skill '{}' not found. Use one of: {}",
+                    name,
+                    crate::skills::get_available_skill_names().join(", ")
+                )),
+            }
+        }
     }
 }
 

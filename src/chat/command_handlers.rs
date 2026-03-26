@@ -192,6 +192,10 @@ pub async fn handle_command_result(
             handle_note_search(state, query, global, limit);
             HandleResult::Continue
         }
+        CommandResult::Skill { name, content } => {
+            handle_skill_activated(state, name, content);
+            HandleResult::Continue
+        }
     }
 }
 
@@ -1656,6 +1660,21 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
             eprintln!("\x1B[31m✗ Search failed: {}\x1B[0m", e);
         }
     }
+}
+
+/// Handle skill activation command
+///
+/// Activates a skill for the current session by setting it in the session state.
+/// The skill content will be injected into the system prompt.
+pub fn handle_skill_activated(state: &mut ReplState, name: String, content: String) {
+    // Store the active skill in session
+    state.session.active_skill = Some(super::session::ActiveSkill {
+        name: name.clone(),
+        content,
+    });
+
+    println!("\x1B[32m✓ Skill '{}' activated for this session.\x1B[0m", name);
+    println!("\x1B[90mSkill instructions will be followed when relevant to the conversation.\x1B[0m");
 }
 
 #[cfg(test)]

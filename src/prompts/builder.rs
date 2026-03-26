@@ -68,6 +68,8 @@ pub struct PromptConfig<'a> {
     pub is_anonymous: bool,
     /// Todo list section to inject (from TodoState)
     pub todos: Option<&'a str>,
+    /// Active skill content (from /skill-name command)
+    pub active_skill: Option<&'a str>,
 }
 
 impl<'a> PromptConfig<'a> {
@@ -88,6 +90,7 @@ impl<'a> PromptConfig<'a> {
             facts_section: None,
             is_anonymous: false,
             todos: None,
+            active_skill: None,
         }
     }
 
@@ -148,6 +151,12 @@ impl<'a> PromptConfig<'a> {
     /// Set todos section (from TodoState)
     pub fn with_todos(mut self, todos: Option<&'a str>) -> Self {
         self.todos = todos;
+        self
+    }
+
+    /// Set active skill (from /skill-name command)
+    pub fn with_active_skill(mut self, active_skill: Option<&'a str>) -> Self {
+        self.active_skill = active_skill;
         self
     }
 }
@@ -287,6 +296,17 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
                 prompt.push_str("\nUse `skill_view(name=\"skill-name\")` to load the full skill content.\n");
             }
         }
+    }
+
+    // 4a.1. Active skill (from /skill-name command)
+    // If a skill was activated, inject its full content
+    if let Some(skill_content) = config.active_skill
+        && !skill_content.is_empty()
+    {
+        prompt.push_str("\n### ACTIVE SKILL\n\n");
+        prompt.push_str("[SYSTEM: The user has invoked a skill. Follow its instructions for this session.]\n\n");
+        prompt.push_str(skill_content);
+        prompt.push_str("\n\n");
     }
 
     // 4b. Memory section (if retrieval is enabled)

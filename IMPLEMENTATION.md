@@ -811,7 +811,7 @@ On-demand Loading:
 | 3 | ✅ COMPLETED | Skills Tools (skill_list, skill_view) |
 | 4 | ✅ COMPLETED | Prompt Integration (INDEX section) |
 | 5 | ✅ COMPLETED | Testing (clippy, tests pass) |
-| 6 | 🔄 IN PROGRESS | Skills Slash Commands (activate skills via /skill-name) |
+| 6 | ✅ COMPLETED | Skills Slash Commands (activate skills via /skill-name) |
 
 ### Phase 6: Skills Slash Commands
 
@@ -854,11 +854,15 @@ On-demand Loading:
 - `src/tools/skill_tools.rs` - skill_list, skill_view tools
 
 **Files Modified:**
-- `src/prompts/builder.rs` - Added SKILLS INDEX section
+- `src/prompts/builder.rs` - Added SKILLS INDEX section, active_skill field
 - `src/main.rs` - Added skills module
 - `src/tools/mod.rs` - Added skill_tools module
 - `src/tools/registry.rs` - Registered skills tools
 - `src/Cargo.toml` - Added serde_yaml, skills-tools feature
+- `src/chat/commands.rs` - Added ChatCommand::Skill, CommandResult::Skill, parse detection
+- `src/chat/session.rs` - Added ActiveSkill struct, active_skill field
+- `src/chat/command_handlers.rs` - Added handle_skill_activated
+- `src/chat/core.rs` - Wired active_skill into build_session_system_prompt
 
 **Commits:**
 - `74a25be` feat(skills): add skills module with types, loader, sanitize, and builtin skills

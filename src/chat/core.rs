@@ -116,7 +116,8 @@ pub fn build_session_system_prompt(
             })
             .with_facts_section(facts_section)
             .with_anonymous(session.anonymous)
-            .with_todos(todos_section),
+            .with_todos(todos_section)
+            .with_active_skill(session.active_skill.as_ref().map(|s| s.content.as_str())),
     )
 }
 
