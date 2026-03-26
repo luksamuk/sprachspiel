@@ -1786,11 +1786,78 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 10: Skills System Extended
+### 🔵 PRIORITY 10: Skills Management Tool
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Enhanced security and multilingual support for skills system.
+**Goal:** Allow LLM to create, modify, and delete skills automatically.
+
+**Background:**
+- Skills System (P3) provides read-only access via `skill_list()` and `skill_view()`
+- LLMs often discover repeatable workflows that should be captured as skills
+- Hermes Agent shows successful pattern with `skill_manage()` tool
+
+**Scope (MVP):**
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `create` | `name`, `content` | Create new skill with SKILL.md |
+| `patch` | `name`, `old_string`, `new_string` | Find-and-replace in skill |
+| `delete` | `name` | Remove skill directory |
+
+**NOT in MVP:**
+- `edit` (full rewrite) - use patch
+- `write_file/remove_file` (supporting files) - references can wait
+- Skills Hub integration (community skills) - users install manually
+- Categories - can wait
+
+**Architecture:**
+
+```
+src/skills/
+├── manager.rs       # NOVO: create_skill, patch_skill, delete_skill
+├── loader.rs        # ✅ load_skill_indexes, get_skill_content
+├── sanitize.rs      # ✅ validate_skill_file, is_valid_skill_name
+└── types.rs         # ✅ Skill, SkillIndex, Frontmatter
+
+src/tools/skill_tools.rs
+├── skill_list()     # ✅
+├── skill_view()     # ✅
+└── skill_manage()   # NOVO
+```
+
+**Security:**
+
+1. Builtin skills are protected (cannot edit/delete)
+2. `old_string` must be unique (or `replace_all=true`)
+3. Name validation: `[a-z0-9_-]` only (no path traversal)
+4. Atomic writes (tempfile + rename, never partial writes)
+5. Frontmatter validation (name + description required)
+6. Max size: 256KB (same as read)
+
+**Directories:**
+
+```
+~/.config/ask-ai/skills/          ← User skills (writable)
+PROJECT/.ask-ai/skills/           ← Project skills (writable)
+
+Priority for writes: project > user (same as reads)
+Priority for deletes: user only (cannot delete project from CLI)
+```
+
+**Estimated effort:** 3-4 hours
+
+**Dependencies:** Requires P3 (Skills System) ✅ COMPLETED
+
+**Reference:** `~/.hermes/hermes-agent/tools/skill_manager_tool.py`
+
+---
+
+### 🔵 PRIORITY 11: Multilingual Skill Sanitization
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Enhanced security for multilingual skill content.
 
 **Background:**
 - Skills System (P3) uses English-only sanitization
@@ -1801,11 +1868,10 @@ Features planned for future releases:
 
 | Feature | Description | Dependency |
 |---------|-------------|------------|
-| **Multilingual Sanitization** | Translate-then-detect approach using `ask translate` | P6 (Chat Module) |
-| **Language Detection** | Detect non-Latin characters, log warnings | None (P3) |
-| **ML Detection** | XLM-RoBERTa fine-tuned for injection detection (optional) | ML infrastructure |
-| **LLM-as-Critic** | Second LLM reviews skill content before loading | Token costs |
-| **Community Skills Hub** | Trust levels, third-party skills | Infrastructure |
+| **Translate-then-Detect** | Translate non-English content, then scan | P6 (Chat Module), P10 |
+| **Language Detection** | Detect non-Latin characters, log warnings | None |
+| **ML Detection** | XLM-RoBERTa fine-tuned (optional) | ML infrastructure |
+| **LLM-as-Critic** | Second LLM reviews before loading | Token costs |
 
 **Research:**
 - HackerNoon: Multilingual prompt injection bypasses Azure Content Filter
@@ -1813,18 +1879,16 @@ Features planned for future releases:
 - arXiv:2410.21337v1: XLM-RoBERTa achieves 99% accuracy
 
 **Dependencies:**
-- **Skills System (P3):** Must be completed first
-- **Chat Module Integration (P6):** Required for translate-then-detect approach
+- Skills System (P3) ✅
+- Skills Management (P10) recommended but not required
 
-**Estimated effort:** TBD (needs dependency analysis)
+**Estimated effort:** TBD
 
-**Reference:** `doc/src/development/skills-system-design.md` → Future Consideration: Multilingual Skill Sanitization
-
-**Related:** Issue #14
+**Reference:** `doc/src/development/skills-system-design.md` → Future Considerations
 
 ---
 
-### 🔵 PRIORITY 11: File Staleness Detection
+### 🔵 PRIORITY 12: File Staleness Detection
 
 **Status:** ❌ NOT STARTED
 
