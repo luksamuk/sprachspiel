@@ -45,6 +45,18 @@ All notable changes to Ask-AI will be documented in this file.
   - Added comprehensive security considerations (OWASP LLM Top 10)
   - Added multilingual injection defense as future consideration
 
+- **Prompt Simplification** - Reduced PDF instruction duplication
+  - FILE TOOLS prompt now references `skill_view("pdf-processing")` instead of detailed instructions
+  - EXTERNAL TOOLS prompt simplified, moved examples to pdf-processing skill
+  - Skills become single source of truth for domain-specific instructions
+
+### Planned
+
+- **PRIORITY 10: Skills Management Tool** - Allow LLM to manage skills
+  - `skill_manage(action, name, ...)` tool for create/patch/delete
+  - Estimated effort: 3-4 hours
+  - Dependencies: Skills System (P3) ✅ COMPLETED
+
 ## [0.37.2] - 2026-03-22
 
 ### Fixed
