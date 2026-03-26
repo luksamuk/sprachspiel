@@ -53,6 +53,7 @@ pub struct Skill {
     /// Source: builtin, user, or project.
     pub source: SkillSource,
     /// File path (None for builtin).
+    #[allow(dead_code)]
     pub path: Option<PathBuf>,
 }
 
@@ -116,6 +117,7 @@ impl Frontmatter {
 }
 
 /// Error types for skill operations.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum SkillError {
     /// Skill file not found.

@@ -68,17 +68,17 @@ pub fn get_skill_content(name: &str) -> Option<Skill> {
     }
 
     // Try project skills first (highest priority)
-    if let Some(project_dir) = get_project_skills_dir() {
-        if let Some(skill) = load_skill_from_dir(&project_dir, name, SkillSource::Project) {
-            return Some(skill);
-        }
+    if let Some(project_dir) = get_project_skills_dir()
+        && let Some(skill) = load_skill_from_dir(&project_dir, name, SkillSource::Project)
+    {
+        return Some(skill);
     }
 
     // Try user skills (medium priority)
-    if let Some(user_dir) = get_user_skills_dir() {
-        if let Some(skill) = load_skill_from_dir(&user_dir, name, SkillSource::User) {
-            return Some(skill);
-        }
+    if let Some(user_dir) = get_user_skills_dir()
+        && let Some(skill) = load_skill_from_dir(&user_dir, name, SkillSource::User)
+    {
+        return Some(skill);
     }
 
     // Try builtin skills (lowest priority)
@@ -133,29 +133,21 @@ fn load_skills_indexes_from_dir(
             let skill_dir = path;
             let skill_file = skill_dir.join(SKILL_FILE_NAME);
 
-            if skill_file.exists() {
-                // Use directory name as skill name
-                if let Some(name) = skill_dir.file_name().and_then(|n| n.to_str()) {
-                    if is_valid_skill_name(name) {
-                        // Try to read just the frontmatter for index
-                        if let Ok(content) = std::fs::read_to_string(&skill_file) {
-                            if validate_skill_file(&skill_file, &content).is_ok() {
-                                if let Some(index) =
-                                    parse_skill_index(&skill_file, name, &content, source)
-                                {
-                                    skills.insert(name.to_string(), index);
-                                }
-                            }
-                        }
-                    }
-                }
+            if skill_file.exists()
+                && let Some(name) = skill_dir.file_name().and_then(|n| n.to_str())
+                && is_valid_skill_name(name)
+                && let Ok(content) = std::fs::read_to_string(&skill_file)
+                && validate_skill_file(&skill_file, &content).is_ok()
+                && let Some(index) = parse_skill_index(&skill_file, name, &content, source)
+            {
+                skills.insert(name.to_string(), index);
             }
         }
     }
 }
 
 /// Load a single skill from a directory.
-fn load_skill_from_dir(skills_dir: &PathBuf, name: &str, source: SkillSource) -> Option<Skill> {
+fn load_skill_from_dir(skills_dir: &std::path::Path, name: &str, source: SkillSource) -> Option<Skill> {
     let skill_dir = skills_dir.join(name);
     let skill_file = skill_dir.join(SKILL_FILE_NAME);
 
@@ -269,13 +261,14 @@ fn parse_skill_index(
     });
 
     // Log warning if frontmatter name differs from directory name
-    if let Some(frontmatter_name) = &frontmatter.name {
-        if frontmatter_name != default_name {
-            if crate::debug_tools::is_debug_enabled() {
-                eprintln!("[SKILLS] Warning: {} skill directory name '{}' differs from frontmatter name '{}'", 
-                    source, default_name, frontmatter_name);
-            }
-        }
+    if let Some(frontmatter_name) = &frontmatter.name
+        && frontmatter_name != default_name
+        && crate::debug_tools::is_debug_enabled()
+    {
+        eprintln!(
+            "[SKILLS] Warning: {} skill directory name '{}' differs from frontmatter name '{}'",
+            source, default_name, frontmatter_name
+        );
     }
 
     Some(SkillIndex {

@@ -43,10 +43,12 @@ mod sanitize;
 mod types;
 
 pub use loader::{get_available_skill_names, get_skill_content, load_skill_indexes};
+#[allow(unused_imports)]
 pub use sanitize::{
     is_valid_skill_name, sanitize_skill_content, validate_skill_file, MAX_SKILL_NAME_LENGTH,
     MAX_SKILL_SIZE,
 };
+#[allow(unused_imports)]
 pub use types::{Frontmatter, Skill, SkillError, SkillIndex, SkillSource};
 
 #[cfg(test)]

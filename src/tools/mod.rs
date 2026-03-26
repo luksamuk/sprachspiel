@@ -38,6 +38,10 @@ pub mod notes;
 pub mod run_cmd;
 pub mod tool_check;
 
+// Skills tools (on-demand skill loading)
+#[cfg(feature = "skills-tools")]
+pub mod skill_tools;
+
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
 pub use files::*;
@@ -65,6 +69,11 @@ pub use weather::*;
 
 pub use run_cmd::run_command;
 pub use tool_check::check_tool_availability;
+
+// Skills tools
+#[cfg(feature = "skills-tools")]
+#[allow(unused_imports)]
+pub use skill_tools::*;
 
 /// Common response structure for PokeAPI
 #[cfg(feature = "pokemon-tools")]

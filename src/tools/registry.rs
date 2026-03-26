@@ -29,6 +29,10 @@ use super::notes::note_add;
 // External tool wrappers (always available)
 use super::{check_tool_availability, run_command};
 
+// Skills tools (on-demand skill loading)
+#[cfg(feature = "skills-tools")]
+use super::skill_tools::{skill_list, skill_view};
+
 /// Trait for tool registration - implemented by both Coordinator types
 pub trait ToolRegistrar: Sized {
     fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self;
@@ -362,6 +366,19 @@ where
         tool_count += 1;
     }
 
+    // Skills tools (on-demand skill loading)
+    #[cfg(feature = "skills-tools")]
+    {
+        if is_tool_allowed("skill_list") {
+            coordinator = coordinator.register_tool(skill_list);
+            tool_count += 1;
+        }
+        if is_tool_allowed("skill_view") {
+            coordinator = coordinator.register_tool(skill_view);
+            tool_count += 1;
+        }
+    }
+
     (coordinator, tool_count)
 }
 
@@ -385,6 +402,13 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
     // External tool wrappers (always available)
     tools.push("check_tool_availability".to_string());
     tools.push("run_command".to_string());
+
+    // Skills tools (on-demand skill loading)
+    #[cfg(feature = "skills-tools")]
+    {
+        tools.push("skill_list".to_string());
+        tools.push("skill_view".to_string());
+    }
 
     #[cfg(feature = "pokemon-tools")]
     {

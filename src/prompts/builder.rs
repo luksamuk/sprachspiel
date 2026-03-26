@@ -268,6 +268,27 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         }
     }
 
+    // 4a. Skills index (if enabled)
+    #[cfg(feature = "skills-tools")]
+    {
+        if config.tools_enabled {
+            let skills = crate::skills::load_skill_indexes();
+            if !skills.is_empty() {
+                prompt.push_str("\n### SKILLS\n\n");
+                prompt.push_str("Specialized behaviors available on-demand. Use skill_view() to load detailed instructions.\n\n");
+
+                for skill in skills {
+                    prompt.push_str(&format!(
+                        "- **{}** ({}): {}\n",
+                        skill.name, skill.source, skill.description
+                    ));
+                }
+
+                prompt.push_str("\nUse `skill_view(name=\"skill-name\")` to load the full skill content.\n");
+            }
+        }
+    }
+
     // 4b. Memory section (if retrieval is enabled)
     if config.retrieval_enabled {
         prompt.push_str("\n### MEMORY\n");
