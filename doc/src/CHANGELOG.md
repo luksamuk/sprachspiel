@@ -2,9 +2,18 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [0.38.0] - 2026-03-24
+## [0.38.0] - 2026-03-25
 
 ### Added
+
+- **Skills System Implementation** - Full implementation of on-demand skill loading
+  - **Core Module:** `src/skills/` with types, loader, sanitize, and builtin skills
+  - **Tools:** `skill_list()` for listing available skills, `skill_view(name)` for loading skill content
+  - **4 Builtin Skills:** pdf-processing, ocr-images, code-analysis, web-scraping
+  - **System Prompt Integration:** SKILLS INDEX section shows available skills with descriptions
+  - **Tool Registration:** skills-tools feature (enabled by default)
+  - **Security:** Injection pattern detection, invisible unicode removal, file size limits (256KB)
+  - Related: Issue #8
 
 - **Skills System Design Document Update** - Comprehensive design research and planning
   - **Hermes Agent Analysis:** Researched skills system implementation from `~/.hermes/hermes-agent`

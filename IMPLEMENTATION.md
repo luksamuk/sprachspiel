@@ -768,9 +768,9 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### 🟡 PRIORITY 3: Skills System
+### ✅ PRIORITY 3: Skills System (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.38.0)
 
 **Goal:** Markdown-defined AI behaviors with progressive disclosure.
 
@@ -802,31 +802,37 @@ On-demand Loading:
 
 **Dependencies:** None (CLI Tools completed in v0.28.x)
 
-**Estimated effort:** 3.5 days
-
 **Implementation Phases:**
 
-| Phase | Status | Description | Effort |
-|-------|--------|-------------|--------|
-| 1 | 🔄 IN PROGRESS | Skills Module (types, loader, mod) | 1.5 days |
-| 2 | ❌ NOT STARTED | Builtin Skills (4 .md files) | 0.5 days |
-| 3 | ❌ NOT STARTED | Skills Tools (skill_list, skill_view) | 0.5 days |
-| 4 | ❌ NOT STARTED | Prompt Integration (INDEX section) | 0.5 days |
-| 5 | ❌ NOT STARTED | Testing & Documentation | 0.5 days |
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 1 | ✅ COMPLETED | Skills Module (types, loader, sanitize, mod) |
+| 2 | ✅ COMPLETED | Builtin Skills (4 .md files) |
+| 3 | ✅ COMPLETED | Skills Tools (skill_list, skill_view) |
+| 4 | ✅ COMPLETED | Prompt Integration (INDEX section) |
+| 5 | ✅ COMPLETED | Testing (clippy, tests pass) |
 
-**Files to Create:**
+**Files Created:**
 - `src/skills/mod.rs` - Public API
 - `src/skills/types.rs` - Skill, SkillIndex, SkillSource, Frontmatter
-- `src/skills/loader.rs` - YAML parsing, directory scanning
-- `src/skills/builtin/*.md` - 4 builtin skills
-- `src/tools/skills.rs` - skill_list, skill_view tools
+- `src/skills/loader.rs` - YAML parsing, directory scanning, deduplication
+- `src/skills/sanitize.rs` - Injection pattern detection, validation
+- `src/skills/builtin/pdf-processing.md` - PDF extraction skill
+- `src/skills/builtin/ocr-images.md` - OCR for images skill
+- `src/skills/builtin/code-analysis.md` - Code analysis skill
+- `src/skills/builtin/web-scraping.md` - Web scraping skill
+- `src/tools/skill_tools.rs` - skill_list, skill_view tools
 
-**Files to Modify:**
-- `src/prompts/builder.rs` - Add SKILLS INDEX section
-- `src/chat/core.rs` - Call skills loading on session start
-- `src/tools/mod.rs` - Add skills module
-- `src/tools/registry.rs` - Register skills tools
-- `Cargo.toml` - Add serde_yaml, skills-tools feature
+**Files Modified:**
+- `src/prompts/builder.rs` - Added SKILLS INDEX section
+- `src/main.rs` - Added skills module
+- `src/tools/mod.rs` - Added skill_tools module
+- `src/tools/registry.rs` - Registered skills tools
+- `src/Cargo.toml` - Added serde_yaml, skills-tools feature
+
+**Commits:**
+- `74a25be` feat(skills): add skills module with types, loader, sanitize, and builtin skills
+- `73ced3a` feat(skills): implement skill_list and skill_view tools with registry integration
 
 **Reference:** `doc/src/development/skills-system-design.md`
 
