@@ -9,6 +9,8 @@ All notable changes to Ask-AI will be documented in this file.
 - **Skills System Implementation** - Full implementation of on-demand skill loading
   - **Core Module:** `src/skills/` with types, loader, sanitize, and builtin skills
   - **Tools:** `skill_list()` for listing available skills, `skill_view(name)` for loading skill content
+  - **Slash Commands:** Activate skills via `/skill-name` (e.g., `/pdf-processing`)
+  - **Session Integration:** Active skills injected into system prompt
   - **4 Builtin Skills:** pdf-processing, ocr-images, code-analysis, web-scraping
   - **System Prompt Integration:** SKILLS INDEX section shows available skills with descriptions
   - **Tool Registration:** skills-tools feature (enabled by default)
