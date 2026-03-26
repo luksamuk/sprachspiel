@@ -1108,8 +1108,11 @@ These apply to skills that use `run_command` - skills cannot bypass these contro
 |-------------|----------|-------------|
 | LLM-based audit | Medium | Second LLM reviews skill content before loading |
 | Skill integrity hash | Low | Track SHA256 of skill files, warn on changes |
-| Community skills hub | Future | Trust levels like Hermes |
 | Audit logging | Medium | Log all skill loads with source attribution |
+
+**Note:** Multilingual sanitization is tracked as P10 in IMPLEMENTATION.md.
+
+**Note:** Skills management (create/patch/delete) is tracked as P11 in IMPLEMENTATION.md.
 
 ### References
 

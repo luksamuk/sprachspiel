@@ -52,7 +52,12 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Planned
 
-- **PRIORITY 10: Skills Management Tool** - Allow LLM to manage skills
+- **PRIORITY 10: Multilingual Skill Sanitization** - Enhanced security for skill content
+  - Phase 1: Language detection + warning (no dependencies)
+  - Phase 2: Translate-then-detect approach (requires P6 Chat Module)
+  - Dependencies: Skills System (P3) ✅ COMPLETED
+
+- **PRIORITY 11: Skills Management Tool** - Allow LLM to manage skills
   - `skill_manage(action, name, ...)` tool for create/patch/delete
   - Estimated effort: 3-4 hours
   - Dependencies: Skills System (P3) ✅ COMPLETED

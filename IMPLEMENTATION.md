@@ -1786,7 +1786,52 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 10: Skills Management Tool
+### 🔵 PRIORITY 10: Multilingual Skill Sanitization
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Enhanced security for multilingual skill content.
+
+**Background:**
+- Skills System (P3) uses English-only sanitization
+- Multilingual prompt injection can bypass English-based detection (documented in research)
+- Chat Module Integration (P6) enables translate functionality within chat sessions
+
+**Features:**
+
+| Feature | Description | Dependency |
+|---------|-------------|------------|
+| **Language Detection** | Detect non-Latin characters, log warnings | None (can implement now) |
+| **Translate-then-Detect** | Translate non-English content, then scan | P6 (Chat Module) |
+| **ML Detection** | XLM-RoBERTa fine-tuned (optional) | ML infrastructure |
+| **LLM-as-Critic** | Second LLM reviews before loading | Token costs |
+
+**Implementation Phases:**
+
+| Phase | Description | Dependency |
+|-------|-------------|------------|
+| 1 | Language detection + warning | None ✅ |
+| 2 | Translate-then-detect | P6 |
+| 3 | ML model (optional) | Future |
+
+**Research:**
+- HackerNoon: Multilingual prompt injection bypasses Azure Content Filter
+- arXiv:2512.23684: Hidden prompt injection in 500 ICML papers
+- arXiv:2410.21337v1: XLM-RoBERTa achieves 99% accuracy
+
+**Dependencies:**
+- Skills System (P3) ✅
+- Phase 2 requires P6 (Chat Module Integration)
+
+**Estimated effort:** Phase 1: 2-3 hours | Phase 2: TBD
+
+**Reference:** `doc/src/development/skills-system-design.md` → Future Considerations
+
+**Related:** Issue #14
+
+---
+
+### 🔵 PRIORITY 11: Skills Management Tool
 
 **Status:** ❌ NOT STARTED
 
@@ -1849,42 +1894,7 @@ Priority for deletes: user only (cannot delete project from CLI)
 
 **Dependencies:** Requires P3 (Skills System) ✅ COMPLETED
 
-**Reference:** `~/.hermes/hermes-agent/tools/skill_manager_tool.py`
-
----
-
-### 🔵 PRIORITY 11: Multilingual Skill Sanitization
-
-**Status:** ❌ NOT STARTED
-
-**Goal:** Enhanced security for multilingual skill content.
-
-**Background:**
-- Skills System (P3) uses English-only sanitization
-- Multilingual prompt injection can bypass English-based detection (documented in research)
-- Chat Module Integration (P6) enables translate functionality within chat sessions
-
-**Features:**
-
-| Feature | Description | Dependency |
-|---------|-------------|------------|
-| **Translate-then-Detect** | Translate non-English content, then scan | P6 (Chat Module), P10 |
-| **Language Detection** | Detect non-Latin characters, log warnings | None |
-| **ML Detection** | XLM-RoBERTa fine-tuned (optional) | ML infrastructure |
-| **LLM-as-Critic** | Second LLM reviews before loading | Token costs |
-
-**Research:**
-- HackerNoon: Multilingual prompt injection bypasses Azure Content Filter
-- arXiv:2512.23684: Hidden prompt injection in 500 ICML papers
-- arXiv:2410.21337v1: XLM-RoBERTa achieves 99% accuracy
-
-**Dependencies:**
-- Skills System (P3) ✅
-- Skills Management (P10) recommended but not required
-
-**Estimated effort:** TBD
-
-**Reference:** `doc/src/development/skills-system-design.md` → Future Considerations
+**Related:** Issue #17
 
 ---
 
@@ -1912,7 +1922,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
-### 🔵 PRIORITY 12: Extended Personalities System
+### 🔵 PRIORITY 13: Extended Personalities System
 
 **Status:** ❌ NOT STARTED
 
