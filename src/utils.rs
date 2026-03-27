@@ -110,18 +110,6 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
-/// Capitalize the first letter of a string
-#[allow(dead_code)]
-pub fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(first) => {
-            first.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str()
-        }
-    }
-}
-
 /// Normalize input string for comparison
 ///
 /// Trims whitespace and converts to lowercase. This is Unicode-safe.
@@ -334,14 +322,6 @@ mod tests {
         assert_eq!(format_size(1536), "2 KB");
         assert_eq!(format_size(1048576), "1.0 MB");
         assert_eq!(format_size(1572864), "1.5 MB");
-    }
-
-    #[test]
-    fn test_capitalize() {
-        assert_eq!(capitalize("hello"), "Hello");
-        assert_eq!(capitalize("HELLO"), "Hello");
-        assert_eq!(capitalize("h"), "H");
-        assert_eq!(capitalize(""), "");
     }
 
     #[test]

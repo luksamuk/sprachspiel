@@ -821,12 +821,12 @@ The skills system introduces new attack vectors:
 
 | Component | Risk | Mitigation Status |
 |-----------|------|-------------------|
-| User skills (`~/.config/ask-ai/skills/`) | Malicious skill files | ❌ Not implemented |
-| Project skills (`.ask-ai/skills/`) | Malicious project files | ❌ Not implemented |
-| Skill content sanitization | Prompt injection via skills | ❌ Not implemented |
-| Recursive skill loading | Infinite loops, resource exhaustion | ❌ Not implemented |
-| Skill file size | DoS via huge files | ❌ Not implemented |
-| Skill name validation | Path traversal, injection | ❌ Not implemented |
+| User skills (`~/.config/ask-ai/skills/`) | Malicious skill files | ✅ Sanitization applied |
+| Project skills (`.ask-ai/skills/`) | Malicious project files | ✅ Sanitization applied |
+| Skill content sanitization | Prompt injection via skills | ✅ Injection pattern detection |
+| Recursive skill loading | Infinite loops, resource exhaustion | ✅ Skill name validation |
+| Skill file size | DoS via huge files | ✅ 256KB limit enforced |
+| Skill name validation | Path traversal, injection | ✅ Alphanumeric + hyphen + underscore only |
 
 ### Attack Vectors for Skills
 
@@ -1300,13 +1300,14 @@ When a skill exists in multiple locations, project-level takes precedence.
 | Phase | Status | Description |
 |-------|--------|-------------|
 | Phase 1: CLI Tools | ✅ COMPLETED (v0.28.x) | External tools infrastructure |
-| Phase 2: Skills Module | ❌ NOT STARTED | Types, loader, sanitization, security |
-| Phase 3: Builtin Skills | ❌ NOT STARTED | Four .md files |
-| Phase 4: Skills Tools | ❌ NOT STARTED | skill_list, skill_view |
-| Phase 5: Prompt Integration | ❌ NOT STARTED | INDEX in system prompt |
-| Phase 6: Testing & Docs | ❌ NOT STARTED | Tests, documentation |
+| Phase 2: Skills Module | ✅ COMPLETED (v0.38.0) | Types, loader, sanitization, security |
+| Phase 3: Builtin Skills | ✅ COMPLETED (v0.38.0) | Four .md files (document-processing, ocr-images, code-analysis, web-scraping) |
+| Phase 4: Skills Tools | ✅ COMPLETED (v0.38.0) | skill_list, skill_view |
+| Phase 5: Prompt Integration | ✅ COMPLETED (v0.38.0) | INDEX in system prompt |
+| Phase 6: Slash Commands | ✅ COMPLETED (v0.38.0) | /skill-name activation |
+| Phase 7: Testing & Docs | ✅ COMPLETED (v0.38.0) | Tests, documentation |
 
-**Security Note:** Phase 2 now includes security requirements (sanitization, injection detection, size limits).
+**Security Note:** All mitigations implemented: sanitization, injection detection, size limits (256KB), name validation.
 
 ## Configuration Files
 
@@ -1366,12 +1367,14 @@ The CLI Tools Infrastructure (Phase 1 in original design) is complete:
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| `src/skills/mod.rs` | ❌ NOT STARTED | Public API |
-| `src/skills/types.rs` | ❌ NOT STARTED | Skill, SkillIndex, SkillSource |
-| `src/skills/loader.rs` | ❌ NOT STARTED | YAML parsing, directory scanning |
-| `src/skills/builtin/*.md` | ❌ NOT STARTED | 4 builtin skills |
-| `src/tools/skills.rs` | ❌ NOT STARTED | skill_list, skill_view tools |
-| Prompt integration | ❌ NOT STARTED | INDEX section |
+| `src/skills/mod.rs` | ✅ COMPLETED | Public API |
+| `src/skills/types.rs` | ✅ COMPLETED | Skill, SkillIndex, SkillSource |
+| `src/skills/loader.rs` | ✅ COMPLETED | YAML parsing, directory scanning |
+| `src/skills/sanitize.rs` | ✅ COMPLETED | Injection detection, validation |
+| `src/skills/builtin/*.md` | ✅ COMPLETED | 4 builtin skills (document-processing, ocr-images, code-analysis, web-scraping) |
+| `src/tools/skill_tools.rs` | ✅ COMPLETED | skill_list, skill_view tools |
+| `src/chat/commands.rs` | ✅ COMPLETED | /skill-name activation |
+| Prompt integration | ✅ COMPLETED | INDEX section in system prompt |
 
 ### No Breaking Changes
 

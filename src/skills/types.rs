@@ -116,78 +116,6 @@ impl Frontmatter {
     }
 }
 
-/// Error types for skill operations.
-#[allow(dead_code)]
-#[derive(Debug)]
-pub enum SkillError {
-    /// Skill file not found.
-    NotFound(String),
-    /// Invalid frontmatter.
-    InvalidFrontmatter(String),
-    /// File too large (max 256KB).
-    FileTooLarge {
-        path: PathBuf,
-        size: usize,
-        max: usize,
-    },
-    /// Binary content detected (null bytes).
-    BinaryContent(PathBuf),
-    /// Invalid skill name (not alphanumeric + hyphen + underscore).
-    InvalidName(String),
-    /// I/O error.
-    Io(std::io::Error),
-}
-
-impl std::fmt::Display for SkillError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SkillError::NotFound(name) => {
-                write!(
-                    f,
-                    "Skill '{}' not found. Use skill_list to see available skills.",
-                    name
-                )
-            }
-            SkillError::InvalidFrontmatter(msg) => {
-                write!(f, "Invalid frontmatter: {}", msg)
-            }
-            SkillError::FileTooLarge { path, size, max } => {
-                write!(
-                    f,
-                    "Skill file too large: {} ({} bytes, max {} bytes)",
-                    path.display(),
-                    size,
-                    max
-                )
-            }
-            SkillError::BinaryContent(path) => {
-                write!(f, "Skill file contains binary content: {}", path.display())
-            }
-            SkillError::InvalidName(name) => {
-                write!(f, "Invalid skill name: '{}'. Name must be alphanumeric with hyphens or underscores.", name)
-            }
-            SkillError::Io(e) => {
-                write!(f, "I/O error: {}", e)
-            }
-        }
-    }
-}
-
-impl std::error::Error for SkillError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            SkillError::Io(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for SkillError {
-    fn from(e: std::io::Error) -> Self {
-        SkillError::Io(e)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,19 +166,5 @@ Instructions here...
         let (fm, _) = Frontmatter::parse(content).unwrap();
         assert_eq!(fm.name, None);
         assert_eq!(fm.description, None);
-    }
-
-    #[test]
-    fn test_skill_error_not_found() {
-        let err = SkillError::NotFound("test-skill".to_string());
-        assert!(err.to_string().contains("test-skill"));
-        assert!(err.to_string().contains("skill_list"));
-    }
-
-    #[test]
-    fn test_skill_error_invalid_name() {
-        let err = SkillError::InvalidName("test skill!".to_string());
-        assert!(err.to_string().contains("test skill!"));
-        assert!(err.to_string().contains("alphanumeric"));
     }
 }
