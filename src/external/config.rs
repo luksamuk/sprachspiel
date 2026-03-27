@@ -415,6 +415,27 @@ timeout = 120
 binary = "tesseract"
 
 # =============================================================================
+# EPUB TOOLS
+# =============================================================================
+
+[external.tools.ebook-convert]
+# Convert ePub to text using Calibre (full-featured)
+# USAGE: ebook-convert <file.epub> .txt
+# NOTE: Creates <file>.txt in current directory
+# NOTE: Requires calibre package (large install ~120MB)
+enabled = true
+timeout = 60
+binary = "ebook-convert"
+
+[external.tools.epub2txt]
+# Lightweight ePub to text converter (fallback)
+# USAGE: epub2txt <file.epub> -
+# NOTE: Outputs to stdout, lighter alternative to calibre
+enabled = true
+timeout = 30
+binary = "epub2txt"
+
+# =============================================================================
 # IMAGE TOOLS
 # =============================================================================
 
@@ -440,16 +461,27 @@ binary = "magick"
 # =============================================================================
 #
 # Arch Linux:
-#   sudo pacman -S poppler tesseract perl-image-exiftool imagemagick
+#   sudo pacman -S poppler tesseract perl-image-exiftool imagemagick calibre
+#   yay -S epub2txt  # optional lightweight ePub fallback
 #
 # Debian/Ubuntu:
-#   sudo apt install poppler-utils tesseract-ocr libimage-exiftool-perl imagemagick
+#   sudo apt install poppler-utils tesseract-ocr libimage-exiftool-perl imagemagick calibre
+#   pip install epub2txt  # optional lightweight ePub fallback
+#
+# Void Linux:
+#   sudo xbps-install -S poppler tesseract exiftool imagemagick calibre epub2txt
+#
+# Alpine Linux (calibre in edge/testing only):
+#   sudo apk add poppler tesseract exiftool imagemagick epub2txt
+#   sudo apk add calibre --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing
 #
 # Fedora:
-#   sudo dnf install poppler-utils tesseract perl-Image-ExifTool ImageMagick
+#   sudo dnf install poppler-utils tesseract perl-Image-ExifTool ImageMagick calibre
+#   pip install epub2txt  # optional lightweight ePub fallback
 #
 # Termux (Android):
 #   pkg install poppler tesseract exiftool imagemagick
+#   # calibre and epub2txt not available in Termux
 "#
     .to_string()
 }
@@ -469,6 +501,10 @@ mod tests {
 
         // Should have OCR tool
         assert!(config.tools.contains_key("tesseract"));
+
+        // Should have ePub tools
+        assert!(config.tools.contains_key("ebook-convert"));
+        assert!(config.tools.contains_key("epub2txt"));
 
         // Should have image tools
         assert!(config.tools.contains_key("exiftool"));

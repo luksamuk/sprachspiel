@@ -21,7 +21,7 @@ use ollama_rs::function;
 /// skill_list().await
 /// // Returns:
 /// // Available skills (4):
-/// // - pdf-processing (builtin): Extract text from PDF files
+/// // - document-processing (builtin): Extract content from PDF and ePub files
 /// // - ocr-images (builtin): Process images with OCR
 /// // ...
 /// ```
@@ -62,7 +62,7 @@ pub async fn skill_list() -> Result<String, Box<dyn std::error::Error + Send + S
 /// Use this after `skill_list` shows relevant skills for your task.
 ///
 /// # Arguments
-/// * `name` - The skill name (e.g., "pdf-processing", "ocr-images")
+/// * `name` - The skill name (e.g., "document-processing", "ocr-images")
 ///
 /// # Returns
 /// The full skill content:
@@ -78,7 +78,7 @@ pub async fn skill_list() -> Result<String, Box<dyn std::error::Error + Send + S
 ///
 /// # Example
 /// ```ignore
-/// skill_view("pdf-processing".to_string()).await
+/// skill_view("document-processing".to_string()).await
 /// // Returns:
 /// // # PDF Processing
 /// // When asked to process PDF files:

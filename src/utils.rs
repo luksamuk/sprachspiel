@@ -111,6 +111,7 @@ pub fn format_size(bytes: u64) -> String {
 }
 
 /// Capitalize the first letter of a string
+#[allow(dead_code)]
 pub fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {

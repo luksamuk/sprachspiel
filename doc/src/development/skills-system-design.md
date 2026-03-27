@@ -738,7 +738,7 @@ serde_yaml = "0.9"  # YAML frontmatter parsing
 6. Embed skills in binary with `include_str!`
 
 **Files Created:**
-- `src/skills/builtin/pdf-processing.md`
+- `src/skills/builtin/document-processing.md`
 - `src/skills/builtin/ocr-images.md`
 - `src/skills/builtin/code-analysis.md`
 - `src/skills/builtin/web-scraping.md`
@@ -1228,7 +1228,7 @@ async fn test_pdftotext_integration() {
 When you encounter a task that matches a skill below, call skill_view(name) to load its full instructions.
 
 <available_skills>
-  pdf-processing: Extract text from PDF files. Use when user asks to read, extract, or analyze PDF content.
+  document-processing: Extract content from PDF and ePub files. Use when user asks to read, extract, or analyze documents.
   ocr-images: Perform OCR on images. Use when user asks to extract text from images.
   code-analysis: Analyze code structure. Use when user asks to understand or review code.
   web-scraping: Scrape web content. Use when user asks to fetch or extract web content.
@@ -1239,14 +1239,14 @@ When you encounter a task that matches a skill below, call skill_view(name) to l
 ```
 User: Extract text from document.pdf
 
-Model: [Thinking: This matches pdf-processing skill in the INDEX]
-       [Calls skill_view(name="pdf-processing")]
+Model: [Thinking: This matches document-processing skill in the INDEX]
+       [Calls skill_view(name="document-processing")]
        
-System: [Returns full pdf-processing SKILL.md content]
+System: [Returns full document-processing SKILL.md content]
 
 Model: [Reads skill instructions]
        [Calls check_tool_availability("pdftotext")]
-       
+
 System: ✓ pdftotext is available
 
 Model: [Calls run_command("pdftotext", ["document.pdf", "-"])]

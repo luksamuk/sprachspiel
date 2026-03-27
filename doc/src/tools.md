@@ -434,7 +434,7 @@ Example: skill_list()
 ```
 Available skills (4):
 
-- **pdf-processing** (builtin): Extract text from PDF files
+- **document-processing** (builtin): Extract content from PDF and ePub files
 - **ocr-images** (builtin): Process images with OCR
 - **code-analysis** (builtin): Analyze code structure
 - **web-scraping** (builtin): Scrape web content
@@ -450,8 +450,8 @@ Load and view the full content of a specific skill.
 
 ```
 Function: skill_view
-Args: name (string, required): Skill name (e.g., "pdf-processing")
-Example: skill_view(name="pdf-processing")
+Args: name (string, required): Skill name (e.g., "document-processing")
+Example: skill_view(name="document-processing")
 ```
 
 **Returns:**
@@ -462,9 +462,9 @@ Example: skill_view(name="pdf-processing")
 
 **Example output:**
 ```
-# Skill: pdf-processing (builtin)
+# Skill: document-processing (builtin)
 
-**Description:** Extract text from PDF files
+**Description:** Extract and process content from PDF and ePub files
 
 ---
 [Full skill content with instructions...]
@@ -488,7 +488,7 @@ Example: skill_view(name="pdf-processing")
 ```
 User: Extract text from document.pdf
 LLM: [Calls skill_list() to see available skills]
-     [Calls skill_view(name="pdf-processing") to load instructions]
+     [Calls skill_view(name="document-processing") to load instructions]
      [Follows skill instructions to process PDF]
 ```
 
@@ -856,6 +856,99 @@ file_sandbox = false
 ```
 
 **Warning:** Disabling sandbox for reads allows the AI to read any accessible file. Write sandbox cannot be disabled.
+
+## Document Processing Tools
+
+External CLI tools for PDF and ePub processing. These are called via `run_command` and require installation.
+
+**Note:** These are not built-in tools. They must be installed separately and configured in `~/.config/ask-ai/tools.toml`.
+
+### PDF Tools (poppler-utils)
+
+| Tool | Description | Example |
+|------|-------------|---------|
+| `pdftotext` | Extract text from PDF | `pdftotext document.pdf -` |
+| `pdfinfo` | Get PDF metadata | `pdfinfo document.pdf` |
+| `pdftoppm` | Convert PDF to images | `pdftoppm -png document.pdf output` |
+
+**Common patterns:**
+```bash
+# Extract specific pages
+pdftotext -f 1 -l 10 -layout document.pdf -
+
+# Get page count
+pdfinfo document.pdf | grep Pages
+
+# OCR scanned PDF
+pdftoppm -png document.pdf output
+tesseract output-1.png stdout
+```
+
+### ePub Tools
+
+| Tool | Description | Size | Notes |
+|------|-------------|------|-------|
+| `ebook-convert` | Full-featured ePub converter | ~120MB | Calibre package |
+| `epub2txt` | Lightweight ePub to text | ~1MB | Fallback option |
+
+**Common patterns:**
+```bash
+# Calibre (full conversion)
+ebook-convert book.epub .txt
+
+# epub2txt (quick extraction)
+epub2txt book.epub -
+```
+
+### OCR Tool (tesseract)
+
+```bash
+# OCR an image
+tesseract image.png stdout
+
+# OCR with language
+tesseract image.png stdout -l por
+```
+
+### Installation
+
+| Distro | Command |
+|--------|---------|
+| Arch | `sudo pacman -S poppler calibre tesseract` |
+| Debian/Ubuntu | `sudo apt install poppler-utils calibre tesseract-ocr` |
+| Void | `sudo xbps-install -S poppler calibre tesseract` |
+| Alpine | `sudo apk add poppler tesseract-ocr calibre` |
+| Fedora | `sudo dnf install poppler-utils calibre tesseract` |
+
+### Configuration
+
+Default `~/.config/ask-ai/tools.toml` includes:
+
+```toml
+[external.tools.pdftotext]
+enabled = true
+timeout = 30
+
+[external.tools.pdfinfo]
+enabled = true
+timeout = 5
+
+[external.tools.pdftoppm]
+enabled = true
+timeout = 60
+
+[external.tools.tesseract]
+enabled = true
+timeout = 120
+
+[external.tools.ebook-convert]
+enabled = true
+timeout = 60
+
+[external.tools.epub2txt]
+enabled = true
+timeout = 30
+```
 
 ## LED Control Tools (5)
 

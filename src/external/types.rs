@@ -221,6 +221,25 @@ impl ExternalToolsConfig {
                 .install_hint(Platform::Termux, "pkg install tesseract"),
         );
 
+        // ePub Tools
+        config.tools.insert(
+            "ebook-convert".to_string(),
+            ExternalTool::new("ebook-convert")
+                .with_timeout(60)
+                .install_hint(Platform::Arch, "sudo pacman -S calibre")
+                .install_hint(Platform::Debian, "sudo apt install calibre")
+                .install_hint(Platform::Fedora, "sudo dnf install calibre"), // Termux: calibre not available
+        );
+
+        config.tools.insert(
+            "epub2txt".to_string(),
+            ExternalTool::new("epub2txt")
+                .with_timeout(30)
+                .install_hint(Platform::Arch, "yay -S epub2txt")
+                .install_hint(Platform::Debian, "pip install epub2txt")
+                .install_hint(Platform::Fedora, "pip install epub2txt"), // Termux: epub2txt not available
+        );
+
         // Image Tools
         config.tools.insert(
             "exiftool".to_string(),

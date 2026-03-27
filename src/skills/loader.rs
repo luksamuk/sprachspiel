@@ -19,7 +19,7 @@ const SKILL_FILE_NAME: &str = "SKILL.md";
 /// Builtin skills embedded in binary.
 /// These are always trusted and don't require sanitization.
 static BUILTIN_SKILLS: &[(&str, &str)] = &[
-    ("pdf-processing", include_str!("builtin/pdf-processing.md")),
+    ("document-processing", include_str!("builtin/document-processing.md")),
     ("ocr-images", include_str!("builtin/ocr-images.md")),
     ("code-analysis", include_str!("builtin/code-analysis.md")),
     ("web-scraping", include_str!("builtin/web-scraping.md")),
@@ -294,7 +294,7 @@ mod tests {
 
         // Builtin skills should always be present
         let names: Vec<&str> = indexes.iter().map(|i| i.name.as_str()).collect();
-        assert!(names.contains(&"pdf-processing"));
+        assert!(names.contains(&"document-processing"));
         assert!(names.contains(&"ocr-images"));
         assert!(names.contains(&"code-analysis"));
         assert!(names.contains(&"web-scraping"));
@@ -302,11 +302,11 @@ mod tests {
 
     #[test]
     fn test_get_skill_content_builtin() {
-        let skill = get_skill_content("pdf-processing");
+        let skill = get_skill_content("document-processing");
         assert!(skill.is_some());
 
         let skill = skill.unwrap();
-        assert_eq!(skill.name, "pdf-processing");
+        assert_eq!(skill.name, "document-processing");
         assert_eq!(skill.source, SkillSource::Builtin);
         assert!(skill.path.is_none());
         assert!(!skill.description.is_empty());
@@ -321,13 +321,13 @@ mod tests {
     #[test]
     fn test_get_available_skill_names() {
         let names = get_available_skill_names();
-        assert!(names.contains(&"pdf-processing".to_string()));
+        assert!(names.contains(&"document-processing".to_string()));
         assert!(names.contains(&"ocr-images".to_string()));
     }
 
     #[test]
     fn test_is_valid_skill_name() {
-        assert!(is_valid_skill_name("pdf-processing"));
+        assert!(is_valid_skill_name("document-processing"));
         assert!(is_valid_skill_name("ocr_images"));
         assert!(is_valid_skill_name("codeAnalysis"));
 

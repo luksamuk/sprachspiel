@@ -13,7 +13,7 @@
 //!
 //! On-demand Loading:
 //! ├── LLM sees relevant skill in INDEX
-//! ├── LLM calls skill_view(name="pdf-processing")
+//! ├── LLM calls skill_view(name="document-processing")
 //! └── System returns full SKILL.md content
 //! ```
 //!
@@ -27,15 +27,15 @@
 //!
 //! ```markdown
 //! ---
-//! name: pdf-processing
-//! description: Extract text from PDF files using external tools
+//! name: document-processing
+//! description: Extract content from PDF and ePub files
 //! ---
 //!
-//! # PDF Processing
+//! # Document Processing
 //!
-//! When asked to process PDF files:
+//! When asked to process PDF or ePub files:
 //! 1. Check tool availability with check_tool_availability
-//! 2. Use run_command("pdftotext", ...) for text extraction
+//! 2. Use run_command("pdftotext", ...) for PDF extraction
 //! ```
 
 mod loader;
@@ -62,7 +62,7 @@ mod tests {
 
         // Builtin skills should always be present
         let names: Vec<&str> = indexes.iter().map(|i| i.name.as_str()).collect();
-        assert!(names.contains(&"pdf-processing"));
+        assert!(names.contains(&"document-processing"));
         assert!(names.contains(&"ocr-images"));
         assert!(names.contains(&"code-analysis"));
         assert!(names.contains(&"web-scraping"));
@@ -70,11 +70,11 @@ mod tests {
 
     #[test]
     fn test_get_skill_content_builtin() {
-        let skill = get_skill_content("pdf-processing");
+        let skill = get_skill_content("document-processing");
         assert!(skill.is_some());
 
         let skill = skill.unwrap();
-        assert_eq!(skill.name, "pdf-processing");
+        assert_eq!(skill.name, "document-processing");
         assert_eq!(skill.source, SkillSource::Builtin);
         assert!(skill.path.is_none());
     }

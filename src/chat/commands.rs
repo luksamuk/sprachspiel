@@ -820,7 +820,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
         }
         // Dynamic skill commands: /<skill-name> [args...]
-        // Check if command matches a skill name (e.g., /pdf-processing)
+        // Check if command matches a skill name (e.g., /document-processing)
         _ => {
             // Try to match against available skill names
             let skill_names = crate::skills::get_available_skill_names();

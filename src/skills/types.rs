@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn test_frontmatter_parse_valid() {
         let content = r#"---
-name: pdf-processing
+name: document-processing
 description: Extract text from PDF files
 ---
 # PDF Processing
@@ -210,7 +210,7 @@ description: Extract text from PDF files
 Instructions here...
 "#;
         let (fm, md) = Frontmatter::parse(content).unwrap();
-        assert_eq!(fm.name, Some("pdf-processing".to_string()));
+        assert_eq!(fm.name, Some("document-processing".to_string()));
         assert_eq!(
             fm.description,
             Some("Extract text from PDF files".to_string())

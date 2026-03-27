@@ -143,7 +143,7 @@ Available: read_file, read_file_segment, count_lines, list_directory, search_fil
 
 Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines.
 
-**PDFs:** read_file cannot read PDFs (binary format). Call skill_view("pdf-processing") for detailed instructions."#
+**PDFs:** read_file cannot read PDFs (binary format). Call skill_view("document-processing") for detailed instructions."#
                     .to_string(),
             );
         }
