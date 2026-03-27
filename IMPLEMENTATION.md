@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.38.0** - 2026-03-26 (Skills System)
+**v0.38.0** - 2026-03-27 (Skills System)
 
 ## Current Implementation Status
 
