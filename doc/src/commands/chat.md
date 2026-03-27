@@ -127,7 +127,7 @@ Notes support project-level (default) and global scope. Global notes are visible
 Skills are Markdown files that define AI behaviors for specific tasks. When activated, a skill's instructions are injected into the system prompt.
 
 **Built-in Skills:**
-- `/pdf-processing` - Extract text from PDF files
+- `/document-processing` - Extract content from PDF and ePub files
 - `/ocr-images` - Process images with OCR
 - `/code-analysis` - Analyze code structure
 - `/web-scraping` - Scrape web content
@@ -136,11 +136,11 @@ Skills are Markdown files that define AI behaviors for specific tasks. When acti
 
 **Example:**
 ```
-lfm> /pdf-processing
-✓ Skill activated: pdf-processing (builtin)
-  Extract text from PDF files
+lfm> /document-processing
+✓ Skill activated: document-processing (builtin)
+  Extract content from PDF and ePub files
 
-The AI will now follow PDF processing instructions for this session.
+The AI will now follow document processing instructions for this session.
 ```
 
 Use `/skill-list` to see all available skills (this is a tool, not a command).
