@@ -349,7 +349,7 @@ Skills are Markdown files that define AI behavior and tool usage patterns:
 
 ```
 ~/.config/ask-ai/skills/
-├── pdf-processing.md
+├── document-processing.md
 ├── ocr-images.md
 └── custom-skill.md
 ```
@@ -357,11 +357,11 @@ Skills are Markdown files that define AI behavior and tool usage patterns:
 Skills are **instructions for the model**, not executable code:
 
 ```markdown
-# pdf-processing.md
+# document-processing.md
 
-When asked to process PDF files:
+When asked to process PDF or ePub files:
 1. Check tool availability with `check_tool_availability`
-2. Use `run_command` to execute `pdftotext` if available
+2. Use `run_command` to execute `pdftotext` or `ebook-convert` if available
 ...
 ```
 
@@ -670,7 +670,7 @@ ask-ai/
 │   │   ├── loader.rs        # File loading
 │   │   ├── types.rs         # Skill structs
 │   │   └── builtin/         # Embedded skills
-│   │       ├── pdf-processing.md
+│   │       ├── document-processing.md
 │   │       └── ocr-images.md
 │   ├── translate/           # Translation
 │   ├── ocr/                 # OCR processing
