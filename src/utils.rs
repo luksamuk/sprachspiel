@@ -122,6 +122,7 @@ pub fn format_size(bytes: u64) -> String {
 /// assert_eq!(capitalize("HELLO"), "Hello");
 /// assert_eq!(capitalize("pikachu"), "Pikachu");
 /// ```
+#[cfg(feature = "pokemon-tools")]
 pub fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
@@ -345,6 +346,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "pokemon-tools")]
     fn test_capitalize() {
         assert_eq!(capitalize("hello"), "Hello");
         assert_eq!(capitalize("HELLO"), "Hello");
