@@ -47,6 +47,7 @@ pub use loader::{get_available_skill_names, get_skill_content, load_skill_indexe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use types::SkillSource;
 
     #[test]
     fn test_load_skill_indexes_returns_builtins() {
