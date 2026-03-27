@@ -143,10 +143,7 @@ Available: read_file, read_file_segment, count_lines, list_directory, search_fil
 
 Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines.
 
-**IMPORTANT FOR PDFs:** read_file cannot read PDFs (binary format). Use run_command instead:
-- run_command("pdftotext document.pdf -", null, null, null) - Full text (be careful!)
-- run_command("pdftotext -f 1 -l 10 document.pdf -", null, null, null) - Pages 1-10
-- run_command("pdftotext document.pdf -", 100, null, null) - First 100 lines"#
+**PDFs:** read_file cannot read PDFs (binary format). Call skill_view("document-processing") for detailed instructions."#
                     .to_string(),
             );
         }
@@ -292,17 +289,7 @@ Available: check_tool_availability, run_command
 - tail=N: Return only last N lines (good for conclusions)
 - Both null: Return FULL output (be careful with large files!)
 
-**Workflow:**
-1. Check availability: check_tool_availability("pdftotext")
-2. For large files, use head/tail to preview first
-3. Request specific pages with flags: pdftotext -f 1 -l 5 file.pdf -
-4. Only request full output if you know it's reasonable
-
-**Examples:**
-- run_command("pdftotext doc.pdf -", 100, null, null) - First 100 lines
-- run_command("pdftotext doc.pdf -", null, 50, null) - Last 50 lines
-- run_command("pdftotext -f 11 -l 11 doc.pdf -", null, null, null) - Page 11 only
-- run_command("pdftotext doc.pdf -", 50, 50, null) - First 50 + last 50 lines
+**Before using:** Check tool availability with check_tool_availability("tool-name").
 
 **Security:** No shell features (pipes, redirects). Use tool-specific flags instead."#
                     .to_string(),

@@ -169,8 +169,10 @@ fn is_executable_code_block(lang: &str) -> bool {
     executable_langs.contains(&lang_lower.as_str())
 }
 
-/// Check if a line contains prompt injection patterns
-fn contains_injection_pattern(line: &str) -> bool {
+/// Check if a line contains prompt injection patterns.
+///
+/// This function is used by both AGENTS.md sanitization and skills sanitization.
+pub fn contains_injection_pattern(line: &str) -> bool {
     let line_lower = line.to_lowercase();
 
     // Patterns that suggest instruction override
@@ -234,8 +236,10 @@ fn contains_injection_pattern(line: &str) -> bool {
     false
 }
 
-/// Check if a line contains fake system tags
-fn contains_fake_system_tags(line: &str) -> bool {
+/// Check if a line contains fake system tags.
+///
+/// This function is used by both AGENTS.md sanitization and skills sanitization.
+pub fn contains_fake_system_tags(line: &str) -> bool {
     let line_lower = line.to_lowercase();
 
     // Fake system tags that might confuse models

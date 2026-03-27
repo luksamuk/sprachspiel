@@ -2,6 +2,87 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.38.0] - 2026-03-26
+
+### Added
+
+- **Skills System Implementation** - Full implementation of on-demand skill loading
+  - **Core Module:** `src/skills/` with types, loader, sanitize, and builtin skills
+  - **Tools:** `skill_list()` for listing available skills, `skill_view(name)` for loading skill content
+  - **Slash Commands:** Activate skills via `/skill-name` (e.g., `/document-processing`)
+  - **Session Integration:** Active skills injected into system prompt
+  - **4 Builtin Skills:** document-processing, ocr-images, code-analysis, web-scraping
+  - **System Prompt Integration:** SKILLS INDEX section shows available skills with descriptions
+  - **Tool Registration:** skills-tools feature (enabled by default)
+  - **Security:** Injection pattern detection, invisible unicode removal, file size limits (256KB)
+  - Related: Issue #8
+
+- **Document Processing Skill** - Unified PDF and ePub processing
+  - **PDF Tools:** pdftotext, pdfinfo, pdftoppm, tesseract (OCR fallback)
+  - **ePub Tools:** ebook-convert (Calibre), epub2txt (lightweight fallback)
+  - **Features:** Full extraction, page range, metadata, TOC, internal search
+  - **Multi-distro:** Installation instructions for Arch, Debian, Void, Alpine, Fedora
+  - **External Tool Defaults:** ebook-convert and epub2txt added to default tools.toml
+
+- **Skills System Design Document Update** - Comprehensive design research and planning
+  - **Hermes Agent Analysis:** Researched skills system implementation from `~/.hermes/hermes-agent`
+  - **Progressive Disclosure:** INDEX in prompt + on-demand loading via `skill_view(name)`
+  - **Directory-based Skills:** `SKILL.md` format with YAML frontmatter
+  - **Deduplication Priority:** project > user > builtin
+  - **Simplified Frontmatter:** Only `name` and `description` required
+  - **Two Tools:** `skill_list()` for INDEX, `skill_view(name)` for content
+  - **Implementation Phases:** 5 phases estimated at 3.5 days total
+  - Related: Issue #8
+
+- **Multilingual Prompt Injection Security Research** - Comprehensive security analysis
+  - **Documented Bypasses:** Azure Content Filter bypassed using Thai/Arabic payloads (HackerNoon)
+  - **Academic Research:** arXiv:2512.23684 multilingual hidden prompt injection on 500 papers
+  - **ML Detection:** XLM-RoBERTa fine-tuned achieves 99.13% accuracy (arXiv:2410.21337v1)
+  - **Future Consideration:** Translate-then-detect approach using existing `ask translate` infrastructure
+  - **Current Mitigation:** English-only sanitization + warning on non-Latin characters
+  - References added to skills-system-design.md
+
+### Changed
+
+- **pokemon-tools: Removed from default features** - Now opt-in
+  - Build with `--features pokemon-tools` to enable Pokémon data tools
+  - Reduces default binary size
+  - Precedent for future Plugin System with MCP support
+
+- **skills-system-design.md Complete Rewrite** - Updated from original design
+  - Removed Phase 1 (already completed in v0.28.x)
+  - Added Hermes Agent research findings
+  - Changed from "inject all skills" to "INDEX + on-demand" pattern
+  - Changed from `.md` files to `SKILL.md` in directory structure
+  - Changed from 8-10 days estimate to 3.5 days
+  - Added implementation status tracking
+  - Added comprehensive security considerations (OWASP LLM Top 10)
+  - Added multilingual injection defense as future consideration
+
+- **Prompt Simplification** - Reduced PDF instruction duplication
+  - FILE TOOLS prompt now references `skill_view("document-processing")` instead of detailed instructions
+  - EXTERNAL TOOLS prompt simplified, moved examples to document-processing skill
+  - Skills become single source of truth for domain-specific instructions
+
+- **pdf-processing Skill → document-processing Skill** - Unified PDF and ePub processing
+  - Replaced `pdf-processing` builtin skill with `document-processing`
+  - Added ePub extraction via ebook-convert and epub2txt
+  - Added metadata extraction, TOC parsing, page range support
+  - Added OCR fallback for scanned PDFs and ePub images
+  - Updated all code references and documentation
+
+### Planned
+
+- **PRIORITY 10: Multilingual Skill Sanitization** - Enhanced security for skill content
+  - Phase 1: Language detection + warning (no dependencies)
+  - Phase 2: Translate-then-detect approach (requires P6 Chat Module)
+  - Dependencies: Skills System (P3) ✅ COMPLETED
+
+- **PRIORITY 11: Skills Management Tool** - Allow LLM to manage skills
+  - `skill_manage(action, name, ...)` tool for create/patch/delete
+  - Estimated effort: 3-4 hours
+  - Dependencies: Skills System (P3) ✅ COMPLETED
+
 ## [0.37.2] - 2026-03-22
 
 ### Fixed

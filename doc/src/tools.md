@@ -6,7 +6,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 
 | Category | Count | Source | Status | Default |
 |----------|-------|--------|--------|---------|
-| Pokémon | 9 | PokéAPI | ✅ Working | ✅ Enabled |
+| Pokémon | 9 | PokéAPI | ✅ Working | ❌ Opt-in |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
 | Calculator | 1 | ollama-rs built-in | ✅ Working | ✅ Enabled |
 | Web Search | 2 | Google via Serper | ✅ Working | ✅ Enabled* |
@@ -16,6 +16,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
 | Factual Memory | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
+| Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
@@ -29,18 +30,18 @@ Tools are organized into feature flags that can be enabled or disabled at compil
 ### Default Features
 
 The default build includes:
-- `pokemon-tools` - Pokémon data tools (9 tools)
 - `weather-tools` - Weather lookup tools
 - `calc-tools` - Mathematical calculator
 - `serper-tools` - Google Search via Serper (requires API key)
 - `system-tools` - Date/time and project context
 - `file-tools` - File system operations
+- `skills-tools` - AI behavior skills (skill_list, skill_view)
 
 ### Available Features
 
 | Feature | Description | Tools Included | Default |
 |---------|-------------|----------------|---------|
-| `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ✅ Yes |
+| `pokemon-tools` | Pokémon data from PokéAPI | fetch_pokemon*, fetch_ability_details, fetch_type_effectiveness, fetch_pokemon_by_type, fetch_move_details | ❌ No |
 | `weather-tools` | Weather data from Open-Meteo | get_weather, get_current_weather, get_weather_forecast | ✅ Yes |
 | `calc-tools` | Mathematical calculations | calculate | ✅ Yes |
 | `serper-tools` | Google Search via Serper API | web_search, web_search_news | ✅ Yes |
@@ -48,6 +49,7 @@ The default build includes:
 | `finance-tools` | Stock quotes | get_stock_quote | ❌ No |
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files, write_file, edit_file, append_file | ✅ Yes |
+| `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
@@ -66,8 +68,8 @@ Get your free API key at [serper.dev](https://serper.dev) (2,500 free searches/m
 
 **Option 2: DuckDuckGo** - Free but may be blocked
 ```bash
-# Build with search-tools instead
-cargo build --release --no-default-features --features "pokemon-tools,weather-tools,calc-tools,search-tools,file-tools"
+# Build with search-tools instead of serper-tools
+cargo build --release --no-default-features --features "weather-tools,calc-tools,search-tools,file-tools,system-tools,skills-tools"
 ```
 
 ### Building with Custom Features
@@ -92,9 +94,14 @@ cargo build --release --features all-tools
 cargo build --release --no-default-features --features file-tools
 ```
 
-**Build without Pokémon tools:**
+**Enable Pokémon tools (opt-in):**
 ```bash
-cargo build --release --no-default-features --features "weather-tools,file-tools,search-tools,calc-tools"
+cargo build --release --features pokemon-tools
+```
+
+**Enable all optional tools:**
+```bash
+cargo build --release --features all-tools
 ```
 
 ### Runtime Filtering
@@ -110,6 +117,8 @@ blacklist = ["fetch_pokemon", "web_search"]
 When a tool is blacklisted, it won't be registered with the coordinator AND won't appear in the system prompt's tool descriptions. The model won't even know the tool exists.
 
 ## Pokémon Tools (9)
+
+**Note:** Pokémon tools are **opt-in** and not included in the default build. Enable with `--features pokemon-tools`.
 
 Powered by [PokéAPI](https://pokeapi.co/).
 
@@ -399,6 +408,89 @@ Example: get_project_context()
 - No environment variables exposed
 - Ignores `.env` files and secrets
 - Scoped to max 3 directory levels
+
+## Skills Tools (2)
+
+Tools for discovering and loading AI behavior skills. Skills are Markdown files that define instructions for specific tasks (PDF processing, OCR, code analysis, etc.).
+
+These tools are **enabled by default** and provide progressive disclosure - the system prompt contains only skill names and descriptions, while full content is loaded on-demand when needed.
+
+### skill_list
+
+List all available skills with brief descriptions.
+
+```
+Function: skill_list
+Args: (none)
+Example: skill_list()
+```
+
+**Output includes:**
+- Skill name
+- Source (builtin, user, project)
+- Brief description
+
+**Example output:**
+```
+Available skills (4):
+
+- **document-processing** (builtin): Extract content from PDF and ePub files
+- **ocr-images** (builtin): Process images with OCR
+- **code-analysis** (builtin): Analyze code structure
+- **web-scraping** (builtin): Scrape web content
+
+Use skill_view(name="skill-name") to load a specific skill.
+```
+
+**Use case:** Discover available skills before loading one that matches your task.
+
+### skill_view
+
+Load and view the full content of a specific skill.
+
+```
+Function: skill_view
+Args: name (string, required): Skill name (e.g., "document-processing")
+Example: skill_view(name="document-processing")
+```
+
+**Returns:**
+- Skill name and source
+- Description
+- Full instructions and guidelines
+- Examples and patterns
+
+**Example output:**
+```
+# Skill: document-processing (builtin)
+
+**Description:** Extract and process content from PDF and ePub files
+
+---
+[Full skill content with instructions...]
+```
+
+**Error handling:**
+- Returns error if skill not found (use `skill_list` to see available skills)
+- Returns error if skill name is invalid
+- Returns error if skill content failed validation (contains injection patterns)
+
+**Skill Locations:**
+| Source | Location |
+|--------|----------|
+| builtin | Embedded in binary (always available) |
+| user | `~/.config/ask-ai/skills/<name>/SKILL.md` |
+| project | `.ask-ai/skills/<name>/SKILL.md` |
+
+**Priority:** project > user > builtin (project-level skills override user and builtin).
+
+**Example workflow:**
+```
+User: Extract text from document.pdf
+LLM: [Calls skill_list() to see available skills]
+     [Calls skill_view(name="document-processing") to load instructions]
+     [Follows skill instructions to process PDF]
+```
 
 ## Factual Memory Tools (3)
 
@@ -764,6 +856,99 @@ file_sandbox = false
 ```
 
 **Warning:** Disabling sandbox for reads allows the AI to read any accessible file. Write sandbox cannot be disabled.
+
+## Document Processing Tools
+
+External CLI tools for PDF and ePub processing. These are called via `run_command` and require installation.
+
+**Note:** These are not built-in tools. They must be installed separately and configured in `~/.config/ask-ai/tools.toml`.
+
+### PDF Tools (poppler-utils)
+
+| Tool | Description | Example |
+|------|-------------|---------|
+| `pdftotext` | Extract text from PDF | `pdftotext document.pdf -` |
+| `pdfinfo` | Get PDF metadata | `pdfinfo document.pdf` |
+| `pdftoppm` | Convert PDF to images | `pdftoppm -png document.pdf output` |
+
+**Common patterns:**
+```bash
+# Extract specific pages
+pdftotext -f 1 -l 10 -layout document.pdf -
+
+# Get page count
+pdfinfo document.pdf | grep Pages
+
+# OCR scanned PDF
+pdftoppm -png document.pdf output
+tesseract output-1.png stdout
+```
+
+### ePub Tools
+
+| Tool | Description | Size | Notes |
+|------|-------------|------|-------|
+| `ebook-convert` | Full-featured ePub converter | ~120MB | Calibre package |
+| `epub2txt` | Lightweight ePub to text | ~1MB | Fallback option |
+
+**Common patterns:**
+```bash
+# Calibre (full conversion)
+ebook-convert book.epub .txt
+
+# epub2txt (quick extraction)
+epub2txt book.epub -
+```
+
+### OCR Tool (tesseract)
+
+```bash
+# OCR an image
+tesseract image.png stdout
+
+# OCR with language
+tesseract image.png stdout -l por
+```
+
+### Installation
+
+| Distro | Command |
+|--------|---------|
+| Arch | `sudo pacman -S poppler calibre tesseract` |
+| Debian/Ubuntu | `sudo apt install poppler-utils calibre tesseract-ocr` |
+| Void | `sudo xbps-install -S poppler calibre tesseract` |
+| Alpine | `sudo apk add poppler tesseract-ocr calibre` |
+| Fedora | `sudo dnf install poppler-utils calibre tesseract` |
+
+### Configuration
+
+Default `~/.config/ask-ai/tools.toml` includes:
+
+```toml
+[external.tools.pdftotext]
+enabled = true
+timeout = 30
+
+[external.tools.pdfinfo]
+enabled = true
+timeout = 5
+
+[external.tools.pdftoppm]
+enabled = true
+timeout = 60
+
+[external.tools.tesseract]
+enabled = true
+timeout = 120
+
+[external.tools.ebook-convert]
+enabled = true
+timeout = 60
+
+[external.tools.epub2txt]
+enabled = true
+timeout = 30
+```
 
 ## LED Control Tools (5)
 

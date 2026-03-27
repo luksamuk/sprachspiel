@@ -1,12 +1,12 @@
 [package]
 name = "ask-ai"
-version = "0.37.2"
+version = "0.38.0"
 edition = "2024"
 
 [features]
-default = ["weather-tools", "file-tools", "pokemon-tools", "calc-tools", "serper-tools", "system-tools", "todo-tools"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "sandbox"]
-all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools"]
+default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "todo-tools", "skills-tools"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "skills-tools", "sandbox"]
+all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "skills-tools"]
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin
@@ -21,6 +21,8 @@ finance-tools = ["dep:scraper"]
 system-tools = []
 led-tools = []
 todo-tools = []
+# Skills system for on-demand skill loading
+skills-tools = []
 # Landlock sandbox for Linux (kernel 5.13+)
 sandbox = ["dep:landlock"]
 
@@ -50,6 +52,7 @@ rustyline = "14"
 scraper = { version = "0.22", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 termimad = "0.34"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
 toml = "0.8"

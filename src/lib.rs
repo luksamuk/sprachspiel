@@ -23,6 +23,7 @@ pub mod prompts;
 pub mod query;
 pub mod retrieval;
 pub mod settings;
+pub mod skills;
 pub mod soul;
 pub mod spinner;
 pub mod summarize;

@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.37.2** - 2026-03-21 (Embedding Fallback Rewrite)
+**v0.38.0** - 2026-03-26 (Skills System)
 
 ## Current Implementation Status
 
@@ -146,7 +146,7 @@
 
 **Documentation:** See [Factual Memory System Design](./doc/src/development/factual-memory-system.md) for complete design.
 
-**Key Insight:** Factual Memory and Feedback System (PRIORITY 1) are **orthogonal** and **complementary**:
+**Key Insight:** Factual Memory and Feedback System (PRIORITY 5) are **orthogonal** and **complementary**:
 - Factual Memory → "What do I know about the user/project?"
 - Feedback System → "How should I weight retrieved messages?"
 - They operate at different layers and don't conflict.
@@ -558,7 +558,7 @@ Status bar during spinner ("Thinking...") was attempted but caused display issue
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - Notes System
+### 🔵 PRIORITY 4: Code Quality - Notes System (COMPLETED)
 
 **Status:** ✅ COMPLETED
 
@@ -768,22 +768,105 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### 🟡 PRIORITY 3: Skills System Phase 1
+### ✅ PRIORITY 3: Skills System (COMPLETED)
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED (v0.38.0)
 
-**Goal:** Markdown-defined AI behaviors for tool pipelines.
+**Goal:** Markdown-defined AI behaviors with progressive disclosure.
+
+**Design Research (2026-03-24):**
+- Analyzed Hermes Agent skills system at `~/.hermes/hermes-agent`
+- Confirmed INDEX + on-demand loading pattern (not inject all skills)
+- Confirmed `SKILL.md` format with YAML frontmatter
+- Confirmed deduplication priority: project > user > builtin
+
+**Architecture:**
+```
+System Prompt
+├── SKILLS INDEX (names + descriptions)
+│   └── <available_skills> section
+└── Tools section
+
+On-demand Loading:
+├── LLM sees relevant skill in INDEX
+├── LLM calls skill_view(name="document-processing")
+└── System returns full SKILL.md content
+```
 
 **Features:**
-- SkillsLoader for `.md` files
-- Builtin skills (pdf-processing, ocr-images)
-- User skills (`~/.config/ask-ai/skills/`)
-- Project skills (`.ask-ai/skills/`)
-- Prompt injection integration
+- `skill_list()` tool - returns INDEX (names + descriptions)
+- `skill_view(name)` tool - loads full skill content
+- Builtin skills embedded in binary (`include_str!`)
+- User skills at `~/.config/ask-ai/skills/<name>/SKILL.md`
+- Project skills at `.ask-ai/skills/<name>/SKILL.md`
 
-**Dependencies:** None
+**Dependencies:** None (CLI Tools completed in v0.28.x)
 
-**Estimated effort:** 3-5 days
+**Implementation Phases:**
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 1 | ✅ COMPLETED | Skills Module (types, loader, sanitize, mod) |
+| 2 | ✅ COMPLETED | Builtin Skills (4 .md files) |
+| 3 | ✅ COMPLETED | Skills Tools (skill_list, skill_view) |
+| 4 | ✅ COMPLETED | Prompt Integration (INDEX section) |
+| 5 | ✅ COMPLETED | Testing (clippy, tests pass) |
+| 6 | ✅ COMPLETED | Skills Slash Commands (activate skills via /skill-name) |
+
+### Phase 6: Skills Slash Commands
+
+**Goal:** Allow users to activate skills via slash commands (`/document-processing`).
+
+**Behavior:**
+```
+/document-processing                    → Loads skill, shows activation message
+/document-processing extrair texto.pdf  → Loads skill + sends user message
+/skill-list                             → Lists available skills
+```
+
+**Architecture:**
+- Dynamic slash command detection based on available skills
+- Skill content injected into session system prompt
+- Skills activated for current session only
+
+**Implementation:**
+
+| File | Change |
+|------|--------|
+| `src/chat/commands.rs` | Add `ChatCommand::Skill { name }` and `CommandResult::Skill` |
+| `src/chat/commands.rs` | Modify `parse_command()` to detect `/skill-name` dynamically |
+| `src/chat/session.rs` | Add `active_skill: Option<Skill>` field |
+| `src/prompts/builder.rs` | Inject active skill into system prompt |
+
+**Estimated effort:** 2 hours
+
+**Reference:** Hermes Agent `agent/skill_commands.py`
+
+**Files Created:**
+- `src/skills/mod.rs` - Public API
+- `src/skills/types.rs` - Skill, SkillIndex, SkillSource, Frontmatter
+- `src/skills/loader.rs` - YAML parsing, directory scanning, deduplication
+- `src/skills/sanitize.rs` - Injection pattern detection, validation
+- `src/skills/builtin/document-processing.md` - PDF and ePub extraction skill
+- `src/skills/builtin/ocr-images.md` - OCR for images skill
+- `src/skills/builtin/code-analysis.md` - Code analysis skill
+- `src/skills/builtin/web-scraping.md` - Web scraping skill
+- `src/tools/skill_tools.rs` - skill_list, skill_view tools
+
+**Files Modified:**
+- `src/prompts/builder.rs` - Added SKILLS INDEX section, active_skill field
+- `src/main.rs` - Added skills module
+- `src/tools/mod.rs` - Added skill_tools module
+- `src/tools/registry.rs` - Registered skills tools
+- `src/Cargo.toml` - Added serde_yaml, skills-tools feature
+- `src/chat/commands.rs` - Added ChatCommand::Skill, CommandResult::Skill, parse detection
+- `src/chat/session.rs` - Added ActiveSkill struct, active_skill field
+- `src/chat/command_handlers.rs` - Added handle_skill_activated
+- `src/chat/core.rs` - Wired active_skill into build_session_system_prompt
+
+**Commits:**
+- `74a25be` feat(skills): add skills module with types, loader, sanitize, and builtin skills
+- `73ced3a` feat(skills): implement skill_list and skill_view tools with registry integration
 
 **Reference:** `doc/src/development/skills-system-design.md`
 
@@ -793,7 +876,7 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ### 🟡 PRIORITY 3: Document Import Tool
 
-**Status:** ❌ BLOCKED (requires Skills System Phase 1)
+**Status:** ❌ BLOCKED (requires Skills System)
 
 **Goal:** Import documents for semantic search.
 
@@ -805,7 +888,7 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 - `/import-doc`, `/list-docs`, `/remove-doc` commands
 - Update `search_hybrid()` for document chunks
 
-**Dependencies:** Skills System Phase 1 (for PDF pipeline definition)
+**Dependencies:** Skills System (for PDF pipeline definition)
 
 **Estimated effort:** 5-7 days
 
@@ -906,7 +989,7 @@ const MIN_CHUNK_TOKENS: usize = 32;         // Minimum before aborting
 
 ---
 
-### 🟠 PRIORITY 2: Context Overflow During Multi-Tool Execution
+### 🟠 PRIORITY 2: Context Overflow During Multi-Tool Execution (COMPLETED)
 
 **Status:** ✅ COMPLETED (v0.37.0)
 
@@ -1096,7 +1179,7 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 
 ---
 
-### 🔵 PRIORITY 4: Feedback Infrastructure
+### 🟣 PRIORITY 5: Feedback Infrastructure
 
 **Status:** 📋 PLANNED (depends on: Factual Memory)
 
@@ -1687,78 +1770,220 @@ let results = futures::future::join_all(futures).await;
 
 **Estimated effort:** 3-4 days
 
----
-
-### 🟢 LOW PRIORITY: Memory Enhancement
-
-**Status:** ❌ BLOCKED (requires Document Import + Notes System)
-
-**Phases:**
-- **Phase 2:** Query routing (blocked by multiple source types)
-- **Phase 3:** Timestamp filtering (blocked by Phase 2)
-- **Phase 4-5:** Advanced memory features (blocked by Document Import + Notes)
-
-**Reference:** `doc/src/development/effective-agents-analysis.md` lines 196-226, 446-545
+**Related:** Issue #11
 
 ---
 
-### 🟢 LOW PRIORITY: Other Features
+## 🔵 LOW PRIORITY: Extended Features
 
-- **OCR/Vision Tools** - Image processing via CLI tools (tesseract, exiftool, imagemagick)
-- **File Session State** - Explicit file tracking with security constraints
-- **Skills System Extended** - YAML frontmatter, skill composition
-- **Plugin System** - User-defined tools via dynamic loading
+Features planned for future releases:
 
-### 🟢 PRIORITY 4.5: Status Bar Above Prompt
+| Priority | Feature | Description | Dependencies | Issue |
+|----------|---------|-------------|--------------|-------|
+| P8 | OCR/Vision Tools | Image processing via CLI tools | Skills System | #12 |
+| P9 | File Session State | Explicit file tracking | None | #13 |
+| P10 | Skills System Extended | Multilingual sanitization, security enhancements | Skills System, Chat Module Integration | #14 |
+| P11 | File Staleness | Detect outdated file content | None | #50 |
+| P12 | Extended Personalities | Per-personality model config | None | #49 |
+| P13 | Plugin System | User-defined tools | None | #15 |
+| P14 | TUI | Ratatui-based terminal interface | None | #16 |
+| P15 | Memory Enhancement 2-5 | Query routing, filtering | Doc Import | #17 |
+
+---
+
+### 🔵 PRIORITY 8: OCR/Vision Tools Integration
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Add a dynamic status bar above the prompt input with real-time context information.
+**Goal:** Image processing via CLI tools.
 
-**Inspired by:** Hermes Agent CLI status bar design.
+**Features:**
+- OCR via tesseract
+- Image metadata via exiftool
+- Image conversion via imagemagick
 
-**Current State:**
-- Model name shown inline in rustyline prompt: `glm-5:cloud🧠🔧>`
-- Context info requires `/context` command
-- Thinking/tools indicators mixed with model name in prompt
+**Dependencies:** Skills System (P3)
 
-**Proposed State:**
-- Status bar shows: model, context usage, progress bar, think/tools indicators
-- Prompt line is just `>` (clean, minimal)
+**Estimated effort:** 3-5 days
 
-**Proposed Design:**
-```
-────────────────────────────────────────────────────────────────────────────────
- glm-5:cloud │ 47.2K/128K │ [████░░░░░░] 37% │ 🧠🔧
-────────────────────────────────────────────────────────────────────────────────
-> _
-```
-
-**Components:**
-- Model name
-- Context usage: `XX.XK/YYYK` tokens
-- Progress bar with colors (green < 50%, yellow 50-75%, red > 75%)
-- Think/Tools indicators (in status bar)
-- Prompt: just `>` (clean, minimal)
-
-**Implementation:**
-
-| File | Changes |
-|------|---------|
-| `src/chat/view/terminal.rs` | Add `render_status_bar()` method |
-| `src/chat/input/rustyline.rs` | Call status bar before prompt |
-| `src/context_overflow.rs` | Add `to_status_bar()` method |
-
-**Priority Rationale:**
-- Higher than TUI (Priority 5) because component can be reused
-- Lower than Code Quality (Priority 4) because not blocking
-- Immediate value without full TUI rewrite
-
-**Related:** Issue #47
+**Related:** Issue #12
 
 ---
 
-### 🟢 PRIORITY 5: TUI (Terminal User Interface)
+### 🔵 PRIORITY 9: File Session State
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Explicit file tracking for session context.
+
+**Related:** Issue #13
+
+---
+
+### 🔵 PRIORITY 10: Extended Personalities System
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Per-personality model configuration and separate memory context.
+
+**Reason for Priority:** Didactic use case requires separate personalities soon.
+
+**Current State (SOUL.md):**
+- Multiple personality files supported via symlinks
+- Symlink approach: `ln -sf ~/.config/ask-ai/SPRACH.md ~/.config/ask-ai/SOUL.md`
+
+**What's MISSING:**
+- Per-personality model configuration
+- Separate memory context per personality
+- Personality directory support (`personalities/`)
+
+**Dependencies:** None
+
+**Estimated effort:** 2-3 days
+
+**Related:** Issue #49
+
+---
+
+### 🔵 PRIORITY 11: Multilingual Skill Sanitization
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Enhanced security for multilingual skill content.
+
+**Background:**
+- Skills System (P3) uses English-only sanitization
+- Multilingual prompt injection can bypass English-based detection (documented in research)
+- Chat Module Integration (P6) enables translate functionality within chat sessions
+
+**Features:**
+
+| Feature | Description | Dependency |
+|---------|-------------|------------|
+| **Language Detection** | Detect non-Latin characters, log warnings | None (can implement now) |
+| **Translate-then-Detect** | Translate non-English content, then scan | P6 (Chat Module) |
+| **ML Detection** | XLM-RoBERTa fine-tuned (optional) | ML infrastructure |
+| **LLM-as-Critic** | Second LLM reviews before loading | Token costs |
+
+**Implementation Phases:**
+
+| Phase | Description | Dependency |
+|-------|-------------|------------|
+| 1 | Language detection + warning | None ✅ |
+| 2 | Translate-then-detect | P6 |
+| 3 | ML model (optional) | Future |
+
+**Research:**
+- HackerNoon: Multilingual prompt injection bypasses Azure Content Filter
+- arXiv:2512.23684: Hidden prompt injection in 500 ICML papers
+- arXiv:2410.21337v1: XLM-RoBERTa achieves 99% accuracy
+
+**Dependencies:**
+- Skills System (P3) ✅
+- Phase 2 requires P6 (Chat Module Integration)
+
+**Estimated effort:** Phase 1: 2-3 hours | Phase 2: TBD
+
+**Reference:** `doc/src/development/skills-system-design.md` → Future Considerations
+
+**Related:** Issue #14
+
+**Related:** Issue #14
+
+---
+
+### 🔵 PRIORITY 12: Skills Management Tool
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Allow LLM to create, modify, and delete skills automatically.
+
+**Background:**
+- Skills System (P3) provides read-only access via `skill_list()` and `skill_view()`
+- LLMs often discover repeatable workflows that should be captured as skills
+- Hermes Agent shows successful pattern with `skill_manage()` tool
+
+**Scope (MVP):**
+
+| Action | Parameters | Description |
+|--------|------------|-------------|
+| `create` | `name`, `content` | Create new skill with SKILL.md |
+| `patch` | `name`, `old_string`, `new_string` | Find-and-replace in skill |
+| `delete` | `name` | Remove skill directory |
+
+**NOT in MVP:**
+- `edit` (full rewrite) - use patch
+- `write_file/remove_file` (supporting files) - references can wait
+- Skills Hub integration (community skills) - users install manually
+- Categories - can wait
+
+**Architecture:**
+
+```
+src/skills/
+├── manager.rs       # NOVO: create_skill, patch_skill, delete_skill
+├── loader.rs        # ✅ load_skill_indexes, get_skill_content
+├── sanitize.rs      # ✅ validate_skill_file, is_valid_skill_name
+└── types.rs         # ✅ Skill, SkillIndex, Frontmatter
+
+src/tools/skill_tools.rs
+├── skill_list()     # ✅
+├── skill_view()     # ✅
+└── skill_manage()   # NOVO
+```
+
+**Security:**
+
+1. Builtin skills are protected (cannot edit/delete)
+2. `old_string` must be unique (or `replace_all=true`)
+3. Name validation: `[a-z0-9_-]` only (no path traversal)
+4. Atomic writes (tempfile + rename, never partial writes)
+5. Frontmatter validation (name + description required)
+6. Max size: 256KB (same as read)
+
+**Directories:**
+
+```
+~/.config/ask-ai/skills/          ← User skills (writable)
+PROJECT/.ask-ai/skills/           ← Project skills (writable)
+
+Priority for writes: project > user (same as reads)
+Priority for deletes: user only (cannot delete project from CLI)
+```
+
+**Estimated effort:** 3-4 hours
+
+**Dependencies:** Requires P3 (Skills System) ✅ COMPLETED
+
+**Related:** Issue #52
+
+---
+
+### 🔵 PRIORITY 13: File Staleness Detection
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Prevent file edits based on outdated content.
+
+**Problem:**
+When the LLM edits a file using `edit_file` or `write_file`, it may operate on outdated content if:
+1. The file was modified externally (by another process, user, or git operations)
+2. The LLM's context contains stale information about the file's structure
+
+**Proposed Solution:**
+- Track modification time (mtime) when a file is read
+- Before edit operations, compare current mtime with stored mtime
+- If different, return warning: "File has been modified since it was read."
+
+**Dependencies:** None
+
+**Estimated effort:** 1-2 days
+
+**Related:** Issue #50
+
+---
+
+### 🔵 PRIORITY 14: TUI (Terminal User Interface)
 
 **Status:** ❌ NOT STARTED
 
@@ -1766,7 +1991,126 @@ let results = futures::future::join_all(futures).await;
 
 See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
 
-**Blocked by:** Status Bar (Priority 4.5) - component reuse
+**Components:**
+- Chat pane with markdown rendering
+- Input pane with history
+- Status bar showing model, context usage, tokens
+- Sidebar for tools/messages (optional)
+
+**Estimated effort:** 3-4 weeks
+
+**Related:** Issue #16
+
+---
+
+### 🔵 PRIORITY 15: Plugin System
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Pluggable architecture for extending ask-ai functionality with external tools.
+
+**Dependencies:** TBD
+
+**Estimated effort:** TBD
+
+**Related:** Issue #15
+
+#### Background: Opt-in Tools
+
+The current architecture supports **feature flags** for optional tools:
+
+- `pokemon-tools` - Opt-in (not in default build)
+- `led-tools` - Opt-in (not in default build)
+- `finance-tools` - Opt-in (not in default build)
+- `search-tools` - Opt-in (not in default build)
+
+This is a precedent for the plugin system: tools that require:
+- External APIs (PokéAPI, Google Finance)
+- Specific hardware (LED control)
+- Opt-in due to size/complexity
+
+#### Architecture Direction
+
+The Plugin System should support two paradigms:
+
+**1. Native Plugins (Rust WASM/WebAssembly)**
+
+```rust
+// Future: ./plugins/my_plugin.wasm
+pub fn register_tools(registry: &mut ToolRegistry) {
+    registry.register(MyTool::new());
+}
+```
+
+**2. MCP (Model Context Protocol) Support**
+
+MCP is an open standard for connecting AI applications to external systems:
+
+- **Standardized interface**: JSON Schema for tool definitions
+- **Server-based**: External processes provide tools via MCP protocol
+- **Dynamic discovery**: Tools are listed at runtime, not compile-time
+- **Security**: Human-in-the-loop for sensitive operations
+
+**Reference:** https://modelcontextprotocol.io
+
+**Example MCP Tool Definition:**
+```json
+{
+  "name": "get_weather",
+  "description": "Get current weather for a location",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "location": { "type": "string" }
+    },
+    "required": ["location"]
+  }
+}
+```
+
+#### Research Summary
+
+| System | Approach | Type Safety | Security |
+|--------|----------|-------------|----------|
+| MCP | JSON Schema + server | Runtime validation | Human approval |
+| AI SDK (Vercel) | Zod Schema + execute | Compile-time | Needs approval |
+| Hermes Agent | Skills (Markdown) + Tools (Rust) | Compile-time for tools | Sanitization |
+| **ask-ai (current)** | Rust code + feature flags | Compile-time | Blacklist |
+
+#### Implementation Phases
+
+**Phase 1: MCP Client Integration**
+- Implement MCP client to connect to external tool servers
+- Support `tools/list` and `tools/call` operations
+- Human confirmation UI for tool invocations
+
+**Phase 2: Native Plugin System**
+- WASM module loading with sandbox
+- Plugin registry API
+- Hot-reload support
+
+**Phase 3: Plugin Distribution**
+- Plugin discovery mechanism
+- Version management
+- Security scanning
+
+#### Why Not Generic HTTP Tool
+
+A generic `http_request` tool has been considered and **rejected** for these reasons:
+
+1. **Security**: No input sanitization, can call ANY URL
+2. **Type Safety**: LLM must infer JSON schemas from responses
+3. **Error Handling**: Runtime errors only, no compile-time validation
+4. **Complexity**: LLMs struggle with complex nested APIs without typed schemas
+
+The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not raw HTTP.
+
+#### References
+
+- [Model Context Protocol](https://modelcontextprotocol.io)
+- [MCP Specification](https://spec.modelcontextprotocol.io)
+- [Vercel AI SDK Tools](https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling)
+- [OWASP LLM Top 10](https://genai.owasp.org/llm-top-10/)
 
 ---
 
@@ -1837,4 +2181,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-11 - v0.28.0: SQLite cleanup, run_command timeout fix, parameter type fix
+2026-03-26 - v0.38.0: Pokemon tools removed from default, Plugin System + MCP documentation

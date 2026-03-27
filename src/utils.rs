@@ -110,14 +110,23 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
-/// Capitalize the first letter of a string
+/// Capitalize the first letter of a string.
+///
+/// Converts the first character to uppercase and the rest to lowercase.
+/// Useful for formatting names (e.g., "PIKACHU" -> "Pikachu").
+///
+/// # Example
+/// ```
+/// use ask_ai::utils::capitalize;
+/// assert_eq!(capitalize("hello"), "Hello");
+/// assert_eq!(capitalize("HELLO"), "Hello");
+/// assert_eq!(capitalize("pikachu"), "Pikachu");
+/// ```
 pub fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
         None => String::new(),
-        Some(first) => {
-            first.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str()
-        }
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str(),
     }
 }
 
@@ -341,6 +350,7 @@ mod tests {
         assert_eq!(capitalize("HELLO"), "Hello");
         assert_eq!(capitalize("h"), "H");
         assert_eq!(capitalize(""), "");
+        assert_eq!(capitalize("pikachu"), "Pikachu");
     }
 
     #[test]
