@@ -789,7 +789,7 @@ System Prompt
 
 On-demand Loading:
 ├── LLM sees relevant skill in INDEX
-├── LLM calls skill_view(name="pdf-processing")
+├── LLM calls skill_view(name="document-processing")
 └── System returns full SKILL.md content
 ```
 
@@ -815,13 +815,13 @@ On-demand Loading:
 
 ### Phase 6: Skills Slash Commands
 
-**Goal:** Allow users to activate skills via slash commands (`/pdf-processing`).
+**Goal:** Allow users to activate skills via slash commands (`/document-processing`).
 
 **Behavior:**
 ```
-/pdf-processing                    → Loads skill, shows activation message
-/pdf-processing extrair texto.pdf  → Loads skill + sends user message
-/skill-list                        → Lists available skills
+/document-processing                    → Loads skill, shows activation message
+/document-processing extrair texto.pdf  → Loads skill + sends user message
+/skill-list                             → Lists available skills
 ```
 
 **Architecture:**
@@ -847,7 +847,7 @@ On-demand Loading:
 - `src/skills/types.rs` - Skill, SkillIndex, SkillSource, Frontmatter
 - `src/skills/loader.rs` - YAML parsing, directory scanning, deduplication
 - `src/skills/sanitize.rs` - Injection pattern detection, validation
-- `src/skills/builtin/pdf-processing.md` - PDF extraction skill
+- `src/skills/builtin/document-processing.md` - PDF and ePub extraction skill
 - `src/skills/builtin/ocr-images.md` - OCR for images skill
 - `src/skills/builtin/code-analysis.md` - Code analysis skill
 - `src/skills/builtin/web-scraping.md` - Web scraping skill
