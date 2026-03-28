@@ -876,21 +876,48 @@ On-demand Loading:
 
 ### 🟡 PRIORITY 3: Document Import Tool
 
-**Status:** ❌ BLOCKED (requires Skills System)
+**Status:** 🔄 IN PROGRESS
 
-**Goal:** Import documents for semantic search.
+**Goal:** Import documents for semantic search and retrieval.
+
+**Dependencies:** Skills System ✅ COMPLETED (v0.38.0)
 
 **Features:**
-- TEXT/MD: Builtin support (import_text_file)
-- PDF: External tools (pdftotext) + skills
-- Scanned PDF: tesseract + pdftoppm pipeline
-- Chunking with overlap (512 tokens, 64 overlap)
-- `/import-doc`, `/list-docs`, `/remove-doc` commands
-- Update `search_hybrid()` for document chunks
+- **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (via skills)
+- **Chunking:** Same system as notes/messages (~512 tokens)
+- **Scope:** Project-scoped by default, optional global scope
+- **Commands:** `/import-doc`, `/list-docs`, `/show-doc`, `/remove-doc`
+- **LLM Tool:** `import_document(path, scope?)` for autonomous import
+- **Storage:** content_items table with ContentType::Document
+- **Retrieval:** Integrated with `remember()` tool via hybrid search
 
-**Dependencies:** Skills System (for PDF pipeline definition)
+**Implementation Phases:**
 
-**Estimated effort:** 5-7 days
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Database & Types (document.rs, types.rs, db.rs) | ❌ |
+| 2 | LLM Tool (tools/documents.rs) | ❌ |
+| 3 | Commands (commands.rs, command_handlers.rs) | ❌ |
+| 4 | Embeddings integration | ❌ |
+| 5 | Tests | ❌ |
+| 6 | Documentation | ❌ |
+
+**Files to Create:**
+- `src/content/document.rs` - Document struct, file detection, title extraction
+- `src/tools/documents.rs` - import_document tool
+
+**Files to Modify:**
+- `src/content/mod.rs` - Export document module
+- `src/content/types.rs` - Add Document struct
+- `src/content/db.rs` - Document CRUD operations
+- `src/tools/mod.rs` - Add documents module
+- `src/tools/registry.rs` - Register import_document tool
+- `src/chat/commands.rs` - Add ImportDoc, ListDocs, ShowDoc, RemoveDoc
+- `src/chat/command_handlers.rs` - Handle /import-doc commands
+- `src/embeddings/fallback.rs` - Document embedding support
+- `Cargo.toml` - Add document-tools feature flag
+
+**Estimated effort:** 2-3 days
 
 **Reference:** `doc/src/development/planning-session-cli-tools.md` lines 151-156, 287-302
 

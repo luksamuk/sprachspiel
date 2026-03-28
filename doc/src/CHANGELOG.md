@@ -2,6 +2,23 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.39.0] - TBD
+
+### Added
+
+- **Document Import Tool** - Import documents for semantic search and retrieval
+  - **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (via skills)
+  - **Commands:** `/import-doc`, `/list-docs`, `/show-doc`, `/remove-doc`
+  - **LLM Tool:** `import_document(path, scope?)` for autonomous document import
+  - **Chunking:** Uses same system as notes/messages (~512 tokens)
+  - **Scope:** Project-scoped by default, optional global scope
+  - **Storage:** Documents stored in `content_items` table (ContentType::Document)
+  - **Retrieval:** Integrated with `remember()` tool via hybrid search (BM25 + vector)
+  - **PDF Processing:** Uses `document-processing` skill with `pdftotext`
+  - **Title Extraction:** Automatic from filename or first heading
+  - **Feature Flag:** `document-tools` feature (enabled by default)
+  - Related: Issue #9
+
 ## [0.38.0] - 2026-03-27
 
 ### Added
