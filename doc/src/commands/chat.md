@@ -118,6 +118,48 @@ Notes support project-level (default) and global scope. Global notes are visible
 
 **Pagination:** `/note list` shows 8 notes per page. Use `/note list 2` to see page 2, `/note list 3` for page 3, etc.
 
+### Documents
+
+| Command | Description |
+|---------|-------------|
+| `/doc import <path> [--global]`, `/di` | Import a document (TXT, MD, ORG, PDF, EPUB) |
+| `/doc list [--global]`, `/dl` | List imported documents |
+| `/doc show <id>`, `/ds` | Show document content by ID |
+| `/doc delete <id>`, `/dd` | Delete a document by ID |
+
+Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
+
+**Supported Formats:**
+
+| Format | Extension | Dependency |
+|--------|-----------|------------|
+| Plain Text | `.txt` | Builtin |
+| Markdown | `.md` | Builtin |
+| Org Mode | `.org` | Builtin |
+| PDF | `.pdf` | `pdftotext` (poppler-utils) |
+| EPUB | `.epub` | `epub2txt` or `ebook-convert` (Calibre) |
+
+**File Size Limit:** 5MB maximum. Larger files are rejected.
+
+**Scope:**
+- Project scope (default): Document visible only in current project
+- Global scope (`--global`): Document visible across all projects
+
+**PDF/EPUB Dependencies:**
+
+PDF and EPUB files require external tools:
+
+| Distro | Command |
+|--------|---------|
+| Arch | `sudo pacman -S poppler-utils` + `yay -S epub2txt-bin` |
+| Debian/Ubuntu | `sudo apt install poppler-utils` + download epub2txt |
+| Void | `sudo xbps-install poppler` |
+| Fedora | `sudo dnf install poppler-utils` |
+
+**LLM Integration:**
+
+The LLM can import documents autonomously using the `import_document(path, scope?)` tool. Once imported, documents are searchable via the `remember()` tool.
+
 ### Skills
 
 | Command | Description |

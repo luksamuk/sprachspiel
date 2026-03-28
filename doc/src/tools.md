@@ -6,6 +6,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 
 | Category | Count | Source | Status | Default |
 |----------|-------|--------|--------|---------|
+| Document Import | 1 | Local files | ✅ Working | ✅ Enabled |
 | Pokémon | 9 | PokéAPI | ✅ Working | ❌ Opt-in |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
 | Calculator | 1 | ollama-rs built-in | ✅ Working | ✅ Enabled |
@@ -50,6 +51,7 @@ The default build includes:
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files, write_file, edit_file, append_file | ✅ Yes |
 | `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
+| `document-tools` | Document import | import_document | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
@@ -607,6 +609,86 @@ Source: Note | Created: 2026-03-15 14:30
 ```
 
 **Note:** This tool is for explicit retrieval. The AI automatically retrieves relevant context on each message, so you only need to call this when you're looking for something specific that isn't in the current context.
+
+## Document Import Tool (1)
+
+Import documents for semantic search and retrieval. Documents are stored in the database and can be searched alongside conversations and notes.
+
+### import_document
+
+Import a document file (TXT, MD, ORG, PDF, EPUB) for semantic search.
+
+```
+Function: import_document
+Args:
+  - path (string, required): File path (absolute or relative)
+  - scope (string, optional): "project" (default) or "global"
+Example: import_document(path: "docs/report.pdf")
+Example: import_document(path: "/home/user/notes.org", scope: "global")
+```
+
+**Supported File Types:**
+
+| Type | Extension | Dependency |
+|------|-----------|------------|
+| Plain Text | `.txt` | Builtin |
+| Markdown | `.md` | Builtin |
+| Org Mode | `.org` | Builtin |
+| PDF | `.pdf` | `skills-tools` + `pdftotext` |
+| EPUB | `.epub` | `skills-tools` + `epub2txt` |
+
+**File Size Limit:** 5MB maximum. Larger files are rejected with a helpful error.
+
+**Scope:**
+- `project` (default): Document visible only in current project
+- `global`: Document visible across all projects
+
+**PDF/EPUB Dependencies:**
+
+PDF and EPUB files require:
+1. `skills-tools` feature (enabled by default)
+2. External tools installed:
+   - PDF: `pdftotext` (poppler-utils package)
+   - EPUB: `epub2txt` (AUR: `epub2txt-bin`) or `ebook-convert` (Calibre)
+
+**Installation:**
+
+| Distro | Command |
+|--------|---------|
+| Arch | `sudo pacman -S poppler-utils` + `yay -S epub2txt-bin` |
+| Debian/Ubuntu | `sudo apt install poppler-utils` + download epub2txt from GitHub |
+| Void | `sudo xbps-install -S poppler` + compile epub2txt |
+| Fedora | `sudo dnf install poppler-utils` + compile epub2txt |
+
+**Error Handling:**
+
+| Situation | Error Message |
+|-----------|---------------|
+| File not found | `Error: File not found: 'report.pdf'. Please check the path and try again.` |
+| File too large | `Error: File exceeds maximum size of 5MB. Consider splitting the document into smaller files.` |
+| Unsupported type | `Error: Unsupported file type '.docx'. Supported: .txt, .md, .org, .pdf, .epub` |
+| Missing dependency | `Error: Importing 'pdf' files requires the 'skills-tools' feature. Recompile with: cargo build --features skills-tools` |
+
+**Integration with remember():**
+
+Once imported, documents can be retrieved via the `remember()` tool:
+
+```
+# Retrieve by ID
+remember(id="doc:5")
+
+# Semantic search across all documents
+remember(query="authentication implementation")
+```
+
+**User Commands:**
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| `/doc import <path> [--global]` | `/di` | Import a document |
+| `/doc list [--global]` | `/dl` | List imported documents |
+| `/doc show <id>` | `/ds` | Show document content |
+| `/doc delete <id>` | `/dd` | Delete a document |
 
 ## File Operation Tools (8)
 

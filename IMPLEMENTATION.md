@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.38.0** - 2026-03-27 (Skills System)
+**v0.39.0** - 2026-03-27 (Document Import Tool)
 
 ## Current Implementation Status
 
@@ -874,9 +874,9 @@ On-demand Loading:
 
 ---
 
-### 🟡 PRIORITY 3: Document Import Tool
+### ✅ PRIORITY 3: Document Import Tool (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.39.0)
 
 **Goal:** Import documents for semantic search and retrieval.
 
@@ -887,7 +887,7 @@ On-demand Loading:
 - **File Size Limit:** 5MB for uploaded files; larger files rejected with helpful error
 - **Chunking:** Same system as notes/messages (~512 tokens)
 - **Scope:** Project-scoped by default, optional global scope
-- **Commands:** `/import-doc`, `/list-docs`, `/show-doc`, `/remove-doc`
+- **Commands:** `/doc import`, `/doc list`, `/doc show`, `/doc delete` (shortcuts: `/di`, `/dl`, `/ds`, `/dd`)
 - **LLM Tool:** `import_document(path, scope?)` for autonomous import
 - **Storage:** content_items table with ContentType::Document
 - **Retrieval:** Integrated with `remember()` tool via hybrid search
@@ -902,29 +902,30 @@ On-demand Loading:
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Database & Types (document.rs, types.rs, db.rs) | ❌ |
-| 2 | LLM Tool (tools/documents.rs) | ❌ |
-| 3 | Commands (commands.rs, command_handlers.rs) | ❌ |
-| 4 | Embeddings integration | ❌ |
-| 5 | Tests | ❌ |
-| 6 | Documentation | ❌ |
+| 1 | Database & Types (document.rs, db/schema.rs, migration v8) | ✅ Done |
+| 2 | LLM Tool (tools/documents.rs) | ✅ Done |
+| 3 | Commands (commands.rs, command_handlers.rs) | ✅ Done |
+| 4 | Embeddings integration | ✅ Done |
+| 5 | Tests | ✅ Done |
+| 6 | Documentation | ✅ Done |
 
-**Files to Create:**
-- `src/content/document.rs` - Document struct, file detection, title extraction
-- `src/tools/documents.rs` - import_document tool
+**Files Created:**
+- `src/content/document.rs` - Document struct, FileType enum, detect_file_type(), extract_title(), MAX_DOCUMENT_SIZE constant
+- `src/tools/documents.rs` - import_document() LLM tool
 
-**Files to Modify:**
+**Files Modified:**
 - `src/content/mod.rs` - Export document module
-- `src/content/types.rs` - Add Document struct, MAX_DOCUMENT_SIZE constant
-- `src/content/db.rs` - Document CRUD operations
-- `src/tools/mod.rs` - Add documents module
-- `src/tools/registry.rs` - Register import_document tool
-- `src/chat/commands.rs` - Add ImportDoc, ListDocs, ShowDoc, RemoveDoc
-- `src/chat/command_handlers.rs` - Handle /import-doc commands
-- `src/embeddings/fallback.rs` - Document embedding support
-- `Cargo.toml` - Add document-tools feature flag
+- `src/content/db.rs` - Document CRUD operations (insert_document, get_document, list_documents, delete_document)
+- `src/db/schema.rs` - Migration v8: added filename, file_type, word_count columns
+- `src/db/connection.rs` - Migration v7→v8 for document columns
+- `src/tools/mod.rs` - Add documents module (feature-gated)
+- `src/tools/registry.rs` - Register import_document tool (feature-gated)
+- `src/chat/commands.rs` - Added CommandResult variants and parsing for /doc commands
+- `src/chat/command_handlers.rs` - Added handlers for document commands (feature-gated)
+- `Cargo.toml` - Added `document-tools` feature flag (default, included in all-tools)
 
-**Estimated effort:** 2-3 days
+**Commits:**
+- PR #53 - Full implementation
 
 **Reference:** `doc/src/development/planning-session-cli-tools.md` lines 151-156, 287-302
 

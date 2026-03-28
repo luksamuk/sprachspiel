@@ -1,4 +1,4 @@
-.TH ASK-AI 1 "2026-03-27" "ask-ai 0.38.0" "User Commands"
+.TH ASK-AI 1 "2026-03-27" "ask-ai 0.39.0" "User Commands"
 .SH NAME
 ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
@@ -177,6 +177,14 @@ Interactive commands available inside chat:
 /note delete <id>, /nd \- Delete a note by ID
 .br
 /note search <query> [--global] [limit] \- Search stored notes
+.br
+/doc import <path> [--global], /di \- Import a document (TXT, MD, ORG, PDF, EPUB)
+.br
+/doc list [--global], /dl \- List imported documents
+.br
+/doc show <id>, /ds \- Show document content by ID
+.br
+/doc delete <id>, /dd \- Delete a document by ID
 .in -4
 .PP
 Tab completion available for commands and model names.
