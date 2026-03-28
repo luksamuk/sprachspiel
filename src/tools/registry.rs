@@ -26,6 +26,10 @@ use super::fact_tools::{fact_add, fact_remove, fact_search};
 // Notes tools (always available)
 use super::notes::note_add;
 
+// Document import tool
+#[cfg(feature = "document-tools")]
+use super::documents::import_document;
+
 // External tool wrappers (always available)
 use super::{check_tool_availability, run_command};
 
@@ -355,6 +359,15 @@ where
         tool_count += 1;
     }
 
+    // Document import tool
+    #[cfg(feature = "document-tools")]
+    {
+        if is_tool_allowed("import_document") {
+            coordinator = coordinator.register_tool(import_document);
+            tool_count += 1;
+        }
+    }
+
     // External tool wrappers (always available)
     // These tools check for external CLI tools like pdftotext, tesseract, etc.
     if is_tool_allowed("check_tool_availability") {
@@ -398,6 +411,14 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
 
     // Notes tools - always available (checks context internally)
     tools.push("note_add".to_string());
+
+    // Document import tool
+    #[cfg(feature = "document-tools")]
+    {
+        if is_allowed("import_document") {
+            tools.push("import_document".to_string());
+        }
+    }
 
     // External tool wrappers (always available)
     tools.push("check_tool_availability".to_string());

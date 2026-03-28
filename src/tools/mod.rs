@@ -34,6 +34,10 @@ pub mod fact_tools;
 // Notes tools (always available)
 pub mod notes;
 
+// Document import tool
+#[cfg(feature = "document-tools")]
+pub mod documents;
+
 // External tool wrappers (always available)
 pub mod run_cmd;
 pub mod tool_check;
@@ -66,9 +70,14 @@ pub use weather::*;
 
 // Fact tools are imported directly in registry.rs
 // Notes tools are imported directly in registry.rs
+// Documents tools are imported directly in registry.rs
 
 pub use run_cmd::run_command;
 pub use tool_check::check_tool_availability;
+
+#[cfg(feature = "document-tools")]
+#[allow(unused_imports)]
+pub use documents::*;
 
 // Skills tools
 #[cfg(feature = "skills-tools")]

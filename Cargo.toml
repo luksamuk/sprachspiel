@@ -4,9 +4,9 @@ version = "0.38.0"
 edition = "2024"
 
 [features]
-default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "todo-tools", "skills-tools"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "skills-tools", "sandbox"]
-all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "skills-tools"]
+default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "todo-tools", "skills-tools", "document-tools"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "skills-tools", "document-tools", "sandbox"]
+all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "todo-tools", "skills-tools", "document-tools"]
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin
@@ -23,6 +23,9 @@ led-tools = []
 todo-tools = []
 # Skills system for on-demand skill loading
 skills-tools = []
+# Document import tool (TXT, MD, ORG, PDF, EPUB)
+# PDF/EPUB require skills-tools feature for document-processing skill
+document-tools = []
 # Landlock sandbox for Linux (kernel 5.13+)
 sandbox = ["dep:landlock"]
 

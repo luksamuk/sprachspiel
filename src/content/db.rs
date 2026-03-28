@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use zerocopy::IntoBytes;
 
+use super::document::{Document, FileType};
 use super::types::{
     ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType,
     Note,
@@ -243,6 +244,104 @@ impl Database {
         self.with_connection(|conn| {
             conn.execute(
                 "DELETE FROM content_items WHERE id = ?1 AND content_type = 'note'",
+                params![id],
+            )?;
+            Ok(())
+        })
+    }
+
+    // ============================================================
+    // Document CRUD Operations
+    // ============================================================
+
+    /// Insert a document into content_items
+    pub fn insert_document(&self, document: &Document) -> Result<i64> {
+        self.with_connection(|conn| {
+            let content_type = ContentType::Document.to_string();
+            let scope = document.scope.to_string();
+            let source = document.source.to_string();
+            let file_type = document.file_type.to_string();
+
+            conn.execute(
+                "INSERT INTO content_items (
+                    content_type, scope, source, title, content, importance,
+                    access_count, decay_score, created_at, updated_at,
+                    last_accessed, has_embedding, project_id, filename, file_type, word_count
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?12, ?13, ?14, ?15)",
+                params![
+                    content_type,
+                    scope,
+                    source,
+                    document.title,
+                    document.content,
+                    document.importance,
+                    document.access_count as i32,
+                    document.decay_score,
+                    document.created_at.timestamp(),
+                    document.updated_at.timestamp(),
+                    document.last_accessed.timestamp(),
+                    document.project_id,
+                    document.filename,
+                    file_type,
+                    document.word_count as i32,
+                ],
+            )?;
+            Ok(conn.last_insert_rowid())
+        })
+    }
+
+    /// Get a document by ID
+    pub fn get_document(&self, id: i64) -> Result<Option<Document>> {
+        self.with_connection(|conn| {
+            let sql = "SELECT id, scope, source, title, content, importance, access_count,
+                              decay_score, created_at, updated_at, last_accessed, project_id,
+                              filename, file_type, word_count
+                       FROM content_items
+                       WHERE id = ?1 AND content_type = 'document'";
+            let mut stmt = conn.prepare(sql)?;
+            let mut rows = stmt.query_map(params![id], row_to_document)?;
+            rows.next().transpose()
+        })
+    }
+
+    /// List documents with optional filtering
+    pub fn list_documents(
+        &self,
+        scope: Option<ContentScope>,
+        project_id: Option<&str>,
+    ) -> Result<Vec<Document>> {
+        self.with_connection(|conn| {
+            let mut builder = WhereBuilder::new();
+            builder
+                .add("content_type = 'document'")
+                .add_option("scope = ?", scope.map(|s| s.to_string()))
+                .add_option_str("project_id = ?", project_id);
+
+            let sql = format!(
+                "SELECT id, scope, source, title, content, importance, access_count,
+                        decay_score, created_at, updated_at, last_accessed, project_id,
+                        filename, file_type, word_count
+                 FROM content_items {} ORDER BY created_at DESC",
+                builder.build_where()
+            );
+            let params = builder.into_params();
+
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_document)?;
+
+            let mut results = Vec::new();
+            for r in rows {
+                results.push(r?);
+            }
+            Ok(results)
+        })
+    }
+
+    /// Delete a document by ID
+    pub fn delete_document(&self, id: i64) -> Result<()> {
+        self.with_connection(|conn| {
+            conn.execute(
+                "DELETE FROM content_items WHERE id = ?1 AND content_type = 'document'",
                 params![id],
             )?;
             Ok(())
@@ -1134,6 +1233,30 @@ fn row_to_content_item(row: &rusqlite::Row) -> Result<ContentItem> {
     })
 }
 
+/// Helper to map a row to a Document
+fn row_to_document(row: &rusqlite::Row) -> Result<Document> {
+    Ok(Document {
+        id: row.get(0)?,
+        scope: ContentScope::from_str(&row.get::<_, String>(1)?)
+            .map_err(rusqlite::Error::InvalidParameterName)?,
+        source: ContentSource::from_str(&row.get::<_, String>(2)?)
+            .map_err(rusqlite::Error::InvalidParameterName)?,
+        title: row.get(3)?,
+        content: row.get(4)?,
+        importance: row.get(5)?,
+        access_count: row.get::<_, i32>(6)? as u32,
+        decay_score: row.get(7)?,
+        created_at: DateTime::from_timestamp(row.get::<_, i64>(8)?, 0).unwrap_or_else(Utc::now),
+        updated_at: DateTime::from_timestamp(row.get::<_, i64>(9)?, 0).unwrap_or_else(Utc::now),
+        last_accessed: DateTime::from_timestamp(row.get::<_, i64>(10)?, 0).unwrap_or_else(Utc::now),
+        project_id: row.get(11)?,
+        filename: row.get(12)?,
+        file_type: FileType::from_str(&row.get::<_, String>(13)?)
+            .map_err(rusqlite::Error::InvalidParameterName)?,
+        word_count: row.get::<_, i32>(14)? as usize,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1328,6 +1451,125 @@ mod tests {
             ContentScope::Project,
             None,
             ContentSource::User,
+            None,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_insert_and_get_document() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let doc = Document::new(
+            "This is a test document.".to_string(),
+            "Test Document".to_string(),
+            "test.md".to_string(),
+            FileType::Md,
+            ContentScope::Project,
+            Some("test-project".to_string()),
+        )
+        .expect("Failed to create document");
+
+        let id = db.insert_document(&doc).expect("Failed to insert document");
+        assert!(id > 0);
+
+        let retrieved = db.get_document(id).expect("Failed to get document");
+        assert!(retrieved.is_some());
+
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.content, "This is a test document.");
+        assert_eq!(retrieved.title, "Test Document");
+        assert_eq!(retrieved.filename, "test.md");
+        assert_eq!(retrieved.file_type, FileType::Md);
+        assert_eq!(retrieved.scope, ContentScope::Project);
+        assert_eq!(retrieved.source, ContentSource::User);
+    }
+
+    #[test]
+    fn test_list_documents() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let doc1 = Document::new(
+            "Document 1 content.".to_string(),
+            "Doc 1".to_string(),
+            "doc1.txt".to_string(),
+            FileType::Txt,
+            ContentScope::Project,
+            Some("project-a".to_string()),
+        )
+        .expect("Failed to create document");
+
+        let doc2 = Document::new(
+            "Document 2 content.".to_string(),
+            "Doc 2".to_string(),
+            "doc2.pdf".to_string(),
+            FileType::Pdf,
+            ContentScope::Global,
+            None,
+        )
+        .expect("Failed to create document");
+
+        db.insert_document(&doc1).expect("Failed to insert doc1");
+        db.insert_document(&doc2).expect("Failed to insert doc2");
+
+        let all_docs = db.list_documents(None, None).expect("Failed to list documents");
+        assert_eq!(all_docs.len(), 2);
+
+        let project_docs = db
+            .list_documents(None, Some("project-a"))
+            .expect("Failed to list project documents");
+        assert_eq!(project_docs.len(), 1);
+
+        let global_docs = db
+            .list_documents(Some(ContentScope::Global), None)
+            .expect("Failed to list global documents");
+        assert_eq!(global_docs.len(), 1);
+    }
+
+    #[test]
+    fn test_delete_document() {
+        let db = Database::in_memory().expect("Failed to create database");
+
+        let doc = Document::new(
+            "To be deleted.".to_string(),
+            "Delete Test".to_string(),
+            "delete.org".to_string(),
+            FileType::Org,
+            ContentScope::Project,
+            None,
+        )
+        .expect("Failed to create document");
+
+        let id = db.insert_document(&doc).expect("Failed to insert document");
+        assert!(db.get_document(id).expect("Failed to get document").is_some());
+
+        db.delete_document(id).expect("Failed to delete document");
+        assert!(db.get_document(id).expect("Failed to get document").is_none());
+    }
+
+    #[test]
+    fn test_document_size_validation() {
+        use crate::content::document::MAX_DOCUMENT_SIZE;
+        
+        let long_content = "x".repeat(MAX_DOCUMENT_SIZE + 1);
+        let result = Document::new(
+            long_content,
+            "Large Doc".to_string(),
+            "large.txt".to_string(),
+            FileType::Txt,
+            ContentScope::Project,
+            None,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds maximum size"));
+
+        let valid_content = "x".repeat(1000);
+        let result = Document::new(
+            valid_content,
+            "Small Doc".to_string(),
+            "small.md".to_string(),
+            FileType::Md,
+            ContentScope::Project,
             None,
         );
         assert!(result.is_ok());
