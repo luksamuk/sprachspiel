@@ -7,16 +7,18 @@ All notable changes to Ask-AI will be documented in this file.
 ### Added
 
 - **Document Import Tool** - Import documents for semantic search and retrieval
-  - **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (via skills)
+  - **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (requires `skills-tools` feature)
+  - **File Size Limit:** 5MB for uploaded files; larger files rejected with helpful error
   - **Commands:** `/import-doc`, `/list-docs`, `/show-doc`, `/remove-doc`
   - **LLM Tool:** `import_document(path, scope?)` for autonomous document import
   - **Chunking:** Uses same system as notes/messages (~512 tokens)
   - **Scope:** Project-scoped by default, optional global scope
   - **Storage:** Documents stored in `content_items` table (ContentType::Document)
   - **Retrieval:** Integrated with `remember()` tool via hybrid search (BM25 + vector)
-  - **PDF Processing:** Uses `document-processing` skill with `pdftotext`
+  - **PDF/EPUB Processing:** Uses builtin `document-processing` skill with `pdftotext`/`ebook-convert`
   - **Title Extraction:** Automatic from filename or first heading
-  - **Feature Flag:** `document-tools` feature (enabled by default)
+  - **Feature Flag:** `document-tools` feature (enabled by default, included in `all-tools`)
+  - **Dependencies:** PDF/EPUB require `skills-tools` feature; TXT/MD/ORG work standalone
   - Related: Issue #9
 
 ## [0.38.0] - 2026-03-27

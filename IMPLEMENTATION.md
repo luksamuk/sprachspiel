@@ -883,13 +883,20 @@ On-demand Loading:
 **Dependencies:** Skills System ✅ COMPLETED (v0.38.0)
 
 **Features:**
-- **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (via skills)
+- **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (requires `skills-tools` feature)
+- **File Size Limit:** 5MB for uploaded files; larger files rejected with helpful error
 - **Chunking:** Same system as notes/messages (~512 tokens)
 - **Scope:** Project-scoped by default, optional global scope
 - **Commands:** `/import-doc`, `/list-docs`, `/show-doc`, `/remove-doc`
 - **LLM Tool:** `import_document(path, scope?)` for autonomous import
 - **Storage:** content_items table with ContentType::Document
 - **Retrieval:** Integrated with `remember()` tool via hybrid search
+
+**Feature Flag Dependencies:**
+- `document-tools` feature enabled by default
+- PDF/EPUB import requires `skills-tools` feature (also default)
+- TXT/MD/ORG import works standalone (no skills dependency)
+- Included in `all-tools` feature
 
 **Implementation Phases:**
 
@@ -908,7 +915,7 @@ On-demand Loading:
 
 **Files to Modify:**
 - `src/content/mod.rs` - Export document module
-- `src/content/types.rs` - Add Document struct
+- `src/content/types.rs` - Add Document struct, MAX_DOCUMENT_SIZE constant
 - `src/content/db.rs` - Document CRUD operations
 - `src/tools/mod.rs` - Add documents module
 - `src/tools/registry.rs` - Register import_document tool
