@@ -72,11 +72,13 @@ impl std::str::FromStr for FileType {
 
 impl FileType {
     /// Check if this file type requires skills-tools feature
+    #[allow(dead_code)]
     pub fn requires_skills(&self) -> bool {
         matches!(self, FileType::Pdf | FileType::Epub)
     }
 
     /// Check if this file type is builtin (no external dependencies)
+    #[allow(dead_code)]
     pub fn is_builtin(&self) -> bool {
         !self.requires_skills()
     }

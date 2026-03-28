@@ -93,6 +93,19 @@ pub enum CommandResult {
         global: bool,
         limit: usize,
     },
+    /// Import a document
+    DocumentImport {
+        path: String,
+        global: bool,
+    },
+    /// List documents
+    DocumentList {
+        global: bool,
+    },
+    /// Show a document by ID
+    DocumentShow { id: i64 },
+    /// Delete a document by ID
+    DocumentDelete { id: i64 },
     /// Activate a skill (loaded skill content)
     Skill {
         name: String,
@@ -210,6 +223,19 @@ pub enum ChatCommand {
         global: bool,
         limit: usize,
     },
+    /// Import a document
+    DocumentImport {
+        path: String,
+        global: bool,
+    },
+    /// List documents
+    DocumentList {
+        global: bool,
+    },
+    /// Show a document by ID
+    DocumentShow { id: i64 },
+    /// Delete a document by ID
+    DocumentDelete { id: i64 },
     /// Activate a skill by name
     Skill { name: String },
 }
@@ -793,6 +819,81 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(_) => return Some(Err("Invalid note ID. Must be a number.".to_string())),
             }
         }
+        "doc" | "document" | "docs" | "documents" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"list");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+            
+            match *subcmd {
+                "import" | "i" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /doc import <path> [--global]".to_string()));
+                    }
+                    let global = subargs.contains("--global");
+                    let path = subargs.replace("--global", "").trim().to_string();
+                    if path.is_empty() {
+                        return Some(Err("Usage: /doc import <path> [--global]".to_string()));
+                    }
+                    ChatCommand::DocumentImport { path, global }
+                }
+                "list" | "l" => {
+                    let global = subargs.contains("--global");
+                    ChatCommand::DocumentList { global }
+                }
+                "show" | "s" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /doc show <id>".to_string()));
+                    }
+                    match subargs.trim().parse::<i64>() {
+                        Ok(id) => ChatCommand::DocumentShow { id },
+                        Err(_) => return Some(Err("Invalid document ID. Must be a number.".to_string())),
+                    }
+                }
+                "delete" | "d" | "remove" | "rm" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /doc delete <id>".to_string()));
+                    }
+                    match subargs.trim().parse::<i64>() {
+                        Ok(id) => ChatCommand::DocumentDelete { id },
+                        Err(_) => return Some(Err("Invalid document ID. Must be a number.".to_string())),
+                    }
+                }
+                _ => return Some(Err("Usage: /doc <import|list|show|delete>".to_string())),
+            }
+        }
+        "di" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /di <path> [--global]".to_string()));
+            }
+            let global = args.contains("--global");
+            let path = args.replace("--global", "").trim().to_string();
+            if path.is_empty() {
+                return Some(Err("Usage: /di <path> [--global]".to_string()));
+            }
+            ChatCommand::DocumentImport { path, global }
+        }
+        "dl" => {
+            let global = args.contains("--global");
+            ChatCommand::DocumentList { global }
+        }
+        "ds" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /ds <id>".to_string()));
+            }
+            match args.trim().parse::<i64>() {
+                Ok(id) => ChatCommand::DocumentShow { id },
+                Err(_) => return Some(Err("Invalid document ID. Must be a number.".to_string())),
+            }
+        }
+        "dd" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /dd <id>".to_string()));
+            }
+            match args.trim().parse::<i64>() {
+                Ok(id) => ChatCommand::DocumentDelete { id },
+                Err(_) => return Some(Err("Invalid document ID. Must be a number.".to_string())),
+            }
+        }
         "session" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
@@ -1266,6 +1367,14 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
 
         ChatCommand::NoteSearch { query, global, limit } => CommandResult::NoteSearch { query, global, limit },
 
+        ChatCommand::DocumentImport { path, global } => CommandResult::DocumentImport { path, global },
+
+        ChatCommand::DocumentList { global } => CommandResult::DocumentList { global },
+
+        ChatCommand::DocumentShow { id } => CommandResult::DocumentShow { id },
+
+        ChatCommand::DocumentDelete { id } => CommandResult::DocumentDelete { id },
+
         ChatCommand::Skill { name } => {
             // Load skill content and return it for injection into session
             let skill = crate::skills::get_skill_content(&name);
@@ -1335,6 +1444,15 @@ Notes:
 
   Subcommand shortcuts: /no = /note, /na = /note add
   /nl = /note list, /ns = /note show, /nd = /note delete
+
+Documents:
+  /doc import <path> [--global]   Import a document (TXT, MD, ORG, PDF, EPUB)
+  /doc list [--global]            List documents
+  /doc show <id>                  Show a document
+  /doc delete <id>                Delete a document
+
+  Subcommand shortcuts: /di = /doc import, /dl = /doc list
+  /ds = /doc show, /dd = /doc delete
 
 Todo List:
   /todo add <description>    Add a new task

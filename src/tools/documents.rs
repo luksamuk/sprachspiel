@@ -241,7 +241,7 @@ pub async fn import_document(
 /// Extract text from PDF/EPUB using skills
 #[cfg(feature = "skills-tools")]
 fn extract_text_with_skill(
-    file_path: &PathBuf,
+    file_path: &std::path::Path,
     file_type: &FileType,
 ) -> Result<String, String> {
     use std::process::Command;

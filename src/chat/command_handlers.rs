@@ -192,6 +192,22 @@ pub async fn handle_command_result(
             handle_note_search(state, query, global, limit);
             HandleResult::Continue
         }
+        CommandResult::DocumentImport { path, global } => {
+            handle_document_import(state, path, global);
+            HandleResult::Continue
+        }
+        CommandResult::DocumentList { global } => {
+            handle_document_list(state, global);
+            HandleResult::Continue
+        }
+        CommandResult::DocumentShow { id } => {
+            handle_document_show(state, id);
+            HandleResult::Continue
+        }
+        CommandResult::DocumentDelete { id } => {
+            handle_document_delete(state, id);
+            HandleResult::Continue
+        }
         CommandResult::Skill { name, content } => {
             handle_skill_activated(state, name, content);
             HandleResult::Continue
@@ -1660,6 +1676,369 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
             eprintln!("\x1B[31m✗ Search failed: {}\x1B[0m", e);
         }
     }
+}
+
+// ============================================================
+// Document Command Handlers
+// ============================================================
+
+/// Handle document import command
+#[cfg(feature = "document-tools")]
+pub fn handle_document_import(state: &ReplState, path: String, global: bool) {
+    use crate::content::{detect_file_type, ContentScope, Document, FileType, MAX_DOCUMENT_SIZE};
+    use std::fs;
+    use std::path::PathBuf;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot import documents in anonymous mode.");
+        return;
+    }
+
+    let file_path = PathBuf::from(&path);
+    if !file_path.exists() {
+        eprintln!("\x1B[31m✗ File not found: {}\x1B[0m", path);
+        return;
+    }
+
+    let metadata = match fs::metadata(&file_path) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Cannot read file metadata: {}\x1B[0m", e);
+            return;
+        }
+    };
+
+    if metadata.len() > MAX_DOCUMENT_SIZE as u64 {
+        eprintln!(
+            "\x1B[31m✗ File exceeds maximum size of {} bytes (got {} bytes).\x1B[0m",
+            MAX_DOCUMENT_SIZE,
+            metadata.len()
+        );
+        println!("  Consider splitting the document into smaller files.");
+        return;
+    }
+
+    let file_type = match detect_file_type(&file_path) {
+        Ok(ft) => ft,
+        Err(e) => {
+            eprintln!("\x1B[31m✗ {}\x1B[0m", e);
+            return;
+        }
+    };
+
+    #[cfg(not(feature = "skills-tools"))]
+    if file_type.requires_skills() {
+        eprintln!(
+            "\x1B[31m✗ Importing '{}' files requires the 'skills-tools' feature.\x1B[0m",
+            file_type.extension()
+        );
+        println!("  Recompile with: cargo build --features skills-tools");
+        println!("  Alternatively, convert to TXT/MD/ORG format first.");
+        return;
+    }
+
+    let content = match file_type {
+        FileType::Txt | FileType::Md | FileType::Org => {
+            match fs::read_to_string(&file_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Cannot read file: {}\x1B[0m", e);
+                    return;
+                }
+            }
+        }
+        FileType::Pdf | FileType::Epub => {
+            #[cfg(feature = "skills-tools")]
+            {
+                use std::process::Command;
+
+                let (program, args) = match file_type {
+                    FileType::Pdf => ("pdftotext", vec![file_path.to_string_lossy().to_string(), "-".to_string()]),
+                    FileType::Epub => ("epub2txt", vec![file_path.to_string_lossy().to_string(), "-".to_string()]),
+                    _ => unreachable!(),
+                };
+
+                let output = Command::new(program).args(&args).output();
+
+                match output {
+                    Ok(output) => {
+                        if output.status.success() {
+                            match String::from_utf8(output.stdout) {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    eprintln!("\x1B[31m✗ Failed to parse output as UTF-8: {}\x1B[0m", e);
+                                    return;
+                                }
+                            }
+                        } else {
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            eprintln!("\x1B[31m✗ {} failed: {}\x1B[0m", program, stderr.trim());
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "\x1B[31m✗ Could not run '{}' - {}. Install with your package manager.\x1B[0m",
+                            program, e
+                        );
+                        return;
+                    }
+                }
+            }
+            #[cfg(not(feature = "skills-tools"))]
+            {
+                unreachable!("Already checked above");
+            }
+        }
+    };
+
+    let filename = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&path)
+        .to_string();
+
+    let title = Document::extract_title(&content, &filename);
+
+    let scope = if global {
+        ContentScope::Global
+    } else {
+        ContentScope::Project
+    };
+
+    let project_id = if global {
+        None
+    } else {
+        state.session.project_id.clone()
+    };
+
+    let document = match Document::new(
+        content.clone(),
+        title.clone(),
+        filename.clone(),
+        file_type,
+        scope,
+        project_id.clone(),
+    ) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to create document: {}\x1B[0m", e);
+            return;
+        }
+    };
+
+    match db.insert_document(&document) {
+        Ok(id) => {
+            let scope_str = if global { "global" } else { "project" };
+            println!(
+                "\x1B[32m✓ Imported document #{} (scope: {}): {}\x1B[0m",
+                id, scope_str, title
+            );
+            println!("  File: {}", filename);
+            println!("  Words: {}", document.word_count);
+            println!("  Type: {}", file_type.extension());
+
+            if let Some(ref embedding_client) = state.embedding_client {
+                let client = Arc::clone(embedding_client);
+                let db_clone = Arc::clone(&db);
+                let pid = project_id.clone();
+                let doc_content = document.content.clone();
+
+                tokio::spawn(async move {
+                    let ctx = EmbedItemContext::new(
+                        &doc_content,
+                        id,
+                        "document",
+                        None,
+                        pid.as_deref(),
+                    );
+                    if let Err(e) =
+                        embed_item_with_fallback(ctx, &db_clone, &client, DEFAULT_CONTEXT_LENGTH)
+                            .await
+                    {
+                        eprintln!("Warning: Failed to generate embedding for document: {}", e);
+                    }
+                });
+            }
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to store document: {}\x1B[0m", e);
+        }
+    }
+}
+
+#[cfg(not(feature = "document-tools"))]
+pub fn handle_document_import(_state: &ReplState, _path: String, _global: bool) {
+    eprintln!("Error: Document import requires 'document-tools' feature.");
+    println!("  Recompile with: cargo build --features document-tools");
+}
+
+/// Handle document list command
+#[cfg(feature = "document-tools")]
+pub fn handle_document_list(state: &ReplState, global: bool) {
+    use crate::content::ContentScope;
+    use chrono::Utc;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot list documents in anonymous mode.");
+        return;
+    }
+
+    let scope = if global {
+        Some(ContentScope::Global)
+    } else {
+        Some(ContentScope::Project)
+    };
+
+    let project_id = if global {
+        None
+    } else {
+        state.session.project_id.clone()
+    };
+
+    match db.list_documents(scope, project_id.as_deref()) {
+        Ok(documents) => {
+            let scope_str = if global { "global" } else { "project" };
+            println!("\x1B[36mDocuments (scope: {}):\x1B[0m", scope_str);
+
+            if documents.is_empty() {
+                println!("  No documents found.");
+                return;
+            }
+
+            for doc in &documents {
+                let age_days = (Utc::now() - doc.created_at).num_days();
+                println!(
+                    "  \x1B[33m#{} {} \x1B[90m({}, {} words, {}d)\x1B[0m",
+                    doc.id,
+                    doc.title,
+                    doc.file_type.extension(),
+                    doc.word_count,
+                    age_days
+                );
+            }
+
+            println!("\n  \x1B[90mFound: {} document(s)\x1B[0m", documents.len());
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to list documents: {}\x1B[0m", e);
+        }
+    }
+}
+
+#[cfg(not(feature = "document-tools"))]
+pub fn handle_document_list(_state: &ReplState, _global: bool) {
+    eprintln!("Error: Document listing requires 'document-tools' feature.");
+    println!("  Recompile with: cargo build --features document-tools");
+}
+
+/// Handle document show command
+#[cfg(feature = "document-tools")]
+pub fn handle_document_show(state: &ReplState, id: i64) {
+    use chrono::Utc;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot show document in anonymous mode.");
+        return;
+    }
+
+    match db.get_document(id) {
+        Ok(Some(doc)) => {
+            let age_days = (Utc::now() - doc.created_at).num_days();
+            let scope_str = match doc.scope {
+                crate::content::ContentScope::Global => "global".to_string(),
+                crate::content::ContentScope::Project => {
+                    doc.project_id.as_deref().unwrap_or("project").to_string()
+                }
+            };
+            println!("\x1B[36mDocument #{}:\x1B[0m", doc.id);
+            println!("  \x1B[1m{}\x1B[0m", doc.title);
+            println!(
+                "  \x1B[90mFile: {} | Type: {} | Words: {} | Age: {}d | Scope: {}\x1B[0m",
+                doc.filename, doc.file_type.extension(), doc.word_count, age_days, scope_str
+            );
+            println!();
+            println!("{}", doc.content);
+        }
+        Ok(None) => {
+            eprintln!("\x1B[31m✗ Document #{} not found.\x1B[0m", id);
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to retrieve document: {}\x1B[0m", e);
+        }
+    }
+}
+
+#[cfg(not(feature = "document-tools"))]
+pub fn handle_document_show(_state: &ReplState, _id: i64) {
+    eprintln!("Error: Document viewing requires 'document-tools' feature.");
+    println!("  Recompile with: cargo build --features document-tools");
+}
+
+/// Handle document delete command
+#[cfg(feature = "document-tools")]
+pub fn handle_document_delete(state: &ReplState, id: i64) {
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot delete document in anonymous mode.");
+        return;
+    }
+
+    match db.get_document(id) {
+        Ok(Some(doc)) => {
+            match db.delete_document(id) {
+                Ok(()) => {
+                    println!("\x1B[32m✓ Deleted document #{}: {}\x1B[0m", id, doc.title);
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to delete document: {}\x1B[0m", e);
+                }
+            }
+        }
+        Ok(None) => {
+            eprintln!("\x1B[31m✗ Document #{} not found.\x1B[0m", id);
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to retrieve document: {}\x1B[0m", e);
+        }
+    }
+}
+
+#[cfg(not(feature = "document-tools"))]
+pub fn handle_document_delete(_state: &ReplState, _id: i64) {
+    eprintln!("Error: Document deletion requires 'document-tools' feature.");
+    println!("  Recompile with: cargo build --features document-tools");
 }
 
 /// Handle skill activation command
