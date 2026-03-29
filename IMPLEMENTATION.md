@@ -1906,37 +1906,19 @@ Features planned for future releases:
 
 | Priority | Feature | Description | Dependencies | Issue |
 |----------|---------|-------------|--------------|-------|
-| P8 | OCR/Vision Tools | Image processing via CLI tools | Skills System | #12 |
-| P9 | File Session State | Explicit file tracking | None | #13 |
-| P10 | Skills System Extended | Multilingual sanitization, security enhancements | Skills System, Chat Module Integration | #14 |
-| P11 | File Staleness | Detect outdated file content | None | #50 |
-| P12 | Extended Personalities | Per-personality model config | None | #49 |
-| P13 | Plugin System | User-defined tools | None | #15 |
-| P14 | TUI | Ratatui-based terminal interface | None | #16 |
-| P15 | Memory Enhancement 2-5 | Query routing, filtering | Doc Import | #17 |
+| P8 | File Session State | Explicit file tracking | None | #13 |
+| P9 | Skills System Extended | Multilingual sanitization, security enhancements | Skills System, Specialized Agents | #14 |
+| P10 | File Staleness | Detect outdated file content | None | #50 |
+| P11 | Extended Personalities | Per-personality model config | None | #49 |
+| P12 | Plugin System | User-defined tools | None | #15 |
+| P13 | TUI | Ratatui-based terminal interface | None | #16 |
+| P14 | Memory Enhancement 2-5 | Query routing, filtering | Doc Import | #17 |
+
+**Note:** OCR/Vision Tools Integration was merged into Priority 4 (Specialized Agent Architecture).
 
 ---
 
-### 🔵 PRIORITY 8: OCR/Vision Tools Integration
-
-**Status:** ❌ NOT STARTED
-
-**Goal:** Image processing via CLI tools.
-
-**Features:**
-- OCR via tesseract
-- Image metadata via exiftool
-- Image conversion via imagemagick
-
-**Dependencies:** Skills System (P3)
-
-**Estimated effort:** 3-5 days
-
-**Related:** Issue #12
-
----
-
-### 🔵 PRIORITY 9: File Session State
+### 🔵 PRIORITY 8: File Session State
 
 **Status:** ❌ NOT STARTED
 
