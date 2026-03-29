@@ -579,11 +579,13 @@ Retrieve content from conversation history, notes, and imported documents.
 Function: remember
 Args:
   - id (string, optional): Specific item ID with prefix (e.g., "msg:42", "note:7", "doc:13")
+  - chunk (string, optional): Chunk index for large documents (0-based, e.g., "0", "5", "15")
   - query (string, optional): Search query for semantic search
   - limit (string, optional): Max results (default: 5, max: 10)
 Example: remember(id="msg:42")
 Example: remember(id="note:7")
 Example: remember(id="doc:13")
+Example: remember(id="doc:13", chunk="5")
 Example: remember(query="authentication")
 Example: remember(query="database design", limit="10")
 ```
@@ -596,21 +598,44 @@ Example: remember(query="database design", limit="10")
 | `doc:N` | Document | Imported document (TXT, MD, ORG, PDF, EPUB) |
 | `web:N` | Web | Web-scraped content (future) |
 
+**Chunk Retrieval for Large Documents:**
+
+Large documents (>~5000 characters) are split into chunks for storage. When retrieving:
+
+- **Without chunk parameter**: Returns preview (first 3 chunks) with navigation hint
+- **With chunk parameter**: Returns specific chunk content without truncation
+
+```
+# Large document preview
+remember(id="doc:5")
+→ **Document 5**: Manual (45000 words)
+   ⚠️ Large document. Showing chunks 1-3 of 87.
+   Use remember(id="doc:5", chunk="N") to read specific chunks.
+
+# Specific chunk
+remember(id="doc:5", chunk="15")
+→ **Document 5** — Chunk 16/87
+   Position: characters 15000-16000
+   [Full chunk content without truncation]
+```
+
 **Use Cases:**
 - **By ID**: Get full content when you only have an excerpt from search results
+- **By ID + Chunk**: Navigate large documents section by section
 - **By Query**: Find topics not in current context window
 - **Hybrid Search**: Combines BM25 (keyword) and semantic (vector) search with RRF fusion
 
-**Output Format:**
+**Output Format (Document with chunks):**
 ```
-📄 Document #13: My Research Paper
+📄 Document #13 — Chunk 15/87
+Title: My Research Paper
 Type: pdf | Scope: project
-File: paper.pdf
-Words: 5432
-Created: 2026-03-28 10:30
+Position: characters 15000-16000
 ---
-[Full document content here...]
+[Chunk content here...]
 ---
+
+*Chunk 15 of 87. Use remember(id="doc:13", chunk="N") to navigate.*
 ```
 
 **Note:** This tool is for explicit retrieval. The AI automatically retrieves relevant context on each message, so you only need to call this when you're looking for something specific that isn't in the current context.

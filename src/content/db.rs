@@ -348,7 +348,60 @@ impl Database {
         })
     }
 
-    /// Get all content items without embeddings for regeneration
+    // ============================================================
+    // Content Chunk Operations
+    // ============================================================
+
+    /// Get all chunks for a content item
+    ///
+    /// Returns chunks ordered by chunk_index (ascending).
+    pub fn get_content_chunks(&self, item_id: i64) -> Result<Vec<super::types::ContentChunk>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, item_id, chunk_index, content, start_offset, end_offset
+                 FROM content_chunks
+                 WHERE item_id = ?1
+                 ORDER BY chunk_index ASC",
+            )?;
+            let rows = stmt.query_map(params![item_id], row_to_content_chunk)?;
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+    }
+
+    /// Get a specific chunk by index
+    ///
+    /// Returns the chunk at the given index for the item.
+    pub fn get_content_chunk(
+        &self,
+        item_id: i64,
+        chunk_index: i32,
+    ) -> Result<Option<super::types::ContentChunk>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, item_id, chunk_index, content, start_offset, end_offset
+                 FROM content_chunks
+                 WHERE item_id = ?1 AND chunk_index = ?2",
+            )?;
+            let mut rows = stmt.query_map(params![item_id, chunk_index], row_to_content_chunk)?;
+            rows.next().transpose()
+        })
+    }
+
+    /// Count chunks for a content item
+    ///
+    /// Returns the number of chunks for the item.
+    pub fn count_content_chunks(&self, item_id: i64) -> Result<i32> {
+        self.with_connection(|conn| {
+            let count: i32 = conn.query_row(
+                "SELECT COUNT(*) FROM content_chunks WHERE item_id = ?1",
+                params![item_id],
+                |row| row.get(0),
+            )?;
+            Ok(count)
+        })
+    }
+
+    /// Get content items without embeddings for regeneration
     ///
     /// Returns (item_id, content_type, content) for items that need embedding generation.
     /// Used during migration to regenerate embeddings from content.
@@ -1254,6 +1307,18 @@ fn row_to_document(row: &rusqlite::Row) -> Result<Document> {
         file_type: FileType::from_str(&row.get::<_, String>(13)?)
             .map_err(rusqlite::Error::InvalidParameterName)?,
         word_count: row.get::<_, i32>(14)? as usize,
+    })
+}
+
+/// Helper to map a row to a ContentChunk
+fn row_to_content_chunk(row: &rusqlite::Row) -> Result<super::types::ContentChunk> {
+    Ok(super::types::ContentChunk {
+        id: row.get(0)?,
+        item_id: row.get(1)?,
+        chunk_index: row.get(2)?,
+        content: row.get(3)?,
+        start_offset: row.get(4)?,
+        end_offset: row.get(5)?,
     })
 }
 

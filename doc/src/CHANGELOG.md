@@ -22,9 +22,12 @@ All notable changes to Ask-AI will be documented in this file.
   - Related: Issue #9
 
 - **Document Retrieval Integration** - Documents now searchable via `remember()` tool
-  - `remember(id="doc:N")` retrieves full document content
+  - `remember(id="doc:N")` retrieves full document content (or preview for large docs)
+  - `remember(id="doc:N", chunk="M")` retrieves specific chunk of large documents
   - `remember(query="...")` searches across messages, notes, AND documents
   - Hybrid search (BM25 + semantic) includes documents in results
+  - Large document preview shows first 3 chunks with navigation hint
+  - Chunk output shows position info (e.g., "Chunk 15/87, chars 15000-16000")
   - Related: Issue #9
 
 ## [0.38.0] - 2026-03-27

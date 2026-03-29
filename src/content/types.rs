@@ -267,6 +267,23 @@ impl std::fmt::Display for ContentSearchType {
     }
 }
 
+/// A chunk of content for long documents
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentChunk {
+    /// Unique identifier
+    pub id: i64,
+    /// Parent item ID
+    pub item_id: i64,
+    /// Chunk index (0-based)
+    pub chunk_index: i32,
+    /// Chunk content
+    pub content: String,
+    /// Start offset in original document (characters)
+    pub start_offset: i32,
+    /// End offset in original document (characters)
+    pub end_offset: i32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

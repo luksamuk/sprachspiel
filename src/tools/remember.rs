@@ -8,6 +8,9 @@ use crate::db::SourceType;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::tools::context::{get_db, get_embedding};
 
+/// Number of chunks to show in preview for large documents
+const MAX_PREVIEW_CHUNKS: i32 = 3;
+
 /// Parse a source ID into (SourceType, numeric_id)
 /// IDs must include source type prefix (e.g., "msg:42", "doc:13")
 fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
@@ -49,13 +52,17 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
 ///
 /// Use this tool to:
 /// 1. Get the full content of a specific item (by ID from retrieved context)
-/// 2. Search for topics not in the current context (by query)
+/// 2. Get a specific chunk of a large document (by ID and chunk index)
+/// 3. Search for topics not in the current context (by query)
 ///
 /// # Arguments
 /// * `id` - ID of content to retrieve (MUST include prefix). Optional.
 ///   - Example: "msg:42" for conversation message
 ///   - Example: "note:7" for user-created note
 ///   - Example: "doc:13" for imported document
+/// * `chunk` - Chunk index for large documents (0-based). Optional.
+///   - Example: "0" for first chunk, "15" for 16th chunk
+///   - Use when document has multiple chunks (shown in document metadata)
 /// * `query` - Search query for semantic search. Optional.
 ///   - Example: "Wittgenstein" to find content about that topic
 ///   - Searches across messages, notes, AND documents
@@ -63,19 +70,22 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
 ///
 /// # Returns
 /// - For id: Full content with metadata
+/// - For id + chunk: Specific chunk content
 /// - For query: List of matching items with IDs and excerpts
 ///
 /// # Examples
 /// ```ignore
 /// remember(id="msg:42")              // Get conversation message 42
 /// remember(id="note:7")              // Get note 7
-/// remember(id="doc:13")              // Get document 13
+/// remember(id="doc:13")              // Get document 13 (or preview for large docs)
+/// remember(id="doc:13", chunk="5")    // Get chunk 5 of document 13
 /// remember(query="Wittgenstein")     // Search by topic
 /// remember(query="philosophy", limit="10")
 /// ```
 #[ollama_rs::function]
 pub async fn remember(
     id: Option<String>,
+    chunk: Option<String>,
     query: Option<String>,
     limit: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -83,6 +93,7 @@ pub async fn remember(
         "remember",
         &[
             ("id".to_string(), id.clone().unwrap_or_default()),
+            ("chunk".to_string(), chunk.clone().unwrap_or_default()),
             ("query".to_string(), query.clone().unwrap_or_default()),
             (
                 "limit".to_string(),
@@ -94,12 +105,15 @@ pub async fn remember(
     // Validate parameters - treat empty strings as None
     let id_is_empty = id.as_ref().map(|s| s.is_empty()).unwrap_or(true);
     let query_is_empty = query.as_ref().map(|s| s.is_empty()).unwrap_or(true);
+    let chunk_is_empty = chunk.as_ref().map(|s| s.is_empty()).unwrap_or(true);
 
     if id_is_empty && query_is_empty {
         let err = "Error: Provide either 'id' or 'query' parameter.\n\n\
                    Examples:\n\
                    - remember(id=\"msg:42\") to get a specific message\n\
                    - remember(id=\"note:7\") to get a specific note\n\
+                   - remember(id=\"doc:13\") to get document 13 (or preview)\n\
+                   - remember(id=\"doc:13\", chunk=\"5\") to get chunk 5\n\
                    - remember(query=\"Wittgenstein\") to search by topic\n\n\
                    Note: Use source prefix for IDs (msg:, note:, doc:)";
         log_tool_result("remember", err);
@@ -112,6 +126,13 @@ pub async fn remember(
         .unwrap_or(5)
         .clamp(1, 10);
 
+    // Parse chunk (only valid with id)
+    let chunk_num = if !chunk_is_empty {
+        chunk.and_then(|c| c.parse::<i32>().ok())
+    } else {
+        None
+    };
+
     // Filter empty strings from id and query
     let id_val = id.filter(|s| !s.is_empty());
     let query_val = query.filter(|s| !s.is_empty());
@@ -120,7 +141,7 @@ pub async fn remember(
     let result = match (get_db(), get_embedding()) {
         (Some(db), Some(embedding)) => {
             if let Some(id_str) = id_val {
-                remember_by_id(&db, &id_str).await
+                remember_by_id(&db, &id_str, chunk_num).await
             } else if let Some(q) = query_val {
                 remember_by_query(&db, &embedding, &q, limit_num).await
             } else {
@@ -144,7 +165,11 @@ pub async fn remember(
 }
 
 /// Retrieve a specific message by its ID
-async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) -> String {
+async fn remember_by_id(
+    db: &std::sync::Arc<crate::db::Database>,
+    id_str: &str,
+    chunk: Option<i32>,
+) -> String {
     // Parse ID (supports "42" and "msg:42" formats)
     let (source_type, numeric_id) = match parse_source_id(id_str) {
         Ok(result) => result,
@@ -161,7 +186,7 @@ async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) 
     // Handle different source types
     match source_type {
         SourceType::Conversation => fetch_conversation_message(db, numeric_id).await,
-        SourceType::Document => fetch_document(db, numeric_id).await,
+        SourceType::Document => fetch_document(db, numeric_id, chunk).await,
         SourceType::Note => fetch_note(db, numeric_id).await,
         SourceType::Web => {
             // Future: Web source support
@@ -279,8 +304,12 @@ async fn fetch_note(db: &std::sync::Arc<crate::db::Database>, id: i64) -> String
     }
 }
 
-/// Fetch a document by ID
-async fn fetch_document(db: &std::sync::Arc<crate::db::Database>, id: i64) -> String {
+/// Fetch a document by ID, optionally with a specific chunk
+async fn fetch_document(
+    db: &std::sync::Arc<crate::db::Database>,
+    id: i64,
+    chunk: Option<i32>,
+) -> String {
     match db.get_document(id) {
         Ok(Some(doc)) => {
             let scope_str = match doc.scope {
@@ -288,6 +317,28 @@ async fn fetch_document(db: &std::sync::Arc<crate::db::Database>, id: i64) -> St
                 crate::content::ContentScope::Project => "project",
             };
 
+            // Check if document has chunks
+            let has_chunks = match db.content_item_has_chunks(id) {
+                Ok(has) => has,
+                Err(e) => {
+                    return format!(
+                        "Error: Failed to check document chunks.\n\nDetails: {}",
+                        e
+                    );
+                }
+            };
+
+            // If chunk specified, fetch only that chunk
+            if let Some(chunk_index) = chunk {
+                return fetch_document_chunk(db, id, chunk_index, &doc);
+            }
+
+            // If document has chunks and is large, show preview
+            if has_chunks {
+                return fetch_document_preview(db, id, &doc).await;
+            }
+
+            // Small document without chunks - return full content
             let mut output = format!(
                 "**Document {}**\nType: {}\nScope: {}\n",
                 doc.id,
@@ -322,6 +373,145 @@ async fn fetch_document(db: &std::sync::Arc<crate::db::Database>, id: i64) -> St
             id, e
         ),
     }
+}
+
+/// Fetch a specific chunk of a large document
+fn fetch_document_chunk(
+    db: &std::sync::Arc<crate::db::Database>,
+    doc_id: i64,
+    chunk_index: i32,
+    doc: &crate::content::Document,
+) -> String {
+    let scope_str = match doc.scope {
+        crate::content::ContentScope::Global => "global",
+        crate::content::ContentScope::Project => "project",
+    };
+
+    // Get the specific chunk
+    let chunk = match db.get_content_chunk(doc_id, chunk_index) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            // Chunk doesn't exist - get total count for helpful error
+            let total = db.count_content_chunks(doc_id).unwrap_or_default();
+            return format!(
+                "Error: Invalid chunk index {}.\n\n\
+                 Document has {} chunks (0-{}).\n\
+                 Use remember(id=\"doc:{}\", chunk=\"N\") with N between 0 and {}.",
+                chunk_index, total, total.saturating_sub(1), doc_id, total.saturating_sub(1)
+            );
+        }
+        Err(e) => {
+            return format!("Error: Failed to retrieve chunk {}.\n\nDetails: {}", chunk_index, e);
+        }
+    };
+
+    // Get total chunk count
+    let total_chunks = db.count_content_chunks(doc_id).unwrap_or(1);
+
+    let mut output = format!(
+        "**Document {}** — Chunk {}/{}\n",
+        doc_id, chunk_index + 1, total_chunks
+    );
+    output.push_str(&format!("Title: {}\n", doc.title));
+    output.push_str(&format!("Type: {} | Scope: {}\n", doc.file_type.extension(), scope_str));
+    output.push_str(&format!(
+        "Position: characters {}-{}\n",
+        chunk.start_offset, chunk.end_offset
+    ));
+
+    if let Some(ref project_id) = doc.project_id {
+        output.push_str(&format!("Project: {}\n", project_id));
+    }
+
+    output.push_str("\n---\n");
+    output.push_str(&chunk.content);
+    output.push_str("\n---");
+
+    // Add navigation hint
+    if total_chunks > 1 {
+        output.push_str(&format!(
+            "\n\n*Chunk {} of {}. Use remember(id=\"doc:{}\", chunk=\"N\") to navigate.*",
+            chunk_index + 1,
+            total_chunks,
+            doc_id
+        ));
+    }
+
+    output
+}
+
+/// Fetch preview of a large document (first few chunks)
+async fn fetch_document_preview(
+    db: &std::sync::Arc<crate::db::Database>,
+    doc_id: i64,
+    doc: &crate::content::Document,
+) -> String {
+    let scope_str = match doc.scope {
+        crate::content::ContentScope::Global => "global",
+        crate::content::ContentScope::Project => "project",
+    };
+
+    // Get total chunk count
+    let total_chunks = db.count_content_chunks(doc_id).unwrap_or_default();
+
+    // Get first few chunks for preview
+    let all_chunks = match db.get_content_chunks(doc_id) {
+        Ok(chunks) => chunks,
+        Err(e) => {
+            return format!("Error: Failed to retrieve document chunks.\n\nDetails: {}", e);
+        }
+    };
+
+    let preview_count = std::cmp::min(MAX_PREVIEW_CHUNKS, total_chunks);
+    let preview_chunks: Vec<_> = all_chunks.iter().take(preview_count as usize).collect();
+
+    let mut output = format!(
+        "**Document {}**: {}\n",
+        doc_id, doc.title
+    );
+    output.push_str(&format!(
+        "Type: {} | Scope: {} | Words: {}\n",
+        doc.file_type.extension(),
+        scope_str,
+        doc.word_count
+    ));
+    output.push_str(&format!("File: {}\n", doc.filename));
+    output.push_str(&format!("Chunks: {} total\n", total_chunks));
+
+    if let Some(ref project_id) = doc.project_id {
+        output.push_str(&format!("Project: {}\n", project_id));
+    }
+
+    output.push_str(&format!(
+        "\n⚠️ Large document ({} words). Showing chunks 1-{} of {}.\n",
+        doc.word_count, preview_count, total_chunks
+    ));
+    output.push_str(&format!(
+        "Use remember(id=\"doc:{}\", chunk=\"N\") to read specific chunks.\n\n",
+        doc_id
+    ));
+
+    // Show preview chunks
+    for (i, chunk) in preview_chunks.iter().enumerate() {
+        output.push_str(&format!(
+            "--- Chunk {}/{} (chars {}-{}) ---\n",
+            i + 1,
+            total_chunks,
+            chunk.start_offset,
+            chunk.end_offset
+        ));
+        output.push_str(&chunk.content);
+        output.push_str("\n\n");
+    }
+
+    output.push_str("---\n");
+    output.push_str(&format!(
+        "*Use remember(id=\"doc:{}\", chunk=\"N\") for other chunks (0-{}).*",
+        doc_id,
+        total_chunks - 1
+    ));
+
+    output
 }
 
 /// Search for content (messages, notes, and documents) by semantic query
