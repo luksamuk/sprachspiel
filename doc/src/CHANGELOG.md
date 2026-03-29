@@ -116,7 +116,7 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **PRIORITY 10: Multilingual Skill Sanitization** - Enhanced security for skill content
   - Phase 1: Language detection + warning (no dependencies)
-  - Phase 2: Translate-then-detect approach (requires P6 Chat Module)
+  - Phase 2: Translate-then-detect approach (requires P4 Specialized Agents)
   - Dependencies: Skills System (P3) ✅ COMPLETED
 
 - **PRIORITY 11: Skills Management Tool** - Allow LLM to manage skills
@@ -818,7 +818,7 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
   - Phase 2 (Query Routing) blocked by Document Import Tool + Notes System
   - Phase 3 (Timestamp Filtering) blocked by Phase 2
   - New priorities: Document Import Tool and Notes System first
-  - Chat Module Integration remains high priority
+  - Chat Module Integration renamed to Specialized Agent Architecture (P4)
 
 ## [0.27.1] - 2026-03-09
 
