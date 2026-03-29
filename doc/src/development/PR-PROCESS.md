@@ -346,9 +346,9 @@ optional and typically requested for significant features or before releases.
 ### Phase 7: Merge (AGENT, after authorization)
 
 ```
-41. User authorizes merge (all comments resolved, testing passed, smoke test passed if requested)
+45. User authorizes merge (all comments resolved, testing passed, smoke test passed if requested)
 
-42. Agent merges PR using regular merge (NOT squash) with branch deletion:
+46. Agent merges PR using regular merge (NOT squash) with branch deletion:
     gh pr merge PR_NUMBER --merge --delete-branch
     
     IMPORTANT: 
@@ -357,9 +357,9 @@ optional and typically requested for significant features or before releases.
     - Branch is deleted after merge
     - PR is automatically closed
 
-43. Card moves to "Done" automatically (if PR references the card)
+47. Card moves to "Done" automatically (if PR references the card)
 
-44. Issue is closed automatically (via "Closes #N" in PR body)
+48. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
@@ -415,42 +415,41 @@ Todo → In Progress → In Review → Done
 │           ↓                         Agent pushes ────────────┐│
 │           ↓                                           ↓     ││
 │           ↓                               Return to Step 27 ─┘│
-│           ↓ No bugs                                               │
+│           ↓ No bugs                                         │
 ├─────────────────────────────────────────────────────────────┤
-│                          ↓                                    │
+│                          ↓                                   │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                         MERGE                                │
+│                    SMOKE TEST (OPTIONAL)                     │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Step 38: User authorizes merge                             │
+│   Step 37: User requests smoke test (optional)               │
 │           ↓                                                  │
-│   Step 39: Agent runs: gh pr merge N --merge --delete-branch │
+│   Step 38-40: Hermes executes SMOKE_TEST.md                │
 │           ↓                                                  │
-│   Step 40-41: Cleanup (branch deleted, PR closed)            │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-│           ↓ No                            Agent fixes        │
+│   ┌─────────────────────┐                                    │
+│   │ Smoke test fails?   │──── Yes ──→ Document in PR       │
+│   └─────────────────────┘                 ↓                 │
+│           ↓                            Agent fixes          │
 │           ↓                                ↓                 │
 │           ↓                         Agent pushes ────────────┐│
 │           ↓                                           ↓     ││
 │           ↓                               Return to Step 27 ─┘│
-│           ↓ No bugs                                               │
+│           ↓ Pass (or skipped)                               │
 ├─────────────────────────────────────────────────────────────┤
-│                          ↓                                    │
+│                          ↓                                   │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                         MERGE                                │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Step 38: User authorizes merge                             │
+│   Step 45: User authorizes merge                             │
 │           ↓                                                  │
-│   Step 39: Agent runs: gh pr merge N --merge --delete-branch │
+│   Step 46: Agent runs: gh pr merge N --merge --delete-branch│
 │           ↓                                                  │
-│   Step 40-41: Cleanup (branch deleted, PR closed)            │
+│   Step 47-48: Cleanup (branch deleted, PR closed)           │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```

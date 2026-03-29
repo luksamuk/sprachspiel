@@ -3,6 +3,8 @@
 Execute estes testes antes de cada release para garantir que as funcionalidades 
 essenciais estão funcionando.
 
+**Ver também:** [PR Process - Phase 6.5: Smoke Test](doc/src/development/PR-PROCESS.md)
+
 ---
 
 ## Pré-requisitos
