@@ -22,6 +22,6 @@ pub use chunker::{chunk_text, chunk_text_with_config, needs_chunking, ChunkConfi
 pub use client::{EmbeddingClient, DEFAULT_CONTEXT_LENGTH};
 pub use fallback::{embed_chunk_with_fallback, embed_item_with_fallback, EmbedContext, EmbedItemContext};
 pub use regenerate::regenerate_all_embeddings;
-pub use recovery::recover_missing_embeddings;
+pub use recovery::{recover_missing_embeddings, recover_missing_embeddings_with_progress};
 #[allow(unused_imports)]
 pub use truncate::truncate_and_normalize;

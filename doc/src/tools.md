@@ -755,10 +755,10 @@ Import a document file (TXT, MD, ORG, PDF, EPUB) for semantic search.
 ```
 Function: import_document
 Args:
-  - path (string, required): File path (absolute or relative)
+  - path (string, required): File path (absolute or relative, supports ~ expansion)
   - scope (string, optional): "project" (default) or "global"
 Example: import_document(path: "docs/report.pdf")
-Example: import_document(path: "/home/user/notes.org", scope: "global")
+Example: import_document(path: "~/notes.org", scope: "global")
 ```
 
 **Supported File Types:**
@@ -773,9 +773,28 @@ Example: import_document(path: "/home/user/notes.org", scope: "global")
 
 **File Size Limit:** 5MB maximum. Larger files are rejected with a helpful error.
 
+**Path Expansion:** Paths starting with `~` are expanded to the home directory.
+
 **Scope:**
 - `project` (default): Document visible only in current project
 - `global`: Document visible across all projects
+
+**Import Modes:**
+
+| Mode | Behavior |
+|------|----------|
+| Synchronous (default) | Wait for embedding generation to complete before returning |
+| Async (`--nowait`) | Import file immediately, generate embeddings in background |
+
+Use `--nowait` for batch imports when you don't need immediate searchability.
+
+**Title Extraction:**
+
+Documents automatically extract titles from:
+1. Org-mode `#+TITLE:` directive
+2. Markdown `# heading`
+3. Org-mode `* heading`
+4. Filename (fallback)
 
 **PDF/EPUB Dependencies:**
 
@@ -808,8 +827,13 @@ PDF and EPUB files require:
 Once imported, documents can be retrieved via the `remember()` tool:
 
 ```
-# Retrieve by ID
+# Retrieve by ID (accepts #N, doc:N, or N formats)
 remember(id="doc:5")
+remember(id="#5")
+remember(id="5")
+
+# Get specific chunk of large document
+remember(id="doc:5", chunk="0")
 
 # Semantic search across all documents
 remember(query="authentication implementation")
@@ -819,10 +843,34 @@ remember(query="authentication implementation")
 
 | Command | Shortcut | Description |
 |---------|----------|-------------|
-| `/doc import <path> [--global]` | `/di` | Import a document |
+| `/doc import <path> [--global] [--nowait]` | `/di` | Import a document |
 | `/doc list [--global]` | `/dl` | List imported documents |
-| `/doc show <id>` | `/ds` | Show document content |
-| `/doc delete <id>` | `/dd` | Delete a document |
+| `/doc show <id>` | `/ds` | Show document content (accepts #N, doc:N, or N) |
+| `/doc delete <id>` | `/dd` | Delete a document (accepts #N, doc:N, or N) |
+
+**ID Formats:**
+
+Document IDs can be specified in three formats:
+- `#N` - Hashtag format: `/doc show #1`
+- `doc:N` - Prefixed format: `/doc show doc:1`
+- `N` - Numeric format: `/doc show 1`
+
+**Document Flow:**
+
+```
+┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Import     │     │  Extract        │     │  Chunk & Embed  │
+│  Document   │────▶│  Content        │────▶│  (background)   │
+│  (path)     │     │  (title, text)  │     │  ───────────────│
+└─────────────┘     └─────────────────┘     │  512 tokens/chunk│
+                                            └─────────────────┘
+                                                    │
+                                                    ▼
+┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  remember() │     │  Hybrid Search  │     │  SQLite + FTS5 │
+│  query/text │◀────│  BM25 + Vector  │◀────│  + Embeddings   │
+└─────────────┘     └─────────────────┘     └─────────────────┘
+```
 
 ## File Operation Tools (8)
 

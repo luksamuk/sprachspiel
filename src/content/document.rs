@@ -189,6 +189,15 @@ impl Document {
         // Try to find first heading in content
         for line in content.lines().take(20) {
             let trimmed = line.trim();
+
+            // Org-mode #+TITLE: directive (highest priority)
+            if let Some(title) = trimmed.strip_prefix("#+TITLE:") {
+                let title = title.trim();
+                if !title.is_empty() {
+                    return title.to_string();
+                }
+            }
+
             // Markdown heading
             if trimmed.starts_with('#') {
                 let title = trimmed.trim_start_matches('#').trim();
@@ -196,6 +205,7 @@ impl Document {
                     return title.to_string();
                 }
             }
+
             // Org-mode heading
             if trimmed.starts_with('*') {
                 let title = trimmed.trim_start_matches('*').trim();
@@ -203,6 +213,7 @@ impl Document {
                     return title.to_string();
                 }
             }
+
             // Underlined heading (Markdown/Text)
             if !trimmed.is_empty() && line.len() > trimmed.len() {
                 // Next line is underline (=== or ---)

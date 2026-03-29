@@ -18,7 +18,7 @@
 
 use super::files_blocklist::{is_blocked_for_write, BlocklistConfig};
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use crate::utils::{format_size, parse_bool};
+use crate::utils::{expand_tilde_path, format_size, parse_bool};
 use std::path::{Path, PathBuf};
 
 /// Maximum file size for write operations (5MB)
@@ -91,7 +91,7 @@ pub async fn write_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
-    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config, sandbox_enabled) {
+    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
         Ok(p) => p,
         Err(e) => {
             log_tool_result("write_file", &e);
@@ -220,7 +220,7 @@ pub async fn edit_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
-    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config, sandbox_enabled) {
+    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
         Ok(p) => p,
         Err(e) => {
             log_tool_result("edit_file", &e);
@@ -380,7 +380,7 @@ pub async fn append_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
-    let canonical_path = match validate_write_path(&PathBuf::from(&path), &config, sandbox_enabled) {
+    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
         Ok(p) => p,
         Err(e) => {
             log_tool_result("append_file", &e);

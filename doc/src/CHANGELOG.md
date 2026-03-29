@@ -36,6 +36,41 @@ All notable changes to Ask-AI will be documented in this file.
   - Error when `chunk` used with non-document IDs (chunk only for docs)
   - Helpful error messages explain correct usage
 
+- **Synchronous Embedding for Document Import** - Documents indexed immediately by default
+  - `/doc import <path>` - Synchronous indexing with progress indicator
+  - `/doc import <path> --nowait` - Async indexing in background
+  - Embeddings created before command returns (default behavior)
+  - Progress message: "Indexing document..." → "Document indexed (N chunks)"
+  - Related: Issue #9
+
+- **Embedding Flush on Exit** - Pending embeddings completed before shutdown
+  - `/exit` now waits for any pending embeddings to complete
+  - Progress bar shows completion status
+  - Ensures no data loss on graceful shutdown
+  - Related: Issue #9
+
+### Fixed
+
+- **Tilde (~) Expansion in File Paths** - File paths with `~` now correctly expand to home directory
+  - Affects: `/doc import`, `read_file`, `write_file`, `edit_file`, `append_file`, `list_directory`, `search_files`
+  - Also affects: `validate_image_file`, `read_file_as_base64`, `/export` command
+  - Users can now use `~/path/to/file` syntax everywhere
+  - Related: Issue #9 (bug report from Hermes Agent)
+
+- **Document ID Format Flexibility** - Multiple ID formats now accepted
+  - `#N` format: `/doc show #1`, `/doc delete #5`
+  - `doc:N` format: `/doc show doc:1`, `/doc delete doc:5`
+  - Numeric format: `/doc show 1`, `/doc delete 5`
+  - All three formats work consistently across all document commands
+  - Related: Issue #9 (bug report from Hermes Agent)
+
+- **Org-Mode Title Extraction** - `#+TITLE:` directive now correctly parsed
+  - Files like `#+TITLE: My Document` extract "My Document" as title
+  - Previously showed literal "+TITLE: My Document"
+  - Fallback to `* heading` if no `#+TITLE:` found
+  - Fallback to filename if no heading found
+  - Related: Issue #9 (bug report from Hermes Agent)
+
 ### Technical Debt
 
 - **Document Extraction Direct Command Invocation** - `import_document` calls `Command::new("pdftotext")` directly, bypassing the skills system

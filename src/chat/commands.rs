@@ -6,6 +6,22 @@ use super::session::ChatSession;
 use crate::debug_tools::toggle_debug;
 use crate::tokens::ContextMetrics;
 
+/// Parse a document ID from user input.
+/// Accepts formats: "N", "#N", "doc:N" (all return the numeric ID).
+fn parse_document_id(input: &str) -> Result<i64, String> {
+    let id_str = input
+        .trim()
+        .strip_prefix('#')
+        .unwrap_or(input.trim())
+        .strip_prefix("doc:")
+        .unwrap_or(input.trim())
+        .trim();
+    
+    id_str
+        .parse::<i64>()
+        .map_err(|_| format!("Invalid document ID '{}'. Use: #N, doc:N, or just N", input.trim()))
+}
+
 /// Result of executing a command
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandResult {
@@ -97,6 +113,7 @@ pub enum CommandResult {
     DocumentImport {
         path: String,
         global: bool,
+        nowait: bool,
     },
     /// List documents
     DocumentList {
@@ -106,7 +123,7 @@ pub enum CommandResult {
     DocumentShow { id: i64 },
     /// Delete a document by ID
     DocumentDelete { id: i64 },
-    /// Activate a skill (loaded skill content)
+    /// Activate a skill (loaded skill contents)
     Skill {
         name: String,
         content: String,
@@ -227,6 +244,7 @@ pub enum ChatCommand {
     DocumentImport {
         path: String,
         global: bool,
+        nowait: bool,
     },
     /// List documents
     DocumentList {
@@ -827,14 +845,15 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             match *subcmd {
                 "import" | "i" => {
                     if subargs.is_empty() {
-                        return Some(Err("Usage: /doc import <path> [--global]".to_string()));
+                        return Some(Err("Usage: /doc import <path> [--global] [--nowait]".to_string()));
                     }
                     let global = subargs.contains("--global");
-                    let path = subargs.replace("--global", "").trim().to_string();
+                    let nowait = subargs.contains("--nowait");
+                    let path = subargs.replace("--global", "").replace("--nowait", "").trim().to_string();
                     if path.is_empty() {
-                        return Some(Err("Usage: /doc import <path> [--global]".to_string()));
+                        return Some(Err("Usage: /doc import <path> [--global] [--nowait]".to_string()));
                     }
-                    ChatCommand::DocumentImport { path, global }
+                    ChatCommand::DocumentImport { path, global, nowait }
                 }
                 "list" | "l" => {
                     let global = subargs.contains("--global");
@@ -844,18 +863,18 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                     if subargs.is_empty() {
                         return Some(Err("Usage: /doc show <id>".to_string()));
                     }
-                    match subargs.trim().parse::<i64>() {
+                    match parse_document_id(subargs.trim()) {
                         Ok(id) => ChatCommand::DocumentShow { id },
-                        Err(_) => return Some(Err("Invalid document ID. Must be a number.".to_string())),
+                        Err(e) => return Some(Err(e)),
                     }
                 }
                 "delete" | "d" | "remove" | "rm" => {
                     if subargs.is_empty() {
                         return Some(Err("Usage: /doc delete <id>".to_string()));
                     }
-                    match subargs.trim().parse::<i64>() {
+                    match parse_document_id(subargs.trim()) {
                         Ok(id) => ChatCommand::DocumentDelete { id },
-                        Err(_) => return Some(Err("Invalid document ID. Must be a number.".to_string())),
+                        Err(e) => return Some(Err(e)),
                     }
                 }
                 _ => return Some(Err("Usage: /doc <import|list|show|delete>".to_string())),
@@ -863,14 +882,15 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         }
         "di" => {
             if args.is_empty() {
-                return Some(Err("Usage: /di <path> [--global]".to_string()));
+                return Some(Err("Usage: /di <path> [--global] [--nowait]".to_string()));
             }
             let global = args.contains("--global");
-            let path = args.replace("--global", "").trim().to_string();
+            let nowait = args.contains("--nowait");
+            let path = args.replace("--global", "").replace("--nowait", "").trim().to_string();
             if path.is_empty() {
-                return Some(Err("Usage: /di <path> [--global]".to_string()));
+                return Some(Err("Usage: /di <path> [--global] [--nowait]".to_string()));
             }
-            ChatCommand::DocumentImport { path, global }
+            ChatCommand::DocumentImport { path, global, nowait }
         }
         "dl" => {
             let global = args.contains("--global");
@@ -880,18 +900,18 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             if args.is_empty() {
                 return Some(Err("Usage: /ds <id>".to_string()));
             }
-            match args.trim().parse::<i64>() {
+            match parse_document_id(args.trim()) {
                 Ok(id) => ChatCommand::DocumentShow { id },
-                Err(_) => return Some(Err("Invalid document ID. Must be a number.".to_string())),
+                Err(e) => return Some(Err(e)),
             }
         }
         "dd" => {
             if args.is_empty() {
                 return Some(Err("Usage: /dd <id>".to_string()));
             }
-            match args.trim().parse::<i64>() {
+            match parse_document_id(args.trim()) {
                 Ok(id) => ChatCommand::DocumentDelete { id },
-                Err(_) => return Some(Err("Invalid document ID. Must be a number.".to_string())),
+                Err(e) => return Some(Err(e)),
             }
         }
         "session" => {
@@ -1094,13 +1114,16 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
             };
 
             match file {
-                Some(path) => match std::fs::write(&path, &output) {
-                    Ok(()) => {
-                        println!("Conversation exported to: {}", path);
-                        CommandResult::Continue
+                Some(path) => {
+                    let expanded_path = crate::utils::expand_tilde_path(&path);
+                    match std::fs::write(&expanded_path, &output) {
+                        Ok(()) => {
+                            println!("Conversation exported to: {}", path);
+                            CommandResult::Continue
+                        }
+                        Err(e) => CommandResult::Error(format!("Failed to write file: {}", e)),
                     }
-                    Err(e) => CommandResult::Error(format!("Failed to write file: {}", e)),
-                },
+                }
                 None => {
                     println!("{}", output);
                     CommandResult::Continue
@@ -1367,7 +1390,7 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
 
         ChatCommand::NoteSearch { query, global, limit } => CommandResult::NoteSearch { query, global, limit },
 
-        ChatCommand::DocumentImport { path, global } => CommandResult::DocumentImport { path, global },
+        ChatCommand::DocumentImport { path, global, nowait } => CommandResult::DocumentImport { path, global, nowait },
 
         ChatCommand::DocumentList { global } => CommandResult::DocumentList { global },
 

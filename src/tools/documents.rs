@@ -17,8 +17,8 @@ use crate::content::types::ContentScope;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
+use crate::utils::expand_tilde_path;
 use std::fs;
-use std::path::PathBuf;
 
 /// Import a document file for semantic search and retrieval.
 ///
@@ -70,8 +70,8 @@ pub async fn import_document(
         }
     };
 
-    // Resolve path
-    let file_path = PathBuf::from(&path);
+    // Resolve path (expand ~ to home directory)
+    let file_path = expand_tilde_path(&path);
     if !file_path.exists() {
         let err = format!(
             "Error: File not found: '{}'. Please check the path and try again.",

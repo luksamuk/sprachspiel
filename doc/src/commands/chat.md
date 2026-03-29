@@ -122,10 +122,10 @@ Notes support project-level (default) and global scope. Global notes are visible
 
 | Command | Description |
 |---------|-------------|
-| `/doc import <path> [--global]`, `/di` | Import a document (TXT, MD, ORG, PDF, EPUB) |
+| `/doc import <path> [--global] [--nowait]`, `/di` | Import a document (TXT, MD, ORG, PDF, EPUB) |
 | `/doc list [--global]`, `/dl` | List imported documents |
-| `/doc show <id>`, `/ds` | Show document content by ID |
-| `/doc delete <id>`, `/dd` | Delete a document by ID |
+| `/doc show <id>`, `/ds` | Show document content by ID (accepts `#N`, `doc:N`, or `N`) |
+| `/doc delete <id>`, `/dd` | Delete a document by ID (accepts `#N`, `doc:N`, or `N`) |
 
 Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
 
@@ -140,6 +140,24 @@ Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
 | EPUB | `.epub` | `epub2txt` or `ebook-convert` (Calibre) |
 
 **File Size Limit:** 5MB maximum. Larger files are rejected.
+
+**File Path Expansion:** Paths starting with `~` are expanded to your home directory.
+
+**Import Modes:**
+
+| Mode | Command | Behavior |
+|------|---------|----------|
+| Synchronous (default) | `/doc import file.txt` | Wait for indexing to complete |
+| Asynchronous | `/doc import file.txt --nowait` | Import now, index in background |
+
+**ID Formats:**
+
+The `/doc show` and `/doc delete` commands accept multiple ID formats:
+- `#N` - Hashtag format: `/doc show #1`
+- `doc:N` - Prefixed format: `/doc show doc:1`
+- `N` - Numeric format: `/doc show 1`
+
+All three formats are equivalent and interchangeable.
 
 **Scope:**
 - Project scope (default): Document visible only in current project

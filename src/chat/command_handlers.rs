@@ -29,11 +29,35 @@ const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::log_debug;
-use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
+use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback, recover_missing_embeddings_with_progress};
 use crate::settings::Settings;
 use crate::tokens::{calculate_context_metrics, estimate_tokens};
 
 pub use super::session::ChatSession;
+
+/// Flush pending embeddings before exit.
+/// 
+/// This ensures that any embeddings that were being generated
+/// asynchronously are completed before the application exits.
+async fn flush_pending_embeddings(db: Arc<crate::db::Database>, client: Arc<crate::embeddings::EmbeddingClient>) {
+    // Check for pending items
+    let pending_items = match db.get_content_items_for_reindex() {
+        Ok(items) => items.len(),
+        Err(_) => 0,
+    };
+    
+    let pending_chunks = match db.get_content_chunks_for_reindex() {
+        Ok(chunks) => chunks.len(),
+        Err(_) => 0,
+    };
+    
+    if pending_items + pending_chunks == 0 {
+        return;
+    }
+    
+    // Complete pending embeddings with progress bar
+    let _ = recover_missing_embeddings_with_progress(&db, &client).await;
+}
 
 /// Result of handling a command in the REPL loop.
 pub enum HandleResult {
@@ -58,6 +82,11 @@ pub async fn handle_command_result(
             let _ = input.save_history();
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();
+                
+                // Flush pending embeddings before exit
+                if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
+                    flush_pending_embeddings(Arc::clone(db), Arc::clone(client)).await;
+                }
             }
             HandleResult::Exit
         }
@@ -192,8 +221,8 @@ pub async fn handle_command_result(
             handle_note_search(state, query, global, limit);
             HandleResult::Continue
         }
-        CommandResult::DocumentImport { path, global } => {
-            handle_document_import(state, path, global);
+        CommandResult::DocumentImport { path, global, nowait } => {
+            handle_document_import(state, path, global, nowait);
             HandleResult::Continue
         }
         CommandResult::DocumentList { global } => {
@@ -1684,10 +1713,10 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
 
 /// Handle document import command
 #[cfg(feature = "document-tools")]
-pub fn handle_document_import(state: &ReplState, path: String, global: bool) {
+pub fn handle_document_import(state: &ReplState, path: String, global: bool, nowait: bool) {
     use crate::content::{detect_file_type, ContentScope, Document, FileType, MAX_DOCUMENT_SIZE};
+    use crate::utils::expand_tilde_path;
     use std::fs;
-    use std::path::PathBuf;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
@@ -1702,7 +1731,7 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool) {
         return;
     }
 
-    let file_path = PathBuf::from(&path);
+    let file_path = expand_tilde_path(&path);
     if !file_path.exists() {
         eprintln!("\x1B[31m✗ File not found: {}\x1B[0m", path);
         return;
@@ -1847,26 +1876,56 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool) {
             println!("  Type: {}", file_type.extension());
 
             if let Some(ref embedding_client) = state.embedding_client {
-                let client = Arc::clone(embedding_client);
-                let db_clone = Arc::clone(&db);
-                let pid = project_id.clone();
-                let doc_content = document.content.clone();
+                if nowait {
+                    // Async embedding in background
+                    println!("  Indexing in background...");
+                    let client = Arc::clone(embedding_client);
+                    let db_clone = Arc::clone(&db);
+                    let pid = project_id.clone();
+                    let doc_content = document.content.clone();
 
-                tokio::spawn(async move {
+                    tokio::spawn(async move {
+                        let ctx = EmbedItemContext::new(
+                            &doc_content,
+                            id,
+                            "document",
+                            None,
+                            pid.as_deref(),
+                        );
+                        if let Err(e) =
+                            embed_item_with_fallback(ctx, &db_clone, &client, DEFAULT_CONTEXT_LENGTH)
+                                .await
+                        {
+                            eprintln!("Warning: Failed to generate embedding for document: {}", e);
+                        }
+                    });
+                } else {
+                    // Synchronous embedding with progress
+                    println!("  Indexing document...");
+                    
                     let ctx = EmbedItemContext::new(
-                        &doc_content,
+                        &document.content,
                         id,
                         "document",
                         None,
-                        pid.as_deref(),
+                        project_id.as_deref(),
                     );
-                    if let Err(e) =
-                        embed_item_with_fallback(ctx, &db_clone, &client, DEFAULT_CONTEXT_LENGTH)
-                            .await
-                    {
-                        eprintln!("Warning: Failed to generate embedding for document: {}", e);
+
+                    match tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            embed_item_with_fallback(ctx, &db, embedding_client, DEFAULT_CONTEXT_LENGTH).await
+                        })
+                    }) {
+                        Ok(result) => {
+                            let chunks = result.chunks_created.max(1);
+                            println!("  ✓ Document indexed ({} chunk{})", chunks, if chunks > 1 { "s" } else { "" });
+                        }
+                        Err(e) => {
+                            eprintln!("  \x1B[33m⚠ Warning: Failed to index document: {}\x1B[0m", e);
+                            println!("  Run '/reindex' to regenerate embeddings.");
+                        }
                     }
-                });
+                }
             }
         }
         Err(e) => {
@@ -1876,7 +1935,7 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool) {
 }
 
 #[cfg(not(feature = "document-tools"))]
-pub fn handle_document_import(_state: &ReplState, _path: String, _global: bool) {
+pub fn handle_document_import(_state: &ReplState, _path: String, _global: bool, _nowait: bool) {
     eprintln!("Error: Document import requires 'document-tools' feature.");
     println!("  Recompile with: cargo build --features document-tools");
 }
