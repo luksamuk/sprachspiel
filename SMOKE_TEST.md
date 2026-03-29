@@ -67,6 +67,8 @@ echo "teste de import txt" > /tmp/test.txt
 echo "# Markdown Title\n\nContent here." > /tmp/test.md
 echo "#+TITLE: Org Title\n\n* Heading\nContent." > /tmp/test.org
 touch /tmp/empty.txt
+# Arquivo para teste de tilde expansion (Bug #1)
+echo "teste tilde expansion" > ~/test.txt
 ```
 
 ### 3.1 Testes Básicos
@@ -170,9 +172,11 @@ SCHEMA_VER=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;")
 
 ## 10. File Tools (Regressão)
 
-**Preparar arquivo de teste:**
+**Preparar arquivos de teste:**
 ```bash
 echo "test content" > /tmp/file_test.txt
+# Arquivo para teste de tilde expansion (Bug #1 correlato)
+echo "file tools test" > ~/file_test.txt
 ```
 
 Via chat com um modelo que suporte tools:
@@ -191,9 +195,10 @@ Via chat com um modelo que suporte tools:
 rm -f ~/.local/share/ask-ai/embeddings.db
 mv ~/.local/share/ask-ai/embeddings.db.smoke-backup ~/.local/share/ask-ai/embeddings.db 2>/dev/null || true
 
-# Limpar arquivos de teste
+# Limpar arquivos de teste (/tmp e ~)
 rm -f /tmp/test.txt /tmp/test.md /tmp/test.org /tmp/empty.txt
 rm -f /tmp/file_test.txt /tmp/write_test.txt
+rm -f ~/test.txt ~/file_test.txt
 ```
 
 ---
