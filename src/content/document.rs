@@ -71,18 +71,6 @@ impl std::str::FromStr for FileType {
 }
 
 impl FileType {
-    /// Check if this file type requires skills-tools feature
-    #[allow(dead_code)]
-    pub fn requires_skills(&self) -> bool {
-        matches!(self, FileType::Pdf | FileType::Epub)
-    }
-
-    /// Check if this file type is builtin (no external dependencies)
-    #[allow(dead_code)]
-    pub fn is_builtin(&self) -> bool {
-        !self.requires_skills()
-    }
-
     /// Get file extension
     pub fn extension(&self) -> &'static str {
         match self {
@@ -92,6 +80,13 @@ impl FileType {
             FileType::Pdf => "pdf",
             FileType::Epub => "epub",
         }
+    }
+
+    /// Check if this file type requires skills-tools feature
+    /// Only compiled when skills-tools is NOT enabled
+    #[cfg(not(feature = "skills-tools"))]
+    pub fn requires_skills(&self) -> bool {
+        matches!(self, FileType::Pdf | FileType::Epub)
     }
 }
 
@@ -229,21 +224,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_file_type_requires_skills() {
-        assert!(!FileType::Txt.requires_skills());
-        assert!(!FileType::Md.requires_skills());
-        assert!(!FileType::Org.requires_skills());
-        assert!(FileType::Pdf.requires_skills());
-        assert!(FileType::Epub.requires_skills());
-    }
-
-    #[test]
-    fn test_file_type_is_builtin() {
-        assert!(FileType::Txt.is_builtin());
-        assert!(FileType::Md.is_builtin());
-        assert!(FileType::Org.is_builtin());
-        assert!(!FileType::Pdf.is_builtin());
-        assert!(!FileType::Epub.is_builtin());
+    fn test_file_type_extension() {
+        assert_eq!(FileType::Txt.extension(), "txt");
+        assert_eq!(FileType::Md.extension(), "md");
+        assert_eq!(FileType::Org.extension(), "org");
+        assert_eq!(FileType::Pdf.extension(), "pdf");
+        assert_eq!(FileType::Epub.extension(), "epub");
     }
 
     #[test]

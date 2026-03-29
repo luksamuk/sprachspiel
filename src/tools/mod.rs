@@ -75,10 +75,6 @@ pub use weather::*;
 pub use run_cmd::run_command;
 pub use tool_check::check_tool_availability;
 
-#[cfg(feature = "document-tools")]
-#[allow(unused_imports)]
-pub use documents::*;
-
 // Skills tools
 #[cfg(feature = "skills-tools")]
 #[allow(unused_imports)]
