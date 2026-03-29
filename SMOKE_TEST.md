@@ -128,8 +128,8 @@ touch /tmp/empty.txt
 **Nota:** Query mode carrega contexto completo (AGENTS.md, SOUL.md, tools). Para teste rápido, usar `--soulless --ignore-agents` ou aumentar timeout.
 
 ```bash
-# Teste rápido (sem contexto pesado)
-timeout 60 ./target/release/ask-ai query "2+2" --soulless --ignore-agents
+# Teste rápido (sem contexto pesado) - flags ANTES do subcomando
+timeout 60 ./target/release/ask-ai --soulless --ignore-agents query "2+2"
 
 # Teste completo (com contexto)
 timeout 120 ./target/release/ask-ai query "What is 2+2?"
@@ -143,7 +143,7 @@ timeout 120 ./target/release/ask-ai query "What is 2+2?"
 ## 8. Tradução (opcional)
 
 ```bash
-./target/release/ask-ai translate "Hello" --to pt
+./target/release/ask-ai translate pt "Hello"
 ```
 
 - [ ] Retorna tradução (se modelo disponível)
@@ -202,7 +202,8 @@ rm -f /tmp/file_test.txt /tmp/write_test.txt
 
 ```bash
 # Tempo aceitável para query simples (sem contexto)
-time (timeout 30 ./target/release/ask-ai query "2+2" --soulless --ignore-agents > /dev/null)
+# Nota: flags globais ANTES do subcomando
+time (timeout 30 ./target/release/ask-ai --soulless --ignore-agents query "2+2" > /dev/null)
 # Deve completar em < 15 segundos em hardware normal
 ```
 
