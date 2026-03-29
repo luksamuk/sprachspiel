@@ -1961,15 +1961,15 @@ Features planned for future releases:
 
 **Background:**
 - Skills System (P3) uses English-only sanitization
-- Multilingual prompt injection can bypass English-based detection (documented in research)
-- Chat Module Integration (P6) enables translate functionality within chat sessions
+- Multilingual prompt injection can bypass English-based detection (documentated in research)
+- Specialized Agent Architecture (P4) enables translate functionality within chat sessions
 
 **Features:**
 
 | Feature | Description | Dependency |
 |---------|-------------|------------|
 | **Language Detection** | Detect non-Latin characters, log warnings | None (can implement now) |
-| **Translate-then-Detect** | Translate non-English content, then scan | P6 (Chat Module) |
+| **Translate-then-Detect** | Translate non-English content, then scan | P4 (Specialized Agents) |
 | **ML Detection** | XLM-RoBERTa fine-tuned (optional) | ML infrastructure |
 | **LLM-as-Critic** | Second LLM reviews before loading | Token costs |
 
@@ -1978,7 +1978,7 @@ Features planned for future releases:
 | Phase | Description | Dependency |
 |-------|-------------|------------|
 | 1 | Language detection + warning | None ✅ |
-| 2 | Translate-then-detect | P6 |
+| 2 | Translate-then-detect | P4 |
 | 3 | ML model (optional) | Future |
 
 **Research:**
@@ -1988,7 +1988,7 @@ Features planned for future releases:
 
 **Dependencies:**
 - Skills System (P3) ✅
-- Phase 2 requires P6 (Chat Module Integration)
+- Phase 2 requires P4 (Specialized Agent Architecture)
 
 **Estimated effort:** Phase 1: 2-3 hours | Phase 2: TBD
 
