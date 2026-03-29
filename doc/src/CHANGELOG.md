@@ -9,16 +9,22 @@ All notable changes to Ask-AI will be documented in this file.
 - **Document Import Tool** - Import documents for semantic search and retrieval
   - **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (requires `skills-tools` feature)
   - **File Size Limit:** 5MB for uploaded files; larger files rejected with helpful error
-  - **Commands:** `/import-doc`, `/list-docs`, `/show-doc`, `/remove-doc`
+  - **Commands:** `/doc import`, `/doc list`, `/doc show`, `/doc delete` (shortcuts: `/di`, `/dl`, `/ds`, `/dd`)
   - **LLM Tool:** `import_document(path, scope?)` for autonomous document import
   - **Chunking:** Uses same system as notes/messages (~512 tokens)
   - **Scope:** Project-scoped by default, optional global scope
   - **Storage:** Documents stored in `content_items` table (ContentType::Document)
   - **Retrieval:** Integrated with `remember()` tool via hybrid search (BM25 + vector)
-  - **PDF/EPUB Processing:** Uses builtin `document-processing` skill with `pdftotext`/`ebook-convert`
+  - **PDF/EPUB Processing:** Uses builtin `document-processing` skill with `pdftotext`/`epub2txt`
   - **Title Extraction:** Automatic from filename or first heading
   - **Feature Flag:** `document-tools` feature (enabled by default, included in `all-tools`)
   - **Dependencies:** PDF/EPUB require `skills-tools` feature; TXT/MD/ORG work standalone
+  - Related: Issue #9
+
+- **Document Retrieval Integration** - Documents now searchable via `remember()` tool
+  - `remember(id="doc:N")` retrieves full document content
+  - `remember(query="...")` searches across messages, notes, AND documents
+  - Hybrid search (BM25 + semantic) includes documents in results
   - Related: Issue #9
 
 ## [0.38.0] - 2026-03-27

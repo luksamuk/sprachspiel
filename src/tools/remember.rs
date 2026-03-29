@@ -1,7 +1,7 @@
-//! Remember tool for conversation history and notes access
+//! Remember tool for conversation history, notes, and documents access
 //!
 //! Provides the LLM with explicit access to search and retrieve
-//! messages from conversation history and user-created notes.
+//! messages from conversation history, user-created notes, and imported documents.
 
 use crate::consts::roles::{ROLE_USER, format_role_label};
 use crate::db::SourceType;
@@ -55,10 +55,10 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
 /// * `id` - ID of content to retrieve (MUST include prefix). Optional.
 ///   - Example: "msg:42" for conversation message
 ///   - Example: "note:7" for user-created note
-///   - Example: "doc:13" for document (when implemented)
+///   - Example: "doc:13" for imported document
 /// * `query` - Search query for semantic search. Optional.
 ///   - Example: "Wittgenstein" to find content about that topic
-///   - Searches across messages AND notes
+///   - Searches across messages, notes, AND documents
 /// * `limit` - Max results for query (default: 5, max: 10). Optional.
 ///
 /// # Returns
@@ -69,6 +69,7 @@ fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
 /// ```ignore
 /// remember(id="msg:42")              // Get conversation message 42
 /// remember(id="note:7")              // Get note 7
+/// remember(id="doc:13")              // Get document 13
 /// remember(query="Wittgenstein")     // Search by topic
 /// remember(query="philosophy", limit="10")
 /// ```
@@ -160,19 +161,12 @@ async fn remember_by_id(db: &std::sync::Arc<crate::db::Database>, id_str: &str) 
     // Handle different source types
     match source_type {
         SourceType::Conversation => fetch_conversation_message(db, numeric_id).await,
-        SourceType::Document => {
-            // Phase 5: Document ingestion not yet implemented
-            let err = "Error: Document retrieval not yet implemented.\n\n\
-                       Only conversation messages and notes are supported at this time. \
-                       Use remember(id=\"msg:N\") for messages or remember(id=\"note:N\") for notes.";
-            log_tool_result("remember", err);
-            err.to_string()
-        }
+        SourceType::Document => fetch_document(db, numeric_id).await,
         SourceType::Note => fetch_note(db, numeric_id).await,
         SourceType::Web => {
             // Future: Web source support
             let err = "Error: Web retrieval not yet implemented.\n\n\
-                       Only conversation messages and notes are supported at this time.";
+                       Only conversation messages, notes, and documents are supported at this time.";
             log_tool_result("remember", err);
             err.to_string()
         }
@@ -285,7 +279,52 @@ async fn fetch_note(db: &std::sync::Arc<crate::db::Database>, id: i64) -> String
     }
 }
 
-/// Search for content (messages and notes) by semantic query
+/// Fetch a document by ID
+async fn fetch_document(db: &std::sync::Arc<crate::db::Database>, id: i64) -> String {
+    match db.get_document(id) {
+        Ok(Some(doc)) => {
+            let scope_str = match doc.scope {
+                crate::content::ContentScope::Global => "global",
+                crate::content::ContentScope::Project => "project",
+            };
+
+            let mut output = format!(
+                "**Document {}**\nType: {}\nScope: {}\n",
+                doc.id,
+                doc.file_type.extension(),
+                scope_str,
+            );
+
+            output.push_str(&format!("File: {}\n", doc.filename));
+            output.push_str(&format!("Title: {}\n", doc.title));
+            output.push_str(&format!("Words: {}\n", doc.word_count));
+            output.push_str(&format!("Created: {}\n", doc.created_at.format("%Y-%m-%d %H:%M")));
+
+            if let Some(ref project_id) = doc.project_id {
+                output.push_str(&format!("Project: {}\n", project_id));
+            }
+
+            output.push_str("\n---\n");
+            output.push_str(&doc.content);
+            output.push_str("\n---");
+
+            output
+        }
+        Ok(None) => format!(
+            "Error: Document {} not found.\n\n\
+             The document may have been deleted or does not exist.\n\
+             Try using remember(query=\"...\") to search for documents.",
+            id
+        ),
+        Err(e) => format!(
+            "Error: Failed to retrieve document {}.\n\n\
+             Details: {}",
+            id, e
+        ),
+    }
+}
+
+/// Search for content (messages, notes, and documents) by semantic query
 async fn remember_by_query(
     db: &std::sync::Arc<crate::db::Database>,
     embedding_client: &std::sync::Arc<crate::embeddings::EmbeddingClient>,
@@ -305,7 +344,7 @@ async fn remember_by_query(
         }
     };
 
-    // First, search for notes using unified content search
+    // Search for notes using unified content search
     let note_params = crate::content::ContentSearchParams {
         query,
         embedding: &embedding,
@@ -329,7 +368,31 @@ async fn remember_by_query(
         }
     };
 
-    // Then, search for messages using V7 search
+    // Search for documents using unified content search
+    let doc_params = crate::content::ContentSearchParams {
+        query,
+        embedding: &embedding,
+        content_type: Some(crate::content::ContentType::Document),
+        conversation_id: None,
+        project_id: None,
+        scope: None,
+        limit,
+        keyword_weight: 0.4,
+        semantic_weight: 0.6,
+    };
+
+    let doc_results = match db.search_content_hybrid(&doc_params) {
+        Ok(r) => r,
+        Err(e) => {
+            return format!(
+                "Error: Document search failed.\n\n\
+                 Details: {}",
+                e
+            );
+        }
+    };
+
+    // Search for messages using V7 search
     let message_results = match db.search_messages_hybrid(
         query,
         &embedding,
@@ -353,23 +416,25 @@ async fn remember_by_query(
     let enriched_messages = db.enrich_content_results_with_context(message_results).unwrap_or_default();
 
     // Check if we have any results
-    if note_results.is_empty() && enriched_messages.is_empty() {
+    if note_results.is_empty() && doc_results.is_empty() && enriched_messages.is_empty() {
         return "No content found matching your query.\n\n\
                Tips:\n\
                - Try different keywords\n\
                - Use broader search terms\n\
-               - Content includes messages and notes"
+               - Content includes messages, notes, and documents"
             .to_string();
     }
 
     // Format results
     let note_count = note_results.len();
+    let doc_count = doc_results.len();
     let message_count = enriched_messages.len();
     let mut output = format!(
-        "**Found {} result(s)** ({} message(s), {} note(s))\n\n",
-        note_count + message_count,
+        "**Found {} result(s)** ({} message(s), {} note(s), {} document(s))\n\n",
+        note_count + doc_count + message_count,
         message_count,
-        note_count
+        note_count,
+        doc_count
     );
 
     // Format notes first (if any)
@@ -385,6 +450,24 @@ async fn remember_by_query(
             
             output.push_str(&format!(
                 "**[id=note:{}]** {} (score: {:.2})\n{}\n\n",
+                result.item.id, title, result.score, content
+            ));
+        }
+    }
+
+    // Format documents (if any)
+    if !doc_results.is_empty() {
+        output.push_str("**Documents:**\n\n");
+        for result in &doc_results {
+            let title = result.item.title.as_deref().unwrap_or("Untitled");
+            let content = if result.item.content.chars().count() > 150 {
+                format!("{}...", result.item.content.chars().take(150).collect::<String>())
+            } else {
+                result.item.content.clone()
+            };
+            
+            output.push_str(&format!(
+                "**[id=doc:{}]** {} (score: {:.2})\n{}\n\n",
                 result.item.id, title, result.score, content
             ));
         }
@@ -440,5 +523,6 @@ async fn remember_by_query(
     output.push_str("Use IDs to retrieve full content:\n");
     output.push_str("- remember(id=\"msg:N\") for messages\n");
     output.push_str("- remember(id=\"note:N\") for notes\n");
+    output.push_str("- remember(id=\"doc:N\") for documents\n");
     output
 }
