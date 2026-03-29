@@ -38,7 +38,7 @@
 - Built-in models: llama3.1, translategemma, glm-ocr (user models in config)
 - Thinking support for cloud models (configurable via `thinking = true`)
 - Dynamic model selection with capability detection
-- Tool integration with error recovery (31 tools in 9 categories)
+- Tool integration with error recovery (50 tools in 14 categories)
 - Translation (50+ languages)
 - OCR with multiple modes
 - Summarization with styles

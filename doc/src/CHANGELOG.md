@@ -573,7 +573,7 @@ All notable changes to Ask-AI will be documented in this file.
 ### Changed
 
 - **File Operations** - Now 8 tools instead of 5 (3 new write tools added)
-- **Tool Count** - Updated from 28 tools to 31 tools (8 file + 9 pokemon + 3 weather + 1 calc + 2 serper + 2 system + 3 search + 1 finance + 2 run_command)
+- **Tool Count** - Updated from 28 tools to 50 tools (8 file + 9 pokemon + 3 weather + 1 calc + 2 serper + 2 system + 3 search + 1 finance + 2 run_command + 3 facts + 1 notes + 1 documents + 5 todo + 2 skills + 1 remember + 5 LED + 1 misc + 1 tool_check)
 - **Documentation** - Updated `doc/src/tools.md` with write tool documentation and security section
 - **Documentation** - Added "Use Positive Framing" section to `doc/src/soul.md`
 - **Tests** - `test_negative_instructions_in_prompts` now uses `with_soulless(true)` to test only built-in prompts
