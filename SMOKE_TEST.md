@@ -7,6 +7,16 @@ essenciais estão funcionando.
 
 ---
 
+## Terminal-Use (Opcional)
+
+Este smoke test foi projetado para ser executado por um agente de IA usando a ferramenta **terminal-use**, que permite controle automatizado do terminal.
+
+**Instalação:** [github.com/flipbit03/terminal-use](https://github.com/flipbit03/terminal-use)
+
+**Configuração obrigatória:** Usar terminal com **80 colunas de largura** para garantir formatação consistente das saídas.
+
+---
+
 ## Pré-requisitos
 
 ```bash
