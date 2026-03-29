@@ -15,18 +15,19 @@ cargo build --release --features all-tools
 ollama serve  # Em outro terminal
 
 # Preservar banco atual do usuário
-cp ~/.local/share/ask-ai/ask-ai.db ~/.local/share/ask-ai/ask-ai.db.smoke-backup 2>/dev/null || true
 cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.smoke-backup 2>/dev/null || true
 
 # Usar banco temporário para testes (isolamento)
-rm -f ~/.local/share/ask-ai/ask-ai.db ~/.local/share/ask-ai/embeddings.db
+rm -f ~/.local/share/ask-ai/embeddings.db
 ```
 
 ## Modelo de Teste
 
 ```bash
-# Verificar se o modelo padrão está disponível
-ollama list | grep -q qwen3.5 || ollama pull qwen3.5:latest
+# Usar variável de ambiente ou padrão
+MODEL=${SMOKE_MODEL:-qwen3.5:4b}
+ollama list | grep -q "$MODEL" || ollama pull "$MODEL"
+echo "Modelo de teste: $MODEL"
 ```
 
 ---
@@ -95,6 +96,8 @@ touch /tmp/empty.txt
 
 ## 5. Memória (remember/facts)
 
+**Nota:** Usar modelo com suporte a tools (qwen3.5:4b ou maior). Modelos pequenos como 0.8b podem ter dificuldade com tool calling.
+
 - [ ] "Remember that I like coffee" cria uma nota/fato
 - [ ] "What do I like?" retorna "coffee"
 - [ ] Fatos persistem entre sessões (sair e entrar novamente)
@@ -110,10 +113,16 @@ touch /tmp/empty.txt
 
 ---
 
-## 7. Query Mode (rápido)
+## 7. Query Mode
+
+**Nota:** Query mode carrega contexto completo (AGENTS.md, SOUL.md, tools). Para teste rápido, usar `--soulless --ignore-agents` ou aumentar timeout.
 
 ```bash
-./target/release/ask-ai query "What is 2+2?" --model qwen3.5:0.8b --no-tools
+# Teste rápido (sem contexto pesado)
+timeout 60 ./target/release/ask-ai query "2+2" --soulless --ignore-agents
+
+# Teste completo (com contexto)
+timeout 120 ./target/release/ask-ai query "What is 2+2?"
 ```
 
 - [ ] Retorna resposta sem erros
@@ -138,8 +147,14 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"
 sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
 ```
 
-- [ ] Tabelas existem (content, facts, etc.)
+- [ ] Tabelas existem (content, facts, conversations, etc.)
 - [ ] Schema versão correta (8 ou superior)
+
+**Verificação explícita:**
+```bash
+SCHEMA_VER=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;")
+[ "$SCHEMA_VER" -ge 8 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 8"
+```
 
 ---
 
@@ -163,9 +178,7 @@ Via chat com um modelo que suporte tools:
 
 ```bash
 # Restaurar banco do usuário
-rm -f ~/.local/share/ask-ai/ask-ai.db
 rm -f ~/.local/share/ask-ai/embeddings.db
-mv ~/.local/share/ask-ai/ask-ai.db.smoke-backup ~/.local/share/ask-ai/ask-ai.db 2>/dev/null || true
 mv ~/.local/share/ask-ai/embeddings.db.smoke-backup ~/.local/share/ask-ai/embeddings.db 2>/dev/null || true
 
 # Limpar arquivos de teste
@@ -175,7 +188,21 @@ rm -f /tmp/file_test.txt /tmp/write_test.txt
 
 ---
 
+## 11. Performance Básica
+
+```bash
+# Tempo aceitável para query simples (sem contexto)
+time (timeout 30 ./target/release/ask-ai query "2+2" --soulless --ignore-agents > /dev/null)
+# Deve completar em < 15 segundos em hardware normal
+```
+
+- [ ] Query simples completa em tempo razoável (< 15s)
+
+---
+
 ## Resultado
+
+**IMPORTANTE:** Os resultados do smoke test devem ser guardados **fora do projeto** (ex: comentário no PR, issue, ou documento externo). **NÃO MODIFIQUE ESTE ARQUIVO** com resultados - ele é um template reutilizável.
 
 **Data:** _______  
 **Versão:** _______  
@@ -200,7 +227,6 @@ echo "=== Smoke Test Automatizado ==="
 
 # 1. Backup banco
 echo "Backup banco..."
-cp ~/.local/share/ask-ai/ask-ai.db ~/.local/share/ask-ai/ask-ai.db.smoke-backup 2>/dev/null || true
 cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.smoke-backup 2>/dev/null || true
 
 # 2. Build
@@ -218,7 +244,6 @@ cargo test --lib 2>&1 | tail -5
 echo "✓ Unit tests"
 
 # 5. Restore
-mv ~/.local/share/ask-ai/ask-ai.db.smoke-backup ~/.local/share/ask-ai/ask-ai.db 2>/dev/null || true
 mv ~/.local/share/ask-ai/embeddings.db.smoke-backup ~/.local/share/ask-ai/embeddings.db 2>/dev/null || true
 
 echo ""
@@ -234,8 +259,9 @@ O script acima executa testes automatizados. Os seguintes testes devem ser execu
 
 1. **Seção 3**: Document Import (testes interativos no chat)
 2. **Seção 4**: Embedding Síncrono (verificar indexação imediata)
-3. **Seção 5**: Memória (testes interativos)
+3. **Seção 5**: Memória (testes interativos com modelo >= 4b)
 4. **Seção 6**: Notas (testes interativos)
 5. **Seção 10**: File Tools (via LLM)
+6. **Seção 11**: Performance (verificar tempo de resposta)
 
 Estes testes requerem interação com o chat e verificação visual de resultados.
