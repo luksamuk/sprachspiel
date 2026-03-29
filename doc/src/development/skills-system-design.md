@@ -1160,7 +1160,7 @@ When chat multi-mode is implemented (allowing Translate mode within chat session
    - Higher accuracy but requires ML infrastructure
 
 **Implementation Dependency:**
-- Requires: Chat multi-mode (P6: Chat Module Integration in roadmap)
+- Requires: Specialized Agent Architecture (P4 in roadmap)
 - Existing: `ask translate` subcommand with `translategemma` model
 
 **References:**

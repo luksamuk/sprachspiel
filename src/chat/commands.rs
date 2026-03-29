@@ -6,6 +6,24 @@ use super::session::ChatSession;
 use crate::debug_tools::toggle_debug;
 use crate::tokens::ContextMetrics;
 
+/// Parse a document ID from user input.
+/// Accepts formats: "N", "#N", "doc:N" (all return the numeric ID).
+fn parse_document_id(input: &str) -> Result<i64, String> {
+    let trimmed = input.trim();
+    
+    // Try to strip # prefix first
+    let after_hash = trimmed.strip_prefix('#').unwrap_or(trimmed);
+    
+    // Then try to strip doc: prefix
+    let after_doc = after_hash.strip_prefix("doc:").unwrap_or(after_hash);
+    
+    // Parse the remaining number
+    after_doc
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| format!("Invalid document ID '{}'. Use: #N, doc:N, or just N", trimmed))
+}
+
 /// Result of executing a command
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandResult {
@@ -93,7 +111,21 @@ pub enum CommandResult {
         global: bool,
         limit: usize,
     },
-    /// Activate a skill (loaded skill content)
+    /// Import a document
+    DocumentImport {
+        path: String,
+        global: bool,
+        nowait: bool,
+    },
+    /// List documents
+    DocumentList {
+        global: bool,
+    },
+    /// Show a document by ID
+    DocumentShow { id: i64 },
+    /// Delete a document by ID
+    DocumentDelete { id: i64 },
+    /// Activate a skill (loaded skill contents)
     Skill {
         name: String,
         content: String,
@@ -210,6 +242,20 @@ pub enum ChatCommand {
         global: bool,
         limit: usize,
     },
+    /// Import a document
+    DocumentImport {
+        path: String,
+        global: bool,
+        nowait: bool,
+    },
+    /// List documents
+    DocumentList {
+        global: bool,
+    },
+    /// Show a document by ID
+    DocumentShow { id: i64 },
+    /// Delete a document by ID
+    DocumentDelete { id: i64 },
     /// Activate a skill by name
     Skill { name: String },
 }
@@ -793,6 +839,83 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(_) => return Some(Err("Invalid note ID. Must be a number.".to_string())),
             }
         }
+        "doc" | "document" | "docs" | "documents" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"list");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+            
+            match *subcmd {
+                "import" | "i" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /doc import <path> [--global] [--nowait]".to_string()));
+                    }
+                    let global = subargs.contains("--global");
+                    let nowait = subargs.contains("--nowait");
+                    let path = subargs.replace("--global", "").replace("--nowait", "").trim().to_string();
+                    if path.is_empty() {
+                        return Some(Err("Usage: /doc import <path> [--global] [--nowait]".to_string()));
+                    }
+                    ChatCommand::DocumentImport { path, global, nowait }
+                }
+                "list" | "l" => {
+                    let global = subargs.contains("--global");
+                    ChatCommand::DocumentList { global }
+                }
+                "show" | "s" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /doc show <id>".to_string()));
+                    }
+                    match parse_document_id(subargs.trim()) {
+                        Ok(id) => ChatCommand::DocumentShow { id },
+                        Err(e) => return Some(Err(e)),
+                    }
+                }
+                "delete" | "d" | "remove" | "rm" => {
+                    if subargs.is_empty() {
+                        return Some(Err("Usage: /doc delete <id>".to_string()));
+                    }
+                    match parse_document_id(subargs.trim()) {
+                        Ok(id) => ChatCommand::DocumentDelete { id },
+                        Err(e) => return Some(Err(e)),
+                    }
+                }
+                _ => return Some(Err("Usage: /doc <import|list|show|delete>".to_string())),
+            }
+        }
+        "di" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /di <path> [--global] [--nowait]".to_string()));
+            }
+            let global = args.contains("--global");
+            let nowait = args.contains("--nowait");
+            let path = args.replace("--global", "").replace("--nowait", "").trim().to_string();
+            if path.is_empty() {
+                return Some(Err("Usage: /di <path> [--global] [--nowait]".to_string()));
+            }
+            ChatCommand::DocumentImport { path, global, nowait }
+        }
+        "dl" => {
+            let global = args.contains("--global");
+            ChatCommand::DocumentList { global }
+        }
+        "ds" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /ds <id>".to_string()));
+            }
+            match parse_document_id(args.trim()) {
+                Ok(id) => ChatCommand::DocumentShow { id },
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        "dd" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /dd <id>".to_string()));
+            }
+            match parse_document_id(args.trim()) {
+                Ok(id) => ChatCommand::DocumentDelete { id },
+                Err(e) => return Some(Err(e)),
+            }
+        }
         "session" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
@@ -993,13 +1116,16 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
             };
 
             match file {
-                Some(path) => match std::fs::write(&path, &output) {
-                    Ok(()) => {
-                        println!("Conversation exported to: {}", path);
-                        CommandResult::Continue
+                Some(path) => {
+                    let expanded_path = crate::utils::expand_tilde_path(&path);
+                    match std::fs::write(&expanded_path, &output) {
+                        Ok(()) => {
+                            println!("Conversation exported to: {}", path);
+                            CommandResult::Continue
+                        }
+                        Err(e) => CommandResult::Error(format!("Failed to write file: {}", e)),
                     }
-                    Err(e) => CommandResult::Error(format!("Failed to write file: {}", e)),
-                },
+                }
                 None => {
                     println!("{}", output);
                     CommandResult::Continue
@@ -1266,6 +1392,14 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
 
         ChatCommand::NoteSearch { query, global, limit } => CommandResult::NoteSearch { query, global, limit },
 
+        ChatCommand::DocumentImport { path, global, nowait } => CommandResult::DocumentImport { path, global, nowait },
+
+        ChatCommand::DocumentList { global } => CommandResult::DocumentList { global },
+
+        ChatCommand::DocumentShow { id } => CommandResult::DocumentShow { id },
+
+        ChatCommand::DocumentDelete { id } => CommandResult::DocumentDelete { id },
+
         ChatCommand::Skill { name } => {
             // Load skill content and return it for injection into session
             let skill = crate::skills::get_skill_content(&name);
@@ -1335,6 +1469,15 @@ Notes:
 
   Subcommand shortcuts: /no = /note, /na = /note add
   /nl = /note list, /ns = /note show, /nd = /note delete
+
+Documents:
+  /doc import <path> [--global]   Import a document (TXT, MD, ORG, PDF, EPUB)
+  /doc list [--global]            List documents
+  /doc show <id>                  Show a document
+  /doc delete <id>                Delete a document
+
+  Subcommand shortcuts: /di = /doc import, /dl = /doc list
+  /ds = /doc show, /dd = /doc delete
 
 Todo List:
   /todo add <description>    Add a new task
@@ -1442,4 +1585,38 @@ fn export_markdown(session: &ChatSession) -> String {
 /// Export session as JSON
 fn export_json(session: &ChatSession) -> String {
     serde_json::to_string_pretty(session).unwrap_or_else(|_| "{}".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_document_id_numeric() {
+        assert_eq!(parse_document_id("1").unwrap(), 1);
+        assert_eq!(parse_document_id("42").unwrap(), 42);
+        assert_eq!(parse_document_id("-5").unwrap(), -5);
+    }
+
+    #[test]
+    fn test_parse_document_id_hashtag() {
+        assert_eq!(parse_document_id("#1").unwrap(), 1);
+        assert_eq!(parse_document_id("#42").unwrap(), 42);
+        assert_eq!(parse_document_id("  #10  ").unwrap(), 10);
+    }
+
+    #[test]
+    fn test_parse_document_id_prefixed() {
+        assert_eq!(parse_document_id("doc:1").unwrap(), 1);
+        assert_eq!(parse_document_id("doc:42").unwrap(), 42);
+        assert_eq!(parse_document_id("  doc:10  ").unwrap(), 10);
+    }
+
+    #[test]
+    fn test_parse_document_id_invalid() {
+        assert!(parse_document_id("abc").is_err());
+        assert!(parse_document_id("").is_err());
+        assert!(parse_document_id("doc:abc").is_err());
+        assert!(parse_document_id("#abc").is_err());
+    }
 }

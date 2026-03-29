@@ -346,6 +346,55 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ---
 
+### Specialized Agent Architecture
+
+**Priority:** HIGH  
+**Status:** Planned (Issue #12)
+
+**Goal:** Delegate specialized tasks (OCR, vision, document extraction, translation, summarization) to one-shot agents with optimized models.
+
+**Problem:**
+- OCR/Vision/Translate/Summarize are standalone CLI commands, not integrated with chat
+- Document import calls `Command::new()` directly, bypassing skills system
+- Skills can be overridden at project level, but tools don't respect overrides
+
+**Architecture:**
+
+| Aspect | Main Agent | Specialized Agent |
+|--------|------------|-------------------|
+| Context | Full history + memory + database | One-shot (no history) |
+| Database | Yes (SQLite) | No |
+| Thinking | Optional | Never (output only) |
+| Output | Returns to user | Returns to Main Agent |
+| Model | User's chat model | Configured per type |
+
+**Subagent Types:**
+
+| Type | Model | Tools | Purpose |
+|------|-------|-------|---------|
+| `ocr` | glm-ocr:bf16 | run_command(tesseract) | Image text extraction |
+| `vision` | moondream:1.8b | - | Image analysis |
+| `translate` | translategemma:4b | - | Translation |
+| `summarize` | (same model) | - | Summarization |
+| `document` | (same model) | run_command(pdftotext) | PDF/EPUB extraction |
+
+**Planned Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/ocr <image>` | OCR via specialized agent |
+| `/vision <image>` | Image analysis via specialized agent |
+| `/translate <lang> <text>` | Translation via specialized agent |
+| `/summarize <text>` | Summarization via specialized agent |
+
+**Technical Debt Resolved:**
+- `import_document` calling `Command::new()` directly → uses `spawn_subagent(type="document")`
+- Skills can now override document-processing behavior at project level
+
+**Implementation:** See `IMPLEMENTATION.md` - Priority 4
+
+---
+
 ## High Priority
 
 ### CLI Tools Infrastructure (Phase 1)
@@ -416,7 +465,6 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 **Phase 3: Integration** (future)
 - [ ] Integration with Document Import Tool
-- [ ] Integration with OCR/Vision Tools
 - [ ] User skill sharing (community repository?)
 - [ ] Skill versioning
 
@@ -478,21 +526,19 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 ### Document Import Tool
 
-**Priority:** MEDIUM
-**Status:** BLOCKED (requires Skills System Phase 1)
+**Priority:** HIGH
+**Status:** ✅ COMPLETE (v0.39.0)
 
-**Goal:** Import documents for semantic search with external tool pipelines.
+**Goal:** Import documents for semantic search and retrieval.
 
-**Dependencies:**
-- Skills System (for PDF pipeline definition)
-- CLI Tools Phase 2 (pdftotext, pdftoppm, tesseract integration)
+**Implemented:**
+- TXT/MD/ORG: Builtin support
+- PDF/EPUB: External tools (pdftotext, epub2txt) via skills-tools feature
+- Chunking with overlap (~512 tokens)
+- `/doc import`, `/doc list`, `/doc show`, `/doc delete` commands
+- Integration with `remember()` tool for retrieval
 
-**Planned Features:**
-- TEXT/MD: Builtin support (import_text_file)
-- PDF: External tools (pdftotext) + skills
-- Scanned PDF: tesseract + pdftoppm pipeline
-- Chunking with overlap (512 tokens, 64 overlap)
-- `/import-doc`, `/list-docs`, `/remove-doc` commands
+**Technical Debt:** PDF/EPUB extraction calls `Command::new()` directly, bypassing skills system. Will be resolved in Specialized Agent Architecture (Priority 4).
 
 ---
 
@@ -547,13 +593,6 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 ---
 
 ## Low Priority
-
-### OCR Model Customization
-
-**Priority:** Low  
-**Status:** Resolved (Ollama v0.17.6)
-
-GLM-OCR fix available in Ollama v0.17.6+.
 
 ### Plugin System
 

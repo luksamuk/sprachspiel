@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.38.0** - 2026-03-27 (Skills System)
+**v0.39.0** - 2026-03-27 (Document Import Tool)
 
 ## Current Implementation Status
 
@@ -38,7 +38,7 @@
 - Built-in models: llama3.1, translategemma, glm-ocr (user models in config)
 - Thinking support for cloud models (configurable via `thinking = true`)
 - Dynamic model selection with capability detection
-- Tool integration with error recovery (31 tools in 9 categories)
+- Tool integration with error recovery (50 tools in 14 categories)
 - Translation (50+ languages)
 - OCR with multiple modes
 - Summarization with styles
@@ -874,23 +874,58 @@ On-demand Loading:
 
 ---
 
-### 🟡 PRIORITY 3: Document Import Tool
+### ✅ PRIORITY 3: Document Import Tool (COMPLETED)
 
-**Status:** ❌ BLOCKED (requires Skills System)
+**Status:** ✅ COMPLETED (v0.39.0)
 
-**Goal:** Import documents for semantic search.
+**Goal:** Import documents for semantic search and retrieval.
+
+**Dependencies:** Skills System ✅ COMPLETED (v0.38.0)
 
 **Features:**
-- TEXT/MD: Builtin support (import_text_file)
-- PDF: External tools (pdftotext) + skills
-- Scanned PDF: tesseract + pdftoppm pipeline
-- Chunking with overlap (512 tokens, 64 overlap)
-- `/import-doc`, `/list-docs`, `/remove-doc` commands
-- Update `search_hybrid()` for document chunks
+- **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (requires `skills-tools` feature)
+- **File Size Limit:** 5MB for uploaded files; larger files rejected with helpful error
+- **Chunking:** Same system as notes/messages (~512 tokens)
+- **Scope:** Project-scoped by default, optional global scope
+- **Commands:** `/doc import`, `/doc list`, `/doc show`, `/doc delete` (shortcuts: `/di`, `/dl`, `/ds`, `/dd`)
+- **LLM Tool:** `import_document(path, scope?)` for autonomous import
+- **Storage:** content_items table with ContentType::Document
+- **Retrieval:** Integrated with `remember()` tool via hybrid search
 
-**Dependencies:** Skills System (for PDF pipeline definition)
+**Feature Flag Dependencies:**
+- `document-tools` feature enabled by default
+- PDF/EPUB import requires `skills-tools` feature (also default)
+- TXT/MD/ORG import works standalone (no skills dependency)
+- Included in `all-tools` feature
 
-**Estimated effort:** 5-7 days
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Database & Types (document.rs, db/schema.rs, migration v8) | ✅ Done |
+| 2 | LLM Tool (tools/documents.rs) | ✅ Done |
+| 3 | Commands (commands.rs, command_handlers.rs) | ✅ Done |
+| 4 | Embeddings integration | ✅ Done |
+| 5 | Tests | ✅ Done |
+| 6 | Documentation | ✅ Done |
+
+**Files Created:**
+- `src/content/document.rs` - Document struct, FileType enum, detect_file_type(), extract_title(), MAX_DOCUMENT_SIZE constant
+- `src/tools/documents.rs` - import_document() LLM tool
+
+**Files Modified:**
+- `src/content/mod.rs` - Export document module
+- `src/content/db.rs` - Document CRUD operations (insert_document, get_document, list_documents, delete_document)
+- `src/db/schema.rs` - Migration v8: added filename, file_type, word_count columns
+- `src/db/connection.rs` - Migration v7→v8 for document columns
+- `src/tools/mod.rs` - Add documents module (feature-gated)
+- `src/tools/registry.rs` - Register import_document tool (feature-gated)
+- `src/chat/commands.rs` - Added CommandResult variants and parsing for /doc commands
+- `src/chat/command_handlers.rs` - Added handlers for document commands (feature-gated)
+- `Cargo.toml` - Added `document-tools` feature flag (default, included in all-tools)
+
+**Commits:**
+- PR #53 - Full implementation
 
 **Reference:** `doc/src/development/planning-session-cli-tools.md` lines 151-156, 287-302
 
@@ -1690,20 +1725,111 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🟡 PRIORITY 4: Chat Module Integration
+### 🟡 PRIORITY 4: Specialized Agent Architecture
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Use OCR/Vision/Translate/Summarize from chat.
+**Goal:** Delegate specialized tasks (OCR, vision, document extraction, translation, summarization) to one-shot agents with optimized models.
 
-**Features:**
-- `/ocr`, `/vision`, `/translate`, `/summarize` commands in REPL
-- Model switching during commands
-- Design: temporary context or persistent?
+**Problem:**
+- OCR/Vision/Translate/Summarize are standalone CLI commands, not integrated with chat
+- Document import calls `Command::new()` directly, bypassing skills system
+- Skills can be overridden at project level, but tools don't respect overrides
 
-**Dependencies:** None
+**Architecture:**
 
-**Estimated effort:** 3-5 days
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Main Agent (conversational)                                     │
+│ - Full context: history + memory + database                      │
+│ - Tools: spawn_subagent, remember, fact_add, import_document...  │
+│                                                                 │
+│   LLM decides: "I need to extract text from PDF"                │
+│   Tool call: spawn_subagent(type="document", prompt="...")       │
+│         ↓                                                       │
+│ ┌───────────────────────────────────────────────────────────┐  │
+│ │ Specialized Agent (one-shot, no context/database)         │  │
+│ │                                                           │  │
+│ │ Type: "ocr"       → glm-ocr:bf16                          │  │
+│ │ Type: "vision"    → moondream:1.8b                        │  │
+│ │ Type: "translate" → translategemma:4b                     │  │
+│ │ Type: "summarize" → (same model, specialized prompt)      │  │
+│ │ Type: "document"  → (same model, uses run_command)        │  │
+│ │                                                           │  │
+│ │ Tools: Whitelisted per type (run_command, etc.)           │  │
+│ │ Output: Tool result (no thinking)                         │  │
+│ └───────────────────────────────────────────────────────────┘  │
+│         ↓                                                       │
+│ Result injected as tool output for main LLM                     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Key Characteristics:**
+
+| Aspect | Main Agent | Specialized Agent |
+|--------|------------|-------------------|
+| Context | Full history + memory + database | One-shot (no history) |
+| Database | Yes (SQLite) | No |
+| Thinking | Optional | Never (output only) |
+| Output | Returns to user | Returns to Main Agent |
+| Model | User's chat model | Configured per type |
+| Skills | All available | Type-specific whitelist |
+
+**Technical Debt Resolved:**
+- Issue #9 (Document Import): `import_document` will use `spawn_subagent(type="document")`
+- Issue #12 (OCR/Vision): Integrated via specialized agents
+
+**Subagent Types:**
+
+| Type | Model | Tools | Purpose |
+|------|-------|-------|---------|
+| `ocr` | glm-ocr:bf16 | run_command(tesseract) | Image text extraction |
+| `vision` | moondream:1.8b | - | Image analysis |
+| `translate` | translategemma:4b | - | Translation |
+| `summarize` | (same model) | - | Summarization |
+| `document` | (same model) | run_command(pdftotext) | PDF/EPUB extraction |
+
+**Configuration:**
+
+```toml
+# ~/.config/ask-ai/models.toml
+
+[subagents]
+# Override default models for specialized agents
+ocr = "glm-ocr:bf16"
+vision = "moondream:1.8b"
+translation = "translategemma:4b"
+# summarization and document use main chat model
+```
+
+**Implementation Phases:**
+
+| Phase | Description | Effort |
+|-------|-------------|--------|
+| 1 | Define `SubagentType` enum and `spawn_subagent` tool signature | 0.5 day |
+| 2 | Create subagent coordinator (one-shot context, model routing) | 1 day |
+| 3 | Implement OCR subagent (glm-ocr, tesseract tools) | 1 day |
+| 4 | Implement Vision subagent (moondream, image processing) | 1 day |
+| 5 | Implement Translate/Summarize subagents | 0.5 day |
+| 6 | Implement Document subagent (PDF/EPUB, respects skill overrides) | 1 day |
+| 7 | Configuration (models.toml) and user commands | 0.5 day |
+| 8 | Testing and documentation | 1 day |
+| **Total** | | **7 days** |
+
+**User Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/ocr <image>` | OCR via specialized agent |
+| `/vision <image>` | Image analysis via specialized agent |
+| `/translate <lang> <text>` | Translation via specialized agent |
+| `/summarize <text>` | Summarization via specialized agent |
+
+**Dependencies:** Skills System (completed v0.38.0)
+
+**Related Issues:** #9, #12
+
+**Estimated effort:** 5-7 days
 
 ---
 
@@ -1780,37 +1906,19 @@ Features planned for future releases:
 
 | Priority | Feature | Description | Dependencies | Issue |
 |----------|---------|-------------|--------------|-------|
-| P8 | OCR/Vision Tools | Image processing via CLI tools | Skills System | #12 |
-| P9 | File Session State | Explicit file tracking | None | #13 |
-| P10 | Skills System Extended | Multilingual sanitization, security enhancements | Skills System, Chat Module Integration | #14 |
-| P11 | File Staleness | Detect outdated file content | None | #50 |
-| P12 | Extended Personalities | Per-personality model config | None | #49 |
-| P13 | Plugin System | User-defined tools | None | #15 |
-| P14 | TUI | Ratatui-based terminal interface | None | #16 |
-| P15 | Memory Enhancement 2-5 | Query routing, filtering | Doc Import | #17 |
+| P8 | File Session State | Explicit file tracking | None | #13 |
+| P9 | Skills System Extended | Multilingual sanitization, security enhancements | Skills System, Specialized Agents | #14 |
+| P10 | File Staleness | Detect outdated file content | None | #50 |
+| P11 | Extended Personalities | Per-personality model config | None | #49 |
+| P12 | Plugin System | User-defined tools | None | #15 |
+| P13 | TUI | Ratatui-based terminal interface | None | #16 |
+| P14 | Memory Enhancement 2-5 | Query routing, filtering | Doc Import | #17 |
+
+**Note:** OCR/Vision Tools Integration was merged into Priority 4 (Specialized Agent Architecture).
 
 ---
 
-### 🔵 PRIORITY 8: OCR/Vision Tools Integration
-
-**Status:** ❌ NOT STARTED
-
-**Goal:** Image processing via CLI tools.
-
-**Features:**
-- OCR via tesseract
-- Image metadata via exiftool
-- Image conversion via imagemagick
-
-**Dependencies:** Skills System (P3)
-
-**Estimated effort:** 3-5 days
-
-**Related:** Issue #12
-
----
-
-### 🔵 PRIORITY 9: File Session State
+### 🔵 PRIORITY 8: File Session State
 
 **Status:** ❌ NOT STARTED
 
@@ -1853,15 +1961,15 @@ Features planned for future releases:
 
 **Background:**
 - Skills System (P3) uses English-only sanitization
-- Multilingual prompt injection can bypass English-based detection (documented in research)
-- Chat Module Integration (P6) enables translate functionality within chat sessions
+- Multilingual prompt injection can bypass English-based detection (documentated in research)
+- Specialized Agent Architecture (P4) enables translate functionality within chat sessions
 
 **Features:**
 
 | Feature | Description | Dependency |
 |---------|-------------|------------|
 | **Language Detection** | Detect non-Latin characters, log warnings | None (can implement now) |
-| **Translate-then-Detect** | Translate non-English content, then scan | P6 (Chat Module) |
+| **Translate-then-Detect** | Translate non-English content, then scan | P4 (Specialized Agents) |
 | **ML Detection** | XLM-RoBERTa fine-tuned (optional) | ML infrastructure |
 | **LLM-as-Critic** | Second LLM reviews before loading | Token costs |
 
@@ -1870,7 +1978,7 @@ Features planned for future releases:
 | Phase | Description | Dependency |
 |-------|-------------|------------|
 | 1 | Language detection + warning | None ✅ |
-| 2 | Translate-then-detect | P6 |
+| 2 | Translate-then-detect | P4 |
 | 3 | ML model (optional) | Future |
 
 **Research:**
@@ -1880,7 +1988,7 @@ Features planned for future releases:
 
 **Dependencies:**
 - Skills System (P3) ✅
-- Phase 2 requires P6 (Chat Module Integration)
+- Phase 2 requires P4 (Specialized Agent Architecture)
 
 **Estimated effort:** Phase 1: 2-3 hours | Phase 2: TBD
 

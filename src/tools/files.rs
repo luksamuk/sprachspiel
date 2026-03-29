@@ -1,6 +1,6 @@
 use super::files_blocklist::{is_blocked_for_list, is_blocked_for_read, BlocklistConfig};
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use crate::utils::{format_size, parse_bool, parse_u32};
+use crate::utils::{expand_tilde_path, format_size, parse_bool, parse_u32};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 
@@ -51,7 +51,7 @@ pub async fn read_file(
     );
 
     // Validate and canonicalize path (also checks if exists)
-    let path_buf = PathBuf::from(&path);
+    let path_buf = expand_tilde_path(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
@@ -206,7 +206,7 @@ pub async fn read_file_segment(
     );
 
     // Validate and canonicalize path (also checks if exists)
-    let path_buf = PathBuf::from(&path);
+    let path_buf = expand_tilde_path(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
@@ -338,7 +338,7 @@ pub async fn count_lines(
     log_tool_call("count_lines", &[("path".to_string(), path.clone())]);
 
     // Validate and canonicalize path (also checks if exists)
-    let path_buf = PathBuf::from(&path);
+    let path_buf = expand_tilde_path(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
@@ -461,7 +461,7 @@ pub async fn list_directory(
     let config = BlocklistConfig::load();
 
     // Validate and canonicalize path (also checks if exists)
-    let path_buf = PathBuf::from(&path);
+    let path_buf = expand_tilde_path(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {
@@ -687,7 +687,7 @@ pub async fn search_files(
     };
 
     // Validate path (also checks if exists)
-    let path_buf = PathBuf::from(&path);
+    let path_buf = expand_tilde_path(&path);
     let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
         Ok(p) => p,
         Err(e) => {

@@ -6,6 +6,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 
 | Category | Count | Source | Status | Default |
 |----------|-------|--------|--------|---------|
+| Document Import | 1 | Local files | ✅ Working | ✅ Enabled |
 | Pokémon | 9 | PokéAPI | ✅ Working | ❌ Opt-in |
 | Weather | 3 | Open-Meteo | ✅ Working | ✅ Enabled |
 | Calculator | 1 | ollama-rs built-in | ✅ Working | ✅ Enabled |
@@ -13,10 +14,11 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Web Scraper | 1 | html2md | ✅ Working | ❌ Disabled |
 | Finance | 1 | Google Finance | ✅ Working | ❌ Disabled |
 | System | 2 | Local system | ✅ Working | ✅ Enabled |
-| File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
+| File Operations | 8 | Local filesystem | ✅ Working | ✅ Enabled |
 | Factual Memory | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
+| Todo | 5 | Session state | ✅ Working | ✅ Enabled |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
@@ -36,6 +38,8 @@ The default build includes:
 - `system-tools` - Date/time and project context
 - `file-tools` - File system operations
 - `skills-tools` - AI behavior skills (skill_list, skill_view)
+- `todo-tools` - Session todo list management
+- `document-tools` - Document import
 
 ### Available Features
 
@@ -50,6 +54,8 @@ The default build includes:
 | `system-tools` | System context | get_current_datetime, get_project_context | ✅ Yes |
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files, write_file, edit_file, append_file | ✅ Yes |
 | `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
+| `document-tools` | Document import | import_document | ✅ Yes |
+| `todo-tools` | Session todo list | todo_add, todo_update, todo_list, todo_clear_done, todo_clear_all | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
@@ -69,7 +75,7 @@ Get your free API key at [serper.dev](https://serper.dev) (2,500 free searches/m
 **Option 2: DuckDuckGo** - Free but may be blocked
 ```bash
 # Build with search-tools instead of serper-tools
-cargo build --release --no-default-features --features "weather-tools,calc-tools,search-tools,file-tools,system-tools,skills-tools"
+cargo build --release --no-default-features --features "weather-tools,calc-tools,search-tools,file-tools,system-tools,skills-tools,todo-tools,document-tools"
 ```
 
 ### Building with Custom Features
@@ -565,22 +571,103 @@ Users can also manage facts via chat commands:
 - High-importance preferences: Never pruned
 - Automatic decay on startup
 
+## Todo Tools (5)
+
+Tools for managing a task list during a chat session. These tools help the LLM track and manage tasks.
+
+### todo_add
+
+Add a new task to the todo list.
+
+```
+Function: todo_add
+Args:
+  - description (string, required): Task description
+Example: todo_add(description="Implement user authentication")
+```
+
+### todo_update
+
+Update the status of an existing task.
+
+```
+Function: todo_update
+Args:
+  - id (string, required): Task ID (format: "N" or "todo:N")
+  - status (string, required): "pending", "in_progress", or "done"
+Example: todo_update(id="1", status="in_progress")
+Example: todo_update(id="todo:3", status="done")
+```
+
+### todo_list
+
+List all tasks with their current status.
+
+```
+Function: todo_list
+Args: None
+Example: todo_list()
+```
+
+Returns a formatted list showing task ID, description, and status.
+
+### todo_clear_done
+
+Remove all completed (done) tasks from the list.
+
+```
+Function: todo_clear_done
+Args: None
+Example: todo_clear_done()
+```
+
+### todo_clear_all
+
+Clear all tasks from the list.
+
+```
+Function: todo_clear_all
+Args: None
+Example: todo_clear_all()
+```
+
+**User Commands:**
+
+Users can also manage todos via chat commands:
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| `/todo add <description>` | `/ta` | Add task |
+| `/todo list` | `/tl` | List tasks |
+| `/todo update <id> <status>` | `/tu` | Update task status |
+| `/todo clear-done` | `/tcd` | Clear completed tasks |
+| `/todo clear-all` | `/tca` | Clear all tasks |
+
+**Behavior:**
+- Todo state is persisted per session
+- Tasks are stored in `session_todos` table
+- Status values: pending, in_progress, done
+- Task IDs are auto-incremented integers
+
 ## Memory Retrieval Tool (1)
 
-Retrieve conversation messages and notes by ID or search query. This tool provides explicit access to stored content, complementing the automatic retrieval that happens during chat.
+Retrieve content from conversation history, notes, and imported documents by ID or search query. This tool provides explicit access to stored content, complementing the automatic retrieval that happens during chat.
 
 ### remember
 
-Retrieve content from conversation history and notes.
+Retrieve content from conversation history, notes, and imported documents.
 
 ```
 Function: remember
 Args:
-  - id (string, optional): Specific item ID with prefix (e.g., "msg:42", "note:7")
+  - id (string, optional): Specific item ID with prefix (e.g., "msg:42", "note:7", "doc:13")
+  - chunk (string, optional): Chunk index for large documents (0-based, e.g., "0", "5", "15")
   - query (string, optional): Search query for semantic search
   - limit (string, optional): Max results (default: 5, max: 10)
 Example: remember(id="msg:42")
 Example: remember(id="note:7")
+Example: remember(id="doc:13")
+Example: remember(id="doc:13", chunk="5")
 Example: remember(query="authentication")
 Example: remember(query="database design", limit="10")
 ```
@@ -590,23 +677,215 @@ Example: remember(query="database design", limit="10")
 |--------|---------------|-------------|
 | `msg:N` | Conversation | Chat message from history |
 | `note:N` | Note | User-created note |
-| `doc:N` | Document | Imported document (future) |
+| `doc:N` | Document | Imported document (TXT, MD, ORG, PDF, EPUB) |
 | `web:N` | Web | Web-scraped content (future) |
+
+**Chunk Retrieval for Large Documents:**
+
+Large documents (>~5000 characters) are split into chunks for storage. When retrieving:
+
+- **Without chunk parameter**: Returns preview (first 3 chunks) with navigation hint
+- **With chunk parameter**: Returns specific chunk content without truncation
+
+```
+# Large document preview
+remember(id="doc:5")
+→ **Document 5**: Manual (45000 words)
+   ⚠️ Large document. Showing chunks 1-3 of 87.
+   Use remember(id="doc:5", chunk="N") to read specific chunks.
+
+# Specific chunk
+remember(id="doc:5", chunk="15")
+→ **Document 5** — Chunk 16/87
+   Position: characters 15000-16000
+   [Full chunk content without truncation]
+```
 
 **Use Cases:**
 - **By ID**: Get full content when you only have an excerpt from search results
+- **By ID + Chunk**: Navigate large documents section by section
 - **By Query**: Find topics not in current context window
 - **Hybrid Search**: Combines BM25 (keyword) and semantic (vector) search with RRF fusion
 
-**Output Format:**
+**Parameter Validation:**
+
+The tool validates parameter combinations to prevent misuse:
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Cannot use both 'id' and 'query'" | Both parameters specified | Use one or the other |
+| "'limit' only valid with 'query'" | limit used with id | Use limit for searches only |
+| "'chunk' only valid for documents" | chunk used with msg: or note: | Use chunk with doc: only |
+
+**Valid Parameter Combinations:**
+
+| Call | Valid? | Notes |
+|------|--------|-------|
+| `remember(id="doc:13")` | ✅ | Retrieves document (or preview) |
+| `remember(id="doc:13", chunk="5")` | ✅ | Retrieves chunk 5 |
+| `remember(id="msg:42")` | ✅ | Retrieves message |
+| `remember(id="msg:42", chunk="5")` | ❌ | Error: chunk only for docs |
+| `remember(query="auth", limit="10")` | ✅ | Searches, returns up to 10 results |
+| `remember(id="note:7", limit="10")` | ❌ | Error: limit only for queries |
+| `remember(id="doc:13", query="auth")` | ❌ | Error: use one or the other |
+
+**Output Format (Document with chunks):**
 ```
-📄 Note #7: My Research Notes
-Source: Note | Created: 2026-03-15 14:30
-────────────────────────────────────────
-[Full note content here...]
+📄 Document #13 — Chunk 15/87
+Title: My Research Paper
+Type: pdf | Scope: project
+Position: characters 15000-16000
+---
+[Chunk content here...]
+---
+
+*Chunk 15 of 87. Use remember(id="doc:13", chunk="N") to navigate.*
 ```
 
 **Note:** This tool is for explicit retrieval. The AI automatically retrieves relevant context on each message, so you only need to call this when you're looking for something specific that isn't in the current context.
+
+## Document Import Tool (1)
+
+Import documents for semantic search and retrieval. Documents are stored in the database and can be searched alongside conversations and notes.
+
+### import_document
+
+Import a document file (TXT, MD, ORG, PDF, EPUB) for semantic search.
+
+```
+Function: import_document
+Args:
+  - path (string, required): File path (absolute or relative, supports ~ expansion)
+  - scope (string, optional): "project" (default) or "global"
+Example: import_document(path: "docs/report.pdf")
+Example: import_document(path: "~/notes.org", scope: "global")
+```
+
+**Supported File Types:**
+
+| Type | Extension | Dependency |
+|------|-----------|------------|
+| Plain Text | `.txt` | Builtin |
+| Markdown | `.md` | Builtin |
+| Org Mode | `.org` | Builtin |
+| PDF | `.pdf` | `skills-tools` + `pdftotext` |
+| EPUB | `.epub` | `skills-tools` + `epub2txt` |
+
+**File Size Limit:** 5MB maximum. Larger files are rejected with a helpful error.
+
+**Path Expansion:** Paths starting with `~` are expanded to the home directory.
+
+**Scope:**
+- `project` (default): Document visible only in current project
+- `global`: Document visible across all projects
+
+**Import Modes:**
+
+| Mode | Behavior |
+|------|----------|
+| Synchronous (default) | Wait for embedding generation to complete before returning |
+| Async (`--nowait`) | Import file immediately, generate embeddings in background |
+
+Use `--nowait` for batch imports when you don't need immediate searchability.
+
+**Title Extraction:**
+
+Documents automatically extract titles from:
+1. Org-mode `#+TITLE:` directive
+2. Markdown `# heading`
+3. Org-mode `* heading`
+4. Filename (fallback)
+
+**PDF/EPUB Dependencies:**
+
+PDF and EPUB files require:
+1. `skills-tools` feature (enabled by default)
+2. External tools installed:
+   - PDF: `pdftotext` (poppler-utils package)
+   - EPUB: `epub2txt` (AUR: `epub2txt-bin`) or `ebook-convert` (Calibre)
+
+**Installation:**
+
+| Distro | Command |
+|--------|---------|
+| Arch | `sudo pacman -S poppler-utils` + `yay -S epub2txt-bin` |
+| Debian/Ubuntu | `sudo apt install poppler-utils` + download epub2txt from GitHub |
+| Void | `sudo xbps-install -S poppler` + compile epub2txt |
+| Fedora | `sudo dnf install poppler-utils` + compile epub2txt |
+
+**Error Handling:**
+
+| Situation | Error Message |
+|-----------|---------------|
+| File not found | `Error: File not found: 'report.pdf'. Please check the path and try again.` |
+| File too large | `Error: File exceeds maximum size of 5MB. Consider splitting the document into smaller files.` |
+| Unsupported type | `Error: Unsupported file type '.docx'. Supported: .txt, .md, .org, .pdf, .epub` |
+| Missing dependency | `Error: Importing 'pdf' files requires the 'skills-tools' feature. Recompile with: cargo build --features skills-tools` |
+
+**Integration with remember():**
+
+Once imported, documents can be retrieved via the `remember()` tool:
+
+```
+# Retrieve by ID (accepts #N, doc:N, or N formats)
+remember(id="doc:5")
+remember(id="#5")
+remember(id="5")
+
+# Get specific chunk of large document
+remember(id="doc:5", chunk="0")
+
+# Semantic search across all documents
+remember(query="authentication implementation")
+```
+
+**User Commands:**
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| `/doc import <path> [--global] [--nowait]` | `/di` | Import a document |
+| `/doc list [--global]` | `/dl` | List imported documents |
+| `/doc show <id>` | `/ds` | Show document content (accepts #N, doc:N, or N) |
+| `/doc delete <id>` | `/dd` | Delete a document (accepts #N, doc:N, or N) |
+
+**ID Formats:**
+
+Document IDs can be specified in three formats:
+- `#N` - Hashtag format: `/doc show #1`
+- `doc:N` - Prefixed format: `/doc show doc:1`
+- `N` - Numeric format: `/doc show 1`
+
+**Document Flow:**
+
+```mermaid
+flowchart LR
+    subgraph Import["Import"]
+        A[Document Path]
+    end
+    
+    subgraph Extract["Extract"]
+        B[Title & Text]
+    end
+    
+    subgraph Process["Process"]
+        C[Chunk & Embed<br/>512 tokens/chunk]
+    end
+    
+    subgraph Store["Store"]
+        D[(SQLite + FTS5<br/>+ Embeddings)]
+    end
+    
+    subgraph Search["Retrieve"]
+        E[Hybrid Search<br/>BM25 + Vector]
+    end
+    
+    subgraph Query["Query"]
+        F[remember<br/>query/text]
+    end
+    
+    A --> B --> C --> D
+    D --> E --> F
+```
 
 ## File Operation Tools (8)
 

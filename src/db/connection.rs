@@ -457,6 +457,40 @@ impl Database {
             }
         }
 
+        // Migration v7 -> v8: Add document-specific columns to content_items
+        if from_version < 8 {
+            let document_columns = [
+                ("filename", "TEXT"),
+                (
+                    "file_type",
+                    "TEXT CHECK(file_type IN ('txt', 'md', 'org', 'pdf', 'epub'))",
+                ),
+                ("word_count", "INTEGER"),
+            ];
+
+            for (col_name, col_type) in document_columns {
+                let column_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(content_items)")?;
+                    let rows = stmt.query_map([], |row| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&col_name.to_string())
+                };
+
+                if !column_exists {
+                    conn.execute(
+                        &format!(
+                            "ALTER TABLE content_items ADD COLUMN {} {}",
+                            col_name, col_type
+                        ),
+                        [],
+                    )?;
+                }
+            }
+        }
+
         Ok(())
     }
 

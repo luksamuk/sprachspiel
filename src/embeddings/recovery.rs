@@ -261,6 +261,54 @@ pub async fn recover_missing_embeddings(
     recovered
 }
 
+/// Recover missing embeddings for all content (with progress bar).
+///
+/// Same as `recover_missing_embeddings` but shows a progress bar.
+/// Called on /exit to complete pending embeddings before shutting down.
+pub async fn recover_missing_embeddings_with_progress(
+    db: &Arc<Database>,
+    embedding_client: &Arc<EmbeddingClient>,
+) -> usize {
+    use indicatif::{ProgressBar, ProgressStyle};
+
+    // Get counts first
+    let items = match db.get_content_items_for_reindex() {
+        Ok(items) if !items.is_empty() => items,
+        Ok(_) => vec![],
+        Err(_) => return 0,
+    };
+
+    let chunks = match db.get_content_chunks_for_reindex() {
+        Ok(chunks) if !chunks.is_empty() => chunks,
+        Ok(_) => vec![],
+        Err(_) => vec![],
+    };
+
+    let total = items.len() + chunks.len();
+
+    if total == 0 {
+        return 0;
+    }
+
+    println!("Completing {} pending embedding(s)...", total);
+
+    let progress = ProgressBar::new(total as u64);
+    progress.set_style(
+        ProgressStyle::with_template(
+            "  {bar:20} {pos}/{len} ({percent}%)",
+        )
+        .expect("Invalid progress template")
+        .progress_chars("█▓░"),
+    );
+
+    // Call the main recovery function but with progress tracking
+    let result = recover_missing_embeddings(db, embedding_client).await;
+
+    progress.finish_and_clear();
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

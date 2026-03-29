@@ -2,6 +2,82 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.39.0] - TBD
+
+### Added
+
+- **Document Import Tool** - Import documents for semantic search and retrieval
+  - **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (requires `skills-tools` feature)
+  - **File Size Limit:** 5MB for uploaded files; larger files rejected with helpful error
+  - **Commands:** `/doc import`, `/doc list`, `/doc show`, `/doc delete` (shortcuts: `/di`, `/dl`, `/ds`, `/dd`)
+  - **LLM Tool:** `import_document(path, scope?)` for autonomous document import
+  - **Chunking:** Uses same system as notes/messages (~512 tokens)
+  - **Scope:** Project-scoped by default, optional global scope
+  - **Storage:** Documents stored in `content_items` table (ContentType::Document)
+  - **Retrieval:** Integrated with `remember()` tool via hybrid search (BM25 + vector)
+  - **PDF/EPUB Processing:** Uses builtin `document-processing` skill with `pdftotext`/`epub2txt`
+  - **Title Extraction:** Automatic from filename or first heading
+  - **Feature Flag:** `document-tools` feature (enabled by default, included in `all-tools`)
+  - **Dependencies:** PDF/EPUB require `skills-tools` feature; TXT/MD/ORG work standalone
+  - Related: Issue #9
+
+- **Document Retrieval Integration** - Documents now searchable via `remember()` tool
+  - `remember(id="doc:N")` retrieves full document content (or preview for large docs)
+  - `remember(id="doc:N", chunk="M")` retrieves specific chunk of large documents
+  - `remember(query="...")` searches across messages, notes, AND documents
+  - Hybrid search (BM25 + semantic) includes documents in results
+  - Large document preview shows first 3 chunks with navigation hint
+  - Chunk output shows position info (e.g., "Chunk 15/87, chars 15000-16000")
+  - Related: Issue #9
+
+- **Parameter Validation for remember() Tool** - Clear error messages for invalid parameter combinations
+  - Error when both `id` and `query` are specified (mutually exclusive)
+  - Error when `limit` used without `query` (limit only for searches)
+  - Error when `chunk` used with non-document IDs (chunk only for docs)
+  - Helpful error messages explain correct usage
+
+- **Synchronous Embedding for Document Import** - Documents indexed immediately by default
+  - `/doc import <path>` - Synchronous indexing with progress indicator
+  - `/doc import <path> --nowait` - Async indexing in background
+  - Embeddings created before command returns (default behavior)
+  - Progress message: "Indexing document..." → "Document indexed (N chunks)"
+  - Related: Issue #9
+
+- **Embedding Flush on Exit** - Pending embeddings completed before shutdown
+  - `/exit` now waits for any pending embeddings to complete
+  - Progress bar shows completion status
+  - Ensures no data loss on graceful shutdown
+  - Related: Issue #9
+
+### Fixed
+
+- **Tilde (~) Expansion in File Paths** - File paths with `~` now correctly expand to home directory
+  - Affects: `/doc import`, `read_file`, `write_file`, `edit_file`, `append_file`, `list_directory`, `search_files`
+  - Also affects: `validate_image_file`, `read_file_as_base64`, `/export` command
+  - Users can now use `~/path/to/file` syntax everywhere
+  - Related: Issue #9 (bug report from Hermes Agent)
+
+- **Document ID Format Flexibility** - Multiple ID formats now accepted
+  - `#N` format: `/doc show #1`, `/doc delete #5`
+  - `doc:N` format: `/doc show doc:1`, `/doc delete doc:5`
+  - Numeric format: `/doc show 1`, `/doc delete 5`
+  - All three formats work consistently across all document commands
+  - Related: Issue #9 (bug report from Hermes Agent)
+
+- **Org-Mode Title Extraction** - `#+TITLE:` directive now correctly parsed
+  - Files like `#+TITLE: My Document` extract "My Document" as title
+  - Previously showed literal "+TITLE: My Document"
+  - Fallback to `* heading` if no `#+TITLE:` found
+  - Fallback to filename if no heading found
+  - Related: Issue #9 (bug report from Hermes Agent)
+
+### Technical Debt
+
+- **Document Extraction Direct Command Invocation** - `import_document` calls `Command::new("pdftotext")` directly, bypassing the skills system
+  - Project-level skill overrides are not respected for PDF/EPUB extraction
+  - Planned solution: Specialized Agent Architecture (Priority 4) with `spawn_subagent(type="document")`
+  - Related: Issue #12, Issue #9
+
 ## [0.38.0] - 2026-03-27
 
 ### Added
@@ -75,7 +151,7 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **PRIORITY 10: Multilingual Skill Sanitization** - Enhanced security for skill content
   - Phase 1: Language detection + warning (no dependencies)
-  - Phase 2: Translate-then-detect approach (requires P6 Chat Module)
+  - Phase 2: Translate-then-detect approach (requires P4 Specialized Agents)
   - Dependencies: Skills System (P3) ✅ COMPLETED
 
 - **PRIORITY 11: Skills Management Tool** - Allow LLM to manage skills
@@ -532,7 +608,7 @@ All notable changes to Ask-AI will be documented in this file.
 ### Changed
 
 - **File Operations** - Now 8 tools instead of 5 (3 new write tools added)
-- **Tool Count** - Updated from 28 tools to 31 tools (8 file + 9 pokemon + 3 weather + 1 calc + 2 serper + 2 system + 3 search + 1 finance + 2 run_command)
+- **Tool Count** - Updated from 28 tools to 50 tools (8 file + 9 pokemon + 3 weather + 1 calc + 2 serper + 2 system + 3 search + 1 finance + 2 run_command + 3 facts + 1 notes + 1 documents + 5 todo + 2 skills + 1 remember + 5 LED + 1 misc + 1 tool_check)
 - **Documentation** - Updated `doc/src/tools.md` with write tool documentation and security section
 - **Documentation** - Added "Use Positive Framing" section to `doc/src/soul.md`
 - **Tests** - `test_negative_instructions_in_prompts` now uses `with_soulless(true)` to test only built-in prompts
@@ -777,7 +853,7 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
   - Phase 2 (Query Routing) blocked by Document Import Tool + Notes System
   - Phase 3 (Timestamp Filtering) blocked by Phase 2
   - New priorities: Document Import Tool and Notes System first
-  - Chat Module Integration remains high priority
+  - Chat Module Integration renamed to Specialized Agent Architecture (P4)
 
 ## [0.27.1] - 2026-03-09
 

@@ -66,15 +66,22 @@ pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
 
 /// Validate that a file exists and has a supported image extension
 pub fn validate_image_file(path: &std::path::Path) -> Result<(), String> {
-    if !path.exists() {
+    // Expand tilde if present
+    let expanded_path = if path.to_str().map(|s| s.starts_with('~')).unwrap_or(false) {
+        expand_tilde_path(path.to_str().unwrap_or(""))
+    } else {
+        path.to_path_buf()
+    };
+    
+    if !expanded_path.exists() {
         return Err(format!("File not found: {}", path.display()));
     }
 
-    if !path.is_file() {
+    if !expanded_path.is_file() {
         return Err(format!("{} is not a file", path.display()));
     }
 
-    let ext = path
+    let ext = expanded_path
         .extension()
         .and_then(|e| e.to_str())
         .map(|s| s.to_lowercase());
@@ -92,7 +99,14 @@ pub fn validate_image_file(path: &std::path::Path) -> Result<(), String> {
 
 /// Read a file and return its contents as base64-encoded string
 pub async fn read_file_as_base64(path: &std::path::Path) -> Result<String, String> {
-    let bytes = tokio::fs::read(path)
+    // Expand tilde if present
+    let expanded_path = if path.to_str().map(|s| s.starts_with('~')).unwrap_or(false) {
+        expand_tilde_path(path.to_str().unwrap_or(""))
+    } else {
+        path.to_path_buf()
+    };
+    
+    let bytes = tokio::fs::read(&expanded_path)
         .await
         .map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
@@ -144,6 +158,51 @@ pub fn capitalize(s: &str) -> String {
 /// ```
 pub fn normalize_input(s: &str) -> String {
     s.trim().to_lowercase()
+}
+
+/// Expand tilde (~) in file paths to the user's home directory.
+///
+/// This function handles:
+/// - `~` alone -> home directory
+/// - `~/path/to/file` -> home/path/to/file
+/// - `/absolute/path` -> unchanged
+/// - `relative/path` -> unchanged
+///
+/// # Example
+/// ```
+/// use ask_ai::utils::expand_tilde_path;
+/// use std::path::PathBuf;
+///
+/// // On Unix: expands to /home/user/file.txt
+/// let expanded = expand_tilde_path("~/file.txt");
+/// assert!(expanded.is_absolute());
+/// ```
+pub fn expand_tilde_path(path: &str) -> std::path::PathBuf {
+    let trimmed = path.trim();
+    
+    if trimmed.starts_with('~') {
+        if let Some(home) = dirs::home_dir() {
+            // Handle ~ alone
+            if trimmed == "~" || trimmed == "~/" {
+                return home;
+            }
+            
+            // Handle ~/path
+            let rest = &trimmed[1..]; // Remove ~
+            let rest = rest.strip_prefix('/').unwrap_or(rest);
+            
+            if rest.is_empty() {
+                home
+            } else {
+                home.join(rest)
+            }
+        } else {
+            // Cannot expand, return as-is
+            std::path::PathBuf::from(trimmed)
+        }
+    } else {
+        std::path::PathBuf::from(trimmed)
+    }
 }
 
 /// Truncate a string to a maximum number of characters (not bytes)
@@ -477,5 +536,39 @@ mod tests {
         let result_ascii = truncate_to_budget(&long_ascii, 100);
         assert!(result_ascii.contains("... [Result truncated"), "ASCII should be truncated");
         assert!(result_ascii.len() < long_ascii.len());
+    }
+
+    #[test]
+    fn test_expand_tilde_path() {
+        // Test expansion with home directory
+        let home = dirs::home_dir();
+        
+        if let Some(ref home_path) = home {
+            // ~/file.txt -> home/file.txt
+            let expanded = expand_tilde_path("~/file.txt");
+            assert_eq!(expanded, home_path.join("file.txt"));
+            
+            // ~ alone -> home
+            let expanded_alone = expand_tilde_path("~");
+            assert_eq!(expanded_alone, *home_path);
+            
+            // ~/ alone -> home
+            let expanded_slash = expand_tilde_path("~/");
+            assert_eq!(expanded_slash, *home_path);
+        }
+        
+        // Absolute path - unchanged
+        let absolute = expand_tilde_path("/absolute/path");
+        assert_eq!(absolute, std::path::PathBuf::from("/absolute/path"));
+        
+        // Relative path - unchanged
+        let relative = expand_tilde_path("relative/path");
+        assert_eq!(relative, std::path::PathBuf::from("relative/path"));
+        
+        // Path with spaces in home expansion
+        let with_spaces = expand_tilde_path("~/path with spaces/file.txt");
+        if let Some(home_path) = home {
+            assert_eq!(with_spaces, home_path.join("path with spaces/file.txt"));
+        }
     }
 }

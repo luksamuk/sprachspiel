@@ -8,7 +8,7 @@
 //! - facts table (factual memory system)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 7;
+pub const SCHEMA_VERSION: i32 = 8;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -105,8 +105,8 @@ CREATE INDEX IF NOT EXISTS idx_facts_decay ON facts(decay_score) WHERE invalidat
 CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 'project';
 CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
 
--- Content items table (unified storage for messages, notes, documents, v7)
--- Stores messages, notes, and future documents in a unified schema
+-- Content items table (unified storage for messages, notes, documents, v8)
+-- Stores messages, notes, and documents in a unified schema
 CREATE TABLE IF NOT EXISTS content_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     
@@ -124,6 +124,11 @@ CREATE TABLE IF NOT EXISTS content_items (
     scope TEXT CHECK(scope IN ('project', 'global')),
     source TEXT CHECK(source IN ('user', 'llm')),
     title TEXT,
+    
+    -- Document-specific fields (nullable, only for content_type='document', v8)
+    filename TEXT,
+    file_type TEXT CHECK(file_type IN ('txt', 'md', 'org', 'pdf', 'epub')),
+    word_count INTEGER,
     
     -- Common fields (all content types)
     content TEXT NOT NULL,

@@ -7,7 +7,7 @@
 //! The content system uses a unified `content_items` table that stores:
 //! - Messages (from chat sessions)
 //! - Notes (user-created persistent notes)
-//! - Documents (imported files, future feature)
+//! - Documents (imported files)
 //!
 //! All content types benefit from:
 //! - FTS5 full-text search
@@ -18,6 +18,7 @@
 //!
 //! ```ignore
 //! use crate::content::types::{Note, ContentScope, ContentSource};
+//! use crate::content::document::{Document, FileType, detect_file_type};
 //! use crate::content::db::Database;
 //!
 //! let note = Note::new(
@@ -33,9 +34,11 @@
 //! ```
 
 pub mod db;
+pub mod document;
 pub mod types;
 
 pub use db::ContentSearchParams;
+pub use document::{Document, FileType, MAX_DOCUMENT_SIZE, detect_file_type};
 pub use types::{
     ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType, Note,
     MAX_NOTE_CONTENT_SIZE,
