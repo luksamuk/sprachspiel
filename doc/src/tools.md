@@ -14,10 +14,11 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Web Scraper | 1 | html2md | ✅ Working | ❌ Disabled |
 | Finance | 1 | Google Finance | ✅ Working | ❌ Disabled |
 | System | 2 | Local system | ✅ Working | ✅ Enabled |
-| File Operations | 5 | Local filesystem | ✅ Working | ✅ Enabled |
+| File Operations | 8 | Local filesystem | ✅ Working | ✅ Enabled |
 | Factual Memory | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
+| Todo | 5 | Session state | ✅ Working | ✅ Enabled |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
@@ -37,6 +38,8 @@ The default build includes:
 - `system-tools` - Date/time and project context
 - `file-tools` - File system operations
 - `skills-tools` - AI behavior skills (skill_list, skill_view)
+- `todo-tools` - Session todo list management
+- `document-tools` - Document import
 
 ### Available Features
 
@@ -52,6 +55,7 @@ The default build includes:
 | `file-tools` | Local file operations | read_file, read_file_segment, count_lines, list_directory, search_files, write_file, edit_file, append_file | ✅ Yes |
 | `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
 | `document-tools` | Document import | import_document | ✅ Yes |
+| `todo-tools` | Session todo list | todo_add, todo_update, todo_list, todo_clear_done, todo_clear_all | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
@@ -71,7 +75,7 @@ Get your free API key at [serper.dev](https://serper.dev) (2,500 free searches/m
 **Option 2: DuckDuckGo** - Free but may be blocked
 ```bash
 # Build with search-tools instead of serper-tools
-cargo build --release --no-default-features --features "weather-tools,calc-tools,search-tools,file-tools,system-tools,skills-tools"
+cargo build --release --no-default-features --features "weather-tools,calc-tools,search-tools,file-tools,system-tools,skills-tools,todo-tools,document-tools"
 ```
 
 ### Building with Custom Features
@@ -566,6 +570,84 @@ Users can also manage facts via chat commands:
 - Facts: 30-day half-life
 - High-importance preferences: Never pruned
 - Automatic decay on startup
+
+## Todo Tools (5)
+
+Tools for managing a task list during a chat session. These tools help the LLM track and manage tasks.
+
+### todo_add
+
+Add a new task to the todo list.
+
+```
+Function: todo_add
+Args:
+  - description (string, required): Task description
+Example: todo_add(description="Implement user authentication")
+```
+
+### todo_update
+
+Update the status of an existing task.
+
+```
+Function: todo_update
+Args:
+  - id (string, required): Task ID (format: "N" or "todo:N")
+  - status (string, required): "pending", "in_progress", or "done"
+Example: todo_update(id="1", status="in_progress")
+Example: todo_update(id="todo:3", status="done")
+```
+
+### todo_list
+
+List all tasks with their current status.
+
+```
+Function: todo_list
+Args: None
+Example: todo_list()
+```
+
+Returns a formatted list showing task ID, description, and status.
+
+### todo_clear_done
+
+Remove all completed (done) tasks from the list.
+
+```
+Function: todo_clear_done
+Args: None
+Example: todo_clear_done()
+```
+
+### todo_clear_all
+
+Clear all tasks from the list.
+
+```
+Function: todo_clear_all
+Args: None
+Example: todo_clear_all()
+```
+
+**User Commands:**
+
+Users can also manage todos via chat commands:
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| `/todo add <description>` | `/ta` | Add task |
+| `/todo list` | `/tl` | List tasks |
+| `/todo update <id> <status>` | `/tu` | Update task status |
+| `/todo clear-done` | `/tcd` | Clear completed tasks |
+| `/todo clear-all` | `/tca` | Clear all tasks |
+
+**Behavior:**
+- Todo state is persisted per session
+- Tasks are stored in `session_todos` table
+- Status values: pending, in_progress, done
+- Task IDs are auto-incremented integers
 
 ## Memory Retrieval Tool (1)
 
