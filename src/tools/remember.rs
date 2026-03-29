@@ -106,7 +106,49 @@ pub async fn remember(
     let id_is_empty = id.as_ref().map(|s| s.is_empty()).unwrap_or(true);
     let query_is_empty = query.as_ref().map(|s| s.is_empty()).unwrap_or(true);
     let chunk_is_empty = chunk.as_ref().map(|s| s.is_empty()).unwrap_or(true);
+    let limit_is_empty = limit.as_ref().map(|s| s.is_empty()).unwrap_or(true);
 
+    // Parse limit (default: 5, range: 1-10)
+    let limit_num = if !limit_is_empty {
+        match limit.and_then(|l| l.parse::<usize>().ok()) {
+            Some(n) => n.clamp(1, 10),
+            None => {
+                let err = "Error: Invalid 'limit' parameter. Must be a number between 1 and 10.\n\n\
+                           Example: remember(query=\"philosophy\", limit=\"10\")";
+                log_tool_result("remember", err);
+                return Ok(err.to_string());
+            }
+        }
+    } else {
+        5
+    };
+
+    // Parse chunk (only valid with id)
+    let chunk_num = if !chunk_is_empty {
+        match chunk.and_then(|c| c.parse::<i32>().ok()) {
+            Some(n) if n < 0 => {
+                let err = "Error: Invalid 'chunk' parameter. Must be a non-negative number.\n\n\
+                           Example: remember(id=\"doc:13\", chunk=\"0\") for first chunk";
+                log_tool_result("remember", err);
+                return Ok(err.to_string());
+            }
+            Some(n) => Some(n),
+            None => {
+                let err = "Error: Invalid 'chunk' parameter. Must be a number.\n\n\
+                           Example: remember(id=\"doc:13\", chunk=\"5\") for chunk 5";
+                log_tool_result("remember", err);
+                return Ok(err.to_string());
+            }
+        }
+    } else {
+        None
+    };
+
+    // Filter empty strings from id and query
+    let id_val = id.filter(|s| !s.is_empty());
+    let query_val = query.filter(|s| !s.is_empty());
+
+    // Check for missing required parameters
     if id_is_empty && query_is_empty {
         let err = "Error: Provide either 'id' or 'query' parameter.\n\n\
                    Examples:\n\
@@ -120,27 +162,34 @@ pub async fn remember(
         return Ok(err.to_string());
     }
 
-    // Parse limit
-    let limit_num = limit
-        .and_then(|l| l.parse::<usize>().ok())
-        .unwrap_or(5)
-        .clamp(1, 10);
+    // Validate mutually exclusive parameters: id and query cannot both be specified
+    if id_val.is_some() && query_val.is_some() {
+        let err = "Error: Cannot use both 'id' and 'query' parameters at the same time.\n\n\
+                   Use one or the other:\n\
+                   - remember(id=\"msg:42\") to retrieve a specific item\n\
+                   - remember(query=\"authentication\") to search by topic\n\n\
+                   Parameters 'id' and 'query' are mutually exclusive.";
+        log_tool_result("remember", err);
+        return Ok(err.to_string());
+    }
 
-    // Parse chunk (only valid with id)
-    let chunk_num = if !chunk_is_empty {
-        chunk.and_then(|c| c.parse::<i32>().ok())
-    } else {
-        None
-    };
-
-    // Filter empty strings from id and query
-    let id_val = id.filter(|s| !s.is_empty());
-    let query_val = query.filter(|s| !s.is_empty());
+    // Validate conditional parameters: limit only valid with query
+    if !limit_is_empty && id_val.is_some() {
+        let err = "Error: The 'limit' parameter is only valid with 'query' searches.\n\n\
+                   The 'limit' parameter controls how many search results to return.\n\
+                   It has no effect when retrieving a specific item by ID.\n\n\
+                   Examples:\n\
+                   - remember(query=\"authentication\", limit=\"10\")\n\
+                   - remember(id=\"msg:42\") (omits limit, retrieves single item)";
+        log_tool_result("remember", err);
+        return Ok(err.to_string());
+    }
 
     // Get task-local context
     let result = match (get_db(), get_embedding()) {
         (Some(db), Some(embedding)) => {
             if let Some(id_str) = id_val {
+                // chunk validation happens inside remember_by_id after source_type is known
                 remember_by_id(&db, &id_str, chunk_num).await
             } else if let Some(q) = query_val {
                 remember_by_query(&db, &embedding, &q, limit_num).await
@@ -182,6 +231,32 @@ async fn remember_by_id(
             return err;
         }
     };
+
+    // Validate: chunk parameter only valid for documents
+    if let Some(chunk_index) = chunk
+        && source_type != SourceType::Document
+    {
+        let err = format!(
+            "Error: The 'chunk' parameter is only valid for documents.\n\n\
+             You used: remember(id=\"{}:{}\", chunk=\"{}\")\n\
+             Correct: remember(id=\"doc:{}\", chunk=\"{}\")\n\n\
+             {} are retrieved in full - they do not have chunks.\n\
+             Only imported documents (doc:) support chunk retrieval.",
+            source_type.prefix(),
+            numeric_id,
+            chunk_index,
+            numeric_id,
+            chunk_index,
+            match source_type {
+                SourceType::Conversation => "Messages",
+                SourceType::Note => "Notes",
+                SourceType::Document => unreachable!(),
+                SourceType::Web => "Web content",
+            }
+        );
+        log_tool_result("remember", &err);
+        return err;
+    }
 
     // Handle different source types
     match source_type {

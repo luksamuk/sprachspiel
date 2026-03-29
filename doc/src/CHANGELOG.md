@@ -30,6 +30,12 @@ All notable changes to Ask-AI will be documented in this file.
   - Chunk output shows position info (e.g., "Chunk 15/87, chars 15000-16000")
   - Related: Issue #9
 
+- **Parameter Validation for remember() Tool** - Clear error messages for invalid parameter combinations
+  - Error when both `id` and `query` are specified (mutually exclusive)
+  - Error when `limit` used without `query` (limit only for searches)
+  - Error when `chunk` used with non-document IDs (chunk only for docs)
+  - Helpful error messages explain correct usage
+
 ## [0.38.0] - 2026-03-27
 
 ### Added

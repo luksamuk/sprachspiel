@@ -625,6 +625,28 @@ remember(id="doc:5", chunk="15")
 - **By Query**: Find topics not in current context window
 - **Hybrid Search**: Combines BM25 (keyword) and semantic (vector) search with RRF fusion
 
+**Parameter Validation:**
+
+The tool validates parameter combinations to prevent misuse:
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Cannot use both 'id' and 'query'" | Both parameters specified | Use one or the other |
+| "'limit' only valid with 'query'" | limit used with id | Use limit for searches only |
+| "'chunk' only valid for documents" | chunk used with msg: or note: | Use chunk with doc: only |
+
+**Valid Parameter Combinations:**
+
+| Call | Valid? | Notes |
+|------|--------|-------|
+| `remember(id="doc:13")` | ✅ | Retrieves document (or preview) |
+| `remember(id="doc:13", chunk="5")` | ✅ | Retrieves chunk 5 |
+| `remember(id="msg:42")` | ✅ | Retrieves message |
+| `remember(id="msg:42", chunk="5")` | ❌ | Error: chunk only for docs |
+| `remember(query="auth", limit="10")` | ✅ | Searches, returns up to 10 results |
+| `remember(id="note:7", limit="10")` | ❌ | Error: limit only for queries |
+| `remember(id="doc:13", query="auth")` | ❌ | Error: use one or the other |
+
 **Output Format (Document with chunks):**
 ```
 📄 Document #13 — Chunk 15/87
