@@ -1725,20 +1725,111 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🟡 PRIORITY 4: Chat Module Integration
+### 🟡 PRIORITY 4: Specialized Agent Architecture
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Use OCR/Vision/Translate/Summarize from chat.
+**Goal:** Delegate specialized tasks (OCR, vision, document extraction, translation, summarization) to one-shot agents with optimized models.
 
-**Features:**
-- `/ocr`, `/vision`, `/translate`, `/summarize` commands in REPL
-- Model switching during commands
-- Design: temporary context or persistent?
+**Problem:**
+- OCR/Vision/Translate/Summarize are standalone CLI commands, not integrated with chat
+- Document import calls `Command::new()` directly, bypassing skills system
+- Skills can be overridden at project level, but tools don't respect overrides
 
-**Dependencies:** None
+**Architecture:**
 
-**Estimated effort:** 3-5 days
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Main Agent (conversational)                                     │
+│ - Full context: history + memory + database                      │
+│ - Tools: spawn_subagent, remember, fact_add, import_document...  │
+│                                                                 │
+│   LLM decides: "I need to extract text from PDF"                │
+│   Tool call: spawn_subagent(type="document", prompt="...")       │
+│         ↓                                                       │
+│ ┌───────────────────────────────────────────────────────────┐  │
+│ │ Specialized Agent (one-shot, no context/database)         │  │
+│ │                                                           │  │
+│ │ Type: "ocr"       → glm-ocr:bf16                          │  │
+│ │ Type: "vision"    → moondream:1.8b                        │  │
+│ │ Type: "translate" → translategemma:4b                     │  │
+│ │ Type: "summarize" → (same model, specialized prompt)      │  │
+│ │ Type: "document"  → (same model, uses run_command)        │  │
+│ │                                                           │  │
+│ │ Tools: Whitelisted per type (run_command, etc.)           │  │
+│ │ Output: Tool result (no thinking)                         │  │
+│ └───────────────────────────────────────────────────────────┘  │
+│         ↓                                                       │
+│ Result injected as tool output for main LLM                     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Key Characteristics:**
+
+| Aspect | Main Agent | Specialized Agent |
+|--------|------------|-------------------|
+| Context | Full history + memory + database | One-shot (no history) |
+| Database | Yes (SQLite) | No |
+| Thinking | Optional | Never (output only) |
+| Output | Returns to user | Returns to Main Agent |
+| Model | User's chat model | Configured per type |
+| Skills | All available | Type-specific whitelist |
+
+**Technical Debt Resolved:**
+- Issue #9 (Document Import): `import_document` will use `spawn_subagent(type="document")`
+- Issue #12 (OCR/Vision): Integrated via specialized agents
+
+**Subagent Types:**
+
+| Type | Model | Tools | Purpose |
+|------|-------|-------|---------|
+| `ocr` | glm-ocr:bf16 | run_command(tesseract) | Image text extraction |
+| `vision` | moondream:1.8b | - | Image analysis |
+| `translate` | translategemma:4b | - | Translation |
+| `summarize` | (same model) | - | Summarization |
+| `document` | (same model) | run_command(pdftotext) | PDF/EPUB extraction |
+
+**Configuration:**
+
+```toml
+# ~/.config/ask-ai/models.toml
+
+[subagents]
+# Override default models for specialized agents
+ocr = "glm-ocr:bf16"
+vision = "moondream:1.8b"
+translation = "translategemma:4b"
+# summarization and document use main chat model
+```
+
+**Implementation Phases:**
+
+| Phase | Description | Effort |
+|-------|-------------|--------|
+| 1 | Define `SubagentType` enum and `spawn_subagent` tool signature | 0.5 day |
+| 2 | Create subagent coordinator (one-shot context, model routing) | 1 day |
+| 3 | Implement OCR subagent (glm-ocr, tesseract tools) | 1 day |
+| 4 | Implement Vision subagent (moondream, image processing) | 1 day |
+| 5 | Implement Translate/Summarize subagents | 0.5 day |
+| 6 | Implement Document subagent (PDF/EPUB, respects skill overrides) | 1 day |
+| 7 | Configuration (models.toml) and user commands | 0.5 day |
+| 8 | Testing and documentation | 1 day |
+| **Total** | | **7 days** |
+
+**User Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/ocr <image>` | OCR via specialized agent |
+| `/vision <image>` | Image analysis via specialized agent |
+| `/translate <lang> <text>` | Translation via specialized agent |
+| `/summarize <text>` | Summarization via specialized agent |
+
+**Dependencies:** Skills System (completed v0.38.0)
+
+**Related Issues:** #9, #12
+
+**Estimated effort:** 5-7 days
 
 ---
 

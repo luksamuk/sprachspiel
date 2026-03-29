@@ -238,7 +238,24 @@ pub async fn import_document(
     Ok(result)
 }
 
-/// Extract text from PDF/EPUB using skills
+/// Extract text from PDF/EPUB using external tools
+///
+/// FIXME: Technical Debt - Direct Command Invocation
+///
+/// This function calls Command::new("pdftotext") directly, bypassing the skills system.
+/// Project-level skill overrides for document-processing are not respected.
+///
+/// Future Solution (Priority 4: Specialized Agent Architecture):
+/// - spawn_subagent(type="document", prompt, file_path)
+/// - Sub-agent uses run_command within skill-defined constraints
+/// - Output returns as tool result to main agent
+/// - Skills can override document-processing behavior at project level
+///
+/// Related: Issue #12 (OCR/Vision), Issue #9 (Document Import)
+/// Milestone: Priority 4 expansion (Specialized Agents)
+///
+/// For now: This implementation works correctly for extraction.
+/// Users can manually invoke the document-processing skill for other workflows.
 #[cfg(feature = "skills-tools")]
 fn extract_text_with_skill(
     file_path: &std::path::Path,

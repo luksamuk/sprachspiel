@@ -36,6 +36,13 @@ All notable changes to Ask-AI will be documented in this file.
   - Error when `chunk` used with non-document IDs (chunk only for docs)
   - Helpful error messages explain correct usage
 
+### Technical Debt
+
+- **Document Extraction Direct Command Invocation** - `import_document` calls `Command::new("pdftotext")` directly, bypassing the skills system
+  - Project-level skill overrides are not respected for PDF/EPUB extraction
+  - Planned solution: Specialized Agent Architecture (Priority 4) with `spawn_subagent(type="document")`
+  - Related: Issue #12, Issue #9
+
 ## [0.38.0] - 2026-03-27
 
 ### Added
