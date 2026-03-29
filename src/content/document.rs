@@ -196,10 +196,14 @@ impl Document {
                 if !title.is_empty() {
                     return title.to_string();
                 }
+                // Empty #+TITLE: - skip to next line
+                continue;
             }
 
             // Markdown heading
             if trimmed.starts_with('#') {
+                // But skip org-mode directives (already handled above)
+                // This handles case where # is at start but it's actually org content
                 let title = trimmed.trim_start_matches('#').trim();
                 if !title.is_empty() {
                     return title.to_string();
@@ -281,6 +285,37 @@ mod tests {
         let content = "No heading here\nJust plain text.";
         let title = Document::extract_title(content, "my_file.txt");
         assert_eq!(title, "my_file");
+    }
+
+    #[test]
+    fn test_extract_title_org_directive() {
+        let content = "#+TITLE: My Org Title\n\n* Heading\nSome content.";
+        let title = Document::extract_title(content, "file.org");
+        assert_eq!(title, "My Org Title");
+    }
+
+    #[test]
+    fn test_extract_title_org_directive_priority() {
+        // #+TITLE: should take priority over * heading
+        let content = "#+TITLE: Title from Directive\n\n* Different Heading\nContent.";
+        let title = Document::extract_title(content, "file.org");
+        assert_eq!(title, "Title from Directive");
+    }
+
+    #[test]
+    fn test_extract_title_org_empty_directive() {
+        // Empty #+TITLE: should fall back to heading
+        let content = "#+TITLE:\n\n* My Heading\nContent.";
+        let title = Document::extract_title(content, "file.org");
+        assert_eq!(title, "My Heading");
+    }
+
+    #[test]
+    fn test_extract_title_org_whitespace_directive() {
+        // Whitespace after #+TITLE: should be trimmed
+        let content = "#+TITLE:   Spaced Title   \n\n* Heading\nContent.";
+        let title = Document::extract_title(content, "file.org");
+        assert_eq!(title, "Spaced Title");
     }
 
     #[test]

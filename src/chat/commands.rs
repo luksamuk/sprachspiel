@@ -9,17 +9,19 @@ use crate::tokens::ContextMetrics;
 /// Parse a document ID from user input.
 /// Accepts formats: "N", "#N", "doc:N" (all return the numeric ID).
 fn parse_document_id(input: &str) -> Result<i64, String> {
-    let id_str = input
-        .trim()
-        .strip_prefix('#')
-        .unwrap_or(input.trim())
-        .strip_prefix("doc:")
-        .unwrap_or(input.trim())
-        .trim();
+    let trimmed = input.trim();
     
-    id_str
+    // Try to strip # prefix first
+    let after_hash = trimmed.strip_prefix('#').unwrap_or(trimmed);
+    
+    // Then try to strip doc: prefix
+    let after_doc = after_hash.strip_prefix("doc:").unwrap_or(after_hash);
+    
+    // Parse the remaining number
+    after_doc
+        .trim()
         .parse::<i64>()
-        .map_err(|_| format!("Invalid document ID '{}'. Use: #N, doc:N, or just N", input.trim()))
+        .map_err(|_| format!("Invalid document ID '{}'. Use: #N, doc:N, or just N", trimmed))
 }
 
 /// Result of executing a command
@@ -1583,4 +1585,38 @@ fn export_markdown(session: &ChatSession) -> String {
 /// Export session as JSON
 fn export_json(session: &ChatSession) -> String {
     serde_json::to_string_pretty(session).unwrap_or_else(|_| "{}".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_document_id_numeric() {
+        assert_eq!(parse_document_id("1").unwrap(), 1);
+        assert_eq!(parse_document_id("42").unwrap(), 42);
+        assert_eq!(parse_document_id("-5").unwrap(), -5);
+    }
+
+    #[test]
+    fn test_parse_document_id_hashtag() {
+        assert_eq!(parse_document_id("#1").unwrap(), 1);
+        assert_eq!(parse_document_id("#42").unwrap(), 42);
+        assert_eq!(parse_document_id("  #10  ").unwrap(), 10);
+    }
+
+    #[test]
+    fn test_parse_document_id_prefixed() {
+        assert_eq!(parse_document_id("doc:1").unwrap(), 1);
+        assert_eq!(parse_document_id("doc:42").unwrap(), 42);
+        assert_eq!(parse_document_id("  doc:10  ").unwrap(), 10);
+    }
+
+    #[test]
+    fn test_parse_document_id_invalid() {
+        assert!(parse_document_id("abc").is_err());
+        assert!(parse_document_id("").is_err());
+        assert!(parse_document_id("doc:abc").is_err());
+        assert!(parse_document_id("#abc").is_err());
+    }
 }
