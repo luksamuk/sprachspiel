@@ -857,19 +857,34 @@ Document IDs can be specified in three formats:
 
 **Document Flow:**
 
-```
-┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Import     │     │  Extract        │     │  Chunk & Embed  │
-│  Document   │────▶│  Content        │────▶│  (background)   │
-│  (path)     │     │  (title, text)  │     │  ───────────────│
-└─────────────┘     └─────────────────┘     │  512 tokens/chunk│
-                                            └─────────────────┘
-                                                    │
-                                                    ▼
-┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  remember() │     │  Hybrid Search  │     │  SQLite + FTS5 │
-│  query/text │◀────│  BM25 + Vector  │◀────│  + Embeddings   │
-└─────────────┘     └─────────────────┘     └─────────────────┘
+```mermaid
+flowchart LR
+    subgraph Import["Import"]
+        A[Document Path]
+    end
+    
+    subgraph Extract["Extract"]
+        B[Title & Text]
+    end
+    
+    subgraph Process["Process"]
+        C[Chunk & Embed<br/>512 tokens/chunk]
+    end
+    
+    subgraph Store["Store"]
+        D[(SQLite + FTS5<br/>+ Embeddings)]
+    end
+    
+    subgraph Search["Retrieve"]
+        E[Hybrid Search<br/>BM25 + Vector]
+    end
+    
+    subgraph Query["Query"]
+        F[remember<br/>query/text]
+    end
+    
+    A --> B --> C --> D
+    D --> E --> F
 ```
 
 ## File Operation Tools (8)
