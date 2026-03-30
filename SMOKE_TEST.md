@@ -96,14 +96,14 @@ echo "teste tilde expansion" > ~/test.txt
 
 ### 3.4 Testes de Tamanho (Bug #54)
 
-- [ ] Arquivo > 2.5MB é rejeitado com erro claro:
+- [ ] Arquivo > 2.5MB (2.500.000 bytes) é rejeitado com erro claro:
   ```bash
-  # Criar arquivo grande
+  # Criar arquivo grande (3 MB)
   dd if=/dev/zero bs=1M count=3 of=/tmp/large.txt 2>/dev/null
   # Verificar que /doc import rejeita
   /doc import /tmp/3mb.txt
   ```
-- [ ] Mensagem de erro menciona "2.5 MB limit" e sugere dividir arquivo
+- [ ] Mensagem de erro menciona "2.5 MB (2.500.000 bytes) limit" e sugere dividir arquivo
 
 ---
 
@@ -137,7 +137,7 @@ Via chat com modelo que suporta tools:
 # Depois verificar que remember protege contra retorno completo
 ```
 
-- [ ] `remember(id="doc:N")` em documento > 50KB sem chunks retorna erro
+- [ ] `remember(id="doc:N")` em documento > 50KB (50.000 bytes) sem chunks retorna erro
 - [ ] Mensagem explica como re-importar o documento
 - [ ] Sugere `/doc delete N` e re-import
 

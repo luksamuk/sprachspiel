@@ -296,7 +296,7 @@ Available: import_document
 - For .md/.org files: Title is extracted automatically from headings
 
 **File limits:**
-- Maximum 2.5 MB per file
+- Maximum 2.5 MB (2,500,000 bytes) per file
 - Supported: .txt, .md, .org (builtin), .pdf, .epub (requires skills-tools)
 
 **Example:**

@@ -21,9 +21,9 @@ use std::str::FromStr;
 
 use super::types::{ContentScope, ContentSource};
 
-/// Maximum document file size (2.5MB)
+/// Maximum document file size in bytes
 /// Larger documents should be split before import to ensure proper chunking.
-pub const MAX_DOCUMENT_SIZE: usize = 2_500_000;
+pub const MAX_DOCUMENT_SIZE: usize = 2_500_000; // 2.5 MB = 2,500,000 bytes
 
 /// Supported document file types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,14 +151,19 @@ impl Document {
         }
 
         if content.len() > MAX_DOCUMENT_SIZE {
+            let size_mb = content.len() as f64 / 1_000_000.0;
+            let limit_mb = MAX_DOCUMENT_SIZE as f64 / 1_000_000.0;
             return Err(format!(
-                "Document too large: {:.1} MB exceeds the 2.5 MB limit.\n\
+                "Document too large: {:.1} MB ({:.0} bytes) exceeds the {:.1} MB limit ({:.0} bytes).\n\
                  \n\
                  File: {}\n\
                  \n\
                  To import large documents, ask the user to split the file externally,\n\
                  or import a smaller file. The LLM cannot split files automatically.",
-                content.len() as f64 / 1_000_000.0,
+                size_mb,
+                content.len(),
+                limit_mb,
+                MAX_DOCUMENT_SIZE,
                 filename
             ));
         }

@@ -156,14 +156,19 @@ pub async fn import_document(
 
     if metadata.len() > MAX_DOCUMENT_SIZE as u64 {
         let size_mb = metadata.len() as f64 / 1_000_000.0;
+        let limit_mb = MAX_DOCUMENT_SIZE as f64 / 1_000_000.0;
         let err = format!(
-            "Error: File too large ({:.2} MB). Maximum size is 2.5 MB.\n\
+            "Error: File too large ({:.1} MB = {:.0} bytes). Maximum is {:.1} MB ({:.0} bytes).\n\
              \n\
              File: {}\n\
              \n\
              To import large documents, ask the user to split the file externally,\n\
              or import a smaller file. The LLM cannot split files automatically.",
-            size_mb, path
+            size_mb,
+            metadata.len(),
+            limit_mb,
+            MAX_DOCUMENT_SIZE,
+            path
         );
         log_tool_result("import_document", &err);
         return Ok(err);

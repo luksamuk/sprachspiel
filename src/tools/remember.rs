@@ -11,9 +11,9 @@ use crate::tools::context::{get_db, get_embedding};
 /// Number of chunks to show in preview for large documents
 const MAX_PREVIEW_CHUNKS: i32 = 3;
 
-/// Maximum content size to return for documents without chunks (in characters)
+/// Maximum content size to return for documents without chunks (in bytes)
 /// Documents larger than this need to have been chunked during import
-const MAX_UNCHUNKED_CONTENT: usize = 50_000; // ~50KB ≈ 10k tokens
+const MAX_UNCHUNKED_CONTENT: usize = 50_000; // 50 KB = 50,000 bytes ≈ 10k tokens
 
 /// Parse a source ID into (SourceType, numeric_id)
 /// IDs must include source type prefix (e.g., "msg:42", "doc:13")
