@@ -139,7 +139,7 @@ Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
 | PDF | `.pdf` | `pdftotext` (poppler-utils) |
 | EPUB | `.epub` | `epub2txt` or `ebook-convert` (Calibre) |
 
-**File Size Limit:** 5MB maximum. Larger files are rejected.
+**File Size Limit:** 2.5 MB (2,500,000 bytes) maximum. Larger files are rejected.
 
 **File Path Expansion:** Paths starting with `~` are expanded to your home directory.
 

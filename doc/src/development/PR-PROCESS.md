@@ -343,6 +343,68 @@ optional and typically requested for significant features or before releases.
 - Unit tests
 - Binary version check
 
+### Phase 6.5.5: Manual Test (HERMES AGENT)
+
+After smoke test passes, the Hermes Agent may execute manual tests for specific bug fixes
+or features that cannot be tested automatically.
+
+```
+40.5. User requests manual test from Hermes Agent:
+     "Execute manual test on this PR"
+
+40.6. Hermes Agent creates MANUAL-TEST-PR_NUMBER.md from template:
+     - Uses doc/src/development/MANUAL-TEST-TEMPLATE.md as base
+     - Customizes for specific bug fixes in the PR
+     - Adds test cases for each fix
+
+40.7. Hermes Agent executes manual test:
+     - Creates temporary test files
+     - Interacts with LLM to test tool behavior
+     - Verifies error messages are correct
+     - Checks unit consistency (MB/Mb, KB/Kb)
+     - Reports all test results with checkmarks
+     - Notes any failures with detailed error messages
+
+40.8. If manual test passes:
+     - Hermes reports "Aprovado para merge"
+     - Proceed to Phase 7 (Merge)
+
+40.9. If manual test fails:
+     - Hermes documents failures in PR comments
+     - Agent creates todo list of fixes
+     - User confirms fixes
+     - Agent implements fixes
+     - Agent pushes changes
+     - **Return to Step 27 (review iteration)**
+```
+
+**Manual Test Template:**
+
+Located at `doc/src/development/MANUAL-TEST-TEMPLATE.md`
+
+Each manual test includes:
+1. Objective and expected behavior
+2. Test setup (file creation, commands)
+3. Step-by-step verification checklist
+4. Cleanup instructions
+5. Result documentation
+
+**Manual Test Principles:**
+
+1. **Bug Fix Verification**
+   - Each bug fix gets its own test section
+   - Test verifies the fix, not just the feature
+
+2. **Error Message Quality**
+   - Check for vague errors (e.g., "Some(1)")
+   - Verify actionable suggestions are present
+   - Confirm unit consistency (MB vs Mb, KB vs Kb)
+
+3. **Tool Behavior**
+   - Test synchronous operations work immediately
+   - Verify parameters are passed correctly
+   - Check that limits are enforced
+
 ### Phase 7: Merge (AGENT, after authorization)
 
 ```
