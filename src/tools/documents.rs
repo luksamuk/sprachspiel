@@ -5,7 +5,8 @@
 //!
 //! # File Size Limit
 //!
-//! Maximum file size is 2.5MB. Larger files are rejected with a helpful error.
+//! Maximum file size is 2.5 MB (2,500,000 bytes). Larger files are rejected
+//! with a helpful error message.
 //!
 //! # Feature Dependencies
 //!

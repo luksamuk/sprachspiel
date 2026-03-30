@@ -771,7 +771,7 @@ Example: import_document(path: "~/notes.org", scope: "global")
 | PDF | `.pdf` | `skills-tools` + `pdftotext` |
 | EPUB | `.epub` | `skills-tools` + `epub2txt` |
 
-**File Size Limit:** 5MB maximum. Larger files are rejected with a helpful error.
+**File Size Limit:** 2.5 MB (2,500,000 bytes) maximum. Larger files are rejected with a helpful error.
 
 **Path Expansion:** Paths starting with `~` are expanded to the home directory.
 
@@ -818,7 +818,7 @@ PDF and EPUB files require:
 | Situation | Error Message |
 |-----------|---------------|
 | File not found | `Error: File not found: 'report.pdf'. Please check the path and try again.` |
-| File too large | `Error: File exceeds maximum size of 5MB. Consider splitting the document into smaller files.` |
+| File too large | `Error: File too large (3.0 MB = 3,000,000 bytes). Maximum is 2.5 MB (2,500,000 bytes).` |
 | Unsupported type | `Error: Unsupported file type '.docx'. Supported: .txt, .md, .org, .pdf, .epub` |
 | Missing dependency | `Error: Importing 'pdf' files requires the 'skills-tools' feature. Recompile with: cargo build --features skills-tools` |
 

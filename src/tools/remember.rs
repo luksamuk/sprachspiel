@@ -426,7 +426,7 @@ async fn fetch_document(
                 };
                 return format!(
                     "**Document {}**: \"{}\"\n\
-                     Type: {} | Size: {:.1} KB | Words: {}\n\
+                     Type: {} | Size: {:.1} KB ({:.0} bytes) | Words: {}\n\
                      \n\
                      ⚠️ **This document is too large to display** ({} characters).\n\
                      It was imported without proper indexing.\n\
@@ -441,6 +441,7 @@ async fn fetch_document(
                     doc.title.escape_default(),
                     doc.file_type.extension(),
                     doc.content.len() as f64 / 1024.0,
+                    doc.content.len() as f64,
                     doc.word_count,
                     doc.content.len(),
                     doc.id,
