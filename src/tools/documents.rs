@@ -5,7 +5,7 @@
 //!
 //! # File Size Limit
 //!
-//! Maximum file size is 5MB. Larger files are rejected with a helpful error.
+//! Maximum file size is 2.5MB. Larger files are rejected with a helpful error.
 //!
 //! # Feature Dependencies
 //!
@@ -15,44 +15,107 @@
 use crate::content::document::{detect_file_type, Document, FileType, MAX_DOCUMENT_SIZE};
 use crate::content::types::ContentScope;
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::embeddings::{EmbedItemContext, embed_item_with_fallback, DEFAULT_CONTEXT_LENGTH};
 use crate::project::get_project_id;
-use crate::tools::context::get_db;
+use crate::tools::context::{get_db, get_embedding};
 use crate::utils::expand_tilde_path;
 use std::fs;
 
 /// Import a document file for semantic search and retrieval.
 ///
-/// Documents can be TXT, MD, ORG (builtin), or PDF, EPUB (requires skills-tools).
-/// They are stored in the content_items table and can be searched via the remember tool.
+/// Documents are imported with **synchronous indexing** - they are immediately
+/// searchable after this tool returns. Large documents are automatically chunked.
+///
+/// **IMPORTANT:** For .txt files without obvious titles, provide a descriptive
+/// title to improve search quality and avoid duplicate imports.
 ///
 /// # Arguments
-/// * `path` - Absolute or relative path to the file.
-/// * `scope` - "project" (default) or "global". Optional.
+/// * `path` - **Required.** Absolute or relative path to the file.
+///   - Supports `~` home directory expansion
+///   - Example: `"~/documents/report.pdf"` or `"/tmp/notes.txt"`
+///
+/// * `scope` - **Optional.** Search visibility.
+///   - `"project"` (default): Only searchable in current project
+///   - `"global"`: Searchable across all conversations
+///
+/// * `title` - **Recommended for .txt files.** A descriptive title for the document.
+///   - Required when importing .txt files (they have no internal structure)
+///   - Optional for .md/.org files (title is extracted automatically)
+///   - Good titles: `"Meeting Notes 2026-03-29"`, `"GEB Chapter 1"`, `"Q3 Report"`
+///   - Bad titles: `"notes"`, `"file"`, `"document"`
+///
+/// # File Size Limit
+/// **Maximum: 2.5 MB**
+///
+/// Files larger than 2.5MB must be split before importing.
+///
+/// # Supported Formats
+///
+/// | Format | Title Extraction | Notes |
+/// |--------|------------------|-------|
+/// | .txt   | None (provide via `title`) | Plain text |
+/// | .md    | First `# Heading` | Markdown |
+/// | .org   | `#+TITLE:` or first `* Heading` | Org-mode |
+/// | .pdf   | Filename | Requires `skills-tools` feature |
+/// | .epub  | Filename | Requires `skills-tools` feature |
 ///
 /// # Returns
-/// Document ID, title, word count, and confirmation message.
+/// Returns confirmation with document ID, word count, and chunk count.
+/// Use `remember(id="doc:N")` to retrieve specific content.
 ///
 /// # Errors
-/// - File not found
-/// - File too large (> 5MB)
-/// - Unsupported file type
-/// - PDF/EPUB requires skills-tools feature
+///
+/// * `"File not found"` - Check the path is correct
+/// * `"Document too large"` - Split the file first (max 2.5MB)
+/// * `"Requires skills-tools"` - Recompile with `--features skills-tools`
+///
+/// # After Importing
+///
+/// The document is immediately searchable:
+/// ```ignore
+/// remember(query="specific topic from document")
+/// remember(id="doc:N", chunk="0")  // First chunk
+/// remember(id="doc:N", chunk="1")  // Second chunk
+/// ```
+///
+/// If indexing fails, the document is still stored but not searchable.
+/// Run `/reindex` to generate embeddings later.
 ///
 /// # Example
 /// ```ignore
-/// import_document("/path/to/report.pdf".to_string(), Some("project".to_string()))
-/// import_document("notes.md".to_string(), Some("global".to_string()))
+/// // PDF with automatic title extraction
+/// import_document(
+///     "/path/to/report.pdf".to_string(),
+///     None,              // default scope (project)
+///     None               // auto-extract title
+/// )
+///
+/// // Plain text with custom title (RECOMMENDED)
+/// import_document(
+///     "/path/to/notes.txt".to_string(),
+///     None,
+///     Some("Meeting Notes with Team 2026-03-29".to_string())
+/// )
+///
+/// // Global scope for reference material
+/// import_document(
+///     "~/git/biblio/references.org".to_string(),
+///     Some("global".to_string()),
+///     None
+/// )
 /// ```
 #[ollama_rs::function]
 pub async fn import_document(
     path: String,
     scope: Option<String>,
+    title: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call(
         "import_document",
         &[
             ("path".to_string(), path.clone()),
             ("scope".to_string(), scope.clone().unwrap_or_else(|| "project".to_string())),
+            ("title".to_string(), title.clone().unwrap_or_else(|| "(auto)".to_string())),
         ],
     );
 
@@ -92,12 +155,15 @@ pub async fn import_document(
     };
 
     if metadata.len() > MAX_DOCUMENT_SIZE as u64 {
+        let size_mb = metadata.len() as f64 / 1_000_000.0;
         let err = format!(
-            "Error: File exceeds maximum size of {} bytes (got {} bytes).\n\
-             Consider splitting the document into smaller files.\n\
-             Maximum size: 5MB",
-            MAX_DOCUMENT_SIZE,
-            metadata.len()
+            "Error: File too large ({:.2} MB). Maximum size is 2.5 MB.\n\
+             \n\
+             File: {}\n\
+             \n\
+             To import large documents, ask the user to split the file externally,\n\
+             or import a smaller file. The LLM cannot split files automatically.",
+            size_mb, path
         );
         log_tool_result("import_document", &err);
         return Ok(err);
@@ -183,11 +249,12 @@ pub async fn import_document(
         .unwrap_or(&path)
         .to_string();
 
-    let title = Document::extract_title(&content, &filename);
+    // Use provided title, or extract from content, or fall back to filename
+    let final_title = title.unwrap_or_else(|| Document::extract_title(&content, &filename));
 
     let document = match Document::new(
-        content,
-        title.clone(),
+        content.clone(),
+        final_title.clone(),
         filename.clone(),
         file_type,
         content_scope,
@@ -216,23 +283,84 @@ pub async fn import_document(
         ContentScope::Global => "global".to_string(),
     };
 
-    let result = format!(
-        "Imported document {} ({})\n\
-         **Title:** {}\n\
-         **Type:** {}\n\
-         **Words:** {}\n\
-         **Scope:** {}\n\
-         \n\
-         Use remember(id=\"{}\") to retrieve the full content.\n\
-         Use remember(query=\"...\") to search across all documents.",
-        doc_id,
-        file_type.extension(),
-        title,
-        filename,
-        document.word_count,
-        scope_str,
-        doc_id,
-    );
+    // Generate embeddings synchronously (documents need to be searchable immediately)
+    let result = if let Some(embedding_client) = get_embedding() {
+        let db_clone = db.clone();
+        let ctx = EmbedItemContext::new(
+            &document.content,
+            doc_id,
+            "document",
+            None,
+            project_id.as_deref(),
+        );
+        
+        // Use block_in_place for synchronous embedding in async context
+        let embed_result = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                embed_item_with_fallback(ctx, &db_clone, &embedding_client, DEFAULT_CONTEXT_LENGTH).await
+            })
+        });
+        
+        match embed_result {
+            Ok(embed_result) => {
+                let chunks = embed_result.chunks_created.max(1);
+                format!(
+                    "Imported document {} ({})\n\
+                     **Title:** {}\n\
+                     **Type:** {}\n\
+                     **Words:** {}\n\
+                     **Chunks:** {}\n\
+                     **Scope:** {}\n\
+                     \n\
+                     Document is indexed and ready for search.\n\
+                     Use remember(id=\"doc:{}\") to retrieve.\n\
+                     Use remember(query=\"...\") to search by topic.",
+                    doc_id,
+                    file_type.extension(),
+                    final_title,
+                    filename,
+                    document.word_count,
+                    chunks,
+                    scope_str,
+                    doc_id
+                )
+            }
+            Err(e) => {
+                format!(
+                    "Imported document {} ({}) BUT indexing failed: {}\n\
+                     **Title:** {}\n\
+                     **Words:** {}\n\
+                     \n\
+                     The document is stored but NOT searchable.\n\
+                     Run '/reindex' to generate embeddings.\n\
+                     Use remember(id=\"doc:{}\") to retrieve manually.",
+                    doc_id,
+                    file_type.extension(),
+                    e,
+                    final_title,
+                    document.word_count,
+                    doc_id
+                )
+            }
+        }
+    } else {
+        format!(
+            "Imported document {} ({})\n\
+             **Title:** {}\n\
+             **Words:** {}\n\
+             **Scope:** {}\n\
+             \n\
+             ⚠️ No embedding model available. Document stored but NOT searchable.\n\
+             Run '/reindex' after starting with an embedding model.\n\
+             Use remember(id=\"doc:{}\") to retrieve.",
+            doc_id,
+            file_type.extension(),
+            final_title,
+            document.word_count,
+            scope_str,
+            doc_id
+        )
+    };
 
     log_tool_result("import_document", &result);
     Ok(result)
