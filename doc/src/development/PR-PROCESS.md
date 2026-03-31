@@ -348,16 +348,23 @@ optional and typically requested for significant features or before releases.
 After smoke test passes, the Hermes Agent may execute manual tests for specific bug fixes
 or features that cannot be tested automatically.
 
+**IMPORTANT:** Manual test files (e.g., `MANUAL-TEST-<PR_NUMBER>.md`) are **NOT versioned**.
+They should be:
+- Created locally by the Hermes Agent during testing
+- Stored outside the repository (e.g., `~/` or `/tmp`)
+- Deleted after the PR is merged
+- NEVER committed to git
+
 ```
-40.5. User requests manual test from Hermes Agent:
-     "Execute manual test on this PR"
+40.5. Hermes Agent creates manual test file LOCALLY (not in repo):
+     - File: ~/MANUAL-TEST-PR_NUMBER.md (or /tmp/MANUAL-TEST-PR_NUMBER.md)
+     - Based on template: doc/src/development/MANUAL-TEST-TEMPLATE.md
+     - Customized for specific bug fixes in the PR
+     - Uses temporary files for test data
+     - Results documented in the file itself
+     - NEVER add to git
 
-40.6. Hermes Agent creates MANUAL-TEST-PR_NUMBER.md from template:
-     - Uses doc/src/development/MANUAL-TEST-TEMPLATE.md as base
-     - Customizes for specific bug fixes in the PR
-     - Adds test cases for each fix
-
-40.7. Hermes Agent executes manual test:
+40.6. Hermes Agent executes manual test:
      - Creates temporary test files
      - Interacts with LLM to test tool behavior
      - Verifies error messages are correct
@@ -365,17 +372,10 @@ or features that cannot be tested automatically.
      - Reports all test results with checkmarks
      - Notes any failures with detailed error messages
 
-40.8. If manual test passes:
-     - Hermes reports "Aprovado para merge"
-     - Proceed to Phase 7 (Merge)
-
-40.9. If manual test fails:
-     - Hermes documents failures in PR comments
-     - Agent creates todo list of fixes
-     - User confirms fixes
-     - Agent implements fixes
-     - Agent pushes changes
-     - **Return to Step 27 (review iteration)**
+40.7. After manual test completes:
+     - Hermes reports results in PR comments (not in file)
+     - Manual test file is deleted or kept locally (not committed)
+     - If tests pass, proceed to Phase 7 (Merge)
 ```
 
 **Manual Test Template:**
