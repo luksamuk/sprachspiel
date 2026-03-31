@@ -341,9 +341,11 @@ features or before releases.
     - Executes manual test sections interactively
     - Reports all test results with checkmarks
     - Notes any failures with detailed error messages
+    - Writes report to ~/SMOKE-TEST-RESULTS-PR_NUMBER.md (not in repo)
 
 42. If smoke test passes:
-    - Hermes reports "Aprovado para merge"
+    - Hermes reports "Aprovado para merge" in PR comments
+    - Current agent (OpenCode) reads the report from ~/SMOKE-TEST-RESULTS-PR_NUMBER.md
     - Proceed to Phase 7 (Merge)
 
 43. If smoke test fails:
