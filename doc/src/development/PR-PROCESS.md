@@ -273,16 +273,68 @@ Before informing the reviewer that changes are ready, the agent MUST ensure:
 - No local commits remain unpushed
 ```
 
-### Phase 6.5: Smoke Test (OPTIONAL, HERMES AGENT)
+### Phase 6.5: Manual Tests (HERMES AGENT)
 
-After code review approval, the user may request a smoke test execution. This is
-optional and typically requested for significant features or before releases.
+After code review approval and automated tests pass, manual tests may be required
+for specific bug fixes or features that cannot be tested automatically.
+
+**IMPORTANT:** Manual test files (e.g., `MANUAL-TEST-<PR_NUMBER>.md`) are **NOT versioned**.
+They should be:
+- Created locally by the Hermes Agent during testing
+- Stored outside the repository (e.g., `~/` or `/tmp`)
+- Deleted after the PR is merged
+- NEVER committed to git
 
 ```
-37. User requests smoke test from Hermes Agent:
+37. Hermes Agent creates manual test file LOCALLY (not in repo):
+     - File: ~/MANUAL-TEST-PR_NUMBER.md (or /tmp/MANUAL-TEST-PR_NUMBER.md)
+     - Based on template: doc/src/development/MANUAL-TEST-TEMPLATE.md
+     - Customized for specific bug fixes in the PR
+     - Uses temporary files for test data
+     - Results documented in the file itself
+     - NEVER add to git
+
+38. Hermes Agent executes manual test:
+     - Creates temporary test files
+     - Interacts with LLM to test tool behavior
+     - Verifies error messages are correct
+     - Checks unit consistency (MB/Mb, KB/Kb)
+     - Reports all test results with checkmarks
+     - Notes any failures with detailed error messages
+
+39. After manual test completes:
+     - Hermes reports results in PR comments (not in file)
+     - Manual test file is deleted or kept locally (not committed)
+     - If tests pass, proceed to Phase 6.6 (Smoke Test)
+```
+
+**Manual Test Principles:**
+
+1. **Bug Fix Verification**
+   - Each bug fix gets its own test section
+   - Test verifies the fix, not just the feature
+
+2. **Error Message Quality**
+   - Check for vague errors (e.g., "Some(1)")
+   - Verify actionable suggestions are present
+   - Confirm unit consistency (MB vs Mb, KB vs Kb)
+
+3. **Tool Behavior**
+   - Test synchronous operations work immediately
+   - Verify parameters are passed correctly
+   - Check that limits are enforced
+
+### Phase 6.6: Smoke Test (OPTIONAL, HERMES AGENT)
+
+After manual tests pass (or if manual tests not required), the user may request a
+smoke test execution. This is optional and typically requested for significant
+features or before releases.
+
+```
+40. User requests smoke test from Hermes Agent:
     "Execute smoke test on this PR"
 
-38. Hermes Agent executes SMOKE_TEST.md:
+41. Hermes Agent executes SMOKE_TEST.md:
     - Preserves user's existing database (backup)
     - Creates temporary test files
     - Runs automated checklist (build, unit tests)
@@ -290,11 +342,11 @@ optional and typically requested for significant features or before releases.
     - Reports all test results with checkmarks
     - Notes any failures with detailed error messages
 
-39. If smoke test passes:
+42. If smoke test passes:
     - Hermes reports "Aprovado para merge"
     - Proceed to Phase 7 (Merge)
 
-40. If smoke test fails:
+43. If smoke test fails:
     - Hermes documents failures in PR comments
     - Agent creates todo list of fixes
     - User confirms fixes
@@ -331,86 +383,12 @@ optional and typically requested for significant features or before releases.
    - File tools still work after changes
    - Memory/search still work after changes
 
-**Manual Tests (Require Interaction):**
-- Document import via chat
-- Embedding synchronous verification
-- Memory/facts via chat
-- Notes via chat
-- File tools via LLM
-
-**Automated Tests (Script):**
-- Build verification
-- Unit tests
-- Binary version check
-
-### Phase 6.5.5: Manual Test (HERMES AGENT)
-
-After smoke test passes, the Hermes Agent may execute manual tests for specific bug fixes
-or features that cannot be tested automatically.
-
-**IMPORTANT:** Manual test files (e.g., `MANUAL-TEST-<PR_NUMBER>.md`) are **NOT versioned**.
-They should be:
-- Created locally by the Hermes Agent during testing
-- Stored outside the repository (e.g., `~/` or `/tmp`)
-- Deleted after the PR is merged
-- NEVER committed to git
-
-```
-40.5. Hermes Agent creates manual test file LOCALLY (not in repo):
-     - File: ~/MANUAL-TEST-PR_NUMBER.md (or /tmp/MANUAL-TEST-PR_NUMBER.md)
-     - Based on template: doc/src/development/MANUAL-TEST-TEMPLATE.md
-     - Customized for specific bug fixes in the PR
-     - Uses temporary files for test data
-     - Results documented in the file itself
-     - NEVER add to git
-
-40.6. Hermes Agent executes manual test:
-     - Creates temporary test files
-     - Interacts with LLM to test tool behavior
-     - Verifies error messages are correct
-     - Checks unit consistency (MB/Mb, KB/Kb)
-     - Reports all test results with checkmarks
-     - Notes any failures with detailed error messages
-
-40.7. After manual test completes:
-     - Hermes reports results in PR comments (not in file)
-     - Manual test file is deleted or kept locally (not committed)
-     - If tests pass, proceed to Phase 7 (Merge)
-```
-
-**Manual Test Template:**
-
-Located at `doc/src/development/MANUAL-TEST-TEMPLATE.md`
-
-Each manual test includes:
-1. Objective and expected behavior
-2. Test setup (file creation, commands)
-3. Step-by-step verification checklist
-4. Cleanup instructions
-5. Result documentation
-
-**Manual Test Principles:**
-
-1. **Bug Fix Verification**
-   - Each bug fix gets its own test section
-   - Test verifies the fix, not just the feature
-
-2. **Error Message Quality**
-   - Check for vague errors (e.g., "Some(1)")
-   - Verify actionable suggestions are present
-   - Confirm unit consistency (MB vs Mb, KB vs Kb)
-
-3. **Tool Behavior**
-   - Test synchronous operations work immediately
-   - Verify parameters are passed correctly
-   - Check that limits are enforced
-
 ### Phase 7: Merge (AGENT, after authorization)
 
 ```
-45. User authorizes merge (all comments resolved, testing passed, smoke test passed if requested)
+44. User authorizes merge (all comments resolved, manual tests passed, smoke test passed if requested)
 
-46. Agent merges PR using regular merge (NOT squash) with branch deletion:
+45. Agent merges PR using regular merge (NOT squash) with branch deletion:
     gh pr merge PR_NUMBER --merge --delete-branch
     
     IMPORTANT: 
@@ -419,9 +397,9 @@ Each manual test includes:
     - Branch is deleted after merge
     - PR is automatically closed
 
-47. Card moves to "Done" automatically (if PR references the card)
+46. Card moves to "Done" automatically (if PR references the card)
 
-48. Issue is closed automatically (via "Closes #N" in PR body)
+47. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
