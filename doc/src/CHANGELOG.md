@@ -55,6 +55,28 @@ All notable changes to Ask-AI will be documented in this file.
   - Prevents documents that would exceed model context
   - Related: Issue #54
 
+- **Default Model Changed** - From llama3.1 to qwen3.5:4b
+  - `DEFAULT_MODEL`: `llama3.1` → `qwen3.5:4b`
+  - Context: 4K → 128K tokens
+  - Temperature: 0.8 → 1.0
+  - Thinking mode: disabled → enabled by default
+  - Multimodal: supports vision tasks natively
+
+- **New Code Model Default** - Dedicated model for code mode
+  - `DEFAULT_CODE_MODEL`: `qwen2.5-coder:7b`
+  - Optimized for coding with function calling
+  - Automatic fallback: code mode → code default → global default
+  - Behavior: `ask-ai "query"` → qwen3.5:4b, `ask-ai -c "code"` → qwen2.5-coder:7b
+
+- **Built-in Models Reduced** - From 4 to 3 models
+  - Removed: `moondream` (now redundant - qwen3.5:4b is multimodal)
+  - Kept: `qwen3.5:4b`, `translategemma`, `glm-ocr`
+
+- **Vision Default Model** - Changed to qwen3.5:4b
+  - Previous: `moondream:1.8b`
+  - New: `qwen3.5:4b` (multimodal, same as general default)
+  - Moondream remains available as alternative
+
 ## [0.39.0] - 2026-03-29
 
 ### Added

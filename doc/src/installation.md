@@ -275,11 +275,13 @@ make models-essential
 
 This builds and installs:
 - **qwen3.5:4b** - Default for general queries (multimodal)
+- **qwen2.5-coder:7b** - Default for code mode
 - **translategemma:4b** - For translation command
 - **glm-ocr:bf16** - For OCR/text extraction
-- **translategemma:4b** - For translation
-- **glm-ocr:bf16** - For OCR/text extraction
-- **moondream:1.8b** - For vision (alternative)
+
+Optional alternatives:
+- **moondream:1.8b** - Lightweight vision model
+- **llama3.1:8b** - General queries (alternative)
 
 Note: Context window sizes are configured in `~/.config/ask-ai/models.toml`, not in model tags.
 
@@ -303,6 +305,7 @@ cd modelfiles
 
 # Essential models (must have)
 make qwen3.5:4b         # Build Qwen 3.5 4B (default)
+make qwen2.5-coder      # Build Qwen 2.5 Coder 7B (code default)
 make translategemma      # Build Translation model
 make glm-ocr             # Pull OCR model
 

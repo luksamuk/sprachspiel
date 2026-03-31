@@ -100,6 +100,7 @@ These optional models can be configured in `~/.config/ask-ai/models.toml`:
 
 | Preset | Model ID | Context | Best For |
 |--------|----------|---------|----------|
+| **qwen2.5-coder:7b** | qwen2.5-coder:7b | 128K | **Default for code mode**, function calling |
 | qwen3-coder | qwen3-coder:30b | 32K | Code generation with tools |
 | qwen3-coder-next | qwen3-coder-next:cloud | 260K | Cloud code generation |
 | nemotron | nemotron-3-nano:30b | 32K | Thinking mode |
