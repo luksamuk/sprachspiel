@@ -9,7 +9,7 @@ use std::path::PathBuf;
 #[derive(Args, Debug, Clone)]
 #[command(
     about = "Analyze and describe images using vision models",
-    long_about = r#"Analyze and describe images using vision models like moondream, llava, or minicpm-v.
+    long_about = r#"Analyze and describe images using vision models like qwen3.5, moondream, llava, or minicpm-v.
 
 SUPPORTED IMAGE FORMATS:
   - PNG (.png)
@@ -33,18 +33,19 @@ EXAMPLES:
   ask vision --json *.png > output.jsonl     # Batch with JSON output
 
 MODELS:
-  - moondream:1.8b (default) - Lightweight, runs anywhere
+  - qwen3.5:4b (default) - Multimodal, good quality, 128K context
+  - moondream:1.8b - Lightweight alternative, 2K context
   - llava:7b - Better quality, good OCR
   - minicpm-v:8b - Best for multi-image tasks
 
 REQUIREMENTS:
   - Ollama must be running locally or accessible remotely
-  - Vision model must be downloaded: ollama pull moondream:1.8b
+  - Vision model must be downloaded: ollama pull qwen3.5:4b
 
 CONFIGURATION:
   Default model can be set in ~/.config/ask-ai/config.toml:
   [model.vision]
-  model = "moondream"
+  model = "qwen3.5-4b"
 "#
 )]
 pub struct VisionArgs {

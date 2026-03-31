@@ -138,7 +138,7 @@ mod tests {
     fn test_terminal_view_show_welcome() {
         let mut view = TerminalView::new();
         view.show_welcome(
-            "llama3.1",
+            "qwen3.5-4b",
             true,
             true,
             "enabled",

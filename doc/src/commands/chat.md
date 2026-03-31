@@ -212,7 +212,7 @@ Show token usage and context utilization for the current session:
 ```
 > /context
 Context Information:
-  Model:          llama3.1:8b (32K context)
+  Model:          qwen3.5:4b (131K context)
 
   Token Breakdown:
     System prompt:    ~890 tokens

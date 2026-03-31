@@ -7,7 +7,7 @@ Get up and running with Ask-AI in just 5 minutes. This guide covers the essentia
 Before starting, ensure:
 - Ask-AI is installed (see [Installation](./installation.md))
 - Ollama is running (`ollama serve`)
-- Default model is pulled (`ollama pull llama3.1:8b`)
+- Default model is pulled (`ollama pull qwen3.5:4b`)
 
 ## Your First Query
 
@@ -179,7 +179,7 @@ cat to-translate.txt | ask-ai translate :pt
 3. **Markdown by default**: Output is formatted with markdown. Use `--plain` for raw text
 
 4. **Model selection**: Different tasks benefit from different models:
-   - General queries: `llama3.1` (default)
+   - General queries: `qwen3.5-4b` (default)
    - Coding: `qwen3-coder` or `devstral-small-2`
    - Tools: `mistral-small`
    - Summarization: `llama3.2`

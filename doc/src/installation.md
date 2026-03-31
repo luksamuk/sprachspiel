@@ -274,10 +274,12 @@ make models-essential
 ```
 
 This builds and installs:
-- **llama3.1:8b** - Default for general queries
+- **qwen3.5:4b** - Default for general queries (multimodal)
 - **translategemma:4b** - For translation command
 - **glm-ocr:bf16** - For OCR/text extraction
-- **moondream:1.8b** - For vision/image description
+- **translategemma:4b** - For translation
+- **glm-ocr:bf16** - For OCR/text extraction
+- **moondream:1.8b** - For vision (alternative)
 
 Note: Context window sizes are configured in `~/.config/ask-ai/models.toml`, not in model tags.
 
@@ -300,7 +302,7 @@ Build individual models as needed:
 cd modelfiles
 
 # Essential models (must have)
-make llama3.1            # Build Llama 3.1 8B (default)
+make qwen3.5:4b         # Build Qwen 3.5 4B (default)
 make translategemma      # Build Translation model
 make glm-ocr             # Pull OCR model
 
@@ -394,10 +396,12 @@ To remove models installed via modelfiles:
 ollama list
 
 # Remove specific models
-ollama rm llama3.1:8b
+ollama rm qwen3.5:4b
 ollama rm translategemma:4b
 ollama rm glm-ocr:bf16
+# Alternative models:
 ollama rm moondream:1.8b
+ollama rm llama3.1:8b
 
 # Remove optional models
 ollama rm lfm2.5-thinking:1.2b

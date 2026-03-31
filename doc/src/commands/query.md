@@ -43,7 +43,7 @@ These options must be placed **before** the `query` subcommand:
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--model` | `-m` | Model preset to use | `llama3.1` |
+| `--model` | `-m` | Model preset to use | `qwen3.5:4b` |
 | `--prompt` | `-p` | System prompt mode | `default` |
 | `--think` | `-t` | Enable think mode | disabled |
 | `--plain` | | Output plain text (no markdown) | disabled |

@@ -44,8 +44,8 @@ Ask-AI looks for the config file in this order:
 
 # The default model preset to use for general queries.
 # See all available models with: ask-ai --list-models
-# Default: "llama3.1"
-default = "llama3.1"
+# Default: "qwen3.5:4b"
+default = "qwen3.5:4b"
 
 # Global default for thinking mode (optional).
 # This is used as a fallback for all subcommands that don't have their own setting.

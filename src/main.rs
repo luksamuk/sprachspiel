@@ -247,7 +247,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
                  Add it to ~/.config/ask-ai/models.toml or use a built-in model.",
                 translate_model
             );
-            eprintln!("Built-in models: llama3.1, translategemma, glm-ocr, moondream");
+            eprintln!("Built-in models: qwen3.5:4b, translategemma, glm-ocr");
             std::process::exit(1);
         }
     };
@@ -392,7 +392,7 @@ fn print_available_options() {
     println!("Available models:");
     for name in user_models::list_all_model_names() {
         if let Some(config) = user_models::get_model_config(&name) {
-            let default_marker = if name == "llama3.1" { " (default)" } else { "" };
+            let default_marker = if name == "qwen3.5:4b" { " (default)" } else { "" };
             let user_marker = if !config::ModelConfig::is_builtin_valid(&name) {
                 " [user]"
             } else {
@@ -610,7 +610,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     } else if !subcommand_model.is_empty() {
         subcommand_model
     } else {
-        "moondream".to_string()
+        "qwen3.5:4b".to_string()
     };
 
     let model_config = user_models::resolve_model_config(&model_name);

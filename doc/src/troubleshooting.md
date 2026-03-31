@@ -63,10 +63,10 @@ sudo systemctl start ollama
 
 ```bash
 # Pull required models
-ollama pull llama3.1:8b
+ollama pull qwen3.5:4b
 ollama pull translategemma:4b
 ollama pull glm-ocr:bf16
-ollama pull moondream:1.8b
+ollama pull qwen3.5:4b  # Also works for vision
 ```
 
 ## Model Issues
