@@ -302,6 +302,10 @@ host = "localhost:11434"        # Ollama server address
 [model]
 default = "qwen3.5:4b"         # Default model (multimodal)
 
+[model.code]
+# model = "qwen2.5-coder:7b"   # Code mode default (qwen2.5-coder:7b if not set)
+# tools = true                  # Tools enabled by default for code mode
+
 [display]
 skin = "dark"                   # Markdown theme: dark, light, mono
 

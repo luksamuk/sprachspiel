@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 /// Default model name when not specified in config
 pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
 
+/// Default model for code mode (optimized for coding with tools)
+pub const DEFAULT_CODE_MODEL: &str = "qwen2.5-coder:7b";
+
 /// Default Ollama host
 pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
 
@@ -296,12 +299,19 @@ impl Settings {
             _ => &SubcommandModelConfig::default(),
         };
 
-        // Get model: subcommand specific -> global default
+        // Get model: subcommand specific -> code default -> global default
         let model = subcommand_config
             .model
             .as_ref()
             .cloned()
-            .unwrap_or_else(|| self.model.default.clone());
+            .unwrap_or_else(|| {
+                // Code subcommand has its own default model
+                if subcommand == "code" {
+                    DEFAULT_CODE_MODEL.to_string()
+                } else {
+                    self.model.default.clone()
+                }
+            });
 
         // Get thinking: subcommand specific -> global -> model default
         // Note: This returns the config preference; model capability check happens elsewhere
@@ -467,9 +477,9 @@ ollama_port = 11434
 # --- CODE MODE ---
 [model.code]
 # The model to use when the code flag (-c) is active.
-# Recommended: a code-optimized model like deepseek-coder-v2 or qwen3-coder.
-# If not specified, falls back to the global [model] default.
-# model = "deepseek-coder-v2"
+# Default: "qwen2.5-coder:7b" (optimized for coding with function calling)
+# If not specified, falls back to the code default (qwen2.5-coder:7b).
+# model = "qwen2.5-coder:7b"
 
 # Code generation typically doesn't need thinking mode.
 # If not specified, defaults to: false for code
