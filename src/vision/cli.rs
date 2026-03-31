@@ -45,7 +45,7 @@ REQUIREMENTS:
 CONFIGURATION:
   Default model can be set in ~/.config/ask-ai/config.toml:
   [model.vision]
-  model = "qwen3.5-4b"
+  model = "qwen3.5:4b"
 "#
 )]
 pub struct VisionArgs {

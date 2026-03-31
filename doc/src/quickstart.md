@@ -179,10 +179,10 @@ cat to-translate.txt | ask-ai translate :pt
 3. **Markdown by default**: Output is formatted with markdown. Use `--plain` for raw text
 
 4. **Model selection**: Different tasks benefit from different models:
-   - General queries: `qwen3.5-4b` (default)
-   - Coding: `qwen3-coder` or `devstral-small-2`
+   - General queries: `qwen3.5:4b` (default)
+   - Coding: `qwen2.5-coder:7b` (code mode)
    - Tools: `mistral-small`
-   - Summarization: `llama3.2`
+   - Summarization: `qwen3.5:4b`
    - Reasoning: `lfm` (think mode)
 
 5. **Chaining**: Combine commands for powerful workflows. The output of one command becomes the input of the next

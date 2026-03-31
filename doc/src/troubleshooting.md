@@ -63,10 +63,9 @@ sudo systemctl start ollama
 
 ```bash
 # Pull required models
-ollama pull qwen3.5:4b
-ollama pull translategemma:4b
-ollama pull glm-ocr:bf16
-ollama pull qwen3.5:4b  # Also works for vision
+ollama pull qwen3.5:4b       # Default model (also works for vision)
+ollama pull translategemma:4b # Translation
+ollama pull glm-ocr:bf16      # OCR
 ```
 
 ## Model Issues

@@ -244,7 +244,6 @@ ask-ai -m qwen3 -t "reasoning"   # With thinking
 ask-ai -m "qwen3.5:9b" "Write a Rust function"  # Good for code
 ask-ai -m "qwen3.5:27b" "Complex refactoring"   # Overkill for simple tasks
 ask-ai -m qwen3-coder "Write a Rust function"   # Code specialist
-ask-ai -p code "Optimize this code"              # Code prompt mode
 ```
 
 ### For Vision

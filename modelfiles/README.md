@@ -137,7 +137,7 @@ ollama pull llama3.2:3b
 Since v0.14.0, context window sizes are defined in `~/.config/ask-ai/models.toml`:
 
 ```toml
-[models.qwen3.5:4b]
+[models."qwen3.5:4b"]
 model_id = "qwen3.5:4b"
 num_ctx = 131072
 temperature = 1.0

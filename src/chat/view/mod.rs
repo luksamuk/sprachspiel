@@ -529,7 +529,7 @@ mod tests {
     #[test]
     fn test_welcome_info_formatting() {
         let info = WelcomeInfo {
-            model_id: "qwen3.5-4b".to_string(),
+            model_id: "qwen3.5:4b".to_string(),
             tools_enabled: true,
             think_enabled: true,
             sandbox_status: "enabled (landlock)".to_string(),
@@ -539,7 +539,7 @@ mod tests {
         };
 
         let output = info.to_boxed_string();
-        assert!(output.contains("qwen3.5-4b"));
+        assert!(output.contains("qwen3.5:4b"));
         assert!(output.contains("Project:"));
         assert!(output.contains("Session:"));
     }
