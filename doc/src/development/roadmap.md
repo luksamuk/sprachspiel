@@ -654,6 +654,170 @@ User-defined tools via dynamic loading or compilation.
 
 ---
 
+## Low Priority
+
+### Multi-Provider Support (OpenAI-Compatible Backends)
+
+**Priority:** LOW  
+**Status:** 📋 Planned  
+**Issue:** TBD
+
+**Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (cloud/local) through a unified interface.
+
+**Motivation:**
+- **Primary Target:** OpenAI API - enable cloud-based models for users without local GPU
+- **Compatibility Targets:**
+  - llama.cpp (via OpenAI-compatible `/v1/chat/completions` endpoint)
+  - LM Studio (same pathway)
+- **Deferred:** vLLM support postponed until testing resources available
+
+**Current State:**
+- `ollama-rs` is tightly coupled to Ollama's native API
+- Tool calling uses `ollama-rs::generation::tools::Tool` trait
+- Embeddings use `/api/embeddings` endpoint
+- Model capabilities detected via `/api/show_model_info`
+- Context overflow depends on `prompt_eval_count` from responses
+
+**Architecture:**
+
+```rust
+/// Provider abstraction for LLM backends
+trait LlmProvider {
+    /// Send chat request with optional tools
+    async fn chat(&self, messages: Vec<ChatMessage>, tools: Vec<Tool>) -> Result<ChatResponse>;
+    
+    /// Generate completion (for non-chat use cases)
+    async fn generate(&self, prompt: &str, options: GenerateOptions) -> Result<GenerateResponse>;
+    
+    /// Get model capabilities (tools, vision, thinking)
+    async fn get_model_capabilities(&self, model: &str) -> Result<ModelCapabilities>;
+    
+    /// Generate embeddings for text
+    async fn embed(&self, text: &str) -> Result<Vec<f32>>;
+    
+    /// Check provider health/availability
+    async fn is_available(&self) -> bool;
+}
+
+/// Ollama native provider (current implementation)
+struct OllamaProvider { 
+    client: ollama_rs::Ollama,
+    base_url: String,
+}
+
+/// OpenAI-compatible provider (OpenAI API, llama.cpp, LM Studio)
+struct OpenAICompatibleProvider { 
+    client: reqwest::Client, 
+    base_url: String,
+    api_key: Option<String>,
+}
+
+/// Provider selector based on model configuration
+enum Provider {
+    Ollama(OllamaProvider),
+    OpenAI(OpenAICompatibleProvider),
+}
+```
+
+**Key Design Decisions:**
+
+| Decision | Rationale |
+|----------|-----------|
+| Adapter pattern | Clean separation, existing Ollama code unchanged |
+| Enabled by default | No feature flag complexity |
+| Per-model provider | User can mix local (Ollama) + cloud (OpenAI) |
+| Config-based capabilities | OpenAI-compatible servers don't have `/api/show_model_info` |
+
+**Impact Analysis:**
+
+| Component | Ollama API | OpenAI-Compatible | Effort | Notes |
+|-----------|------------|-------------------|--------|-------|
+| Chat/Query | `/api/chat` | `/v1/chat/completions` | LOW | Same message format |
+| Tool Calling | Native tools | Function calling | HIGH | Format conversion required |
+| Embeddings | `/api/embeddings` | `/v1/embeddings` | HIGH | Response format differs |
+| Vision/OCR | `/api/generate` + images | Vision messages | MEDIUM | Image encoding differs |
+| Capabilities | `/api/show_model_info` | Config-based | LOW | No API for this |
+| Context Overflow | `prompt_eval_count` | `usage.prompt_tokens` | LOW | Minor parsing change |
+
+**Configuration:**
+
+```toml
+# ~/.config/ask-ai/models.toml
+
+# Default provider (ollama or openai)
+default_provider = "ollama"
+
+# Provider-specific settings
+[providers.ollama]
+base_url = "http://localhost:11434"
+
+[providers.openai]
+base_url = "https://api.openai.com/v1"  # or "http://localhost:8080/v1" for llama.cpp
+api_key = "${OPENAI_API_KEY}"  # Environment variable
+
+# Per-model provider override
+[models."gpt-4o"]
+provider = "openai"
+tools = true
+vision = true
+thinking = false
+
+[models."qwen3.5:4b"]
+provider = "ollama"  # Explicit, but default anyway
+tools = true
+vision = true
+thinking = false
+```
+
+**Implementation Phases:**
+
+| Phase | Status | Description | Effort |
+|-------|--------|-------------|--------|
+| 1. Provider Trait | 📋 Planned | Define `LlmProvider` trait | 1 day |
+| 2. Ollama Adapter | 📋 Planned | Wrap existing `ollama-rs` in adapter | 2 days |
+| 3. OpenAI Adapter | 📋 Planned | Implement OpenAI-compatible client | 3 days |
+| 4. Tool Conversion | 📋 Planned | Ollama ↔ OpenAI tool format conversion | 2 days |
+| 5. Embeddings | 📋 Planned | Unified embedding interface | 2 days |
+| 6. Vision/OCR | 📋 Planned | Image support through providers | 1 day |
+| 7. Configuration | 📋 Planned | Provider per model in `models.toml` | 1 day |
+| 8. Testing | 📋 Planned | Integration tests with real providers | 2 days |
+| **Total** | | | **14 days** |
+
+**Key Files to Modify:**
+
+| File | Change |
+|------|--------|
+| `src/provider/mod.rs` | NEW - Provider trait and registry |
+| `src/provider/ollama.rs` | NEW - OllamaProvider adapter |
+| `src/provider/openai.rs` | NEW - OpenAICompatibleProvider |
+| `src/settings.rs` | Provider configuration parsing |
+| `src/capabilities.rs` | Config-based capability detection |
+| `src/chat/custom_coordinator.rs` | Use `LlmProvider` trait instead of `ollama-rs` directly |
+| `src/embeddings/client.rs` | Provider abstraction for embeddings |
+
+**Dependencies:**
+- None (adapter abstraction, enabled by default)
+
+**Notes:**
+- OpenAI API is the **primary implementation target** for cloud-based models
+- llama.cpp and LM Studio gain compatibility **through** OpenAI-compatible adapter
+- vLLM support **postponed** until testing resources available
+- Ollama remains primary **local** provider; OpenAI for **cloud** models
+- Users can mix providers: Ollama for local + OpenAI for specific cloud models
+- Tool calling conversion is bidirectional (Ollama ↔ OpenAI format)
+- No feature flag - abstraction is internal architecture detail
+
+**References:**
+- OpenAI API Reference: https://platform.openai.com/docs/api-reference/chat
+- llama.cpp OpenAI-compatible server: https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md
+- LM Studio API: https://lmstudio.ai/docs/python
+- Current `settings.rs` - configuration structure
+- Current `chat/custom_coordinator.rs` - tool execution flow
+- Current `embeddings/client.rs` - embedding client
+- Current `capabilities.rs` - model capability detection
+
+---
+
 ## Future Tools
 
 ### Document Processing
