@@ -180,15 +180,14 @@ pub fn normalize_input(s: &str) -> String {
 pub fn expand_tilde_path(path: &str) -> std::path::PathBuf {
     let trimmed = path.trim();
     
-    if trimmed.starts_with('~') {
+    if let Some(rest) = trimmed.strip_prefix('~') {
         if let Some(home) = dirs::home_dir() {
             // Handle ~ alone
-            if trimmed == "~" || trimmed == "~/" {
+            if rest.is_empty() || rest == "/" {
                 return home;
             }
             
             // Handle ~/path
-            let rest = &trimmed[1..]; // Remove ~
             let rest = rest.strip_prefix('/').unwrap_or(rest);
             
             if rest.is_empty() {

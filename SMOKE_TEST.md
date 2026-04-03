@@ -94,6 +94,17 @@ echo "teste tilde expansion" > ~/test.txt
 - [ ] `/doc show 999` → "not found"
 - [ ] `/doc import /tmp/empty.txt` → rejeitado (arquivo vazio)
 
+### 3.4 Testes de Tamanho (Bug #54)
+
+- [ ] Arquivo > 2.5 MB (2.500.000 bytes) é rejeitado com erro claro:
+  ```bash
+  # Criar arquivo grande (3 MB = 3.000.000 bytes)
+  dd if=/dev/zero bs=1M count=3 of=/tmp/large.txt 2>/dev/null
+  # Verificar que /doc import rejeita
+  /doc import /tmp/3mb.txt
+  ```
+- [ ] Mensagem de erro menciona "2.5 MB (2.500.000 bytes) limit" e sugere dividir arquivo
+
 ---
 
 ## 4. Embedding Síncrono (Feature Nova)
@@ -103,6 +114,32 @@ echo "teste tilde expansion" > ~/test.txt
   Use remember to search for "teste"
   ```
 - [ ] Resultado inclui o documento recém-importado (indexação síncrona funciona)
+
+### 4.1 Tool import_document (via LLM) - Bug #54
+
+**Preparar arquivos de teste:**
+```bash
+echo "teste de import via tool" > /tmp/tool_test.txt
+```
+
+Via chat com modelo que suporta tools:
+
+- [ ] `import_document("/tmp/tool_test.txt", None, Some("Test Document"))` funciona
+- [ ] Import retorna "Chunks: N (document indexed and ready for search)"
+- [ ] `remember(query="teste")` encontra o documento
+- [ ] Tool retorna título correto quando fornecido
+
+### 4.2 Proteção de Documentos Grandes (Bug #54)
+
+**Preparar documento grande sem chunks:**
+```bash
+# Criar documento grande no banco manualmente (simulando import bugado)
+# Depois verificar que remember protege contra retorno completo
+```
+
+- [ ] `remember(id="doc:N")` em documento > 50 KB (50.000 bytes) sem chunks retorna erro
+- [ ] Mensagem explica como re-importar o documento
+- [ ] Sugere `/doc delete N` e re-import
 
 ---
 
@@ -188,6 +225,16 @@ Via chat com um modelo que suporte tools:
 
 ---
 
+## 10.5. run_command Error Messages (Bug #54)
+
+Via chat com modelo que suporte tools:
+
+- [ ] `run_command("pdftotext /nonexistent.pdf -")` retorna erro útil
+- [ ] Mensagem menciona "file does not exist" ou similar
+- [ ] Mensagem NÃO contém "Some(1)" genérico
+
+---
+
 ## Limpeza
 
 ```bash
@@ -198,6 +245,7 @@ mv ~/.local/share/ask-ai/embeddings.db.smoke-backup ~/.local/share/ask-ai/embedd
 # Limpar arquivos de teste (/tmp e ~)
 rm -f /tmp/test.txt /tmp/test.md /tmp/test.org /tmp/empty.txt
 rm -f /tmp/file_test.txt /tmp/write_test.txt
+rm -f /tmp/tool_test.txt /tmp/large.txt
 rm -f ~/test.txt ~/file_test.txt
 ```
 

@@ -44,8 +44,8 @@ Ask-AI looks for the config file in this order:
 
 # The default model preset to use for general queries.
 # See all available models with: ask-ai --list-models
-# Default: "llama3.1"
-default = "llama3.1"
+# Default: "qwen3.5:4b"
+default = "qwen3.5:4b"
 
 # Global default for thinking mode (optional).
 # This is used as a fallback for all subcommands that don't have their own setting.
@@ -71,7 +71,7 @@ ollama_port = 11434
 [model.query]
 # The model to use for 'ask query' or 'ask q'.
 # If not specified, falls back to the global [model] default.
-# model = "llama3.1"
+# model = "qwen3.5:4b"
 
 # Enable thinking mode for queries. Some models show their reasoning process.
 # If not specified, defaults to: true for query
@@ -85,7 +85,7 @@ ollama_port = 11434
 [model.chat]
 # The model to use for 'ask chat'.
 # If not specified, falls back to the global [model] default.
-# model = "llama3.1"
+# model = "qwen3.5:4b"
 
 # Enable thinking mode for chat. Some models show their reasoning process.
 # If not specified, defaults to: false for chat
@@ -98,9 +98,9 @@ ollama_port = 11434
 # --- SUMMARIZE SUBCOMMAND ---
 [model.summarize]
 # The model to use for 'ask summarize'.
-# Recommended: a lightweight model like llama3.2 for speed.
+# Recommended: a lightweight model for speed.
 # If not specified, falls back to the global [model] default.
-# model = "llama3.2"
+# model = "qwen3.5:4b"
 
 # Summarization typically doesn't need thinking mode.
 # If not specified, defaults to: false for summarize
@@ -113,9 +113,9 @@ ollama_port = 11434
 # --- CODE MODE ---
 [model.code]
 # The model to use when the code flag (-c) is active.
-# Recommended: a code-optimized model like deepseek-coder-v2 or qwen3-coder.
-# If not specified, falls back to the global [model] default.
-# model = "deepseek-coder-v2"
+# Default: qwen2.5-coder:7b (optimized for coding with function calling)
+# If not specified, falls back to the code default (qwen2.5-coder:7b).
+# model = "qwen2.5-coder:7b"
 
 # Code generation typically doesn't need thinking mode.
 # If not specified, defaults to: false for code

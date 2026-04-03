@@ -227,7 +227,8 @@ ask-ai -m glm-5:cloud -t "Explain quantum computing step by step"
 ## Requirements
 
 - [Ollama](https://ollama.ai) running locally (or on a remote server for Termux)
-- Required models: `llama3.1:8b`, `translategemma:4b`, `glm-ocr:bf16`, `moondream:1.8b`
+- Required models: `qwen3.5:4b` (default, multimodal), `translategemma:4b`, `glm-ocr:bf16`
+- Optional: `moondream:1.8b` (alternative vision), `llama3.1:8b` (alternative general)
 
 ## Installing Models
 
@@ -299,7 +300,11 @@ Create `~/.config/ask-ai/config.toml`:
 host = "localhost:11434"        # Ollama server address
 
 [model]
-default = "llama3.1:8b"         # Default model
+default = "qwen3.5:4b"         # Default model (multimodal)
+
+[model.code]
+# model = "qwen2.5-coder:7b"   # Code mode default (qwen2.5-coder:7b if not set)
+# tools = true                  # Tools enabled by default for code mode
 
 [display]
 skin = "dark"                   # Markdown theme: dark, light, mono

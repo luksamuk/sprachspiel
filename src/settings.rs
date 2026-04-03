@@ -4,7 +4,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Default model name when not specified in config
-pub const DEFAULT_MODEL: &str = "llama3.1";
+pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
+
+/// Default model for code mode (optimized for coding with tools)
+pub const DEFAULT_CODE_MODEL: &str = "qwen2.5-coder:7b";
 
 /// Default Ollama host
 pub const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
@@ -296,12 +299,19 @@ impl Settings {
             _ => &SubcommandModelConfig::default(),
         };
 
-        // Get model: subcommand specific -> global default
+        // Get model: subcommand specific -> code default -> global default
         let model = subcommand_config
             .model
             .as_ref()
             .cloned()
-            .unwrap_or_else(|| self.model.default.clone());
+            .unwrap_or_else(|| {
+                // Code subcommand has its own default model
+                if subcommand == "code" {
+                    DEFAULT_CODE_MODEL.to_string()
+                } else {
+                    self.model.default.clone()
+                }
+            });
 
         // Get thinking: subcommand specific -> global -> model default
         // Note: This returns the config preference; model capability check happens elsewhere
@@ -373,9 +383,9 @@ impl Settings {
 
 # The default model preset to use for general queries.
 # See all available models with: ask-ai --list-models
-# Recommended: "llama3.1" (built-in) or "ministral" (from models.toml)
-# Default: "llama3.1"
-default = "llama3.1"
+# Recommended: "qwen3.5:4b" (built-in, multimodal) or "ministral" (from models.toml)
+# Default: "qwen3.5:4b"
+default = "qwen3.5:4b"
 
 # Global default for thinking mode.
 # This is used as a fallback for all subcommands that don't have their own setting.
@@ -410,7 +420,7 @@ ollama_port = 11434
 [model.query]
 # The model to use for 'ask query' or 'ask q'.
 # If not specified, falls back to the global [model] default.
-# model = "llama3.1"
+# model = "qwen3.5:4b"
 
 # Enable thinking mode for queries. Some models show their reasoning process.
 # If not specified, defaults to: true for query
@@ -424,7 +434,7 @@ ollama_port = 11434
 [model.chat]
 # The model to use for 'ask chat'.
 # If not specified, falls back to the global [model] default.
-# model = "llama3.1"
+# model = "qwen3.5:4b"
 
 # Enable thinking mode for chat. Some models show their reasoning process.
 # If not specified, defaults to: false for chat
@@ -467,9 +477,9 @@ ollama_port = 11434
 # --- CODE MODE ---
 [model.code]
 # The model to use when the code flag (-c) is active.
-# Recommended: a code-optimized model like deepseek-coder-v2 or qwen3-coder.
-# If not specified, falls back to the global [model] default.
-# model = "deepseek-coder-v2"
+# Default: "qwen2.5-coder:7b" (optimized for coding with function calling)
+# If not specified, falls back to the code default (qwen2.5-coder:7b).
+# model = "qwen2.5-coder:7b"
 
 # Code generation typically doesn't need thinking mode.
 # If not specified, defaults to: false for code
@@ -571,7 +581,7 @@ mod tests {
     #[test]
     fn test_default_settings() {
         let settings = Settings::default();
-        assert_eq!(settings.model.default, "llama3.1");
+        assert_eq!(settings.model.default, "qwen3.5:4b");
         assert_eq!(settings.model.ollama_host, "127.0.0.1");
         assert_eq!(settings.model.ollama_port, 11434);
         assert!(settings.tools.file_sandbox);

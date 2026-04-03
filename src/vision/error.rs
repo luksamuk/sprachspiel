@@ -53,7 +53,7 @@ impl fmt::Display for VisionError {
                 writeln!(f, "  1. Ollama daemon is not running (run: ollama serve)")?;
                 writeln!(
                     f,
-                    "  2. Vision model not downloaded (run: ollama pull moondream:1.8b)"
+                    "  2. Vision model not downloaded (run: ollama pull qwen3.5:4b)"
                 )?;
                 write!(
                     f,

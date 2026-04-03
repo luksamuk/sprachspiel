@@ -270,6 +270,49 @@ note_add("Decision: We chose PostgreSQL because:\n1. Better JSON support\n2. Nat
         }
     }
 
+    // Document tools (requires document-tools feature)
+    #[cfg(feature = "document-tools")]
+    {
+        if !blacklist.contains("import_document") {
+            sections.push(
+                r#"### DOCUMENT TOOLS
+Use for importing files into searchable memory.
+Available: import_document
+
+**When to use:**
+- User mentions a file they want analyzed or referenced later
+- You need to search file content in future conversations
+- Building a knowledge base from documents
+
+**How it works:**
+- File is imported with **synchronous indexing** - searchable immediately
+- Large documents are automatically split into ~512 token chunks
+- Chunks enable granular search and navigation
+
+**Title parameter (IMPORTANT):**
+- For .txt files without obvious title: ALWAYS provide a descriptive title
+- Good: "Meeting Notes 2026-03-29", "API Documentation", "GEB Chapter 1"
+- Bad: "notes", "file", "document"
+- For .md/.org files: Title is extracted automatically from headings
+
+**File limits:**
+- Maximum 2.5 MB (2,500,000 bytes) per file
+- Supported: .txt, .md, .org (builtin), .pdf, .epub (requires skills-tools)
+
+**Example:**
+// Plain text file - provide title
+import_document("/path/to/notes.txt", None, Some("Project Planning Notes Q1"))
+
+// Org file with #+TITLE: directive - auto-extracts title
+import_document("/path/to/reference.org", None, None)
+
+// Global scope for reference material
+import_document("~/docs/glossary.md", Some("global"), None)"#
+                    .to_string(),
+            );
+        }
+    }
+
     // External CLI tools (always available, no feature flag)
     {
         let external_tools = ["check_tool_availability", "run_command"];

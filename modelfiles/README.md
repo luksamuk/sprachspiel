@@ -24,10 +24,10 @@ make models-essential
 ```
 
 This installs:
-- **llama3.1:8b** - Default for general queries (4K context, auto-detected)
+- **qwen3.5:4b** - Default for general queries (131K context, multimodal)
 - **translategemma:4b** - For translation (4K context)
 - **glm-ocr:bf16** - For OCR
-- **moondream:1.8b** - For vision/image description
+- **moondream:1.8b** - For vision/image description (alternative)
 
 ### Install Optional Models (Recommended)
 
@@ -53,9 +53,10 @@ make models            # Everything
 ## Available Make Targets
 
 ### Essential Models
-- `llama3.1` - Llama 3.1 8B (default for query)
+- `qwen3.5:4b` - Qwen 3.5 4B (default for query, multimodal)
 - `translategemma` - Translation model
 - `glm-ocr` - OCR model (pull-only)
+- `llama3.1` - Llama 3.1 8B (alternative for general queries)
 
 ### Optional Models
 - `lfm` - LFM 2.5 Thinking (reasoning)
@@ -116,10 +117,13 @@ If you prefer not to use modelfiles, pull directly:
 
 ```bash
 # Essential models (just pull, no modelfile needed)
-ollama pull llama3.1:8b
+ollama pull qwen3.5:4b
 ollama pull translategemma:4b
 ollama pull glm-ocr:bf16
+# Optional vision alternative:
 ollama pull moondream:1.8b
+# Optional general alternative:
+ollama pull llama3.1:8b
 
 # Optional - some need modelfiles for custom config
 ollama pull lfm2.5-thinking:1.2b
@@ -133,9 +137,11 @@ ollama pull llama3.2:3b
 Since v0.14.0, context window sizes are defined in `~/.config/ask-ai/models.toml`:
 
 ```toml
-[models.llama3.1]
-model_id = "llama3.1:8b"
-# No num_ctx = let Ollama auto-detect based on memory
+[models."qwen3.5:4b"]
+model_id = "qwen3.5:4b"
+num_ctx = 131072
+temperature = 1.0
+thinking = true
 
 [models.lfm]
 model_id = "lfm2.5-thinking:1.2b"

@@ -11,6 +11,10 @@ use crate::tools::context::{get_db, get_embedding};
 /// Number of chunks to show in preview for large documents
 const MAX_PREVIEW_CHUNKS: i32 = 3;
 
+/// Maximum content size to return for documents without chunks (in bytes)
+/// Documents larger than this need to have been chunked during import
+const MAX_UNCHUNKED_CONTENT: usize = 50_000; // 50 KB = 50,000 bytes ≈ 10k tokens
+
 /// Parse a source ID into (SourceType, numeric_id)
 /// IDs must include source type prefix (e.g., "msg:42", "doc:13")
 fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
@@ -408,12 +412,45 @@ async fn fetch_document(
                 return fetch_document_chunk(db, id, chunk_index, &doc);
             }
 
-            // If document has chunks and is large, show preview
+            // If document has chunks, show preview
             if has_chunks {
                 return fetch_document_preview(db, id, &doc).await;
             }
 
-            // Small document without chunks - return full content
+            // NO CHUNKS - Check size before returning full content
+            if doc.content.len() > MAX_UNCHUNKED_CONTENT {
+                // Document too large and has no chunks - needs reimport
+                let scope_flag = match doc.scope {
+                    crate::content::ContentScope::Global => " --global",
+                    crate::content::ContentScope::Project => "",
+                };
+                return format!(
+                    "**Document {}**: \"{}\"\n\
+                     Type: {} | Size: {:.1} KB ({:.0} bytes) | Words: {}\n\
+                     \n\
+                     ⚠️ **This document is too large to display** ({} characters).\n\
+                     It was imported without proper indexing.\n\
+                     \n\
+                     **To fix:** Delete and re-import this document:\n\
+                     \n\
+                     1. Delete: `/doc delete {}{}`\n\
+                     2. Re-import: `import_document(\"{}\", None, \"Descriptive Title\")`\n\
+                     \n\
+                     The re-imported document will be automatically chunked for navigation.",
+                    doc.id,
+                    doc.title.escape_default(),
+                    doc.file_type.extension(),
+                    doc.content.len() as f64 / 1024.0,
+                    doc.content.len() as f64,
+                    doc.word_count,
+                    doc.content.len(),
+                    doc.id,
+                    scope_flag,
+                    doc.filename
+                );
+            }
+
+            // Small enough - return full content
             let mut output = format!(
                 "**Document {}**\nType: {}\nScope: {}\n",
                 doc.id,

@@ -1626,7 +1626,8 @@ mod tests {
             None,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("exceeds maximum size"));
+        let err = result.unwrap_err();
+        assert!(err.contains("too large") || err.contains("exceeds"), "Error should mention size limit: {}", err);
 
         let valid_content = "x".repeat(1000);
         let result = Document::new(

@@ -3,22 +3,22 @@ use std::sync::LazyLock;
 
 use ollama_rs::models::ModelOptions;
 
-pub const DEFAULT_MODEL: &str = "llama3.1";
+pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
 
 static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| {
     let mut configs = HashMap::new();
 
-    // Default model for general queries
+    // Default model for general queries, code, and vision (multimodal)
     configs.insert(
-        "llama3.1",
+        "qwen3.5:4b",
         ModelConfig {
-            model_id: "llama3.1:8b".to_string(),
-            num_ctx: 4096,
-            temperature: 0.8,
-            top_k: None,
-            top_p: None,
-            repeat_penalty: Some(1.1),
-            thinking: false,
+            model_id: "qwen3.5:4b".to_string(),
+            num_ctx: 131072,
+            temperature: 1.0,
+            top_k: Some(20),
+            top_p: Some(0.95),
+            repeat_penalty: Some(1.0),
+            thinking: true,
         },
     );
 
@@ -46,20 +46,6 @@ static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| 
             top_k: None,
             top_p: None,
             repeat_penalty: Some(1.0),
-            thinking: false,
-        },
-    );
-
-    // Vision model (used by vision command)
-    configs.insert(
-        "moondream",
-        ModelConfig {
-            model_id: "moondream:1.8b".to_string(),
-            num_ctx: 2048,
-            temperature: 0.1,
-            top_k: None,
-            top_p: None,
-            repeat_penalty: Some(1.1),
             thinking: false,
         },
     );
@@ -99,7 +85,7 @@ impl ModelConfig {
     }
 
     pub fn list_builtin_names() -> Vec<&'static str> {
-        vec!["llama3.1", "translategemma", "glm-ocr", "moondream"]
+        vec!["qwen3.5:4b", "translategemma", "glm-ocr"]
     }
 
     #[allow(dead_code)]
@@ -139,15 +125,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_model_is_llama31() {
+    fn test_default_model_is_qwen35_4b() {
         let default = ModelConfig::get_default();
-        assert_eq!(default.model_id, "llama3.1:8b");
+        assert_eq!(default.model_id, "qwen3.5:4b");
     }
 
     #[test]
     fn test_all_models_exist() {
         let names = ModelConfig::list_names();
-        assert_eq!(names.len(), 4);
+        assert_eq!(names.len(), 3);
 
         for name in names {
             assert!(ModelConfig::is_valid(name), "Model {} should exist", name);
@@ -166,12 +152,32 @@ mod tests {
     }
 
     #[test]
-    fn test_llama31_parameters() {
-        let llama = ModelConfig::get("llama3.1").unwrap();
-        assert_eq!(llama.model_id, "llama3.1:8b");
-        assert_eq!(llama.temperature, 0.8);
-        assert_eq!(llama.top_k, None);
-        assert_eq!(llama.top_p, None);
-        assert_eq!(llama.repeat_penalty, Some(1.1));
+    fn test_qwen35_4b_parameters() {
+        let qwen = ModelConfig::get("qwen3.5:4b").unwrap();
+        assert_eq!(qwen.model_id, "qwen3.5:4b");
+        assert_eq!(qwen.num_ctx, 131072);
+        assert_eq!(qwen.temperature, 1.0);
+        assert_eq!(qwen.top_k, Some(20));
+        assert_eq!(qwen.top_p, Some(0.95));
+        assert_eq!(qwen.repeat_penalty, Some(1.0));
+        assert!(qwen.thinking);
+    }
+
+    #[test]
+    fn test_translategemma_parameters() {
+        let trans = ModelConfig::get("translategemma").unwrap();
+        assert_eq!(trans.model_id, "translategemma:4b");
+        assert_eq!(trans.num_ctx, 4096);
+        assert_eq!(trans.temperature, 0.2);
+        assert!(!trans.thinking);
+    }
+
+    #[test]
+    fn test_glm_ocr_parameters() {
+        let ocr = ModelConfig::get("glm-ocr").unwrap();
+        assert_eq!(ocr.model_id, "glm-ocr:bf16");
+        assert_eq!(ocr.num_ctx, 0); // auto-detect
+        assert_eq!(ocr.temperature, 0.1);
+        assert!(!ocr.thinking);
     }
 }

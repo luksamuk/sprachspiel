@@ -35,7 +35,7 @@ impl SummarizeProcessor {
 
         // Get model config (with fallback chain)
         let model_config = crate::user_models::get_model_config(model_id).unwrap_or_else(|| {
-            crate::user_models::get_model_config("llama3.1").expect("Default model should exist")
+            crate::user_models::get_model_config("qwen3.5:4b").expect("Default model should exist")
         });
 
         // Initialize Ollama with settings

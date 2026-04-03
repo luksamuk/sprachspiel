@@ -189,16 +189,33 @@ pub async fn run_command(
                 // Success - apply head/tail and return
                 apply_head_tail(output.stdout, head_val, tail_val)
             } else {
-                // Command failed - return stderr
+                // Command failed - return stderr with helpful context
+                let exit_code_str = output.exit_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                
                 if output.stderr.is_empty() {
                     format!(
-                        "Error: Command '{}' failed with exit code {:?}",
-                        command, output.exit_code
+                        "Error: Command '{}' exited with code {}.\n\
+                         \n\
+                         The command ran but failed without an error message.\n\
+                         This usually means:\n\
+                         - The input file does not exist\n\
+                         - The output path is not writable\n\
+                         - Invalid arguments were provided\n\
+                         - The tool is not configured correctly\n\
+                         \n\
+                         Check that the file exists and arguments are correct.",
+                        command, exit_code_str
                     )
                 } else {
                     format!(
-                        "Error: Command '{}' failed with exit code {:?}\n{}",
-                        command, output.exit_code, output.stderr
+                        "Error: Command '{}' failed (exit code {}):\n\
+                         \n\
+                         {}\n\
+                         \n\
+                         Fix the issue above and try again.",
+                        command, exit_code_str, output.stderr.trim()
                     )
                 }
             }

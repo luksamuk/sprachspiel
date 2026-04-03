@@ -2,6 +2,81 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [0.39.5] - 2026-03-30
+
+### Fixed
+
+- **import_document Tool Missing Embedding/Chunking** - Tool now creates embeddings and chunks synchronously
+  - Documents imported via LLM tool are immediately searchable
+  - Large documents automatically chunked (~512 tokens per chunk)
+  - Error message guides user to run '/reindex' if indexing fails
+  - Warning message when no embedding model available
+  - Documents stored with proper chunk metadata for navigation
+  - Related: Issue #54
+
+- **Document Size Limit Reduced to 2.5MB** - Prevents context overflow
+  - Previous 5MB limit could exceed model context on retrieval
+  - Documents larger than 2.5MB are rejected with helpful error message
+  - Documents > 50KB without chunks flagged with re-import instructions
+  - Related: Issue #54
+
+- **remember Tool Protection** - No longer returns full content of unchunked large docs
+  - Returns helpful error explaining how to re-import
+  - Prevents context explosion for incorrectly imported documents
+  - Clear instructions: delete + re-import with proper chunking
+  - Related: Issue #54
+
+- **run_command Error Messages** - Now shows meaningful error context
+  - Replaces generic "exit code Some(1)" with actionable suggestions
+  - Includes common causes for missing stderr
+  - Clean exit code formatting
+  - Related: Issue #54
+
+### Added
+
+- **Title Parameter for import_document** - LLM can provide descriptive titles
+  - Recommended for .txt files without obvious titles
+  - Improves search quality and helps identify duplicates
+  - Fallback chain: `#+TITLE:` directive → first heading → filename
+  - Prompt engineering in DOCUMENT TOOLS section guides LLM usage
+  - Related: Issue #54
+
+- **DOCUMENT TOOLS System Prompt Section** - Guides LLM on proper tool usage
+  - Explains synchronous indexing behavior
+  - Provides title guidelines with examples
+  - Shows file limits and supported formats
+  - Located in `src/prompts/tools.rs`, feature-gated by `document-tools`
+  - Related: Issue #54
+
+### Changed
+
+- **MAX_DOCUMENT_SIZE constant** - Reduced from 5MB to 2.5MB
+  - File: `src/content/document.rs`
+  - Prevents documents that would exceed model context
+  - Related: Issue #54
+
+- **Default Model Changed** - From llama3.1 to qwen3.5:4b
+  - `DEFAULT_MODEL`: `llama3.1` → `qwen3.5:4b`
+  - Context: 4K → 128K tokens
+  - Temperature: 0.8 → 1.0
+  - Thinking mode: disabled → enabled by default
+  - Multimodal: supports vision tasks natively
+
+- **New Code Model Default** - Dedicated model for code mode
+  - `DEFAULT_CODE_MODEL`: `qwen2.5-coder:7b`
+  - Optimized for coding with function calling
+  - Automatic fallback: code mode → code default → global default
+  - Behavior: `ask-ai "query"` → qwen3.5:4b, `ask-ai -c "code"` → qwen2.5-coder:7b
+
+- **Built-in Models Reduced** - From 4 to 3 models
+  - Removed: `moondream` (now redundant - qwen3.5:4b is multimodal)
+  - Kept: `qwen3.5:4b`, `translategemma`, `glm-ocr`
+
+- **Vision Default Model** - Changed to qwen3.5:4b
+  - Previous: `moondream:1.8b`
+  - New: `qwen3.5:4b` (multimodal, same as general default)
+  - Moondream remains available as alternative
+
 ## [0.39.0] - 2026-03-29
 
 ### Added

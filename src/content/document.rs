@@ -6,7 +6,7 @@
 //!
 //! # File Size Limit
 //!
-//! Maximum file size is 5MB (5,242,880 bytes). Larger files are rejected
+//! Maximum file size is 2.5 MB (2,500,000 bytes). Larger files are rejected
 //! with a helpful error message.
 //!
 //! # Feature Dependencies
@@ -21,8 +21,9 @@ use std::str::FromStr;
 
 use super::types::{ContentScope, ContentSource};
 
-/// Maximum document file size (5MB)
-pub const MAX_DOCUMENT_SIZE: usize = 5 * 1024 * 1024;
+/// Maximum document file size in bytes
+/// Larger documents should be split before import to ensure proper chunking.
+pub const MAX_DOCUMENT_SIZE: usize = 2_500_000; // 2.5 MB = 2,500,000 bytes
 
 /// Supported document file types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,11 +151,20 @@ impl Document {
         }
 
         if content.len() > MAX_DOCUMENT_SIZE {
+            let size_mb = content.len() as f64 / 1_000_000.0;
+            let limit_mb = MAX_DOCUMENT_SIZE as f64 / 1_000_000.0;
             return Err(format!(
-                "Document exceeds maximum size of {} bytes (got {} bytes). \
-                 Consider splitting the document into smaller files.",
+                "Document too large: {:.1} MB ({:.0} bytes) exceeds the {:.1} MB limit ({:.0} bytes).\n\
+                 \n\
+                 File: {}\n\
+                 \n\
+                 To import large documents, ask the user to split the file externally,\n\
+                 or import a smaller file. The LLM cannot split files automatically.",
+                size_mb,
+                content.len(),
+                limit_mb,
                 MAX_DOCUMENT_SIZE,
-                content.len()
+                filename
             ));
         }
 
@@ -330,7 +340,28 @@ mod tests {
             Some("test-project".to_string()),
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("exceeds maximum size"));
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("too large") || err.contains("exceeds"),
+            "Error message should mention size limit"
+        );
+    }
+
+    #[test]
+    fn test_document_size_just_under_limit() {
+        let content = "x".repeat(MAX_DOCUMENT_SIZE); // Exactly at limit
+        let result = Document::new(
+            content,
+            "Title".to_string(),
+            "test.txt".to_string(),
+            FileType::Txt,
+            ContentScope::Project,
+            Some("test-project".to_string()),
+        );
+        assert!(
+            result.is_ok(),
+            "Document at exact size limit should be accepted"
+        );
     }
 
     #[test]
