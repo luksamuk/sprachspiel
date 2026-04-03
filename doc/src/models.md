@@ -171,6 +171,23 @@ model_id = "qwen3-coder:30b"
 num_ctx = 32768
 temperature = 0.3
 
+# Tool-calling models (optimized)
+[models.nemotron]
+model_id = "nemotron-3-nano:4b"
+num_ctx = 131072
+temperature = 0.3
+
+[models.gemma4-e2b]
+model_id = "gemma4:e2b"
+num_ctx = 131072
+temperature = 0.7
+repeat_penalty = 1.1
+
+[models.ministral-3]
+model_id = "ministral-3:3b"
+num_ctx = 262144
+temperature = 0.3  # Critical for FC accuracy
+
 # Cloud models with thinking
 [models.glm-5]
 model_id = "glm-5:cloud"
@@ -209,6 +226,44 @@ tools = true
 model = "qwen3.5:4b"        # For vision (multimodal)
 tools = false
 ```
+
+## Tool Calling Performance
+
+Models tested for function calling (tool use) capability. Rankings based on benchmark tests:
+
+### EXCELLENT (Recommended)
+
+| Model | Size | Speed | Notes |
+|-------|------|-------|-------|
+| **qwen3.5:4b** | 3.4 GB | Fast | Default, multimodal, reliable FC |
+| **qwen3.5:9b** | 6.6 GB | Fast | Best quality/speed balance |
+| **nemotron-3-nano:4b** | 2.8 GB | Fast | Most efficient, smallest footprint |
+
+### GOOD (Solid alternatives)
+
+| Model | Size | Speed | Notes |
+|-------|------|-------|-------|
+| **gemma4:e2b** | 7.2 GB | ~2min/test | Native FC (Google), needs temp=0.7 |
+| **ministral-3:3b** | 3.0 GB | Moderate | Uses vision, needs temp=0.3 |
+| **llama3.2:3b** | ~2 GB | Fast | Works but imprecise |
+
+### OK (Works with caveats)
+
+| Model | Size | Speed | Notes |
+|-------|------|-------|-------|
+| nanbeige4.1:3b | 2.4 GB | Slow | Tools + thinking, but slow response |
+
+### Known Issues
+
+| Model | Issue | Notes |
+|-------|-------|-------|
+| qwen2.5-coder:7b | Template JSON issue | Tool calls fail with malformed JSON |
+| llama3.1:8b | No tools support | Architecture doesn't support FC |
+| deepseek-r1:7b | Thinking only | `tools` parameter triggers thinking, no FC |
+| granite3.3:8b | OOM | Too large for 6GB GPU |
+| Qwopus3.5 | Bug #14575 | Loading error on HuggingFace GGUF |
+
+**Recommendation:** For tool calling tasks, use **qwen3.5:4b** (default) or **nemotron-3-nano:4b** (most efficient).
 
 ## Model Capabilities
 
@@ -269,6 +324,13 @@ ask-ai -m kimi-k2.5 "Multimodal task"
 ask-ai -m minimax-m2.5 "Coding task"
 ```
 
+### For Tool Calling (Function Calling)
+```bash
+ask-ai -m nemotron "List files in current directory"  # Most efficient FC
+ask-ai -m gemma4-e2b "Search for TODO comments"       # Native FC (Google)
+ask-ai -m ministral-3 "Analyze this data file"       # Fast FC (needs temp=0.3)
+```
+
 ### Quick Recommendations
 
 | Use Case | Recommended Model | Why |
@@ -279,6 +341,8 @@ ask-ai -m minimax-m2.5 "Coding task"
 | Translation | translategemma | Specialist |
 | OCR | glm-ocr | Specialist |
 | Vision | qwen3.5:4b | Multimodal (same as default) |
+| **Tool calling** | **nemotron-3-nano:4b** | **Most efficient FC (2.8 GB)** |
+| Tool calling (quality) | qwen3.5:9b | Best FC quality/speed |
 
 ## Custom Models
 
