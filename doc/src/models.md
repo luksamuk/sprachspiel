@@ -95,6 +95,10 @@ These optional models can be configured in `~/.config/ask-ai/models.toml`:
 |--------|----------|---------|----------|
 | ministral | ministral-3:14b | 32K | General queries, fast |
 | qwen3 | qwen3:8b | 32K | General with thinking |
+| **nemotron-3-nano** | nemotron-3-nano:4b | 131K | **Efficient tool calling**, 2.8GB |
+| **gemma4:e2b** | gemma4:e2b | 131K | **Native FC**, Google's compact model |
+| nanbeige4.1 | nanbeige4.1:3b | 64K | Tool calling + thinking |
+| ministral-3 | ministral-3:3b | 256K | Fast tool calling (temp=0.3) |
 
 ### Code & Development
 
@@ -226,6 +230,10 @@ tools = false
 | kimi-k2.5 | Yes | Yes | Yes* | No | Cloud | Multimodal cloud |
 | minimax-m2.5 | Yes | No | Yes* | No | Cloud | Agentic tasks |
 | qwen3.5:cloud | Yes | Yes | Yes* | No | Cloud | Large context |
+| **nemotron-3-nano:4b** | Yes | No | No | Yes | 2.8 GB | **Efficient tool calling** |
+| **gemma4:e2b** | Yes | No | No | Yes | 7.2 GB | **Native FC (Google)** |
+| nanbeige4.1:3b | Yes | No | Yes | Yes | 2.4 GB | Tools + thinking |
+| ministral-3:3b | Yes | Yes | No | Yes | 3.0 GB | Fast FC (temp=0.3) |
 
 \* Cloud models support thinking via `thinking = true` in config.
 
