@@ -390,7 +390,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔵 PRIORITY 4: Code Quality - query.rs Complexity
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Reduce cognitive complexity of `run_query` from 32/25 to <25/25.
 
