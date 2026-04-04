@@ -396,11 +396,67 @@ todo_clear_all()             // Clear all tasks
 
 **Context:** Non-interactive mode function (CLI query mode).
 
-**Proposed Solution:**
-- Extract `create_query_session()`
-- Extract `resolve_query_model()`
-- Extract `init_query_database()`
-- Extract `run_query_startup_tasks()`
+**Implementation Plan:**
+
+| Phase | Task | Description |
+|-------|------|-------------|
+| 1 | Create `src/db/init.rs` | Shared `init_database_core()` function |
+| 2 | Refactor `src/chat/repl.rs` | Extract `init_chat_database()` using core |
+| 3 | Create `src/query/mod.rs` | Module structure |
+| 4 | Create `src/query/context.rs` | `QueryContext` struct + builder |
+| 5 | Create `src/query/executor.rs` | `execute_query_with_retry()` (removes duplication) |
+| 6 | Create `src/query/coordinator.rs` | `build_query_coordinator()` |
+| 7 | Refactor `src/query.rs` | Use extracted helpers |
+| 8 | Tests & Clippy | Verify complexity reduction |
+
+**Architecture:**
+
+```
+src/db/init.rs
+├── init_database_core(ollama, skip_persistence, use_debug)
+│   └── Shared logic for DB/embedding initialization
+│
+src/chat/repl.rs
+├── init_chat_database(args, use_debug, settings)
+│   ├── Calls init_database_core()
+│   └── Returns detailed error message on failure
+│
+src/query/mod.rs
+├── context.rs: QueryContext struct + builder
+├── coordinator.rs: build_query_coordinator()
+└── executor.rs: execute_query_with_retry()
+
+src/query.rs (entry point)
+├── run_query() - thin coordinator using helpers
+└── Uses QueryContext for state management
+```
+
+**Key Insight - Duplicação Principal:**
+
+O maior problema está nas linhas 410-450 vs 454-489: retry loop duplicado para `with_context` vs sem context. A extração para `execute_query_with_retry()` elimina essa duplicação (reduz ~12 de complexidade).
+
+**Functions to Reuse (Already Exist):**
+
+| Function | Location | Usage |
+|----------|----------|-------|
+| `resolve_model_config()` | `src/user_models.rs:147` | ✅ Already used |
+| `resolve_think_mode()` | `src/user_models.rs:164` | ✅ Already used |
+| `build_query_context()` | `src/retrieval/context_builder.rs:392` | ✅ Already used |
+| `ModelCapabilities::detect_or_default()` | `src/capabilities.rs` | ✅ Already used |
+
+**Files to Create:**
+
+- `src/db/init.rs` - Core DB initialization
+- `src/query/mod.rs` - Module exports
+- `src/query/context.rs` - QueryContext struct
+- `src/query/coordinator.rs` - Coordinator builder
+- `src/query/executor.rs` - Execution with retry
+
+**Files to Modify:**
+
+- `src/db/mod.rs` - Export init module
+- `src/chat/repl.rs` - Use init_chat_database()
+- `src/query.rs` - Use extracted helpers (reduce to ~100 lines)
 
 **Estimated effort:** 1-2 days
 
