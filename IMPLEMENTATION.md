@@ -537,9 +537,43 @@ todo_clear_all()             // Clear all tasks
 - Default logging level?
 - Keep `--debug` CLI flag or use `RUST_LOG`?
 
+**Related Issues:**
+- Issue #60 - This task
+- Issue #61 - Bug: `--debug` flag is dry-run mode, not debug logging (discovered during PR #59 testing)
+
 **Estimated effort:** 1 day
 
 **Related:** Issue #60
+
+---
+
+### 🟡 PRIORITY 5: Bug - Debug CLI Flag Not Working for Logging
+
+**Status:** 🟡 TRIAGE NEEDED
+
+**Goal:** Fix `--debug` CLI flag to enable debug logging (currently activates dry-run mode).
+
+**Problem:**
+- Flag `--debug` currently prints config without executing (dry-run mode)
+- Parameter `use_debug` passed to `build_context()` etc. is always `false`
+- Macro `log_if_debug!` created in PR #59 never executes
+
+**Discovery:**
+- Found during PR #59 manual testing (Test 4 in MANUAL-TEST-PR59.md)
+- Bug pre-exists PR #59 (not introduced by refactoring)
+
+**Resolution Options:**
+1. **Option A:** Rename `--debug` to `--dry-run` + new `--debug` flag (breaking change)
+2. **Option B:** Add `--verbose` / `-v` flag (non-breaking, standard Unix convention)
+3. **Option C:** Integrate with `log` crate + RUST_LOG env var (depends on Issue #60)
+
+**Recommended:** Option C - integrate with Issue #60 logging refactor
+
+**Priority:** Low - Developer convenience, not critical for users
+
+**Estimated effort:** TBD (depends on Issue #60 triage)
+
+**Related:** Issue #60, PR #59
 
 ---
 
