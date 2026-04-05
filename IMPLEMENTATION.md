@@ -456,10 +456,10 @@ todo_clear_all()             // Clear all tasks
 
 | Phase | Task | Status |
 |-------|------|--------|
-| 1 | Extract `push_messages_as_chat_messages()` helper | ⏳ Pending |
-| 2 | Extract `perform_retrieval()` for retrieval logic | ⏳ Pending |
-| 3 | Refactor `build_context` to use helpers | ⏳ Pending |
-| 4 | Run tests and clippy | ⏳ Pending |
+| 1 | Extract `push_messages_as_chat_messages()` helper + tests | ⏳ Pending |
+| 2 | Extract `RetrievalResult` struct + `perform_retrieval()` + tests | ⏳ Pending |
+| 3 | Add `log_if_debug!` macro + refactor both functions | ⏳ Pending |
+| 4 | Run tests and clippy, verify complexity < 25/25 | ⏳ Pending |
 
 **Estimated effort:** 1 day
 
