@@ -17,7 +17,6 @@ use crate::user_models;
 /// Context for query execution
 ///
 /// Consolidates all state needed for query execution in one struct.
-#[allow(dead_code)]
 pub struct QueryContext {
     pub model_config: ModelConfig,
     pub capabilities: ModelCapabilities,
@@ -33,8 +32,6 @@ pub struct QueryContext {
     pub prompt_name: String,
     pub system_prompt: String,
     pub ollama: Ollama,
-    pub cli_code: bool,
-    pub cli_soulless: bool,
 }
 
 /// Builder for QueryContext
@@ -207,8 +204,6 @@ impl QueryContextBuilder {
             prompt_name,
             system_prompt,
             ollama,
-            cli_code: self.cli_code,
-            cli_soulless: self.cli_soulless,
         }
     }
 }
