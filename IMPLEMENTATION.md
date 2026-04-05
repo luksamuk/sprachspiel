@@ -514,6 +514,35 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
+### 🟡 PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate
+
+**Status:** 🟡 TRIAGE NEEDED
+
+**Goal:** Replace custom `log_debug()` calls with proper logging using the `log` crate for formalization.
+
+**Motivation:**
+- **Standard logging facade** - Industry-standard approach in Rust ecosystem
+- **File path context** - The `log` crate automatically includes file path and line number in log output, useful for debugging
+- **Log levels** - Proper separation (trace, debug, info, warn, error)
+- **Configurable** - Users can control verbosity via RUST_LOG environment variable
+
+**Technical Details:**
+- Replace `log_debug()` calls with `log::debug!()` or appropriate level
+- Replace `eprintln!()` for errors with `log::error!()` where appropriate
+- Add logging initialization in `main.rs`
+- Example output: `[DEBUG src/retrieval/context_builder.rs:317] Retrieval: enabled=true`
+
+**Open Questions:**
+- Backend choice: `env_logger` vs `fern` vs other?
+- Default logging level?
+- Keep `--debug` CLI flag or use `RUST_LOG`?
+
+**Estimated effort:** 1 day
+
+**Related:** Issue #60
+
+---
+
 ### ✅ PRIORITY 4: Code Quality - Dead Code Cleanup (COMPLETED)
 
 **Status:** ✅ COMPLETED (v0.37.0)
