@@ -3,11 +3,13 @@
 //! Provides SQLite storage with sqlite-vec extension for vector embeddings.
 
 mod connection;
+mod init;
 mod operations;
 mod query;
 mod schema;
 
 pub use connection::Database;
+pub use init::init_database_core;
 pub use operations::{fts5_escape, ConversationMetadataParams, SourceType, TodoRow};
 pub use query::WhereBuilder;
 
