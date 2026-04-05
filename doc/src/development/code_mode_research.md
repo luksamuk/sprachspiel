@@ -1,11 +1,15 @@
 # Code Mode Enhancement - Research Summary
 
-> **HISTORICAL NOTE (April 2026):** This research evaluated deepseek-coder-v2 and devstral-small-2.
+> **HISTORICAL NOTE (April 2026):** This research evaluated deepseek-coder-v2.
 > Since then, **qwen2.5-coder:7b** has become the recommended model for code mode due to:
 > - Better tool calling support (BFCL ~75%)
-> - Smaller size (4.7 GB vs 16-24 GB)
+> - Smaller size (4.7 GB vs 16 GB)
 > - Fits in GPU memory (6GB VRAM)
 > - Faster response times
+>
+> **Note on devstral-small-2:** This model (24B) was evaluated and showed good performance,
+> but is not recommended for typical use due to its large size. It remains a valid option
+> for users with sufficient hardware resources.
 >
 > This document is kept for historical reference.
 
