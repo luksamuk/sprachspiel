@@ -944,7 +944,7 @@ Reasoning paused:
 Next step:
 </continuation_needed>"#;
 
-        let (cleaned, tag) = parse_continuation_tag(content);
+        let (_, tag) = parse_continuation_tag(content);
 
         // Empty fields should return None
         assert!(tag.is_none());
@@ -957,7 +957,7 @@ Reasoning paused: Half way through analysis
 Next step:
 </continuation_needed>"#;
 
-        let (cleaned, tag) = parse_continuation_tag(content);
+        let (_, tag) = parse_continuation_tag(content);
 
         // Should still parse if at least one field is filled
         assert!(tag.is_some());
@@ -989,7 +989,7 @@ Next step: Should ignore
 </continuation_needed>
 </continuation_needed>"#;
 
-        let (cleaned, tag) = parse_continuation_tag(content);
+        let (_, tag) = parse_continuation_tag(content);
 
         // We find the first </continuation_needed> (after "ignore")
         // and parse the content between, which includes all lines
