@@ -167,6 +167,24 @@ pub struct ContextResult {
     pub retrieved_count: usize,
 }
 
+/// Push messages as ChatMessages, filtering out system messages.
+///
+/// System messages are handled separately in the context building flow,
+/// so they are skipped when converting session messages to ChatMessages.
+fn push_messages_as_chat_messages<'a, I>(messages: &mut Vec<ChatMessage>, source: I)
+where
+    I: IntoIterator<Item = &'a crate::chat::session::SavedMessage>,
+{
+    for msg in source {
+        match msg.role {
+            MessageRole::User => messages.push(ChatMessage::user(msg.content.clone())),
+            MessageRole::Assistant => messages.push(ChatMessage::assistant(msg.content.clone())),
+            MessageRole::System => { /* skip - handled separately */ }
+            MessageRole::Tool => messages.push(ChatMessage::tool(msg.content.clone())),
+        }
+    }
+}
+
 /// Build context for LLM with optimal ordering
 ///
 /// Context order (to avoid "lost in the middle"):
@@ -306,22 +324,7 @@ pub async fn build_context(
         // Clamp to actual message count to avoid panic after /clear
         let first_preserved = first_preserved.min(session.messages.len());
         if first_preserved > 0 {
-            for msg in &session.messages[..first_preserved] {
-                match msg.role {
-                    MessageRole::User => {
-                        messages.push(ChatMessage::user(msg.content.clone()));
-                    }
-                    MessageRole::Assistant => {
-                        messages.push(ChatMessage::assistant(msg.content.clone()));
-                    }
-                    MessageRole::System => {
-                        // System messages are handled separately
-                    }
-                    MessageRole::Tool => {
-                        messages.push(ChatMessage::tool(msg.content.clone()));
-                    }
-                }
-            }
+            push_messages_as_chat_messages(&mut messages, &session.messages[..first_preserved]);
         }
     }
 
@@ -350,22 +353,7 @@ pub async fn build_context(
         .rev()
         .collect();
 
-    for msg in recent_messages {
-        match msg.role {
-            MessageRole::User => {
-                messages.push(ChatMessage::user(msg.content.clone()));
-            }
-            MessageRole::Assistant => {
-                messages.push(ChatMessage::assistant(msg.content.clone()));
-            }
-            MessageRole::System => {
-                // System messages are handled separately
-            }
-            MessageRole::Tool => {
-                messages.push(ChatMessage::tool(msg.content.clone()));
-            }
-        }
-    }
+    push_messages_as_chat_messages(&mut messages, recent_messages.into_iter());
 
     // 6. Current query (always at the very end - critical for model performance)
     // This is added by the caller, not here
@@ -754,5 +742,77 @@ mod tests {
 
         // Empty session, no summary, no DB - should NOT force
         assert!(!should_force_retrieve(&session, None));
+    }
+
+    #[test]
+    fn test_push_messages_filters_system() {
+        use crate::chat::session::SavedMessage;
+
+        let mut messages = Vec::new();
+        let source = vec![
+            SavedMessage {
+                role: MessageRole::User,
+                content: "user msg".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::System,
+                content: "system msg".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "assistant msg".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        push_messages_as_chat_messages(&mut messages, source.iter());
+
+        // System message should be filtered out
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].content, "user msg");
+        assert_eq!(messages[1].content, "assistant msg");
+    }
+
+    #[test]
+    fn test_push_messages_converts_all_roles() {
+        use crate::chat::session::SavedMessage;
+
+        let mut messages = Vec::new();
+        let source = vec![
+            SavedMessage {
+                role: MessageRole::User,
+                content: "user".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "assistant".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Tool,
+                content: "tool".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        push_messages_as_chat_messages(&mut messages, source.iter());
+
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].content, "user");
+        assert_eq!(messages[1].content, "assistant");
+        assert_eq!(messages[2].content, "tool");
+    }
+
+    #[test]
+    fn test_push_messages_empty_source() {
+        let mut messages = Vec::new();
+        let source: Vec<SavedMessage> = Vec::new();
+
+        push_messages_as_chat_messages(&mut messages, source.iter());
+
+        assert!(messages.is_empty());
     }
 }
