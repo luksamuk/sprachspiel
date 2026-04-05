@@ -308,14 +308,15 @@ ollama pull translategemma    # Translation model
 ollama pull glm-ocr          # OCR model
 
 # Optional models for specialized tasks
-ollama pull lfm2.5-thinking:1.2b  # Reasoning model
-ollama pull mistral-small          # Tools specialist
-ollama pull qwen3-coder           # Code specialist
+ollama pull qwen3.5:9b           # Better quality (needs CPU offload)
+ollama pull qwen2.5-coder:7b     # Code specialist
+ollama pull nanbeige4.1:3b       # Fast alternative (edge-optimized)
+ollama pull ministral-3:3b       # Fast + vision support
 ```
 
 ### Additional Models
 
-Additional models (mistral-small, qwen3-coder, deepseek-coder-v2, etc.) are configured via `~/.config/ask-ai/models.toml`. A default configuration file is created automatically with recommended settings.
+Additional models (qwen3.5:9b, nanbeige4.1:3b, ministral-3:3b, etc.) are configured via `~/.config/ask-ai/models.toml`. A default configuration file is created automatically with recommended settings.
 
 See [Custom Models](./configuration.md#custom-models) for details.
 
@@ -498,27 +499,23 @@ If you get "Model not found" errors:
 
 ```bash
 # Check if Ollama has the model
-ollama list | grep lfm2.5
+ollama list | grep qwen
 
 # Install missing models
-cd modelfiles
-make models-essential
+ollama pull qwen3.5:4b       # Default model
+ollama pull qwen2.5-coder:7b # Code model
 ```
 
 ### Model Installation Fails
 
-If model installation via modelfiles fails:
+If model installation fails:
 
 ```bash
 # Check Ollama is running
 ollama serve
 
-# Try installing the base model manually first
-ollama pull lfm2.5-thinking:1.2b
-
-# Then retry the modelfile installation
-cd modelfiles
-make lfm
+# Try installing the model directly
+ollama pull qwen3.5:4b
 ```
 
 ## Next Steps

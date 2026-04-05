@@ -137,10 +137,10 @@ ask-ai summarize --style academic -f paragraph -l 200 "Research paper..."
 ask-ai summarize "Text..."
 
 # Use specific model
-ask-ai -m mistral-small summarize "Text..."
+ask-ai -m qwen2.5-coder:7b summarize "Text..."
 
 # Use smaller model
-ask-ai -m smollm3 summarize "Text..."
+ask-ai -m nanbeige4.1:3b summarize "Text..."
 ```
 
 ### From Files

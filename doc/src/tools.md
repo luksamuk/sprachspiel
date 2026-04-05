@@ -1410,8 +1410,8 @@ cargo build --release --features "led-tools,finance-tools"
 Tools are automatically enabled for capable models:
 
 ```bash
-# Tools auto-enabled for mistral-small
-ask-ai -m mistral-small "Tell me about Pikachu"
+# Tools auto-enabled for qwen2.5-coder:7b
+ask-ai -m qwen2.5-coder:7b "Tell me about Pikachu"
 
 # Tools auto-enabled for qwen3-coder
 ask-ai -m qwen3-coder "What's the weather in Tokyo?"
@@ -1569,7 +1569,7 @@ None currently.
 
 | Model | Tools | Notes |
 |-------|-------|-------|
-| mistral-small | ✅ | Best for tools |
+| qwen2.5-coder:7b | ✅ | Best for tools |
 | qwen3-coder | ✅ | Code + tools |
 | qwen3.5:4b | ✅ | General purpose (multimodal) |
 
@@ -1635,7 +1635,7 @@ This helps developers debug API issues and tool failures.
 
 ## Best Practices
 
-1. **Use capable models** - mistral-small works best
+1. **Use capable models** - qwen2.5-coder:7b works best
 2. **Be specific** - "Pikachu stats" vs "Tell me about Pikachu"
 3. **Use tool_user prompt** - For complex queries
 4. **Check debug mode** - If tools aren't working

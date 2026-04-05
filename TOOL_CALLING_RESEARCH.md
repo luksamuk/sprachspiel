@@ -56,7 +56,7 @@ GPT-OSS was removed from ask-ai because it outputs special tokens (`<|call|>`, `
 
 **Alternatives**:
 - `qwen3-coder` - Excellent tool support
-- `mistral-small` - Native agentic capability
+- `qwen2.5-coder:7b` - Excellent tool support
 - `qwen3.5:4b` - Reliable tool calling (multimodal)
 
 ---

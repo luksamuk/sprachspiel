@@ -1,7 +1,7 @@
 //! Summarize module
 //!
 //! Provides text summarization functionality using AI with tools disabled.
-//! Uses mistral-small model by default for optimal summarization quality.
+//! Uses qwen3.5:4b model by default for optimal summarization quality.
 
 pub mod cli;
 pub mod processor;

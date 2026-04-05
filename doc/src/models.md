@@ -116,10 +116,11 @@ High-capability models with large context windows:
 
 | Preset | Model ID | Context | Best For |
 |--------|----------|---------|----------|
-| glm-5 | glm-5:cloud | 200K | Complex reasoning, thinking |
-| kimi-k2.5 | kimi-k2.5:cloud | 200K | Multimodal, thinking |
-| minimax-m2.5 | minimax-m2.5:cloud | 200K | Coding, agentic |
-| qwen3.5 | qwen3.5:cloud | 260K | Vision-language |
+| glm-5 | glm-5:cloud | 200K+ | Complex reasoning, thinking |
+| qwen3.5 | qwen3.5:cloud | 256K | Vision-language, fallback |
+| kimi-k2.5 | kimi-k2.5:cloud | 202K | Alternative cloud |
+| minimax-m2.7 | minimax-m2.7:cloud | 204K | Fast cloud option |
+| qwen3-coder-next | qwen3-coder-next:cloud | 256K | Coding specialist |
 
 ### Character Models
 

@@ -92,7 +92,7 @@ ask-ai -d "Test query"
 
 ```bash
 # Use tool-capable model
-ask-ai -m mistral-small "Tell me about Pikachu"
+ask-ai -m qwen3.5:4b "Tell me about Pikachu"
 
 # Force enable tools
 ask-ai --tools "Tell me about Pikachu"
@@ -107,7 +107,7 @@ ask-ai -d "Query"
 
 ```bash
 # Use alternative model
-ask-ai -m mistral-small "Query"
+ask-ai -m qwen3.5:4b "Query"
 ask-ai -m pepe "Query"
 ```
 
@@ -153,7 +153,7 @@ ask-ai translate --list pt
 
 ```bash
 # Try with specific model
-ask-ai translate --model smollm3 en:pt "Text"
+ask-ai translate --model nanbeige4.1:3b en:pt "Text"
 
 # Debug mode
 ask-ai translate -d en:pt "Text"
@@ -214,7 +214,7 @@ ask-ai summarize --max-length 100 "Text"
 ```bash
 # Use smaller model
 ask-ai -m qwen3.5:4b "Question"  # 4B model (default)
-ask-ai -m smollm3 "Question"   # 3B model
+ask-ai -m nanbeige4.1:3b "Question"   # 3B model
 ```
 
 ## Context Issues

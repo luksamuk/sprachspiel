@@ -33,7 +33,7 @@ ask-ai "Explain quantum computing"
 ask-ai -t "Solve this step by step"
 
 # With specific model
-ask-ai -m mistral-small "Generate a Python function"
+ask-ai -m qwen3.5:4b "Generate a Python function"
 
 # Plain text (no markdown)
 ask-ai --plain "List Rust keywords"
@@ -105,7 +105,7 @@ Here are flags you'll use often:
 
 | Flag | Description | Example |
 |------|-------------|---------|
-| `-m` | Select model | `ask-ai -m mistral-small "query"` |
+| `-m` | Select model | `ask-ai -m qwen3.5:4b "query"` |
 | `-t` | Think mode | `ask-ai -t "complex question"` |
 | `--plain` | No markdown | `ask-ai --plain "text"` |
 | `-d` | Debug mode | `ask-ai -d "query"` |
@@ -181,9 +181,8 @@ cat to-translate.txt | ask-ai translate :pt
 4. **Model selection**: Different tasks benefit from different models:
    - General queries: `qwen3.5:4b` (default)
    - Coding: `qwen2.5-coder:7b` (code mode)
-   - Tools: `mistral-small`
+   - Tools: `qwen3.5:4b`
    - Summarization: `qwen3.5:4b`
-   - Reasoning: `lfm` (think mode)
 
 5. **Chaining**: Combine commands for powerful workflows. The output of one command becomes the input of the next
 
