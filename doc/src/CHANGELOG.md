@@ -6,6 +6,11 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Changed
 
+- **Code Quality: context_builder.rs Refactoring** - Reduce cognitive complexity from 27/25 to below 25
+  - Extract retrieval logic into `perform_retrieval()` helper
+  - Extract message conversion into `push_messages()` helper
+  - Related: Issue #30
+
 - **Code Quality: query.rs Refactoring** - Reduce cognitive complexity from 32/25 to below 25
   - Extract initialization logic into helper functions
   - Related: Issue #29

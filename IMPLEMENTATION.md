@@ -432,19 +432,34 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - context_builder.rs Complexity
+### 🔄 PRIORITY 4: Code Quality - context_builder.rs Complexity
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Reduce cognitive complexity of `build_context` from 27/25 to <25/25.
 
-**Context:** Retrieval context building function.
+**Context:** Retrieval context building function in `src/retrieval/context_builder.rs`.
+
+**Analysis:**
+- Function `build_context` (lines 180-378) has complexity 27/25
+- Complexity sources:
+  1. Nested `if let` in retrieval logic (4 levels deep)
+  2. Repeated `match msg.role` blocks (same pattern twice)
+  3. Multiple `if use_debug` scattered throughout
 
 **Proposed Solution:**
-- Extract `build_doc_context()`
-- Extract `build_note_context()`
-- Extract `build_message_context()`
-- Extract `combine_contexts()`
+- Extract `perform_retrieval()` - handles retrieval with embedding client
+- Extract `push_messages_as_chat_messages()` - helper for MessageRole match pattern
+- Extract `build_retrieved_context_section()` - format retrieved results
+
+**Implementation:**
+
+| Phase | Task | Status |
+|-------|------|--------|
+| 1 | Extract `push_messages_as_chat_messages()` helper | ⏳ Pending |
+| 2 | Extract `perform_retrieval()` for retrieval logic | ⏳ Pending |
+| 3 | Refactor `build_context` to use helpers | ⏳ Pending |
+| 4 | Run tests and clippy | ⏳ Pending |
 
 **Estimated effort:** 1 day
 
