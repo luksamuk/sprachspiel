@@ -298,25 +298,19 @@ This pulls cloud-based models with large context windows (198K-256K tokens).
 
 ### Installing Individual Models
 
-Build individual models as needed:
+Pull individual models with `ollama pull`:
 
 ```bash
-cd modelfiles
-
 # Essential models (must have)
-make qwen3.5:4b         # Build Qwen 3.5 4B (default)
-make qwen2.5-coder      # Build Qwen 2.5 Coder 7B (code default)
-make translategemma      # Build Translation model
-make glm-ocr             # Pull OCR model
+ollama pull qwen3.5:4b       # Default model (multimodal)
+ollama pull qwen2.5-coder:7b # Code model
+ollama pull translategemma    # Translation model
+ollama pull glm-ocr          # OCR model
 
 # Optional models for specialized tasks
-make lfm                 # Build LFM 2.5 Thinking (reasoning)
-make llama3.2            # Build Llama 3.2 3B (summarization, tools)
-make mistral-small       # Build Mistral Small (tools)
-make qwen3-coder         # Build Qwen3 Coder (code)
-
-# See all available targets
-make help
+ollama pull lfm2.5-thinking:1.2b  # Reasoning model
+ollama pull mistral-small          # Tools specialist
+ollama pull qwen3-coder           # Code specialist
 ```
 
 ### Additional Models
@@ -324,95 +318,6 @@ make help
 Additional models (mistral-small, qwen3-coder, deepseek-coder-v2, etc.) are configured via `~/.config/ask-ai/models.toml`. A default configuration file is created automatically with recommended settings.
 
 See [Custom Models](./configuration.md#custom-models) for details.
-
-### About Modelfiles
-
-The `modelfiles/` directory contains `.modelfile` definitions that:
-- Specify the base model to pull from Ollama or Hugging Face
-- Configure context window sizes (32K, 64K, etc.)
-- Set optimized parameters (temperature, top_k, top_p, etc.)
-- Define stop tokens and other model-specific settings
-
-Each modelfile creates a customized model with the correct name and configuration for Ask-AI.
-
-### Manual Model Installation (Not Recommended)
-
-**⚠️ Warning:** Direct `ollama pull` will NOT work correctly. Models must be built with custom parameters.
-
-If you attempt manual installation, models will have wrong configuration:
-- Wrong context window sizes
-- Wrong temperature settings
-- Missing stop tokens
-
-The application will fail or behave unexpectedly.
-
-**Always use the Makefile:**
-```bash
-cd modelfiles
-make models-essential
-```
-
-## Verifying Installation
-
-After installation, verify Ask-AI is working:
-
-```bash
-# Check version
-ask-ai --version
-
-# Show help
-ask-ai --help
-
-# List available models
-ask-ai --list
-
-# Test with a simple query (requires lfm model)
-ask-ai "Hello, are you working?"
-```
-
-## Uninstallation
-
-### Uninstall Ask-AI Binary
-
-If you installed with Make:
-
-```bash
-make uninstall
-
-# Or with custom prefix
-make uninstall PREFIX=/usr
-```
-
-If you installed manually:
-
-```bash
-sudo rm /usr/local/bin/ask-ai
-sudo rm /usr/local/share/man/man1/ask-ai.1
-```
-
-### Remove Installed Models
-
-To remove models installed via modelfiles:
-
-```bash
-# List installed models
-ollama list
-
-# Remove specific models
-ollama rm qwen3.5:4b
-ollama rm translategemma:4b
-ollama rm glm-ocr:bf16
-# Alternative models:
-ollama rm moondream:1.8b
-ollama rm llama3.1:8b
-
-# Remove optional models
-ollama rm lfm2.5-thinking:1.2b
-ollama rm llama3.2:3b
-
-# Or remove all models at once
-ollama rm $(ollama list | awk 'NR>1 {print $1}')
-```
 
 ## Post-Installation
 

@@ -190,7 +190,7 @@ default = "lfm"
 thinking = true
 
 [model.summarize]
-default = "llama3.2"
+default = "qwen3.5:4b"
 thinking = false
 
 [model.ocr]

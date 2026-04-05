@@ -148,7 +148,7 @@ source ~/.bashrc
 
 1. **Use WiFi** - Avoid mobile data for better latency
 2. **Keep Ollama warm** - Models that haven't been loaded recently take longer to start
-3. **Use smaller models** - `llama3.2:3b` works well with Termux latency
+3. **Use smaller models** - `qwen3.5:4b` works well with Termux latency
 
 ## Uninstalling
 

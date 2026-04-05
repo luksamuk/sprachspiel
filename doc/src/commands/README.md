@@ -11,7 +11,7 @@ Ask-AI provides six main commands for different tasks. Each command is designed 
 | `translate` | `t` | Language translation | translate |
 | `ocr` | `o` | Image text extraction | glm-ocr |
 | `vision` | `v` | Image description and analysis | moondream |
-| `summarize` | `sum` | Text summarization | llama3.2 |
+| `summarize` | `sum` | Text summarization | qwen3.5:4b |
 
 ## Default Mode
 

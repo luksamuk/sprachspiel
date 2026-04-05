@@ -213,7 +213,7 @@ ask-ai summarize --max-length 100 "Text"
 
 ```bash
 # Use smaller model
-ask-ai -m llama3.2 "Question"  # 3B model
+ask-ai -m qwen3.5:4b "Question"  # 4B model (default)
 ask-ai -m smollm3 "Question"   # 3B model
 ```
 
@@ -264,7 +264,7 @@ ask-ai -m smollm3 "Question"   # 3B model
 **Workaround:**
 ```bash
 # Use smaller context model for tool-heavy tasks
-/model llama3.2   # Smaller context, faster
+/model qwen3.5:4b   # Default model
 
 # Or reduce tool usage
 /tools off        # Disable tools temporarily

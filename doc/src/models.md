@@ -136,7 +136,6 @@ These models are used by the `ask vision` command for image analysis:
 | qwen3.5:4b | 3.4 GB | 131K | Yes | Default, multimodal |
 | moondream:1.8b | 1.7 GB | 2K | No | Lightweight alternative |
 | llava:13b | 8.0 GB | 4K | No | Better quality |
-| llama3.2-vision:11b | 7.8 GB | 128K | No | Large context |
 | ministral-3:14b | 7.5 GB | 32K | Yes | Multi-image, general purpose |
 
 **Note:** The default model (qwen3.5:4b) is multimodal and can handle vision tasks.
@@ -145,7 +144,6 @@ These models are used by the `ask vision` command for image analysis:
 # Install vision models
 ollama pull qwen3.5:4b           # Default (multimodal, also handles vision)
 ollama pull llava:13b            # Optional, better quality
-ollama pull llama3.2-vision:11b  # Optional, large context
 ollama pull ministral-3:14b      # Optional, multi-image support
 ```
 
@@ -253,7 +251,7 @@ Models tested for function calling (tool use) capability. Rankings based on benc
 | **gemma4:e2b** | 7.2 GB | ~2min/test | Native FC (Google), needs temp=0.7 |
 | **gemma4:e4b** | 9.6 GB | ~4min/test | Native FC (Google), larger variant |
 | **ministral-3:3b** | 3.0 GB | Moderate | Uses vision, needs temp=0.3 |
-| **llama3.2:3b** | ~2 GB | Fast | Works but imprecise |
+| **qwen3.5:4b** | 3.4 GB | Fast | Default, tools + multimodal |
 
 ### OK (Works with caveats)
 
@@ -285,7 +283,6 @@ Models tested for function calling (tool use) capability. Rankings based on benc
 | llama3.1:8b | Yes | No | No | Yes | 4.9 GB | Alternative general |
 | moondream:1.8b | No | Yes | No | Yes | 1.7 GB | Alternative vision (light) |
 | llava:13b | No | Yes | No | Yes | 8.0 GB | Better vision quality |
-| llama3.2-vision:11b | No | Yes | No | Yes | 7.8 GB | Large context vision |
 | ministral | Yes | Yes | No | Yes | 7.5 GB | Multi-image support |
 | qwen3 | No | No | Yes | Yes | ~5 GB | Thinking support |
 | qwen3-coder | Yes | No | No | Yes | ~17 GB | Code specialist |

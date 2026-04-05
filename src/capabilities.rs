@@ -31,7 +31,7 @@ impl ModelCapabilities {
     ///
     /// # Arguments
     /// * `ollama` - The Ollama client instance
-    /// * `model_name` - The name of the model to check (e.g., "llama3.2:3b-32k")
+    /// * `model_name` - The name of the model to check (e.g., "qwen3.5:4b")
     ///
     /// # Returns
     /// Detected capabilities for the model

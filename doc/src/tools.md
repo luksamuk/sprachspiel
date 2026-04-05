@@ -1571,7 +1571,7 @@ None currently.
 |-------|-------|-------|
 | mistral-small | ✅ | Best for tools |
 | qwen3-coder | ✅ | Code + tools |
-| llama3.2 | ✅ | General purpose |
+| qwen3.5:4b | ✅ | General purpose (multimodal) |
 
 ## Debug Mode
 

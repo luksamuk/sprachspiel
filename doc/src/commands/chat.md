@@ -576,10 +576,10 @@ lfm> What is Rust?
 lfm> What about its memory safety features?
 [Response that includes context from previous message]
 
-lfm> /model llama3.2
-Model switched to: llama3.2
+lfm> /model qwen3.5:4b
+Model switched to: qwen3.5:4b
 
-llama3.2> /quit
+qwen3.5> /quit
 Goodbye!
 ```
 

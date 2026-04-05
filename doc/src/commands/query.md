@@ -264,8 +264,8 @@ If a model doesn't support a feature:
 
 ```bash
 # Warning if think mode not supported
-ask-ai -m llama3.2 -t query "Question"
-# Output: Warning: llama3.2 does not support think mode. Ignoring -t.
+ask-ai -m smollm3 -t query "Question"
+# Output: Warning: smollm3 does not support think mode. Ignoring -t.
 ```
 
 ## AGENTS.md Context

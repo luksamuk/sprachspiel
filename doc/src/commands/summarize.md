@@ -133,7 +133,7 @@ ask-ai summarize --style academic -f paragraph -l 200 "Research paper..."
 ### Model Selection
 
 ```bash
-# Use default (llama3.2)
+# Use default (qwen3.5:4b)
 ask-ai summarize "Text..."
 
 # Use specific model
@@ -306,8 +306,8 @@ grep -A 20 "^///" src/*.rs | ask-ai summarize --style technical
 
 ## Limitations
 
-- Uses `llama3.2:3b-32k` model by default
-- Requires model to be pulled: `ollama pull llama3.2:3b-32k`
+- Uses `qwen3.5:4b` model by default
+- Requires model to be pulled: `ollama pull qwen3.5:4b`
 - Very long texts may be truncated
 - Does not use tools (by design)
 - Pepe model does not get sarcastic personality (professional mode)
@@ -316,7 +316,7 @@ grep -A 20 "^///" src/*.rs | ask-ai summarize --style technical
 
 ```bash
 # Model not found
-ollama pull llama3.2:3b-32k
+ollama pull qwen3.5:4b
 
 # Empty input
 # Ensure text is provided or piped correctly
