@@ -167,6 +167,94 @@ pub struct ContextResult {
     pub retrieved_count: usize,
 }
 
+/// Result of a retrieval operation
+#[derive(Debug, Clone)]
+pub struct RetrievalResult {
+    /// Chat message containing retrieved context
+    pub message: ChatMessage,
+    /// Number of items retrieved
+    pub count: usize,
+}
+
+/// Perform semantic retrieval for context.
+///
+/// Searches for relevant messages using hybrid search (BM25 + vector similarity).
+/// Returns None if retrieval fails or returns no results.
+async fn perform_retrieval(
+    db: &Arc<Database>,
+    client: &Arc<EmbeddingClient>,
+    query: &str,
+    conversation_id: Option<&str>,
+    project_id: Option<&str>,
+    config: &RetrievalConfig,
+    use_debug: bool,
+) -> Option<RetrievalResult> {
+    if use_debug {
+        log_debug("Generating embedding for query...");
+    }
+
+    let embedding = client.embed(query).await.ok()?;
+
+    if use_debug {
+        log_debug(&format!(
+            "Searching for relevant messages (conversation: {:?}, project: {:?})",
+            conversation_id, project_id
+        ));
+    }
+
+    let results = db
+        .search_messages_hybrid(
+            query,
+            &embedding,
+            conversation_id,
+            project_id,
+            config.relevant_count,
+            config.keyword_weight,
+            config.semantic_weight,
+        )
+        .ok()?;
+
+    let enriched_results = match db.enrich_content_results_with_context(results) {
+        Ok(r) => r,
+        Err(e) => {
+            if use_debug {
+                log_debug(&format!("Warning: Failed to enrich results: {}", e));
+            }
+            return None;
+        }
+    };
+
+    if use_debug {
+        log_debug(&format!(
+            "Search returned {} results",
+            enriched_results.len()
+        ));
+    }
+
+    if enriched_results.is_empty() {
+        return None;
+    }
+
+    let count = enriched_results.len();
+    let retrieved_text = format_retrieved_context(&enriched_results);
+
+    if use_debug {
+        let enriched_count = enriched_results
+            .iter()
+            .filter(|r| !r.subsequent_items.is_empty())
+            .count();
+        log_debug(&format!(
+            "Added {} retrieved messages to context ({} enriched with responses)",
+            count, enriched_count
+        ));
+    }
+
+    Some(RetrievalResult {
+        message: ChatMessage::system(retrieved_text),
+        count,
+    })
+}
+
 /// Push messages as ChatMessages, filtering out system messages.
 ///
 /// System messages are handled separately in the context building flow,
@@ -241,81 +329,27 @@ pub async fn build_context(
         }
 
         if let (Some(db), Some(client)) = (db, embedding_client) {
-            if use_debug {
-                log_debug("Generating embedding for query...");
-            }
-
-                if let Ok(embedding) = client.embed(user_query).await {
-                    if use_debug {
-                        log_debug(&format!(
-                            "Searching for relevant messages in conversation: {}",
-                            session.id
-                        ));
-                    }
-
-                    // Note: We don't exclude the current message from search because:
-                    // 1. Messages don't have DB IDs in memory
-                    // 2. The current message hasn't been saved to DB yet when search runs
-                    // 3. Search only finds historical messages, not current prompt
-
-                    if let Ok(results) = db.search_messages_hybrid(
-                        user_query,
-                        &embedding,
-                        Some(&session.id),
-                        session.project_id.as_deref(),
-                        config.relevant_count,
-                        config.keyword_weight,
-                        config.semantic_weight,
-                    ) {
-                        // Enrich results with conversation context (attach assistant responses to user questions)
-                        let enriched_results = match db.enrich_content_results_with_context(results) {
-                            Ok(r) => r,
-                            Err(e) => {
-                                if use_debug {
-                                    log_debug(&format!("Warning: Failed to enrich results: {}", e));
-                                }
-                                // Return empty on error - the original `results` is consumed by enrich_with_context
-                                Vec::new()
-                            }
-                        };
-
-                        if use_debug {
-                            log_debug(&format!(
-                                "Search returned {} results",
-                                enriched_results.len()
-                            ));
-                        }
-
-                        if !enriched_results.is_empty() {
-                            retrieved_count = enriched_results.len();
-                            retrieval_performed = true;
-
-                            let retrieved_text = format_retrieved_context(&enriched_results);
-                            messages.push(ChatMessage::system(retrieved_text));
-
-                            if use_debug {
-                                let enriched_count = enriched_results
-                                    .iter()
-                                    .filter(|r| !r.subsequent_items.is_empty())
-                                    .count();
-                                log_debug(&format!(
-                                    "Added {} retrieved messages to context ({} enriched with responses)",
-                                    retrieved_count, enriched_count
-                                ));
-                            }
-                        }
-                    } else if use_debug {
-                        log_debug("Search returned no results");
-                    }
-                } else if use_debug {
-                    log_debug("Failed to generate embedding for query");
-                }
-            } else if use_debug {
-                log_debug("Skipping retrieval: db or embedding_client not available");
+            if let Some(result) = perform_retrieval(
+                db,
+                client,
+                user_query,
+                Some(&session.id),
+                session.project_id.as_deref(),
+                config,
+                use_debug,
+            )
+            .await
+            {
+                messages.push(result.message);
+                retrieved_count = result.count;
+                retrieval_performed = true;
             }
         } else if use_debug {
-            log_debug("Skipping retrieval: conditions not met");
+            log_debug("Skipping retrieval: db or embedding_client not available");
         }
+    } else if use_debug {
+        log_debug("Skipping retrieval: conditions not met");
+    }
 
     // 3. First preserved messages (if middle compaction)
     // According to "lost in the middle" research, important content should be
@@ -403,69 +437,20 @@ pub async fn build_query_context(
         }
 
         if let (Some(db), Some(client)) = (db, embedding_client) {
-            if use_debug {
-                log_debug("Generating embedding for query...");
-            }
-
-            if let Ok(embedding) = client.embed(user_query).await {
-                if use_debug {
-                    log_debug(&format!(
-                        "Searching for relevant messages in project: {:?}",
-                        project_id
-                    ));
-                }
-
-                // Search by project_id only (no conversation_id)
-                if let Ok(results) = db.search_messages_hybrid(
-                    user_query,
-                    &embedding,
-                    None,        // No conversation_id - search all in project
-                    project_id,  // Search by project
-                    config.relevant_count,
-                    config.keyword_weight,
-                    config.semantic_weight,
-                ) {
-                    // Enrich results with conversation context
-                    let enriched_results = match db.enrich_content_results_with_context(results) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            if use_debug {
-                                log_debug(&format!("Warning: Failed to enrich results: {}", e));
-                            }
-                            Vec::new()
-                        }
-                    };
-
-                    if use_debug {
-                        log_debug(&format!(
-                            "Search returned {} results",
-                            enriched_results.len()
-                        ));
-                    }
-
-                    if !enriched_results.is_empty() {
-                        retrieved_count = enriched_results.len();
-                        retrieval_performed = true;
-
-                        let retrieved_text = format_retrieved_context(&enriched_results);
-                        messages.push(ChatMessage::system(retrieved_text));
-
-                        if use_debug {
-                            let enriched_count = enriched_results
-                                .iter()
-                                .filter(|r| !r.subsequent_items.is_empty())
-                                .count();
-                            log_debug(&format!(
-                                "Added {} retrieved messages to context ({} enriched with responses)",
-                                retrieved_count, enriched_count
-                            ));
-                        }
-                    }
-                } else if use_debug {
-                    log_debug("Search returned no results");
-                }
-            } else if use_debug {
-                log_debug("Failed to generate embedding for query");
+            if let Some(result) = perform_retrieval(
+                db,
+                client,
+                user_query,
+                None, // No conversation_id - search all in project
+                project_id,
+                config,
+                use_debug,
+            )
+            .await
+            {
+                messages.push(result.message);
+                retrieved_count = result.count;
+                retrieval_performed = true;
             }
         } else if use_debug {
             log_debug("Skipping retrieval: db or embedding_client not available");
