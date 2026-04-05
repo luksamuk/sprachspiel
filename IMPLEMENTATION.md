@@ -388,79 +388,47 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - query.rs Complexity
+### ✅ PRIORITY 4: Code Quality - query.rs Complexity (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.39.6)
 
 **Goal:** Reduce cognitive complexity of `run_query` from 32/25 to <25/25.
 
 **Context:** Non-interactive mode function (CLI query mode).
 
-**Implementation Plan:**
+**Implementation:**
 
-| Phase | Task | Description |
-|-------|------|-------------|
-| 1 | Create `src/db/init.rs` | Shared `init_database_core()` function |
-| 2 | Refactor `src/chat/repl.rs` | Extract `init_chat_database()` using core |
-| 3 | Create `src/query/mod.rs` | Module structure |
-| 4 | Create `src/query/context.rs` | `QueryContext` struct + builder |
-| 5 | Create `src/query/executor.rs` | `execute_query_with_retry()` (removes duplication) |
-| 6 | Create `src/query/coordinator.rs` | `build_query_coordinator()` |
-| 7 | Refactor `src/query.rs` | Use extracted helpers |
-| 8 | Tests & Clippy | Verify complexity reduction |
+| Phase | Task | Status |
+|-------|------|--------|
+| 1 | Create `src/db/init.rs` | ✅ init_database_core() |
+| 2 | Refactor `src/chat/repl.rs` | ✅ init_chat_database() |
+| 3 | Create `src/query/mod.rs` | ✅ Module structure |
+| 4 | Create `src/query/context.rs` | ✅ QueryContext + builder |
+| 5 | Create `src/query/executor.rs` | ✅ execute_query_with_retry() |
+| 6 | Create `src/query/coordinator.rs` | ✅ build_query_coordinator() |
+| 7 | Refactor `src/query.rs` | ✅ run_query ~100 lines |
+| 8 | Tests & Clippy | ✅ Clean, complexity <25/25 |
 
-**Architecture:**
+**Files Created:**
+- `src/db/init.rs` - Core DB initialization (44 lines)
+- `src/query/mod.rs` - Module exports, run_query (335 lines)
+- `src/query/context.rs` - QueryContext struct (219 lines)
+- `src/query/coordinator.rs` - Coordinator builder (55 lines)
+- `src/query/executor.rs` - Execution with retry (119 lines)
 
-```
-src/db/init.rs
-├── init_database_core(ollama, skip_persistence, use_debug)
-│   └── Shared logic for DB/embedding initialization
-│
-src/chat/repl.rs
-├── init_chat_database(args, use_debug, settings)
-│   ├── Calls init_database_core()
-│   └── Returns detailed error message on failure
-│
-src/query/mod.rs
-├── context.rs: QueryContext struct + builder
-├── coordinator.rs: build_query_coordinator()
-└── executor.rs: execute_query_with_retry()
-
-src/query.rs (entry point)
-├── run_query() - thin coordinator using helpers
-└── Uses QueryContext for state management
-```
-
-**Key Insight - Duplicação Principal:**
-
-O maior problema está nas linhas 410-450 vs 454-489: retry loop duplicado para `with_context` vs sem context. A extração para `execute_query_with_retry()` elimina essa duplicação (reduz ~12 de complexidade).
-
-**Functions to Reuse (Already Exist):**
-
-| Function | Location | Usage |
-|----------|----------|-------|
-| `resolve_model_config()` | `src/user_models.rs:147` | ✅ Already used |
-| `resolve_think_mode()` | `src/user_models.rs:164` | ✅ Already used |
-| `build_query_context()` | `src/retrieval/context_builder.rs:392` | ✅ Already used |
-| `ModelCapabilities::detect_or_default()` | `src/capabilities.rs` | ✅ Already used |
-
-**Files to Create:**
-
-- `src/db/init.rs` - Core DB initialization
-- `src/query/mod.rs` - Module exports
-- `src/query/context.rs` - QueryContext struct
-- `src/query/coordinator.rs` - Coordinator builder
-- `src/query/executor.rs` - Execution with retry
-
-**Files to Modify:**
-
+**Files Modified:**
 - `src/db/mod.rs` - Export init module
 - `src/chat/repl.rs` - Use init_chat_database()
-- `src/query.rs` - Use extracted helpers (reduce to ~100 lines)
 
-**Estimated effort:** 1-2 days
+**Complexity Reduction:**
+- Original: 516 lines in query.rs, cognitive complexity 32/25
+- Final: ~100 lines in run_query, complexity below threshold (no longer flagged)
+- Duplicate retry loop removed (lines 410-489 → single execute_retry_loop function)
 
-**Related:** Issue #29
+**Commits:**
+- `768bfb6` refactor: reduce query.rs cognitive complexity (Issue #29)
+
+**Related:** Issue #29, PR #58
 
 ---
 
