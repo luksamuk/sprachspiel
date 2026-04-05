@@ -17,6 +17,15 @@ use crate::db::Database;
 use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
 
+/// Log debug message if debug mode is enabled.
+macro_rules! log_if_debug {
+    ($debug:expr, $($arg:tt)*) => {
+        if $debug {
+            log_debug(&format!($($arg)*));
+        }
+    };
+}
+
 /// Minimum messages before auto-retrieval activates
 pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 5;
 
@@ -167,6 +176,106 @@ pub struct ContextResult {
     pub retrieved_count: usize,
 }
 
+/// Result of a retrieval operation
+#[derive(Debug, Clone)]
+pub struct RetrievalResult {
+    /// Chat message containing retrieved context
+    pub message: ChatMessage,
+    /// Number of items retrieved
+    pub count: usize,
+}
+
+/// Perform semantic retrieval for context.
+///
+/// Searches for relevant messages using hybrid search (BM25 + vector similarity).
+/// Returns None if retrieval fails or returns no results.
+async fn perform_retrieval(
+    db: &Arc<Database>,
+    client: &Arc<EmbeddingClient>,
+    query: &str,
+    conversation_id: Option<&str>,
+    project_id: Option<&str>,
+    config: &RetrievalConfig,
+    use_debug: bool,
+) -> Option<RetrievalResult> {
+    log_if_debug!(use_debug, "Generating embedding for query...");
+
+    let embedding = client.embed(query).await.ok()?;
+
+    log_if_debug!(
+        use_debug,
+        "Searching for relevant messages (conversation: {:?}, project: {:?})",
+        conversation_id,
+        project_id
+    );
+
+    let results = db
+        .search_messages_hybrid(
+            query,
+            &embedding,
+            conversation_id,
+            project_id,
+            config.relevant_count,
+            config.keyword_weight,
+            config.semantic_weight,
+        )
+        .ok()?;
+
+    let enriched_results = match db.enrich_content_results_with_context(results) {
+        Ok(r) => r,
+        Err(e) => {
+            log_if_debug!(use_debug, "Warning: Failed to enrich results: {}", e);
+            return None;
+        }
+    };
+
+    log_if_debug!(
+        use_debug,
+        "Search returned {} results",
+        enriched_results.len()
+    );
+
+    if enriched_results.is_empty() {
+        return None;
+    }
+
+    let count = enriched_results.len();
+    let retrieved_text = format_retrieved_context(&enriched_results);
+
+    log_if_debug!(
+        use_debug,
+        "Added {} retrieved messages to context ({} enriched with responses)",
+        count,
+        enriched_results
+            .iter()
+            .filter(|r| !r.subsequent_items.is_empty())
+            .count()
+    );
+
+    Some(RetrievalResult {
+        message: ChatMessage::system(retrieved_text),
+        count,
+    })
+}
+
+/// Push messages as ChatMessages, filtering out system messages.
+///
+/// System messages are handled separately in the context building flow,
+/// so they are skipped when converting session messages to ChatMessages.
+fn push_messages_as_chat_messages<'a, I>(messages: &mut Vec<ChatMessage>, source: I)
+where
+    I: IntoIterator<Item = &'a crate::chat::session::SavedMessage>,
+{
+    for msg in source {
+        match msg.role {
+            MessageRole::User => messages.push(ChatMessage::user(msg.content.clone())),
+            MessageRole::Assistant => messages.push(ChatMessage::assistant(msg.content.clone())),
+            MessageRole::System => { /* skip - handled separately */ }
+            MessageRole::Tool => messages.push(ChatMessage::tool(msg.content.clone())),
+        }
+    }
+}
+
 /// Build context for LLM with optimal ordering
 ///
 /// Context order (to avoid "lost in the middle"):
@@ -199,105 +308,52 @@ pub async fn build_context(
     // Forced retrieval: after /clear, session empty but DB has messages
     let force_retrieve = should_force_retrieve(session, db);
 
-    if use_debug {
-        log_debug(&format!(
-            "Retrieval: enabled={}, should_retrieve={}, force_retrieve={}",
-            config.enabled, should_retrieve, force_retrieve
-        ));
-        log_debug(&format!(
-            "Session: id={}, anonymous={}, messages={}, has_summary={}",
-            session.id,
-            session.anonymous,
-            session.messages.len(),
-            session.compacted_summary.is_some()
-        ));
-    }
+    log_if_debug!(
+        use_debug,
+        "Retrieval: enabled={}, should_retrieve={}, force_retrieve={}",
+        config.enabled,
+        should_retrieve,
+        force_retrieve
+    );
+    log_if_debug!(
+        use_debug,
+        "Session: id={}, anonymous={}, messages={}, has_summary={}",
+        session.id,
+        session.anonymous,
+        session.messages.len(),
+        session.compacted_summary.is_some()
+    );
 
     if should_retrieve || force_retrieve {
-        if use_debug {
-            log_debug(&format!(
-                "Attempting retrieval: db={}, embedding_client={}",
-                db.is_some(),
-                embedding_client.is_some()
-            ));
-        }
+        log_if_debug!(
+            use_debug,
+            "Attempting retrieval: db={}, embedding_client={}",
+            db.is_some(),
+            embedding_client.is_some()
+        );
 
         if let (Some(db), Some(client)) = (db, embedding_client) {
-            if use_debug {
-                log_debug("Generating embedding for query...");
+            if let Some(result) = perform_retrieval(
+                db,
+                client,
+                user_query,
+                Some(&session.id),
+                session.project_id.as_deref(),
+                config,
+                use_debug,
+            )
+            .await
+            {
+                messages.push(result.message);
+                retrieved_count = result.count;
+                retrieval_performed = true;
             }
-
-                if let Ok(embedding) = client.embed(user_query).await {
-                    if use_debug {
-                        log_debug(&format!(
-                            "Searching for relevant messages in conversation: {}",
-                            session.id
-                        ));
-                    }
-
-                    // Note: We don't exclude the current message from search because:
-                    // 1. Messages don't have DB IDs in memory
-                    // 2. The current message hasn't been saved to DB yet when search runs
-                    // 3. Search only finds historical messages, not current prompt
-
-                    if let Ok(results) = db.search_messages_hybrid(
-                        user_query,
-                        &embedding,
-                        Some(&session.id),
-                        session.project_id.as_deref(),
-                        config.relevant_count,
-                        config.keyword_weight,
-                        config.semantic_weight,
-                    ) {
-                        // Enrich results with conversation context (attach assistant responses to user questions)
-                        let enriched_results = match db.enrich_content_results_with_context(results) {
-                            Ok(r) => r,
-                            Err(e) => {
-                                if use_debug {
-                                    log_debug(&format!("Warning: Failed to enrich results: {}", e));
-                                }
-                                // Return empty on error - the original `results` is consumed by enrich_with_context
-                                Vec::new()
-                            }
-                        };
-
-                        if use_debug {
-                            log_debug(&format!(
-                                "Search returned {} results",
-                                enriched_results.len()
-                            ));
-                        }
-
-                        if !enriched_results.is_empty() {
-                            retrieved_count = enriched_results.len();
-                            retrieval_performed = true;
-
-                            let retrieved_text = format_retrieved_context(&enriched_results);
-                            messages.push(ChatMessage::system(retrieved_text));
-
-                            if use_debug {
-                                let enriched_count = enriched_results
-                                    .iter()
-                                    .filter(|r| !r.subsequent_items.is_empty())
-                                    .count();
-                                log_debug(&format!(
-                                    "Added {} retrieved messages to context ({} enriched with responses)",
-                                    retrieved_count, enriched_count
-                                ));
-                            }
-                        }
-                    } else if use_debug {
-                        log_debug("Search returned no results");
-                    }
-                } else if use_debug {
-                    log_debug("Failed to generate embedding for query");
-                }
-            } else if use_debug {
-                log_debug("Skipping retrieval: db or embedding_client not available");
-            }
-        } else if use_debug {
-            log_debug("Skipping retrieval: conditions not met");
+        } else {
+            log_if_debug!(use_debug, "Skipping retrieval: db or embedding_client not available");
         }
+    } else {
+        log_if_debug!(use_debug, "Skipping retrieval: conditions not met");
+    }
 
     // 3. First preserved messages (if middle compaction)
     // According to "lost in the middle" research, important content should be
@@ -306,22 +362,7 @@ pub async fn build_context(
         // Clamp to actual message count to avoid panic after /clear
         let first_preserved = first_preserved.min(session.messages.len());
         if first_preserved > 0 {
-            for msg in &session.messages[..first_preserved] {
-                match msg.role {
-                    MessageRole::User => {
-                        messages.push(ChatMessage::user(msg.content.clone()));
-                    }
-                    MessageRole::Assistant => {
-                        messages.push(ChatMessage::assistant(msg.content.clone()));
-                    }
-                    MessageRole::System => {
-                        // System messages are handled separately
-                    }
-                    MessageRole::Tool => {
-                        messages.push(ChatMessage::tool(msg.content.clone()));
-                    }
-                }
-            }
+            push_messages_as_chat_messages(&mut messages, &session.messages[..first_preserved]);
         }
     }
 
@@ -350,22 +391,7 @@ pub async fn build_context(
         .rev()
         .collect();
 
-    for msg in recent_messages {
-        match msg.role {
-            MessageRole::User => {
-                messages.push(ChatMessage::user(msg.content.clone()));
-            }
-            MessageRole::Assistant => {
-                messages.push(ChatMessage::assistant(msg.content.clone()));
-            }
-            MessageRole::System => {
-                // System messages are handled separately
-            }
-            MessageRole::Tool => {
-                messages.push(ChatMessage::tool(msg.content.clone()));
-            }
-        }
-    }
+    push_messages_as_chat_messages(&mut messages, recent_messages.into_iter());
 
     // 6. Current query (always at the very end - critical for model performance)
     // This is added by the caller, not here
@@ -407,96 +433,46 @@ pub async fn build_query_context(
 
     // 2. Retrieved messages (search across all project sessions)
     if config.enabled {
-        if use_debug {
-            log_debug(&format!(
-                "Query mode retrieval: project_id={:?}, enabled={}",
-                project_id, config.enabled
-            ));
-        }
+        log_if_debug!(
+            use_debug,
+            "Query mode retrieval: project_id={:?}, enabled={}",
+            project_id,
+            config.enabled
+        );
 
         if let (Some(db), Some(client)) = (db, embedding_client) {
-            if use_debug {
-                log_debug("Generating embedding for query...");
+            if let Some(result) = perform_retrieval(
+                db,
+                client,
+                user_query,
+                None, // No conversation_id - search all in project
+                project_id,
+                config,
+                use_debug,
+            )
+            .await
+            {
+                messages.push(result.message);
+                retrieved_count = result.count;
+                retrieval_performed = true;
             }
-
-            if let Ok(embedding) = client.embed(user_query).await {
-                if use_debug {
-                    log_debug(&format!(
-                        "Searching for relevant messages in project: {:?}",
-                        project_id
-                    ));
-                }
-
-                // Search by project_id only (no conversation_id)
-                if let Ok(results) = db.search_messages_hybrid(
-                    user_query,
-                    &embedding,
-                    None,        // No conversation_id - search all in project
-                    project_id,  // Search by project
-                    config.relevant_count,
-                    config.keyword_weight,
-                    config.semantic_weight,
-                ) {
-                    // Enrich results with conversation context
-                    let enriched_results = match db.enrich_content_results_with_context(results) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            if use_debug {
-                                log_debug(&format!("Warning: Failed to enrich results: {}", e));
-                            }
-                            Vec::new()
-                        }
-                    };
-
-                    if use_debug {
-                        log_debug(&format!(
-                            "Search returned {} results",
-                            enriched_results.len()
-                        ));
-                    }
-
-                    if !enriched_results.is_empty() {
-                        retrieved_count = enriched_results.len();
-                        retrieval_performed = true;
-
-                        let retrieved_text = format_retrieved_context(&enriched_results);
-                        messages.push(ChatMessage::system(retrieved_text));
-
-                        if use_debug {
-                            let enriched_count = enriched_results
-                                .iter()
-                                .filter(|r| !r.subsequent_items.is_empty())
-                                .count();
-                            log_debug(&format!(
-                                "Added {} retrieved messages to context ({} enriched with responses)",
-                                retrieved_count, enriched_count
-                            ));
-                        }
-                    }
-                } else if use_debug {
-                    log_debug("Search returned no results");
-                }
-            } else if use_debug {
-                log_debug("Failed to generate embedding for query");
-            }
-        } else if use_debug {
-            log_debug("Skipping retrieval: db or embedding_client not available");
+        } else {
+            log_if_debug!(use_debug, "Skipping retrieval: db or embedding_client not available");
         }
-    } else if use_debug {
-        log_debug("Skipping retrieval: disabled");
+    } else {
+        log_if_debug!(use_debug, "Skipping retrieval: disabled");
     }
 
     // 3. Current query (always last)
     messages.push(ChatMessage::user(user_query.to_string()));
 
-    if use_debug {
-        log_debug(&format!(
-            "Query context built: {} messages, retrieval={}, retrieved={}",
-            messages.len(),
-            retrieval_performed,
-            retrieved_count
-        ));
-    }
+    log_if_debug!(
+        use_debug,
+        "Query context built: {} messages, retrieval={}, retrieved={}",
+        messages.len(),
+        retrieval_performed,
+        retrieved_count
+    );
 
     ContextResult {
         messages,
@@ -754,5 +730,77 @@ mod tests {
 
         // Empty session, no summary, no DB - should NOT force
         assert!(!should_force_retrieve(&session, None));
+    }
+
+    #[test]
+    fn test_push_messages_filters_system() {
+        use crate::chat::session::SavedMessage;
+
+        let mut messages = Vec::new();
+        let source = vec![
+            SavedMessage {
+                role: MessageRole::User,
+                content: "user msg".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::System,
+                content: "system msg".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "assistant msg".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        push_messages_as_chat_messages(&mut messages, source.iter());
+
+        // System message should be filtered out
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].content, "user msg");
+        assert_eq!(messages[1].content, "assistant msg");
+    }
+
+    #[test]
+    fn test_push_messages_converts_all_roles() {
+        use crate::chat::session::SavedMessage;
+
+        let mut messages = Vec::new();
+        let source = vec![
+            SavedMessage {
+                role: MessageRole::User,
+                content: "user".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Assistant,
+                content: "assistant".to_string(),
+                ..Default::default()
+            },
+            SavedMessage {
+                role: MessageRole::Tool,
+                content: "tool".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        push_messages_as_chat_messages(&mut messages, source.iter());
+
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].content, "user");
+        assert_eq!(messages[1].content, "assistant");
+        assert_eq!(messages[2].content, "tool");
+    }
+
+    #[test]
+    fn test_push_messages_empty_source() {
+        let mut messages = Vec::new();
+        let source: Vec<SavedMessage> = Vec::new();
+
+        push_messages_as_chat_messages(&mut messages, source.iter());
+
+        assert!(messages.is_empty());
     }
 }

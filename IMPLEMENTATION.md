@@ -432,21 +432,41 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - context_builder.rs Complexity
+### ✅ PRIORITY 4: Code Quality - context_builder.rs Complexity (COMPLETED)
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED
 
 **Goal:** Reduce cognitive complexity of `build_context` from 27/25 to <25/25.
 
-**Context:** Retrieval context building function.
+**Context:** Retrieval context building function in `src/retrieval/context_builder.rs`.
 
-**Proposed Solution:**
-- Extract `build_doc_context()`
-- Extract `build_note_context()`
-- Extract `build_message_context()`
-- Extract `combine_contexts()`
+**Analysis:**
+- Function `build_context` (lines 180-378) had complexity 27/25
+- Complexity sources:
+  1. Nested `if let` in retrieval logic (4 levels deep)
+  2. Repeated `match msg.role` blocks (same pattern twice)
+  3. Multiple `if use_debug` scattered throughout
 
-**Estimated effort:** 1 day
+**Implementation:**
+
+| Phase | Task | Status |
+|-------|------|--------|
+| 1 | Extract `push_messages_as_chat_messages()` helper + tests | ✅ Done |
+| 2 | Extract `RetrievalResult` struct + `perform_retrieval()` | ✅ Done |
+| 3 | Add `log_if_debug!` macro + refactor both functions | ✅ Done |
+| 4 | Run tests and clippy, verify complexity < 25/25 | ✅ Done |
+
+**Files Modified:**
+- `src/retrieval/context_builder.rs` - Added helper functions, macro, tests
+
+**Complexity Reduction:**
+- Before: 27/25 (flagged by clippy)
+- After: No clippy warning (complexity below threshold)
+
+**Commits:**
+- `c46d12c` refactor(context_builder): extract push_messages_as_chat_messages helper (Phase 1)
+- `ed83e21` refactor(context_builder): extract perform_retrieval helper (Phase 2)
+- `0abb06b` refactor(context_builder): add log_if_debug macro (Phase 3)
 
 **Related:** Issue #30
 
@@ -491,6 +511,69 @@ todo_clear_all()             // Clear all tasks
 **Estimated effort:** 2-3 days
 
 **Related:** Issue #35
+
+---
+
+### 🟡 PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate
+
+**Status:** 🟡 TRIAGE NEEDED
+
+**Goal:** Replace custom `log_debug()` calls with proper logging using the `log` crate for formalization.
+
+**Motivation:**
+- **Standard logging facade** - Industry-standard approach in Rust ecosystem
+- **File path context** - The `log` crate automatically includes file path and line number in log output, useful for debugging
+- **Log levels** - Proper separation (trace, debug, info, warn, error)
+- **Configurable** - Users can control verbosity via RUST_LOG environment variable
+
+**Technical Details:**
+- Replace `log_debug()` calls with `log::debug!()` or appropriate level
+- Replace `eprintln!()` for errors with `log::error!()` where appropriate
+- Add logging initialization in `main.rs`
+- Example output: `[DEBUG src/retrieval/context_builder.rs:317] Retrieval: enabled=true`
+
+**Open Questions:**
+- Backend choice: `env_logger` vs `fern` vs other?
+- Default logging level?
+- Keep `--debug` CLI flag or use `RUST_LOG`?
+
+**Related Issues:**
+- Issue #60 - This task
+- Issue #61 - Bug: `--debug` flag is dry-run mode, not debug logging (discovered during PR #59 testing)
+
+**Estimated effort:** 1 day
+
+**Related:** Issue #60
+
+---
+
+### 🟡 PRIORITY 5: Bug - Debug CLI Flag Not Working for Logging
+
+**Status:** 🟡 TRIAGE NEEDED
+
+**Goal:** Fix `--debug` CLI flag to enable debug logging (currently activates dry-run mode).
+
+**Problem:**
+- Flag `--debug` currently prints config without executing (dry-run mode)
+- Parameter `use_debug` passed to `build_context()` etc. is always `false`
+- Macro `log_if_debug!` created in PR #59 never executes
+
+**Discovery:**
+- Found during PR #59 manual testing (Test 4 in MANUAL-TEST-PR59.md)
+- Bug pre-exists PR #59 (not introduced by refactoring)
+
+**Resolution Options:**
+1. **Option A:** Rename `--debug` to `--dry-run` + new `--debug` flag (breaking change)
+2. **Option B:** Add `--verbose` / `-v` flag (non-breaking, standard Unix convention)
+3. **Option C:** Integrate with `log` crate + RUST_LOG env var (depends on Issue #60)
+
+**Recommended:** Option C - integrate with Issue #60 logging refactor
+
+**Priority:** Low - Developer convenience, not critical for users
+
+**Estimated effort:** TBD (depends on Issue #60 triage)
+
+**Related:** Issue #60, PR #59
 
 ---
 
