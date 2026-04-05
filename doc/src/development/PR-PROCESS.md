@@ -162,7 +162,38 @@ After documentation is committed:
 22. Mark PR as "ready for review":
     gh pr ready <number>
 
-23. Move GitHub Project card to "In Review" (both Status and Scrum Status)
+23. Move GitHub Project card to "In Review" (both Status and Scrum Status):
+    # Find the item ID (project number 4 = Ask-AI Roadmap)
+    gh project item-list 4 --owner luksamuk --format json | jq '.items[] | select(.title | test("issue_title")) | {id: .id}'
+    
+    # Or find by issue number:
+    gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id'
+    
+    # Update Status field to "In Review":
+    gh api graphql -f query='
+    mutation {
+      updateProjectV2ItemFieldValue(
+        input: {
+          projectId: "PVT_kwHOADplIc4BRnZ9"
+          itemId: "<ITEM_ID>"
+          fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg"
+          value: { singleSelectOptionId: "77520bb7" }
+        }
+      ) { projectV2Item { id } }
+    }'
+    
+    # Update Scrum Status field to "In Review":
+    gh api graphql -f query='
+    mutation {
+      updateProjectV2ItemFieldValue(
+        input: {
+          projectId: "PVT_kwHOADplIc4BRnZ9"
+          itemId: "<ITEM_ID>"
+          fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY"
+          value: { singleSelectOptionId: "d242b7c7" }
+        }
+      ) { projectV2Item { id } }
+    }'
 
 24. Add comment to issue: "PR #N ready for review"
 ```
@@ -637,6 +668,9 @@ gh pr ready PR_NUMBER
 
 ## Project Information
 
+- **Project Name**: Ask-AI Roadmap
+- **Project URL**: https://github.com/users/luksamuk/projects/4/views/4
+- **Project Number**: 4
 - **Project ID**: `PVT_kwHOADplIc4BRnZ9`
 - **Status Field ID**: `PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg`
 - **Scrum Status Field ID**: `PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY`
