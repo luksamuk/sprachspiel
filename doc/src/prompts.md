@@ -143,13 +143,13 @@ ask-ai -p code "Write a function"
 
 ```bash
 # Tool user with capable model
-ask-ai -m mistral-small -p tool_user "Tell me about Pikachu"
+ask-ai -m qwen2.5-coder:7b -p tool_user "Tell me about Pikachu"
 
 # Code mode with code model
-ask-ai -m qwen3-coder -p code "Implement sort"
+ask-ai -m qwen2.5-coder:7b -p code "Implement sort"
 
 # Default with any model
-ask-ai -m lfm -p default "Question"
+ask-ai -m qwen3.5:4b -p default "Question"
 ```
 
 ### Combining Options

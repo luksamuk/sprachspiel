@@ -2,6 +2,14 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **Code Quality: query.rs Refactoring** - Reduce cognitive complexity from 32/25 to below 25
+  - Extract initialization logic into helper functions
+  - Related: Issue #29
+
 ## [0.39.5] - 2026-03-30
 
 ### Fixed

@@ -142,7 +142,7 @@ source ~/.bashrc  # or ~/.zshrc
 
 ```bash
 ask-ai "What is Rust?"           # Basic query
-ask-ai -m llama3.2 "Explain async"  # Specific model
+ask-ai -m qwen3.5:4b "Explain async"  # Specific model
 ask-ai -c "Write a Python function"  # Code mode
 ask-ai -t "Think step by step"   # Think mode
 ```

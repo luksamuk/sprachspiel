@@ -1,2 +1,0 @@
-FROM llava:7b
-PARAMETER num_ctx 32768

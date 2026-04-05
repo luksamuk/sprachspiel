@@ -28,7 +28,7 @@
 //!
 //! let prompt = build_system_prompt(
 //!     PromptConfig::new(PromptType::ToolUser)
-//!         .with_model_id(Some("llama3.2:3b"))
+//!         .with_model_id(Some("qwen3.5:4b"))
 //!         .with_blacklist(Some(&blacklist))
 //!         .with_agents_md(Some(agents_content))
 //!         .with_tools(true)

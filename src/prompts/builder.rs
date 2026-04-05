@@ -41,7 +41,7 @@ pub enum PromptType {
 /// ```ignore
 /// let prompt = build_system_prompt(
 ///     PromptConfig::new(PromptType::ToolUser)
-///         .with_model_id(Some("llama3.2"))
+///         .with_model_id(Some("qwen3.5:4b"))
 ///         .with_tools(true)
 /// );
 /// ```

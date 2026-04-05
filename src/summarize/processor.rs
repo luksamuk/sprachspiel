@@ -1,6 +1,6 @@
 //! Summarize processor
 //!
-//! Handles text summarization using mistral-small model with tools disabled.
+//! Handles text summarization using qwen3.5:4b model with tools disabled.
 //! Ensures security and efficiency by not allowing tool calls during summarization.
 
 use ollama_rs::generation::chat::ChatMessage;

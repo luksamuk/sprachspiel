@@ -1,2 +1,0 @@
-FROM translategemma:12b
-PARAMETER num_ctx 32768

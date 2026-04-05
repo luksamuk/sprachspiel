@@ -227,7 +227,7 @@ Force context pressure by using a small context window:
 
 ```bash
 # Small context for testing
-ask-ai chat --model llama3.2:1b --context 4096
+ask-ai chat --model qwen3.5:4b --context 4096
 
 # Engage in long conversation until context fills
 # LLM should pause and continue automatically

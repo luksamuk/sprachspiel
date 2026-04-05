@@ -20,7 +20,7 @@ Get answers from AI models with beautiful markdown formatting:
 
 ```bash
 ask-ai "Explain quantum computing in simple terms"
-ask-ai -m mistral-small "Generate a Python function for Fibonacci"
+ask-ai -m qwen3.5:4b "Generate a Python function for Fibonacci"
 ask-ai -t "Solve this step by step"  # Think mode
 ```
 

@@ -135,7 +135,7 @@ done
 ```bash
 # Use specific model
 ask-ai vision -m llava:13b photo.png
-ask-ai vision -m llama3.2-vision:11b screenshot.png
+ask-ai vision -m qwen3.5:4b screenshot.png
 ask-ai vision -m ministral-3:14b img1.png img2.png -- "Compare these"
 
 # Via config file (~/.config/ask-ai/config.toml):
@@ -150,7 +150,6 @@ ask-ai vision -m ministral-3:14b img1.png img2.png -- "Compare these"
 | `qwen3.5:4b` | 3.4 GB | 131K | Yes | Default, multimodal, good quality |
 | `moondream:1.8b` | 1.7 GB | 2K | No | Lightweight alternative |
 | `llava:13b` | 8.0 GB | 4K | No | Better quality |
-| `llama3.2-vision:11b` | 7.8 GB | 128K | No | Large context, good interpretation |
 | `ministral-3:14b` | 7.5 GB | 32K | Yes | Multi-image, general purpose |
 
 **Note:** 8K context is sufficient for most vision tasks.

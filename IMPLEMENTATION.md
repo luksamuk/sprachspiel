@@ -388,23 +388,47 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - query.rs Complexity
+### ✅ PRIORITY 4: Code Quality - query.rs Complexity (COMPLETED)
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED (v0.39.6)
 
 **Goal:** Reduce cognitive complexity of `run_query` from 32/25 to <25/25.
 
 **Context:** Non-interactive mode function (CLI query mode).
 
-**Proposed Solution:**
-- Extract `create_query_session()`
-- Extract `resolve_query_model()`
-- Extract `init_query_database()`
-- Extract `run_query_startup_tasks()`
+**Implementation:**
 
-**Estimated effort:** 1-2 days
+| Phase | Task | Status |
+|-------|------|--------|
+| 1 | Create `src/db/init.rs` | ✅ init_database_core() |
+| 2 | Refactor `src/chat/repl.rs` | ✅ init_chat_database() |
+| 3 | Create `src/query/mod.rs` | ✅ Module structure |
+| 4 | Create `src/query/context.rs` | ✅ QueryContext + builder |
+| 5 | Create `src/query/executor.rs` | ✅ execute_query_with_retry() |
+| 6 | Create `src/query/coordinator.rs` | ✅ build_query_coordinator() |
+| 7 | Refactor `src/query.rs` | ✅ run_query ~100 lines |
+| 8 | Tests & Clippy | ✅ Clean, complexity <25/25 |
 
-**Related:** Issue #29
+**Files Created:**
+- `src/db/init.rs` - Core DB initialization (44 lines)
+- `src/query/mod.rs` - Module exports, run_query (335 lines)
+- `src/query/context.rs` - QueryContext struct (219 lines)
+- `src/query/coordinator.rs` - Coordinator builder (55 lines)
+- `src/query/executor.rs` - Execution with retry (119 lines)
+
+**Files Modified:**
+- `src/db/mod.rs` - Export init module
+- `src/chat/repl.rs` - Use init_chat_database()
+
+**Complexity Reduction:**
+- Original: 516 lines in query.rs, cognitive complexity 32/25
+- Final: ~100 lines in run_query, complexity below threshold (no longer flagged)
+- Duplicate retry loop removed (lines 410-489 → single execute_retry_loop function)
+
+**Commits:**
+- `768bfb6` refactor: reduce query.rs cognitive complexity (Issue #29)
+
+**Related:** Issue #29, PR #58
 
 ---
 

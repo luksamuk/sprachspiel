@@ -65,11 +65,11 @@ fn build_clear_code(visual_lines: usize) -> String {
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// Initialize database and embedding client.
+/// Initialize database and embedding client for chat mode.
 /// Returns (db, embedding_client, ollama, error_message).
 /// error_message is Some when database initialization fails for non-anonymous sessions.
 #[allow(clippy::type_complexity)]
-fn init_database(
+fn init_chat_database(
     args: &super::ChatArgs,
     use_debug: bool,
     settings: &Settings,
@@ -80,60 +80,45 @@ fn init_database(
     Option<String>,
 ) {
     let ollama = settings.ollama_client();
-    let mut error_detail: Option<String> = None;
 
-    let db = if !args.anonymous {
-        match crate::db::Database::new() {
-            Ok(database) => {
-                if use_debug {
-                    log_debug("Database initialized for message persistence");
-                }
-                Some(Arc::new(database))
-            }
-            Err(e) => {
-                let storage_path = crate::db::Database::get_storage_path();
-                let error_msg = format!(
-                    "\n\
-                     ══════════════════════════════════════════════════════════════\n\
-                     DATABASE INITIALIZATION FAILED\n\
-                     ══════════════════════════════════════════════════════════════\n\
-                     \n\
-                     Error: {}\n\
-                     Storage path: {}\n\
-                     \n\
-                     Possible causes:\n\
-                     1. sqlite-vec extension not loaded (check Ollama installation)\n\
-                     2. Permission denied for storage directory\n\
-                     3. Corrupted database file (try deleting and restarting)\n\
-                     4. Disk full or I/O error\n\
-                     \n\
-                     To diagnose:\n\
-                     - Check if Ollama is running: ollama list\n\
-                     - Check directory permissions: ls -la ~/.local/share/ask-ai/\n\
-                     - Run with --debug for more information\n\
-                     \n\
-                     Use --anonymous for anonymous mode without database persistence.\n\
-                     ══════════════════════════════════════════════════════════════",
-                    e,
-                    storage_path.display()
-                );
-                eprintln!("{}", error_msg);
-                if use_debug {
-                    log_debug(&format!("Database error details: {:?}", e));
-                }
-                error_detail = Some(error_msg);
-                None
-            }
-        }
+    if args.anonymous {
+        return (None, None, ollama, None);
+    }
+
+    let (db, embedding) = crate::db::init_database_core(ollama.clone(), false, use_debug);
+
+    let error_detail = if db.is_none() {
+        let storage_path = crate::db::Database::get_storage_path();
+        let error_msg = format!(
+            "\n\
+             ══════════════════════════════════════════════════════════════\n\
+             DATABASE INITIALIZATION FAILED\n\
+             ══════════════════════════════════════════════════════════════\n\
+             \n\
+             Storage path: {}\n\
+             \n\
+             Possible causes:\n\
+             1. sqlite-vec extension not loaded (check Ollama installation)\n\
+             2. Permission denied for storage directory\n\
+             3. Corrupted database file (try deleting and restarting)\n\
+             4. Disk full or I/O error\n\
+             \n\
+             To diagnose:\n\
+             - Check if Ollama is running: ollama list\n\
+             - Check directory permissions: ls -la ~/.local/share/ask-ai/\n\
+             - Run with --debug for more information\n\
+             \n\
+             Use --anonymous for anonymous mode without database persistence.\n\
+             ══════════════════════════════════════════════════════════════",
+            storage_path.display()
+        );
+        eprintln!("{}", error_msg);
+        Some(error_msg)
     } else {
         None
     };
 
-    let embedding_client = db
-        .as_ref()
-        .map(|_| Arc::new(crate::embeddings::EmbeddingClient::new(ollama.clone())));
-
-    (db, embedding_client, ollama, error_detail)
+    (db, embedding, ollama, error_detail)
 }
 
 /// Run startup tasks (decay cycle).
@@ -470,7 +455,7 @@ pub async fn run_chat_repl(
         &settings.model.default
     };
 
-    let (db, embedding_client, ollama, db_error) = init_database(args, use_debug, settings);
+    let (db, embedding_client, ollama, db_error) = init_chat_database(args, use_debug, settings);
 
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {

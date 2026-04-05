@@ -82,13 +82,13 @@ ask-ai q "What is the capital of France?"
 
 ```bash
 # Use a different model
-ask-ai -m mistral-small query "Generate a Python function"
+ask-ai -m qwen2.5-coder:7b query "Generate a Python function"
 
 # Code-focused model
 ask-ai -m qwen3-coder query "Write a Rust struct for users"
 
 # Smaller model for quick answers
-ask-ai -m smollm3 query "What is 2+2?"
+ask-ai -m nanbeige4.1:3b query "What is 2+2?"
 ```
 
 ### Think Mode
@@ -115,7 +115,7 @@ ask-ai -c query "Write a Python function to sort a list"
 ask-ai -c --tools query "Read my config.rs and suggest improvements"
 
 # Explicit model selection
-ask-ai -m deepseek-coder-v2 -c query "Implement a thread pool in Rust"
+ask-ai -m qwen2.5-coder:7b -c query "Implement a thread pool in Rust"
 ```
 
 #### Code Mode Configuration
@@ -125,7 +125,7 @@ Code mode uses settings from `[model.code]` in your config file:
 ```toml
 # ~/.config/ask-ai/config.toml
 [model.code]
-model = "deepseek-coder-v2"  # Recommended: fast and accurate
+model = "qwen2.5-coder:7b"  # Recommended: fast and accurate
 thinking = false
 tools = true  # Enable file operations for context-aware code
 ```
@@ -264,8 +264,8 @@ If a model doesn't support a feature:
 
 ```bash
 # Warning if think mode not supported
-ask-ai -m llama3.2 -t query "Question"
-# Output: Warning: llama3.2 does not support think mode. Ignoring -t.
+ask-ai -m ministral-3:14b -t query "Question"
+# Output: Warning: ministral-3:14b does not support think mode. Ignoring -t.
 ```
 
 ## AGENTS.md Context
