@@ -14,17 +14,8 @@ use std::time::Instant;
 use crate::chat::session::{ChatSession, MessageRole};
 use crate::content::ContentSearchResult;
 use crate::db::Database;
-use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
-
-/// Log debug message if debug mode is enabled.
-macro_rules! log_if_debug {
-    ($debug:expr, $($arg:tt)*) => {
-        if $debug {
-            log_debug(&format!($($arg)*));
-        }
-    };
-}
+use crate::log_if_debug;
 
 /// Minimum messages before auto-retrieval activates
 pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 5;

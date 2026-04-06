@@ -68,3 +68,25 @@ macro_rules! tool_wrapper {
         Ok(result)
     }};
 }
+
+/// Log debug message if debug mode is enabled (for tool registration).
+///
+/// This macro is used in tool registration functions to log debug messages
+/// only when debug mode is enabled.
+///
+/// # Example
+/// ```ignore
+/// use crate::log_if_debug;
+///
+/// fn register_tools(use_debug: bool) {
+///     log_if_debug!(use_debug, "🔑 [Tool] Registering search tools");
+/// }
+/// ```
+#[macro_export]
+macro_rules! log_if_debug {
+    ($debug:expr, $($arg:tt)*) => {
+        if $debug {
+            $crate::debug_tools::log_debug(&format!($($arg)*));
+        }
+    };
+}

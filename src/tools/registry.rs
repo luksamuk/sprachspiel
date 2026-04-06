@@ -3,6 +3,7 @@
 //! Centralized tool registration for use across query, legacy query, and chat modes.
 //! Handles feature flags and blacklist filtering.
 
+use crate::log_if_debug;
 use crate::settings::Settings;
 
 #[cfg(any(
@@ -272,9 +273,10 @@ fn register_search_tools_serper<C: ToolRegistrar>(
     let mut coord = coordinator;
 
     if super::serper::is_serper_available() {
-        if use_debug {
-            eprintln!("🔑 [Serper] API key found - enabling Google Search via Serper");
-        }
+        log_if_debug!(
+            use_debug,
+            "🔑 [Serper] API key found - enabling Google Search via Serper"
+        );
         register_if_allowed!(
             coord,
             count,
@@ -289,24 +291,20 @@ fn register_search_tools_serper<C: ToolRegistrar>(
             "web_search_news",
             super::serper::web_search_news
         );
+        // web_scrape is always available with search-tools, even when using Serper
+        #[cfg(feature = "search-tools")]
+        register_if_allowed!(coord, count, is_allowed, "web_scrape", web_scrape);
     } else {
         #[cfg(feature = "search-tools")]
         {
-            if use_debug {
-                eprintln!(
-                    "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)"
-                );
-            }
+            log_if_debug!(use_debug, "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)");
             register_if_allowed!(coord, count, is_allowed, "web_search", web_search);
             register_if_allowed!(coord, count, is_allowed, "web_search_news", web_search_news);
+            register_if_allowed!(coord, count, is_allowed, "web_scrape", web_scrape);
         }
         #[cfg(not(feature = "search-tools"))]
         {
-            if use_debug {
-                eprintln!(
-                    "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature"
-                );
-            }
+            log_if_debug!(use_debug, "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature");
         }
     }
 
@@ -324,19 +322,6 @@ fn register_search_tools_ddg<C: ToolRegistrar>(
 
     register_if_allowed!(coord, count, is_allowed, "web_search", web_search);
     register_if_allowed!(coord, count, is_allowed, "web_search_news", web_search_news);
-
-    (coord, count)
-}
-
-/// Register web scraper tool
-#[cfg(feature = "search-tools")]
-fn register_web_scrape_tool<C: ToolRegistrar>(
-    coordinator: C,
-    is_allowed: impl Fn(&str) -> bool,
-) -> (C, usize) {
-    let mut count = 0;
-    let mut coord = coordinator;
-
     register_if_allowed!(coord, count, is_allowed, "web_scrape", web_scrape);
 
     (coord, count)
@@ -414,12 +399,11 @@ fn register_led_tools<C: ToolRegistrar>(
         // Initialize the LED endpoint from settings
         super::led::set_led_endpoint(settings.led_endpoint());
 
-        if use_debug {
-            eprintln!(
-                "💡 [LED] Device configured at {}",
-                settings.led_endpoint().unwrap_or_default()
-            );
-        }
+        log_if_debug!(
+            use_debug,
+            "💡 [LED] Device configured at {}",
+            settings.led_endpoint().unwrap_or_default()
+        );
 
         register_if_allowed!(coord, count, is_allowed, "led_get_status", led_get_status);
         register_if_allowed!(coord, count, is_allowed, "led_set_power", led_set_power);
@@ -432,8 +416,9 @@ fn register_led_tools<C: ToolRegistrar>(
             led_set_brightness
         );
         register_if_allowed!(coord, count, is_allowed, "led_set_color", led_set_color);
-    } else if use_debug {
-        eprintln!(
+    } else {
+        log_if_debug!(
+            use_debug,
             "💡 [LED] No device configured - LED tools disabled. Add [led] ip = \"<IP>\" to config.toml"
         );
     }
@@ -561,6 +546,16 @@ fn get_search_tool_names_serper(is_allowed: impl Fn(&str) -> bool) -> Vec<String
     if super::serper::is_serper_available() {
         push_if_allowed!(tools, is_allowed, "web_search");
         push_if_allowed!(tools, is_allowed, "web_search_news");
+        // web_scrape is always available with search-tools, even when using Serper
+        #[cfg(feature = "search-tools")]
+        push_if_allowed!(tools, is_allowed, "web_scrape");
+    } else {
+        #[cfg(feature = "search-tools")]
+        {
+            push_if_allowed!(tools, is_allowed, "web_search");
+            push_if_allowed!(tools, is_allowed, "web_search_news");
+            push_if_allowed!(tools, is_allowed, "web_scrape");
+        }
     }
 
     tools
@@ -572,13 +567,6 @@ fn get_search_tool_names_ddg(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     let mut tools = Vec::new();
     push_if_allowed!(tools, is_allowed, "web_search");
     push_if_allowed!(tools, is_allowed, "web_search_news");
-    tools
-}
-
-/// Get web scraper tool names
-#[cfg(feature = "search-tools")]
-fn get_web_scrape_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
-    let mut tools = Vec::new();
     push_if_allowed!(tools, is_allowed, "web_scrape");
     tools
 }
@@ -739,14 +727,6 @@ where
         tool_count += n;
     }
 
-    // Web scraper (always with search-tools)
-    #[cfg(feature = "search-tools")]
-    {
-        let (c, n) = register_web_scrape_tool(coordinator, is_allowed);
-        coordinator = c;
-        tool_count += n;
-    }
-
     // System tools
     #[cfg(feature = "system-tools")]
     {
@@ -836,12 +816,6 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
     #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
     {
         tools.extend(get_search_tool_names_ddg(is_allowed));
-    }
-
-    // Web scraper
-    #[cfg(feature = "search-tools")]
-    {
-        tools.extend(get_web_scrape_tool_names(is_allowed));
     }
 
     // System tools
