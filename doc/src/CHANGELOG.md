@@ -14,11 +14,12 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Changed
 
-- **Code Quality: registry.rs Refactoring** - Reduce cognitive complexity from 56/25 to below 25
-  - Extract tool registration into 13 category-based helper functions
-  - Extract tool name listing into 13 category-based helper functions
+- **Code Quality: registry.rs Refactoring** - Reduce cognitive complexity from 56/25 to <25/25
+  - Extract 13 `register_*_tools()` helper functions for tool registration
+  - Extract 13 `get_*_tool_names()` helper functions for tool name listing
+  - Create `register_if_allowed!` and `push_if_allowed!` macros for DRY code
   - Ensure consistent tool ordering between `register_tools()` and `get_available_tool_names()`
-  - Related: Issue #31
+  - Related: Issue #31, PR #62
 
 - **Code Quality: context_builder.rs Refactoring** - Reduce cognitive complexity from 27/25 to below 25
   - Extract retrieval logic into `perform_retrieval()` helper

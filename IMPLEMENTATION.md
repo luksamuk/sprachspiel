@@ -472,9 +472,9 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - registry.rs Complexity
+### ✅ PRIORITY 4: Code Quality - registry.rs Complexity (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS (Issue #31)
+**Status:** ✅ COMPLETED (Issue #31)
 
 **Goal:** Reduce cognitive complexity of `register_tools` from 56/25 to <25/25.
 
@@ -484,35 +484,39 @@ todo_clear_all()             // Clear all tasks
 
 | # | Bug | Description | Fix |
 |---|-----|-------------|-----|
-| B1 | `finance-tools` missing | `get_available_tool_names()` doesn't include `get_stock_quote` | Add `finance-tools` block |
-| B2 | `web_scrape` condition mismatch | `register_tools`: `#[cfg(feature = "search-tools")]` vs `get_available_tool_names`: `#[cfg(all(..., not(...)))]` | Unify to `#[cfg(feature = "search-tools")]` |
-| B3 | `test_tool` ignores blacklist | Always registered, doesn't check `is_tool_allowed()` | Add blacklist check |
+| B1 | `finance-tools` missing | `get_available_tool_names()` didn't include `get_stock_quote` | Added `finance-tools` block |
+| B2 | `web_scrape` condition mismatch | Different `#[cfg]` conditions | Unified to `#[cfg(feature = "search-tools")]` |
+| B3 | `test_tool` ignores blacklist | Always registered | Added blacklist check |
 
-**Proposed Solution:**
-- Extract 13 `register_*_tools()` helper functions (one per category)
-- Extract 13 `get_*_tool_names()` helper functions (one per category)
-- `register_core_tools()` for always-available tools (test_tool, remember, facts, notes, etc.)
-- `register_led_tools()` requires `&Settings` for initialization
-- `register_search_tools_serper()` complex fallback logic with `use_debug`
-- Fix all 3 bugs in same PR
-
-**Implementation Plan:**
+**Implementation:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 1 | Create branch, update docs (with bugs) | ✅ Done |
-| 2 | Fix bug B1: finance-tools in get_available_tool_names | ⏳ |
-| 3 | Fix bug B2: web_scrape condition | ⏳ |
-| 4 | Fix bug B3: test_tool blacklist check | ⏳ |
-| 5 | Extract `register_*_tools()` helpers | ⏳ |
-| 6 | Extract `get_*_tool_names()` helpers | ⏳ |
-| 7 | Refactor `register_tools()` | ⏳ |
-| 8 | Refactor `get_available_tool_names()` | ⏳ |
-| 9 | Run tests and clippy | ⏳ |
+| 2 | Fix bug B1: finance-tools in get_available_tool_names | ✅ Done |
+| 3 | Fix bug B2: web_scrape condition | ✅ Done |
+| 4 | Fix bug B3: test_tool blacklist check | ✅ Done |
+| 5 | Extract 13 `register_*_tools()` helpers | ✅ Done |
+| 6 | Extract 13 `get_*_tool_names()` helpers | ✅ Done |
+| 7 | Refactor `register_tools()` | ✅ Done |
+| 8 | Refactor `get_available_tool_names()` | ✅ Done |
+| 9 | Run tests and clippy | ✅ Done |
 
-**Estimated effort:** 1-2 days
+**Complexity Reduction:**
 
-**Related:** Issue #31
+| Function | Before | After |
+|----------|--------|-------|
+| `register_tools` | 56/25 | <25/25 (no warning) |
+| `get_available_tool_names` | ~30/25 | <25/25 (no warning) |
+
+**Files Modified:**
+- `src/tools/registry.rs` - Extracted 26 helper functions, 2 macros, refactored main functions
+
+**Commits:**
+- `f2884d7` docs: update CHANGELOG and IMPLEMENTATION with bug fixes for Issue #31
+- `05c3639` refactor: reduce registry.rs cognitive complexity (Issue #31)
+
+**Related:** Issue #31, PR #62
 
 ---
 
