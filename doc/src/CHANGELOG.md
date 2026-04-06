@@ -4,11 +4,20 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **registry.rs Bugs** - Three bugs fixed during refactoring
+  - `finance-tools` now appears in `get_available_tool_names()` (was missing)
+  - `web_scrape` tool registration condition now matches `get_available_tool_names()`
+  - `test_tool` now respects blacklist setting (was always registered)
+  - Related: Issue #31
+
 ### Changed
 
 - **Code Quality: registry.rs Refactoring** - Reduce cognitive complexity from 56/25 to below 25
-  - Extract tool registration into category-based helper functions
-  - Extract tool name listing into category-based helper functions
+  - Extract tool registration into 13 category-based helper functions
+  - Extract tool name listing into 13 category-based helper functions
+  - Ensure consistent tool ordering between `register_tools()` and `get_available_tool_names()`
   - Related: Issue #31
 
 - **Code Quality: context_builder.rs Refactoring** - Reduce cognitive complexity from 27/25 to below 25

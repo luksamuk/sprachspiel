@@ -480,27 +480,35 @@ todo_clear_all()             // Clear all tasks
 
 **Context:** Tool registration function - largest complexity in codebase.
 
+**Bugs Discovered During Analysis:**
+
+| # | Bug | Description | Fix |
+|---|-----|-------------|-----|
+| B1 | `finance-tools` missing | `get_available_tool_names()` doesn't include `get_stock_quote` | Add `finance-tools` block |
+| B2 | `web_scrape` condition mismatch | `register_tools`: `#[cfg(feature = "search-tools")]` vs `get_available_tool_names`: `#[cfg(all(..., not(...)))]` | Unify to `#[cfg(feature = "search-tools")]` |
+| B3 | `test_tool` ignores blacklist | Always registered, doesn't check `is_tool_allowed()` | Add blacklist check |
+
 **Proposed Solution:**
-- Extract `register_pokemon_tools()`
-- Extract `register_weather_tools()`
-- Extract `register_calc_tools()`
-- Extract `register_search_tools()`
-- Extract `register_system_tools()`
-- Extract `register_file_tools()`
-- Extract `register_led_tools()`
-- Extract `register_todo_tools()`
-- Extract `register_core_tools()` (always-available tools)
-- Extract corresponding `get_*_tool_names()` helpers for `get_available_tool_names`
+- Extract 13 `register_*_tools()` helper functions (one per category)
+- Extract 13 `get_*_tool_names()` helper functions (one per category)
+- `register_core_tools()` for always-available tools (test_tool, remember, facts, notes, etc.)
+- `register_led_tools()` requires `&Settings` for initialization
+- `register_search_tools_serper()` complex fallback logic with `use_debug`
+- Fix all 3 bugs in same PR
 
 **Implementation Plan:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Create branch, update docs | 🔄 |
-| 2 | Extract category helper functions | ⏳ |
-| 3 | Refactor `register_tools()` to use helpers | ⏳ |
-| 4 | Refactor `get_available_tool_names()` | ⏳ |
-| 5 | Run tests and clippy | ⏳ |
+| 1 | Create branch, update docs (with bugs) | ✅ Done |
+| 2 | Fix bug B1: finance-tools in get_available_tool_names | ⏳ |
+| 3 | Fix bug B2: web_scrape condition | ⏳ |
+| 4 | Fix bug B3: test_tool blacklist check | ⏳ |
+| 5 | Extract `register_*_tools()` helpers | ⏳ |
+| 6 | Extract `get_*_tool_names()` helpers | ⏳ |
+| 7 | Refactor `register_tools()` | ⏳ |
+| 8 | Refactor `get_available_tool_names()` | ⏳ |
+| 9 | Run tests and clippy | ⏳ |
 
 **Estimated effort:** 1-2 days
 
