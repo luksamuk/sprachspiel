@@ -598,10 +598,7 @@ pub async fn run_chat_repl(
         .build()?;
 
     // Initialize global todo state from session
-    #[cfg(feature = "todo-tools")]
-    {
-        crate::tools::todo::load_from_session(&state.session.todos);
-    }
+    crate::tools::todo::load_from_session(&state.session.todos);
 
     // Initialize input backend using RustylineInput abstraction
     let model_names: Vec<String> = crate::user_models::list_all_model_names();

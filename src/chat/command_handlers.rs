@@ -170,48 +170,23 @@ pub async fn handle_command_result(
             HandleResult::Continue
         }
         CommandResult::TodoAdd { description } => {
-            #[cfg(feature = "todo-tools")]
-            {
-                handle_todo_add(description, &mut state.session);
-            }
-            #[cfg(not(feature = "todo-tools"))]
-            println!("Todo tools not available. Enable with --features todo-tools");
+            handle_todo_add(description, &mut state.session);
             HandleResult::Continue
         }
         CommandResult::TodoList => {
-            #[cfg(feature = "todo-tools")]
-            {
-                handle_todo_list();
-            }
-            #[cfg(not(feature = "todo-tools"))]
-            println!("Todo tools not available. Enable with --features todo-tools");
+            handle_todo_list();
             HandleResult::Continue
         }
         CommandResult::TodoUpdate { id, status } => {
-            #[cfg(feature = "todo-tools")]
-            {
-                handle_todo_update(id, status, &mut state.session);
-            }
-            #[cfg(not(feature = "todo-tools"))]
-            println!("Todo tools not available. Enable with --features todo-tools");
+            handle_todo_update(id, status, &mut state.session);
             HandleResult::Continue
         }
         CommandResult::TodoClearDone => {
-            #[cfg(feature = "todo-tools")]
-            {
-                handle_todo_clear_done(&mut state.session);
-            }
-            #[cfg(not(feature = "todo-tools"))]
-            println!("Todo tools not available. Enable with --features todo-tools");
+            handle_todo_clear_done(&mut state.session);
             HandleResult::Continue
         }
         CommandResult::TodoClearAll => {
-            #[cfg(feature = "todo-tools")]
-            {
-                handle_todo_clear_all(&mut state.session);
-            }
-            #[cfg(not(feature = "todo-tools"))]
-            println!("Todo tools not available. Enable with --features todo-tools");
+            handle_todo_clear_all(&mut state.session);
             HandleResult::Continue
         }
         CommandResult::NoteAdd {
@@ -934,7 +909,6 @@ pub fn handle_fact_search(state: &ReplState, query: String, global: bool, limit:
 /// Handle todo add command
 ///
 /// Adds a new task to the todo list.
-#[cfg(feature = "todo-tools")]
 pub fn handle_todo_add(description: String, session: &mut super::session::ChatSession) {
     use crate::tools::todo;
 
@@ -958,7 +932,6 @@ pub fn handle_todo_add(description: String, session: &mut super::session::ChatSe
 /// Handle todo list command
 ///
 /// Lists all tasks in the todo list.
-#[cfg(feature = "todo-tools")]
 pub fn handle_todo_list() {
     use crate::tools::todo;
 
@@ -970,7 +943,6 @@ pub fn handle_todo_list() {
 /// Handle todo update command
 ///
 /// Updates the status of a task.
-#[cfg(feature = "todo-tools")]
 pub fn handle_todo_update(id: usize, status: String, session: &mut super::session::ChatSession) {
     use crate::chat::todo_state::TaskStatus;
     use crate::tools::todo;
@@ -1007,7 +979,6 @@ pub fn handle_todo_update(id: usize, status: String, session: &mut super::sessio
 /// Handle todo clear-done command
 ///
 /// Clears all completed tasks from the list.
-#[cfg(feature = "todo-tools")]
 pub fn handle_todo_clear_done(session: &mut super::session::ChatSession) {
     use crate::tools::todo;
 
@@ -1036,7 +1007,6 @@ pub fn handle_todo_clear_done(session: &mut super::session::ChatSession) {
 /// Handle todo clear-all command
 ///
 /// Clears all tasks from the list.
-#[cfg(feature = "todo-tools")]
 pub fn handle_todo_clear_all(session: &mut super::session::ChatSession) {
     use crate::tools::todo;
 

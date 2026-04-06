@@ -122,10 +122,7 @@ pub async fn process_send_result(
     .await;
 
     // Sync global TODO state back to session before saving
-    #[cfg(feature = "todo-tools")]
-    {
-        state.session.todos = crate::tools::todo::save_to_session();
-    }
+    state.session.todos = crate::tools::todo::save_to_session();
 
     if !state.session.anonymous
         && let Err(e) = state.session.save_sqlite()

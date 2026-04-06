@@ -4,16 +4,14 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed
-
-- **registry.rs Bugs** - Four bugs fixed during refactoring
-  - `finance-tools` now appears in `get_available_tool_names()` (was missing)
-  - `web_scrape` tool registration condition now matches `get_available_tool_names()`
-  - `test_tool` now respects blacklist setting (was always registered)
-  - `todo-tools` missing feature gates causing minimal build failure (fixed in 5 files)
-  - Related: Issue #31
-
 ### Changed
+
+- **todo-tools is now built-in** - No longer requires feature flag
+  - Todo tools are always available (like facts and notes)
+  - `TodoState` is now always part of `ChatSession`
+  - Removed `todo-tools` from feature flags in Cargo.toml
+  - All `/todo` commands work without enabling features
+  - Related: Issue #31, PR #62
 
 - **Code Quality: registry.rs Refactoring** - Reduce cognitive complexity from 56/25 to <25/25
   - Extract 13 `register_*_tools()` helper functions for tool registration

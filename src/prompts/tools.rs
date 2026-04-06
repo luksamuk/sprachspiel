@@ -201,8 +201,7 @@ Color tips: To make "more red", increase R or decrease G/B. For "warmer", increa
         }
     }
 
-    // Todo tools
-    #[cfg(feature = "todo-tools")]
+    // Todo tools (always available)
     {
         let todo_tools = [
             "todo_add",

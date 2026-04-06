@@ -14,8 +14,7 @@ use crate::settings::Settings;
     feature = "search-tools",
     feature = "system-tools",
     feature = "file-tools",
-    feature = "finance-tools",
-    feature = "todo-tools"
+    feature = "finance-tools"
 ))]
 use super::*;
 
@@ -27,6 +26,9 @@ use super::fact_tools::{fact_add, fact_remove, fact_search};
 
 // Notes tools (always available)
 use super::notes::note_add;
+
+// Todo tools (always available)
+use super::todo::{todo_add, todo_clear_all, todo_clear_done, todo_list, todo_update};
 
 // Document import tool
 #[cfg(feature = "document-tools")]
@@ -426,8 +428,7 @@ fn register_led_tools<C: ToolRegistrar>(
     (coord, count)
 }
 
-/// Register todo tools
-#[cfg(feature = "todo-tools")]
+/// Register todo tools (always available)
 fn register_todo_tools<C: ToolRegistrar>(
     coordinator: C,
     is_allowed: impl Fn(&str) -> bool,
@@ -623,8 +624,7 @@ fn get_led_tool_names(settings: &Settings, is_allowed: impl Fn(&str) -> bool) ->
     tools
 }
 
-/// Get todo tool names
-#[cfg(feature = "todo-tools")]
+/// Get todo tool names (always available)
 fn get_todo_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     let mut tools = Vec::new();
     let todo_tools = [
@@ -751,8 +751,7 @@ where
         tool_count += n;
     }
 
-    // Todo tools
-    #[cfg(feature = "todo-tools")]
+    // Todo tools (always available)
     {
         let (c, n) = register_todo_tools(coordinator, is_allowed);
         coordinator = c;
@@ -836,11 +835,8 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
         tools.extend(get_led_tool_names(settings, is_allowed));
     }
 
-    // Todo tools
-    #[cfg(feature = "todo-tools")]
-    {
-        tools.extend(get_todo_tool_names(is_allowed));
-    }
+    // Todo tools (always available)
+    tools.extend(get_todo_tool_names(is_allowed));
 
     tools
 }

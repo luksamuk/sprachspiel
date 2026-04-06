@@ -487,7 +487,8 @@ todo_clear_all()             // Clear all tasks
 | B1 | `finance-tools` missing | `get_available_tool_names()` didn't include `get_stock_quote` | Added `finance-tools` block |
 | B2 | `web_scrape` condition mismatch | Different `#[cfg]` conditions | Unified to `#[cfg(feature = "search-tools")]` |
 | B3 | `test_tool` ignores blacklist | Always registered | Added blacklist check |
-| B4 | `todo-tools` missing feature gates | Minimal build (`--no-default-features`) failed | Added `#[cfg(feature = "todo-tools")]` to 5 files |
+
+**Design Decision:** During review, we discovered that `todo-tools` was incorrectly feature-gated. Since `TodoState` is always part of `ChatSession`, todo tools should be built-in (like facts and notes).
 
 **Implementation:**
 
@@ -502,7 +503,7 @@ todo_clear_all()             // Clear all tasks
 | 7 | Refactor `register_tools()` | ✅ Done |
 | 8 | Refactor `get_available_tool_names()` | ✅ Done |
 | 9 | Run tests and clippy | ✅ Done |
-| 10 | Fix bug B4: todo-tools feature gates | ✅ Done |
+| 10 | Make todo-tools built-in (remove feature gates) | ✅ Done |
 
 **Complexity Reduction:**
 
@@ -513,13 +514,11 @@ todo_clear_all()             // Clear all tasks
 
 **Files Modified:**
 - `src/tools/registry.rs` - Extracted 26 helper functions, 2 macros, refactored main functions
+- `src/tools/mod.rs` - Removed `todo-tools` feature gates
 - `src/macros.rs` - Added `log_if_debug!` macro
 - `src/retrieval/context_builder.rs` - Use shared macro
-- `src/chat/command_handlers.rs` - Feature gates for todo functions
-- `src/chat/commands.rs` - Feature gates for CommandResult variants and parsing
-- `src/chat/repl.rs` - Feature gate for todo initialization
-- `src/chat/core.rs` - Feature gate for todos in prompt
-- `src/chat/continuation.rs` - Feature gate for todo sync
+- `src/prompts/tools.rs` - Removed `todo-tools` feature gate
+- `Cargo.toml` - Removed `todo-tools` from default and all-tools features
 
 **Commits:**
 - `f2884d7` docs: update CHANGELOG and IMPLEMENTATION with bug fixes for Issue #31
@@ -527,7 +526,7 @@ todo_clear_all()             // Clear all tasks
 - `fcdcd9e` docs: mark Issue #31 as completed
 - `7995956` docs: add Issue #63 to roadmap (notes tools missing)
 - `4404bf9` fix: apply PR review feedback
-- `XXXXXXX` fix: add todo-tools feature gates for minimal build (Bug B4)
+- `3a86403` fix: make todo-tools built-in (remove feature gates)
 
 **Related:** Issue #31, PR #62
 
