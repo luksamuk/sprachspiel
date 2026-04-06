@@ -487,6 +487,7 @@ todo_clear_all()             // Clear all tasks
 | B1 | `finance-tools` missing | `get_available_tool_names()` didn't include `get_stock_quote` | Added `finance-tools` block |
 | B2 | `web_scrape` condition mismatch | Different `#[cfg]` conditions | Unified to `#[cfg(feature = "search-tools")]` |
 | B3 | `test_tool` ignores blacklist | Always registered | Added blacklist check |
+| B4 | `todo-tools` missing feature gates | Minimal build (`--no-default-features`) failed | Added `#[cfg(feature = "todo-tools")]` to 5 files |
 
 **Implementation:**
 
@@ -501,6 +502,7 @@ todo_clear_all()             // Clear all tasks
 | 7 | Refactor `register_tools()` | ✅ Done |
 | 8 | Refactor `get_available_tool_names()` | ✅ Done |
 | 9 | Run tests and clippy | ✅ Done |
+| 10 | Fix bug B4: todo-tools feature gates | ✅ Done |
 
 **Complexity Reduction:**
 
@@ -511,10 +513,21 @@ todo_clear_all()             // Clear all tasks
 
 **Files Modified:**
 - `src/tools/registry.rs` - Extracted 26 helper functions, 2 macros, refactored main functions
+- `src/macros.rs` - Added `log_if_debug!` macro
+- `src/retrieval/context_builder.rs` - Use shared macro
+- `src/chat/command_handlers.rs` - Feature gates for todo functions
+- `src/chat/commands.rs` - Feature gates for CommandResult variants and parsing
+- `src/chat/repl.rs` - Feature gate for todo initialization
+- `src/chat/core.rs` - Feature gate for todos in prompt
+- `src/chat/continuation.rs` - Feature gate for todo sync
 
 **Commits:**
 - `f2884d7` docs: update CHANGELOG and IMPLEMENTATION with bug fixes for Issue #31
 - `05c3639` refactor: reduce registry.rs cognitive complexity (Issue #31)
+- `fcdcd9e` docs: mark Issue #31 as completed
+- `7995956` docs: add Issue #63 to roadmap (notes tools missing)
+- `4404bf9` fix: apply PR review feedback
+- `XXXXXXX` fix: add todo-tools feature gates for minimal build (Bug B4)
 
 **Related:** Issue #31, PR #62
 

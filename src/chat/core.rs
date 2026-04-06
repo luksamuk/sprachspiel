@@ -323,7 +323,11 @@ pub async fn send_message(
 
     // Build system prompt
     // Get todos section from global state
+    #[cfg(feature = "todo-tools")]
     let todos_section = crate::tools::todo::format_todos_for_prompt();
+
+    #[cfg(not(feature = "todo-tools"))]
+    let todos_section: Option<String> = None;
 
     let system_prompt = build_session_system_prompt(
         session,

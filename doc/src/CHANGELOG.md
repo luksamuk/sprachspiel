@@ -6,10 +6,11 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
-- **registry.rs Bugs** - Three bugs fixed during refactoring
+- **registry.rs Bugs** - Four bugs fixed during refactoring
   - `finance-tools` now appears in `get_available_tool_names()` (was missing)
   - `web_scrape` tool registration condition now matches `get_available_tool_names()`
   - `test_tool` now respects blacklist setting (was always registered)
+  - `todo-tools` missing feature gates causing minimal build failure (fixed in 5 files)
   - Related: Issue #31
 
 ### Changed

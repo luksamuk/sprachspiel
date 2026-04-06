@@ -75,14 +75,19 @@ pub enum CommandResult {
         limit: usize,
     },
     /// Add a new todo task
+    #[cfg(feature = "todo-tools")]
     TodoAdd { description: String },
     /// List todo tasks
+    #[cfg(feature = "todo-tools")]
     TodoList,
     /// Update todo task status
+    #[cfg(feature = "todo-tools")]
     TodoUpdate { id: usize, status: String },
     /// Clear completed todo tasks
+    #[cfg(feature = "todo-tools")]
     TodoClearDone,
     /// Clear all todo tasks
+    #[cfg(feature = "todo-tools")]
     TodoClearAll,
     /// Add a new note
     NoteAdd {
@@ -206,14 +211,19 @@ pub enum ChatCommand {
         limit: usize,
     },
     /// Add a new todo task
+    #[cfg(feature = "todo-tools")]
     TodoAdd { description: String },
     /// List todo tasks
+    #[cfg(feature = "todo-tools")]
     TodoList,
     /// Update todo task status
+    #[cfg(feature = "todo-tools")]
     TodoUpdate { id: usize, status: String },
     /// Clear completed todo tasks
+    #[cfg(feature = "todo-tools")]
     TodoClearDone,
     /// Clear all todo tasks
+    #[cfg(feature = "todo-tools")]
     TodoClearAll,
     /// Add a new note
     NoteAdd {
@@ -614,6 +624,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             ChatCommand::FactSearch { query, global, limit }
         }
+        #[cfg(feature = "todo-tools")]
         "todo" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
@@ -646,6 +657,11 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 _ => return Some(Err("Usage: /todo <add|list|update|clear-done|clear-all>".to_string())),
             }
         }
+        #[cfg(not(feature = "todo-tools"))]
+        "todo" | "ta" | "tl" | "tu" => {
+            return Some(Err("Todo tools not available. Enable with --features todo-tools".to_string()));
+        }
+        #[cfg(feature = "todo-tools")]
         "ta" => {
             if args.is_empty() {
                 return Some(Err("Usage: /ta <description>".to_string()));
@@ -654,7 +670,9 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 description: args.trim().to_string(),
             }
         }
+        #[cfg(feature = "todo-tools")]
         "tl" => ChatCommand::TodoList,
+        #[cfg(feature = "todo-tools")]
         "tu" => {
             let parts: Vec<&str> = args.splitn(2, ' ').collect();
             if parts.len() < 2 {
@@ -1370,14 +1388,19 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
             CommandResult::FactSearch { query, global, limit }
         }
 
+        #[cfg(feature = "todo-tools")]
         ChatCommand::TodoAdd { description } => CommandResult::TodoAdd { description },
 
+        #[cfg(feature = "todo-tools")]
         ChatCommand::TodoList => CommandResult::TodoList,
 
+        #[cfg(feature = "todo-tools")]
         ChatCommand::TodoUpdate { id, status } => CommandResult::TodoUpdate { id, status },
 
+        #[cfg(feature = "todo-tools")]
         ChatCommand::TodoClearDone => CommandResult::TodoClearDone,
 
+        #[cfg(feature = "todo-tools")]
         ChatCommand::TodoClearAll => CommandResult::TodoClearAll,
 
         ChatCommand::NoteAdd { content, title, global } => CommandResult::NoteAdd { content, title, global },
@@ -1479,15 +1502,6 @@ Documents:
   Subcommand shortcuts: /di = /doc import, /dl = /doc list
   /ds = /doc show, /dd = /doc delete
 
-Todo List:
-  /todo add <description>    Add a new task
-  /todo list                 List all tasks
-  /todo update <id> <status> Update task status (pending|in_progress|done)
-  /todo clear-done           Clear completed tasks
-  /todo clear-all            Clear all tasks
-
-  Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
-
 Shortcuts:
   /q = /quit, /n = /new, /h = /help
   /m = /model, /s = /system, /l = /load
@@ -1496,6 +1510,20 @@ Shortcuts:
   /ctx = /context, /f = /search (find)
   /fp = /fact prune, /fa = /fact add
   /fl = /fact list, /fr = /fact remove, /fs = /fact search"#
+    );
+
+    #[cfg(feature = "todo-tools")]
+    println!(
+        r#"
+Todo List:
+  /todo add <description>    Add a new task
+  /todo list                 List all tasks
+  /todo update <id> <status> Update task status (pending|in_progress|done)
+  /todo clear-done           Clear completed tasks
+  /todo clear-all            Clear all tasks
+
+  Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
+"#
     );
 }
 
