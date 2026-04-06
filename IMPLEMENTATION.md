@@ -474,20 +474,33 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔵 PRIORITY 4: Code Quality - registry.rs Complexity
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS (Issue #31)
 
-**Goal:** Reduce cognitive complexity of `register_tools` from 52/25 to <25/25.
+**Goal:** Reduce cognitive complexity of `register_tools` from 56/25 to <25/25.
 
 **Context:** Tool registration function - largest complexity in codebase.
 
 **Proposed Solution:**
-- Extract `register_weather_tools()`
-- Extract `register_file_tools()`
 - Extract `register_pokemon_tools()`
+- Extract `register_weather_tools()`
 - Extract `register_calc_tools()`
-- Extract `register_serper_tools()`
-- Extract `register_system_tools()`
 - Extract `register_search_tools()`
+- Extract `register_system_tools()`
+- Extract `register_file_tools()`
+- Extract `register_led_tools()`
+- Extract `register_todo_tools()`
+- Extract `register_core_tools()` (always-available tools)
+- Extract corresponding `get_*_tool_names()` helpers for `get_available_tool_names`
+
+**Implementation Plan:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Create branch, update docs | 🔄 |
+| 2 | Extract category helper functions | ⏳ |
+| 3 | Refactor `register_tools()` to use helpers | ⏳ |
+| 4 | Refactor `get_available_tool_names()` | ⏳ |
+| 5 | Run tests and clippy | ⏳ |
 
 **Estimated effort:** 1-2 days
 
