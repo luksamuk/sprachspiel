@@ -4,6 +4,18 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Notes LLM Tools Complete CRUD** - LLM can now manage notes programmatically
+  - `note_list(global)` - List notes with optional global scope
+  - `note_show(id)` - Show specific note by ID
+  - `note_edit(id, title, content)` - Edit note title and/or content
+  - `note_delete(id)` - Delete note by ID
+  - `note_search(query, global, limit)` - Search notes by keyword
+  - Previously only `note_add` was available to LLM
+  - Brings notes tools to parity with file tools (full CRUD)
+  - Related: Issue #63
+
 ### Changed
 
 - **todo-tools is now built-in** - No longer requires feature flag
