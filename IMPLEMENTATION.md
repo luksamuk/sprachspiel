@@ -472,26 +472,63 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - registry.rs Complexity
+### ✅ PRIORITY 4: Code Quality - registry.rs Complexity (COMPLETED)
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED (Issue #31)
 
-**Goal:** Reduce cognitive complexity of `register_tools` from 52/25 to <25/25.
+**Goal:** Reduce cognitive complexity of `register_tools` from 56/25 to <25/25.
 
 **Context:** Tool registration function - largest complexity in codebase.
 
-**Proposed Solution:**
-- Extract `register_weather_tools()`
-- Extract `register_file_tools()`
-- Extract `register_pokemon_tools()`
-- Extract `register_calc_tools()`
-- Extract `register_serper_tools()`
-- Extract `register_system_tools()`
-- Extract `register_search_tools()`
+**Bugs Discovered During Analysis:**
 
-**Estimated effort:** 1-2 days
+| # | Bug | Description | Fix |
+|---|-----|-------------|-----|
+| B1 | `finance-tools` missing | `get_available_tool_names()` didn't include `get_stock_quote` | Added `finance-tools` block |
+| B2 | `web_scrape` condition mismatch | Different `#[cfg]` conditions | Unified to `#[cfg(feature = "search-tools")]` |
+| B3 | `test_tool` ignores blacklist | Always registered | Added blacklist check |
 
-**Related:** Issue #31
+**Design Decision:** During review, we discovered that `todo-tools` was incorrectly feature-gated. Since `TodoState` is always part of `ChatSession`, todo tools should be built-in (like facts and notes).
+
+**Implementation:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Create branch, update docs (with bugs) | ✅ Done |
+| 2 | Fix bug B1: finance-tools in get_available_tool_names | ✅ Done |
+| 3 | Fix bug B2: web_scrape condition | ✅ Done |
+| 4 | Fix bug B3: test_tool blacklist check | ✅ Done |
+| 5 | Extract 13 `register_*_tools()` helpers | ✅ Done |
+| 6 | Extract 13 `get_*_tool_names()` helpers | ✅ Done |
+| 7 | Refactor `register_tools()` | ✅ Done |
+| 8 | Refactor `get_available_tool_names()` | ✅ Done |
+| 9 | Run tests and clippy | ✅ Done |
+| 10 | Make todo-tools built-in (remove feature gates) | ✅ Done |
+
+**Complexity Reduction:**
+
+| Function | Before | After |
+|----------|--------|-------|
+| `register_tools` | 56/25 | <25/25 (no warning) |
+| `get_available_tool_names` | ~30/25 | <25/25 (no warning) |
+
+**Files Modified:**
+- `src/tools/registry.rs` - Extracted 26 helper functions, 2 macros, refactored main functions
+- `src/tools/mod.rs` - Removed `todo-tools` feature gates
+- `src/macros.rs` - Added `log_if_debug!` macro
+- `src/retrieval/context_builder.rs` - Use shared macro
+- `src/prompts/tools.rs` - Removed `todo-tools` feature gate
+- `Cargo.toml` - Removed `todo-tools` from default and all-tools features
+
+**Commits:**
+- `f2884d7` docs: update CHANGELOG and IMPLEMENTATION with bug fixes for Issue #31
+- `05c3639` refactor: reduce registry.rs cognitive complexity (Issue #31)
+- `fcdcd9e` docs: mark Issue #31 as completed
+- `7995956` docs: add Issue #63 to roadmap (notes tools missing)
+- `4404bf9` fix: apply PR review feedback
+- `3a86403` fix: make todo-tools built-in (remove feature gates)
+
+**Related:** Issue #31, PR #62
 
 ---
 
@@ -872,6 +909,35 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 5. Copy embeddings from `chunk_embeddings` → `chunk_embeddings` (new table)
 6. Populate FTS5
 7. Keep old tables renamed as backup
+
+---
+
+### 🔵 PRIORITY 3: Bug - Notes LLM Tools Missing
+
+**Status:** ❌ NOT STARTED
+
+**Issue:** #63
+
+**Summary:** Only `note_add` exists as LLM tool, but slash commands exist for edit, list, show, delete, search.
+
+**Current State:**
+
+| Command | LLM Tool | Status |
+|---------|----------|--------|
+| `/note add` | `note_add` | ✅ Exists |
+| `/note list` | `note_list` | ❌ Missing |
+| `/note show` | `note_show` | ❌ Missing |
+| `/note edit` | `note_edit` | ❌ Missing |
+| `/note delete` | `note_delete` | ❌ Missing |
+| `/note search` | `note_search` | ❌ Missing |
+
+**Expected Behavior:** LLM should be able to manage notes, similar to how it manages files with `read_file`, `write_file`, `edit_file`, `append_file`.
+
+**Discovered During:** PR #62 review (comment about notes tools)
+
+**Reference:** `src/chat/command_handlers.rs` (lines 1361-1629) - handlers already exist
+
+**Estimated effort:** 1-2 days
 
 ---
 

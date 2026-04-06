@@ -6,6 +6,20 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Changed
 
+- **todo-tools is now built-in** - No longer requires feature flag
+  - Todo tools are always available (like facts and notes)
+  - `TodoState` is now always part of `ChatSession`
+  - Removed `todo-tools` from feature flags in Cargo.toml
+  - All `/todo` commands work without enabling features
+  - Related: Issue #31, PR #62
+
+- **Code Quality: registry.rs Refactoring** - Reduce cognitive complexity from 56/25 to <25/25
+  - Extract 13 `register_*_tools()` helper functions for tool registration
+  - Extract 13 `get_*_tool_names()` helper functions for tool name listing
+  - Create `register_if_allowed!` and `push_if_allowed!` macros for DRY code
+  - Ensure consistent tool ordering between `register_tools()` and `get_available_tool_names()`
+  - Related: Issue #31, PR #62
+
 - **Code Quality: context_builder.rs Refactoring** - Reduce cognitive complexity from 27/25 to below 25
   - Extract retrieval logic into `perform_retrieval()` helper
   - Extract message conversion into `push_messages()` helper
