@@ -900,6 +900,35 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
+### 🔵 PRIORITY 3: Bug - Notes LLM Tools Missing
+
+**Status:** ❌ NOT STARTED
+
+**Issue:** #63
+
+**Summary:** Only `note_add` exists as LLM tool, but slash commands exist for edit, list, show, delete, search.
+
+**Current State:**
+
+| Command | LLM Tool | Status |
+|---------|----------|--------|
+| `/note add` | `note_add` | ✅ Exists |
+| `/note list` | `note_list` | ❌ Missing |
+| `/note show` | `note_show` | ❌ Missing |
+| `/note edit` | `note_edit` | ❌ Missing |
+| `/note delete` | `note_delete` | ❌ Missing |
+| `/note search` | `note_search` | ❌ Missing |
+
+**Expected Behavior:** LLM should be able to manage notes, similar to how it manages files with `read_file`, `write_file`, `edit_file`, `append_file`.
+
+**Discovered During:** PR #62 review (comment about notes tools)
+
+**Reference:** `src/chat/command_handlers.rs` (lines 1361-1629) - handlers already exist
+
+**Estimated effort:** 1-2 days
+
+---
+
 ### ✅ PRIORITY 3: Skills System (COMPLETED)
 
 **Status:** ✅ COMPLETED (v0.38.0)
