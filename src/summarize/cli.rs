@@ -15,7 +15,7 @@ This subcommand uses a specialized summarization prompt and automatically
 disables tool usage for security and efficiency.
 
 MODEL:
-  Uses qwen3.5:4b by default for optimal summarization quality.
+  Resolved from config.toml [model.summarize], [model] default, or --model flag.
 
 EXAMPLES:
   ask summarize "Long text here..."
