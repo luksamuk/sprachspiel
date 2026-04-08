@@ -912,9 +912,9 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### 🔄 PRIORITY 3: Bug - Notes LLM Tools Missing
+### ✅ PRIORITY 3: Bug - Notes LLM Tools Missing
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 
 **Issue:** #63
 
@@ -927,18 +927,22 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 - `note_show` → `remember(id="note:N")` returns full note content
 - `note_search` → `remember(query)` searches across notes, docs, messages
 
-**Current State:**
+**Implementation:**
+- Added `note_edit(id, title?, content?)` and `note_delete(id)` to `src/tools/notes.rs`
+- Added `parse_note_id()` helper (accepts "42" and "note:42" formats)
+- Registered tools in `src/tools/registry.rs`
+- Updated prompts in `src/prompts/tools.rs`
+- Commits: `c809a76`, `e847288`, `f795e4e`, `b98adf9`, `80a6acf`
 
-| Command | LLM Tool | Status | Alternative |
-|---------|----------|--------|-------------|
-| `/note add` | `note_add` | ✅ Exists | — |
-| `/note list` | — | ❌ Not needed | `remember(query)` |
-| `/note show` | — | ❌ Not needed | `remember(id="note:N")` |
-| `/note edit` | `note_edit` | 🔨 Implementing | — |
-| `/note delete` | `note_delete` | 🔨 Implementing | — |
-| `/note search` | — | ❌ Not needed | `remember(query)` |
-
-**Rationale:** Documents have the same pattern — only `import_document` exists as LLM tool, and the LLM uses `remember` for everything else. Notes follow the same design.
+**Also included in PR #64:**
+- Braille art welcome banner (replaced jp2a ASCII art)
+  - 23-line colored braille art from neuronio3.png (width 35)
+  - Expanded `WelcomeInfo` from 7 to 12 fields
+  - Separate Facts/Notes/Docs count lines
+  - "Ollama" label renamed to "Server"
+  - Removed embed_model from banner
+  - Added `count_facts()`, `count_notes()`, `count_documents()` to Database
+- Fix: config.toml model settings in summarize/vision subcommands
 
 **Implementation Plan:**
 

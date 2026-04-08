@@ -6,6 +6,13 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Braille Art Welcome Banner** - New neuron braille art replaces jp2a ASCII art
+  - 23-line colored braille art generated from neuronio3.png (width 35)
+  - Expanded session info: Model, Think, Tools, Vision, Sandbox, Project, Session, Version, Server
+  - Separate Facts/Notes/Docs count lines (only shown when count > 0)
+  - `WelcomeInfo` struct expanded from 7 to 12 fields
+  - Added `count_facts()`, `count_notes()`, `count_documents()` to Database
+
 - **Notes LLM Tools: edit and delete** - LLM can now maintain notes it creates
   - `note_edit(id, title?, content?)` - Edit note title and/or content
   - `note_delete(id)` - Delete note by ID (accepts "42" or "note:42")
@@ -19,6 +26,10 @@ All notable changes to Ask-AI will be documented in this file.
   - Both now properly resolve models from user settings
 
 ### Changed
+
+- **Welcome banner: "Ollama" label renamed to "Server"** - Future-proof for non-Ollama backends
+  - Removed embed_model line (it's a fixed constant, not useful info)
+  - Removed combined `db_stats()` function in favor of individual count methods
 
 - **todo-tools is now built-in** - No longer requires feature flag
   - Todo tools are always available (like facts and notes)
