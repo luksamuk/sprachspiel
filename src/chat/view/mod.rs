@@ -35,6 +35,12 @@ mod colors {
     pub const RED: &str = "\x1B[31m";
 }
 
+/// ASCII art logo using toilet "future" font (pre-rendered)
+const BANNER_LOGO: &str = "\
+\x1B[1;34;94m┏━┓┏━┓╻┏\x1B[0m    \x1B[1;34;94m┏━┓╻\x1B[0m
+\x1B[1;34;94m┣━┫┗━┓┣┻\x1B[0;34m┓╺━╸┣━┫┃\x1B[0m
+\x1B[0;34m╹\x1B[0m \x1B[0;34m╹┗━┛╹\x1B[0m \x1B[0;34m╹\x1B[0m   \x1B[0;34m╹\x1B[0m \x1B[0;34m╹╹\x1B[0m";
+
 /// Neuron braille art - generated from neuronio3.png via braille_art.py
 /// Brain with extensions representing tools/memory/Zettelkasten
 /// Generated: python3 braille_art.py neuronio3.png -w 45 --color
@@ -185,6 +191,11 @@ impl WelcomeInfo {
         output.push('\n');
 
         let session_lines = self.format_session_lines();
+
+        output.push_str(BANNER_LOGO);
+        output.push('\n');
+        output.push_str(&format!("{}{}\n", colors::DIM, "─".repeat(80)));
+        output.push('\n');
 
         let art_visual_widths: Vec<usize> = NEURON_BRAILLE_ART
             .iter()
