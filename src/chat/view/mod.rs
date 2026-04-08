@@ -310,39 +310,15 @@ impl WelcomeInfo {
         ));
 
         if self.fact_count > 0 {
-            lines.push(format!(
-                "{}Facts:{} {}{}{}{}",
-                bc,
-                r,
-                d,
-                self.fact_count,
-                if self.fact_count == 1 { "" } else { "s" },
-                r
-            ));
+            lines.push(format!("{}Facts:{} {}{}{}", bc, r, d, self.fact_count, r));
         }
 
         if self.note_count > 0 {
-            lines.push(format!(
-                "{}Notes:{} {}{}{}{}",
-                bc,
-                r,
-                d,
-                self.note_count,
-                if self.note_count == 1 { "" } else { "s" },
-                r
-            ));
+            lines.push(format!("{}Notes:{} {}{}{}", bc, r, d, self.note_count, r));
         }
 
         if self.doc_count > 0 {
-            lines.push(format!(
-                "{}Docs:{} {}{}{}{}",
-                bc,
-                r,
-                d,
-                self.doc_count,
-                if self.doc_count == 1 { "" } else { "s" },
-                r
-            ));
+            lines.push(format!("{}Docs:{} {}{}{}", bc, r, d, self.doc_count, r));
         }
 
         lines
