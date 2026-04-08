@@ -19,7 +19,7 @@ mod truncate;
 
 pub use chunk_config::DynamicChunkConfig;
 pub use chunker::{ChunkConfig, chunk_text, chunk_text_with_config, needs_chunking};
-pub use client::{DEFAULT_CONTEXT_LENGTH, DEFAULT_EMBEDDING_MODEL, EmbeddingClient};
+pub use client::{DEFAULT_CONTEXT_LENGTH, EmbeddingClient};
 pub use fallback::{
     EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
 };

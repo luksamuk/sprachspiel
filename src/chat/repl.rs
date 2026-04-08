@@ -495,12 +495,24 @@ pub async fn run_chat_repl(
     let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // PRINT BANNER FIRST (before any other output)
-    let db_stats = if let Some(db_ref) = &db {
-        crate::content::db_stats(db_ref)
+    let (fact_count, note_count, doc_count) = if let Some(db_ref) = &db {
+        (
+            db_ref.count_facts().unwrap_or(0),
+            db_ref.count_notes().unwrap_or(0),
+            db_ref.count_documents().unwrap_or(0),
+        )
     } else {
-        String::new()
+        (0, 0, 0)
     };
-    print_welcome(&session, &model_config, &capabilities, settings, &db_stats);
+    print_welcome(
+        &session,
+        &model_config,
+        &capabilities,
+        settings,
+        fact_count,
+        note_count,
+        doc_count,
+    );
 
     // Print session info (if any)
     if let Some(msg) = resume_message {
@@ -765,17 +777,18 @@ fn print_welcome(
     model_config: &ModelConfig,
     capabilities: &ModelCapabilities,
     settings: &crate::settings::Settings,
-    db_stats: &str,
+    fact_count: i64,
+    note_count: i64,
+    doc_count: i64,
 ) {
     let project = session.project_id.as_deref().unwrap_or("anonymous");
     let session_name = session.name.as_deref().unwrap_or(&session.id);
     let sandbox_status = crate::external::get_sandbox_status();
     let version = env!("CARGO_PKG_VERSION");
-    let ollama_url = format!(
+    let server_url = format!(
         "{}:{}",
         settings.model.ollama_host, settings.model.ollama_port
     );
-    let embed_model = crate::embeddings::DEFAULT_EMBEDDING_MODEL.to_string();
 
     let mut view = TerminalView::new();
     view.show_welcome(
@@ -788,8 +801,9 @@ fn print_welcome(
         session_name,
         session.anonymous,
         version,
-        &ollama_url,
-        &embed_model,
-        db_stats,
+        &server_url,
+        fact_count,
+        note_count,
+        doc_count,
     );
 }

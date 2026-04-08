@@ -104,9 +104,10 @@ impl TerminalView {
         session_name: &str,
         is_anonymous: bool,
         version: &str,
-        ollama_url: &str,
-        embed_model: &str,
-        db_stats: &str,
+        server_url: &str,
+        fact_count: i64,
+        note_count: i64,
+        doc_count: i64,
     ) {
         let info = WelcomeInfo {
             model_id: model_id.to_string(),
@@ -118,9 +119,10 @@ impl TerminalView {
             session_name: session_name.to_string(),
             is_anonymous,
             version: version.to_string(),
-            ollama_url: ollama_url.to_string(),
-            embed_model: embed_model.to_string(),
-            db_stats: db_stats.to_string(),
+            server_url: server_url.to_string(),
+            fact_count,
+            note_count,
+            doc_count,
         };
         println!("{}", info.to_boxed_string());
     }
@@ -158,8 +160,9 @@ mod tests {
             false,
             "0.39.5",
             "127.0.0.1:11434",
-            "nomic-embed-text",
-            "3 facts, 2 notes",
+            3,
+            2,
+            0,
         );
     }
 

@@ -1684,34 +1684,3 @@ mod tests {
         assert!(result.is_ok());
     }
 }
-
-/// Get a compact stats string for the welcome banner
-pub fn db_stats(db: &std::sync::Arc<Database>) -> String {
-    let facts = db.count_facts().unwrap_or(0);
-    let notes = db.count_notes().unwrap_or(0);
-    let docs = db.count_documents().unwrap_or(0);
-
-    if facts == 0 && notes == 0 && docs == 0 {
-        return String::new();
-    }
-
-    let mut parts = Vec::new();
-    if facts > 0 {
-        parts.push(format!(
-            "{} fact{}",
-            facts,
-            if facts == 1 { "" } else { "s" }
-        ));
-    }
-    if notes > 0 {
-        parts.push(format!(
-            "{} note{}",
-            notes,
-            if notes == 1 { "" } else { "s" }
-        ));
-    }
-    if docs > 0 {
-        parts.push(format!("{} doc{}", docs, if docs == 1 { "" } else { "s" }));
-    }
-    parts.join(", ")
-}
