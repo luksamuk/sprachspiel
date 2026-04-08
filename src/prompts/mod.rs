@@ -50,8 +50,8 @@ pub use base::{
 };
 #[allow(unused_imports)]
 pub use builder::{
-    build_compaction_prompt, build_continuation_prompt, build_system_prompt, build_tool_user_prompt,
-    PromptConfig, PromptType,
+    PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
+    build_system_prompt, build_tool_user_prompt,
 };
 #[allow(unused_imports)]
 pub use tools::build_tool_context;

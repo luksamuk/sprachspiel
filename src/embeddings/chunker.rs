@@ -191,7 +191,7 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
         if last_chunk.content.len() < config.min_chunk_size {
             let prev_chunk = chunks[chunks.len() - 2].clone();
             let merged_len = prev_chunk.content.len() + last_chunk.content.len();
-            
+
             // Only merge if the result fits within max_chars
             if merged_len <= config.max_chars {
                 let merged_content = format!("{}{}", prev_chunk.content, last_chunk.content);

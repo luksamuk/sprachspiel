@@ -8,7 +8,7 @@ use indicatif::ProgressBar;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::coordinator::{
-    classify_ollama_error, format_recovery_message, is_ollama_error_recoverable, MAX_RETRIES,
+    MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,
 };
 use crate::chat::custom_coordinator::CustomCoordinator;
 use crate::db::Database;

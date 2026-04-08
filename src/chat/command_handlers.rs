@@ -29,32 +29,38 @@ const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::debug_tools::log_debug;
-use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback, recover_missing_embeddings_with_progress};
+use crate::embeddings::{
+    DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback,
+    recover_missing_embeddings_with_progress,
+};
 use crate::settings::Settings;
 use crate::tokens::{calculate_context_metrics, estimate_tokens};
 
 pub use super::session::ChatSession;
 
 /// Flush pending embeddings before exit.
-/// 
+///
 /// This ensures that any embeddings that were being generated
 /// asynchronously are completed before the application exits.
-async fn flush_pending_embeddings(db: Arc<crate::db::Database>, client: Arc<crate::embeddings::EmbeddingClient>) {
+async fn flush_pending_embeddings(
+    db: Arc<crate::db::Database>,
+    client: Arc<crate::embeddings::EmbeddingClient>,
+) {
     // Check for pending items
     let pending_items = match db.get_content_items_for_reindex() {
         Ok(items) => items.len(),
         Err(_) => 0,
     };
-    
+
     let pending_chunks = match db.get_content_chunks_for_reindex() {
         Ok(chunks) => chunks.len(),
         Err(_) => 0,
     };
-    
+
     if pending_items + pending_chunks == 0 {
         return;
     }
-    
+
     // Complete pending embeddings with progress bar
     let _ = recover_missing_embeddings_with_progress(&db, &client).await;
 }
@@ -82,7 +88,7 @@ pub async fn handle_command_result(
             let _ = input.save_history();
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();
-                
+
                 // Flush pending embeddings before exit
                 if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
                     flush_pending_embeddings(Arc::clone(db), Arc::clone(client)).await;
@@ -221,7 +227,11 @@ pub async fn handle_command_result(
             handle_note_search(state, query, global, limit);
             HandleResult::Continue
         }
-        CommandResult::DocumentImport { path, global, nowait } => {
+        CommandResult::DocumentImport {
+            path,
+            global,
+            nowait,
+        } => {
             handle_document_import(state, path, global, nowait);
             HandleResult::Continue
         }
@@ -1714,7 +1724,7 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
 /// Handle document import command
 #[cfg(feature = "document-tools")]
 pub fn handle_document_import(state: &ReplState, path: String, global: bool, nowait: bool) {
-    use crate::content::{detect_file_type, ContentScope, Document, FileType, MAX_DOCUMENT_SIZE};
+    use crate::content::{ContentScope, Document, FileType, MAX_DOCUMENT_SIZE, detect_file_type};
     use crate::utils::expand_tilde_path;
     use std::fs;
 
@@ -1775,23 +1785,27 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
     }
 
     let content = match file_type {
-        FileType::Txt | FileType::Md | FileType::Org => {
-            match fs::read_to_string(&file_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Cannot read file: {}\x1B[0m", e);
-                    return;
-                }
+        FileType::Txt | FileType::Md | FileType::Org => match fs::read_to_string(&file_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("\x1B[31m✗ Cannot read file: {}\x1B[0m", e);
+                return;
             }
-        }
+        },
         FileType::Pdf | FileType::Epub => {
             #[cfg(feature = "skills-tools")]
             {
                 use std::process::Command;
 
                 let (program, args) = match file_type {
-                    FileType::Pdf => ("pdftotext", vec![file_path.to_string_lossy().to_string(), "-".to_string()]),
-                    FileType::Epub => ("epub2txt", vec![file_path.to_string_lossy().to_string(), "-".to_string()]),
+                    FileType::Pdf => (
+                        "pdftotext",
+                        vec![file_path.to_string_lossy().to_string(), "-".to_string()],
+                    ),
+                    FileType::Epub => (
+                        "epub2txt",
+                        vec![file_path.to_string_lossy().to_string(), "-".to_string()],
+                    ),
                     _ => unreachable!(),
                 };
 
@@ -1803,7 +1817,10 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
                             match String::from_utf8(output.stdout) {
                                 Ok(c) => c,
                                 Err(e) => {
-                                    eprintln!("\x1B[31m✗ Failed to parse output as UTF-8: {}\x1B[0m", e);
+                                    eprintln!(
+                                        "\x1B[31m✗ Failed to parse output as UTF-8: {}\x1B[0m",
+                                        e
+                                    );
                                     return;
                                 }
                             }
@@ -1892,9 +1909,13 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
                             None,
                             pid.as_deref(),
                         );
-                        if let Err(e) =
-                            embed_item_with_fallback(ctx, &db_clone, &client, DEFAULT_CONTEXT_LENGTH)
-                                .await
+                        if let Err(e) = embed_item_with_fallback(
+                            ctx,
+                            &db_clone,
+                            &client,
+                            DEFAULT_CONTEXT_LENGTH,
+                        )
+                        .await
                         {
                             eprintln!("Warning: Failed to generate embedding for document: {}", e);
                         }
@@ -1902,7 +1923,7 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
                 } else {
                     // Synchronous embedding with progress
                     println!("  Indexing document...");
-                    
+
                     let ctx = EmbedItemContext::new(
                         &document.content,
                         id,
@@ -1913,15 +1934,28 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
 
                     match tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(async {
-                            embed_item_with_fallback(ctx, &db, embedding_client, DEFAULT_CONTEXT_LENGTH).await
+                            embed_item_with_fallback(
+                                ctx,
+                                &db,
+                                embedding_client,
+                                DEFAULT_CONTEXT_LENGTH,
+                            )
+                            .await
                         })
                     }) {
                         Ok(result) => {
                             let chunks = result.chunks_created.max(1);
-                            println!("  ✓ Document indexed ({} chunk{})", chunks, if chunks > 1 { "s" } else { "" });
+                            println!(
+                                "  ✓ Document indexed ({} chunk{})",
+                                chunks,
+                                if chunks > 1 { "s" } else { "" }
+                            );
                         }
                         Err(e) => {
-                            eprintln!("  \x1B[33m⚠ Warning: Failed to index document: {}\x1B[0m", e);
+                            eprintln!(
+                                "  \x1B[33m⚠ Warning: Failed to index document: {}\x1B[0m",
+                                e
+                            );
                             println!("  Run '/reindex' to regenerate embeddings.");
                         }
                     }
@@ -2038,7 +2072,11 @@ pub fn handle_document_show(state: &ReplState, id: i64) {
             println!("  \x1B[1m{}\x1B[0m", doc.title);
             println!(
                 "  \x1B[90mFile: {} | Type: {} | Words: {} | Age: {}d | Scope: {}\x1B[0m",
-                doc.filename, doc.file_type.extension(), doc.word_count, age_days, scope_str
+                doc.filename,
+                doc.file_type.extension(),
+                doc.word_count,
+                age_days,
+                scope_str
             );
             println!();
             println!("{}", doc.content);
@@ -2075,16 +2113,14 @@ pub fn handle_document_delete(state: &ReplState, id: i64) {
     }
 
     match db.get_document(id) {
-        Ok(Some(doc)) => {
-            match db.delete_document(id) {
-                Ok(()) => {
-                    println!("\x1B[32m✓ Deleted document #{}: {}\x1B[0m", id, doc.title);
-                }
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Failed to delete document: {}\x1B[0m", e);
-                }
+        Ok(Some(doc)) => match db.delete_document(id) {
+            Ok(()) => {
+                println!("\x1B[32m✓ Deleted document #{}: {}\x1B[0m", id, doc.title);
             }
-        }
+            Err(e) => {
+                eprintln!("\x1B[31m✗ Failed to delete document: {}\x1B[0m", e);
+            }
+        },
         Ok(None) => {
             eprintln!("\x1B[31m✗ Document #{} not found.\x1B[0m", id);
         }
@@ -2111,8 +2147,13 @@ pub fn handle_skill_activated(state: &mut ReplState, name: String, content: Stri
         content,
     });
 
-    println!("\x1B[32m✓ Skill '{}' activated for this session.\x1B[0m", name);
-    println!("\x1B[90mSkill instructions will be followed when relevant to the conversation.\x1B[0m");
+    println!(
+        "\x1B[32m✓ Skill '{}' activated for this session.\x1B[0m",
+        name
+    );
+    println!(
+        "\x1B[90mSkill instructions will be followed when relevant to the conversation.\x1B[0m"
+    );
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@
 //! - SourceType for content classification
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Result};
+use rusqlite::{Result, params};
 use serde::{Deserialize, Serialize};
 
 use super::Database;

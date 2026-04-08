@@ -13,10 +13,10 @@
 //! - TXT/MD/ORG: Builtin support, no dependencies
 //! - PDF/EPUB: Requires `skills-tools` feature (uses document-processing skill)
 
-use crate::content::document::{detect_file_type, Document, FileType, MAX_DOCUMENT_SIZE};
+use crate::content::document::{Document, FileType, MAX_DOCUMENT_SIZE, detect_file_type};
 use crate::content::types::ContentScope;
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use crate::embeddings::{EmbedItemContext, embed_item_with_fallback, DEFAULT_CONTEXT_LENGTH};
+use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
 use crate::project::get_project_id;
 use crate::tools::context::{get_db, get_embedding};
 use crate::utils::expand_tilde_path;
@@ -115,8 +115,14 @@ pub async fn import_document(
         "import_document",
         &[
             ("path".to_string(), path.clone()),
-            ("scope".to_string(), scope.clone().unwrap_or_else(|| "project".to_string())),
-            ("title".to_string(), title.clone().unwrap_or_else(|| "(auto)".to_string())),
+            (
+                "scope".to_string(),
+                scope.clone().unwrap_or_else(|| "project".to_string()),
+            ),
+            (
+                "title".to_string(),
+                title.clone().unwrap_or_else(|| "(auto)".to_string()),
+            ),
         ],
     );
 
@@ -125,10 +131,7 @@ pub async fn import_document(
         Some("global") => ContentScope::Global,
         Some("project") | None => ContentScope::Project,
         Some(s) => {
-            let err = format!(
-                "Error: Invalid scope '{}'. Use 'project' or 'global'.",
-                s
-            );
+            let err = format!("Error: Invalid scope '{}'. Use 'project' or 'global'.", s);
             log_tool_result("import_document", &err);
             return Ok(err);
         }
@@ -220,16 +223,14 @@ pub async fn import_document(
 
     // Read file content
     let content = match file_type {
-        FileType::Txt | FileType::Md | FileType::Org => {
-            match fs::read_to_string(&file_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    let err = format!("Error: Cannot read file: {}", e);
-                    log_tool_result("import_document", &err);
-                    return Ok(err);
-                }
+        FileType::Txt | FileType::Md | FileType::Org => match fs::read_to_string(&file_path) {
+            Ok(c) => c,
+            Err(e) => {
+                let err = format!("Error: Cannot read file: {}", e);
+                log_tool_result("import_document", &err);
+                return Ok(err);
             }
-        }
+        },
         FileType::Pdf | FileType::Epub => {
             #[cfg(feature = "skills-tools")]
             {
@@ -285,7 +286,9 @@ pub async fn import_document(
     };
 
     let scope_str = match content_scope {
-        ContentScope::Project => format!("project '{}'", project_id.as_deref().unwrap_or("default")),
+        ContentScope::Project => {
+            format!("project '{}'", project_id.as_deref().unwrap_or("default"))
+        }
         ContentScope::Global => "global".to_string(),
     };
 
@@ -299,14 +302,15 @@ pub async fn import_document(
             None,
             project_id.as_deref(),
         );
-        
+
         // Use block_in_place for synchronous embedding in async context
         let embed_result = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                embed_item_with_fallback(ctx, &db_clone, &embedding_client, DEFAULT_CONTEXT_LENGTH).await
+                embed_item_with_fallback(ctx, &db_clone, &embedding_client, DEFAULT_CONTEXT_LENGTH)
+                    .await
             })
         });
-        
+
         match embed_result {
             Ok(embed_result) => {
                 let chunks = embed_result.chunks_created.max(1);
@@ -399,12 +403,14 @@ fn extract_text_with_skill(
 
     // Build command based on file type
     let (program, args) = match file_type {
-        FileType::Pdf => {
-            ("pdftotext", vec![file_path.to_string_lossy().to_string(), "-".to_string()])
-        }
-        FileType::Epub => {
-            ("epub2txt", vec![file_path.to_string_lossy().to_string(), "-".to_string()])
-        }
+        FileType::Pdf => (
+            "pdftotext",
+            vec![file_path.to_string_lossy().to_string(), "-".to_string()],
+        ),
+        FileType::Epub => (
+            "epub2txt",
+            vec![file_path.to_string_lossy().to_string(), "-".to_string()],
+        ),
         _ => {
             return Err(format!(
                 "Error: Internal error - unexpected file type '{}'.",
@@ -414,9 +420,7 @@ fn extract_text_with_skill(
     };
 
     // Run extraction command
-    let output = Command::new(program)
-        .args(&args)
-        .output();
+    let output = Command::new(program).args(&args).output();
 
     match output {
         Ok(output) => {
@@ -433,12 +437,9 @@ fn extract_text_with_skill(
                 ))
             }
         }
-        Err(e) => {
-            Err(format!(
-                "Error: Could not run '{}' - {}. Install with your package manager.",
-                program,
-                e
-            ))
-        }
+        Err(e) => Err(format!(
+            "Error: Could not run '{}' - {}. Install with your package manager.",
+            program, e
+        )),
     }
 }

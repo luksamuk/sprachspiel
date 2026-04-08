@@ -8,8 +8,8 @@
 
 use ask_ai::chat::session::{ChatSession, MessageRole, SavedMessage};
 use ask_ai::context_overflow::{
-    calculate_thresholds, check_context_overflow, COMPACTION_MIN, DEFAULT_KEEP_FIRST,
-    DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD, PRE_TOOL_MIN,
+    COMPACTION_MIN, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD,
+    PRE_TOOL_MIN, calculate_thresholds, check_context_overflow,
 };
 use chrono::Utc;
 

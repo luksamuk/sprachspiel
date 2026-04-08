@@ -25,7 +25,7 @@
 //! - EMERGENCY_MIN: 256 tokens
 
 use crate::chat::session::ChatSession;
-use crate::tokens::{estimate_tokens, MESSAGE_OVERHEAD};
+use crate::tokens::{MESSAGE_OVERHEAD, estimate_tokens};
 use ollama_rs::generation::chat::ChatMessage;
 
 /// Percentage thresholds (as fractions of context window)

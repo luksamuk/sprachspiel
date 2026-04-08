@@ -31,7 +31,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use super::chunk_config::DynamicChunkConfig;
-use super::chunker::{chunk_text_with_config, ChunkConfig};
+use super::chunker::{ChunkConfig, chunk_text_with_config};
 use super::client::{EmbeddingClient, EmbeddingError};
 use crate::db::Database;
 
@@ -140,7 +140,11 @@ impl std::fmt::Display for FallbackError {
         match self {
             Self::Embedding(e) => write!(f, "Embedding error: {}", e),
             Self::Database(msg) => write!(f, "Database error: {}", msg),
-            Self::MaxDivisionsExceeded { divisions, max, content_len } => {
+            Self::MaxDivisionsExceeded {
+                divisions,
+                max,
+                content_len,
+            } => {
                 write!(
                     f,
                     "Maximum fallback divisions exceeded: {} divisions (max {}) for {} byte content. \
@@ -149,7 +153,11 @@ impl std::fmt::Display for FallbackError {
                     divisions, max, content_len
                 )
             }
-            Self::MaxChunksExceeded { chunks, max, content_len } => {
+            Self::MaxChunksExceeded {
+                chunks,
+                max,
+                content_len,
+            } => {
                 write!(
                     f,
                     "Maximum chunks exceeded: {} chunks (max {}) for {} byte content. \
@@ -158,7 +166,11 @@ impl std::fmt::Display for FallbackError {
                     chunks, max, content_len
                 )
             }
-            Self::BelowMinimumTokens { estimated_tokens, min, content_len } => {
+            Self::BelowMinimumTokens {
+                estimated_tokens,
+                min,
+                content_len,
+            } => {
                 write!(
                     f,
                     "Chunk below minimum token limit: {} tokens (min {}) for {} byte content. \
@@ -245,7 +257,12 @@ pub fn embed_chunk_with_fallback<'a>(
 ) -> Pin<Box<dyn Future<Output = Result<EmbedResult, FallbackError>> + Send + 'a>> {
     Box::pin(async move {
         // Check limits before proceeding
-        check_limits(division_count, ctx.content.len(), MAX_FALLBACK_DIVISIONS, MAX_CHUNKS_PER_ITEM)?;
+        check_limits(
+            division_count,
+            ctx.content.len(),
+            MAX_FALLBACK_DIVISIONS,
+            MAX_CHUNKS_PER_ITEM,
+        )?;
 
         // Try direct embed first
         match client.embed(ctx.content).await {
@@ -275,7 +292,12 @@ pub fn embed_chunk_with_fallback<'a>(
 /// # Panics
 ///
 /// Panics with clear error message if limits exceeded.
-fn check_limits(division_count: usize, content_len: usize, max_divisions: usize, max_chunks: usize) -> Result<(), FallbackError> {
+fn check_limits(
+    division_count: usize,
+    content_len: usize,
+    max_divisions: usize,
+    max_chunks: usize,
+) -> Result<(), FallbackError> {
     if division_count >= max_divisions {
         return Err(FallbackError::MaxDivisionsExceeded {
             divisions: division_count,
@@ -352,11 +374,20 @@ async fn handle_chunk_context_exceeded(
             timestamp: ctx.timestamp,
         };
 
-        embed_chunk_with_fallback(chunk_ctx, Arc::clone(&db), Arc::clone(&client), halved_length, division_count + 1).await?;
+        embed_chunk_with_fallback(
+            chunk_ctx,
+            Arc::clone(&db),
+            Arc::clone(&client),
+            halved_length,
+            division_count + 1,
+        )
+        .await?;
         total_created += 1;
     }
 
-    Ok(EmbedResult { chunks_created: total_created })
+    Ok(EmbedResult {
+        chunks_created: total_created,
+    })
 }
 
 /// Create chunks atomically in a transaction.
@@ -418,7 +449,12 @@ pub async fn embed_item_with_fallback(
     context_length: usize,
 ) -> Result<EmbedResult, FallbackError> {
     // Check limits
-    check_limits(0, ctx.content.len(), MAX_FALLBACK_DIVISIONS, MAX_CHUNKS_PER_ITEM)?;
+    check_limits(
+        0,
+        ctx.content.len(),
+        MAX_FALLBACK_DIVISIONS,
+        MAX_CHUNKS_PER_ITEM,
+    )?;
 
     // Try direct embed first
     match client.embed(ctx.content).await {
@@ -498,7 +534,14 @@ async fn handle_item_context_exceeded<'a>(
             timestamp: ctx.timestamp,
         };
 
-        embed_chunk_with_fallback(chunk_ctx, Arc::clone(db), Arc::clone(client), halved_length, 1).await?;
+        embed_chunk_with_fallback(
+            chunk_ctx,
+            Arc::clone(db),
+            Arc::clone(client),
+            halved_length,
+            1,
+        )
+        .await?;
         total_created += 1;
     }
 
@@ -510,7 +553,9 @@ async fn handle_item_context_exceeded<'a>(
         )
     })?;
 
-    Ok(EmbedResult { chunks_created: total_created })
+    Ok(EmbedResult {
+        chunks_created: total_created,
+    })
 }
 
 /// Create chunks for an item that doesn't have any yet.
@@ -560,8 +605,8 @@ mod tests {
     #[test]
     fn test_estimate_tokens() {
         // Conservative estimate: 3 chars/token
-        assert_eq!(estimate_tokens(100), 34);  // 100/3 = 33.3 → 34
-        assert_eq!(estimate_tokens(300), 100);  // 300/3 = 100
+        assert_eq!(estimate_tokens(100), 34); // 100/3 = 33.3 → 34
+        assert_eq!(estimate_tokens(300), 100); // 300/3 = 100
         assert_eq!(estimate_tokens(1000), 334); // 1000/3 = 333.3 → 334
     }
 

@@ -23,8 +23,10 @@ use std::sync::Arc;
 
 use crate::db::Database;
 use crate::embeddings::{
-    chunk_text_with_config, ChunkConfig, DynamicChunkConfig, EmbeddingClient,
-    fallback::{EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback},
+    ChunkConfig, DynamicChunkConfig, EmbeddingClient, chunk_text_with_config,
+    fallback::{
+        EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
+    },
 };
 
 /// Recover missing embeddings for all content
@@ -65,7 +67,10 @@ pub async fn recover_missing_embeddings(
     let context_length = match embedding_client.get_context_length().await {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("Warning: Could not get embedding model context length: {}", e);
+            eprintln!(
+                "Warning: Could not get embedding model context length: {}",
+                e
+            );
             eprintln!("Using conservative default of 512 tokens.");
             512
         }
@@ -141,12 +146,23 @@ pub async fn recover_missing_embeddings(
                     timestamp,
                 };
 
-                match embed_chunk_with_fallback(ctx, Arc::clone(db), Arc::clone(embedding_client), context_length, 0).await {
+                match embed_chunk_with_fallback(
+                    ctx,
+                    Arc::clone(db),
+                    Arc::clone(embedding_client),
+                    context_length,
+                    0,
+                )
+                .await
+                {
                     Ok(result) => {
                         recovered += result.chunks_created;
                     }
                     Err(e) => {
-                        eprintln!("Warning: Failed to recover embedding for chunk {}: {}", chunk_id, e);
+                        eprintln!(
+                            "Warning: Failed to recover embedding for chunk {}: {}",
+                            chunk_id, e
+                        );
                     }
                 }
             }
@@ -221,7 +237,10 @@ pub async fn recover_missing_embeddings(
                 Some((pid, ct, c, p)) => (pid, ct, c, p),
                 None => {
                     // Chunk was just created but item doesn't exist - shouldn't happen
-                    eprintln!("Warning: Newly created chunk {} has no parent item", chunk_id);
+                    eprintln!(
+                        "Warning: Newly created chunk {} has no parent item",
+                        chunk_id
+                    );
                     continue;
                 }
             };
@@ -239,7 +258,15 @@ pub async fn recover_missing_embeddings(
                 timestamp,
             };
 
-            match embed_chunk_with_fallback(ctx, Arc::clone(db), Arc::clone(embedding_client), context_length, 0).await {
+            match embed_chunk_with_fallback(
+                ctx,
+                Arc::clone(db),
+                Arc::clone(embedding_client),
+                context_length,
+                0,
+            )
+            .await
+            {
                 Ok(result) => {
                     recovered += result.chunks_created;
                 }
@@ -294,11 +321,9 @@ pub async fn recover_missing_embeddings_with_progress(
 
     let progress = ProgressBar::new(total as u64);
     progress.set_style(
-        ProgressStyle::with_template(
-            "  {bar:20} {pos}/{len} ({percent}%)",
-        )
-        .expect("Invalid progress template")
-        .progress_chars("█▓░"),
+        ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%)")
+            .expect("Invalid progress template")
+            .progress_chars("█▓░"),
     );
 
     // Call the main recovery function but with progress tracking

@@ -312,7 +312,8 @@ async fn fetch_conversation_message(db: &std::sync::Arc<crate::db::Database>, id
                         }
                     }
                     Err(e) => {
-                        output.push_str(&format!("\n\n*Failed to fetch assistant response: {}*", e));
+                        output
+                            .push_str(&format!("\n\n*Failed to fetch assistant response: {}*", e));
                     }
                 }
             }
@@ -341,7 +342,7 @@ async fn fetch_note(db: &std::sync::Arc<crate::db::Database>, id: i64) -> String
                 crate::content::ContentScope::Global => "global",
                 crate::content::ContentScope::Project => "project",
             };
-            
+
             let source_str = match note.source {
                 crate::content::ContentSource::User => "user",
                 crate::content::ContentSource::Llm => "llm",
@@ -400,10 +401,7 @@ async fn fetch_document(
             let has_chunks = match db.content_item_has_chunks(id) {
                 Ok(has) => has,
                 Err(e) => {
-                    return format!(
-                        "Error: Failed to check document chunks.\n\nDetails: {}",
-                        e
-                    );
+                    return format!("Error: Failed to check document chunks.\n\nDetails: {}", e);
                 }
             };
 
@@ -461,7 +459,10 @@ async fn fetch_document(
             output.push_str(&format!("File: {}\n", doc.filename));
             output.push_str(&format!("Title: {}\n", doc.title));
             output.push_str(&format!("Words: {}\n", doc.word_count));
-            output.push_str(&format!("Created: {}\n", doc.created_at.format("%Y-%m-%d %H:%M")));
+            output.push_str(&format!(
+                "Created: {}\n",
+                doc.created_at.format("%Y-%m-%d %H:%M")
+            ));
 
             if let Some(ref project_id) = doc.project_id {
                 output.push_str(&format!("Project: {}\n", project_id));
@@ -509,11 +510,18 @@ fn fetch_document_chunk(
                 "Error: Invalid chunk index {}.\n\n\
                  Document has {} chunks (0-{}).\n\
                  Use remember(id=\"doc:{}\", chunk=\"N\") with N between 0 and {}.",
-                chunk_index, total, total.saturating_sub(1), doc_id, total.saturating_sub(1)
+                chunk_index,
+                total,
+                total.saturating_sub(1),
+                doc_id,
+                total.saturating_sub(1)
             );
         }
         Err(e) => {
-            return format!("Error: Failed to retrieve chunk {}.\n\nDetails: {}", chunk_index, e);
+            return format!(
+                "Error: Failed to retrieve chunk {}.\n\nDetails: {}",
+                chunk_index, e
+            );
         }
     };
 
@@ -522,10 +530,16 @@ fn fetch_document_chunk(
 
     let mut output = format!(
         "**Document {}** — Chunk {}/{}\n",
-        doc_id, chunk_index + 1, total_chunks
+        doc_id,
+        chunk_index + 1,
+        total_chunks
     );
     output.push_str(&format!("Title: {}\n", doc.title));
-    output.push_str(&format!("Type: {} | Scope: {}\n", doc.file_type.extension(), scope_str));
+    output.push_str(&format!(
+        "Type: {} | Scope: {}\n",
+        doc.file_type.extension(),
+        scope_str
+    ));
     output.push_str(&format!(
         "Position: characters {}-{}\n",
         chunk.start_offset, chunk.end_offset
@@ -570,17 +584,17 @@ async fn fetch_document_preview(
     let all_chunks = match db.get_content_chunks(doc_id) {
         Ok(chunks) => chunks,
         Err(e) => {
-            return format!("Error: Failed to retrieve document chunks.\n\nDetails: {}", e);
+            return format!(
+                "Error: Failed to retrieve document chunks.\n\nDetails: {}",
+                e
+            );
         }
     };
 
     let preview_count = std::cmp::min(MAX_PREVIEW_CHUNKS, total_chunks);
     let preview_chunks: Vec<_> = all_chunks.iter().take(preview_count as usize).collect();
 
-    let mut output = format!(
-        "**Document {}**: {}\n",
-        doc_id, doc.title
-    );
+    let mut output = format!("**Document {}**: {}\n", doc_id, doc.title);
     output.push_str(&format!(
         "Type: {} | Scope: {} | Words: {}\n",
         doc.file_type.extension(),
@@ -696,13 +710,10 @@ async fn remember_by_query(
 
     // Search for messages using V7 search
     let message_results = match db.search_messages_hybrid(
-        query,
-        &embedding,
-        None,  // conversation_id
-        None,  // project_id
-        limit,
-        0.4,   // keyword_weight
-        0.6,   // semantic_weight
+        query, &embedding, None, // conversation_id
+        None, // project_id
+        limit, 0.4, // keyword_weight
+        0.6, // semantic_weight
     ) {
         Ok(r) => r,
         Err(e) => {
@@ -715,7 +726,9 @@ async fn remember_by_query(
     };
 
     // Enrich message results with assistant responses
-    let enriched_messages = db.enrich_content_results_with_context(message_results).unwrap_or_default();
+    let enriched_messages = db
+        .enrich_content_results_with_context(message_results)
+        .unwrap_or_default();
 
     // Check if we have any results
     if note_results.is_empty() && doc_results.is_empty() && enriched_messages.is_empty() {
@@ -745,11 +758,14 @@ async fn remember_by_query(
         for result in &note_results {
             let title = result.item.title.as_deref().unwrap_or("Untitled");
             let content = if result.item.content.chars().count() > 150 {
-                format!("{}...", result.item.content.chars().take(150).collect::<String>())
+                format!(
+                    "{}...",
+                    result.item.content.chars().take(150).collect::<String>()
+                )
             } else {
                 result.item.content.clone()
             };
-            
+
             output.push_str(&format!(
                 "**[id=note:{}]** {} (score: {:.2})\n{}\n\n",
                 result.item.id, title, result.score, content
@@ -763,11 +779,14 @@ async fn remember_by_query(
         for result in &doc_results {
             let title = result.item.title.as_deref().unwrap_or("Untitled");
             let content = if result.item.content.chars().count() > 150 {
-                format!("{}...", result.item.content.chars().take(150).collect::<String>())
+                format!(
+                    "{}...",
+                    result.item.content.chars().take(150).collect::<String>()
+                )
             } else {
                 result.item.content.clone()
             };
-            
+
             output.push_str(&format!(
                 "**[id=doc:{}]** {} (score: {:.2})\n{}\n\n",
                 result.item.id, title, result.score, content

@@ -19,7 +19,10 @@ const SKILL_FILE_NAME: &str = "SKILL.md";
 /// Builtin skills embedded in binary.
 /// These are always trusted and don't require sanitization.
 static BUILTIN_SKILLS: &[(&str, &str)] = &[
-    ("document-processing", include_str!("builtin/document-processing.md")),
+    (
+        "document-processing",
+        include_str!("builtin/document-processing.md"),
+    ),
     ("ocr-images", include_str!("builtin/ocr-images.md")),
     ("code-analysis", include_str!("builtin/code-analysis.md")),
     ("web-scraping", include_str!("builtin/web-scraping.md")),
@@ -147,7 +150,11 @@ fn load_skills_indexes_from_dir(
 }
 
 /// Load a single skill from a directory.
-fn load_skill_from_dir(skills_dir: &std::path::Path, name: &str, source: SkillSource) -> Option<Skill> {
+fn load_skill_from_dir(
+    skills_dir: &std::path::Path,
+    name: &str,
+    source: SkillSource,
+) -> Option<Skill> {
     let skill_dir = skills_dir.join(name);
     let skill_file = skill_dir.join(SKILL_FILE_NAME);
 

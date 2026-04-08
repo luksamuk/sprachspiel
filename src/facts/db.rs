@@ -3,7 +3,7 @@
 //! Provides CRUD operations and search functionality for the Factual Memory System.
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Result};
+use rusqlite::{Result, params};
 use std::str::FromStr;
 
 use super::decay::should_prune;

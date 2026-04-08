@@ -241,7 +241,9 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
             && !facts.is_empty()
         {
             prompt.push_str("\n### USER FACTS\n\n");
-            prompt.push_str("The following are persistent facts and preferences about the user/project.\n\n");
+            prompt.push_str(
+                "The following are persistent facts and preferences about the user/project.\n\n",
+            );
             prompt.push_str("**Preferences** → Apply to personalize tone and style.\n");
             prompt.push_str("**Facts** → Reference when relevant to the topic.\n\n");
             prompt.push_str(facts);
@@ -261,7 +263,8 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         prompt.push_str("\n### ANONYMOUS SESSION\n");
         prompt.push_str("**Important:** You are in an anonymous session.\n");
         prompt.push_str("- This conversation will NOT be saved or persisted.\n");
-        prompt.push_str("- Fact storage tools (fact_add, fact_search, fact_remove) are DISABLED.\n");
+        prompt
+            .push_str("- Fact storage tools (fact_add, fact_search, fact_remove) are DISABLED.\n");
         prompt.push_str("- Session memory (remember tool) is DISABLED.\n");
         prompt.push_str("- Any information the user shares will be lost when this session ends.\n");
         prompt.push_str("- If the user wants persistent memory, they should start a regular session without --anonymous.\n");
@@ -293,7 +296,9 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
                     ));
                 }
 
-                prompt.push_str("\nUse `skill_view(name=\"skill-name\")` to load the full skill content.\n");
+                prompt.push_str(
+                    "\nUse `skill_view(name=\"skill-name\")` to load the full skill content.\n",
+                );
             }
         }
     }
@@ -304,7 +309,9 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         && !skill_content.is_empty()
     {
         prompt.push_str("\n### ACTIVE SKILL\n\n");
-        prompt.push_str("[SYSTEM: The user has invoked a skill. Follow its instructions for this session.]\n\n");
+        prompt.push_str(
+            "[SYSTEM: The user has invoked a skill. Follow its instructions for this session.]\n\n",
+        );
         prompt.push_str(skill_content);
         prompt.push_str("\n\n");
     }
@@ -320,7 +327,9 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
     // 4c. Memory tools section (if retrieval and tools are both enabled)
     if config.retrieval_enabled && config.tools_enabled {
         prompt.push_str("\n### MEMORY TOOLS\n");
-        prompt.push_str("Retrieve stored content (messages, notes, documents) using the remember tool:\n\n");
+        prompt.push_str(
+            "Retrieve stored content (messages, notes, documents) using the remember tool:\n\n",
+        );
         prompt.push_str("**By ID** (for exact retrieval):\n");
         prompt.push_str("- **remember(id=\"msg:N\")**: Get conversation message\n");
         prompt.push_str("- **remember(id=\"note:N\")**: Get user-created note\n");
