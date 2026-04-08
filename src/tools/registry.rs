@@ -25,7 +25,7 @@ use super::remember;
 use super::fact_tools::{fact_add, fact_remove, fact_search};
 
 // Notes tools (always available)
-use super::notes::note_add;
+use super::notes::{note_add, note_delete, note_edit};
 
 // Todo tools (always available)
 use super::todo::{todo_add, todo_clear_all, todo_clear_done, todo_list, todo_update};
@@ -95,6 +95,8 @@ fn register_core_tools<C: ToolRegistrar>(
 
     // notes tools - always available (checks context internally)
     register_if_allowed!(coord, count, is_allowed, "note_add", note_add);
+    register_if_allowed!(coord, count, is_allowed, "note_edit", note_edit);
+    register_if_allowed!(coord, count, is_allowed, "note_delete", note_delete);
 
     // external tool wrappers (always available)
     register_if_allowed!(
@@ -299,14 +301,20 @@ fn register_search_tools_serper<C: ToolRegistrar>(
     } else {
         #[cfg(feature = "search-tools")]
         {
-            log_if_debug!(use_debug, "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)");
+            log_if_debug!(
+                use_debug,
+                "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)"
+            );
             register_if_allowed!(coord, count, is_allowed, "web_search", web_search);
             register_if_allowed!(coord, count, is_allowed, "web_search_news", web_search_news);
             register_if_allowed!(coord, count, is_allowed, "web_scrape", web_scrape);
         }
         #[cfg(not(feature = "search-tools"))]
         {
-            log_if_debug!(use_debug, "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature");
+            log_if_debug!(
+                use_debug,
+                "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature"
+            );
         }
     }
 
@@ -468,6 +476,8 @@ fn get_core_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     push_if_allowed!(tools, is_allowed, "fact_search");
     push_if_allowed!(tools, is_allowed, "fact_remove");
     push_if_allowed!(tools, is_allowed, "note_add");
+    push_if_allowed!(tools, is_allowed, "note_edit");
+    push_if_allowed!(tools, is_allowed, "note_delete");
     push_if_allowed!(tools, is_allowed, "check_tool_availability");
     push_if_allowed!(tools, is_allowed, "run_command");
 

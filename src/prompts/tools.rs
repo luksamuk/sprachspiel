@@ -235,11 +235,13 @@ Status values: pending, in_progress, done"#
 
     // Notes tools (always available)
     {
-        if !blacklist.contains("note_add") {
-            sections.push(
-                r#"### NOTES TOOLS
+        if !blacklist.contains("note_add")
+            || !blacklist.contains("note_edit")
+            || !blacklist.contains("note_delete")
+        {
+            let section = r#"### NOTES TOOLS
 Use for storing longer documents that should persist across sessions.
-Available: note_add
+Available: note_add, note_edit, note_delete
 
 **When to use note_add vs fact_add:**
 
@@ -261,11 +263,15 @@ Use **fact_add** for:
 - Notes are stored in the database, NOT injected into the system prompt
 - Retrieve notes with remember(id="note:N") or remember(query="topic")
 - Notes are project-scoped (not global)
+- Edit notes with note_edit(id="N", title="...", content="...")
+- Delete notes with note_delete(id="N")
 
 **Example:**
-note_add("Decision: We chose PostgreSQL because:\n1. Better JSON support\n2. Native full-text search", "Architecture: Database Choice")"#
-                    .to_string(),
-            );
+note_add("Decision: We chose PostgreSQL because:\n1. Better JSON support\n2. Native full-text search", "Architecture: Database Choice")
+note_edit(id="42", title="Revised: Database Decision")
+note_delete(id="42")"#.to_string();
+
+            sections.push(section);
         }
     }
 
