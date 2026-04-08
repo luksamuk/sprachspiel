@@ -920,39 +920,40 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 **PR:** #64
 
-**Summary:** Only `note_add` exists as LLM tool, but slash commands exist for edit, list, show, delete, search.
+**Summary:** Only `note_add` exists as LLM tool. LLM cannot edit or delete notes it creates.
+
+**Design Decision:** Only `note_edit` and `note_delete` are needed. Other operations are covered by existing `remember` tool:
+- `note_list` → `remember(query)` discovers notes
+- `note_show` → `remember(id="note:N")` returns full note content
+- `note_search` → `remember(query)` searches across notes, docs, messages
 
 **Current State:**
 
-| Command | LLM Tool | Status |
-|---------|----------|--------|
-| `/note add` | `note_add` | ✅ Exists |
-| `/note list` | `note_list` | 🔨 Implementing |
-| `/note show` | `note_show` | 🔨 Implementing |
-| `/note edit` | `note_edit` | 🔨 Implementing |
-| `/note delete` | `note_delete` | 🔨 Implementing |
-| `/note search` | `note_search` | 🔨 Implementing |
+| Command | LLM Tool | Status | Alternative |
+|---------|----------|--------|-------------|
+| `/note add` | `note_add` | ✅ Exists | — |
+| `/note list` | — | ❌ Not needed | `remember(query)` |
+| `/note show` | — | ❌ Not needed | `remember(id="note:N")` |
+| `/note edit` | `note_edit` | 🔨 Implementing | — |
+| `/note delete` | `note_delete` | 🔨 Implementing | — |
+| `/note search` | — | ❌ Not needed | `remember(query)` |
 
-**Expected Behavior:** LLM should be able to manage notes, similar to how it manages files with `read_file`, `write_file`, `edit_file`, `append_file`.
-
-**Discovered During:** PR #62 review (comment about notes tools)
+**Rationale:** Documents have the same pattern — only `import_document` exists as LLM tool, and the LLM uses `remember` for everything else. Notes follow the same design.
 
 **Implementation Plan:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add note_list tool (src/tools/notes.rs) | 🔨 |
-| 2 | Add note_show tool | 🔨 |
-| 3 | Add note_edit tool | 🔨 |
-| 4 | Add note_delete tool | 🔨 |
-| 5 | Add note_search tool | 🔨 |
-| 6 | Register tools in registry.rs | 🔨 |
-| 7 | Test all tools | 🔨 |
-| 8 | Verify clippy passes | 🔨 |
+| 1 | Add `parse_note_id()` helper (accepts "42" or "note:42") | 🔨 |
+| 2 | Add `note_edit(id, title?, content?)` tool | 🔨 |
+| 3 | Add `note_delete(id)` tool | 🔨 |
+| 4 | Register tools in registry.rs | 🔨 |
+| 5 | Update prompts/tools.rs | 🔨 |
+| 6 | Build, test, clippy | 🔨 |
 
-**Reference:** `src/chat/command_handlers.rs` (lines 1361-1629) - handlers already exist
+**Also included in PR:** Fix for config.toml model settings in summarize/vision subcommands (commit `aa0744b`).
 
-**Estimated effort:** 1-2 days
+**Estimated effort:** 0.5-1 day
 
 ---
 

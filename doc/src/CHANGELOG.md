@@ -6,15 +6,17 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
-- **Notes LLM Tools Complete CRUD** - LLM can now manage notes programmatically
-  - `note_list(global)` - List notes with optional global scope
-  - `note_show(id)` - Show specific note by ID
-  - `note_edit(id, title, content)` - Edit note title and/or content
-  - `note_delete(id)` - Delete note by ID
-  - `note_search(query, global, limit)` - Search notes by keyword
-  - Previously only `note_add` was available to LLM
-  - Brings notes tools to parity with file tools (full CRUD)
+- **Notes LLM Tools: edit and delete** - LLM can now maintain notes it creates
+  - `note_edit(id, title?, content?)` - Edit note title and/or content
+  - `note_delete(id)` - Delete note by ID (accepts "42" or "note:42")
+  - Previously only `note_add` was available; LLM could create but not modify or remove notes
+  - Listing (`note_list`) and viewing (`note_show`) are covered by `remember(query)` and `remember(id="note:N")`
   - Related: Issue #63
+
+- **Fix: config.toml model settings in summarize/vision** - Subcommands now respect user model settings
+  - `summarize` subcommand was falling back to hardcoded `qwen3.5:4b` instead of using `config.toml`
+  - `vision` subcommand was ignoring user's configured default model
+  - Both now properly resolve models from user settings
 
 ### Changed
 
