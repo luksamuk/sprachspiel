@@ -48,11 +48,11 @@ fn calculate_visual_lines(input: &str, prompt_len: usize, terminal_width: usize)
     if terminal_width == 0 {
         return 1; // Fallback: assume single line (visual artifacts acceptable)
     }
-    
+
     // Unicode-aware width calculation
     let input_width = input.width();
     let total_width = prompt_len + input_width;
-    
+
     // Ceiling division: how many lines does the input occupy?
     total_width.div_ceil(terminal_width).max(1)
 }
@@ -495,7 +495,12 @@ pub async fn run_chat_repl(
     let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // PRINT BANNER FIRST (before any other output)
-    print_welcome(&session, &model_config, &capabilities);
+    let db_stats = if let Some(db_ref) = &db {
+        crate::content::db_stats(db_ref)
+    } else {
+        String::new()
+    };
+    print_welcome(&session, &model_config, &capabilities, settings, &db_stats);
 
     // Print session info (if any)
     if let Some(msg) = resume_message {
@@ -759,19 +764,32 @@ fn print_welcome(
     session: &ChatSession,
     model_config: &ModelConfig,
     capabilities: &ModelCapabilities,
+    settings: &crate::settings::Settings,
+    db_stats: &str,
 ) {
     let project = session.project_id.as_deref().unwrap_or("anonymous");
     let session_name = session.name.as_deref().unwrap_or(&session.id);
     let sandbox_status = crate::external::get_sandbox_status();
+    let version = env!("CARGO_PKG_VERSION");
+    let ollama_url = format!(
+        "{}:{}",
+        settings.model.ollama_host, settings.model.ollama_port
+    );
+    let embed_model = crate::embeddings::DEFAULT_EMBEDDING_MODEL.to_string();
 
     let mut view = TerminalView::new();
     view.show_welcome(
         &model_config.model_id,
         session.tools && capabilities.tools,
         session.think && capabilities.thinking,
+        capabilities.vision,
         sandbox_status,
         project,
         session_name,
         session.anonymous,
+        version,
+        &ollama_url,
+        &embed_model,
+        db_stats,
     );
 }

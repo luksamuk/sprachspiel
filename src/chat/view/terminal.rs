@@ -98,19 +98,29 @@ impl TerminalView {
         model_id: &str,
         tools_enabled: bool,
         think_enabled: bool,
+        vision_enabled: bool,
         sandbox_status: &str,
         project: &str,
         session_name: &str,
         is_anonymous: bool,
+        version: &str,
+        ollama_url: &str,
+        embed_model: &str,
+        db_stats: &str,
     ) {
         let info = WelcomeInfo {
             model_id: model_id.to_string(),
             tools_enabled,
             think_enabled,
+            vision_enabled,
             sandbox_status: sandbox_status.to_string(),
             project: project.to_string(),
             session_name: session_name.to_string(),
             is_anonymous,
+            version: version.to_string(),
+            ollama_url: ollama_url.to_string(),
+            embed_model: embed_model.to_string(),
+            db_stats: db_stats.to_string(),
         };
         println!("{}", info.to_boxed_string());
     }
@@ -141,10 +151,15 @@ mod tests {
             "qwen3.5:4b",
             true,
             true,
+            true,
             "enabled",
             "my-project",
             "default",
             false,
+            "0.39.5",
+            "127.0.0.1:11434",
+            "nomic-embed-text",
+            "3 facts, 2 notes",
         );
     }
 

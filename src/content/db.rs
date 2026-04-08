@@ -3,7 +3,7 @@
 //! Provides CRUD operations and search for content_items table.
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Result};
+use rusqlite::{Result, params};
 use std::collections::HashMap;
 use std::str::FromStr;
 use zerocopy::IntoBytes;
@@ -13,9 +13,9 @@ use super::types::{
     ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType,
     Note,
 };
-use crate::db::fts5_escape;
 use crate::db::Database;
 use crate::db::WhereBuilder;
+use crate::db::fts5_escape;
 
 // === SQL Constants ===
 // Extracted from inline to improve maintainability and reduce duplication
@@ -213,7 +213,7 @@ impl Database {
     pub fn update_note(&self, id: i64, title: Option<&str>, content: Option<&str>) -> Result<()> {
         self.with_connection(|conn| {
             let now = Utc::now().timestamp();
-            
+
             match (title, content) {
                 (Some(t), Some(c)) => {
                     conn.execute(
@@ -327,7 +327,8 @@ impl Database {
             let params = builder.into_params();
 
             let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_document)?;
+            let rows =
+                stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_document)?;
 
             let mut results = Vec::new();
             for r in rows {
@@ -979,6 +980,35 @@ impl Database {
         })
     }
 
+    /// Count facts in the database
+    pub fn count_facts(&self) -> Result<i64> {
+        self.with_connection(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM facts", [], |row| row.get(0))
+        })
+    }
+
+    /// Count notes in the database
+    pub fn count_notes(&self) -> Result<i64> {
+        self.with_connection(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM content_items WHERE content_type = 'note'",
+                [],
+                |row| row.get(0),
+            )
+        })
+    }
+
+    /// Count documents in the database
+    pub fn count_documents(&self) -> Result<i64> {
+        self.with_connection(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM content_items WHERE content_type = 'document'",
+                [],
+                |row| row.get(0),
+            )
+        })
+    }
+
     /// Delete the last N content items from a conversation
     ///
     /// Returns the number of items actually deleted.
@@ -1197,8 +1227,7 @@ impl Database {
             if result.item.role.as_deref() == Some("user")
                 && let Some(conv_id) = &result.item.conversation_id
             {
-                let subsequent =
-                    self.get_content_subsequent_assistant(result.item.id, conv_id)?;
+                let subsequent = self.get_content_subsequent_assistant(result.item.id, conv_id)?;
 
                 for msg in subsequent {
                     if !seen_ids.contains(&msg.id) {
@@ -1577,7 +1606,9 @@ mod tests {
         db.insert_document(&doc1).expect("Failed to insert doc1");
         db.insert_document(&doc2).expect("Failed to insert doc2");
 
-        let all_docs = db.list_documents(None, None).expect("Failed to list documents");
+        let all_docs = db
+            .list_documents(None, None)
+            .expect("Failed to list documents");
         assert_eq!(all_docs.len(), 2);
 
         let project_docs = db
@@ -1606,16 +1637,24 @@ mod tests {
         .expect("Failed to create document");
 
         let id = db.insert_document(&doc).expect("Failed to insert document");
-        assert!(db.get_document(id).expect("Failed to get document").is_some());
+        assert!(
+            db.get_document(id)
+                .expect("Failed to get document")
+                .is_some()
+        );
 
         db.delete_document(id).expect("Failed to delete document");
-        assert!(db.get_document(id).expect("Failed to get document").is_none());
+        assert!(
+            db.get_document(id)
+                .expect("Failed to get document")
+                .is_none()
+        );
     }
 
     #[test]
     fn test_document_size_validation() {
         use crate::content::document::MAX_DOCUMENT_SIZE;
-        
+
         let long_content = "x".repeat(MAX_DOCUMENT_SIZE + 1);
         let result = Document::new(
             long_content,
@@ -1627,7 +1666,11 @@ mod tests {
         );
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.contains("too large") || err.contains("exceeds"), "Error should mention size limit: {}", err);
+        assert!(
+            err.contains("too large") || err.contains("exceeds"),
+            "Error should mention size limit: {}",
+            err
+        );
 
         let valid_content = "x".repeat(1000);
         let result = Document::new(
@@ -1640,4 +1683,35 @@ mod tests {
         );
         assert!(result.is_ok());
     }
+}
+
+/// Get a compact stats string for the welcome banner
+pub fn db_stats(db: &std::sync::Arc<Database>) -> String {
+    let facts = db.count_facts().unwrap_or(0);
+    let notes = db.count_notes().unwrap_or(0);
+    let docs = db.count_documents().unwrap_or(0);
+
+    if facts == 0 && notes == 0 && docs == 0 {
+        return String::new();
+    }
+
+    let mut parts = Vec::new();
+    if facts > 0 {
+        parts.push(format!(
+            "{} fact{}",
+            facts,
+            if facts == 1 { "" } else { "s" }
+        ));
+    }
+    if notes > 0 {
+        parts.push(format!(
+            "{} note{}",
+            notes,
+            if notes == 1 { "" } else { "s" }
+        ));
+    }
+    if docs > 0 {
+        parts.push(format!("{} doc{}", docs, if docs == 1 { "" } else { "s" }));
+    }
+    parts.join(", ")
 }
