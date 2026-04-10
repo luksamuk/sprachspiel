@@ -276,6 +276,7 @@ impl ChatSession {
         db.update_conversation_metadata(&crate::db::ConversationMetadataParams {
             id: &self.id,
             name: self.name.as_deref(),
+            model: &self.model,
             system_prompt: self.system_prompt.as_deref(),
             compacted_summary: self.compacted_summary.as_deref(),
             compacted_range: self.compacted_range,

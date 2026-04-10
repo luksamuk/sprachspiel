@@ -1063,6 +1063,7 @@ pub async fn handle_model_switch(
     .await?;
 
     state.current_model_name = result.model_name.clone();
+    state.session.set_model(result.model_name.clone());
     state.model_config = result.model_config;
     state.capabilities = result.capabilities.clone();
     state.session.think = result.think_active;

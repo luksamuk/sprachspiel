@@ -28,6 +28,11 @@ All notable changes to Ask-AI will be documented in this file.
   - Both now properly resolve models from `resolve_model_config()`
   - Related: Issue #65
 
+- **Model change via /model not persisted to database** - `/model` switch now saves to DB
+  - `handle_model_switch` was not calling `session.set_model()`, so the model changed in memory but not in the session
+  - `update_conversation_metadata` was not including the `model` column in the UPDATE query
+  - Both fixed: session model is now updated and persisted on save
+
 ### Changed
 
 - **Welcome banner: "Ollama" label renamed to "Server"** - Future-proof for non-Ollama backends

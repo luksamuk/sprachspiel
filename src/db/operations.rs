@@ -85,6 +85,8 @@ pub struct ConversationMetadataParams<'a> {
     pub id: &'a str,
     /// New name for the conversation
     pub name: Option<&'a str>,
+    /// Model name
+    pub model: &'a str,
     /// System prompt
     pub system_prompt: Option<&'a str>,
     /// Compacted summary
@@ -263,9 +265,8 @@ impl Database {
 
     /// Update conversation metadata (for session persistence)
     ///
-    /// Updates session-specific fields: system_prompt, compacted_summary,
+    /// Updates session-specific fields: model, system_prompt, compacted_summary,
     /// compacted_range, think, tools, tool_output_level.
-    #[allow(dead_code)]
     pub fn update_conversation_metadata(
         &self,
         params: &ConversationMetadataParams<'_>,
@@ -274,17 +275,19 @@ impl Database {
             conn.execute(
                 "UPDATE conversations SET 
                     title = COALESCE(?1, title),
-                    system_prompt = ?2,
-                    compacted_summary = ?3,
-                    compacted_range_start = ?4,
-                    compacted_range_end = ?5,
-                    think = ?6,
-                    tools = ?7,
-                    tool_output_level = ?8,
-                    updated_at = ?9
-                 WHERE id = ?10",
+                    model = ?2,
+                    system_prompt = ?3,
+                    compacted_summary = ?4,
+                    compacted_range_start = ?5,
+                    compacted_range_end = ?6,
+                    think = ?7,
+                    tools = ?8,
+                    tool_output_level = ?9,
+                    updated_at = ?10
+                 WHERE id = ?11",
                 params![
                     params.name,
+                    params.model,
                     params.system_prompt,
                     params.compacted_summary,
                     params.compacted_range.map(|(s, _)| s as i64),
