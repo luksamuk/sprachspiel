@@ -111,6 +111,9 @@ pub async fn import_document(
     scope: Option<String>,
     title: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Normalize empty strings to None — LLMs may send "" instead of omitting
+    let title = title.filter(|s| !s.is_empty());
+
     log_tool_call(
         "import_document",
         &[
@@ -121,7 +124,7 @@ pub async fn import_document(
             ),
             (
                 "title".to_string(),
-                title.clone().unwrap_or_else(|| "(auto)".to_string()),
+                title.as_deref().unwrap_or("(auto)").to_string(),
             ),
         ],
     );

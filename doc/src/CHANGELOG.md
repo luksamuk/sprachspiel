@@ -33,6 +33,12 @@ All notable changes to Ask-AI will be documented in this file.
   - `update_conversation_metadata` was not including the `model` column in the UPDATE query
   - Both fixed: session model is now updated and persisted on save
 
+- **Empty string normalization for Option<String> tool parameters** - LLMs send `""` instead of omitting
+  - `note_edit(id, title, content)` now normalizes `Some("")` → `None` for title and content
+  - `note_add(content, title)` now normalizes empty title → None (falls back to "Untitled")
+  - `import_document(path, scope, title)` now normalizes empty title → None (triggers auto-extraction)
+  - Added AGENTS.md section documenting the pattern and checklist
+
 ### Changed
 
 - **Welcome banner: "Ollama" label renamed to "Server"** - Future-proof for non-Ollama backends

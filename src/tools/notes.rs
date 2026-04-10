@@ -82,13 +82,16 @@ pub async fn note_add(
     content: String,
     title: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Normalize empty strings to None — LLMs may send "" instead of omitting
+    let title = title.filter(|s| !s.is_empty());
+
     log_tool_call(
         "note_add",
         &[
             ("content".to_string(), content.clone()),
             (
                 "title".to_string(),
-                title.clone().unwrap_or_else(|| "None".to_string()),
+                title.as_deref().unwrap_or("None").to_string(),
             ),
         ],
     );
@@ -194,13 +197,17 @@ pub async fn note_edit(
     title: Option<String>,
     content: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Normalize empty strings to None — LLMs may send "" instead of omitting
+    let title = title.filter(|s| !s.is_empty());
+    let content = content.filter(|s| !s.is_empty());
+
     log_tool_call(
         "note_edit",
         &[
             ("id".to_string(), id.clone()),
             (
                 "title".to_string(),
-                title.clone().unwrap_or_else(|| "unchanged".to_string()),
+                title.as_deref().unwrap_or("unchanged").to_string(),
             ),
             (
                 "content".to_string(),
