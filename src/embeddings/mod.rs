@@ -25,5 +25,3 @@ pub use fallback::{
 };
 pub use recovery::{recover_missing_embeddings, recover_missing_embeddings_with_progress};
 pub use regenerate::regenerate_all_embeddings;
-#[allow(unused_imports)]
-pub use truncate::truncate_and_normalize;
