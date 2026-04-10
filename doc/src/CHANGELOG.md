@@ -20,10 +20,13 @@ All notable changes to Ask-AI will be documented in this file.
   - Listing (`note_list`) and viewing (`note_show`) are covered by `remember(query)` and `remember(id="note:N")`
   - Related: Issue #63
 
-- **Fix: config.toml model settings in summarize/vision** - Subcommands now respect user model settings
+### Fixed
+
+- **summarize/vision subcommands ignoring config.toml model settings** - Subcommands now respect user model settings
   - `summarize` subcommand was falling back to hardcoded `qwen3.5:4b` instead of using `config.toml`
   - `vision` subcommand was ignoring user's configured default model
-  - Both now properly resolve models from user settings
+  - Both now properly resolve models from `resolve_model_config()`
+  - Related: Issue #65
 
 ### Changed
 

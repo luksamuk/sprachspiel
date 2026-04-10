@@ -942,22 +942,44 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
   - "Ollama" label renamed to "Server"
   - Removed embed_model from banner
   - Added `count_facts()`, `count_notes()`, `count_documents()` to Database
-- Fix: config.toml model settings in summarize/vision subcommands
+- Fix: config.toml model settings in summarize/vision subcommands (Issue #65)
 
-**Implementation Plan:**
+**Implementation:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Add `parse_note_id()` helper (accepts "42" or "note:42") | 🔨 |
-| 2 | Add `note_edit(id, title?, content?)` tool | 🔨 |
-| 3 | Add `note_delete(id)` tool | 🔨 |
-| 4 | Register tools in registry.rs | 🔨 |
-| 5 | Update prompts/tools.rs | 🔨 |
-| 6 | Build, test, clippy | 🔨 |
+| 1 | Add `parse_note_id()` helper (accepts "42" or "note:42") | ✅ Done |
+| 2 | Add `note_edit(id, title?, content?)` tool | ✅ Done |
+| 3 | Add `note_delete(id)` tool | ✅ Done |
+| 4 | Register tools in registry.rs | ✅ Done |
+| 5 | Update prompts/tools.rs | ✅ Done |
+| 6 | Build, test, clippy | ✅ Done |
+| 7 | Braille art banner | ✅ Done |
+| 8 | Fix config.toml model in summarize/vision | ✅ Done |
 
-**Also included in PR:** Fix for config.toml model settings in summarize/vision subcommands (commit `aa0744b`).
+**Also included in PR #64:**
+- Braille art welcome banner (replaced jp2a ASCII art)
+- Fix: config.toml model settings in summarize/vision subcommands (Issue #65, commit `aa0744b`)
 
 **Estimated effort:** 0.5-1 day
+
+---
+
+### ✅ Bug: summarize/vision ignoring config.toml model settings (COMPLETED)
+
+**Status:** ✅ COMPLETED
+
+**Issue:** #65
+
+**PR:** #64
+
+**Summary:** `summarize` and `vision` subcommands were falling back to hardcoded `qwen3.5:4b` instead of respecting `config.toml` model settings.
+
+**Root Cause:** Both subcommands called `ModelConfig::default()` instead of `resolve_model_config()`.
+
+**Fix:** Changed to use `resolve_model_config()` which reads from CLI flag → config.toml → hardcoded fallback.
+
+**Commit:** `aa0744b`
 
 ---
 
