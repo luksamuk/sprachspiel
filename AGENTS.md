@@ -772,6 +772,7 @@ Do NOT use `.filter()` when:
 | `note_edit` | `src/tools/notes.rs` | `title`, `content` |
 | `note_add` | `src/tools/notes.rs` | `title` |
 | `import_document` | `src/tools/documents.rs` | `title` |
+| `search_files` | `src/tools/files.rs` | `file_pattern` |
 
 **Checklist for New Tools:**
 

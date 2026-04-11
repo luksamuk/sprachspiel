@@ -1053,15 +1053,24 @@ Example: list_directory(path: "src", recursive: "true")
 
 ### search_files
 
-Search file contents with regex pattern.
+Search file contents with regex pattern. Only works on text-based files (source code, config, markdown, etc.). Binary files (PDFs, images, executables) are silently skipped.
 
 ```
 Function: search_files
 Args: pattern (string), path (string), file_pattern (string, optional), sandbox (string, optional)
 Example: search_files(pattern: "TODO|FIXME", path: "src", file_pattern: "*.rs")
+Example: search_files(pattern: "^(CHAPTER|INTRODUCTION)", path: "book", file_pattern: "*.md")
+Example: search_files(pattern: "fn main", path: "src/main.rs")
 ```
 
 **Note:** `sandbox` accepts "true", "false", "1", "0".
+
+**Pattern tips:**
+- Uses full Rust regex syntax (`regex` crate)
+- `^` matches start of line, `$` matches end of line (searches line by line)
+- For alternation, prefer grouping: `"^(CHAPTER|INTRODUCTION)"` instead of `"^CHAPTER|^INTRODUCTION"` (shorter patterns are less likely to be truncated by the model)
+- Use `(?i)` for case-insensitive search: `(?i)^chapter`
+- An empty `file_pattern` searches all files (same as omitting it)
 
 **Features:**
 - Regex pattern matching (full Rust regex syntax)
@@ -1069,6 +1078,7 @@ Example: search_files(pattern: "TODO|FIXME", path: "src", file_pattern: "*.rs")
 - Returns matching lines with file path and line number
 - Limited to 100 results and 1MB files
 - Searches files within 5 directory levels
+- Can search a single file by passing its path instead of a directory
 
 ### write_file
 

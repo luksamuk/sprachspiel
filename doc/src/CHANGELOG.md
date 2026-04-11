@@ -23,6 +23,19 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **search_files: empty file_pattern silently filtering out all files** - LLMs often send `file_pattern=""` instead of omitting it, causing zero search results
+  - Added `.filter(|s| !s.is_empty())` normalization so empty string → None (search all files)
+  - Without this fix, `glob_to_regex("")` produced regex `^$` that matched no filenames
+  - Also improved `log_tool_call` to display `"all"` instead of `""` when file_pattern is None
+  - Related: AGENTS.md "Empty String Normalization for Option<String>" pattern
+
+- **search_files: improved docstring and documentation** - Better guidance for LLM regex usage
+  - Added note that only text files are searched (PDFs, binaries silently skipped)
+  - Recommended grouped alternation `"^(A|B)"` over `"^A|^B"` to avoid pattern truncation
+  - Documented `(?i)` for case-insensitive search and `^`/`$` line-anchor behavior
+  - Clarified that `path` can be a single file, not just directories
+  - Updated tools.md with expanded examples and pattern tips
+
 - **summarize/vision subcommands ignoring config.toml model settings** - Subcommands now respect user model settings
   - `summarize` subcommand was falling back to hardcoded `qwen3.5:4b` instead of using `config.toml`
   - `vision` subcommand was ignoring user's configured default model
