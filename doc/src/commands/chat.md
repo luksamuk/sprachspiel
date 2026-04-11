@@ -432,6 +432,42 @@ Sessions are stored in a SQLite database at `~/.local/share/ask-ai/embeddings.db
 - **Project organization**: Sessions grouped by git remote URL or folder name
 - **Anonymous sessions** (`--anonymous`): Not persisted, in-memory only
 
+### Session Resume Context
+
+When resuming a previous session, ask-ai displays the last 3 conversation exchanges after the welcome banner:
+
+```
+Resumed session: default (47 messages)
+Recent context (47 messages):
+  👤 User: Can you check the auth middleware?
+  🤖 Assistant: I found the issue - the token validation is checking expired tokens...
+  👤 User: What about the refresh token logic?
+  🤖 Assistant: The refresh logic looks fine, but the middleware needs to pass...
+  👤 User: Also, can you look at the login endpoint?
+```
+
+**How it works:**
+
+- A **exchange** is one User message + its Assistant response
+- Shows up to **3 recent exchanges** (oldest to newest)
+- Only **User** and **Assistant** messages are shown — System and Tool messages are filtered out
+- Each message is **truncated to ~80 characters** for readability
+- The number in parentheses is the **total message count** (including System and Tool)
+
+**When it appears:**
+
+| Scenario | Context shown? |
+|----------|---------------|
+| Resume a saved session (`ask chat` or `ask chat --load name`) | ✅ Yes |
+| New session with no messages | ❌ No |
+| Anonymous session (`--anonymous`) | ❌ No |
+
+**Edge cases:**
+
+- If the last User message has no Assistant response yet, only the User line is shown
+- If a session contains only System or Tool messages, nothing is displayed
+- The context display is automatic — no command or configuration needed
+
 ### Storage Location
 
 ```
