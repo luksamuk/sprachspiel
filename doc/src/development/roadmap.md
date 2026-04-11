@@ -6,8 +6,8 @@ This document outlines planned features and the current state of Ask-AI.
 
 | Milestone | Codename | Description | Priorities |
 |-----------|----------|-------------|------------|
-| **[M1]** | Core Evolution | All work before Sprach 2.0 | P1, P4-P6, P8-P13 |
-| **[M2]** | Sprach 2.0 | CAS research, cognitive extensions | P7, P14, P15 |
+| **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
+| **[M2]** | Sprach 2.0 | CAS research, cognitive extensions | P7 (S2.1-S2.6), P14, P15 |
 | **[M3]** | Future | Deferred, no current priority | Cost tracking, team features, speculation |
 
 ## Current State
@@ -710,7 +710,7 @@ User-defined tools via dynamic loading or compilation.
 
 **Priority:** P6.0 (was LOW, upgraded)  
 **Status:** 📋 PLANNED  
-**Issue:** TBD
+**Issue:** #72
 
 > **NOTE:** This feature has been upgraded from LOW priority to P6.0 and is now tracked in IMPLEMENTATION.md under PRIORITY 6: Core Enhancements. The detailed implementation plan is in the P6.0 section of IMPLEMENTATION.md. This roadmap section is kept for architectural reference.
 
