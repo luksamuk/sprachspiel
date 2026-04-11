@@ -16,6 +16,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | System | 2 | Local system | ✅ Working | ✅ Enabled |
 | File Operations | 8 | Local filesystem | ✅ Working | ✅ Enabled |
 | Factual Memory | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
+| Notes | 3 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
 | Todo | 5 | Session state | ✅ Working | ✅ Enabled |
@@ -570,6 +571,81 @@ Users can also manage facts via chat commands:
 - Facts: 30-day half-life
 - High-importance preferences: Never pruned
 - Automatic decay on startup
+
+## Notes Tools (3)
+
+Tools for creating, editing, and deleting notes. Notes are stored in the same database as facts and can be retrieved via the `remember` tool.
+
+These tools allow the LLM to maintain persistent notes across sessions — longer-form content that doesn't fit the fact model (max 500 chars). Notes support titles, content up to 10,000 characters, and are stored with project/global scope.
+
+### note_add
+
+Create a new note with optional title.
+
+```
+Function: note_add
+Args:
+  - content (string, required): Note content (max 10,000 characters)
+  - title (string, optional): Note title (auto-generated from content if omitted)
+Example: note_add(content="Architecture Decision: We chose PostgreSQL over MySQL for better JSON support.")
+Example: note_add(content="Meeting notes from standup...", title="Standup 2024-01-15")
+```
+
+**Auto-title:** If title is omitted, the first line of content (up to 200 chars) is used as the title.
+
+**Content validation:** Empty content is rejected. For short facts under 500 characters, use `fact_add` instead.
+
+**Scope:** Notes are stored with the current project scope by default.
+
+**User Commands:**
+
+Users can also manage notes via chat commands:
+
+| Command | Shortcut | Description |
+|---------|----------|-------------|
+| `/note add <text> [--global]` | `/na` | Add a note |
+| `/note list [--global]` | `/nl` | List notes |
+| `/note show <id>` | `/ns` | Show note content (accepts #N, note:N, or N) |
+| `/note edit <id> [--title TITLE] [--content TEXT]` | `/ne` | Edit a note |
+| `/note delete <id>` | `/nd` | Delete a note |
+
+### note_edit
+
+Edit an existing note's title and/or content. At least one of `title` or `content` must be provided.
+
+```
+Function: note_edit
+Args:
+  - id (string, required): Note ID (format: "N" or "note:N")
+  - title (string, optional): New title for the note
+  - content (string, optional): New content for the note
+Example: note_edit(id="42", title="Revised Architecture Decision")
+Example: note_edit(id="note:7", content="Updated content here...")
+Example: note_edit(id="42", title="New Title", content="New content...")
+```
+
+**ID formats:** Accepts both `42` and `note:42` formats.
+
+**Validation:**
+- At least one of `title` or `content` must be provided
+- Content cannot be empty (use `note_delete` to remove notes)
+- Content is limited to 10,000 characters
+
+### note_delete
+
+Permanently delete a note by its ID.
+
+```
+Function: note_delete
+Args:
+  - id (string, required): Note ID (format: "N" or "note:N")
+Example: note_delete(id="42")
+Example: note_delete(id="note:42")
+```
+
+**Returns:** Confirmation with deleted note's title and content preview.
+
+**Tip:** Use `remember(query="...")` first to find the note ID if you don't know it.
 
 ## Todo Tools (5)
 
