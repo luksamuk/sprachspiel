@@ -35,6 +35,14 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **CRITICAL: Unicode panic on string truncation in chat resume** - Fixed crash when resuming sessions with multibyte characters
+  - `truncate_str()` used byte-based slicing (`&s[..N]`) which panicked on non-ASCII characters
+  - Portuguese text with `ç`, `ã`, `é` (2-3 bytes each) caused panic at byte boundaries
+  - Rewrote `truncate_str()` to use `.chars().count()` and `.chars().take(N)` for Unicode-safe operations
+  - Replaced 4 inline byte-slicing patterns in `command_handlers.rs` with `truncate_str()` calls
+  - Added Unicode regression tests (Portuguese, CJK, mixed content)
+  - Related: Issue #69
+
 - **search_files: empty file_pattern silently filtering out all files** - LLMs often send `file_pattern=""` instead of omitting it, causing zero search results
   - Added `.filter(|s| !s.is_empty())` normalization so empty string → None (search all files)
   - Without this fix, `glob_to_regex("")` produced regex `^$` that matched no filenames
