@@ -3,6 +3,7 @@
 //! This module provides the `TerminalView` struct, which implements
 //! the `ChatView` trait using standard terminal output (println!/eprintln!).
 
+use crate::chat::strip_thinking_tags;
 use crate::consts::roles::format_role_label;
 use crate::markdown;
 
@@ -155,7 +156,10 @@ impl TerminalView {
                 };
                 let user = RecentMessage {
                     role_label: format_role_label(role_str),
-                    content: truncate_str(&user_msg.content, super::MAX_CONTEXT_LINE_LENGTH),
+                    content: truncate_str(
+                        &strip_thinking_tags(&user_msg.content),
+                        super::MAX_CONTEXT_LINE_LENGTH,
+                    ),
                 };
                 let assistant = asst_msg.map(|a| {
                     let a_role_str = match a.role {
@@ -164,7 +168,10 @@ impl TerminalView {
                     };
                     RecentMessage {
                         role_label: format_role_label(a_role_str),
-                        content: truncate_str(&a.content, super::MAX_CONTEXT_LINE_LENGTH),
+                        content: truncate_str(
+                            &strip_thinking_tags(&a.content),
+                            super::MAX_CONTEXT_LINE_LENGTH,
+                        ),
                     }
                 });
                 (user, assistant)

@@ -451,6 +451,7 @@ Recent context (47 messages):
 - A **exchange** is one User message + its Assistant response
 - Shows up to **3 recent exchanges** (oldest to newest)
 - Only **User** and **Assistant** messages are shown — System and Tool messages are filtered out
+- **Thinking blocks** (e.g. `<thinking>...</thinking>`) are automatically stripped from message content
 - Each message is **truncated to ~80 characters** for readability
 - The number in parentheses is the **total message count** (including System and Tool)
 

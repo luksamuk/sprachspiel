@@ -770,4 +770,28 @@ mod tests {
         // Should NOT contain assistant content when None
         assert!(!output.contains("🤖 Assistant"));
     }
+
+    #[test]
+    fn test_recent_context_info_strips_thinking_tags() {
+        // Verify that thinking tags are not shown in context display
+        use crate::chat::strip_thinking_tags;
+
+        // HTML thinking tags should be stripped
+        let input = "<thinking>Let me think about this...</thinking>\n\nThe answer is 42";
+        let cleaned = strip_thinking_tags(input);
+        assert!(!cleaned.contains("<thinking>"));
+        assert!(!cleaned.contains("</thinking>"));
+        assert!(cleaned.contains("The answer is 42"));
+
+        // When truncated, thinking content should not appear
+        let truncated = truncate_str(&cleaned, MAX_CONTEXT_LINE_LENGTH);
+        assert!(!truncated.contains("Let me think"));
+        assert!(truncated.contains("The answer is 42"));
+
+        // Unicode thinking tags should also be stripped
+        let unicode_input = "\u{6beb}Internal reasoning\u{6beb}\n\nFinal response";
+        let unicode_cleaned = strip_thinking_tags(unicode_input);
+        assert!(!unicode_cleaned.contains("Internal reasoning"));
+        assert!(unicode_cleaned.contains("Final response"));
+    }
 }
