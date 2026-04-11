@@ -320,6 +320,75 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
+### 🔴 PRIORITY 1: Enhance Todo Tools — CRUD Gaps, Priority, and Tags (Issue #66)
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Fix technical debt in todo tools by adding missing CRUD operations, priority levels, and tags/categories.
+
+**Problem Statement:**
+- Cannot retrieve a single task by ID (`todo_get`)
+- Cannot delete a specific task (`todo_delete`) — only `clear_done` and `clear_all` exist
+- Cannot edit a task's description after creation (`todo_edit`)
+- No priority levels (low/medium/high/critical) — all tasks are equal
+- No tags/categories for grouping (bug, feature, refactor, etc.)
+- No filtering in `todo_list` (by status, tag, or priority)
+
+**Solution:** Extend todo tools in two phases:
+
+**Phase 1 — Missing CRUD (essential):**
+
+| Tool | Description |
+|------|-------------|
+| `todo_get(id)` | Retrieve a single task by ID |
+| `todo_delete(id)` | Delete a specific task by ID |
+| `todo_edit(id, description?)` | Edit task description |
+
+**Phase 2 — Priority and Tags (organization):**
+
+| Change | Description |
+|--------|-------------|
+| `Priority` enum | `low`, `medium` (default), `high`, `critical` |
+| `tags: Vec<String>` | Comma-separated tags on `Task` struct |
+| `todo_add(description, priority?, tags?)` | Extended creation |
+| `todo_edit(id, description?, priority?, tags?)` | Extended editing |
+| `todo_list(filter?)` | Filter by status/tag/priority |
+| DB migration | Add `priority` and `tags` columns to `session_todos` |
+
+**Design Decisions:**
+- All optional params use `Option<String>` per AGENTS.md (LLM parameter safety)
+- Empty string normalization: `.filter(|s| !s.is_empty())` on priority/tags
+- Priority default: `medium`
+- Tags: comma-separated, trimmed, lowercased
+- No sub-tasks (YAGNI — LLM can use numbered descriptions like "1/3: X")
+- `todo_edit` follows `note_edit` pattern: at least one field required
+
+**Implementation:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1.1 | Add `todo_get(id)` tool | ❌ |
+| 1.2 | Add `todo_delete(id)` tool | ❌ |
+| 1.3 | Add `todo_edit(id, description?)` tool | ❌ |
+| 1.4 | Register new tools in registry | ❌ |
+| 1.5 | Add tool descriptions to prompts | ❌ |
+| 1.6 | Update `doc/src/tools.md` | ❌ |
+| 1.7 | Manual tests | ❌ |
+| 2.1 | Add `Priority` enum | ❌ |
+| 2.2 | Add `tags: Vec<String>` to `Task` | ❌ |
+| 2.3 | Extend `todo_add(description, priority?, tags?)` | ❌ |
+| 2.4 | Extend `todo_edit(id, description?, priority?, tags?)` | ❌ |
+| 2.5 | Extend `todo_list(filter?)` with filtering | ❌ |
+| 2.6 | Extend `format_list()` for priority/tags | ❌ |
+| 2.7 | DB migration for `priority` and `tags` columns | ❌ |
+| 2.8 | Update `to_rows()`/`from_rows()` | ❌ |
+| 2.9 | Update prompts and docs | ❌ |
+| 2.10 | Manual tests | ❌ |
+
+**Related:** Issue #66
+
+---
+
 ### ✅ PRIORITY 1: Code Quality - Prompts Centralization (COMPLETED)
 
 **Status:** ✅ COMPLETED (v0.33.0)
@@ -912,32 +981,76 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### 🔵 PRIORITY 3: Bug - Notes LLM Tools Missing
+### ✅ PRIORITY 3: Bug - Notes LLM Tools Missing
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED
 
 **Issue:** #63
 
-**Summary:** Only `note_add` exists as LLM tool, but slash commands exist for edit, list, show, delete, search.
+**PR:** #64
 
-**Current State:**
+**Summary:** Only `note_add` exists as LLM tool. LLM cannot edit or delete notes it creates.
 
-| Command | LLM Tool | Status |
-|---------|----------|--------|
-| `/note add` | `note_add` | ✅ Exists |
-| `/note list` | `note_list` | ❌ Missing |
-| `/note show` | `note_show` | ❌ Missing |
-| `/note edit` | `note_edit` | ❌ Missing |
-| `/note delete` | `note_delete` | ❌ Missing |
-| `/note search` | `note_search` | ❌ Missing |
+**Design Decision:** Only `note_edit` and `note_delete` are needed. Other operations are covered by existing `remember` tool:
+- `note_list` → `remember(query)` discovers notes
+- `note_show` → `remember(id="note:N")` returns full note content
+- `note_search` → `remember(query)` searches across notes, docs, messages
 
-**Expected Behavior:** LLM should be able to manage notes, similar to how it manages files with `read_file`, `write_file`, `edit_file`, `append_file`.
+**Implementation:**
+- Added `note_edit(id, title?, content?)` and `note_delete(id)` to `src/tools/notes.rs`
+- Added `parse_note_id()` helper (accepts "42" and "note:42" formats)
+- Registered tools in `src/tools/registry.rs`
+- Updated prompts in `src/prompts/tools.rs`
+- Commits: `c809a76`, `e847288`, `f795e4e`, `b98adf9`, `80a6acf`
 
-**Discovered During:** PR #62 review (comment about notes tools)
+**Also included in PR #64:**
+- Braille art welcome banner (replaced jp2a ASCII art)
+  - 14-line colored braille art from extended-mind.png (width 39)
+  - Reordered session info by importance: Model, Server, Tools, Think, Vision, Sandbox, Project, Session, Version
+  - Added Skills count line (shown when tools enabled and skills > 0)
+  - Expanded `WelcomeInfo` from 7 to 13 fields (added skill_count)
+  - Separate Facts/Notes/Docs count lines
+  - "Ollama" label renamed to "Server"
+  - Removed embed_model from banner
+  - Added `count_facts()`, `count_notes()`, `count_documents()` to Database
+- Fix: config.toml model settings in summarize/vision subcommands (Issue #65)
 
-**Reference:** `src/chat/command_handlers.rs` (lines 1361-1629) - handlers already exist
+**Implementation:**
 
-**Estimated effort:** 1-2 days
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add `parse_note_id()` helper (accepts "42" or "note:42") | ✅ Done |
+| 2 | Add `note_edit(id, title?, content?)` tool | ✅ Done |
+| 3 | Add `note_delete(id)` tool | ✅ Done |
+| 4 | Register tools in registry.rs | ✅ Done |
+| 5 | Update prompts/tools.rs | ✅ Done |
+| 6 | Build, test, clippy | ✅ Done |
+| 7 | Braille art banner | ✅ Done |
+| 8 | Fix config.toml model in summarize/vision | ✅ Done |
+
+**Also included in PR #64:**
+- Braille art welcome banner (replaced jp2a ASCII art)
+- Fix: config.toml model settings in summarize/vision subcommands (Issue #65, commit `aa0744b`)
+
+**Estimated effort:** 0.5-1 day
+
+---
+
+### ✅ Bug: summarize/vision ignoring config.toml model settings (COMPLETED)
+
+**Status:** ✅ COMPLETED
+
+**Issue:** #65
+
+**PR:** #64
+
+**Summary:** `summarize` and `vision` subcommands were falling back to hardcoded `qwen3.5:4b` instead of respecting `config.toml` model settings.
+
+**Root Cause:** Both subcommands called `ModelConfig::default()` instead of `resolve_model_config()`.
+
+**Fix:** Changed to use `resolve_model_config()` which reads from CLI flag → config.toml → hardcoded fallback.
+
+**Commit:** `aa0744b`
 
 ---
 

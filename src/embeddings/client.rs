@@ -241,7 +241,9 @@ mod tests {
             "maximum context length exceeded"
         ));
         assert!(EmbeddingClient::is_context_exceeded("token limit exceeded"));
-        assert!(EmbeddingClient::is_context_exceeded("sequence length exceeded"));
+        assert!(EmbeddingClient::is_context_exceeded(
+            "sequence length exceeded"
+        ));
         assert!(!EmbeddingClient::is_context_exceeded("connection refused"));
         assert!(!EmbeddingClient::is_context_exceeded("network error"));
     }

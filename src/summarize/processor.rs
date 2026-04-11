@@ -1,6 +1,6 @@
 //! Summarize processor
 //!
-//! Handles text summarization using qwen3.5:4b model with tools disabled.
+//! Handles text summarization respecting config.toml model settings with tools disabled.
 //! Ensures security and efficiency by not allowing tool calls during summarization.
 
 use ollama_rs::generation::chat::ChatMessage;
@@ -33,10 +33,7 @@ impl SummarizeProcessor {
             return Err("No text provided for summarization".into());
         }
 
-        // Get model config (with fallback chain)
-        let model_config = crate::user_models::get_model_config(model_id).unwrap_or_else(|| {
-            crate::user_models::get_model_config("qwen3.5:4b").expect("Default model should exist")
-        });
+        let model_config = crate::user_models::resolve_model_config(model_id);
 
         // Initialize Ollama with settings
         let ollama = settings.ollama_client();

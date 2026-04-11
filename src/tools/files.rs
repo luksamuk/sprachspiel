@@ -1,4 +1,4 @@
-use super::files_blocklist::{is_blocked_for_list, is_blocked_for_read, BlocklistConfig};
+use super::files_blocklist::{BlocklistConfig, is_blocked_for_list, is_blocked_for_read};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{expand_tilde_path, format_size, parse_bool, parse_u32};
 use regex::Regex;
@@ -486,9 +486,14 @@ pub async fn list_directory(
     let mut entries = Vec::new();
 
     if recursive_parsed {
-        if let Err(e) =
-            collect_entries_recursive(&canonical_path, &canonical_path, &mut entries, 0, 10, &config)
-        {
+        if let Err(e) = collect_entries_recursive(
+            &canonical_path,
+            &canonical_path,
+            &mut entries,
+            0,
+            10,
+            &config,
+        ) {
             let err_msg = format!("Error: Failed to list directory recursively: {}", e);
             log_tool_result("list_directory", &err_msg);
             return Ok(err_msg);
@@ -514,7 +519,7 @@ pub async fn list_directory(
                 Err(_) => continue, // Skip entries without metadata
             };
             let name = entry.file_name().to_string_lossy().to_string();
-            
+
             // Check blocklist for list operations
             let entry_path = entry.path();
             let display_name = if is_blocked_for_list(&entry_path, &config) {
@@ -583,14 +588,14 @@ fn collect_entries_recursive(
 
         // Calculate relative path from base
         let full_path = entry.path();
-        
+
         // Check blocklist for list operations
         if is_blocked_for_list(&full_path, config) {
             let indent = "  ".repeat(depth);
             entries.push(format!("{}[BLOCKED]", indent));
             continue;
         }
-        
+
         let relative_path = full_path
             .strip_prefix(base_path)
             .map(|p| p.to_path_buf())
@@ -621,7 +626,14 @@ fn collect_entries_recursive(
 
         // Recurse into subdirectories
         if metadata.is_dir() {
-            let _ = collect_entries_recursive(base_path, &full_path, entries, depth + 1, max_depth, config);
+            let _ = collect_entries_recursive(
+                base_path,
+                &full_path,
+                entries,
+                depth + 1,
+                max_depth,
+                config,
+            );
         }
     }
 

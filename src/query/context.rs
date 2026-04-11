@@ -125,7 +125,8 @@ impl QueryContextBuilder {
 
         let model_config = user_models::resolve_model_config(&model_name);
         let ollama = settings.ollama_client();
-        let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
+        let capabilities =
+            ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
         let use_tools = self.cli_tools || (subcommand_tools && capabilities.tools);
         let use_think = user_models::resolve_think_mode(
@@ -160,14 +161,15 @@ impl QueryContextBuilder {
             _ => PromptType::Default,
         };
 
-        let project_id = if self.cli_code { None } else { crate::project::get_project_id() };
+        let project_id = if self.cli_code {
+            None
+        } else {
+            crate::project::get_project_id()
+        };
 
         let skip_persistence = self.cli_code;
-        let (db, embedding_client) = crate::db::init_database_core(
-            ollama.clone(),
-            skip_persistence,
-            output_flags.debug,
-        );
+        let (db, embedding_client) =
+            crate::db::init_database_core(ollama.clone(), skip_persistence, output_flags.debug);
 
         let retrieval_enabled = db.is_some() && embedding_client.is_some();
 

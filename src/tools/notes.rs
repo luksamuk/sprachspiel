@@ -15,11 +15,27 @@
 //! - Quick facts (project uses PostgreSQL, API key location)
 //! - Settings and configuration snippets
 
-use crate::content::types::{ContentScope, ContentSource, Note, MAX_NOTE_CONTENT_SIZE};
+use crate::content::types::{ContentScope, ContentSource, MAX_NOTE_CONTENT_SIZE, Note};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
 use crate::utils::truncate_chars;
+
+/// Parse note ID from various formats ("42" or "note:42")
+fn parse_note_id(id: &str) -> Result<i64, String> {
+    let id_str = id.trim();
+    let numeric_str = if id_str.starts_with("note:") {
+        id_str.strip_prefix("note:").unwrap_or(id_str)
+    } else {
+        id_str
+    };
+    numeric_str.parse::<i64>().map_err(|_| {
+        format!(
+            "Invalid note ID: '{}'. Use format 'note:N' or just 'N'.",
+            id
+        )
+    })
+}
 
 /// Create a note for longer documents that should persist across sessions.
 ///
@@ -66,7 +82,19 @@ pub async fn note_add(
     content: String,
     title: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    log_tool_call("note_add", &[("content".to_string(), content.clone()), ("title".to_string(), title.clone().unwrap_or_else(|| "None".to_string()))]);
+    // Normalize empty strings to None — LLMs may send "" instead of omitting
+    let title = title.filter(|s| !s.is_empty());
+
+    log_tool_call(
+        "note_add",
+        &[
+            ("content".to_string(), content.clone()),
+            (
+                "title".to_string(),
+                title.as_deref().unwrap_or("None").to_string(),
+            ),
+        ],
+    );
 
     // Validate content length
     if content.is_empty() {
@@ -107,7 +135,8 @@ pub async fn note_add(
         project_id,
         ContentSource::Llm, // Mark as LLM-created
         title.clone(),
-    ).map_err(|e| format!("Failed to create note: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to create note: {}", e))?;
 
     // Insert into database
     let note_id = match db.insert_note(&note) {
@@ -133,6 +162,225 @@ pub async fn note_add(
     Ok(result)
 }
 
+/// Edit an existing note's title and/or content.
+///
+/// Use this to correct or update notes you previously created with note_add.
+/// At least one of `title` or `content` must be provided.
+///
+/// # Arguments
+/// * `id` - The note ID to edit. Required.
+///   - Format: "42" or "note:42" (both accepted)
+///   - Example: "42" or "note:42"
+/// * `title` - New title for the note. Optional.
+///   - Set to change the note's title
+/// * `content` - New content for the note. Optional.
+///   - Replaces the entire note content (max 10,000 characters)
+///   - Does NOT append — provide the complete new content
+///
+/// # Returns
+/// Confirmation message showing what was updated.
+///
+/// # Example
+/// ```ignore
+/// // Change title only
+/// note_edit(id="42", title="Revised Architecture Decision")
+///
+/// // Change content only
+/// note_edit(id="note:42", content="Updated content here...")
+///
+/// // Change both
+/// note_edit(id="42", title="New Title", content="New content...")
+/// ```
+#[ollama_rs::function]
+pub async fn note_edit(
+    id: String,
+    title: Option<String>,
+    content: Option<String>,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Normalize empty strings to None — LLMs may send "" instead of omitting
+    let title = title.filter(|s| !s.is_empty());
+    let content = content.filter(|s| !s.is_empty());
+
+    log_tool_call(
+        "note_edit",
+        &[
+            ("id".to_string(), id.clone()),
+            (
+                "title".to_string(),
+                title.as_deref().unwrap_or("unchanged").to_string(),
+            ),
+            (
+                "content".to_string(),
+                content
+                    .as_ref()
+                    .map(|c| format!("{} chars", c.len()))
+                    .unwrap_or_else(|| "unchanged".to_string()),
+            ),
+        ],
+    );
+
+    let parsed_id = match parse_note_id(&id) {
+        Ok(n) => n,
+        Err(e) => {
+            log_tool_result("note_edit", &e);
+            return Ok(e);
+        }
+    };
+
+    if title.is_none() && content.is_none() {
+        let err = "Error: Provide at least one of 'title' or 'content' to update.\n\n\
+                   Examples:\n\
+                   - note_edit(id=\"42\", title=\"New Title\")\n\
+                   - note_edit(id=\"note:42\", content=\"New content\")";
+        log_tool_result("note_edit", err);
+        return Ok(err.to_string());
+    }
+
+    if let Some(ref c) = content {
+        if c.is_empty() {
+            let err = "Error: Note content cannot be empty. To delete the note, use note_delete.";
+            log_tool_result("note_edit", err);
+            return Ok(err.to_string());
+        }
+        if c.len() > MAX_NOTE_CONTENT_SIZE {
+            let err = format!(
+                "Error: Note content exceeds {} characters (got {}.\n\
+                 Please shorten the content or split into multiple notes.",
+                MAX_NOTE_CONTENT_SIZE,
+                c.len()
+            );
+            log_tool_result("note_edit", &err);
+            return Ok(err);
+        }
+    }
+
+    let db = match get_db() {
+        Some(d) => d,
+        None => {
+            let err = "Error: Database not available. Notes require a database connection.\n\
+                       Start ask-ai without --anonymous to use notes.";
+            log_tool_result("note_edit", err);
+            return Ok(err.to_string());
+        }
+    };
+
+    match db.get_note(parsed_id) {
+        Ok(Some(_)) => match db.update_note(parsed_id, title.as_deref(), content.as_deref()) {
+            Ok(()) => {
+                let mut result = format!("Updated note #{}", parsed_id);
+                if let Some(t) = &title {
+                    result.push_str(&format!("\n**Title:** {}", t));
+                }
+                if let Some(c) = &content {
+                    let preview = truncate_chars(c, 200);
+                    result.push_str(&format!("\n**Content preview:** {}", preview));
+                }
+                result.push_str(&format!(
+                    "\n\nUse remember(id=\"note:{}\") to view full content.",
+                    parsed_id
+                ));
+                log_tool_result("note_edit", &result);
+                Ok(result)
+            }
+            Err(e) => {
+                let err = format!("Error: Failed to update note #{}: {}", parsed_id, e);
+                log_tool_result("note_edit", &err);
+                Ok(err)
+            }
+        },
+        Ok(None) => {
+            let err = format!(
+                "Error: Note #{} not found.\n\n\
+                 Use remember(query=\"...\") to search for notes.",
+                parsed_id
+            );
+            log_tool_result("note_edit", &err);
+            Ok(err)
+        }
+        Err(e) => {
+            let err = format!("Error: Failed to retrieve note #{}: {}", parsed_id, e);
+            log_tool_result("note_edit", &err);
+            Ok(err)
+        }
+    }
+}
+
+/// Delete a note by its ID.
+///
+/// Permanently removes a note from storage. Use remember(query=\"...\") first
+/// to find the note ID if you don't know it.
+///
+/// # Arguments
+/// * `id` - The note ID to delete. Required.
+///   - Format: "42" or "note:42" (both accepted)
+///   - Example: "42" or "note:42"
+///
+/// # Returns
+/// Confirmation message with the deleted note's title and preview, or error if not found.
+///
+/// # Example
+/// ```ignore
+/// note_delete(id="42")
+/// note_delete(id="note:42")
+/// ```
+#[ollama_rs::function]
+pub async fn note_delete(id: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("note_delete", &[("id".to_string(), id.clone())]);
+
+    let parsed_id = match parse_note_id(&id) {
+        Ok(n) => n,
+        Err(e) => {
+            log_tool_result("note_delete", &e);
+            return Ok(e);
+        }
+    };
+
+    let db = match get_db() {
+        Some(d) => d,
+        None => {
+            let err = "Error: Database not available. Notes require a database connection.\n\
+                       Start ask-ai without --anonymous to use notes.";
+            log_tool_result("note_delete", err);
+            return Ok(err.to_string());
+        }
+    };
+
+    match db.get_note(parsed_id) {
+        Ok(Some(note)) => match db.delete_note(parsed_id) {
+            Ok(()) => {
+                let title_str = note.title.as_deref().unwrap_or("Untitled");
+                let preview = truncate_chars(&note.content, 200);
+                let result = format!(
+                    "Deleted note #{}\n\n**Title:** {}\n**Preview:** {}\n\n\
+                     Use note_add() to create a new note.",
+                    parsed_id, title_str, preview
+                );
+                log_tool_result("note_delete", &result);
+                Ok(result)
+            }
+            Err(e) => {
+                let err = format!("Error: Failed to delete note #{}: {}", parsed_id, e);
+                log_tool_result("note_delete", &err);
+                Ok(err)
+            }
+        },
+        Ok(None) => {
+            let err = format!(
+                "Error: Note #{} not found.\n\n\
+                 Use remember(query=\"...\") to search for notes.",
+                parsed_id
+            );
+            log_tool_result("note_delete", &err);
+            Ok(err)
+        }
+        Err(e) => {
+            let err = format!("Error: Failed to retrieve note #{}: {}", parsed_id, e);
+            log_tool_result("note_delete", &err);
+            Ok(err)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,13 +388,16 @@ mod tests {
     #[test]
     fn test_note_add_validation_long() {
         let long_content = "x".repeat(MAX_NOTE_CONTENT_SIZE + 1);
-        assert!(Note::new(
-            long_content,
-            ContentScope::Project,
-            None,
-            ContentSource::Llm,
-            None,
-        ).is_err());
+        assert!(
+            Note::new(
+                long_content,
+                ContentScope::Project,
+                None,
+                ContentSource::Llm,
+                None,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -158,7 +409,8 @@ mod tests {
             Some("test-project".to_string()),
             ContentSource::Llm,
             Some("Architecture Note".to_string()),
-        ).expect("Valid note should succeed");
+        )
+        .expect("Valid note should succeed");
 
         assert_eq!(note.content, content);
         assert_eq!(note.scope, ContentScope::Project);

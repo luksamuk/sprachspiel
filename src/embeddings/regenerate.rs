@@ -13,8 +13,10 @@ use std::sync::Arc;
 
 use crate::db::Database;
 use crate::embeddings::{
-    chunk_text_with_config, ChunkConfig, DynamicChunkConfig, EmbeddingClient,
-    fallback::{EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback},
+    ChunkConfig, DynamicChunkConfig, EmbeddingClient, chunk_text_with_config,
+    fallback::{
+        EmbedContext, EmbedItemContext, embed_chunk_with_fallback, embed_item_with_fallback,
+    },
 };
 
 /// Result of embedding regeneration
@@ -79,7 +81,10 @@ pub async fn regenerate_all_embeddings(
     let context_length = match embedding_client.get_context_length().await {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("Warning: Could not get embedding model context length: {}", e);
+            eprintln!(
+                "Warning: Could not get embedding model context length: {}",
+                e
+            );
             eprintln!("Using conservative default of 512 tokens.");
             512
         }
@@ -129,17 +134,16 @@ pub async fn regenerate_all_embeddings(
 
     println!(
         "Regenerating embeddings for {} items (context: {} tokens)...",
-        items.len(), context_length
+        items.len(),
+        context_length
     );
 
     // Setup progress bar with ETA
     let progress = ProgressBar::new(total as u64);
     progress.set_style(
-        ProgressStyle::with_template(
-            "  {bar:20} {pos}/{len} ({percent}%) ETA: {eta_precise}",
-        )
-        .expect("Invalid progress template")
-        .progress_chars("█▓░"),
+        ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%) ETA: {eta_precise}")
+            .expect("Invalid progress template")
+            .progress_chars("█▓░"),
     );
 
     let mut stats = RegenerationStats {
@@ -200,7 +204,15 @@ pub async fn regenerate_all_embeddings(
                     timestamp,
                 };
 
-                match embed_chunk_with_fallback(ctx, Arc::clone(db), Arc::clone(embedding_client), context_length, 0).await {
+                match embed_chunk_with_fallback(
+                    ctx,
+                    Arc::clone(db),
+                    Arc::clone(embedding_client),
+                    context_length,
+                    0,
+                )
+                .await
+                {
                     Ok(result) => {
                         stats.chunks_processed += result.chunks_created;
                     }
@@ -254,7 +266,11 @@ pub async fn regenerate_all_embeddings(
                         progress.finish_and_clear();
                         println!("\nError: Cannot connect to Ollama for embedding generation.");
                         println!("Please ensure Ollama is running and try again.");
-                        println!("Progress saved: {}/{} items processed.", stats.items_processed, items.len());
+                        println!(
+                            "Progress saved: {}/{} items processed.",
+                            stats.items_processed,
+                            items.len()
+                        );
                         panic!("Embedding generation failed - Ollama unreachable");
                     }
                 }
@@ -331,7 +347,15 @@ pub async fn regenerate_all_embeddings(
             timestamp,
         };
 
-        match embed_chunk_with_fallback(ctx, Arc::clone(db), Arc::clone(embedding_client), context_length, 0).await {
+        match embed_chunk_with_fallback(
+            ctx,
+            Arc::clone(db),
+            Arc::clone(embedding_client),
+            context_length,
+            0,
+        )
+        .await
+        {
             Ok(result) => {
                 stats.chunks_processed += result.chunks_created;
             }

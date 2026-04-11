@@ -1,7 +1,7 @@
 //! Summarize module
 //!
 //! Provides text summarization functionality using AI with tools disabled.
-//! Uses qwen3.5:4b model by default for optimal summarization quality.
+//! Model is resolved from config.toml [model.summarize] or [model] default settings.
 
 pub mod cli;
 pub mod processor;

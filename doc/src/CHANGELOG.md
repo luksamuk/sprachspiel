@@ -4,7 +4,47 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Braille Art Welcome Banner** - Extended mind braille art replaces jp2a ASCII art
+  - 14-line colored braille art generated from extended-mind.png (width 39)
+  - Reordered session info by importance: Model, Server, Tools, Think, Vision, Sandbox, Project, Session, Version
+  - Separate Facts/Notes/Docs count lines (only shown when count > 0)
+  - Skills count line (only shown when tools enabled and skills > 0)
+  - `WelcomeInfo` struct expanded from 7 to 13 fields (added skill_count)
+  - Added `count_facts()`, `count_notes()`, `count_documents()` to Database
+
+- **Notes LLM Tools: edit and delete** - LLM can now maintain notes it creates
+  - `note_edit(id, title?, content?)` - Edit note title and/or content
+  - `note_delete(id)` - Delete note by ID (accepts "42" or "note:42")
+  - Previously only `note_add` was available; LLM could create but not modify or remove notes
+  - Listing (`note_list`) and viewing (`note_show`) are covered by `remember(query)` and `remember(id="note:N")`
+  - Related: Issue #63
+
+### Fixed
+
+- **summarize/vision subcommands ignoring config.toml model settings** - Subcommands now respect user model settings
+  - `summarize` subcommand was falling back to hardcoded `qwen3.5:4b` instead of using `config.toml`
+  - `vision` subcommand was ignoring user's configured default model
+  - Both now properly resolve models from `resolve_model_config()`
+  - Related: Issue #65
+
+- **Model change via /model not persisted to database** - `/model` switch now saves to DB
+  - `handle_model_switch` was not calling `session.set_model()`, so the model changed in memory but not in the session
+  - `update_conversation_metadata` was not including the `model` column in the UPDATE query
+  - Both fixed: session model is now updated and persisted on save
+
+- **Empty string normalization for Option<String> tool parameters** - LLMs send `""` instead of omitting
+  - `note_edit(id, title, content)` now normalizes `Some("")` → `None` for title and content
+  - `note_add(content, title)` now normalizes empty title → None (falls back to "Untitled")
+  - `import_document(path, scope, title)` now normalizes empty title → None (triggers auto-extraction)
+  - Added AGENTS.md section documenting the pattern and checklist
+
 ### Changed
+
+- **Welcome banner: "Ollama" label renamed to "Server"** - Future-proof for non-Ollama backends
+  - Removed embed_model line (it's a fixed constant, not useful info)
+  - Removed combined `db_stats()` function in favor of individual count methods
 
 - **todo-tools is now built-in** - No longer requires feature flag
   - Todo tools are always available (like facts and notes)

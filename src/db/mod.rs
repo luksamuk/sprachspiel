@@ -10,7 +10,7 @@ mod schema;
 
 pub use connection::Database;
 pub use init::init_database_core;
-pub use operations::{fts5_escape, ConversationMetadataParams, SourceType, TodoRow};
+pub use operations::{ConversationMetadataParams, SourceType, TodoRow, fts5_escape};
 pub use query::WhereBuilder;
 
 /// Initialize sqlite-vec extension globally.

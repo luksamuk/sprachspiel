@@ -16,7 +16,7 @@
 //! - `edit_file` - Surgical edits (replace/insert/delete lines)
 //! - `append_file` - Append content to end of file
 
-use super::files_blocklist::{is_blocked_for_write, BlocklistConfig};
+use super::files_blocklist::{BlocklistConfig, is_blocked_for_write};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::utils::{expand_tilde_path, format_size, parse_bool};
 use std::path::{Path, PathBuf};
@@ -82,7 +82,10 @@ pub async fn write_file(
         "write_file",
         &[
             ("path".to_string(), path.clone()),
-            ("content_length".to_string(), format!("{} bytes", content.len())),
+            (
+                "content_length".to_string(),
+                format!("{} bytes", content.len()),
+            ),
             ("overwrite".to_string(), overwrite.to_string()),
         ],
     );
@@ -91,13 +94,14 @@ pub async fn write_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
-    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
-        Ok(p) => p,
-        Err(e) => {
-            log_tool_result("write_file", &e);
-            return Ok(e);
-        }
-    };
+    let canonical_path =
+        match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
+            Ok(p) => p,
+            Err(e) => {
+                log_tool_result("write_file", &e);
+                return Ok(e);
+            }
+        };
 
     // Check if file exists
     if canonical_path.exists() && !overwrite {
@@ -137,10 +141,7 @@ pub async fn write_file(
         "created"
     };
 
-    let result = format!(
-        "Successfully wrote {} to '{}' ({}).",
-        size, path, action
-    );
+    let result = format!("Successfully wrote {} to '{}' ({}).", size, path, action);
     log_tool_result("write_file", &result);
     Ok(result)
 }
@@ -220,13 +221,14 @@ pub async fn edit_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
-    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
-        Ok(p) => p,
-        Err(e) => {
-            log_tool_result("edit_file", &e);
-            return Ok(e);
-        }
-    };
+    let canonical_path =
+        match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
+            Ok(p) => p,
+            Err(e) => {
+                log_tool_result("edit_file", &e);
+                return Ok(e);
+            }
+        };
 
     // File must exist for edit operations
     if !canonical_path.exists() {
@@ -262,9 +264,11 @@ pub async fn edit_file(
     let new_content = match operation.as_str() {
         "replace" => edit_replace(&original_content, search.as_deref(), replace.as_deref()),
         "insert" => edit_insert(&original_content, after_line.as_deref(), content.as_deref()),
-        "delete_lines" => {
-            edit_delete_lines(&original_content, start_line.as_deref(), end_line.as_deref())
-        }
+        "delete_lines" => edit_delete_lines(
+            &original_content,
+            start_line.as_deref(),
+            end_line.as_deref(),
+        ),
         _ => {
             let err_msg = format!(
                 "Error: Invalid operation '{}'. Must be 'replace', 'insert', or 'delete_lines'.",
@@ -371,7 +375,10 @@ pub async fn append_file(
         "append_file",
         &[
             ("path".to_string(), path.clone()),
-            ("content_length".to_string(), format!("{} bytes", content.len())),
+            (
+                "content_length".to_string(),
+                format!("{} bytes", content.len()),
+            ),
             ("create".to_string(), create.to_string()),
         ],
     );
@@ -380,13 +387,14 @@ pub async fn append_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
-    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
-        Ok(p) => p,
-        Err(e) => {
-            log_tool_result("append_file", &e);
-            return Ok(e);
-        }
-    };
+    let canonical_path =
+        match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
+            Ok(p) => p,
+            Err(e) => {
+                log_tool_result("append_file", &e);
+                return Ok(e);
+            }
+        };
 
     // Check if file exists
     let file_exists = canonical_path.exists();
@@ -606,9 +614,8 @@ fn edit_replace(
     search: Option<&str>,
     replace: Option<&str>,
 ) -> Result<String, String> {
-    let search = search.ok_or_else(|| {
-        "Error: 'search' parameter required for 'replace' operation.".to_string()
-    })?;
+    let search = search
+        .ok_or_else(|| "Error: 'search' parameter required for 'replace' operation.".to_string())?;
 
     let replace_text = replace.unwrap_or("");
 
@@ -638,7 +645,9 @@ fn edit_insert(
     insert_content: Option<&str>,
 ) -> Result<String, String> {
     let after_line_num = after_line
-        .ok_or_else(|| "Error: 'after_line' parameter required for 'insert' operation.".to_string())?
+        .ok_or_else(|| {
+            "Error: 'after_line' parameter required for 'insert' operation.".to_string()
+        })?
         .parse::<usize>()
         .map_err(|_| "Error: 'after_line' must be a valid number.".to_string())?;
 
@@ -678,12 +687,16 @@ fn edit_delete_lines(
     end_line: Option<&str>,
 ) -> Result<String, String> {
     let start = start_line
-        .ok_or_else(|| "Error: 'start_line' parameter required for 'delete_lines' operation.".to_string())?
+        .ok_or_else(|| {
+            "Error: 'start_line' parameter required for 'delete_lines' operation.".to_string()
+        })?
         .parse::<usize>()
         .map_err(|_| "Error: 'start_line' must be a valid number.".to_string())?;
 
     let end = end_line
-        .ok_or_else(|| "Error: 'end_line' parameter required for 'delete_lines' operation.".to_string())?
+        .ok_or_else(|| {
+            "Error: 'end_line' parameter required for 'delete_lines' operation.".to_string()
+        })?
         .parse::<usize>()
         .map_err(|_| "Error: 'end_line' must be a valid number.".to_string())?;
 

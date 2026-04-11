@@ -392,7 +392,11 @@ fn print_available_options() {
     println!("Available models:");
     for name in user_models::list_all_model_names() {
         if let Some(config) = user_models::get_model_config(&name) {
-            let default_marker = if name == "qwen3.5:4b" { " (default)" } else { "" };
+            let default_marker = if name == "qwen3.5:4b" {
+                " (default)"
+            } else {
+                ""
+            };
             let user_marker = if !config::ModelConfig::is_builtin_valid(&name) {
                 " [user]"
             } else {
@@ -610,7 +614,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     } else if !subcommand_model.is_empty() {
         subcommand_model
     } else {
-        "qwen3.5:4b".to_string()
+        settings.model.default.clone()
     };
 
     let model_config = user_models::resolve_model_config(&model_name);

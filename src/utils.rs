@@ -72,7 +72,7 @@ pub fn validate_image_file(path: &std::path::Path) -> Result<(), String> {
     } else {
         path.to_path_buf()
     };
-    
+
     if !expanded_path.exists() {
         return Err(format!("File not found: {}", path.display()));
     }
@@ -105,7 +105,7 @@ pub async fn read_file_as_base64(path: &std::path::Path) -> Result<String, Strin
     } else {
         path.to_path_buf()
     };
-    
+
     let bytes = tokio::fs::read(&expanded_path)
         .await
         .map_err(|e| format!("Failed to read file {}: {}", path.display(), e))?;
@@ -141,7 +141,9 @@ pub fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
         None => String::new(),
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str(),
+        Some(first) => {
+            first.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str()
+        }
     }
 }
 
@@ -179,17 +181,17 @@ pub fn normalize_input(s: &str) -> String {
 /// ```
 pub fn expand_tilde_path(path: &str) -> std::path::PathBuf {
     let trimmed = path.trim();
-    
+
     if let Some(rest) = trimmed.strip_prefix('~') {
         if let Some(home) = dirs::home_dir() {
             // Handle ~ alone
             if rest.is_empty() || rest == "/" {
                 return home;
             }
-            
+
             // Handle ~/path
             let rest = rest.strip_prefix('/').unwrap_or(rest);
-            
+
             if rest.is_empty() {
                 home
             } else {
@@ -250,9 +252,7 @@ pub fn truncate_to_budget(text: &str, budget: usize) -> String {
 
     format!(
         "{}\n\n... [Result truncated: {} → {} tokens]",
-        truncated,
-        estimated_tokens,
-        budget
+        truncated, estimated_tokens, budget
     )
 }
 
@@ -466,7 +466,7 @@ mod tests {
         // Budget of 5 tokens with 20 overhead = target of 0 -> minimal content
         let text = "This is a longer piece of text that should be truncated";
         let result = truncate_to_budget(text, 5);
-        
+
         assert!(result.contains("... [Result truncated"));
         assert!(!result.is_empty());
     }
@@ -478,10 +478,10 @@ mod tests {
         // Budget of 50 tokens should still preserve beginning
         let text = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
         let result = truncate_to_budget(text, 50);
-        
+
         // Within budget, no truncation
         assert_eq!(result, text);
-        
+
         // Now with smaller budget
         let result_small = truncate_to_budget(text, 3);
         assert!(result_small.contains("truncated"));
@@ -492,17 +492,17 @@ mod tests {
         // Budget smaller than overhead - should still work
         let text = "Hello world";
         let result = truncate_to_budget(text, 5);
-        
+
         // Should still return something (possibly empty truncated string)
         assert!(!result.is_empty() || result.contains("truncated"));
     }
-    
+
     #[test]
     fn test_truncate_to_budget_realistic() {
         // Realistic scenario: 4000 token budget, 8000 token content
         let long_text = "word ".repeat(8000); // ~32000 chars, ~10666 tokens
         let result = truncate_to_budget(&long_text, 4000);
-        
+
         assert!(result.contains("... [Result truncated"));
         // Budget of 4000 - 20 overhead = 3980 tokens * 4 chars = ~15920 chars
         assert!(result.len() < long_text.len());
@@ -513,27 +513,34 @@ mod tests {
         // Unicode text truncation with whitespace - should handle multibyte chars correctly
         // Note: estimate_tokens uses word-based counting (split_whitespace)
         // Chinese without spaces = 1 word, with spaces = multiple words
-        
+
         // Test with spaces to ensure word count triggers truncation
-        let unicode_text = "中国 对 巴西 新闻 视角 测试 数据 这是 一个 很长 的 文本 需要 被 截断 ".repeat(20);
+        let unicode_text =
+            "中国 对 巴西 新闻 视角 测试 数据 这是 一个 很长 的 文本 需要 被 截断 ".repeat(20);
         let result = truncate_to_budget(&unicode_text, 10);
-        
+
         // Should contain truncation notice when tokens exceed budget
-        assert!(result.contains("... [Result truncated") || result.len() < unicode_text.len(), 
-            "Result should be truncated or shorter: got {} chars", result.len());
-        
+        assert!(
+            result.contains("... [Result truncated") || result.len() < unicode_text.len(),
+            "Result should be truncated or shorter: got {} chars",
+            result.len()
+        );
+
         // Test that chars().take() handles multibyte correctly (doesn't panic)
         assert!(!result.is_empty());
-        
+
         // Mixed ASCII and Unicode with spaces
         let mixed_text = "Hello 世界 This is 中国 测试 数据 ".repeat(30);
         let result_mixed = truncate_to_budget(&mixed_text, 20);
         assert!(result_mixed.contains("... [Result truncated") || result_mixed == mixed_text);
-        
+
         // Long ASCII text (reliable for truncation test)
         let long_ascii = "word ".repeat(1000); // ~1333 tokens
         let result_ascii = truncate_to_budget(&long_ascii, 100);
-        assert!(result_ascii.contains("... [Result truncated"), "ASCII should be truncated");
+        assert!(
+            result_ascii.contains("... [Result truncated"),
+            "ASCII should be truncated"
+        );
         assert!(result_ascii.len() < long_ascii.len());
     }
 
@@ -541,29 +548,29 @@ mod tests {
     fn test_expand_tilde_path() {
         // Test expansion with home directory
         let home = dirs::home_dir();
-        
+
         if let Some(ref home_path) = home {
             // ~/file.txt -> home/file.txt
             let expanded = expand_tilde_path("~/file.txt");
             assert_eq!(expanded, home_path.join("file.txt"));
-            
+
             // ~ alone -> home
             let expanded_alone = expand_tilde_path("~");
             assert_eq!(expanded_alone, *home_path);
-            
+
             // ~/ alone -> home
             let expanded_slash = expand_tilde_path("~/");
             assert_eq!(expanded_slash, *home_path);
         }
-        
+
         // Absolute path - unchanged
         let absolute = expand_tilde_path("/absolute/path");
         assert_eq!(absolute, std::path::PathBuf::from("/absolute/path"));
-        
+
         // Relative path - unchanged
         let relative = expand_tilde_path("relative/path");
         assert_eq!(relative, std::path::PathBuf::from("relative/path"));
-        
+
         // Path with spaces in home expansion
         let with_spaces = expand_tilde_path("~/path with spaces/file.txt");
         if let Some(home_path) = home {

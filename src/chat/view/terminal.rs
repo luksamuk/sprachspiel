@@ -98,19 +98,33 @@ impl TerminalView {
         model_id: &str,
         tools_enabled: bool,
         think_enabled: bool,
+        vision_enabled: bool,
         sandbox_status: &str,
         project: &str,
         session_name: &str,
         is_anonymous: bool,
+        version: &str,
+        server_url: &str,
+        fact_count: i64,
+        note_count: i64,
+        doc_count: i64,
+        skill_count: usize,
     ) {
         let info = WelcomeInfo {
             model_id: model_id.to_string(),
             tools_enabled,
             think_enabled,
+            vision_enabled,
             sandbox_status: sandbox_status.to_string(),
             project: project.to_string(),
             session_name: session_name.to_string(),
             is_anonymous,
+            version: version.to_string(),
+            server_url: server_url.to_string(),
+            fact_count,
+            note_count,
+            doc_count,
+            skill_count,
         };
         println!("{}", info.to_boxed_string());
     }
@@ -141,10 +155,17 @@ mod tests {
             "qwen3.5:4b",
             true,
             true,
+            true,
             "enabled",
             "my-project",
             "default",
             false,
+            "0.39.5",
+            "127.0.0.1:11434",
+            3,
+            2,
+            0,
+            4,
         );
     }
 

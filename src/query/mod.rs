@@ -6,9 +6,9 @@ mod context;
 mod coordinator;
 mod executor;
 
+use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
-use ollama_rs::Ollama;
 
 use crate::capabilities::ModelCapabilities;
 use crate::chat::custom_coordinator::{ChatEvent, CustomCoordinator};
@@ -115,7 +115,11 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
                 });
             }
         }
-        ChatEvent::ContextNearLimit { tool_name, tokens_used, context_window } => {
+        ChatEvent::ContextNearLimit {
+            tool_name,
+            tokens_used,
+            context_window,
+        } => {
             if use_debug {
                 eprintln!(
                     "\x1B[33m[INFO] Context at {:.0}% after tool '{}' ({} / {} tokens)\x1B[0m",
@@ -126,16 +130,22 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
                 );
             }
         }
-        ChatEvent::ContextTruncated { tool_name, original_tokens, new_tokens, context_window } => {
+        ChatEvent::ContextTruncated {
+            tool_name,
+            original_tokens,
+            new_tokens,
+            context_window,
+        } => {
             eprintln!(
                 "\x1B[33m[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)\x1B[0m",
-                tool_name,
-                original_tokens,
-                new_tokens,
-                context_window
+                tool_name, original_tokens, new_tokens, context_window
             );
         }
-        ChatEvent::ContextNeedsCompaction { tokens_used, context_window, tools_executed } => {
+        ChatEvent::ContextNeedsCompaction {
+            tokens_used,
+            context_window,
+            tools_executed,
+        } => {
             if use_debug {
                 eprintln!(
                     "\x1B[33m[INFO] Context needs compaction: {}K / {}K tokens ({} tools executed)\x1B[0m",

@@ -340,7 +340,10 @@ pub async fn build_context(
                 retrieval_performed = true;
             }
         } else {
-            log_if_debug!(use_debug, "Skipping retrieval: db or embedding_client not available");
+            log_if_debug!(
+                use_debug,
+                "Skipping retrieval: db or embedding_client not available"
+            );
         }
     } else {
         log_if_debug!(use_debug, "Skipping retrieval: conditions not met");
@@ -433,13 +436,8 @@ pub async fn build_query_context(
 
         if let (Some(db), Some(client)) = (db, embedding_client) {
             if let Some(result) = perform_retrieval(
-                db,
-                client,
-                user_query,
-                None, // No conversation_id - search all in project
-                project_id,
-                config,
-                use_debug,
+                db, client, user_query, None, // No conversation_id - search all in project
+                project_id, config, use_debug,
             )
             .await
             {
@@ -448,7 +446,10 @@ pub async fn build_query_context(
                 retrieval_performed = true;
             }
         } else {
-            log_if_debug!(use_debug, "Skipping retrieval: db or embedding_client not available");
+            log_if_debug!(
+                use_debug,
+                "Skipping retrieval: db or embedding_client not available"
+            );
         }
     } else {
         log_if_debug!(use_debug, "Skipping retrieval: disabled");

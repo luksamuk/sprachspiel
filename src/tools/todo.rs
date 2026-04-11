@@ -19,14 +19,6 @@ pub fn get_todo_state() -> Arc<Mutex<TodoState>> {
         .clone()
 }
 
-/// Reset the todo state (for testing or new session)
-#[cfg(test)]
-pub fn reset_todo_state() {
-    let state = get_todo_state();
-    let mut guard = state.lock().unwrap();
-    *guard = TodoState::new();
-}
-
 /// Load todos from a session into the global state.
 ///
 /// Call this at the start of the REPL to restore the session's todo list.

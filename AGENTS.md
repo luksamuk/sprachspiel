@@ -717,6 +717,69 @@ pub async fn my_tool(
 2. **Parse internally with `.parse().ok()` or utility functions**
 3. **Validate required parameters early and return helpful errors**
 4. **Use existing patterns from `web_search`, `run_command`, etc.**
+5. **Normalize empty strings to None for truly optional text parameters (see below)**
+
+#### Empty String Normalization for `Option<String>`
+
+**LLMs frequently send `""` (empty string) instead of omitting optional parameters.**
+When an LLM sends `"title": ""`, it deserializes as `Some("")`, NOT `None`.
+
+This means `is_none()` checks are bypassed, causing tools to:
+- Silently accept empty values without error
+- Write empty strings to the database
+- Skip fallback logic (like auto-title extraction)
+
+**The Problem:**
+
+```rust
+// ❌ WRONG - is_none() does NOT catch Some("")
+if title.is_none() && content.is_none() {
+    return Ok("Error: Provide at least one field".to_string());
+}
+// If LLM sends title="", this check PASSES and title="" is used
+```
+
+**The Fix: Normalize with `.filter()`**
+
+Always normalize `Option<String>` parameters at the start of tool functions when:
+1. The parameter is truly optional (None means "skip this field")
+2. An empty string should be treated the same as not providing the parameter
+3. The code uses `is_none()` to check if the parameter was provided
+
+```rust
+// ✅ CORRECT - Normalize empty strings to None before validation
+let title = title.filter(|s| !s.is_empty());
+let content = content.filter(|s| !s.is_empty());
+
+// Now is_none() works correctly for both None and Some("")
+if title.is_none() && content.is_none() {
+    return Ok("Error: Provide at least one field".to_string());
+}
+```
+
+**When NOT to Normalize:**
+
+Do NOT use `.filter()` when:
+- Empty string is a valid value (e.g., `replace: Option<String>` in edit_file allows empty replacement)
+- The parameter is a boolean/numeric option (use `parse_bool()`/`parse_u32()` instead)
+- The parameter already validates content (e.g., `content.is_empty()` check exists below)
+
+**Current Tools Using This Pattern:**
+
+| Tool | File | Parameters Normalized |
+|------|------|----------------------|
+| `remember` | `src/tools/remember.rs` | `id`, `query` (`.filter(\|s\| !s.is_empty())`) |
+| `note_edit` | `src/tools/notes.rs` | `title`, `content` |
+| `note_add` | `src/tools/notes.rs` | `title` |
+| `import_document` | `src/tools/documents.rs` | `title` |
+
+**Checklist for New Tools:**
+
+Before submitting a tool with `Option<String>` parameters:
+1. **Ask:** Is this parameter truly optional? Does None mean "skip"?
+2. **Ask:** Would `Some("")` be semantically equivalent to `None`?
+3. **If yes to both:** Add `.filter(|s| !s.is_empty())` normalization
+4. **If no:** Ensure explicit `is_empty()` validation with error message
 
 ### Required Parameters
 

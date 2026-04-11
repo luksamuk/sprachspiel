@@ -48,11 +48,11 @@ fn calculate_visual_lines(input: &str, prompt_len: usize, terminal_width: usize)
     if terminal_width == 0 {
         return 1; // Fallback: assume single line (visual artifacts acceptable)
     }
-    
+
     // Unicode-aware width calculation
     let input_width = input.width();
     let total_width = prompt_len + input_width;
-    
+
     // Ceiling division: how many lines does the input occupy?
     total_width.div_ceil(terminal_width).max(1)
 }
@@ -495,7 +495,34 @@ pub async fn run_chat_repl(
     let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
     // PRINT BANNER FIRST (before any other output)
-    print_welcome(&session, &model_config, &capabilities);
+    let (fact_count, note_count, doc_count) = if let Some(db_ref) = &db {
+        (
+            db_ref.count_facts().unwrap_or(0),
+            db_ref.count_notes().unwrap_or(0),
+            db_ref.count_documents().unwrap_or(0),
+        )
+    } else {
+        (0, 0, 0)
+    };
+
+    // Count available skills (only relevant when tools enabled)
+    let tools_active = session.tools && capabilities.tools;
+    let skill_count = if tools_active {
+        crate::skills::load_skill_indexes().len()
+    } else {
+        0
+    };
+
+    print_welcome(
+        &session,
+        &model_config,
+        &capabilities,
+        settings,
+        fact_count,
+        note_count,
+        doc_count,
+        skill_count,
+    );
 
     // Print session info (if any)
     if let Some(msg) = resume_message {
@@ -755,23 +782,41 @@ fn build_status_bar(state: &super::repl_state::ReplState) -> String {
     info.format_status_bar()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn print_welcome(
     session: &ChatSession,
     model_config: &ModelConfig,
     capabilities: &ModelCapabilities,
+    settings: &crate::settings::Settings,
+    fact_count: i64,
+    note_count: i64,
+    doc_count: i64,
+    skill_count: usize,
 ) {
     let project = session.project_id.as_deref().unwrap_or("anonymous");
     let session_name = session.name.as_deref().unwrap_or(&session.id);
     let sandbox_status = crate::external::get_sandbox_status();
+    let version = env!("CARGO_PKG_VERSION");
+    let server_url = format!(
+        "{}:{}",
+        settings.model.ollama_host, settings.model.ollama_port
+    );
 
     let mut view = TerminalView::new();
     view.show_welcome(
         &model_config.model_id,
         session.tools && capabilities.tools,
         session.think && capabilities.thinking,
+        capabilities.vision,
         sandbox_status,
         project,
         session_name,
         session.anonymous,
+        version,
+        &server_url,
+        fact_count,
+        note_count,
+        doc_count,
+        skill_count,
     );
 }

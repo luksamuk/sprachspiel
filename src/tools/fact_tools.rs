@@ -5,8 +5,8 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::facts::classify::classify_fact;
-use crate::facts::conflict::{detect_conflicts, resolve_conflict, CONFLICT_THRESHOLD};
-use crate::facts::types::{Category, Fact, Scope, Source, MAX_FACT_CONTENT_SIZE};
+use crate::facts::conflict::{CONFLICT_THRESHOLD, detect_conflicts, resolve_conflict};
+use crate::facts::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
 use crate::utils::parse_bounded_number;
@@ -15,17 +15,20 @@ use ollama_rs::function;
 /// Parse fact ID from various formats ("42" or "fact:42")
 fn parse_fact_id(id: &str) -> Result<i64, String> {
     let id_str = id.trim();
-    
+
     // Handle "fact:N" format
     let numeric_str = if id_str.starts_with("fact:") {
         id_str.strip_prefix("fact:").unwrap_or(id_str)
     } else {
         id_str
     };
-    
-    numeric_str
-        .parse::<i64>()
-        .map_err(|_| format!("Invalid fact ID: '{}'. Use format 'fact:N' or just 'N'.", id))
+
+    numeric_str.parse::<i64>().map_err(|_| {
+        format!(
+            "Invalid fact ID: '{}'. Use format 'fact:N' or just 'N'.",
+            id
+        )
+    })
 }
 
 /// Store a fact or preference about the user or project.
@@ -69,8 +72,14 @@ pub async fn fact_add(
         "fact_add",
         &[
             ("content".to_string(), content.clone()),
-            ("category".to_string(), category.clone().unwrap_or_else(|| "auto".to_string())),
-            ("scope".to_string(), scope.clone().unwrap_or_else(|| "global".to_string())),
+            (
+                "category".to_string(),
+                category.clone().unwrap_or_else(|| "auto".to_string()),
+            ),
+            (
+                "scope".to_string(),
+                scope.clone().unwrap_or_else(|| "global".to_string()),
+            ),
         ],
     );
 
@@ -137,10 +146,7 @@ pub async fn fact_add(
         }
         Some("global") | None => (Scope::Global, None),
         Some(s) => {
-            let err = format!(
-                "Error: Invalid scope '{}'. Use 'global' or 'project'.",
-                s
-            );
+            let err = format!("Error: Invalid scope '{}'. Use 'global' or 'project'.", s);
             log_tool_result("fact_add", &err);
             return Ok(err);
         }
@@ -303,9 +309,18 @@ pub async fn fact_search(
         "fact_search",
         &[
             ("query".to_string(), query.clone()),
-            ("category".to_string(), category.clone().unwrap_or_else(|| "all".to_string())),
-            ("scope".to_string(), scope.clone().unwrap_or_else(|| "all".to_string())),
-            ("limit".to_string(), limit.clone().unwrap_or_else(|| "5".to_string())),
+            (
+                "category".to_string(),
+                category.clone().unwrap_or_else(|| "all".to_string()),
+            ),
+            (
+                "scope".to_string(),
+                scope.clone().unwrap_or_else(|| "all".to_string()),
+            ),
+            (
+                "limit".to_string(),
+                limit.clone().unwrap_or_else(|| "5".to_string()),
+            ),
         ],
     );
 
@@ -354,21 +369,33 @@ pub async fn fact_search(
     };
 
     if results.is_empty() {
-        let result = format!("No facts found matching '{}'.\n\n\
+        let result = format!(
+            "No facts found matching '{}'.\n\n\
                               Tips:\n\
                               - Try different keywords\n\
                               - Use broader search terms\n\
-                              - Facts may not have been stored yet", query);
+                              - Facts may not have been stored yet",
+            query
+        );
         log_tool_result("fact_search", &result);
         return Ok(result);
     }
 
     // Filter by category if specified
     let filtered_results: Vec<_> = match category.as_deref() {
-        Some("preference") => results.into_iter().filter(|r| r.fact.category == Category::Preference).collect(),
-        Some("fact") => results.into_iter().filter(|r| r.fact.category == Category::Fact).collect(),
+        Some("preference") => results
+            .into_iter()
+            .filter(|r| r.fact.category == Category::Preference)
+            .collect(),
+        Some("fact") => results
+            .into_iter()
+            .filter(|r| r.fact.category == Category::Fact)
+            .collect(),
         Some(c) => {
-            let err = format!("Error: Invalid category '{}'. Use 'preference' or 'fact'.", c);
+            let err = format!(
+                "Error: Invalid category '{}'. Use 'preference' or 'fact'.",
+                c
+            );
             log_tool_result("fact_search", &err);
             return Ok(err);
         }
@@ -377,14 +404,21 @@ pub async fn fact_search(
 
     if filtered_results.is_empty() {
         let category_label = category.as_deref().unwrap_or("all");
-        let result = format!("No {} facts found matching '{}'.\n\n\
-                              Try searching without category filter.", category_label, query);
+        let result = format!(
+            "No {} facts found matching '{}'.\n\n\
+                              Try searching without category filter.",
+            category_label, query
+        );
         log_tool_result("fact_search", &result);
         return Ok(result);
     }
 
     // Format results
-    let mut output = format!("**Found {} fact(s) matching '{}'**\n\n", filtered_results.len(), query);
+    let mut output = format!(
+        "**Found {} fact(s) matching '{}'**\n\n",
+        filtered_results.len(),
+        query
+    );
 
     for result in filtered_results {
         let category_label = match result.fact.category {
@@ -429,9 +463,7 @@ pub async fn fact_search(
 /// fact_remove(id="fact:42")
 /// ```
 #[function]
-pub async fn fact_remove(
-    id: String,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn fact_remove(id: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("fact_remove", &[("id".to_string(), id.clone())]);
 
     // Parse ID

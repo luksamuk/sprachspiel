@@ -118,9 +118,9 @@ fn test_whitespace_content() {
     // Whitespace-only content has zero tokens (word-based estimation)
     let whitespace = "   \n\t   ";
     let estimate = estimate_tokens(whitespace);
-    assert!(
-        estimate >= 0,
-        "Whitespace should estimate to zero or minimal tokens"
+    assert_eq!(
+        estimate, 0,
+        "Whitespace should estimate to zero tokens, got {estimate}"
     );
 }
 

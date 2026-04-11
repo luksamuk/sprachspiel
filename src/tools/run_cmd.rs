@@ -190,10 +190,11 @@ pub async fn run_command(
                 apply_head_tail(output.stdout, head_val, tail_val)
             } else {
                 // Command failed - return stderr with helpful context
-                let exit_code_str = output.exit_code
+                let exit_code_str = output
+                    .exit_code
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "unknown".to_string());
-                
+
                 if output.stderr.is_empty() {
                     format!(
                         "Error: Command '{}' exited with code {}.\n\
@@ -215,7 +216,9 @@ pub async fn run_command(
                          {}\n\
                          \n\
                          Fix the issue above and try again.",
-                        command, exit_code_str, output.stderr.trim()
+                        command,
+                        exit_code_str,
+                        output.stderr.trim()
                     )
                 }
             }
