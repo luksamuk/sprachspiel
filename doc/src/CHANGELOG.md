@@ -6,8 +6,8 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
-- **Braille Art Welcome Banner** - New neuron braille art replaces jp2a ASCII art
-  - 23-line colored braille art generated from neuronio3.png (width 35)
+- **Braille Art Welcome Banner** - Extended mind braille art replaces jp2a ASCII art
+  - 14-line colored braille art generated from extended-mind.png (width 39)
   - Expanded session info: Model, Think, Tools, Vision, Sandbox, Project, Session, Version, Server
   - Separate Facts/Notes/Docs count lines (only shown when count > 0)
   - `WelcomeInfo` struct expanded from 7 to 12 fields
