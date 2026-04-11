@@ -108,6 +108,7 @@ impl TerminalView {
         fact_count: i64,
         note_count: i64,
         doc_count: i64,
+        skill_count: usize,
     ) {
         let info = WelcomeInfo {
             model_id: model_id.to_string(),
@@ -123,6 +124,7 @@ impl TerminalView {
             fact_count,
             note_count,
             doc_count,
+            skill_count,
         };
         println!("{}", info.to_boxed_string());
     }
@@ -163,6 +165,7 @@ mod tests {
             3,
             2,
             0,
+            4,
         );
     }
 

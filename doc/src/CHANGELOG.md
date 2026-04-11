@@ -8,9 +8,10 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **Braille Art Welcome Banner** - Extended mind braille art replaces jp2a ASCII art
   - 14-line colored braille art generated from extended-mind.png (width 39)
-  - Expanded session info: Model, Think, Tools, Vision, Sandbox, Project, Session, Version, Server
+  - Reordered session info by importance: Model, Server, Tools, Think, Vision, Sandbox, Project, Session, Version
   - Separate Facts/Notes/Docs count lines (only shown when count > 0)
-  - `WelcomeInfo` struct expanded from 7 to 12 fields
+  - Skills count line (only shown when tools enabled and skills > 0)
+  - `WelcomeInfo` struct expanded from 7 to 13 fields (added skill_count)
   - Added `count_facts()`, `count_notes()`, `count_documents()` to Database
 
 - **Notes LLM Tools: edit and delete** - LLM can now maintain notes it creates

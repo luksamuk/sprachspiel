@@ -504,6 +504,15 @@ pub async fn run_chat_repl(
     } else {
         (0, 0, 0)
     };
+
+    // Count available skills (only relevant when tools enabled)
+    let tools_active = session.tools && capabilities.tools;
+    let skill_count = if tools_active {
+        crate::skills::load_skill_indexes().len()
+    } else {
+        0
+    };
+
     print_welcome(
         &session,
         &model_config,
@@ -512,6 +521,7 @@ pub async fn run_chat_repl(
         fact_count,
         note_count,
         doc_count,
+        skill_count,
     );
 
     // Print session info (if any)
@@ -772,6 +782,7 @@ fn build_status_bar(state: &super::repl_state::ReplState) -> String {
     info.format_status_bar()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn print_welcome(
     session: &ChatSession,
     model_config: &ModelConfig,
@@ -780,6 +791,7 @@ fn print_welcome(
     fact_count: i64,
     note_count: i64,
     doc_count: i64,
+    skill_count: usize,
 ) {
     let project = session.project_id.as_deref().unwrap_or("anonymous");
     let session_name = session.name.as_deref().unwrap_or(&session.id);
@@ -805,5 +817,6 @@ fn print_welcome(
         fact_count,
         note_count,
         doc_count,
+        skill_count,
     );
 }

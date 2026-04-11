@@ -167,6 +167,7 @@ pub struct WelcomeInfo {
     pub fact_count: i64,
     pub note_count: i64,
     pub doc_count: i64,
+    pub skill_count: usize,
 }
 
 impl WelcomeInfo {
@@ -226,6 +227,10 @@ impl WelcomeInfo {
     }
 
     /// Format session info lines for right-side display
+    ///
+    /// Order: most useful/frequently consulted first, static metadata last:
+    /// Model → Server → Tools → Think → Vision → Sandbox → Project → Session → Version
+    /// Then conditional: Facts, Notes, Docs, Skills
     fn format_session_lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
 
@@ -233,6 +238,7 @@ impl WelcomeInfo {
         let d = colors::DIM;
         let r = colors::RESET;
 
+        // Core identity
         lines.push(format!(
             "{}Model:{} {}{}{}",
             bc,
@@ -242,10 +248,16 @@ impl WelcomeInfo {
             r
         ));
 
-        if self.think_enabled {
-            lines.push(format!("{}Think:{} {}enabled{}", bc, r, d, r));
-        }
+        lines.push(format!(
+            "{}Server:{} {}{}{}",
+            bc,
+            r,
+            d,
+            truncate_str(&self.server_url, 30),
+            r
+        ));
 
+        // Capabilities
         let tools_status = if self.tools_enabled {
             "enabled"
         } else {
@@ -253,10 +265,15 @@ impl WelcomeInfo {
         };
         lines.push(format!("{}Tools:{} {}{}{}", bc, r, d, tools_status, r));
 
+        if self.think_enabled {
+            lines.push(format!("{}Think:{} {}enabled{}", bc, r, d, r));
+        }
+
         if self.vision_enabled {
             lines.push(format!("{}Vision:{} {}enabled{}", bc, r, d, r));
         }
 
+        // Security
         lines.push(format!(
             "{}Sandbox:{} {}{}{}",
             bc,
@@ -266,6 +283,7 @@ impl WelcomeInfo {
             r
         ));
 
+        // Context
         lines.push(format!(
             "{}Project:{} {}{}{}",
             bc,
@@ -289,17 +307,10 @@ impl WelcomeInfo {
             r
         ));
 
+        // Static metadata
         lines.push(format!("{}Version:{} {}{}{}", bc, r, d, self.version, r));
 
-        lines.push(format!(
-            "{}Server:{} {}{}{}",
-            bc,
-            r,
-            d,
-            truncate_str(&self.server_url, 30),
-            r
-        ));
-
+        // Content counts (only shown when > 0)
         if self.fact_count > 0 {
             lines.push(format!("{}Facts:{} {}{}{}", bc, r, d, self.fact_count, r));
         }
@@ -310,6 +321,11 @@ impl WelcomeInfo {
 
         if self.doc_count > 0 {
             lines.push(format!("{}Docs:{} {}{}{}", bc, r, d, self.doc_count, r));
+        }
+
+        // Skills (only when tools enabled and skills available)
+        if self.tools_enabled && self.skill_count > 0 {
+            lines.push(format!("{}Skills:{} {}{}{}", bc, r, d, self.skill_count, r));
         }
 
         lines
@@ -563,6 +579,7 @@ mod tests {
             fact_count: 3,
             note_count: 2,
             doc_count: 1,
+            skill_count: 4,
         };
 
         let output = info.to_boxed_string();

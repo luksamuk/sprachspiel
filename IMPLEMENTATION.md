@@ -937,7 +937,9 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 **Also included in PR #64:**
 - Braille art welcome banner (replaced jp2a ASCII art)
   - 14-line colored braille art from extended-mind.png (width 39)
-  - Expanded `WelcomeInfo` from 7 to 12 fields
+  - Reordered session info by importance: Model, Server, Tools, Think, Vision, Sandbox, Project, Session, Version
+  - Added Skills count line (shown when tools enabled and skills > 0)
+  - Expanded `WelcomeInfo` from 7 to 13 fields (added skill_count)
   - Separate Facts/Notes/Docs count lines
   - "Ollama" label renamed to "Server"
   - Removed embed_model from banner
