@@ -47,6 +47,7 @@
   - [OpenClaw-RL Analysis](./development/research/openclaw-rl-analysis.md)
   - [Effective Agents Analysis](./development/research/effective-agents-analysis.md)
   - [Context Management Research](./development/research/context_management_research.md)
+  - [Sprach 2.0 Research](./development/sprach-2-0-research.md)
 
 ## Legacy Documentation
 

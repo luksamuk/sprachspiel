@@ -1,10 +1,17 @@
 # Ask-AI
 
-A powerful Rust CLI tool for interacting with Ollama LLM models with support for translation, OCR, summarization, and tool-assisted queries.
+A Rust CLI harness for research, interaction, and cognitive evolution with local and cloud LLMs.
 
 ## Overview
 
-Ask-AI provides a comprehensive command-line interface to local and cloud-based LLMs through Ollama, with semantic search, persistent conversations, and intelligent tool use.
+Ask-AI is a cognitive interaction harness — not a code-specific tool — built around Ollama LLMs. It provides persistent memory (factual + semantic), adaptive personality (SOUL.md), 50+ extensible tools, and conversational agent capabilities. Designed for research, knowledge management, and open-ended cognitive interaction rather than narrowly scoped development workflows.
+
+Key capabilities:
+- **Persistent memory** — facts, notes, documents with semantic search and Ebbinghaus decay
+- **Adaptive personality** — SOUL.md defines agent identity and behavior style
+- **50+ tools** — file operations, web search, calculations, task management, and more
+- **Context intelligence** — hybrid RAG (BM25 + vector + RRF), auto-compaction, context overflow protection
+- **Translation, OCR, summarization** — specialized modes for different cognitive tasks
 
 ## Quick Start
 

@@ -130,7 +130,15 @@
 
 ## Priority Roadmap
 
-### ✅ PRIORITY 0: Factual Memory System (COMPLETED)
+### Milestones
+
+| Milestone | Codename | Description | Priorities |
+|-----------|----------|-------------|------------|
+| **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
+| **[M2]** | Sprach 2.0 | CAS research, cognitive extensions | P7 (S2.1-S2.6), P14, P15 |
+| **[M3]** | Future | Deferred, no current priority | Cost tracking, team features, speculation, VCR |
+
+### ✅ PRIORITY 0: Factual Memory System (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED
 
@@ -233,7 +241,7 @@ fact_remove(id)             // LLM removes incorrect facts
 
 ---
 
-### ✅ PRIORITY 0: TODO System Activation (COMPLETED)
+### ✅ PRIORITY 0: TODO System Activation (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.34.0)
 
@@ -320,7 +328,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔴 PRIORITY 1: Enhance Todo Tools — CRUD Gaps, Priority, and Tags (Issue #66)
+### 🔴 PRIORITY 1: Enhance Todo Tools — CRUD Gaps, Priority, and Tags (Issue #66) [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -389,7 +397,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### ✅ PRIORITY 1: Code Quality - Prompts Centralization (COMPLETED)
+### ✅ PRIORITY 1: Code Quality - Prompts Centralization (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.33.0)
 
@@ -425,7 +433,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### ✅ PRIORITY 1: Code Quality - run_chat_repl Complexity (COMPLETED)
+### ✅ PRIORITY 1: Code Quality - run_chat_repl Complexity (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.35.0)
 
@@ -457,7 +465,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### ✅ PRIORITY 4: Code Quality - query.rs Complexity (COMPLETED)
+### ✅ PRIORITY 4: Code Quality - query.rs Complexity (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.39.6)
 
@@ -501,7 +509,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### ✅ PRIORITY 4: Code Quality - context_builder.rs Complexity (COMPLETED)
+### ✅ PRIORITY 4: Code Quality - context_builder.rs Complexity (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED
 
@@ -541,7 +549,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### ✅ PRIORITY 4: Code Quality - registry.rs Complexity (COMPLETED)
+### ✅ PRIORITY 4: Code Quality - registry.rs Complexity (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (Issue #31)
 
@@ -601,7 +609,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - commands.rs Complexity (parse_command)
+### 🔵 PRIORITY 4: Code Quality - commands.rs Complexity (parse_command) [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -620,7 +628,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🟡 PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate
+### 🟡 PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate [M1]
 
 **Status:** 🟡 TRIAGE NEEDED
 
@@ -649,11 +657,22 @@ todo_clear_all()             // Clear all tasks
 
 **Estimated effort:** 1 day
 
+**Verbosity integration:** This item should merge with the planned Verbosity Configuration feature. The `log` crate levels naturally serve as a verbosity system — a single implementation covers both logging refactoring AND configurable verbosity:
+
+| Verbosity | Log Level | Behavior |
+|-----------|-----------|----------|
+| Quiet | `warn` | Only warnings and errors |
+| Normal (default) | `info` | Standard output |
+| Verbose | `debug` | Tool calls, reasoning details |
+| Debug | `trace` | Everything (embedding distances, token budgets, internal state) |
+
+This means one `--verbosity` flag (or `RUST_LOG` env var) replaces both `--debug` and any future `--verbose` flag.
+
 **Related:** Issue #60
 
 ---
 
-### 🟡 PRIORITY 5: Bug - Debug CLI Flag Not Working for Logging
+### 🟡 PRIORITY 5: Bug - Debug CLI Flag Not Working for Logging [M1]
 
 **Status:** 🟡 TRIAGE NEEDED
 
@@ -683,7 +702,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### ✅ PRIORITY 4: Code Quality - Dead Code Cleanup (COMPLETED)
+### ✅ PRIORITY 4: Code Quality - Dead Code Cleanup (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.37.0)
 
@@ -711,7 +730,7 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### ✅ PRIORITY 4: Status Bar Above Prompt (COMPLETED)
+### ✅ PRIORITY 4: Status Bar Above Prompt (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.37.2)
 
@@ -771,7 +790,7 @@ Status bar during spinner ("Thinking...") was attempted but caused display issue
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality - Notes System (COMPLETED)
+### 🔵 PRIORITY 4: Code Quality - Notes System (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED
 
@@ -981,7 +1000,7 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### ✅ PRIORITY 3: Bug - Notes LLM Tools Missing
+### ✅ PRIORITY 3: Bug - Notes LLM Tools Missing [M1]
 
 **Status:** ✅ COMPLETED
 
@@ -1054,7 +1073,7 @@ CREATE VIRTUAL TABLE content_fts USING fts5(
 
 ---
 
-### ✅ PRIORITY 3: Skills System (COMPLETED)
+### ✅ PRIORITY 3: Skills System (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.38.0)
 
@@ -1160,7 +1179,7 @@ On-demand Loading:
 
 ---
 
-### ✅ PRIORITY 3: Document Import Tool (COMPLETED)
+### ✅ PRIORITY 3: Document Import Tool (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.39.0)
 
@@ -1219,7 +1238,7 @@ On-demand Loading:
 
 ---
 
-### ✅ PRIORITY 3: Embedding Fallback for Oversized Content (COMPLETED)
+### ✅ PRIORITY 3: Embedding Fallback for Oversized Content (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.37.2)
 
@@ -1500,7 +1519,7 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 
 ---
 
-### 🟣 PRIORITY 5: Feedback Infrastructure
+### 🟣 PRIORITY 5: Feedback Infrastructure [M1]
 
 **Status:** 📋 PLANNED (depends on: Factual Memory)
 
@@ -1537,9 +1556,11 @@ Context Assembly:
 
 **Related:** Issue #23
 
+**Sprach 2.0 Note:** The article's "Learned Personality" proposal (S2.5 — SOUL.md patching) overlaps with but extends P5. P5 captures *what happened* (feedback signals for retrieval weighting); S2.5 adjusts *who I am* (personality modification with human approval). Both are complementary. When designing P5, consider: (1) should feedback influence only facts (safe) or also behavior style (ambitious)?, (2) a `/reflect` command could be the first step toward S2.3 (reflection triggers).
+
 ---
 
-### ✅ PRIORITY 2: Context Continuation (COMPLETED)
+### ✅ PRIORITY 2: Context Continuation (COMPLETED) [M1]
 
 **Goal:** Enable LLM to gracefully pause reasoning when context fills up, then automatically continue after compaction.
 
@@ -1641,7 +1662,7 @@ pub struct ContinuationTag {
 
 ---
 
-### ✅ PRIORITY 1: PreToolContent Persistence & Context Enrichment (COMPLETED)
+### ✅ PRIORITY 1: PreToolContent Persistence & Context Enrichment (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (All phases done)
 
@@ -1684,7 +1705,7 @@ pub struct ContinuationTag {
 - `0f9a6d2 feat(db): add message_type and previous_message_id columns (schema v5)`
 - `7b91c47 feat(chat): accumulate PreToolContent in CustomCoordinator`
 
-### ✅ PRIORITY 1: SOUL.md - AI Personality System (COMPLETED)
+### ✅ PRIORITY 1: SOUL.md - AI Personality System (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (v0.29.0)
 
@@ -1757,7 +1778,7 @@ block_list = false  # Allow listing (filenames visible)
 
 ---
 
-### ✅ PRIORITY 3: Code Quality - run_chat_repl Refactoring (COMPLETED)
+### ✅ PRIORITY 3: Code Quality - run_chat_repl Refactoring (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED (PR #19 merged)
 
@@ -2011,11 +2032,13 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🟡 PRIORITY 4: Specialized Agent Architecture
+### 🟡 PRIORITY 4: Specialized Agent Architecture [M1]
 
 **Status:** ❌ NOT STARTED
 
 **Goal:** Delegate specialized tasks (OCR, vision, document extraction, translation, summarization) to one-shot agents with optimized models.
+
+**Scope note:** ask-ai is a harness for research, interaction, and cognitive evolution — not specifically for code. When code-specific features (e.g., post-edit verification, linting) are needed, the preferred approach is to spawn a specialized subagent that interacts with an EXTERNAL harness, rather than implementing code-specific features in ask-ai itself.
 
 **Problem:**
 - OCR/Vision/Translate/Summarize are standalone CLI commands, not integrated with chat
@@ -2119,7 +2142,7 @@ translation = "translategemma:4b"
 
 ---
 
-### 🟡 PRIORITY 5: Parallel Tool Execution
+### 🟡 PRIORITY 5: Parallel Tool Execution [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -2177,6 +2200,8 @@ let results = futures::future::join_all(futures).await;
 - `write_file`, `edit_file`, `append_file` (when implemented)
 - Database operations
 - File writes
+
+**Implementation note:** The read-only vs write classification above should be formalized in code (e.g., `ToolCategory::ReadOnly` / `ToolCategory::Stateful` enum) to enable the runtime parallel execution decision.
 
 **Dependencies:** None
 
@@ -2242,6 +2267,241 @@ Recent context (47 messages):
 
 ---
 
+## 🔵 PRIORITY 6: Core Enhancements [M1]
+
+Features that enhance core functionality before Sprach 2.0 work begins.
+
+### P6.0: Multi-Provider Support (OpenAI-Compatible Backends)
+
+**Status:** 📋 PLANNED  
+**Depends on:** None  
+**Estimated effort:** 4-7 weeks (5 phases)
+
+**Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (llama.cpp, LM Studio, cloud providers) through a unified interface.
+
+**Motivation:**
+- **Performance:** llama.cpp server with OpenAI-compatible endpoints can be significantly faster than Ollama for local models
+- **Flexibility:** Users without local GPU can use cloud models (OpenAI, Together, etc.)
+- **Compatibility:** llama.cpp and LM Studio gain compatibility through the OpenAI-compatible adapter
+- **Extensibility:** Future providers (Anthropic, Google) fit naturally into the abstraction
+
+**Architecture:** Provider abstraction with `LlmProvider` trait:
+
+```
+┌─────────────────────────────────┐
+│        ask-ai (business logic)   │
+│   Uses agnostic types:          │
+│   LlmMessage, LlmResponse,       │
+│   ModelParams, ProviderError     │
+├─────────────────────────────────┤
+│         LlmProvider trait        │
+│   chat_complete()                │
+│   generate()                     │
+│   embed()                        │
+│   model_info()                   │
+│   list_models()                  │
+├──────────┬───────────────────────┤
+│ Ollama   │  OpenAI-compatible    │
+│ Provider │  Provider             │
+│ (ollama  │  (reqwest +           │
+│  -rs)    │   serde_json)         │
+└──────────┴───────────────────────┘
+```
+
+**Impact analysis:** ~770 lines across ~27 files. Breaking changes but refactoring, not rewrite.
+
+| Category | Files | Lines affected | Type |
+|----------|-------|----------------|------|
+| CustomCoordinator | 1 | ~200 | Breaking |
+| ChatMessage/Message types | 12 | ~150 | Breaking |
+| Error handling | 2 | ~105 | Breaking |
+| ModelOptions/ModelInfo | 3 | ~90 | Breaking |
+| Vision/OCR processors | 2 | ~95 | Breaking |
+| Client/Provider creation | 5 | ~70 | Breaking |
+| Tool macro/trait | 19 | ~39 | Aditivo (keep ollama-rs) |
+| Config files | 0 | 0 | Aditivo |
+
+**Key design decisions:**
+- `#[ollama_rs::function]` macro **preserved** — ollama-rs stays as dependency
+- Tool format conversion at provider boundary (Ollama vs OpenAI function calling)
+- Config-based capabilities (no `show_model_info` equivalent in OpenAI)
+- Per-model provider in `models.toml`
+
+**Implementation phases:**
+
+| Phase | Description | Effort |
+|-------|-------------|--------|
+| 1. Foundation | Create `src/provider/` with agnostic types + `LlmProvider` trait + `OllamaProvider` wrapper | 1-2 weeks |
+| 2. Core migration | Migrate `CustomCoordinator`, error handling, chat/query modules | 2-3 weeks |
+| 3. OpenAI-compatible | Implement `OpenAICompatibleProvider` with reqwest, tool calling, embeddings | 1-2 weeks |
+| 4. Config & UX | Extend `models.toml`/`config.toml`, config-based capabilities, integration tests | 1 week |
+| 5. Subcommands | Migrate Vision, OCR, Translate, Summarize | 1 week |
+
+**Configuration example:**
+
+```toml
+# models.toml
+[carnice-9b-local]
+model_id = "carnice-9b"
+provider = "openai-compatible"
+base_url = "http://127.0.0.1:12434"  # llama.cpp / llama-swap
+tools = true
+
+[gpt-4o]
+model_id = "gpt-4o"
+provider = "openai-compatible"
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+tools = true
+vision = true
+```
+
+**Key risks:**
+
+| Risk | Mitigation |
+|------|-----------|
+| Tool calling format incompatibility | Adapter pattern: `ToolInfo` → OpenAI format at boundary |
+| `show_model_info()` absent in OpenAI | Config-based capability declaration in `models.toml` |
+| `KeepAlive` is Ollama-only | Param ignored by OpenAI provider |
+| Vision API completely different | Two paths: Ollama uses `/api/generate`, OpenAI uses chat + `image_url` |
+| SSE vs JSON lines streaming | Not currently used — deferred |
+
+**Reference:** See `doc/src/development/roadmap.md` - Multi-Provider Support section for architectural details and type definitions.
+
+**Related:** Issue #TBD
+
+---
+
+### P6.1: Auto Fact Extraction (autoDream-lite)
+
+**Status:** 📋 PLANNED  
+**Depends on:** P0 (Factual Memory System — completed)  
+**Estimated effort:** 3-5 days
+
+**Goal:** Extract facts automatically from conversation content after each response, instead of relying solely on manual `/fact add` or LLM-initiated `fact_add` calls.
+
+**Current state:** Facts can only be added via `/fact add` command or `fact_add` tool. The LLM must explicitly decide to add a fact. There is no automatic extraction.
+
+**Proposal:** Post-response hook that analyzes conversation content and extracts new facts (preferences, corrections, objective facts), deduplicating against existing facts via FTS5 similarity.
+
+**Design notes:**
+- Extraction should be lightweight — either heuristic classification (same as `src/facts/classify.rs`) or a small/fast LLM call specifically for extraction
+- Deduplication against existing facts via FTS5 search before insertion
+- Auto-extracted facts marked with `Source::Llm` (already supported)
+- Scope: project by default, global if pattern matches
+- A full 4-phase consolidation daemon (Orient → Gather → Consolidate → Prune) is deferred to after Sprach 2.0
+
+**Open questions:**
+- Heuristic vs. LLM-based extraction? Heuristics are cheaper but less accurate.
+- Cost budget: how many tokens per extraction call?
+- Should user be notified when facts are auto-extracted?
+
+**Related:** Issue #TBD
+
+---
+
+### P6.2: Context Pinning
+
+**Status:** 🟡 RESEARCH NEEDED  
+**Depends on:** None  
+**Estimated effort:** 2-4 days (after research)
+
+**Goal:** Allow users to mark specific messages or decisions as high-priority, preserving them during compaction.
+
+**Current state:** All messages are eligible for compaction. There is no mechanism to pin important context.
+
+**Proposal:** Add `/pin <id>` command and message metadata to exempt specific messages from compaction.
+
+**Open questions:**
+- How many pins are reasonable? Unlimited pins could fill context.
+- Should pins expire? Or require manual unpin?
+- How does pinning interact with the compaction algorithm in `src/chat/core.rs`?
+- UI: how does user see what's pinned?
+
+**Related:** Issue #TBD
+
+---
+
+### P6.3: Dynamic Context Limits
+
+**Status:** 🟡 RESEARCH NEEDED  
+**Depends on:** None  
+**Estimated effort:** 1-2 days (after research)
+
+**Goal:** Calculate tool operation limits (max_lines, max_tokens for results) dynamically based on remaining context, instead of using fixed constants.
+
+**Current state:** Some limits already adapt (pre-tool warning in `custom_coordinator.rs`), but `max_lines` in `read_file` and tool result truncation use fixed values.
+
+**Open questions:**
+- What's the right formula? Context_remaining - buffer = available_for_tool?
+- Need more research to understand the full complexity.
+
+**Related:** Issue #TBD
+
+---
+
+### P6.4: Secret Scanning (Content)
+
+**Status:** 📋 PLANNED  
+**Depends on:** Existing `files_blocklist.rs` (path-based scanning)  
+**Estimated effort:** 1-2 days
+
+**Goal:** Scan file CONTENT for credential patterns (AWS keys, GitHub tokens, OpenAI keys, SSH private keys) before write operations, extending the existing path-based blocklist.
+
+**Current state:** `src/tools/files_blocklist.rs` blocks writing to sensitive FILE PATHS (`.env`, `id_rsa`, etc.). However, file CONTENT is not scanned — writing `AKIAIOSFODNN7EXAMPLE` to `notes.txt` would succeed. This is an evolution of the blocklist concept, not a new security layer.
+
+**Proposal:** Add `scan_content_for_secrets(content: &str)` function that checks content against 25+ credential patterns before allowing write operations.
+
+**Security rule:** Never log or display secret values — only show rule ID and label (e.g., "AWS Access Key detected").
+
+**Related:** Issue #TBD
+
+---
+
+### 🔵 PRIORITY 4: Code Quality — Memory Staleness Warnings [M1]
+
+**Status:** 📋 PLANNED  
+**Estimated effort:** 0.5 day
+
+**Goal:** Inject staleness warnings into the facts prompt when facts are old.
+
+**Current state:** `src/facts/prompt.rs` formats facts without age indicators. Facts with `last_accessed` > 30 days may be outdated but are presented with the same confidence as fresh facts.
+
+**Proposal:** Add age-based caveats in the facts injection:
+
+```rust
+if fact.days_since_access > 30 {
+    format!("⚠️ {} days old — may be outdated.", fact.days_since_access)
+}
+```
+
+**Complexity:** Very low — single file change in `src/facts/prompt.rs`.
+
+**Related:** Issue #TBD
+
+---
+
+### 🔵 PRIORITY 4: Code Quality — Truncation Warnings [M1]
+
+**Status:** 📋 PLANNED  
+**Estimated effort:** 0.5 day
+
+**Goal:** Add explicit truncation metadata in tool outputs when file reads or search results are limited.
+
+**Current state:** `read_file` with `max_lines` silently truncates. No `[TRUNCATED]` indicator in output.
+
+**Proposal:** Append truncation notice to tool output:
+
+```
+[TRUNCATED: Showing lines 1-50 of 342. Use read_file_segment for more.]
+```
+
+**Complexity:** Low — modify `read_file` and `search_files` output formatting.
+
+**Related:** Issue #TBD
+
+---
+
 ## 🔵 LOW PRIORITY: Extended Features
 
 Features planned for future releases:
@@ -2260,7 +2520,7 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 8: File Session State
+### 🔵 PRIORITY 8: File Session State [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -2270,7 +2530,7 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 10: Extended Personalities System
+### 🔵 PRIORITY 10: Extended Personalities System [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -2295,7 +2555,7 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 11: Multilingual Skill Sanitization
+### 🔵 PRIORITY 11: Multilingual Skill Sanitization [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -2342,7 +2602,7 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 12: Skills Management Tool
+### 🔵 PRIORITY 12: Skills Management Tool [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -2409,7 +2669,7 @@ Priority for deletes: user only (cannot delete project from CLI)
 
 ---
 
-### 🔵 PRIORITY 13: File Staleness Detection
+### 🔵 PRIORITY 13: File Staleness Detection [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -2433,7 +2693,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
-### 🔵 PRIORITY 14: TUI (Terminal User Interface)
+### 🔵 PRIORITY 14: TUI (Terminal User Interface) [M2]
 
 **Status:** ❌ NOT STARTED
 
@@ -2449,11 +2709,13 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 
 **Estimated effort:** 3-4 weeks
 
+**Mascote idea:** An ASCII mascote (Sprach described itself as "Nó de Ideias" — Idea Knot) could serve as a visual indicator of system state. When reflection triggers fire (see S2.3), the mascote's expression could change to signal the user. This follows patterns from other agent frameworks where visual feedback helps users understand internal state. Note for P14 implementation.
+
 **Related:** Issue #16
 
 ---
 
-### 🔵 PRIORITY 15: Plugin System
+### 🔵 PRIORITY 15: Plugin System [M2]
 
 **Status:** ❌ NOT STARTED
 
@@ -2464,6 +2726,15 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 **Estimated effort:** TBD
 
 **Related:** Issue #15
+
+**Sprach 2.0 Note:** The article adds architectural details to P15: (1) 4-layer architecture (Runtime WASM → Host Interface → Plugin Manifest → Plugin Code), (2) sandbox by capabilities (allowed/denied lists, not total isolation), (3) semantic versioning (DEC-005: major equal, minor ≥ required), (4) TOML manifest format. See S2.4 in PRIORITY 7 for details.
+
+**Sub-items to address during P15 research:**
+
+1. **MCP Client Integration:** Dynamic tool discovery via MCP protocol. Primary path for extending functionality without native code changes.
+2. **Extensible Hooks:** Lifecycle hooks (PreToolCall, PostFileWrite, PreCompact) as a lightweight plugin alternative. May or may not be implemented depending on scope.
+3. **Post-edit verification as EXTERNAL service:** NOT built into ask-ai. Code verification (syntax, typecheck, lint) should be a plugin or external service that the harness invokes. This keeps ask-ai focused on research, interaction, and cognitive evolution.
+4. **Scope clarification:** ask-ai is NOT a code-specific harness. Features specific to software development workflows should be delegated to external tools/plugins. The core should remain focused on general-purpose cognitive interaction.
 
 #### Background: Opt-in Tools
 
@@ -2564,6 +2835,211 @@ The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not 
 
 ---
 
+## 🟣 PRIORITY 7: Sprach 2.0 — CAS Research [M2]
+
+**Status:** 🟡 RESEARCH NEEDED  
+**Reference:** `~/git/biblio/sprach-2-0-auto-analise.org`  
+**Comprehensive Design:** See [Sprach 2.0 Research](./doc/src/development/sprach-2-0-research.md) for open questions, code analysis, and implementation details.
+
+Based on the Sprach 2.0 self-analysis article, which identifies ask-ai-rs as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. The proposals below aim to increase emergent connectivity and adaptive behavior.
+
+**Prerequisite:** All P1-P5 current items must be completed before starting P7 work.
+
+### S2.1: Visualize Connections Tool
+
+**Status:** 🟡 RESEARCH NEEDED  
+**Depends on:** None  
+**Estimated effort:** 2-3 days (after research)
+
+LLM tool that, given an item ID or query, finds top-N most similar items via embedding similarity and returns a Mermaid graph visualization.
+
+**Existing infrastructure:**
+- `search_content_semantic()` in `content/db.rs` — vector search works
+- `content_embeddings` (vec0) — 256d embeddings already stored
+- `ContentSearchResult.score` — similarity distance already computed
+- `EmbeddingClient` — configurable embedding model
+
+**Open questions:**
+- How to handle items without embeddings?
+- Mermaid rendering: terminal output vs. file vs. markdown block?
+- Should connections be calculated on-the-fly or cached? (DEC-001: cache incrementally)
+- What N is optimal for meaningful graphs without noise?
+
+---
+
+### S2.2: Content Relations Graph
+
+**Status:** 🟡 RESEARCH NEEDED  
+**Depends on:** S2.1  
+**Estimated effort:** 5-8 days (after research)
+
+Persistent `content_relations` table with a two-layer architecture:
+1. **Layer 1 (Discovery):** Embedding-based, automatic, finds proximity (`find_similar(query_embedding, threshold=0.75)`)
+2. **Layer 2 (Classification):** LLM-based, on-demand, classifies relation type (`classify_relation(source, target)`)
+
+**Relation types** (inspired by Zettelkasten):
+
+| Type | Definition | Example |
+|------|-----------|---------|
+| `extends` | B develops A | Carvalho extends Maturana |
+| `contradicts` | B contests A | Lucas contests Estrada |
+| `instantiates` | B is case of A | "Eu-difuso" instantiates "Strange Loop" |
+| `cites` | B references A | Note cites Villalobos |
+| `presupposes` | B assumes A as base | Enactivism presupposes autopoiesis |
+| `resolves` | B dissolves tension in A | Synthesis resolves Ellis+Gödel |
+| `questions` | B problematizes A | Critique questions Clark |
+
+**Schema:**
+
+```sql
+CREATE TABLE content_relations (
+    source_id INTEGER NOT NULL,
+    target_id INTEGER NOT NULL,
+    relation_type TEXT NOT NULL,      -- enum of 7 types
+    strength REAL NOT NULL,           -- cosine similarity (0-1)
+    confidence REAL NOT NULL,         -- LLM confidence (0-1)
+    justification TEXT,               -- 1-sentence LLM explanation
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (source_id, target_id)
+);
+```
+
+**Cache incremental approach (DEC-001):** Classification runs on-demand, results are cached. Graph grows organically by usage, not pre-computed.
+
+**Existing infrastructure:**
+- `content_items` unified table (schema v8) with migration system
+- `EmbeddingClient` for similarity computation
+- `ContentSearchResult` with distance scoring
+
+**Open questions:**
+- When to create relations? On-query (lazy) vs on-insert (eager) vs batch?
+- Should unused relations decay (like facts)?
+- Is persistent storage better than lazy computation (S2.1 only)?
+- Scalability: 10K items × 10 relations = 100K rows — acceptable for SQLite?
+
+---
+
+### S2.3: Reflection on Triggers + Curation
+
+**Status:** 🟡 RESEARCH NEEDED  
+**Depends on:** S2.1, S2.2 (needs relation detection)  
+**Estimated effort:** 4-7 days (after research)
+
+Self-reflection triggered by specific events (not periodic). Reflection results are saved as drafts requiring human approval.
+
+**Trigger types (DEC-002):**
+
+| Trigger | Criterion | Example |
+|---------|----------|---------|
+| Error | Tool failure, insufficient context | `visualize_connections()` returns empty |
+| Surprise | Embedding distant from expected | Query "enactivism" returns note about "Turing" |
+| Conflict | Two notes contradict each other | Carvalho vs. Villalobos on closure |
+| Pattern | Same query repeated N times | User asks about "open-endedness" 3× in 5 sessions |
+| On-demand | User requests | "Sprach, reflect on X" → `/reflect` command |
+
+**Curation pipeline (DEC-003):**
+
+Reflections are saved as **drafts**, not published automatically:
+
+1. **Novelty:** Cosine similarity < 0.85 with existing notes
+2. **Actionability:** Must imply ≥1 concrete change (tool, note, behavior)
+3. **Density:** Minimum 200 words, ≥1 Zettelkasten connection
+4. **Human approval:** Draft → `/approve-patch` → published
+
+**Existing infrastructure:**
+- `note_add` tool (LLM can create notes)
+- `ChatSession` with message counting
+- `ContentSource::Llm` source attribution
+- Fact decay system (model for reflection aging)
+
+**Open questions:**
+- How to detect "surprise" triggers? (embedding distance threshold tuning)
+- How to detect "conflict" triggers? (contradictory notes identification)
+- How to detect "pattern" triggers? (repeated query tracking)
+- What prompt template produces useful reflections vs. noise?
+- Where to store drafts? Database with `status=draft` flag?
+
+---
+
+### S2.4: Plugin System (WASM)
+
+**NOTE:** This is already tracked as PRIORITY 15 in this document. The Sprach 2.0 article adds architectural details:
+
+- **4-layer architecture:** Runtime WASM → Host Interface → Plugin Manifest → Plugin Code
+- **Sandbox by capabilities** (DEC-004): allowed/denied lists, not total isolation
+- **Semantic versioning** (DEC-005): Major equal, minor ≥ required
+- **Example manifest:** TOML with `name`, `version`, `[capabilities]`
+- **State of art:** WASM confirmed as emerging standard; alternatives (E2B, Daytona) need evaluation
+
+These details should be incorporated into P15 when research begins.
+
+---
+
+### S2.5: SOUL.md Patching with Approval
+
+**Status:** 🟡 RESEARCH NEEDED  
+**Depends on:** S2.3 (curation pipeline feeds personality adjustment)  
+**Estimated effort:** 3-5 days (after research)
+
+Dynamic personality adaptation through LLM-generated patches to SOUL.md, with mandatory human approval.
+
+**Flow (DEC-006):**
+
+1. User gives feedback ("too verbose", "too technical")
+2. Sprach generates a **suggestion patch** (not automatic)
+3. Lucas reviews via `/apply-patch` command
+4. If approved: patch applied + git commit automatic
+
+**Key difference from P5 (Feedback Infrastructure):**
+- P5 captures **what happened** (signal + weight for retrieval)
+- S2.5 adjusts **who I am** (personality modification)
+
+Both are complementary: P5 improves *retrieval quality*, S2.5 improves *behavior style*.
+
+**Existing infrastructure:**
+- `src/soul.rs` — loads SOUL.md statically (no dynamic updates yet)
+- `src/facts/` — model for decay and scope
+- `src/tools/notes.rs` — model for LLM-generated content with source attribution
+
+**Open questions:**
+- Should SOUL.md be in git? What about users without git?
+- Patch format: search-replace? Section-level? Line-level?
+- How to validate patches don't corrupt SOUL.md structure?
+- Backup mechanism: timestamped copies before patching?
+
+---
+
+### S2.6: Skills Auto-Registration and Meta-Architecture
+
+**Status:** 🕐 AWAITING MATURATION  
+**Depends on:** S2.1-S2.5 operational  
+**Estimated effort:** TBD
+
+Meta-level architecture where skills can create and register other skills. Requires S2.1-S2.5 to be operational and well-tested before this becomes meaningful.
+
+**Why wait:** Needs more experimentation with 6.1-6.5 before meta-level design makes sense.
+
+---
+
+### Sprach 2.0: Validated Decisions (DEC-001 to DEC-006)
+
+The following architectural decisions from the Sprach 2.0 article have been validated by state-of-the-art research:
+
+| Decision | Ruling | Validation |
+|----------|--------|------------|
+| **DEC-001** Cache incremental for `content_relations` | On-demand, not pre-computed | GraphSeek 2026, Graph RAG 2026 |
+| **DEC-002** Reflection triggers over periodic | Specific triggers, not time-based | ICML 2025, MeCo arXiv 2025 |
+| **DEC-003** Curation with human approval | Drafts, not auto-publish | Rewire.it, "Human-in-the-loop" |
+| **DEC-004** WASM sandbox by capabilities | Allowed/denied, not total isolation | The New Stack 2026, MCP-SandboxScan |
+| **DEC-005** Semantic versioning for plugins | Major equal, minor ≥ | OpenFang, "Semver + manifest signing" |
+| **DEC-006** SOUL.md patches with approval | Suggestions, not automatic | MetaMind NeurIPS 2025, "Human oversight" |
+
+**Competitors identified:**
+- Joplin GSoC 2026: Note graphs with AI (similar to S2.1 + S2.2)
+- OpenClaw: WASM sandbox for community skills (similar to S2.4)
+
+---
+
 ## Streaming Architecture (Future)
 
 The `ollama-rs` library (already included with `stream` feature) provides streaming capabilities:
@@ -2631,4 +3107,4 @@ The original detailed implementation notes have been moved to:
 
 ## Last Updated
 
-2026-03-26 - v0.38.0: Pokemon tools removed from default, Plugin System + MCP documentation
+2026-04-11 - P6 Core Enhancements added, milestone tags [M1]/[M2]/[M3], P4 extras, P5 verbosity merge, P15 sub-items with scope clarification

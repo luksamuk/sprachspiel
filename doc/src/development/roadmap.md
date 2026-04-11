@@ -2,6 +2,14 @@
 
 This document outlines planned features and the current state of Ask-AI.
 
+## Milestones
+
+| Milestone | Codename | Description | Priorities |
+|-----------|----------|-------------|------------|
+| **[M1]** | Core Evolution | All work before Sprach 2.0 | P1, P4-P6, P8-P13 |
+| **[M2]** | Sprach 2.0 | CAS research, cognitive extensions | P7, P14, P15 |
+| **[M3]** | Future | Deferred, no current priority | Cost tracking, team features, speculation |
+
 ## Current State
 
 ### Implemented Features
@@ -592,6 +600,63 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 
 ---
 
+### P6: Core Enhancements [M1]
+
+**Priority:** P6 (before Sprach 2.0, after current P1/P4/P5)  
+**Status:** 📋 PLANNED / 🟡 RESEARCH
+
+| ID | Feature | Status | Effort |
+|----|---------|--------|--------|
+| P6.0 | Multi-Provider Support (OpenAI-Compatible) | 📋 Planned | 4-7 weeks |
+| P6.1 | Auto Fact Extraction (autoDream-lite) | 📋 Planned | 3-5 days |
+| P6.2 | Context Pinning | 🟡 Research | 2-4 days |
+| P6.3 | Dynamic Context Limits | 🟡 Research | 1-2 days |
+| P6.4 | Secret Scanning (Content) | 📋 Planned | 1-2 days |
+
+**Also in P4 (Code Quality extras) [M1]:**
+
+| Feature | Status | Effort |
+|---------|--------|--------|
+| Memory Staleness Warnings | 📋 Planned | 0.5 day |
+| Truncation Warnings | 📋 Planned | 0.5 day |
+
+**P5 merge [M1]:** Verbosity Configuration merged with `log` crate item — single implementation covering both logging levels and configurable verbosity (quiet/normal/verbose/debug).
+
+---
+
+### Sprach 2.0: CAS Research [M2]
+
+**Priority:** P7 (after all P1-P5 current items are resolved)  
+**Status:** 🟡 RESEARCH NEEDED  
+**Reference:** `~/git/biblio/sprach-2-0-auto-analise.org`  
+**Full Design:** See [Sprach 2.0 Research](./sprach-2-0-research.md) for open questions, code analysis, and implementation details.
+
+Self-analysis identifying ask-ai-rs as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. Proposals aim to increase emergent connectivity and adaptive behavior.
+
+| ID | Proposal | Depends On | Status | Effort |
+|----|----------|------------|--------|--------|
+| S2.1 | Visualize Connections Tool | None | 🟡 Research | 2-3 days |
+| S2.2 | Content Relations Graph (2-layer) | S2.1 | 🟡 Research | 5-8 days |
+| S2.3 | Reflection on Triggers + Curation | S2.1, S2.2 | 🟡 Research | 4-7 days |
+| S2.4 | Plugin System (WASM) | — | 📋 P15 (existing) | 3-4 weeks |
+| S2.5 | SOUL.md Patching + `/apply-patch` | S2.3 | 🟡 Research | 3-5 days |
+| S2.6 | Skills Auto-Registration (Meta) | S2.1-S2.5 | 🕐 Wait | TBD |
+
+**Validated Decisions (DEC-001 to DEC-006):**
+
+| Decision | Ruling | Validation |
+|----------|--------|------------|
+| DEC-001 | Cache incremental for relations (on-demand, not pre-computed) | GraphSeek 2026, Graph RAG 2026 |
+| DEC-002 | Reflection triggers (not periodic) | ICML 2025, MeCo arXiv 2025 |
+| DEC-003 | Curation with human approval (drafts, not auto-publish) | Rewire.it, "Human-in-the-loop" |
+| DEC-004 | WASM sandbox by capabilities (allowed/denied, not total isolation) | The New Stack 2026, MCP-SandboxScan |
+| DEC-005 | Semantic versioning for plugins (major equal, minor ≥) | OpenFang, "Semver + manifest signing" |
+| DEC-006 | SOUL.md patches require human approval (suggestions, not automatic) | MetaMind NeurIPS 2025, "Human oversight" |
+
+**Competitors:** Joplin GSoC 2026 (note graphs with AI), OpenClaw (WASM sandbox for community skills)
+
+---
+
 ## Low Priority
 
 ### Plugin System
@@ -600,21 +665,6 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 **Status:** Not started
 
 User-defined tools via dynamic loading or compilation.
-
----
-
-### OpenAPI Compatibility (Direct API Access)
-
-**Priority:** LOW  
-**Status:** Research Needed
-
-**Goal:** Support direct interaction with OpenAI-compatible APIs.
-
-**Tasks:**
-- [ ] Research: Required API endpoints
-- [ ] Design: Provider trait/interface
-- [ ] Implement: OpenAI provider
-- [ ] Implement: LM Studio provider
 
 ---
 
@@ -656,15 +706,18 @@ User-defined tools via dynamic loading or compilation.
 
 ## Low Priority
 
-### Multi-Provider Support (OpenAI-Compatible Backends)
+### Multi-Provider Support (OpenAI-Compatible Backends) → Moved to P6.0 [M1]
 
-**Priority:** LOW  
-**Status:** 📋 Planned  
+**Priority:** P6.0 (was LOW, upgraded)  
+**Status:** 📋 PLANNED  
 **Issue:** TBD
+
+> **NOTE:** This feature has been upgraded from LOW priority to P6.0 and is now tracked in IMPLEMENTATION.md under PRIORITY 6: Core Enhancements. The detailed implementation plan is in the P6.0 section of IMPLEMENTATION.md. This roadmap section is kept for architectural reference.
 
 **Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (cloud/local) through a unified interface.
 
 **Motivation:**
+- **Performance:** llama.cpp server with OpenAI-compatible endpoints can be faster than Ollama for local models
 - **Primary Target:** OpenAI API - enable cloud-based models for users without local GPU
 - **Compatibility Targets:**
   - llama.cpp (via OpenAI-compatible `/v1/chat/completions` endpoint)
@@ -815,6 +868,27 @@ thinking = false
 - Current `chat/custom_coordinator.rs` - tool execution flow
 - Current `embeddings/client.rs` - embedding client
 - Current `capabilities.rs` - model capability detection
+
+---
+
+## [M3] Future — Deferred
+
+Features explicitly deferred with no current priority:
+
+| Feature | Reason |
+|---------|--------|
+| AutoDream full daemon (4-phase) | After Sprach 2.0 |
+| Cost Tracking | After Sprach 2.0 |
+| Multi-scope Memory (team/private) | Not applicable — harness is not code-focused |
+| Context Collapse | Observe, don't implement |
+| VCR Testing | When CI is robust |
+| Speculation | Indefinite deferral |
+| Remote Agent | P15+ |
+| Team Memory Sync | Team use only |
+| Remote Managed Settings | Enterprise |
+| Worktree-aware sessions | Niche |
+| Thinkback Marketplace | Too premature |
+| Session Summary / Away Summary | Descarted — session continuation already works |
 
 ---
 
