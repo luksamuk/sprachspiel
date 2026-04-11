@@ -2186,6 +2186,62 @@ let results = futures::future::join_all(futures).await;
 
 ---
 
+### Session Context Resume
+
+**Status:** ✅ COMPLETED (v0.39.5)
+
+**Goal:** Show a brief summary of recent messages when resuming a chat session, so the user can quickly remember what they were discussing.
+
+**Problem Statement:**
+When a user opens the chat and a previous session is loaded, they currently only see:
+```
+Resumed session: default (47 messages)
+```
+This provides no context about what was discussed. The user has to scroll up or issue `/search` to recall the conversation topic.
+
+**Solution:** Display the last few user/assistant message exchanges automatically when a session is resumed. No LLM call needed — simply show the last N messages from the session's in-memory history.
+
+**Design Decisions:**
+- Show only User and Assistant messages (skip System and Tool messages)
+- Show the last 3 exchanges (a "exchange" = one User message + its Assistant response)
+- Truncate each message to ~80 characters for readability
+- Use `format_role_label()` from `src/consts/roles.rs` for consistent role labels with emojis
+- Only display when a session is resumed (not for new or anonymous sessions)
+- Display after the welcome banner and resume message
+
+**Example Output:**
+```
+Resumed session: default (47 messages)
+Recent context (47 messages):
+  👤 User: Can you check the auth middleware?
+  🤖 Assistant: I found the issue - the token validation is checking expired tokens...
+  👤 User: What about the refresh token logic?
+  🤖 Assistant: The refresh logic looks fine, but the middleware needs to pass...
+```
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add `get_recent_exchanges()` to `ChatSession` | ✅ Done |
+| 2 | Add `RecentContextInfo` struct and formatting to `view/mod.rs` | ✅ Done |
+| 3 | Add `show_recent_context()` to `TerminalView` | ✅ Done |
+| 4 | Integrate in `repl.rs` after resume message | ✅ Done |
+| 5 | Make `truncate_str` pub(crate) in `view/mod.rs` | ✅ Done |
+| 6 | Tests and verification | ✅ Done |
+
+**Implementation:**
+- Added `ChatSession::get_recent_exchanges()` method that walks messages forward, pairing User+Assistant into exchanges
+- Added `RecentContextInfo` and `RecentMessage` structs in `view/mod.rs` with `format_context_summary()` method
+- Made `truncate_str()` pub(crate) and added `MAX_CONTEXT_LINE_LENGTH` constant
+- Added `TerminalView::show_recent_context()` method that extracts exchanges and formats them
+- Wired up in `repl.rs` to call `show_recent_context()` after resume message
+- Added 6 unit tests for `get_recent_exchanges()` and 3 tests for `RecentContextInfo`
+
+**Related:** Issue #67
+
+---
+
 ## 🔵 LOW PRIORITY: Extended Features
 
 Features planned for future releases:

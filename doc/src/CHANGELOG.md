@@ -6,6 +6,18 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Session Context Resume** - Display recent conversation context when resuming a session
+  - Shows last 3 exchanges (user + assistant pairs) automatically on session resume
+  - Filters out System and Tool messages, showing only User and Assistant
+  - Truncates each message to ~80 characters for readability
+  - Uses `format_role_label()` for consistent role labels with emojis (👤 User, 🤖 Assistant)
+  - Only displayed when resuming a saved session, not for new or anonymous sessions
+  - Added `ChatSession::get_recent_exchanges()` method for extracting recent exchanges
+  - Added `RecentContextInfo` and `RecentMessage` structs for context display formatting
+  - Added `TerminalView::show_recent_context()` method and `RecentContextInfo::format_context_summary()`
+  - Made `truncate_str()` pub(crate) for reuse across view modules
+  - Related: Issue #67
+
 - **Braille Art Welcome Banner** - Extended mind braille art replaces jp2a ASCII art
   - 14-line colored braille art generated from extended-mind.png (width 39)
   - Reordered session info by importance: Model, Server, Tools, Think, Vision, Sandbox, Project, Session, Version

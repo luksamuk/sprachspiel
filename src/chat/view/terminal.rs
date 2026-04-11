@@ -3,9 +3,11 @@
 //! This module provides the `TerminalView` struct, which implements
 //! the `ChatView` trait using standard terminal output (println!/eprintln!).
 
+use crate::consts::roles::format_role_label;
 use crate::markdown;
 
-use super::{ChatView, TokenMetrics, WelcomeInfo};
+use super::super::session::{ChatSession, MessageRole};
+use super::{truncate_str, ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
 
 /// Terminal output backend using println!/eprintln!
 ///
@@ -127,6 +129,57 @@ impl TerminalView {
             skill_count,
         };
         println!("{}", info.to_boxed_string());
+    }
+
+    /// Display recent context summary for a resumed session.
+    ///
+    /// Shows the last 3 exchanges (user+assistant pairs) from the session,
+    /// with role labels and truncated content. Only displayed when resuming
+    /// a session with messages, not for new or anonymous sessions.
+    pub fn show_recent_context(&mut self, session: &ChatSession) {
+        const MAX_EXCHANGES: usize = 3;
+        let exchanges = session.get_recent_exchanges(MAX_EXCHANGES);
+
+        if exchanges.is_empty() {
+            return;
+        }
+
+        let total_messages = session.messages.len();
+
+        let recent_exchanges: Vec<(RecentMessage, Option<RecentMessage>)> = exchanges
+            .into_iter()
+            .map(|(user_msg, asst_msg)| {
+                let role_str = match user_msg.role {
+                    MessageRole::User => "user",
+                    _ => "user",
+                };
+                let user = RecentMessage {
+                    role_label: format_role_label(role_str),
+                    content: truncate_str(&user_msg.content, super::MAX_CONTEXT_LINE_LENGTH),
+                };
+                let assistant = asst_msg.map(|a| {
+                    let a_role_str = match a.role {
+                        MessageRole::Assistant => "assistant",
+                        _ => "assistant",
+                    };
+                    RecentMessage {
+                        role_label: format_role_label(a_role_str),
+                        content: truncate_str(&a.content, super::MAX_CONTEXT_LINE_LENGTH),
+                    }
+                });
+                (user, assistant)
+            })
+            .collect();
+
+        let info = RecentContextInfo {
+            total_messages,
+            exchanges: recent_exchanges,
+        };
+
+        let summary = info.format_context_summary();
+        if !summary.is_empty() {
+            println!("{}", summary);
+        }
     }
 }
 

@@ -789,6 +789,55 @@ impl ChatSession {
             .find(|m| m.role == MessageRole::User)
     }
 
+    /// Get recent User/Assistant exchanges for context display on session resume.
+    ///
+    /// Returns up to `count` exchanges (1 exchange = 1 User + 1 Assistant message),
+    /// filtering out System and Tool messages. Results are in chronological order
+    /// (oldest first), suitable for display as a "recent context" summary.
+    ///
+    /// Each exchange is represented as a tuple of `(user_content, assistant_content)`,
+    /// where `assistant_content` is `None` if no assistant reply followed the user message.
+    pub fn get_recent_exchanges(
+        &self,
+        count: usize,
+    ) -> Vec<(SavedMessage, Option<SavedMessage>)> {
+        // Build exchanges: walk through messages in order, pairing each
+        // User message with the next Assistant message (if any).
+        let mut all_exchanges: Vec<(SavedMessage, Option<SavedMessage>)> = Vec::new();
+        let mut pending_user: Option<SavedMessage> = None;
+
+        for msg in &self.messages {
+            match msg.role {
+                MessageRole::User => {
+                    // If there's a pending user without an assistant, save it as incomplete
+                    if let Some(user_msg) = pending_user.take() {
+                        all_exchanges.push((user_msg, None));
+                    }
+                    pending_user = Some(msg.clone());
+                }
+                MessageRole::Assistant => {
+                    if let Some(user_msg) = pending_user.take() {
+                        all_exchanges.push((user_msg, Some(msg.clone())));
+                    } else {
+                        // Orphan assistant message — skip
+                    }
+                }
+                MessageRole::System | MessageRole::Tool => {
+                    // Filter out system and tool messages
+                }
+            }
+        }
+
+        // If there's a pending user message without a reply, include it
+        if let Some(user_msg) = pending_user {
+            all_exchanges.push((user_msg, None));
+        }
+
+        // Take the last `count` exchanges
+        let start = all_exchanges.len().saturating_sub(count);
+        all_exchanges.into_iter().skip(start).collect()
+    }
+
     /// Set the compacted summary with middle compaction (preserves first and last messages)
     pub fn set_compacted_summary_with_range(
         &mut self,
@@ -1506,4 +1555,163 @@ fn test_history_real_tokens_with_tool_call_in_between() {
         tokens, 500,
         "Should return cumulative tokens from assistant message"
     );
+}
+
+#[test]
+fn test_get_recent_exchanges_empty_session() {
+    let session = ChatSession::new("test-model".into(), None, false);
+    let exchanges = session.get_recent_exchanges(3);
+    assert!(exchanges.is_empty(), "Empty session should have no exchanges");
+}
+
+#[test]
+fn test_get_recent_exchanges_single_exchange() {
+    let mut session = ChatSession::new("test-model".into(), None, false);
+    session.messages.push(SavedMessage {
+        role: MessageRole::User,
+        content: "Hello".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+    session.messages.push(SavedMessage {
+        role: MessageRole::Assistant,
+        content: "Hi there!".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+
+    let exchanges = session.get_recent_exchanges(3);
+    assert_eq!(exchanges.len(), 1);
+    assert_eq!(exchanges[0].0.content, "Hello");
+    assert_eq!(exchanges[0].1.as_ref().unwrap().content, "Hi there!");
+}
+
+#[test]
+fn test_get_recent_exchanges_filters_system_and_tool() {
+    let mut session = ChatSession::new("test-model".into(), None, false);
+    session.messages.push(SavedMessage {
+        role: MessageRole::System,
+        content: "System prompt".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+    session.messages.push(SavedMessage {
+        role: MessageRole::User,
+        content: "Hello".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+    session.messages.push(SavedMessage {
+        role: MessageRole::Tool,
+        content: "Tool result".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+    session.messages.push(SavedMessage {
+        role: MessageRole::Assistant,
+        content: "Hi!".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+
+    let exchanges = session.get_recent_exchanges(3);
+    assert_eq!(exchanges.len(), 1);
+    // User should be matched with the assistant response
+    assert_eq!(exchanges[0].0.content, "Hello");
+    assert_eq!(exchanges[0].1.as_ref().unwrap().content, "Hi!");
+}
+
+#[test]
+fn test_get_recent_exchanges_multiple_exchanges() {
+    let mut session = ChatSession::new("test-model".into(), None, false);
+    for i in 0..5 {
+        session.messages.push(SavedMessage {
+            role: MessageRole::User,
+            content: format!("User {}", i),
+            timestamp: Utc::now(),
+            ..Default::default()
+        });
+        session.messages.push(SavedMessage {
+            role: MessageRole::Assistant,
+            content: format!("Assistant {}", i),
+            timestamp: Utc::now(),
+            ..Default::default()
+        });
+    }
+
+    // Request 3 exchanges (should get last 3 of 5)
+    let exchanges = session.get_recent_exchanges(3);
+    assert_eq!(exchanges.len(), 3);
+
+    // Should be in chronological order (oldest first)
+    assert_eq!(exchanges[0].0.content, "User 2");
+    assert_eq!(exchanges[0].1.as_ref().unwrap().content, "Assistant 2");
+    assert_eq!(exchanges[1].0.content, "User 3");
+    assert_eq!(exchanges[1].1.as_ref().unwrap().content, "Assistant 3");
+    assert_eq!(exchanges[2].0.content, "User 4");
+    assert_eq!(exchanges[2].1.as_ref().unwrap().content, "Assistant 4");
+}
+
+#[test]
+fn test_get_recent_exchanges_incomplete_exchange() {
+    // Test: last user message without assistant reply
+    let mut session = ChatSession::new("test-model".into(), None, false);
+    session.messages.push(SavedMessage {
+        role: MessageRole::User,
+        content: "First question".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+    session.messages.push(SavedMessage {
+        role: MessageRole::Assistant,
+        content: "First answer".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+    session.messages.push(SavedMessage {
+        role: MessageRole::User,
+        content: "Second question".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+
+    let exchanges = session.get_recent_exchanges(3);
+    assert_eq!(exchanges.len(), 2);
+
+    // First exchange: complete
+    assert_eq!(exchanges[0].0.content, "First question");
+    assert_eq!(exchanges[0].1.as_ref().unwrap().content, "First answer");
+
+    // Second exchange: user only (no assistant reply yet)
+    assert_eq!(exchanges[1].0.content, "Second question");
+    assert!(exchanges[1].1.is_none());
+}
+
+#[test]
+fn test_get_recent_exchanges_tool_messages_between() {
+    // Test: Tool messages between user and assistant are skipped
+    let mut session = ChatSession::new("test-model".into(), None, false);
+    session.messages.push(SavedMessage {
+        role: MessageRole::User,
+        content: "What's the weather?".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+    session.messages.push(SavedMessage {
+        role: MessageRole::Tool,
+        content: "Weather data".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+    session.messages.push(SavedMessage {
+        role: MessageRole::Assistant,
+        content: "It's sunny!".into(),
+        timestamp: Utc::now(),
+        ..Default::default()
+    });
+
+    let exchanges = session.get_recent_exchanges(3);
+    assert_eq!(exchanges.len(), 1);
+    assert_eq!(exchanges[0].0.content, "What's the weather?");
+    assert_eq!(exchanges[0].1.as_ref().unwrap().content, "It's sunny!");
 }
