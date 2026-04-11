@@ -6,8 +6,8 @@
 //! 3. Error recovery
 
 use ask_ai::context_overflow::{
-    COMPACTION_MIN, CRITICAL_USAGE_PERCENT, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD,
-    MODERATE_USAGE_PERCENT, PRE_TOOL_MIN, calculate_thresholds,
+    calculate_thresholds, COMPACTION_MIN, CRITICAL_USAGE_PERCENT, DEFAULT_KEEP_LAST,
+    DEFAULT_OVERFLOW_THRESHOLD, MODERATE_USAGE_PERCENT, PRE_TOOL_MIN,
 };
 use ask_ai::tokens::estimate_tokens;
 
@@ -118,9 +118,9 @@ fn test_whitespace_content() {
     // Whitespace-only content has zero tokens (word-based estimation)
     let whitespace = "   \n\t   ";
     let estimate = estimate_tokens(whitespace);
-    assert!(
-        estimate >= 0,
-        "Whitespace should estimate to zero or minimal tokens"
+    assert_eq!(
+        estimate, 0,
+        "Whitespace should estimate to zero tokens, got {estimate}"
     );
 }
 
