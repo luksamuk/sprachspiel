@@ -527,6 +527,10 @@ pub async fn run_chat_repl(
     // Print session info (if any)
     if let Some(msg) = resume_message {
         println!("{}", msg);
+
+        // Show recent context when resuming a session
+        let mut view = TerminalView::new();
+        view.show_recent_context(&session);
     }
 
     // Attach database to session

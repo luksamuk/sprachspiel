@@ -447,6 +447,73 @@ impl StatusBarInfo {
     }
 }
 
+/// A single message in the recent context display
+pub struct RecentMessage {
+    /// Role label (e.g., "👤 User", "🤖 Assistant")
+    pub role_label: String,
+    /// Truncated message content
+    pub content: String,
+}
+
+/// Recent context information for session resume display
+///
+/// Contains the last few exchanges (user+assistant pairs) from
+/// the resumed session, shown after the welcome banner.
+pub struct RecentContextInfo {
+    /// Number of total messages in the session
+    pub total_messages: usize,
+    /// Recent exchanges in chronological order (oldest first)
+    pub exchanges: Vec<(RecentMessage, Option<RecentMessage>)>,
+}
+
+impl RecentContextInfo {
+    /// Format the recent context as a dimmed block below the banner.
+    ///
+    /// Shows the last few exchanges with role labels and truncated content.
+    /// Returns an empty string if there are no exchanges to display.
+    pub fn format_context_summary(&self) -> String {
+        if self.exchanges.is_empty() {
+            return String::new();
+        }
+
+        let mut output = String::new();
+        output.push_str(&format!(
+            "{}{}Recent context ({} messages):{}\n",
+            colors::DIM,
+            colors::BOLD,
+            self.total_messages,
+            colors::RESET
+        ));
+
+        for (user_msg, assistant_msg) in &self.exchanges {
+            // User message line
+            output.push_str(&format!(
+                "  {}{}{}:{} {}\n",
+                colors::BOLD_CYAN,
+                user_msg.role_label,
+                colors::RESET,
+                colors::DIM,
+                user_msg.content
+            ));
+
+            // Assistant message line (if present)
+            if let Some(asst) = assistant_msg {
+                output.push_str(&format!(
+                    "  {}{}{}:{} {}\n",
+                    colors::BOLD_YELLOW,
+                    asst.role_label,
+                    colors::RESET,
+                    colors::DIM,
+                    asst.content
+                ));
+            }
+        }
+
+        output.push_str(colors::RESET);
+        output
+    }
+}
+
 /// Format tokens as human-readable string
 ///
 /// Examples:
@@ -478,8 +545,11 @@ fn get_bar_color(percent: u8) -> &'static str {
     }
 }
 
+/// Maximum length for each message line in the recent context display
+pub const MAX_CONTEXT_LINE_LENGTH: usize = 80;
+
 /// Truncate a string to a maximum length, adding ellipsis if truncated
-fn truncate_str(s: &str, max_len: usize) -> String {
+pub(crate) fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
@@ -648,5 +718,80 @@ mod tests {
         let output = info.format_status_bar();
         assert!(!output.contains("🧠"));
         assert!(!output.contains("🔧"));
+    }
+
+    #[test]
+    fn test_recent_context_info_empty() {
+        let info = RecentContextInfo {
+            total_messages: 0,
+            exchanges: vec![],
+        };
+        assert!(info.format_context_summary().is_empty());
+    }
+
+    #[test]
+    fn test_recent_context_info_with_exchanges() {
+        let info = RecentContextInfo {
+            total_messages: 10,
+            exchanges: vec![(
+                RecentMessage {
+                    role_label: "👤 User".to_string(),
+                    content: "What is Rust?".to_string(),
+                },
+                Some(RecentMessage {
+                    role_label: "🤖 Assistant".to_string(),
+                    content: "Rust is a systems programming language...".to_string(),
+                }),
+            )],
+        };
+        let output = info.format_context_summary();
+        assert!(output.contains("Recent context"));
+        assert!(output.contains("10 messages"));
+        assert!(output.contains("👤 User"));
+        assert!(output.contains("🤖 Assistant"));
+        assert!(output.contains("What is Rust?"));
+    }
+
+    #[test]
+    fn test_recent_context_info_user_only() {
+        let info = RecentContextInfo {
+            total_messages: 3,
+            exchanges: vec![(
+                RecentMessage {
+                    role_label: "👤 User".to_string(),
+                    content: "Hello".to_string(),
+                },
+                None,
+            )],
+        };
+        let output = info.format_context_summary();
+        assert!(output.contains("👤 User"));
+        assert!(output.contains("Hello"));
+        // Should NOT contain assistant content when None
+        assert!(!output.contains("🤖 Assistant"));
+    }
+
+    #[test]
+    fn test_recent_context_info_strips_thinking_tags() {
+        // Verify that thinking tags are not shown in context display
+        use crate::chat::strip_thinking_tags;
+
+        // HTML thinking tags should be stripped
+        let input = "<thinking>Let me think about this...</thinking>\n\nThe answer is 42";
+        let cleaned = strip_thinking_tags(input);
+        assert!(!cleaned.contains("<thinking>"));
+        assert!(!cleaned.contains("</thinking>"));
+        assert!(cleaned.contains("The answer is 42"));
+
+        // When truncated, thinking content should not appear
+        let truncated = truncate_str(&cleaned, MAX_CONTEXT_LINE_LENGTH);
+        assert!(!truncated.contains("Let me think"));
+        assert!(truncated.contains("The answer is 42"));
+
+        // Unicode thinking tags should also be stripped
+        let unicode_input = "\u{6beb}Internal reasoning\u{6beb}\n\nFinal response";
+        let unicode_cleaned = strip_thinking_tags(unicode_input);
+        assert!(!unicode_cleaned.contains("Internal reasoning"));
+        assert!(unicode_cleaned.contains("Final response"));
     }
 }
