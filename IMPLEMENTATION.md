@@ -2368,7 +2368,7 @@ vision = true
 
 **Reference:** See `doc/src/development/roadmap.md` - Multi-Provider Support section for architectural details and type definitions.
 
-**Related:** Issue #TBD
+**Related:** Issue #72
 
 ---
 
@@ -2396,7 +2396,7 @@ vision = true
 - Cost budget: how many tokens per extraction call?
 - Should user be notified when facts are auto-extracted?
 
-**Related:** Issue #TBD
+**Related:** Issue #73
 
 ---
 
@@ -2418,7 +2418,7 @@ vision = true
 - How does pinning interact with the compaction algorithm in `src/chat/core.rs`?
 - UI: how does user see what's pinned?
 
-**Related:** Issue #TBD
+**Related:** Issue #74
 
 ---
 
@@ -2436,7 +2436,7 @@ vision = true
 - What's the right formula? Context_remaining - buffer = available_for_tool?
 - Need more research to understand the full complexity.
 
-**Related:** Issue #TBD
+**Related:** Issue #75
 
 ---
 
@@ -2454,7 +2454,7 @@ vision = true
 
 **Security rule:** Never log or display secret values — only show rule ID and label (e.g., "AWS Access Key detected").
 
-**Related:** Issue #TBD
+**Related:** Issue #76
 
 ---
 
@@ -2477,7 +2477,7 @@ if fact.days_since_access > 30 {
 
 **Complexity:** Very low — single file change in `src/facts/prompt.rs`.
 
-**Related:** Issue #TBD
+**Related:** Issue #70
 
 ---
 
@@ -2498,7 +2498,7 @@ if fact.days_since_access > 30 {
 
 **Complexity:** Low — modify `read_file` and `search_files` output formatting.
 
-**Related:** Issue #TBD
+**Related:** Issue #71
 
 ---
 
