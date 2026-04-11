@@ -320,6 +320,75 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
+### 🔴 PRIORITY 1: Enhance Todo Tools — CRUD Gaps, Priority, and Tags (Issue #66)
+
+**Status:** ❌ NOT STARTED
+
+**Goal:** Fix technical debt in todo tools by adding missing CRUD operations, priority levels, and tags/categories.
+
+**Problem Statement:**
+- Cannot retrieve a single task by ID (`todo_get`)
+- Cannot delete a specific task (`todo_delete`) — only `clear_done` and `clear_all` exist
+- Cannot edit a task's description after creation (`todo_edit`)
+- No priority levels (low/medium/high/critical) — all tasks are equal
+- No tags/categories for grouping (bug, feature, refactor, etc.)
+- No filtering in `todo_list` (by status, tag, or priority)
+
+**Solution:** Extend todo tools in two phases:
+
+**Phase 1 — Missing CRUD (essential):**
+
+| Tool | Description |
+|------|-------------|
+| `todo_get(id)` | Retrieve a single task by ID |
+| `todo_delete(id)` | Delete a specific task by ID |
+| `todo_edit(id, description?)` | Edit task description |
+
+**Phase 2 — Priority and Tags (organization):**
+
+| Change | Description |
+|--------|-------------|
+| `Priority` enum | `low`, `medium` (default), `high`, `critical` |
+| `tags: Vec<String>` | Comma-separated tags on `Task` struct |
+| `todo_add(description, priority?, tags?)` | Extended creation |
+| `todo_edit(id, description?, priority?, tags?)` | Extended editing |
+| `todo_list(filter?)` | Filter by status/tag/priority |
+| DB migration | Add `priority` and `tags` columns to `session_todos` |
+
+**Design Decisions:**
+- All optional params use `Option<String>` per AGENTS.md (LLM parameter safety)
+- Empty string normalization: `.filter(|s| !s.is_empty())` on priority/tags
+- Priority default: `medium`
+- Tags: comma-separated, trimmed, lowercased
+- No sub-tasks (YAGNI — LLM can use numbered descriptions like "1/3: X")
+- `todo_edit` follows `note_edit` pattern: at least one field required
+
+**Implementation:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1.1 | Add `todo_get(id)` tool | ❌ |
+| 1.2 | Add `todo_delete(id)` tool | ❌ |
+| 1.3 | Add `todo_edit(id, description?)` tool | ❌ |
+| 1.4 | Register new tools in registry | ❌ |
+| 1.5 | Add tool descriptions to prompts | ❌ |
+| 1.6 | Update `doc/src/tools.md` | ❌ |
+| 1.7 | Manual tests | ❌ |
+| 2.1 | Add `Priority` enum | ❌ |
+| 2.2 | Add `tags: Vec<String>` to `Task` | ❌ |
+| 2.3 | Extend `todo_add(description, priority?, tags?)` | ❌ |
+| 2.4 | Extend `todo_edit(id, description?, priority?, tags?)` | ❌ |
+| 2.5 | Extend `todo_list(filter?)` with filtering | ❌ |
+| 2.6 | Extend `format_list()` for priority/tags | ❌ |
+| 2.7 | DB migration for `priority` and `tags` columns | ❌ |
+| 2.8 | Update `to_rows()`/`from_rows()` | ❌ |
+| 2.9 | Update prompts and docs | ❌ |
+| 2.10 | Manual tests | ❌ |
+
+**Related:** Issue #66
+
+---
+
 ### ✅ PRIORITY 1: Code Quality - Prompts Centralization (COMPLETED)
 
 **Status:** ✅ COMPLETED (v0.33.0)
