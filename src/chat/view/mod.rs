@@ -550,10 +550,11 @@ pub const MAX_CONTEXT_LINE_LENGTH: usize = 80;
 
 /// Truncate a string to a maximum length, adding ellipsis if truncated
 pub(crate) fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
+        format!("{}...", truncated)
     }
 }
 
@@ -662,6 +663,31 @@ mod tests {
     fn test_truncate_str() {
         assert_eq!(truncate_str("short", 10), "short");
         assert_eq!(truncate_str("this is a very long string", 10), "this is...");
+    }
+
+    #[test]
+    fn test_truncate_str_unicode() {
+        // Regression test: byte-based slicing panicked on multibyte chars
+        // Portuguese text with ç, ã, é — exact crash scenario from bug report
+        let pt = "A conexão com Wittgenstein é perfeita";
+        let result = truncate_str(pt, 20);
+        assert!(result.ends_with("..."));
+        assert!(!result.is_empty());
+
+        // CJK characters (3 bytes each) - with max_len=7, we get 4 chars + ...
+        // 7 - 3 = 4, so we should get 4 characters before ...
+        let cjk = "你好世界Hello世界";
+        let result = truncate_str(cjk, 7); // 7 chars = 4 Chinese + 3 ASCII, then ...
+        assert!(result.ends_with("..."));
+        assert!(result.starts_with("你好"));
+
+        // String shorter than max_len should not be modified
+        let short = "café";
+        assert_eq!(truncate_str(short, 10), "café");
+
+        // Boundary case: exactly max_len chars
+        let exact = "abcdefghijklmno"; // 15 chars
+        assert_eq!(truncate_str(exact, 15), "abcdefghijklmno");
     }
 
     #[test]

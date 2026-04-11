@@ -1322,11 +1322,7 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
             let lines: Vec<&str> = content.lines().collect();
             let max_lines = 5;
             for line in lines.iter().take(max_lines) {
-                let truncated = if line.len() > 76 {
-                    format!("{}...", &line[..76])
-                } else {
-                    line.to_string()
-                };
+                let truncated = crate::chat::view::truncate_str(line, 76);
                 println!("  │ {}", truncated);
             }
 
@@ -1451,11 +1447,7 @@ pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
                 }
                 // Get first line only for preview, truncated if too long
                 let first_line = note.content.lines().next().unwrap_or(&note.content);
-                let preview = if first_line.len() > 76 {
-                    format!("{}...", &first_line[..76])
-                } else {
-                    first_line.to_string()
-                };
+                let preview = crate::chat::view::truncate_str(first_line, 76);
                 println!("  │ {}", preview);
             }
 
@@ -1584,11 +1576,7 @@ pub fn handle_note_edit(
                 if let Some(c) = &content {
                     println!(
                         "  Content: {}",
-                        if c.len() > 80 {
-                            format!("{}...", &c[..80])
-                        } else {
-                            c.clone()
-                        }
+                        crate::chat::view::truncate_str(c, 80)
                     );
                 }
             }
@@ -1702,11 +1690,7 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
                         result.item.id, result.score, age_days
                     );
                 }
-                let preview = if result.item.content.len() > 80 {
-                    format!("{}...", &result.item.content[..80])
-                } else {
-                    result.item.content.clone()
-                };
+                let preview = crate::chat::view::truncate_str(&result.item.content, 80);
                 println!("    {}", preview);
             }
 
