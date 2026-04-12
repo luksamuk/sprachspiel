@@ -310,6 +310,84 @@ Via chat with a model that supports tools:
 
 ---
 
+## 11. Memory Staleness Warnings (Issue #70)
+
+**Verify that facts in the system prompt show staleness labels when outdated.**
+
+This test requires inserting facts with different ages into the database and checking
+the system prompt injection. Since staleness is based on `decay_score`, `last_accessed`,
+`access_count`, and `created_at`, we test via the application's behavior.
+
+### 11.1 Fresh Facts Show No Label
+
+- [ ] Start a new chat session
+- [ ] Tell the LLM: "Remember that I prefer dark mode"
+- [ ] Verify the fact is stored (via `/fact list` or by asking "What do I prefer?")
+- [ ] Fresh facts should appear **without** any staleness label (no `(stale)`, `(N days ago)`, `(unused)`)
+
+### 11.2 Staleness Labels Appear in Prompt (Regression)
+
+> **Note:** Full staleness testing requires database manipulation to set `decay_score`,
+> `last_accessed`, `access_count`, and `created_at` to old values. This is not easily
+> testable via smoke test without direct DB access.
+
+- [ ] Verify that the `get_staleness_label()` function exists in `src/facts/prompt.rs` (code review)
+- [ ] Verify that `build_facts_section()` calls `get_staleness_label()` for each fact (code review)
+
+---
+
+## 12. Truncation Warnings in Tool Outputs (Issue #71)
+
+**Verify that tool outputs include `[TRUNCATED]` notices when content is limited.**
+
+### 12.1 read_file with max_lines
+
+**Prepare test file:**
+```bash
+# Create a file with 20 lines
+for i in $(seq 1 20); do echo "Line $i: This is test content for truncation warnings"; done > /tmp/truncation_test.txt
+```
+
+Via chat with a model that supports tools:
+
+- [ ] `read_file(path="/tmp/truncation_test.txt", max_lines="5")` returns only 5 lines
+- [ ] Output includes `[TRUNCATED: Showing lines 1-5 of 20. Use read_file_segment to read more.]`
+- [ ] `read_file(path="/tmp/truncation_test.txt")` (no max_lines) returns all 20 lines with NO truncation notice
+- [ ] `read_file(path="/tmp/truncation_test.txt", max_lines="25")` returns all 20 lines with NO truncation notice (requested lines >= total)
+
+### 12.2search_files Truncation
+
+**Prepare test file:**
+```bash
+# Create a file with a pattern that appears many times
+for i in $(seq 1 200); do echo "UNIQUEPATTERN line $i"; done > /tmp/search_truncation_test.txt
+```
+
+- [ ] `search_files(pattern="UNIQUEPATTERN", path="/tmp")` returns results
+- [ ] If more than 100 matches, output includes `[TRUNCATED: Showing 100 matches. Refine your search pattern for fewer results.]`
+
+### 12.3 remember Truncation (Notes/Documents)
+
+Via chat with a model that supports tools:
+
+- [ ] Create a long note: "Remember this is a very long note with lots of content that should exceed 150 characters when displayed in search results so that the truncation warning appears in the output"
+- [ ] Search for it: `remember(query="long note")`
+- [ ] If the content exceeds 150 chars, output includes `[TRUNCATED: 150 of N chars. Use remember(id="note:X") for full content.]`
+
+### 12.4 Unicode Safety (Regression)
+
+- [ ] Create a file with multibyte characters: `echo "Linha 1: Olá mundo 日本語テスト 🎉" > /tmp/unicode_test.txt`
+- [ ] `read_file(path="/tmp/unicode_test.txt", max_lines="1")` returns first line without garbled characters
+- [ ] Truncation notice is properly formatted (not garbled)
+
+### 12.5 Cleanup
+
+```bash
+rm -f /tmp/truncation_test.txt /tmp/search_truncation_test.txt /tmp/unicode_test.txt
+```
+
+---
+
 ## Cleanup
 
 ```bash
@@ -329,7 +407,7 @@ Since we use a temporary database (isolated), they will be discarded when restor
 
 ---
 
-## 11. Basic Performance
+## 13. Basic Performance
 
 ```bash
 # Acceptable time for simple query (no context)
@@ -406,6 +484,8 @@ The script above runs automated tests. The following tests must be run manually:
 5. **Section 6.5**: Todo Tools (CRUD, priority, tags, filters)
 6. **Section 10**: File Tools (via LLM)
 7. **Section 10.5**: run_command Error Messages
-8. **Section 11**: Performance (verify response time)
+8. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
+9. **Section 12**: Truncation Warnings in Tool Outputs (via LLM)
+10. **Section 13**: Performance (verify response time)
 
 These tests require chat interaction and visual verification of results.

@@ -18,6 +18,31 @@ This is MANDATORY. The PR process document describes the exact workflow:
 
 **DO NOT skip this step. DO NOT assume you know the workflow. READ THE DOCUMENT.**
 
+## Next Demand Workflow
+
+When the user asks "What's the next demand?" (or "Qual a próxima demanda?"):
+
+1. **Consult roadmap documents:**
+   - Read `IMPLEMENTATION.md` for priority list and status
+   - Read `doc/src/development/roadmap.md` for detailed feature info
+   - Check GitHub Project board for current card status
+
+2. **Identify the next priority:**
+   - Look for items marked `📋 PLANNED`, `🟡 RESEARCH`, `❌ NOT STARTED`
+   - Prioritize by priority labels (P0 > P1 > P2 > ... > P8+)
+   - Consider dependencies and effort estimates
+   - Present options with estimated effort
+
+3. **Re-read the PR-PROCESS.md:**
+   - Before starting ANY work, re-read `doc/src/development/PR-PROCESS.md`
+   - Follow the exact workflow: branch → docs → draft PR → implement → review → test → merge
+   - **Do NOT assume you remember the process** — re-read it every time
+   - The process has been updated multiple times; always verify the current version
+
+4. **Present the plan:**
+   - Show what will be done, in which files, with what approach
+   - Wait for user approval before proceeding
+
 ## Build Commands
 
 ```bash

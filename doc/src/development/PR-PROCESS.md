@@ -266,7 +266,7 @@ This phase repeats until all review comments are resolved.
     - Adds more comments → return to step 27
 ```
 
-### Phase 6: Manual Testing (REVIEWER)
+### Phase 6: Review & Approval (REVIEWER)
 
 After all review comments are resolved, the reviewer performs manual testing.
 
@@ -288,62 +288,62 @@ After all review comments are resolved, the reviewer performs manual testing.
     f. Agent pushes changes
     g. **Return to Step 27 (review iteration)** - new commits need review
 
-36. If testing passes:
-    - Proceed to Phase 7 (merge)
+36. If testing passes → proceed to Phase 6.1
+```
 
 **IMPORTANT:** Every time the agent pushes commits (whether fixing review comments, 
 bugs from testing, or any other changes), the PR returns to Step 27 for a new 
 review iteration. The reviewer must review the new commits and either:
 - Add more comments → continue iteration
-- Approve → proceed to Phase 7
+- Approve → proceed to Phase 6.1
 
 **CRITICAL:** The reviewer can only review after the agent has pushed ALL commits.
 Before informing the reviewer that changes are ready, the agent MUST ensure:
 - All commits are pushed to the remote branch
 - `git status` shows "up to date with 'origin/<branch>'"
 - No local commits remain unpushed
-```
 
-### Phase 6.5: Manual Tests (HERMES AGENT)
+### Phase 6.1: Agent Creates Manual Test Script (AFTER Review Approval)
 
-After code review approval and automated tests pass, manual tests may be required
-for specific bug fixes or features that cannot be tested automatically.
+After the reviewer approves the PR, the primary agent (OpenCode, not Hermes) creates
+a manual test script specific to the task being implemented.
 
-**IMPORTANT:** Manual test files (e.g., `MANUAL-TEST-<PR_NUMBER>.md`) are **NOT versioned**.
-They should be:
-- Created locally by the Hermes Agent during testing
-- Stored outside the repository (e.g., `~/` or `/tmp`)
+**Why the primary agent creates this:** The primary agent knows what code changed,
+what edge cases exist, and what the PR is supposed to do. The Hermes Agent only
+executes the script — it does not decide what to test.
+
+**IMPORTANT:** Manual test files are **NOT versioned**. They are:
+- Created by the primary agent (OpenCode)
+- Stored outside the repository (e.g., `~/MANUAL-TEST-PR_NUMBER.md`)
+- Based on template: `doc/src/development/MANUAL-TEST-TEMPLATE.md`
+- Customized for the specific feature/fix in the PR
 - Deleted after the PR is merged
-- NEVER committed to git
+- **NEVER committed to git**
 
 ```
-37. Hermes Agent creates manual test file LOCALLY (not in repo):
-     - File: ~/MANUAL-TEST-PR_NUMBER.md (or /tmp/MANUAL-TEST-PR_NUMBER.md)
-     - Based on template: doc/src/development/MANUAL-TEST-TEMPLATE.md
-     - Customized for specific bug fixes in the PR
-     - Uses temporary files for test data
-     - Results documented in the file itself
-     - NEVER add to git
+37. Primary agent creates manual test file LOCALLY (not in repo):
+    - File: ~/MANUAL-TEST-PR_NUMBER.md (or /tmp/MANUAL-TEST-PR_NUMBER.md)
+    - Based on template: doc/src/development/MANUAL-TEST-TEMPLATE.md
+    - Customized for the specific feature/fix in the PR
+    - Includes test sections for:
+      a. Feature functionality (happy path)
+      b. Edge cases (Unicode, empty input, boundary values)
+      c. Error handling (invalid input, missing dependencies)
+      d. Regression tests (existing features still work)
+    - Uses temporary files for test data
+    - NEVER add to git
 
-38. Hermes Agent executes manual test:
-     - Creates temporary test files
-     - Interacts with LLM to test tool behavior
-     - Verifies error messages are correct
-     - Checks unit consistency (MB/Mb, KB/Kb)
-     - Reports all test results with checkmarks
-     - Notes any failures with detailed error messages
-
-39. After manual test completes:
-     - Hermes reports results in PR comments (not in file)
-     - Manual test file is deleted or kept locally (not committed)
-     - If tests pass, proceed to Phase 6.6 (Smoke Test)
+38. Wait for user confirmation of the test script
+    - User may suggest additions or modifications
+    - Revise the script if needed
+    - Only proceed after user approves
 ```
 
 **Manual Test Principles:**
 
-1. **Bug Fix Verification**
-   - Each bug fix gets its own test section
-   - Test verifies the fix, not just the feature
+1. **Task-Specific Testing**
+   - Each feature/bug gets its own test section
+   - Test verifies the specific change, not just the feature
 
 2. **Error Message Quality**
    - Check for vague errors (e.g., "Some(1)")
@@ -355,17 +355,82 @@ They should be:
    - Verify parameters are passed correctly
    - Check that limits are enforced
 
-### Phase 6.6: Smoke Test (OPTIONAL, HERMES AGENT)
+### Phase 6.2: Manual Tests — Executed by Hermes Agent
 
-After manual tests pass (or if manual tests not required), the user may request a
-smoke test execution. This is optional and typically requested for significant
-features or before releases.
+The Hermes Agent executes the task-specific manual test script created in Phase 6.1.
+
+**IMPORTANT:** The Hermes Agent does NOT create the test script — it only executes it.
+The primary agent creates the script in Phase 6.1.
 
 ```
-40. User requests smoke test from Hermes Agent:
+39. Hermes Agent executes manual test script:
+    - Reads ~/MANUAL-TEST-PR_NUMBER.md
+    - Creates temporary test files
+    - Interacts with LLM to test tool behavior
+    - Verifies error messages are correct
+    - Checks unit consistency (MB/Mb, KB/Kb)
+    - Reports all test results with checkmarks
+    - Notes any failures with detailed error messages
+
+40. Hermes reports results in PR comments (not in the file itself)
+
+41. If manual tests find bugs:
+    a. Hermes documents failures in PR comments
+    b. Current agent (OpenCode) creates todo list of fixes
+    c. User confirms fixes
+    d. Agent implements fixes
+    e. Agent pushes changes
+    f. **Return to Step 27 (review iteration)**
+       - New commits need review
+       - After review, re-run manual tests for the fix
+
+42. If manual tests pass → proceed to Phase 6.3
+```
+
+### Phase 6.3: Agent Reviews and Updates Smoke Test Suite
+
+Before the smoke test, the primary agent checks whether the `SMOKE_TEST.md` file
+in the repository needs updates for the features/fixes in this PR.
+
+**Key distinction:** The smoke test is a **generalized regression suite** versioned in
+the repository. It is NOT task-specific — it tests that nothing is broken overall.
+The agent only adds items when there are new minimum guarantees to enforce.
+
+```
+43. Primary agent reviews SMOKE_TEST.md:
+    - Check if the PR adds features that need minimum regression guarantees
+    - If new guarantees are needed:
+      a. Add test sections to SMOKE_TEST.md
+      b. Commit: git commit -m "test: add smoke test sections for <feature>"
+      c. Push changes
+    - If no new guarantees needed:
+      - Skip this step, proceed to Phase 6.4
+
+44. Wait for user confirmation before proceeding to smoke test
+```
+
+**When to Update SMOKE_TEST.md:**
+
+- **Add sections** when: new user-visible features, new tools, new CLI commands,
+  new error messages that need verification, bug fixes that could regress
+- **Do NOT add sections** when: internal refactors, documentation-only changes,
+  test-only changes, features that are already covered by existing sections
+
+### Phase 6.4: Smoke Test — Executed by Hermes Agent (OPTIONAL)
+
+The Hermes Agent executes the generalized regression suite (`SMOKE_TEST.md`).
+This is optional and typically requested for significant features or before releases.
+
+**Key distinction from manual tests:**
+- **Manual tests** (Phase 6.2) are task-specific, created per PR, NOT versioned
+- **Smoke tests** (Phase 6.4) are generalized, versioned in `SMOKE_TEST.md`,
+  and ensure minimum guarantees across all features
+
+```
+45. User requests smoke test from Hermes Agent:
     "Execute smoke test on this PR"
 
-41. Hermes Agent executes SMOKE_TEST.md:
+46. Hermes Agent executes SMOKE_TEST.md:
     - Preserves user's existing database (backup)
     - Creates temporary test files
     - Runs automated checklist (build, unit tests)
@@ -374,12 +439,12 @@ features or before releases.
     - Notes any failures with detailed error messages
     - Writes report to ~/SMOKE-TEST-RESULTS-PR_NUMBER.md (not in repo)
 
-42. If smoke test passes:
+47. If smoke test passes:
     - Hermes reports "Aprovado para merge" in PR comments
     - Current agent (OpenCode) reads the report from ~/SMOKE-TEST-RESULTS-PR_NUMBER.md
     - Proceed to Phase 7 (Merge)
 
-43. If smoke test fails:
+48. If smoke test fails:
     - Hermes documents failures in PR comments
     - Agent creates todo list of fixes
     - User confirms fixes
@@ -419,9 +484,9 @@ features or before releases.
 ### Phase 7: Merge (AGENT, after authorization)
 
 ```
-44. User authorizes merge (all comments resolved, manual tests passed, smoke test passed if requested)
+49. User authorizes merge (all comments resolved, manual tests passed, smoke test passed if requested)
 
-45. Agent merges PR using regular merge (NOT squash) with branch deletion:
+50. Agent merges PR using regular merge (NOT squash) with branch deletion:
     gh pr merge PR_NUMBER --merge --delete-branch
     
     IMPORTANT: 
@@ -430,9 +495,9 @@ features or before releases.
     - Branch is deleted after merge
     - PR is automatically closed
 
-46. Card moves to "Done" automatically (if PR references the card)
+51. Card moves to "Done" automatically (if PR references the card)
 
-47. Issue is closed automatically (via "Closes #N" in PR body)
+52. Issue is closed automatically (via "Closes #N" in PR body)
 ```
 
 ## GitHub Project Status Flow
@@ -482,9 +547,9 @@ Todo → In Progress → In Review → Done
 │           ↓                                                  │
 │   ┌─────────────────────┐                                    │
 │   │ Bugs found?         │──── Yes ──→ Document bugs in PR   │
-│   └─────────────────────┘                 ↓                 │
+│   └─────────────────────┘                 ↓                  │
 │           ↓                            Agent fixes          │
-│           ↓                                ↓                 │
+│           ↓                                ↓                  │
 │           ↓                         Agent pushes ────────────┐│
 │           ↓                                           ↓     ││
 │           ↓                               Return to Step 27 ─┘│
@@ -492,24 +557,56 @@ Todo → In Progress → In Review → Done
 ├─────────────────────────────────────────────────────────────┤
 │                          ↓                                   │
 └─────────────────────────────────────────────────────────────┘
-                          ↓
+                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    SMOKE TEST (OPTIONAL)                     │
+│              MANUAL TEST SCRIPT (Task-Specific)              │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Step 37: User requests smoke test (optional)               │
+│   Step 37-38: Primary agent creates script                    │
+│               ~/MANUAL-TEST-PR_NUMBER.md                     │
 │           ↓                                                  │
-│   Step 38-40: Hermes executes SMOKE_TEST.md                │
+│   Step 39-42: Hermes Agent executes script                    │
 │           ↓                                                  │
 │   ┌─────────────────────┐                                    │
-│   │ Smoke test fails?   │──── Yes ──→ Document in PR       │
-│   └─────────────────────┘                 ↓                 │
-│           ↓                            Agent fixes          │
-│           ↓                                ↓                 │
-│           ↓                         Agent pushes ────────────┐│
-│           ↓                                           ↓     ││
-│           ↓                               Return to Step 27 ─┘│
-│           ↓ Pass (or skipped)                               │
+│   │ Bugs found?         │──── Yes ──→ Document in PR        │
+│   └─────────────────────┘                 ↓                  │
+│           ↓                            Agent fixes           │
+│           ↓                                ↓                  │
+│           ↓                         Agent pushes ────────────┐ │
+│           ↓                                          ↓      │ │
+│           ↓                              Return to Step 27 ──┘ │
+│           ↓ Pass                                             │
+├─────────────────────────────────────────────────────────────┤
+│                          ↓                                   │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│              SMOKE TEST UPDATE (If Needed)                   │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Step 43-44: Agent reviews SMOKE_TEST.md                    │
+│               Adds sections if needed                         │
+│               Commits and pushes changes if any               │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────────┐
+│              SMOKE TEST (Generalized Regression)             │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   Step 45: User requests smoke test                           │
+│           ↓                                                  │
+│   Step 46: Hermes executes SMOKE_TEST.md                      │
+│           ↓                                                  │
+│   ┌─────────────────────┐                                    │
+│   │ Smoke test fails?   │──── Yes ──→ Document in PR         │
+│   └─────────────────────┘                 ↓                  │
+│           ↓                            Agent fixes           │
+│           ↓                                ↓                  │
+│           ↓                         Agent pushes ────────────┐ │
+│           ↓                                          ↓      │ │
+│           ↓                              Return to Step 27 ──┘ │
+│           ↓ Pass (or skipped)                                │
 ├─────────────────────────────────────────────────────────────┤
 │                          ↓                                   │
 └─────────────────────────────────────────────────────────────┘
@@ -518,11 +615,11 @@ Todo → In Progress → In Review → Done
 │                         MERGE                                │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│   Step 45: User authorizes merge                             │
+│   Step 49: User authorizes merge                             │
 │           ↓                                                  │
-│   Step 46: Agent runs: gh pr merge N --merge --delete-branch│
+│   Step 50: Agent runs: gh pr merge N --merge --delete-branch│
 │           ↓                                                  │
-│   Step 47-48: Cleanup (branch deleted, PR closed)           │
+│   Step 51-52: Cleanup (branch deleted, PR closed)           │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -575,15 +672,19 @@ During review, several scenarios may occur:
 3. May split into multiple issues/PRs
 4. Documents remaining work in IMPLEMENTATION.md
 
-### Scenario: Bugs Found During Manual Testing
+### Scenario: Bugs Found During Testing
 
-1. Reviewer documents bugs in PR comments during testing
+Bugs can be found during any testing phase (review, manual tests, or smoke test).
+The flow is the same regardless of which phase finds them.
+
+1. Tester (reviewer or Hermes) documents bugs in PR comments
 2. Agent creates todo list of fixes needed
 3. User confirms the fixes are appropriate
 4. Agent implements fixes
 5. Agent updates PR body to document bugs fixed
 6. Agent pushes changes
-7. Return to Step 19 (review iteration)
+7. **Return to Step 27 (review iteration)** — every push triggers a review cycle
+8. After review, the relevant test phase is re-executed
 
 ### Scenario: Scope Creep in PR
 
@@ -598,6 +699,51 @@ but is appropriate to include (e.g., defining guidelines during implementation).
    - Additional out-of-scope work (clearly marked)
 5. Agent updates CHANGELOG/IMPLEMENTATION.md as needed
 6. Continue with normal review process
+
+## Multiple Issues per PR
+
+Sometimes it makes sense to address multiple related issues in a single PR
+(e.g., two small fixes that touch adjacent code, or complementary features).
+
+### Rules
+
+1. **Both issues must be related** — don't combine unrelated work
+2. **PR title describes both** — e.g., `feat: memory staleness warnings and truncation notices`
+3. **PR body references all issues** — use `Closes #A, Closes #B` for auto-close
+4. **Both cards follow the same flow** — both move to "In Progress" at start, both to "In Review" at Phase 4
+
+### Card Movement
+
+```
+Phase 1: Move ALL cards to "In Progress"
+Phase 4: Move ALL cards to "In Review"
+Phase 7: Cards move to "Done" automatically when PR merges
+```
+
+### Comments on Issues
+
+```
+Phase 2 (Draft PR):
+  gh issue comment #A --body "PR #N criado para resolver esta issue."
+  gh issue comment #B --body "PR #N criado para resolver esta issue (junto com #A)."
+
+Phase 4 (Ready for Review):
+  gh issue comment #A --body "PR #N ready for review"
+  gh issue comment #B --body "PR #N ready for review"
+```
+
+### Manual Test Script
+
+The manual test script (`~/MANUAL-TEST-PR_NUMBER.md`) should include sections for
+each issue's functionality. Group tests by issue number:
+
+```markdown
+## 1. Issue #70: Memory Staleness Warnings
+...
+
+## 2. Issue #71: Truncation Warnings
+...
+```
 
 ## Conventional Commits
 
