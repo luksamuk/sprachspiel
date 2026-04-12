@@ -459,6 +459,88 @@ fn parse_todo_add_args(args: &str) -> (String, Option<String>, Option<String>) {
     (description, priority, tags)
 }
 
+/// Parse a task ID from a string, returning a helpful error message on failure.
+fn parse_task_id_str(input: &str) -> Result<usize, String> {
+    input
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| "Invalid task ID. Must be a number.".to_string())
+}
+
+/// Parse todo subcommand arguments into a ChatCommand.
+///
+/// Extracted from the main parse_command to reduce complexity.
+fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
+    match subcmd {
+        "add" | "a" => {
+            if subargs.is_empty() {
+                return Err(
+                    "Usage: /todo add <description> [--priority <p>] [--tags <t1,t2>]".to_string(),
+                );
+            }
+            let (description, priority, tags) = parse_todo_add_args(subargs);
+            Ok(ChatCommand::TodoAdd {
+                description,
+                priority,
+                tags,
+            })
+        }
+        "list" | "l" => {
+            let filter = if subargs.is_empty() {
+                None
+            } else {
+                Some(subargs.trim().to_string())
+            };
+            Ok(ChatCommand::TodoList { filter })
+        }
+        "get" | "g" => {
+            let id = parse_task_id_str(subargs)?;
+            Ok(ChatCommand::TodoGet { id })
+        }
+        "update" | "u" => {
+            let update_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
+            if update_parts.len() < 2 {
+                return Err("Usage: /todo update <id> <status>".to_string());
+            }
+            let id = parse_task_id_str(update_parts[0])?;
+            let status = update_parts[1].trim().to_string();
+            Ok(ChatCommand::TodoUpdate { id, status })
+        }
+        "edit" | "e" => {
+            let edit_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
+            if edit_parts.is_empty() {
+                return Err(
+                    "Usage: /todo edit <id> [--priority <p>] [--tags <t1,t2>] [description]"
+                        .to_string(),
+                );
+            }
+            let id = parse_task_id_str(edit_parts[0])?;
+            let rest = edit_parts.get(1).copied().unwrap_or("");
+            let (desc, priority, tags) = parse_todo_add_args(rest);
+            let description = if desc.is_empty() {
+                None
+            } else {
+                Some(desc)
+            };
+            Ok(ChatCommand::TodoEdit {
+                id,
+                description,
+                priority,
+                tags,
+            })
+        }
+        "delete" | "d" | "del" => {
+            let id = parse_task_id_str(subargs)?;
+            Ok(ChatCommand::TodoDelete { id })
+        }
+        "clear-done" | "cd" => Ok(ChatCommand::TodoClearDone),
+        "clear-all" | "ca" => Ok(ChatCommand::TodoClearAll),
+        _ => Err(
+            "Usage: /todo <add|list|get|update|edit|delete|clear-done|clear-all>".to_string(),
+        ),
+    }
+}
+
 /// Parse a command string
 pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let input = input.trim();
@@ -694,92 +776,9 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
             let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-
-            match *subcmd {
-                "add" | "a" => {
-                    if subargs.is_empty() {
-                        return Some(Err(
-                            "Usage: /todo add <description> [--priority <p>] [--tags <t1,t2>]"
-                                .to_string(),
-                        ));
-                    }
-                    // Parse --priority and --tags flags from the end
-                    let (description, priority, tags) = parse_todo_add_args(subargs);
-                    ChatCommand::TodoAdd {
-                        description,
-                        priority,
-                        tags,
-                    }
-                }
-                "list" | "l" => {
-                    let filter = if subargs.is_empty() {
-                        None
-                    } else {
-                        Some(subargs.trim().to_string())
-                    };
-                    ChatCommand::TodoList { filter }
-                }
-                "get" | "g" => {
-                    let id: usize = match subargs.trim().parse() {
-                        Ok(id) => id,
-                        Err(_) => {
-                            return Some(Err("Invalid task ID. Must be a number.".to_string()));
-                        }
-                    };
-                    ChatCommand::TodoGet { id }
-                }
-                "update" | "u" => {
-                    let update_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
-                    if update_parts.len() < 2 {
-                        return Some(Err("Usage: /todo update <id> <status>".to_string()));
-                    }
-                    let id: usize = match update_parts[0].trim().parse() {
-                        Ok(id) => id,
-                        Err(_) => {
-                            return Some(Err("Invalid task ID. Must be a number.".to_string()));
-                        }
-                    };
-                    let status = update_parts[1].trim().to_string();
-                    ChatCommand::TodoUpdate { id, status }
-                }
-                "edit" | "e" => {
-                    let edit_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
-                    if edit_parts.is_empty() {
-                        return Some(Err("Usage: /todo edit <id> [--priority <p>] [--tags <t1,t2>] [description]".to_string()));
-                    }
-                    let id: usize = match edit_parts[0].trim().parse() {
-                        Ok(id) => id,
-                        Err(_) => {
-                            return Some(Err("Invalid task ID. Must be a number.".to_string()));
-                        }
-                    };
-                    let rest = edit_parts.get(1).copied().unwrap_or("");
-                    let (desc, priority, tags) = parse_todo_add_args(rest);
-                    let description = if desc.is_empty() { None } else { Some(desc) };
-                    ChatCommand::TodoEdit {
-                        id,
-                        description,
-                        priority,
-                        tags,
-                    }
-                }
-                "delete" | "d" | "del" => {
-                    let id: usize = match subargs.trim().parse() {
-                        Ok(id) => id,
-                        Err(_) => {
-                            return Some(Err("Invalid task ID. Must be a number.".to_string()));
-                        }
-                    };
-                    ChatCommand::TodoDelete { id }
-                }
-                "clear-done" | "cd" => ChatCommand::TodoClearDone,
-                "clear-all" | "ca" => ChatCommand::TodoClearAll,
-                _ => {
-                    return Some(Err(
-                        "Usage: /todo <add|list|get|update|edit|delete|clear-done|clear-all>"
-                            .to_string(),
-                    ));
-                }
+            match parse_todo_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
         }
         "ta" => {

@@ -353,13 +353,6 @@ impl TodoState {
         self.tasks.is_empty()
     }
 
-    /// Format the todo list for display (unfiltered)
-    // Convenience wrapper; production uses format_list_filtered()
-    #[allow(dead_code)]
-    pub fn format_list(&self) -> String {
-        self.format_list_filtered(&TaskFilter::default())
-    }
-
     /// Format the todo list for display with optional filter
     pub fn format_list_filtered(&self, filter: &TaskFilter) -> String {
         let filtered: Vec<&Task> = self
@@ -743,7 +736,7 @@ mod tests {
         state.add("Task 1".to_string());
         state.update_status(1, TaskStatus::Done).unwrap();
 
-        let formatted = state.format_list();
+        let formatted = state.format_list_filtered(&TaskFilter::default());
         assert!(formatted.contains("✓"));
         assert!(formatted.contains("Task 1"));
         assert!(formatted.contains("Stats: 0 pending, 0 in progress, 1 done"));
