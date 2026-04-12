@@ -1574,10 +1574,7 @@ pub fn handle_note_edit(
                     println!("  Title: {}", t);
                 }
                 if let Some(c) = &content {
-                    println!(
-                        "  Content: {}",
-                        crate::chat::view::truncate_str(c, 80)
-                    );
+                    println!("  Content: {}", crate::chat::view::truncate_str(c, 80));
                 }
             }
             Err(e) => {

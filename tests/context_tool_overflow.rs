@@ -6,8 +6,8 @@
 //! 3. Error recovery
 
 use ask_ai::context_overflow::{
-    calculate_thresholds, COMPACTION_MIN, CRITICAL_USAGE_PERCENT, DEFAULT_KEEP_LAST,
-    DEFAULT_OVERFLOW_THRESHOLD, MODERATE_USAGE_PERCENT, PRE_TOOL_MIN,
+    COMPACTION_MIN, CRITICAL_USAGE_PERCENT, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD,
+    MODERATE_USAGE_PERCENT, PRE_TOOL_MIN, calculate_thresholds,
 };
 use ask_ai::tokens::estimate_tokens;
 

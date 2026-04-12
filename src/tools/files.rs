@@ -689,10 +689,7 @@ pub async fn search_files(
             ("path".to_string(), path.clone()),
             (
                 "file_pattern".to_string(),
-                file_pattern
-                    .as_deref()
-                    .unwrap_or("all")
-                    .to_string(),
+                file_pattern.as_deref().unwrap_or("all").to_string(),
             ),
         ],
     );
@@ -1079,8 +1076,8 @@ mod tests {
     fn test_regex_invalid_pattern_returns_error() {
         // Verify that invalid regex patterns fail to compile
         let invalid_patterns = [
-            "(",       // Unclosed paren
-            "[",       // Unclosed bracket
+            "(",        // Unclosed paren
+            "[",        // Unclosed bracket
             "*invalid", // Invalid quantifier
         ];
 

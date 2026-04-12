@@ -8,7 +8,7 @@ use crate::consts::roles::format_role_label;
 use crate::markdown;
 
 use super::super::session::{ChatSession, MessageRole};
-use super::{truncate_str, ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
+use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo, truncate_str};
 
 /// Terminal output backend using println!/eprintln!
 ///

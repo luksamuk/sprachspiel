@@ -797,10 +797,7 @@ impl ChatSession {
     ///
     /// Each exchange is represented as a tuple of `(user_content, assistant_content)`,
     /// where `assistant_content` is `None` if no assistant reply followed the user message.
-    pub fn get_recent_exchanges(
-        &self,
-        count: usize,
-    ) -> Vec<(SavedMessage, Option<SavedMessage>)> {
+    pub fn get_recent_exchanges(&self, count: usize) -> Vec<(SavedMessage, Option<SavedMessage>)> {
         // Build exchanges: walk through messages in order, pairing each
         // User message with the next Assistant message (if any).
         let mut all_exchanges: Vec<(SavedMessage, Option<SavedMessage>)> = Vec::new();
@@ -1561,7 +1558,10 @@ fn test_history_real_tokens_with_tool_call_in_between() {
 fn test_get_recent_exchanges_empty_session() {
     let session = ChatSession::new("test-model".into(), None, false);
     let exchanges = session.get_recent_exchanges(3);
-    assert!(exchanges.is_empty(), "Empty session should have no exchanges");
+    assert!(
+        exchanges.is_empty(),
+        "Empty session should have no exchanges"
+    );
 }
 
 #[test]
