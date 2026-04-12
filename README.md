@@ -1,5 +1,7 @@
 # Ask-AI
 
+<img src="assets/ask-ai-banner.png" alt="ask-ai banner" width="100%">
+
 A Rust CLI harness for research, interaction, and cognitive evolution with local and cloud LLMs.
 
 ## Overview
@@ -362,8 +364,15 @@ The system uses:
 ## AI-Assisted Development
 
 Developed with assistance from:
-- **GLM 5** (Z.ai) - Plan, research, and implementation
-- **Kimi K2.5** (Moonshot AI) - Architecture design
+- **GLM 4.7 Flash** (Z.ai) — Project inception and initial scaffolding
+- **GLM 5** (Z.ai) — Plan, research, and implementation
+- **GLM 5.1** (Z.ai) — Ongoing development and refinement
+- **Kimi K2.5** (Moonshot AI) — Architecture design
+- **MiniMax M2.7** (MiniMax) — Code review and testing
+
+Agent harnesses used:
+- **OpenCode** — Primary development harness
+- **Hermes Agent** — Orchestration, asset creation, and project management
 
 Human oversight for architecture decisions and quality assurance.
 
