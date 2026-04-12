@@ -1,200 +1,112 @@
-# Manual Test - PR #55
+# Manual Test Template
 
-Execute estes testes após os testes automatizados passarem, antes de finalizar o merge.
+Run these tests after automated tests pass, before finalizing a merge.
 
-**Issue:** #54 - import_document tool missing embedding/chunking + large doc protection
-
-**Branch:** fix/document-import-embedding
+**Issue:** #N - _Brief description_
+**Branch:** _branch-name_
+**PR:** #N
 
 ---
 
-## Pré-requisitos
+## Prerequisites
 
 ```bash
-cd /home/alchemist/git/ask-ollama-rs
+cd /path/to/ask-ai-rs
 cargo build --release --features all-tools
+ollama serve  # In another terminal
+```
+
+## Test Model
+
+```bash
+# Use environment variable or default
+MODEL=${SMOKE_MODEL:-qwen3.5:4b}
+ollama list | grep -q "$MODEL" || ollama pull "$MODEL"
+echo "Test model: $MODEL"
 ```
 
 ---
 
-## 1. import_document com Parâmetro title
+## LLM Tool Refusal Policy
 
-**Objetivo:** Verificar que o parâmetro `title` funciona corretamente.
+Some tests require the LLM to call tools. If the model **refuses** to call a tool:
+
+1. **Retry with an explicit instruction** — rephrase the prompt to make the tool call unavoidable (e.g., "You MUST call the tool right now, do not just describe it").
+2. **If the model still refuses persistently** — **FAIL the test** and note which model refused which tool.
+3. **Switch to an abliterated model** — check `models.toml` for an abliterated variant (e.g., `qwen3.5:4b-abliterated`). If no abliterated model is listed, request one from the user before retrying.
+
+**Rationale:** Abliterated models have safety refusals removed, ensuring deterministic tool calling during tests. A model that refuses to call tools is a valid test failure, not a bug in the application.
+
+---
+
+## 1. _Test Category Name_
+
+**Objective:** _What this test verifies._
 
 ```bash
-echo "This is a test document for PR #55." > /tmp/pr55_title.txt
+# Prepare test data
+echo "test content" > /tmp/test_file.txt
 ```
 
-No chat com LLM (modelo com suporte a tools):
+In chat with LLM (model with tools support):
 
-- [ ] `import_document("/tmp/pr55_title.txt", None, Some("PR55 Test Document"))` retorna sucesso
-- [ ] Resultado mostra `**Title:** PR55 Test Document`
-- [ ] Resultado mostra `**Chunks:** N` (N ≥ 1)
-- [ ] `remember(query="PR55")` encontra o documento
+> **LLM Refusal:** If the model refuses to call the tool, rephrase explicitly.
+> If refusal persists, switch to an abliterated model (see LLM Tool Refusal Policy above).
 
-**Limpeza:**
+- [ ] `tool_name("param")` returns success
+- [ ] Result shows expected output
+- [ ] Related slash command works (e.g., `/command arg`)
+
+**Cleanup:**
 ```bash
-rm /tmp/pr55_title.txt
+rm -f /tmp/test_file.txt
 ```
 
 ---
 
-## 2. Extração Automática de Título
+## 2. _Another Test Category_
 
-**Objetivo:** Verificar que títulos são extraídos de Markdown/Org.
+**Objective:** _What this test verifies._
+
+- [ ] Slash command `/cmd arg` works
+- [ ] Error handling: `/cmd invalid` shows useful error message
+- [ ] Edge case: _describe edge case_
+
+---
+
+## N. _Repeat as Needed_
+
+_Copy the section structure above for each test category._
+
+---
+
+## Cleanup
 
 ```bash
-echo "# Auto Title Test" > /tmp/pr55_auto.md
-echo "" >> /tmp/pr55_auto.md
-echo "Content here." >> /tmp/pr55_auto.md
-```
-
-No chat com LLM:
-
-- [ ] `import_document("/tmp/pr55_auto.md", None, None)` retorna sucesso
-- [ ] Título extraído é "Auto Title Test" (do heading `#`)
-- [ ] Resultado mostra `**Chunks:** N` (N ≥ 1)
-
-**Limpeza:**
-```bash
-rm /tmp/pr55_auto.md
+# Remove any test documents from database (if needed)
+# /doc list to see IDs
+# /doc delete N for each test document
 ```
 
 ---
 
-## 3. Limite de Tamanho (Rejeição > 2.5 MB)
+## Results
 
-**Objetivo:** Verificar que arquivos > 2.5 MB são rejeitados com erro útil.
+**Date:** _______  
+**Model used:** _______  
+**Status:** [ ] Approved for merge  
 
-```bash
-dd if=/dev/zero bs=1M count=3 of=/tmp/pr55_large.txt 2>/dev/null
-```
-
-No chat com LLM:
-
-- [ ] `import_document("/tmp/pr55_large.txt", None, Some("Large"))` retorna ERRO
-- [ ] Mensagem menciona "2.5 MB" ou "2.500.000 bytes"
-- [ ] Mensagem NÃO contém "5 MB" ou "5.000.000 bytes"
-- [ ] Mensagem explica que arquivo é grande demais
-
-**Limpeza:**
-```bash
-rm /tmp/pr55_large.txt
-```
-
----
-
-## 4. Arquivo Próximo ao Limite
-
-**Objetivo:** Verificar que arquivos < 2.5 MB são aceitos.
-
-```bash
-dd if=/dev/zero bs=1M count=2 of=/tmp/pr55_medium.txt 2>/dev/null
-dd if=/dev/zero bs=400K count=1 >> /tmp/pr55_medium.txt 2>/dev/null
-```
-
-No chat com LLM:
-
-- [ ] `import_document("/tmp/pr55_medium.txt", None, Some("Medium"))` retorna sucesso
-- [ ] Resultado mostra "indexed and ready for search"
-- [ ] Resultado mostra `**Chunks:** N` (N ≥ 1)
-
-**Limpeza:**
-```bash
-rm /tmp/pr55_medium.txt
-```
-
----
-
-## 5. Embedding Síncrono (Busca Imediata)
-
-**Objetivo:** Verificar que documento é buscável imediatamente após import.
-
-```bash
-echo "PR55 unique search term: XYLOQUENT" > /tmp/pr55_sync.txt
-```
-
-No chat com LLM:
-
-- [ ] `import_document("/tmp/pr55_sync.txt", None, Some("Sync Test"))` retorna sucesso
-- [ ] IMMEDIATAMENTE após, `remember(query="XYLOQUENT")` encontra o documento
-- [ ] Resultado da busca mostra "Sync Test"
-
-**Limpeza:**
-```bash
-rm /tmp/pr55_sync.txt
-```
-
----
-
-## 6. run_command Mensagens de Erro
-
-**Objetivo:** Verificar que mensagens de erro são úteis (não "Some(1)").
-
-No chat com LLM:
-
-- [ ] `run_command("pdftotext /nonexistent_file.pdf -", None, None, None)` retorna erro
-- [ ] Mensagem de erro NÃO contém "Some(1)"
-- [ ] Mensagem contém sugestões úteis ou explicação do erro
-- [ ] Mensagem mostra "exit code 1" ou similar
-
----
-
-## 7. Proteção de Documentos Grandes sem Chunks
-
-**Objetivo:** Verificar que `remember` protege contra documentos grandes não indexados.
-
-**Pré-condição:** Precisa de um documento > 50 KB importado SEM chunks (bug antigo).
-
-Se não houver documento assim, pule este teste com marcação "N/A".
-
-No chat com LLM:
-
-- [ ] `remember(id="doc:N")` onde N é ID de documento grande sem chunks
-- [ ] Mensagem explica que documento é muito grande
-- [ ] Mensagem sugere `/doc delete N` e re-import
-- [ ] Mensagem menciona "50.000" ou "50 KB"
-
----
-
-## 8. Unidades Corretas nas Mensagens
-
-**Objetivo:** Verificar que todas as mensagens usam unidades corretas (MB/Mb, KB/Kb).
-
-No chat com LLM (verificar outputs dos testes anteriores):
-
-- [ ] Mensagens de tamanho mostram "MB" ou "KB" (NÃO "Mb" ou "Kb")
-- [ ] Valores em bytes são mostrados junto com unidades ("2.500.000 bytes")
-- [ ] Constantes não estão hardcoded (valores vêm de MAX_DOCUMENT_SIZE)
-
----
-
-## Limpeza Final
-
-```bash
-# Remover documentos de teste do banco (se necessário)
-# /doc list para ver IDs
-# /doc delete N para cada documento de teste
-```
-
----
-
-## Resultado
-
-**Data:** _______  
-**Modelo usado:** _______  
-**Status:** [ ] Aprovado para merge  
-**Problemas encontrados:**
+**Issues found:**
 
 _______________________________________
 
 ---
 
-## Checklist para Merge
+## Merge Checklist
 
-- [ ] Todos os testes acima passaram
-- [ ] `cargo test --all-features` passou
-- [ ] `cargo clippy --all-features -- -D warnings` passou
-- [ ] Smoke test (SMOKE_TEST.md) passou
-- [ ] Documentação revisada (CHANGELOG atualizado)
-- [ ] PR reviewed e aprovado
+- [ ] All tests above passed
+- [ ] `cargo test --all-features` passed
+- [ ] `cargo clippy --all-features -- -D warnings` passed
+- [ ] Smoke test (SMOKE_TEST.md) passed
+- [ ] Documentation reviewed (CHANGELOG updated)
+- [ ] PR reviewed and approved

@@ -6,7 +6,7 @@ use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use super::schema::{SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL, set_version_sql};
+use super::schema::{set_version_sql, SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL};
 
 /// Thread-safe database wrapper
 #[derive(Clone)]
@@ -641,6 +641,8 @@ mod tests {
         assert!(columns.contains(&"task_id".to_string()));
         assert!(columns.contains(&"description".to_string()));
         assert!(columns.contains(&"status".to_string()));
+        assert!(columns.contains(&"priority".to_string()));
+        assert!(columns.contains(&"tags".to_string()));
         assert!(columns.contains(&"created_at".to_string()));
     }
 

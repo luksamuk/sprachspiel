@@ -1,301 +1,379 @@
 # Smoke Test Manual - ask-ai
 
-Execute estes testes antes de cada release para garantir que as funcionalidades 
-essenciais estão funcionando.
+Run these tests before each release to ensure core functionality works.
 
-**Ver também:** [PR Process - Phase 6.5: Smoke Test](doc/src/development/PR-PROCESS.md)
-
----
-
-## Terminal-Use (Opcional)
-
-Este smoke test foi projetado para ser executado por um agente de IA usando a ferramenta **terminal-use**, que permite controle automatizado do terminal.
-
-**Instalação:** [github.com/flipbit03/terminal-use](https://github.com/flipbit03/terminal-use)
-
-**Configuração obrigatória:** Usar terminal com **80 colunas de largura** para garantir formatação consistente das saídas.
+**See also:** [PR Process - Phase 6.5: Smoke Test](doc/src/development/PR-PROCESS.md)
 
 ---
 
-## Pré-requisitos
+## Terminal-Use (Optional)
+
+This smoke test is designed to be run by an AI agent using the **terminal-use** tool, which allows automated terminal control.
+
+**Installation:** [github.com/flipbit03/terminal-use](https://github.com/flipbit03/terminal-use)
+
+**Required configuration:** Use a terminal with **80 columns width** to ensure consistent output formatting.
+
+---
+
+## Prerequisites
 
 ```bash
 cd /home/alchemist/git/ask-ollama-rs
 cargo build --release --features all-tools
-ollama serve  # Em outro terminal
+ollama serve  # In another terminal
 
-# Preservar banco atual do usuário
+# Backup user's existing database
 cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.smoke-backup 2>/dev/null || true
 
-# Usar banco temporário para testes (isolamento)
+# Use temporary database for tests (isolation)
 rm -f ~/.local/share/ask-ai/embeddings.db
 ```
 
-## Modelo de Teste
+## Test Model
 
 ```bash
-# Usar variável de ambiente ou padrão
+# Use environment variable or default
 MODEL=${SMOKE_MODEL:-qwen3.5:4b}
 ollama list | grep -q "$MODEL" || ollama pull "$MODEL"
-echo "Modelo de teste: $MODEL"
+echo "Test model: $MODEL"
 ```
 
 ---
 
-## 1. Binário Básico
+## LLM Tool Refusal Policy
 
-- [ ] Binário executa: `./target/release/ask-ai --help`
-- [ ] Versão visível: `./target/release/ask-ai --version`
-- [ ] Subcomandos listados (chat, query, translate)
+Some tests require the LLM to call tools (sections 4.1, 4.2, 5, 6, 6.5.5, 10, 10.5). If the model **refuses** to call a tool:
+
+1. **Retry with an explicit instruction** — rephrase the prompt to make the tool call unavoidable (e.g., "You MUST call the todo_add tool right now, do not just describe it").
+2. **If the model still refuses persistently** — **FAIL the test** and note which model refused which tool.
+3. **Switch to an abliterated model** — check `models.toml` for an abliterated variant (e.g., `qwen3.5:4b-abliterated`). If no abliterated model is listed, request one from the user before retrying.
+
+**Rationale:** Abliterated models have safety refusals removed, ensuring deterministic tool calling during smoke tests. A model that refuses to call tools is a valid test failure, not a bug in the application.
+
+---
+
+## 1. Basic Binary
+
+- [ ] Binary runs: `./target/release/ask-ai --help`
+- [ ] Version visible: `./target/release/ask-ai --version`
+- [ ] Subcommands listed (chat, query, translate)
 
 ---
 
 ## 2. Chat Mode
 
-- [ ] Inicia sem erros
-- [ ] Mostra modelo carregado
-- [ ] `/help` mostra comandos disponíveis (incluindo /doc)
-- [ ] `/exit` encerra corretamente
+- [ ] Starts without errors
+- [ ] Shows loaded model
+- [ ] `/help` shows available commands (including /doc and /todo)
+- [ ] `/exit` quits correctly
 
 ---
 
-## 3. Document Import (Feature Crítica)
+## 3. Document Import (Critical Feature)
 
-**Preparar arquivos de teste:**
+**Prepare test files:**
 ```bash
-echo "teste de import txt" > /tmp/test.txt
+echo "txt import test" > /tmp/test.txt
 echo "# Markdown Title\n\nContent here." > /tmp/test.md
 echo "#+TITLE: Org Title\n\n* Heading\nContent." > /tmp/test.org
 touch /tmp/empty.txt
-# Arquivo para teste de tilde expansion (Bug #1)
-echo "teste tilde expansion" > ~/test.txt
+# File for tilde expansion test (Bug #1)
+echo "tilde expansion test" > ~/test.txt
 ```
 
-### 3.1 Testes Básicos
+### 3.1 Basic Tests
 
-- [ ] `/doc import /tmp/test.txt` funciona (caminho absoluto)
-- [ ] `/doc import ~/test.txt` funciona (caminho com ~) ← **Bug #1 corrigido**
-- [ ] `/doc list` mostra o documento
-- [ ] `/doc show 1` funciona (formato N) ← **Bug #2 corrigido**
-- [ ] `/doc show #1` funciona (formato #N) ← **Bug #2 corrigido**
-- [ ] `/doc show doc:1` funciona (formato doc:N) ← **Bug #2 corrigido**
-- [ ] `/doc delete 1` remove corretamente
+- [ ] `/doc import /tmp/test.txt` works (absolute path)
+- [ ] `/doc import ~/test.txt` works (path with ~) ← **Bug #1 fixed**
+- [ ] `/doc list` shows the document
+- [ ] `/doc show 1` works (format N) ← **Bug #2 fixed**
+- [ ] `/doc show #1` works (format #N) ← **Bug #2 fixed**
+- [ ] `/doc show doc:1` works (format doc:N) ← **Bug #2 fixed**
+- [ ] `/doc delete 1` removes correctly
 
-### 3.2 Testes de Formatos
+### 3.2 Format Tests
 
-- [ ] `/doc import /tmp/test.md` - Markdown importado
-- [ ] Título de MD extraído do `# heading` (verificar com `/doc show`)
-- [ ] `/doc import /tmp/test.org` - Org-mode importado
-- [ ] Título de ORG extraído do `#+TITLE:` (não do * heading) ← **Bug #3 corrigido**
+- [ ] `/doc import /tmp/test.md` - Markdown imported
+- [ ] MD title extracted from `# heading` (verify with `/doc show`)
+- [ ] `/doc import /tmp/test.org` - Org-mode imported
+- [ ] ORG title extracted from `#+TITLE:` (not from * heading) ← **Bug #3 fixed**
 
-### 3.3 Testes de Erro
+### 3.3 Error Tests
 
-- [ ] `/doc import /naoexiste.txt` → "File not found"
+- [ ] `/doc import /nonexistent.txt` → "File not found"
 - [ ] `/doc show 999` → "not found"
-- [ ] `/doc import /tmp/empty.txt` → rejeitado (arquivo vazio)
+- [ ] `/doc import /tmp/empty.txt` → rejected (empty file)
 
-### 3.4 Testes de Tamanho (Bug #54)
+### 3.4 Size Tests (Bug #54)
 
-- [ ] Arquivo > 2.5 MB (2.500.000 bytes) é rejeitado com erro claro:
+- [ ] File > 2.5 MB (2,500,000 bytes) is rejected with clear error:
   ```bash
-  # Criar arquivo grande (3 MB = 3.000.000 bytes)
+  # Create large file (3 MB = 3,000,000 bytes)
   dd if=/dev/zero bs=1M count=3 of=/tmp/large.txt 2>/dev/null
-  # Verificar que /doc import rejeita
+  # Verify that /doc import rejects it
   /doc import /tmp/3mb.txt
   ```
-- [ ] Mensagem de erro menciona "2.5 MB (2.500.000 bytes) limit" e sugere dividir arquivo
+- [ ] Error message mentions "2.5 MB (2,500,000 bytes) limit" and suggests splitting the file
 
 ---
 
-## 4. Embedding Síncrono (Feature Nova)
+## 4. Synchronous Embedding (New Feature)
 
-- [ ] Após `/doc import /tmp/test.txt`, buscar imediatamente:
+- [ ] After `/doc import /tmp/test.txt`, search immediately:
   ```
-  Use remember to search for "teste"
+  Use remember to search for "test"
   ```
-- [ ] Resultado inclui o documento recém-importado (indexação síncrona funciona)
+- [ ] Result includes the recently imported document (synchronous indexing works)
 
-### 4.1 Tool import_document (via LLM) - Bug #54
+### 4.1 import_document Tool (via LLM) - Bug #54
 
-**Preparar arquivos de teste:**
+**Prepare test files:**
 ```bash
-echo "teste de import via tool" > /tmp/tool_test.txt
+echo "test import via tool" > /tmp/tool_test.txt
 ```
 
-Via chat com modelo que suporta tools:
+Via chat with a model that supports tools:
 
-- [ ] `import_document("/tmp/tool_test.txt", None, Some("Test Document"))` funciona
-- [ ] Import retorna "Chunks: N (document indexed and ready for search)"
-- [ ] `remember(query="teste")` encontra o documento
-- [ ] Tool retorna título correto quando fornecido
+> **LLM Refusal:** If the model refuses to call `import_document`, rephrase the prompt
+> more explicitly. If refusal persists, switch to an abliterated model (see LLM Tool
+> Refusal Policy above) and retest.
 
-### 4.2 Proteção de Documentos Grandes (Bug #54)
+- [ ] `import_document("/tmp/tool_test.txt", None, Some("Test Document"))` works
+- [ ] Import returns "Chunks: N (document indexed and ready for search)"
+- [ ] `remember(query="test")` finds the document
+- [ ] Tool returns correct title when provided
 
-**Preparar documento grande sem chunks:**
+### 4.2 Large Document Protection (Bug #54)
+
+**Prepare large document without chunks:**
 ```bash
-# Criar documento grande no banco manualmente (simulando import bugado)
-# Depois verificar que remember protege contra retorno completo
+# Create large document in database manually (simulating broken import)
+# Then verify that remember protects against full content return
 ```
 
-- [ ] `remember(id="doc:N")` em documento > 50 KB (50.000 bytes) sem chunks retorna erro
-- [ ] Mensagem explica como re-importar o documento
-- [ ] Sugere `/doc delete N` e re-import
+- [ ] `remember(id="doc:N")` on document > 50 KB (50,000 bytes) without chunks returns error
+- [ ] Message explains how to re-import the document
+- [ ] Suggests `/doc delete N` and re-import
 
 ---
 
-## 5. Memória (remember/facts)
+## 5. Memory (remember/facts)
 
-**Nota:** Usar modelo com suporte a tools (qwen3.5:4b ou maior). Modelos pequenos como 0.8b podem ter dificuldade com tool calling.
+**Note:** Use a model that supports tools (qwen3.5:4b or larger). Small models like 0.8b may struggle with tool calling.
 
-- [ ] "Remember that I like coffee" cria uma nota/fato
-- [ ] "What do I like?" retorna "coffee"
-- [ ] Fatos persistem entre sessões (sair e entrar novamente)
+> **LLM Refusal:** If the model refuses to call `remember`, rephrase explicitly.
+> If refusal persists, switch to an abliterated model (see LLM Tool Refusal Policy above).
+
+- [ ] "Remember that I like coffee" creates a note/fact
+- [ ] "What do I like?" returns "coffee"
+- [ ] Facts persist between sessions (quit and re-enter)
 
 ---
 
-## 6. Notas (Regressão)
+## 6. Notes (Regression)
 
-- [ ] "Remember this is a test note" cria nota
-- [ ] `/note list` mostra notas
-- [ ] `/note show 1` exibe nota
-- [ ] `/note delete 1` remove nota
+- [ ] "Remember this is a test note" creates a note
+- [ ] `/note list` shows notes
+- [ ] `/note show 1` displays note
+- [ ] `/note delete 1` removes note
+
+---
+
+## 6.5. Todo Tools (New Feature - Issue #66)
+
+**Note:** Tests via slash commands in chat. Does not require a model with tools.
+
+### 6.5.1 Basic Tests (CRUD)
+
+- [ ] `/todo add "Buy groceries --priority high --tags shopping,food"` creates task with priority and tags
+- [ ] `/todo add "Write documentation"` creates task with default priority (medium)
+- [ ] `/todo list` shows all tasks
+- [ ] `/todo list pending` filters by status
+- [ ] `/todo list high` filters by priority
+- [ ] `/todo list #shopping` filters by tag
+
+### 6.5.2 Get/Edit/Delete Tests
+
+- [ ] `/todo get 1` shows task details (description, priority, tags, status)
+- [ ] `/todo edit 1 --priority critical` updates priority
+- [ ] `/todo edit 1 --tags urgent,shopping` updates tags
+- [ ] `/todo edit 1 Updated description` updates description
+- [ ] `/todo update 1 in_progress` changes status
+- [ ] `/todo delete 2` removes a specific task
+
+### 6.5.3 Error Tests
+
+- [ ] `/todo get 999` → "not found" or similar message
+- [ ] `/todo get` (no ID) → shows usage
+- [ ] `/todo edit` (no ID) → shows usage
+- [ ] `/todo delete` (no ID) → shows usage
+
+### 6.5.4 Cleanup Tests
+
+- [ ] `/todo update 1 done` marks as completed
+- [ ] `/todo clear-done` removes completed tasks
+- [ ] `/todo clear-all` removes all tasks
+
+### 6.5.5 Todo Tools via LLM (requires model with tools)
+
+Via chat with a model that supports tools:
+
+> **LLM Refusal:** If the model refuses to call a todo tool, rephrase explicitly
+> (e.g., "Call the todo_add tool now"). If refusal persists, switch to an
+> abliterated model (see LLM Tool Refusal Policy above).
+
+- [ ] "Add a todo task to review code with high priority" → LLM calls `todo_add`
+- [ ] "List my todo tasks" → LLM calls `todo_list`
+- [ ] "Mark task 1 as in progress" → LLM calls `todo_update`
+- [ ] "Get details of task 1" → LLM calls `todo_get`
+- [ ] "Change priority of task 1 to critical" → LLM calls `todo_edit`
 
 ---
 
 ## 7. Query Mode
 
-**Nota:** Query mode carrega contexto completo (AGENTS.md, SOUL.md, tools). Para teste rápido, usar `--soulless --ignore-agents` ou aumentar timeout.
+**Note:** Query mode loads full context (AGENTS.md, SOUL.md, tools). For quick testing, use `--soulless --ignore-agents` or increase timeout.
 
 ```bash
-# Teste rápido (sem contexto pesado) - flags ANTES do subcomando
+# Quick test (no heavy context) - global flags BEFORE subcommand
 timeout 60 ./target/release/ask-ai --soulless --ignore-agents query "2+2"
 
-# Teste completo (com contexto)
+# Full test (with context)
 timeout 120 ./target/release/ask-ai query "What is 2+2?"
 ```
 
-- [ ] Retorna resposta sem erros
+- [ ] Returns answer without errors
 - [ ] Exit code 0
 
 ---
 
-## 8. Tradução (opcional)
+## 8. Translation (optional)
 
 ```bash
 ./target/release/ask-ai translate pt "Hello"
 ```
 
-- [ ] Retorna tradução (se modelo disponível)
+- [ ] Returns translation (if model available)
 
 ---
 
-## 9. Banco de Dados
+## 9. Database
 
 ```bash
 sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"
 sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
 ```
 
-- [ ] Tabelas existem (content, facts, conversations, etc.)
-- [ ] Schema versão correta (8 ou superior)
+- [ ] Tables exist (content, facts, conversations, session_todos, etc.)
+- [ ] Schema version correct (9 or higher)
 
-**Verificação explícita:**
+**Explicit verification:**
 ```bash
 SCHEMA_VER=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;")
-[ "$SCHEMA_VER" -ge 8 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 8"
+[ "$SCHEMA_VER" -ge 9 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 9"
+```
+
+**Verify priority/tags columns in session_todos (v9):**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(session_todos);"
+# Must include columns: priority (TEXT) and tags (TEXT)
 ```
 
 ---
 
-## 10. File Tools (Regressão)
+## 10. File Tools (Regression)
 
-**Preparar arquivos de teste:**
+**Prepare test files:**
 ```bash
 echo "test content" > /tmp/file_test.txt
-# Arquivo para teste de tilde expansion (Bug #1 correlato)
+# File for tilde expansion test (Bug #1 related)
 echo "file tools test" > ~/file_test.txt
 ```
 
-Via chat com um modelo que suporte tools:
+Via chat with a model that supports tools:
 
-- [ ] `read_file(path="/tmp/file_test.txt")` funciona
-- [ ] `read_file(path="~/file_test.txt")` funciona (com ~) ← **Bug #1 correlato**
-- [ ] `list_directory(path="~")` funciona
-- [ ] `write_file(path="/tmp/write_test.txt", content="test")` funciona
+- [ ] `read_file(path="/tmp/file_test.txt")` works
+- [ ] `read_file(path="~/file_test.txt")` works (with ~) ← **Bug #1 related**
+- [ ] `list_directory(path="~")` works
+- [ ] `write_file(path="/tmp/write_test.txt", content="test")` works
 
 ---
 
 ## 10.5. run_command Error Messages (Bug #54)
 
-Via chat com modelo que suporte tools:
+Via chat with a model that supports tools:
 
-- [ ] `run_command("pdftotext /nonexistent.pdf -")` retorna erro útil
-- [ ] Mensagem menciona "file does not exist" ou similar
-- [ ] Mensagem NÃO contém "Some(1)" genérico
+- [ ] `run_command("pdftotext /nonexistent.pdf -")` returns useful error
+- [ ] Message mentions "file does not exist" or similar
+- [ ] Message does NOT contain generic "Some(1)"
 
 ---
 
-## Limpeza
+## Cleanup
 
 ```bash
-# Restaurar banco do usuário
+# Restore user's database
 rm -f ~/.local/share/ask-ai/embeddings.db
 mv ~/.local/share/ask-ai/embeddings.db.smoke-backup ~/.local/share/ask-ai/embeddings.db 2>/dev/null || true
 
-# Limpar arquivos de teste (/tmp e ~)
+# Clean up test files (/tmp and ~)
 rm -f /tmp/test.txt /tmp/test.md /tmp/test.org /tmp/empty.txt
 rm -f /tmp/file_test.txt /tmp/write_test.txt
 rm -f /tmp/tool_test.txt /tmp/large.txt
 rm -f ~/test.txt ~/file_test.txt
 ```
 
+**Note:** All todos created during testing are stored in the session database.
+Since we use a temporary database (isolated), they will be discarded when restoring the original database.
+
 ---
 
-## 11. Performance Básica
+## 11. Basic Performance
 
 ```bash
-# Tempo aceitável para query simples (sem contexto)
-# Nota: flags globais ANTES do subcomando
+# Acceptable time for simple query (no context)
+# Note: global flags BEFORE subcommand
 time (timeout 30 ./target/release/ask-ai --soulless --ignore-agents query "2+2" > /dev/null)
-# Deve completar em < 15 segundos em hardware normal
+# Should complete in < 15 seconds on normal hardware
 ```
 
-- [ ] Query simples completa em tempo razoável (< 15s)
+- [ ] Simple query completes in reasonable time (< 15s)
 
 ---
 
-## Resultado
+## Results
 
-**IMPORTANTE:** Os resultados do smoke test devem ser guardados **fora do projeto** (ex: comentário no PR, issue, ou documento externo). **NÃO MODIFIQUE ESTE ARQUIVO** com resultados - ele é um template reutilizável.
+**IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
 
-**Data:** _______  
-**Versão:** _______  
-**Modelo usado:** _______  
-**Status:** [ ] Aprovado para merge  
+**Date:** _______  
+**Version:** _______  
+**Model used:** _______  
+**Status:** [ ] Approved for merge
 
-**Problemas encontrados:**
+**Issues found:**
 
 _______________________________________
 
 ---
 
-## Checklist Rápido (Automatizado)
+## Quick Checklist (Automated)
 
-Execute em sequência:
+Run in sequence:
 
 ```bash
 #!/bin/bash
 set -e
 
-echo "=== Smoke Test Automatizado ==="
+echo "=== Automated Smoke Test ==="
 
-# 1. Backup banco
-echo "Backup banco..."
+# 1. Backup database
+echo "Backing up database..."
 cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.smoke-backup 2>/dev/null || true
 
 # 2. Build
-echo "Build..."
-cargo build --release --features all-tools || { echo "✗ Build falhou"; exit 1; }
+echo "Building..."
+cargo build --release --features all-tools || { echo "✗ Build failed"; exit 1; }
 echo "✓ Build"
 
 # 3. Quick checks
@@ -311,21 +389,23 @@ echo "✓ Unit tests"
 mv ~/.local/share/ask-ai/embeddings.db.smoke-backup ~/.local/share/ask-ai/embeddings.db 2>/dev/null || true
 
 echo ""
-echo "=== Smoke Test Automatizado Completo ==="
-echo "Execute testes manuais restantes conforme SMOKE_TEST.md"
+echo "=== Automated Smoke Test Complete ==="
+echo "Run remaining manual tests per SMOKE_TEST.md"
 ```
 
 ---
 
-## Testes Manuais Restantes
+## Remaining Manual Tests
 
-O script acima executa testes automatizados. Os seguintes testes devem ser executados manualmente:
+The script above runs automated tests. The following tests must be run manually:
 
-1. **Seção 3**: Document Import (testes interativos no chat)
-2. **Seção 4**: Embedding Síncrono (verificar indexação imediata)
-3. **Seção 5**: Memória (testes interativos com modelo >= 4b)
-4. **Seção 6**: Notas (testes interativos)
-5. **Seção 10**: File Tools (via LLM)
-6. **Seção 11**: Performance (verificar tempo de resposta)
+1. **Section 3**: Document Import (interactive chat tests)
+2. **Section 4**: Synchronous Embedding (verify immediate indexing)
+3. **Section 5**: Memory (interactive tests with model >= 4b)
+4. **Section 6**: Notes (interactive tests)
+5. **Section 6.5**: Todo Tools (CRUD, priority, tags, filters)
+6. **Section 10**: File Tools (via LLM)
+7. **Section 10.5**: run_command Error Messages
+8. **Section 11**: Performance (verify response time)
 
-Estes testes requerem interação com o chat e verificação visual de resultados.
+These tests require chat interaction and visual verification of results.
