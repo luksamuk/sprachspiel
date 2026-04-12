@@ -6,6 +6,19 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Enhanced Todo Tools — CRUD Gaps, Priority, and Tags** (Issue #66)
+  - `todo_get(id)` — Retrieve a single task by ID
+  - `todo_delete(id)` — Delete a specific task by ID (previously only `clear_done` and `clear_all`)
+  - `todo_edit(id, description?)` — Edit a task's description (follows `note_edit` pattern)
+  - `Priority` enum: `low`, `medium` (default), `high`, `critical`
+  - `tags: Vec<String>` on `Task` struct for grouping (bug, feature, refactor, etc.)
+  - `todo_add(description, priority?, tags?)` — Extended creation with priority and tags
+  - `todo_edit(id, description?, priority?, tags?)` — Extended editing with priority and tags
+  - `todo_list(filter?)` — Filter tasks by status, tag, or priority
+  - DB migration v8→v9: added `priority` and `tags` columns to `session_todos`
+  - User commands: `/todo get <id>`, `/todo delete <id>`, `/todo edit <id> <description>`
+  - User commands: `/todo add <desc> --priority <p> --tags <t1,t2>`
+
 - **Session Context Resume** - Display recent conversation context when resuming a session
   - Shows last 3 exchanges (user + assistant pairs) automatically on session resume
   - Filters out System and Tool messages, showing only User and Assistant

@@ -72,11 +72,26 @@ pub enum CommandResult {
         limit: usize,
     },
     /// Add a new todo task
-    TodoAdd { description: String },
+    TodoAdd {
+        description: String,
+        priority: Option<String>,
+        tags: Option<String>,
+    },
     /// List todo tasks
-    TodoList,
+    TodoList { filter: Option<String> },
     /// Update todo task status
     TodoUpdate { id: usize, status: String },
+    /// Get a single todo task by ID
+    TodoGet { id: usize },
+    /// Edit a todo task
+    TodoEdit {
+        id: usize,
+        description: Option<String>,
+        priority: Option<String>,
+        tags: Option<String>,
+    },
+    /// Delete a todo task
+    TodoDelete { id: usize },
     /// Clear completed todo tasks
     TodoClearDone,
     /// Clear all todo tasks
@@ -190,11 +205,26 @@ pub enum ChatCommand {
         limit: usize,
     },
     /// Add a new todo task
-    TodoAdd { description: String },
+    TodoAdd {
+        description: String,
+        priority: Option<String>,
+        tags: Option<String>,
+    },
     /// List todo tasks
-    TodoList,
+    TodoList { filter: Option<String> },
     /// Update todo task status
     TodoUpdate { id: usize, status: String },
+    /// Get a single todo task by ID
+    TodoGet { id: usize },
+    /// Edit a todo task
+    TodoEdit {
+        id: usize,
+        description: Option<String>,
+        priority: Option<String>,
+        tags: Option<String>,
+    },
+    /// Delete a todo task
+    TodoDelete { id: usize },
     /// Clear completed todo tasks
     TodoClearDone,
     /// Clear all todo tasks
@@ -397,6 +427,124 @@ fn parse_note_add(args: &str) -> Result<(String, Option<String>, bool), String> 
 
     let content = content_parts.join(" ");
     Ok((content, title, global))
+}
+
+/// Parse todo add arguments, extracting --priority and --tags flags.
+///
+/// Format: "description text --priority high --tags bug,urgent"
+/// Returns (description, priority, tags)
+fn parse_todo_add_args(args: &str) -> (String, Option<String>, Option<String>) {
+    let mut parts: Vec<String> = Vec::new();
+    let mut priority: Option<String> = None;
+    let mut tags: Option<String> = None;
+
+    let tokens: Vec<&str> = args.split_whitespace().collect();
+    let mut i = 0;
+
+    while i < tokens.len() {
+        if (tokens[i] == "--priority" || tokens[i] == "-p") && i + 1 < tokens.len() {
+            priority = Some(tokens[i + 1].to_string());
+            i += 2;
+            continue;
+        } else if (tokens[i] == "--tags" || tokens[i] == "-t") && i + 1 < tokens.len() {
+            tags = Some(tokens[i + 1].to_string());
+            i += 2;
+            continue;
+        }
+        parts.push(tokens[i].to_string());
+        i += 1;
+    }
+
+    let description = parts.join(" ").trim().to_string();
+    (description, priority, tags)
+}
+
+/// Parse a task ID from a string, returning a helpful error message on failure.
+fn parse_task_id_str(input: &str) -> Result<usize, String> {
+    input
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| "Invalid task ID. Must be a number.".to_string())
+}
+
+/// Parse todo subcommand arguments into a ChatCommand.
+///
+/// Extracted from the main parse_command to reduce complexity.
+fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
+    match subcmd {
+        "add" | "a" => {
+            if subargs.is_empty() {
+                return Err(
+                    "Usage: /todo add <description> [--priority <p>] [--tags <t1,t2>]".to_string(),
+                );
+            }
+            let (description, priority, tags) = parse_todo_add_args(subargs);
+            Ok(ChatCommand::TodoAdd {
+                description,
+                priority,
+                tags,
+            })
+        }
+        "list" | "l" => {
+            let filter = if subargs.is_empty() {
+                None
+            } else {
+                Some(subargs.trim().to_string())
+            };
+            Ok(ChatCommand::TodoList { filter })
+        }
+        "get" | "g" => {
+            if subargs.is_empty() {
+                return Err("Usage: /todo get <id>".to_string());
+            }
+            let id = parse_task_id_str(subargs)?;
+            Ok(ChatCommand::TodoGet { id })
+        }
+        "update" | "u" => {
+            let update_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
+            if update_parts.len() < 2 {
+                return Err("Usage: /todo update <id> <status>".to_string());
+            }
+            let id = parse_task_id_str(update_parts[0])?;
+            let status = update_parts[1].trim().to_string();
+            Ok(ChatCommand::TodoUpdate { id, status })
+        }
+        "edit" | "e" => {
+            let edit_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
+            if edit_parts.is_empty() || edit_parts[0].is_empty() {
+                return Err(
+                    "Usage: /todo edit <id> [--priority <p>] [--tags <t1,t2>] [description]"
+                        .to_string(),
+                );
+            }
+            let id = parse_task_id_str(edit_parts[0])?;
+            let rest = edit_parts.get(1).copied().unwrap_or("");
+            let (desc, priority, tags) = parse_todo_add_args(rest);
+            let description = if desc.is_empty() {
+                None
+            } else {
+                Some(desc)
+            };
+            Ok(ChatCommand::TodoEdit {
+                id,
+                description,
+                priority,
+                tags,
+            })
+        }
+        "delete" | "d" | "del" => {
+            if subargs.is_empty() {
+                return Err("Usage: /todo delete <id>".to_string());
+            }
+            let id = parse_task_id_str(subargs)?;
+            Ok(ChatCommand::TodoDelete { id })
+        }
+        "clear-done" | "cd" => Ok(ChatCommand::TodoClearDone),
+        "clear-all" | "ca" => Ok(ChatCommand::TodoClearAll),
+        _ => Err(
+            "Usage: /todo <add|list|get|update|edit|delete|clear-done|clear-all>".to_string(),
+        ),
+    }
 }
 
 /// Parse a command string
@@ -634,49 +782,23 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
             let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-
-            match *subcmd {
-                "add" | "a" => {
-                    if subargs.is_empty() {
-                        return Some(Err("Usage: /todo add <description>".to_string()));
-                    }
-                    ChatCommand::TodoAdd {
-                        description: subargs.trim().to_string(),
-                    }
-                }
-                "list" | "l" => ChatCommand::TodoList,
-                "update" | "u" => {
-                    let update_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
-                    if update_parts.len() < 2 {
-                        return Some(Err("Usage: /todo update <id> <status>".to_string()));
-                    }
-                    let id: usize = match update_parts[0].trim().parse() {
-                        Ok(id) => id,
-                        Err(_) => {
-                            return Some(Err("Invalid task ID. Must be a number.".to_string()));
-                        }
-                    };
-                    let status = update_parts[1].trim().to_string();
-                    ChatCommand::TodoUpdate { id, status }
-                }
-                "clear-done" | "cd" => ChatCommand::TodoClearDone,
-                "clear-all" | "ca" => ChatCommand::TodoClearAll,
-                _ => {
-                    return Some(Err(
-                        "Usage: /todo <add|list|update|clear-done|clear-all>".to_string()
-                    ));
-                }
+            match parse_todo_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
         }
         "ta" => {
             if args.is_empty() {
                 return Some(Err("Usage: /ta <description>".to_string()));
             }
+            let (description, priority, tags) = parse_todo_add_args(args);
             ChatCommand::TodoAdd {
-                description: args.trim().to_string(),
+                description,
+                priority,
+                tags,
             }
         }
-        "tl" => ChatCommand::TodoList,
+        "tl" => ChatCommand::TodoList { filter: None },
         "tu" => {
             let parts: Vec<&str> = args.splitn(2, ' ').collect();
             if parts.len() < 2 {
@@ -1498,11 +1620,35 @@ pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> Comma
             limit,
         },
 
-        ChatCommand::TodoAdd { description } => CommandResult::TodoAdd { description },
+        ChatCommand::TodoAdd {
+            description,
+            priority,
+            tags,
+        } => CommandResult::TodoAdd {
+            description,
+            priority,
+            tags,
+        },
 
-        ChatCommand::TodoList => CommandResult::TodoList,
+        ChatCommand::TodoList { filter } => CommandResult::TodoList { filter },
 
         ChatCommand::TodoUpdate { id, status } => CommandResult::TodoUpdate { id, status },
+
+        ChatCommand::TodoGet { id } => CommandResult::TodoGet { id },
+
+        ChatCommand::TodoEdit {
+            id,
+            description,
+            priority,
+            tags,
+        } => CommandResult::TodoEdit {
+            id,
+            description,
+            priority,
+            tags,
+        },
+
+        ChatCommand::TodoDelete { id } => CommandResult::TodoDelete { id },
 
         ChatCommand::TodoClearDone => CommandResult::TodoClearDone,
 
@@ -1634,11 +1780,14 @@ Documents:
   /ds = /doc show, /dd = /doc delete
 
 Todo List:
-  /todo add <description>    Add a new task
-  /todo list                 List all tasks
-  /todo update <id> <status> Update task status (pending|in_progress|done)
-  /todo clear-done           Clear completed tasks
-  /todo clear-all            Clear all tasks
+  /todo add <description> [--priority <p>] [--tags <t1,t2>]    Add a new task
+  /todo list [filter]                                            List tasks (filter: status/priority/#tag)
+  /todo get <id>                                                 Get task details
+  /todo update <id> <status>                                    Update task status (pending|in_progress|done)
+  /todo edit <id> [--priority <p>] [--tags <t1,t2>] [desc]     Edit task details
+  /todo delete <id>                                              Delete a task
+  /todo clear-done                                               Clear completed tasks
+  /todo clear-all                                                Clear all tasks
 
   Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
 

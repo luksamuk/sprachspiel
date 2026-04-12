@@ -175,16 +175,37 @@ pub async fn handle_command_result(
             handle_fact_search(state, query, global, limit);
             HandleResult::Continue
         }
-        CommandResult::TodoAdd { description } => {
-            handle_todo_add(description, &mut state.session);
+        CommandResult::TodoAdd {
+            description,
+            priority,
+            tags,
+        } => {
+            handle_todo_add(description, priority, tags, &mut state.session);
             HandleResult::Continue
         }
-        CommandResult::TodoList => {
-            handle_todo_list();
+        CommandResult::TodoList { filter } => {
+            handle_todo_list(filter);
             HandleResult::Continue
         }
         CommandResult::TodoUpdate { id, status } => {
             handle_todo_update(id, status, &mut state.session);
+            HandleResult::Continue
+        }
+        CommandResult::TodoGet { id } => {
+            handle_todo_get(id);
+            HandleResult::Continue
+        }
+        CommandResult::TodoEdit {
+            id,
+            description,
+            priority,
+            tags,
+        } => {
+            handle_todo_edit(id, description, priority, tags, &mut state.session);
+            HandleResult::Continue
+        }
+        CommandResult::TodoDelete { id } => {
+            handle_todo_delete(id, &mut state.session);
             HandleResult::Continue
         }
         CommandResult::TodoClearDone => {
@@ -919,18 +940,55 @@ pub fn handle_fact_search(state: &ReplState, query: String, global: bool, limit:
 /// Handle todo add command
 ///
 /// Adds a new task to the todo list.
-pub fn handle_todo_add(description: String, session: &mut super::session::ChatSession) {
+pub fn handle_todo_add(
+    description: String,
+    priority: Option<String>,
+    tags: Option<String>,
+    session: &mut super::session::ChatSession,
+) {
+    use crate::chat::todo_state::Priority;
     use crate::tools::todo;
+
+    let priority_val = priority
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(Priority::Medium);
+
+    let tags_val: Vec<String> = tags
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.split(',')
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
 
     let id = {
         let state = todo::get_todo_state();
         let mut guard = state.lock().unwrap();
-        guard.add(description.clone())
+        guard.add_with_options(description.clone(), priority_val, tags_val.clone())
     };
 
     session.todos = todo::save_to_session();
 
-    println!("Added task {}: {} [pending]", id, description);
+    let mut msg = format!(
+        "Added task {}: {} [pending] [{}]",
+        id, description, priority_val
+    );
+    if !tags_val.is_empty() {
+        msg.push_str(&format!(
+            " {}",
+            tags_val
+                .iter()
+                .map(|t| format!("#{}", t))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+    }
+    println!("{}", msg);
 
     if !session.anonymous
         && let Err(e) = session.save_sqlite()
@@ -941,13 +999,173 @@ pub fn handle_todo_add(description: String, session: &mut super::session::ChatSe
 
 /// Handle todo list command
 ///
-/// Lists all tasks in the todo list.
-pub fn handle_todo_list() {
+/// Lists all tasks in the todo list, optionally filtered.
+pub fn handle_todo_list(filter: Option<String>) {
+    use crate::chat::todo_state::{Priority, TaskFilter, TaskStatus};
+    use crate::tools::todo;
+
+    let filter_val = filter.filter(|s| !s.is_empty());
+
+    let task_filter = if let Some(ref f) = filter_val {
+        if let Some(tag) = f.strip_prefix('#') {
+            TaskFilter {
+                tag: Some(tag.to_lowercase()),
+                ..Default::default()
+            }
+        } else if let Ok(status) = f.parse::<TaskStatus>() {
+            TaskFilter {
+                status: Some(status),
+                ..Default::default()
+            }
+        } else if let Ok(priority) = f.parse::<Priority>() {
+            TaskFilter {
+                priority: Some(priority),
+                ..Default::default()
+            }
+        } else {
+            TaskFilter {
+                tag: Some(f.to_lowercase()),
+                ..Default::default()
+            }
+        }
+    } else {
+        TaskFilter::default()
+    };
+
+    let state = todo::get_todo_state();
+    let guard = state.lock().unwrap();
+    println!("{}", guard.format_list_filtered(&task_filter));
+}
+
+/// Handle todo get command
+///
+/// Gets a single task by ID.
+pub fn handle_todo_get(id: usize) {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
     let guard = state.lock().unwrap();
-    println!("{}", guard.format_list());
+
+    match guard.get(id) {
+        Some(task) => {
+            let mut output = format!(
+                "Task {}: {}\n  Status: {}\n  Priority: {}",
+                task.id, task.description, task.status, task.priority
+            );
+            if !task.tags.is_empty() {
+                output.push_str(&format!(
+                    "\n  Tags: {}",
+                    task.tags
+                        .iter()
+                        .map(|t| format!("#{}", t))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+            println!("{}", output);
+        }
+        None => eprintln!("Error: Task {} not found", id),
+    }
+}
+
+/// Handle todo edit command
+///
+/// Edits a task's description, priority, and/or tags.
+pub fn handle_todo_edit(
+    id: usize,
+    description: Option<String>,
+    priority: Option<String>,
+    tags: Option<String>,
+    session: &mut super::session::ChatSession,
+) {
+    use crate::chat::todo_state::Priority;
+    use crate::tools::todo;
+
+    // Normalize empty strings to None
+    let description = description.filter(|s| !s.is_empty());
+    let priority = priority.filter(|s| !s.is_empty());
+    let tags = tags.filter(|s| !s.is_empty());
+
+    if description.is_none() && priority.is_none() && tags.is_none() {
+        eprintln!("Error: Provide at least one field to update (description, priority, or tags).");
+        return;
+    }
+
+    let priority_val: Option<Priority> = priority.and_then(|s| s.parse().ok());
+    let tags_val: Option<Vec<String>> = tags.map(|s| {
+        s.split(',')
+            .map(|t| t.trim().to_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect()
+    });
+
+    let state = todo::get_todo_state();
+    let mut guard = state.lock().unwrap();
+
+    match guard.edit(id, description, priority_val, tags_val) {
+        Ok(()) => {
+            let task = guard.get(id).unwrap();
+            let mut msg = format!("Task {} updated:", id);
+            msg.push_str(&format!("\n  Description: {}", task.description));
+            msg.push_str(&format!("\n  Status: {}", task.status));
+            msg.push_str(&format!("\n  Priority: {}", task.priority));
+            if !task.tags.is_empty() {
+                msg.push_str(&format!(
+                    "\n  Tags: {}",
+                    task.tags
+                        .iter()
+                        .map(|t| format!("#{}", t))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+            println!("{}", msg);
+            drop(guard);
+            session.todos = todo::save_to_session();
+
+            if !session.anonymous
+                && let Err(e) = session.save_sqlite()
+            {
+                eprintln!("Warning: Could not save session: {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+        }
+    }
+}
+
+/// Handle todo delete command
+///
+/// Deletes a specific task by ID.
+pub fn handle_todo_delete(id: usize, session: &mut super::session::ChatSession) {
+    use crate::tools::todo;
+
+    let state = todo::get_todo_state();
+    let mut guard = state.lock().unwrap();
+
+    let task_desc = guard.get(id).map(|t| t.description.clone());
+
+    match guard.delete(id) {
+        Ok(()) => {
+            if let Some(desc) = task_desc {
+                println!("Deleted task {}: {}", id, desc);
+            } else {
+                println!("Deleted task {}", id);
+            }
+            drop(guard);
+            session.todos = todo::save_to_session();
+
+            if !session.anonymous
+                && let Err(e) = session.save_sqlite()
+            {
+                eprintln!("Warning: Could not save session: {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+        }
+    }
 }
 
 /// Handle todo update command

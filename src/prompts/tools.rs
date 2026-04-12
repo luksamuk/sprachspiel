@@ -206,6 +206,9 @@ Color tips: To make "more red", increase R or decrease G/B. For "warmer", increa
         let todo_tools = [
             "todo_add",
             "todo_update",
+            "todo_get",
+            "todo_edit",
+            "todo_delete",
             "todo_list",
             "todo_clear_done",
             "todo_clear_all",
@@ -217,18 +220,24 @@ Color tips: To make "more red", increase R or decrease G/B. For "warmer", increa
 
         if !available.is_empty() {
             sections.push(
-                r#"### TODO TOOLS
+                r##"### TODO TOOLS
 Use for tracking tasks during multi-step work. Reduces need to search conversation history.
-Available: todo_add, todo_update, todo_list, todo_clear_done, todo_clear_all
+Available: todo_add, todo_update, todo_get, todo_edit, todo_delete, todo_list, todo_clear_done, todo_clear_all
 
 Workflow:
 1. Add tasks with todo_add("description") when starting multi-step work
+   - Optional: todo_add("Fix bug", priority="high", tags="bug,urgent")
 2. List tasks with todo_list() to see current status
-3. Update status with todo_update(id, "in_progress") or todo_update(id, "done")
-4. Clear completed tasks with todo_clear_done()
+   - Filter: todo_list("pending"), todo_list("high"), todo_list("#bug")
+3. Get details with todo_get(id)
+4. Update status with todo_update(id, "in_progress") or todo_update(id, "done")
+5. Edit tasks with todo_edit(id, description="new desc", priority="high")
+6. Delete tasks with todo_delete(id)
+7. Clear completed tasks with todo_clear_done()
 
-Status values: pending, in_progress, done"#
-                    .to_string(),
+Priority values: low, medium (default), high, critical
+Status values: pending, in_progress, done
+Tags: lowercase, comma-separated (e.g., "bug,frontend")"##.to_string(),
             );
         }
     }

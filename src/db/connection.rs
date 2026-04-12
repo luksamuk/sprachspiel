@@ -6,7 +6,7 @@ use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use super::schema::{SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL, set_version_sql};
+use super::schema::{set_version_sql, SCHEMA_SQL, SCHEMA_VERSION, VERSION_SQL};
 
 /// Thread-safe database wrapper
 #[derive(Clone)]
@@ -491,6 +491,36 @@ impl Database {
             }
         }
 
+        // Migration v8 -> v9: Add priority and tags columns to session_todos
+        if from_version < 9 {
+            let todo_columns = [
+                ("priority", "TEXT NOT NULL DEFAULT 'medium'"),
+                ("tags", "TEXT NOT NULL DEFAULT ''"),
+            ];
+
+            for (col_name, col_type) in todo_columns {
+                let column_exists: bool = {
+                    let mut stmt = conn.prepare("PRAGMA table_info(session_todos)")?;
+                    let rows = stmt.query_map([], |row| {
+                        let name: String = row.get(1)?;
+                        Ok(name)
+                    })?;
+                    let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                    names.contains(&col_name.to_string())
+                };
+
+                if !column_exists {
+                    conn.execute(
+                        &format!(
+                            "ALTER TABLE session_todos ADD COLUMN {} {}",
+                            col_name, col_type
+                        ),
+                        [],
+                    )?;
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -611,6 +641,8 @@ mod tests {
         assert!(columns.contains(&"task_id".to_string()));
         assert!(columns.contains(&"description".to_string()));
         assert!(columns.contains(&"status".to_string()));
+        assert!(columns.contains(&"priority".to_string()));
+        assert!(columns.contains(&"tags".to_string()));
         assert!(columns.contains(&"created_at".to_string()));
     }
 

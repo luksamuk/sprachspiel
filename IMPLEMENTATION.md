@@ -330,7 +330,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔴 PRIORITY 1: Enhance Todo Tools — CRUD Gaps, Priority, and Tags (Issue #66) [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS (v0.40.0)
 
 **Goal:** Fix technical debt in todo tools by adding missing CRUD operations, priority levels, and tags/categories.
 
@@ -375,23 +375,22 @@ todo_clear_all()             // Clear all tasks
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1.1 | Add `todo_get(id)` tool | ❌ |
-| 1.2 | Add `todo_delete(id)` tool | ❌ |
-| 1.3 | Add `todo_edit(id, description?)` tool | ❌ |
-| 1.4 | Register new tools in registry | ❌ |
-| 1.5 | Add tool descriptions to prompts | ❌ |
-| 1.6 | Update `doc/src/tools.md` | ❌ |
-| 1.7 | Manual tests | ❌ |
-| 2.1 | Add `Priority` enum | ❌ |
-| 2.2 | Add `tags: Vec<String>` to `Task` | ❌ |
-| 2.3 | Extend `todo_add(description, priority?, tags?)` | ❌ |
-| 2.4 | Extend `todo_edit(id, description?, priority?, tags?)` | ❌ |
-| 2.5 | Extend `todo_list(filter?)` with filtering | ❌ |
-| 2.6 | Extend `format_list()` for priority/tags | ❌ |
-| 2.7 | DB migration for `priority` and `tags` columns | ❌ |
-| 2.8 | Update `to_rows()`/`from_rows()` | ❌ |
-| 2.9 | Update prompts and docs | ❌ |
-| 2.10 | Manual tests | ❌ |
+| 1.1 | Add `todo_get(id)` tool | ✅ Done |
+| 1.2 | Add `todo_delete(id)` tool | ✅ Done |
+| 1.3 | Add `todo_edit(id, description?, priority?, tags?)` tool | ✅ Done |
+| 1.4 | Register new tools in registry | ✅ Done |
+| 1.5 | Add tool descriptions to prompts | ✅ Done |
+| 1.6 | Update slash commands and handlers | ✅ Done |
+| 2.1 | Add `Priority` enum | ✅ Done |
+| 2.2 | Add `tags: Vec<String>` to `Task` | ✅ Done |
+| 2.3 | Extend `todo_add(description, priority?, tags?)` | ✅ Done |
+| 2.4 | Extend `todo_edit(id, description?, priority?, tags?)` | ✅ Done |
+| 2.5 | Extend `todo_list(filter?)` with filtering | ✅ Done |
+| 2.6 | Extend `format_list()` for priority/tags | ✅ Done |
+| 2.7 | DB migration v8→v9 for `priority` and `tags` columns | ✅ Done |
+| 2.8 | Update `to_rows()`/`from_rows()` | ✅ Done |
+| 2.9 | Update prompts and docs | ✅ Done |
+| 2.10 | Manual tests | 📋 Pending |
 
 **Related:** Issue #66
 

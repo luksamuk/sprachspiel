@@ -2,12 +2,16 @@
 //!
 //! These tools allow the LLM to track tasks explicitly during a conversation,
 //! reducing the need to search through conversation history.
+//!
+//! Tasks support status (pending/in_progress/done), priority (low/medium/high/critical),
+//! and tags for grouping (e.g., "bug", "feature").
 
 use std::sync::{Arc, Mutex};
 
 use once_cell::sync::OnceCell;
 
-use crate::chat::todo_state::{TaskStatus, TodoState};
+use crate::chat::todo_state::{Priority, TaskFilter, TaskStatus, TodoState};
+use crate::debug_tools::{log_tool_call, log_tool_result};
 
 /// Global todo state shared between tools
 static TODO_STATE: OnceCell<Arc<Mutex<TodoState>>> = OnceCell::new();
@@ -58,15 +62,52 @@ pub fn format_todos_for_prompt() -> Option<String> {
             TaskStatus::InProgress => "►",
             TaskStatus::Done => "✓",
         };
+        let tags_str = if task.tags.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", task.format_tags())
+        };
         output.push_str(&format!(
-            "{} {} - {} [{}]\n",
-            status_icon, task.id, task.description, task.status
+            "{} {} - {} [{}][{}]{}\n",
+            status_icon, task.id, task.description, task.status, task.priority, tags_str
         ));
     }
 
     output.push_str("\nUse `todo_list()` to see the full list with descriptions.\n");
 
     Some(output)
+}
+
+/// Parse task ID from string, returning helpful error message on failure.
+fn parse_task_id(task_id: &str) -> Result<usize, String> {
+    task_id.parse::<usize>().map_err(|_| {
+        format!(
+            "Error: Invalid task ID '{}'. Must be a number like '1', '2', etc.",
+            task_id
+        )
+    })
+}
+
+/// Parse priority from optional string, defaulting to Medium.
+fn parse_priority(priority: Option<String>) -> Priority {
+    priority
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(Priority::Medium)
+}
+
+/// Parse tags from optional comma-separated string.
+fn parse_tags(tags: Option<String>) -> Vec<String> {
+    tags.as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.split(',')
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Add a new task to the todo list.
@@ -78,23 +119,67 @@ pub fn format_todos_for_prompt() -> Option<String> {
 /// * `description` - A clear, concise description of the task to track.
 ///   - Example: "Implement user authentication"
 ///   - Example: "Fix the bug in file parsing"
+/// * `priority` - Optional priority level. One of: "low", "medium", "high", "critical".
+///   - Default: "medium"
+///   - Aliases: "l"=low, "m"=medium, "h"=high, "c"=critical, "urgent"=critical
+/// * `tags` - Optional comma-separated tags for grouping. Use lowercase.
+///   - Example: "bug,urgent"
+///   - Example: "feature,frontend"
 ///
 /// # Returns
-/// Confirmation message with the task ID and current status, or an error message.
+/// Confirmation message with the task ID, status, priority, and tags.
 ///
 /// # Example
 /// ```ignore
-/// todo_add("Review the pull request".to_string())
-/// // Returns: "Added task 1: Review the pull request [pending]"
+/// todo_add("Fix login bug".to_string(), Some("high".to_string()), Some("bug,auth".to_string()))
+/// // Returns: "Added task 1: Fix login bug [pending] [high] #bug #auth"
 /// ```
 #[ollama_rs::function]
 pub async fn todo_add(
     description: String,
+    priority: Option<String>,
+    tags: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let priority_val = parse_priority(priority);
+    let tags_val = parse_tags(tags);
+
+    log_tool_call(
+        "todo_add",
+        &[
+            ("description".to_string(), description.clone()),
+            ("priority".to_string(), priority_val.to_string()),
+            (
+                "tags".to_string(),
+                if tags_val.is_empty() {
+                    "none".to_string()
+                } else {
+                    tags_val.join(",")
+                },
+            ),
+        ],
+    );
+
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
-    let id = guard.add(description.clone());
-    Ok(format!("Added task {}: {} [pending]", id, description))
+    let id = guard.add_with_options(description.clone(), priority_val, tags_val.clone());
+
+    let mut result = format!(
+        "Added task {}: {} [pending] [{}]",
+        id, description, priority_val
+    );
+    if !tags_val.is_empty() {
+        result.push_str(&format!(
+            " {}",
+            tags_val
+                .iter()
+                .map(|t| format!("#{}", t))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+    }
+
+    log_tool_result("todo_add", &result);
+    Ok(result)
 }
 
 /// Update the status of an existing task.
@@ -122,57 +207,328 @@ pub async fn todo_update(
     task_id: String,
     status: String,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let id: usize = match task_id.parse() {
+    log_tool_call(
+        "todo_update",
+        &[
+            ("task_id".to_string(), task_id.clone()),
+            ("status".to_string(), status.clone()),
+        ],
+    );
+
+    let id: usize = match parse_task_id(&task_id) {
         Ok(id) => id,
-        Err(_) => {
-            let err = format!(
-                "Error: Invalid task ID '{}'. Must be a number like '1', '2', etc.",
-                task_id
-            );
-            return Ok(err);
+        Err(e) => {
+            log_tool_result("todo_update", &e);
+            return Ok(e);
         }
     };
 
     let new_status: TaskStatus = match status.parse() {
         Ok(s) => s,
-        Err(e) => return Ok(format!("Error: {}", e)),
+        Err(e) => {
+            let err = format!("Error: {}", e);
+            log_tool_result("todo_update", &err);
+            return Ok(err);
+        }
     };
 
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
 
-    match guard.update_status(id, new_status) {
-        Ok(()) => Ok(format!("Task {} marked as {}", id, new_status)),
-        Err(e) => Ok(format!("Error: {}", e)),
-    }
+    let result = match guard.update_status(id, new_status) {
+        Ok(()) => format!("Task {} marked as {}", id, new_status),
+        Err(e) => format!("Error: {}", e),
+    };
+
+    log_tool_result("todo_update", &result);
+    Ok(result)
 }
 
-/// List all tasks in the todo list.
+/// Get details of a single task by ID.
 ///
-/// Use this tool to see the current task list with their IDs and statuses.
-/// Call this before updating tasks to see what exists.
+/// Use this tool to retrieve the full details of a specific task,
+/// including its description, status, priority, and tags.
+///
+/// # Arguments
+/// * `task_id` - The ID of the task to retrieve.
+///   - Example: "1", "2", "3"
 ///
 /// # Returns
-/// Formatted list of all tasks with IDs, statuses, and descriptions.
-/// Shows task count summary at the end.
+/// Detailed task information or error if task not found.
 ///
 /// # Example
 /// ```ignore
-/// todo_list()
-/// // Returns:
-/// // "### TODO LIST
-/// //  
-/// //  ☐ 1. Review pull request [pending]
-/// //  ► 2. Implement authentication [in_progress]
-/// //  ✓ 3. Write tests [done]
-/// //  
-/// //  Stats: 1 pending, 1 in progress, 1 done"
+/// todo_get("1".to_string())
+/// // Returns: "Task 1: Fix login bug\nStatus: pending\nPriority: high\nTags: #bug #auth"
 /// ```
 #[ollama_rs::function]
-pub async fn todo_list() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn todo_get(task_id: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("todo_get", &[("task_id".to_string(), task_id.clone())]);
+
+    let id: usize = match parse_task_id(&task_id) {
+        Ok(id) => id,
+        Err(e) => {
+            log_tool_result("todo_get", &e);
+            return Ok(e);
+        }
+    };
+
     let state = get_todo_state();
     let guard = state.lock().unwrap();
-    Ok(guard.format_list())
+
+    let result = match guard.get(id) {
+        Some(task) => {
+            let mut output = format!(
+                "Task {}: {}\nStatus: {}\nPriority: {}",
+                task.id, task.description, task.status, task.priority
+            );
+            if !task.tags.is_empty() {
+                output.push_str(&format!(
+                    "\nTags: {}",
+                    task.tags
+                        .iter()
+                        .map(|t| format!("#{}", t))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+            output
+        }
+        None => format!("Error: Task {} not found", id),
+    };
+
+    log_tool_result("todo_get", &result);
+    Ok(result)
+}
+
+/// Edit a task's description, priority, and/or tags.
+///
+/// Use this to correct or update a task's metadata.
+/// At least one of `description`, `priority`, or `tags` must be provided.
+///
+/// # Arguments
+/// * `task_id` - The ID of the task to edit.
+///   - Example: "1", "2", "3"
+/// * `description` - New description for the task. Optional.
+///   - Example: "Updated task description"
+/// * `priority` - New priority level. Optional. One of: "low", "medium", "high", "critical".
+/// * `tags` - New comma-separated tags. Optional. Replaces all existing tags.
+///   - Example: "bug,urgent"
+///
+/// # Returns
+/// Confirmation message showing what was updated, or error if task not found.
+///
+/// # Example
+/// ```ignore
+/// // Change priority only
+/// todo_edit("1".to_string(), None, Some("high".to_string()), None)
+///
+/// // Change tags only
+/// todo_edit("1".to_string(), None, None, Some("bug,frontend".to_string()))
+/// ```
+#[ollama_rs::function]
+pub async fn todo_edit(
+    task_id: String,
+    description: Option<String>,
+    priority: Option<String>,
+    tags: Option<String>,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    // Normalize empty strings to None
+    let description = description.filter(|s| !s.is_empty());
+    let priority = priority.filter(|s| !s.is_empty());
+    let tags = tags.filter(|s| !s.is_empty());
+
+    log_tool_call(
+        "todo_edit",
+        &[
+            ("task_id".to_string(), task_id.clone()),
+            (
+                "description".to_string(),
+                description.as_deref().unwrap_or("unchanged").to_string(),
+            ),
+            (
+                "priority".to_string(),
+                priority.as_deref().unwrap_or("unchanged").to_string(),
+            ),
+            (
+                "tags".to_string(),
+                tags.as_deref().unwrap_or("unchanged").to_string(),
+            ),
+        ],
+    );
+
+    let id: usize = match parse_task_id(&task_id) {
+        Ok(id) => id,
+        Err(e) => {
+            log_tool_result("todo_edit", &e);
+            return Ok(e);
+        }
+    };
+
+    let priority_val: Option<Priority> = priority.and_then(|s| s.parse().ok());
+    let tags_val: Option<Vec<String>> = tags.map(|s| {
+        s.split(',')
+            .map(|t| t.trim().to_lowercase())
+            .filter(|t| !t.is_empty())
+            .collect()
+    });
+
+    let state = get_todo_state();
+    let mut guard = state.lock().unwrap();
+
+    let result = match guard.edit(id, description, priority_val, tags_val) {
+        Ok(()) => {
+            let task = guard.get(id).unwrap();
+            let mut msg = format!("Task {} updated:", id);
+            msg.push_str(&format!("\n  Description: {}", task.description));
+            msg.push_str(&format!("\n  Status: {}", task.status));
+            msg.push_str(&format!("\n  Priority: {}", task.priority));
+            if !task.tags.is_empty() {
+                msg.push_str(&format!(
+                    "\n  Tags: {}",
+                    task.tags
+                        .iter()
+                        .map(|t| format!("#{}", t))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+            msg
+        }
+        Err(e) => format!("Error: {}", e),
+    };
+
+    log_tool_result("todo_edit", &result);
+    Ok(result)
+}
+
+/// Delete a specific task by ID.
+///
+/// Use this to remove a task that is no longer needed.
+/// This permanently removes the task from the list.
+///
+/// # Arguments
+/// * `task_id` - The ID of the task to delete.
+///   - Example: "1", "2", "3"
+///
+/// # Returns
+/// Confirmation message or error if task not found.
+///
+/// # Example
+/// ```ignore
+/// todo_delete("3".to_string())
+/// // Returns: "Deleted task 3: Fix typo"
+/// ```
+#[ollama_rs::function]
+pub async fn todo_delete(
+    task_id: String,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("todo_delete", &[("task_id".to_string(), task_id.clone())]);
+
+    let id: usize = match parse_task_id(&task_id) {
+        Ok(id) => id,
+        Err(e) => {
+            log_tool_result("todo_delete", &e);
+            return Ok(e);
+        }
+    };
+
+    let state = get_todo_state();
+    let mut guard = state.lock().unwrap();
+
+    // Get task description before deleting for a better message
+    let task_desc = guard.get(id).map(|t| t.description.clone());
+
+    let result = match guard.delete(id) {
+        Ok(()) => {
+            if let Some(desc) = task_desc {
+                format!("Deleted task {}: {}", id, desc)
+            } else {
+                format!("Deleted task {}", id)
+            }
+        }
+        Err(e) => format!("Error: {}", e),
+    };
+
+    log_tool_result("todo_delete", &result);
+    Ok(result)
+}
+
+/// List tasks in the todo list, optionally filtered by status, priority, or tag.
+///
+/// Use this tool to see the current task list. Call this before editing tasks
+/// to confirm the task ID and current state.
+///
+/// # Arguments
+/// * `filter` - Optional filter criteria. One of:
+///   - Status filter: "pending", "in_progress", "done"
+///   - Priority filter: "low", "medium", "high", "critical"
+///   - Tag filter: starts with "#" (e.g., "#bug", "#feature")
+///   - Omit to show all tasks
+///
+/// # Returns
+/// Formatted list of tasks matching the filter, with IDs, statuses, priorities, and tags.
+///
+/// # Example
+/// ```ignore
+/// todo_list(None)                    // Show all tasks
+/// todo_list(Some("pending".to_string()))     // Show pending tasks
+/// todo_list(Some("high".to_string()))         // Show high priority tasks
+/// todo_list(Some("#bug".to_string()))          // Show tasks tagged "bug"
+/// ```
+#[ollama_rs::function]
+pub async fn todo_list(
+    filter: Option<String>,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let filter_val = filter.filter(|s| !s.is_empty());
+
+    log_tool_call(
+        "todo_list",
+        &[(
+            "filter".to_string(),
+            filter_val.as_deref().unwrap_or("all").to_string(),
+        )],
+    );
+
+    let state = get_todo_state();
+    let guard = state.lock().unwrap();
+
+    let task_filter = if let Some(ref f) = filter_val {
+        // Check for tag filter (starts with #)
+        if let Some(tag) = f.strip_prefix('#') {
+            TaskFilter {
+                tag: Some(tag.to_lowercase()),
+                ..Default::default()
+            }
+        }
+        // Check for status filter
+        else if let Ok(status) = f.parse::<TaskStatus>() {
+            TaskFilter {
+                status: Some(status),
+                ..Default::default()
+            }
+        }
+        // Check for priority filter
+        else if let Ok(priority) = f.parse::<Priority>() {
+            TaskFilter {
+                priority: Some(priority),
+                ..Default::default()
+            }
+        }
+        // Unknown filter - try as tag without #
+        else {
+            TaskFilter {
+                tag: Some(f.to_lowercase()),
+                ..Default::default()
+            }
+        }
+    } else {
+        TaskFilter::default()
+    };
+
+    let result = guard.format_list_filtered(&task_filter);
+    log_tool_result("todo_list", &result);
+    Ok(result)
 }
 
 /// Clear completed (done) tasks from the list.
@@ -190,17 +546,22 @@ pub async fn todo_list() -> Result<String, Box<dyn std::error::Error + Send + Sy
 /// ```
 #[ollama_rs::function]
 pub async fn todo_clear_done() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("todo_clear_done", &[]);
+
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
     let removed = guard.clear_done();
 
-    if removed == 0 {
-        Ok("No completed tasks to remove.".to_string())
+    let result = if removed == 0 {
+        "No completed tasks to remove.".to_string()
     } else if removed == 1 {
-        Ok("Removed 1 completed task.".to_string())
+        "Removed 1 completed task.".to_string()
     } else {
-        Ok(format!("Removed {} completed tasks.", removed))
-    }
+        format!("Removed {} completed tasks.", removed)
+    };
+
+    log_tool_result("todo_clear_done", &result);
+    Ok(result)
 }
 
 /// Clear all tasks from the list.
@@ -218,17 +579,22 @@ pub async fn todo_clear_done() -> Result<String, Box<dyn std::error::Error + Sen
 /// ```
 #[ollama_rs::function]
 pub async fn todo_clear_all() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    log_tool_call("todo_clear_all", &[]);
+
     let state = get_todo_state();
     let mut guard = state.lock().unwrap();
     let count = guard.clear_all();
 
-    if count == 0 {
-        Ok("The task list was already empty.".to_string())
+    let result = if count == 0 {
+        "The task list was already empty.".to_string()
     } else if count == 1 {
-        Ok("Cleared 1 task from the list.".to_string())
+        "Cleared 1 task from the list.".to_string()
     } else {
-        Ok(format!("Cleared {} tasks from the list.", count))
-    }
+        format!("Cleared {} tasks from the list.", count)
+    };
+
+    log_tool_result("todo_clear_all", &result);
+    Ok(result)
 }
 
 #[cfg(test)]
