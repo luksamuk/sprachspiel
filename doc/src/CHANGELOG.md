@@ -4,6 +4,13 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Code Quality: Reduce `parse_command` complexity** (Issue #35)
+  - Extract individual command group parsers from monolithic `parse_command` function
+  - Reduce cyclomatic complexity of `parse_command` (~450 lines) to manageable components
+  - Maintain identical public API (`parse_command` signature unchanged)
+
 ### Added
 
 - **Memory Staleness Warnings in Facts Prompt** (Issue #70)

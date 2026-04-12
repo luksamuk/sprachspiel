@@ -578,7 +578,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔵 PRIORITY 4: Code Quality - commands.rs Complexity (parse_command) [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Reduce cyclomatic complexity of `parse_command` from ~450 lines to manageable size.
 
