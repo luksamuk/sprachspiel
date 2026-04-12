@@ -328,50 +328,13 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🔴 PRIORITY 1: Enhance Todo Tools — CRUD Gaps, Priority, and Tags (Issue #66) [M1]
+### ✅ PRIORITY 1: Enhance Todo Tools — CRUD Gaps, Priority, and Tags (COMPLETED) [M1]
 
-**Status:** 🔄 IN PROGRESS (v0.40.0)
+**Status:** ✅ COMPLETED (v0.39.5)
 
 **Goal:** Fix technical debt in todo tools by adding missing CRUD operations, priority levels, and tags/categories.
 
-**Problem Statement:**
-- Cannot retrieve a single task by ID (`todo_get`)
-- Cannot delete a specific task (`todo_delete`) — only `clear_done` and `clear_all` exist
-- Cannot edit a task's description after creation (`todo_edit`)
-- No priority levels (low/medium/high/critical) — all tasks are equal
-- No tags/categories for grouping (bug, feature, refactor, etc.)
-- No filtering in `todo_list` (by status, tag, or priority)
-
-**Solution:** Extend todo tools in two phases:
-
-**Phase 1 — Missing CRUD (essential):**
-
-| Tool | Description |
-|------|-------------|
-| `todo_get(id)` | Retrieve a single task by ID |
-| `todo_delete(id)` | Delete a specific task by ID |
-| `todo_edit(id, description?)` | Edit task description |
-
-**Phase 2 — Priority and Tags (organization):**
-
-| Change | Description |
-|--------|-------------|
-| `Priority` enum | `low`, `medium` (default), `high`, `critical` |
-| `tags: Vec<String>` | Comma-separated tags on `Task` struct |
-| `todo_add(description, priority?, tags?)` | Extended creation |
-| `todo_edit(id, description?, priority?, tags?)` | Extended editing |
-| `todo_list(filter?)` | Filter by status/tag/priority |
-| DB migration | Add `priority` and `tags` columns to `session_todos` |
-
-**Design Decisions:**
-- All optional params use `Option<String>` per AGENTS.md (LLM parameter safety)
-- Empty string normalization: `.filter(|s| !s.is_empty())` on priority/tags
-- Priority default: `medium`
-- Tags: comma-separated, trimmed, lowercased
-- No sub-tasks (YAGNI — LLM can use numbered descriptions like "1/3: X")
-- `todo_edit` follows `note_edit` pattern: at least one field required
-
-**Implementation:**
+**Implementation Summary:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
@@ -386,13 +349,18 @@ todo_clear_all()             // Clear all tasks
 | 2.3 | Extend `todo_add(description, priority?, tags?)` | ✅ Done |
 | 2.4 | Extend `todo_edit(id, description?, priority?, tags?)` | ✅ Done |
 | 2.5 | Extend `todo_list(filter?)` with filtering | ✅ Done |
-| 2.6 | Extend `format_list()` for priority/tags | ✅ Done |
+| 2.6 | Extend `format_list_filtered()` for priority/tags | ✅ Done |
 | 2.7 | DB migration v8→v9 for `priority` and `tags` columns | ✅ Done |
 | 2.8 | Update `to_rows()`/`from_rows()` | ✅ Done |
 | 2.9 | Update prompts and docs | ✅ Done |
-| 2.10 | Manual tests | 📋 Pending |
+| 2.10 | Manual tests | ✅ Done |
+| 2.11 | Smoke test | ✅ Done (63/64 pass, 1 skipped) |
+| 2.12 | Bug fix: error messages for /todo edit/get/delete without args | ✅ Done |
+| 2.13 | Refactor: extract `parse_todo_subcommand`, remove YAGNI code | ✅ Done |
 
-**Related:** Issue #66
+**Key files:** `src/chat/todo_state.rs`, `src/tools/todo.rs`, `src/db/connection.rs`, `src/db/operations.rs`, `src/db/schema.rs`, `src/tools/registry.rs`, `src/chat/commands.rs`, `src/chat/command_handlers.rs`, `src/prompts/tools.rs`
+
+**Closes:** Issue #66 via PR #82
 
 ---
 
