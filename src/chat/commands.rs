@@ -520,11 +520,7 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             let id = parse_task_id_str(edit_parts[0])?;
             let rest = edit_parts.get(1).copied().unwrap_or("");
             let (desc, priority, tags) = parse_todo_add_args(rest);
-            let description = if desc.is_empty() {
-                None
-            } else {
-                Some(desc)
-            };
+            let description = if desc.is_empty() { None } else { Some(desc) };
             Ok(ChatCommand::TodoEdit {
                 id,
                 description,
@@ -541,9 +537,7 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
         }
         "clear-done" | "cd" => Ok(ChatCommand::TodoClearDone),
         "clear-all" | "ca" => Ok(ChatCommand::TodoClearAll),
-        _ => Err(
-            "Usage: /todo <add|list|get|update|edit|delete|clear-done|clear-all>".to_string(),
-        ),
+        _ => Err("Usage: /todo <add|list|get|update|edit|delete|clear-done|clear-all>".to_string()),
     }
 }
 
