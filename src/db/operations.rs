@@ -126,6 +126,8 @@ pub struct TodoRow {
     pub task_id: usize,
     pub description: String,
     pub status: String,
+    pub priority: String,
+    pub tags: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -414,13 +416,15 @@ impl Database {
             // Insert new todos
             for todo in todos {
                 conn.execute(
-                    "INSERT INTO session_todos (conversation_id, task_id, description, status, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    "INSERT INTO session_todos (conversation_id, task_id, description, status, priority, tags, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     params![
                         conversation_id,
                         todo.task_id,
                         todo.description,
                         todo.status,
+                        todo.priority,
+                        todo.tags,
                         todo.created_at.timestamp(),
                     ],
                 )?;
@@ -433,26 +437,69 @@ impl Database {
     /// Get todos for a conversation
     pub fn get_todos(&self, conversation_id: &str) -> Result<Vec<TodoRow>> {
         self.with_connection(|conn: &rusqlite::Connection| {
-            let mut stmt = conn.prepare(
-                "SELECT task_id, description, status, created_at 
-                 FROM session_todos 
-                 WHERE conversation_id = ?1 
-                 ORDER BY task_id ASC",
-            )?;
+            // Check if priority and tags columns exist (migration v9)
+            let columns: Vec<String> = {
+                let mut stmt = conn.prepare("PRAGMA table_info(session_todos)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                rows.collect::<Result<Vec<String>, _>>()?
+            };
 
-            let rows = stmt.query_map(params![conversation_id], |row| {
-                let timestamp: i64 = row.get(3)?;
-                let created_at =
-                    chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
-                Ok(TodoRow {
-                    task_id: row.get(0)?,
-                    description: row.get(1)?,
-                    status: row.get(2)?,
-                    created_at,
-                })
-            })?;
+            let has_priority_tags =
+                columns.contains(&"priority".to_string()) && columns.contains(&"tags".to_string());
 
-            rows.collect::<Result<Vec<_>>>()
+            let rows: Vec<TodoRow> = if has_priority_tags {
+                let mut stmt = conn.prepare(
+                    "SELECT task_id, description, status, priority, tags, created_at 
+                     FROM session_todos 
+                     WHERE conversation_id = ?1 
+                     ORDER BY task_id ASC",
+                )?;
+
+                let rows = stmt.query_map(params![conversation_id], |row| {
+                    let timestamp: i64 = row.get(5)?;
+                    let created_at =
+                        chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
+                    Ok(TodoRow {
+                        task_id: row.get(0)?,
+                        description: row.get(1)?,
+                        status: row.get(2)?,
+                        priority: row.get(3)?,
+                        tags: row.get(4)?,
+                        created_at,
+                    })
+                })?;
+
+                rows.collect::<Result<Vec<_>, _>>()?
+            } else {
+                // Fallback for pre-v9 schema (no priority/tags columns)
+                let mut stmt = conn.prepare(
+                    "SELECT task_id, description, status, created_at 
+                     FROM session_todos 
+                     WHERE conversation_id = ?1 
+                     ORDER BY task_id ASC",
+                )?;
+
+                let rows = stmt.query_map(params![conversation_id], |row| {
+                    let timestamp: i64 = row.get(3)?;
+                    let created_at =
+                        chrono::DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
+                    Ok(TodoRow {
+                        task_id: row.get(0)?,
+                        description: row.get(1)?,
+                        status: row.get(2)?,
+                        priority: "medium".to_string(),
+                        tags: String::new(),
+                        created_at,
+                    })
+                })?;
+
+                rows.collect::<Result<Vec<_>, _>>()?
+            };
+
+            Ok(rows)
         })
     }
 }

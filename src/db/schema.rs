@@ -8,7 +8,7 @@
 //! - facts table (factual memory system)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 8;
+pub const SCHEMA_VERSION: i32 = 9;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS session_todos (
     task_id INTEGER NOT NULL,
     description TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
+    priority TEXT NOT NULL DEFAULT 'medium',
+    tags TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );

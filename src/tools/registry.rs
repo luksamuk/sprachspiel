@@ -28,7 +28,10 @@ use super::fact_tools::{fact_add, fact_remove, fact_search};
 use super::notes::{note_add, note_delete, note_edit};
 
 // Todo tools (always available)
-use super::todo::{todo_add, todo_clear_all, todo_clear_done, todo_list, todo_update};
+use super::todo::{
+    todo_add, todo_clear_all, todo_clear_done, todo_delete, todo_edit, todo_get, todo_list,
+    todo_update,
+};
 
 // Document import tool
 #[cfg(feature = "document-tools")]
@@ -446,6 +449,9 @@ fn register_todo_tools<C: ToolRegistrar>(
 
     register_if_allowed!(coord, count, is_allowed, "todo_add", todo_add);
     register_if_allowed!(coord, count, is_allowed, "todo_update", todo_update);
+    register_if_allowed!(coord, count, is_allowed, "todo_get", todo_get);
+    register_if_allowed!(coord, count, is_allowed, "todo_edit", todo_edit);
+    register_if_allowed!(coord, count, is_allowed, "todo_delete", todo_delete);
     register_if_allowed!(coord, count, is_allowed, "todo_list", todo_list);
     register_if_allowed!(coord, count, is_allowed, "todo_clear_done", todo_clear_done);
     register_if_allowed!(coord, count, is_allowed, "todo_clear_all", todo_clear_all);
@@ -640,6 +646,9 @@ fn get_todo_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     let todo_tools = [
         "todo_add",
         "todo_update",
+        "todo_get",
+        "todo_edit",
+        "todo_delete",
         "todo_list",
         "todo_clear_done",
         "todo_clear_all",
