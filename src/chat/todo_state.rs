@@ -93,7 +93,7 @@ impl std::str::FromStr for Priority {
 }
 
 impl Priority {
-    /// Get display symbol for priority
+    /// Get display symbol for priority (used in test_priority_symbols)
     #[allow(dead_code)]
     pub fn symbol(&self) -> &'static str {
         match self {
@@ -138,6 +138,7 @@ pub struct Task {
 
 impl Task {
     /// Create a new task with the given id and description
+    // Used in test modules and as convenience constructor without priority/tags
     #[allow(dead_code)]
     pub fn new(id: usize, description: String) -> Self {
         let now = Utc::now();
@@ -224,7 +225,8 @@ impl TodoState {
         }
     }
 
-    /// Add a new task and return its ID
+    /// Add a new task and return its ID (without priority/tags)
+    // Used in test modules; production code uses add_with_options()
     #[allow(dead_code)]
     pub fn add(&mut self, description: String) -> usize {
         let id = self.next_id;
@@ -250,12 +252,6 @@ impl TodoState {
     /// Get a task by ID
     pub fn get(&self, id: usize) -> Option<&Task> {
         self.tasks.iter().find(|t| t.id == id)
-    }
-
-    /// Get a mutable reference to a task by ID
-    #[allow(dead_code)]
-    pub fn get_mut(&mut self, id: usize) -> Option<&mut Task> {
-        self.tasks.iter_mut().find(|t| t.id == id)
     }
 
     /// Update a task's status by ID
@@ -339,25 +335,26 @@ impl TodoState {
         self.tasks.iter().filter(|t| t.status == status).count()
     }
 
-    /// Count tasks by priority
+    /// Count tasks by priority (used in test_todo_state_count_by_priority)
     #[allow(dead_code)]
     pub fn count_by_priority(&self, priority: Priority) -> usize {
         self.tasks.iter().filter(|t| t.priority == priority).count()
     }
 
-    /// Count total tasks
+    /// Count total tasks (used in tests)
     #[allow(dead_code)]
     pub fn count(&self) -> usize {
         self.tasks.len()
     }
 
-    /// Check if the list is empty
+    /// Check if the list is empty (used in tests)
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.tasks.is_empty()
     }
 
     /// Format the todo list for display (unfiltered)
+    // Convenience wrapper; production uses format_list_filtered()
     #[allow(dead_code)]
     pub fn format_list(&self) -> String {
         self.format_list_filtered(&TaskFilter::default())
