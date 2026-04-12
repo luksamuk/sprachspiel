@@ -55,6 +55,11 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **Recent context display: multi-line messages breaking layout** - Newlines in message content are now collapsed to spaces so each message displays on a single line when resuming a session
+  - Previously, messages containing `\n` would spill across multiple lines in the "Recent context" summary, making the display messy
+  - `strip_thinking_tags()` output is now `.replace('\n', " ")` before truncation
+  - Added test `test_recent_context_info_newlines_collapsed`
+
 - **CRITICAL: Unicode panic on string truncation in chat resume** - Fixed crash when resuming sessions with multibyte characters
   - `truncate_str()` used byte-based slicing (`&s[..N]`) which panicked on non-ASCII characters
   - Portuguese text with `ç`, `ã`, `é` (2-3 bytes each) caused panic at byte boundaries
