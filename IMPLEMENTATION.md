@@ -330,7 +330,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔴 PRIORITY 1: Enhance Todo Tools — CRUD Gaps, Priority, and Tags (Issue #66) [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Fix technical debt in todo tools by adding missing CRUD operations, priority levels, and tags/categories.
 
