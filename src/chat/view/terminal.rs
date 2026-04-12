@@ -8,7 +8,7 @@ use crate::consts::roles::format_role_label;
 use crate::markdown;
 
 use super::super::session::{ChatSession, MessageRole};
-use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo, truncate_str};
+use super::{truncate_str, ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
 
 /// Terminal output backend using println!/eprintln!
 ///
@@ -157,7 +157,7 @@ impl TerminalView {
                 let user = RecentMessage {
                     role_label: format_role_label(role_str),
                     content: truncate_str(
-                        &strip_thinking_tags(&user_msg.content),
+                        &strip_thinking_tags(&user_msg.content).replace('\n', " "),
                         super::MAX_CONTEXT_LINE_LENGTH,
                     ),
                 };
@@ -169,7 +169,7 @@ impl TerminalView {
                     RecentMessage {
                         role_label: format_role_label(a_role_str),
                         content: truncate_str(
-                            &strip_thinking_tags(&a.content),
+                            &strip_thinking_tags(&a.content).replace('\n', " "),
                             super::MAX_CONTEXT_LINE_LENGTH,
                         ),
                     }

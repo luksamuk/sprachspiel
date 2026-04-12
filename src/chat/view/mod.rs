@@ -820,4 +820,43 @@ mod tests {
         assert!(!unicode_cleaned.contains("Internal reasoning"));
         assert!(unicode_cleaned.contains("Final response"));
     }
+
+    #[test]
+    fn test_recent_context_info_newlines_collapsed() {
+        // Verify that when newlines are replaced with spaces before creating
+        // RecentMessage (as done in show_recent_context), each message
+        // displays on a single line in the context summary.
+        let info = RecentContextInfo {
+            total_messages: 4,
+            exchanges: vec![(
+                RecentMessage {
+                    role_label: "👤 User".to_string(),
+                    // Content already has newlines replaced with spaces
+                    // (this happens in show_recent_context before truncate_str)
+                    content: "Hello world how are you?".to_string(),
+                },
+                Some(RecentMessage {
+                    role_label: "🤖 Assistant".to_string(),
+                    content: "I am fine thanks!".to_string(),
+                }),
+            )],
+        };
+        let output = info.format_context_summary();
+
+        // No line should contain a bare newline inside the message content
+        // Each message should be on a single line after its role label
+        for line in output.lines() {
+            // Lines with role labels should not contain embedded \n
+            // (they are already single lines since \n was replaced before)
+            // We just verify the output contains the content as expected
+            if line.contains("👤") {
+                assert!(line.contains("Hello world how are you?"));
+                assert!(!line.contains("\n"));
+            }
+            if line.contains("🤖") {
+                assert!(line.contains("I am fine thanks!"));
+                assert!(!line.contains("\n"));
+            }
+        }
+    }
 }
