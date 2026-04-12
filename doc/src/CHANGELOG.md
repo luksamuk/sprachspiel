@@ -6,6 +6,23 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Memory Staleness Warnings in Facts Prompt** (Issue #70)
+  - Facts in the system prompt now show age-based staleness labels when outdated
+  - `(stale)` label when `decay_score < 0.3` (badly decayed)
+  - `(N days ago)` label when `last_accessed` > 30 days (not recently used)
+  - `(unused)` label when `access_count == 0` and age > 7 days (never retrieved)
+  - Priority order: stale > days ago > unused (only one label per fact)
+  - Fresh facts (recently accessed, high decay score) show no label — no noise
+
+- **Truncation Warnings in Tool Outputs** (Issue #71)
+  - `read_file(path, max_lines)` now appends `[TRUNCATED: Showing lines 1-N of M. Use read_file_segment to read more.]`
+  - `search_files()` now uses standardized `[TRUNCATED: ...]` format instead of `... (stopped after N matches)`
+  - `remember(query=...)` now shows `[TRUNCATED: 150 of N chars. Use remember(id="note:X") for full content.]` for notes/docs
+  - `remember(query=...)` now shows `[TRUNCATED: 200 of N chars. Use remember(id="msg:X") for full content.]` for messages
+  - `remember(query=...)` sub-messages now show `[+N chars]` instead of bare `...`
+  - All truncation is Unicode-safe using `.chars().take()` pattern from project conventions
+  - Introduced `REMEMBER_NOTE_PREVIEW_CHARS`, `REMEMBER_MESSAGE_PREVIEW_CHARS`, `REMEMBER_SUBMESSAGE_PREVIEW_CHARS` constants
+
 - **Enhanced Todo Tools — CRUD Gaps, Priority, and Tags** (Issue #66)
   - `todo_get(id)` — Retrieve a single task by ID
   - `todo_delete(id)` — Delete a specific task by ID (previously only `clear_done` and `clear_all`)

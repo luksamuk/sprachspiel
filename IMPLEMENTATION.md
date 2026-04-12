@@ -2427,18 +2427,26 @@ vision = true
 
 ### 🔵 PRIORITY 4: Code Quality — Memory Staleness Warnings [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS  
 **Estimated effort:** 0.5 day
 
 **Goal:** Inject staleness warnings into the facts prompt when facts are old.
 
 **Current state:** `src/facts/prompt.rs` formats facts without age indicators. Facts with `last_accessed` > 30 days may be outdated but are presented with the same confidence as fresh facts.
 
-**Proposal:** Add age-based caveats in the facts injection:
+**Implementation:**
 
+Added `get_staleness_label()` function in `src/facts/prompt.rs` with priority-based labels:
+- `(stale)` — when `decay_score < 0.3` (badly decayed)
+- `(N days ago)` — when `last_accessed` > 30 days (not recently used)
+- `(unused)` — when `access_count == 0` and age > 7 days (never retrieved)
+- No label for fresh facts (avoids noise)
+
+Modified `build_facts_section()` to append staleness label after fact content:
 ```rust
-if fact.days_since_access > 30 {
-    format!("⚠️ {} days old — may be outdated.", fact.days_since_access)
+for fact in preferences {
+    let staleness = get_staleness_label(fact);
+    section.push_str(&format!("- {}{}\n", fact.content, staleness));
 }
 ```
 
@@ -2450,20 +2458,33 @@ if fact.days_since_access > 30 {
 
 ### 🔵 PRIORITY 4: Code Quality — Truncation Warnings [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS  
 **Estimated effort:** 0.5 day
 
 **Goal:** Add explicit truncation metadata in tool outputs when file reads or search results are limited.
 
 **Current state:** `read_file` with `max_lines` silently truncates. No `[TRUNCATED]` indicator in output.
 
-**Proposal:** Append truncation notice to tool output:
+**Implementation:**
 
-```
-[TRUNCATED: Showing lines 1-50 of 342. Use read_file_segment for more.]
-```
+Modified truncation handling across three files:
 
-**Complexity:** Low — modify `read_file` and `search_files` output formatting.
+1. **`src/tools/files.rs`** — `read_file`:
+   - Added `[TRUNCATED: Showing lines 1-N of M. Use read_file_segment to read more.]` when `max_lines` truncates output
+   - Calculates `total_lines` before truncation to include total count
+   - Only appends notice when actually truncated (skips if `max_lines >= total_lines`)
+
+2. **`src/tools/files.rs`** — `search_files`:
+   - Changed from `... (stopped after N matches)` to `[TRUNCATED: Showing N matches. Refine your search pattern for fewer results.]`
+
+3. **`src/tools/remember.rs`**:
+   - Added `REMEMBER_NOTE_PREVIEW_CHARS` (150), `REMEMBER_MESSAGE_PREVIEW_CHARS` (200), `REMEMBER_SUBMESSAGE_PREVIEW_CHARS` (100) constants
+   - Notes/docs: `[TRUNCATED: 150 of N chars. Use remember(id="note:X") for full content.]`
+   - Messages: `[TRUNCATED: 200 of N chars. Use remember(id="msg:X") for full content.]`
+   - Sub-messages: `[+N chars]` (no retrievable ID, so simplified format)
+   - All truncation uses Unicode-safe `.chars().take()` pattern
+
+**Complexity:** Low — modify output formatting in `read_file`, `search_files`, and `remember`.
 
 **Related:** Issue #71
 
