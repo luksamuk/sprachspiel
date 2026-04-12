@@ -494,6 +494,9 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             Ok(ChatCommand::TodoList { filter })
         }
         "get" | "g" => {
+            if subargs.is_empty() {
+                return Err("Usage: /todo get <id>".to_string());
+            }
             let id = parse_task_id_str(subargs)?;
             Ok(ChatCommand::TodoGet { id })
         }
@@ -508,7 +511,7 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
         }
         "edit" | "e" => {
             let edit_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
-            if edit_parts.is_empty() {
+            if edit_parts.is_empty() || edit_parts[0].is_empty() {
                 return Err(
                     "Usage: /todo edit <id> [--priority <p>] [--tags <t1,t2>] [description]"
                         .to_string(),
@@ -530,6 +533,9 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             })
         }
         "delete" | "d" | "del" => {
+            if subargs.is_empty() {
+                return Err("Usage: /todo delete <id>".to_string());
+            }
             let id = parse_task_id_str(subargs)?;
             Ok(ChatCommand::TodoDelete { id })
         }
