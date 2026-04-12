@@ -46,6 +46,8 @@ once_cell = "1.21"
 # Use same reqwest version as ollama-rs to avoid duplication
 # Use rustls-tls for cross-compilation support (no OpenSSL dependency)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2", "system-proxy"] }
+# rattles provides spinner animation presets (frames only, rendering via indicatif)
+rattles = "0.2"
 # regex is used directly in our code for file filtering
 regex = "1.10"
 # rustyline for interactive REPL with history

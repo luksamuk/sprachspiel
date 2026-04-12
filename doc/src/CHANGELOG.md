@@ -26,6 +26,13 @@ All notable changes to Ask-AI will be documented in this file.
   - `WelcomeInfo` struct expanded from 7 to 13 fields (added skill_count)
   - Added `count_facts()`, `count_notes()`, `count_documents()` to Database
 
+- **Randomized spinner animations** - Each spinner now uses a random animation preset from rattles
+  - Added `rattles` dependency (v0.2) for spinner animation presets (42 presets: braille, ascii, arrows)
+  - Each call to `create_spinner()` picks a random animation via `tick_strings()`
+  - Rendering backend remains indicatif (suspend/resume, steady tick, progress bars unchanged)
+  - Emoji presets excluded for terminal compatibility (including Termux)
+  - All presets verified as single-line (height=1)
+
 - **Notes LLM Tools: edit and delete** - LLM can now maintain notes it creates
   - `note_edit(id, title?, content?)` - Edit note title and/or content
   - `note_delete(id)` - Delete note by ID (accepts "42" or "note:42")

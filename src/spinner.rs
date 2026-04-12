@@ -2,12 +2,93 @@
 //!
 //! Provides visual feedback while waiting for Ollama responses.
 //! Supports suspend/resume for printing tool calls.
+//! Uses rattles presets for randomized spinner animations.
 
 use indicatif::{ProgressBar, ProgressStyle};
+use rattles::Rattle;
 use std::sync::RwLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static ACTIVE_SPINNER: RwLock<Option<ProgressBar>> = RwLock::new(None);
 static ACTIVE_STATUS_BAR: RwLock<Option<String>> = RwLock::new(None);
+
+/// Extract all animation frames from a Rattler as static string slices.
+/// Uses TickedRattler to iterate without depending on the global clock.
+fn extract_all_frames<T: Rattle>(rattler: rattles::Rattler<T>) -> Vec<&'static str> {
+    let len = rattler.len();
+    let mut ticked = rattler.into_ticked();
+    let mut frames = Vec::with_capacity(len);
+    for _ in 0..len {
+        frames.push(ticked.tick()[0]);
+    }
+    frames
+}
+
+/// Return frames from a random rattles preset for use as indicatif tick_strings.
+///
+/// Uses the system timestamp for randomness (no `rand` dependency).
+/// The last frame is always `" "` (space) — shown when the spinner finishes.
+/// Only single-line presets are included (no emoji, no multi-line braille).
+fn random_spinner_frames() -> Vec<&'static str> {
+    let presets: Vec<fn() -> Vec<&'static str>> = vec![
+        // --- braille ---
+        || extract_all_frames(rattles::presets::braille::dots()),
+        || extract_all_frames(rattles::presets::braille::dots2()),
+        || extract_all_frames(rattles::presets::braille::dots3()),
+        || extract_all_frames(rattles::presets::braille::dots4()),
+        || extract_all_frames(rattles::presets::braille::dots5()),
+        || extract_all_frames(rattles::presets::braille::dots6()),
+        || extract_all_frames(rattles::presets::braille::dots7()),
+        || extract_all_frames(rattles::presets::braille::dots8()),
+        || extract_all_frames(rattles::presets::braille::dots9()),
+        || extract_all_frames(rattles::presets::braille::dots10()),
+        || extract_all_frames(rattles::presets::braille::dots11()),
+        || extract_all_frames(rattles::presets::braille::dots12()),
+        || extract_all_frames(rattles::presets::braille::bounce()),
+        || extract_all_frames(rattles::presets::braille::breathe()),
+        || extract_all_frames(rattles::presets::braille::snake()),
+        || extract_all_frames(rattles::presets::braille::wave()),
+        || extract_all_frames(rattles::presets::braille::waverows()),
+        || extract_all_frames(rattles::presets::braille::pulse()),
+        || extract_all_frames(rattles::presets::braille::orbit()),
+        || extract_all_frames(rattles::presets::braille::helix()),
+        || extract_all_frames(rattles::presets::braille::sparkle()),
+        || extract_all_frames(rattles::presets::braille::rain()),
+        || extract_all_frames(rattles::presets::braille::sand()),
+        || extract_all_frames(rattles::presets::braille::scan()),
+        || extract_all_frames(rattles::presets::braille::cascade()),
+        || extract_all_frames(rattles::presets::braille::fillsweep()),
+        // --- ascii ---
+        || extract_all_frames(rattles::presets::ascii::dqpb()),
+        || extract_all_frames(rattles::presets::ascii::arc()),
+        || extract_all_frames(rattles::presets::ascii::balloon()),
+        || extract_all_frames(rattles::presets::ascii::circle_halves()),
+        || extract_all_frames(rattles::presets::ascii::circle_quarters()),
+        || extract_all_frames(rattles::presets::ascii::toggle()),
+        || extract_all_frames(rattles::presets::ascii::triangle()),
+        || extract_all_frames(rattles::presets::ascii::grow_horizontal()),
+        || extract_all_frames(rattles::presets::ascii::grow_vertical()),
+        || extract_all_frames(rattles::presets::ascii::noise()),
+        || extract_all_frames(rattles::presets::ascii::point()),
+        || extract_all_frames(rattles::presets::ascii::simple_dots()),
+        || extract_all_frames(rattles::presets::ascii::simple_dots_scrolling()),
+        || extract_all_frames(rattles::presets::ascii::square_corners()),
+        || extract_all_frames(rattles::presets::ascii::rolling_line()),
+        // --- arrows ---
+        || extract_all_frames(rattles::presets::arrows::arrow()),
+    ];
+
+    let idx = (SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        % (presets.len() as u128)) as usize;
+
+    let mut frames = presets[idx]();
+    // indicatif shows the last frame when the spinner finishes
+    frames.push(" ");
+    frames
+}
 
 /// RAII guard that automatically finishes the spinner when dropped
 ///
@@ -69,8 +150,10 @@ impl Drop for SpinnerGuard {
 /// ```
 pub fn create_spinner(message: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
+    let frames = random_spinner_frames();
     pb.set_style(
         ProgressStyle::default_spinner()
+            .tick_strings(&frames)
             .template("{spinner:.green} {msg}")
             .expect("Failed to set spinner style"),
     );
@@ -123,8 +206,10 @@ where
 #[allow(dead_code)]
 pub fn create_custom_spinner(message: &str, template: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
+    let frames = random_spinner_frames();
     pb.set_style(
         ProgressStyle::default_spinner()
+            .tick_strings(&frames)
             .template(template)
             .expect("Failed to set custom spinner style"),
     );
