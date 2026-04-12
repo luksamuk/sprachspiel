@@ -116,11 +116,21 @@ pub async fn read_file(
     // Apply max_lines limit if specified
     let result = if let Some(lines) = max_lines_parsed {
         let lines_to_take = lines as usize;
-        content
-            .lines()
-            .take(lines_to_take)
-            .collect::<Vec<_>>()
-            .join("\n")
+        let total_lines = content.lines().count();
+        if lines_to_take >= total_lines {
+            // Requested more lines than the file has — no truncation needed
+            content
+        } else {
+            let truncated: String = content
+                .lines()
+                .take(lines_to_take)
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!(
+                "{}\n\n[TRUNCATED: Showing lines 1-{} of {}. Use read_file_segment to read more.]",
+                truncated, lines_to_take, total_lines
+            )
+        }
     } else {
         content
     };
@@ -778,7 +788,10 @@ pub async fn search_files(
                 ));
 
                 if matches.len() >= MAX_RESULTS {
-                    matches.push(format!("... (stopped after {} matches)", MAX_RESULTS));
+                    matches.push(format!(
+                        "[TRUNCATED: Showing {} matches. Refine your search pattern for fewer results.]",
+                        MAX_RESULTS
+                    ));
                     break;
                 }
             }
