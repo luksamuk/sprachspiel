@@ -2554,7 +2554,7 @@ vision = true
 
 ### 🔵 PRIORITY 4: Code Quality — Memory Staleness Warnings [M1]
 
-**Status:** 🔄 IN PROGRESS  
+**Status:** ✅ COMPLETED (v0.39.5)  
 **Estimated effort:** 0.5 day
 
 **Goal:** Inject staleness warnings into the facts prompt when facts are old.
@@ -2585,7 +2585,7 @@ for fact in preferences {
 
 ### 🔵 PRIORITY 4: Code Quality — Truncation Warnings [M1]
 
-**Status:** 🔄 IN PROGRESS  
+**Status:** ✅ COMPLETED (v0.39.5)  
 **Estimated effort:** 0.5 day
 
 **Goal:** Add explicit truncation metadata in tool outputs when file reads or search results are limited.
