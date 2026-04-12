@@ -15,6 +15,15 @@ const MAX_PREVIEW_CHUNKS: i32 = 3;
 /// Documents larger than this need to have been chunked during import
 const MAX_UNCHUNKED_CONTENT: usize = 50_000; // 50 KB = 50,000 bytes ≈ 10k tokens
 
+/// Maximum characters to display for note/document content in search results
+const REMEMBER_NOTE_PREVIEW_CHARS: usize = 150;
+
+/// Maximum characters to display for message content in search results
+const REMEMBER_MESSAGE_PREVIEW_CHARS: usize = 200;
+
+/// Maximum characters to display for subsequent message content in search results
+const REMEMBER_SUBMESSAGE_PREVIEW_CHARS: usize = 100;
+
 /// Parse a source ID into (SourceType, numeric_id)
 /// IDs must include source type prefix (e.g., "msg:42", "doc:13")
 fn parse_source_id(id: &str) -> Result<(SourceType, i64), String> {
@@ -757,10 +766,17 @@ async fn remember_by_query(
         output.push_str("**Notes:**\n\n");
         for result in &note_results {
             let title = result.item.title.as_deref().unwrap_or("Untitled");
-            let content = if result.item.content.chars().count() > 150 {
+            let total_chars = result.item.content.chars().count();
+            let content = if total_chars > REMEMBER_NOTE_PREVIEW_CHARS {
+                let truncated: String = result
+                    .item
+                    .content
+                    .chars()
+                    .take(REMEMBER_NOTE_PREVIEW_CHARS)
+                    .collect();
                 format!(
-                    "{}...",
-                    result.item.content.chars().take(150).collect::<String>()
+                    "{}...[TRUNCATED: {} of {} chars. Use remember(id=\"note:{}\") for full content.]",
+                    truncated, REMEMBER_NOTE_PREVIEW_CHARS, total_chars, result.item.id
                 )
             } else {
                 result.item.content.clone()
@@ -778,10 +794,17 @@ async fn remember_by_query(
         output.push_str("**Documents:**\n\n");
         for result in &doc_results {
             let title = result.item.title.as_deref().unwrap_or("Untitled");
-            let content = if result.item.content.chars().count() > 150 {
+            let total_chars = result.item.content.chars().count();
+            let content = if total_chars > REMEMBER_NOTE_PREVIEW_CHARS {
+                let truncated: String = result
+                    .item
+                    .content
+                    .chars()
+                    .take(REMEMBER_NOTE_PREVIEW_CHARS)
+                    .collect();
                 format!(
-                    "{}...",
-                    result.item.content.chars().take(150).collect::<String>()
+                    "{}...[TRUNCATED: {} of {} chars. Use remember(id=\"doc:{}\") for full content.]",
+                    truncated, REMEMBER_NOTE_PREVIEW_CHARS, total_chars, result.item.id
                 )
             } else {
                 result.item.content.clone()
@@ -802,9 +825,18 @@ async fn remember_by_query(
             let role = item.role.as_deref().unwrap_or("unknown");
             let role_label = format_role_label(role);
 
-            // Truncate content for display (respect UTF-8 boundaries)
-            let content = if item.content.chars().count() > 200 {
-                format!("{}...", item.content.chars().take(200).collect::<String>())
+            // Truncate content for display with [TRUNCATED] notice
+            let total_chars = item.content.chars().count();
+            let content = if total_chars > REMEMBER_MESSAGE_PREVIEW_CHARS {
+                let truncated: String = item
+                    .content
+                    .chars()
+                    .take(REMEMBER_MESSAGE_PREVIEW_CHARS)
+                    .collect();
+                format!(
+                    "{}...[TRUNCATED: {} of {} chars. Use remember(id=\"msg:{}\") for full content.]",
+                    truncated, REMEMBER_MESSAGE_PREVIEW_CHARS, total_chars, item.id
+                )
             } else {
                 item.content.clone()
             };
@@ -820,10 +852,18 @@ async fn remember_by_query(
                     Some("pre_tool_content") => "[Intermediate] ",
                     _ => "",
                 };
-                let sub_content = if sub_item.item.content.chars().count() > 100 {
+                let sub_total_chars = sub_item.item.content.chars().count();
+                let sub_content = if sub_total_chars > REMEMBER_SUBMESSAGE_PREVIEW_CHARS {
+                    let truncated: String = sub_item
+                        .item
+                        .content
+                        .chars()
+                        .take(REMEMBER_SUBMESSAGE_PREVIEW_CHARS)
+                        .collect();
                     format!(
-                        "{}...",
-                        sub_item.item.content.chars().take(100).collect::<String>()
+                        "{}...[+{} chars]",
+                        truncated,
+                        sub_total_chars - REMEMBER_SUBMESSAGE_PREVIEW_CHARS
                     )
                 } else {
                     sub_item.item.content.clone()

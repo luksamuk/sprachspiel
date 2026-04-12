@@ -2148,13 +2148,140 @@ let results = futures::future::join_all(futures).await;
 
 | Phase | Task | Duration |
 |-------|------|----------|
+| 0.1 | Add `busy_timeout` to DB connection | 0.5h |
+| 0.2 | Evaluate WAL mode and implement if viable | 0.5 day |
+| 0.3 | Build DB concurrency integration test binary | 1 day |
 | 1 | Identify which tools are safe for parallel execution | 0.5 day |
 | 2 | Implement dependency analysis in CustomCoordinator | 1 day |
 | 3 | Parallel execution with `join_all` | 1 day |
 | 4 | Preserve sequential order for stateful tools | 0.5 day |
 | 5 | Tests and benchmarks | 1 day |
 
-**Safe for Parallel (read-only):**
+**Phase 0: Database Concurrency Prerequisites**
+
+Before parallel tool execution can work reliably, the SQLite connection must
+handle concurrent access properly. Today the DB uses `Arc<Mutex<Connection>>`
+which serializes all access, but this creates contention when background
+operations (embedding generation, recovery) hold the lock for extended periods.
+
+**Phase 0.1: Add `busy_timeout`** (1 line change in `init_connection()`)
+
+```rust
+conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+```
+
+This makes SQLite wait up to 5 seconds when the database is locked, instead
+of failing immediately with SQLITE_BUSY. Prevents the "unable to open database
+file" error observed in smoke tests when embedding generation competes with
+tool calls for the DB lock.
+
+**Phase 0.2: Evaluate WAL mode** (design decision)
+
+```rust
+conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+```
+
+WAL (Write-Ahead Logging) enables concurrent reads during writes. Without WAL,
+`Arc<Mutex<Connection>>` serializes all access — even read-only tools wait.
+With WAL, multiple read connections can operate while a write is in progress.
+
+**Risks to evaluate:**
+- WAL changes file behavior (requires testing: backup, recovery, cross-platform)
+- WAL creates `-wal` and `-shm` files alongside the database
+- WAL may have different performance characteristics on network filesystems
+- Must verify compatibility with existing backup/restore procedures
+
+**Phase 0.3: DB Concurrency Integration Test** (`tests/db_concurrency.rs`)
+
+A separate integration test binary that simulates concurrent DB access
+patterns without requiring a running LLM or Ollama server. Uses its own
+temporary database file to avoid affecting user data.
+
+**Test scenarios:**
+
+| Scenario | Description | Contention Level |
+|----------|-------------|------------------|
+| A | Two lightweight reads (`note_show` + `note_list`) | None |
+| B | Two reads with embedding (`remember(query=x)` + `remember(query=y)`) | Low |
+| C | Heavy write + read (`import_document` + `remember(query)`) | High |
+| D | Background embedding + read (send message + `remember()`) | High — the smoke test case |
+| E | Auto-compact + read (after long conversation + `remember()`) | Medium |
+
+**Binary design:**
+
+```bash
+# Run with default temporary database
+cargo test --test db_concurrency
+
+# Run with specific database (for manual testing)
+cargo test --test db_concurrency -- --db-path /tmp/test_concurrency.db
+
+# Run specific scenario
+cargo test --test db_concurrency -- --scenario heavy_write_read
+```
+
+**Architecture of the test binary:**
+
+```rust
+// tests/db_concurrency.rs
+// Simulates concurrent DB access patterns that occur during LLM tool calls
+
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// Spawns N concurrent DB operations and measures:
+/// - Total time (should be near-max of individual ops, not sum)
+/// - Whether any operation fails with SQLITE_BUSY or lock errors
+/// - Whether data integrity is preserved under concurrent access
+async fn run_concurrent_scenario(
+    db: Arc<Database>,
+    scenario: Scenario,
+) -> ConcurrencyResult {
+    let futures: Vec<_> = scenario.operations()
+        .map(|op| tokio::spawn(async move { op.execute(&db).await }))
+        .collect();
+
+    let start = Instant::now();
+    let results = futures::future::join_all(futures).await;
+    let elapsed = start.elapsed();
+
+    ConcurrencyResult {
+        scenario: scenario.name(),
+        total_time: elapsed,
+        individual_times: results.iter().map(|r| r.time).collect(),
+        errors: results.iter().filter(|r| r.is_err()).collect(),
+        integrity_ok: verify_data_integrity(&db),
+    }
+}
+```
+
+**Key metric:** With proper concurrency support (WAL + busy_timeout), total
+time for parallel reads should approach the max of individual operation times,
+not the sum. Without WAL, the Mutex serializes everything and total time
+approaches the sum.
+
+**Current DB concurrency sources (existing background operations):**
+
+1. **Embedding generation** — `tokio::spawn` in `session.rs` (lines 374, 502, 613)
+   holds DB lock while writing embeddings after each user message
+2. **Embedding recovery** — `recovery.rs` runs on startup, may hold lock during
+   orphan cleanup and embedding generation
+3. **Auto-compact** — `auto_compact_if_needed` runs after each LLM response,
+   performs multiple DB reads and writes
+
+**Tools that access the DB (potential parallel readers):**
+
+| Tool | Access Type | Estimated Duration |
+|------|-------------|-------------------|
+| `remember(query=...)` | Read (semantic search) | ~100ms (with embedding) |
+| `remember(id=...)` | Read (SELECT by ID) | <5ms |
+| `note_show` / `note_list` | Read (SELECT) | <10ms |
+| `note_edit` / `note_add` | Write (UPDATE/INSERT) | <5ms |
+| `fact_remember` / `fact_recall` | Write/Read | <5ms |
+| `import_document` | Write (INSERT + chunking) | ~100ms-2s |
+| `/fact list` / `/doc list` | Read | <5ms |
+
+**Safe for Parallel (read-only, no DB access):**
 - `get_weather`, `get_current_datetime`
 - `read_file`, `read_file_segment`, `count_lines`, `list_directory`, `search_files`
 - `web_search`, `search_duckduckgo`
@@ -2170,9 +2297,9 @@ let results = futures::future::join_all(futures).await;
 
 **Implementation note:** The read-only vs write classification above should be formalized in code (e.g., `ToolCategory::ReadOnly` / `ToolCategory::Stateful` enum) to enable the runtime parallel execution decision.
 
-**Dependencies:** None
+**Dependencies:** Phase 0 must be completed before Phase 1-5
 
-**Estimated effort:** 3-4 days
+**Estimated effort:** 5-6 days (including Phase 0)
 
 **Related:** Issue #11
 
@@ -2427,18 +2554,26 @@ vision = true
 
 ### 🔵 PRIORITY 4: Code Quality — Memory Staleness Warnings [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS  
 **Estimated effort:** 0.5 day
 
 **Goal:** Inject staleness warnings into the facts prompt when facts are old.
 
 **Current state:** `src/facts/prompt.rs` formats facts without age indicators. Facts with `last_accessed` > 30 days may be outdated but are presented with the same confidence as fresh facts.
 
-**Proposal:** Add age-based caveats in the facts injection:
+**Implementation:**
 
+Added `get_staleness_label()` function in `src/facts/prompt.rs` with priority-based labels:
+- `(stale)` — when `decay_score < 0.3` (badly decayed)
+- `(N days ago)` — when `last_accessed` > 30 days (not recently used)
+- `(unused)` — when `access_count == 0` and age > 7 days (never retrieved)
+- No label for fresh facts (avoids noise)
+
+Modified `build_facts_section()` to append staleness label after fact content:
 ```rust
-if fact.days_since_access > 30 {
-    format!("⚠️ {} days old — may be outdated.", fact.days_since_access)
+for fact in preferences {
+    let staleness = get_staleness_label(fact);
+    section.push_str(&format!("- {}{}\n", fact.content, staleness));
 }
 ```
 
@@ -2450,20 +2585,33 @@ if fact.days_since_access > 30 {
 
 ### 🔵 PRIORITY 4: Code Quality — Truncation Warnings [M1]
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS  
 **Estimated effort:** 0.5 day
 
 **Goal:** Add explicit truncation metadata in tool outputs when file reads or search results are limited.
 
 **Current state:** `read_file` with `max_lines` silently truncates. No `[TRUNCATED]` indicator in output.
 
-**Proposal:** Append truncation notice to tool output:
+**Implementation:**
 
-```
-[TRUNCATED: Showing lines 1-50 of 342. Use read_file_segment for more.]
-```
+Modified truncation handling across three files:
 
-**Complexity:** Low — modify `read_file` and `search_files` output formatting.
+1. **`src/tools/files.rs`** — `read_file`:
+   - Added `[TRUNCATED: Showing lines 1-N of M. Use read_file_segment to read more.]` when `max_lines` truncates output
+   - Calculates `total_lines` before truncation to include total count
+   - Only appends notice when actually truncated (skips if `max_lines >= total_lines`)
+
+2. **`src/tools/files.rs`** — `search_files`:
+   - Changed from `... (stopped after N matches)` to `[TRUNCATED: Showing N matches. Refine your search pattern for fewer results.]`
+
+3. **`src/tools/remember.rs`**:
+   - Added `REMEMBER_NOTE_PREVIEW_CHARS` (150), `REMEMBER_MESSAGE_PREVIEW_CHARS` (200), `REMEMBER_SUBMESSAGE_PREVIEW_CHARS` (100) constants
+   - Notes/docs: `[TRUNCATED: 150 of N chars. Use remember(id="note:X") for full content.]`
+   - Messages: `[TRUNCATED: 200 of N chars. Use remember(id="msg:X") for full content.]`
+   - Sub-messages: `[+N chars]` (no retrievable ID, so simplified format)
+   - All truncation uses Unicode-safe `.chars().take()` pattern
+
+**Complexity:** Low — modify output formatting in `read_file`, `search_files`, and `remember`.
 
 **Related:** Issue #71
 

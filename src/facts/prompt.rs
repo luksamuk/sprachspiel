@@ -3,11 +3,44 @@
 //! Constructs the "## User Facts" section that gets injected into the system prompt,
 //! with Unicode-safe truncation if the total exceeds the limit.
 //!
-//! NOTE: This module is used in Phase 0.4 (Prompt injection).
-//! Functions here are intentionally kept for future use.
+//! Staleness labels are appended to facts when they indicate age or decay:
+//! - `(stale)` — decay_score < 0.3 (badly decayed)
+//! - `(N days ago)` — last_accessed > 30 days (not recently used)
+//! - `(unused)` — access_count == 0 and age > 7 days (never retrieved)
 
 use super::types::{Category, Fact, MAX_TOTAL_FACTS_CHARS};
 use crate::utils::truncate_chars;
+use chrono::Utc;
+
+/// Threshold for decay_score below which a fact is considered stale.
+const STALE_DECAY_THRESHOLD: f32 = 0.3;
+
+/// Number of days without access before showing "days ago" label.
+const DAYS_AGO_THRESHOLD: i64 = 30;
+
+/// Number of days since creation (with zero accesses) before showing "unused" label.
+const UNUSED_AGE_THRESHOLD: i64 = 7;
+
+/// Returns a staleness label for a fact, or empty string if the fact is fresh.
+///
+/// Labels are prioritized: stale > days ago > unused.
+/// Only one label is ever shown per fact to minimize prompt token usage.
+/// Fresh facts (recently accessed, high decay score) produce no label.
+fn get_staleness_label(fact: &Fact) -> String {
+    let now = Utc::now();
+    let days_since_access = (now - fact.last_accessed).num_days();
+    let age_days = (now - fact.created_at).num_days();
+
+    if fact.decay_score < STALE_DECAY_THRESHOLD {
+        " (stale)".to_string()
+    } else if days_since_access > DAYS_AGO_THRESHOLD {
+        format!(" ({} days ago)", days_since_access)
+    } else if fact.access_count == 0 && age_days > UNUSED_AGE_THRESHOLD {
+        " (unused)".to_string()
+    } else {
+        String::new()
+    }
+}
 
 /// Build the facts section for the system prompt.
 ///
@@ -40,7 +73,8 @@ pub fn build_facts_section(facts: &[Fact]) -> String {
     if !preferences.is_empty() {
         section.push_str("### Preferences\n");
         for fact in preferences {
-            section.push_str(&format!("- {}\n", fact.content));
+            let staleness = get_staleness_label(fact);
+            section.push_str(&format!("- {}{}\n", fact.content, staleness));
         }
         section.push('\n');
     }
@@ -48,7 +82,8 @@ pub fn build_facts_section(facts: &[Fact]) -> String {
     if !fact_list.is_empty() {
         section.push_str("### Facts\n");
         for fact in fact_list {
-            section.push_str(&format!("- {}\n", fact.content));
+            let staleness = get_staleness_label(fact);
+            section.push_str(&format!("- {}{}\n", fact.content, staleness));
         }
     }
 
@@ -156,6 +191,7 @@ mod tests {
 
     #[test]
     fn test_format() {
+        // Fresh facts should have no staleness label
         let facts = vec![
             create_test_fact("I prefer Portuguese", Category::Preference),
             create_test_fact("The project uses Rust", Category::Fact),
@@ -167,5 +203,173 @@ mod tests {
             "### Preferences\n- I prefer Portuguese\n\n### Facts\n- The project uses Rust\n";
 
         assert_eq!(result, expected);
+    }
+
+    // --- Staleness label tests ---
+
+    fn create_stale_fact(content: &str, category: Category, decay_score: f32) -> Fact {
+        Fact {
+            id: 1,
+            scope: Scope::Project,
+            category,
+            content: content.to_string(),
+            importance: 0.5,
+            access_count: 0,
+            decay_score,
+            created_at: Utc::now(),
+            last_accessed: Utc::now(),
+            source: Source::User,
+            invalidated_at: None,
+            project_id: None,
+        }
+    }
+
+    fn create_fact_with_age(
+        content: &str,
+        category: Category,
+        days_since_access: i64,
+        age_days: i64,
+        access_count: u32,
+        decay_score: f32,
+    ) -> Fact {
+        let now = Utc::now();
+        Fact {
+            id: 1,
+            scope: Scope::Project,
+            category,
+            content: content.to_string(),
+            importance: 0.5,
+            access_count,
+            decay_score,
+            created_at: now - chrono::Duration::days(age_days),
+            last_accessed: now - chrono::Duration::days(days_since_access),
+            source: Source::User,
+            invalidated_at: None,
+            project_id: None,
+        }
+    }
+
+    #[test]
+    fn test_staleness_stale() {
+        // decay_score < 0.3 → "(stale)"
+        let fact = create_stale_fact("Old API endpoint", Category::Fact, 0.2);
+        let label = get_staleness_label(&fact);
+        assert_eq!(label, " (stale)");
+    }
+
+    #[test]
+    fn test_staleness_days_ago() {
+        // last_accessed > 30 days and decay_score >= 0.3 → "(N days ago)"
+        let fact = create_fact_with_age(
+            "Old preference",
+            Category::Preference,
+            45,  // 45 days since last access
+            60,  // 60 days old
+            3,   // accessed 3 times
+            0.5, // not stale
+        );
+        let label = get_staleness_label(&fact);
+        assert_eq!(label, " (45 days ago)");
+    }
+
+    #[test]
+    fn test_staleness_unused() {
+        // access_count == 0 and age > 7 days → "(unused)"
+        let fact = create_fact_with_age(
+            "Created but never used",
+            Category::Fact,
+            10,  // 10 days since last access
+            15,  // 15 days old
+            0,   // never accessed
+            0.8, // not stale
+        );
+        let label = get_staleness_label(&fact);
+        assert_eq!(label, " (unused)");
+    }
+
+    #[test]
+    fn test_staleness_fresh() {
+        // Recently accessed, high decay_score → no label
+        let fact = create_fact_with_age(
+            "Fresh fact",
+            Category::Fact,
+            0,    // accessed today
+            1,    // 1 day old
+            5,    // accessed 5 times
+            0.95, // high decay score
+        );
+        let label = get_staleness_label(&fact);
+        assert!(label.is_empty());
+    }
+
+    #[test]
+    fn test_staleness_priority_stale_over_days_ago() {
+        // decay_score < 0.3 takes priority over days_since_access > 30
+        let fact = create_fact_with_age(
+            "Both stale and old",
+            Category::Fact,
+            60,  // 60 days since access (> 30)
+            90,  // 90 days old
+            1,   // accessed once
+            0.1, // very stale (< 0.3)
+        );
+        let label = get_staleness_label(&fact);
+        assert_eq!(label, " (stale)");
+    }
+
+    #[test]
+    fn test_staleness_priority_days_ago_over_unused() {
+        // days_since_access > 30 takes priority over access_count == 0
+        let fact = create_fact_with_age(
+            "Old and unused",
+            Category::Fact,
+            45,  // 45 days since access (> 30)
+            60,  // 60 days old
+            0,   // never accessed
+            0.5, // not stale
+        );
+        let label = get_staleness_label(&fact);
+        assert_eq!(label, " (45 days ago)");
+    }
+
+    #[test]
+    fn test_staleness_borderline_not_stale() {
+        // decay_score == 0.3 should NOT show "(stale)" (threshold is strictly < 0.3)
+        let fact = create_stale_fact("Borderline", Category::Fact, 0.3);
+        let label = get_staleness_label(&fact);
+        // With decay_score = 0.3, last_accessed = now (0 days), access_count = 0, age = 0 days
+        // No label should appear
+        assert!(label.is_empty());
+    }
+
+    #[test]
+    fn test_staleness_in_section() {
+        // Verify staleness label appears in the final section output
+        let fact = create_fact_with_age(
+            "Old project fact",
+            Category::Fact,
+            60,  // 60 days since access
+            90,  // 90 days old
+            2,   // accessed twice
+            0.4, // not stale but old
+        );
+        let result = build_facts_section(&[fact]);
+        assert!(result.contains("- Old project fact (60 days ago)\n"));
+    }
+
+    #[test]
+    fn test_staleness_in_section_with_mixed() {
+        // Mix of fresh and stale facts
+        let fresh = create_test_fact("Fresh preference", Category::Preference);
+        let mut stale = create_test_fact("Old preference", Category::Preference);
+        stale.decay_score = 0.1;
+        stale.last_accessed = Utc::now() - chrono::Duration::days(100);
+        stale.created_at = Utc::now() - chrono::Duration::days(200);
+
+        let result = build_facts_section(&[fresh, stale]);
+        // Fresh fact should have no label
+        assert!(result.contains("- Fresh preference\n"));
+        // Stale fact should have (stale) label
+        assert!(result.contains("- Old preference (stale)\n"));
     }
 }
