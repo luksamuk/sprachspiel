@@ -1112,4 +1112,494 @@ mod tests {
         assert!(parse_document_id("doc:abc").is_err());
         assert!(parse_document_id("#abc").is_err());
     }
+
+    // =========================================================
+    // Tests for extracted subcommand parsers
+    // =========================================================
+
+    // --- Session subcommand parser ---
+
+    #[test]
+    fn test_parse_session_subcommand_new() {
+        let cmd = parse_session_subcommand("new", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::New));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_load() {
+        let cmd = parse_session_subcommand("load", "my-session").unwrap();
+        assert!(matches!(cmd, ChatCommand::Load { ref name } if name == "my-session"));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_load_empty() {
+        assert!(parse_session_subcommand("load", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_list() {
+        let cmd = parse_session_subcommand("list", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::List));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_save_with_name() {
+        let cmd = parse_session_subcommand("save", "my-save").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::Save { ref name } if name.as_deref() == Some("my-save"))
+        );
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_save_without_name() {
+        let cmd = parse_session_subcommand("save", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::Save { ref name } if name.is_none()));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget() {
+        let cmd = parse_session_subcommand("forget", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::Forget));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_invalid() {
+        assert!(parse_session_subcommand("unknown", "").is_err());
+    }
+
+    // --- Fact subcommand parser ---
+
+    #[test]
+    fn test_parse_fact_subcommand_prune() {
+        let cmd = parse_fact_subcommand("prune", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactPrune));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_prune_shortcut() {
+        let cmd = parse_fact_subcommand("p", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactPrune));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_add() {
+        let cmd = parse_fact_subcommand("add", "some fact").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactAdd { ref content, global: false } if content == "some fact")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_add_shortcut() {
+        let cmd = parse_fact_subcommand("a", "some fact").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactAdd { ref content, global: false } if content == "some fact")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_add_global() {
+        let cmd = parse_fact_subcommand("add", "global fact --global").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactAdd { ref content, global: true } if content == "global fact")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_add_empty() {
+        assert!(parse_fact_subcommand("add", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_list() {
+        let cmd = parse_fact_subcommand("list", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactList { global: false }));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_list_global() {
+        let cmd = parse_fact_subcommand("list", "--global").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactList { global: true }));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_remove() {
+        let cmd = parse_fact_subcommand("remove", "42").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactRemove { id: 42 }));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_remove_empty() {
+        assert!(parse_fact_subcommand("remove", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_remove_invalid_id() {
+        assert!(parse_fact_subcommand("remove", "abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_search() {
+        // Note: search parser uses splitn(2, ' '), so "rust" alone -> query="rust", limit=10
+        let cmd = parse_fact_subcommand("search", "rust").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactSearch { ref query, global: false, limit: 10 } if query == "rust")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_search_with_limit() {
+        let cmd = parse_fact_subcommand("search", "rust 5").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactSearch { ref query, global: false, limit: 5 } if query == "rust")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_invalid() {
+        assert!(parse_fact_subcommand("unknown", "").is_err());
+    }
+
+    // --- Document subcommand parser ---
+
+    #[test]
+    fn test_parse_doc_subcommand_import() {
+        let cmd = parse_doc_subcommand("import", "/path/to/file.pdf").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::DocumentImport { ref path, global: false, nowait: false } if path == "/path/to/file.pdf")
+        );
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_import_shortcut() {
+        let cmd = parse_doc_subcommand("i", "/path/to/file.pdf").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::DocumentImport { ref path, global: false, nowait: false } if path == "/path/to/file.pdf")
+        );
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_import_with_flags() {
+        let cmd = parse_doc_subcommand("import", "/file.pdf --global --nowait").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::DocumentImport { ref path, global: true, nowait: true } if path == "/file.pdf")
+        );
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_import_empty() {
+        assert!(parse_doc_subcommand("import", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_list() {
+        let cmd = parse_doc_subcommand("list", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentList { global: false }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_list_global() {
+        let cmd = parse_doc_subcommand("list", "--global").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentList { global: true }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_show() {
+        let cmd = parse_doc_subcommand("show", "5").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentShow { id: 5 }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_show_with_prefix() {
+        let cmd = parse_doc_subcommand("show", "doc:10").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentShow { id: 10 }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_show_empty() {
+        assert!(parse_doc_subcommand("show", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_delete() {
+        let cmd = parse_doc_subcommand("delete", "3").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentDelete { id: 3 }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_delete_shortcuts() {
+        let cmd = parse_doc_subcommand("d", "3").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentDelete { id: 3 }));
+        let cmd2 = parse_doc_subcommand("rm", "3").unwrap();
+        assert!(matches!(cmd2, ChatCommand::DocumentDelete { id: 3 }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_invalid() {
+        assert!(parse_doc_subcommand("unknown", "").is_err());
+    }
+
+    // --- Note subcommand parser ---
+
+    #[test]
+    fn test_parse_note_subcommand_add() {
+        let cmd = parse_note_subcommand("add", "some note content").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::NoteAdd { ref content, ref title, global: false } if content == "some note content" && title.is_none())
+        );
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_add_shortcut() {
+        let cmd = parse_note_subcommand("a", "note text").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteAdd { ref content, .. } if content == "note text"));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_add_empty() {
+        assert!(parse_note_subcommand("add", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_list() {
+        let cmd = parse_note_subcommand("list", "").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::NoteList {
+                global: false,
+                page: None
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_list_with_page() {
+        let cmd = parse_note_subcommand("list", "2").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::NoteList {
+                global: false,
+                page: Some(2)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_list_global_with_page() {
+        let cmd = parse_note_subcommand("list", "--global 3").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::NoteList {
+                global: true,
+                page: Some(3)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_list_zero_page() {
+        assert!(parse_note_subcommand("list", "0").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_show() {
+        let cmd = parse_note_subcommand("show", "42").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteShow { id: 42 }));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_show_empty() {
+        assert!(parse_note_subcommand("show", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_show_invalid_id() {
+        assert!(parse_note_subcommand("show", "abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_delete() {
+        let cmd = parse_note_subcommand("delete", "7").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteDelete { id: 7 }));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_delete_shortcut() {
+        let cmd = parse_note_subcommand("d", "7").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteDelete { id: 7 }));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_search() {
+        // Note: search parser uses splitn(2, ' '), so single word -> query="query", limit=10
+        let cmd = parse_note_subcommand("search", "query").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::NoteSearch { ref query, global: false, limit: 10 } if query == "query")
+        );
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_search_shortcut() {
+        // Shortcut "f" maps to search
+        let cmd = parse_note_subcommand("f", "query").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteSearch { ref query, .. } if query == "query"));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_search_empty() {
+        assert!(parse_note_subcommand("search", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_invalid() {
+        assert!(parse_note_subcommand("unknown", "").is_err());
+    }
+
+    // --- Todo subcommand parser ---
+
+    #[test]
+    fn test_parse_todo_subcommand_add() {
+        let cmd = parse_todo_subcommand("add", "Buy groceries").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoAdd { ref description, .. } if description == "Buy groceries")
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_add_shortcut() {
+        let cmd = parse_todo_subcommand("a", "Buy groceries").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoAdd { ref description, .. } if description == "Buy groceries")
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_add_with_priority() {
+        let cmd = parse_todo_subcommand("add", "Fix bug --priority high").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoAdd { ref description, ref priority, .. } if description == "Fix bug" && priority.as_deref() == Some("high"))
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_add_empty() {
+        assert!(parse_todo_subcommand("add", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_list() {
+        let cmd = parse_todo_subcommand("list", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoList { ref filter } if filter.is_none()));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_list_with_filter() {
+        let cmd = parse_todo_subcommand("list", "pending").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoList { ref filter } if filter.as_deref() == Some("pending"))
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_get() {
+        let cmd = parse_todo_subcommand("get", "5").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoGet { id: 5 }));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_get_empty() {
+        assert!(parse_todo_subcommand("get", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_update() {
+        let cmd = parse_todo_subcommand("update", "1 done").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoUpdate { id: 1, ref status } if status == "done"));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_update_missing_status() {
+        assert!(parse_todo_subcommand("update", "1").is_err());
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_delete() {
+        let cmd = parse_todo_subcommand("delete", "5").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoDelete { id: 5 }));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_delete_shortcuts() {
+        let cmd = parse_todo_subcommand("d", "5").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoDelete { id: 5 }));
+        let cmd2 = parse_todo_subcommand("del", "5").unwrap();
+        assert!(matches!(cmd2, ChatCommand::TodoDelete { id: 5 }));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_clear_done() {
+        let cmd = parse_todo_subcommand("clear-done", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoClearDone));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_clear_done_shortcut() {
+        let cmd = parse_todo_subcommand("cd", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoClearDone));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_clear_all() {
+        let cmd = parse_todo_subcommand("clear-all", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoClearAll));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_clear_all_shortcut() {
+        let cmd = parse_todo_subcommand("ca", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoClearAll));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_edit() {
+        let cmd = parse_todo_subcommand("edit", "3 new description").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoEdit { id: 3, ref description, .. } if description.as_deref() == Some("new description"))
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_edit_shortcut() {
+        let cmd = parse_todo_subcommand("e", "3 updated text").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoEdit { id: 3, .. }));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_edit_missing_id() {
+        assert!(parse_todo_subcommand("edit", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_invalid() {
+        assert!(parse_todo_subcommand("unknown", "").is_err());
+    }
+
+    // --- Shortcut mapping functions ---
+
+    #[test]
+    fn test_map_fact_shortcut() {
+        assert_eq!(map_fact_shortcut("fp", "x"), ("prune", ""));
+        assert_eq!(map_fact_shortcut("fa", "my content"), ("add", "my content"));
+        assert_eq!(map_fact_shortcut("fl", ""), ("list", ""));
+        assert_eq!(map_fact_shortcut("fr", "5"), ("remove", "5"));
+        assert_eq!(map_fact_shortcut("fs", "query"), ("search", "query"));
+    }
+
+    #[test]
+    fn test_map_note_shortcut() {
+        assert_eq!(map_note_shortcut("na", "content"), ("add", "content"));
+        assert_eq!(map_note_shortcut("nl", ""), ("list", ""));
+        assert_eq!(map_note_shortcut("ns", "5"), ("show", "5"));
+        assert_eq!(map_note_shortcut("nd", "5"), ("delete", "5"));
+    }
 }
