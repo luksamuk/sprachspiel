@@ -102,7 +102,7 @@ All notable changes to Ask-AI will be documented in this file.
   - Added `.filter(|s| !s.is_empty())` normalization so empty string → None (search all files)
   - Without this fix, `glob_to_regex("")` produced regex `^$` that matched no filenames
   - Also improved `log_tool_call` to display `"all"` instead of `""` when file_pattern is None
-  - Related: AGENTS.md "Empty String Normalization for Option<String>" pattern
+  - Related: AGENTS.md "Empty String Normalization for `Option<String>`" pattern
 
 - **search_files: improved docstring and documentation** - Better guidance for LLM regex usage
   - Added note that only text files are searched (PDFs, binaries silently skipped)
@@ -122,7 +122,7 @@ All notable changes to Ask-AI will be documented in this file.
   - `update_conversation_metadata` was not including the `model` column in the UPDATE query
   - Both fixed: session model is now updated and persisted on save
 
-- **Empty string normalization for Option<String> tool parameters** - LLMs send `""` instead of omitting
+- **Empty string normalization for `Option<String>` tool parameters** - LLMs send `""` instead of omitting
   - `note_edit(id, title, content)` now normalizes `Some("")` → `None` for title and content
   - `note_add(content, title)` now normalizes empty title → None (falls back to "Untitled")
   - `import_document(path, scope, title)` now normalizes empty title → None (triggers auto-extraction)

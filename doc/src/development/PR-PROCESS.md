@@ -300,7 +300,7 @@ review iteration. The reviewer must review the new commits and either:
 **CRITICAL:** The reviewer can only review after the agent has pushed ALL commits.
 Before informing the reviewer that changes are ready, the agent MUST ensure:
 - All commits are pushed to the remote branch
-- `git status` shows "up to date with 'origin/<branch>'"
+- `git status` shows "up to date with 'origin/`<branch>`'"
 - No local commits remain unpushed
 
 ### Phase 6.1: Agent Creates Manual Test Script (AFTER Review Approval)
