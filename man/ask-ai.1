@@ -142,6 +142,8 @@ Interactive commands available inside chat:
 .br
 /undo, /u \- Undo last message (remove response, show last input)
 .br
+/forget [--yes] \- Delete conversation completely and start fresh (requires --yes)
+.br
 /save [name] \- Save current session
 .br
 /load <name> \- Load a saved session
@@ -185,6 +187,10 @@ Interactive commands available inside chat:
 /doc show <id>, /ds \- Show document content by ID
 .br
 /doc delete <id>, /dd \- Delete a document by ID
+.br
+/skill, /sk \- List available skills
+.br
+/skill <name>, /sk <name> \- Activate a skill for this session
 .in -4
 .PP
 Tab completion available for commands and model names.
