@@ -619,10 +619,64 @@ todo_clear_all()             // Clear all tasks
 - `a5c2d80` refactor: eliminate CommandResult enum, add handle_command to command_handlers
 - `bd8b927` refactor: eliminate SessionSubcommand enum and ChatCommand::Session variant
 - `e226374` test: add unit tests for extracted subcommand parsers
+- fix: remove /f shortcut from /forget, move to /search (collision causing data loss)
+- fix: add missing /todo shortcuts (/tg, /te, /td, /tcd, /tca)
+
+**Bugs found during manual testing (fixed):**
+- `/f` was mapped to `/forget` instead of `/search` — collision causing accidental data loss
+- Missing `/todo` shortcuts for get, edit, delete, clear-done, clear-all
+
+**Pre-existing bugs (NOT from PR, separate issues):**
+- Session save/load persistence (1.3, 1.5) — `/session save` reports success but data not found by `/session list`
+- FTS schema mismatch (1.7) — `content_fts` table missing `conversation_id` column
+- FOREIGN KEY constraint on todos — session save FK warning on todo mutations
 
 **Estimated effort:** 2-3 days
 
 **Related:** Issue #35
+
+---
+
+### 🟡 PRIORITY 5: UX - `/forget --yes` Confirmation [M1]
+
+**Status:** 📋 PLANNED
+
+**Goal:** Require explicit confirmation for `/forget` command to prevent accidental data loss.
+
+**Problem:**
+- `/forget` is the most destructive command — it deletes the entire conversation from the database
+- Currently executes immediately with no confirmation
+- A typo (e.g., `/forget` instead of `/forgets`) could destroy hours of conversation
+- The `/f` shortcut was previously mapped to `/forget`, causing accidental data loss (fixed in PR #84)
+
+**Implementation:**
+- `/forget` without `--yes` → warn: "This will permanently delete this conversation. Use /forget --yes to confirm."
+- `/forget --yes` → execute the forget operation
+- No shortcuts for `/forget` (already enforced in PR #84)
+
+**Related:** Discovered during PR #84 manual testing
+
+---
+
+### 🟡 PRIORITY 5: UX - `/skill <name>` Subcommand [M1]
+
+**Status:** 📋 PLANNED
+
+**Goal:** Move skill activation from `/<skill-name>` to `/skill <skill-name>` to prevent namespace collisions.
+
+**Problem:**
+- Skills are currently activated as top-level commands (e.g., `/document-processing`)
+- Any skill name could collide with existing commands (e.g., a skill named "forget", "new", "help")
+- No clear separation between built-in commands and user-defined skills
+- The wildcard `_` match arm in `parse_command` processes skill names last, making collision behavior unpredictable
+
+**Implementation:**
+- Add `/skill <name>` as explicit command
+- Keep `/<skill-name>` as deprecated alias (with warning) for backward compatibility
+- Move skill matching logic from wildcard `_` to the `/skill` subcommand handler
+- Document the change in help text
+
+**Related:** Discovered during PR #84 manual testing (`/skill` was unrecognized, only `/<skill-name>` works)
 
 ---
 

@@ -750,6 +750,11 @@ fn map_todo_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
         "ta" => ("add", args),
         "tl" => ("list", ""),
         "tu" => ("update", args),
+        "tg" => ("get", args),
+        "te" => ("edit", args),
+        "td" => ("delete", args),
+        "tcd" => ("clear-done", ""),
+        "tca" => ("clear-all", ""),
         _ => unreachable!(),
     }
 }
@@ -770,7 +775,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let command = match *cmd {
         "quit" | "exit" | "q" => ChatCommand::Quit,
         "new" | "n" => ChatCommand::New,
-        "forget" | "f" => ChatCommand::Forget,
+        "forget" => ChatCommand::Forget,
         "help" | "h" | "?" => ChatCommand::Help,
         "model" | "m" => {
             if args.is_empty() {
@@ -844,7 +849,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         }
         "retry" | "r" => ChatCommand::Retry,
         "undo" | "u" => ChatCommand::Undo,
-        "search" | "find" => {
+        "search" | "find" | "f" => {
             if args.is_empty() {
                 return Some(Err("Usage: /search <query> [limit]".to_string()));
             }
@@ -880,7 +885,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
-        "ta" | "tl" | "tu" => {
+        "ta" | "tl" | "tu" | "tg" | "te" | "td" | "tcd" | "tca" => {
             let (subcmd, subargs) = map_todo_shortcut(cmd, args);
             match parse_todo_subcommand(subcmd, subargs) {
                 Ok(cmd) => cmd,
@@ -1021,6 +1026,8 @@ Todo List:
   /todo clear-all                                                Clear all tasks
 
   Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
+  /tg = /todo get, /te = /todo edit, /td = /todo delete
+  /tcd = /todo clear-done, /tca = /todo clear-all
 
 Shortcuts:
   /q = /quit, /n = /new, /h = /help
@@ -1601,5 +1608,20 @@ mod tests {
         assert_eq!(map_note_shortcut("nl", ""), ("list", ""));
         assert_eq!(map_note_shortcut("ns", "5"), ("show", "5"));
         assert_eq!(map_note_shortcut("nd", "5"), ("delete", "5"));
+    }
+
+    #[test]
+    fn test_map_todo_shortcut() {
+        assert_eq!(map_todo_shortcut("ta", "task"), ("add", "task"));
+        assert_eq!(map_todo_shortcut("tl", ""), ("list", ""));
+        assert_eq!(map_todo_shortcut("tu", "1 done"), ("update", "1 done"));
+        assert_eq!(map_todo_shortcut("tg", "5"), ("get", "5"));
+        assert_eq!(
+            map_todo_shortcut("te", "3 --priority low"),
+            ("edit", "3 --priority low")
+        );
+        assert_eq!(map_todo_shortcut("td", "5"), ("delete", "5"));
+        assert_eq!(map_todo_shortcut("tcd", ""), ("clear-done", ""));
+        assert_eq!(map_todo_shortcut("tca", ""), ("clear-all", ""));
     }
 }
