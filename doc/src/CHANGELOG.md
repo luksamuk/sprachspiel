@@ -19,6 +19,11 @@ All notable changes to Ask-AI will be documented in this file.
   - `/<skill-name>` (the wildcard match) is now an invalid command — use `/skill <name>` instead
   - Removes namespace collision risk (e.g., a skill named "forget", "new", "help")
 
+- **Fix: FTS5 `conversation_id` column error in `delete_conversation()`**
+  - Removed invalid `DELETE FROM content_fts WHERE conversation_id = ?1` query
+  - The `content_fts` table (FTS5 external content mode) does not have a `conversation_id` column
+  - FTS entries are cleaned automatically by the `content_items_ad` trigger when `content_items` are deleted
+
 - **Code Quality: Reduce `parse_command` complexity** (Issue #35)
   - Extract `parse_fact_subcommand()`, `parse_note_subcommand()`, `parse_doc_subcommand()`, `parse_session_subcommand()` from monolithic `parse_command`
   - Consolidate 16 two-letter shortcut commands (/fa, /na, /di, etc.) as delegates to their parent parsers, eliminating ~135 lines of duplicated parsing logic
