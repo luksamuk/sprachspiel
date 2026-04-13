@@ -244,19 +244,21 @@ Via chat with a model that supports tools:
 
 ---
 
-## 6.6. Command Shortcuts and Safety (PR #84)
+## 6.6. Command Shortcuts and Safety (PR #84, PR #87)
 
 **Verify shortcut behavior and destructive command safety.**
 
 ### 6.6.1 /f Maps to /search (not /forget)
 
 - [ ] `/f test query` → executes search (NOT forget) ← **Bug fix: /f was mapped to /forget**
-- [ ] `/forget` → executes forget (only accessible by full name, no shortcuts)
+- [ ] `/forget` → shows warning (requires --yes) ← **Issue #85: /forget confirmation**
+- [ ] `/forget --yes` → executes forget
 
-### 6.6.2 Skill Activation via /<skill-name>
+### 6.6.2 Skill Activation via /skill (Issue #86)
 
-- [ ] `/document-processing` → activates the document-processing skill (existing behavior)
-- [ ] `/skill document-processing` → "Unknown command" (not yet implemented, see Issue #86)
+- [ ] `/skill` → lists available skills
+- [ ] `/skill document-processing` → activates the skill
+- [ ] `/document-processing` → "Unknown command" (wildcard removed)
 
 ---
 
