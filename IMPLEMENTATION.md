@@ -654,7 +654,7 @@ todo_clear_all()             // Clear all tasks
 - `/forget --yes` → execute the forget operation
 - No shortcuts for `/forget` (already enforced in PR #84)
 
-**Related:** Discovered during PR #84 manual testing
+**Related:** Issue #85, discovered during PR #84 manual testing
 
 ---
 
@@ -676,7 +676,7 @@ todo_clear_all()             // Clear all tasks
 - Move skill matching logic from wildcard `_` to the `/skill` subcommand handler
 - Document the change in help text
 
-**Related:** Discovered during PR #84 manual testing (`/skill` was unrecognized, only `/<skill-name>` works)
+**Related:** Issue #86, discovered during PR #84 manual testing (`/skill` was unrecognized, only `/<skill-name>` works)
 
 ---
 
