@@ -580,14 +580,38 @@ todo_clear_all()             // Clear all tasks
 
 **Status:** 🔄 IN PROGRESS
 
-**Goal:** Reduce cyclomatic complexity of `parse_command` from ~450 lines to manageable size.
+**Goal:** Reduce cyclomatic complexity of `parse_command` from ~450 lines to manageable size, eliminate `CommandResult` enum duplication, and remove session subcommand duplication.
 
-**Context:** Command parsing function in `src/chat/commands.rs` (lines 218-671). Single monolithic function with giant `match` statement handling all commands and their aliases.
+**Context:** `src/chat/commands.rs` (1919 lines). Five problems identified:
 
-**Proposed Solution:**
-- Extract individual parsers for command groups (model, todo, note, fact)
-- Use derive-based pattern matching for structured commands
-- Maintain identical public API
+1. **Monolithic `parse_command`** — 44 match arms, ~645 lines of match code
+2. **16 shortcut duplicates** — `/fa`, `/na`, `/di`, etc. copy 100% of parent subcommand logic (~135 lines)
+3. **Two mirror enums** — `ChatCommand` and `CommandResult` with 23+ identical variants
+4. **30 pass-through variants** in `execute_command` — no logic, just wrapping ChatCommand → CommandResult
+5. **Session duplication** — `ChatCommand::Session` duplicates `New/Load/List/Save/Forget` (~151 lines)
+
+**Implementation Phases:**
+
+| Phase | Description | Lines Removed | Status |
+|-------|-------------|---------------|--------|
+| 1.1 | Extract `parse_fact_subcommand()` | ~70 (shortcut dedup) | 📋 Pending |
+| 1.2 | Extract `parse_note_subcommand()` | ~60 (shortcut dedup) | 📋 Pending |
+| 1.3 | Extract `parse_doc_subcommand()` | ~42 (shortcut dedup) | 📋 Pending |
+| 1.4 | Extract `parse_session_subcommand()` | ~13 (shortcut dedup) | 📋 Pending |
+| 1.5 | Consolidate 2-letter shortcuts as delegates | ~135 | 📋 Pending |
+| 1.6 | Add unit tests for extracted parsers | +40 (tests) | 📋 Pending |
+| 2 | Eliminate `CommandResult` enum, move execute logic to `command_handlers.rs` | ~150 | 📋 Pending |
+| 3 | Eliminate `SessionSubcommand` duplication | ~127 | 📋 Pending |
+
+**Estimated total reduction:** ~462 lines (1919 → ~1457)
+
+**Files Modified:**
+- `src/chat/commands.rs` — Extract parsers, delete `CommandResult`, delete `execute_command`, delete `SessionSubcommand`
+- `src/chat/command_handlers.rs` — Absorb `execute_command` logic, create `handle_command()` using `ChatCommand`
+- `src/chat/repl.rs` — Replace `execute_command + handle_command_result` with `handle_command`
+
+**Branch:** `refactor/parse-command-complexity`
+**PR:** #84
 
 **Estimated effort:** 2-3 days
 
