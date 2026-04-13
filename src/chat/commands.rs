@@ -51,8 +51,6 @@ pub enum ChatCommand {
     },
     /// List saved sessions
     List,
-    /// Session management commands
-    Session { subcommand: SessionSubcommand },
     /// Show session information
     Info,
     /// Show context metrics and token usage
@@ -163,16 +161,6 @@ pub enum ChatCommand {
 pub enum ExportFormat {
     Markdown,
     Json,
-}
-
-/// Session subcommands for /session command
-#[derive(Debug, Clone, PartialEq)]
-pub enum SessionSubcommand {
-    New,
-    Load { name: String },
-    List,
-    Save { name: Option<String> },
-    Forget,
 }
 
 /// Parse note add command with proper quote handling
@@ -699,35 +687,25 @@ fn parse_doc_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Stri
 /// Returns canonical ChatCommand variants (New, Load, List, Save, Forget).
 fn parse_session_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
     match subcmd {
-        "new" => Ok(ChatCommand::Session {
-            subcommand: SessionSubcommand::New,
-        }),
+        "new" => Ok(ChatCommand::New),
         "load" => {
             if subargs.is_empty() {
                 return Err("Usage: /session load <name>".to_string());
             }
-            Ok(ChatCommand::Session {
-                subcommand: SessionSubcommand::Load {
-                    name: subargs.trim().to_string(),
-                },
+            Ok(ChatCommand::Load {
+                name: subargs.trim().to_string(),
             })
         }
-        "list" => Ok(ChatCommand::Session {
-            subcommand: SessionSubcommand::List,
-        }),
+        "list" => Ok(ChatCommand::List),
         "save" => {
             let name = if subargs.is_empty() {
                 None
             } else {
                 Some(subargs.trim().to_string())
             };
-            Ok(ChatCommand::Session {
-                subcommand: SessionSubcommand::Save { name },
-            })
+            Ok(ChatCommand::Save { name })
         }
-        "forget" => Ok(ChatCommand::Session {
-            subcommand: SessionSubcommand::Forget,
-        }),
+        "forget" => Ok(ChatCommand::Forget),
         _ => Err("Usage: /session <new|load|list|save|forget>".to_string()),
     }
 }

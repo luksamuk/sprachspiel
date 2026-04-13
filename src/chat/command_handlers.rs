@@ -155,33 +155,6 @@ pub async fn handle_command(
             HandleResult::Continue
         }
 
-        ChatCommand::Session { subcommand } => {
-            // Delegate session subcommands to their respective handlers
-            // Note: This will be eliminated in Phase 3 (SessionSubcommand removal)
-            match subcommand {
-                super::commands::SessionSubcommand::New => {
-                    handle_new(state);
-                }
-                super::commands::SessionSubcommand::Load { name } => {
-                    if let Err(e) = handle_load(state, name) {
-                        eprintln!("\x1B[31mError: {}\x1B[0m", e);
-                    }
-                }
-                super::commands::SessionSubcommand::List => {
-                    handle_list(state);
-                }
-                super::commands::SessionSubcommand::Save { name } => {
-                    if let Err(e) = handle_save(state, name) {
-                        eprintln!("\x1B[31mError: {}\x1B[0m", e);
-                    }
-                }
-                super::commands::SessionSubcommand::Forget => {
-                    handle_forget(state);
-                }
-            }
-            HandleResult::Continue
-        }
-
         ChatCommand::Info => {
             super::commands::print_session_info(&state.session, None);
             HandleResult::Continue
