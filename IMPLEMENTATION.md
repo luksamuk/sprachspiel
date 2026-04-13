@@ -578,7 +578,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔵 PRIORITY 4: Code Quality - commands.rs Complexity (parse_command) [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (PR #84, ready for review)
 
 **Goal:** Reduce cyclomatic complexity of `parse_command` from ~450 lines to manageable size, eliminate `CommandResult` enum duplication, and remove session subcommand duplication.
 
@@ -594,14 +594,14 @@ todo_clear_all()             // Clear all tasks
 
 | Phase | Description | Lines Removed | Status |
 |-------|-------------|---------------|--------|
-| 1.1 | Extract `parse_fact_subcommand()` | ~70 (shortcut dedup) | 📋 Pending |
-| 1.2 | Extract `parse_note_subcommand()` | ~60 (shortcut dedup) | 📋 Pending |
-| 1.3 | Extract `parse_doc_subcommand()` | ~42 (shortcut dedup) | 📋 Pending |
-| 1.4 | Extract `parse_session_subcommand()` | ~13 (shortcut dedup) | 📋 Pending |
-| 1.5 | Consolidate 2-letter shortcuts as delegates | ~135 | 📋 Pending |
-| 1.6 | Add unit tests for extracted parsers | +40 (tests) | 📋 Pending |
-| 2 | Eliminate `CommandResult` enum, move execute logic to `command_handlers.rs` | ~150 | 📋 Pending |
-| 3 | Eliminate `SessionSubcommand` duplication | ~127 | 📋 Pending |
+| 1.1 | Extract `parse_fact_subcommand()` | ~70 (shortcut dedup) | ✅ Done |
+| 1.2 | Extract `parse_note_subcommand()` | ~60 (shortcut dedup) | ✅ Done |
+| 1.3 | Extract `parse_doc_subcommand()` | ~42 (shortcut dedup) | ✅ Done |
+| 1.4 | Extract `parse_session_subcommand()` | ~13 (shortcut dedup) | ✅ Done |
+| 1.5 | Consolidate 2-letter shortcuts as delegates | ~135 | ✅ Done |
+| 1.6 | Add unit tests for extracted parsers | +490 (76 tests) | ✅ Done |
+| 2 | Eliminate `CommandResult` enum, move execute logic to `command_handlers.rs` | ~321 | ✅ Done |
+| 3 | Eliminate `SessionSubcommand` duplication | ~49 | ✅ Done |
 
 **Estimated total reduction:** ~462 lines (1919 → ~1457)
 
@@ -611,7 +611,14 @@ todo_clear_all()             // Clear all tasks
 - `src/chat/repl.rs` — Replace `execute_command + handle_command_result` with `handle_command`
 
 **Branch:** `refactor/parse-command-complexity`
-**PR:** #84
+**PR:** #84 (ready for review)
+
+**Commits:**
+- `b5df9f0` docs: update CHANGELOG and IMPLEMENTATION.md for parse_command refactoring
+- `e2b9e35` refactor: extract group parsers and consolidate 2-letter shortcuts
+- `a5c2d80` refactor: eliminate CommandResult enum, add handle_command to command_handlers
+- `bd8b927` refactor: eliminate SessionSubcommand enum and ChatCommand::Session variant
+- `e226374` test: add unit tests for extracted subcommand parsers
 
 **Estimated effort:** 2-3 days
 
