@@ -215,6 +215,19 @@ Via chat with a model that supports tools:
 - [ ] `/todo clear-done` removes completed tasks
 - [ ] `/todo clear-all` removes all tasks
 
+### 6.5.6 Todo Shortcut Aliases (PR #84)
+
+**Verify 2-letter shortcut commands for todo subcommands work correctly.**
+
+- [ ] `/ta Buy shortcut test` → creates task (same as `/todo add`)
+- [ ] `/tl` → lists tasks (same as `/todo list`)
+- [ ] `/tu 1 done` → updates task status (same as `/todo update`)
+- [ ] `/tg 1` → shows task details (same as `/todo get`)
+- [ ] `/te 1 Updated via shortcut` → edits task (same as `/todo edit`)
+- [ ] `/td 1` → deletes task (same as `/todo delete`)
+- [ ] `/tcd` → clears completed tasks (same as `/todo clear-done`)
+- [ ] `/tca` → clears all tasks (same as `/todo clear-all`)
+
 ### 6.5.5 Todo Tools via LLM (requires model with tools)
 
 Via chat with a model that supports tools:
@@ -228,6 +241,22 @@ Via chat with a model that supports tools:
 - [ ] "Mark task 1 as in progress" → LLM calls `todo_update`
 - [ ] "Get details of task 1" → LLM calls `todo_get`
 - [ ] "Change priority of task 1 to critical" → LLM calls `todo_edit`
+
+---
+
+## 6.6. Command Shortcuts and Safety (PR #84)
+
+**Verify shortcut behavior and destructive command safety.**
+
+### 6.6.1 /f Maps to /search (not /forget)
+
+- [ ] `/f test query` → executes search (NOT forget) ← **Bug fix: /f was mapped to /forget**
+- [ ] `/forget` → executes forget (only accessible by full name, no shortcuts)
+
+### 6.6.2 Skill Activation via /<skill-name>
+
+- [ ] `/document-processing` → activates the document-processing skill (existing behavior)
+- [ ] `/skill document-processing` → "Unknown command" (not yet implemented, see Issue #86)
 
 ---
 
@@ -482,10 +511,11 @@ The script above runs automated tests. The following tests must be run manually:
 3. **Section 5**: Memory (interactive tests with model >= 4b)
 4. **Section 6**: Notes (interactive tests)
 5. **Section 6.5**: Todo Tools (CRUD, priority, tags, filters)
-6. **Section 10**: File Tools (via LLM)
-7. **Section 10.5**: run_command Error Messages
-8. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
-9. **Section 12**: Truncation Warnings in Tool Outputs (via LLM)
-10. **Section 13**: Performance (verify response time)
+6. **Section 6.6**: Command Shortcuts and Safety (/f, /forget, skills)
+7. **Section 10**: File Tools (via LLM)
+8. **Section 10.5**: run_command Error Messages
+9. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
+10. **Section 12**: Truncation Warnings in Tool Outputs (via LLM)
+11. **Section 13**: Performance (verify response time)
 
 These tests require chat interaction and visual verification of results.
