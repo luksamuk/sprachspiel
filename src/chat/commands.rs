@@ -3,7 +3,6 @@
 //! Parses and executes commands like /quit, /new, /model, etc.
 
 use super::session::ChatSession;
-use crate::debug_tools::toggle_debug;
 use crate::tokens::ContextMetrics;
 
 /// Parse a document ID from user input.
@@ -24,116 +23,6 @@ fn parse_document_id(input: &str) -> Result<i64, String> {
             trimmed
         )
     })
-}
-
-/// Result of executing a command
-#[derive(Debug, Clone, PartialEq)]
-pub enum CommandResult {
-    /// Continue the REPL loop
-    Continue,
-    /// Exit the REPL
-    Exit,
-    /// An error occurred (message included)
-    Error(String),
-    /// Toggle think mode (returns new state)
-    ThinkToggled(bool),
-    /// Toggle tools (returns new state)
-    ToolsToggled(bool),
-    /// Compact command (needs async handling in REPL)
-    Compact,
-    /// Tool output level changed
-    ToolOutputChanged(super::session::ToolOutputLevel),
-    /// Toggle debug (returns new state)
-    DebugToggled(bool),
-    /// Retry last message (regenerate response)
-    Retry,
-    /// Undo last message (remove response, show last input)
-    Undo,
-    /// Show context metrics (handled in REPL)
-    Context,
-    /// Search conversation history (handled in REPL)
-    Search { query: String, limit: usize },
-    /// Reindex embeddings (handled in REPL)
-    Reindex,
-    /// Toggle retrieval mode (returns new state)
-    RetrievalToggled(bool),
-    /// Prune old facts using decay cycle
-    FactPrune,
-    /// Add a new fact
-    FactAdd { content: String, global: bool },
-    /// List facts
-    FactList { global: bool },
-    /// Remove a fact by ID
-    FactRemove { id: i64 },
-    /// Search facts
-    FactSearch {
-        query: String,
-        global: bool,
-        limit: usize,
-    },
-    /// Add a new todo task
-    TodoAdd {
-        description: String,
-        priority: Option<String>,
-        tags: Option<String>,
-    },
-    /// List todo tasks
-    TodoList { filter: Option<String> },
-    /// Update todo task status
-    TodoUpdate { id: usize, status: String },
-    /// Get a single todo task by ID
-    TodoGet { id: usize },
-    /// Edit a todo task
-    TodoEdit {
-        id: usize,
-        description: Option<String>,
-        priority: Option<String>,
-        tags: Option<String>,
-    },
-    /// Delete a todo task
-    TodoDelete { id: usize },
-    /// Clear completed todo tasks
-    TodoClearDone,
-    /// Clear all todo tasks
-    TodoClearAll,
-    /// Add a new note
-    NoteAdd {
-        content: String,
-        title: Option<String>,
-        global: bool,
-    },
-    /// List notes (with optional page)
-    NoteList { global: bool, page: Option<usize> },
-    /// Show a note by ID
-    NoteShow { id: i64 },
-    /// Edit a note
-    NoteEdit {
-        id: i64,
-        title: Option<String>,
-        content: Option<String>,
-    },
-    /// Delete a note by ID
-    NoteDelete { id: i64 },
-    /// Search notes
-    NoteSearch {
-        query: String,
-        global: bool,
-        limit: usize,
-    },
-    /// Import a document
-    DocumentImport {
-        path: String,
-        global: bool,
-        nowait: bool,
-    },
-    /// List documents
-    DocumentList { global: bool },
-    /// Show a document by ID
-    DocumentShow { id: i64 },
-    /// Delete a document by ID
-    DocumentDelete { id: i64 },
-    /// Activate a skill (loaded skill contents)
-    Skill { name: String, content: String },
 }
 
 /// Parsed chat command
@@ -162,8 +51,6 @@ pub enum ChatCommand {
     },
     /// List saved sessions
     List,
-    /// Session management commands
-    Session { subcommand: SessionSubcommand },
     /// Show session information
     Info,
     /// Show context metrics and token usage
@@ -274,16 +161,6 @@ pub enum ChatCommand {
 pub enum ExportFormat {
     Markdown,
     Json,
-}
-
-/// Session subcommands for /session command
-#[derive(Debug, Clone, PartialEq)]
-pub enum SessionSubcommand {
-    New,
-    Load { name: String },
-    List,
-    Save { name: Option<String> },
-    Forget,
 }
 
 /// Parse note add command with proper quote handling
@@ -541,6 +418,347 @@ fn parse_todo_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
     }
 }
 
+/// Parse fact subcommand arguments into a ChatCommand.
+///
+/// Extracted from the main parse_command to reduce complexity.
+/// Handles: prune, add, list, remove, search.
+fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
+    match subcmd {
+        "prune" | "p" => Ok(ChatCommand::FactPrune),
+        "add" | "a" => {
+            if subargs.is_empty() {
+                return Err("Usage: /fact add <content> [--global]".to_string());
+            }
+            let global = subargs.trim().ends_with(" --global");
+            let content = if global {
+                subargs
+                    .trim()
+                    .strip_suffix("--global")
+                    .unwrap_or(subargs.trim())
+                    .trim()
+                    .to_string()
+            } else {
+                subargs.trim().to_string()
+            };
+            if content.is_empty() {
+                return Err("Usage: /fact add <content> [--global]".to_string());
+            }
+            Ok(ChatCommand::FactAdd { content, global })
+        }
+        "list" | "l" => {
+            let global = subargs.trim() == "--global";
+            Ok(ChatCommand::FactList { global })
+        }
+        "remove" | "r" => {
+            if subargs.is_empty() {
+                return Err("Usage: /fact remove <id>".to_string());
+            }
+            match subargs.trim().parse::<i64>() {
+                Ok(id) => Ok(ChatCommand::FactRemove { id }),
+                Err(_) => Err("Invalid fact ID. Must be a number.".to_string()),
+            }
+        }
+        "search" | "s" => {
+            if subargs.is_empty() {
+                return Err("Usage: /fact search <query> [--global] [limit]".to_string());
+            }
+            let global = subargs.contains("--global");
+            let args_without_global = subargs.replace("--global", "");
+            let args_trimmed = args_without_global.trim();
+            let parts: Vec<&str> = args_trimmed.splitn(2, ' ').collect();
+            let query = parts.first().unwrap_or(&"").to_string();
+            let limit: usize = parts
+                .get(1)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(10);
+            if query.is_empty() {
+                return Err("Usage: /fact search <query> [--global] [limit]".to_string());
+            }
+            Ok(ChatCommand::FactSearch {
+                query,
+                global,
+                limit,
+            })
+        }
+        _ => Err("Usage: /fact <add|list|remove|search|prune>".to_string()),
+    }
+}
+
+/// Parse note subcommand arguments into a ChatCommand.
+///
+/// Extracted from the main parse_command to reduce complexity.
+/// Handles: add, list, show, edit, delete, search.
+fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
+    match subcmd {
+        "add" | "a" => {
+            if subargs.is_empty() {
+                return Err("Usage: /note add <content> [--title <title>] [--global]".to_string());
+            }
+
+            // Parse note arguments with proper quote handling
+            match parse_note_add(subargs) {
+                Ok((content, title, global)) => {
+                    if content.is_empty() {
+                        return Err(
+                            "Usage: /note add <content> [--title <title>] [--global]".to_string()
+                        );
+                    }
+                    Ok(ChatCommand::NoteAdd {
+                        content,
+                        title,
+                        global,
+                    })
+                }
+                Err(e) => Err(e),
+            }
+        }
+        "list" | "l" => {
+            let mut global = false;
+            let mut page: Option<usize> = None;
+
+            // Parse arguments: [--global] [page]
+            for part in subargs.split_whitespace() {
+                if part == "--global" {
+                    global = true;
+                } else if let Ok(p) = part.parse::<usize>() {
+                    if p == 0 {
+                        return Err(
+                            "Page must be >= 1. Use /note list 1 for first page.".to_string()
+                        );
+                    }
+                    page = Some(p);
+                }
+            }
+            Ok(ChatCommand::NoteList { global, page })
+        }
+        "show" | "s" => {
+            if subargs.is_empty() {
+                return Err("Usage: /note show <id>".to_string());
+            }
+            match subargs.trim().parse::<i64>() {
+                Ok(id) => Ok(ChatCommand::NoteShow { id }),
+                Err(_) => Err("Invalid note ID. Must be a number.".to_string()),
+            }
+        }
+        "edit" | "e" => {
+            let edit_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
+            if edit_parts.len() < 2 {
+                return Err(
+                    "Usage: /note edit <id> [--title <title>] [--content <content>]".to_string(),
+                );
+            }
+            let id: i64 = match edit_parts[0].trim().parse() {
+                Ok(id) => id,
+                Err(_) => return Err("Invalid note ID. Must be a number.".to_string()),
+            };
+            let rest = edit_parts[1].trim();
+            let has_title = rest.contains("--title");
+            let has_content = rest.contains("--content");
+
+            let (title, content) = if has_title && has_content {
+                let title_idx = rest.find("--title").unwrap();
+                let content_idx = rest.find("--content").unwrap();
+                let (first, second) = if title_idx < content_idx {
+                    (("--title", title_idx), ("--content", content_idx))
+                } else {
+                    (("--content", content_idx), ("--title", title_idx))
+                };
+                let first_val_start = rest[first.1 + first.0.len()..].trim();
+                let first_end = first_val_start.find(" --").unwrap_or(first_val_start.len());
+                let first_val = first_val_start[..first_end].to_string();
+
+                let second_val_start = rest[second.1 + second.0.len()..].trim();
+                let second_val = second_val_start.to_string();
+
+                if first.0 == "--title" {
+                    (Some(first_val), Some(second_val))
+                } else {
+                    (Some(second_val), Some(first_val))
+                }
+            } else if has_title {
+                let title_idx = rest.find("--title").unwrap();
+                let title = rest[title_idx + 7..].trim().to_string();
+                (Some(title), None)
+            } else if has_content {
+                let content_idx = rest.find("--content").unwrap();
+                let content = rest[content_idx + 9..].trim().to_string();
+                (None, Some(content))
+            } else {
+                (None, None)
+            };
+
+            if title.is_none() && content.is_none() {
+                return Err(
+                    "Usage: /note edit <id> [--title <title>] [--content <content>]".to_string(),
+                );
+            }
+            Ok(ChatCommand::NoteEdit { id, title, content })
+        }
+        "delete" | "d" => {
+            if subargs.is_empty() {
+                return Err("Usage: /note delete <id>".to_string());
+            }
+            match subargs.trim().parse::<i64>() {
+                Ok(id) => Ok(ChatCommand::NoteDelete { id }),
+                Err(_) => Err("Invalid note ID. Must be a number.".to_string()),
+            }
+        }
+        "search" | "f" => {
+            if subargs.is_empty() {
+                return Err("Usage: /note search <query> [--global] [limit]".to_string());
+            }
+            let global = subargs.contains("--global");
+            let args_without_global = subargs.replace("--global", "");
+            let args_trimmed = args_without_global.trim();
+            let parts: Vec<&str> = args_trimmed.splitn(2, ' ').collect();
+            let query = parts.first().unwrap_or(&"").to_string();
+            let limit: usize = parts
+                .get(1)
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(10);
+            if query.is_empty() {
+                return Err("Usage: /note search <query> [--global] [limit]".to_string());
+            }
+            Ok(ChatCommand::NoteSearch {
+                query,
+                global,
+                limit,
+            })
+        }
+        _ => Err("Usage: /note <add|list|show|edit|delete|search>".to_string()),
+    }
+}
+
+/// Parse document subcommand arguments into a ChatCommand.
+///
+/// Extracted from the main parse_command to reduce complexity.
+/// Handles: import, list, show, delete.
+fn parse_doc_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
+    match subcmd {
+        "import" | "i" => {
+            if subargs.is_empty() {
+                return Err("Usage: /doc import <path> [--global] [--nowait]".to_string());
+            }
+            let global = subargs.contains("--global");
+            let nowait = subargs.contains("--nowait");
+            let path = subargs
+                .replace("--global", "")
+                .replace("--nowait", "")
+                .trim()
+                .to_string();
+            if path.is_empty() {
+                return Err("Usage: /doc import <path> [--global] [--nowait]".to_string());
+            }
+            Ok(ChatCommand::DocumentImport {
+                path,
+                global,
+                nowait,
+            })
+        }
+        "list" | "l" => {
+            let global = subargs.contains("--global");
+            Ok(ChatCommand::DocumentList { global })
+        }
+        "show" | "s" => {
+            if subargs.is_empty() {
+                return Err("Usage: /doc show <id>".to_string());
+            }
+            match parse_document_id(subargs.trim()) {
+                Ok(id) => Ok(ChatCommand::DocumentShow { id }),
+                Err(e) => Err(e),
+            }
+        }
+        "delete" | "d" | "remove" | "rm" => {
+            if subargs.is_empty() {
+                return Err("Usage: /doc delete <id>".to_string());
+            }
+            match parse_document_id(subargs.trim()) {
+                Ok(id) => Ok(ChatCommand::DocumentDelete { id }),
+                Err(e) => Err(e),
+            }
+        }
+        _ => Err("Usage: /doc <import|list|show|delete>".to_string()),
+    }
+}
+
+/// Parse session subcommand arguments into a ChatCommand.
+///
+/// Extracted from the main parse_command to reduce complexity.
+/// Returns canonical ChatCommand variants (New, Load, List, Save, Forget).
+fn parse_session_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
+    match subcmd {
+        "new" => Ok(ChatCommand::New),
+        "load" => {
+            if subargs.is_empty() {
+                return Err("Usage: /session load <name>".to_string());
+            }
+            Ok(ChatCommand::Load {
+                name: subargs.trim().to_string(),
+            })
+        }
+        "list" => Ok(ChatCommand::List),
+        "save" => {
+            let name = if subargs.is_empty() {
+                None
+            } else {
+                Some(subargs.trim().to_string())
+            };
+            Ok(ChatCommand::Save { name })
+        }
+        "forget" => Ok(ChatCommand::Forget),
+        _ => Err("Usage: /session <new|load|list|save|forget>".to_string()),
+    }
+}
+
+/// Map 2-letter fact shortcuts to their (subcommand, subargs) equivalent.
+fn map_fact_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
+    match cmd {
+        "fp" => ("prune", ""),
+        "fa" => ("add", args),
+        "fl" => ("list", args),
+        "fr" => ("remove", args),
+        "fs" => ("search", args),
+        _ => unreachable!(),
+    }
+}
+
+/// Map 2-letter note shortcuts to their (subcommand, subargs) equivalent.
+fn map_note_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
+    match cmd {
+        "na" => ("add", args),
+        "nl" => ("list", args),
+        "ns" => ("show", args),
+        "nd" => ("delete", args),
+        _ => unreachable!(),
+    }
+}
+
+/// Map 2-letter doc shortcuts to their (subcommand, subargs) equivalent.
+fn map_doc_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
+    match cmd {
+        "di" => ("import", args),
+        "dl" => ("list", args),
+        "ds" => ("show", args),
+        "dd" => ("delete", args),
+        _ => unreachable!(),
+    }
+}
+
+/// Map 2-letter todo shortcuts to their (subcommand, subargs) equivalent.
+fn map_todo_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
+    match cmd {
+        "ta" => ("add", args),
+        "tl" => ("list", ""),
+        "tu" => ("update", args),
+        "tg" => ("get", args),
+        "te" => ("edit", args),
+        "td" => ("delete", args),
+        "tcd" => ("clear-done", ""),
+        "tca" => ("clear-all", ""),
+        _ => unreachable!(),
+    }
+}
+
 /// Parse a command string
 pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let input = input.trim();
@@ -557,7 +775,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let command = match *cmd {
         "quit" | "exit" | "q" => ChatCommand::Quit,
         "new" | "n" => ChatCommand::New,
-        "forget" | "f" => ChatCommand::Forget,
+        "forget" => ChatCommand::Forget,
         "help" | "h" | "?" => ChatCommand::Help,
         "model" | "m" => {
             if args.is_empty() {
@@ -631,7 +849,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         }
         "retry" | "r" => ChatCommand::Retry,
         "undo" | "u" => ChatCommand::Undo,
-        "search" | "find" => {
+        "search" | "find" | "f" => {
             if args.is_empty() {
                 return Some(Err("Usage: /search <query> [limit]".to_string()));
             }
@@ -646,130 +864,16 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
             let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-
-            match *subcmd {
-                "prune" | "p" => ChatCommand::FactPrune,
-                "add" | "a" => {
-                    if subargs.is_empty() {
-                        return Some(Err("Usage: /fact add <content> [--global]".to_string()));
-                    }
-                    let global = subargs.trim().ends_with(" --global");
-                    let content = if global {
-                        subargs
-                            .trim()
-                            .strip_suffix("--global")
-                            .unwrap_or(subargs.trim())
-                            .trim()
-                            .to_string()
-                    } else {
-                        subargs.trim().to_string()
-                    };
-                    if content.is_empty() {
-                        return Some(Err("Usage: /fact add <content> [--global]".to_string()));
-                    }
-                    ChatCommand::FactAdd { content, global }
-                }
-                "list" | "l" => {
-                    let global = subargs.trim() == "--global";
-                    ChatCommand::FactList { global }
-                }
-                "remove" | "r" => {
-                    if subargs.is_empty() {
-                        return Some(Err("Usage: /fact remove <id>".to_string()));
-                    }
-                    match subargs.trim().parse::<i64>() {
-                        Ok(id) => ChatCommand::FactRemove { id },
-                        Err(_) => {
-                            return Some(Err("Invalid fact ID. Must be a number.".to_string()));
-                        }
-                    }
-                }
-                "search" | "s" => {
-                    if subargs.is_empty() {
-                        return Some(Err(
-                            "Usage: /fact search <query> [--global] [limit]".to_string()
-                        ));
-                    }
-                    let global = subargs.contains("--global");
-                    let args_without_global = subargs.replace("--global", "");
-                    let args_trimmed = args_without_global.trim();
-                    let parts: Vec<&str> = args_trimmed.splitn(2, ' ').collect();
-                    let query = parts.first().unwrap_or(&"").to_string();
-                    let limit: usize = parts
-                        .get(1)
-                        .and_then(|s| s.trim().parse().ok())
-                        .unwrap_or(10);
-                    if query.is_empty() {
-                        return Some(Err(
-                            "Usage: /fact search <query> [--global] [limit]".to_string()
-                        ));
-                    }
-                    ChatCommand::FactSearch {
-                        query,
-                        global,
-                        limit,
-                    }
-                }
-                _ => {
-                    return Some(Err(
-                        "Usage: /fact <add|list|remove|search|prune>".to_string()
-                    ));
-                }
+            match parse_fact_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
         }
-        "fp" => ChatCommand::FactPrune,
-        "fa" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /fa <content> [--global]".to_string()));
-            }
-            let global = args.trim().ends_with(" --global");
-            let content = if global {
-                args.trim()
-                    .strip_suffix("--global")
-                    .unwrap_or(args.trim())
-                    .trim()
-                    .to_string()
-            } else {
-                args.trim().to_string()
-            };
-            if content.is_empty() {
-                return Some(Err("Usage: /fa <content> [--global]".to_string()));
-            }
-            ChatCommand::FactAdd { content, global }
-        }
-        "fl" => {
-            let global = args.trim() == "--global";
-            ChatCommand::FactList { global }
-        }
-        "fr" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /fr <id>".to_string()));
-            }
-            match args.trim().parse::<i64>() {
-                Ok(id) => ChatCommand::FactRemove { id },
-                Err(_) => return Some(Err("Invalid fact ID. Must be a number.".to_string())),
-            }
-        }
-        "fs" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /fs <query> [--global] [limit]".to_string()));
-            }
-            let global = args.contains("--global");
-            let args_without_global = args.replace("--global", "");
-            let args_trimmed = args_without_global.trim();
-            let parts: Vec<&str> = args_trimmed.splitn(2, ' ').collect();
-            let query = parts.first().unwrap_or(&"").to_string();
-            let limit: usize = parts
-                .get(1)
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(10);
-            if query.is_empty() {
-                return Some(Err("Usage: /fs <query> [--global] [limit]".to_string()));
-            }
-            ChatCommand::FactSearch {
-                query,
-                global,
-                limit,
+        "fp" | "fa" | "fl" | "fr" | "fs" => {
+            let (subcmd, subargs) = map_fact_shortcut(cmd, args);
+            match parse_fact_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
         }
         "todo" => {
@@ -781,346 +885,42 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
-        "ta" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /ta <description>".to_string()));
+        "ta" | "tl" | "tu" | "tg" | "te" | "td" | "tcd" | "tca" => {
+            let (subcmd, subargs) = map_todo_shortcut(cmd, args);
+            match parse_todo_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
-            let (description, priority, tags) = parse_todo_add_args(args);
-            ChatCommand::TodoAdd {
-                description,
-                priority,
-                tags,
-            }
-        }
-        "tl" => ChatCommand::TodoList { filter: None },
-        "tu" => {
-            let parts: Vec<&str> = args.splitn(2, ' ').collect();
-            if parts.len() < 2 {
-                return Some(Err("Usage: /tu <id> <status>".to_string()));
-            }
-            let id: usize = match parts[0].trim().parse() {
-                Ok(id) => id,
-                Err(_) => return Some(Err("Invalid task ID. Must be a number.".to_string())),
-            };
-            let status = parts[1].trim().to_string();
-            ChatCommand::TodoUpdate { id, status }
         }
         "note" | "no" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
             let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-
-            match *subcmd {
-                "add" | "a" => {
-                    if subargs.is_empty() {
-                        return Some(Err(
-                            "Usage: /note add <content> [--title <title>] [--global]".to_string(),
-                        ));
-                    }
-
-                    // Parse note arguments with proper quote handling
-                    match parse_note_add(subargs) {
-                        Ok((content, title, global)) => {
-                            if content.is_empty() {
-                                return Some(Err(
-                                    "Usage: /note add <content> [--title <title>] [--global]"
-                                        .to_string(),
-                                ));
-                            }
-                            ChatCommand::NoteAdd {
-                                content,
-                                title,
-                                global,
-                            }
-                        }
-                        Err(e) => return Some(Err(e)),
-                    }
-                }
-                "list" | "l" => {
-                    let mut global = false;
-                    let mut page: Option<usize> = None;
-
-                    // Parse arguments: [--global] [page]
-                    for part in subargs.split_whitespace() {
-                        if part == "--global" {
-                            global = true;
-                        } else if let Ok(p) = part.parse::<usize>() {
-                            if p == 0 {
-                                return Some(Err(
-                                    "Page must be >= 1. Use /note list 1 for first page."
-                                        .to_string(),
-                                ));
-                            }
-                            page = Some(p);
-                        }
-                    }
-                    ChatCommand::NoteList { global, page }
-                }
-                "show" | "s" => {
-                    if subargs.is_empty() {
-                        return Some(Err("Usage: /note show <id>".to_string()));
-                    }
-                    match subargs.trim().parse::<i64>() {
-                        Ok(id) => ChatCommand::NoteShow { id },
-                        Err(_) => {
-                            return Some(Err("Invalid note ID. Must be a number.".to_string()));
-                        }
-                    }
-                }
-                "edit" | "e" => {
-                    let edit_parts: Vec<&str> = subargs.splitn(2, ' ').collect();
-                    if edit_parts.len() < 2 {
-                        return Some(Err(
-                            "Usage: /note edit <id> [--title <title>] [--content <content>]"
-                                .to_string(),
-                        ));
-                    }
-                    let id: i64 = match edit_parts[0].trim().parse() {
-                        Ok(id) => id,
-                        Err(_) => {
-                            return Some(Err("Invalid note ID. Must be a number.".to_string()));
-                        }
-                    };
-                    let rest = edit_parts[1].trim();
-                    let has_title = rest.contains("--title");
-                    let has_content = rest.contains("--content");
-
-                    let (title, content) = if has_title && has_content {
-                        let title_idx = rest.find("--title").unwrap();
-                        let content_idx = rest.find("--content").unwrap();
-                        let (first, second) = if title_idx < content_idx {
-                            (("--title", title_idx), ("--content", content_idx))
-                        } else {
-                            (("--content", content_idx), ("--title", title_idx))
-                        };
-                        let first_val_start = rest[first.1 + first.0.len()..].trim();
-                        let first_end =
-                            first_val_start.find(" --").unwrap_or(first_val_start.len());
-                        let first_val = first_val_start[..first_end].to_string();
-
-                        let second_val_start = rest[second.1 + second.0.len()..].trim();
-                        let second_val = second_val_start.to_string();
-
-                        if first.0 == "--title" {
-                            (Some(first_val), Some(second_val))
-                        } else {
-                            (Some(second_val), Some(first_val))
-                        }
-                    } else if has_title {
-                        let title_idx = rest.find("--title").unwrap();
-                        let title = rest[title_idx + 7..].trim().to_string();
-                        (Some(title), None)
-                    } else if has_content {
-                        let content_idx = rest.find("--content").unwrap();
-                        let content = rest[content_idx + 9..].trim().to_string();
-                        (None, Some(content))
-                    } else {
-                        (None, None)
-                    };
-
-                    if title.is_none() && content.is_none() {
-                        return Some(Err(
-                            "Usage: /note edit <id> [--title <title>] [--content <content>]"
-                                .to_string(),
-                        ));
-                    }
-                    ChatCommand::NoteEdit { id, title, content }
-                }
-                "delete" | "d" => {
-                    if subargs.is_empty() {
-                        return Some(Err("Usage: /note delete <id>".to_string()));
-                    }
-                    match subargs.trim().parse::<i64>() {
-                        Ok(id) => ChatCommand::NoteDelete { id },
-                        Err(_) => {
-                            return Some(Err("Invalid note ID. Must be a number.".to_string()));
-                        }
-                    }
-                }
-                "search" | "f" => {
-                    if subargs.is_empty() {
-                        return Some(Err(
-                            "Usage: /note search <query> [--global] [limit]".to_string()
-                        ));
-                    }
-                    let global = subargs.contains("--global");
-                    let args_without_global = subargs.replace("--global", "");
-                    let args_trimmed = args_without_global.trim();
-                    let parts: Vec<&str> = args_trimmed.splitn(2, ' ').collect();
-                    let query = parts.first().unwrap_or(&"").to_string();
-                    let limit: usize = parts
-                        .get(1)
-                        .and_then(|s| s.trim().parse().ok())
-                        .unwrap_or(10);
-                    if query.is_empty() {
-                        return Some(Err(
-                            "Usage: /note search <query> [--global] [limit]".to_string()
-                        ));
-                    }
-                    ChatCommand::NoteSearch {
-                        query,
-                        global,
-                        limit,
-                    }
-                }
-                _ => {
-                    return Some(Err(
-                        "Usage: /note <add|list|show|edit|delete|search>".to_string()
-                    ));
-                }
-            }
-        }
-        "na" => {
-            if args.is_empty() {
-                return Some(Err(
-                    "Usage: /na <content> [--title <title>] [--global]".to_string()
-                ));
-            }
-            match parse_note_add(args) {
-                Ok((content, title, global)) => {
-                    if content.is_empty() {
-                        return Some(Err(
-                            "Usage: /na <content> [--title <title>] [--global]".to_string()
-                        ));
-                    }
-                    ChatCommand::NoteAdd {
-                        content,
-                        title,
-                        global,
-                    }
-                }
+            match parse_note_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
                 Err(e) => return Some(Err(e)),
             }
         }
-        "nl" => {
-            let mut global = false;
-            let mut page: Option<usize> = None;
-            for part in args.split_whitespace() {
-                if part == "--global" {
-                    global = true;
-                } else if let Ok(p) = part.parse::<usize>() {
-                    if p == 0 {
-                        return Some(Err(
-                            "Page must be >= 1. Use /note list 1 for first page.".to_string()
-                        ));
-                    }
-                    page = Some(p);
-                }
-            }
-            ChatCommand::NoteList { global, page }
-        }
-        "ns" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /ns <id>".to_string()));
-            }
-            match args.trim().parse::<i64>() {
-                Ok(id) => ChatCommand::NoteShow { id },
-                Err(_) => return Some(Err("Invalid note ID. Must be a number.".to_string())),
-            }
-        }
-        "nd" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /nd <id>".to_string()));
-            }
-            match args.trim().parse::<i64>() {
-                Ok(id) => ChatCommand::NoteDelete { id },
-                Err(_) => return Some(Err("Invalid note ID. Must be a number.".to_string())),
+        "na" | "nl" | "ns" | "nd" => {
+            let (subcmd, subargs) = map_note_shortcut(cmd, args);
+            match parse_note_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
         }
         "doc" | "document" | "docs" | "documents" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"list");
             let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-
-            match *subcmd {
-                "import" | "i" => {
-                    if subargs.is_empty() {
-                        return Some(Err(
-                            "Usage: /doc import <path> [--global] [--nowait]".to_string()
-                        ));
-                    }
-                    let global = subargs.contains("--global");
-                    let nowait = subargs.contains("--nowait");
-                    let path = subargs
-                        .replace("--global", "")
-                        .replace("--nowait", "")
-                        .trim()
-                        .to_string();
-                    if path.is_empty() {
-                        return Some(Err(
-                            "Usage: /doc import <path> [--global] [--nowait]".to_string()
-                        ));
-                    }
-                    ChatCommand::DocumentImport {
-                        path,
-                        global,
-                        nowait,
-                    }
-                }
-                "list" | "l" => {
-                    let global = subargs.contains("--global");
-                    ChatCommand::DocumentList { global }
-                }
-                "show" | "s" => {
-                    if subargs.is_empty() {
-                        return Some(Err("Usage: /doc show <id>".to_string()));
-                    }
-                    match parse_document_id(subargs.trim()) {
-                        Ok(id) => ChatCommand::DocumentShow { id },
-                        Err(e) => return Some(Err(e)),
-                    }
-                }
-                "delete" | "d" | "remove" | "rm" => {
-                    if subargs.is_empty() {
-                        return Some(Err("Usage: /doc delete <id>".to_string()));
-                    }
-                    match parse_document_id(subargs.trim()) {
-                        Ok(id) => ChatCommand::DocumentDelete { id },
-                        Err(e) => return Some(Err(e)),
-                    }
-                }
-                _ => return Some(Err("Usage: /doc <import|list|show|delete>".to_string())),
-            }
-        }
-        "di" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /di <path> [--global] [--nowait]".to_string()));
-            }
-            let global = args.contains("--global");
-            let nowait = args.contains("--nowait");
-            let path = args
-                .replace("--global", "")
-                .replace("--nowait", "")
-                .trim()
-                .to_string();
-            if path.is_empty() {
-                return Some(Err("Usage: /di <path> [--global] [--nowait]".to_string()));
-            }
-            ChatCommand::DocumentImport {
-                path,
-                global,
-                nowait,
-            }
-        }
-        "dl" => {
-            let global = args.contains("--global");
-            ChatCommand::DocumentList { global }
-        }
-        "ds" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /ds <id>".to_string()));
-            }
-            match parse_document_id(args.trim()) {
-                Ok(id) => ChatCommand::DocumentShow { id },
+            match parse_doc_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
                 Err(e) => return Some(Err(e)),
             }
         }
-        "dd" => {
-            if args.is_empty() {
-                return Some(Err("Usage: /dd <id>".to_string()));
-            }
-            match parse_document_id(args.trim()) {
-                Ok(id) => ChatCommand::DocumentDelete { id },
+        "di" | "dl" | "ds" | "dd" => {
+            let (subcmd, subargs) = map_doc_shortcut(cmd, args);
+            match parse_doc_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
                 Err(e) => return Some(Err(e)),
             }
         }
@@ -1128,42 +928,9 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
             let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-
-            match *subcmd {
-                "new" => ChatCommand::Session {
-                    subcommand: SessionSubcommand::New,
-                },
-                "load" => {
-                    if subargs.is_empty() {
-                        return Some(Err("Usage: /session load <name>".to_string()));
-                    }
-                    ChatCommand::Session {
-                        subcommand: SessionSubcommand::Load {
-                            name: subargs.trim().to_string(),
-                        },
-                    }
-                }
-                "list" => ChatCommand::Session {
-                    subcommand: SessionSubcommand::List,
-                },
-                "save" => {
-                    let name = if subargs.is_empty() {
-                        None
-                    } else {
-                        Some(subargs.trim().to_string())
-                    };
-                    ChatCommand::Session {
-                        subcommand: SessionSubcommand::Save { name },
-                    }
-                }
-                "forget" => ChatCommand::Session {
-                    subcommand: SessionSubcommand::Forget,
-                },
-                _ => {
-                    return Some(Err(
-                        "Usage: /session <new|load|list|save|forget>".to_string()
-                    ));
-                }
+            match parse_session_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
             }
         }
         // Dynamic skill commands: /<skill-name> [args...]
@@ -1187,533 +954,8 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     Some(Ok(command))
 }
 
-/// Execute a chat command
-pub fn execute_command(command: ChatCommand, session: &mut ChatSession) -> CommandResult {
-    match command {
-        ChatCommand::Quit => {
-            println!("Goodbye!");
-            CommandResult::Exit
-        }
-
-        ChatCommand::New => {
-            // Check if there are searchable messages in database (any conversation)
-            let has_searchable_messages = if let Some(ref db) = session.db {
-                db.count_all_content_items()
-                    .map(|count| count > 0)
-                    .unwrap_or(false)
-            } else {
-                false
-            };
-
-            // Clear session state
-            session.compacted_summary = None;
-            session.messages.clear();
-            session.messages_sent_to_llm = 0;
-            session.compacted_range = None;
-            session.name = None;
-
-            // Generate new session ID
-            use std::time::{SystemTime, UNIX_EPOCH};
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            session.id = format!("session-{}", timestamp);
-
-            // Reset timestamps
-            let now = chrono::Utc::now();
-            session.created_at = now;
-            session.updated_at = now;
-
-            // Note: Session is NOT saved here - will be persisted on first message
-            // This allows creating new sessions without polluting the database with empty sessions
-
-            println!("New session started.");
-            if has_searchable_messages {
-                println!(
-                    "\x1B[90m[i] Previous conversations remain searchable via /search or remember().\x1B[0m"
-                );
-            }
-            CommandResult::Continue
-        }
-
-        ChatCommand::Forget => {
-            session.forget_session();
-
-            if let Some(ref db) = session.db
-                && !session.anonymous
-                && !session.id.is_empty()
-            {
-                print!("Removing conversation from database... ");
-                std::io::Write::flush(&mut std::io::stdout()).ok();
-                match db.delete_conversation(&session.id) {
-                    Ok(_) => println!("Done."),
-                    Err(e) => eprintln!("\nWarning: Could not delete conversation: {}", e),
-                }
-            }
-
-            if !session.anonymous {
-                // Generate new session ID using timestamp
-                use std::time::{SystemTime, UNIX_EPOCH};
-                let timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                session.id = format!("session-{}", timestamp);
-                if let Err(e) = session.save_sqlite() {
-                    eprintln!("Warning: Could not save new session: {}", e);
-                }
-            }
-
-            println!("Session forgotten. Starting fresh conversation.");
-            CommandResult::Continue
-        }
-
-        ChatCommand::Help => {
-            print_help();
-            CommandResult::Continue
-        }
-
-        // Note: Model switching is handled directly in repl.rs via model_switch module
-        // This ensures consistent state management for capabilities, tools, and think mode
-        ChatCommand::Model { name: _ } => CommandResult::Continue,
-
-        ChatCommand::System { prompt } => {
-            session.set_system_prompt(prompt.clone());
-            println!("System prompt updated.");
-            CommandResult::Continue
-        }
-
-        ChatCommand::Save { name } => {
-            if session.anonymous {
-                return CommandResult::Error(
-                    "Cannot save anonymous session. Use /save without --anonymous flag."
-                        .to_string(),
-                );
-            }
-
-            if let Some(n) = name {
-                session.rename(n);
-            }
-
-            match session.save_sqlite() {
-                Ok(()) => {
-                    let session_name = session.name.as_deref().unwrap_or(&session.id);
-                    println!("Session saved: {}", session_name);
-                    CommandResult::Continue
-                }
-                Err(e) => CommandResult::Error(format!("Failed to save session: {}", e)),
-            }
-        }
-
-        ChatCommand::Load { name } => {
-            // Need database for load
-            let db = match &session.db {
-                Some(d) => std::sync::Arc::clone(d),
-                None => {
-                    return CommandResult::Error(
-                        "Cannot load session: database not initialized.".to_string(),
-                    );
-                }
-            };
-
-            // Save current session if it has messages
-            if !session.anonymous
-                && !session.messages.is_empty()
-                && let Err(e) = session.save_sqlite()
-            {
-                eprintln!("Warning: Could not save current session: {}", e);
-            }
-
-            match ChatSession::load_sqlite(&db, &name) {
-                Ok(loaded) => {
-                    *session = loaded;
-                    let display_name = session.name.as_deref().unwrap_or(&session.id);
-                    println!(
-                        "Loaded session: {} ({} messages)",
-                        display_name,
-                        session.messages.len()
-                    );
-                    CommandResult::Continue
-                }
-                Err(e) => CommandResult::Error(format!("Failed to load session: {}", e)),
-            }
-        }
-
-        ChatCommand::Export { format, file } => {
-            let output = match format {
-                ExportFormat::Markdown => export_markdown(session),
-                ExportFormat::Json => export_json(session),
-            };
-
-            match file {
-                Some(path) => {
-                    let expanded_path = crate::utils::expand_tilde_path(&path);
-                    match std::fs::write(&expanded_path, &output) {
-                        Ok(()) => {
-                            println!("Conversation exported to: {}", path);
-                            CommandResult::Continue
-                        }
-                        Err(e) => CommandResult::Error(format!("Failed to write file: {}", e)),
-                    }
-                }
-                None => {
-                    println!("{}", output);
-                    CommandResult::Continue
-                }
-            }
-        }
-
-        ChatCommand::List => {
-            // Need database for list
-            let db = match &session.db {
-                Some(d) => std::sync::Arc::clone(d),
-                None => {
-                    return CommandResult::Error(
-                        "Cannot list sessions: database not initialized.".to_string(),
-                    );
-                }
-            };
-
-            match db.list_sessions(session.project_id.as_deref()) {
-                Ok(sessions) => {
-                    if sessions.is_empty() {
-                        println!("No saved sessions for this project.");
-                    } else {
-                        println!("Sessions for this project:");
-                        for info in sessions {
-                            let time = info.updated_at.format("%Y-%m-%d %H:%M");
-                            let name = info.name.as_deref().unwrap_or(&info.id);
-                            // Mark current session with arrow
-                            let marker = if info.id == session.id { "→" } else { " " };
-                            println!(
-                                "{} {} - {} ({} messages) {}",
-                                marker, name, info.model, info.message_count, time
-                            );
-                        }
-                    }
-                }
-                Err(e) => eprintln!("Warning: Could not list sessions: {}", e),
-            }
-            CommandResult::Continue
-        }
-
-        ChatCommand::Session { subcommand } => {
-            // Delegate session subcommands to their respective handlers
-            match subcommand {
-                SessionSubcommand::New => {
-                    // Same as ChatCommand::New
-                    let has_searchable_messages = if let Some(ref db) = session.db {
-                        db.count_all_content_items()
-                            .map(|count| count > 0)
-                            .unwrap_or(false)
-                    } else {
-                        false
-                    };
-
-                    session.compacted_summary = None;
-                    session.messages.clear();
-                    session.messages_sent_to_llm = 0;
-                    session.compacted_range = None;
-                    session.name = None;
-
-                    use std::time::{SystemTime, UNIX_EPOCH};
-                    let timestamp = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
-                    session.id = format!("session-{}", timestamp);
-
-                    let now = chrono::Utc::now();
-                    session.created_at = now;
-                    session.updated_at = now;
-
-                    println!("New session started.");
-                    if has_searchable_messages {
-                        println!(
-                            "\x1B[90m[i] Previous conversations remain searchable via /search or remember().\x1B[0m"
-                        );
-                    }
-                    CommandResult::Continue
-                }
-                SessionSubcommand::Load { name } => {
-                    // Same as ChatCommand::Load
-                    let db = match &session.db {
-                        Some(d) => std::sync::Arc::clone(d),
-                        None => {
-                            return CommandResult::Error(
-                                "Cannot load session: database not initialized.".to_string(),
-                            );
-                        }
-                    };
-
-                    if !session.anonymous
-                        && !session.messages.is_empty()
-                        && let Err(e) = session.save_sqlite()
-                    {
-                        eprintln!("Warning: Could not save current session: {}", e);
-                    }
-
-                    match ChatSession::load_sqlite(&db, &name) {
-                        Ok(loaded) => {
-                            *session = loaded;
-                            let display_name = session.name.as_deref().unwrap_or(&session.id);
-                            println!(
-                                "Loaded session: {} ({} messages)",
-                                display_name,
-                                session.messages.len()
-                            );
-                            CommandResult::Continue
-                        }
-                        Err(e) => CommandResult::Error(format!("Failed to load session: {}", e)),
-                    }
-                }
-                SessionSubcommand::List => {
-                    // Same as ChatCommand::List
-                    let db = match &session.db {
-                        Some(d) => std::sync::Arc::clone(d),
-                        None => {
-                            return CommandResult::Error(
-                                "Cannot list sessions: database not initialized.".to_string(),
-                            );
-                        }
-                    };
-
-                    match db.list_sessions(session.project_id.as_deref()) {
-                        Ok(sessions) => {
-                            if sessions.is_empty() {
-                                println!("No saved sessions for this project.");
-                            } else {
-                                println!("Sessions for this project:");
-                                for info in sessions {
-                                    let time = info.updated_at.format("%Y-%m-%d %H:%M");
-                                    let name = info.name.as_deref().unwrap_or(&info.id);
-                                    // Mark current session with arrow
-                                    let marker = if info.id == session.id { "→" } else { " " };
-                                    println!(
-                                        "{} {} - {} ({} messages) {}",
-                                        marker, name, info.model, info.message_count, time
-                                    );
-                                }
-                            }
-                        }
-                        Err(e) => eprintln!("Warning: Could not list sessions: {}", e),
-                    }
-                    CommandResult::Continue
-                }
-                SessionSubcommand::Save { name } => {
-                    // Same as ChatCommand::Save
-                    if session.anonymous {
-                        return CommandResult::Error(
-                            "Cannot save anonymous session. Use /save without --anonymous flag."
-                                .to_string(),
-                        );
-                    }
-
-                    if let Some(n) = name {
-                        session.rename(n);
-                    }
-
-                    match session.save_sqlite() {
-                        Ok(()) => {
-                            let session_name = session.name.as_deref().unwrap_or(&session.id);
-                            println!("Session saved: {}", session_name);
-                            CommandResult::Continue
-                        }
-                        Err(e) => CommandResult::Error(format!("Failed to save session: {}", e)),
-                    }
-                }
-                SessionSubcommand::Forget => {
-                    // Same as ChatCommand::Forget
-                    session.forget_session();
-
-                    if let Some(ref db) = session.db
-                        && !session.anonymous
-                        && !session.id.is_empty()
-                    {
-                        print!("Removing conversation from database... ");
-                        std::io::Write::flush(&mut std::io::stdout()).ok();
-                        match db.delete_conversation(&session.id) {
-                            Ok(_) => println!("Done."),
-                            Err(e) => eprintln!("\nWarning: Could not delete conversation: {}", e),
-                        }
-                    }
-
-                    if !session.anonymous {
-                        use std::time::{SystemTime, UNIX_EPOCH};
-                        let timestamp = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0);
-                        session.id = format!("session-{}", timestamp);
-                        if let Err(e) = session.save_sqlite() {
-                            eprintln!("Warning: Could not save new session: {}", e);
-                        }
-                    }
-
-                    println!("Session forgotten. Starting fresh conversation.");
-                    CommandResult::Continue
-                }
-            }
-        }
-
-        ChatCommand::Info => {
-            print_session_info(session, None);
-            CommandResult::Continue
-        }
-
-        ChatCommand::Context => CommandResult::Context,
-
-        ChatCommand::Think => {
-            session.think = !session.think;
-            CommandResult::ThinkToggled(session.think)
-        }
-
-        ChatCommand::Tools => {
-            session.tools = !session.tools;
-            CommandResult::ToolsToggled(session.tools)
-        }
-
-        ChatCommand::Compact => CommandResult::Compact,
-
-        ChatCommand::ToolsOutput { level } => {
-            session.tool_output_level = level;
-            CommandResult::ToolOutputChanged(level)
-        }
-
-        ChatCommand::Debug => CommandResult::DebugToggled(toggle_debug()),
-
-        ChatCommand::Retry => CommandResult::Retry,
-
-        ChatCommand::Undo => CommandResult::Undo,
-
-        ChatCommand::Search { query, limit } => CommandResult::Search { query, limit },
-
-        ChatCommand::Reindex => CommandResult::Reindex,
-
-        ChatCommand::Retrieval => {
-            session.retrieval_enabled = !session.retrieval_enabled;
-            CommandResult::RetrievalToggled(session.retrieval_enabled)
-        }
-
-        ChatCommand::FactPrune => CommandResult::FactPrune,
-
-        ChatCommand::FactAdd { content, global } => CommandResult::FactAdd { content, global },
-
-        ChatCommand::FactList { global } => CommandResult::FactList { global },
-
-        ChatCommand::FactRemove { id } => CommandResult::FactRemove { id },
-
-        ChatCommand::FactSearch {
-            query,
-            global,
-            limit,
-        } => CommandResult::FactSearch {
-            query,
-            global,
-            limit,
-        },
-
-        ChatCommand::TodoAdd {
-            description,
-            priority,
-            tags,
-        } => CommandResult::TodoAdd {
-            description,
-            priority,
-            tags,
-        },
-
-        ChatCommand::TodoList { filter } => CommandResult::TodoList { filter },
-
-        ChatCommand::TodoUpdate { id, status } => CommandResult::TodoUpdate { id, status },
-
-        ChatCommand::TodoGet { id } => CommandResult::TodoGet { id },
-
-        ChatCommand::TodoEdit {
-            id,
-            description,
-            priority,
-            tags,
-        } => CommandResult::TodoEdit {
-            id,
-            description,
-            priority,
-            tags,
-        },
-
-        ChatCommand::TodoDelete { id } => CommandResult::TodoDelete { id },
-
-        ChatCommand::TodoClearDone => CommandResult::TodoClearDone,
-
-        ChatCommand::TodoClearAll => CommandResult::TodoClearAll,
-
-        ChatCommand::NoteAdd {
-            content,
-            title,
-            global,
-        } => CommandResult::NoteAdd {
-            content,
-            title,
-            global,
-        },
-
-        ChatCommand::NoteList { global, page } => CommandResult::NoteList { global, page },
-
-        ChatCommand::NoteShow { id } => CommandResult::NoteShow { id },
-
-        ChatCommand::NoteEdit { id, title, content } => {
-            CommandResult::NoteEdit { id, title, content }
-        }
-
-        ChatCommand::NoteDelete { id } => CommandResult::NoteDelete { id },
-
-        ChatCommand::NoteSearch {
-            query,
-            global,
-            limit,
-        } => CommandResult::NoteSearch {
-            query,
-            global,
-            limit,
-        },
-
-        ChatCommand::DocumentImport {
-            path,
-            global,
-            nowait,
-        } => CommandResult::DocumentImport {
-            path,
-            global,
-            nowait,
-        },
-
-        ChatCommand::DocumentList { global } => CommandResult::DocumentList { global },
-
-        ChatCommand::DocumentShow { id } => CommandResult::DocumentShow { id },
-
-        ChatCommand::DocumentDelete { id } => CommandResult::DocumentDelete { id },
-
-        ChatCommand::Skill { name } => {
-            // Load skill content and return it for injection into session
-            let skill = crate::skills::get_skill_content(&name);
-            match skill {
-                Some(skill) => CommandResult::Skill {
-                    name: skill.name,
-                    content: skill.content,
-                },
-                None => CommandResult::Error(format!(
-                    "Skill '{}' not found. Use one of: {}",
-                    name,
-                    crate::skills::get_available_skill_names().join(", ")
-                )),
-            }
-        }
-    }
-}
-
 /// Print help message
-fn print_help() {
+pub fn print_help() {
     println!(
         r#"Available commands:
   /quit, /exit     Exit the chat session
@@ -1784,6 +1026,8 @@ Todo List:
   /todo clear-all                                                Clear all tasks
 
   Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
+  /tg = /todo get, /te = /todo edit, /td = /todo delete
+  /tcd = /todo clear-done, /tca = /todo clear-all
 
 Shortcuts:
   /q = /quit, /n = /new, /h = /help
@@ -1843,47 +1087,6 @@ pub fn print_session_info(session: &ChatSession, metrics: Option<&ContextMetrics
     }
 }
 
-/// Export session as markdown
-fn export_markdown(session: &ChatSession) -> String {
-    let mut output = String::new();
-
-    output.push_str(&format!(
-        "# Chat Session: {}\n\n",
-        session.name.as_deref().unwrap_or(&session.id)
-    ));
-    output.push_str(&format!("- **Model:** {}\n", session.model));
-    output.push_str(&format!(
-        "- **Created:** {}\n",
-        session.created_at.format("%Y-%m-%d %H:%M")
-    ));
-    output.push_str(&format!("- **Messages:** {}\n\n", session.messages.len()));
-    output.push_str("---\n\n");
-
-    for msg in &session.messages {
-        match msg.role {
-            super::session::MessageRole::User => {
-                output.push_str(&format!("**User:** {}\n\n", msg.content));
-            }
-            super::session::MessageRole::Assistant => {
-                output.push_str(&format!("**Assistant:**\n\n{}\n\n", msg.content));
-            }
-            super::session::MessageRole::System => {
-                output.push_str(&format!("**System:** {}\n\n", msg.content));
-            }
-            super::session::MessageRole::Tool => {
-                output.push_str(&format!("**Tool:** {}\n\n", msg.content));
-            }
-        }
-    }
-
-    output
-}
-
-/// Export session as JSON
-fn export_json(session: &ChatSession) -> String {
-    serde_json::to_string_pretty(session).unwrap_or_else(|_| "{}".to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1915,5 +1118,510 @@ mod tests {
         assert!(parse_document_id("").is_err());
         assert!(parse_document_id("doc:abc").is_err());
         assert!(parse_document_id("#abc").is_err());
+    }
+
+    // =========================================================
+    // Tests for extracted subcommand parsers
+    // =========================================================
+
+    // --- Session subcommand parser ---
+
+    #[test]
+    fn test_parse_session_subcommand_new() {
+        let cmd = parse_session_subcommand("new", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::New));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_load() {
+        let cmd = parse_session_subcommand("load", "my-session").unwrap();
+        assert!(matches!(cmd, ChatCommand::Load { ref name } if name == "my-session"));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_load_empty() {
+        assert!(parse_session_subcommand("load", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_list() {
+        let cmd = parse_session_subcommand("list", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::List));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_save_with_name() {
+        let cmd = parse_session_subcommand("save", "my-save").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::Save { ref name } if name.as_deref() == Some("my-save"))
+        );
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_save_without_name() {
+        let cmd = parse_session_subcommand("save", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::Save { ref name } if name.is_none()));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget() {
+        let cmd = parse_session_subcommand("forget", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::Forget));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_invalid() {
+        assert!(parse_session_subcommand("unknown", "").is_err());
+    }
+
+    // --- Fact subcommand parser ---
+
+    #[test]
+    fn test_parse_fact_subcommand_prune() {
+        let cmd = parse_fact_subcommand("prune", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactPrune));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_prune_shortcut() {
+        let cmd = parse_fact_subcommand("p", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactPrune));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_add() {
+        let cmd = parse_fact_subcommand("add", "some fact").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactAdd { ref content, global: false } if content == "some fact")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_add_shortcut() {
+        let cmd = parse_fact_subcommand("a", "some fact").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactAdd { ref content, global: false } if content == "some fact")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_add_global() {
+        let cmd = parse_fact_subcommand("add", "global fact --global").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactAdd { ref content, global: true } if content == "global fact")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_add_empty() {
+        assert!(parse_fact_subcommand("add", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_list() {
+        let cmd = parse_fact_subcommand("list", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactList { global: false }));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_list_global() {
+        let cmd = parse_fact_subcommand("list", "--global").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactList { global: true }));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_remove() {
+        let cmd = parse_fact_subcommand("remove", "42").unwrap();
+        assert!(matches!(cmd, ChatCommand::FactRemove { id: 42 }));
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_remove_empty() {
+        assert!(parse_fact_subcommand("remove", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_remove_invalid_id() {
+        assert!(parse_fact_subcommand("remove", "abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_search() {
+        // Note: search parser uses splitn(2, ' '), so "rust" alone -> query="rust", limit=10
+        let cmd = parse_fact_subcommand("search", "rust").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactSearch { ref query, global: false, limit: 10 } if query == "rust")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_search_with_limit() {
+        let cmd = parse_fact_subcommand("search", "rust 5").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::FactSearch { ref query, global: false, limit: 5 } if query == "rust")
+        );
+    }
+
+    #[test]
+    fn test_parse_fact_subcommand_invalid() {
+        assert!(parse_fact_subcommand("unknown", "").is_err());
+    }
+
+    // --- Document subcommand parser ---
+
+    #[test]
+    fn test_parse_doc_subcommand_import() {
+        let cmd = parse_doc_subcommand("import", "/path/to/file.pdf").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::DocumentImport { ref path, global: false, nowait: false } if path == "/path/to/file.pdf")
+        );
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_import_shortcut() {
+        let cmd = parse_doc_subcommand("i", "/path/to/file.pdf").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::DocumentImport { ref path, global: false, nowait: false } if path == "/path/to/file.pdf")
+        );
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_import_with_flags() {
+        let cmd = parse_doc_subcommand("import", "/file.pdf --global --nowait").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::DocumentImport { ref path, global: true, nowait: true } if path == "/file.pdf")
+        );
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_import_empty() {
+        assert!(parse_doc_subcommand("import", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_list() {
+        let cmd = parse_doc_subcommand("list", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentList { global: false }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_list_global() {
+        let cmd = parse_doc_subcommand("list", "--global").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentList { global: true }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_show() {
+        let cmd = parse_doc_subcommand("show", "5").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentShow { id: 5 }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_show_with_prefix() {
+        let cmd = parse_doc_subcommand("show", "doc:10").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentShow { id: 10 }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_show_empty() {
+        assert!(parse_doc_subcommand("show", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_delete() {
+        let cmd = parse_doc_subcommand("delete", "3").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentDelete { id: 3 }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_delete_shortcuts() {
+        let cmd = parse_doc_subcommand("d", "3").unwrap();
+        assert!(matches!(cmd, ChatCommand::DocumentDelete { id: 3 }));
+        let cmd2 = parse_doc_subcommand("rm", "3").unwrap();
+        assert!(matches!(cmd2, ChatCommand::DocumentDelete { id: 3 }));
+    }
+
+    #[test]
+    fn test_parse_doc_subcommand_invalid() {
+        assert!(parse_doc_subcommand("unknown", "").is_err());
+    }
+
+    // --- Note subcommand parser ---
+
+    #[test]
+    fn test_parse_note_subcommand_add() {
+        let cmd = parse_note_subcommand("add", "some note content").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::NoteAdd { ref content, ref title, global: false } if content == "some note content" && title.is_none())
+        );
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_add_shortcut() {
+        let cmd = parse_note_subcommand("a", "note text").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteAdd { ref content, .. } if content == "note text"));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_add_empty() {
+        assert!(parse_note_subcommand("add", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_list() {
+        let cmd = parse_note_subcommand("list", "").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::NoteList {
+                global: false,
+                page: None
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_list_with_page() {
+        let cmd = parse_note_subcommand("list", "2").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::NoteList {
+                global: false,
+                page: Some(2)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_list_global_with_page() {
+        let cmd = parse_note_subcommand("list", "--global 3").unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::NoteList {
+                global: true,
+                page: Some(3)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_list_zero_page() {
+        assert!(parse_note_subcommand("list", "0").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_show() {
+        let cmd = parse_note_subcommand("show", "42").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteShow { id: 42 }));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_show_empty() {
+        assert!(parse_note_subcommand("show", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_show_invalid_id() {
+        assert!(parse_note_subcommand("show", "abc").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_delete() {
+        let cmd = parse_note_subcommand("delete", "7").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteDelete { id: 7 }));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_delete_shortcut() {
+        let cmd = parse_note_subcommand("d", "7").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteDelete { id: 7 }));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_search() {
+        // Note: search parser uses splitn(2, ' '), so single word -> query="query", limit=10
+        let cmd = parse_note_subcommand("search", "query").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::NoteSearch { ref query, global: false, limit: 10 } if query == "query")
+        );
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_search_shortcut() {
+        // Shortcut "f" maps to search
+        let cmd = parse_note_subcommand("f", "query").unwrap();
+        assert!(matches!(cmd, ChatCommand::NoteSearch { ref query, .. } if query == "query"));
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_search_empty() {
+        assert!(parse_note_subcommand("search", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_note_subcommand_invalid() {
+        assert!(parse_note_subcommand("unknown", "").is_err());
+    }
+
+    // --- Todo subcommand parser ---
+
+    #[test]
+    fn test_parse_todo_subcommand_add() {
+        let cmd = parse_todo_subcommand("add", "Buy groceries").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoAdd { ref description, .. } if description == "Buy groceries")
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_add_shortcut() {
+        let cmd = parse_todo_subcommand("a", "Buy groceries").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoAdd { ref description, .. } if description == "Buy groceries")
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_add_with_priority() {
+        let cmd = parse_todo_subcommand("add", "Fix bug --priority high").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoAdd { ref description, ref priority, .. } if description == "Fix bug" && priority.as_deref() == Some("high"))
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_add_empty() {
+        assert!(parse_todo_subcommand("add", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_list() {
+        let cmd = parse_todo_subcommand("list", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoList { ref filter } if filter.is_none()));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_list_with_filter() {
+        let cmd = parse_todo_subcommand("list", "pending").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoList { ref filter } if filter.as_deref() == Some("pending"))
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_get() {
+        let cmd = parse_todo_subcommand("get", "5").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoGet { id: 5 }));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_get_empty() {
+        assert!(parse_todo_subcommand("get", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_update() {
+        let cmd = parse_todo_subcommand("update", "1 done").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoUpdate { id: 1, ref status } if status == "done"));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_update_missing_status() {
+        assert!(parse_todo_subcommand("update", "1").is_err());
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_delete() {
+        let cmd = parse_todo_subcommand("delete", "5").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoDelete { id: 5 }));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_delete_shortcuts() {
+        let cmd = parse_todo_subcommand("d", "5").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoDelete { id: 5 }));
+        let cmd2 = parse_todo_subcommand("del", "5").unwrap();
+        assert!(matches!(cmd2, ChatCommand::TodoDelete { id: 5 }));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_clear_done() {
+        let cmd = parse_todo_subcommand("clear-done", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoClearDone));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_clear_done_shortcut() {
+        let cmd = parse_todo_subcommand("cd", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoClearDone));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_clear_all() {
+        let cmd = parse_todo_subcommand("clear-all", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoClearAll));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_clear_all_shortcut() {
+        let cmd = parse_todo_subcommand("ca", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoClearAll));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_edit() {
+        let cmd = parse_todo_subcommand("edit", "3 new description").unwrap();
+        assert!(
+            matches!(cmd, ChatCommand::TodoEdit { id: 3, ref description, .. } if description.as_deref() == Some("new description"))
+        );
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_edit_shortcut() {
+        let cmd = parse_todo_subcommand("e", "3 updated text").unwrap();
+        assert!(matches!(cmd, ChatCommand::TodoEdit { id: 3, .. }));
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_edit_missing_id() {
+        assert!(parse_todo_subcommand("edit", "").is_err());
+    }
+
+    #[test]
+    fn test_parse_todo_subcommand_invalid() {
+        assert!(parse_todo_subcommand("unknown", "").is_err());
+    }
+
+    // --- Shortcut mapping functions ---
+
+    #[test]
+    fn test_map_fact_shortcut() {
+        assert_eq!(map_fact_shortcut("fp", "x"), ("prune", ""));
+        assert_eq!(map_fact_shortcut("fa", "my content"), ("add", "my content"));
+        assert_eq!(map_fact_shortcut("fl", ""), ("list", ""));
+        assert_eq!(map_fact_shortcut("fr", "5"), ("remove", "5"));
+        assert_eq!(map_fact_shortcut("fs", "query"), ("search", "query"));
+    }
+
+    #[test]
+    fn test_map_note_shortcut() {
+        assert_eq!(map_note_shortcut("na", "content"), ("add", "content"));
+        assert_eq!(map_note_shortcut("nl", ""), ("list", ""));
+        assert_eq!(map_note_shortcut("ns", "5"), ("show", "5"));
+        assert_eq!(map_note_shortcut("nd", "5"), ("delete", "5"));
+    }
+
+    #[test]
+    fn test_map_todo_shortcut() {
+        assert_eq!(map_todo_shortcut("ta", "task"), ("add", "task"));
+        assert_eq!(map_todo_shortcut("tl", ""), ("list", ""));
+        assert_eq!(map_todo_shortcut("tu", "1 done"), ("update", "1 done"));
+        assert_eq!(map_todo_shortcut("tg", "5"), ("get", "5"));
+        assert_eq!(
+            map_todo_shortcut("te", "3 --priority low"),
+            ("edit", "3 --priority low")
+        );
+        assert_eq!(map_todo_shortcut("td", "5"), ("delete", "5"));
+        assert_eq!(map_todo_shortcut("tcd", ""), ("clear-done", ""));
+        assert_eq!(map_todo_shortcut("tca", ""), ("clear-all", ""));
     }
 }

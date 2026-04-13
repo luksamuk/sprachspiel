@@ -578,20 +578,105 @@ todo_clear_all()             // Clear all tasks
 
 ### 🔵 PRIORITY 4: Code Quality - commands.rs Complexity (parse_command) [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED (PR #84, ready for review)
 
-**Goal:** Reduce cyclomatic complexity of `parse_command` from ~450 lines to manageable size.
+**Goal:** Reduce cyclomatic complexity of `parse_command` from ~450 lines to manageable size, eliminate `CommandResult` enum duplication, and remove session subcommand duplication.
 
-**Context:** Command parsing function in `src/chat/commands.rs` (lines 218-671). Single monolithic function with giant `match` statement handling all commands and their aliases.
+**Context:** `src/chat/commands.rs` (1919 lines). Five problems identified:
 
-**Proposed Solution:**
-- Extract individual parsers for command groups (model, todo, note, fact)
-- Use derive-based pattern matching for structured commands
-- Maintain identical public API
+1. **Monolithic `parse_command`** — 44 match arms, ~645 lines of match code
+2. **16 shortcut duplicates** — `/fa`, `/na`, `/di`, etc. copy 100% of parent subcommand logic (~135 lines)
+3. **Two mirror enums** — `ChatCommand` and `CommandResult` with 23+ identical variants
+4. **30 pass-through variants** in `execute_command` — no logic, just wrapping ChatCommand → CommandResult
+5. **Session duplication** — `ChatCommand::Session` duplicates `New/Load/List/Save/Forget` (~151 lines)
+
+**Implementation Phases:**
+
+| Phase | Description | Lines Removed | Status |
+|-------|-------------|---------------|--------|
+| 1.1 | Extract `parse_fact_subcommand()` | ~70 (shortcut dedup) | ✅ Done |
+| 1.2 | Extract `parse_note_subcommand()` | ~60 (shortcut dedup) | ✅ Done |
+| 1.3 | Extract `parse_doc_subcommand()` | ~42 (shortcut dedup) | ✅ Done |
+| 1.4 | Extract `parse_session_subcommand()` | ~13 (shortcut dedup) | ✅ Done |
+| 1.5 | Consolidate 2-letter shortcuts as delegates | ~135 | ✅ Done |
+| 1.6 | Add unit tests for extracted parsers | +490 (76 tests) | ✅ Done |
+| 2 | Eliminate `CommandResult` enum, move execute logic to `command_handlers.rs` | ~321 | ✅ Done |
+| 3 | Eliminate `SessionSubcommand` duplication | ~49 | ✅ Done |
+
+**Estimated total reduction:** ~462 lines (1919 → ~1457)
+
+**Files Modified:**
+- `src/chat/commands.rs` — Extract parsers, delete `CommandResult`, delete `execute_command`, delete `SessionSubcommand`
+- `src/chat/command_handlers.rs` — Absorb `execute_command` logic, create `handle_command()` using `ChatCommand`
+- `src/chat/repl.rs` — Replace `execute_command + handle_command_result` with `handle_command`
+
+**Branch:** `refactor/parse-command-complexity`
+**PR:** #84 (ready for review)
+
+**Commits:**
+- `b5df9f0` docs: update CHANGELOG and IMPLEMENTATION.md for parse_command refactoring
+- `e2b9e35` refactor: extract group parsers and consolidate 2-letter shortcuts
+- `a5c2d80` refactor: eliminate CommandResult enum, add handle_command to command_handlers
+- `bd8b927` refactor: eliminate SessionSubcommand enum and ChatCommand::Session variant
+- `e226374` test: add unit tests for extracted subcommand parsers
+- fix: remove /f shortcut from /forget, move to /search (collision causing data loss)
+- fix: add missing /todo shortcuts (/tg, /te, /td, /tcd, /tca)
+
+**Bugs found during manual testing (fixed):**
+- `/f` was mapped to `/forget` instead of `/search` — collision causing accidental data loss
+- Missing `/todo` shortcuts for get, edit, delete, clear-done, clear-all
+
+**Pre-existing bugs (NOT from PR, separate issues):**
+- Session save/load persistence (1.3, 1.5) — `/session save` reports success but data not found by `/session list`
+- FTS schema mismatch (1.7) — `content_fts` table missing `conversation_id` column
+- FOREIGN KEY constraint on todos — session save FK warning on todo mutations
 
 **Estimated effort:** 2-3 days
 
 **Related:** Issue #35
+
+---
+
+### 🟡 PRIORITY 5: UX - `/forget --yes` Confirmation [M1]
+
+**Status:** 📋 PLANNED
+
+**Goal:** Require explicit confirmation for `/forget` command to prevent accidental data loss.
+
+**Problem:**
+- `/forget` is the most destructive command — it deletes the entire conversation from the database
+- Currently executes immediately with no confirmation
+- A typo (e.g., `/forget` instead of `/forgets`) could destroy hours of conversation
+- The `/f` shortcut was previously mapped to `/forget`, causing accidental data loss (fixed in PR #84)
+
+**Implementation:**
+- `/forget` without `--yes` → warn: "This will permanently delete this conversation. Use /forget --yes to confirm."
+- `/forget --yes` → execute the forget operation
+- No shortcuts for `/forget` (already enforced in PR #84)
+
+**Related:** Issue #85, discovered during PR #84 manual testing
+
+---
+
+### 🟡 PRIORITY 5: UX - `/skill <name>` Subcommand [M1]
+
+**Status:** 📋 PLANNED
+
+**Goal:** Move skill activation from `/<skill-name>` to `/skill <skill-name>` to prevent namespace collisions.
+
+**Problem:**
+- Skills are currently activated as top-level commands (e.g., `/document-processing`)
+- Any skill name could collide with existing commands (e.g., a skill named "forget", "new", "help")
+- No clear separation between built-in commands and user-defined skills
+- The wildcard `_` match arm in `parse_command` processes skill names last, making collision behavior unpredictable
+
+**Implementation:**
+- Add `/skill <name>` as explicit command
+- Keep `/<skill-name>` as deprecated alias (with warning) for backward compatibility
+- Move skill matching logic from wildcard `_` to the `/skill` subcommand handler
+- Document the change in help text
+
+**Related:** Issue #86, discovered during PR #84 manual testing (`/skill` was unrecognized, only `/<skill-name>` works)
 
 ---
 

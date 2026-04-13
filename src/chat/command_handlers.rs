@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use super::commands::CommandResult;
+use super::commands::ChatCommand;
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
 
@@ -28,7 +28,7 @@ use super::session::ToolOutputLevel;
 const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::debug_tools::log_debug;
+use crate::debug_tools::{log_debug, toggle_debug};
 use crate::embeddings::{
     DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback,
     recover_missing_embeddings_with_progress,
@@ -73,18 +73,22 @@ pub enum HandleResult {
     Exit,
 }
 
-/// Handle a command result in the REPL loop.
+/// Handle a chat command in the REPL loop.
 ///
 /// Dispatches to the appropriate handler based on the command type.
 /// Returns `HandleResult::Exit` for exit commands, `HandleResult::Continue` otherwise.
-pub async fn handle_command_result(
-    result: CommandResult,
+///
+/// This function replaces the former two-step flow:
+/// `execute_command(ChatCommand) → CommandResult → handle_command_result(CommandResult)`
+/// All execution logic is now directly in this single function.
+pub async fn handle_command(
+    cmd: ChatCommand,
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
 ) -> HandleResult {
-    match result {
-        CommandResult::Continue => HandleResult::Continue,
-        CommandResult::Exit => {
+    match cmd {
+        ChatCommand::Quit => {
+            println!("Goodbye!");
             let _ = input.save_history();
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();
@@ -96,35 +100,67 @@ pub async fn handle_command_result(
             }
             HandleResult::Exit
         }
-        CommandResult::Error(e) => {
-            eprintln!("\x1B[31mError: {}\x1B[0m", e);
+
+        ChatCommand::New => {
+            handle_new(state);
             HandleResult::Continue
         }
-        CommandResult::ThinkToggled(new_state) => {
-            handle_think_toggled(state, new_state);
+
+        ChatCommand::Forget => {
+            handle_forget(state);
             HandleResult::Continue
         }
-        CommandResult::ToolsToggled(new_state) => {
-            handle_tools_toggled(state, new_state);
+
+        ChatCommand::Help => {
+            super::commands::print_help();
             HandleResult::Continue
         }
-        CommandResult::Compact => {
-            handle_compact(state).await;
+
+        // Note: Model switching is handled directly in repl.rs via model_switch module
+        ChatCommand::Model { name: _ } => HandleResult::Continue,
+
+        ChatCommand::System { prompt } => {
+            state.session.set_system_prompt(prompt);
+            println!("System prompt updated.");
             HandleResult::Continue
         }
-        CommandResult::ToolOutputChanged(level) => {
-            handle_tool_output_changed(level);
+
+        ChatCommand::Save { name } => {
+            match handle_save(state, name) {
+                Ok(()) => HandleResult::Continue,
+                Err(e) => {
+                    eprintln!("\x1B[31mError: {}\x1B[0m", e);
+                    HandleResult::Continue
+                }
+            }
+        }
+
+        ChatCommand::Load { name } => {
+            match handle_load(state, name) {
+                Ok(()) => HandleResult::Continue,
+                Err(e) => {
+                    eprintln!("\x1B[31mError: {}\x1B[0m", e);
+                    HandleResult::Continue
+                }
+            }
+        }
+
+        ChatCommand::Export { format, file } => {
+            handle_export(&state.session, format, file);
             HandleResult::Continue
         }
-        CommandResult::DebugToggled(new_state) => {
-            handle_debug_toggled(new_state);
+
+        ChatCommand::List => {
+            handle_list(state);
             HandleResult::Continue
         }
-        CommandResult::RetrievalToggled(new_state) => {
-            handle_retrieval_toggled(state, new_state);
+
+        ChatCommand::Info => {
+            super::commands::print_session_info(&state.session, None);
             HandleResult::Continue
         }
-        CommandResult::Context => {
+
+        ChatCommand::Context => {
             print_context_info(
                 &state.session,
                 &state.model_config,
@@ -135,39 +171,83 @@ pub async fn handle_command_result(
             );
             HandleResult::Continue
         }
-        CommandResult::Retry => {
+
+        ChatCommand::Think => {
+            state.session.think = !state.session.think;
+            handle_think_toggled(state, state.session.think);
+            HandleResult::Continue
+        }
+
+        ChatCommand::Tools => {
+            state.session.tools = !state.session.tools;
+            handle_tools_toggled(state, state.session.tools);
+            HandleResult::Continue
+        }
+
+        ChatCommand::Compact => {
+            handle_compact(state).await;
+            HandleResult::Continue
+        }
+
+        ChatCommand::ToolsOutput { level } => {
+            state.session.tool_output_level = level;
+            handle_tool_output_changed(level);
+            HandleResult::Continue
+        }
+
+        ChatCommand::Debug => {
+            let new_state = toggle_debug();
+            handle_debug_toggled(new_state);
+            HandleResult::Continue
+        }
+
+        ChatCommand::Retry => {
             handle_retry(state).await;
             HandleResult::Continue
         }
-        CommandResult::Undo => {
+
+        ChatCommand::Undo => {
             handle_undo(state);
             HandleResult::Continue
         }
-        CommandResult::Search { query, limit } => {
+
+        ChatCommand::Search { query, limit } => {
             handle_search(state, query, limit).await;
             HandleResult::Continue
         }
-        CommandResult::Reindex => {
+
+        ChatCommand::Reindex => {
             handle_reindex(state).await;
             HandleResult::Continue
         }
-        CommandResult::FactPrune => {
+
+        ChatCommand::Retrieval => {
+            state.session.retrieval_enabled = !state.session.retrieval_enabled;
+            handle_retrieval_toggled(state, state.session.retrieval_enabled);
+            HandleResult::Continue
+        }
+
+        ChatCommand::FactPrune => {
             handle_fact_prune(state);
             HandleResult::Continue
         }
-        CommandResult::FactAdd { content, global } => {
+
+        ChatCommand::FactAdd { content, global } => {
             handle_fact_add(state, content, global);
             HandleResult::Continue
         }
-        CommandResult::FactList { global } => {
+
+        ChatCommand::FactList { global } => {
             handle_fact_list(state, global);
             HandleResult::Continue
         }
-        CommandResult::FactRemove { id } => {
+
+        ChatCommand::FactRemove { id } => {
             handle_fact_remove(state, id);
             HandleResult::Continue
         }
-        CommandResult::FactSearch {
+
+        ChatCommand::FactSearch {
             query,
             global,
             limit,
@@ -175,7 +255,8 @@ pub async fn handle_command_result(
             handle_fact_search(state, query, global, limit);
             HandleResult::Continue
         }
-        CommandResult::TodoAdd {
+
+        ChatCommand::TodoAdd {
             description,
             priority,
             tags,
@@ -183,19 +264,23 @@ pub async fn handle_command_result(
             handle_todo_add(description, priority, tags, &mut state.session);
             HandleResult::Continue
         }
-        CommandResult::TodoList { filter } => {
+
+        ChatCommand::TodoList { filter } => {
             handle_todo_list(filter);
             HandleResult::Continue
         }
-        CommandResult::TodoUpdate { id, status } => {
+
+        ChatCommand::TodoUpdate { id, status } => {
             handle_todo_update(id, status, &mut state.session);
             HandleResult::Continue
         }
-        CommandResult::TodoGet { id } => {
+
+        ChatCommand::TodoGet { id } => {
             handle_todo_get(id);
             HandleResult::Continue
         }
-        CommandResult::TodoEdit {
+
+        ChatCommand::TodoEdit {
             id,
             description,
             priority,
@@ -204,19 +289,23 @@ pub async fn handle_command_result(
             handle_todo_edit(id, description, priority, tags, &mut state.session);
             HandleResult::Continue
         }
-        CommandResult::TodoDelete { id } => {
+
+        ChatCommand::TodoDelete { id } => {
             handle_todo_delete(id, &mut state.session);
             HandleResult::Continue
         }
-        CommandResult::TodoClearDone => {
+
+        ChatCommand::TodoClearDone => {
             handle_todo_clear_done(&mut state.session);
             HandleResult::Continue
         }
-        CommandResult::TodoClearAll => {
+
+        ChatCommand::TodoClearAll => {
             handle_todo_clear_all(&mut state.session);
             HandleResult::Continue
         }
-        CommandResult::NoteAdd {
+
+        ChatCommand::NoteAdd {
             content,
             title,
             global,
@@ -224,23 +313,28 @@ pub async fn handle_command_result(
             handle_note_add(state, content, title, global);
             HandleResult::Continue
         }
-        CommandResult::NoteList { global, page } => {
+
+        ChatCommand::NoteList { global, page } => {
             handle_note_list(state, global, page);
             HandleResult::Continue
         }
-        CommandResult::NoteShow { id } => {
+
+        ChatCommand::NoteShow { id } => {
             handle_note_show(state, id);
             HandleResult::Continue
         }
-        CommandResult::NoteEdit { id, title, content } => {
+
+        ChatCommand::NoteEdit { id, title, content } => {
             handle_note_edit(state, id, title, content);
             HandleResult::Continue
         }
-        CommandResult::NoteDelete { id } => {
+
+        ChatCommand::NoteDelete { id } => {
             handle_note_delete(state, id);
             HandleResult::Continue
         }
-        CommandResult::NoteSearch {
+
+        ChatCommand::NoteSearch {
             query,
             global,
             limit,
@@ -248,7 +342,8 @@ pub async fn handle_command_result(
             handle_note_search(state, query, global, limit);
             HandleResult::Continue
         }
-        CommandResult::DocumentImport {
+
+        ChatCommand::DocumentImport {
             path,
             global,
             nowait,
@@ -256,23 +351,257 @@ pub async fn handle_command_result(
             handle_document_import(state, path, global, nowait);
             HandleResult::Continue
         }
-        CommandResult::DocumentList { global } => {
+
+        ChatCommand::DocumentList { global } => {
             handle_document_list(state, global);
             HandleResult::Continue
         }
-        CommandResult::DocumentShow { id } => {
+
+        ChatCommand::DocumentShow { id } => {
             handle_document_show(state, id);
             HandleResult::Continue
         }
-        CommandResult::DocumentDelete { id } => {
+
+        ChatCommand::DocumentDelete { id } => {
             handle_document_delete(state, id);
             HandleResult::Continue
         }
-        CommandResult::Skill { name, content } => {
-            handle_skill_activated(state, name, content);
+
+        ChatCommand::Skill { name } => {
+            // Load skill content and activate it
+            let skill = crate::skills::get_skill_content(&name);
+            match skill {
+                Some(skill) => {
+                    handle_skill_activated(state, skill.name, skill.content);
+                }
+                None => {
+                    eprintln!(
+                        "\x1B[31mError: Skill '{}' not found. Use one of: {}\x1B[0m",
+                        name,
+                        crate::skills::get_available_skill_names().join(", ")
+                    );
+                }
+            }
             HandleResult::Continue
         }
     }
+}
+
+/// Handle /new command — start a new conversation session.
+fn handle_new(state: &mut ReplState) {
+    // Check if there are searchable messages in database (any conversation)
+    let has_searchable_messages = if let Some(ref db) = state.session.db {
+        db.count_all_content_items()
+            .map(|count| count > 0)
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    // Clear session state
+    state.session.compacted_summary = None;
+    state.session.messages.clear();
+    state.session.messages_sent_to_llm = 0;
+    state.session.compacted_range = None;
+    state.session.name = None;
+
+    // Generate new session ID
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    state.session.id = format!("session-{}", timestamp);
+
+    // Reset timestamps
+    let now = chrono::Utc::now();
+    state.session.created_at = now;
+    state.session.updated_at = now;
+
+    println!("New session started.");
+    if has_searchable_messages {
+        println!(
+            "\x1B[90m[i] Previous conversations remain searchable via /search or remember().\x1B[0m"
+        );
+    }
+}
+
+/// Handle /forget command — delete conversation completely and start fresh.
+fn handle_forget(state: &mut ReplState) {
+    state.session.forget_session();
+
+    if let Some(ref db) = state.session.db
+        && !state.session.anonymous
+        && !state.session.id.is_empty()
+    {
+        print!("Removing conversation from database... ");
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+        match db.delete_conversation(&state.session.id) {
+            Ok(_) => println!("Done."),
+            Err(e) => eprintln!("\nWarning: Could not delete conversation: {}", e),
+        }
+    }
+
+    if !state.session.anonymous {
+        // Generate new session ID using timestamp
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        state.session.id = format!("session-{}", timestamp);
+        if let Err(e) = state.session.save_sqlite() {
+            eprintln!("Warning: Could not save new session: {}", e);
+        }
+    }
+
+    println!("Session forgotten. Starting fresh conversation.");
+}
+
+/// Handle /save command — save current session.
+fn handle_save(state: &mut ReplState, name: Option<String>) -> Result<(), String> {
+    if state.session.anonymous {
+        return Err(
+            "Cannot save anonymous session. Use /save without --anonymous flag.".to_string(),
+        );
+    }
+
+    if let Some(n) = name {
+        state.session.rename(n);
+    }
+
+    match state.session.save_sqlite() {
+        Ok(()) => {
+            let session_name = state.session.name.as_deref().unwrap_or(&state.session.id);
+            println!("Session saved: {}", session_name);
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed to save session: {}", e)),
+    }
+}
+
+/// Handle /load command — load a saved session.
+fn handle_load(state: &mut ReplState, name: String) -> Result<(), String> {
+    let db = match &state.session.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            return Err("Cannot load session: database not initialized.".to_string());
+        }
+    };
+
+    // Save current session if it has messages
+    if !state.session.anonymous
+        && !state.session.messages.is_empty()
+        && let Err(e) = state.session.save_sqlite()
+    {
+        eprintln!("Warning: Could not save current session: {}", e);
+    }
+
+    match ChatSession::load_sqlite(&db, &name) {
+        Ok(loaded) => {
+            state.session = loaded;
+            let display_name = state.session.name.as_deref().unwrap_or(&state.session.id);
+            println!(
+                "Loaded session: {} ({} messages)",
+                display_name,
+                state.session.messages.len()
+            );
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed to load session: {}", e)),
+    }
+}
+
+/// Handle /export command — export conversation to file or stdout.
+fn handle_export(session: &ChatSession, format: super::commands::ExportFormat, file: Option<String>) {
+    let output = match format {
+        super::commands::ExportFormat::Markdown => export_markdown(session),
+        super::commands::ExportFormat::Json => export_json(session),
+    };
+
+    match file {
+        Some(path) => {
+            let expanded_path = crate::utils::expand_tilde_path(&path);
+            match std::fs::write(&expanded_path, &output) {
+                Ok(()) => println!("Conversation exported to: {}", path),
+                Err(e) => eprintln!("\x1B[31mError: Failed to write file: {}\x1B[0m", e),
+            }
+        }
+        None => println!("{}", output),
+    }
+}
+
+/// Handle /list command — list saved sessions.
+fn handle_list(state: &ReplState) {
+    let db = match &state.session.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("\x1B[31mError: Cannot list sessions: database not initialized.\x1B[0m");
+            return;
+        }
+    };
+
+    match db.list_sessions(state.session.project_id.as_deref()) {
+        Ok(sessions) => {
+            if sessions.is_empty() {
+                println!("No saved sessions for this project.");
+            } else {
+                println!("Sessions for this project:");
+                for info in sessions {
+                    let time = info.updated_at.format("%Y-%m-%d %H:%M");
+                    let name = info.name.as_deref().unwrap_or(&info.id);
+                    // Mark current session with arrow
+                    let marker = if info.id == state.session.id { "→" } else { " " };
+                    println!(
+                        "{} {} - {} ({} messages) {}",
+                        marker, name, info.model, info.message_count, time
+                    );
+                }
+            }
+        }
+        Err(e) => eprintln!("Warning: Could not list sessions: {}", e),
+    }
+}
+
+/// Export session as markdown
+fn export_markdown(session: &ChatSession) -> String {
+    let mut output = String::new();
+
+    output.push_str(&format!(
+        "# Chat Session: {}\n\n",
+        session.name.as_deref().unwrap_or(&session.id)
+    ));
+    output.push_str(&format!("- **Model:** {}\n", session.model));
+    output.push_str(&format!(
+        "- **Created:** {}\n",
+        session.created_at.format("%Y-%m-%d %H:%M")
+    ));
+    output.push_str(&format!("- **Messages:** {}\n\n", session.messages.len()));
+    output.push_str("---\n\n");
+
+    for msg in &session.messages {
+        match msg.role {
+            super::session::MessageRole::User => {
+                output.push_str(&format!("**User:** {}\n\n", msg.content));
+            }
+            super::session::MessageRole::Assistant => {
+                output.push_str(&format!("**Assistant:**\n\n{}\n\n", msg.content));
+            }
+            super::session::MessageRole::System => {
+                output.push_str(&format!("**System:** {}\n\n", msg.content));
+            }
+            super::session::MessageRole::Tool => {
+                output.push_str(&format!("**Tool:** {}\n\n", msg.content));
+            }
+        }
+    }
+
+    output
+}
+
+/// Export session as JSON
+fn export_json(session: &ChatSession) -> String {
+    serde_json::to_string_pretty(session).unwrap_or_else(|_| "{}".to_string())
 }
 
 /// Handle think mode toggle

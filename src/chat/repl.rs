@@ -15,8 +15,8 @@ use crate::tokens::calculate_context_metrics;
 use crate::tool_robustness::format_tool_error;
 use crate::tools::get_available_tool_names;
 
-use super::command_handlers::{HandleResult, handle_command_result, handle_model_switch};
-use super::commands::{ChatCommand, execute_command, parse_command};
+use super::command_handlers::{HandleResult, handle_model_switch};
+use super::commands::{ChatCommand, parse_command};
 use super::continuation::{
     OverflowHandleResult, ProcessResult, build_inter_tool_compaction_prompt, build_pre_tool_prompt,
     check_and_compact_before_tool, handle_overflow_error, process_send_result,
@@ -677,8 +677,11 @@ pub async fn run_chat_repl(
                                 continue;
                             }
 
-                            let result = execute_command(cmd, &mut state.session);
-                            match handle_command_result(result, &mut state, &mut input).await {
+                            match super::command_handlers::handle_command(
+                                cmd, &mut state, &mut input,
+                            )
+                            .await
+                            {
                                 HandleResult::Continue => continue,
                                 HandleResult::Exit => return Ok(()),
                             }

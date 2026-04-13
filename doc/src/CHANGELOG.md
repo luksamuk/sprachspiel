@@ -4,6 +4,19 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Code Quality: Reduce `parse_command` complexity** (Issue #35)
+  - Extract `parse_fact_subcommand()`, `parse_note_subcommand()`, `parse_doc_subcommand()`, `parse_session_subcommand()` from monolithic `parse_command`
+  - Consolidate 16 two-letter shortcut commands (/fa, /na, /di, etc.) as delegates to their parent parsers, eliminating ~135 lines of duplicated parsing logic
+  - Eliminate `CommandResult` enum — was a 1:1 mirror of `ChatCommand` with 23+ identical variants and 30 pass-through arms in `execute_command`
+  - Move execution logic from `execute_command()` into `handle_command()` in `command_handlers.rs`, using `ChatCommand` directly
+  - Eliminate `SessionSubcommand` enum and `ChatCommand::Session` — `/session new|load|list|save|forget` now returns canonical `ChatCommand` variants, removing ~151 lines of duplicated handler logic
+  - Net reduction: ~462 lines (1919 → ~1457 in `commands.rs`)
+  - Add 77 unit tests for all extracted parsers and shortcut mappers
+  - **Fix: Remove `/f` shortcut from `/forget`** — `/f` was a collision between `/forget` and `/search (find)`, causing accidental data loss. `/forget` is now only accessible by its full name; `/f` correctly maps to `/search`
+  - **Add missing `/todo` shortcuts** — `/tg` (get), `/te` (edit), `/td` (delete), `/tcd` (clear-done), `/tca` (clear-all) now work alongside existing `/ta`, `/tl`, `/tu`
+
 ### Added
 
 - **Memory Staleness Warnings in Facts Prompt** (Issue #70)
