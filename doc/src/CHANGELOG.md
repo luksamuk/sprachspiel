@@ -6,6 +6,19 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Changed
 
+- **UX: `/forget` confirmation required** (Issue #85)
+  - `/forget` now requires `--yes` flag to execute — without it, shows a warning
+  - Prevents accidental data loss from typos or unintended execution
+  - `/session forget` also requires `--yes` for consistency
+  - No shortcuts exist for `/forget` (already enforced in PR #84)
+
+- **UX: `/skill <name>` subcommand replaces `/<skill-name>` wildcard** (Issue #86)
+  - Skills are now activated via `/skill <name>` (e.g., `/skill document-processing`)
+  - `/skill` (no args) lists available skills
+  - `/sk` is a shortcut for `/skill`
+  - `/<skill-name>` (the wildcard match) is now an invalid command — use `/skill <name>` instead
+  - Removes namespace collision risk (e.g., a skill named "forget", "new", "help")
+
 - **Code Quality: Reduce `parse_command` complexity** (Issue #35)
   - Extract `parse_fact_subcommand()`, `parse_note_subcommand()`, `parse_doc_subcommand()`, `parse_session_subcommand()` from monolithic `parse_command`
   - Consolidate 16 two-letter shortcut commands (/fa, /na, /di, etc.) as delegates to their parent parsers, eliminating ~135 lines of duplicated parsing logic

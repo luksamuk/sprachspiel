@@ -639,7 +639,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🟡 PRIORITY 5: UX - `/forget --yes` Confirmation [M1]
 
-**Status:** 📋 PLANNED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Require explicit confirmation for `/forget` command to prevent accidental data loss.
 
@@ -653,6 +653,8 @@ todo_clear_all()             // Clear all tasks
 - `/forget` without `--yes` → warn: "This will permanently delete this conversation. Use /forget --yes to confirm."
 - `/forget --yes` → execute the forget operation
 - No shortcuts for `/forget` (already enforced in PR #84)
+- `ChatCommand::Forget` becomes `ChatCommand::Forget { confirmed: bool }`
+- Parser validates `--yes` flag, rejects invalid arguments
 
 **Related:** Issue #85, discovered during PR #84 manual testing
 
@@ -660,7 +662,7 @@ todo_clear_all()             // Clear all tasks
 
 ### 🟡 PRIORITY 5: UX - `/skill <name>` Subcommand [M1]
 
-**Status:** 📋 PLANNED
+**Status:** 🔄 IN PROGRESS
 
 **Goal:** Move skill activation from `/<skill-name>` to `/skill <skill-name>` to prevent namespace collisions.
 
@@ -671,9 +673,11 @@ todo_clear_all()             // Clear all tasks
 - The wildcard `_` match arm in `parse_command` processes skill names last, making collision behavior unpredictable
 
 **Implementation:**
-- Add `/skill <name>` as explicit command
-- Keep `/<skill-name>` as deprecated alias (with warning) for backward compatibility
-- Move skill matching logic from wildcard `_` to the `/skill` subcommand handler
+- Add `/skill <name>` as explicit command to activate a skill
+- `/skill` (no args) lists available skills (new `ChatCommand::SkillList`)
+- Add `/sk` as shortcut for `/skill`
+- Remove `/<skill-name>` wildcard — unknown commands are now invalid (not skill activations)
+- `/skill list` attempts to activate a skill named "list" — no reserved words
 - Document the change in help text
 
 **Related:** Issue #86, discovered during PR #84 manual testing (`/skill` was unrecognized, only `/<skill-name>` works)
