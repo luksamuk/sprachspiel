@@ -1003,11 +1003,15 @@ File write operations have additional security requirements that MUST be followe
 
 **Mandatory Security Measures:**
 
-1. **Always sandboxed** - `sandbox=false` parameter is IGNORED for write operations
+1. **Always sandboxed** - Sandbox is always enforced. The `sandbox` parameter has been removed — the LLM cannot disable the restriction.
 2. **Blocked patterns** - Sensitive files are always blocked, regardless of configuration
 3. **Size limits** - Maximum 5MB per write operation
 4. **UTF-8 only** - Binary content is rejected
 5. **Atomic writes** - Use temp file + rename pattern to prevent corruption
+
+**Allowed directories:**
+- Current working directory and subdirectories (always)
+- `/tmp` and `/var/tmp` (for tool interoperability, e.g., pdftotext output)
 
 **Blocked patterns (always blocked):**
 
@@ -1038,12 +1042,13 @@ File write operations have additional security requirements that MUST be followe
 
 ```rust
 // MUST call validate_write_path() before ANY write operation
-fn validate_write_path(path: &Path, sandbox: bool) -> Result<PathBuf, String> {
+fn validate_write_path(path: &Path, config: &BlocklistConfig) -> Result<PathBuf, String> {
     // 1. Canonicalize path (resolve symlinks)
-    // 2. Enforce sandbox (ignore sandbox=false for writes)
-    // 3. Check is_blocked_path()
+    // 2. Check is_blocked_path() — ALWAYS enforced
+    // 3. Enforce sandbox — ALWAYS enforced (no bypass possible)
     // 4. Verify parent directory exists
     // 5. Verify write permissions
+}
 }
 
 // MUST check blocked patterns after path resolution

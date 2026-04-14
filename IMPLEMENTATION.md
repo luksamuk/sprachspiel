@@ -1814,11 +1814,12 @@ pub struct ContinuationTag {
 - `4a08cb0 fix: use strip_prefix instead of manual slicing in clippy`
 
 **Security Model:**
-- **Sandbox ALWAYS enforced** for writes (ignoring `sandbox=false`)
+- **Sandbox always enforced** for all file operations (cannot be disabled)
 - **Blocked patterns** for sensitive files (`.env`, `secrets`, `.pem`, etc.)
 - **5MB size limit** per operation
 - **Atomic writes** (temp file + rename) to prevent corruption
 - **UTF-8 validation** - reject binary content
+- **`/tmp` and `/var/tmp`** allowed for tool interoperability
 
 **Configuration:**
 ```toml

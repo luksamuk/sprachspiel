@@ -132,8 +132,6 @@ impl ExternalTool {
 pub struct ExternalToolsConfig {
     /// Default timeout for all commands (seconds).
     pub default_timeout: Duration,
-    /// Whether to enable sandboxing globally.
-    pub enable_sandbox: bool,
     /// Configured tools by name.
     pub tools: HashMap<String, ExternalTool>,
 }
@@ -170,7 +168,6 @@ impl ExternalToolsConfig {
     pub fn new() -> Self {
         ExternalToolsConfig {
             default_timeout: Duration::from_secs(30),
-            enable_sandbox: true, // Enabled by default on Linux (graceful on other platforms)
             tools: HashMap::new(),
         }
     }

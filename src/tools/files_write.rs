@@ -5,7 +5,8 @@
 //!
 //! # Security Model
 //!
-//! - **ALWAYS sandboxed** to current working directory (ignores `sandbox=false`)
+//! - **Sandbox always enforced** — file operations are restricted to the current
+//!   working directory. The LLM cannot bypass this restriction.
 //! - **Blocked patterns** for sensitive files (`.env`, `secrets`, SSH keys, etc.)
 //! - **Atomic writes** using temp file + rename pattern
 //! - **UTF-8 validation** and **5MB size limit**
@@ -42,23 +43,17 @@ const MAX_WRITE_SIZE: usize = 5_242_880;
 /// * `overwrite` - Whether to overwrite existing file (default: "false"). Optional.
 ///   - "false" (default): Return error if file exists (safer)
 ///   - "true": Overwrite existing file
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
-///   - "true" (default): Only allow files within current directory tree
-///   - "false": Allow any absolute path (blocked patterns still enforced)
-///
-/// # Returns
-/// Success message with file path and size, or error message.
 ///
 /// # Security
+/// - Sandbox always enforced — file operations restricted to current working directory
 /// - Blocked patterns ALWAYS enforced (cannot write to .env, secrets, etc.)
-/// - Sandbox restricts to CWD when enabled
 /// - Maximum file size: 5MB
 /// - Atomic write (temp file + rename) to prevent corruption
 ///
 /// # Errors
 /// - File exists and overwrite=false
-/// - Path matches blocked pattern (ALWAYS blocked, sandbox doesn't matter)
-/// - Path outside sandbox (when sandbox=true)
+/// - Path matches blocked pattern (ALWAYS blocked)
+/// - Path outside sandbox (always enforced)
 /// - Content is not valid UTF-8
 /// - Content exceeds 5MB
 /// - Parent directory doesn't exist
@@ -66,17 +61,15 @@ const MAX_WRITE_SIZE: usize = 5_242_880;
 /// # Example
 /// ```ignore
 /// write_file("output.txt", "Hello, World!", "false", null)
-/// write_file("src/main.rs", code_content, "true", null)
+/// write_file("src/main.rs", code_content, "true")
 /// ```
 #[ollama_rs::function]
 pub async fn write_file(
     path: String,
     content: String,
     overwrite: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let overwrite = parse_bool(overwrite, false);
-    let sandbox_enabled = parse_bool(sandbox, true);
 
     log_tool_call(
         "write_file",
@@ -93,9 +86,9 @@ pub async fn write_file(
     // Load blocklist configuration
     let config = BlocklistConfig::load();
 
-    // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
+    // Validate path (blocked patterns ALWAYS enforced, sandbox always enforced)
     let canonical_path =
-        match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
+        match validate_write_path(&expand_tilde_path(&path), &config) {
             Ok(p) => p,
             Err(e) => {
                 log_tool_result("write_file", &e);
@@ -171,26 +164,25 @@ pub async fn write_file(
 /// * `end_line` - Last line to delete (for "delete_lines" operation). Optional.
 ///   - Use same as start_line to delete single line.
 /// * `create_backup` - Create .bak file before editing (default: "false"). Optional.
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
 ///
 /// # Returns
 /// Success message showing what was changed, or error message.
 ///
 /// # Security
+/// - Sandbox always enforced — file operations restricted to current working directory
 /// - Blocked patterns ALWAYS enforced (cannot edit .env, secrets, etc.)
-/// - Sandbox restricts to CWD when enabled
 /// - Creates backup file with .bak extension if requested
 ///
 /// # Example
 /// ```ignore
 /// // Replace text
-/// edit_file("config.yml", "replace", "old_value", "new_value", null, null, null, null, null, null)
+/// edit_file("config.yml", "replace", "old_value", "new_value", null, null, null, null, null)
 ///
 /// // Insert after line 10
-/// edit_file("README.md", "insert", null, null, "10", "## New Section\n\nContent.", null, null, null, null)
+/// edit_file("README.md", "insert", null, null, "10", "## New Section\n\nContent.", null, null, null)
 ///
 /// // Delete lines 5-10
-/// edit_file("script.py", "delete_lines", null, null, null, null, "5", "10", null, null)
+/// edit_file("script.py", "delete_lines", null, null, null, null, "5", "10", null)
 /// ```
 #[ollama_rs::function]
 pub async fn edit_file(
@@ -203,10 +195,8 @@ pub async fn edit_file(
     start_line: Option<String>,
     end_line: Option<String>,
     create_backup: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let create_backup = parse_bool(create_backup, false);
-    let sandbox_enabled = parse_bool(sandbox, true);
 
     log_tool_call(
         "edit_file",
@@ -220,9 +210,9 @@ pub async fn edit_file(
     // Load blocklist configuration
     let config = BlocklistConfig::load();
 
-    // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
+    // Validate path (blocked patterns ALWAYS enforced, sandbox always enforced)
     let canonical_path =
-        match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
+        match validate_write_path(&expand_tilde_path(&path), &config) {
             Ok(p) => p,
             Err(e) => {
                 log_tool_result("edit_file", &e);
@@ -343,34 +333,30 @@ pub async fn edit_file(
 /// * `create` - Create file if it doesn't exist (default: "false"). Optional.
 ///   - "false": Return error if file doesn't exist
 ///   - "true": Create file if it doesn't exist
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
 ///
 /// # Returns
 /// Success message with total file size, or error message.
 ///
 /// # Security
+/// - Sandbox always enforced — file operations restricted to current working directory
 /// - Blocked patterns ALWAYS enforced (cannot append to .env, secrets, etc.)
-/// - Sandbox restricts to CWD when enabled
 /// - Maximum total file size: 5MB
 ///
 /// # Example
 /// ```ignore
 /// // Append to existing file
-/// append_file("log.txt", "New log entry\n", "false", null)
+/// append_file("log.txt", "New log entry\n", "false")
 ///
 /// // Create if not exists, then append
-/// append_file("output.txt", "First line\n", "true", null)
+/// append_file("output.txt", "First line\n", "true")
 /// ```
 #[ollama_rs::function]
 pub async fn append_file(
     path: String,
     content: String,
     create: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let create = parse_bool(create, false);
-    let sandbox_enabled = parse_bool(sandbox, true);
-
     log_tool_call(
         "append_file",
         &[
@@ -386,9 +372,9 @@ pub async fn append_file(
     // Load blocklist configuration
     let config = BlocklistConfig::load();
 
-    // Validate path (blocked patterns ALWAYS enforced, sandbox configurable)
+    // Validate path (blocked patterns ALWAYS enforced, sandbox always enforced)
     let canonical_path =
-        match validate_write_path(&expand_tilde_path(&path), &config, sandbox_enabled) {
+        match validate_write_path(&expand_tilde_path(&path), &config) {
             Ok(p) => p,
             Err(e) => {
                 log_tool_result("append_file", &e);
@@ -491,12 +477,11 @@ pub async fn append_file(
 ///
 /// This function enforces security requirements for all write operations:
 /// 1. Blocked patterns ALWAYS enforced (cannot write sensitive files)
-/// 2. Sandbox enforced when sandbox_enabled=true
+/// 2. Sandbox ALWAYS enforced (cannot write outside current working directory)
 /// 3. Parent directory must exist
 pub fn validate_write_path(
     path: &Path,
     config: &BlocklistConfig,
-    sandbox_enabled: bool,
 ) -> Result<PathBuf, String> {
     // 1. Get absolute path
     let abs_path = if path.is_absolute() {
@@ -535,18 +520,20 @@ pub fn validate_write_path(
         .canonicalize()
         .map_err(|e| format!("Cannot access parent directory: {}", e))?;
 
-    // 5. Enforce sandbox when enabled
-    if sandbox_enabled {
-        let cwd = std::env::current_dir()
-            .map_err(|_| "Could not determine current directory".to_string())?;
-        let canonical_cwd = cwd
-            .canonicalize()
-            .map_err(|_| "Could not determine current directory".to_string())?;
+    // 5. Sandbox is ALWAYS enforced — check that the path is within CWD
+    // or within allowed temporary directories
+    let cwd = std::env::current_dir()
+        .map_err(|_| "Could not determine current directory".to_string())?;
+    let canonical_cwd = cwd
+        .canonicalize()
+        .map_err(|_| "Could not determine current directory".to_string())?;
 
-        if !canonical_parent.starts_with(&canonical_cwd) {
+    if !canonical_parent.starts_with(&canonical_cwd) {
+        // Allow /tmp and /var/tmp (needed for tool interop, e.g., pdftotext output)
+        if !is_temp_directory(&canonical_parent) {
             return Err(format!(
                 "Error: Path '{}' is outside the allowed directory. \
-                 Use sandbox=false to write outside current directory.",
+                 File operations are restricted to the current working directory.",
                 path.display()
             ));
         }
@@ -566,26 +553,41 @@ pub fn validate_write_path(
             ));
         }
 
-        // Re-check sandbox after resolving symlinks
-        if sandbox_enabled {
-            let cwd = std::env::current_dir()
-                .map_err(|_| "Could not determine current directory".to_string())?;
-            let canonical_cwd = cwd
-                .canonicalize()
-                .map_err(|_| "Could not determine current directory".to_string())?;
+        // Re-check sandbox after resolving symlinks (always enforced)
+        let cwd = std::env::current_dir()
+            .map_err(|_| "Could not determine current directory".to_string())?;
+        let canonical_cwd = cwd
+            .canonicalize()
+            .map_err(|_| "Could not determine current directory".to_string())?;
 
-            if !canonical_path.starts_with(&canonical_cwd) {
-                return Err(format!(
-                    "Error: Path '{}' (resolved from symlink) is outside the allowed directory.",
-                    path.display()
-                ));
-            }
+        if !canonical_path.starts_with(&canonical_cwd) && !is_temp_directory(&canonical_path) {
+            return Err(format!(
+                "Error: Path '{}' (resolved from symlink) is outside the allowed directory.",
+                path.display()
+            ));
         }
 
         return Ok(canonical_path);
     }
 
     Ok(abs_path)
+}
+
+/// Check if a canonical path is within an allowed temporary directory.
+fn is_temp_directory(canonical_path: &Path) -> bool {
+    // Check /tmp (standard temporary directory)
+    if let Ok(canonical_tmp) = Path::new("/tmp").canonicalize()
+        && canonical_path.starts_with(&canonical_tmp)
+    {
+        return true;
+    }
+    // Check /var/tmp (persistent temporary directory)
+    if let Ok(canonical_var_tmp) = Path::new("/var/tmp").canonicalize()
+        && canonical_path.starts_with(&canonical_var_tmp)
+    {
+        return true;
+    }
+    false
 }
 
 /// Atomic write using temp file + rename pattern.
@@ -782,13 +784,13 @@ mod tests {
     fn test_validate_write_path_blocks_sensitive_files() {
         let config = BlocklistConfig::default();
 
-        // Should block .env files (sandbox doesn't matter for blocked patterns)
-        let result = validate_write_path(&PathBuf::from(".env"), &config, true);
+        // Should block .env files (blocked patterns always enforced)
+        let result = validate_write_path(&PathBuf::from(".env"), &config);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("protected pattern"));
 
         // Should block secrets files
-        let result = validate_write_path(&PathBuf::from("secrets.json"), &config, false);
+        let result = validate_write_path(&PathBuf::from("secrets.json"), &config);
         assert!(result.is_err());
     }
 

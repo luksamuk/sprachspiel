@@ -98,16 +98,12 @@ pub struct ToolSettings {
     /// List of tools to disable
     #[serde(default = "default_blacklist")]
     pub blacklist: Vec<String>,
-    /// Whether to sandbox file operations to CWD
-    #[serde(default = "default_true")]
-    pub file_sandbox: bool,
 }
 
 impl Default for ToolSettings {
     fn default() -> Self {
         ToolSettings {
             blacklist: default_blacklist(),
-            file_sandbox: true,
         }
     }
 }
@@ -190,10 +186,6 @@ fn default_skin() -> String {
 
 fn default_blacklist() -> Vec<String> {
     Vec::new()
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Settings {
@@ -513,14 +505,6 @@ ollama_port = 11434
 # Default: [] (all tools enabled)
 blacklist = []
 
-# Enable file operation sandboxing for security.
-# When true, file tools (read_file, list_directory, search_files) can only 
-# access files within the current working directory and its subdirectories.
-# This prevents the AI from accessing sensitive system files.
-# WARNING: Disable only if you fully trust the AI and understand the risks.
-# Default: true
-file_sandbox = true
-
 # =============================================================================
 # OUTPUT CONFIGURATION
 # =============================================================================
@@ -584,7 +568,6 @@ mod tests {
         assert_eq!(settings.model.default, "qwen3.5:4b");
         assert_eq!(settings.model.ollama_host, "127.0.0.1");
         assert_eq!(settings.model.ollama_port, 11434);
-        assert!(settings.tools.file_sandbox);
         assert_eq!(settings.display.skin, "dark");
         // These should be false by default
         assert!(!settings.output.plain_default);
@@ -623,7 +606,6 @@ ollama_port = 8080
 
 [tools]
 blacklist = ["web_search", "fetch_page"]
-file_sandbox = false
 
 [output]
 plain_default = true
@@ -638,7 +620,6 @@ skin = "light"
         assert_eq!(settings.model.ollama_host, "192.168.1.100");
         assert_eq!(settings.model.ollama_port, 8080);
         assert!(settings.is_tool_blacklisted("web_search"));
-        assert!(!settings.tools.file_sandbox);
         assert!(settings.output.plain_default);
         assert!(settings.output.debug_default);
         assert_eq!(settings.display.skin, "light");

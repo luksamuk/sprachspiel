@@ -4,6 +4,26 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **CRITICAL: Removed LLM-controllable sandbox bypass from file tools.**
+  The `sandbox` parameter in `read_file`, `read_file_segment`, `count_lines`,
+  `list_directory`, `search_files`, `write_file`, `edit_file`, and `append_file`
+  allowed the LLM to pass `sandbox=false` to escape filesystem restrictions.
+  This was a security vulnerability — the entity being restricted should never
+  be able to disable the restriction. Sandbox is now always enforced for all
+  file operations. The `file_sandbox` config setting is also removed — sandbox
+  cannot be disabled via configuration either.
+
+- **Removed `enable_sandbox = false` option from tools.toml.** The Landlock
+  sandbox for `run_command` is now always enabled on Linux (kernel 5.13+).
+  There is no configuration option to disable it.
+
+- **Added `/tmp` and `/var/tmp` as allowed directories for file operations.**
+  Temporary directories are needed for tool interoperability (e.g., `pdftotext`
+  output). These are the only directories outside CWD that file tools can access.
+  This is consistent with the Landlock sandbox which already allows `/tmp`.
+
 ### Changed
 
 - **UX: `/forget` confirmation required** (Issue #85)
