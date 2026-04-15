@@ -272,6 +272,12 @@ impl ChatSession {
 
         let db = self.db.as_ref().ok_or("No database attached to session")?;
 
+        // Ensure conversation row exists before UPDATE and FK-dependent INSERTs.
+        // Without this, update_conversation_metadata() silently affects 0 rows,
+        // and save_todos() fails with FOREIGN KEY constraint (conversation_id
+        // references conversations(id)).
+        self.ensure_conversation_exists();
+
         // Update conversation metadata
         db.update_conversation_metadata(&crate::db::ConversationMetadataParams {
             id: &self.id,

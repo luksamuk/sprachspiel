@@ -44,6 +44,14 @@ All notable changes to Ask-AI will be documented in this file.
   - The `content_fts` table (FTS5 external content mode) does not have a `conversation_id` column
   - FTS entries are cleaned automatically by the `content_items_ad` trigger when `content_items` are deleted
 
+- **Fix: FOREIGN KEY constraint failure when saving todos**
+  - `save_sqlite()` called `update_conversation_metadata()` (UPDATE) before `save_todos()` (INSERT with FK),
+    but the conversation row might not exist yet (e.g., after `/forget` generates a new session ID)
+  - The UPDATE silently affected 0 rows, then the INSERT into `session_todos` failed because
+    `conversation_id REFERENCES conversations(id)` was violated
+  - Now calls `ensure_conversation_exists()` (INSERT OR REPLACE) before the metadata update,
+    matching the pattern already used in `add_user_message()` and `add_assistant_message()`
+
 - **Code Quality: Reduce `parse_command` complexity** (Issue #35)
   - Extract `parse_fact_subcommand()`, `parse_note_subcommand()`, `parse_doc_subcommand()`, `parse_session_subcommand()` from monolithic `parse_command`
   - Consolidate 16 two-letter shortcut commands (/fa, /na, /di, etc.) as delegates to their parent parsers, eliminating ~135 lines of duplicated parsing logic

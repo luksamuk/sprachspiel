@@ -628,8 +628,8 @@ todo_clear_all()             // Clear all tasks
 
 **Pre-existing bugs (NOT from PR, separate issues):**
 - Session save/load persistence (1.3, 1.5) — `/session save` reports success but data not found by `/session list`
-- FTS schema mismatch (1.7) — `content_fts` table missing `conversation_id` column
-- FOREIGN KEY constraint on todos — session save FK warning on todo mutations
+- FTS schema mismatch (1.7) — `content_fts` table missing `conversation_id` column (FIXED in PR #87)
+- FOREIGN KEY constraint on todos — session save FK warning on todo mutations (FIXED in PR #87)
 
 **Estimated effort:** 2-3 days
 
