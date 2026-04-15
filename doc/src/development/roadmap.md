@@ -465,7 +465,7 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 **Phase 2: Advanced Features** (future)
 - [ ] YAML frontmatter parsing
-- [ ] Skill invocation commands (`/skill-name`)
+- [x] Skill invocation via `/skill <name>` (completed PR #87)
 - [ ] Skill composition (multiple skills active)
 - [ ] Skill dependencies (skill A requires skill B)
 - [ ] Project-level skill discovery

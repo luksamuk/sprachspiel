@@ -637,50 +637,51 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🟡 PRIORITY 5: UX - `/forget --yes` Confirmation [M1]
+### ✅ PRIORITY 5: UX - `/forget --yes` Confirmation [M1] (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.39.5)
 
-**Goal:** Require explicit confirmation for `/forget` command to prevent accidental data loss.
+**Goal:** Require explicit confirmation for `/forget` command to prevent accidental data loss. ✅ **COMPLETED**
 
 **Problem:**
 - `/forget` is the most destructive command — it deletes the entire conversation from the database
-- Currently executes immediately with no confirmation
+- Previously executed immediately with no confirmation
 - A typo (e.g., `/forget` instead of `/forgets`) could destroy hours of conversation
 - The `/f` shortcut was previously mapped to `/forget`, causing accidental data loss (fixed in PR #84)
 
 **Implementation:**
-- `/forget` without `--yes` → warn: "This will permanently delete this conversation. Use /forget --yes to confirm."
-- `/forget --yes` → execute the forget operation
-- No shortcuts for `/forget` (already enforced in PR #84)
-- `ChatCommand::Forget` becomes `ChatCommand::Forget { confirmed: bool }`
-- Parser validates `--yes` flag, rejects invalid arguments
+- ✅ `/forget` without `--yes` → warn: "This will permanently delete this conversation. Use /forget --yes to confirm."
+- ✅ `/forget --yes` → execute the forget operation
+- ✅ No shortcuts for `/forget` (already enforced in PR #84)
+- ✅ `ChatCommand::Forget` became `ChatCommand::Forget { confirmed: bool }`
+- ✅ Parser validates `--yes` flag, rejects invalid arguments
+- ✅ FK constraint bug in `save_sqlite()` fixed — `ensure_conversation_exists()` added
 
-**Related:** Issue #85, discovered during PR #84 manual testing
+**Related:** Issue #85 (CLOSED via PR #87)
 
 ---
 
-### 🟡 PRIORITY 5: UX - `/skill <name>` Subcommand [M1]
+### ✅ PRIORITY 5: UX - `/skill <name>` Subcommand [M1] (COMPLETED)
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED (v0.39.5)
 
-**Goal:** Move skill activation from `/<skill-name>` to `/skill <skill-name>` to prevent namespace collisions.
+**Goal:** Move skill activation from `/<skill-name>` to `/skill <name>` to prevent namespace collisions. ✅ **COMPLETED**
 
 **Problem:**
-- Skills are currently activated as top-level commands (e.g., `/document-processing`)
+- Skills were previously activated as top-level commands (e.g., `/document-processing`)
 - Any skill name could collide with existing commands (e.g., a skill named "forget", "new", "help")
 - No clear separation between built-in commands and user-defined skills
-- The wildcard `_` match arm in `parse_command` processes skill names last, making collision behavior unpredictable
+- The wildcard `_` match arm processed skill names last, making collision behavior unpredictable
 
 **Implementation:**
-- Add `/skill <name>` as explicit command to activate a skill
-- `/skill` (no args) lists available skills (new `ChatCommand::SkillList`)
-- Add `/sk` as shortcut for `/skill`
-- Remove `/<skill-name>` wildcard — unknown commands are now invalid (not skill activations)
-- `/skill list` attempts to activate a skill named "list" — no reserved words
-- Document the change in help text
+- ✅ `/skill <name>` is now the explicit command to activate a skill
+- ✅ `/skill` (no args) lists available skills (`ChatCommand::SkillList`)
+- ✅ `/sk` is a shortcut for `/skill`
+- ✅ `/<skill-name>` wildcard removed — unknown commands are now invalid (not skill activations)
+- ✅ `/skill list` attempts to activate a skill named "list" — no reserved words
+- ✅ Help text updated
 
-**Related:** Issue #86, discovered during PR #84 manual testing (`/skill` was unrecognized, only `/<skill-name>` works)
+**Related:** Issue #86 (CLOSED via PR #87)
 
 ---
 

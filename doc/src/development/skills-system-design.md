@@ -1304,7 +1304,7 @@ When a skill exists in multiple locations, project-level takes precedence.
 | Phase 3: Builtin Skills | ✅ COMPLETED (v0.38.0) | Four .md files (document-processing, ocr-images, code-analysis, web-scraping) |
 | Phase 4: Skills Tools | ✅ COMPLETED (v0.38.0) | skill_list, skill_view |
 | Phase 5: Prompt Integration | ✅ COMPLETED (v0.38.0) | INDEX in system prompt |
-| Phase 6: Slash Commands | ✅ COMPLETED (v0.38.0) | /skill-name activation |
+| Phase 6: Slash Commands | ✅ COMPLETED (v0.38.0) | `/skill <name>` activation (replaces `/<skill-name>` wildcard) |
 | Phase 7: Testing & Docs | ✅ COMPLETED (v0.38.0) | Tests, documentation |
 
 **Security Note:** All mitigations implemented: sanitization, injection detection, size limits (256KB), name validation.
@@ -1373,7 +1373,7 @@ The CLI Tools Infrastructure (Phase 1 in original design) is complete:
 | `src/skills/sanitize.rs` | ✅ COMPLETED | Injection detection, validation |
 | `src/skills/builtin/*.md` | ✅ COMPLETED | 4 builtin skills (document-processing, ocr-images, code-analysis, web-scraping) |
 | `src/tools/skill_tools.rs` | ✅ COMPLETED | skill_list, skill_view tools |
-| `src/chat/commands.rs` | ✅ COMPLETED | /skill-name activation |
+| `src/chat/commands.rs` | ✅ COMPLETED | `/skill <name>` subcommand |
 | Prompt integration | ✅ COMPLETED | INDEX section in system prompt |
 
 ### No Breaking Changes
