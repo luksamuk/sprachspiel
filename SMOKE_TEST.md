@@ -252,9 +252,17 @@ Via chat with a model that supports tools:
 
 - [ ] `/f test query` → executes search (NOT forget) ← **Bug fix: /f was mapped to /forget**
 - [ ] `/forget` → shows warning (requires --yes) ← **Issue #85: /forget confirmation**
-- [ ] `/forget --yes` → executes forget
+- [ ] `/forget --yes` → executes forget, no `FOREIGN KEY constraint` warning ← **Bug fix: save_sqlite FK**
 
-### 6.6.2 Skill Activation via /skill (Issue #86)
+### 6.6.2 Todo After /forget — No FK Warning
+
+**Bug fix:** `save_sqlite()` now calls `ensure_conversation_exists()` before FK-dependent INSERTs.
+
+- [ ] `/forget --yes` → new session ID generated
+- [ ] `/todo add FK test` → adds todo without `FOREIGN KEY constraint failed` warning
+- [ ] `/todo list` → shows the task, no FK warning
+
+### 6.6.3 Skill Activation via /skill (Issue #86)
 
 - [ ] `/skill` → lists available skills
 - [ ] `/skill document-processing` → activates the skill
