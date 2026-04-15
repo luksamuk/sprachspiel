@@ -977,15 +977,13 @@ Read contents of a file. Files larger than 1MB are rejected.
 
 ```
 Function: read_file
-Args: path (string), max_lines (string, optional), sandbox (string, optional)
+Args: path (string), max_lines (string, optional)
 Example: read_file(path: "README.md", max_lines: "50")
 ```
 
-**Note:** All arguments are strings for robustness. `max_lines` accepts numbers like "50" or "100". `sandbox` accepts "true", "false", "1", "0".
-
 **Features:**
 - Limit output to N lines with `max_lines`
-- Sandbox restricts access to current directory
+- Always sandboxed to current working directory (plus `/tmp` for tool interop)
 - Supports relative and absolute paths
 - Auto-resolves symlinks
 
@@ -995,7 +993,7 @@ Read a specific segment of a file (useful for large files).
 
 ```
 Function: read_file_segment
-Args: path (string), start_line (string, REQUIRED), num_lines (string, REQUIRED), sandbox (string, optional)
+Args: path (string), start_line (string, REQUIRED), num_lines (string, REQUIRED)
 Example: read_file_segment(path: "src/main.rs", start_line: "100", num_lines: "50")
 ```
 
@@ -1021,7 +1019,7 @@ Count lines in a file. **Use this before reading large files** to avoid pollutin
 
 ```
 Function: count_lines
-Args: path (string), sandbox (string, optional)
+Args: path (string)
 Example: count_lines(path: "src/main.rs")
 ```
 
@@ -1039,7 +1037,7 @@ List files and directories. Shows file types and sizes.
 
 ```
 Function: list_directory
-Args: path (string), recursive (string, optional), sandbox (string, optional)
+Args: path (string), recursive (string, optional)
 Example: list_directory(path: "src", recursive: "true")
 ```
 
@@ -1057,13 +1055,11 @@ Search file contents with regex pattern. Only works on text-based files (source 
 
 ```
 Function: search_files
-Args: pattern (string), path (string), file_pattern (string, optional), sandbox (string, optional)
+Args: pattern (string), path (string), file_pattern (string, optional)
 Example: search_files(pattern: "TODO|FIXME", path: "src", file_pattern: "*.rs")
 Example: search_files(pattern: "^(CHAPTER|INTRODUCTION)", path: "book", file_pattern: "*.md")
 Example: search_files(pattern: "fn main", path: "src/main.rs")
 ```
-
-**Note:** `sandbox` accepts "true", "false", "1", "0".
 
 **Pattern tips:**
 - Uses full Rust regex syntax (`regex` crate)
@@ -1086,7 +1082,7 @@ Write content to a file, creating or overwriting it.
 
 ```
 Function: write_file
-Args: path (string), content (string), overwrite (string, optional), sandbox (string, optional)
+Args: path (string), content (string), overwrite (string, optional)
 Example: write_file(path: "output.txt", content: "Hello, World!")
 Example: write_file(path: "config.json", content: json_data, overwrite: "true")
 ```
@@ -1094,8 +1090,8 @@ Example: write_file(path: "config.json", content: json_data, overwrite: "true")
 **Note:** `overwrite` accepts "true", "false", "1", "0". Default is "false".
 
 **Security:**
-- **Blocked patterns ALWAYS enforced** - Cannot write to `.env`, `secrets`, SSH keys, certificates
-- **Sandbox respected** - `sandbox=false` allows writing outside CWD, but still enforces blocked patterns
+- **Blocked patterns ALWAYS enforced** - Cannot write to `.env`, secrets, SSH keys, certificates
+- **Sandbox always enforced** - File operations restricted to current working directory (plus `/tmp`)
 - **Size limit** - Maximum 5MB per write
 - **Atomic writes** - Uses temp file + rename for corruption safety
 
@@ -1121,12 +1117,11 @@ Args:
   - start_line (string, optional): First line to delete (for "delete_lines")
   - end_line (string, optional): Last line to delete (for "delete_lines")
   - create_backup (string, optional): Create .bak file first
-  - sandbox (string, optional): Restrict to CWD (default: true)
 ```
 
 **Security:**
-- **Blocked patterns ALWAYS enforced** - Cannot edit `.env`, `secrets`, SSH keys, certificates
-- **Sandbox respected** - `sandbox=false` allows editing outside CWD, but blocked patterns still enforced
+- **Blocked patterns ALWAYS enforced** - Cannot edit `.env`, secrets, SSH keys, certificates
+- **Sandbox always enforced** - File operations restricted to current working directory (plus `/tmp`)
 - Program's own config files (`~/.config/ask-ai/`) are always blocked - user must edit manually for security
 
 ### append_file
@@ -1161,19 +1156,14 @@ File tools have multiple security layers:
 
 #### Sandbox
 
-```toml
-# ~/.config/ask-ai/config.toml
-[tools]
-file_sandbox = true  # Only allow access to CWD and subdirectories
-```
+File operations are always sandboxed to the current working directory. This cannot be disabled.
 
-**Sandbox behavior:**
-- ✅ Allowed: Files in current directory and subdirectories
+**Allowed directories:**
+- ✅ Current directory and subdirectories (always)
+- ✅ `/tmp` and `/var/tmp` (for tool interoperability)
 - ❌ Blocked: Files outside working directory
 - ❌ Blocked: System directories (`/etc`, `/usr`, etc.)
 - ❌ Blocked: Symlinks pointing outside sandbox
-
-**Important:** Write operations (`write_file`, `edit_file`, `append_file`) are **always sandboxed** regardless of this setting. Only read operations respect `file_sandbox = false`.
 
 #### Blocked Patterns
 
@@ -1204,23 +1194,16 @@ block_list = false  # Allow listing (filenames visible)
 
 | Operation | Sandbox | Blocked Patterns |
 |-----------|---------|------------------|
-| `read_file` | Configurable | Yes (if `block_read=true`) |
-| `read_file_segment` | Configurable | Yes (if `block_read=true`) |
-| `count_lines` | Configurable | Yes (if `block_read=true`) |
-| `list_directory` | Configurable | Filenames visible (not content) |
-| `search_files` | Configurable | Yes (if `block_read=true`) |
+| `read_file` | **Always enforced** | Yes (if `block_read=true`) |
+| `read_file_segment` | **Always enforced** | Yes (if `block_read=true`) |
+| `count_lines` | **Always enforced** | Yes (if `block_read=true`) |
+| `list_directory` | **Always enforced** | Filenames visible (not content) |
+| `search_files` | **Always enforced** | Yes (if `block_read=true`) |
 | `write_file` | **Always enforced** | **Always enforced** |
 | `edit_file` | **Always enforced** | **Always enforced** |
 | `append_file` | **Always enforced** | **Always enforced** |
 
-**Disabling read sandbox** (not recommended for writes):
-
-```toml
-[tools]
-file_sandbox = false
-```
-
-**Warning:** Disabling sandbox for reads allows the AI to read any accessible file. Write sandbox cannot be disabled.
+All file operations are sandboxed to the current working directory (plus `/tmp` and `/var/tmp`).
 
 ## Document Processing Tools
 

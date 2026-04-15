@@ -359,13 +359,10 @@ std::thread_local! {
 /// number of stacked rulesets is reached for the current thread."
 #[cfg(all(feature = "sandbox", target_os = "linux"))]
 fn apply_sandbox_if_enabled(
-    config: &ExternalToolsConfig,
+    _config: &ExternalToolsConfig,
     _binary_path: Option<&std::path::Path>,
 ) -> Result<(), String> {
-    if !config.enable_sandbox {
-        debug_log!("Sandbox disabled in config");
-        return Ok(());
-    }
+    // Sandbox is always enabled — no configuration option to disable it
 
     // Check if already applied in this thread
     if LANDLOCK_APPLIED.get() {
@@ -558,26 +555,21 @@ fn apply_sandbox_if_enabled(
     _config: &ExternalToolsConfig,
     _binary_path: Option<&std::path::Path>,
 ) -> Result<(), String> {
+    // Sandbox is always enabled but not available on this platform
     #[cfg(target_os = "android")]
-    if _config.enable_sandbox {
-        eprintln!(
-            "Warning: Sandbox not available on Termux. Running without filesystem isolation."
-        );
-    }
+    eprintln!(
+        "Warning: Sandbox not available on Termux. Running without filesystem isolation."
+    );
 
     #[cfg(target_os = "macos")]
-    if _config.enable_sandbox {
-        eprintln!(
-            "Warning: Sandbox not yet supported on macOS. Running without filesystem isolation."
-        );
-    }
+    eprintln!(
+        "Warning: Sandbox not yet supported on macOS. Running without filesystem isolation."
+    );
 
     #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
-    if _config.enable_sandbox {
-        eprintln!(
-            "Warning: Sandbox not supported on this platform. Running without filesystem isolation."
-        );
-    }
+    eprintln!(
+        "Warning: Sandbox not supported on this platform. Running without filesystem isolation."
+    );
 
     Ok(())
 }

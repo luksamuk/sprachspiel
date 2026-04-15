@@ -23,8 +23,6 @@ struct ToolsToml {
 struct ExternalSection {
     #[serde(default = "default_timeout")]
     default_timeout: u64,
-    #[serde(default = "default_enable_sandbox")]
-    enable_sandbox: bool,
     #[serde(default)]
     tools: HashMap<String, ToolToml>,
 }
@@ -76,10 +74,6 @@ fn default_enabled() -> bool {
     true
 }
 
-fn default_enable_sandbox() -> bool {
-    true // Enabled by default on Linux
-}
-
 fn default_max_file_size() -> usize {
     DEFAULT_MAX_FILE_SIZE
 }
@@ -95,7 +89,6 @@ impl Default for ExternalSection {
     fn default() -> Self {
         ExternalSection {
             default_timeout: 30,
-            enable_sandbox: true, // Enabled by default on Linux
             tools: HashMap::new(),
         }
     }
@@ -200,16 +193,9 @@ fn parse_config(toml_config: ToolsToml) -> ExternalToolsConfig {
         .map(|e| Duration::from_secs(e.default_timeout))
         .unwrap_or(Duration::from_secs(30));
 
-    let enable_sandbox = toml_config
-        .external
-        .as_ref()
-        .map(|e| e.enable_sandbox)
-        .unwrap_or(true); // Default: true
-
     // Start with default tools
     let mut config = ExternalToolsConfig::with_defaults();
     config.default_timeout = default_timeout;
-    config.enable_sandbox = enable_sandbox;
 
     // Merge per-tool configuration from TOML
     if let Some(external) = &toml_config.external {
@@ -347,15 +333,11 @@ pub fn generate_default_toml() -> String {
 # SANDBOX (Linux only)
 # =============================================================================
 #
-# enable_sandbox = true: Uses Landlock to isolate filesystem access
+# Landlock sandbox: Uses Landlock to isolate filesystem access
 # - Requires Linux kernel 5.13+ (graceful degradation on older kernels)
 # - Automatically disabled on Termux, macOS, and non-Linux systems
 # - Restricts file access to current directory + /usr (read-only)
-#
-# enable_sandbox = false: No filesystem isolation (use with caution)
-#
-# RECOMMENDATION: Keep sandbox enabled unless you have specific needs.
-# For maximum isolation, run inside a container or VM.
+# - Always enabled — cannot be disabled for security
 #
 # =============================================================================
 # PLATFORM SUPPORT
@@ -370,9 +352,6 @@ pub fn generate_default_toml() -> String {
 [external]
 # Default timeout for all commands (seconds)
 default_timeout = 30
-# Enable Landlock sandbox on Linux (kernel 5.13+)
-# Automatically disabled on non-Linux platforms
-enable_sandbox = true
 
 # =============================================================================
 # PDF TOOLS (from poppler-utils)
@@ -512,7 +491,6 @@ mod tests {
 
         // Default timeout
         assert_eq!(config.default_timeout, Duration::from_secs(30));
-        assert!(config.enable_sandbox); // Enabled by default
     }
 
     #[test]
@@ -530,13 +508,11 @@ mod tests {
         let content = r#"
 [external]
 default_timeout = 60
-enable_sandbox = true
 "#;
         let toml: ToolsToml = toml::from_str(content).unwrap();
         let config = parse_config(toml);
 
         assert_eq!(config.default_timeout, Duration::from_secs(60));
-        assert!(config.enable_sandbox);
     }
 
     #[test]
@@ -617,7 +593,6 @@ binary = "ffmpeg"
         let content = r#"
 [external]
 default_timeout = 60
-enable_sandbox = false
 
 [external.tools.pdftotext]
 enabled = true
@@ -637,7 +612,6 @@ binary = "ffmpeg"
 
         // Global settings
         assert_eq!(config.default_timeout, Duration::from_secs(60));
-        assert!(!config.enable_sandbox);
 
         // pdftotext: default timeout overridden
         let pdftotext = config.tools.get("pdftotext").unwrap();

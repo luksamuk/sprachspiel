@@ -149,14 +149,6 @@ ollama_port = 11434
 # Default: [] (all enabled tools are available)
 blacklist = []
 
-# Enable file operation sandboxing for security.
-# When true, file tools (read_file, list_directory, search_files) can only 
-# access files within the current working directory and its subdirectories.
-# This prevents the AI from accessing sensitive system files.
-# WARNING: Disable only if you fully trust the AI and understand the risks.
-# Default: true
-file_sandbox = true
-
 # =============================================================================
 # OUTPUT CONFIGURATION
 # =============================================================================
@@ -429,17 +421,6 @@ cargo build --release --features all-tools
 Then, to use them:
 ```bash
 ask-ai --tools "Tell me about Pikachu"
-```
-
-### File Tool Sandboxing
-
-File operation tools (`read_file`, `list_directory`, `search_files`) are sandboxed by default to the current working directory for security. This prevents the AI from accessing files outside your project.
-
-To disable sandboxing (not recommended):
-
-```toml
-[tools]
-file_sandbox = false
 ```
 
 ## Environment Variables

@@ -14,13 +14,14 @@ const MAX_RESULTS: usize = 100; // Maximum search results
 ///
 /// # Arguments
 /// * `path` - Path to the file (relative to current directory or absolute).
-///   - Examples: "README.md", "src/main.rs", "/etc/config.yml"
+///   - Examples: "README.md", "src/main.rs"
 /// * `max_lines` - Maximum number of lines to read (default: all). Optional.
 ///   - Use for large files to avoid context pollution.
 ///   - Example: "100" to read first 100 lines
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
-///   - "true" (default): Only allow files within current directory tree
-///   - "false": Allow any absolute path
+///
+/// # Security
+/// - File access is always sandboxed to the current working directory
+/// - Blocked patterns (`.env`, secrets, SSH keys) are always enforced
 ///
 /// # Returns
 /// The file contents with line numbers, or an error message.
@@ -32,10 +33,8 @@ const MAX_RESULTS: usize = 100; // Maximum search results
 pub async fn read_file(
     path: String,
     max_lines: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let max_lines_parsed = parse_u32(max_lines, None);
-    let sandbox_parsed = parse_bool(sandbox, true);
 
     log_tool_call(
         "read_file",
@@ -52,7 +51,7 @@ pub async fn read_file(
 
     // Validate and canonicalize path (also checks if exists)
     let path_buf = expand_tilde_path(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
+    let canonical_path = match validate_path(&path_buf) {
         Ok(p) => p,
         Err(e) => {
             // validate_path already returns a complete error message
@@ -148,14 +147,15 @@ pub async fn read_file(
 ///
 /// # Arguments
 /// * `path` - Path to the file (relative to current directory or absolute).
-///   - Examples: "src/main.rs", "/var/log/app.log"
+///   - Examples: "src/main.rs", "logs/app.log"
 /// * `start_line` - Line number to start reading from (1-indexed). Required.
 ///   - Example: "1" to start from the beginning
 /// * `num_lines` - Number of lines to read. Required.
 ///   - Example: "50" to read 50 lines
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
-///   - "true" (default): Only allow files within current directory tree
-///   - "false": Allow any absolute path
+///
+/// # Security
+/// - File access is always sandboxed to the current working directory
+/// - Blocked patterns (`.env`, secrets, SSH keys) are always enforced
 ///
 /// # Returns
 /// The specified lines with line numbers, or an error message.
@@ -167,7 +167,6 @@ pub async fn read_file_segment(
     path: String,
     start_line: String,
     num_lines: String,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let start_line_parsed = match parse_u32(Some(start_line.clone()), None) {
         Some(n) => n,
@@ -191,7 +190,6 @@ pub async fn read_file_segment(
             return Ok(err_msg);
         }
     };
-    let sandbox_parsed = parse_bool(sandbox, true);
 
     if start_line_parsed == 0 {
         let err_msg =
@@ -217,7 +215,7 @@ pub async fn read_file_segment(
 
     // Validate and canonicalize path (also checks if exists)
     let path_buf = expand_tilde_path(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
+    let canonical_path = match validate_path(&path_buf) {
         Ok(p) => p,
         Err(e) => {
             // validate_path already returns a complete error message
@@ -326,9 +324,10 @@ pub async fn read_file_segment(
 /// # Arguments
 /// * `path` - Path to the file (relative to current directory or absolute).
 ///   - Examples: "large_file.txt", "src/module.rs"
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
-///   - "true" (default): Only allow files within current directory tree
-///   - "false": Allow any absolute path
+///
+/// # Security
+/// - File access is always sandboxed to the current working directory
+/// - Blocked patterns (`.env`, secrets, SSH keys) are always enforced
 ///
 /// # Returns
 /// File information including:
@@ -341,15 +340,12 @@ pub async fn read_file_segment(
 #[ollama_rs::function]
 pub async fn count_lines(
     path: String,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let sandbox_parsed = parse_bool(sandbox, true);
-
     log_tool_call("count_lines", &[("path".to_string(), path.clone())]);
 
     // Validate and canonicalize path (also checks if exists)
     let path_buf = expand_tilde_path(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
+    let canonical_path = match validate_path(&path_buf) {
         Ok(p) => p,
         Err(e) => {
             // validate_path already returns a complete error message
@@ -414,39 +410,18 @@ pub async fn count_lines(
 ///
 /// # Arguments
 /// * `path` - Path to the directory (relative to current directory or absolute).
-///   - Examples: ".", "src", "/home/user/projects"
+///   - Examples: ".", "src"
 /// * `recursive` - List subdirectories recursively (default: false). Optional.
 ///   - "true": List all files in subdirectories
 ///   - "false" (default): List only immediate contents
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
-///   - "true" (default): Only allow directories within current directory tree
-///   - "false": Allow any absolute path
 ///
-/// # Returns
-/// Directory listing with:
-/// - File/directory names with type indicators ([file], [dir], [symlink])
-/// - File sizes for regular files
-/// - Tree structure for recursive listings
-///
-/// List contents of a directory.
-///
-/// Returns a formatted list of files and directories.
-/// Use this to explore project structure or find files.
-///
-/// # Arguments
-/// * `path` - Directory path (default: current directory). Optional.
-///   - Examples: ".", "src", "/home/user/projects"
-/// * `recursive` - List subdirectories (default: false). Optional.
-///   - "true": List all subdirectories up to 10 levels deep
-///   - "false": List only immediate children
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
+/// # Security
+/// - File access is always sandboxed to the current working directory
+/// - Respects `block_list` configuration (blocked filenames shown as "[BLOCKED]")
+/// - Blocked patterns from tools.toml are applied to hide sensitive filenames
 ///
 /// # Returns
 /// Formatted list with [type] prefix (file/dir/symlink) and sizes.
-///
-/// # Security
-/// - Respects `block_list` configuration (blocked filenames shown as "[BLOCKED]")
-/// - Blocked patterns from tools.toml are applied to hide sensitive filenames
 ///
 /// # Errors
 /// Returns error message if directory doesn't exist or is not accessible.
@@ -454,10 +429,8 @@ pub async fn count_lines(
 pub async fn list_directory(
     path: String,
     recursive: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let recursive_parsed = parse_bool(recursive, false);
-    let sandbox_parsed = parse_bool(sandbox, true);
 
     log_tool_call(
         "list_directory",
@@ -472,7 +445,7 @@ pub async fn list_directory(
 
     // Validate and canonicalize path (also checks if exists)
     let path_buf = expand_tilde_path(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
+    let canonical_path = match validate_path(&path_buf) {
         Ok(p) => p,
         Err(e) => {
             // validate_path already returns a complete error message
@@ -664,14 +637,15 @@ fn collect_entries_recursive(
 ///     `"^CHAPTER|^Chapter|^INTRODUCTION"` to avoid very long patterns that may get truncated.
 ///   - Examples: "fn main", "import.*react", "TODO", "error.*handler"
 /// * `path` - Directory or file to search in (relative to current directory or absolute).
-///   - Examples: ".", "src", "/home/user/project"
+///   - Examples: ".", "src"
 ///   - If a file path is given, searches only that file.
 /// * `file_pattern` - Glob pattern to filter which files to search (default: all files). Optional.
 ///   - Examples: "*.rs", "*.py", "*.js", "*.txt"
 ///   - Leave empty or omit to search all text files.
-/// * `sandbox` - Restrict to current directory tree (default: true). Optional.
-///   - "true" (default): Only search within current directory tree
-///   - "false": Allow searching any directory
+///
+/// # Security
+/// - File access is always sandboxed to the current working directory
+/// - Blocked patterns (`.env`, secrets, SSH keys) are always enforced
 ///
 /// # Returns
 /// Search results with:
@@ -686,9 +660,7 @@ pub async fn search_files(
     pattern: String,
     path: String,
     file_pattern: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let sandbox_parsed = parse_bool(sandbox, true);
     // Normalize empty file_pattern to None (LLMs often send "" instead of omitting)
     let file_pattern = file_pattern.filter(|s| !s.is_empty());
 
@@ -719,7 +691,7 @@ pub async fn search_files(
 
     // Validate path (also checks if exists)
     let path_buf = expand_tilde_path(&path);
-    let canonical_path = match validate_path(&path_buf, sandbox_parsed) {
+    let canonical_path = match validate_path(&path_buf) {
         Ok(p) => p,
         Err(e) => {
             // validate_path already returns a complete error message
@@ -879,10 +851,17 @@ fn glob_to_regex(pattern: &str) -> String {
     regex
 }
 
-/// Validate that a path is within the sandbox (current working directory)
+/// Validate that a path is within the sandbox (current working directory).
+///
+/// Sandbox is always enforced — the LLM cannot bypass this restriction.
+/// This is a security boundary: the entity being restricted must never
+/// be able to disable the restriction.
+///
+/// Allowed paths beyond CWD:
+/// - `/tmp` — standard temporary directory (needed for tool interop)
+/// - `/var/tmp` — persistent temporary directory
 fn validate_path(
     path: &Path,
-    sandbox: bool,
 ) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
     // Get the absolute path
     let abs_path = if path.is_absolute() {
@@ -906,25 +885,46 @@ fn validate_path(
         .canonicalize()
         .map_err(|e| format!("Cannot access path '{}': {}", path.display(), e))?;
 
-    if sandbox {
-        // Get current working directory
-        let cwd = std::env::current_dir().map_err(|_| "Could not determine current directory")?;
-        let canonical_cwd = cwd
-            .canonicalize()
-            .map_err(|_| "Could not determine current directory")?;
+    // Sandbox is ALWAYS enforced — check that the path is within CWD
+    // or within allowed temporary directories
+    let cwd = std::env::current_dir().map_err(|_| "Could not determine current directory")?;
+    let canonical_cwd = cwd
+        .canonicalize()
+        .map_err(|_| "Could not determine current directory")?;
 
-        // Check that the path starts with cwd
-        if !canonical_path.starts_with(&canonical_cwd) {
-            return Err(format!(
-                "Path '{}' is outside the allowed directory. \
-                 File operations are sandboxed to the current working directory.",
-                path.display()
-            )
-            .into());
-        }
+    // Check if path is within CWD
+    if canonical_path.starts_with(&canonical_cwd) {
+        return Ok(canonical_path);
     }
 
-    Ok(canonical_path)
+    // Allow /tmp and /var/tmp (needed for tool interop, e.g., pdftotext output)
+    if is_temp_directory(&canonical_path) {
+        return Ok(canonical_path);
+    }
+
+    Err(format!(
+        "Path '{}' is outside the allowed directory. \
+         File operations are restricted to the current working directory.",
+        path.display()
+    )
+    .into())
+}
+
+/// Check if a canonical path is within an allowed temporary directory.
+fn is_temp_directory(canonical_path: &Path) -> bool {
+    // Check /tmp (standard temporary directory)
+    if let Ok(canonical_tmp) = Path::new("/tmp").canonicalize()
+        && canonical_path.starts_with(&canonical_tmp)
+    {
+        return true;
+    }
+    // Check /var/tmp (persistent temporary directory)
+    if let Ok(canonical_var_tmp) = Path::new("/var/tmp").canonicalize()
+        && canonical_path.starts_with(&canonical_var_tmp)
+    {
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -945,7 +945,7 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let relative = PathBuf::from("src/main.rs");
 
-        let result = validate_path(&relative, true);
+        let result = validate_path(&relative);
         assert!(result.is_ok());
 
         // The validated path should be absolute and canonical
@@ -956,22 +956,10 @@ mod tests {
 
     #[test]
     fn test_validate_path_outside_cwd() {
-        // This should fail when sandbox is enabled
+        // Sandbox is always enforced — paths outside CWD must always fail
         let outside_path = PathBuf::from("/etc/passwd");
-        let result = validate_path(&outside_path, true);
+        let result = validate_path(&outside_path);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_validate_path_no_sandbox() {
-        // Should succeed even outside CWD when sandbox is disabled
-        let outside_path = PathBuf::from("/tmp");
-        let result = validate_path(&outside_path, false);
-        // This might fail if /tmp doesn't exist, but should not fail due to sandbox
-        if let Err(err) = result {
-            let err_msg = err.to_string();
-            assert!(!err_msg.contains("sandboxed"));
-        }
     }
 
     // --- Tests for empty file_pattern normalization ---

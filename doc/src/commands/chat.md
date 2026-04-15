@@ -42,7 +42,7 @@ Once inside the chat, these commands are available:
 |---------|-------------|
 | `/quit`, `/exit`, `/q` | Exit the chat session |
 | `/new`, `/n` | Start a new conversation (previous messages remain searchable) |
-| `/forget` | Delete conversation completely and start fresh |
+| `/forget [--yes]` | Delete conversation completely and start fresh (requires `--yes`) |
 | `/help`, `/h`, `/?` | Show available commands |
 | `/save [name]` | Save current session (optionally named) |
 | `/load <name>`, `/l <name>` | Load a saved session |
@@ -61,7 +61,7 @@ The `/session` command provides an alternative syntax for session management:
 | `/session load <name>` | Same as `/load` - load a saved session |
 | `/session list` | Same as `/list` - list saved sessions |
 | `/session save [name]` | Same as `/save` - save current session |
-| `/session forget` | Same as `/forget` - delete and start fresh |
+| `/session forget [--yes]` | Same as `/forget` - delete and start fresh (requires `--yes`) |
 
 ### Model & Mode
 
@@ -182,28 +182,36 @@ The LLM can import documents autonomously using the `import_document(path, scope
 
 | Command | Description |
 |---------|-------------|
-| `/<skill-name>` | Activate a skill for the current session |
+| `/skill`, `/sk` | List available skills |
+| `/skill <name>`, `/sk <name>` | Activate a skill for the current session |
 
 Skills are Markdown files that define AI behaviors for specific tasks. When activated, a skill's instructions are injected into the system prompt.
 
 **Built-in Skills:**
-- `/document-processing` - Extract content from PDF and ePub files
-- `/ocr-images` - Process images with OCR
-- `/code-analysis` - Analyze code structure
-- `/web-scraping` - Scrape web content
+- `document-processing` - Extract content from PDF and ePub files
+- `ocr-images` - Process images with OCR
+- `code-analysis` - Analyze code structure
+- `web-scraping` - Scrape web content
 
 **User Skills:** Place custom skills in `~/.config/ask-ai/skills/<name>/SKILL.md`
 
 **Example:**
 ```
-lfm> /document-processing
-✓ Skill activated: document-processing (builtin)
-  Extract content from PDF and ePub files
+lfm> /skill
+Available skills:
+  document-processing - Extract content from PDF and ePub files
+  ocr-images - Process images with OCR
+  code-analysis - Analyze code structure
+  web-scraping - Scrape web content
 
-The AI will now follow document processing instructions for this session.
+Use /skill <name> to activate a skill.
+
+lfm> /skill document-processing
+✓ Skill 'document-processing' activated for this session.
+Skill instructions will be followed when relevant to the conversation.
 ```
 
-Use `/skill-list` to see all available skills (this is a tool, not a command).
+Use `skill_list()` (LLM tool) to see available skills from within a conversation.
 
 ## /context - Context Metrics
 

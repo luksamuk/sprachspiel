@@ -4,7 +4,53 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **CRITICAL: Removed LLM-controllable sandbox bypass from file tools.**
+  The `sandbox` parameter in `read_file`, `read_file_segment`, `count_lines`,
+  `list_directory`, `search_files`, `write_file`, `edit_file`, and `append_file`
+  allowed the LLM to pass `sandbox=false` to escape filesystem restrictions.
+  This was a security vulnerability — the entity being restricted should never
+  be able to disable the restriction. Sandbox is now always enforced for all
+  file operations. The `file_sandbox` config setting is also removed — sandbox
+  cannot be disabled via configuration either.
+
+- **Removed `enable_sandbox = false` option from tools.toml.** The Landlock
+  sandbox for `run_command` is now always enabled on Linux (kernel 5.13+).
+  There is no configuration option to disable it.
+
+- **Added `/tmp` and `/var/tmp` as allowed directories for file operations.**
+  Temporary directories are needed for tool interoperability (e.g., `pdftotext`
+  output). These are the only directories outside CWD that file tools can access.
+  This is consistent with the Landlock sandbox which already allows `/tmp`.
+
 ### Changed
+
+- **UX: `/forget` confirmation required** (Issue #85)
+  - `/forget` now requires `--yes` flag to execute — without it, shows a warning
+  - Prevents accidental data loss from typos or unintended execution
+  - `/session forget` also requires `--yes` for consistency
+  - No shortcuts exist for `/forget` (already enforced in PR #84)
+
+- **UX: `/skill <name>` subcommand replaces `/<skill-name>` wildcard** (Issue #86)
+  - Skills are now activated via `/skill <name>` (e.g., `/skill document-processing`)
+  - `/skill` (no args) lists available skills
+  - `/sk` is a shortcut for `/skill`
+  - `/<skill-name>` (the wildcard match) is now an invalid command — use `/skill <name>` instead
+  - Removes namespace collision risk (e.g., a skill named "forget", "new", "help")
+
+- **Fix: FTS5 `conversation_id` column error in `delete_conversation()`**
+  - Removed invalid `DELETE FROM content_fts WHERE conversation_id = ?1` query
+  - The `content_fts` table (FTS5 external content mode) does not have a `conversation_id` column
+  - FTS entries are cleaned automatically by the `content_items_ad` trigger when `content_items` are deleted
+
+- **Fix: FOREIGN KEY constraint failure when saving todos**
+  - `save_sqlite()` called `update_conversation_metadata()` (UPDATE) before `save_todos()` (INSERT with FK),
+    but the conversation row might not exist yet (e.g., after `/forget` generates a new session ID)
+  - The UPDATE silently affected 0 rows, then the INSERT into `session_todos` failed because
+    `conversation_id REFERENCES conversations(id)` was violated
+  - Now calls `ensure_conversation_exists()` (INSERT OR REPLACE) before the metadata update,
+    matching the pattern already used in `add_user_message()` and `add_assistant_message()`
 
 - **Code Quality: Reduce `parse_command` complexity** (Issue #35)
   - Extract `parse_fact_subcommand()`, `parse_note_subcommand()`, `parse_doc_subcommand()`, `parse_session_subcommand()` from monolithic `parse_command`

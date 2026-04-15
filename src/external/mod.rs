@@ -12,21 +12,15 @@ pub use config::{load_file_tools_config, load_tools_config};
 /// Get the sandbox status for display.
 ///
 /// Returns:
-/// - "enabled (landlock)" - Linux with sandbox feature and enable_sandbox=true
-/// - "available (disabled in config)" - Linux with sandbox feature but disabled in config
+/// - "enabled (landlock)" - Linux with sandbox feature (always enabled)
 /// - "not compiled" - Not built with sandbox feature
 /// - "not supported" - Platform doesn't support Landlock (Termux, macOS)
 pub fn get_sandbox_status() -> &'static str {
     // First check if sandbox feature is compiled in
     #[cfg(all(feature = "sandbox", target_os = "linux"))]
     {
-        // Check config
-        let config = crate::tools::run_cmd::get_config();
-        if config.enable_sandbox {
-            "enabled (landlock)"
-        } else {
-            "available (disabled in config)"
-        }
+        // Sandbox is always enabled — no configuration option to disable it
+        "enabled (landlock)"
     }
 
     #[cfg(all(feature = "sandbox", not(target_os = "linux")))]

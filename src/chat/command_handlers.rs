@@ -106,7 +106,12 @@ pub async fn handle_command(
             HandleResult::Continue
         }
 
-        ChatCommand::Forget => {
+        ChatCommand::Forget { confirmed } => {
+            if !confirmed {
+                println!("\x1B[33m⚠️ /forget will permanently delete this conversation.\x1B[0m");
+                println!("\x1B[33m   Use /forget --yes to confirm.\x1B[0m");
+                return HandleResult::Continue;
+            }
             handle_forget(state);
             HandleResult::Continue
         }
@@ -381,6 +386,20 @@ pub async fn handle_command(
                         crate::skills::get_available_skill_names().join(", ")
                     );
                 }
+            }
+            HandleResult::Continue
+        }
+
+        ChatCommand::SkillList => {
+            let skills = crate::skills::load_skill_indexes();
+            if skills.is_empty() {
+                println!("No skills available.");
+            } else {
+                println!("Available skills:");
+                for skill in &skills {
+                    println!("  {} - {}", skill.name, skill.description);
+                }
+                println!("\nUse /skill <name> to activate a skill.");
             }
             HandleResult::Continue
         }

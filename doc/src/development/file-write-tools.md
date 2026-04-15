@@ -66,8 +66,9 @@ Based on discussion on 2026-03-12:
 
 **Decision:** Mandatory sandbox for all write operations
 
-- `sandbox=false` accepted for backward compatibility but **ignored for writes**
-- Write operations ALWAYS sandboxed to CWD
+- Sandbox is always enforced — there is no `sandbox` parameter to disable it
+- The LLM (the entity being restricted) can never disable the restriction
+- Write operations ALWAYS sandboxed to CWD (plus `/tmp` for tool interop)
 - Same path validation as read operations
 - No writing outside allowed directories
 
@@ -162,20 +163,18 @@ fn is_blocked_path(path: &Path) -> bool {
 /// * `overwrite` - Whether to overwrite existing file (default: "false").
 ///   - "false": Return error if file exists (safer)
 ///   - "true": Overwrite existing file
-/// * `sandbox` - Ignored for write operations (always sandboxed).
-///   - Included for backward compatibility.
 ///
 /// # Returns
 /// Success message with file path and size, or error message.
 ///
 /// # Security
-/// - Always sandboxed to current directory tree
+/// - Always sandboxed to current working directory (plus `/tmp`)
 /// - Blocked for sensitive file patterns (.env, secrets, .pem, etc.)
 /// - Maximum file size: 5MB
 ///
 /// # Errors
 /// - File exists and overwrite=false
-/// - Path is outside sandbox (even with sandbox=false)
+/// - Path is outside sandbox (always enforced)
 /// - File matches blocked pattern
 /// - Content is not valid UTF-8
 /// - Content exceeds 5MB
@@ -183,15 +182,14 @@ fn is_blocked_path(path: &Path) -> bool {
 ///
 /// # Example
 /// ```ignore
-/// write_file("output.txt", "Hello, World!", "false", null)
-/// write_file("src/module.rs", code_content, "true", null)
+/// write_file("output.txt", "Hello, World!", "false")
+/// write_file("src/module.rs", code_content, "true")
 /// ```
 #[ollama_rs::function]
 pub async fn write_file(
     path: String,
     content: String,
     overwrite: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
 ```
 
@@ -224,14 +222,13 @@ pub async fn write_file(
 /// * `end_line` - Last line to delete (for "delete_lines" operation).
 ///   - Use same as start_line to delete single line.
 /// * `create_backup` - Create .bak file before editing (default: "false").
-/// * `sandbox` - Ignored for write operations (always sandboxed).
 ///
 /// # Returns
 /// Success message showing what was changed, or error message.
 ///
 /// # Security
 /// - File must exist before editing
-/// - Always sandboxed to current directory tree
+/// - Always sandboxed to current working directory (plus `/tmp`)
 /// - Blocked for sensitive file patterns
 /// - Creates backup file in same directory with .bak extension if requested
 ///
@@ -260,7 +257,6 @@ pub async fn edit_file(
     start_line: Option<String>,
     end_line: Option<String>,
     create_backup: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
 ```
 
@@ -281,31 +277,28 @@ pub async fn edit_file(
 /// * `create` - Create file if it doesn't exist (default: "false").
 ///   - "false": Return error if file doesn't exist
 ///   - "true": Create file if it doesn't exist (same as write_file for new files)
-/// * `sandbox` - Ignored for write operations (always sandboxed).
-///
 /// # Returns
 /// Success message with total file size, or error message.
 ///
 /// # Security
-/// - Always sandboxed to current directory tree
+/// - Always sandboxed to current working directory (plus `/tmp`)
 /// - Blocked for sensitive file patterns
 /// - Maximum total file size: 5MB
 ///
 /// # Example
 /// ```ignore
 /// // Append to existing file
-/// append_file("log.txt", "New log entry\n", "false", null)
+/// append_file("log.txt", "New log entry\n", "false")
 ///
 /// // Create if not exists, then append
-/// append_file("output.txt", "First line\n", "true", null)
-/// append_file("output.txt", "Second line\n", "false", null)
+/// append_file("output.txt", "First line\n", "true")
+/// append_file("output.txt", "Second line\n", "false")
 /// ```
 #[ollama_rs::function]
 pub async fn append_file(
     path: String,
     content: String,
     create: Option<String>,
-    sandbox: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
 ```
 

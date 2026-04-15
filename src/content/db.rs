@@ -1110,11 +1110,11 @@ impl Database {
                 );
             }
 
-            // Delete FTS entries
-            conn.execute(
-                "DELETE FROM content_fts WHERE conversation_id = ?1",
-                params![conversation_id],
-            )?;
+            // FTS entries are cleaned automatically by the content_items_ad
+            // trigger (AFTER DELETE on content_items) when we delete from
+            // content_items below. No explicit FTS deletion is needed here
+            // — the content_fts table uses external content mode and does
+            // not have a conversation_id column.
 
             // Delete content_items (chunks cascade)
             conn.execute(

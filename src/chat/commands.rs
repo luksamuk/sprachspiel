@@ -33,7 +33,8 @@ pub enum ChatCommand {
     /// Start a new conversation session
     New,
     /// Forget everything (clear + delete from database)
-    Forget,
+    /// Requires --yes flag to confirm destructive operation
+    Forget { confirmed: bool },
     /// Show help message
     Help,
     /// Switch to a different model
@@ -152,6 +153,8 @@ pub enum ChatCommand {
     DocumentShow { id: i64 },
     /// Delete a document by ID
     DocumentDelete { id: i64 },
+    /// List available skills
+    SkillList,
     /// Activate a skill by name
     Skill { name: String },
 }
@@ -705,7 +708,13 @@ fn parse_session_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, 
             };
             Ok(ChatCommand::Save { name })
         }
-        "forget" => Ok(ChatCommand::Forget),
+        "forget" => {
+            let confirmed = subargs.trim() == "--yes";
+            if !confirmed && !subargs.trim().is_empty() && subargs.trim() != "--yes" {
+                return Err("Usage: /session forget [--yes]".to_string());
+            }
+            Ok(ChatCommand::Forget { confirmed })
+        }
         _ => Err("Usage: /session <new|load|list|save|forget>".to_string()),
     }
 }
@@ -775,7 +784,13 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let command = match *cmd {
         "quit" | "exit" | "q" => ChatCommand::Quit,
         "new" | "n" => ChatCommand::New,
-        "forget" => ChatCommand::Forget,
+        "forget" => {
+            let confirmed = args.trim() == "--yes";
+            if !confirmed && !args.trim().is_empty() && args.trim() != "--yes" {
+                return Some(Err("Usage: /forget [--yes]".to_string()));
+            }
+            ChatCommand::Forget { confirmed }
+        }
         "help" | "h" | "?" => ChatCommand::Help,
         "model" | "m" => {
             if args.is_empty() {
@@ -933,21 +948,30 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
-        // Dynamic skill commands: /<skill-name> [args...]
-        // Check if command matches a skill name (e.g., /document-processing)
-        _ => {
-            // Try to match against available skill names
-            let skill_names = crate::skills::get_available_skill_names();
-            if skill_names.iter().any(|s| s == cmd) {
-                ChatCommand::Skill {
-                    name: cmd.to_string(),
-                }
+        "skill" | "sk" => {
+            if args.trim().is_empty() {
+                // /skill (no args) → list available skills
+                ChatCommand::SkillList
             } else {
-                return Some(Err(format!(
-                    "Unknown command: /{}. Use /help for available commands.",
-                    cmd
-                )));
+                // /skill <name> → activate a skill
+                let skill_name = args.trim().to_string();
+                let skill_names = crate::skills::get_available_skill_names();
+                if skill_names.iter().any(|s| s == &skill_name) {
+                    ChatCommand::Skill { name: skill_name }
+                } else {
+                    return Some(Err(format!(
+                        "Unknown skill: '{}'. Available skills: {}",
+                        skill_name,
+                        skill_names.join(", ")
+                    )));
+                }
             }
+        }
+        _ => {
+            return Some(Err(format!(
+                "Unknown command: /{}. Use /help for available commands.",
+                cmd
+            )));
         }
     };
 
@@ -960,7 +984,7 @@ pub fn print_help() {
         r#"Available commands:
   /quit, /exit     Exit the chat session
   /new, /n         Start a new conversation (previous messages remain searchable)
-  /forget          Delete conversation completely and start fresh
+  /forget [--yes]  Delete conversation completely and start fresh (requires --yes)
   /help            Show this help message
   /model <name>    Switch to a different model
   /system <text>   Change the system prompt
@@ -977,7 +1001,7 @@ pub fn print_help() {
     /session load <name>  Same as /load
     /session list    Same as /list
     /session save [name]  Same as /save
-    /session forget  Same as /forget
+    /session forget [--yes]  Same as /forget (requires --yes)
   /export <fmt>    Export conversation (md, json)
   /list            List saved sessions for this project
   /info            Show current session information
@@ -1013,7 +1037,7 @@ Documents:
   /doc delete <id>                Delete a document
 
   Subcommand shortcuts: /di = /doc import, /dl = /doc list
-  /ds = /doc show, /dd = /doc delete
+   /ds = /doc show, /dd = /doc delete
 
 Todo List:
   /todo add <description> [--priority <p>] [--tags <t1,t2>]    Add a new task
@@ -1025,9 +1049,13 @@ Todo List:
   /todo clear-done                                               Clear completed tasks
   /todo clear-all                                                Clear all tasks
 
-  Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
-  /tg = /todo get, /te = /todo edit, /td = /todo delete
-  /tcd = /todo clear-done, /tca = /todo clear-all
+   Subcommand shortcuts: /ta = /todo add, /tl = /todo list, /tu = /todo update
+   /tg = /todo get, /te = /todo edit, /td = /todo delete
+   /tcd = /todo clear-done, /tca = /todo clear-all
+
+Skills:
+  /skill           List available skills
+  /skill <name>    Activate a skill for this session
 
 Shortcuts:
   /q = /quit, /n = /new, /h = /help
@@ -1035,6 +1063,7 @@ Shortcuts:
   /t = /think, /e = /export, /ls = /list, /i = /info
   /r = /retry, /to = /tools-output, /u = /undo
   /ctx = /context, /f = /search (find)
+  /sk = /skill
   /fp = /fact prune, /fa = /fact add
   /fl = /fact list, /fr = /fact remove, /fs = /fact search"#
     );
@@ -1166,7 +1195,18 @@ mod tests {
     #[test]
     fn test_parse_session_subcommand_forget() {
         let cmd = parse_session_subcommand("forget", "").unwrap();
-        assert!(matches!(cmd, ChatCommand::Forget));
+        assert!(matches!(cmd, ChatCommand::Forget { confirmed: false }));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget_with_yes() {
+        let cmd = parse_session_subcommand("forget", "--yes").unwrap();
+        assert!(matches!(cmd, ChatCommand::Forget { confirmed: true }));
+    }
+
+    #[test]
+    fn test_parse_session_subcommand_forget_invalid_arg() {
+        assert!(parse_session_subcommand("forget", "nope").is_err());
     }
 
     #[test]
@@ -1623,5 +1663,84 @@ mod tests {
         assert_eq!(map_todo_shortcut("td", "5"), ("delete", "5"));
         assert_eq!(map_todo_shortcut("tcd", ""), ("clear-done", ""));
         assert_eq!(map_todo_shortcut("tca", ""), ("clear-all", ""));
+    }
+
+    // --- Top-level parse_command tests ---
+
+    #[test]
+    fn test_parse_forget_no_args() {
+        let cmd = parse_command("/forget").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Forget { confirmed: false }));
+    }
+
+    #[test]
+    fn test_parse_forget_with_yes() {
+        let cmd = parse_command("/forget --yes").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Forget { confirmed: true }));
+    }
+
+    #[test]
+    fn test_parse_forget_invalid_flag() {
+        let result = parse_command("/forget --no");
+        assert!(result.is_some());
+        assert!(result.unwrap().is_err());
+    }
+
+    #[test]
+    fn test_parse_forget_trailing_space() {
+        let cmd = parse_command("/forget ").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Forget { confirmed: false }));
+    }
+
+    #[test]
+    fn test_parse_skill_no_args() {
+        let cmd = parse_command("/skill").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::SkillList));
+    }
+
+    #[test]
+    fn test_parse_skill_list_arg_is_skill_name() {
+        // "list" is NOT a reserved word — /skill list tries to activate a skill named "list"
+        // Since no skill named "list" exists, this returns an error
+        let result = parse_command("/skill list");
+        assert!(result.is_some());
+        assert!(result.unwrap().is_err());
+        // To list skills, use /skill (no args)
+    }
+
+    #[test]
+    fn test_parse_skill_activate_valid() {
+        let cmd = parse_command("/skill document-processing")
+            .unwrap()
+            .unwrap();
+        assert!(matches!(cmd, ChatCommand::Skill { ref name } if name == "document-processing"));
+    }
+
+    #[test]
+    fn test_parse_skill_unknown() {
+        let result = parse_command("/skill nonexistent-skill-xyz");
+        assert!(result.is_some());
+        assert!(result.unwrap().is_err());
+    }
+
+    #[test]
+    fn test_parse_sk_shortcut_no_args() {
+        let cmd = parse_command("/sk").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::SkillList));
+    }
+
+    #[test]
+    fn test_parse_sk_shortcut_activate() {
+        let cmd = parse_command("/sk document-processing").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Skill { ref name } if name == "document-processing"));
+    }
+
+    #[test]
+    fn test_parse_skill_name_no_longer_wildcard() {
+        // The old wildcard behavior: /document-processing was a valid command.
+        // Now it should be an unknown command.
+        let result = parse_command("/document-processing");
+        assert!(result.is_some());
+        assert!(result.unwrap().is_err());
     }
 }
