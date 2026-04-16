@@ -394,7 +394,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         let (_, compaction_buffer, _, _) = calculate_thresholds(ctx_window);
 
         // Debug log (only when debug enabled)
-        if crate::debug_tools::is_debug_enabled() {
+        if log::log_enabled!(log::Level::Debug) {
             eprintln!("\x1B[90m[INTER-TOOL-CHECK-DETAILS]\x1b[0m");
             eprintln!(
                 "\x1B[90m  base_tokens={} (from Ollama, includes sys+tools+history)\x1b[0m",
@@ -567,12 +567,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// Set model options
     pub fn options(mut self, options: ModelOptions) -> Self {
         self.options = options;
-        self
-    }
-
-    /// Enable debug mode for verbose logging
-    pub fn debug(mut self, debug: bool) -> Self {
-        self.debug = debug;
         self
     }
 

@@ -13,7 +13,6 @@ use ollama_rs::models::ModelOptions;
 use crate::capabilities::ModelCapabilities;
 use crate::chat::custom_coordinator::{ChatEvent, CustomCoordinator};
 use crate::config::ModelConfig;
-use crate::debug_tools::{enable_debug, log_debug};
 use crate::markdown;
 use crate::prompts::builder::PromptType;
 use crate::retrieval::build_query_context;
@@ -26,15 +25,13 @@ pub use context::QueryContextBuilder;
 /// Output flags resolved from CLI and config
 #[derive(Debug, Clone, Copy)]
 pub struct OutputFlags {
-    pub debug: bool,
     pub plain: bool,
 }
 
 impl OutputFlags {
-    pub fn resolve(debug: Option<bool>, plain: Option<bool>, settings: &Settings) -> Self {
+    pub fn resolve(plain: Option<bool>, _settings: &Settings) -> Self {
         Self {
-            debug: debug.unwrap_or(settings.output.debug_default),
-            plain: plain.unwrap_or(settings.output.plain_default),
+            plain: plain.unwrap_or(false),
         }
     }
 }
@@ -52,7 +49,6 @@ pub struct ChatContext {
     pub model_id: String,
     pub model_options: ModelOptions,
     pub use_think: bool,
-    pub use_debug: bool,
     pub use_plain: bool,
     pub context_window: Option<usize>,
     pub system_prompt: Option<String>,
@@ -61,16 +57,11 @@ pub struct ChatContext {
 impl ChatContext {
     pub fn build_coordinator(self) -> CustomCoordinator<Vec<ChatMessage>> {
         let use_think = self.use_think;
-        let use_plain = self.use_plain;
-        let use_debug = self.use_debug;
+        let _use_plain = self.use_plain;
 
         let mut coordinator = CustomCoordinator::new(self.ollama, self.model_id, vec![])
             .options(self.model_options)
-            .think(use_think)
-            .debug(use_debug)
-            .on_event(move |event| {
-                handle_chat_event(event, use_think, use_plain, use_debug);
-            });
+            .think(use_think);
 
         if let Some(ctx_window) = self.context_window {
             coordinator = coordinator.context_window(ctx_window);
@@ -85,7 +76,7 @@ impl ChatContext {
 }
 
 /// Handle chat events (pre-tool content, tool calls, tool results)
-pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use_debug: bool) {
+pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
     use crate::chat::{display_thinking, strip_thinking_tags};
 
     match event {
@@ -108,10 +99,10 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
         }
         ChatEvent::ToolCall { .. } => {}
         ChatEvent::ToolResult { result, .. } => {
-            if !use_debug {
+            if !log::log_enabled!(log::Level::Debug) {
                 suspend_for_print(|| {
                     let preview = crate::utils::truncate_chars(&result, 100);
-                    eprintln!("\x1B[90m✓ Result: {}\x1B[0m", preview.replace('\n', " "));
+                    eprintln!("✓ Result: {}", preview.replace('\n', " "));
                 });
             }
         }
@@ -120,15 +111,13 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
             tokens_used,
             context_window,
         } => {
-            if use_debug {
-                eprintln!(
-                    "\x1B[33m[INFO] Context at {:.0}% after tool '{}' ({} / {} tokens)\x1B[0m",
-                    (tokens_used * 100) / context_window,
-                    tool_name,
-                    tokens_used,
-                    context_window
-                );
-            }
+            log::debug!(
+                "[INFO] Context at {:.0}% after tool '{}' ({} / {} tokens)",
+                (tokens_used * 100) / context_window,
+                tool_name,
+                tokens_used,
+                context_window
+            );
         }
         ChatEvent::ContextTruncated {
             tool_name,
@@ -136,9 +125,12 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
             new_tokens,
             context_window,
         } => {
-            eprintln!(
-                "\x1B[33m[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)\x1B[0m",
-                tool_name, original_tokens, new_tokens, context_window
+            log::warn!(
+                "[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)",
+                tool_name,
+                original_tokens,
+                new_tokens,
+                context_window
             );
         }
         ChatEvent::ContextNeedsCompaction {
@@ -146,14 +138,12 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool, use
             context_window,
             tools_executed,
         } => {
-            if use_debug {
-                eprintln!(
-                    "\x1B[33m[INFO] Context needs compaction: {}K / {}K tokens ({} tools executed)\x1B[0m",
-                    tokens_used / 1000,
-                    context_window / 1000,
-                    tools_executed.len()
-                );
-            }
+            log::debug!(
+                "[INFO] Context needs compaction: {}K / {}K tokens ({} tools executed)",
+                tokens_used / 1000,
+                context_window / 1000,
+                tools_executed.len()
+            );
         }
     }
 }
@@ -248,7 +238,6 @@ pub async fn run_query(
     cli_prompt: &str,
     cli_ignore_agents: bool,
     cli_soulless: bool,
-    debug: Option<bool>,
     plain: Option<bool>,
     settings: &Settings,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -265,16 +254,14 @@ pub async fn run_query(
         .cli_prompt(cli_prompt)
         .cli_ignore_agents(cli_ignore_agents)
         .cli_soulless(cli_soulless)
-        .debug(debug)
         .plain(plain)
         .build(settings)
         .await;
 
     validate_prompt_type(ctx.prompt_type, cli_prompt)?;
 
-    if ctx.output_flags.debug {
-        enable_debug();
-        log_debug("Debug mode enabled - will log all tool calls and results");
+    if log::log_enabled!(log::Level::Debug) {
+        log::debug!("Debug mode enabled - will log all tool calls and results");
         print_debug_info(
             &ctx.model_config,
             &ctx.capabilities,
@@ -286,7 +273,7 @@ pub async fn run_query(
         eprintln!("\n🚀 Executing with debug logging enabled...\n");
     }
 
-    if ctx.output_flags.debug && ctx.agents_md.is_some() {
+    if log::log_enabled!(log::Level::Debug) && ctx.agents_md.is_some() {
         eprintln!("📄 [AGENTS.md] Context injected from current directory");
     }
 
@@ -300,7 +287,7 @@ pub async fn run_query(
         &query,
         &ctx.system_prompt,
         &retrieval_config,
-        ctx.output_flags.debug,
+        log::log_enabled!(log::Level::Debug),
     )
     .await;
 
@@ -315,7 +302,6 @@ pub async fn run_query(
         ctx.embedding_client,
         &ctx.tool_names,
         spinner.clone(),
-        ctx.output_flags.debug,
     )
     .await;
 
@@ -323,7 +309,7 @@ pub async fn run_query(
         Ok(resp) => resp,
         Err(e) => {
             finish_spinner(spinner);
-            if crate::debug_tools::is_debug_enabled() {
+            if log::log_enabled!(log::Level::Debug) {
                 eprintln!("\n❌ Tool execution failed (RAW):\n{:#?}\n", e);
             } else {
                 let error_msg = format_tool_error(&e);

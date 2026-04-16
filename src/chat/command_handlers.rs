@@ -28,7 +28,6 @@ use super::session::ToolOutputLevel;
 const TOKENS_PER_TOOL: usize = 50;
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::debug_tools::{log_debug, toggle_debug};
 use crate::embeddings::{
     DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback,
     recover_missing_embeddings_with_progress,
@@ -130,25 +129,21 @@ pub async fn handle_command(
             HandleResult::Continue
         }
 
-        ChatCommand::Save { name } => {
-            match handle_save(state, name) {
-                Ok(()) => HandleResult::Continue,
-                Err(e) => {
-                    eprintln!("\x1B[31mError: {}\x1B[0m", e);
-                    HandleResult::Continue
-                }
+        ChatCommand::Save { name } => match handle_save(state, name) {
+            Ok(()) => HandleResult::Continue,
+            Err(e) => {
+                eprintln!("\x1B[31mError: {}\x1B[0m", e);
+                HandleResult::Continue
             }
-        }
+        },
 
-        ChatCommand::Load { name } => {
-            match handle_load(state, name) {
-                Ok(()) => HandleResult::Continue,
-                Err(e) => {
-                    eprintln!("\x1B[31mError: {}\x1B[0m", e);
-                    HandleResult::Continue
-                }
+        ChatCommand::Load { name } => match handle_load(state, name) {
+            Ok(()) => HandleResult::Continue,
+            Err(e) => {
+                eprintln!("\x1B[31mError: {}\x1B[0m", e);
+                HandleResult::Continue
             }
-        }
+        },
 
         ChatCommand::Export { format, file } => {
             handle_export(&state.session, format, file);
@@ -201,8 +196,16 @@ pub async fn handle_command(
         }
 
         ChatCommand::Debug => {
-            let new_state = toggle_debug();
-            handle_debug_toggled(new_state);
+            let verbosity = crate::debug_tools::toggle_debug();
+            match verbosity {
+                crate::logging::Verbosity::Normal => println!("Debug mode: OFF (log level: info)"),
+                crate::logging::Verbosity::Trace => println!("Debug mode: ON (log level: trace)"),
+                _ => println!(
+                    "Debug mode: {} (log level: {:?})",
+                    verbosity,
+                    verbosity.to_level_filter()
+                ),
+            }
             HandleResult::Continue
         }
 
@@ -532,7 +535,11 @@ fn handle_load(state: &mut ReplState, name: String) -> Result<(), String> {
 }
 
 /// Handle /export command — export conversation to file or stdout.
-fn handle_export(session: &ChatSession, format: super::commands::ExportFormat, file: Option<String>) {
+fn handle_export(
+    session: &ChatSession,
+    format: super::commands::ExportFormat,
+    file: Option<String>,
+) {
     let output = match format {
         super::commands::ExportFormat::Markdown => export_markdown(session),
         super::commands::ExportFormat::Json => export_json(session),
@@ -570,7 +577,11 @@ fn handle_list(state: &ReplState) {
                     let time = info.updated_at.format("%Y-%m-%d %H:%M");
                     let name = info.name.as_deref().unwrap_or(&info.id);
                     // Mark current session with arrow
-                    let marker = if info.id == state.session.id { "→" } else { " " };
+                    let marker = if info.id == state.session.id {
+                        "→"
+                    } else {
+                        " "
+                    };
                     println!(
                         "{} {} - {} ({} messages) {}",
                         marker, name, info.model, info.message_count, time
@@ -687,13 +698,6 @@ pub fn handle_tool_output_changed(level: ToolOutputLevel) {
     println!("Tool output level: {}", level);
 }
 
-/// Handle debug mode toggle
-///
-/// Prints the new debug state.
-pub fn handle_debug_toggled(new_state: bool) {
-    println!("Debug mode: {}", new_state);
-}
-
 /// Handle undo command
 ///
 /// Removes the last assistant messages (including preceding user message)
@@ -735,9 +739,7 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) {
 
     let conversation_id = state.session.id.clone();
 
-    if state.use_debug {
-        log_debug(&format!("Searching in conversation: {}", conversation_id));
-    }
+    log::debug!("Searching in conversation: {}", conversation_id);
 
     crate::retrieval::run_search(&db, &state.ollama, &query, Some(&conversation_id), limit).await;
 }
@@ -838,7 +840,6 @@ pub async fn handle_compact(state: &mut ReplState) {
 ///
 /// Removes last assistant messages and regenerates the response.
 pub async fn handle_retry(state: &mut ReplState) {
-    use crate::debug_tools::log_debug;
     use crate::tool_robustness::format_tool_error;
 
     // Remove last assistant messages
@@ -866,7 +867,6 @@ pub async fn handle_retry(state: &mut ReplState) {
             false, // cli_code: false for retry (use existing config)
             &state.settings,
             state.agents_md.as_deref(),
-            state.use_debug,
             state.db.as_ref(),
             state.embedding_client.as_ref(),
             state.cli_soulless,
@@ -901,9 +901,8 @@ pub async fn handle_retry(state: &mut ReplState) {
 
                 if !state.session.anonymous
                     && let Err(e) = state.session.save_sqlite()
-                    && state.use_debug
                 {
-                    log_debug(&format!("Warning: Could not save session: {}", e));
+                    log::debug!("Warning: Could not save session: {}", e);
                 }
             }
             Err(e) => {
@@ -2727,7 +2726,6 @@ mod tests {
             capabilities,
             tools_active: false,
             agents_md: None,
-            use_debug: false,
             cli_code: false,
             cli_soulless: false,
             ollama,
@@ -2805,13 +2803,6 @@ mod tests {
 
         // Should not panic when retrieval is disabled
         handle_retrieval_toggled(&state, false);
-    }
-
-    #[test]
-    fn test_handle_debug_toggled() {
-        // Just verifying it doesn't panic
-        handle_debug_toggled(true);
-        handle_debug_toggled(false);
     }
 
     #[test]

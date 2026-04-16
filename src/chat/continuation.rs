@@ -18,7 +18,6 @@ use super::repl_state::ReplState;
 use crate::context_overflow::{
     check_context_overflow, needs_buffered_compaction, needs_pre_tool_compaction,
 };
-use crate::debug_tools::log_debug;
 use crate::prompts::CONTINUATION_PROMPT_INTER_TOOL;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use std::time::Instant;
@@ -67,12 +66,7 @@ pub async fn process_send_result(
             result.pre_tool_thinking.clone(),
             user_message_id,
         );
-        if state.use_debug {
-            log_debug(&format!(
-                "Saved pre-tool content ({} chars)",
-                pre_content.len()
-            ));
-        }
+        log::debug!("Saved pre-tool content ({} chars)", pre_content.len());
     }
 
     // Handle continuation if LLM paused for compaction
@@ -126,9 +120,8 @@ pub async fn process_send_result(
 
     if !state.session.anonymous
         && let Err(e) = state.session.save_sqlite()
-        && state.use_debug
     {
-        log_debug(&format!("Warning: Could not save session: {}", e));
+        log::debug!("Warning: Could not save session: {}", e);
     }
 
     ProcessResult::Success
@@ -236,12 +229,11 @@ pub async fn handle_continuation(
         .as_ref()
         .ok_or("No continuation tag found")?;
 
-    if state.use_debug {
-        log_debug(&format!(
-            "Continuation requested: paused_at='{}', next_step='{}'",
-            continuation_tag.paused_at, continuation_tag.next_step
-        ));
-    }
+    log::debug!(
+        "Continuation requested: paused_at='{}', next_step='{}'",
+        continuation_tag.paused_at,
+        continuation_tag.next_step
+    );
     eprintln!("\n\x1B[33m⏳ Paused for context compaction, continuing...\x1B[0m");
 
     // Compact context before first continuation
@@ -268,7 +260,6 @@ pub async fn handle_continuation(
         state.cli_code,
         &state.settings,
         state.agents_md.as_deref(),
-        state.use_debug,
         state.db.as_ref(),
         state.embedding_client.as_ref(),
         state.cli_soulless,
@@ -322,7 +313,6 @@ pub async fn handle_continuation(
                     state.cli_code,
                     &state.settings,
                     state.agents_md.as_deref(),
-                    state.use_debug,
                     state.db.as_ref(),
                     state.embedding_client.as_ref(),
                     state.cli_soulless,
@@ -406,12 +396,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
     eprintln!("\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m");
 
     let (removed, _) = state.session.remove_last_assistant_messages_with_content();
-    if state.use_debug {
-        log_debug(&format!(
-            "Removed {} messages after overflow error",
-            removed
-        ));
-    }
+    log::debug!("Removed {} messages after overflow error", removed);
 
     eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
     auto_compact_if_needed(
@@ -426,12 +411,11 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
 
     if !state.session.anonymous
         && let Err(save_err) = state.session.save_sqlite()
-        && state.use_debug
     {
-        log_debug(&format!(
+        log::debug!(
             "Warning: Could not save session after recovery: {}",
             save_err
-        ));
+        );
     }
 
     eprintln!("\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m");
@@ -461,19 +445,17 @@ async fn handle_inter_tool_compaction_error(
         tools_executed.len()
     );
 
-    if state.use_debug {
-        log_debug(&format!(
-            "[Inter-tool Compaction] Starting: {}K/{}K tokens ({}%), {} messages in history",
-            tokens_used / 1000,
-            context_window / 1000,
-            (tokens_used * 100) / context_window,
-            messages_before
-        ));
-        log_debug(&format!(
-            "[Inter-tool Compaction] Tools executed before pause: {}",
-            tools_executed.join(", ")
-        ));
-    }
+    log::debug!(
+        "[Inter-tool Compaction] Starting: {}K/{}K tokens ({}%), {} messages in history",
+        tokens_used / 1000,
+        context_window / 1000,
+        (tokens_used * 100) / context_window,
+        messages_before
+    );
+    log::debug!(
+        "[Inter-tool Compaction] Tools executed before pause: {}",
+        tools_executed.join(", ")
+    );
 
     auto_compact_if_needed(
         &state.ollama,
@@ -489,26 +471,24 @@ async fn handle_inter_tool_compaction_error(
     let messages_after = state.session.messages.len();
     let elapsed = start_time.elapsed();
 
-    if state.use_debug {
-        let tokens_saved = tokens_before.saturating_sub(tokens_after);
-        let _messages_removed = messages_before.saturating_sub(messages_after);
+    let tokens_saved = tokens_before.saturating_sub(tokens_after);
+    let _messages_removed = messages_before.saturating_sub(messages_after);
 
-        log_debug(&format!(
-            "[Inter-tool Compaction] Completed in {:.2}s: {}K → {}K tokens (saved {}K), {} → {} messages",
-            elapsed.as_secs_f64(),
-            tokens_before / 1000,
-            tokens_after / 1000,
-            tokens_saved / 1000,
-            messages_before,
-            messages_after
-        ));
+    log::debug!(
+        "[Inter-tool Compaction] Completed in {:.2}s: {}K → {}K tokens (saved {}K), {} → {} messages",
+        elapsed.as_secs_f64(),
+        tokens_before / 1000,
+        tokens_after / 1000,
+        tokens_saved / 1000,
+        messages_before,
+        messages_after
+    );
 
-        if let Some(summary) = &state.session.compacted_summary {
-            log_debug(&format!(
-                "[Inter-tool Compaction] Summary length: {} chars",
-                summary.len()
-            ));
-        }
+    if let Some(summary) = &state.session.compacted_summary {
+        log::debug!(
+            "[Inter-tool Compaction] Summary length: {} chars",
+            summary.len()
+        );
     }
 
     OverflowHandleResult::InterToolCompaction {
