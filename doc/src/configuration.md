@@ -161,11 +161,10 @@ blacklist = []
 # Default: false
 plain_default = false
 
-# Enable debug output by default.
-# If true, shows detailed logs including tool calls, model parameters,
-# and raw responses. Useful for troubleshooting.
-# Default: false
-debug_default = false
+# Verbosity level (optional).
+# Options: "normal" (info) or "trace" (debug/trace) for more verbose logging.
+# Default: "normal"
+# verbosity = "normal"
 
 # =============================================================================
 # DISPLAY CONFIGURATION
@@ -504,18 +503,17 @@ Then reference it with `-p custom` flag.
 
 ## Debug Configuration
 
-### Debug Output
+### Verbose Logging
 
-Debug mode shows:
+Verbose logging shows:
 - Model configuration (temperature, context, etc.)
 - Tool calls and their results
 - Model capabilities detection
-- Raw responses
+- Raw responses (when verbose level is enabled)
 
 Enable via:
-- Config file: `debug_default = true`
-- CLI flag: `ask-ai -d "query"`
-- Environment: `ASK_AI_DEBUG=1`
+- CLI flag: `ask-ai -v "query"` (verbose), `ask-ai -vv "query"` (trace)
+- Environment: `RUST_LOG=trace ask-ai command` or `RUST_LOG=debug ask-ai command)`
 
 ## Performance Tuning
 

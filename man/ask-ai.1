@@ -66,8 +66,14 @@ Enable think mode for models that support reasoning.
 .BR \-\-plain
 Output plain text without markdown formatting.
 .TP
-.BR \-d ", " \-\-debug
-Enable debug mode with detailed logging to stderr.
+.BR \-\-dry\-run
+Dry-run mode: print configuration and exit without executing.
+.TP
+.BR \-\-dry\-run
+Dry-run mode: print configuration and exit without executing.
+.TP
+.BR \-v ", " \-\-verbose
+Increase verbosity: \-v (verbose), \-vv (trace).
 .TP
 .BR \-l ", " \-\-list
 List available models and prompt modes, then exit.
@@ -117,6 +123,9 @@ Ignore AGENTS.md file in current directory.
 .TP
 .BR \-\-soulless
 Skip SOUL.md personality (use neutral personality).
+.TP
+.BR \-v ", " \-\-verbose
+Increase verbosity: \-v (verbose), \-vv (trace).
 .PP
 Interactive commands available inside chat:
 .in +4
@@ -310,7 +319,7 @@ Translate text:
 .nf
 .RS
 ask-ai translate en:pt "Hello world"
-ask-ai -d translate :pt "Auto-detect source"
+ask-ai translate :pt "Auto-detect source"
 .RE
 .fi
 .PP
@@ -343,12 +352,13 @@ echo "Long text" | ask-ai summarize --style technical
 .RE
 .fi
 .PP
-Debug mode:
+Debug mode (verbose logging):
 .PP
 .nf
 .RS
-ask-ai -d query "Test query"
-ask-ai -d -m llama3.1 query "Debug with specific model"
+ask-ai -v query "Test query"
+ask-ai -v -m llama3.1 query "Verbose with specific model"
+ask-ai -vv query "Trace level logging"
 .RE
 .fi
 .PP

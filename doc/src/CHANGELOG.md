@@ -6,21 +6,37 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
-- **Logging infrastructure with `log` crate and `env_logger` backend** (Issues #60, #61)
+- **Logging infrastructure with `log` crate and `env_logger` backend** (Issues #60, #61, #87, #88)
   - Replace custom `log_debug()` / `AtomicBool` / `eprintln!` with industry-standard `log` crate
-  - Configurable verbosity levels: quiet (`-q`), normal (default), verbose (`-v`), debug (`-vv`)
+  - Simplified verbosity levels: quiet (normal), verbose (`-v`), trace (`-vv`)
+  - Verbose flags available globally and in chat subcommand (`ask chat -v`)
   - `RUST_LOG` environment variable support for fine-grained control
   - Tool calls logged at `info` level, tool results at `debug` level, internal state at `trace` level
-  - `config.toml` support: `[output] verbosity = "quiet|normal|verbose|debug"`
+  - `/debug` toggle in chat now syncs both `state.use_debug` state and `log::set_max_level()`
+  - Tool call format changed to `🔧 name(args)` (no "Calling:" prefix)
+  - Chat interactive mode ignores quiet flag (allows user input display)
+  - Spinner suppressed in quiet mode
+  - Rustyline debug output always suppressed
+  - `/debug` command toggles Normal ↔ Trace (not Debug)
+  - `debug_default` config option removed
 
 ### Changed
 
+- **Simplified verbosity system to 4 levels** (Issue #87)
+  - Levels: Quiet, Normal, Verbose, Trace (removed Debug level)
+  - Normal level now shows info (was warn)
+  - Verbose level now shows debug (was info)
+  - Trace level now shows trace (was debug level)
+  - Removed `-vvv` trace flag (replaced with second `-v`)
+  - Removed `debug_default` config option
+
 - **Renamed `--debug` CLI flag to `--dry-run`** (Issue #61)
   - `--debug` was confusing — it printed config without executing (dry-run), not debug logging
-  - New `-v` / `-vv` flags control verbosity (verbose / debug level)
+  - New `-v` / `-vv` flags control verbosity (verbose / trace level)
+  - `-d` / `--debug` flag removed from all subcommands
   - `--debug` kept as deprecated alias for `--dry-run` for one version
 
-### Security
+- **UX: `/forget` confirmation required** (Issue #85)
 
 - **CRITICAL: Removed LLM-controllable sandbox bypass from file tools.**
   The `sandbox` parameter in `read_file`, `read_file_segment`, `count_lines`,

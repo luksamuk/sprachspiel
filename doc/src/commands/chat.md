@@ -31,6 +31,7 @@ Start an interactive chat session with an Ollama model. Conversations are automa
 | `--tools` | Force enable tools even if model doesn't advertise support |
 | `--ignore-agents` | Ignore AGENTS.md file if present |
 | `--soulless` | Skip SOUL.md personality (use neutral personality) |
+| `-v, --verbose` | Increase verbosity: `-v` (verbose), `-vv` (trace) |
 
 ## Interactive Commands
 
