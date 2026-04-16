@@ -109,6 +109,14 @@ struct Cli {
     #[arg(long)]
     soulless: bool,
 
+    /// Increase verbosity (-v for verbose/debug, -vv for trace)
+    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    verbose: u8,
+
+    /// Quiet mode — only errors and the final answer (no spinner, no tool calls)
+    #[arg(short = 'q', long)]
+    quiet: bool,
+
     /// Initialize/create sample configuration file
     #[arg(long)]
     init_config: bool,
@@ -137,6 +145,12 @@ async fn main() -> AppResult<()> {
     }
 
     let settings = Settings::load();
+
+    // Initialize logging system based on CLI flags, RUST_LOG, and config
+    // Priority: CLI flags > RUST_LOG env var > config.toml > default (info)
+    let config_verbosity = settings.output.verbosity;
+    let verbosity = crate::logging::Verbosity::resolve(cli.quiet, cli.verbose, config_verbosity);
+    crate::logging::init(verbosity);
 
     // Initialize markdown skin with user configuration
     markdown::init_markdown_skin(&settings.display.skin);
@@ -473,6 +487,14 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
 }
 
 async fn handle_chat(args: ChatArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
+    // Chat may have its own -v flag (from ChatArgs.verbose).
+    // If chat-specific verbosity is higher than the global one, upgrade it.
+    // Chat ignores quiet mode (interactive — the user is watching the screen).
+    if args.verbose > 0 {
+        let chat_verbosity = crate::logging::Verbosity::resolve(false, args.verbose, None);
+        crate::logging::set_verbosity(chat_verbosity);
+    }
+
     chat::run_chat_repl(
         settings,
         &args,

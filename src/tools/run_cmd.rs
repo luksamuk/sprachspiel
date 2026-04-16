@@ -22,9 +22,7 @@ fn get_platform() -> &'static Platform {
 /// Log a debug message with format (only in debug mode).
 macro_rules! debug_log {
     ($($arg:tt)*) => {
-        if log::log_enabled!(log::Level::Debug) {
-            eprintln!("[DEBUG] {}", format!($($arg)*));
-        }
+        log::debug!($($arg)*);
     };
 }
 

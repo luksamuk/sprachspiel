@@ -66,6 +66,10 @@ pub struct ChatArgs {
     #[arg(long)]
     pub soulless: bool,
 
+    /// Increase verbosity (-v for verbose/debug, -vv for trace)
+    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
+
     /// Tool output verbosity level (compact, full, hidden)
     #[arg(long, value_name = "LEVEL", default_value = "compact")]
     pub tools_output: ToolOutputLevel,

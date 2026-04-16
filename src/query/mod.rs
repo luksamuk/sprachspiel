@@ -157,38 +157,35 @@ pub fn print_debug_info(
     query: &str,
     prompt_name: &str,
 ) {
-    println!("Debug Mode - Configuration:");
-    println!("==========================");
-    println!("Model ID:          {}", model_config.model_id);
+    log::debug!("Debug Mode - Configuration:");
+    log::debug!("==========================");
+    log::debug!("Model ID:          {}", model_config.model_id);
     if model_config.num_ctx > 0 {
-        println!("Context Window:    {}K tokens", model_config.num_ctx / 1024);
+        log::debug!("Context Window:    {}K tokens", model_config.num_ctx / 1024);
     } else {
-        println!("Context Window:    auto");
+        log::debug!("Context Window:    auto");
     }
-    println!("Temperature:       {}", model_config.temperature);
+    log::debug!("Temperature:       {}", model_config.temperature);
     if let Some(top_k) = model_config.top_k {
-        println!("Top K:             {}", top_k);
+        log::debug!("Top K:             {}", top_k);
     }
     if let Some(top_p) = model_config.top_p {
-        println!("Top P:             {}", top_p);
+        log::debug!("Top P:             {}", top_p);
     }
     if let Some(rp) = model_config.repeat_penalty {
-        println!("Repeat Penalty:    {}", rp);
+        log::debug!("Repeat Penalty:    {}", rp);
     }
-    println!();
-    println!("Detected Capabilities:");
-    println!("  Tools:      {}", capabilities.tools);
-    println!("  Vision:     {}", capabilities.vision);
-    println!("  Completion: {}", capabilities.completion);
-    println!("  Thinking:   {}", capabilities.thinking);
-    println!();
-    println!("Active Configuration:");
-    println!("  Tools Enabled:   {}", use_tools);
-    println!("  Think Mode:      {}", use_think);
-    println!("  Prompt Mode:     {}", prompt_name);
-    println!();
-    println!("Query: {}", query);
-    println!("==========================");
+    log::debug!("Detected Capabilities:");
+    log::debug!("  Tools:      {}", capabilities.tools);
+    log::debug!("  Vision:     {}", capabilities.vision);
+    log::debug!("  Completion: {}", capabilities.completion);
+    log::debug!("  Thinking:   {}", capabilities.thinking);
+    log::debug!("Active Configuration:");
+    log::debug!("  Tools Enabled:   {}", use_tools);
+    log::debug!("  Think Mode:      {}", use_think);
+    log::debug!("  Prompt Mode:     {}", prompt_name);
+    log::debug!("Query: {}", query);
+    log::debug!("==========================");
 }
 
 /// Display query result with optional thinking and markdown
@@ -270,11 +267,11 @@ pub async fn run_query(
             &query,
             &ctx.prompt_name,
         );
-        eprintln!("\n🚀 Executing with debug logging enabled...\n");
+        log::debug!("🚀 Executing with debug logging enabled...");
     }
 
-    if log::log_enabled!(log::Level::Debug) && ctx.agents_md.is_some() {
-        eprintln!("📄 [AGENTS.md] Context injected from current directory");
+    if ctx.agents_md.is_some() {
+        log::debug!("📄 [AGENTS.md] Context injected from current directory");
     }
 
     let coordinator = coordinator::build_query_coordinator(&ctx, settings);
@@ -309,9 +306,8 @@ pub async fn run_query(
         Ok(resp) => resp,
         Err(e) => {
             finish_spinner(spinner);
-            if log::log_enabled!(log::Level::Debug) {
-                eprintln!("\n❌ Tool execution failed (RAW):\n{:#?}\n", e);
-            } else {
+            log::debug!("❌ Tool execution failed (RAW):\n{:#?}", e);
+            if !log::log_enabled!(log::Level::Debug) {
                 let error_msg = format_tool_error(&e);
                 eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
             }

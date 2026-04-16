@@ -69,24 +69,23 @@ macro_rules! tool_wrapper {
     }};
 }
 
-/// Log debug message if debug mode is enabled (for tool registration).
+/// Log debug message if debug mode is enabled.
 ///
-/// This macro is used in tool registration functions to log debug messages
-/// only when debug mode is enabled.
+/// The `$debug` parameter is ignored — log level filtering is handled
+/// automatically by the `log` crate. Kept for backward compatibility
+/// with call sites that still pass the argument.
 ///
 /// # Example
 /// ```ignore
 /// use crate::log_if_debug;
 ///
-/// fn register_tools(use_debug: bool) {
-///     log_if_debug!(use_debug, "🔑 [Tool] Registering search tools");
+/// fn register_tools() {
+///     log_if_debug!(true, "🔑 [Tool] Registering search tools");
 /// }
 /// ```
 #[macro_export]
 macro_rules! log_if_debug {
-    ($debug:expr, $($arg:tt)*) => {
-        if $debug && log::log_enabled!(log::Level::Debug) {
-            log::debug!($($arg)*);
-        }
+    ($_debug:expr, $($arg:tt)*) => {
+        log::debug!($($arg)*);
     };
 }

@@ -114,6 +114,11 @@ pub struct OutputSettings {
     /// Use plain output by default
     #[serde(default)]
     pub plain_default: bool,
+    /// Verbosity level for logging: "quiet", "normal", "verbose", or "trace"
+    /// Default: "normal" (info level — shows tool calls)
+    /// Priority: CLI flags > RUST_LOG env var > this config > default
+    #[serde(default)]
+    pub verbosity: Option<crate::logging::Verbosity>,
 }
 
 /// Display-related settings
@@ -513,6 +518,19 @@ blacklist = []
 # If true, responses will be plain text instead of formatted markdown.
 # Default: false
 plain_default = false
+
+# Verbosity level for log output.
+# Controls how much diagnostic information is shown alongside the LLM response.
+#
+# Options:
+#   "quiet"   — Errors only. No spinner, no tool calls. Ideal for scripting/pipes.
+#   "normal"  — Tool calls (compact), warnings, errors. Good default for interactive use.
+#   "verbose" — Detailed tool calls with full parameters and results. For debugging.
+#   "trace"   — Everything including embedding internals, token budgets. Maximum info.
+#
+# Priority: CLI flags (-v/-q) > RUST_LOG env var > this setting > default
+# Default: "normal" (info level)
+# verbosity = "normal"
 
 # =============================================================================
 # DISPLAY CONFIGURATION
