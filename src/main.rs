@@ -16,6 +16,7 @@ mod debug_tools;
 mod embeddings;
 pub mod external;
 mod facts;
+pub mod logging;
 mod macros;
 mod markdown;
 mod ocr;
@@ -41,7 +42,6 @@ use clap::Parser;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::ChatArgs;
-use crate::debug_tools::enable_debug;
 use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
 use crate::query::{OutputFlags, run_query};
 use crate::settings::Settings;
@@ -88,10 +88,6 @@ struct Cli {
     /// Output plain text without markdown formatting
     #[arg(long, action = clap::ArgAction::SetTrue)]
     plain: Option<bool>,
-
-    /// Dry-run mode: print config without executing
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    debug: Option<bool>,
 
     /// List available models and prompts
     #[arg(short, long)]
@@ -172,22 +168,19 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         std::process::exit(1);
     }
 
-    let output_flags = OutputFlags::resolve(cli.debug, cli.plain, settings);
+    let output_flags = OutputFlags::resolve(cli.plain, settings);
 
-    if output_flags.debug {
-        enable_debug();
-        eprintln!("Debug Mode - Translation Configuration:");
-        eprintln!("==========================");
-        if let Some(lang) = &args.language {
-            eprintln!("Language:          {}", lang);
-        }
-        if let Some(text) = &args.text {
-            let preview = crate::utils::truncate_chars(text, 50);
-            eprintln!("Text:              {}", preview);
-        }
-        eprintln!("==========================");
-        eprintln!("\n🚀 Executing translation with debug logging enabled...\n");
+    log::debug!("Debug Mode - Translation Configuration:");
+    log::debug!("==========================");
+    if let Some(lang) = &args.language {
+        log::debug!("Language:          {}", lang);
     }
+    if let Some(text) = &args.text {
+        let preview = crate::utils::truncate_chars(text, 50);
+        log::debug!("Text:              {}", preview);
+    }
+    log::debug!("==========================");
+    log::info!("Executing translation with logging enabled...");
 
     let mapper = LanguageMapper::new();
 
@@ -294,7 +287,6 @@ async fn handle_query_subcommand(args: QueryArgs, cli: &Cli, settings: &Settings
         &cli.prompt,
         cli.ignore_agents,
         cli.soulless,
-        cli.debug,
         cli.plain,
         settings,
     )
@@ -323,7 +315,6 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
         &cli.prompt,
         cli.ignore_agents,
         cli.soulless,
-        cli.debug,
         cli.plain,
         settings,
     )
@@ -448,26 +439,23 @@ fn get_query_legacy(cli: &Cli) -> AppResult<String> {
     Ok(input.trim().to_string())
 }
 
-async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
+async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult<()> {
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 
-    let output_flags = OutputFlags::resolve(cli.debug, cli.plain, settings);
+    // OutputFlags::resolve() parameters now ignored for debug (always false)
 
-    if output_flags.debug {
-        enable_debug();
-        eprintln!("Debug Mode - OCR Configuration:");
-        eprintln!("==========================");
-        eprintln!("Model ID:          glm-ocr:bf16");
-        eprintln!("Mode:              {:?}", args.mode);
-        eprintln!("Max Tokens:        {}", args.max_tokens);
-        eprintln!("JSON Output:       {}", args.json);
-        eprintln!("Files:             {:?}", args.files);
-        eprintln!("==========================");
-        eprintln!("\n🚀 Executing OCR with debug logging enabled...\n");
-    }
+    log::debug!("Debug Mode - OCR Configuration:");
+    log::debug!("==========================");
+    log::debug!("Model ID:          glm-ocr:bf16");
+    log::debug!("Mode:              {:?}", args.mode);
+    log::debug!("Max Tokens:        {}", args.max_tokens);
+    log::debug!("JSON Output:       {}", args.json);
+    log::debug!("Files:             {:?}", args.files);
+    log::debug!("==========================");
+    log::info!("Executing OCR with logging enabled...");
 
     let processor = OcrProcessor::new();
 
@@ -509,20 +497,17 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
         settings.model.default.clone()
     };
 
-    let output_flags = OutputFlags::resolve(cli.debug, cli.plain, settings);
+    let output_flags = OutputFlags::resolve(cli.plain, settings);
 
-    if output_flags.debug {
-        enable_debug();
-        eprintln!("Debug Mode - Summarize Configuration:");
-        eprintln!("==========================");
-        eprintln!("Model ID:          {}", model_id);
-        eprintln!("Max Length:        {} words", args.max_length);
-        eprintln!("Format:            {:?}", args.format);
-        eprintln!("Style:             {:?}", args.style);
-        eprintln!("Plain Output:      {}", output_flags.plain);
-        eprintln!("==========================");
-        eprintln!("\n🚀 Executing summarization with debug logging enabled...\n");
-    }
+    log::debug!("Debug Mode - Summarize Configuration:");
+    log::debug!("==========================");
+    log::debug!("Model ID:          {}", model_id);
+    log::debug!("Max Length:        {} words", args.max_length);
+    log::debug!("Format:            {:?}", args.format);
+    log::debug!("Style:             {:?}", args.style);
+    log::debug!("Plain Output:      {}", output_flags.plain);
+    log::debug!("==========================");
+    log::info!("Executing summarization with logging enabled...");
 
     let text = if let Some(ref text) = args.text {
         text.clone()
@@ -620,21 +605,18 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     let model_config = user_models::resolve_model_config(&model_name);
     let model_id = model_config.model_id.clone();
 
-    let output_flags = OutputFlags::resolve(cli.debug, cli.plain, settings);
+    let output_flags = OutputFlags::resolve(cli.plain, settings);
 
-    if output_flags.debug {
-        enable_debug();
-        eprintln!("Debug Mode - Vision Configuration:");
-        eprintln!("==========================");
-        eprintln!("Model:             {}", model_id);
-        eprintln!("Files:             {:?}", args.files);
-        eprintln!("Prompt:            {}", args.get_prompt());
-        eprintln!("Detailed:          {}", args.detailed);
-        eprintln!("JSON Output:       {}", args.json);
-        eprintln!("Max Tokens:        {}", args.max_tokens);
-        eprintln!("==========================");
-        eprintln!("\n🚀 Executing vision analysis with debug logging enabled...\n");
-    }
+    log::debug!("Debug Mode - Vision Configuration:");
+    log::debug!("==========================");
+    log::debug!("Model:             {}", model_id);
+    log::debug!("Files:             {:?}", args.files);
+    log::debug!("Prompt:            {}", args.get_prompt());
+    log::debug!("Detailed:          {}", args.detailed);
+    log::debug!("JSON Output:       {}", args.json);
+    log::debug!("Max Tokens:        {}", args.max_tokens);
+    log::debug!("==========================");
+    log::info!("Executing vision analysis with logging enabled...");
 
     let processor = VisionProcessor::new();
 
