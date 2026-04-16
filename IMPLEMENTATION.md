@@ -685,53 +685,92 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🟡 PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate [M1]
+### 🔄 PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate + Verbosity System [M1]
 
-**Status:** 🟡 TRIAGE NEEDED
+**Status:** 🔄 IN PROGRESS (branch: `feat/log-crate-verbosity`)
 
-**Goal:** Replace custom `log_debug()` calls with proper logging using the `log` crate for formalization.
+**Goal:** Replace custom `log_debug()` calls with the `log` crate, implement configurable verbosity, and fix the `--debug` CLI flag bug.
 
 **Motivation:**
 - **Standard logging facade** - Industry-standard approach in Rust ecosystem
-- **File path context** - The `log` crate automatically includes file path and line number in log output, useful for debugging
+- **File path context** - The `log` crate automatically includes file path and line number in log output
 - **Log levels** - Proper separation (trace, debug, info, warn, error)
-- **Configurable** - Users can control verbosity via RUST_LOG environment variable
+- **Configurable** - Users can control verbosity via `-v`/`-vv` flags or `RUST_LOG` environment variable
 
-**Technical Details:**
-- Replace `log_debug()` calls with `log::debug!()` or appropriate level
-- Replace `eprintln!()` for errors with `log::error!()` where appropriate
-- Add logging initialization in `main.rs`
-- Example output: `[DEBUG src/retrieval/context_builder.rs:317] Retrieval: enabled=true`
+**Resolved Design Decisions:**
+- **Backend:** `env_logger` — standard Rust choice, lightweight, supports `RUST_LOG`
+- **Default level:** `info` (normal mode) — tool calls visible, internal details hidden
+- **`--debug` CLI flag:** Renamed to `--dry-run` (kept as deprecated alias); new `-v`/`-vv` for verbosity
+- **Verbosity integration:** Single system covers both logging AND configurable verbosity
 
-**Open Questions:**
-- Backend choice: `env_logger` vs `fern` vs other?
-- Default logging level?
-- Keep `--debug` CLI flag or use `RUST_LOG`?
+| Verbosity | Flag | Log Level | Behavior |
+|-----------|------|-----------|----------|
+| Quiet | `-q` | `warn` | Only warnings and errors |
+| Normal | (default) | `info` | Standard output + compact tool calls |
+| Verbose | `-v` | `debug` | Detailed tool calls, reasoning details |
+| Debug | `-vv` | `trace` | Everything (embedding distances, token budgets, internal state) |
+
+**Migration Mapping:**
+
+| Current Function | Migrates To | Level |
+|-----------------|-------------|-------|
+| `log_debug(msg)` | `log::debug!(msg)` | `debug` |
+| `log_tool_call()` (compact) | `log::info!("🔧 Calling: ...")` | `info` |
+| `log_tool_call()` (detailed) | `log::debug!("🔧 TOOL CALL: ...")` | `debug` |
+| `log_tool_result()` | `log::debug!("📤 TOOL RESULT: ...")` | `debug` |
+| `log_if_debug!` | `log::debug!` | `debug` |
+| `eprintln!` (user errors) | Keep `eprintln!` | N/A |
+| `eprintln!` (warnings) | `log::warn!` | `warn` |
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Add `log` + `env_logger` deps, init logging in `main.rs` | ❌ Not started |
+| 2 | Create `src/logging.rs` with verbosity config | ❌ Not started |
+| 3 | Migrate `debug_tools.rs` — `eprintln!` → `log::debug!` | ❌ Not started |
+| 4 | Migrate `log_debug()` calls → `log::debug!` (45 calls, 8 files) | ❌ Not started |
+| 5 | Migrate `log_if_debug!` → `log::debug!` (20 calls, 2 files) | ❌ Not started |
+| 6 | Rename `--debug` → `--dry-run`, add `-v`/`-vv` flags | ❌ Not started |
+| 7 | Connect verbosity to chat REPL | ❌ Not started |
+| 8 | Config `config.toml` verbosity in `[output]` | ❌ Not started |
+| 9 | Update `/debug` command to use `log::set_max_level()` | ❌ Not started |
+| 10 | Tests, clippy, documentation | ❌ Not started |
+
+**Files to Create:**
+- `src/logging.rs` — Logging initialization, verbosity levels, env_logger config
+
+**Files to Modify:**
+- `Cargo.toml` — Add `log`, `env_logger` dependencies
+- `src/main.rs` — Init logging, rename `--debug`, add `-v`/`-vv`
+- `src/debug_tools.rs` — Replace `eprintln!` with `log::debug!`
+- `src/macros.rs` — Update `log_if_debug!` to use `log::debug!`
+- `src/chat/cli.rs` — Add `-v`/`-vv` flags
+- `src/chat/repl.rs` — Connect CLI verbosity to logging
+- `src/chat/core.rs` — `log_debug()` → `log::debug!` (~9 calls)
+- `src/chat/continuation.rs` — `log_debug()` → `log::debug!` (~10 calls)
+- `src/chat/command_handlers.rs` — `log_debug()` → `log::debug!` (~2 calls)
+- `src/db/init.rs` — `log_debug()` → `log::debug!` (~2 calls)
+- `src/query/mod.rs` — `log_debug()` → `log::debug!` (~1 call)
+- `src/query/executor.rs` — `log_debug()` → `log::debug!` (~1 call)
+- `src/retrieval/search.rs` — `log_debug()` → `log::debug!` (~6 calls)
+- `src/tools/registry.rs` — `log_if_debug!` → `log::debug!` (~5 calls)
+- `src/retrieval/context_builder.rs` — `log_if_debug!` → `log::debug!` (~13 calls)
+- `src/settings.rs` — Add `verbosity` field to `OutputSettings`
 
 **Related Issues:**
-- Issue #60 - This task
-- Issue #61 - Bug: `--debug` flag is dry-run mode, not debug logging (discovered during PR #59 testing)
+- Issue #60 — This task (replace log_debug with log crate)
+- Issue #61 — Bug: `--debug` flag is dry-run mode, not debug logging
 
 **Estimated effort:** 1 day
 
-**Verbosity integration:** This item should merge with the planned Verbosity Configuration feature. The `log` crate levels naturally serve as a verbosity system — a single implementation covers both logging refactoring AND configurable verbosity:
-
-| Verbosity | Log Level | Behavior |
-|-----------|-----------|----------|
-| Quiet | `warn` | Only warnings and errors |
-| Normal (default) | `info` | Standard output |
-| Verbose | `debug` | Tool calls, reasoning details |
-| Debug | `trace` | Everything (embedding distances, token budgets, internal state) |
-
-This means one `--verbosity` flag (or `RUST_LOG` env var) replaces both `--debug` and any future `--verbose` flag.
-
-**Related:** Issue #60
-
 ---
 
-### 🟡 PRIORITY 5: Bug - Debug CLI Flag Not Working for Logging [M1]
+### 🔄 PRIORITY 5: Bug - Debug CLI Flag Not Working for Logging [M1]
 
-**Status:** 🟡 TRIAGE NEEDED
+**Status:** 🔄 IN PROGRESS (merged with Issue #60 above)
+
+**Status:** 🔄 IN PROGRESS (merged with Issue #60 above — resolved by renaming `--debug` to `--dry-run` and adding `-v`/`-vv` verbosity flags)
 
 **Goal:** Fix `--debug` CLI flag to enable debug logging (currently activates dry-run mode).
 
@@ -740,22 +779,9 @@ This means one `--verbosity` flag (or `RUST_LOG` env var) replaces both `--debug
 - Parameter `use_debug` passed to `build_context()` etc. is always `false`
 - Macro `log_if_debug!` created in PR #59 never executes
 
-**Discovery:**
-- Found during PR #59 manual testing (Test 4 in MANUAL-TEST-PR59.md)
-- Bug pre-exists PR #59 (not introduced by refactoring)
+**Resolution:** Option C — Integrate with `log` crate + RUST_LOG env var. Rename `--debug` to `--dry-run`, add `-v`/`-vv` for verbosity. Tracked in the P5 section above.
 
-**Resolution Options:**
-1. **Option A:** Rename `--debug` to `--dry-run` + new `--debug` flag (breaking change)
-2. **Option B:** Add `--verbose` / `-v` flag (non-breaking, standard Unix convention)
-3. **Option C:** Integrate with `log` crate + RUST_LOG env var (depends on Issue #60)
-
-**Recommended:** Option C - integrate with Issue #60 logging refactor
-
-**Priority:** Low - Developer convenience, not critical for users
-
-**Estimated effort:** TBD (depends on Issue #60 triage)
-
-**Related:** Issue #60, PR #59
+**Related:** Issue #60, Issue #61
 
 ---
 

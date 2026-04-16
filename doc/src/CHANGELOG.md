@@ -4,6 +4,22 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Logging infrastructure with `log` crate and `env_logger` backend** (Issues #60, #61)
+  - Replace custom `log_debug()` / `AtomicBool` / `eprintln!` with industry-standard `log` crate
+  - Configurable verbosity levels: quiet (`-q`), normal (default), verbose (`-v`), debug (`-vv`)
+  - `RUST_LOG` environment variable support for fine-grained control
+  - Tool calls logged at `info` level, tool results at `debug` level, internal state at `trace` level
+  - `config.toml` support: `[output] verbosity = "quiet|normal|verbose|debug"`
+
+### Changed
+
+- **Renamed `--debug` CLI flag to `--dry-run`** (Issue #61)
+  - `--debug` was confusing — it printed config without executing (dry-run), not debug logging
+  - New `-v` / `-vv` flags control verbosity (verbose / debug level)
+  - `--debug` kept as deprecated alias for `--dry-run` for one version
+
 ### Security
 
 - **CRITICAL: Removed LLM-controllable sandbox bypass from file tools.**
