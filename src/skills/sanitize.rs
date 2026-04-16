@@ -164,7 +164,7 @@ pub fn sanitize_skill_content(content: &str, source: &str) -> Option<String> {
     }
 
     // Log removed patterns in debug mode
-    if !removed_patterns.is_empty() && crate::debug_tools::is_debug_enabled() {
+    if !removed_patterns.is_empty() && log::log_enabled!(log::Level::Debug) {
         eprintln!(
             "[SKILLS] Sanitized {} patterns from {} skill:",
             removed_patterns.len(),
@@ -211,7 +211,7 @@ pub fn validate_skill_file(path: &std::path::Path, content: &str) -> Result<(), 
     // Check for invisible Unicode
     if content.chars().any(is_invisible_unicode) {
         // Warning only, not error - we'll strip them during sanitization
-        if crate::debug_tools::is_debug_enabled() {
+        if log::log_enabled!(log::Level::Debug) {
             eprintln!(
                 "[SKILLS] Warning: Skill file contains invisible Unicode characters: {}",
                 path.display()

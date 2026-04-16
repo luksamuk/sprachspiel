@@ -270,7 +270,7 @@ fn parse_skill_index(
     // Log warning if frontmatter name differs from directory name
     if let Some(frontmatter_name) = &frontmatter.name
         && frontmatter_name != default_name
-        && crate::debug_tools::is_debug_enabled()
+        && log::log_enabled!(log::Level::Debug)
     {
         eprintln!(
             "[SKILLS] Warning: {} skill directory name '{}' differs from frontmatter name '{}'",

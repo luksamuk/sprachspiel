@@ -22,7 +22,7 @@ fn get_platform() -> &'static Platform {
 /// Log a debug message with format (only in debug mode).
 macro_rules! debug_log {
     ($($arg:tt)*) => {
-        if crate::debug_tools::is_debug_enabled() {
+        if log::log_enabled!(log::Level::Debug) {
             eprintln!("[DEBUG] {}", format!($($arg)*));
         }
     };
@@ -557,14 +557,10 @@ fn apply_sandbox_if_enabled(
 ) -> Result<(), String> {
     // Sandbox is always enabled but not available on this platform
     #[cfg(target_os = "android")]
-    eprintln!(
-        "Warning: Sandbox not available on Termux. Running without filesystem isolation."
-    );
+    eprintln!("Warning: Sandbox not available on Termux. Running without filesystem isolation.");
 
     #[cfg(target_os = "macos")]
-    eprintln!(
-        "Warning: Sandbox not yet supported on macOS. Running without filesystem isolation."
-    );
+    eprintln!("Warning: Sandbox not yet supported on macOS. Running without filesystem isolation.");
 
     #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
     eprintln!(

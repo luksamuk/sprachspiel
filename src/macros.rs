@@ -85,8 +85,8 @@ macro_rules! tool_wrapper {
 #[macro_export]
 macro_rules! log_if_debug {
     ($debug:expr, $($arg:tt)*) => {
-        if $debug {
-            $crate::debug_tools::log_debug(&format!($($arg)*));
+        if $debug && log::log_enabled!(log::Level::Debug) {
+            log::debug!($($arg)*);
         }
     };
 }

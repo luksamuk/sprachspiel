@@ -114,9 +114,6 @@ pub struct OutputSettings {
     /// Use plain output by default
     #[serde(default)]
     pub plain_default: bool,
-    /// Enable debug mode by default
-    #[serde(default)]
-    pub debug_default: bool,
 }
 
 /// Display-related settings
@@ -517,12 +514,6 @@ blacklist = []
 # Default: false
 plain_default = false
 
-# Enable debug output by default.
-# If true, shows detailed logs including tool calls, model parameters,
-# and raw responses. Useful for troubleshooting.
-# Default: false
-debug_default = false
-
 # =============================================================================
 # DISPLAY CONFIGURATION
 # =============================================================================
@@ -571,7 +562,6 @@ mod tests {
         assert_eq!(settings.display.skin, "dark");
         // These should be false by default
         assert!(!settings.output.plain_default);
-        assert!(!settings.output.debug_default);
         // Translate model defaults to None (uses builtin "translategemma")
         assert!(settings.model.translate.model.is_none());
     }
@@ -609,7 +599,6 @@ blacklist = ["web_search", "fetch_page"]
 
 [output]
 plain_default = true
-debug_default = true
 
 [display]
 skin = "light"
@@ -621,7 +610,6 @@ skin = "light"
         assert_eq!(settings.model.ollama_port, 8080);
         assert!(settings.is_tool_blacklisted("web_search"));
         assert!(settings.output.plain_default);
-        assert!(settings.output.debug_default);
         assert_eq!(settings.display.skin, "light");
     }
 

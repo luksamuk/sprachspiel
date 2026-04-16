@@ -1,49 +1,43 @@
-//! Debug utilities for tool execution logging
+//! Tool execution logging using the `log` crate.
 //!
-//! Provides functions to log tool calls and their results.
-//! Tool calls are ALWAYS logged (user has right to see what's being executed).
-//! Detailed results are only shown in debug mode.
-
-use std::sync::atomic::{AtomicBool, Ordering};
+//! Tool calls are logged at `info` level (visible in Normal mode).
+//! Detailed tool parameters and results are logged at `debug` level
+//! (visible in Verbose mode, i.e., `-v`).
+//!
+//! # Verbosity and Tool Logging
+//!
+//! | Level   | Tool Calls          | Tool Results |
+//! |---------|---------------------|--------------|
+//! | Quiet   | Hidden (error only) | Hidden       |
+//! | Normal  | Compact: 🔧 name()  | Hidden       |
+//! | Verbose | Detailed: key=val   | Full output  |
+//! | Trace   | Same as Verbose     | Same + extra |
 
 use crate::spinner::suspend_for_print;
 
-static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
-
-/// Enable debug mode
-pub fn enable_debug() {
-    DEBUG_MODE.store(true, Ordering::SeqCst);
-}
-pub fn toggle_debug() -> bool {
-    let value = !is_debug_enabled();
-    DEBUG_MODE.store(value, Ordering::SeqCst);
-    value
+/// Toggle debug/logging verbosity between Normal and Trace.
+/// Used by the `/debug` command in chat mode.
+/// Returns the new verbosity level.
+pub fn toggle_debug() -> crate::logging::Verbosity {
+    crate::logging::toggle_verbosity()
 }
 
-/// Check if debug mode is enabled
-pub fn is_debug_enabled() -> bool {
-    DEBUG_MODE.load(Ordering::SeqCst)
-}
-
-/// Log a tool call with its arguments
-/// ALWAYS logs (user has right to see what's being executed on their system)
+/// Log a tool call with its arguments.
+///
+/// In Normal mode (info level): compact single-line format `🔧 name(args)`
+/// In Verbose mode (debug level): detailed multi-line format with full params
 pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
-    if is_debug_enabled() {
-        // Detailed format for debug mode
+    if log::log_enabled!(log::Level::Debug) {
+        // Detailed format for verbose/trace mode
         suspend_for_print(|| {
-            eprintln!();
-            eprintln!("═══════════════════════════════════════════════════════════════");
-            eprintln!("🔧 TOOL CALL: {}", tool_name);
-            eprintln!("───────────────────────────────────────────────────────────────");
-
+            log::debug!("🔧 {}", tool_name);
             for (key, value) in args {
                 let display_value = crate::utils::truncate_chars(value, 77);
-                eprintln!("  {}: {}", key, display_value);
+                log::debug!("  {}: {}", key, display_value);
             }
-            eprintln!("───────────────────────────────────────────────────────────────");
         });
     } else {
-        // Compact format for normal mode - always show what tool is being called
+        // Compact format for normal mode
         let args_str: Vec<String> = args
             .iter()
             .map(|(k, v)| {
@@ -52,17 +46,13 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
             })
             .collect();
         suspend_for_print(|| {
-            eprintln!("🔧 Calling: {}({})", tool_name, args_str.join(", "));
+            log::info!("🔧 {}({})", tool_name, args_str.join(", "));
         });
     }
 }
 
-/// Log tool result (only in debug mode)
+/// Log tool result (only visible at Verbose/Trace level)
 pub fn log_tool_result(tool_name: &str, result: &str) {
-    if !is_debug_enabled() {
-        return;
-    }
-
     let display_result = if result.chars().count() > 500 {
         let truncated: String = result.chars().take(497).collect();
         let remaining = result.chars().count() - 497;
@@ -72,17 +62,6 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
     };
 
     suspend_for_print(|| {
-        eprintln!("📤 TOOL RESULT for {}:", tool_name);
-        eprintln!("{}", display_result);
-        eprintln!("═══════════════════════════════════════════════════════════════");
+        log::debug!("📤 {} result: {}", tool_name, display_result);
     });
-}
-
-/// Log a debug message (only in debug mode)
-pub fn log_debug(msg: &str) {
-    if is_debug_enabled() {
-        suspend_for_print(|| {
-            eprintln!("\x1B[90m[DEBUG] {}\x1B[0m", msg);
-        });
-    }
 }
