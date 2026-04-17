@@ -124,6 +124,7 @@ pub fn merge_configs(built_in: Option<&ModelConfig>, user: &UserModelConfig) -> 
 }
 
 pub fn get_model_config(name: &str) -> Option<ModelConfig> {
+    // First try exact match by config key name (e.g., "glm-ocr", "translategemma")
     let built_in = ModelConfig::get_builtin(name);
     let user_models = get_user_models();
     let user_config = user_models.get(name);
@@ -132,7 +133,10 @@ pub fn get_model_config(name: &str) -> Option<ModelConfig> {
         (Some(bi), Some(uc)) => Some(merge_configs(Some(bi), uc)),
         (Some(bi), None) => Some(bi.clone()),
         (None, Some(uc)) => Some(merge_configs(None, uc)),
-        (None, None) => None,
+        (None, None) => {
+            // Fall back to lookup by model_id (e.g., "glm-ocr:bf16" matches the "glm-ocr" config)
+            ModelConfig::get_builtin_by_model_id(name).cloned()
+        }
     }
 }
 

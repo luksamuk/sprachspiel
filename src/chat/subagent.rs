@@ -105,6 +105,9 @@ impl SubagentType {
 /// Configuration for a subagent execution.
 ///
 /// Each subagent type has its own defaults but can be overridden.
+/// Model options are resolved from the built-in/user model config at
+/// construction time, ensuring per-model temperature, num_ctx, etc.
+/// are respected instead of falling back to a hardcoded temperature 0.0.
 #[derive(Debug, Clone)]
 pub struct SubagentConfig {
     /// Model name to use for this subagent (e.g. "glm-ocr:bf16").
@@ -115,16 +118,28 @@ pub struct SubagentConfig {
     pub tool_whitelist: Vec<String>,
     /// Maximum output tokens; results are truncated beyond this.
     pub max_output_chars: usize,
+    /// Model options (temperature, num_ctx, etc.) resolved from ModelConfig.
+    pub model_options: ModelOptions,
 }
-
 impl SubagentConfig {
+
+
     /// Create a new config with the given model and system prompt.
+    ///
+    /// Model options are resolved from the built-in or user model config.
+    /// If the model is not found in any config, falls back to
+    /// `ModelOptions::default().temperature(0.0)` (same as the old hardcoded behavior).
     pub fn new(model: impl Into<String>, system_prompt: impl Into<String>) -> Self {
+        let model_name = model.into();
+        let model_options = crate::user_models::get_model_config(&model_name)
+            .map(|mc| mc.build_model_options())
+            .unwrap_or_else(|| ModelOptions::default().temperature(0.0));
         Self {
-            model: model.into(),
+            model: model_name,
             system_prompt: system_prompt.into(),
             tool_whitelist: Vec::new(),
             max_output_chars: DEFAULT_MAX_OUTPUT_TOKENS,
+            model_options,
         }
     }
 
@@ -140,9 +155,13 @@ impl SubagentConfig {
         self
     }
 
-    /// Build default `ModelOptions` for this config.
-    pub fn default_model_options(&self) -> ModelOptions {
-        ModelOptions::default().temperature(0.0)
+    /// Override the resolved model options.
+    ///
+    /// By default, `new()` resolves model options from the model config.
+    /// Use this to override with custom options if needed.
+    pub fn with_model_options(mut self, options: ModelOptions) -> Self {
+        self.model_options = options;
+        self
     }
 }
 
@@ -221,7 +240,7 @@ impl SubagentRunner {
         let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
         let image = Image::from_base64(base64_image);
 
-        let model_options = self.config.default_model_options();
+        let model_options = self.config.model_options.clone();
 
         let request = GenerationRequest::new(self.config.model.clone(), prompt)
             .options(model_options)
@@ -248,7 +267,7 @@ impl SubagentRunner {
         let system_message = ChatMessage::system(self.config.system_prompt.clone());
         let user_message = ChatMessage::user(prompt);
 
-        let model_options = self.config.default_model_options();
+        let model_options = self.config.model_options.clone();
 
         let request = ChatMessageRequest::new(
             self.config.model.clone(),
@@ -318,7 +337,7 @@ impl SubagentRunner {
         let system_message = ChatMessage::system(system_prompt);
         let user_message = ChatMessage::user(text.to_string());
 
-        let model_options = self.config.default_model_options();
+        let model_options = self.config.model_options.clone();
 
         let request = ChatMessageRequest::new(
             self.config.model.clone(),
@@ -506,7 +525,7 @@ impl SubagentRunner {
         // Create minimal CustomCoordinator with ONLY run_command.
         // spawn_subagent is deliberately NOT added (recursion prevention).
         let mut coordinator = CustomCoordinator::new(self.ollama.clone(), doc_model, vec![])
-            .options(ModelOptions::default().temperature(0.0))
+            .options(self.config.model_options.clone())
             .add_tool(run_command);
 
         // Set system prompt from the skill content.
@@ -569,6 +588,9 @@ mod tests {
         assert_eq!(config.system_prompt, "Extract text from images");
         assert!(config.tool_whitelist.is_empty());
         assert_eq!(config.max_output_chars, DEFAULT_MAX_OUTPUT_TOKENS);
+        // model_options is resolved from built-in config — just verify it's present
+        // (fields are pub(super) so we can't access individually, but Clone works)
+        let _opts = config.model_options.clone();
     }
 
     #[test]
@@ -578,6 +600,21 @@ mod tests {
             .with_max_output_chars(5000);
         assert_eq!(config.tool_whitelist, vec!["run_command"]);
         assert_eq!(config.max_output_chars, 5000);
+        // Unknown model falls back to default model options (temperature 0.0)
+        let _opts = config.model_options.clone();
+    }
+
+    #[test]
+    fn subagent_config_with_model_options_override() {
+        use ollama_rs::models::ModelOptions;
+
+        let custom_opts = ModelOptions::default().temperature(0.5).num_ctx(8192);
+        let config = SubagentConfig::new("glm-ocr:bf16", "OCR")
+            .with_model_options(custom_opts);
+        // with_model_options replaces the resolved options
+        // We can't directly compare ModelOptions (private fields), but
+        // the override should produce a consistent config
+        let _opts = config.model_options.clone();
     }
     #[test]
     fn subagent_type_from_str() {
