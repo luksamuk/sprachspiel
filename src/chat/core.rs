@@ -132,6 +132,7 @@ pub fn setup_coordinator(
     system_prompt: String,
     real_history_tokens: Option<usize>,
 ) -> CustomCoordinator<Vec<ChatMessage>> {
+    let think_enabled_for_callback = think_enabled;
     let coordinator = crate::query::ChatContext {
         ollama,
         model_id: model_config.model_id.clone(),
@@ -141,7 +142,63 @@ pub fn setup_coordinator(
         context_window: Some(model_config.num_ctx as usize),
         system_prompt: Some(system_prompt),
     }
-    .build_coordinator();
+    .build_coordinator()
+    .on_event(move |event| {
+        // Display pre-tool thinking and content during tool execution
+        // This mirrors what handle_chat_event does in query mode, but
+        // uses print_markdown_chat() for 80-column rendering.
+        match event {
+            crate::chat::custom_coordinator::ChatEvent::PreToolContent {
+                content,
+                thinking,
+            } => {
+                crate::spinner::suspend_for_print(|| {
+                    if think_enabled_for_callback {
+                        display_thinking(&content, thinking.as_ref(), true);
+                    }
+                    if !content.trim().is_empty() {
+                        let cleaned = strip_thinking_tags(&content);
+                        if !cleaned.trim().is_empty() {
+                            crate::markdown::print_markdown_chat(&cleaned);
+                        }
+                    }
+                });
+            }
+            crate::chat::custom_coordinator::ChatEvent::ContextNeedsCompaction {
+                tokens_used,
+                context_window,
+                ..
+            } => {
+                let percent = if context_window > 0 {
+                    (tokens_used * 100) / context_window
+                } else {
+                    0
+                };
+                eprintln!(
+                    "\x1B[33m⚠ Context {}% full. Compaction may be needed.\x1B[0m",
+                    percent
+                );
+            }
+            crate::chat::custom_coordinator::ChatEvent::ContextTruncated {
+                tool_name,
+                original_tokens,
+                new_tokens,
+                context_window,
+            } => {
+                log::warn!(
+                    "[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)",
+                    tool_name,
+                    original_tokens,
+                    new_tokens,
+                    context_window
+                );
+            }
+            _ => {
+                // Other events (ToolCall, ToolResult, ContextNearLimit)
+                // are handled by log_tool_call/log_tool_result/log::debug
+            }
+        }
+    });
 
     let mut coordinator = coordinator;
 
@@ -239,7 +296,7 @@ pub fn process_chat_response(
     }
 
     let display_content = strip_thinking_tags(&content);
-    crate::markdown::print_markdown(&display_content);
+    crate::markdown::print_markdown_chat(&display_content);
 
     let pre_tool = coordinator.take_pre_tool_content();
     let (pre_tool_content, pre_tool_thinking) = match pre_tool {
@@ -251,7 +308,7 @@ pub fn process_chat_response(
 
     if continuation_needed.is_some() {
         eprint!("\x1B[2K\r");
-        crate::markdown::print_markdown(&cleaned_response);
+        crate::markdown::print_markdown_chat(&cleaned_response);
     }
 
     SendMessageResult {

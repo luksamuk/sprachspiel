@@ -144,8 +144,8 @@ pub fn display_thinking(
     if let Some(ref thinking) = thinking_content {
         eprintln!("{DIM_STYLE}{THINKING_COLOR}[Thinking]{RESET}");
 
-        // Get terminal width, accounting for indentation
-        let terminal_width = termimad::terminal_size().0 as usize;
+        // Use fixed chat width (80 columns) for consistent rendering
+        let terminal_width = crate::markdown::CHAT_TERMINAL_WIDTH;
         let wrap_width = terminal_width.saturating_sub(THINKING_INDENT);
 
         if render_markdown {

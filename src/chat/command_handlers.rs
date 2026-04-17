@@ -818,7 +818,7 @@ pub async fn handle_compact(state: &mut ReplState) {
 
             println!();
             println!("\x1B[90m--- Summary ---\x1B[0m");
-            markdown::print_markdown(&summary);
+            markdown::print_markdown_chat(&summary);
             println!("\x1B[90m---------------\x1B[0m");
 
             if !state.session.anonymous {
@@ -2082,10 +2082,10 @@ pub fn handle_note_show(state: &ReplState, id: i64) {
             header.push_str("---\n");
 
             // Print header with markdown
-            crate::markdown::print_markdown(&header);
+            crate::markdown::print_markdown_chat(&header);
 
             // Print content as markdown (no prefix, let termimad handle it)
-            crate::markdown::print_markdown(&note.content);
+            crate::markdown::print_markdown_chat(&note.content);
         }
         Ok(None) => {
             eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);

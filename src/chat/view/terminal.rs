@@ -52,7 +52,7 @@ impl ChatView for TerminalView {
         }
 
         // Display the main response content as markdown
-        markdown::print_markdown(content);
+        markdown::print_markdown_chat(content);
     }
 
     fn show_token_metrics(&mut self, metrics: &TokenMetrics) {
