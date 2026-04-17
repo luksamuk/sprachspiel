@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.39.0** - 2026-03-29 (Document Import Tool)
+**v0.40.0** - 2026-03-29 (Document Import Tool)
 
 ## Current Implementation Status
 
@@ -434,7 +434,7 @@ todo_clear_all()             // Clear all tasks
 
 ### ✅ PRIORITY 4: Code Quality - query.rs Complexity (COMPLETED) [M1]
 
-**Status:** ✅ COMPLETED (v0.39.6)
+**Status:** ✅ COMPLETED (v0.40.0)
 
 **Goal:** Reduce cognitive complexity of `run_query` from 32/25 to <25/25.
 
@@ -687,7 +687,7 @@ todo_clear_all()             // Clear all tasks
 
 ### ✅ PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate + Verbosity System [M1]
 
-**Status:** ✅ COMPLETED (v0.39.7, branch: `feat/verbosity-simplification`)
+**Status:** ✅ COMPLETED (v0.40.0)
 
 **Goal:** Simplify verbosity system to 4 levels, remove debug mode, and integrate with REPL.
 

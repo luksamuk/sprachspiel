@@ -6,6 +6,16 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+
+### Changed
+
+
+### Fixed
+
+## [0.40.0] - 2026-04-17
+
+### Added
+
 - **Logging infrastructure with `log` crate and `env_logger` backend** (Issues #60, #61, #87, #88)
   - Replace custom `log_debug()` / `AtomicBool` / `eprintln!` with industry-standard `log` crate
   - 4-level verbosity system: Quiet (`-q`), Normal (default), Verbose (`-v`), Trace (`-vv`)
@@ -29,82 +39,6 @@ All notable changes to Ask-AI will be documented in this file.
   - Thinking blocks wrap at 80 columns (uses `CHAT_TERMINAL_WIDTH` constant)
   - Recent context display truncated to 80 visual columns (ANSI-aware)
   - Query mode and other subcommands still use real terminal width
-
-### Changed
-
-- **Simplified verbosity system to 4 levels** (Issue #87)
-  - Levels: Quiet, Normal, Verbose, Trace (removed Debug level)
-  - Normal level now shows info (was warn)
-  - Verbose level now shows debug (was info)
-  - Trace level now shows trace (was debug level)
-  - Removed `-vvv` trace flag (replaced with second `-v`)
-  - Removed `debug_default` config option
-
-- **Removed `-d`/`--debug` CLI flag** (Issue #61)
-  - `-d`/`--debug` completely removed from all subcommands (not deprecated)
-  - New `-v` / `-vv` flags control verbosity (verbose / trace level)
-  - `debug_default` config option replaced by `verbosity` in `[output]` section
-
-- **UX: `/forget` confirmation required** (Issue #85)
-
-- **CRITICAL: Removed LLM-controllable sandbox bypass from file tools.**
-  The `sandbox` parameter in `read_file`, `read_file_segment`, `count_lines`,
-  `list_directory`, `search_files`, `write_file`, `edit_file`, and `append_file`
-  allowed the LLM to pass `sandbox=false` to escape filesystem restrictions.
-  This was a security vulnerability — the entity being restricted should never
-  be able to disable the restriction. Sandbox is now always enforced for all
-  file operations. The `file_sandbox` config setting is also removed — sandbox
-  cannot be disabled via configuration either.
-
-- **Removed `enable_sandbox = false` option from tools.toml.** The Landlock
-  sandbox for `run_command` is now always enabled on Linux (kernel 5.13+).
-  There is no configuration option to disable it.
-
-- **Added `/tmp` and `/var/tmp` as allowed directories for file operations.**
-  Temporary directories are needed for tool interoperability (e.g., `pdftotext`
-  output). These are the only directories outside CWD that file tools can access.
-  This is consistent with the Landlock sandbox which already allows `/tmp`.
-
-### Changed
-
-- **UX: `/forget` confirmation required** (Issue #85)
-  - `/forget` now requires `--yes` flag to execute — without it, shows a warning
-  - Prevents accidental data loss from typos or unintended execution
-  - `/session forget` also requires `--yes` for consistency
-  - No shortcuts exist for `/forget` (already enforced in PR #84)
-
-- **UX: `/skill <name>` subcommand replaces `/<skill-name>` wildcard** (Issue #86)
-  - Skills are now activated via `/skill <name>` (e.g., `/skill document-processing`)
-  - `/skill` (no args) lists available skills
-  - `/sk` is a shortcut for `/skill`
-  - `/<skill-name>` (the wildcard match) is now an invalid command — use `/skill <name>` instead
-  - Removes namespace collision risk (e.g., a skill named "forget", "new", "help")
-
-- **Fix: FTS5 `conversation_id` column error in `delete_conversation()`**
-  - Removed invalid `DELETE FROM content_fts WHERE conversation_id = ?1` query
-  - The `content_fts` table (FTS5 external content mode) does not have a `conversation_id` column
-  - FTS entries are cleaned automatically by the `content_items_ad` trigger when `content_items` are deleted
-
-- **Fix: FOREIGN KEY constraint failure when saving todos**
-  - `save_sqlite()` called `update_conversation_metadata()` (UPDATE) before `save_todos()` (INSERT with FK),
-    but the conversation row might not exist yet (e.g., after `/forget` generates a new session ID)
-  - The UPDATE silently affected 0 rows, then the INSERT into `session_todos` failed because
-    `conversation_id REFERENCES conversations(id)` was violated
-  - Now calls `ensure_conversation_exists()` (INSERT OR REPLACE) before the metadata update,
-    matching the pattern already used in `add_user_message()` and `add_assistant_message()`
-
-- **Code Quality: Reduce `parse_command` complexity** (Issue #35)
-  - Extract `parse_fact_subcommand()`, `parse_note_subcommand()`, `parse_doc_subcommand()`, `parse_session_subcommand()` from monolithic `parse_command`
-  - Consolidate 16 two-letter shortcut commands (/fa, /na, /di, etc.) as delegates to their parent parsers, eliminating ~135 lines of duplicated parsing logic
-  - Eliminate `CommandResult` enum — was a 1:1 mirror of `ChatCommand` with 23+ identical variants and 30 pass-through arms in `execute_command`
-  - Move execution logic from `execute_command()` into `handle_command()` in `command_handlers.rs`, using `ChatCommand` directly
-  - Eliminate `SessionSubcommand` enum and `ChatCommand::Session` — `/session new|load|list|save|forget` now returns canonical `ChatCommand` variants, removing ~151 lines of duplicated handler logic
-  - Net reduction: ~462 lines (1919 → ~1457 in `commands.rs`)
-  - Add 77 unit tests for all extracted parsers and shortcut mappers
-  - **Fix: Remove `/f` shortcut from `/forget`** — `/f` was a collision between `/forget` and `/search (find)`, causing accidental data loss. `/forget` is now only accessible by its full name; `/f` correctly maps to `/search`
-  - **Add missing `/todo` shortcuts** — `/tg` (get), `/te` (edit), `/td` (delete), `/tcd` (clear-done), `/tca` (clear-all) now work alongside existing `/ta`, `/tl`, `/tu`
-
-### Added
 
 - **Memory Staleness Warnings in Facts Prompt** (Issue #70)
   - Facts in the system prompt now show age-based staleness labels when outdated
@@ -148,27 +82,106 @@ All notable changes to Ask-AI will be documented in this file.
   - Made `truncate_str()` pub(crate) for reuse across view modules
   - Related: Issue #67
 
-- **Braille Art Welcome Banner** - Extended mind braille art replaces jp2a ASCII art
-  - 14-line colored braille art generated from extended-mind.png (width 39)
-  - Reordered session info by importance: Model, Server, Tools, Think, Vision, Sandbox, Project, Session, Version
-  - Separate Facts/Notes/Docs count lines (only shown when count > 0)
-  - Skills count line (only shown when tools enabled and skills > 0)
-  - `WelcomeInfo` struct expanded from 7 to 13 fields (added skill_count)
-  - Added `count_facts()`, `count_notes()`, `count_documents()` to Database
 
-- **Randomized spinner animations** - Each spinner now uses a random animation preset from rattles
-  - Added `rattles` dependency (v0.2) for spinner animation presets (42 presets: braille, ascii, arrows)
-  - Each call to `create_spinner()` picks a random animation via `tick_strings()`
-  - Rendering backend remains indicatif (suspend/resume, steady tick, progress bars unchanged)
-  - Emoji presets excluded for terminal compatibility (including Termux)
-  - All presets verified as single-line (height=1)
+### Changed
 
-- **Notes LLM Tools: edit and delete** - LLM can now maintain notes it creates
-  - `note_edit(id, title?, content?)` - Edit note title and/or content
-  - `note_delete(id)` - Delete note by ID (accepts "42" or "note:42")
-  - Previously only `note_add` was available; LLM could create but not modify or remove notes
-  - Listing (`note_list`) and viewing (`note_show`) are covered by `remember(query)` and `remember(id="note:N")`
-  - Related: Issue #63
+- **Simplified verbosity system to 4 levels** (Issue #87)
+  - Levels: Quiet, Normal, Verbose, Trace (removed Debug level)
+  - Normal level now shows info (was warn)
+  - Verbose level now shows debug (was info)
+  - Trace level now shows trace (was debug level)
+  - Removed `-vvv` trace flag (replaced with second `-v`)
+  - Removed `debug_default` config option
+
+- **Removed `-d`/`--debug` CLI flag** (Issue #61)
+  - `-d`/`--debug` completely removed from all subcommands (not deprecated)
+  - New `-v` / `-vv` flags control verbosity (verbose / trace level)
+  - `debug_default` config option replaced by `verbosity` in `[output]` section
+
+- **UX: `/forget` confirmation required** (Issue #85)
+
+- **CRITICAL: Removed LLM-controllable sandbox bypass from file tools.**
+  The `sandbox` parameter in `read_file`, `read_file_segment`, `count_lines`,
+  `list_directory`, `search_files`, `write_file`, `edit_file`, and `append_file`
+  allowed the LLM to pass `sandbox=false` to escape filesystem restrictions.
+  This was a security vulnerability — the entity being restricted should never
+  be able to disable the restriction. Sandbox is now always enforced for all
+  file operations. The `file_sandbox` config setting is also removed — sandbox
+  cannot be disabled via configuration either.
+
+- **Removed `enable_sandbox = false` option from tools.toml.** The Landlock
+  sandbox for `run_command` is now always enabled on Linux (kernel 5.13+).
+  There is no configuration option to disable it.
+
+- **Added `/tmp` and `/var/tmp` as allowed directories for file operations.**
+  Temporary directories are needed for tool interoperability (e.g., `pdftotext`
+  output). These are the only directories outside CWD that file tools can access.
+  This is consistent with the Landlock sandbox which already allows `/tmp`.
+
+- **UX: `/forget` confirmation required** (Issue #85)
+  - `/forget` now requires `--yes` flag to execute — without it, shows a warning
+  - Prevents accidental data loss from typos or unintended execution
+  - `/session forget` also requires `--yes` for consistency
+  - No shortcuts exist for `/forget` (already enforced in PR #84)
+
+- **UX: `/skill <name>` subcommand replaces `/<skill-name>` wildcard** (Issue #86)
+  - Skills are now activated via `/skill <name>` (e.g., `/skill document-processing`)
+  - `/skill` (no args) lists available skills
+  - `/sk` is a shortcut for `/skill`
+  - `/<skill-name>` (the wildcard match) is now an invalid command — use `/skill <name>` instead
+  - Removes namespace collision risk (e.g., a skill named "forget", "new", "help")
+
+- **Fix: FTS5 `conversation_id` column error in `delete_conversation()`**
+  - Removed invalid `DELETE FROM content_fts WHERE conversation_id = ?1` query
+  - The `content_fts` table (FTS5 external content mode) does not have a `conversation_id` column
+  - FTS entries are cleaned automatically by the `content_items_ad` trigger when `content_items` are deleted
+
+- **Fix: FOREIGN KEY constraint failure when saving todos**
+  - `save_sqlite()` called `update_conversation_metadata()` (UPDATE) before `save_todos()` (INSERT with FK),
+    but the conversation row might not exist yet (e.g., after `/forget` generates a new session ID)
+  - The UPDATE silently affected 0 rows, then the INSERT into `session_todos` failed because
+    `conversation_id REFERENCES conversations(id)` was violated
+  - Now calls `ensure_conversation_exists()` (INSERT OR REPLACE) before the metadata update,
+    matching the pattern already used in `add_user_message()` and `add_assistant_message()`
+
+- **Code Quality: Reduce `parse_command` complexity** (Issue #35)
+  - Extract `parse_fact_subcommand()`, `parse_note_subcommand()`, `parse_doc_subcommand()`, `parse_session_subcommand()` from monolithic `parse_command`
+  - Consolidate 16 two-letter shortcut commands (/fa, /na, /di, etc.) as delegates to their parent parsers, eliminating ~135 lines of duplicated parsing logic
+  - Eliminate `CommandResult` enum — was a 1:1 mirror of `ChatCommand` with 23+ identical variants and 30 pass-through arms in `execute_command`
+  - Move execution logic from `execute_command()` into `handle_command()` in `command_handlers.rs`, using `ChatCommand` directly
+  - Eliminate `SessionSubcommand` enum and `ChatCommand::Session` — `/session new|load|list|save|forget` now returns canonical `ChatCommand` variants, removing ~151 lines of duplicated handler logic
+  - Net reduction: ~462 lines (1919 → ~1457 in `commands.rs`)
+  - Add 77 unit tests for all extracted parsers and shortcut mappers
+  - **Fix: Remove `/f` shortcut from `/forget`** — `/f` was a collision between `/forget` and `/search (find)`, causing accidental data loss. `/forget` is now only accessible by its full name; `/f` correctly maps to `/search`
+  - **Add missing `/todo` shortcuts** — `/tg` (get), `/te` (edit), `/td` (delete), `/tcd` (clear-done), `/tca` (clear-all) now work alongside existing `/ta`, `/tl`, `/tu`
+
+- **Welcome banner: "Ollama" label renamed to "Server"** - Future-proof for non-Ollama backends
+  - Removed embed_model line (it's a fixed constant, not useful info)
+  - Removed combined `db_stats()` function in favor of individual count methods
+
+- **todo-tools is now built-in** - No longer requires feature flag
+  - Todo tools are always available (like facts and notes)
+  - `TodoState` is now always part of `ChatSession`
+  - Removed `todo-tools` from feature flags in Cargo.toml
+  - All `/todo` commands work without enabling features
+  - Related: Issue #31, PR #62
+
+- **Code Quality: registry.rs Refactoring** - Reduce cognitive complexity from 56/25 to <25/25
+  - Extract 13 `register_*_tools()` helper functions for tool registration
+  - Extract 13 `get_*_tool_names()` helper functions for tool name listing
+  - Create `register_if_allowed!` and `push_if_allowed!` macros for DRY code
+  - Ensure consistent tool ordering between `register_tools()` and `get_available_tool_names()`
+  - Related: Issue #31, PR #62
+
+- **Code Quality: context_builder.rs Refactoring** - Reduce cognitive complexity from 27/25 to below 25
+  - Extract retrieval logic into `perform_retrieval()` helper
+  - Extract message conversion into `push_messages()` helper
+  - Related: Issue #30
+
+- **Code Quality: query.rs Refactoring** - Reduce cognitive complexity from 32/25 to below 25
+  - Extract initialization logic into helper functions
+  - Related: Issue #29
+
 
 ### Fixed
 
@@ -215,34 +228,6 @@ All notable changes to Ask-AI will be documented in this file.
   - `import_document(path, scope, title)` now normalizes empty title → None (triggers auto-extraction)
   - Added AGENTS.md section documenting the pattern and checklist
 
-### Changed
-
-- **Welcome banner: "Ollama" label renamed to "Server"** - Future-proof for non-Ollama backends
-  - Removed embed_model line (it's a fixed constant, not useful info)
-  - Removed combined `db_stats()` function in favor of individual count methods
-
-- **todo-tools is now built-in** - No longer requires feature flag
-  - Todo tools are always available (like facts and notes)
-  - `TodoState` is now always part of `ChatSession`
-  - Removed `todo-tools` from feature flags in Cargo.toml
-  - All `/todo` commands work without enabling features
-  - Related: Issue #31, PR #62
-
-- **Code Quality: registry.rs Refactoring** - Reduce cognitive complexity from 56/25 to <25/25
-  - Extract 13 `register_*_tools()` helper functions for tool registration
-  - Extract 13 `get_*_tool_names()` helper functions for tool name listing
-  - Create `register_if_allowed!` and `push_if_allowed!` macros for DRY code
-  - Ensure consistent tool ordering between `register_tools()` and `get_available_tool_names()`
-  - Related: Issue #31, PR #62
-
-- **Code Quality: context_builder.rs Refactoring** - Reduce cognitive complexity from 27/25 to below 25
-  - Extract retrieval logic into `perform_retrieval()` helper
-  - Extract message conversion into `push_messages()` helper
-  - Related: Issue #30
-
-- **Code Quality: query.rs Refactoring** - Reduce cognitive complexity from 32/25 to below 25
-  - Extract initialization logic into helper functions
-  - Related: Issue #29
 
 ## [0.39.5] - 2026-03-30
 
@@ -2747,55 +2732,6 @@ If upgrading from v0.13.0:
 - Updated contributing.md with feature flags and Makefile commands
 - Updated man page with --ignore-agents flag
 - Updated roadmap.md with ollama-rs integration status
-
-## [Unreleased]
-
-### Planned
-
-- Custom model support - Allow users to define custom models in config
-- Termux builds - Android/Termux support
-
-### Added
-
-- Complete documentation with mdBook
-- Man page for terminal reference
-- Development documentation (architecture, roadmap, contributing)
-- Mermaid diagram support
-- New `read_file_segment` tool for reading specific line ranges from files
-- New `count_lines` tool to check file size before reading
-- Tool error handling guidelines in documentation
-- Tool calls now always visible to user (even without debug mode)
-- **AGENTS.md context injection** - Automatically load project context from current directory
-- **`--ignore-agents` flag** - Disable AGENTS.md context loading
-- Security sanitization for AGENTS.md content (injection patterns, executable code blocks)
-
-### Fixed
-
-- Tool call errors now return friendly messages instead of crashing
-- Code mode now respects `[model.code]` config properly
-- Translate subcommand now respects `--plain` flag
-- Per-subcommand configuration system (query, summarize, code)
-- `read_file` debug output now shows "all" instead of empty when max_lines not specified
-- `list_directory` debug output now shows "false" instead of empty when recursive not specified
-- **Weather tools fixed** - API response structs now use optional fields
-- **All tools now have proper error handling** - No more crashes from network/API errors
-- **Raw errors shown with pretty printing in debug mode** - Use `{:#?}` for readable error output
-- **Pokémon tools fixed** - All 9 tools now have proper logging and error handling
-
-### Changed
-
-- Tools now return informative error messages to help LLM recover from mistakes
-- Tool calls always logged to stderr so users can see what's being executed
-- Documentation updated with tool error handling philosophy
-- Prompt updated to encourage using `count_lines` before reading large files
-- **All tool arguments now use String type** for robustness (LLMs generate inconsistent JSON)
-  - Boolean parameters accept: "true", "false", "1", "0", "yes"
-  - Numeric parameters accept: "50", "100", etc.
-  - Empty/unset parameters use sensible defaults
-- **File sizes shown in KB/MB** instead of raw bytes (more intuitive for LLMs)
-- **`count_lines`** now shows only line count (removed byte count - LLMs think in lines)
-- **`read_file_segment`** now requires both `start_line` and `num_lines` (no defaults)
-- Spinner now suspends during tool output (no more frozen spinner text)
 
 ## [0.1.0] - 2026-02-17
 
