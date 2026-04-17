@@ -2846,20 +2846,28 @@ mod tests {
 pub async fn handle_subagent_ocr(state: &mut ReplState, path: String) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
     use crate::ocr::mode::OcrMode;
-    use std::path::Path;
+    use crate::utils::expand_tilde_path;
 
-    let file_path = Path::new(&path);
+    // Expand tilde in path (e.g., ~/photo.jpg → /home/user/photo.jpg)
+    let file_path = expand_tilde_path(&path);
     if !file_path.exists() {
         eprintln!("\x1B[31mError: File not found: {}\x1B[0m", path);
         return;
     }
 
+    // Save user command to conversation context
+    state.session.add_user_message(format!("/ocr {}", path));
+
     let (model, _, _) = state.settings.get_subcommand_config("ocr");
     let config = SubagentConfig::new(model, "OCR extraction");
     let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
 
-    match runner.run_ocr(file_path, OcrMode::Text, &state.settings).await {
-        Ok(result) => println!("{}", result),
+    match runner.run_ocr(&file_path, OcrMode::Text, &state.settings).await {
+        Ok(result) => {
+            println!("{}", result);
+            // Save result to conversation context so AI can reference it
+            state.session.add_assistant_message(result, None);
+        }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
 }
@@ -2867,9 +2875,11 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String) {
 /// Handle /vision command - analyze image(s) with vision model
 pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, prompt: Option<String>) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+    use crate::utils::expand_tilde_path;
     use std::path::PathBuf;
 
-    let path_bufs: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    // Expand tilde in paths
+    let path_bufs: Vec<PathBuf> = paths.iter().map(|p| expand_tilde_path(p)).collect();
 
     // Validate files exist
     for path in &path_bufs {
@@ -2879,6 +2889,13 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
         }
     }
 
+    // Build command string for context
+    let cmd_str = match &prompt {
+        Some(p) => format!("/vision {} {}", paths.join(" "), p),
+        None => format!("/vision {}", paths.join(" ")),
+    };
+    state.session.add_user_message(cmd_str);
+
     let (model, _, _) = state.settings.get_subcommand_config("vision");
     let config = SubagentConfig::new(model, "Vision analysis");
     let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
@@ -2886,7 +2903,10 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
     let prompt_str = prompt.as_deref().unwrap_or("Describe what you see in this image.");
 
     match runner.run_vision(&path_bufs, prompt_str).await {
-        Ok(result) => println!("{}", result),
+        Ok(result) => {
+            println!("{}", result);
+            state.session.add_assistant_message(result, None);
+        }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
 }
@@ -2895,12 +2915,18 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
 pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String, text: String) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
 
+    // Save user command to conversation context
+    state.session.add_user_message(format!("/translate {} {}", lang_pair, text));
+
     let (model, _, _) = state.settings.get_subcommand_config("translate");
     let config = SubagentConfig::new(model, "Translation");
     let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
 
     match runner.run_translate(&lang_pair, &text).await {
-        Ok(result) => println!("{}", result),
+        Ok(result) => {
+            println!("{}", result);
+            state.session.add_assistant_message(result, None);
+        }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
 }
@@ -2909,12 +2935,18 @@ pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String,
 pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
 
+    // Save user command to conversation context
+    state.session.add_user_message(format!("/summarize {}", text));
+
     let (model, _, _) = state.settings.get_subcommand_config("summarize");
     let config = SubagentConfig::new(model, "Summarization");
     let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
 
     match runner.run_summarize(&text).await {
-        Ok(result) => println!("{}", result),
+        Ok(result) => {
+            println!("{}", result);
+            state.session.add_assistant_message(result, None);
+        }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
 }
