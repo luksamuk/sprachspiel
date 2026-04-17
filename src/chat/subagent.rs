@@ -579,4 +579,46 @@ mod tests {
         assert_eq!(config.tool_whitelist, vec!["run_command"]);
         assert_eq!(config.max_output_chars, 5000);
     }
+    #[test]
+    fn subagent_type_from_str() {
+        // Valid types — case-insensitive
+        assert_eq!("ocr".parse::<SubagentType>(), Ok(SubagentType::Ocr));
+        assert_eq!("vision".parse::<SubagentType>(), Ok(SubagentType::Vision));
+        assert_eq!("translate".parse::<SubagentType>(), Ok(SubagentType::Translate));
+        assert_eq!("summarize".parse::<SubagentType>(), Ok(SubagentType::Summarize));
+        assert_eq!("document".parse::<SubagentType>(), Ok(SubagentType::Document));
+
+        // Case-insensitive
+        assert_eq!("OCR".parse::<SubagentType>(), Ok(SubagentType::Ocr));
+        assert_eq!("Vision".parse::<SubagentType>(), Ok(SubagentType::Vision));
+        assert_eq!("TRANSLATE".parse::<SubagentType>(), Ok(SubagentType::Translate));
+
+        // Invalid types
+        assert!("unknown".parse::<SubagentType>().is_err());
+        assert!("".parse::<SubagentType>().is_err());
+        assert!("code".parse::<SubagentType>().is_err());
+    }
+
+    #[test]
+    fn subagent_type_parse_convenience() {
+        // The parse() convenience method wraps from_str
+        assert_eq!(SubagentType::parse("ocr"), Some(SubagentType::Ocr));
+        assert_eq!(SubagentType::parse("invalid"), None);
+        assert_eq!(SubagentType::parse(""), None);
+    }
+
+    #[test]
+    fn result_truncation() {
+        // Under budget: returned as-is
+        let short = "Hello world";
+        assert_eq!(truncate_to_budget(short, 10_000), short);
+
+        // Over budget: truncated with notice
+        // Token estimation uses word count, so use many words
+        let long = "word ".repeat(20_000); // 20K words = ~26.7K tokens
+        let result = truncate_to_budget(&long, 100);
+        assert!(result.contains("[Result truncated"));
+        assert!(result.len() < long.len());
+    }
+
 }

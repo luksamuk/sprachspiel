@@ -58,7 +58,7 @@ This document outlines planned features and the current state of Ask-AI.
   - Nested continuations (up to 3 levels)
   - Context status injected into prompts
 
-**Tools (32 total):**
+**Tools (33 total):**
 
 | Category | Count | Feature Flag | Default |
 |----------|-------|--------------|---------|
@@ -72,6 +72,7 @@ This document outlines planned features and the current state of Ask-AI.
 | Factual Memory | 3 | (always on) | ✅ Enabled |
 | Memory Retrieval | 1 | (always on) | ✅ Enabled |
 | Run Command | 1 | (always on) | ✅ Enabled |
+| Subagent | 1 | `subagent-tools` | ✅ Enabled |
 | LED Control | 5 | `led-tools` | ❌ Disabled* |
 
 *LED tools require `[led]` configuration in config.toml.
@@ -357,7 +358,7 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 ### Specialized Agent Architecture
 
 **Priority:** HIGH  
-**Status:** Planned (Issue #12)
+**Status:** ✅ COMPLETE
 
 **Goal:** Delegate specialized tasks (OCR, vision, document extraction, translation, summarization) to one-shot agents with optimized models.
 
@@ -378,15 +379,15 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 **Subagent Types:**
 
-| Type | Model | Tools | Purpose |
-|------|-------|-------|---------|
-| `ocr` | glm-ocr:bf16 | run_command(tesseract) | Image text extraction |
-| `vision` | moondream:1.8b | - | Image analysis |
-| `translate` | translategemma:4b | - | Translation |
-| `summarize` | (same model) | - | Summarization |
-| `document` | (same model) | run_command(pdftotext) | PDF/EPUB extraction |
+| Type | Model | API | Purpose |
+|------|-------|-----|---------|
+| `ocr` | glm-ocr:bf16 | /api/generate | Image text extraction |
+| `vision` | moondream:1.8b | /api/generate | Image analysis |
+| `translate` | translategemma:4b | /api/chat | Translation |
+| `summarize` | (same model) | /api/chat | Summarization |
+| `document` | (same model) | /api/chat | PDF/EPUB extraction |
 
-**Planned Commands:**
+**Chat Commands:**
 
 | Command | Description |
 |---------|-------------|
@@ -395,10 +396,23 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 | `/translate <lang> <text>` | Translation via specialized agent |
 | `/summarize <text>` | Summarization via specialized agent |
 
+**LLM Tool:**
+
+| Tool | Description |
+|------|-------------|
+| `spawn_subagent(type, prompt, file_path?)` | Spawn a specialized subagent from within chat |
+
 **Technical Debt Resolved:**
 - `import_document` calling `Command::new()` directly → uses `spawn_subagent(type="document")`
 - Skills can now override document-processing behavior at project level
+- Document subagent prevents recursion (spawn_subagent not registered in its coordinator)
 
+**Key Files:**
+- `src/chat/subagent.rs` - SubagentRunner and SubagentConfig
+- `src/tools/subagent_tools.rs` - spawn_subagent LLM tool
+- `src/prompts/tools.rs` - Tool prompt for spawn_subagent
+
+**Implementation:** See `IMPLEMENTATION.md` - Priority 4
 **Implementation:** See `IMPLEMENTATION.md` - Priority 4
 
 ---

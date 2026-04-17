@@ -280,7 +280,7 @@ Analyze or describe an image using the moondream vision model.
 **Examples:**
 ```
 /vision /tmp/screenshot.png
-/visibility /tmp/diagram.png "Describe the architecture shown"
+/vision /tmp/diagram.png "Describe the architecture shown"
 ```
 
 Without a custom prompt, the model provides a general description. With a prompt, it answers specific questions about the image.

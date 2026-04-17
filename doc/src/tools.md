@@ -22,7 +22,6 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Todo | 5 | Session state | ✅ Working | ✅ Enabled |
 | Subagent | 1 | SubagentRunner | ✅ Working | ✅ Enabled |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
-| LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
 
@@ -43,6 +42,7 @@ The default build includes:
 - `skills-tools` - AI behavior skills (skill_list, skill_view)
 - `todo-tools` - Session todo list management
 - `document-tools` - Document import
+- `subagent-tools` - Specialized subagent delegation (spawn_subagent)
 
 ### Available Features
 

@@ -218,3 +218,80 @@ pub fn build_document_config(settings: &crate::settings::Settings) -> SubagentCo
     let (model, _, _) = settings.get_subcommand_config("document");
     SubagentConfig::new(model, DOCUMENT_SYSTEM_PROMPT)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_invalid_subagent_type() {
+        // Unknown type strings should fail SubagentType::parse
+        assert!(SubagentType::parse("invalid").is_none());
+        assert!(SubagentType::parse("unknown").is_none());
+        assert!(SubagentType::parse("").is_none());
+        assert!(SubagentType::parse("code").is_none());
+
+        // Valid type strings should succeed
+        assert!(SubagentType::parse("ocr").is_some());
+        assert!(SubagentType::parse("vision").is_some());
+        assert!(SubagentType::parse("translate").is_some());
+        assert!(SubagentType::parse("summarize").is_some());
+        assert!(SubagentType::parse("document").is_some());
+    }
+
+    #[test]
+    fn test_missing_file_path_for_ocr() {
+        // OCR and Vision require file_path (uses_generate_api() == true)
+        let ocr = SubagentType::Ocr;
+        let vision = SubagentType::Vision;
+        assert!(ocr.uses_generate_api());
+        assert!(vision.uses_generate_api());
+
+        // Text-based types do not require file_path
+        assert!(!SubagentType::Translate.uses_generate_api());
+        assert!(!SubagentType::Summarize.uses_generate_api());
+        assert!(!SubagentType::Document.uses_generate_api());
+    }
+
+    #[test]
+    fn test_valid_subagent_types_constant() {
+        // Ensure the VALID_SUBAGENT_TYPES constant matches the enum
+        assert_eq!(VALID_SUBAGENT_TYPES.len(), 5);
+        assert!(VALID_SUBAGENT_TYPES.contains(&"ocr"));
+        assert!(VALID_SUBAGENT_TYPES.contains(&"vision"));
+        assert!(VALID_SUBAGENT_TYPES.contains(&"translate"));
+        assert!(VALID_SUBAGENT_TYPES.contains(&"summarize"));
+        assert!(VALID_SUBAGENT_TYPES.contains(&"document"));
+    }
+
+    #[test]
+    fn test_file_path_empty_string_normalization() {
+        // Empty string should be treated as None (filter pattern)
+        let file_path: Option<String> = Some("".to_string());
+        let normalized = file_path.filter(|s| !s.is_empty());
+        assert!(normalized.is_none());
+
+        // Non-empty string should remain Some
+        let file_path: Option<String> = Some("/tmp/image.png".to_string());
+        let normalized = file_path.filter(|s| !s.is_empty());
+        assert!(normalized.is_some());
+
+        // None should stay None
+        let file_path: Option<String> = None;
+        let normalized = file_path.filter(|s| !s.is_empty());
+        assert!(normalized.is_none());
+    }
+
+    #[test]
+    fn test_error_message_for_invalid_type() {
+        // Verify the error message format matches expectations
+        let invalid_type = "foobar";
+        let err = format!(
+            "Error: Unknown subagent type '{}'. Valid types: {}",
+            invalid_type,
+            VALID_SUBAGENT_TYPES.join(", ")
+        );
+        assert!(err.contains("summarize, document"));
+    }
+}

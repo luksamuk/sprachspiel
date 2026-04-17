@@ -2092,9 +2092,27 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🔄 PRIORITY 4: Specialized Agent Architecture [M1]
+### ✅ PRIORITY 4: Specialized Agent Architecture [M1]
 
-**Status:** 🔄 IN PROGRESS (v0.41.0)
+**Status:** ✅ COMPLETED (v0.41.0)
+
+**Implementation:**
+- Created `src/chat/subagent.rs` - `SubagentRunner` for one-shot execution with dual API path support
+- Added `spawn_subagent` tool in `src/tools/spawn_subagent.rs` - LLM-initiated subagent invocation with type-safe dispatch
+- Implemented chat commands: `/ocr`, `/vision`, `/translate`, `/summarize` in `src/chat/commands/`
+- Refactored document extraction to use subagent architecture (Issue #9)
+- Added config support for `[model.ocr]` and `[model.document]` in `src/config/models.rs`
+- Created feature flag `subagent-tools` in `Cargo.toml`
+- Updated `doc/src/CHANGELOG.md` with P4 release notes
+
+**Key Files Modified:**
+- `src/chat/subagent.rs` (new) - Core subagent execution engine
+- `src/tools/spawn_subagent.rs` (new) - Tool for LLM-initiated subagent spawning
+- `src/chat/commands/mod.rs` - Added specialized command handlers
+- `src/config/models.rs` - Added OCR and document model configuration
+- `Cargo.toml` - Added `subagent-tools` feature flag
+
+**Related Issues:** #9 (Document Import), #12 (OCR/Vision Integration)
 
 **Status:** ❌ NOT STARTED
 
