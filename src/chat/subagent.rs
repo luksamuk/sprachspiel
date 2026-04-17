@@ -110,7 +110,7 @@ impl SubagentType {
 /// are respected instead of falling back to a hardcoded temperature 0.0.
 #[derive(Debug, Clone)]
 pub struct SubagentConfig {
-    /// Model name to use for this subagent (e.g. "glm-ocr:bf16").
+    /// Resolved model_id to use for this subagent (e.g. "glm-ocr:bf16", "translategemma:4b").
     pub model: String,
     /// System prompt injected before the user prompt.
     pub system_prompt: String,
@@ -124,18 +124,21 @@ pub struct SubagentConfig {
 impl SubagentConfig {
 
 
-    /// Create a new config with the given model and system prompt.
+    /// Create a new config with the given model config key and system prompt.
     ///
-    /// Model options are resolved from the built-in or user model config.
-    /// If the model is not found in any config, falls back to
-    /// `ModelOptions::default().temperature(0.0)` (same as the old hardcoded behavior).
+    /// The `model` parameter is a config key (e.g., "translategemma", "glm-ocr")
+    /// that gets resolved to a model_id (e.g., "translategemma:4b", "glm-ocr:bf16")
+    /// for the actual Ollama API call. If the config key is not found in built-in
+    /// or user models, it is used directly as the model name with default options.
     pub fn new(model: impl Into<String>, system_prompt: impl Into<String>) -> Self {
-        let model_name = model.into();
-        let model_options = crate::user_models::get_model_config(&model_name)
-            .map(|mc| mc.build_model_options())
-            .unwrap_or_else(|| ModelOptions::default().temperature(0.0));
+        let config_key = model.into();
+        let (resolved_model, model_options) = crate::user_models::get_model_config(&config_key)
+            .map(|mc| (mc.model_id.clone(), mc.build_model_options()))
+            .unwrap_or_else(|| {
+                (config_key.clone(), ModelOptions::default().temperature(0.0))
+            });
         Self {
-            model: model_name,
+            model: resolved_model,
             system_prompt: system_prompt.into(),
             tool_whitelist: Vec::new(),
             max_output_chars: DEFAULT_MAX_OUTPUT_TOKENS,
@@ -583,6 +586,7 @@ mod tests {
 
     #[test]
     fn subagent_config_defaults() {
+        // Using model_id "glm-ocr:bf16" should resolve via model_id fallback
         let config = SubagentConfig::new("glm-ocr:bf16", "Extract text from images");
         assert_eq!(config.model, "glm-ocr:bf16");
         assert_eq!(config.system_prompt, "Extract text from images");
@@ -609,8 +613,10 @@ mod tests {
         use ollama_rs::models::ModelOptions;
 
         let custom_opts = ModelOptions::default().temperature(0.5).num_ctx(8192);
-        let config = SubagentConfig::new("glm-ocr:bf16", "OCR")
+        // Using config key "glm-ocr" should resolve to model_id "glm-ocr:bf16"
+        let config = SubagentConfig::new("glm-ocr", "OCR")
             .with_model_options(custom_opts);
+        assert_eq!(config.model, "glm-ocr:bf16");
         // with_model_options replaces the resolved options
         // We can't directly compare ModelOptions (private fields), but
         // the override should produce a consistent config
@@ -660,8 +666,9 @@ mod tests {
 
     #[test]
     fn test_subagent_config_model_options_from_builtin() {
-        // Create a SubagentConfig with a builtin model (glm-ocr:bf16 has temperature 0.1)
-        let config = SubagentConfig::new("glm-ocr:bf16", "test");
+        // Create a SubagentConfig with config key "glm-ocr" — should resolve model_id
+        let config = SubagentConfig::new("glm-ocr", "test");
+        assert_eq!(config.model, "glm-ocr:bf16");
         // Verify temperature is resolved from ModelConfig (0.1 for glm-ocr)
         // We can't directly access model_options fields, but we can check via clone
         let opts = config.model_options.clone();
@@ -683,10 +690,24 @@ mod tests {
 
     #[test]
     fn test_subagent_config_with_translate_model() {
-        // Test that SubagentConfig works with translategemma
-        let config = SubagentConfig::new("translategemma:4b", "Translate text");
+        // Test that SubagentConfig resolves config key "translategemma" to model_id
+        let config = SubagentConfig::new("translategemma", "Translate text");
         assert_eq!(config.model, "translategemma:4b");
         let _opts = config.model_options.clone();
+    }
+
+    /// Test that config key "glm-ocr" resolves to model_id "glm-ocr:bf16"
+    #[test]
+    fn test_subagent_config_resolves_glm_ocr_config_key() {
+        let config = SubagentConfig::new("glm-ocr", "Extract text");
+        assert_eq!(config.model, "glm-ocr:bf16");
+    }
+
+    /// Test that config key "translategemma" resolves to model_id "translategemma:4b"
+    #[test]
+    fn test_subagent_config_resolves_translategemma_config_key() {
+        let config = SubagentConfig::new("translategemma", "Translate text");
+        assert_eq!(config.model, "translategemma:4b");
     }
 
     #[test]

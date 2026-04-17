@@ -291,19 +291,21 @@ mod tests {
     #[test]
     fn test_build_translate_config_uses_translategemma() {
         // Build Settings and call build_translate_config
+        // get_subcommand_config returns config key "translategemma",
+        // SubagentConfig::new() resolves it to model_id "translategemma:4b"
         let settings = Settings::default();
         let config = build_translate_config(&settings);
-        // Should contain "translategemma" as the model name
-        assert!(config.model.contains("translategemma"));
-}
+        assert_eq!(config.model, "translategemma:4b");
+    }
 
     #[test]
     fn test_build_ocr_config_uses_glm_ocr() {
         // Build Settings and call build_ocr_config
+        // get_subcommand_config returns config key "glm-ocr",
+        // SubagentConfig::new() resolves it to model_id "glm-ocr:bf16"
         let settings = Settings::default();
         let config = build_ocr_config(&settings);
-        // Should contain "glm-ocr" as the model name
-        assert!(config.model.contains("glm-ocr"));
+        assert_eq!(config.model, "glm-ocr:bf16");
     }
 
     #[test]

@@ -315,12 +315,10 @@ impl Settings {
                 if subcommand == "code" {
                     DEFAULT_CODE_MODEL.to_string()
                 } else if subcommand == "translate" {
-
-                    "translategemma:4b".to_string()
+                    "translategemma".to_string()
 
                 } else if subcommand == "ocr" {
-
-                    "glm-ocr:bf16".to_string()
+                    "glm-ocr".to_string()
                 } else {
                     self.model.default.clone()
                 }
@@ -725,5 +723,53 @@ tools = false
         assert!(settings.model.document.model.is_none());
         assert!(settings.model.document.thinking.is_none());
         assert!(settings.model.document.tools.is_none());
+    }
+
+    #[test]
+    fn test_get_subcommand_config_translate_default_model() {
+        let settings = Settings::default();
+        let (model, thinking, tools) = settings.get_subcommand_config("translate");
+        // Default translate model is config key "translategemma" (resolved to model_id by SubagentConfig)
+        assert_eq!(model, "translategemma");
+        // Translate defaults to no thinking
+        assert!(!thinking);
+        // Translate defaults to no tools
+        assert!(!tools);
+    }
+
+    #[test]
+    fn test_get_subcommand_config_ocr_default_model() {
+        let settings = Settings::default();
+        let (model, thinking, tools) = settings.get_subcommand_config("ocr");
+        // Default OCR model is config key "glm-ocr" (resolved to model_id by SubagentConfig)
+        assert_eq!(model, "glm-ocr");
+        // OCR defaults to no thinking
+        assert!(!thinking);
+        // OCR defaults to no tools
+        assert!(!tools);
+    }
+
+    #[test]
+    fn test_get_subcommand_config_translate_model_resolution() {
+        // Verify that config key "translategemma" resolves to model_id via get_model_config
+        use crate::user_models::get_model_config;
+        let config = get_model_config("translategemma");
+        assert!(config.is_some(), "translategemma should resolve via config key");
+        let config = config.unwrap();
+        assert_eq!(config.model_id, "translategemma:4b");
+        // The builtin translategemma has temperature 0.2
+        assert_eq!(config.temperature, 0.2);
+    }
+
+    #[test]
+    fn test_get_subcommand_config_ocr_model_resolution() {
+        // Verify that config key "glm-ocr" resolves to model_id via get_model_config
+        use crate::user_models::get_model_config;
+        let config = get_model_config("glm-ocr");
+        assert!(config.is_some(), "glm-ocr should resolve via config key");
+        let config = config.unwrap();
+        assert_eq!(config.model_id, "glm-ocr:bf16");
+        // The builtin glm-ocr has temperature 0.1
+        assert_eq!(config.temperature, 0.1);
     }
 }
