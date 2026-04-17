@@ -7,9 +7,11 @@ This document describes the mandatory workflow for implementing features and fix
 **DO NOT skip steps. DO NOT jump ahead. Each step must be completed before the next.**
 
 - ❌ DO NOT start implementing before Phase 2 is complete
+- ❌ DO NOT skip Phase 2.6 (Requirements Checkpoint) — it is NON-NEGOTIABLE
 - ❌ DO NOT create PR before Phase 3 is complete
 - ❌ DO NOT mark PR "ready for review" before Phase 4 is complete
 - ✅ DO read this document BEFORE starting ANY implementation
+- ✅ DO present the requirements table (Phase 2.6) before writing ANY code
 
 ## ⚠️ CRITICAL RULES
 
@@ -121,13 +123,13 @@ After documentation is committed:
     
     User will then authorize implementation.
     
-16. After user approves plan:
+    16. After user approves plan:
     a. Update IMPLEMENTATION.md with detailed plan
     b. Update PR body with implementation plan
     c. Update TODO list with implementation tasks
     d. Commit documentation changes
     e. Push changes
-    f. Proceed to Phase 3 (Implementation)
+    f. Proceed to Phase 2.6 (Requirements Checkpoint)
 ```
 
 **Why this step exists:**
@@ -137,9 +139,69 @@ After documentation is committed:
 - Allows user to course-correct the plan
 - **READ-ONLY during planning** - no file modifications until approved
 
-### Phase 3: Implementation (AFTER Plan Approval)
+### Phase 2.6: Requirements Checkpoint (NON-NEGOTIABLE) ⛔
 
-**Only start Phase 3 after plan is approved and documentation updated.**
+**This phase is MANDATORY. NEVER skip it. NEVER proceed to Phase 3 without it.**
+
+After the plan is approved in Phase 2.5, the agent MUST present a requirements
+review to the user BEFORE writing any code. This is the last gate before implementation.
+
+```
+17. Extract and present ALL requirements from:
+    a. The issue(s) being addressed
+    b. The IMPLEMENTATION.md plan
+    c. The approved Phase 2.5 plan
+    d. Any AGENTS.md guidelines that apply
+
+18. For each requirement, classify it as:
+    ✅ CLEAR  — Well-defined, no ambiguity, ready to implement
+    ⚠️ VAGUE — Needs clarification before implementing
+    ❌ CONFLICT — Contradicts another requirement or existing behavior
+    🔄 REWORK — Duplicates or overlaps with existing code
+
+19. Present the requirements table to the user:
+    | # | Requirement | Source | Status | Notes |
+    |---|-------------|--------|--------|-------|
+    | 1 | ... | Issue #60 | ✅ CLEAR | ... |
+    | 2 | ... | Plan | ⚠️ VAGUE | Need to define X |
+
+20. For any ⚠️ VAGUE or ❌ CONFLICT items:
+    a. Present the specific question to the user
+    b. WAIT for user's decision
+    c. Update the requirement table
+
+21. For any 🔄 REWORK items:
+    a. Explain what existing code already does this
+    b. Ask user: "Should we extend existing code or implement new code?"
+    c. WAIT for user's decision
+    d. Remove duplicated work from the plan
+
+22. After all requirements are ✅ CLEAR:
+    a. Ask user: "All requirements are clear. May I proceed to implementation?"
+    b. WAIT for explicit user authorization
+    c. Only then proceed to Phase 3
+```
+
+**Why this phase is NON-NEGOTIABLE:**
+
+Without this checkpoint, the agent may:
+- Implement features that already exist (wasted effort)
+- Make assumptions about vague requirements (wrong implementation)
+- Miss conflicts between new and existing behavior (bugs)
+- Skip requirement validation entirely (technical debt)
+
+**This phase has already caused real problems:**
+- P5 (Log Crate + Verbosity) was implemented without requirements review
+- The "Normal = warn" vs "Normal = info" decision was never validated with the user
+- Tool call visibility defaults were assumed without confirmation
+- This resulted in potential rework and unclear UX expectations
+
+**The agent MUST present this table and get explicit user approval.**
+If the agent skips this phase, the user should send them back to do it.
+
+### Phase 3: Implementation (AFTER Requirements Checkpoint)
+
+**Only start Phase 3 after Phase 2.6 requirements are all ✅ CLEAR and user has authorized.**
 
 ```
 17. Implement tasks from TODO list in order

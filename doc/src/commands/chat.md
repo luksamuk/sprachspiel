@@ -31,6 +31,27 @@ Start an interactive chat session with an Ollama model. Conversations are automa
 | `--tools` | Force enable tools even if model doesn't advertise support |
 | `--ignore-agents` | Ignore AGENTS.md file if present |
 | `--soulless` | Skip SOUL.md personality (use neutral personality) |
+| `-v, --verbose` | Increase verbosity: `-v` (verbose), `-vv` (trace) |
+
+## Output Format
+
+Interactive chat output is rendered at a fixed width of **80 columns**, regardless of terminal size. This ensures consistent formatting for users who prefer floating terminal windows (e.g., 80x50). The status bar, thinking blocks, markdown responses, and recent context all respect this width.
+
+**Query mode** and other subcommands use the full terminal width.
+
+## Tool Call Visibility
+
+During tool execution, the LLM's thinking process and text before tool calls are displayed in real-time. This means you see the model's reasoning (e.g., "Let me check the weather...") before the `🔧 tool_call()` line appears.
+
+Tool call and result visibility follows the global verbosity level:
+
+| Mode | Tool Calls | Tool Results |
+|------|-----------|--------------|
+| Normal (default) | `🔧 name(args)` in gray | Hidden |
+| Verbose (`-v`) | Detailed + params in gray | Truncated preview |
+| Trace (`-vv`) | Detailed + params in gray | Full result |
+
+Use `/debug` to toggle between Normal and Trace verbosity mid-session.
 
 ## Interactive Commands
 
@@ -460,7 +481,7 @@ Recent context (47 messages):
 - Shows up to **3 recent exchanges** (oldest to newest)
 - Only **User** and **Assistant** messages are shown — System and Tool messages are filtered out
 - **Thinking blocks** (e.g. `<thinking>...</thinking>`) are automatically stripped from message content
-- Each message is **truncated to ~80 characters** for readability
+- Each message is **truncated to 80 visual columns** (ANSI-aware, preserving role label colors)
 - The number in parentheses is the **total message count** (including System and Tool)
 
 **When it appears:**

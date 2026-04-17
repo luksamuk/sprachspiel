@@ -125,6 +125,17 @@ pub fn display_thinking(
     thinking_field: Option<&String>,
     render_markdown: bool,
 ) -> Option<String> {
+    // In quiet mode (Error level only), suppress thinking display
+    if !log::log_enabled!(log::Level::Info) {
+        // Still extract the thinking content so it can be processed,
+        // but don't display it
+        let thinking_content = thinking_field.cloned().or_else(|| {
+            let processed = process_thinking(content);
+            processed.thinking
+        });
+        return thinking_content;
+    }
+
     let thinking_content = thinking_field.cloned().or_else(|| {
         let processed = process_thinking(content);
         processed.thinking
@@ -133,8 +144,8 @@ pub fn display_thinking(
     if let Some(ref thinking) = thinking_content {
         eprintln!("{DIM_STYLE}{THINKING_COLOR}[Thinking]{RESET}");
 
-        // Get terminal width, accounting for indentation
-        let terminal_width = termimad::terminal_size().0 as usize;
+        // Use fixed chat width (80 columns) for consistent rendering
+        let terminal_width = crate::markdown::CHAT_TERMINAL_WIDTH;
         let wrap_width = terminal_width.saturating_sub(THINKING_INDENT);
 
         if render_markdown {

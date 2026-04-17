@@ -15,7 +15,6 @@ use crate::chat::session::{ChatSession, MessageRole};
 use crate::content::ContentSearchResult;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
-use crate::log_if_debug;
 
 /// Minimum messages before auto-retrieval activates
 pub const MIN_MESSAGES_FOR_RETRIEVAL: usize = 5;
@@ -187,14 +186,12 @@ async fn perform_retrieval(
     conversation_id: Option<&str>,
     project_id: Option<&str>,
     config: &RetrievalConfig,
-    use_debug: bool,
 ) -> Option<RetrievalResult> {
-    log_if_debug!(use_debug, "Generating embedding for query...");
+    log::debug!("Generating embedding for query...");
 
     let embedding = client.embed(query).await.ok()?;
 
-    log_if_debug!(
-        use_debug,
+    log::debug!(
         "Searching for relevant messages (conversation: {:?}, project: {:?})",
         conversation_id,
         project_id
@@ -215,16 +212,12 @@ async fn perform_retrieval(
     let enriched_results = match db.enrich_content_results_with_context(results) {
         Ok(r) => r,
         Err(e) => {
-            log_if_debug!(use_debug, "Warning: Failed to enrich results: {}", e);
+            log::debug!("Warning: Failed to enrich results: {}", e);
             return None;
         }
     };
 
-    log_if_debug!(
-        use_debug,
-        "Search returned {} results",
-        enriched_results.len()
-    );
+    log::debug!("Search returned {} results", enriched_results.len());
 
     if enriched_results.is_empty() {
         return None;
@@ -233,8 +226,7 @@ async fn perform_retrieval(
     let count = enriched_results.len();
     let retrieved_text = format_retrieved_context(&enriched_results);
 
-    log_if_debug!(
-        use_debug,
+    log::debug!(
         "Added {} retrieved messages to context ({} enriched with responses)",
         count,
         enriched_results
@@ -284,7 +276,6 @@ pub async fn build_context(
     user_query: &str,
     system_prompt: &str,
     config: &RetrievalConfig,
-    use_debug: bool,
 ) -> ContextResult {
     let mut messages = Vec::new();
     let mut retrieval_performed = false;
@@ -299,15 +290,13 @@ pub async fn build_context(
     // Forced retrieval: after /clear, session empty but DB has messages
     let force_retrieve = should_force_retrieve(session, db);
 
-    log_if_debug!(
-        use_debug,
+    log::debug!(
         "Retrieval: enabled={}, should_retrieve={}, force_retrieve={}",
         config.enabled,
         should_retrieve,
         force_retrieve
     );
-    log_if_debug!(
-        use_debug,
+    log::debug!(
         "Session: id={}, anonymous={}, messages={}, has_summary={}",
         session.id,
         session.anonymous,
@@ -316,8 +305,7 @@ pub async fn build_context(
     );
 
     if should_retrieve || force_retrieve {
-        log_if_debug!(
-            use_debug,
+        log::debug!(
             "Attempting retrieval: db={}, embedding_client={}",
             db.is_some(),
             embedding_client.is_some()
@@ -331,7 +319,6 @@ pub async fn build_context(
                 Some(&session.id),
                 session.project_id.as_deref(),
                 config,
-                use_debug,
             )
             .await
             {
@@ -340,13 +327,10 @@ pub async fn build_context(
                 retrieval_performed = true;
             }
         } else {
-            log_if_debug!(
-                use_debug,
-                "Skipping retrieval: db or embedding_client not available"
-            );
+            log::debug!("Skipping retrieval: db or embedding_client not available");
         }
     } else {
-        log_if_debug!(use_debug, "Skipping retrieval: conditions not met");
+        log::debug!("Skipping retrieval: conditions not met");
     }
 
     // 3. First preserved messages (if middle compaction)
@@ -416,7 +400,6 @@ pub async fn build_query_context(
     user_query: &str,
     system_prompt: &str,
     config: &RetrievalConfig,
-    use_debug: bool,
 ) -> ContextResult {
     let mut messages = Vec::new();
     let mut retrieval_performed = false;
@@ -427,8 +410,7 @@ pub async fn build_query_context(
 
     // 2. Retrieved messages (search across all project sessions)
     if config.enabled {
-        log_if_debug!(
-            use_debug,
+        log::debug!(
             "Query mode retrieval: project_id={:?}, enabled={}",
             project_id,
             config.enabled
@@ -437,7 +419,7 @@ pub async fn build_query_context(
         if let (Some(db), Some(client)) = (db, embedding_client) {
             if let Some(result) = perform_retrieval(
                 db, client, user_query, None, // No conversation_id - search all in project
-                project_id, config, use_debug,
+                project_id, config,
             )
             .await
             {
@@ -446,20 +428,16 @@ pub async fn build_query_context(
                 retrieval_performed = true;
             }
         } else {
-            log_if_debug!(
-                use_debug,
-                "Skipping retrieval: db or embedding_client not available"
-            );
+            log::debug!("Skipping retrieval: db or embedding_client not available");
         }
     } else {
-        log_if_debug!(use_debug, "Skipping retrieval: disabled");
+        log::debug!("Skipping retrieval: disabled");
     }
 
     // 3. Current query (always last)
     messages.push(ChatMessage::user(user_query.to_string()));
 
-    log_if_debug!(
-        use_debug,
+    log::debug!(
         "Query context built: {} messages, retrieval={}, retrieved={}",
         messages.len(),
         retrieval_performed,

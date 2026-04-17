@@ -7,9 +7,23 @@
 //! - `dark`: Dark background optimized (transparent, no gray bars)
 //! - `light`: Light background optimized (transparent, no gray bars)
 //! - `mono`: Monochrome, no colors (bold/italic preserved)
+//!
+//! # Chat Terminal Width
+//!
+//! In interactive chat mode, all output is rendered at a fixed width
+//! (`CHAT_TERMINAL_WIDTH = 80` columns) regardless of the actual terminal
+//! size. This ensures consistent output for users who run the chat in a
+//! floating 80x50 terminal window.
 
 use std::sync::OnceLock;
 use termimad::MadSkin;
+
+/// Fixed terminal width for chat mode (80 columns).
+///
+/// All markdown and thinking block rendering in chat mode uses this width
+/// instead of the actual terminal size. This ensures consistent output
+/// when using a floating 80x50 terminal window.
+pub const CHAT_TERMINAL_WIDTH: usize = 80;
 
 /// Global markdown skin, initialized once at startup
 static MARKDOWN_SKIN: OnceLock<MadSkin> = OnceLock::new();
@@ -49,7 +63,9 @@ fn create_mono_skin() -> MadSkin {
 
 /// Print markdown text using the global skin.
 ///
-/// This is the primary function to use for rendering markdown output.
+/// This is the primary function to use for rendering markdown output
+/// in non-chat contexts (query mode, translation, summarize, etc.).
+/// Uses the real terminal width for line wrapping.
 /// Falls back to default skin if not initialized.
 pub fn print_markdown(text: &str) {
     let skin = MARKDOWN_SKIN
@@ -57,6 +73,20 @@ pub fn print_markdown(text: &str) {
         .or_else(|| DEFAULT_SKIN.get())
         .expect("Skin not initialized - call init_markdown_skin() at startup");
     skin.print_text(text);
+}
+
+/// Print markdown text at chat terminal width (80 columns).
+///
+/// Use this for all markdown rendering in interactive chat mode
+/// to ensure consistent output regardless of terminal size.
+/// Uses `CHAT_TERMINAL_WIDTH` (80) for line wrapping.
+pub fn print_markdown_chat(text: &str) {
+    let skin = MARKDOWN_SKIN
+        .get()
+        .or_else(|| DEFAULT_SKIN.get())
+        .expect("Skin not initialized - call init_markdown_skin() at startup");
+    let fmt = skin.text(text, Some(CHAT_TERMINAL_WIDTH));
+    print!("{}", fmt);
 }
 
 #[cfg(test)]

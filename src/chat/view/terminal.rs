@@ -7,8 +7,8 @@ use crate::chat::strip_thinking_tags;
 use crate::consts::roles::format_role_label;
 use crate::markdown;
 
-use super::super::session::{ChatSession, MessageRole};
-use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo, truncate_str};
+use super::super::session::ChatSession;
+use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
 
 /// Terminal output backend using println!/eprintln!
 ///
@@ -52,7 +52,7 @@ impl ChatView for TerminalView {
         }
 
         // Display the main response content as markdown
-        markdown::print_markdown(content);
+        markdown::print_markdown_chat(content);
     }
 
     fn show_token_metrics(&mut self, metrics: &TokenMetrics) {
@@ -150,29 +150,13 @@ impl TerminalView {
         let recent_exchanges: Vec<(RecentMessage, Option<RecentMessage>)> = exchanges
             .into_iter()
             .map(|(user_msg, asst_msg)| {
-                let role_str = match user_msg.role {
-                    MessageRole::User => "user",
-                    _ => "user",
-                };
                 let user = RecentMessage {
-                    role_label: format_role_label(role_str),
-                    content: truncate_str(
-                        &strip_thinking_tags(&user_msg.content).replace('\n', " "),
-                        super::MAX_CONTEXT_LINE_LENGTH,
-                    ),
+                    role_label: format_role_label("user"),
+                    content: strip_thinking_tags(&user_msg.content).replace('\n', " "),
                 };
-                let assistant = asst_msg.map(|a| {
-                    let a_role_str = match a.role {
-                        MessageRole::Assistant => "assistant",
-                        _ => "assistant",
-                    };
-                    RecentMessage {
-                        role_label: format_role_label(a_role_str),
-                        content: truncate_str(
-                            &strip_thinking_tags(&a.content).replace('\n', " "),
-                            super::MAX_CONTEXT_LINE_LENGTH,
-                        ),
-                    }
+                let assistant = asst_msg.map(|a| RecentMessage {
+                    role_label: format_role_label("assistant"),
+                    content: strip_thinking_tags(&a.content).replace('\n', " "),
                 });
                 (user, assistant)
             })
@@ -185,7 +169,13 @@ impl TerminalView {
 
         let summary = info.format_context_summary();
         if !summary.is_empty() {
-            println!("{}", summary);
+            // Truncate each line to CHAT_TERMINAL_WIDTH (80) visual columns,
+            // preserving ANSI escape codes
+            let chat_width = crate::markdown::CHAT_TERMINAL_WIDTH;
+            for line in summary.lines() {
+                let truncated = super::truncate_visual(line, chat_width);
+                println!("{}", truncated);
+            }
         }
     }
 }

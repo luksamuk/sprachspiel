@@ -268,7 +268,6 @@ pub struct CustomCoordinator<C: ChatHistory> {
     history: C,
     tool_infos: Vec<CustomToolInfo>,
     tools: HashMap<String, Box<dyn ToolHolder>>,
-    debug: bool,
     format: Option<FormatType>,
     keep_alive: Option<KeepAlive>,
     think: Option<ThinkType>,
@@ -303,7 +302,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             history,
             tool_infos: Vec::default(),
             tools: HashMap::default(),
-            debug: false,
             format: None,
             keep_alive: None,
             think: None,
@@ -323,9 +321,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// Returns a ContextCheckResult with the (possibly truncated) result and status flags.
     fn check_and_handle_context_overflow(&self, result: String) -> ContextCheckResult {
         let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) else {
-            eprintln!(
-                "\x1B[90m[DEBUG] check_and_handle_context_overflow: no context_window or system_prompt\x1B[0m"
-            );
+            log::debug!("check_and_handle_context_overflow: no context_window or system_prompt");
             return ContextCheckResult {
                 result,
                 is_near_limit: false,
@@ -394,45 +390,34 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         let (_, compaction_buffer, _, _) = calculate_thresholds(ctx_window);
 
         // Debug log (only when debug enabled)
-        if crate::debug_tools::is_debug_enabled() {
-            eprintln!("\x1B[90m[INTER-TOOL-CHECK-DETAILS]\x1b[0m");
-            eprintln!(
-                "\x1B[90m  base_tokens={} (from Ollama, includes sys+tools+history)\x1b[0m",
-                base_tokens
-            );
-            eprintln!(
-                "\x1B[90m  initial_message_count={}\x1b[0m",
-                self.initial_message_count
-            );
-            eprintln!("\x1B[90m  all_messages={}\x1b[0m", all_messages);
-            eprintln!(
-                "\x1B[90m  growth_messages={} (new this request)\x1b[0m",
-                growth_messages.len()
-            );
-            eprintln!(
-                "\x1B[90m  growth_tokens={} (estimated)\x1b[0m",
-                growth_tokens
-            );
-            eprintln!(
-                "\x1B[90m  tool_tokens={} (diagnostic, already in base)\x1b[0m",
-                tool_tokens
-            );
-            eprintln!(
-                "\x1B[90m  system_tokens={} (diagnostic, already in base)\x1b[0m",
-                system_tokens
-            );
-            eprintln!(
-                "\x1B[90m  result_tokens={} (current tool result)\x1b[0m",
-                result_tokens
-            );
-            eprintln!(
-                "\x1B[90m[INTER-TOOL-CHECK] total={}/{} remaining={} buffer={}\x1b[0m",
-                fmt_tokens(total_after_add),
-                fmt_tokens(ctx_window),
-                fmt_tokens(ctx_window.saturating_sub(total_after_add)),
-                fmt_tokens(compaction_buffer)
-            );
-        }
+        log::debug!("[INTER-TOOL-CHECK-DETAILS]");
+        log::debug!(
+            "  base_tokens={} (from Ollama, includes sys+tools+history)",
+            base_tokens
+        );
+        log::debug!("  initial_message_count={}", self.initial_message_count);
+        log::debug!("  all_messages={}", all_messages);
+        log::debug!(
+            "  growth_messages={} (new this request)",
+            growth_messages.len()
+        );
+        log::debug!("  growth_tokens={} (estimated)", growth_tokens);
+        log::debug!(
+            "  tool_tokens={} (diagnostic, already in base)",
+            tool_tokens
+        );
+        log::debug!(
+            "  system_tokens={} (diagnostic, already in base)",
+            system_tokens
+        );
+        log::debug!("  result_tokens={} (current tool result)", result_tokens);
+        log::debug!(
+            "[INTER-TOOL-CHECK] total={}/{} remaining={} buffer={}",
+            fmt_tokens(total_after_add),
+            fmt_tokens(ctx_window),
+            fmt_tokens(ctx_window.saturating_sub(total_after_add)),
+            fmt_tokens(compaction_buffer)
+        );
 
         if is_emergency_context(total_after_add, ctx_window) {
             let available = calculate_available_budget(base_tokens + growth_tokens, ctx_window);
@@ -444,8 +429,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             // Only show truncation warning if significant reduction
             if reduction > 100 || (original_tokens > 1000 && reduction * 100 / original_tokens > 10)
             {
-                eprintln!(
-                    "\x1B[31m[EMERGENCY] Context at {}% ({} tokens). Truncated tool result: {} → {} tokens\x1b[0m",
+                log::warn!(
+                    "[EMERGENCY] Context at {}% ({} tokens). Truncated tool result: {} → {} tokens",
                     (total_after_add) * 100 / ctx_window,
                     total_after_add,
                     original_tokens,
@@ -469,13 +454,11 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             if base_tokens == 0 {
                 // Fresh session - nothing to compact, just proceed
                 // Context will grow as conversation proceeds, future requests will have base > 0
-                if self.debug {
-                    eprintln!(
-                        "\x1B[90m[INTER-TOOL] Fresh session (base=0), nothing to compact. Proceeding... ({}K/{}K)\x1b[0m",
-                        total_after_add / 1000,
-                        ctx_window / 1000
-                    );
-                }
+                log::debug!(
+                    "[INTER-TOOL] Fresh session (base=0), nothing to compact. Proceeding... ({}K/{}K)",
+                    total_after_add / 1000,
+                    ctx_window / 1000
+                );
                 return ContextCheckResult {
                     result,
                     is_near_limit: true,
@@ -485,8 +468,8 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 };
             }
 
-            eprintln!(
-                "\x1B[33m⏳ [INTER-TOOL] Context: {}K/{}K ({}% used, {}K remaining). Buffer: {}K. NEEDS COMPACTION.\x1B[0m",
+            log::warn!(
+                "⏳ [INTER-TOOL] Context: {}K/{}K ({}% used, {}K remaining). Buffer: {}K. NEEDS COMPACTION.",
                 total_after_add / 1000,
                 ctx_window / 1000,
                 (total_after_add * 100) / ctx_window,
@@ -504,13 +487,11 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         }
 
         if needs_inter_tool_compaction(total_after_add, ctx_window) {
-            if self.debug {
-                eprintln!(
-                    "\x1B[33m[INFO] Context at {}% ({} tokens). Inter-tool warning.\x1B[0m",
-                    (total_after_add) * 100 / ctx_window,
-                    total_after_add
-                );
-            }
+            log::debug!(
+                "[INFO] Context at {}% ({} tokens). Inter-tool warning.",
+                (total_after_add) * 100 / ctx_window,
+                total_after_add
+            );
 
             return ContextCheckResult {
                 result,
@@ -570,12 +551,6 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         self
     }
 
-    /// Enable debug mode for verbose logging
-    pub fn debug(mut self, debug: bool) -> Self {
-        self.debug = debug;
-        self
-    }
-
     /// Set keep alive (for future use)
     #[allow(dead_code)]
     pub fn keep_alive(mut self, keep_alive: KeepAlive) -> Self {
@@ -629,11 +604,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         &mut self,
         messages: Vec<ChatMessage>,
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
-        if self.debug {
-            for m in &messages {
-                eprintln!("Hit {} with:", self.model);
-                eprintln!("\t{:?}: '{}'", m.role, m.content);
-            }
+        for m in &messages {
+            log::debug!("Hit {} with:", self.model);
+            log::debug!("\t{:?}: '{}'", m.role, m.content);
         }
 
         let request =
@@ -766,18 +739,14 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     arguments: args.clone(),
                 });
 
-                if self.debug {
-                    eprintln!("Tool call: {:?}", call.function);
-                }
+                log::debug!("Tool call: {:?}", call.function);
 
                 let Some(tool) = self.tools.get_mut(&tool_name) else {
-                    if self.debug {
-                        eprintln!(
-                            "\x1B[90m[DEBUG] Unknown tool '{}'. Available: {}\x1B[0m",
-                            tool_name,
-                            self.tools.keys().cloned().collect::<Vec<_>>().join(", ")
-                        );
-                    }
+                    log::debug!(
+                        "Unknown tool '{}'. Available: {}",
+                        tool_name,
+                        self.tools.keys().cloned().collect::<Vec<_>>().join(", ")
+                    );
                     return Err(ollama_rs::error::OllamaError::ToolCallError(
                         ollama_rs::error::ToolCallError::UnknownToolName,
                     ));
@@ -786,25 +755,18 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 let result = match tool.call(args.clone()).await {
                     Ok(result) => result,
                     Err(e) => {
-                        if self.debug {
-                            eprintln!(
-                                "\x1B[90m[DEBUG] Tool '{}' call failed: {}\x1B[0m",
-                                tool_name, e
-                            );
-                            eprintln!(
-                                "\x1B[90m[DEBUG]   Arguments: {}\x1B[0m",
-                                serde_json::to_string(&args).unwrap_or_else(|_| args.to_string())
-                            );
-                        }
+                        log::debug!("Tool '{}' call failed: {}", tool_name, e);
+                        log::debug!(
+                            "  Arguments: {}",
+                            serde_json::to_string(&args).unwrap_or_else(|_| args.to_string())
+                        );
                         return Err(ollama_rs::error::OllamaError::ToolCallError(
                             ollama_rs::error::ToolCallError::InternalToolError(e),
                         ));
                     }
                 };
 
-                if self.debug {
-                    eprintln!("Tool response: {}", &result);
-                }
+                log::debug!("Tool response: {}", &result);
 
                 // Emit tool result event
                 self.emit_event(ChatEvent::ToolResult {

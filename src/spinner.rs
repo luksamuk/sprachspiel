@@ -148,7 +148,32 @@ impl Drop for SpinnerGuard {
 /// // Do work...
 /// spinner.finish_and_clear();
 /// ```
+/// Check if spinners should be shown (hidden in quiet mode)
+///
+/// Returns `true` unless the log level is explicitly set to `Error` (quiet mode).
+/// When no logger is initialized (`Off`), spinners are enabled (default behavior).
+pub fn is_spinner_enabled() -> bool {
+    let level = log::max_level();
+    // Off = no logger initialized yet (default: spinners enabled)
+    // Error = quiet mode (spinners suppressed)
+    level != log::LevelFilter::Error
+}
+
+/// Create a new progress spinner with random animation frames.
+///
+/// In quiet mode (error level only), returns a hidden spinner that does nothing.
+/// This ensures spinners are suppressed when the user only wants the final output.
 pub fn create_spinner(message: &str) -> ProgressBar {
+    if !is_spinner_enabled() {
+        // In quiet mode, return a hidden spinner but still track it
+        let pb = ProgressBar::hidden();
+        pb.set_message(message.to_string());
+        if let Ok(mut guard) = ACTIVE_SPINNER.write() {
+            *guard = Some(pb.clone());
+        }
+        return pb;
+    }
+
     let pb = ProgressBar::new_spinner();
     let frames = random_spinner_frames();
     pb.set_style(

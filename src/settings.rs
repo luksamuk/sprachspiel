@@ -114,9 +114,16 @@ pub struct OutputSettings {
     /// Use plain output by default
     #[serde(default)]
     pub plain_default: bool,
-    /// Enable debug mode by default
+    /// Verbosity level for logging: "quiet", "normal", "verbose", or "trace"
+    /// Default: "normal" (info level — shows tool calls)
+    /// Priority: CLI flags (-v/-q) > RUST_LOG env var > this setting > default
     #[serde(default)]
-    pub debug_default: bool,
+    pub verbosity: Option<crate::logging::Verbosity>,
+    /// Deprecated: use `verbosity` instead.
+    /// This field exists solely for backwards compatibility with old config files.
+    /// It is ignored — `verbosity` takes precedence.
+    #[serde(default, rename = "debug_default")]
+    pub debug_default: Option<bool>,
 }
 
 /// Display-related settings
@@ -517,11 +524,18 @@ blacklist = []
 # Default: false
 plain_default = false
 
-# Enable debug output by default.
-# If true, shows detailed logs including tool calls, model parameters,
-# and raw responses. Useful for troubleshooting.
-# Default: false
-debug_default = false
+# Verbosity level for log output.
+# Controls how much diagnostic information is shown alongside the LLM response.
+#
+# Options:
+#   "quiet"   — Errors only. No spinner, no tool calls. Ideal for scripting/pipes.
+#   "normal"  — Tool calls (compact), warnings, errors. Good default for interactive use.
+#   "verbose" — Detailed tool calls with full parameters and results. For debugging.
+#   "trace"   — Everything including embedding internals, token budgets. Maximum info.
+#
+# Priority: CLI flags (-v/-q) > RUST_LOG env var > this setting > default
+# Default: "normal" (info level)
+# verbosity = "normal"
 
 # =============================================================================
 # DISPLAY CONFIGURATION
@@ -571,7 +585,6 @@ mod tests {
         assert_eq!(settings.display.skin, "dark");
         // These should be false by default
         assert!(!settings.output.plain_default);
-        assert!(!settings.output.debug_default);
         // Translate model defaults to None (uses builtin "translategemma")
         assert!(settings.model.translate.model.is_none());
     }
@@ -609,7 +622,6 @@ blacklist = ["web_search", "fetch_page"]
 
 [output]
 plain_default = true
-debug_default = true
 
 [display]
 skin = "light"
@@ -621,7 +633,6 @@ skin = "light"
         assert_eq!(settings.model.ollama_port, 8080);
         assert!(settings.is_tool_blacklisted("web_search"));
         assert!(settings.output.plain_default);
-        assert!(settings.output.debug_default);
         assert_eq!(settings.display.skin, "light");
     }
 

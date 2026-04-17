@@ -25,7 +25,6 @@ use crate::config::ModelConfig;
 use crate::context_overflow::{
     MAX_SUMMARY_TOKENS, check_context_overflow, needs_buffered_compaction,
 };
-use crate::debug_tools::log_debug;
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
     PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
@@ -128,23 +127,77 @@ pub fn setup_coordinator(
     model_config: &ModelConfig,
     model_options: ollama_rs::models::ModelOptions,
     think_enabled: bool,
-    use_debug: bool,
     tools_enabled: bool,
     settings: &Settings,
     system_prompt: String,
     real_history_tokens: Option<usize>,
 ) -> CustomCoordinator<Vec<ChatMessage>> {
+    let think_enabled_for_callback = think_enabled;
     let coordinator = crate::query::ChatContext {
         ollama,
         model_id: model_config.model_id.clone(),
         model_options,
         use_think: think_enabled,
-        use_debug,
-        use_plain: false,
         context_window: Some(model_config.num_ctx as usize),
         system_prompt: Some(system_prompt),
     }
-    .build_coordinator();
+    .build_coordinator()
+    .on_event(move |event| {
+        // Display pre-tool thinking and content during tool execution
+        // This mirrors what handle_chat_event does in query mode, but
+        // uses print_markdown_chat() for 80-column rendering.
+        match event {
+            crate::chat::custom_coordinator::ChatEvent::PreToolContent {
+                content,
+                thinking,
+            } => {
+                crate::spinner::suspend_for_print(|| {
+                    if think_enabled_for_callback {
+                        display_thinking(&content, thinking.as_ref(), true);
+                    }
+                    if !content.trim().is_empty() {
+                        let cleaned = strip_thinking_tags(&content);
+                        if !cleaned.trim().is_empty() {
+                            crate::markdown::print_markdown_chat(&cleaned);
+                        }
+                    }
+                });
+            }
+            crate::chat::custom_coordinator::ChatEvent::ContextNeedsCompaction {
+                tokens_used,
+                context_window,
+                ..
+            } => {
+                let percent = if context_window > 0 {
+                    (tokens_used * 100) / context_window
+                } else {
+                    0
+                };
+                eprintln!(
+                    "\x1B[33m⚠ Context {}% full. Compaction may be needed.\x1B[0m",
+                    percent
+                );
+            }
+            crate::chat::custom_coordinator::ChatEvent::ContextTruncated {
+                tool_name,
+                original_tokens,
+                new_tokens,
+                context_window,
+            } => {
+                log::warn!(
+                    "[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)",
+                    tool_name,
+                    original_tokens,
+                    new_tokens,
+                    context_window
+                );
+            }
+            _ => {
+                // Other events (ToolCall, ToolResult, ContextNearLimit)
+                // are handled by log_tool_call/log_tool_result/log::debug
+            }
+        }
+    });
 
     let mut coordinator = coordinator;
 
@@ -154,10 +207,10 @@ pub fn setup_coordinator(
     }
 
     if tools_enabled {
-        let (coord_new, tool_count) = register_tools(coordinator, settings, use_debug);
+        let (coord_new, tool_count) = register_tools(coordinator, settings);
         coordinator = coord_new;
-        if use_debug {
-            log_debug(&format!("{} tools active", tool_count));
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!("{} tools active", tool_count);
         }
     }
     coordinator
@@ -171,7 +224,6 @@ pub async fn prepare_messages(
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
     user_input: &str,
     system_prompt: &str,
-    use_debug: bool,
     coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
     continuation_tag: Option<&ContinuationTag>,
 ) -> Vec<ChatMessage> {
@@ -191,17 +243,16 @@ pub async fn prepare_messages(
         user_input,
         system_prompt,
         &retrieval_config,
-        use_debug,
     )
     .await;
 
     if context_result.retrieval_performed {
         update_retrieval_time(session);
-        if use_debug {
-            log_debug(&format!(
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!(
                 "Retrieved {} relevant messages",
                 context_result.retrieved_count
-            ));
+            );
         }
     }
 
@@ -211,8 +262,8 @@ pub async fn prepare_messages(
     if let Some(tag) = continuation_tag {
         let continuation_prompt = build_continuation_prompt(&tag.paused_at, &tag.next_step);
         coordinator.push_ephemeral(ChatMessage::user(continuation_prompt));
-        if use_debug {
-            log_debug("Injected continuation prompt as ephemeral message");
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!("Injected continuation prompt as ephemeral message");
         }
     }
 
@@ -244,7 +295,7 @@ pub fn process_chat_response(
     }
 
     let display_content = strip_thinking_tags(&content);
-    crate::markdown::print_markdown(&display_content);
+    crate::markdown::print_markdown_chat(&display_content);
 
     let pre_tool = coordinator.take_pre_tool_content();
     let (pre_tool_content, pre_tool_thinking) = match pre_tool {
@@ -256,7 +307,7 @@ pub fn process_chat_response(
 
     if continuation_needed.is_some() {
         eprint!("\x1B[2K\r");
-        crate::markdown::print_markdown(&cleaned_response);
+        crate::markdown::print_markdown_chat(&cleaned_response);
     }
 
     SendMessageResult {
@@ -290,7 +341,6 @@ pub async fn send_message(
     cli_code: bool,
     settings: &Settings,
     agents_md: Option<&str>,
-    use_debug: bool,
     db: Option<&Arc<crate::db::Database>>,
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
     cli_soulless: bool,
@@ -304,15 +354,15 @@ pub async fn send_message(
         match db_ref.get_facts_for_prompt(session.project_id.as_deref()) {
             Ok(facts) if !facts.is_empty() => {
                 let section = build_facts_section(&facts);
-                if use_debug && !section.is_empty() {
-                    log_debug(&format!("Loaded {} facts for prompt", facts.len()));
+                if log::log_enabled!(log::Level::Debug) && !section.is_empty() {
+                    log::debug!("Loaded {} facts for prompt", facts.len());
                 }
                 Some(section)
             }
             Ok(_) => None,
             Err(e) => {
-                if use_debug {
-                    log_debug(&format!("Warning: Failed to load facts: {}", e));
+                if log::log_enabled!(log::Level::Debug) {
+                    log::debug!("Warning: Failed to load facts: {}", e);
                 }
                 None
             }
@@ -349,20 +399,20 @@ pub async fn send_message(
             "\x1B[33m⚠ Context {}% full. Consider using /compact to summarize old messages.\x1B[0m",
             overflow_status.usage_percent()
         );
-    } else if use_debug {
-        log_debug(&format!(
+    } else if log::log_enabled!(log::Level::Debug) {
+        log::debug!(
             "Context usage: {} / {} tokens ({:.1}%)",
             overflow_status.total_tokens(),
             context_window,
             overflow_status.usage_percent() as f32
-        ));
+        );
     }
 
     // Setup coordinator with optional tools
     // Get real token count from session for accurate overflow detection
     let real_history_tokens = session.history_real_tokens();
 
-    if use_debug {
+    if log::log_enabled!(log::Level::Debug) {
         // Collect prompt_tokens state for debugging
         let prompt_tokens_state: Vec<(usize, Option<u64>)> = session
             .messages
@@ -376,19 +426,20 @@ pub async fn send_message(
             .iter()
             .any(|m| m.prompt_tokens.map(|t| t > 0).unwrap_or(false));
 
-        log_debug(&format!(
+        log::debug!(
             "[setup_coordinator] real_history_tokens={} messages={} has_compacted={} messages_sent_to_llm={}",
             real_history_tokens,
             session.messages.len(),
             session.has_compacted_messages(),
             session.messages_sent_to_llm
-        ));
-        log_debug(&format!(
+        );
+        log::debug!(
             "[setup_coordinator] has_nonzero_prompt_tokens={} first_10_prompt_tokens={:?}",
-            has_nonzero_tokens, prompt_tokens_state
-        ));
+            has_nonzero_tokens,
+            prompt_tokens_state
+        );
         if session.has_compacted_messages() {
-            log_debug(&format!(
+            log::debug!(
                 "[setup_coordinator] summary_len={} compacted_range={:?}",
                 session
                     .compacted_summary
@@ -396,7 +447,7 @@ pub async fn send_message(
                     .map(|s| s.len())
                     .unwrap_or(0),
                 session.compacted_range
-            ));
+            );
         }
     }
 
@@ -405,7 +456,6 @@ pub async fn send_message(
         model_config,
         model_options,
         think_enabled,
-        use_debug,
         tools_enabled,
         settings,
         system_prompt.clone(),
@@ -419,19 +469,18 @@ pub async fn send_message(
         embedding_client,
         user_input,
         &system_prompt,
-        use_debug,
         &mut coordinator,
         continuation_tag,
     )
     .await;
 
-    if use_debug {
-        log_debug(&format!("Sending {} messages to model", messages.len()));
+    if log::log_enabled!(log::Level::Debug) {
+        log::debug!("Sending {} messages to model", messages.len());
         if session.has_compacted_messages() {
-            log_debug(&format!(
+            log::debug!(
                 "(includes compacted summary of {} messages)",
                 session.compacted_message_count()
-            ));
+            );
         }
     }
 
@@ -466,13 +515,13 @@ pub async fn send_message(
                     let recovery_err = classify_ollama_error(&e, &tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
-                    if use_debug {
-                        log_debug(&format!(
+                    if log::log_enabled!(log::Level::Debug) {
+                        log::debug!(
                             "🔧 [Recovery] Attempt {}/{} - {}",
                             attempts,
                             MAX_RETRIES,
                             recovery_err.description()
-                        ));
+                        );
                     }
 
                     messages.push(ChatMessage::tool(error_msg));

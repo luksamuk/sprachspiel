@@ -53,7 +53,6 @@ pub struct ReplState {
 
     // Context state
     pub agents_md: Option<String>,
-    pub use_debug: bool,
 
     // Command flags (immutable after init)
     pub cli_code: bool,
@@ -78,7 +77,6 @@ pub struct ReplStateBuilder {
     capabilities: Option<ModelCapabilities>,
     tools_active: bool,
     agents_md: Option<String>,
-    use_debug: bool,
     cli_code: bool,
     cli_soulless: bool,
     ollama: Option<ollama_rs::Ollama>,
@@ -95,7 +93,6 @@ impl ReplStateBuilder {
             capabilities: None,
             tools_active: false,
             agents_md: None,
-            use_debug: false,
             cli_code: false,
             cli_soulless: false,
             ollama: None,
@@ -127,11 +124,6 @@ impl ReplStateBuilder {
 
     pub fn agents_md(mut self, md: Option<String>) -> Self {
         self.agents_md = md;
-        self
-    }
-
-    pub fn use_debug(mut self, debug: bool) -> Self {
-        self.use_debug = debug;
         self
     }
 
@@ -181,7 +173,6 @@ impl ReplStateBuilder {
             capabilities,
             tools_active: self.tools_active,
             agents_md: self.agents_md,
-            use_debug: self.use_debug,
             cli_code: self.cli_code,
             cli_soulless: self.cli_soulless,
             ollama,

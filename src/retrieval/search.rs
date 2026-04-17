@@ -8,7 +8,7 @@ use ollama_rs::Ollama;
 
 use crate::content::{ContentSearchResult, ContentSearchType};
 use crate::db::Database;
-use crate::debug_tools::log_debug;
+
 use crate::embeddings::EmbeddingClient;
 use crate::markdown;
 
@@ -137,18 +137,20 @@ pub async fn run_search(
     limit: usize,
 ) {
     // Debug: Show search parameters
-    log_debug(&format!(
+    log::debug!(
         "Search params:\n  query: \"{}\"\n  conversation_id: {:?}\n  limit: {}",
-        query, conversation_id, limit
-    ));
+        query,
+        conversation_id,
+        limit
+    );
 
     // Generate embedding for query
     let embedding_client = EmbeddingClient::new(ollama.clone());
 
-    log_debug("Generating embedding for query...");
+    log::debug!("Generating embedding for query...");
     let embedding = match embedding_client.embed(query).await {
         Ok(emb) => {
-            log_debug(&format!("Embedding generated ({} dimensions)", emb.len()));
+            log::debug!("Embedding generated ({} dimensions)", emb.len());
             emb
         }
         Err(e) => {
@@ -158,7 +160,7 @@ pub async fn run_search(
     };
 
     // Perform hybrid search using content_items (V7)
-    log_debug("Running hybrid search on content_items...");
+    log::debug!("Running hybrid search on content_items...");
     let results = match db.search_messages_hybrid(
         query,
         &embedding,
@@ -169,7 +171,7 @@ pub async fn run_search(
         0.6,
     ) {
         Ok(r) => {
-            log_debug(&format!("Hybrid search found {} results", r.len()));
+            log::debug!("Hybrid search found {} results", r.len());
             r
         }
         Err(e) => {
@@ -179,11 +181,11 @@ pub async fn run_search(
     };
 
     // Enrich results with assistant responses
-    log_debug("Enriching results with assistant responses...");
+    log::debug!("Enriching results with assistant responses...");
     let enriched_results = match db.enrich_content_results_with_context(results) {
         Ok(r) => {
             let enriched_count = r.iter().filter(|res| res.chunk_content.is_some()).count();
-            log_debug(&format!("Enriched {} results", enriched_count));
+            log::debug!("Enriched {} results", enriched_count);
             r
         }
         Err(e) => {

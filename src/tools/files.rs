@@ -338,9 +338,7 @@ pub async fn read_file_segment(
 /// # Errors
 /// Returns error message if file doesn't exist or is not readable.
 #[ollama_rs::function]
-pub async fn count_lines(
-    path: String,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn count_lines(path: String) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     log_tool_call("count_lines", &[("path".to_string(), path.clone())]);
 
     // Validate and canonicalize path (also checks if exists)
@@ -860,9 +858,7 @@ fn glob_to_regex(pattern: &str) -> String {
 /// Allowed paths beyond CWD:
 /// - `/tmp` — standard temporary directory (needed for tool interop)
 /// - `/var/tmp` — persistent temporary directory
-fn validate_path(
-    path: &Path,
-) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+fn validate_path(path: &Path) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
     // Get the absolute path
     let abs_path = if path.is_absolute() {
         path.to_path_buf()

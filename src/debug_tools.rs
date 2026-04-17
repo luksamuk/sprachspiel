@@ -1,49 +1,61 @@
-//! Debug utilities for tool execution logging
+//! Tool execution logging using the `log` crate.
 //!
-//! Provides functions to log tool calls and their results.
-//! Tool calls are ALWAYS logged (user has right to see what's being executed).
-//! Detailed results are only shown in debug mode.
-
-use std::sync::atomic::{AtomicBool, Ordering};
+//! Tool calls are displayed as UI output (eprintln) in Normal mode,
+//! and logged at `debug` level in Verbose mode (-v) with full parameters.
+//!
+//! # Verbosity and Tool Logging
+//!
+//! | Level   | Tool Calls          | Tool Results        |
+//! |---------|---------------------|----------------------|
+//! | Quiet   | Hidden (error only) | Hidden               |
+//! | Normal  | Compact: 🔧 name()  | Hidden               |
+//! | Verbose | Detailed: key=val   | Truncated (~100 chr) |
+//! | Trace   | Detailed: key=val   | Full output (500 chr) |
+//!
+//! # Implementation Notes
+//!
+//! In Normal mode, tool calls are printed directly to stderr (via suspend_for_print)
+//! so they appear cleanly on the terminal without log-level prefixes.
+//! Tool results are hidden in Normal mode — they're diagnostic info, not essential UI.
+//!
+//! In Verbose/Trace mode, both calls and results are printed via `eprintln!`
+//! (not `log::debug!`) so we can apply consistent DIM+gray styling.
+//! The `log::debug!` path is only used for internal coordinator diagnostics.
 
 use crate::spinner::suspend_for_print;
 
-static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
+/// ANSI style: DIM (faint) + light gray text — same as `[Thinking]` blocks
+const TOOL_DIM: &str = "\x1B[2m\x1B[37m";
+/// ANSI reset
+const RESET: &str = "\x1B[0m";
 
-/// Enable debug mode
-pub fn enable_debug() {
-    DEBUG_MODE.store(true, Ordering::SeqCst);
-}
-pub fn toggle_debug() -> bool {
-    let value = !is_debug_enabled();
-    DEBUG_MODE.store(value, Ordering::SeqCst);
-    value
-}
-
-/// Check if debug mode is enabled
-pub fn is_debug_enabled() -> bool {
-    DEBUG_MODE.load(Ordering::SeqCst)
+/// Toggle debug/logging verbosity between Normal and Trace.
+/// Used by the `/debug` command in chat mode.
+/// Returns the new verbosity level.
+pub fn toggle_debug() -> crate::logging::Verbosity {
+    crate::logging::toggle_verbosity()
 }
 
-/// Log a tool call with its arguments
-/// ALWAYS logs (user has right to see what's being executed on their system)
+/// Log a tool call with its arguments.
+///
+/// - **Normal mode**: compact single-line format `🔧 name(args)` in DIM gray
+/// - **Verbose/Trace mode**: detailed multi-line format in DIM gray
+///   (printed via `eprintln!`, not `log::debug!`, for consistent styling)
+/// - **Quiet mode**: hidden
 pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
-    if is_debug_enabled() {
-        // Detailed format for debug mode
+    if log::log_enabled!(log::Level::Debug) {
+        // Detailed format for verbose/trace mode — printed directly
+        // so we can apply DIM gray styling consistently
         suspend_for_print(|| {
-            eprintln!();
-            eprintln!("═══════════════════════════════════════════════════════════════");
-            eprintln!("🔧 TOOL CALL: {}", tool_name);
-            eprintln!("───────────────────────────────────────────────────────────────");
-
+            eprintln!("{TOOL_DIM}🔧 {tool_name}{RESET}");
             for (key, value) in args {
                 let display_value = crate::utils::truncate_chars(value, 77);
-                eprintln!("  {}: {}", key, display_value);
+                eprintln!("{TOOL_DIM}  {key}: {display_value}{RESET}");
             }
-            eprintln!("───────────────────────────────────────────────────────────────");
         });
-    } else {
-        // Compact format for normal mode - always show what tool is being called
+    } else if log::log_enabled!(log::Level::Info) {
+        // Compact format for normal mode — printed directly to stderr
+        // without log-level prefix, so it appears clean in the terminal
         let args_str: Vec<String> = args
             .iter()
             .map(|(k, v)| {
@@ -52,37 +64,42 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
             })
             .collect();
         suspend_for_print(|| {
-            eprintln!("🔧 Calling: {}({})", tool_name, args_str.join(", "));
+            eprintln!("{TOOL_DIM}🔧 {}({}){RESET}", tool_name, args_str.join(", "));
         });
     }
+    // In Quiet mode (Error level only), neither branch executes — tool calls are hidden
 }
 
-/// Log tool result (only in debug mode)
+/// Log tool result.
+///
+/// - **Normal mode**: hidden (tool calls are enough for the user)
+/// - **Verbose mode (-v)**: truncated preview (~100 chars) in DIM gray
+/// - **Trace mode (-vv)**: full result (up to 500 chars) in DIM gray
+/// - **Quiet mode**: hidden
 pub fn log_tool_result(tool_name: &str, result: &str) {
-    if !is_debug_enabled() {
-        return;
+    // Trace mode: full result (up to 500 chars)
+    if log::max_level() == log::LevelFilter::Trace {
+        let display_result = format_result(result, 500);
+        suspend_for_print(|| {
+            eprintln!("{TOOL_DIM}📤 {tool_name} result: {display_result}{RESET}");
+        });
+    } else if log::log_enabled!(log::Level::Debug) {
+        // Verbose mode: truncated preview (~100 chars)
+        let preview = crate::utils::truncate_chars(result, 100);
+        suspend_for_print(|| {
+            eprintln!("{TOOL_DIM}✓ Result: {}{RESET}", preview.replace('\n', " "));
+        });
     }
+    // Normal + Quiet mode: tool results are hidden
+}
 
-    let display_result = if result.chars().count() > 500 {
-        let truncated: String = result.chars().take(497).collect();
-        let remaining = result.chars().count() - 497;
-        format!("{}...[truncated {} chars]", truncated, remaining)
+/// Format a tool result string, truncating to `max_chars` if needed.
+fn format_result(result: &str, max_chars: usize) -> String {
+    if result.chars().count() > max_chars {
+        let truncated: String = result.chars().take(max_chars - 3).collect();
+        let remaining = result.chars().count() - max_chars + 3;
+        format!("{}...[+{} chars]", truncated, remaining)
     } else {
         result.to_string()
-    };
-
-    suspend_for_print(|| {
-        eprintln!("📤 TOOL RESULT for {}:", tool_name);
-        eprintln!("{}", display_result);
-        eprintln!("═══════════════════════════════════════════════════════════════");
-    });
-}
-
-/// Log a debug message (only in debug mode)
-pub fn log_debug(msg: &str) {
-    if is_debug_enabled() {
-        suspend_for_print(|| {
-            eprintln!("\x1B[90m[DEBUG] {}\x1B[0m", msg);
-        });
     }
 }

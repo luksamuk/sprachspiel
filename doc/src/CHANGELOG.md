@@ -4,7 +4,48 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
-### Security
+### Added
+
+- **Logging infrastructure with `log` crate and `env_logger` backend** (Issues #60, #61, #87, #88)
+  - Replace custom `log_debug()` / `AtomicBool` / `eprintln!` with industry-standard `log` crate
+  - 4-level verbosity system: Quiet (`-q`), Normal (default), Verbose (`-v`), Trace (`-vv`)
+  - Verbose flags available globally and in chat subcommand (`ask chat -v`)
+  - `RUST_LOG` environment variable support for fine-grained control
+  - `/debug` toggle in chat now syncs state and `log::set_max_level()`
+  - Tool calls displayed as `🔧 name(args)` in DIM gray (matching `[Thinking]` style)
+  - Tool result visibility is tiered: hidden in Normal, truncated in Verbose, full in Trace
+  - Chat interactive mode ignores quiet flag (allows user input display)
+  - Spinner suppressed in quiet mode
+  - Rustyline debug output always suppressed
+  - `debug_default` config option replaced by `verbosity` (backwards compatible)
+
+- **Pre-tool thinking and content visible in chat**
+  - Chat now shows the LLM's thinking process and text before tool calls
+  - Previously only visible in query mode; now consistent across both modes
+  - `ChatEvent::PreToolContent` processed via `.on_event()` callback during tool execution
+
+- **Chat output fixed at 80 columns** (`CHAT_TERMINAL_WIDTH`)
+  - All chat markdown rendering uses `print_markdown_chat()` at 80 columns
+  - Thinking blocks wrap at 80 columns (uses `CHAT_TERMINAL_WIDTH` constant)
+  - Recent context display truncated to 80 visual columns (ANSI-aware)
+  - Query mode and other subcommands still use real terminal width
+
+### Changed
+
+- **Simplified verbosity system to 4 levels** (Issue #87)
+  - Levels: Quiet, Normal, Verbose, Trace (removed Debug level)
+  - Normal level now shows info (was warn)
+  - Verbose level now shows debug (was info)
+  - Trace level now shows trace (was debug level)
+  - Removed `-vvv` trace flag (replaced with second `-v`)
+  - Removed `debug_default` config option
+
+- **Removed `-d`/`--debug` CLI flag** (Issue #61)
+  - `-d`/`--debug` completely removed from all subcommands (not deprecated)
+  - New `-v` / `-vv` flags control verbosity (verbose / trace level)
+  - `debug_default` config option replaced by `verbosity` in `[output]` section
+
+- **UX: `/forget` confirmation required** (Issue #85)
 
 - **CRITICAL: Removed LLM-controllable sandbox bypass from file tools.**
   The `sandbox` parameter in `read_file`, `read_file_segment`, `count_lines`,

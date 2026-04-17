@@ -23,13 +23,11 @@ pub fn build_query_coordinator(
     )
     .options(model_options)
     .think(ctx.use_think)
-    .debug(ctx.output_flags.debug)
     .on_event({
         let use_think = ctx.use_think;
         let use_plain = ctx.output_flags.plain;
-        let use_debug = ctx.output_flags.debug;
         move |event| {
-            super::handle_chat_event(event, use_think, use_plain, use_debug);
+            super::handle_chat_event(event, use_think, use_plain);
         }
     });
 
@@ -38,16 +36,15 @@ pub fn build_query_coordinator(
     coordinator = coordinator.system_prompt(ctx.system_prompt.clone());
 
     if ctx.use_tools {
-        if ctx.output_flags.debug {
+        if log::log_enabled!(log::Level::Debug) {
             eprintln!("🔧 [Tools] Tools enabled - will log when called");
         }
-        let (coord_new, tool_count) =
-            crate::tools::register_tools(coordinator, settings, ctx.output_flags.debug);
+        let (coord_new, tool_count) = crate::tools::register_tools(coordinator, settings);
         coordinator = coord_new;
-        if ctx.output_flags.debug {
+        if log::log_enabled!(log::Level::Debug) {
             eprintln!("   -> {} tools active", tool_count);
         }
-    } else if ctx.output_flags.debug {
+    } else if log::log_enabled!(log::Level::Debug) {
         eprintln!("⚠️  [Tools] No tools enabled for this model");
     }
 

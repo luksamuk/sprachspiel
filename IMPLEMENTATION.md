@@ -685,77 +685,79 @@ todo_clear_all()             // Clear all tasks
 
 ---
 
-### 🟡 PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate [M1]
+### ✅ PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate + Verbosity System [M1]
 
-**Status:** 🟡 TRIAGE NEEDED
+**Status:** ✅ COMPLETED (v0.39.7, branch: `feat/verbosity-simplification`)
 
-**Goal:** Replace custom `log_debug()` calls with proper logging using the `log` crate for formalization.
+**Goal:** Simplify verbosity system to 4 levels, remove debug mode, and integrate with REPL.
 
 **Motivation:**
-- **Standard logging facade** - Industry-standard approach in Rust ecosystem
-- **File path context** - The `log` crate automatically includes file path and line number in log output, useful for debugging
-- **Log levels** - Proper separation (trace, debug, info, warn, error)
-- **Configurable** - Users can control verbosity via RUST_LOG environment variable
+- **Simplified UX** - Most users only need 2 levels (normal and verbose)
+- **Clearer semantics** - 4 levels are easier to understand than 5
+- **Cleaner code** - Removed debug-specific logic and `debug_default` config
 
-**Technical Details:**
-- Replace `log_debug()` calls with `log::debug!()` or appropriate level
-- Replace `eprintln!()` for errors with `log::error!()` where appropriate
-- Add logging initialization in `main.rs`
-- Example output: `[DEBUG src/retrieval/context_builder.rs:317] Retrieval: enabled=true`
+**Resolved Design Decisions:**
 
-**Open Questions:**
-- Backend choice: `env_logger` vs `fern` vs other?
-- Default logging level?
-- Keep `--debug` CLI flag or use `RUST_LOG`?
+| Aspect | Old Design | New Design |
+|--------|-----------|------------|
+| Verbosity Levels | 5 (Quiet, Normal, Verbose, Debug, Trace) | 4 (Quiet, Normal, Verbose, Trace) |
+| Normal Level | `warn` | `info` (shows tool calls) |
+| Verbose Level | `info` | `debug` (shows tool calls + results) |
+| Debug Level | `-vv` → `debug` | Removed (now verbose) |
+| Trace Level | `-vvv` → `trace` | `-vv` → `trace` (replaced debug) |
+| Debug Flag | `-d/--debug` (dry-run) | Removed |
+| Verbose Flags | `-v`/`-vv`/`-q` | `-v` (verbose), `-vv` (trace) |
+| Debug Toggle | `/debug` command | `/debug` command (Normal ↔ Trace) |
+| `debug_default` | Config option | Removed |
+| Rustyline Debug | Shown in normal mode | Always suppressed |
+| Quiet Mode | Suppresses only warnings | Also suppresses spinners |
+| `use_debug` Param | Passed to many functions | Removed from all functions |
+| `Verbosity::Debug` | Exists | Removed |
+| Future TUI | stderr logging | Logging to file instead |
+
+| Verbosity | Flag | Log Level | Behavior |
+|-----------|------|-----------|----------|
+| Quiet | (none) | `error` | Only errors, no spinners |
+| Normal | (default) | `info` | Tool calls visible + errors |
+| Verbose | `-v` | `debug` | Tool calls + results + internal state |
+| Trace | `-vv` | `trace` | Everything (including embedding distances, token budgets) |
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Simplify Verbosity enum (4 levels, remove Debug) | ✅ Completed |
+| 2 | Update logging.rs - Verbosity struct with 4 variants | ✅ Completed |
+| 3 | Update Rustyline input - Always suppress debug output | ✅ Completed |
+| 4 | Update quiet mode - Spinners suppressed | ✅ Completed |
+| 5 | Remove `debug_default` from config | ✅ Completed |
+| 6 | Update `/debug` command - Toggle Normal ↔ Trace | ✅ Completed |
+| 7 | Remove `use_debug` parameter from ALL functions | ✅ Completed |
+| 8 | Update `/debug` DB error message (remove debug reference) | ✅ Completed |
+| 9 | Remove `dbg!()` macro | ✅ Completed |
+| 10 | Update tool call format - `🔧 name(args)` (no "Calling:") | ✅ Completed |
+| 11 | Chat interactive mode ignores quiet flag | ✅ Completed |
+| 12 | Tests & clippy & documentation | ✅ Completed |
+
+**Files Created:**
+- `src/logging.rs` — Logging initialization, Verbosity enum (4 levels), init(), set_verbosity(), 6 unit tests
+
+**Files Modified:**
+- `Cargo.toml` — Updated dependencies
+- `src/main.rs` — Removed `-d/--debug` flag,简化 `-v`/`-vv` flags
+- `src/lib.rs` — Added `pub mod logging`
+- `src/chat/cli.rs` — Updated verbosity flags
+- `src/chat/repl.rs` — Quiet mode handling, removed debug banners
+- `src/chat/input/rustyline.rs` — Always suppress debug output
+- `src/chat/command_handlers.rs` — `/debug` command syncs log level, not use_debug
+- `src/db/connection.rs` — DB error message update (no debug reference)
+- `src/settings.rs` — Removed `debug_default`, `debug_tools`, `verbosity` types updated
 
 **Related Issues:**
-- Issue #60 - This task
-- Issue #61 - Bug: `--debug` flag is dry-run mode, not debug logging (discovered during PR #59 testing)
-
-**Estimated effort:** 1 day
-
-**Verbosity integration:** This item should merge with the planned Verbosity Configuration feature. The `log` crate levels naturally serve as a verbosity system — a single implementation covers both logging refactoring AND configurable verbosity:
-
-| Verbosity | Log Level | Behavior |
-|-----------|-----------|----------|
-| Quiet | `warn` | Only warnings and errors |
-| Normal (default) | `info` | Standard output |
-| Verbose | `debug` | Tool calls, reasoning details |
-| Debug | `trace` | Everything (embedding distances, token budgets, internal state) |
-
-This means one `--verbosity` flag (or `RUST_LOG` env var) replaces both `--debug` and any future `--verbose` flag.
-
-**Related:** Issue #60
-
----
-
-### 🟡 PRIORITY 5: Bug - Debug CLI Flag Not Working for Logging [M1]
-
-**Status:** 🟡 TRIAGE NEEDED
-
-**Goal:** Fix `--debug` CLI flag to enable debug logging (currently activates dry-run mode).
-
-**Problem:**
-- Flag `--debug` currently prints config without executing (dry-run mode)
-- Parameter `use_debug` passed to `build_context()` etc. is always `false`
-- Macro `log_if_debug!` created in PR #59 never executes
-
-**Discovery:**
-- Found during PR #59 manual testing (Test 4 in MANUAL-TEST-PR59.md)
-- Bug pre-exists PR #59 (not introduced by refactoring)
-
-**Resolution Options:**
-1. **Option A:** Rename `--debug` to `--dry-run` + new `--debug` flag (breaking change)
-2. **Option B:** Add `--verbose` / `-v` flag (non-breaking, standard Unix convention)
-3. **Option C:** Integrate with `log` crate + RUST_LOG env var (depends on Issue #60)
-
-**Recommended:** Option C - integrate with Issue #60 logging refactor
-
-**Priority:** Low - Developer convenience, not critical for users
-
-**Estimated effort:** TBD (depends on Issue #60 triage)
-
-**Related:** Issue #60, PR #59
+- Issue #60 — Replace log_debug with log crate
+- Issue #61 — Bug: `--debug` flag is dry-run mode, not debug logging
+- Issue #87 — Simplify verbosity to 4 levels
+- Issue #88 — Remove debug mode, update `/debug` command
 
 ---
 

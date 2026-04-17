@@ -3,7 +3,6 @@
 //! Centralized tool registration for use across query, legacy query, and chat modes.
 //! Handles feature flags and blacklist filtering.
 
-use crate::log_if_debug;
 use crate::settings::Settings;
 
 #[cfg(any(
@@ -274,16 +273,12 @@ fn register_finance_tools<C: ToolRegistrar>(
 fn register_search_tools_serper<C: ToolRegistrar>(
     coordinator: C,
     is_allowed: impl Fn(&str) -> bool,
-    use_debug: bool,
 ) -> (C, usize) {
     let mut count = 0;
     let mut coord = coordinator;
 
     if super::serper::is_serper_available() {
-        log_if_debug!(
-            use_debug,
-            "🔑 [Serper] API key found - enabling Google Search via Serper"
-        );
+        log::debug!("🔑 [Serper] API key found - enabling Google Search via Serper");
         register_if_allowed!(
             coord,
             count,
@@ -304,8 +299,7 @@ fn register_search_tools_serper<C: ToolRegistrar>(
     } else {
         #[cfg(feature = "search-tools")]
         {
-            log_if_debug!(
-                use_debug,
+            log::debug!(
                 "ℹ️  [Search] SERPER_API_KEY not set - using DuckDuckGo (may be blocked by CAPTCHA)"
             );
             register_if_allowed!(coord, count, is_allowed, "web_search", web_search);
@@ -314,8 +308,7 @@ fn register_search_tools_serper<C: ToolRegistrar>(
         }
         #[cfg(not(feature = "search-tools"))]
         {
-            log_if_debug!(
-                use_debug,
+            log::debug!(
                 "⚠️  [Search] No search available - set SERPER_API_KEY or enable search-tools feature"
             );
         }
@@ -403,7 +396,6 @@ fn register_led_tools<C: ToolRegistrar>(
     coordinator: C,
     settings: &Settings,
     is_allowed: impl Fn(&str) -> bool,
-    use_debug: bool,
 ) -> (C, usize) {
     let mut count = 0;
     let mut coord = coordinator;
@@ -412,8 +404,7 @@ fn register_led_tools<C: ToolRegistrar>(
         // Initialize the LED endpoint from settings
         super::led::set_led_endpoint(settings.led_endpoint());
 
-        log_if_debug!(
-            use_debug,
+        log::debug!(
             "💡 [LED] Device configured at {}",
             settings.led_endpoint().unwrap_or_default()
         );
@@ -430,8 +421,7 @@ fn register_led_tools<C: ToolRegistrar>(
         );
         register_if_allowed!(coord, count, is_allowed, "led_set_color", led_set_color);
     } else {
-        log_if_debug!(
-            use_debug,
+        log::debug!(
             "💡 [LED] No device configured - LED tools disabled. Add [led] ip = \"<IP>\" to config.toml"
         );
     }
@@ -670,7 +660,7 @@ fn get_todo_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
 /// - Feature flags (compile-time)
 /// - Settings blacklist (runtime)
 /// - API key availability (for Serper)
-pub fn register_tools<C>(mut coordinator: C, settings: &Settings, use_debug: bool) -> (C, usize)
+pub fn register_tools<C>(mut coordinator: C, settings: &Settings) -> (C, usize)
 where
     C: ToolRegistrar,
 {
@@ -733,7 +723,7 @@ where
     // Search tools (Serper preferred, with DDG fallback)
     #[cfg(feature = "serper-tools")]
     {
-        let (c, n) = register_search_tools_serper(coordinator, is_allowed, use_debug);
+        let (c, n) = register_search_tools_serper(coordinator, is_allowed);
         coordinator = c;
         tool_count += n;
     }
@@ -765,7 +755,7 @@ where
     // LED tools (requires configuration)
     #[cfg(feature = "led-tools")]
     {
-        let (c, n) = register_led_tools(coordinator, settings, is_allowed, use_debug);
+        let (c, n) = register_led_tools(coordinator, settings, is_allowed);
         coordinator = c;
         tool_count += n;
     }

@@ -87,14 +87,13 @@ pub async fn write_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox always enforced)
-    let canonical_path =
-        match validate_write_path(&expand_tilde_path(&path), &config) {
-            Ok(p) => p,
-            Err(e) => {
-                log_tool_result("write_file", &e);
-                return Ok(e);
-            }
-        };
+    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config) {
+        Ok(p) => p,
+        Err(e) => {
+            log_tool_result("write_file", &e);
+            return Ok(e);
+        }
+    };
 
     // Check if file exists
     if canonical_path.exists() && !overwrite {
@@ -211,14 +210,13 @@ pub async fn edit_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox always enforced)
-    let canonical_path =
-        match validate_write_path(&expand_tilde_path(&path), &config) {
-            Ok(p) => p,
-            Err(e) => {
-                log_tool_result("edit_file", &e);
-                return Ok(e);
-            }
-        };
+    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config) {
+        Ok(p) => p,
+        Err(e) => {
+            log_tool_result("edit_file", &e);
+            return Ok(e);
+        }
+    };
 
     // File must exist for edit operations
     if !canonical_path.exists() {
@@ -373,14 +371,13 @@ pub async fn append_file(
     let config = BlocklistConfig::load();
 
     // Validate path (blocked patterns ALWAYS enforced, sandbox always enforced)
-    let canonical_path =
-        match validate_write_path(&expand_tilde_path(&path), &config) {
-            Ok(p) => p,
-            Err(e) => {
-                log_tool_result("append_file", &e);
-                return Ok(e);
-            }
-        };
+    let canonical_path = match validate_write_path(&expand_tilde_path(&path), &config) {
+        Ok(p) => p,
+        Err(e) => {
+            log_tool_result("append_file", &e);
+            return Ok(e);
+        }
+    };
 
     // Check if file exists
     let file_exists = canonical_path.exists();
@@ -479,10 +476,7 @@ pub async fn append_file(
 /// 1. Blocked patterns ALWAYS enforced (cannot write sensitive files)
 /// 2. Sandbox ALWAYS enforced (cannot write outside current working directory)
 /// 3. Parent directory must exist
-pub fn validate_write_path(
-    path: &Path,
-    config: &BlocklistConfig,
-) -> Result<PathBuf, String> {
+pub fn validate_write_path(path: &Path, config: &BlocklistConfig) -> Result<PathBuf, String> {
     // 1. Get absolute path
     let abs_path = if path.is_absolute() {
         path.to_path_buf()
@@ -522,8 +516,8 @@ pub fn validate_write_path(
 
     // 5. Sandbox is ALWAYS enforced — check that the path is within CWD
     // or within allowed temporary directories
-    let cwd = std::env::current_dir()
-        .map_err(|_| "Could not determine current directory".to_string())?;
+    let cwd =
+        std::env::current_dir().map_err(|_| "Could not determine current directory".to_string())?;
     let canonical_cwd = cwd
         .canonicalize()
         .map_err(|_| "Could not determine current directory".to_string())?;

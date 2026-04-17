@@ -12,7 +12,6 @@ use crate::chat::coordinator::{
 };
 use crate::chat::custom_coordinator::CustomCoordinator;
 use crate::db::Database;
-use crate::debug_tools::log_debug;
 use crate::embeddings::EmbeddingClient;
 
 /// Execute a query with retry logic.
@@ -26,7 +25,6 @@ pub async fn execute_query_with_retry(
     embedding_client: Option<Arc<EmbeddingClient>>,
     tool_names: &[String],
     spinner: ProgressBar,
-    use_debug: bool,
 ) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
     if let (Some(db), Some(embedding)) = (&db, &embedding_client) {
         execute_with_context(
@@ -36,11 +34,10 @@ pub async fn execute_query_with_retry(
             embedding.clone(),
             tool_names,
             spinner,
-            use_debug,
         )
         .await
     } else {
-        execute_without_context(coordinator, messages, tool_names, spinner, use_debug).await
+        execute_without_context(coordinator, messages, tool_names, spinner).await
     }
 }
 
@@ -52,10 +49,9 @@ async fn execute_with_context(
     embedding: Arc<EmbeddingClient>,
     tool_names: &[String],
     spinner: ProgressBar,
-    use_debug: bool,
 ) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
     crate::tools::context::with_context(db, embedding, async {
-        execute_retry_loop(coordinator, messages, tool_names, spinner, use_debug).await
+        execute_retry_loop(coordinator, messages, tool_names, spinner).await
     })
     .await
 }
@@ -66,9 +62,8 @@ async fn execute_without_context(
     messages: Vec<ChatMessage>,
     tool_names: &[String],
     spinner: ProgressBar,
-    use_debug: bool,
 ) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
-    execute_retry_loop(coordinator, messages, tool_names, spinner, use_debug).await
+    execute_retry_loop(coordinator, messages, tool_names, spinner).await
 }
 
 /// Core retry loop shared by both execution paths.
@@ -77,7 +72,6 @@ async fn execute_retry_loop(
     messages: Vec<ChatMessage>,
     tool_names: &[String],
     spinner: ProgressBar,
-    use_debug: bool,
 ) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
     let mut attempts = 0;
     let mut messages = messages;
@@ -94,13 +88,13 @@ async fn execute_retry_loop(
                     let recovery_err = classify_ollama_error(&e, tool_names);
                     let error_msg = format_recovery_message(&recovery_err);
 
-                    if use_debug {
-                        log_debug(&format!(
+                    if log::log_enabled!(log::Level::Debug) {
+                        log::debug!(
                             "🔧 [Recovery] Attempt {}/{} - {}",
                             attempts,
                             MAX_RETRIES,
                             recovery_err.description()
-                        ));
+                        );
                     }
 
                     messages.push(ChatMessage::tool(error_msg));

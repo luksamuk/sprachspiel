@@ -1658,36 +1658,55 @@ ask-ai -d "Tell me about Pikachu"
 
 ### Tool Call Visibility
 
-**Tool calls are always visible**, even without debug mode. This is intentional - users have the right to see what tools are being executed on their system.
+**Tool calls are always visible in Normal mode**, even without verbose logging. This is intentional — users have the right to see what tools are being executed on their system.
 
-**Without debug mode:**
+Tool calls and results are displayed with tiered visibility based on verbosity:
+
+| Level | Flag | Tool Calls | Tool Results |
+|-------|------|-------------|--------------|
+| Quiet | `-q` | Hidden | Hidden |
+| Normal | (default) | `🔧 name(args)` in gray | Hidden |
+| Verbose | `-v` | Detailed name + params in gray | Truncated preview (~100 chars) |
+| Trace | `-vv` | Detailed name + params in gray | Full result (up to 500 chars) |
+
+**Normal mode (default):**
 ```
-🔧 Calling: read_file(path=README.md, max_lines=50)
+🔧 read_file(path=README.md, max_lines=50)
 ```
 
-**With debug mode (`-d`):**
+**Verbose mode (`-v`):**
 ```
-═══════════════════════════════════════════════════════════════
-🔧 TOOL CALL: read_file
-───────────────────────────────────────────────────────────────
+🔧 read_file
   path: README.md
   max_lines: 50
-───────────────────────────────────────────────────────────────
-📤 TOOL RESULT for read_file:
-[content...]
-═══════════════════════════════════════════════════════════════
+✓ Result: # Project Name...
 ```
 
-### Error Display in Debug Mode
+**Trace mode (`-vv`):**
+```
+🔧 read_file
+  path: README.md
+  max_lines: 50
+📤 read_file result: # Project Name\n\nA long description...
+```
 
-When errors occur, debug mode shows the raw error with pretty printing:
+**Quiet mode (`-q`):**
+```
+(no tool output — only the final LLM answer)
+```
 
-**Without debug mode:**
+In chat mode, tool calls appear during execution and the LLM's thinking process before tool calls is also displayed. Use `/debug` to toggle between Normal and Trace verbosity mid-session.
+
+### Error Display in Verbose/Trace Mode
+
+When errors occur, verbose/trace mode shows additional diagnostic information:
+
+**Normal mode:**
 ```
 ❌ Tool execution failed: Error calling tool
 ```
 
-**With debug mode (`-d`):**
+**Verbose/Trace mode (`-v` or `-vv`):**
 ```
 ❌ Tool execution failed (RAW):
 ToolCallError(

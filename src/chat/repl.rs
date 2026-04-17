@@ -9,7 +9,6 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
-use crate::debug_tools::{enable_debug, log_debug};
 use crate::settings::Settings;
 use crate::tokens::calculate_context_metrics;
 use crate::tool_robustness::format_tool_error;
@@ -71,7 +70,6 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 #[allow(clippy::type_complexity)]
 fn init_chat_database(
     args: &super::ChatArgs,
-    use_debug: bool,
     settings: &Settings,
 ) -> (
     Option<Arc<crate::db::Database>>,
@@ -85,7 +83,7 @@ fn init_chat_database(
         return (None, None, ollama, None);
     }
 
-    let (db, embedding) = crate::db::init_database_core(ollama.clone(), false, use_debug);
+    let (db, embedding) = crate::db::init_database_core(ollama.clone(), false, false);
 
     let error_detail = if db.is_none() {
         let storage_path = crate::db::Database::get_storage_path();
@@ -106,7 +104,7 @@ fn init_chat_database(
              To diagnose:\n\
              - Check if Ollama is running: ollama list\n\
              - Check directory permissions: ls -la ~/.local/share/ask-ai/\n\
-             - Run with --debug for more information\n\
+             -               Run with -v for more information\n\
              \n\
              Use --anonymous for anonymous mode without database persistence.\n\
              ══════════════════════════════════════════════════════════════",
@@ -133,14 +131,15 @@ async fn run_startup_tasks(
         match db_ref.run_decay_cycle() {
             Ok(DecayStats { pruned, remaining }) => {
                 if pruned > 0 {
-                    log_debug(&format!(
+                    log::debug!(
                         "Facts decay: pruned {} old facts, {} remaining",
-                        pruned, remaining
-                    ));
+                        pruned,
+                        remaining
+                    );
                 }
             }
             Err(e) => {
-                log_debug(&format!("Warning: Facts decay cycle failed: {}", e));
+                log::debug!("Warning: Facts decay cycle failed: {}", e);
             }
         }
     }
@@ -151,9 +150,8 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
     let user_message_id = state.session.add_user_message(line.to_string());
     if !state.session.anonymous
         && let Err(e) = state.session.save_sqlite()
-        && state.use_debug
     {
-        log_debug(&format!("Warning: Could not save session: {}", e));
+        log::debug!("Warning: Could not save session: {}", e);
     }
 
     let context_window = state.model_config.num_ctx as usize;
@@ -175,7 +173,6 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
             state.cli_code,
             &state.settings,
             state.agents_md.as_deref(),
-            state.use_debug,
             state.db.as_ref(),
             state.embedding_client.as_ref(),
             state.cli_soulless,
@@ -214,20 +211,18 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
                             break;
                         }
 
-                        if state.use_debug {
-                            let remaining_cycles = MAX_COMPACTION_CYCLES - compaction_cycles;
-                            log_debug(&format!(
-                                "[Inter-tool Compaction] Cycle {}/{} ({} tools executed before pause)",
-                                compaction_cycles,
-                                MAX_COMPACTION_CYCLES,
-                                tools_executed.len()
-                            ));
-                            if remaining_cycles > 0 {
-                                log_debug(&format!(
-                                    "[Inter-tool Compaction] {} compaction(s) remaining before manual intervention",
-                                    remaining_cycles
-                                ));
-                            }
+                        let remaining_cycles = MAX_COMPACTION_CYCLES - compaction_cycles;
+                        log::debug!(
+                            "[Inter-tool Compaction] Cycle {}/{} ({} tools executed before pause)",
+                            compaction_cycles,
+                            MAX_COMPACTION_CYCLES,
+                            tools_executed.len()
+                        );
+                        if remaining_cycles > 0 {
+                            log::debug!(
+                                "[Inter-tool Compaction] {} compaction(s) remaining before manual intervention",
+                                remaining_cycles
+                            );
                         }
 
                         eprintln!("\x1B[33m\x1B[33mContinuing...\x1B[0m");
@@ -254,12 +249,8 @@ fn create_session(
     project_id: &Option<String>,
     model_override: Option<&str>,
     default_model: &str,
-    use_debug: bool,
 ) -> SessionLoadResult {
     if args.anonymous {
-        if use_debug {
-            log_debug("Anonymous mode: starting fresh session without history");
-        }
         return SessionLoadResult {
             session: ChatSession::new(
                 model_override.unwrap_or(default_model).to_string(),
@@ -331,9 +322,6 @@ fn create_session(
             },
             Ok(None) => {
                 // No sessions exist - create new session (not persisted yet)
-                if use_debug {
-                    log_debug("No existing sessions found, creating new session");
-                }
             }
             Err(e) => {
                 eprintln!("Warning: Could not query sessions: {}", e);
@@ -425,24 +413,17 @@ pub async fn run_chat_repl(
     cli_ignore_agents: bool,
     cli_soulless: bool,
 ) -> AppResult<()> {
-    let use_debug = settings.output.debug_default;
-
-    if use_debug {
-        enable_debug();
-        log_debug("Debug mode enabled for chat session");
-    }
-
     let project_id = if args.anonymous {
         None
     } else {
         get_project_id()
     };
 
-    if use_debug {
+    if log::log_enabled!(log::Level::Debug) {
         if let Some(ref pid) = project_id {
-            log_debug(&format!("Project ID: {}", pid));
+            log::debug!("Project ID: {}", pid);
         } else {
-            log_debug("Running in anonymous mode (no persistence)");
+            log::debug!("Running in anonymous mode (no persistence)");
         }
     }
 
@@ -455,7 +436,7 @@ pub async fn run_chat_repl(
         &settings.model.default
     };
 
-    let (db, embedding_client, ollama, db_error) = init_chat_database(args, use_debug, settings);
+    let (db, embedding_client, ollama, db_error) = init_chat_database(args, settings);
 
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {
@@ -470,14 +451,7 @@ pub async fn run_chat_repl(
     run_startup_tasks(&db, &embedding_client, args.anonymous).await;
 
     // Load or create session (returns info without printing yet)
-    let session_load_result = create_session(
-        args,
-        &db,
-        &project_id,
-        model_override,
-        default_model,
-        use_debug,
-    );
+    let session_load_result = create_session(args, &db, &project_id, model_override, default_model);
     let mut session = session_load_result.session;
     let resume_message = session_load_result.resume_message;
 
@@ -610,7 +584,7 @@ pub async fn run_chat_repl(
     // Phase 8: Create ReplState to consolidate mutable state
     // Created AFTER initialization, right before the loop
     // We pass cloned/copied values for incremental migration.
-    // Immutable values (use_debug, cli_code, cli_soulless, agents_md) are accessed via state.
+    // Immutable values (cli_code, cli_soulless, agents_md) are accessed via state.
     // Mutable values (session, model_config, capabilities, tools_active) currently have
     // BOTH local variables AND state fields - migration is in progress.
     let mut state = super::repl_state::ReplStateBuilder::new()
@@ -619,7 +593,6 @@ pub async fn run_chat_repl(
         .capabilities(capabilities.clone()) // Clone for state
         .tools_active(tools_active) // Copy (bool) - now accessible as state.tools_active
         .agents_md(agents_md.clone()) // Clone for state
-        .use_debug(use_debug) // Copy (bool) - now accessible as state.use_debug
         .cli_code(cli_code) // Copy (bool) - now accessible as state.cli_code
         .cli_soulless(cli_soulless) // Copy (bool) - now accessible as state.cli_soulless
         .ollama(ollama.clone()) // Clone for state

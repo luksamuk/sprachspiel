@@ -43,7 +43,6 @@ pub struct QueryContextBuilder {
     cli_prompt: String,
     cli_ignore_agents: bool,
     cli_soulless: bool,
-    debug: Option<bool>,
     plain: Option<bool>,
 }
 
@@ -57,7 +56,6 @@ impl QueryContextBuilder {
             cli_prompt: String::new(),
             cli_ignore_agents: false,
             cli_soulless: false,
-            debug: None,
             plain: None,
         }
     }
@@ -97,11 +95,6 @@ impl QueryContextBuilder {
         self
     }
 
-    pub fn debug(mut self, debug: Option<bool>) -> Self {
-        self.debug = debug;
-        self
-    }
-
     pub fn plain(mut self, plain: Option<bool>) -> Self {
         self.plain = plain;
         self
@@ -109,7 +102,7 @@ impl QueryContextBuilder {
 
     /// Build the query context
     pub async fn build(self, settings: &Settings) -> QueryContext {
-        let output_flags = super::OutputFlags::resolve(self.debug, self.plain, settings);
+        let output_flags = super::OutputFlags::resolve(self.plain);
 
         let config_name = if self.cli_code { "code" } else { "query" };
         let (subcommand_model, subcommand_thinking, subcommand_tools) =
@@ -168,8 +161,11 @@ impl QueryContextBuilder {
         };
 
         let skip_persistence = self.cli_code;
-        let (db, embedding_client) =
-            crate::db::init_database_core(ollama.clone(), skip_persistence, output_flags.debug);
+        let (db, embedding_client) = crate::db::init_database_core(
+            ollama.clone(),
+            skip_persistence,
+            log::log_enabled!(log::Level::Debug),
+        );
 
         let retrieval_enabled = db.is_some() && embedding_client.is_some();
 

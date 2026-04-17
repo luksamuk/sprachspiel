@@ -120,7 +120,7 @@ fn sanitize_content(content: &str) -> Option<String> {
     }
 
     // Log removed patterns (could be useful for debugging)
-    if !removed_patterns.is_empty() && crate::debug_tools::is_debug_enabled() {
+    if !removed_patterns.is_empty() && log::log_enabled!(log::Level::Debug) {
         eprintln!(
             "[AGENTS.md] Sanitized {} suspicious patterns:",
             removed_patterns.len()
