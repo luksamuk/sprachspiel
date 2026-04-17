@@ -561,7 +561,7 @@ pub(crate) fn truncate_str(s: &str, max_len: usize) -> String {
 /// Truncate a string to a maximum visual width (Unicode-aware, ANSI-aware)
 /// Each Unicode character counts as 1 visual column, even multi-byte chars.
 /// ANSI escape codes are preserved but not counted.
-fn truncate_visual(s: &str, max_width: usize) -> String {
+pub(crate) fn truncate_visual(s: &str, max_width: usize) -> String {
     let chars: Vec<char> = s.chars().collect();
     let mut width = 0;
     let mut result = String::new();
@@ -600,7 +600,7 @@ fn truncate_visual(s: &str, max_width: usize) -> String {
 }
 
 /// Calculate visual width of a string, stripping ANSI escape codes
-fn strip_ansi_width(s: &str) -> usize {
+pub(crate) fn strip_ansi_width(s: &str) -> usize {
     let mut width = 0;
     let chars: Vec<char> = s.chars().collect();
     let mut i = 0;

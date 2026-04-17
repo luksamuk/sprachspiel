@@ -8,17 +8,27 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **Logging infrastructure with `log` crate and `env_logger` backend** (Issues #60, #61, #87, #88)
   - Replace custom `log_debug()` / `AtomicBool` / `eprintln!` with industry-standard `log` crate
-  - Simplified verbosity levels: quiet (normal), verbose (`-v`), trace (`-vv`)
+  - 4-level verbosity system: Quiet (`-q`), Normal (default), Verbose (`-v`), Trace (`-vv`)
   - Verbose flags available globally and in chat subcommand (`ask chat -v`)
   - `RUST_LOG` environment variable support for fine-grained control
-  - Tool calls logged at `info` level, tool results at `debug` level, internal state at `trace` level
-  - `/debug` toggle in chat now syncs both `state.use_debug` state and `log::set_max_level()`
-  - Tool call format changed to `🔧 name(args)` (no "Calling:" prefix)
+  - `/debug` toggle in chat now syncs state and `log::set_max_level()`
+  - Tool calls displayed as `🔧 name(args)` in DIM gray (matching `[Thinking]` style)
+  - Tool result visibility is tiered: hidden in Normal, truncated in Verbose, full in Trace
   - Chat interactive mode ignores quiet flag (allows user input display)
   - Spinner suppressed in quiet mode
   - Rustyline debug output always suppressed
-  - `/debug` command toggles Normal ↔ Trace (not Debug)
-  - `debug_default` config option removed
+  - `debug_default` config option replaced by `verbosity` (backwards compatible)
+
+- **Pre-tool thinking and content visible in chat**
+  - Chat now shows the LLM's thinking process and text before tool calls
+  - Previously only visible in query mode; now consistent across both modes
+  - `ChatEvent::PreToolContent` processed via `.on_event()` callback during tool execution
+
+- **Chat output fixed at 80 columns** (`CHAT_TERMINAL_WIDTH`)
+  - All chat markdown rendering uses `print_markdown_chat()` at 80 columns
+  - Thinking blocks wrap at 80 columns (uses `CHAT_TERMINAL_WIDTH` constant)
+  - Recent context display truncated to 80 visual columns (ANSI-aware)
+  - Query mode and other subcommands still use real terminal width
 
 ### Changed
 
@@ -30,11 +40,10 @@ All notable changes to Ask-AI will be documented in this file.
   - Removed `-vvv` trace flag (replaced with second `-v`)
   - Removed `debug_default` config option
 
-- **Renamed `--debug` CLI flag to `--dry-run`** (Issue #61)
-  - `--debug` was confusing — it printed config without executing (dry-run), not debug logging
+- **Removed `-d`/`--debug` CLI flag** (Issue #61)
+  - `-d`/`--debug` completely removed from all subcommands (not deprecated)
   - New `-v` / `-vv` flags control verbosity (verbose / trace level)
-  - `-d` / `--debug` flag removed from all subcommands
-  - `--debug` kept as deprecated alias for `--dry-run` for one version
+  - `debug_default` config option replaced by `verbosity` in `[output]` section
 
 - **UX: `/forget` confirmation required** (Issue #85)
 
