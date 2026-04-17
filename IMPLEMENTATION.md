@@ -2092,7 +2092,9 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🟡 PRIORITY 4: Specialized Agent Architecture [M1]
+### 🔄 PRIORITY 4: Specialized Agent Architecture [M1]
+
+**Status:** 🔄 IN PROGRESS (v0.41.0)
 
 **Status:** ❌ NOT STARTED
 
@@ -2175,7 +2177,14 @@ translation = "translategemma:4b"
 
 | Phase | Description | Effort |
 |-------|-------------|--------|
-| 1 | Define `SubagentType` enum and `spawn_subagent` tool signature | 0.5 day |
+| 1 | Define `SubagentType` enum and `spawn_subagent` tool signature | ✅ Done |
+| 2 | Create subagent coordinator (one-shot context, model routing) | 🔄 In Progress |
+| 3 | Implement OCR subagent (glm-ocr, tesseract tools) | 🔄 In Progress |
+| 4 | Implement Vision subagent (moondream, image processing) | 🔄 In Progress |
+| 5 | Implement Translate/Summarize subagents | 🔄 In Progress |
+| 6 | Implement Document subagent (PDF/EPUB, respects skill overrides) | 🔄 In Progress |
+| 7 | Configuration (models.toml) and user commands | 🔄 In Progress |
+| 8 | Testing and documentation | 📋 Planned |
 | 2 | Create subagent coordinator (one-shot context, model routing) | 1 day |
 | 3 | Implement OCR subagent (glm-ocr, tesseract tools) | 1 day |
 | 4 | Implement Vision subagent (moondream, image processing) | 1 day |

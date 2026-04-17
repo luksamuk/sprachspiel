@@ -6,6 +6,14 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Specialized Agent Architecture** - One-shot subagents for OCR, Vision, Translation, Summarization, and Document extraction (Issue #12)
+  - `SubagentRunner` - Lightweight one-shot executor with dual API path support (`/api/generate` and `/api/chat`)
+  - `spawn_subagent` tool - LLM-initiated subagent invocation with type-safe dispatch
+  - `/ocr`, `/vision`, `/translate`, `/summarize` chat commands - Direct user access to subagents
+  - Document extraction refactor - Replaces `Command::new()` with `spawn_subagent(type="document")`
+  - Config support for `[model.ocr]` and `[model.document]` sections
+  - Feature flag: `subagent-tools` (default enabled)
+
 
 ### Changed
 
