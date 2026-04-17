@@ -116,9 +116,14 @@ pub struct OutputSettings {
     pub plain_default: bool,
     /// Verbosity level for logging: "quiet", "normal", "verbose", or "trace"
     /// Default: "normal" (info level — shows tool calls)
-    /// Priority: CLI flags > RUST_LOG env var > this config > default
+    /// Priority: CLI flags (-v/-q) > RUST_LOG env var > this setting > default
     #[serde(default)]
     pub verbosity: Option<crate::logging::Verbosity>,
+    /// Deprecated: use `verbosity` instead.
+    /// This field exists solely for backwards compatibility with old config files.
+    /// It is ignored — `verbosity` takes precedence.
+    #[serde(default, rename = "debug_default")]
+    pub debug_default: Option<bool>,
 }
 
 /// Display-related settings

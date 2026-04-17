@@ -125,6 +125,17 @@ pub fn display_thinking(
     thinking_field: Option<&String>,
     render_markdown: bool,
 ) -> Option<String> {
+    // In quiet mode (Error level only), suppress thinking display
+    if !log::log_enabled!(log::Level::Info) {
+        // Still extract the thinking content so it can be processed,
+        // but don't display it
+        let thinking_content = thinking_field.cloned().or_else(|| {
+            let processed = process_thinking(content);
+            processed.thinking
+        });
+        return thinking_content;
+    }
+
     let thinking_content = thinking_field.cloned().or_else(|| {
         let processed = process_thinking(content);
         processed.thinking

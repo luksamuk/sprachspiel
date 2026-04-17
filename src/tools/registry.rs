@@ -273,7 +273,6 @@ fn register_finance_tools<C: ToolRegistrar>(
 fn register_search_tools_serper<C: ToolRegistrar>(
     coordinator: C,
     is_allowed: impl Fn(&str) -> bool,
-    _use_debug: bool,
 ) -> (C, usize) {
     let mut count = 0;
     let mut coord = coordinator;
@@ -397,7 +396,6 @@ fn register_led_tools<C: ToolRegistrar>(
     coordinator: C,
     settings: &Settings,
     is_allowed: impl Fn(&str) -> bool,
-    _use_debug: bool,
 ) -> (C, usize) {
     let mut count = 0;
     let mut coord = coordinator;
@@ -662,7 +660,7 @@ fn get_todo_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
 /// - Feature flags (compile-time)
 /// - Settings blacklist (runtime)
 /// - API key availability (for Serper)
-pub fn register_tools<C>(mut coordinator: C, settings: &Settings, _use_debug: bool) -> (C, usize)
+pub fn register_tools<C>(mut coordinator: C, settings: &Settings) -> (C, usize)
 where
     C: ToolRegistrar,
 {
@@ -725,7 +723,7 @@ where
     // Search tools (Serper preferred, with DDG fallback)
     #[cfg(feature = "serper-tools")]
     {
-        let (c, n) = register_search_tools_serper(coordinator, is_allowed, _use_debug);
+        let (c, n) = register_search_tools_serper(coordinator, is_allowed);
         coordinator = c;
         tool_count += n;
     }
@@ -757,7 +755,7 @@ where
     // LED tools (requires configuration)
     #[cfg(feature = "led-tools")]
     {
-        let (c, n) = register_led_tools(coordinator, settings, is_allowed, _use_debug);
+        let (c, n) = register_led_tools(coordinator, settings, is_allowed);
         coordinator = c;
         tool_count += n;
     }

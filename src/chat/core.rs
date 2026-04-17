@@ -151,7 +151,7 @@ pub fn setup_coordinator(
     }
 
     if tools_enabled {
-        let (coord_new, tool_count) = register_tools(coordinator, settings, false);
+        let (coord_new, tool_count) = register_tools(coordinator, settings);
         coordinator = coord_new;
         if log::log_enabled!(log::Level::Debug) {
             log::debug!("{} tools active", tool_count);
@@ -187,7 +187,6 @@ pub async fn prepare_messages(
         user_input,
         system_prompt,
         &retrieval_config,
-        false, // use_debug removed - check log level at caller
     )
     .await;
 

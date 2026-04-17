@@ -39,7 +39,7 @@ pub fn build_query_coordinator(
         if log::log_enabled!(log::Level::Debug) {
             eprintln!("🔧 [Tools] Tools enabled - will log when called");
         }
-        let (coord_new, tool_count) = crate::tools::register_tools(coordinator, settings, false);
+        let (coord_new, tool_count) = crate::tools::register_tools(coordinator, settings);
         coordinator = coord_new;
         if log::log_enabled!(log::Level::Debug) {
             eprintln!("   -> {} tools active", tool_count);

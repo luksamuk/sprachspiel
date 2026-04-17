@@ -186,7 +186,6 @@ async fn perform_retrieval(
     conversation_id: Option<&str>,
     project_id: Option<&str>,
     config: &RetrievalConfig,
-    _use_debug: bool,
 ) -> Option<RetrievalResult> {
     log::debug!("Generating embedding for query...");
 
@@ -277,7 +276,6 @@ pub async fn build_context(
     user_query: &str,
     system_prompt: &str,
     config: &RetrievalConfig,
-    _use_debug: bool,
 ) -> ContextResult {
     let mut messages = Vec::new();
     let mut retrieval_performed = false;
@@ -321,7 +319,6 @@ pub async fn build_context(
                 Some(&session.id),
                 session.project_id.as_deref(),
                 config,
-                _use_debug,
             )
             .await
             {
@@ -403,7 +400,6 @@ pub async fn build_query_context(
     user_query: &str,
     system_prompt: &str,
     config: &RetrievalConfig,
-    _use_debug: bool,
 ) -> ContextResult {
     let mut messages = Vec::new();
     let mut retrieval_performed = false;
@@ -423,7 +419,7 @@ pub async fn build_query_context(
         if let (Some(db), Some(client)) = (db, embedding_client) {
             if let Some(result) = perform_retrieval(
                 db, client, user_query, None, // No conversation_id - search all in project
-                project_id, config, _use_debug,
+                project_id, config,
             )
             .await
             {

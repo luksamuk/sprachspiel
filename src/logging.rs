@@ -28,6 +28,18 @@
 //! regardless of the application's verbosity level. This prevents noisy readline
 //! internals from cluttering the output even at trace level.
 //!
+//! # Known Limitation: Chat Mode and Verbose/Trace
+//!
+//! In interactive chat mode, the terminal is managed by rustyline which captures
+//! the screen. `env_logger` output goes to stderr, which may not be visible inline
+//! in the chat terminal. This means `-v`/`-vv` flags are primarily useful in
+//! **query mode** (non-interactive). In chat mode, only tool call display
+//! (via `eprintln!` with `suspend_for_print`) is reliably visible.
+//!
+//! The `/debug` command toggles the log level but trace/debug output from
+//! `log::debug!()` / `log::trace!()` will appear on stderr, which may be
+//! scrolled off or not visible depending on the terminal.
+//!
 //! # Future Note (TUI)
 //!
 //! When the TUI (ratatui.rs) is implemented, the chat REPL will be replaced.

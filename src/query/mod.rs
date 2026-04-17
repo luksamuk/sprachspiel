@@ -99,7 +99,10 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
         }
         ChatEvent::ToolCall { .. } => {}
         ChatEvent::ToolResult { result, .. } => {
-            if !log::log_enabled!(log::Level::Debug) {
+            // Show result preview only in Normal mode (info level)
+            // In Quiet mode (error only), suppress all non-error output
+            // In Verbose/Trace mode, the full result is logged via log_tool_result
+            if log::log_enabled!(log::Level::Info) && !log::log_enabled!(log::Level::Debug) {
                 suspend_for_print(|| {
                     let preview = crate::utils::truncate_chars(&result, 100);
                     eprintln!("✓ Result: {}", preview.replace('\n', " "));
@@ -284,7 +287,6 @@ pub async fn run_query(
         &query,
         &ctx.system_prompt,
         &retrieval_config,
-        log::log_enabled!(log::Level::Debug),
     )
     .await;
 
