@@ -122,6 +122,18 @@ The `/session` command provides an alternative syntax for session management:
 
 Subcommand shortcuts: `/fact a` (add), `/fact l` (list), `/fact r` (remove), `/fact s` (search), `/fact p` (prune)
 
+### Todos
+
+| Command | Description |
+|---------|-------------|
+| `/todo get`, `/tg` | Get current session todo list |
+| `/todo add <text>`, `/ta` | Add a todo item |
+| `/todo delete <id>`, `/td` | Delete a todo by ID |
+| `/todo edit <id> [--text <text>]`, `/te` | Edit a todo |
+| `/todo priority <id> <level>`, `/tp` | Set priority (high, medium, low) |
+| `/todo tags <id> <tags>`, `/tt` | Add/update tags |
+| `/todo list`, `/tl` | Alias for `/todo get` |
+
 ### Notes
 
 | Command | Description |

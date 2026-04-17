@@ -288,7 +288,7 @@ make install-local-all-tools
 
 | Feature | Tools | Default | Notes |
 |---------|-------|---------|-------|
-| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes | Fetch Pokémon stats, types, abilities |
+| `pokemon-tools` | 9 Pokémon data tools | ❌ No | Fetch Pokémon stats, types, abilities |
 | `weather-tools` | 3 Weather tools | ✅ Yes | Current weather, forecast, air quality |
 | `file-tools` | 5 File tools | ✅ Yes | Read files, search, list directories |
 | `calc-tools` | 1 Calculator | ✅ Yes | Mathematical expressions |
@@ -296,7 +296,7 @@ make install-local-all-tools
 | `system-tools` | 2 System tools | ✅ Yes | System info, current directory |
 | `todo-tools` | 5 Todo tools | ✅ Yes | Task tracking with priorities |
 | `led-tools` | 4 LED control tools | Yes | Control GPIO LEDs (embedded) |
-| `remember` | 1 History search tool | Yes | Search conversation history |
+|| `skill-tools` | 2 AI behavior tools | ✅ Yes | Dynamic skill activation |
 | `search-tools` | 3 DuckDuckGo tools | ❌ No | May fail due to CAPTCHA |
 | `finance-tools` | 1 Stock quote tool | ❌ No | Planned |
 

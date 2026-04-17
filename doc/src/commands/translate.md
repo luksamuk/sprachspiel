@@ -20,15 +20,9 @@ Translate text between languages with automatic source language detection. The c
 | `LANGUAGE` | Language pair in format `[source:]target` or just `target` for auto-detect |
 | `TEXT` | Text to translate. Reads from stdin if not provided. |
 
-## Global Options
-
-These options must be placed **before** the `translate` subcommand:
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--plain` | | Plain text output (no markdown) |
-| `--debug` | `-d` | Enable debug mode |
-| `--help` | `-h` | Show help |
+|| `-v` | Verbose logging |
+|| `-vv` | Trace logging |
+|| `--help` | Show help |
 
 ## Subcommand Options
 
@@ -154,12 +148,11 @@ ask-ai translate --list spanish
 ask-ai --plain translate :pt "Hello **world**"
 # Output: Olá **mundo**
 ```
-
-### Debug Mode
+### Logging
 
 ```bash
 # See translation process
-ask-ai -d translate en:pt "Test"
+ask-ai -v translate en:pt "Test"
 # Shows model configuration and processing
 ```
 

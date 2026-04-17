@@ -443,17 +443,17 @@ cargo test --test prompt_benchmark test_platform_detection -- --nocapture
 cargo build
 
 # Test tool selection
-./target/debug/ask-ai -m <model> "Tell me about Pikachu" --debug 2>&1 | grep -i "fetch_pokemon"
+./target/debug/ask-ai -m <model> "Tell me about Pikachu" -vv 2>&1 | grep -i "fetch_pokemon"
 
 # Test weather
-./target/debug/ask-ai -m <model> "Weather in Paris" --debug 2>&1 | grep -i "weather"
+./target/debug/ask-ai -m <model> "Weather in Paris" -vv 2>&1 | grep -i "weather"
 
 # Test web search
-./target/debug/ask-ai -m <model> "Latest Rust news" --debug 2>&1 | grep -i "search"
+./target/debug/ask-ai -m <model> "Latest Rust news" -vv 2>&1 | grep -i "search"
 
 # Test AGENTS.md
 echo "# Test Project\nTest context." > AGENTS.md
-./target/debug/ask-ai -m <model> "What is this project?" --debug
+./target/debug/ask-ai -m <model> "What is this project?" -vv
 rm AGENTS.md
 ```
 

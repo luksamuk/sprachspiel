@@ -20,16 +20,9 @@ Vision provides general image understanding capabilities. It can describe images
 | `FILE` | One or more image files to analyze |
 | `PROMPT` | Optional custom prompt (overrides modes) |
 
-## Global Options
-
-These options must be placed **before** the `vision` subcommand:
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--plain` | | Output plain text without markdown rendering |
-| `--debug` | `-d` | Enable debug mode |
-| `--model` | `-m` | Model to use (overrides config) |
-| `--help` | `-h` | Show help |
+|| `-v` | Verbose logging |
+|| `-vv` | Trace logging |
+|| `--help` | Show help |
 
 ## Subcommand Options
 

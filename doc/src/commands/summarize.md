@@ -25,16 +25,9 @@ Create summaries of long documents, articles, or any text. The summarize command
 |----------|-------------|
 | `TEXT` | Text to summarize. Reads from stdin if not provided. |
 
-## Global Options
-
-These options must be placed **before** the `summarize` subcommand:
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--model` | `-m` | Model preset to use |
-| `--plain` | | Plain text output (no markdown) |
-| `--debug` | `-d` | Enable debug mode |
-| `--help` | `-h` | Show help |
+|| `-v` | Verbose logging |
+|| `-vv` | Trace logging |
+|| `--help` | Show help |
 
 ## Subcommand Options
 

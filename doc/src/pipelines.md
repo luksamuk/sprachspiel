@@ -249,7 +249,7 @@ ask-ai ocr doc.png | tee /dev/tty | ask-ai summarize
 time ask-ai ocr doc.png | time ask-ai summarize
 
 # Full debug
-ask-ai ocr -d doc.png 2> debug.log | ask-ai summarize -d 2> summary.log
+ask-ai ocr -v doc.png 2> debug.log | ask-ai summarize -v 2> summary.log
 ```
 
 ## Creating Scripts

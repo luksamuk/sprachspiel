@@ -24,14 +24,9 @@ OCR (Optical Character Recognition) extracts text from images. GLM-OCR is a mult
 |----------|-------------|
 | `FILE` | One or more image files to process |
 
-## Global Options
-
-These options must be placed **before** the `ocr` subcommand:
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--debug` | `-d` | Enable debug mode |
-| `--help` | `-h` | Show help |
+|| `-v` | Verbose logging |
+|| `-vv` | Trace logging |
+|| `--help` | Show help |
 
 ## Subcommand Options
 
@@ -127,13 +122,12 @@ ask-ai ocr --max-tokens 16384 large-document.png
 # Decrease for quick extraction
 ask-ai ocr --max-tokens 4096 simple.png
 ```
-
-### Debug Mode
+### Logging
 
 ```bash
 # See processing details
-ask-ai ocr -d document.png
-
+ask-ai ocr -v document.png
+#
 # Shows:
 # - Model being used
 # - Image processing info

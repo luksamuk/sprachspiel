@@ -430,7 +430,7 @@ Be helpful.
 To see how your SOUL.md affects the system prompt:
 
 ```bash
-ask query --debug "test query" 2>&1 | head -100
+ask-ai -v "test query" 2>&1 | head -100
 ```
 
 This shows the complete prompt being sent to the model.
