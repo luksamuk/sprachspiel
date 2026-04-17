@@ -5,24 +5,29 @@
 //!
 //! # Verbosity and Tool Logging
 //!
-//! | Level   | Tool Calls          | Tool Results |
-//! |---------|---------------------|--------------|
-//! | Quiet   | Hidden (error only) | Hidden       |
-//! | Normal  | Compact: 🔧 name()  | Hidden       |
-//! | Verbose | Detailed: key=val   | Full output  |
-//! | Trace   | Same as Verbose     | Same + extra |
+//! | Level   | Tool Calls          | Tool Results        |
+//! |---------|---------------------|----------------------|
+//! | Quiet   | Hidden (error only) | Hidden               |
+//! | Normal  | Compact: 🔧 name()  | Hidden               |
+//! | Verbose | Detailed: key=val   | Truncated (~100 chr) |
+//! | Trace   | Detailed: key=val   | Full output (500 chr) |
 //!
 //! # Implementation Notes
 //!
 //! In Normal mode, tool calls are printed directly to stderr (via suspend_for_print)
 //! so they appear cleanly on the terminal without log-level prefixes.
-//! In Verbose/Trace mode, they're logged at `debug` level which includes
-//! the full module path, timestamp, and detailed parameters.
+//! Tool results are hidden in Normal mode — they're diagnostic info, not essential UI.
 //!
-//! Tool result previews (`✓ Result:`) are always shown in Normal mode
-//! as UI output — they are part of the user experience, not diagnostic logging.
+//! In Verbose/Trace mode, both calls and results are printed via `eprintln!`
+//! (not `log::debug!`) so we can apply consistent DIM+gray styling.
+//! The `log::debug!` path is only used for internal coordinator diagnostics.
 
 use crate::spinner::suspend_for_print;
+
+/// ANSI style: DIM (faint) + light gray text — same as `[Thinking]` blocks
+const TOOL_DIM: &str = "\x1B[2m\x1B[37m";
+/// ANSI reset
+const RESET: &str = "\x1B[0m";
 
 /// Toggle debug/logging verbosity between Normal and Trace.
 /// Used by the `/debug` command in chat mode.
@@ -33,17 +38,21 @@ pub fn toggle_debug() -> crate::logging::Verbosity {
 
 /// Log a tool call with its arguments.
 ///
-/// In Normal mode: compact single-line format `🔧 name(args)` printed to stderr
-/// In Verbose/Trace mode: detailed multi-line format via `log::debug!()`
+/// - **Normal mode**: compact single-line format `🔧 name(args)` in DIM gray
+/// - **Verbose/Trace mode**: detailed multi-line format in DIM gray
+///   (printed via `eprintln!`, not `log::debug!`, for consistent styling)
+/// - **Quiet mode**: hidden
 pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
     if log::log_enabled!(log::Level::Debug) {
-        // Detailed format for verbose/trace mode — goes through env_logger
-        // which adds the [LEVEL module] prefix and timestamp
-        log::debug!("🔧 {}", tool_name);
-        for (key, value) in args {
-            let display_value = crate::utils::truncate_chars(value, 77);
-            log::debug!("  {}: {}", key, display_value);
-        }
+        // Detailed format for verbose/trace mode — printed directly
+        // so we can apply DIM gray styling consistently
+        suspend_for_print(|| {
+            eprintln!("{TOOL_DIM}🔧 {tool_name}{RESET}");
+            for (key, value) in args {
+                let display_value = crate::utils::truncate_chars(value, 77);
+                eprintln!("{TOOL_DIM}  {key}: {display_value}{RESET}");
+            }
+        });
     } else if log::log_enabled!(log::Level::Info) {
         // Compact format for normal mode — printed directly to stderr
         // without log-level prefix, so it appears clean in the terminal
@@ -55,34 +64,42 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
             })
             .collect();
         suspend_for_print(|| {
-            eprintln!("🔧 {}({})", tool_name, args_str.join(", "));
+            eprintln!("{TOOL_DIM}🔧 {}({}){RESET}", tool_name, args_str.join(", "));
         });
     }
     // In Quiet mode (Error level only), neither branch executes — tool calls are hidden
 }
 
-/// Log tool result (only visible at Verbose/Trace level).
+/// Log tool result.
 ///
-/// In Normal mode, a compact preview is shown as UI output.
-/// In Verbose/Trace mode, the full result is logged at debug level.
+/// - **Normal mode**: hidden (tool calls are enough for the user)
+/// - **Verbose mode (-v)**: truncated preview (~100 chars) in DIM gray
+/// - **Trace mode (-vv)**: full result (up to 500 chars) in DIM gray
+/// - **Quiet mode**: hidden
 pub fn log_tool_result(tool_name: &str, result: &str) {
-    let display_result = if result.chars().count() > 500 {
-        let truncated: String = result.chars().take(497).collect();
-        let remaining = result.chars().count() - 497;
-        format!("{}...[truncated {} chars]", truncated, remaining)
-    } else {
-        result.to_string()
-    };
-
-    if log::log_enabled!(log::Level::Debug) {
-        // Full result in verbose/trace mode
-        log::debug!("📤 {} result: {}", tool_name, display_result);
-    } else if log::log_enabled!(log::Level::Info) {
-        // Compact preview in normal mode — shown as UI, not log
-        let preview = crate::utils::truncate_chars(&display_result, 100);
+    // Trace mode: full result (up to 500 chars)
+    if log::max_level() == log::LevelFilter::Trace {
+        let display_result = format_result(result, 500);
         suspend_for_print(|| {
-            eprintln!("✓ Result: {}", preview.replace('\n', " "));
+            eprintln!("{TOOL_DIM}📤 {tool_name} result: {display_result}{RESET}");
+        });
+    } else if log::log_enabled!(log::Level::Debug) {
+        // Verbose mode: truncated preview (~100 chars)
+        let preview = crate::utils::truncate_chars(result, 100);
+        suspend_for_print(|| {
+            eprintln!("{TOOL_DIM}✓ Result: {}{RESET}", preview.replace('\n', " "));
         });
     }
-    // In Quiet mode, neither branch executes — tool results are hidden
+    // Normal + Quiet mode: tool results are hidden
+}
+
+/// Format a tool result string, truncating to `max_chars` if needed.
+fn format_result(result: &str, max_chars: usize) -> String {
+    if result.chars().count() > max_chars {
+        let truncated: String = result.chars().take(max_chars - 3).collect();
+        let remaining = result.chars().count() - max_chars + 3;
+        format!("{}...[+{} chars]", truncated, remaining)
+    } else {
+        result.to_string()
+    }
 }

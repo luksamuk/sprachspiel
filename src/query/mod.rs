@@ -98,16 +98,10 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
             });
         }
         ChatEvent::ToolCall { .. } => {}
-        ChatEvent::ToolResult { result, .. } => {
-            // Show result preview only in Normal mode (info level)
-            // In Quiet mode (error only), suppress all non-error output
-            // In Verbose/Trace mode, the full result is logged via log_tool_result
-            if log::log_enabled!(log::Level::Info) && !log::log_enabled!(log::Level::Debug) {
-                suspend_for_print(|| {
-                    let preview = crate::utils::truncate_chars(&result, 100);
-                    eprintln!("✓ Result: {}", preview.replace('\n', " "));
-                });
-            }
+        ChatEvent::ToolResult { .. } => {
+            // Tool result display is handled by log_tool_result() inside each
+            // tool function — no need to duplicate it here.
+            // The ChatEvent::ToolResult is kept for future use (e.g., TUI rendering).
         }
         ChatEvent::ContextNearLimit {
             tool_name,
