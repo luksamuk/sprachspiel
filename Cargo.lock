@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "ask-ai"
-version = "0.39.5"
+version = "0.40.0"
 dependencies = [
  "base64",
  "calc",

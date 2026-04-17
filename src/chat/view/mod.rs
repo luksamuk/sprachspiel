@@ -645,7 +645,8 @@ mod tests {
             project: "my-project".to_string(),
             session_name: "default".to_string(),
             is_anonymous: false,
-            version: "0.39.5".to_string(),
+            version: "0.40.0".to_string(),
+
             server_url: "localhost:11434".to_string(),
             fact_count: 3,
             note_count: 2,
