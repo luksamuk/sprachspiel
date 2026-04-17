@@ -168,11 +168,7 @@ pub fn setup_coordinator(
                 context_window,
                 ..
             } => {
-                let percent = if context_window > 0 {
-                    (tokens_used * 100) / context_window
-                } else {
-                    0
-                };
+                let percent = (tokens_used * 100).checked_div(context_window).unwrap_or(0);
                 eprintln!(
                     "\x1B[33m⚠ Context {}% full. Compaction may be needed.\x1B[0m",
                     percent

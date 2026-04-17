@@ -406,6 +406,22 @@ pub async fn handle_command(
             }
             HandleResult::Continue
         }
+        ChatCommand::Ocr { path } => {
+            handle_subagent_ocr(state, path).await;
+            HandleResult::Continue
+        }
+        ChatCommand::Vision { paths, prompt } => {
+            handle_subagent_vision(state, paths, prompt).await;
+            HandleResult::Continue
+        }
+        ChatCommand::Translate { lang_pair, text } => {
+            handle_subagent_translate(state, lang_pair, text).await;
+            HandleResult::Continue
+        }
+        ChatCommand::Summarize { text } => {
+            handle_subagent_summarize(state, text).await;
+            HandleResult::Continue
+        }
     }
 }
 
@@ -2825,3 +2841,81 @@ mod tests {
         // Should print "No messages to remove" and not panic
     }
 }
+
+/// Handle /ocr command - extract text from an image
+pub async fn handle_subagent_ocr(state: &mut ReplState, path: String) {
+    use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+    use crate::ocr::mode::OcrMode;
+    use std::path::Path;
+
+    let file_path = Path::new(&path);
+    if !file_path.exists() {
+        eprintln!("\x1B[31mError: File not found: {}\x1B[0m", path);
+        return;
+    }
+
+    let (model, _, _) = state.settings.get_subcommand_config("ocr");
+    let config = SubagentConfig::new(model, "OCR extraction");
+    let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
+
+    match runner.run_ocr(file_path, OcrMode::Text, &state.settings).await {
+        Ok(result) => println!("{}", result),
+        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+
+/// Handle /vision command - analyze image(s) with vision model
+pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, prompt: Option<String>) {
+    use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+    use std::path::PathBuf;
+
+    let path_bufs: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+
+    // Validate files exist
+    for path in &path_bufs {
+        if !path.exists() {
+            eprintln!("\x1B[31mError: File not found: {}\x1B[0m", path.display());
+            return;
+        }
+    }
+
+    let (model, _, _) = state.settings.get_subcommand_config("vision");
+    let config = SubagentConfig::new(model, "Vision analysis");
+    let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
+
+    let prompt_str = prompt.as_deref().unwrap_or("Describe what you see in this image.");
+
+    match runner.run_vision(&path_bufs, prompt_str).await {
+        Ok(result) => println!("{}", result),
+        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+
+/// Handle /translate command - translate text between languages
+pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String, text: String) {
+    use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+
+    let (model, _, _) = state.settings.get_subcommand_config("translate");
+    let config = SubagentConfig::new(model, "Translation");
+    let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
+
+    match runner.run_translate(&lang_pair, &text).await {
+        Ok(result) => println!("{}", result),
+        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+
+/// Handle /summarize command - summarize text
+pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
+    use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+
+    let (model, _, _) = state.settings.get_subcommand_config("summarize");
+    let config = SubagentConfig::new(model, "Summarization");
+    let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
+
+    match runner.run_summarize(&text).await {
+        Ok(result) => println!("{}", result),
+        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+

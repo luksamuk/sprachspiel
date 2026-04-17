@@ -369,7 +369,7 @@ pub async fn build_context(
         .rev()
         .collect();
 
-    push_messages_as_chat_messages(&mut messages, recent_messages.into_iter());
+    push_messages_as_chat_messages(&mut messages, recent_messages);
 
     // 6. Current query (always at the very end - critical for model performance)
     // This is added by the caller, not here

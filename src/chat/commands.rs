@@ -157,6 +157,14 @@ pub enum ChatCommand {
     SkillList,
     /// Activate a skill by name
     Skill { name: String },
+    /// Run OCR on an image file
+    Ocr { path: String },
+    /// Analyze image(s) with vision model
+    Vision { paths: Vec<String>, prompt: Option<String> },
+    /// Translate text between languages
+    Translate { lang_pair: String, text: String },
+    /// Summarize text
+    Summarize { text: String },
 }
 
 /// Export format for /export command
@@ -967,6 +975,40 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 }
             }
         }
+        "ocr" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /ocr <file>".to_string()));
+            }
+            ChatCommand::Ocr { path: args.trim().to_string() }
+        }
+        "vision" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /vision <path> [prompt]".to_string()));
+            }
+            let parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let path = parts.first().unwrap_or(&"").to_string();
+            let prompt = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+            ChatCommand::Vision { paths: vec![path], prompt }
+        }
+        "translate" | "tr" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /translate <source:target> <text>".to_string()));
+            }
+            let parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let lang_pair = parts.first().unwrap_or(&"").to_string();
+            let text = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+            if text.is_empty() {
+                return Some(Err("Usage: /translate <source:target> <text>".to_string()));
+            }
+            ChatCommand::Translate { lang_pair, text }
+        }
+        "summarize" | "sum" => {
+            if args.is_empty() {
+                return Some(Err("Usage: /summarize <text>".to_string()));
+            }
+            ChatCommand::Summarize { text: args.trim().to_string() }
+        }
+
         _ => {
             return Some(Err(format!(
                 "Unknown command: /{}. Use /help for available commands.",
@@ -1056,6 +1098,14 @@ Todo List:
 Skills:
   /skill           List available skills
   /skill <name>    Activate a skill for this session
+
+Subagents:
+  /ocr <file>                 Extract text from an image using OCR
+  /vision <path> [prompt]     Analyze image with vision model
+  /translate <src:dst> <text>  Translate text between languages
+  /summarize <text>           Summarize text
+
+  Shortcuts: /tr = /translate, /sum = /summarize
 
 Shortcuts:
   /q = /quit, /n = /new, /h = /help

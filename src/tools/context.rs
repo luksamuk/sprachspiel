@@ -83,7 +83,7 @@ where
 ///
 /// This allows tools like spawn_subagent to access the Ollama client
 /// and Settings while still having DB and Embedding access.
-#[allow(clippy::redundant_async_block)]
+#[allow(dead_code, clippy::redundant_async_block)]
 pub async fn with_full_context<F, T>(
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
