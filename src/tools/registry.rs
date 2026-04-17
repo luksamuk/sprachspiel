@@ -13,7 +13,8 @@ use crate::settings::Settings;
     feature = "search-tools",
     feature = "system-tools",
     feature = "file-tools",
-    feature = "finance-tools"
+    feature = "finance-tools",
+    feature = "subagent-tools"
 ))]
 use super::*;
 
@@ -43,6 +44,9 @@ use super::{check_tool_availability, run_command};
 #[cfg(feature = "skills-tools")]
 use super::skill_tools::{skill_list, skill_view};
 
+// Subagent tools (LLM-initiated subagent invocation)
+#[cfg(feature = "subagent-tools")]
+use super::subagent_tools::spawn_subagent;
 /// Trait for tool registration - implemented by both Coordinator types
 pub trait ToolRegistrar: Sized {
     fn register_tool<T: ollama_rs::generation::tools::Tool + 'static>(self, tool: T) -> Self;
@@ -138,6 +142,19 @@ fn register_skills_tools<C: ToolRegistrar>(
 
     register_if_allowed!(coord, count, is_allowed, "skill_list", skill_list);
     register_if_allowed!(coord, count, is_allowed, "skill_view", skill_view);
+
+    (coord, count)
+}
+/// Register subagent tools
+#[cfg(feature = "subagent-tools")]
+fn register_subagent_tools<C: ToolRegistrar>(
+    coordinator: C,
+    is_allowed: impl Fn(&str) -> bool,
+) -> (C, usize) {
+    let mut count = 0;
+    let mut coord = coordinator;
+
+    register_if_allowed!(coord, count, is_allowed, "spawn_subagent", spawn_subagent);
 
     (coord, count)
 }
@@ -497,6 +514,14 @@ fn get_skills_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
     tools
 }
 
+/// Get subagent tool names
+#[cfg(feature = "subagent-tools")]
+fn get_subagent_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
+    let mut tools = Vec::new();
+    push_if_allowed!(tools, is_allowed, "spawn_subagent");
+    tools
+}
+
 /// Get Pokemon tool names
 #[cfg(feature = "pokemon-tools")]
 fn get_pokemon_tool_names(is_allowed: impl Fn(&str) -> bool) -> Vec<String> {
@@ -688,6 +713,14 @@ where
         tool_count += n;
     }
 
+    // Subagent tools
+    #[cfg(feature = "subagent-tools")]
+    {
+        let (c, n) = register_subagent_tools(coordinator, is_allowed);
+        coordinator = c;
+        tool_count += n;
+    }
+
     // Pokemon tools
     #[cfg(feature = "pokemon-tools")]
     {
@@ -788,6 +821,12 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
     #[cfg(feature = "skills-tools")]
     {
         tools.extend(get_skills_tool_names(is_allowed));
+    }
+
+    // Subagent tools
+    #[cfg(feature = "subagent-tools")]
+    {
+        tools.extend(get_subagent_tool_names(is_allowed));
     }
 
     // Pokemon tools

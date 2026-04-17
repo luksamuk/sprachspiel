@@ -1,7 +1,7 @@
 //! Task-local storage for async tools
 //!
-//! Provides async-safe access to Database and EmbeddingClient
-//! for tools that need them (like `remember`).
+//! Provides async-safe access to Database, EmbeddingClient, Ollama client,
+//! and Settings for tools that need them.
 //!
 //! Uses `tokio::task_local!` instead of `thread_local!` because
 //! thread-local storage is unsafe in async contexts where tasks
@@ -12,12 +12,18 @@ use std::sync::Arc;
 
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
+use crate::settings::Settings;
+use ollama_rs::Ollama;
 
 tokio::task_local! {
     /// Database for tools that need conversation history access
     pub static REMEMBER_DB: Arc<Database>;
     /// Embedding client for tools that need semantic search
     pub static REMEMBER_EMBEDDING: Arc<EmbeddingClient>;
+    /// Ollama client for tools that need LLM access (e.g., spawn_subagent)
+    pub static TOOL_OLLAMA: Ollama;
+    /// Settings for tools that need configuration (e.g., spawn_subagent)
+    pub static TOOL_SETTINGS: Arc<Settings>;
 }
 
 /// Helper to get database from task-local context
@@ -32,6 +38,20 @@ pub fn get_db() -> Option<Arc<Database>> {
 /// Returns None if context is not set (e.g., anonymous session)
 pub fn get_embedding() -> Option<Arc<EmbeddingClient>> {
     REMEMBER_EMBEDDING.try_with(|e| e.clone()).ok()
+}
+
+/// Helper to get Ollama client from task-local context
+///
+/// Returns None if context is not set
+pub fn get_ollama() -> Option<Ollama> {
+    TOOL_OLLAMA.try_with(|o| o.clone()).ok()
+}
+
+/// Helper to get Settings from task-local context
+///
+/// Returns None if context is not set
+pub fn get_settings() -> Option<Arc<Settings>> {
+    TOOL_SETTINGS.try_with(|s| s.clone()).ok()
 }
 
 /// Run an async function with the tool context set
@@ -54,6 +74,36 @@ where
         .scope(db, async move {
             REMEMBER_EMBEDDING
                 .scope(embedding, async move { f.await })
+                .await
+        })
+        .await
+}
+
+/// Run an async function with full tool context including Ollama and Settings
+///
+/// This allows tools like spawn_subagent to access the Ollama client
+/// and Settings while still having DB and Embedding access.
+#[allow(clippy::redundant_async_block)]
+pub async fn with_full_context<F, T>(
+    db: Arc<Database>,
+    embedding: Arc<EmbeddingClient>,
+    ollama: Ollama,
+    settings: Arc<Settings>,
+    f: F,
+) -> T
+where
+    F: Future<Output = T>,
+{
+    REMEMBER_DB
+        .scope(db, async move {
+            REMEMBER_EMBEDDING
+                .scope(embedding, async move {
+                    TOOL_OLLAMA
+                        .scope(ollama, async move {
+                            TOOL_SETTINGS.scope(settings, async move { f.await }).await
+                        })
+                        .await
+                })
                 .await
         })
         .await

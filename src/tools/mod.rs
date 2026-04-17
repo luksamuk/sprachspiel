@@ -45,6 +45,10 @@ pub mod tool_check;
 #[cfg(feature = "skills-tools")]
 pub mod skill_tools;
 
+// Subagent tools (LLM-initiated subagent invocation)
+#[cfg(feature = "subagent-tools")]
+pub mod subagent_tools;
+
 #[cfg(feature = "calc-tools")]
 pub use calc::*;
 pub use files::*;
@@ -77,6 +81,7 @@ pub use tool_check::check_tool_availability;
 #[allow(unused_imports)]
 pub use skill_tools::*;
 
+// Subagent tools are imported directly in registry.rs
 /// Common response structure for PokeAPI
 #[cfg(feature = "pokemon-tools")]
 #[derive(Debug, Deserialize)]
