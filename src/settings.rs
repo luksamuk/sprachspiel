@@ -675,4 +675,55 @@ model = "qwen3"
         assert!(settings.model.translate.thinking.is_none());
         assert!(settings.model.translate.tools.is_none());
     }
+
+    #[test]
+    fn test_ocr_model_default() {
+        let settings = Settings::default();
+        // OCR defaults to None, code should use "glm-ocr:bf16" as fallback
+        assert!(settings.model.ocr.model.is_none());
+        assert!(settings.model.ocr.thinking.is_none());
+        assert!(settings.model.ocr.tools.is_none());
+    }
+
+    #[test]
+    fn test_ocr_model_override() {
+        let sample = r#"
+[model.ocr]
+model = "custom-ocr:latest"
+thinking = true
+tools = false
+"#;
+
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert_eq!(settings.model.ocr.model, Some("custom-ocr:latest".to_string()));
+        assert_eq!(settings.model.ocr.thinking, Some(true));
+        assert_eq!(settings.model.ocr.tools, Some(false));
+    }
+
+    #[test]
+    fn test_vision_model_default() {
+        let settings = Settings::default();
+        // Vision defaults to None (uses global default from subcommand config)
+        assert!(settings.model.vision.model.is_none());
+        assert!(settings.model.vision.thinking.is_none());
+        assert!(settings.model.vision.tools.is_none());
+    }
+
+    #[test]
+    fn test_summarize_model_default() {
+        let settings = Settings::default();
+        // Summarize defaults to None (uses global default from subcommand config)
+        assert!(settings.model.summarize.model.is_none());
+        assert!(settings.model.summarize.thinking.is_none());
+        assert!(settings.model.summarize.tools.is_none());
+    }
+
+    #[test]
+    fn test_document_model_default() {
+        let settings = Settings::default();
+        // Document defaults to None (uses global default from subcommand config)
+        assert!(settings.model.document.model.is_none());
+        assert!(settings.model.document.thinking.is_none());
+        assert!(settings.model.document.tools.is_none());
+    }
 }

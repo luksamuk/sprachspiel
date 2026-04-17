@@ -215,6 +215,7 @@ pub fn build_document_config(settings: &crate::settings::Settings) -> SubagentCo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::Settings;
 
     #[test]
     fn test_invalid_subagent_type() {
@@ -285,5 +286,50 @@ mod tests {
             VALID_SUBAGENT_TYPES.join(", ")
         );
         assert!(err.contains("summarize, document"));
+    }
+
+    #[test]
+    fn test_build_translate_config_uses_translategemma() {
+        // Build Settings and call build_translate_config
+        let settings = Settings::default();
+        let config = build_translate_config(&settings);
+        // Should contain "translategemma" as the model name
+        assert!(config.model.contains("translategemma"));
+}
+
+    #[test]
+    fn test_build_ocr_config_uses_glm_ocr() {
+        // Build Settings and call build_ocr_config
+        let settings = Settings::default();
+        let config = build_ocr_config(&settings);
+        // Should contain "glm-ocr" as the model name
+        assert!(config.model.contains("glm-ocr"));
+    }
+
+    #[test]
+    fn test_build_summarize_config_model() {
+        // Build Settings and call build_summarize_config
+        let settings = Settings::default();
+        let config = build_summarize_config(&settings);
+        // Should use the default model from settings
+        assert!(!config.model.is_empty());
+    }
+
+    #[test]
+    fn test_build_vision_config_model() {
+        // Build Settings and call build_vision_config
+        let settings = Settings::default();
+        let config = build_vision_config(&settings);
+        // Should use the default model from settings
+        assert!(!config.model.is_empty());
+    }
+
+    #[test]
+    fn test_build_document_config_model() {
+        // Build Settings and call build_document_config
+        let settings = Settings::default();
+        let config = build_document_config(&settings);
+        // Should use the default model from settings
+        assert!(!config.model.is_empty());
     }
 }
