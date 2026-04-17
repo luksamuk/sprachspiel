@@ -17,23 +17,15 @@ use crate::utils::expand_tilde_path;
 const VALID_SUBAGENT_TYPES: &[&str] = &["ocr", "vision", "translate", "summarize", "document"];
 
 /// Default system prompt for OCR subagent
-const OCR_SYSTEM_PROMPT: &str = "You are an OCR assistant. Extract all text from the provided image. \
-    Return only the extracted text, preserving the original layout and structure as much as possible. \
-    Do not add commentary or explanations.";
+const OCR_SYSTEM_PROMPT: &str = "You are an OCR engine. Extract all text from the image precisely. \
+    Preserve layout and structure. Output only extracted text, no commentary.";
 
-/// Default system prompt for Vision subagent
-const VISION_SYSTEM_PROMPT: &str = "You are a vision assistant. Analyze and describe the provided image \
-    according to the user's instructions. Be thorough and accurate in your description.";
-
-/// Default system prompt for Translate subagent
-const TRANSLATE_SYSTEM_PROMPT: &str = "You are a professional translator. Translate the provided text \
-    according to the user's instructions. Preserve the original meaning, tone, and formatting. \
-    Output only the translated text without explanations.";
-
-/// Default system prompt for Document subagent
-const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processing assistant. Process the provided \
-    document content according to the user's instructions. Follow the instructions precisely and \
-    provide accurate, structured output.";
+const VISION_SYSTEM_PROMPT: &str = "You are a vision model. Analyze the image as instructed. \
+    Describe what you see thoroughly and accurately. Output only your analysis.";
+const TRANSLATE_SYSTEM_PROMPT: &str = "You are a translator. Translate the text as directed. \
+    Preserve meaning, tone, and formatting. Output only the translation, no explanations.";
+const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_command tool to \
+    extract text from the file. Follow instructions precisely. Output structured results.";
 
 /// Spawn a specialized subagent for OCR, Vision, Translation, Summarization, or Document extraction.
 ///
