@@ -246,6 +246,76 @@ Skill instructions will be followed when relevant to the conversation.
 
 Use `skill_list()` (LLM tool) to see available skills from within a conversation.
 
+### Subagent Commands
+
+Delegate specialized tasks to purpose-built subagent models directly from chat. Each command uses the optimized model for that task type (see [Subagent Tools](../tools.md#subagent-tool-1) for details).
+
+| Command | Description |
+|---------|-------------|
+| `/ocr <image_path>` | Extract text from an image using OCR (glm-ocr model) |
+| `/vision <image_path> [prompt]` | Analyze or describe an image (moondream model) |
+| `/translate <lang_pair> <text>` | Translate text between languages (translategemma model) |
+| `/summarize <text>` | Summarize long text (current chat model) |
+
+#### /ocr
+
+Extract text from an image using the GLM-OCR specialized subagent.
+
+**Usage:** `/ocr <image_path>`
+
+**Examples:**
+```
+/ocr /tmp/receipt.png
+/ocr ~/documents/scan.jpg
+```
+
+The image is processed by the `glm-ocr:bf16` model, which is optimized for text extraction including plain text, tables, formulas, and figures.
+
+#### /vision
+
+Analyze or describe an image using the moondream vision model.
+
+**Usage:** `/vision <image_path> [prompt]`
+
+**Examples:**
+```
+/vision /tmp/screenshot.png
+/visibility /tmp/diagram.png "Describe the architecture shown"
+```
+
+Without a custom prompt, the model provides a general description. With a prompt, it answers specific questions about the image.
+
+#### /translate
+
+Translate text between languages using the TranslateGemma model.
+
+**Usage:** `/translate <lang_pair> <text>`
+
+The language pair format is `[source:]target`. Omit the source for auto-detection.
+
+**Examples:**
+```
+/translate en:pt Hello, how are you?
+/translate :es This is a test
+/translate pt The text to translate to Portuguese
+```
+
+Supports 50+ languages. See [translate command](./translate.md) for the full language list.
+
+#### /summarize
+
+Summarize text using the current chat model with a specialized summarization prompt.
+
+**Usage:** `/summarize <text>`
+
+**Examples:**
+```
+/summarize Long article text that needs to be condensed...
+```
+
+The subagent uses the same model as the current chat session but with a summarization-specific system prompt (no SOUL personality, no tools). Results are truncated at 10,000 characters.
+
+
 ## /context - Context Metrics
 
 Show token usage and context utilization for the current session:
