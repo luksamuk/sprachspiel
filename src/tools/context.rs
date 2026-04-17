@@ -65,7 +65,7 @@ pub fn get_settings() -> Option<Arc<Settings>> {
 ///     coordinator.chat(messages).await
 /// }).await;
 /// ```
-#[allow(clippy::redundant_async_block)]
+#[allow(clippy::redundant_async_block, dead_code)]
 pub async fn with_context<F, T>(db: Arc<Database>, embedding: Arc<EmbeddingClient>, f: F) -> T
 where
     F: Future<Output = T>,
@@ -79,11 +79,37 @@ where
         .await
 }
 
+/**
+ * Run an async function with tool context (TOOL_OLLAMA and TOOL_SETTINGS).
+ *
+ * This allows tools to access the Ollama client and Settings via task-local storage.
+ * Use this wrapper when calling coordinator.chat() or similar async operations
+ * in contexts that don't need DB/Embedding access (e.g., anonymous sessions).
+ *
+ * # Example
+ * ```ignore
+ * let result = with_tool_context(ollama, settings, async {
+ *     coordinator.chat(messages).await
+ * }).await;
+ * ```
+ */
+#[allow(clippy::redundant_async_block, dead_code)]
+pub async fn with_tool_context<F, T>(ollama: Ollama, settings: Arc<Settings>, f: F) -> T
+where
+    F: Future<Output = T>,
+{
+    TOOL_OLLAMA
+        .scope(ollama, async move {
+            TOOL_SETTINGS.scope(settings, async move { f.await }).await
+        })
+        .await
+}
+
 /// Run an async function with full tool context including Ollama and Settings
 ///
 /// This allows tools like spawn_subagent to access the Ollama client
 /// and Settings while still having DB and Embedding access.
-#[allow(dead_code, clippy::redundant_async_block)]
+#[allow(clippy::redundant_async_block)]
 pub async fn with_full_context<F, T>(
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
@@ -98,11 +124,7 @@ where
         .scope(db, async move {
             REMEMBER_EMBEDDING
                 .scope(embedding, async move {
-                    TOOL_OLLAMA
-                        .scope(ollama, async move {
-                            TOOL_SETTINGS.scope(settings, async move { f.await }).await
-                        })
-                        .await
+                    with_tool_context(ollama, settings, async move { f.await }).await
                 })
                 .await
         })
