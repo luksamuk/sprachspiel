@@ -314,7 +314,12 @@ impl Settings {
                 // Code subcommand has its own default model
                 if subcommand == "code" {
                     DEFAULT_CODE_MODEL.to_string()
+                } else if subcommand == "translate" {
+
+                    "translategemma:4b".to_string()
+
                 } else if subcommand == "ocr" {
+
                     "glm-ocr:bf16".to_string()
                 } else {
                     self.model.default.clone()
