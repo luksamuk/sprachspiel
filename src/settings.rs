@@ -76,8 +76,13 @@ pub struct ModelSettings {
     /// Falls back to "translategemma" if model not specified
     #[serde(default)]
     pub translate: SubcommandModelConfig,
+    /// OCR subcommand configuration
+    #[serde(default)]
+    pub ocr: SubcommandModelConfig,
+    /// Document subcommand configuration
+    #[serde(default)]
+    pub document: SubcommandModelConfig,
 }
-
 /// Model configuration for a specific subcommand
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SubcommandModelConfig {
@@ -163,10 +168,11 @@ impl Default for ModelSettings {
             code: SubcommandModelConfig::default(),
             vision: SubcommandModelConfig::default(),
             translate: SubcommandModelConfig::default(),
+            ocr: SubcommandModelConfig::default(),
+            document: SubcommandModelConfig::default(),
         }
     }
 }
-
 impl Default for DisplaySettings {
     fn default() -> Self {
         DisplaySettings {
@@ -292,12 +298,13 @@ impl Settings {
             "query" => &self.model.query,
             "chat" => &self.model.chat,
             "summarize" => &self.model.summarize,
-            "code" => &self.model.code,
-            "vision" => &self.model.vision,
             "translate" => &self.model.translate,
+            "ocr" => &self.model.ocr,
+            "document" => &self.model.document,
             _ => &SubcommandModelConfig::default(),
         };
 
+        // Get model: subcommand specific > code default > global default
         // Get model: subcommand specific -> code default -> global default
         let model = subcommand_config
             .model
@@ -307,11 +314,12 @@ impl Settings {
                 // Code subcommand has its own default model
                 if subcommand == "code" {
                     DEFAULT_CODE_MODEL.to_string()
+                } else if subcommand == "ocr" {
+                    "glm-ocr:bf16".to_string()
                 } else {
                     self.model.default.clone()
                 }
             });
-
         // Get thinking: subcommand specific -> global -> model default
         // Note: This returns the config preference; model capability check happens elsewhere
         let thinking = subcommand_config
@@ -330,9 +338,10 @@ impl Settings {
             "query" => true,
             "chat" => true,
             "code" => true,
-            "summarize" => false,
             "translate" => false,
             "vision" => false,
+            "ocr" => false,
+            "document" => true,
             _ => true,
         };
         let tools = subcommand_config.tools.unwrap_or(default_tools);
@@ -444,34 +453,40 @@ ollama_port = 11434
 # tools = true
 
 # --- SUMMARIZE SUBCOMMAND ---
-[model.summarize]
-# The model to use for 'ask summarize'.
-# Recommended: a lightweight model like qwen3 for speed and thinking.
+# tools = false
+
+# --- OCR SUBCOMMAND ---
+[model.ocr]
+# The model to use for 'ask ocr'.
+# Built-in: "glm-ocr:bf16" (optimized for OCR tasks)
+# If not specified, uses "glm-ocr:bf16" by default.
+# model = "glm-ocr:bf16"
+
+# OCR typically doesn't need thinking mode.
+# If not specified, defaults to: false for ocr
+# thinking = false
+
+# OCR doesn't use external tools.
+# If not specified, defaults to: false for ocr
+# tools = false
+
+# --- DOCUMENT SUBCOMMAND ---
+[model.document]
+# The model to use for 'ask document'.
 # If not specified, falls back to the global [model] default.
-# model = "qwen3"
+# model = "qwen3.5:4b"
 
-# Summarization typically doesn't need thinking mode.
-# If not specified, defaults to: false for summarize
+# Document operations typically don't need thinking mode.
+# If not specified, defaults to: false for document
 # thinking = false
 
-# Summarization doesn't use external tools.
-# If not specified, defaults to: false for summarize
-# tools = false
+# Enable tool calling for document operations. This allows the model to inspect
+# your project files (read_file, list_directory, search_files) before
+# performing document operations.
+# If not specified, defaults to: true for document
+# tools = true
 
-# --- TRANSLATE SUBCOMMAND ---
-[model.translate]
-# The model to use for 'ask translate'.
-# Built-in: "translategemma" (optimized for translation)
-# If not specified, uses "translategemma" by default.
-# model = "translategemma"
-
-# Translation typically doesn't need thinking mode.
-# If not specified, defaults to: false for translate
-# thinking = false
-
-# Translation doesn't use tools.
-# If not specified, defaults to: false for translate
-# tools = false
+# --- CODE MODE ---
 
 # --- CODE MODE ---
 [model.code]
