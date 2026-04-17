@@ -214,7 +214,7 @@ fn build_summarize_config(settings: &crate::settings::Settings) -> SubagentConfi
 }
 
 /// Build SubagentConfig for Document processing tasks.
-fn build_document_config(settings: &crate::settings::Settings) -> SubagentConfig {
+pub fn build_document_config(settings: &crate::settings::Settings) -> SubagentConfig {
     let (model, _, _) = settings.get_subcommand_config("document");
     SubagentConfig::new(model, DOCUMENT_SYSTEM_PROMPT)
 }

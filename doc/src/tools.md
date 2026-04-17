@@ -20,6 +20,8 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
 | Todo | 5 | Session state | ✅ Working | ✅ Enabled |
+| Subagent | 1 | SubagentRunner | ✅ Working | ✅ Enabled |
+| LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
@@ -57,6 +59,7 @@ The default build includes:
 | `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
 | `document-tools` | Document import | import_document | ✅ Yes |
 | `todo-tools` | Session todo list | todo_add, todo_update, todo_list, todo_clear_done, todo_clear_all | ✅ Yes |
+| `subagent-tools` | Specialized subagent delegation | spawn_subagent | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
@@ -724,6 +727,93 @@ Users can also manage todos via chat commands:
 - Tasks are stored in `session_todos` table
 - Status values: pending, in_progress, done
 - Task IDs are auto-incremented integers
+
+## Subagent Tool (1)
+
+Delegate specialized tasks (OCR, Vision, Translation, Summarization, Document extraction) to purpose-built subagent models. This allows the main chat model to invoke specialized models for tasks they are better suited for.
+
+### spawn_subagent
+
+Spawn a specialized subagent for OCR, Vision, Translation, Summarization, or Document extraction.
+
+```
+Function: spawn_subagent
+Args:
+  - subagent_type (string, required): One of "ocr", "vision", "translate", "summarize", "document"
+  - prompt (string, required): The task description or text to process
+  - file_path (string, optional): Path to image/document file (required for ocr, vision, document)
+Example: spawn_subagent(subagent_type: "ocr", prompt: "Extract all text from this image", file_path: "/tmp/document.png")
+Example: spawn_subagent(subagent_type: "vision", prompt: "Describe what you see", file_path: "/tmp/photo.jpg")
+Example: spawn_subagent(subagent_type: "translate", prompt: "Translate this to Portuguese: Hello world")
+Example: spawn_subagent(subagent_type: "summarize", prompt: "Summarize this long text...")
+Example: spawn_subagent(subagent_type: "document", prompt: "Extract all text content", file_path: "report.pdf")
+```
+
+**Subagent Types:**
+
+| Type | Model | API | Purpose | File Required |
+|------|-------|-----|---------|---------------|
+| `ocr` | glm-ocr:bf16 | /api/generate | Image text extraction | ✅ Yes |
+| `vision` | moondream:1.8b | /api/generate | Image analysis/description | ✅ Yes |
+| `translate` | translategemma:4b | /api/chat | Translation between languages | ❌ No |
+| `summarize` | (same model) | /api/chat | Text summarization | ❌ No |
+| `document` | (same model) | /api/chat | PDF/EPUB text extraction | ✅ Yes |
+
+**Key Characteristics:**
+
+| Aspect | Main Agent | Specialized Agent |
+|--------|------------|-------------------|
+| Context | Full history + memory + database | One-shot (no history) |
+| Database | Yes (SQLite) | No |
+| Thinking | Optional | Never (output only) |
+| Output | Returns to user | Returns to Main Agent |
+| Model | User's chat model | Configured per type |
+| Tools | All available | Type-specific whitelist |
+
+**Parameter Details:**
+
+- **subagent_type**: Determines which specialized model is used. Must be one of the five supported types.
+- **prompt**: The task instruction. For `translate`, include the text and target language. For `summarize`, include the text to summarize.
+- **file_path**: Required for `ocr`, `vision`, and `document` types. Supports `~` expansion. Not required for `translate` or `summarize`.
+
+**Error Handling:**
+
+| Situation | Error Message |
+|-----------|---------------|
+| Unknown subagent type | `Error: Unknown subagent type 'X'. Valid types: ocr, vision, translate, summarize, document` |
+| Missing file_path for OCR/Vision | `Error: file_path is required for OCR subagent. Provide the path to an image file.` |
+| File not found | `Error: Failed to read image file 'X': ...` |
+| Unsupported document type | `Error: Unsupported file type '.docx'. Document subagent supports PDF and EPUB files only.` |
+| Subagent execution failure | `Error: X subagent execution failed: ...` |
+
+**Recursion Prevention:**
+
+The `document` subagent creates a minimal coordinator with ONLY `run_command` registered. The `spawn_subagent` tool is deliberately NOT added, preventing the document subagent from spawning further subagents (infinite recursion prevention).
+
+**Configuration:**
+
+Subagent models can be overridden in `~/.config/ask-ai/models.toml`:
+
+```toml
+# Override default models for specialized agents
+[subagents]
+ocr = "glm-ocr:bf16"
+vision = "moondream:1.8b"
+translation = "translategemma:4b"
+# summarization and document use main chat model
+```
+
+**Chat Commands:**
+
+In addition to the `spawn_subagent` tool, the following chat commands provide direct access to subagent functionality:
+
+| Command | Description |
+|---------|-------------|
+| `/ocr <image>` | OCR via specialized agent |
+| `/vision <image>` | Image analysis via specialized agent |
+| `/translate <lang> <text>` | Translation via specialized agent |
+| `/summarize <text>` | Summarization via specialized agent |
+
 
 ## Memory Retrieval Tool (1)
 

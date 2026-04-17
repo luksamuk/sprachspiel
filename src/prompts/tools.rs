@@ -353,6 +353,7 @@ Types:
 - OCR, vision, and document types require `file_path` parameter with absolute or relative path
 - Text-based types (translate, summarize) work with stdin or direct text input
 
+**Example:**
 spawn_subagent("ocr", "Extract all text from this image", Some("/path/to/document.png"))
 spawn_subagent("translate", "Translate this to Portuguese", None)
 spawn_subagent("document", "Analyze this PDF", Some("report.pdf"))"#.to_string(),
@@ -362,6 +363,7 @@ spawn_subagent("document", "Analyze this PDF", Some("report.pdf"))"#.to_string()
 
     // External CLI tools (always available, no feature flag)
     {
+        let external_tools = ["check_tool_availability", "run_command"];
         let available: Vec<_> = external_tools
             .iter()
             .filter(|t| !blacklist.contains(*t))
