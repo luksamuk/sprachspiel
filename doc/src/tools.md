@@ -728,36 +728,19 @@ Users can also manage todos via chat commands:
 - Status values: pending, in_progress, done
 - Task IDs are auto-incremented integers
 
-## Subagent Tool (1)
+## Subagent System
 
-Delegate specialized tasks (OCR, Vision, Translation, Summarization, Document extraction) to purpose-built subagent models. This allows the main chat model to invoke specialized models for tasks they are better suited for.
+The subagent system provides specialized one-shot models for specific tasks that require capabilities different from the main chat model. Instead of using the general-purpose chat model for everything, ask-ai can delegate specialized tasks to purpose-built models configured for specific purposes.
 
-### spawn_subagent
+### What Are Subagents?
 
-Spawn a specialized subagent for OCR, Vision, Translation, Summarization, or Document extraction.
+Subagents are specialized AI models that handle specific tasks:
 
-```
-Function: spawn_subagent
-Args:
-  - subagent_type (string, required): One of "ocr", "vision", "translate", "summarize", "document"
-  - prompt (string, required): The task description or text to process
-  - file_path (string, optional): Path to image/document file (required for ocr, vision, document)
-Example: spawn_subagent(subagent_type: "ocr", prompt: "Extract all text from this image", file_path: "/tmp/document.png")
-Example: spawn_subagent(subagent_type: "vision", prompt: "Describe what you see", file_path: "/tmp/photo.jpg")
-Example: spawn_subagent(subagent_type: "translate", prompt: "Translate this to Portuguese: Hello world")
-Example: spawn_subagent(subagent_type: "summarize", prompt: "Summarize this long text...")
-Example: spawn_subagent(subagent_type: "document", prompt: "Extract all text content", file_path: "report.pdf")
-```
-
-**Subagent Types:**
-
-| Type | Model | API | Purpose | File Required |
-|------|-------|-----|---------|---------------|
-| `ocr` | glm-ocr:bf16 | /api/generate | Image text extraction | ✅ Yes |
-| `vision` | moondream:1.8b | /api/generate | Image analysis/description | ✅ Yes |
-| `translate` | translategemma:4b | /api/chat | Translation between languages | ❌ No |
-| `summarize` | (same model) | /api/chat | Text summarization | ❌ No |
-| `document` | (same model) | /api/chat | PDF/EPUB text extraction | ✅ Yes |
+- **OCR** - Extract text from images with models optimized for optical character recognition
+- **Vision** - Analyze and describe images using vision-capable models
+- **Translation** - Translate text between languages using dedicated translation models
+- **Summarization** - Create concise summaries of long text
+- **Document Processing** - Extract and process content from PDF and EPUB files
 
 **Key Characteristics:**
 
@@ -770,13 +753,129 @@ Example: spawn_subagent(subagent_type: "document", prompt: "Extract all text con
 | Model | User's chat model | Configured per type |
 | Tools | All available | Type-specific whitelist |
 
-**Parameter Details:**
+### Available Subagent Types
 
-- **subagent_type**: Determines which specialized model is used. Must be one of the five supported types.
-- **prompt**: The task instruction. For `translate`, include the text and target language. For `summarize`, include the text to summarize.
-- **file_path**: Required for `ocr`, `vision`, and `document` types. Supports `~` expansion. Not required for `translate` or `summarize`.
+| Type | Purpose | File Required | Default Model |
+|------|---------|---------------|---------------|
+| `ocr` | Image text extraction | ✅ Yes | `glm-ocr:bf16` |
+| `vision` | Image analysis/description | ✅ Yes | `qwen3.5:4b` |
+| `translate` | Translation between languages | ❌ No | `translategemma:4b` |
+| `summarize` | Text summarization | ❌ No | `qwen3.5:4b` |
+| `document` | PDF/EPUB text extraction | ✅ Yes | `qwen3.5:4b` |
 
-**Error Handling:**
+### Using Chat Commands
+
+Chat commands provide direct access to subagent functionality and are **always available** regardless of feature flags:
+
+| Command | Description | Example |
+|---------|-------------|----------|
+| `/ocr <image>` | Extract text from image | `/ocr document.png` |
+| `/vision <image>` | Analyze/describe image | `/vision photo.jpg "What's in this image?"` |
+| `/translate <lang> <text>` | Translate text | `/translate pt "Hello world"` |
+| `/summarize <text>` | Summarize text | `/summarize Long text here...` |
+
+**Chat Command Features:**
+- Commands work in interactive chat mode (`ask-ai chat`)
+- No feature flag requirements - always available
+- Automatically route to the appropriate subagent model
+- Support file paths, piped input, and inline text
+
+### LLM Delegation via spawn_subagent
+
+When the main chat model determines a task requires specialized processing, it can invoke the `spawn_subagent` tool to delegate the work:
+
+```
+Function: spawn_subagent
+Args:
+  - subagent_type (string, required): One of "ocr", "vision", "translate", "summarize", "document"
+  - prompt (string, required): The task description or text to process
+  - file_path (string, optional): Path to image/document file (required for ocr, vision, document)
+Example: spawn_subagent(subagent_type: "ocr", prompt: "Extract all text", file_path: "/tmp/image.png")
+Example: spawn_subagent(subagent_type: "translate", prompt: "Translate to Portuguese: Hello world")
+Example: spawn_subagent(subagent_type: "summarize", prompt: "Summarize this article...")
+```
+
+**How Delegation Works:**
+
+1. User asks a question or provides a task
+2. Main LLM analyzes the request and identifies it requires specialized processing
+3. LLM calls `spawn_subagent` with appropriate type and parameters
+4. Subagent executes the task with its specialized model
+5. Result returns to main LLM, which incorporates it into the response
+
+**Example Workflow:**
+
+```
+User: "I have a scanned document in Japanese. Can you extract the text and translate it to English?"
+
+Main LLM: [Calls spawn_subagent for OCR]
+  → subagent_type: "ocr"
+  → file_path: "/tmp/scan.png"
+  → prompt: "Extract all text from this image"
+
+OCR Subagent: [Returns extracted Japanese text]
+
+Main LLM: [Calls spawn_subagent for Translation]
+  → subagent_type: "translate"
+  → prompt: "Translate to English: [Japanese text]"
+
+Translation Subagent: [Returns English translation]
+
+Main LLM: [Presents final result to user]
+```
+
+### Model Configuration
+
+Subagent models are configured in `~/.config/ask-ai/config.toml`. Each subagent type can use a different model optimized for its specific task:
+
+```toml
+# ~/.config/ask-ai/config.toml
+
+[model.ocr]
+model = "glm-ocr:bf16"
+
+[model.vision]
+model = "qwen3.5:4b"
+
+[model.translate]
+model = "translategemma:4b"
+
+[model.summarize]
+model = "qwen3.5:4b"
+
+[model.document]
+model = "qwen3.5:4b"
+```
+
+**Configuration Notes:**
+
+- Models must be installed in Ollama before use
+- OCR requires a model with OCR capabilities (e.g., `glm-ocr:bf16`)
+- Vision requires a multimodal model (e.g., `qwen3.5:4b`, `moondream:1.8b`)
+- Translation works best with dedicated translation models (e.g., `translategemma:4b`)
+- Summarization and document processing can use general-purpose models
+- If a subagent model is not configured, the system uses sensible defaults
+
+### Feature Flag
+
+The `spawn_subagent` tool is controlled by the `subagent-tools` feature flag, which is **enabled by default**:
+
+```bash
+# Default build includes subagent-tools
+cargo build --release
+
+# Explicitly enable (same as default)
+cargo build --release --features subagent-tools
+
+# Disable subagent tool (chat commands still work)
+cargo build --release --no-default-features --features "weather-tools,file-tools"
+```
+
+**Important:** The `subagent-tools` feature flag only controls the `spawn_subagent` tool available to the LLM. The chat commands (`/ocr`, `/vision`, `/translate`, `/summarize`) are part of the chat module and are **always available** regardless of feature flags.
+
+### Error Handling
+
+Subagents handle errors gracefully and return informative messages:
 
 | Situation | Error Message |
 |-----------|---------------|
@@ -786,35 +885,18 @@ Example: spawn_subagent(subagent_type: "document", prompt: "Extract all text con
 | Unsupported document type | `Error: Unsupported file type '.docx'. Document subagent supports PDF and EPUB files only.` |
 | Subagent execution failure | `Error: X subagent execution failed: ...` |
 
-**Recursion Prevention:**
+### Recursion Prevention
 
-The `document` subagent creates a minimal coordinator with ONLY `run_command` registered. The `spawn_subagent` tool is deliberately NOT added, preventing the document subagent from spawning further subagents (infinite recursion prevention).
+The `document` subagent creates a minimal coordinator with ONLY `run_command` registered. The `spawn_subagent` tool is deliberately NOT added to subagents, preventing infinite recursion where subagents could spawn further subagents.
 
-**Configuration:**
+### See Also
 
-Subagent models can be overridden in `~/.config/ask-ai/models.toml`:
-
-```toml
-# Override default models for specialized agents
-[subagents]
-ocr = "glm-ocr:bf16"
-vision = "moondream:1.8b"
-translation = "translategemma:4b"
-# summarization and document use main chat model
-```
-
-**Chat Commands:**
-
-In addition to the `spawn_subagent` tool, the following chat commands provide direct access to subagent functionality:
-
-| Command | Description |
-|---------|-------------|
-| `/ocr <image>` | OCR via specialized agent |
-| `/vision <image>` | Image analysis via specialized agent |
-| `/translate <lang> <text>` | Translation via specialized agent |
-| `/summarize <text>` | Summarization via specialized agent |
-
-
+- [Chat Commands](./commands/chat.md) - Complete chat command reference
+- [Configuration](./configuration.md) - Model and tool configuration
+- [OCR Command](./commands/ocr.md) - OCR usage details
+- [Translate Command](./commands/translate.md) - Translation usage details
+- [Summarize Command](./commands/summarize.md) - Summarization usage details
+- [Vision Command](./commands/vision.md) - Vision usage details
 ## Memory Retrieval Tool (1)
 
 Retrieve content from conversation history, notes, and imported documents by ID or search query. This tool provides explicit access to stored content, complementing the automatic retrieval that happens during chat.
