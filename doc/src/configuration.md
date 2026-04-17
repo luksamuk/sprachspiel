@@ -161,9 +161,17 @@ blacklist = []
 # Default: false
 plain_default = false
 
-# Verbosity level (optional).
-# Options: "normal" (info) or "trace" (debug/trace) for more verbose logging.
-# Default: "normal"
+# Verbosity level for log output (optional).
+# Controls how much diagnostic information is shown alongside the LLM response.
+#
+# Options:
+#   "quiet"   — Errors only. No spinner, no tool calls. Ideal for scripting/pipes.
+#   "normal"  — Tool calls (compact), warnings, errors. Good default for interactive use.
+#   "verbose" — Detailed tool calls with full parameters and results. For debugging.
+#   "trace"   — Everything including embedding internals, token budgets. Maximum info.
+#
+# Priority: CLI flags (-v/-q) > RUST_LOG env var > this setting > default
+# Default: "normal" (info level)
 # verbosity = "normal"
 
 # =============================================================================
