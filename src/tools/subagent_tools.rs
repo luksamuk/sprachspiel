@@ -167,7 +167,7 @@ pub async fn spawn_subagent(
     // Create runner and execute
     let runner = SubagentRunner::new(ollama, config, (*settings).clone());
 
-    let result = match runner.run(agent_type.clone(), prompt, resolved_path).await {
+    let result = match runner.run(agent_type, prompt, resolved_path).await {
         Ok(output) => output,
         Err(e) => {
             let err = format!(
