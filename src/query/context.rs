@@ -102,7 +102,7 @@ impl QueryContextBuilder {
 
     /// Build the query context
     pub async fn build(self, settings: &Settings) -> QueryContext {
-        let output_flags = super::OutputFlags::resolve(self.plain, settings);
+        let output_flags = super::OutputFlags::resolve(self.plain);
 
         let config_name = if self.cli_code { "code" } else { "query" };
         let (subcommand_model, subcommand_thinking, subcommand_tools) =

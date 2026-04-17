@@ -29,7 +29,7 @@ pub struct OutputFlags {
 }
 
 impl OutputFlags {
-    pub fn resolve(plain: Option<bool>, _settings: &Settings) -> Self {
+    pub fn resolve(plain: Option<bool>) -> Self {
         Self {
             plain: plain.unwrap_or(false),
         }
@@ -49,7 +49,6 @@ pub struct ChatContext {
     pub model_id: String,
     pub model_options: ModelOptions,
     pub use_think: bool,
-    pub use_plain: bool,
     pub context_window: Option<usize>,
     pub system_prompt: Option<String>,
 }
@@ -57,7 +56,6 @@ pub struct ChatContext {
 impl ChatContext {
     pub fn build_coordinator(self) -> CustomCoordinator<Vec<ChatMessage>> {
         let use_think = self.use_think;
-        let _use_plain = self.use_plain;
 
         let mut coordinator = CustomCoordinator::new(self.ollama, self.model_id, vec![])
             .options(self.model_options)

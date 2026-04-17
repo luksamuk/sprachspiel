@@ -138,7 +138,6 @@ pub fn setup_coordinator(
         model_id: model_config.model_id.clone(),
         model_options,
         use_think: think_enabled,
-        use_plain: false,
         context_window: Some(model_config.num_ctx as usize),
         system_prompt: Some(system_prompt),
     }

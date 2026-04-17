@@ -182,7 +182,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         std::process::exit(1);
     }
 
-    let output_flags = OutputFlags::resolve(cli.plain, settings);
+    let output_flags = OutputFlags::resolve(cli.plain);
 
     log::debug!("Debug Mode - Translation Configuration:");
     log::debug!("==========================");
@@ -459,8 +459,6 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
         std::process::exit(1);
     }
 
-    // OutputFlags::resolve() parameters now ignored for debug (always false)
-
     log::debug!("Debug Mode - OCR Configuration:");
     log::debug!("==========================");
     log::debug!("Model ID:          glm-ocr:bf16");
@@ -519,7 +517,7 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
         settings.model.default.clone()
     };
 
-    let output_flags = OutputFlags::resolve(cli.plain, settings);
+    let output_flags = OutputFlags::resolve(cli.plain);
 
     log::debug!("Debug Mode - Summarize Configuration:");
     log::debug!("==========================");
@@ -627,7 +625,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     let model_config = user_models::resolve_model_config(&model_name);
     let model_id = model_config.model_id.clone();
 
-    let output_flags = OutputFlags::resolve(cli.plain, settings);
+    let output_flags = OutputFlags::resolve(cli.plain);
 
     log::debug!("Debug Mode - Vision Configuration:");
     log::debug!("==========================");
