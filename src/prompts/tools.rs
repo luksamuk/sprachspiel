@@ -348,27 +348,27 @@ Available: spawn_subagent
 - The input is too short to benefit from a specialized model
 
 Types:
-|- `ocr`: Extract text from images (requires `file_path`)
-|- `vision`: Analyze images (requires `file_path`)
-|- `translate`: Translate text between languages
-|- `summarize`: Summarize long text
-|- `document`: Process PDF/EPUB documents (requires `file_path`)
-|
-|**When to use each type:**
-|- Use `ocr` when you need to extract text from image files (PNG, JPG, etc.)
-|- Use `vision` when you need to understand or describe image content
-|- Use `translate` for converting text between languages
-|- Use `summarize` for condensing long text into shorter versions
-|- Use `document` for working with PDF or EPUB files
-|
-|**file_path requirement:**
-|- OCR, vision, and document types require `file_path` parameter with absolute or relative path
-|- Text-based types (translate, summarize) work with stdin or direct text input
-|
-|**Example:**
-|spawn_subagent("ocr", "Extract all text from this image", Some("/path/to/document.png"))
-|spawn_subagent("translate", "Translate this to Portuguese", None)
-|spawn_subagent("document", "Analyze this PDF", Some("report.pdf"))"###.to_string(),
+- `ocr`: Extract text from images (requires `file_path`)
+- `vision`: Analyze images (requires `file_path`)
+- `translate`: Translate text between languages
+- `summarize`: Summarize long text
+- `document`: Process PDF/EPUB documents (requires `file_path`)
+
+**When to use each type:**
+- Use `ocr` when you need to extract text from image files (PNG, JPG, etc.)
+- Use `vision` when you need to understand or describe image content
+- Use `translate` for converting text between languages
+- Use `summarize` for condensing long text into shorter versions
+- Use `document` for working with PDF or EPUB files
+
+**file_path requirement:**
+- OCR, vision, and document types require `file_path` parameter with absolute or relative path
+- Text-based types (translate, summarize) work with stdin or direct text input
+
+**Example:**
+spawn_subagent("ocr", "Extract all text from this image", Some("/path/to/document.png"))
+spawn_subagent("translate", "Translate this to Portuguese", None)
+spawn_subagent("document", "Analyze this PDF", Some("report.pdf"))"###.to_string(),
             );
         }
     }
