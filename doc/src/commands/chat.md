@@ -252,7 +252,7 @@ Delegate specialized tasks to purpose-built subagent models directly from chat. 
 
 | Command | Description |
 |---------|-------------|
-| `/ocr <image_path>` | Extract text from an image using OCR (glm-ocr model) |
+| `/ocr <image_path> [mode]` | Extract text from an image using OCR (text/table/figure/formula) |
 | `/vision <image_path> [prompt]` | Analyze or describe an image (moondream model) |
 | `/translate <lang_pair> <text>` | Translate text between languages (translategemma model) |
 | `/summarize <text>` | Summarize long text (current chat model) |
@@ -261,15 +261,18 @@ Delegate specialized tasks to purpose-built subagent models directly from chat. 
 
 Extract text from an image using the GLM-OCR specialized subagent.
 
-**Usage:** `/ocr <image_path>`
+**Usage:** `/ocr <image_path> [mode]`
+
+**Modes:** `text` (default), `table`, `figure`, `formula`
 
 **Examples:**
 ```
 /ocr /tmp/receipt.png
-/ocr ~/documents/scan.jpg
+/ocr /tmp/spreadsheet.png table
+/ocr ~/documents/diagram.jpg figure
 ```
 
-The image is processed by the `glm-ocr:bf16` model, which is optimized for text extraction including plain text, tables, formulas, and figures.
+The image is processed by the configured OCR model (default: `glm-ocr:bf16`). OCR prompts adapt to the model type — GLM-OCR uses rigid prefixes, while vision models use descriptive restricted prompts. The optional mode parameter selects the extraction type (text, table, figure, or formula).
 
 #### /vision
 

@@ -61,10 +61,6 @@ const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_
 ///   - `"figure"` — Figure/diagram recognition
 ///   - `"formula"` — Mathematical formula extraction (LaTeX)
 ///   - If not specified, defaults to "text"
-///   - For OCR: Single image path (e.g., `"/tmp/screenshot.png"`)
-///   - For Vision: Comma-separated paths for multi-image analysis (e.g., `"img1.png,img2.jpg"`)
-///   - Supports `~` home directory expansion
-///   - Not required for Translate, Summarize, or Document types
 ///
 /// # Returns
 /// The subagent result as plain text, or an error message if the subagent fails.
@@ -80,8 +76,6 @@ const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_
 /// spawn_subagent("ocr".to_string(), "Extract table structure".to_string(), Some("/tmp/table.png".to_string()), Some("table".to_string()))
 /// spawn_subagent("vision".to_string(), "Describe these images".to_string(), Some("img1.png,img2.jpg".to_string()), None)
 /// spawn_subagent("summarize".to_string(), "Summarize this long text...".to_string(), None, None)
-/// spawn_subagent("vision".to_string(), "Describe these images".to_string(), Some("img1.png,img2.jpg".to_string()))
-/// spawn_subagent("summarize".to_string(), "Summarize this long text...".to_string(), None)
 /// ```
 #[ollama_rs::function]
 pub async fn spawn_subagent(

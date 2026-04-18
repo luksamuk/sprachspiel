@@ -2879,7 +2879,7 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
     state.session.add_user_message(cmd_str);
 
     let (model, _, _) = state.settings.get_subcommand_config("ocr");
-    let config = SubagentConfig::new(model, "OCR extraction");
+    let config = SubagentConfig::new(model, "OCR extraction").with_ocr_mode(mode);
     let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
 
     match runner.run_ocr(&file_path, mode).await {

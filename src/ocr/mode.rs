@@ -44,7 +44,6 @@ impl OcrMode {
     }
 
     /// Get the descriptive prompt for vision models
-    #[allow(dead_code)] // Used by OcrProcessor in upcoming OCR implementation
     pub fn into_descriptive_prompt(self) -> &'static str {
         match self {
             OcrMode::Text => "Extract all text from this image. Preserve layout and structure. Output ONLY the extracted text, no analysis or commentary.",
@@ -56,14 +55,12 @@ impl OcrMode {
 }
 
 /// Returns true if the given model_id refers to a GLM-OCR model variant.
-#[allow(dead_code)] // Used by OCR model selection in upcoming implementation
 pub fn is_glm_ocr_model(model_id: &str) -> bool {
     model_id.starts_with("glm-ocr")
 }
 
 /// Parse an OCR mode from an optional input string.
 /// Returns `OcrMode::Text` for None or empty input.
-#[allow(dead_code)] // Used by OCR CLI parsing in upcoming implementation
 pub fn parse_ocr_mode(input: Option<String>) -> Result<OcrMode, String> {
     let input = input.filter(|s| !s.is_empty());
     match input {
