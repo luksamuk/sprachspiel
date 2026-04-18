@@ -27,10 +27,12 @@ impl OcrProcessor {
     }
 
     /// Process a single image file
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_file(
         &self,
         path: &Path,
         mode: OcrMode,
+        prompt_override: Option<&str>,
         model: &str,
         model_options: ModelOptions,
         ollama: &Ollama,
@@ -47,7 +49,7 @@ impl OcrProcessor {
 
         let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
         let image = Image::from_base64(base64_image);
-        let prompt = mode.into_prompt();
+        let prompt = prompt_override.unwrap_or_else(|| mode.into_prompt());
 
         // Create generation request with the image attached
         let request = GenerationRequest::new(model.to_string(), prompt)
@@ -91,6 +93,7 @@ impl OcrProcessor {
     pub async fn process_batch(
         &self,
         args: &OcrArgs,
+        prompt_override: Option<&str>,
         model: &str,
         model_options: ModelOptions,
         ollama: &Ollama,
@@ -99,7 +102,7 @@ impl OcrProcessor {
         let mut results = Vec::new();
 
         for file in &args.files {
-            match self.process_file(file, args.mode, model, model_options.clone(), ollama, show_spinner).await {
+            match self.process_file(file, args.mode, prompt_override, model, model_options.clone(), ollama, show_spinner).await {
                 Ok(result) => results.push(result),
                 Err(e) => {
                     eprintln!("Error processing {}: {}", file.display(), e);

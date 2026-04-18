@@ -434,7 +434,7 @@ impl SubagentRunner {
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let processor = OcrProcessor::new();
 
-        match processor.process_file(path, mode, &self.config.model, self.config.model_options.clone(), &self.ollama, false).await {
+        match processor.process_file(path, mode, None, &self.config.model, self.config.model_options.clone(), &self.ollama, false).await {
             Ok(output) => Ok(truncate_to_budget(
                 &output.content,
                 self.config.max_output_chars,

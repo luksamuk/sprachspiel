@@ -42,6 +42,39 @@ impl OcrMode {
             OcrMode::Formula => "formulas",
         }
     }
+
+    /// Get the descriptive prompt for vision models
+    #[allow(dead_code)] // Used by OcrProcessor in upcoming OCR implementation
+    pub fn into_descriptive_prompt(self) -> &'static str {
+        match self {
+            OcrMode::Text => "Extract all text from this image. Preserve layout and structure. Output ONLY the extracted text, no analysis or commentary.",
+            OcrMode::Table => "Extract the table structure from this image. Preserve rows and columns. Output ONLY the table data in markdown format, no analysis or commentary.",
+            OcrMode::Figure => "Extract and describe the figure or diagram in this image. Output ONLY a description of what is depicted, no analysis or commentary beyond the figure content.",
+            OcrMode::Formula => "Extract all mathematical formulas from this image. Output ONLY the formulas in LaTeX notation, no analysis or commentary.",
+        }
+    }
+}
+
+/// Returns true if the given model_id refers to a GLM-OCR model variant.
+#[allow(dead_code)] // Used by OCR model selection in upcoming implementation
+pub fn is_glm_ocr_model(model_id: &str) -> bool {
+    model_id.starts_with("glm-ocr")
+}
+
+/// Parse an OCR mode from an optional input string.
+/// Returns `OcrMode::Text` for None or empty input.
+#[allow(dead_code)] // Used by OCR CLI parsing in upcoming implementation
+pub fn parse_ocr_mode(input: Option<String>) -> Result<OcrMode, String> {
+    let input = input.filter(|s| !s.is_empty());
+    match input {
+        None => Ok(OcrMode::Text),
+        Some(s) => OcrMode::from_str(&s, true).map_err(|_| {
+            format!(
+                "Error: Invalid OCR mode '{}'. Valid modes: text, table, figure, formula",
+                s
+            )
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -59,5 +92,67 @@ mod tests {
     #[test]
     fn test_default() {
         assert!(matches!(OcrMode::default(), OcrMode::Text));
+    }
+
+    #[test]
+    fn test_descriptive_prompts() {
+        assert!(
+            OcrMode::Text.into_descriptive_prompt().contains("ONLY")
+                && OcrMode::Text.into_descriptive_prompt().contains("no")
+                && OcrMode::Text
+                    .into_descriptive_prompt()
+                    .contains("commentary")
+        );
+        assert!(
+            OcrMode::Table.into_descriptive_prompt().contains("ONLY")
+                && OcrMode::Table.into_descriptive_prompt().contains("no")
+                && OcrMode::Table
+                    .into_descriptive_prompt()
+                    .contains("commentary")
+        );
+        assert!(
+            OcrMode::Figure.into_descriptive_prompt().contains("ONLY")
+                && OcrMode::Figure.into_descriptive_prompt().contains("no")
+                && OcrMode::Figure
+                    .into_descriptive_prompt()
+                    .contains("commentary")
+        );
+        assert!(
+            OcrMode::Formula.into_descriptive_prompt().contains("ONLY")
+                && OcrMode::Formula.into_descriptive_prompt().contains("no")
+                && OcrMode::Formula
+                    .into_descriptive_prompt()
+                    .contains("commentary")
+        );
+    }
+
+    #[test]
+    fn test_is_glm_ocr_model() {
+        assert!(is_glm_ocr_model("glm-ocr:bf16"));
+        assert!(!is_glm_ocr_model("qwen3.5:cloud"));
+        assert!(is_glm_ocr_model("glm-ocr"));
+        assert!(is_glm_ocr_model("glm-ocr-custom:q4"));
+        assert!(!is_glm_ocr_model("minicpm-v"));
+    }
+
+    #[test]
+    fn test_parse_ocr_mode() {
+        assert_eq!(parse_ocr_mode(None).unwrap(), OcrMode::Text);
+        assert_eq!(
+            parse_ocr_mode(Some("table".to_string())).unwrap(),
+            OcrMode::Table
+        );
+        assert_eq!(
+            parse_ocr_mode(Some("FIGURE".to_string())).unwrap(),
+            OcrMode::Figure
+        );
+        assert_eq!(
+            parse_ocr_mode(Some("formula".to_string())).unwrap(),
+            OcrMode::Formula
+        );
+        assert!(parse_ocr_mode(Some("invalid".to_string())).is_err());
+        let err = parse_ocr_mode(Some("invalid".to_string())).unwrap_err();
+        assert!(err.contains("text, table, figure, formula"));
+        assert_eq!(parse_ocr_mode(Some("".to_string())).unwrap(), OcrMode::Text);
     }
 }

@@ -483,7 +483,7 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
     let processor = OcrProcessor::new();
     let ollama = settings.ollama_client();
 
-    let results = match processor.process_batch(&args, &model_id, model_options, &ollama, true).await {
+    let results = match processor.process_batch(&args, None, &model_id, model_options, &ollama, true).await {
         Ok(results) => results,
         Err(e) => {
             eprintln!("Error: {}", e);
