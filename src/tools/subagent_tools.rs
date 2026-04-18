@@ -19,9 +19,6 @@ use std::path::PathBuf;
 /// Valid subagent type strings for error messages
 const VALID_SUBAGENT_TYPES: &[&str] = &["ocr", "vision", "translate", "summarize", "document"];
 
-/// Default system prompt for OCR subagent
-const OCR_SYSTEM_PROMPT: &str = "You are an OCR engine. Extract all text from the image precisely. \
-    Preserve layout and structure. Output only extracted text, no commentary.";
 
 const VISION_SYSTEM_PROMPT: &str = "You are a vision model. Analyze the image as instructed. \
     Describe what you see thoroughly and accurately. Output only your analysis.";
@@ -252,7 +249,7 @@ pub async fn spawn_subagent(
 /// Build SubagentConfig for OCR tasks.
 fn build_ocr_config(settings: &crate::settings::Settings) -> SubagentConfig {
     let (model, _, _) = settings.get_subcommand_config("ocr");
-    SubagentConfig::new(model, OCR_SYSTEM_PROMPT)
+    SubagentConfig::new(model, "OCR")
 }
 
 /// Build SubagentConfig for Vision tasks.
