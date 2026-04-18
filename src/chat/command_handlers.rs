@@ -406,8 +406,8 @@ pub async fn handle_command(
             }
             HandleResult::Continue
         }
-        ChatCommand::Ocr { path } => {
-            handle_subagent_ocr(state, path).await;
+        ChatCommand::Ocr { path, mode } => {
+            handle_subagent_ocr(state, path, mode).await;
             HandleResult::Continue
         }
         ChatCommand::Vision { paths, prompt } => {
@@ -2843,10 +2843,19 @@ mod tests {
 }
 
 /// Handle /ocr command - extract text from an image
-pub async fn handle_subagent_ocr(state: &mut ReplState, path: String) {
+pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Option<String>) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
-    use crate::ocr::mode::OcrMode;
+    use crate::ocr::mode::{OcrMode, parse_ocr_mode};
     use crate::utils::expand_tilde_path;
+
+    // Parse the optional OCR mode
+    let mode = match parse_ocr_mode(mode) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("\x1B[31m{}\x1B[0m", e);
+            return;
+        }
+    };
 
     // Expand tilde in path (e.g., ~/photo.jpg → /home/user/photo.jpg)
     let file_path = expand_tilde_path(&path);
@@ -2863,13 +2872,17 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String) {
     }
 
     // Save user command to conversation context
-    state.session.add_user_message(format!("/ocr {}", path));
+    let cmd_str = match mode {
+        OcrMode::Text => format!("/ocr {}", path),
+        _ => format!("/ocr {} {:?}", path, mode).to_lowercase(),
+    };
+    state.session.add_user_message(cmd_str);
 
     let (model, _, _) = state.settings.get_subcommand_config("ocr");
     let config = SubagentConfig::new(model, "OCR extraction");
     let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
 
-    match runner.run_ocr(&file_path, OcrMode::Text).await {
+    match runner.run_ocr(&file_path, mode).await {
         Ok(result) => {
             println!("{}", result);
             // Save result to conversation context so AI can reference it

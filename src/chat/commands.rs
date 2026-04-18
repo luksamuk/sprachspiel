@@ -157,8 +157,8 @@ pub enum ChatCommand {
     SkillList,
     /// Activate a skill by name
     Skill { name: String },
-    /// Run OCR on an image file
-    Ocr { path: String },
+    /// Run OCR on an image file (optional mode: text, table, figure, formula)
+    Ocr { path: String, mode: Option<String> },
     /// Analyze image(s) with vision model
     Vision { paths: Vec<String>, prompt: Option<String> },
     /// Translate text between languages
@@ -977,9 +977,12 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         }
         "ocr" => {
             if args.is_empty() {
-                return Some(Err("Usage: /ocr <file>".to_string()));
+                return Some(Err("Usage: /ocr <file> [mode]".to_string()));
             }
-            ChatCommand::Ocr { path: args.trim().to_string() }
+            let parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let path = parts.first().unwrap_or(&"").to_string();
+            let mode = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+            ChatCommand::Ocr { path, mode }
         }
         "vision" => {
             if args.is_empty() {
@@ -1100,7 +1103,7 @@ Skills:
   /skill <name>    Activate a skill for this session
 
 Subagents:
-  /ocr <file>                 Extract text from an image using OCR
+  /ocr <file> [mode]          Extract text from an image using OCR (modes: text, table, figure, formula)
   /vision <path> [prompt]     Analyze image with vision model
   /translate <src:dst> <text>  Translate text between languages
   /summarize <text>           Summarize text
