@@ -1,0 +1,77 @@
+QA Evidence: Security Blocklist Blocks .env Files
+===================================================
+Date: 2026-04-17
+Scenario: Test 1 from MANUAL-TEST-SUBAGENT-SECURITY.md
+
+OBJECTIVE
+---------
+Verify that blocked patterns (.env, secrets, SSH keys) are rejected 
+even when inside the current working directory.
+
+CODE UNDER TEST
+---------------
+File: src/tools/files_blocklist.rs, lines 38-69 (DEFAULT_BLOCKED_PATTERNS)
+File: src/tools/files_blocklist.rs, lines 200-206 (is_blocked_for_read)
+File: src/security.rs, lines 79-91 (CWD branch checks blocklist)
+File: src/security.rs, lines 94-107 (/tmp branch checks blocklist)
+
+BLOCKED PATTERNS (22 total)
+---------------------------
+Environment files: .env, .env.local, .env.development, .env.production, .env.staging, .env.test
+Secrets: secrets, secrets.json, secrets.yaml, secrets.yml, credentials, credentials.json
+SSH: id_rsa, id_dsa, id_ed25519, id_ecdsa, .ssh, authorized_keys, known_hosts
+Certificates: .pem, .key
+GPG: .gnupg
+Cloud: service-account.json, service_account.json
+
+UNIT TESTS RUN
+--------------
+$ cargo test --all-features files_blocklist::tests -- --nocapture
+
+Results (13 tests, all pass):
+  test_pattern_to_regex_exact_filename ... ok
+  test_pattern_to_regex_extension ... ok
+  test_pattern_to_regex_with_dots ... ok
+  test_pattern_to_regex_wildcard ... ok
+  test_default_patterns_match_env_files ... ok    ← KEY TEST
+  test_default_patterns_match_secrets ... ok
+  test_default_patterns_match_ssh_keys ... ok
+  test_default_patterns_match_certificates ... ok
+  test_default_patterns_match_cloud_credentials ... ok
+  test_default_patterns_dont_match_normal_files ... ok
+  test_is_blocked_for_read ... ok                 ← KEY TEST
+  test_is_blocked_for_write ... ok
+  test_block_read_flag ... ok
+
+KEY TEST DETAILS
+----------------
+test_default_patterns_match_env_files:
+  config.is_blocked(PathBuf::from(".env"))          → true ✓
+  config.is_blocked(PathBuf::from(".env.local"))     → true ✓
+  config.is_blocked(PathBuf::from(".env.production")) → true ✓
+  config.is_blocked(PathBuf::from("project/.env"))   → true ✓
+  config.is_blocked(PathBuf::from("project/.env.local")) → true ✓
+
+test_is_blocked_for_read:
+  is_blocked_for_read(PathBuf::from(".env"), &config) → true ✓
+  is_blocked_for_read(PathBuf::from("README.md"), &config) → false ✓
+
+VERIFICATION: .env blocking scenario
+--------------------------------------
+When validate_subagent_path() is called with an .env file inside CWD:
+1. Path expands and canonicalizes successfully
+2. Path starts_with(canonical_cwd) → YES (inside CWD)
+3. is_blocked_for_read() → YES (.env matches DEFAULT_BLOCKED_PATTERNS)
+4. Returns Err: "Error: BLOCKED - '.env' matches a protected file pattern..."
+
+The blocklist check happens AFTER the sandbox check. Even though the file
+is within CWD (passes sandbox), it's still blocked by the blocklist.
+
+Two-layer defense:
+- Layer 1: CWD sandbox blocks paths OUTSIDE allowed directories
+- Layer 2: Blocklist blocks sensitive files even INSIDE allowed directories
+
+VERDICT: PASS
+=============
+Blocklist correctly blocks .env and other sensitive files within CWD.
+All 13 blocklist unit tests pass. Two-layer defense confirmed.

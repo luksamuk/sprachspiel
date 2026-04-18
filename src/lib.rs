@@ -35,6 +35,7 @@ pub mod translate;
 pub mod user_models;
 pub mod utils;
 pub mod vision;
+pub mod security;
 
 /// Result type alias for application errors
 pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;

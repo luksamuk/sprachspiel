@@ -1,0 +1,8 @@
+QA Scenario: spawn_subagent works in chat mode with DB
+Command: cargo build --features all-tools
+Result: PASS
+Output: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s
+Cross-test: with_full_context and with_tool_context called from src/chat/core.rs
+  - Line 37: use crate::tools::context::{with_full_context, with_tool_context};
+  - Line 496: with_full_context(...)
+  - Line 505: with_tool_context(...)

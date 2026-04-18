@@ -10,8 +10,10 @@
 use crate::chat::subagent::{SubagentConfig, SubagentRunner, SubagentType};
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
+use crate::security::validate_subagent_paths;
 use crate::tools::context::{get_ollama, get_settings};
 use crate::utils::expand_tilde_path;
+use std::path::PathBuf;
 
 /// Valid subagent type strings for error messages
 const VALID_SUBAGENT_TYPES: &[&str] = &["ocr", "vision", "translate", "summarize", "document"];
@@ -22,8 +24,10 @@ const OCR_SYSTEM_PROMPT: &str = "You are an OCR engine. Extract all text from th
 
 const VISION_SYSTEM_PROMPT: &str = "You are a vision model. Analyze the image as instructed. \
     Describe what you see thoroughly and accurately. Output only your analysis.";
+
 const TRANSLATE_SYSTEM_PROMPT: &str = "You are a translator. Translate the text as directed. \
     Preserve meaning, tone, and formatting. Output only the translation, no explanations.";
+
 const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_command tool to \
     extract text from the file. Follow instructions precisely. Output structured results.";
 
@@ -35,20 +39,21 @@ const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_
 /// # Arguments
 /// * `subagent_type` - **Required.** The type of subagent to invoke.
 ///   - `"ocr"` — Extract text from images (requires `file_path`)
-///   - `"vision"` — Analyze or describe images (requires `file_path`)
+///   - `"vision"` — Analyze or describe images (requires `file_path`, supports multiple)
 ///   - `"translate"` — Translate text between languages
 ///   - `"summarize"` — Summarize long text
 ///   - `"document"` — Process structured documents
 ///
 /// * `prompt` - **Required.** The task description or text to process.
 ///   - For OCR: "Extract all text from this image" (file_path required)
-///   - For Vision: "Describe what you see in this image" (file_path required)
+///   - For Vision: "Describe what you see in this image" (file_path required, comma-separated for multiple)
 ///   - For Translate: The text to translate (or instructions like "Translate to Portuguese")
 ///   - For Summarize: The text to summarize
 ///   - For Document: Instructions for processing the document
 ///
-/// * `file_path` - **Required for OCR/Vision.** Path to the image file.
-///   - Example: `"/tmp/screenshot.png"` or `"~/documents/scan.jpg"`
+/// * `file_path` - **Required for OCR/Vision.** Path(s) to the image file(s).
+///   - For OCR: Single image path (e.g., `"/tmp/screenshot.png"`)
+///   - For Vision: Comma-separated paths for multi-image analysis (e.g., `"img1.png,img2.jpg"`)
 ///   - Supports `~` home directory expansion
 ///   - Not required for Translate, Summarize, or Document types
 ///
@@ -63,6 +68,7 @@ const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_
 /// # Example
 /// ```ignore
 /// spawn_subagent("ocr".to_string(), "Extract all text from this image".to_string(), Some("/tmp/document.png".to_string()))
+/// spawn_subagent("vision".to_string(), "Describe these images".to_string(), Some("img1.png,img2.jpg".to_string()))
 /// spawn_subagent("summarize".to_string(), "Summarize this long text...".to_string(), None)
 /// ```
 #[ollama_rs::function]
@@ -107,28 +113,67 @@ pub async fn spawn_subagent(
         }
     };
 
-    // Validate file_path requirement for OCR/Vision
-    if agent_type.uses_generate_api() && file_path.is_none() {
-        let err = format!(
-            "Error: file_path is required for {} subagent. \
-             Provide the path to an image file.\n\n\
-             Example: spawn_subagent(\"{}\", \"Extract text\", \"/path/to/image.png\")",
-            agent_type.label(),
-            subagent_type
-        );
-        log_tool_result("spawn_subagent", &err);
-        return Ok(err);
-    }
+    // Parse file paths based on subagent type
+    // Vision supports comma-separated paths for multi-image analysis
+    // OCR and other types use a single path
+    let file_paths: Vec<PathBuf> = if agent_type.uses_generate_api() {
+        match &file_path {
+            Some(p) => {
+                if agent_type == SubagentType::Vision {
+                    // Vision: parse comma-separated paths (multi-image support)
+                    let paths: Vec<PathBuf> = p
+                        .split(',')
+                        .map(|s| expand_tilde_path(s.trim()))
+                        .filter(|p| !p.as_os_str().is_empty())
+                        .collect();
+                    if paths.is_empty() {
+                        let err = "Error: No valid image paths provided.".to_string();
+                        log_tool_result("spawn_subagent", &err);
+                        return Ok(err);
+                    }
+                    paths
+                } else {
+                    // OCR: single path
+                    vec![expand_tilde_path(p)]
+                }
+            }
+            None => {
+                let err = format!(
+                    "Error: file_path is required for {} subagent.                      Provide the path to an image file.\n\n                     Example: spawn_subagent(\"{}\", \"Extract text\", \"/path/to/image.png\")",
+                    agent_type.label(),
+                    subagent_type
+                );
+                log_tool_result("spawn_subagent", &err);
+                return Ok(err);
+            }
+        }
+    } else {
+        // Non-image types: file_path is optional, use single path if provided
+        match &file_path {
+            Some(p) => vec![expand_tilde_path(p)],
+            None => Vec::new(),
+        }
+    };
 
-    // Expand tilde in file_path if present
-    let resolved_path = file_path.map(|p| expand_tilde_path(&p).to_string_lossy().to_string());
+    // Validate file paths for security (sandbox + blocklist)
+    let validated_paths = if file_paths.is_empty() {
+        Vec::new()
+    } else {
+        match validate_subagent_paths(&file_paths) {
+            Ok(paths) => paths,
+            Err(e) => {
+                let err = format!("Error: Invalid file path: {}", e);
+                log_tool_result("spawn_subagent", &err);
+                return Ok(err);
+            }
+        }
+    };
 
     // Get Ollama client from task-local context
     let ollama = match get_ollama() {
         Some(o) => o,
         None => {
-            let err = "Error: Ollama client not available in tool context. \
-                       This tool requires an active Ollama connection."
+            let err = "Error: Ollama client not available in tool context.                        This tool requires an active Ollama connection."
                 .to_string();
             log_tool_result("spawn_subagent", &err);
             return Ok(err);
@@ -139,8 +184,7 @@ pub async fn spawn_subagent(
     let settings = match get_settings() {
         Some(s) => s,
         None => {
-            let err = "Error: Settings not available in tool context. \
-                       This tool requires application configuration."
+            let err = "Error: Settings not available in tool context.                        This tool requires application configuration."
                 .to_string();
             log_tool_result("spawn_subagent", &err);
             return Ok(err);
@@ -159,7 +203,7 @@ pub async fn spawn_subagent(
     // Create runner and execute
     let runner = SubagentRunner::new(ollama, config, (*settings).clone());
 
-    let result = match runner.run(agent_type, prompt, resolved_path).await {
+    let result = match runner.run(agent_type, prompt, validated_paths).await {
         Ok(output) => output,
         Err(e) => {
             let err = format!(
@@ -210,7 +254,6 @@ pub fn build_document_config(settings: &crate::settings::Settings) -> SubagentCo
     let (model, _, _) = settings.get_subcommand_config("document");
     SubagentConfig::new(model, DOCUMENT_SYSTEM_PROMPT)
 }
-
 
 #[cfg(test)]
 mod tests {

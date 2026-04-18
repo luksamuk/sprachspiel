@@ -2850,6 +2850,13 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String) {
 
     // Expand tilde in path (e.g., ~/photo.jpg → /home/user/photo.jpg)
     let file_path = expand_tilde_path(&path);
+
+    // Validate path for security (sandbox + blocklist)
+    if let Err(e) = crate::security::validate_subagent_path(&file_path) {
+        eprintln!("\x1B[31mError: {}\x1B[0m", e);
+        return;
+    }
+
     if !file_path.exists() {
         eprintln!("\x1B[31mError: File not found: {}\x1B[0m", path);
         return;
@@ -2862,7 +2869,7 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String) {
     let config = SubagentConfig::new(model, "OCR extraction");
     let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
 
-    match runner.run_ocr(&file_path, OcrMode::Text, &state.settings).await {
+    match runner.run_ocr(&file_path, OcrMode::Text).await {
         Ok(result) => {
             println!("{}", result);
             // Save result to conversation context so AI can reference it
@@ -2880,6 +2887,14 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
 
     // Expand tilde in paths
     let path_bufs: Vec<PathBuf> = paths.iter().map(|p| expand_tilde_path(p)).collect();
+
+    // Validate all paths for security (sandbox + blocklist)
+    for path in &path_bufs {
+        if let Err(e) = crate::security::validate_subagent_path(path) {
+            eprintln!("\x1B[31mError: {}\x1B[0m", e);
+            return;
+        }
+    }
 
     // Validate files exist
     for path in &path_bufs {

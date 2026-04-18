@@ -1,0 +1,8 @@
+QA Scenario: with_tool_context provides Ollama and Settings to tools
+Command: cargo test --lib context -- --nocapture
+Result: PASS
+Output: 57 tests passed, 0 failed, 0 ignored
+Context-specific tests:
+  - tools::context::tests::with_tool_context_scopes_ollama_and_settings ... ok
+  - tools::context::tests::with_full_context_scopes_all_four ... ok
+  - tools::context::tests::get_ollama_returns_none_outside_scope ... ok

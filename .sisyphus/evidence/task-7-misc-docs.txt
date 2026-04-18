@@ -1,0 +1,56 @@
+# Task 7: Update Miscellaneous Documentation Files
+## Evidence of Completion
+
+### Verification Steps Performed
+
+1. **troubleshooting.md debug flag update**
+   - Line 303: Changed `ask-ai -d "Test query"` → `ask-ai -v "Test query"`
+   - ✅ Completed
+
+2. **pipelines.md debug flag updates**
+   - Line 252: Changed `ask-ai ocr -d doc.png 2> debug.log | ask-ai summarize -d 2> summary.log` → `ask-ai ocr -v doc.png 2> debug.log | ask-ai summarize -v 2> summary.log`
+   - ✅ Completed
+
+3. **soul.md debug flag update**
+   - Line 433: Changed `ask query --debug "test query" 2>&1 | head -100` → `ask-ai -v "test query" 2>&1 | head -100`
+   - ✅ Completed
+
+4. **README.md feature table update**
+   - Line 299: Added `skill-tools` feature for dynamic skill activation
+   - ✅ Completed
+
+5. **chat.md enhanced /todo documentation**
+   - Added new section for `/todo` commands:
+     - `/todo get`, `/tg` - Get current session todo list
+     - `/todo add <text>`, `/ta` - Add a todo item
+     - `/todo delete <id>`, `/td` - Delete a todo by ID
+     - `/todo edit <id> [--text <text>]`, `/te` - Edit a todo
+     - `/todo priority <id> <level>`, `/tp` - Set priority (high, medium, low)
+     - `/todo tags <id> <tags>`, `/tt` - Add/update tags
+     - `/todo list`, `/tl` - Alias for `/todo get`
+   - Session context resume already documented
+   - `/forget --yes` already documented
+   - `/skill` subcommand already documented
+   - ✅ Completed
+
+### QA Verification Command
+
+```bash
+grep -r '\-d.*debug\|--debug' doc/src/ | grep -v CHANGELOG | grep -v 'Removed\|removed'
+```
+
+**Result:** No output - all debug flags have been removed from documentation files
+
+### Documents Modified
+
+- `doc/src/troubleshooting.md` (1 line)
+- `doc/src/pipelines.md` (1 line)
+- `doc/src/soul.md` (1 line)
+- `README.md` (1 line - feature table)
+- `doc/src/commands/chat.md` (12 lines - new section added)
+
+### Not Modified (as per requirements)
+
+- `CHANGELOG.md` - excluded from changes
+- No new documentation pages created
+- No breaking changes introduced

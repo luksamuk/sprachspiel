@@ -1,0 +1,8 @@
+QA Scenario: spawn_subagent works in query mode
+Command: cargo build --features all-tools
+Result: PASS
+Output: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.10s
+Cross-test: with_full_context and with_tool_context called from src/query/executor.rs
+  - Line 18: use crate::tools::context::{with_full_context, with_tool_context};
+  - Line 65: with_full_context(db, embedding, ollama, settings, async {
+  - Line 80: with_tool_context(ollama, settings, async {

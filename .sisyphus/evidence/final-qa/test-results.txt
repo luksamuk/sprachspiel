@@ -1,0 +1,72 @@
+QA Evidence: Full Test Suite Results
+====================================
+Date: 2026-04-17
+Command: cargo test --all-features
+
+RESULTS
+-------
+Unit Tests (ask_ai lib):      673 passed, 0 failed
+Unit Tests (ask_ai binary):   674 passed, 0 failed
+Integration Tests:
+  context_recovery_flow:         8 passed, 0 failed
+  context_tool_overflow:         8 passed, 0 failed
+  prompt_benchmark:             10 passed, 0 failed
+  serde_option_test:             9 passed, 0 failed
+  test_ddg_searcher:             2 passed, 0 failed
+  token_counting:               18 passed, 0 failed
+DocTests:                       4 passed, 19 ignored
+
+TOTAL: All tests pass. Zero failures.
+
+RELEVANT SECURITY TESTS
+-----------------------
+security::tests::test_validate_subagent_path_nonexistent ... ok
+security::tests::test_validate_subagent_path_current_dir ... ok
+security::tests::test_validate_subagent_path_absolute ... ok
+security::tests::test_validate_subagent_paths_empty ... ok
+security::tests::test_validate_subagent_paths_multi ... ok
+
+BLOCKLIST TESTS
+---------------
+files_blocklist::tests::test_default_patterns_match_env_files ... ok
+files_blocklist::tests::test_default_patterns_match_secrets ... ok
+files_blocklist::tests::test_default_patterns_match_ssh_keys ... ok
+files_blocklist::tests::test_default_patterns_match_certificates ... ok
+files_blocklist::tests::test_default_patterns_match_cloud_credentials ... ok
+files_blocklist::tests::test_default_patterns_dont_match_normal_files ... ok
+files_blocklist::tests::test_is_blocked_for_read ... ok
+files_blocklist::tests::test_is_blocked_for_write ... ok
+files_blocklist::tests::test_block_read_flag ... ok
+
+SUBAGENT TESTS
+--------------
+subagent_tools::tests::test_parse_comma_separated_paths ... ok
+subagent_tools::tests::test_single_path_backward_compat ... ok
+subagent_tools::tests::test_missing_file_path_for_ocr ... ok
+subagent_tools::tests::test_invalid_subagent_type ... ok
+subagent_tools::tests::test_error_message_for_invalid_type ... ok
+subagent_tools::tests::test_build_ocr_config_uses_glm_ocr ... ok
+subagent_tools::tests::test_build_vision_config_model ... ok
+subagent_tools::tests::test_build_translate_config_uses_translategemma ... ok
+subagent_tools::tests::test_build_summarize_config_model ... ok
+subagent_tools::tests::test_build_document_config_model ... ok
+
+OCR PROMPT TESTS
+----------------
+subagent::tests::test_ocr_prompt_override_for_glm_ocr ... ok
+subagent::tests::subagent_config_defaults ... ok
+subagent::tests::subagent_config_builder ... ok
+subagent::tests::subagent_config_with_model_options_override ... ok
+subagent::tests::test_subagent_config_with_custom_ocr ... ok
+subagent::tests::test_subagent_config_resolves_glm_ocr_config_key ... ok
+subagent::tests::test_subagent_config_resolves_translategemma_config_key ... ok
+subagent::tests::test_subagent_config_with_translate_model ... ok
+subagent::tests::test_subagent_config_with_vision_model ... ok
+subagent::tests::test_subagent_config_model_options_from_builtin ... ok
+subagent::tests::test_subagent_config_model_options_from_unknown_model ... ok
+
+LSP DIAGNOSTICS
+---------------
+0 errors across 50 scanned .rs files
+
+VERDICT: ALL 673+ tests pass. Zero failures.

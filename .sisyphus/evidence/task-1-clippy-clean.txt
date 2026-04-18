@@ -1,0 +1,3 @@
+    Checking ask-ai v0.40.0 (/home/alchemist/git/ask-ollama-rs)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.21s
+Exit code: 0

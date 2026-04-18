@@ -25,6 +25,7 @@ mod project;
 mod prompts;
 mod query;
 mod retrieval;
+mod security;
 mod settings;
 mod skills;
 mod soul;
@@ -459,9 +460,19 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
         std::process::exit(1);
     }
 
+    let (model_key, _, _) = settings.get_subcommand_config("ocr");
+    let (model_id, model_options) = crate::user_models::get_model_config(&model_key)
+        .map(|mc| (mc.model_id.clone(), mc.build_model_options()))
+        .unwrap_or_else(|| {
+            (
+                model_key.clone(),
+                ollama_rs::models::ModelOptions::default().temperature(0.0),
+            )
+        });
+
     log::debug!("Debug Mode - OCR Configuration:");
     log::debug!("==========================");
-    log::debug!("Model ID:          glm-ocr:bf16");
+    log::debug!("Model ID:          {}", model_id);
     log::debug!("Mode:              {:?}", args.mode);
     log::debug!("Max Tokens:        {}", args.max_tokens);
     log::debug!("JSON Output:       {}", args.json);
@@ -470,8 +481,9 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
     log::info!("Executing OCR with logging enabled...");
 
     let processor = OcrProcessor::new();
+    let ollama = settings.ollama_client();
 
-    let results = match processor.process_batch(&args, settings).await {
+    let results = match processor.process_batch(&args, &model_id, model_options, &ollama, true).await {
         Ok(results) => results,
         Err(e) => {
             eprintln!("Error: {}", e);

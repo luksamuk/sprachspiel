@@ -206,11 +206,17 @@ impl SubagentRunner {
         &self,
         subagent_type: SubagentType,
         prompt: String,
-        file_path: Option<String>,
+        file_paths: Vec<PathBuf>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let raw = match subagent_type {
-            SubagentType::Ocr | SubagentType::Vision => {
-                self.run_generate(prompt, file_path).await?
+            SubagentType::Ocr => {
+                if file_paths.is_empty() {
+                    return Err("Error: file_path is required for OCR subagent".into());
+                }
+                self.run_ocr(&file_paths[0], OcrMode::Text).await?
+            }
+            SubagentType::Vision => {
+                self.run_vision(&file_paths, &prompt).await?
             }
             SubagentType::Translate | SubagentType::Summarize | SubagentType::Document => {
                 self.run_chat(prompt).await?
@@ -363,7 +369,7 @@ impl SubagentRunner {
     ///
     /// Delegates to the existing `VisionProcessor::process()` method,
     /// which handles image validation, base64 encoding, and API calls.
-    /// The vision model is resolved from `settings.get_subcommand_config("vision")`.
+    /// The vision model is resolved from `self.config.model`.
     ///
     /// # Arguments
     /// * `paths` - Image file paths to analyze.
@@ -380,7 +386,7 @@ impl SubagentRunner {
             return Err("Error: No image files provided for vision subagent.".into());
         }
 
-        let (model, _thinking, _tools) = self.settings.get_subcommand_config("vision");
+        let model = self.config.model.clone();
 
         let args = VisionArgs {
             files: paths.to_vec(),
@@ -412,7 +418,6 @@ impl SubagentRunner {
     /// # Arguments
     /// * `path` - Path to the image file to process.
     /// * `mode` - OCR extraction mode (Text, Table, Figure, Formula).
-    /// * `settings` - Application settings (used by OcrProcessor for Ollama client).
     ///
     /// # Returns
     /// * `Ok(String)` - Extracted text content on success, or an error message on failure.
@@ -426,11 +431,10 @@ impl SubagentRunner {
         &self,
         path: &Path,
         mode: OcrMode,
-        settings: &Settings,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let processor = OcrProcessor::new();
 
-        match processor.process_file(path, mode, settings).await {
+        match processor.process_file(path, mode, &self.config.model, self.config.model_options.clone(), &self.ollama, false).await {
             Ok(output) => Ok(truncate_to_budget(
                 &output.content,
                 self.config.max_output_chars,
@@ -484,9 +488,8 @@ impl SubagentRunner {
             }
         };
 
-        // Get the document model from settings.
         // Document subagent uses tools=true, thinking=false by default.
-        let (doc_model, _thinking, _tools) = self.settings.get_subcommand_config("document");
+        let doc_model = self.config.model.clone();
 
         // Build user prompt describing the file to process.
         let file_name = path

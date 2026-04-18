@@ -1,0 +1,186 @@
+   Compiling ask-ai v0.40.0 (/home/alchemist/git/ask-ollama-rs)
+error: expected `;`, found `#`
+   --> src/tools/context.rs:131:15
+    |
+131 |         .await
+    |               ^ help: add `;` here
+132 |
+133 | #[cfg(test)]
+    | - unexpected token
+
+error[E0308]: mismatched types
+   --> src/tools/context.rs:122:1
+    |
+113 |   pub async fn with_full_context<F, T>(
+    |                                     - expected this type parameter
+...
+122 | / {
+123 | |     REMEMBER_DB
+124 | |         .scope(db, async move {
+125 | |             REMEMBER_EMBEDDING
+...   |
+208 | | }
+    | |_^ expected type parameter `T`, found `()`
+    |
+    = note: expected type parameter `T`
+                    found unit type `()`
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/tools/context.rs:140:28
+    |
+140 |         let dummy_ollama = Ollama::new("http://localhost:11434".to_string());
+    |                            ^^^^^^^^^^^-------------------------------------- argument #2 of type `u16` is missing
+    |
+note: associated function defined here
+   --> /home/alchemist/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ollama-rs-0.3.4/src/lib.rs:121:12
+    |
+121 |     pub fn new(host: impl IntoUrl, port: u16) -> Self {
+    |            ^^^
+help: provide the argument
+    |
+140 |         let dummy_ollama = Ollama::new("http://localhost:11434".to_string(), /* u16 */);
+    |                                                                            +++++++++++
+
+error[E0599]: no function or associated item named `new_in_memory` found for struct `connection::Database` in the current scope
+   --> src/tools/context.rs:159:43
+    |
+159 |         let dummy_db = Arc::new(Database::new_in_memory().unwrap());
+    |                                           ^^^^^^^^^^^^^ function or associated item not found in `connection::Database`
+    |
+   ::: src/db/connection.rs:13:1
+    |
+ 13 | pub struct Database {
+    | ------------------- function or associated item `new_in_memory` not found for this struct
+    |
+note: if you're trying to build a new `connection::Database` consider using one of the following associated functions:
+      connection::Database::new
+      connection::Database::in_memory
+      connection::Database::open
+   --> src/db/connection.rs:19:5
+    |
+ 19 |     pub fn new() -> Result<Self> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 29 |     pub fn in_memory() -> Result<Self> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 40 |     pub fn open(path: &PathBuf) -> Result<Self> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: there is an associated function `in_memory` with a similar name
+    |
+159 -         let dummy_db = Arc::new(Database::new_in_memory().unwrap());
+159 +         let dummy_db = Arc::new(Database::in_memory().unwrap());
+    |
+
+error[E0061]: this function takes 1 argument but 2 arguments were supplied
+   --> src/tools/context.rs:160:40
+    |
+160 |         let dummy_embedding = Arc::new(EmbeddingClient::new("http://localhost:11434".to_string(), "nomic-bert".to_string()).unwrap());
+    |                                        ^^^^^^^^^^^^^^^^^^^^ ------------------------------------  ------------------------ unexpected argument #2 of type `std::string::String`
+    |                                                             |
+    |                                                             expected `Ollama`, found `String`
+    |
+note: associated function defined here
+   --> src/embeddings/client.rs:30:12
+    |
+ 30 |     pub fn new(ollama: Ollama) -> Self {
+    |            ^^^ --------------
+help: remove the extra argument
+    |
+160 -         let dummy_embedding = Arc::new(EmbeddingClient::new("http://localhost:11434".to_string(), "nomic-bert".to_string()).unwrap());
+160 +         let dummy_embedding = Arc::new(EmbeddingClient::new(/* ollama_rs::Ollama */).unwrap());
+    |
+
+error[E0599]: no method named `unwrap` found for struct `client::EmbeddingClient` in the current scope
+   --> src/tools/context.rs:160:125
+    |
+160 |         let dummy_embedding = Arc::new(EmbeddingClient::new("http://localhost:11434".to_string(), "nomic-bert".to_string()).unwrap());
+    |                                                                                                                             ^^^^^^ method not found in `client::EmbeddingClient`
+    |
+   ::: src/embeddings/client.rs:23:1
+    |
+ 23 | pub struct EmbeddingClient {
+    | -------------------------- method `unwrap` not found for this struct
+    |
+    = help: items from traits can only be used if the trait is implemented and in scope
+    = note: the following trait defines an item `unwrap`, perhaps you need to implement it:
+            candidate #1: `fallible_iterator::FallibleIterator`
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/tools/context.rs:161:28
+    |
+161 |         let dummy_ollama = Ollama::new("http://localhost:11434".to_string());
+    |                            ^^^^^^^^^^^-------------------------------------- argument #2 of type `u16` is missing
+    |
+note: associated function defined here
+   --> /home/alchemist/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ollama-rs-0.3.4/src/lib.rs:121:12
+    |
+121 |     pub fn new(host: impl IntoUrl, port: u16) -> Self {
+    |            ^^^
+help: provide the argument
+    |
+161 |         let dummy_ollama = Ollama::new("http://localhost:11434".to_string(), /* u16 */);
+    |                                                                            +++++++++++
+
+error[E0382]: use of moved value: `result`
+    --> src/tools/context.rs:203:17
+     |
+ 193 |         let result = tokio::spawn(async {
+     |             ------ move occurs because `result` has type `std::result::Result<(bool, bool, bool, bool), JoinError>`, which does not implement the `Copy` trait
+...
+ 202 |         assert!(result.unwrap().0, "get_ollama should return None outside scope");
+     |                 ------ -------- `result` moved due to this method call
+     |                 |
+     |                 help: consider calling `.as_ref()` or `.as_mut()` to borrow the type's contents
+ 203 |         assert!(result.unwrap().1, "get_settings should return None outside scope");
+     |                 ^^^^^^ value used here after move
+     |
+note: `std::result::Result::<T, E>::unwrap` takes ownership of the receiver `self`, which moves `result`
+    --> /home/alchemist/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/result.rs:1227:19
+     |
+1227 |     pub fn unwrap(self) -> T
+     |                   ^^^^
+help: you could `clone` the value and consume it, if the `JoinError: Clone` trait bound could be satisfied
+     |
+ 202 |         assert!(result.clone().unwrap().0, "get_ollama should return None outside scope");
+     |                       ++++++++
+
+error[E0382]: use of moved value: `result`
+   --> src/tools/context.rs:204:17
+    |
+193 |         let result = tokio::spawn(async {
+    |             ------ move occurs because `result` has type `std::result::Result<(bool, bool, bool, bool), JoinError>`, which does not implement the `Copy` trait
+...
+203 |         assert!(result.unwrap().1, "get_settings should return None outside scope");
+    |                 ------ -------- `result` moved due to this method call
+    |                 |
+    |                 help: consider calling `.as_ref()` or `.as_mut()` to borrow the type's contents
+204 |         assert!(result.unwrap().2, "get_db should return None outside scope");
+    |                 ^^^^^^ value used here after move
+    |
+help: you could `clone` the value and consume it, if the `JoinError: Clone` trait bound could be satisfied
+    |
+203 |         assert!(result.clone().unwrap().1, "get_settings should return None outside scope");
+    |                       ++++++++
+
+error[E0382]: use of moved value: `result`
+   --> src/tools/context.rs:205:17
+    |
+193 |         let result = tokio::spawn(async {
+    |             ------ move occurs because `result` has type `std::result::Result<(bool, bool, bool, bool), JoinError>`, which does not implement the `Copy` trait
+...
+204 |         assert!(result.unwrap().2, "get_db should return None outside scope");
+    |                 ------ -------- `result` moved due to this method call
+    |                 |
+    |                 help: consider calling `.as_ref()` or `.as_mut()` to borrow the type's contents
+205 |         assert!(result.unwrap().3, "get_embedding should return None outside scope");
+    |                 ^^^^^^ value used here after move
+    |
+help: you could `clone` the value and consume it, if the `JoinError: Clone` trait bound could be satisfied
+    |
+204 |         assert!(result.clone().unwrap().2, "get_db should return None outside scope");
+    |                       ++++++++
+
+Some errors have detailed explanations: E0061, E0308, E0382, E0599.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `ask-ai` (lib test) due to 10 previous errors
