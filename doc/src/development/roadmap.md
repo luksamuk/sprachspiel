@@ -387,6 +387,12 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 | `summarize` | (same model) | /api/chat | Summarization |
 | `document` | (same model) | /api/chat | PDF/EPUB extraction |
 
+**v0.42.0-dev Update — OCR Prompt Strategy:**
+- OCR prompts now adapt to model type: GLM-OCR keeps rigid prefixes, vision models use descriptive restricted prompts
+- `/ocr` chat command accepts optional mode parameter (text, table, figure, formula)
+- `spawn_subagent` tool now accepts `ocr_mode` parameter for LLM-driven mode selection
+- All 3 OCR entry points (CLI, `/ocr`, `spawn_subagent`) use model-aware prompt selection
+
 **Chat Commands:**
 
 | Command | Description |

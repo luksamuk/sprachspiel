@@ -14,9 +14,18 @@ All notable changes to Ask-AI will be documented in this file.
   - Config support for `[model.ocr]` and `[model.document]` sections
   - Feature flag: `subagent-tools` (default enabled)
 
+- **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
+  - `OcrMode::into_descriptive_prompt()` returns mode-specific restricted prompts for vision models (Text/Table/Figure/Formula)
+  - `is_glm_ocr_model()` utility for detecting GLM-OCR models vs. vision models
+  - `parse_ocr_mode()` convenience function for parsing OCR mode from LLM string parameters
+  - `ocr_mode` parameter on `spawn_subagent` tool — LLMs can now specify Text/Table/Figure/Formula OCR mode
+  - `/ocr` chat command now accepts an optional mode parameter (e.g., `/ocr image.png table`)
+  - All 3 OCR entry points (CLI, chat `/ocr`, subagent `spawn_subagent`) use model-aware prompt selection
 
 ### Changed
 
+- OCR prompts now adapt to configured model: GLM-OCR uses rigid prefixes, vision models use descriptive prompts with no-commentary restriction
+- Removed dead `OCR_SYSTEM_PROMPT` constant (was silently ignored by `/api/generate` API)
 
 ### Fixed
 

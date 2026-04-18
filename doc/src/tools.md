@@ -769,7 +769,7 @@ Chat commands provide direct access to subagent functionality and are **always a
 
 | Command | Description | Example |
 |---------|-------------|----------|
-| `/ocr <image>` | Extract text from image | `/ocr document.png` |
+| `/ocr <image> [mode]` | Extract text from image with optional mode (text/table/figure/formula) | `/ocr document.png table` |
 | `/vision <image>` | Analyze/describe image | `/vision photo.jpg "What's in this image?"` |
 | `/translate <lang> <text>` | Translate text | `/translate pt "Hello world"` |
 | `/summarize <text>` | Summarize text | `/summarize Long text here...` |
@@ -790,7 +790,8 @@ Args:
   - subagent_type (string, required): One of "ocr", "vision", "translate", "summarize", "document"
   - prompt (string, required): The task description or text to process
   - file_path (string, optional): Path to image/document file (required for ocr, vision, document)
-Example: spawn_subagent(subagent_type: "ocr", prompt: "Extract all text", file_path: "/tmp/image.png")
+  - ocr_mode (string, optional): OCR extraction mode — one of "text" (default), "table", "figure", "formula". Only applicable when subagent_type is "ocr".
+Example: spawn_subagent(subagent_type: "ocr", prompt: "Extract all text", file_path: "/tmp/image.png", ocr_mode: "table")
 Example: spawn_subagent(subagent_type: "translate", prompt: "Translate to Portuguese: Hello world")
 Example: spawn_subagent(subagent_type: "summarize", prompt: "Summarize this article...")
 ```
