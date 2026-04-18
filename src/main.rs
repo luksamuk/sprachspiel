@@ -650,9 +650,11 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     log::debug!("==========================");
     log::info!("Executing vision analysis with logging enabled...");
 
+    let model_options = model_config.build_model_options().num_predict(args.max_tokens as i32);
+    let ollama = settings.ollama_client();
     let processor = VisionProcessor::new();
 
-    match processor.process(&args, &model_id, settings).await {
+    match processor.process(&args, &model_id, &ollama, model_options, true).await {
         Ok(result) => {
             if args.json {
                 print_vision_results(&result, true);

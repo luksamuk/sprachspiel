@@ -301,6 +301,8 @@ impl Settings {
             "translate" => &self.model.translate,
             "ocr" => &self.model.ocr,
             "document" => &self.model.document,
+            "vision" => &self.model.vision,
+            "code" => &self.model.code,
             _ => &SubcommandModelConfig::default(),
         };
 

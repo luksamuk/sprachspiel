@@ -399,7 +399,7 @@ impl SubagentRunner {
 
         let processor = VisionProcessor::new();
         let output = processor
-            .process(&args, &model, &self.settings)
+            .process(&args, &model, &self.ollama, self.config.model_options.clone(), false)
             .await
             .map_err(|e| format!("Error: Vision processing failed: {}", e))?;
 

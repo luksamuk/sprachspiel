@@ -7,7 +7,7 @@ use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 
-use crate::settings::Settings;
+use ollama_rs::Ollama;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::utils::{read_file_as_base64, validate_image_file};
 
@@ -25,7 +25,9 @@ impl VisionProcessor {
         &self,
         args: &VisionArgs,
         model: &str,
-        settings: &Settings,
+        ollama: &Ollama,
+        model_options: ModelOptions,
+        show_spinner: bool,
     ) -> VisionResult<VisionOutput> {
         if args.files.is_empty() {
             return Err(VisionError::NoImages);
@@ -48,11 +50,8 @@ impl VisionProcessor {
 
         let prompt = args.get_prompt().to_string();
 
-        let ollama = settings.ollama_client();
-
-        let model_options = ModelOptions::default()
-            .temperature(0.1)
-            .num_predict(args.max_tokens as i32);
+        // Layer num_predict on top of the passed model_options (per-request concern)
+        let model_options = model_options.num_predict(args.max_tokens as i32);
 
         let mut request = GenerationRequest::new(model.to_string(), prompt).options(model_options);
 
@@ -66,7 +65,11 @@ impl VisionProcessor {
         } else {
             format!("Analyzing {} images...", file_count)
         };
-        let spinner = create_spinner(&spinner_msg);
+        let spinner = if show_spinner {
+            Some(create_spinner(&spinner_msg))
+        } else {
+            None
+        };
 
         let response = ollama
             .generate(request)
@@ -75,7 +78,9 @@ impl VisionProcessor {
                 message: format!("Failed to process image(s): {}", e),
             })?;
 
-        finish_spinner(spinner);
+        if let Some(sp) = spinner {
+            finish_spinner(sp);
+        }
 
         let content = response.response.trim().to_string();
 
