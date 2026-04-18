@@ -9,6 +9,7 @@
 
 use crate::chat::subagent::{SubagentConfig, SubagentRunner, SubagentType};
 use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::ocr::mode::parse_ocr_mode;
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::security::validate_subagent_paths;
 use crate::tools::context::{get_ollama, get_settings};
@@ -57,6 +58,17 @@ const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_
 ///   - Supports `~` home directory expansion
 ///   - Not required for Translate, Summarize, or Document types
 ///
+/// * `ocr_mode` - **Optional.** OCR extraction mode. Only used when `subagent_type` is "ocr".
+///   - `"text"` — General text recognition (default)
+///   - `"table"` — Table structure extraction
+///   - `"figure"` — Figure/diagram recognition
+///   - `"formula"` — Mathematical formula extraction (LaTeX)
+///   - If not specified, defaults to "text"
+///   - For OCR: Single image path (e.g., `"/tmp/screenshot.png"`)
+///   - For Vision: Comma-separated paths for multi-image analysis (e.g., `"img1.png,img2.jpg"`)
+///   - Supports `~` home directory expansion
+///   - Not required for Translate, Summarize, or Document types
+///
 /// # Returns
 /// The subagent result as plain text, or an error message if the subagent fails.
 ///
@@ -67,7 +79,10 @@ const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_
 ///
 /// # Example
 /// ```ignore
-/// spawn_subagent("ocr".to_string(), "Extract all text from this image".to_string(), Some("/tmp/document.png".to_string()))
+/// spawn_subagent("ocr".to_string(), "Extract all text from this image".to_string(), Some("/tmp/document.png".to_string()), None)
+/// spawn_subagent("ocr".to_string(), "Extract table structure".to_string(), Some("/tmp/table.png".to_string()), Some("table".to_string()))
+/// spawn_subagent("vision".to_string(), "Describe these images".to_string(), Some("img1.png,img2.jpg".to_string()), None)
+/// spawn_subagent("summarize".to_string(), "Summarize this long text...".to_string(), None, None)
 /// spawn_subagent("vision".to_string(), "Describe these images".to_string(), Some("img1.png,img2.jpg".to_string()))
 /// spawn_subagent("summarize".to_string(), "Summarize this long text...".to_string(), None)
 /// ```
@@ -76,9 +91,11 @@ pub async fn spawn_subagent(
     subagent_type: String,
     prompt: String,
     file_path: Option<String>,
+    ocr_mode: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     // Normalize empty strings to None
     let file_path = file_path.filter(|s| !s.is_empty());
+    let ocr_mode = ocr_mode.filter(|s| !s.is_empty());
 
     log_tool_call(
         "spawn_subagent",
@@ -96,6 +113,7 @@ pub async fn spawn_subagent(
                 "file_path".to_string(),
                 file_path.clone().unwrap_or_else(|| "(none)".to_string()),
             ),
+            ("ocr_mode".to_string(), ocr_mode.clone().unwrap_or_else(|| "(default)".to_string())),
         ],
     );
 
@@ -192,8 +210,19 @@ pub async fn spawn_subagent(
     };
 
     // Resolve model and build config based on subagent type
+    // For OCR, also parse and apply ocr_mode if provided
     let config = match agent_type {
-        SubagentType::Ocr => build_ocr_config(&settings),
+        SubagentType::Ocr => {
+            let mut cfg = build_ocr_config(&settings);
+            match parse_ocr_mode(ocr_mode) {
+                Ok(mode) => cfg = cfg.with_ocr_mode(mode),
+                Err(e) => {
+                    log_tool_result("spawn_subagent", &e);
+                    return Ok(e);
+                }
+            }
+            cfg
+        }
         SubagentType::Vision => build_vision_config(&settings),
         SubagentType::Translate => build_translate_config(&settings),
         SubagentType::Summarize => build_summarize_config(&settings),

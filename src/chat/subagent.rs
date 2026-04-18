@@ -27,7 +27,7 @@ use crate::vision::{VisionArgs, VisionProcessor};
 use std::path::Path;
 
 use crate::ocr::error::OcrError;
-use crate::ocr::mode::OcrMode;
+use crate::ocr::mode::{OcrMode, is_glm_ocr_model};
 use crate::ocr::processor::OcrProcessor;
 
 /// Default maximum output length in tokens for subagent results.
@@ -120,6 +120,8 @@ pub struct SubagentConfig {
     pub max_output_chars: usize,
     /// Model options (temperature, num_ctx, etc.) resolved from ModelConfig.
     pub model_options: ModelOptions,
+    /// OCR extraction mode (Text, Table, Figure, Formula).
+    pub ocr_mode: OcrMode,
 }
 impl SubagentConfig {
 
@@ -142,6 +144,7 @@ impl SubagentConfig {
             system_prompt: system_prompt.into(),
             tool_whitelist: Vec::new(),
             max_output_chars: DEFAULT_MAX_OUTPUT_TOKENS,
+            ocr_mode: OcrMode::Text,
             model_options,
         }
     }
@@ -164,6 +167,12 @@ impl SubagentConfig {
     /// Use this to override with custom options if needed.
     pub fn with_model_options(mut self, options: ModelOptions) -> Self {
         self.model_options = options;
+        self
+    }
+
+    /// Set the OCR extraction mode (only affects OCR subagent).
+    pub fn with_ocr_mode(mut self, mode: OcrMode) -> Self {
+        self.ocr_mode = mode;
         self
     }
 }
@@ -213,7 +222,7 @@ impl SubagentRunner {
                 if file_paths.is_empty() {
                     return Err("Error: file_path is required for OCR subagent".into());
                 }
-                self.run_ocr(&file_paths[0], OcrMode::Text).await?
+                self.run_ocr(&file_paths[0], self.config.ocr_mode).await?
             }
             SubagentType::Vision => {
                 self.run_vision(&file_paths, &prompt).await?
@@ -434,7 +443,13 @@ impl SubagentRunner {
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let processor = OcrProcessor::new();
 
-        match processor.process_file(path, mode, None, &self.config.model, self.config.model_options.clone(), &self.ollama, false).await {
+        let prompt_override = if is_glm_ocr_model(&self.config.model) {
+            None // GLM-OCR: use mode.into_prompt() (rigid prefix)
+        } else {
+            Some(mode.into_descriptive_prompt()) // Vision model: descriptive prompt
+        };
+
+        match processor.process_file(path, mode, prompt_override, &self.config.model, self.config.model_options.clone(), &self.ollama, false).await {
             Ok(output) => Ok(truncate_to_budget(
                 &output.content,
                 self.config.max_output_chars,
@@ -721,6 +736,22 @@ mod tests {
         let _opts = config.model_options.clone();
     }
 
+    #[test]
+    fn subagent_config_default_ocr_mode() {
+        let config = SubagentConfig::new("glm-ocr", "OCR");
+        assert_eq!(config.ocr_mode, OcrMode::Text);
+    }
+
+    #[test]
+    fn subagent_config_with_ocr_mode() {
+        let config = SubagentConfig::new("glm-ocr", "OCR")
+            .with_ocr_mode(OcrMode::Table);
+        assert_eq!(config.ocr_mode, OcrMode::Table);
+
+        let config = SubagentConfig::new("glm-ocr", "OCR")
+            .with_ocr_mode(OcrMode::Formula);
+        assert_eq!(config.ocr_mode, OcrMode::Formula);
+    }
     #[test]
     fn test_subagent_config_with_custom_ocr() {
         // Test that SubagentConfig works with a custom OCR model

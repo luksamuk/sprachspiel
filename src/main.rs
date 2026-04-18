@@ -44,6 +44,7 @@ use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::ChatArgs;
 use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
+use crate::ocr::mode::is_glm_ocr_model;
 use crate::query::{OutputFlags, run_query};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -483,7 +484,13 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
     let processor = OcrProcessor::new();
     let ollama = settings.ollama_client();
 
-    let results = match processor.process_batch(&args, None, &model_id, model_options, &ollama, true).await {
+    let prompt_override = if is_glm_ocr_model(&model_id) {
+        None
+    } else {
+        Some(args.mode.into_descriptive_prompt())
+    };
+
+    let results = match processor.process_batch(&args, prompt_override, &model_id, model_options, &ollama, true).await {
         Ok(results) => results,
         Err(e) => {
             eprintln!("Error: {}", e);
