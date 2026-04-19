@@ -150,14 +150,14 @@ impl SubagentConfig {
 ///
 /// Unlike `CustomCoordinator` (992 lines with history, callbacks, overflow
 /// detection, continuation tags), `SubagentRunner` is intentionally minimal:
-just an Ollama client, a config, and a `run()` method.
+/// just an Ollama client, a config, and a `run()` method.
 pub struct SubagentRunner {
     ollama: Ollama,
     config: SubagentConfig,
 }
 
 impl SubagentRunner {
-    Create a new runner with the given Ollama client and config.
+        /// Create a new runner with the given Ollama client and config.
     pub fn new(ollama: Ollama, config: SubagentConfig) -> Self {
         Self {
             ollama,
