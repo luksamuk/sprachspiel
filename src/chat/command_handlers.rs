@@ -2866,10 +2866,6 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
         return;
     }
 
-    if !file_path.exists() {
-        eprintln!("\x1B[31mError: File not found: {}\x1B[0m", path);
-        return;
-    }
 
     // Save user command to conversation context
     let cmd_str = match mode {
@@ -2909,13 +2905,6 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
         }
     }
 
-    // Validate files exist
-    for path in &path_bufs {
-        if !path.exists() {
-            eprintln!("\x1B[31mError: File not found: {}\x1B[0m", path.display());
-            return;
-        }
-    }
 
     // Build command string for context
     let cmd_str = match &prompt {

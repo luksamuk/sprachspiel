@@ -187,7 +187,7 @@ impl SubagentRunner {
         let raw = match subagent_type {
             SubagentType::Ocr => {
                 if file_paths.is_empty() {
-                    return Err("Error: file_path is required for OCR subagent".into());
+                    return Err("file_path is required for OCR subagent".into());
                 }
                 self.run_ocr(&file_paths[0], self.config.ocr_mode).await?
             }
@@ -223,7 +223,7 @@ impl SubagentRunner {
 
         let response = self.ollama.send_chat_messages(request).await.map_err(|e| {
             format!(
-                "Error: /api/chat failed for model '{}': {}",
+                "/api/chat failed for model '{}': {}",
                 self.config.model, e
             )
         })?;
@@ -249,7 +249,7 @@ impl SubagentRunner {
 
         let mapper = LanguageMapper::new();
         let (source, target) = parse_language_pair(lang_pair, &mapper)
-            .map_err(|e| format!("Error: Invalid language pair '{}': {}", lang_pair, e))?;
+            .map_err(|e| format!("Invalid language pair '{}': {}", lang_pair, e))?;
 
         let prompt = build_translation_prompt(source.as_ref(), &target, text, None);
 
@@ -293,7 +293,7 @@ impl SubagentRunner {
 
         let response = self.ollama.send_chat_messages(request).await.map_err(|e| {
             format!(
-                "Error: /api/chat failed for summarize on model '{}': {}",
+                "/api/chat failed for summarize on model '{}': {}",
                 self.config.model, e
             )
         })?;
@@ -320,7 +320,7 @@ impl SubagentRunner {
         prompt: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         if paths.is_empty() {
-            return Err("Error: No image files provided for vision subagent.".into());
+            return Err("No image files provided for vision subagent.".into());
         }
 
         let model = self.config.model.clone();
@@ -338,7 +338,7 @@ impl SubagentRunner {
         let output = processor
             .process(&args, &model, &self.ollama, self.config.model_options.clone(), false)
             .await
-            .map_err(|e| format!("Error: Vision processing failed: {}", e))?;
+            .map_err(|e| format!("Vision processing failed: {}", e))?;
 
         Ok(truncate_to_budget(
             &output.content,
@@ -489,7 +489,7 @@ impl SubagentRunner {
             .await
             .map_err(|e| {
                 format!(
-                    "Error: Document extraction failed for '{}': {}",
+                    "Document Extraction failed for '{}': {}",
                     file_name, e
                 )
             })?;
