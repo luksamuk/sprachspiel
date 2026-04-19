@@ -81,7 +81,7 @@ pub fn validate_subagent_path(path: &Path) -> Result<PathBuf, String> {
         // Check blocklist for sensitive files
         if is_blocked_for_read(&canonical_path, &BLOCKLIST_CONFIG) {
             let err_msg = format!(
-                "Error: BLOCKED - '{}' matches a protected file pattern. \
+                "BLOCKED - '{}' matches a protected file pattern. \
                  This file may contain sensitive information (credentials, secrets, keys). \
                  Reading such files is restricted for security.",
                 path.display()
@@ -96,7 +96,7 @@ pub fn validate_subagent_path(path: &Path) -> Result<PathBuf, String> {
         // Check blocklist for sensitive files in temp directories
         if is_blocked_for_read(&canonical_path, &BLOCKLIST_CONFIG) {
             let err_msg = format!(
-                "Error: BLOCKED - '{}' matches a protected file pattern. \
+                "BLOCKED - '{}' matches a protected file pattern. \
                  This file may contain sensitive information (credentials, secrets, keys). \
                  Reading such files is restricted for security.",
                 path.display()
