@@ -45,12 +45,8 @@ cat file.txt | ask-ai summarize
 
 Most commands support these options:
 
-| Option | Description |
-|--------|-------------|
-| `-m, --model` | Select model preset |
-| `--plain` | Plain text output (no markdown) |
-| `-d, --debug` | Debug mode with logging |
-| `-h, --help` | Show command help |
+| `-v, -vv` | Verbosity: verbose / trace level
+| `-h, --help` | Show command help
 
 ### Output Redirection
 

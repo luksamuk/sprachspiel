@@ -18,7 +18,7 @@ use crate::content::types::ContentScope;
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
 use crate::project::get_project_id;
-use crate::tools::context::{get_db, get_embedding};
+use crate::tools::context::{get_db, get_embedding, get_ollama, get_settings};
 use crate::utils::expand_tilde_path;
 use std::fs;
 
@@ -237,7 +237,7 @@ pub async fn import_document(
         FileType::Pdf | FileType::Epub => {
             #[cfg(feature = "skills-tools")]
             {
-                match extract_text_with_skill(&file_path, &file_type) {
+                match extract_text_with_skill(&file_path).await {
                     Ok(c) => c,
                     Err(e) => {
                         log_tool_result("import_document", &e);
@@ -379,70 +379,33 @@ pub async fn import_document(
     Ok(result)
 }
 
-/// Extract text from PDF/EPUB using external tools
+/// Extract text from PDF/EPUB using the document-processing subagent.
 ///
-/// FIXME: Technical Debt - Direct Command Invocation
-///
-/// This function calls Command::new("pdftotext") directly, bypassing the skills system.
-/// Project-level skill overrides for document-processing are not respected.
-///
-/// Future Solution (Priority 4: Specialized Agent Architecture):
-/// - spawn_subagent(type="document", prompt, file_path)
-/// - Sub-agent uses run_command within skill-defined constraints
-/// - Output returns as tool result to main agent
-/// - Skills can override document-processing behavior at project level
-///
-/// Related: Issue #12 (OCR/Vision), Issue #9 (Document Import)
-/// Milestone: Priority 4 expansion (Specialized Agents)
-///
-/// For now: This implementation works correctly for extraction.
-/// Users can manually invoke the document-processing skill for other workflows.
+/// Delegates to `SubagentRunner::run_document()` which uses a model with
+/// the `run_command` tool and the document-processing skill as system prompt.
+/// This respects project-level skill overrides for document processing.
 #[cfg(feature = "skills-tools")]
-fn extract_text_with_skill(
+async fn extract_text_with_skill(
     file_path: &std::path::Path,
-    file_type: &FileType,
 ) -> Result<String, String> {
-    use std::process::Command;
+    use crate::chat::subagent::SubagentRunner;
+    use crate::tools::subagent_tools::build_document_config;
 
-    // Build command based on file type
-    let (program, args) = match file_type {
-        FileType::Pdf => (
-            "pdftotext",
-            vec![file_path.to_string_lossy().to_string(), "-".to_string()],
-        ),
-        FileType::Epub => (
-            "epub2txt",
-            vec![file_path.to_string_lossy().to_string(), "-".to_string()],
-        ),
-        _ => {
-            return Err(format!(
-                "Error: Internal error - unexpected file type '{}'.",
-                file_type.extension()
-            ));
-        }
+    let ollama = match get_ollama() {
+        Some(o) => o,
+        None => return Err("Error: Ollama client not available for document extraction.".to_string()),
     };
 
-    // Run extraction command
-    let output = Command::new(program).args(&args).output();
+    let settings = match get_settings() {
+        Some(s) => s,
+        None => return Err("Error: Settings not available for document extraction.".to_string()),
+    };
 
-    match output {
-        Ok(output) => {
-            if output.status.success() {
-                String::from_utf8(output.stdout)
-                    .map_err(|e| format!("Error: Failed to parse output as UTF-8: {}", e))
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(format!(
-                    "Error: {} failed with exit code {:?}: {}",
-                    program,
-                    output.status.code(),
-                    stderr.trim()
-                ))
-            }
-        }
-        Err(e) => Err(format!(
-            "Error: Could not run '{}' - {}. Install with your package manager.",
-            program, e
-        )),
+    let config = build_document_config(&settings);
+    let runner = SubagentRunner::new(ollama, config);
+
+    match runner.run_document(file_path).await {
+        Ok(text) => Ok(text),
+        Err(e) => Err(format!("Error: Document extraction failed: {}", e)),
     }
 }

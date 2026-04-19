@@ -406,6 +406,22 @@ pub async fn handle_command(
             }
             HandleResult::Continue
         }
+        ChatCommand::Ocr { path, mode } => {
+            handle_subagent_ocr(state, path, mode).await;
+            HandleResult::Continue
+        }
+        ChatCommand::Vision { paths, prompt } => {
+            handle_subagent_vision(state, paths, prompt).await;
+            HandleResult::Continue
+        }
+        ChatCommand::Translate { lang_pair, text } => {
+            handle_subagent_translate(state, lang_pair, text).await;
+            HandleResult::Continue
+        }
+        ChatCommand::Summarize { text } => {
+            handle_subagent_summarize(state, text).await;
+            HandleResult::Continue
+        }
     }
 }
 
@@ -2825,3 +2841,130 @@ mod tests {
         // Should print "No messages to remove" and not panic
     }
 }
+
+/// Handle /ocr command - extract text from an image
+pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Option<String>) {
+    use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+    use crate::ocr::mode::{OcrMode, parse_ocr_mode};
+    use crate::utils::expand_tilde_path;
+
+    // Parse the optional OCR mode
+    let mode = match parse_ocr_mode(mode) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("\x1B[31m{}\x1B[0m", e);
+            return;
+        }
+    };
+
+    // Expand tilde in path (e.g., ~/photo.jpg → /home/user/photo.jpg)
+    let file_path = expand_tilde_path(&path);
+
+    // Validate path for security (sandbox + blocklist)
+    if let Err(e) = crate::security::validate_subagent_path(&file_path) {
+        eprintln!("\x1B[31mError: {}\x1B[0m", e);
+        return;
+    }
+
+
+    // Save user command to conversation context
+    let cmd_str = match mode {
+        OcrMode::Text => format!("/ocr {}", path),
+        _ => format!("/ocr {} {:?}", path, mode).to_lowercase(),
+    };
+    state.session.add_user_message(cmd_str);
+
+    let (model, _, _) = state.settings.get_subcommand_config("ocr");
+    let config = SubagentConfig::new(model, "OCR extraction").with_ocr_mode(mode);
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
+
+    match runner.run_ocr(&file_path, mode).await {
+        Ok(result) => {
+            println!("{}", result);
+            // Save result to conversation context so AI can reference it
+            state.session.add_assistant_message(result, None);
+        }
+        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+
+/// Handle /vision command - analyze image(s) with vision model
+pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, prompt: Option<String>) {
+    use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+    use crate::utils::expand_tilde_path;
+    use std::path::PathBuf;
+
+    // Expand tilde in paths
+    let path_bufs: Vec<PathBuf> = paths.iter().map(|p| expand_tilde_path(p)).collect();
+
+    // Validate all paths for security (sandbox + blocklist)
+    for path in &path_bufs {
+        if let Err(e) = crate::security::validate_subagent_path(path) {
+            eprintln!("\x1B[31mError: {}\x1B[0m", e);
+            return;
+        }
+    }
+
+
+    // Build command string for context
+    let cmd_str = match &prompt {
+        Some(p) => format!("/vision {} {}", paths.join(" "), p),
+        None => format!("/vision {}", paths.join(" ")),
+    };
+    state.session.add_user_message(cmd_str);
+
+    let (model, _, _) = state.settings.get_subcommand_config("vision");
+    let config = SubagentConfig::new(model, "Vision analysis");
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
+
+    let prompt_str = prompt.as_deref().unwrap_or("Describe what you see in this image.");
+
+    match runner.run_vision(&path_bufs, prompt_str).await {
+        Ok(result) => {
+            println!("{}", result);
+            state.session.add_assistant_message(result, None);
+        }
+        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+
+/// Handle /translate command - translate text between languages
+pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String, text: String) {
+    use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+
+    // Save user command to conversation context
+    state.session.add_user_message(format!("/translate {} {}", lang_pair, text));
+
+    let (model, _, _) = state.settings.get_subcommand_config("translate");
+    let config = SubagentConfig::new(model, "Translation");
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
+
+    match runner.run_translate(&lang_pair, &text).await {
+        Ok(result) => {
+            println!("{}", result);
+            state.session.add_assistant_message(result, None);
+        }
+        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+
+/// Handle /summarize command - summarize text
+pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
+    use crate::chat::subagent::{SubagentConfig, SubagentRunner};
+
+    // Save user command to conversation context
+    state.session.add_user_message(format!("/summarize {}", text));
+
+    let (model, _, _) = state.settings.get_subcommand_config("summarize");
+    let config = SubagentConfig::new(model, "Summarization");
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
+
+    match runner.run_summarize(&text).await {
+        Ok(result) => {
+            println!("{}", result);
+            state.session.add_assistant_message(result, None);
+        }
+        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+

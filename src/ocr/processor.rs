@@ -4,12 +4,12 @@
 //! Uses /api/generate endpoint as recommended by GLM-OCR documentation.
 
 use base64::Engine;
+use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 use std::path::Path;
 
-use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::utils::validate_image_file;
 
@@ -27,11 +27,16 @@ impl OcrProcessor {
     }
 
     /// Process a single image file
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_file(
         &self,
         path: &Path,
         mode: OcrMode,
-        settings: &Settings,
+        prompt_override: Option<&str>,
+        model: &str,
+        model_options: ModelOptions,
+        ollama: &Ollama,
+        show_spinner: bool,
     ) -> OcrResult<OcrOutput> {
         validate_image_file(path).map_err(OcrError::FileNotFound)?;
 
@@ -44,21 +49,23 @@ impl OcrProcessor {
 
         let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
         let image = Image::from_base64(base64_image);
-        let prompt = mode.into_prompt();
-        let ollama = settings.ollama_client();
-        let model_options = ModelOptions::default().temperature(0.0);
+        let prompt = prompt_override.unwrap_or_else(|| mode.into_prompt());
 
         // Create generation request with the image attached
-        let request = GenerationRequest::new("glm-ocr:bf16".to_string(), prompt)
+        let request = GenerationRequest::new(model.to_string(), prompt)
             .options(model_options)
-            .add_image(image); // <-- Actually sends the image data
+            .add_image(image);
 
-        // Show spinner
-        let spinner = create_spinner(&format!(
-            "Extracting {} from {}...",
-            mode.description(),
-            path.display()
-        ));
+        // Show spinner (conditional — hidden when called from subagent to avoid overlap)
+        let spinner = if show_spinner {
+            Some(create_spinner(&format!(
+                "Extracting {} from {}...",
+                mode.description(),
+                path.display()
+            )))
+        } else {
+            None
+        };
 
         // Send request to /api/generate
         let response = ollama
@@ -69,7 +76,9 @@ impl OcrProcessor {
             })?;
 
         // Clear spinner
-        finish_spinner(spinner);
+        if let Some(sp) = spinner {
+            finish_spinner(sp);
+        }
 
         let content = response.response.trim().to_string();
 
@@ -84,12 +93,16 @@ impl OcrProcessor {
     pub async fn process_batch(
         &self,
         args: &OcrArgs,
-        settings: &Settings,
+        prompt_override: Option<&str>,
+        model: &str,
+        model_options: ModelOptions,
+        ollama: &Ollama,
+        show_spinner: bool,
     ) -> OcrResult<Vec<OcrOutput>> {
         let mut results = Vec::new();
 
         for file in &args.files {
-            match self.process_file(file, args.mode, settings).await {
+            match self.process_file(file, args.mode, prompt_override, model, model_options.clone(), ollama, show_spinner).await {
                 Ok(result) => results.push(result),
                 Err(e) => {
                     eprintln!("Error processing {}: {}", file.display(), e);

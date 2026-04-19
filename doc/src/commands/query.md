@@ -41,18 +41,9 @@ This is **read-only** - query mode does not persist new messages.
 
 These options must be placed **before** the `query` subcommand:
 
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--model` | `-m` | Model preset to use | `qwen3.5:4b` |
-| `--prompt` | `-p` | System prompt mode | `default` |
-| `--think` | `-t` | Enable think mode | disabled |
-| `--plain` | | Output plain text (no markdown) | disabled |
-| `--debug` | `-d` | Enable debug logging | disabled |
-| `--tools` | | Force enable tools | auto-detect |
-| `--code` | `-c` | Code mode (no retrieval) | disabled |
-| `--ignore-agents` | | Ignore AGENTS.md context | disabled |
-| `--soulless` | | Skip SOUL.md personality | disabled |
-| `--help` | `-h` | Show help | - |
+| `-v` | Verbose logging |
+| `-vv` | Trace logging |
+| `--help` | Show help |
 
 ## Prompt Modes
 
@@ -147,17 +138,17 @@ ask-ai -c query "Rust function to parse JSON"
 ask-ai -c query "Convert this function to async"
 
 # Debug with code mode
-ask-ai -c -d query "Why does this code panic?"
+ask-ai -c query "Why does this code panic?"
 ```
 
-### Debug Mode
+### Logging
 
-Debug mode shows what's happening under the hood:
+Logging shows what's happening under the hood:
 
 ```bash
 # See model configuration
-ask-ai -d query "Test query"
-
+ask-ai -v query "Test query"
+#
 # Shows:
 # - Model being used
 # - Capabilities detected
@@ -244,19 +235,14 @@ ask-ai --plain query "List files" | wc -w
 ```
 
 ## Common Patterns
-
-### Combining Options
-
-```bash
 # Think + specific model
 ask-ai -m glm-5 -t query "Complex reasoning task"
-
-# Code + debug
-ask-ai -c -d query "Debug this function"
-
+#
+# Code + verbose
+ask-ai -c -v query "Debug this function"
+#
 # Tools + plain
 ask-ai --tools --plain query "Get weather" | grep temperature
-```
 
 ### Error Handling
 

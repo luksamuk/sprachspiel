@@ -25,6 +25,7 @@ mod project;
 mod prompts;
 mod query;
 mod retrieval;
+mod security;
 mod settings;
 mod skills;
 mod soul;
@@ -43,6 +44,7 @@ use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::ChatArgs;
 use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
+use crate::ocr::mode::is_glm_ocr_model;
 use crate::query::{OutputFlags, run_query};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -459,9 +461,30 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
         std::process::exit(1);
     }
 
+    // Security: validate all file paths against blocklist + CWD sandbox
+    let expanded_paths: Vec<std::path::PathBuf> = args
+        .files
+        .iter()
+        .map(|p| crate::utils::expand_tilde_path(&p.to_string_lossy()))
+        .collect();
+    if let Err(e) = crate::security::validate_subagent_paths(&expanded_paths) {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+
+    let (model_key, _, _) = settings.get_subcommand_config("ocr");
+    let (model_id, model_options) = crate::user_models::get_model_config(&model_key)
+        .map(|mc| (mc.model_id.clone(), mc.build_model_options()))
+        .unwrap_or_else(|| {
+            (
+                model_key.clone(),
+                ollama_rs::models::ModelOptions::default().temperature(0.0),
+            )
+        });
+
     log::debug!("Debug Mode - OCR Configuration:");
     log::debug!("==========================");
-    log::debug!("Model ID:          glm-ocr:bf16");
+    log::debug!("Model ID:          {}", model_id);
     log::debug!("Mode:              {:?}", args.mode);
     log::debug!("Max Tokens:        {}", args.max_tokens);
     log::debug!("JSON Output:       {}", args.json);
@@ -470,8 +493,15 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
     log::info!("Executing OCR with logging enabled...");
 
     let processor = OcrProcessor::new();
+    let ollama = settings.ollama_client();
 
-    let results = match processor.process_batch(&args, settings).await {
+    let prompt_override = if is_glm_ocr_model(&model_id) {
+        None
+    } else {
+        Some(args.mode.into_descriptive_prompt())
+    };
+
+    let results = match processor.process_batch(&args, prompt_override, &model_id, model_options, &ollama, true).await {
         Ok(results) => results,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -610,6 +640,17 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
         std::process::exit(1);
     }
 
+    // Security: validate all file paths against blocklist + CWD sandbox
+    let expanded_paths: Vec<std::path::PathBuf> = args
+        .files
+        .iter()
+        .map(|p| crate::utils::expand_tilde_path(&p.to_string_lossy()))
+        .collect();
+    if let Err(e) = crate::security::validate_subagent_paths(&expanded_paths) {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+
     let (subcommand_model, _, _) = settings.get_subcommand_config("vision");
 
     let model_name = if let Some(ref m) = cli.model {
@@ -638,9 +679,11 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     log::debug!("==========================");
     log::info!("Executing vision analysis with logging enabled...");
 
+    let model_options = model_config.build_model_options().num_predict(args.max_tokens as i32);
+    let ollama = settings.ollama_client();
     let processor = VisionProcessor::new();
 
-    match processor.process(&args, &model_id, settings).await {
+    match processor.process(&args, &model_id, &ollama, model_options, true).await {
         Ok(result) => {
             if args.json {
                 print_vision_results(&result, true);

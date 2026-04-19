@@ -86,7 +86,7 @@ cargo build --release --no-default-features --features file-tools
 Available features:
 - `weather-tools` - Weather lookup tools (default)
 - `file-tools` - File system operations (default)
-- `pokemon-tools` - Pokémon data tools (default)
+- `pokemon-tools` - Pokémon data tools (opt-in)
 - `calc-tools` - Mathematical calculator (default)
 - `serper-tools` - Serper API web search (default, requires `SERPER_API_KEY`)
 - `system-tools` - System information tools (default)

@@ -6,6 +6,8 @@ mod context;
 mod coordinator;
 mod executor;
 
+use std::sync::Arc;
+
 use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::models::ModelOptions;
@@ -291,6 +293,8 @@ pub async fn run_query(
         messages,
         ctx.db,
         ctx.embedding_client,
+        ctx.ollama.clone(),
+        Arc::new(settings.clone()),
         &ctx.tool_names,
         spinner.clone(),
     )

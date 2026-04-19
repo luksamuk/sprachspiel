@@ -300,7 +300,7 @@ ask-ai --version
 ask-ai --list
 
 # Debug output
-ask-ai -d "Test query" 2> debug.log
+ask-ai -v "Test query" 2> debug.log
 cat debug.log
 ```
 

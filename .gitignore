@@ -12,3 +12,6 @@ doc/book/
 # Emacs temporary files
 \#*\#
 .#*
+
+# Oh My OpenCode agent artifacts
+.sisyphus/

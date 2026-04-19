@@ -633,9 +633,9 @@ pub async fn skill_view(name: String) -> Result<String, Box<dyn std::error::Erro
 **Feature Flag (Cargo.toml):**
 ```toml
 [features]
-default = ["weather-tools", "file-tools", "pokemon-tools", "calc-tools", 
-           "serper-tools", "system-tools", "skills-tools"]
-skills-tools = []
+default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools"]
+           skills-tools = []
+subagent-tools = []
 ```
 
 ### 7. Prompt Integration

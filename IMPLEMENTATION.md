@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.39.0** - 2026-03-29 (Document Import Tool)
+**v0.40.0** - 2026-03-29 (Document Import Tool)
 
 ## Current Implementation Status
 
@@ -434,7 +434,7 @@ todo_clear_all()             // Clear all tasks
 
 ### ✅ PRIORITY 4: Code Quality - query.rs Complexity (COMPLETED) [M1]
 
-**Status:** ✅ COMPLETED (v0.39.6)
+**Status:** ✅ COMPLETED (v0.40.0)
 
 **Goal:** Reduce cognitive complexity of `run_query` from 32/25 to <25/25.
 
@@ -687,7 +687,7 @@ todo_clear_all()             // Clear all tasks
 
 ### ✅ PRIORITY 5: Code Quality - Replace Debug Logs with `log` Crate + Verbosity System [M1]
 
-**Status:** ✅ COMPLETED (v0.39.7, branch: `feat/verbosity-simplification`)
+**Status:** ✅ COMPLETED (v0.40.0)
 
 **Goal:** Simplify verbosity system to 4 levels, remove debug mode, and integrate with REPL.
 
@@ -2092,113 +2092,47 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🟡 PRIORITY 4: Specialized Agent Architecture [M1]
+### ✅ PRIORITY 4: Specialized Agent Architecture [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** ✅ COMPLETED (v0.41.0)
 
-**Goal:** Delegate specialized tasks (OCR, vision, document extraction, translation, summarization) to one-shot agents with optimized models.
+**Implementation:**
+- Created `src/chat/subagent.rs` - `SubagentRunner` for one-shot execution with dual API path support
+- Added `spawn_subagent` tool in `src/tools/spawn_subagent.rs` - LLM-initiated subagent invocation with type-safe dispatch
+- Implemented chat commands: `/ocr`, `/vision`, `/translate`, `/summarize` in `src/chat/commands/`
+- Refactored document extraction to use subagent architecture (Issue #9)
+- Added config support for `[model.ocr]` and `[model.document]` in `src/config/models.rs`
+- Created feature flag `subagent-tools` in `Cargo.toml`
+- Updated `doc/src/CHANGELOG.md` with P4 release notes
 
-**Scope note:** ask-ai is a harness for research, interaction, and cognitive evolution — not specifically for code. When code-specific features (e.g., post-edit verification, linting) are needed, the preferred approach is to spawn a specialized subagent that interacts with an EXTERNAL harness, rather than implementing code-specific features in ask-ai itself.
+**Key Files Modified:**
+- `src/chat/subagent.rs` (new) - Core subagent execution engine
+- `src/tools/spawn_subagent.rs` (new) - Tool for LLM-initiated subagent spawning
+- `src/chat/commands/mod.rs` - Added specialized command handlers
+- `src/config/models.rs` - Added OCR and document model configuration
+- `Cargo.toml` - Added `subagent-tools` feature flag
 
-**Problem:**
-- OCR/Vision/Translate/Summarize are standalone CLI commands, not integrated with chat
-- Document import calls `Command::new()` directly, bypassing skills system
-- Skills can be overridden at project level, but tools don't respect overrides
+**Related Issues:** #9 (Document Import), #12 (OCR/Vision Integration)
 
-**Architecture:**
+**OCR Prompt Strategy (v0.42.0-dev):**
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ Main Agent (conversational)                                     │
-│ - Full context: history + memory + database                      │
-│ - Tools: spawn_subagent, remember, fact_add, import_document...  │
-│                                                                 │
-│   LLM decides: "I need to extract text from PDF"                │
-│   Tool call: spawn_subagent(type="document", prompt="...")       │
-│         ↓                                                       │
-│ ┌───────────────────────────────────────────────────────────┐  │
-│ │ Specialized Agent (one-shot, no context/database)         │  │
-│ │                                                           │  │
-│ │ Type: "ocr"       → glm-ocr:bf16                          │  │
-│ │ Type: "vision"    → moondream:1.8b                        │  │
-│ │ Type: "translate" → translategemma:4b                     │  │
-│ │ Type: "summarize" → (same model, specialized prompt)      │  │
-│ │ Type: "document"  → (same model, uses run_command)        │  │
-│ │                                                           │  │
-│ │ Tools: Whitelisted per type (run_command, etc.)           │  │
-│ │ Output: Tool result (no thinking)                         │  │
-│ └───────────────────────────────────────────────────────────┘  │
-│         ↓                                                       │
-│ Result injected as tool output for main LLM                     │
-└──────────────────────────────────────────────────────────────────┘
-```
+- Added `OcrMode::into_descriptive_prompt()` — restricted, mode-specific prompts for vision models
+- Added `is_glm_ocr_model()` — model detection for prompt selection
+- Added `parse_ocr_mode()` — convenience parser for LLM string parameters
+- Added `prompt_override: Option<&str>` on `OcrProcessor::process_file()` and `process_batch()`
+- Added `ocr_mode: OcrMode` field on `SubagentConfig` with builder method
+- Added `ocr_mode: Option<String>` parameter on `spawn_subagent()` tool
+- Updated `/ocr` chat command to accept optional mode parameter
+- Updated all 3 OCR entry points (CLI, chat, subagent) with model-aware prompt selection
+- Removed dead `OCR_SYSTEM_PROMPT` constant
+- YAGNI dead code removal: uses_chat_api(), tool_whitelist, with_tool_whitelist(), with_max_output_chars(), with_model_options(), SubagentRunner::settings, run_generate()
+- Module-level #![allow(dead_code)] removed from security.rs and subagent.rs
 
-**Key Characteristics:**
-
-| Aspect | Main Agent | Specialized Agent |
-|--------|------------|-------------------|
-| Context | Full history + memory + database | One-shot (no history) |
-| Database | Yes (SQLite) | No |
-| Thinking | Optional | Never (output only) |
-| Output | Returns to user | Returns to Main Agent |
-| Model | User's chat model | Configured per type |
-| Skills | All available | Type-specific whitelist |
-
-**Technical Debt Resolved:**
-- Issue #9 (Document Import): `import_document` will use `spawn_subagent(type="document")`
-- Issue #12 (OCR/Vision): Integrated via specialized agents
-
-**Subagent Types:**
-
-| Type | Model | Tools | Purpose |
-|------|-------|-------|---------|
-| `ocr` | glm-ocr:bf16 | run_command(tesseract) | Image text extraction |
-| `vision` | moondream:1.8b | - | Image analysis |
-| `translate` | translategemma:4b | - | Translation |
-| `summarize` | (same model) | - | Summarization |
-| `document` | (same model) | run_command(pdftotext) | PDF/EPUB extraction |
-
-**Configuration:**
-
-```toml
-# ~/.config/ask-ai/models.toml
-
-[subagents]
-# Override default models for specialized agents
-ocr = "glm-ocr:bf16"
-vision = "moondream:1.8b"
-translation = "translategemma:4b"
-# summarization and document use main chat model
-```
-
-**Implementation Phases:**
-
-| Phase | Description | Effort |
-|-------|-------------|--------|
-| 1 | Define `SubagentType` enum and `spawn_subagent` tool signature | 0.5 day |
-| 2 | Create subagent coordinator (one-shot context, model routing) | 1 day |
-| 3 | Implement OCR subagent (glm-ocr, tesseract tools) | 1 day |
-| 4 | Implement Vision subagent (moondream, image processing) | 1 day |
-| 5 | Implement Translate/Summarize subagents | 0.5 day |
-| 6 | Implement Document subagent (PDF/EPUB, respects skill overrides) | 1 day |
-| 7 | Configuration (models.toml) and user commands | 0.5 day |
-| 8 | Testing and documentation | 1 day |
-| **Total** | | **7 days** |
-
-**User Commands:**
-
-| Command | Description |
-|---------|-------------|
-| `/ocr <image>` | OCR via specialized agent |
-| `/vision <image>` | Image analysis via specialized agent |
-| `/translate <lang> <text>` | Translation via specialized agent |
-| `/summarize <text>` | Summarization via specialized agent |
-
-**Dependencies:** Skills System (completed v0.38.0)
-
-**Related Issues:** #9, #12
-
-**Estimated effort:** 5-7 days
+**Commits:**
+- `c25be97` feat(ocr): add model-aware prompt selection with descriptive prompts for vision models
+- `4c8a81a` feat(subagent): propagate ocr_mode through subagent pipeline
+- `6864b04` feat(chat): add mode parameter to /ocr command with model-aware prompts
+- `0574c18` chore(ocr): remove dead OCR_SYSTEM_PROMPT constant
 
 ---
 

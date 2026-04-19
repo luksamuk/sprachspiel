@@ -313,7 +313,7 @@ run_command("pdfinfo document.pdf", null, null, null)
 - [x] Update FILE TOOLS prompt
 - [x] Add unit tests (14 tests)
 - [x] Update tools.toml template with security documentation
-- [ ] Manual testing with --debug
+- [ ] Manual testing with -vv
 - [x] Update IMPLEMENTATION.md
 
 ## References

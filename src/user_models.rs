@@ -124,6 +124,7 @@ pub fn merge_configs(built_in: Option<&ModelConfig>, user: &UserModelConfig) -> 
 }
 
 pub fn get_model_config(name: &str) -> Option<ModelConfig> {
+    // Try config key lookup first (e.g., "glm-ocr", "translategemma")
     let built_in = ModelConfig::get_builtin(name);
     let user_models = get_user_models();
     let user_config = user_models.get(name);
@@ -132,7 +133,10 @@ pub fn get_model_config(name: &str) -> Option<ModelConfig> {
         (Some(bi), Some(uc)) => Some(merge_configs(Some(bi), uc)),
         (Some(bi), None) => Some(bi.clone()),
         (None, Some(uc)) => Some(merge_configs(None, uc)),
-        (None, None) => None,
+        (None, None) => {
+            // Fall back to lookup by model_id (e.g., "translategemma:4b" matches builtin config)
+            ModelConfig::get_builtin_by_model_id(name).cloned()
+        }
     }
 }
 
@@ -284,5 +288,47 @@ num_ctx = 16384
         assert_eq!(custom.model_id, Some("llama3:8b".to_string()));
         assert_eq!(custom.temperature, Some(0.7));
         assert_eq!(custom.num_ctx, None);
+    }
+
+    #[test]
+    fn test_get_model_config_by_model_id_translategemma() {
+        // "translategemma:4b" is the model_id in the builtin "translategemma" config.
+        // It should be found via model_id lookup even though there's no config key
+        // named "translategemma:4b".
+        let config = get_model_config("translategemma:4b");
+        assert!(config.is_some(), "translategemma:4b should resolve via model_id");
+        let config = config.unwrap();
+        assert_eq!(config.model_id, "translategemma:4b");
+        assert_eq!(config.temperature, 0.2);
+        assert!(!config.thinking);
+    }
+
+    #[test]
+    fn test_get_model_config_by_model_id_glm_ocr() {
+        // "glm-ocr:bf16" is the model_id in the builtin "glm-ocr" config.
+        let config = get_model_config("glm-ocr:bf16");
+        assert!(config.is_some(), "glm-ocr:bf16 should resolve via model_id");
+        let config = config.unwrap();
+        assert_eq!(config.model_id, "glm-ocr:bf16");
+        assert_eq!(config.temperature, 0.1);
+        assert!(!config.thinking);
+    }
+
+    #[test]
+    fn test_get_model_config_by_key_still_works() {
+        // Exact config key lookups should still work normally
+        let config = get_model_config("translategemma");
+        assert!(config.is_some());
+        assert_eq!(config.unwrap().model_id, "translategemma:4b");
+
+        let config = get_model_config("glm-ocr");
+        assert!(config.is_some());
+        assert_eq!(config.unwrap().model_id, "glm-ocr:bf16");
+    }
+
+    #[test]
+    fn test_get_model_config_unknown_returns_none() {
+        let config = get_model_config("nonexistent:model");
+        assert!(config.is_none());
     }
 }

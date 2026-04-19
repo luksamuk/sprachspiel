@@ -1,4 +1,4 @@
-.TH ASK-AI 1 "2026-03-30" "ask-ai 0.39.5" "User Commands"
+.TH ASK-AI 1 "2026-04-17" "ask-ai 0.40.0" "User Commands"
 .SH NAME
 ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
@@ -200,6 +200,24 @@ Interactive commands available inside chat:
 /skill, /sk \- List available skills
 .br
 /skill <name>, /sk <name> \- Activate a skill for this session
+.br
+/ocr <file> [mode] \- Extract text from image (modes: text, table, figure, formula)
+.br
+/vision <path> [prompt] \- Analyze image with vision model
+.br
+/translate <src:dst> <text> \- Translate text between languages
+.br
+/summarize <text> \- Summarize text
+.br
+/todo add <desc>, /ta \- Add a todo
+.br
+/todo list, /tl \- List todos
+.br
+/todo done <id>, /td \- Mark todo as done
+.br
+/todo remove <id>, /tr \- Remove a todo
+.br
+/todo update <id> [options], /tu \- Update a todo
 .in -4
 .PP
 Tab completion available for commands and model names.

@@ -74,6 +74,16 @@ impl ModelConfig {
         CONFIGS.get(name)
     }
 
+    /// Look up a built-in model config by its model_id field.
+    ///
+    /// This searches all built-in configs' `model_id` values, unlike `get_builtin()`
+    /// which looks up by the config key name.
+    /// Use this when you have a model ID like "glm-ocr:bf16" instead of
+    /// the config key "glm-ocr".
+    pub fn get_builtin_by_model_id(model_id: &str) -> Option<&'static ModelConfig> {
+        CONFIGS.values().find(|mc| mc.model_id == model_id)
+    }
+
     #[allow(dead_code)]
     pub fn get_default() -> ModelConfig {
         CONFIGS.get(DEFAULT_MODEL).cloned().unwrap()
@@ -180,4 +190,31 @@ mod tests {
         assert_eq!(ocr.temperature, 0.1);
         assert!(!ocr.thinking);
     }
+
+    #[test]
+    fn test_get_builtin_by_model_id() {
+        // Lookup by config key should work
+        let by_key = ModelConfig::get_builtin("glm-ocr");
+        assert!(by_key.is_some());
+        assert_eq!(by_key.unwrap().model_id, "glm-ocr:bf16");
+
+        // Lookup by model_id should also work (different string than config key)
+        let by_id = ModelConfig::get_builtin_by_model_id("glm-ocr:bf16");
+        assert!(by_id.is_some());
+        assert_eq!(by_id.unwrap().model_id, "glm-ocr:bf16");
+        assert_eq!(by_id.unwrap().temperature, 0.1);
+
+        // Config key lookup won't find model_id
+        let by_wrong_key = ModelConfig::get_builtin("glm-ocr:bf16");
+        assert!(by_wrong_key.is_none());
+
+        // model_id lookup for default model (same as config key)
+        let qwen_by_id = ModelConfig::get_builtin_by_model_id("qwen3.5:4b");
+        assert!(qwen_by_id.is_some());
+        assert_eq!(qwen_by_id.unwrap().temperature, 1.0);
+
+        // Nonexistent model_id
+        assert!(ModelConfig::get_builtin_by_model_id("nonexistent:7b").is_none());
+    }
+
 }

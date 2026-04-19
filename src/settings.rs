@@ -76,8 +76,13 @@ pub struct ModelSettings {
     /// Falls back to "translategemma" if model not specified
     #[serde(default)]
     pub translate: SubcommandModelConfig,
+    /// OCR subcommand configuration
+    #[serde(default)]
+    pub ocr: SubcommandModelConfig,
+    /// Document subcommand configuration
+    #[serde(default)]
+    pub document: SubcommandModelConfig,
 }
-
 /// Model configuration for a specific subcommand
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SubcommandModelConfig {
@@ -163,10 +168,11 @@ impl Default for ModelSettings {
             code: SubcommandModelConfig::default(),
             vision: SubcommandModelConfig::default(),
             translate: SubcommandModelConfig::default(),
+            ocr: SubcommandModelConfig::default(),
+            document: SubcommandModelConfig::default(),
         }
     }
 }
-
 impl Default for DisplaySettings {
     fn default() -> Self {
         DisplaySettings {
@@ -292,12 +298,15 @@ impl Settings {
             "query" => &self.model.query,
             "chat" => &self.model.chat,
             "summarize" => &self.model.summarize,
-            "code" => &self.model.code,
-            "vision" => &self.model.vision,
             "translate" => &self.model.translate,
+            "ocr" => &self.model.ocr,
+            "document" => &self.model.document,
+            "vision" => &self.model.vision,
+            "code" => &self.model.code,
             _ => &SubcommandModelConfig::default(),
         };
 
+        // Get model: subcommand specific > code default > global default
         // Get model: subcommand specific -> code default -> global default
         let model = subcommand_config
             .model
@@ -307,11 +316,15 @@ impl Settings {
                 // Code subcommand has its own default model
                 if subcommand == "code" {
                     DEFAULT_CODE_MODEL.to_string()
+                } else if subcommand == "translate" {
+                    "translategemma".to_string()
+
+                } else if subcommand == "ocr" {
+                    "glm-ocr".to_string()
                 } else {
                     self.model.default.clone()
                 }
             });
-
         // Get thinking: subcommand specific -> global -> model default
         // Note: This returns the config preference; model capability check happens elsewhere
         let thinking = subcommand_config
@@ -330,9 +343,10 @@ impl Settings {
             "query" => true,
             "chat" => true,
             "code" => true,
-            "summarize" => false,
             "translate" => false,
             "vision" => false,
+            "ocr" => false,
+            "document" => true,
             _ => true,
         };
         let tools = subcommand_config.tools.unwrap_or(default_tools);
@@ -444,34 +458,40 @@ ollama_port = 11434
 # tools = true
 
 # --- SUMMARIZE SUBCOMMAND ---
-[model.summarize]
-# The model to use for 'ask summarize'.
-# Recommended: a lightweight model like qwen3 for speed and thinking.
+# tools = false
+
+# --- OCR SUBCOMMAND ---
+[model.ocr]
+# The model to use for 'ask ocr'.
+# Built-in: "glm-ocr:bf16" (optimized for OCR tasks)
+# If not specified, uses "glm-ocr:bf16" by default.
+# model = "glm-ocr:bf16"
+
+# OCR typically doesn't need thinking mode.
+# If not specified, defaults to: false for ocr
+# thinking = false
+
+# OCR doesn't use external tools.
+# If not specified, defaults to: false for ocr
+# tools = false
+
+# --- DOCUMENT SUBCOMMAND ---
+[model.document]
+# The model to use for 'ask document'.
 # If not specified, falls back to the global [model] default.
-# model = "qwen3"
+# model = "qwen3.5:4b"
 
-# Summarization typically doesn't need thinking mode.
-# If not specified, defaults to: false for summarize
+# Document operations typically don't need thinking mode.
+# If not specified, defaults to: false for document
 # thinking = false
 
-# Summarization doesn't use external tools.
-# If not specified, defaults to: false for summarize
-# tools = false
+# Enable tool calling for document operations. This allows the model to inspect
+# your project files (read_file, list_directory, search_files) before
+# performing document operations.
+# If not specified, defaults to: true for document
+# tools = true
 
-# --- TRANSLATE SUBCOMMAND ---
-[model.translate]
-# The model to use for 'ask translate'.
-# Built-in: "translategemma" (optimized for translation)
-# If not specified, uses "translategemma" by default.
-# model = "translategemma"
-
-# Translation typically doesn't need thinking mode.
-# If not specified, defaults to: false for translate
-# thinking = false
-
-# Translation doesn't use tools.
-# If not specified, defaults to: false for translate
-# tools = false
+# --- CODE MODE ---
 
 # --- CODE MODE ---
 [model.code]
@@ -654,5 +674,104 @@ model = "qwen3"
         assert!(settings.model.translate.model.is_none());
         assert!(settings.model.translate.thinking.is_none());
         assert!(settings.model.translate.tools.is_none());
+    }
+
+    #[test]
+    fn test_ocr_model_default() {
+        let settings = Settings::default();
+        // OCR defaults to None, code should use "glm-ocr:bf16" as fallback
+        assert!(settings.model.ocr.model.is_none());
+        assert!(settings.model.ocr.thinking.is_none());
+        assert!(settings.model.ocr.tools.is_none());
+    }
+
+    #[test]
+    fn test_ocr_model_override() {
+        let sample = r#"
+[model.ocr]
+model = "custom-ocr:latest"
+thinking = true
+tools = false
+"#;
+
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert_eq!(settings.model.ocr.model, Some("custom-ocr:latest".to_string()));
+        assert_eq!(settings.model.ocr.thinking, Some(true));
+        assert_eq!(settings.model.ocr.tools, Some(false));
+    }
+
+    #[test]
+    fn test_vision_model_default() {
+        let settings = Settings::default();
+        // Vision defaults to None (uses global default from subcommand config)
+        assert!(settings.model.vision.model.is_none());
+        assert!(settings.model.vision.thinking.is_none());
+        assert!(settings.model.vision.tools.is_none());
+    }
+
+    #[test]
+    fn test_summarize_model_default() {
+        let settings = Settings::default();
+        // Summarize defaults to None (uses global default from subcommand config)
+        assert!(settings.model.summarize.model.is_none());
+        assert!(settings.model.summarize.thinking.is_none());
+        assert!(settings.model.summarize.tools.is_none());
+    }
+
+    #[test]
+    fn test_document_model_default() {
+        let settings = Settings::default();
+        // Document defaults to None (uses global default from subcommand config)
+        assert!(settings.model.document.model.is_none());
+        assert!(settings.model.document.thinking.is_none());
+        assert!(settings.model.document.tools.is_none());
+    }
+
+    #[test]
+    fn test_get_subcommand_config_translate_default_model() {
+        let settings = Settings::default();
+        let (model, thinking, tools) = settings.get_subcommand_config("translate");
+        // Default translate model is config key "translategemma" (resolved to model_id by SubagentConfig)
+        assert_eq!(model, "translategemma");
+        // Translate defaults to no thinking
+        assert!(!thinking);
+        // Translate defaults to no tools
+        assert!(!tools);
+    }
+
+    #[test]
+    fn test_get_subcommand_config_ocr_default_model() {
+        let settings = Settings::default();
+        let (model, thinking, tools) = settings.get_subcommand_config("ocr");
+        // Default OCR model is config key "glm-ocr" (resolved to model_id by SubagentConfig)
+        assert_eq!(model, "glm-ocr");
+        // OCR defaults to no thinking
+        assert!(!thinking);
+        // OCR defaults to no tools
+        assert!(!tools);
+    }
+
+    #[test]
+    fn test_get_subcommand_config_translate_model_resolution() {
+        // Verify that config key "translategemma" resolves to model_id via get_model_config
+        use crate::user_models::get_model_config;
+        let config = get_model_config("translategemma");
+        assert!(config.is_some(), "translategemma should resolve via config key");
+        let config = config.unwrap();
+        assert_eq!(config.model_id, "translategemma:4b");
+        // The builtin translategemma has temperature 0.2
+        assert_eq!(config.temperature, 0.2);
+    }
+
+    #[test]
+    fn test_get_subcommand_config_ocr_model_resolution() {
+        // Verify that config key "glm-ocr" resolves to model_id via get_model_config
+        use crate::user_models::get_model_config;
+        let config = get_model_config("glm-ocr");
+        assert!(config.is_some(), "glm-ocr should resolve via config key");
+        let config = config.unwrap();
+        assert_eq!(config.model_id, "glm-ocr:bf16");
+        // The builtin glm-ocr has temperature 0.1
+        assert_eq!(config.temperature, 0.1);
     }
 }

@@ -34,6 +34,7 @@ use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::tokens::estimate_tokens;
+use crate::tools::context::{with_full_context, with_tool_context};
 use crate::tools::{get_available_tool_names, register_tools};
 use crate::utils::truncate_to_budget;
 
@@ -168,11 +169,7 @@ pub fn setup_coordinator(
                 context_window,
                 ..
             } => {
-                let percent = if context_window > 0 {
-                    (tokens_used * 100) / context_window
-                } else {
-                    0
-                };
+                let percent = (tokens_used * 100).checked_div(context_window).unwrap_or(0);
                 eprintln!(
                     "\x1B[33m⚠ Context {}% full. Compaction may be needed.\x1B[0m",
                     percent
@@ -496,14 +493,21 @@ pub async fn send_message(
     let mut attempts = 0;
     let result = loop {
         let current_result = if let (Some(db), Some(embedding)) = (db, embedding_client) {
-            crate::tools::context::with_context(
+            with_full_context(
                 db.clone(),
                 embedding.clone(),
+                ollama.clone(),
+                Arc::new(settings.clone()),
                 coordinator.chat(messages.clone()),
             )
             .await
         } else {
-            coordinator.chat(messages.clone()).await
+            with_tool_context(
+                ollama.clone(),
+                Arc::new(settings.clone()),
+                coordinator.chat(messages.clone()),
+            )
+            .await
         };
 
         match current_result {

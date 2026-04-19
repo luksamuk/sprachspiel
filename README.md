@@ -174,6 +174,17 @@ ask-ai chat --anonymous          # Anonymous session (no history)
 - `/model <name>` - Switch model mid-session
 - `/clear` - Clear current session
 - `/save [name]` / `/load <name>` - Save/load sessions
+- `/ocr <file> [mode]` - Extract text from image
+- `/vision <path> [prompt]` - Analyze image with vision model
+- `/translate <src:dst> <text>` - Translate text
+- `/summarize <text>` - Summarize text
+- `/fact add|list|search|remove|prune` - Manage facts
+- `/note add|list|show|edit|delete|search` - Manage notes
+- `/doc import|list|show|delete` - Manage documents
+- `/todo add|list|done|remove|update` - Manage tasks
+- `/think` - Toggle think mode
+- `/tools` - Toggle tools
+- `/skill [name]` - List or activate skills
 
 ### Translate
 
@@ -288,15 +299,17 @@ make install-local-all-tools
 
 | Feature | Tools | Default | Notes |
 |---------|-------|---------|-------|
-| `pokemon-tools` | 9 Pokémon data tools | ✅ Yes | Fetch Pokémon stats, types, abilities |
+| `pokemon-tools` | 9 Pokémon data tools | ❌ No | Fetch Pokémon stats, types, abilities |
 | `weather-tools` | 3 Weather tools | ✅ Yes | Current weather, forecast, air quality |
 | `file-tools` | 5 File tools | ✅ Yes | Read files, search, list directories |
 | `calc-tools` | 1 Calculator | ✅ Yes | Mathematical expressions |
 | `serper-tools` | 2 Web search tools | ✅ Yes | Requires `SERPER_API_KEY` |
 | `system-tools` | 2 System tools | ✅ Yes | System info, current directory |
 | `todo-tools` | 5 Todo tools | ✅ Yes | Task tracking with priorities |
-| `led-tools` | 4 LED control tools | Yes | Control GPIO LEDs (embedded) |
-| `remember` | 1 History search tool | Yes | Search conversation history |
+| `led-tools` | 4 LED control tools | ✅ Yes | Control GPIO LEDs (embedded) |
+| `skill-tools` | 2 AI behavior tools | ✅ Yes | Dynamic skill activation |
+| `document-tools` | 3 Document tools | ✅ Yes | Import, list, show documents |
+| `subagent-tools` | 1 Subagent tool | ✅ Yes | LLM-initiated subagent delegation |
 | `search-tools` | 3 DuckDuckGo tools | ❌ No | May fail due to CAPTCHA |
 | `finance-tools` | 1 Stock quote tool | ❌ No | Planned |
 

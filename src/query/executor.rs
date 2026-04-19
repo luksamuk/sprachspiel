@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use indicatif::ProgressBar;
 use ollama_rs::generation::chat::ChatMessage;
+use ollama_rs::Ollama;
 
 use crate::chat::coordinator::{
     MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,
@@ -13,16 +14,22 @@ use crate::chat::coordinator::{
 use crate::chat::custom_coordinator::CustomCoordinator;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
+use crate::settings::Settings;
+use crate::tools::context::{with_full_context, with_tool_context};
 
 /// Execute a query with retry logic.
 ///
 /// Handles recoverable Ollama errors by retrying up to MAX_RETRIES times.
-/// Automatically wraps with DB context if available for the remember tool.
+/// Automatically wraps with full context if available for the remember tool
+/// and spawn_subagent tool.
+#[allow(clippy::too_many_arguments)]
 pub async fn execute_query_with_retry(
     coordinator: CustomCoordinator<Vec<ChatMessage>>,
     messages: Vec<ChatMessage>,
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
+    ollama: Ollama,
+    settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
 ) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
@@ -32,25 +39,30 @@ pub async fn execute_query_with_retry(
             messages,
             db.clone(),
             embedding.clone(),
+            ollama,
+            settings,
             tool_names,
             spinner,
         )
         .await
     } else {
-        execute_without_context(coordinator, messages, tool_names, spinner).await
+        execute_without_context(coordinator, messages, ollama, settings, tool_names, spinner).await
     }
 }
 
 /// Execute with DB context (for remember tool support).
+#[allow(clippy::too_many_arguments)]
 async fn execute_with_context(
     coordinator: CustomCoordinator<Vec<ChatMessage>>,
     messages: Vec<ChatMessage>,
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,
+    ollama: Ollama,
+    settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
 ) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
-    crate::tools::context::with_context(db, embedding, async {
+    with_full_context(db, embedding, ollama, settings, async {
         execute_retry_loop(coordinator, messages, tool_names, spinner).await
     })
     .await
@@ -60,10 +72,15 @@ async fn execute_with_context(
 async fn execute_without_context(
     coordinator: CustomCoordinator<Vec<ChatMessage>>,
     messages: Vec<ChatMessage>,
+    ollama: Ollama,
+    settings: Arc<Settings>,
     tool_names: &[String],
     spinner: ProgressBar,
 ) -> Result<ollama_rs::generation::chat::ChatMessageResponse, String> {
-    execute_retry_loop(coordinator, messages, tool_names, spinner).await
+    with_tool_context(ollama, settings, async {
+        execute_retry_loop(coordinator, messages, tool_names, spinner).await
+    })
+    .await
 }
 
 /// Core retry loop shared by both execution paths.
