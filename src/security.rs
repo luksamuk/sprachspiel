@@ -21,7 +21,6 @@
 //!     Err(e) => eprintln!("Error: {}", e),
 //! }
 //! ```
-#![allow(dead_code)]
 
 use crate::tools::files_blocklist::{BlocklistConfig, is_blocked_for_read};
 use once_cell::sync::Lazy;

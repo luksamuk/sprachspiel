@@ -54,30 +54,6 @@ pub fn get_settings() -> Option<Arc<Settings>> {
     TOOL_SETTINGS.try_with(|s| s.clone()).ok()
 }
 
-/// Run an async function with the tool context set
-///
-/// This allows tools to access DB and EmbeddingClient via task-local storage.
-/// Use this wrapper when calling coordinator.chat() or similar async operations.
-///
-/// # Example
-/// ```ignore
-/// let result = with_context(db, embedding, async {
-///     coordinator.chat(messages).await
-/// }).await;
-/// ```
-#[allow(clippy::redundant_async_block, dead_code)]
-pub async fn with_context<F, T>(db: Arc<Database>, embedding: Arc<EmbeddingClient>, f: F) -> T
-where
-    F: Future<Output = T>,
-{
-    REMEMBER_DB
-        .scope(db, async move {
-            REMEMBER_EMBEDDING
-                .scope(embedding, async move { f.await })
-                .await
-        })
-        .await
-}
 
 /**
  * Run an async function with tool context (TOOL_OLLAMA and TOOL_SETTINGS).
@@ -93,7 +69,7 @@ where
  * }).await;
  * ```
  */
-#[allow(clippy::redundant_async_block, dead_code)]
+#[allow(clippy::redundant_async_block)]
 pub async fn with_tool_context<F, T>(ollama: Ollama, settings: Arc<Settings>, f: F) -> T
 where
     F: Future<Output = T>,

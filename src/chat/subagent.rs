@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Subagent Runner - lightweight one-shot executor for specialized tasks.
 //!
 //! Provides a minimal interface for dispatching sub-tasks (OCR, Vision,
@@ -54,7 +53,7 @@ impl SubagentType {
         matches!(self, SubagentType::Ocr | SubagentType::Vision)
     }
 
-    /// Returns `true` for variants that use `/api/chat` (text-based).
+    #[allow(dead_code)]
     pub fn uses_chat_api(&self) -> bool {
         !self.uses_generate_api()
     }
@@ -114,7 +113,7 @@ pub struct SubagentConfig {
     pub model: String,
     /// System prompt injected before the user prompt.
     pub system_prompt: String,
-    /// Tool names allowed for this subagent (only relevant for Document).
+    #[allow(dead_code)]
     pub tool_whitelist: Vec<String>,
     /// Maximum output tokens; results are truncated beyond this.
     pub max_output_chars: usize,
@@ -149,18 +148,21 @@ impl SubagentConfig {
         }
     }
 
+    #[allow(dead_code)]
     /// Set the tool whitelist (only affects Document subagent).
     pub fn with_tool_whitelist(mut self, tools: Vec<String>) -> Self {
         self.tool_whitelist = tools;
         self
     }
 
+    #[allow(dead_code)]
     /// Override the default maximum output token budget.
     pub fn with_max_output_chars(mut self, max: usize) -> Self {
         self.max_output_chars = max;
         self
     }
 
+    #[allow(dead_code)]
     /// Override the resolved model options.
     ///
     /// By default, `new()` resolves model options from the model config.
@@ -185,6 +187,7 @@ impl SubagentConfig {
 pub struct SubagentRunner {
     ollama: Ollama,
     config: SubagentConfig,
+    #[allow(dead_code)]
     settings: Settings,
 }
 
@@ -239,6 +242,7 @@ impl SubagentRunner {
     ///
     /// Reads the file at `file_path`, base64-encodes it, attaches it as an
     /// image to a `GenerationRequest`, and returns the model's response text.
+    #[allow(dead_code)]
     async fn run_generate(
         &self,
         prompt: String,
