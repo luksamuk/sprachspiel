@@ -868,7 +868,48 @@ fn validate_path(path: &Path) -> Result<PathBuf, Box<dyn std::error::Error + Sen
             .join(path)
     };
 
-    // Check if path exists before canonicalizing
+    // Get canonical CWD for sandbox checks
+    let cwd = std::env::current_dir().map_err(|_| "Could not determine current directory")?;
+    let canonical_cwd = cwd
+        .canonicalize()
+        .map_err(|_| "Could not determine current directory")?;
+
+    // PHASE 1: Try to canonicalize the FULL path directly.
+    // This works for existing files AND directories (including `.`, `/tmp`, etc.).
+    // For directory paths, parent() goes UP one level which can be outside sandbox,
+    // so we must try full canonicalization first.
+    if let Ok(canonical_path) = abs_path.canonicalize() {
+        let in_cwd = canonical_path.starts_with(&canonical_cwd);
+        let in_tmp = is_temp_directory(&canonical_path);
+
+        if !in_cwd && !in_tmp {
+            return Err("Access denied: path not accessible".into());
+        }
+
+        return Ok(canonical_path);
+    }
+
+    // PHASE 2: Full canonicalization failed (path doesn't exist or can't access).
+    // Fall back to parent-based check to avoid info-leak.
+    let parent = abs_path
+        .parent()
+        .ok_or("Invalid path: no parent directory")?;
+    let canonical_parent = match parent.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            return Err("Access denied: path not accessible".into());
+        }
+    };
+
+    // Check parent is within sandbox (CWD or /tmp or /var/tmp)
+    let parent_in_cwd = canonical_parent.starts_with(&canonical_cwd);
+    let parent_in_tmp = is_temp_directory(&canonical_parent);
+
+    if !parent_in_cwd && !parent_in_tmp {
+        return Err("Access denied: path not accessible".into());
+    }
+
+    // Parent is in sandbox, safe to reveal whether path exists
     if !abs_path.exists() {
         return Err(format!(
             "FILE NOT FOUND: '{}'. The file or directory does not exist. Use list_directory to see available files.",
@@ -876,35 +917,22 @@ fn validate_path(path: &Path) -> Result<PathBuf, Box<dyn std::error::Error + Sen
         ).into());
     }
 
-    // Canonicalize to resolve symlinks and normalize
+    // Path exists but canonicalization failed earlier — try again
     let canonical_path = abs_path
         .canonicalize()
         .map_err(|e| format!("Cannot access path '{}': {}", path.display(), e))?;
 
-    // Sandbox is ALWAYS enforced — check that the path is within CWD
-    // or within allowed temporary directories
-    let cwd = std::env::current_dir().map_err(|_| "Could not determine current directory")?;
-    let canonical_cwd = cwd
-        .canonicalize()
-        .map_err(|_| "Could not determine current directory")?;
+    // Re-check sandbox after canonicalization (symlinks can escape sandbox)
+    let in_cwd = canonical_path.starts_with(&canonical_cwd);
+    let in_tmp = is_temp_directory(&canonical_path);
 
-    // Check if path is within CWD
-    if canonical_path.starts_with(&canonical_cwd) {
-        return Ok(canonical_path);
+    if !in_cwd && !in_tmp {
+        return Err("Access denied: path not accessible".into());
     }
 
-    // Allow /tmp and /var/tmp (needed for tool interop, e.g., pdftotext output)
-    if is_temp_directory(&canonical_path) {
-        return Ok(canonical_path);
-    }
-
-    Err(format!(
-        "Path '{}' is outside the allowed directory. \
-         File operations are restricted to the current working directory.",
-        path.display()
-    )
-    .into())
+    Ok(canonical_path)
 }
+
 
 /// Check if a canonical path is within an allowed temporary directory.
 fn is_temp_directory(canonical_path: &Path) -> bool {

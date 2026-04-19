@@ -461,6 +461,17 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
         std::process::exit(1);
     }
 
+    // Security: validate all file paths against blocklist + CWD sandbox
+    let expanded_paths: Vec<std::path::PathBuf> = args
+        .files
+        .iter()
+        .map(|p| crate::utils::expand_tilde_path(&p.to_string_lossy()))
+        .collect();
+    if let Err(e) = crate::security::validate_subagent_paths(&expanded_paths) {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+
     let (model_key, _, _) = settings.get_subcommand_config("ocr");
     let (model_id, model_options) = crate::user_models::get_model_config(&model_key)
         .map(|mc| (mc.model_id.clone(), mc.build_model_options()))
@@ -625,6 +636,17 @@ fn handle_completion(args: CompletionArgs, _settings: &Settings) -> AppResult<()
 
 async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     if let Err(e) = args.validate() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+
+    // Security: validate all file paths against blocklist + CWD sandbox
+    let expanded_paths: Vec<std::path::PathBuf> = args
+        .files
+        .iter()
+        .map(|p| crate::utils::expand_tilde_path(&p.to_string_lossy()))
+        .collect();
+    if let Err(e) = crate::security::validate_subagent_paths(&expanded_paths) {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }

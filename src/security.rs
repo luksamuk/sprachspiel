@@ -44,74 +44,121 @@ pub fn validate_subagent_path(path: &Path) -> Result<PathBuf, String> {
         path.to_path_buf()
     };
 
-    // Check if path exists before canonicalizing
-    if !expanded_path.exists() {
+    // Get absolute path if not already absolute
+    let abs_path = if expanded_path.is_absolute() {
+        expanded_path
+    } else {
+        std::env::current_dir()
+            .map_err(|_| "Could not determine current directory".to_string())?
+            .join(&expanded_path)
+    };
+
+    // Check blocklist on non-canonical path first (fast filename pattern match,
+    // no filesystem access needed — prevents timing attacks on sensitive names)
+    if is_blocked_for_read(&abs_path, &BLOCKLIST_CONFIG) {
+        let err_msg = format!(
+            "BLOCKED - '{}' matches a protected file pattern. \
+             This file may contain sensitive information (credentials, secrets, keys). \
+             Reading such files is restricted for security.",
+            path.display()
+        );
+        return Err(err_msg);
+    }
+
+    // Get canonical CWD for sandbox checks
+    let cwd = std::env::current_dir()
+        .map_err(|_| "Could not determine current directory".to_string())?;
+    let canonical_cwd = cwd
+        .canonicalize()
+        .map_err(|_| "Could not determine current directory".to_string())?;
+
+    // PHASE 1: Try to canonicalize the FULL path directly.
+    // This works for existing files AND directories (including `.`, `/tmp`, etc.).
+    // For directory paths, parent() goes UP one level which can be outside sandbox,
+    // so we must try full canonicalization first.
+    if let Ok(canonical_path) = abs_path.canonicalize() {
+        // Path exists — check sandbox on canonical path
+        let in_cwd = canonical_path.starts_with(&canonical_cwd);
+        let in_tmp = is_temp_directory(&canonical_path);
+
+        if !in_cwd && !in_tmp {
+            // Outside sandbox — return generic message (no info-leak about whether it exists)
+            return Err("Access denied: path not accessible".to_string());
+        }
+
+        // Re-check blocklist after symlink resolution
+        if is_blocked_for_read(&canonical_path, &BLOCKLIST_CONFIG) {
+            let err_msg = format!(
+                "BLOCKED - '{}' matches a protected file pattern. \
+                 This file may contain sensitive information (credentials, secrets, keys). \
+                 Reading such files is restricted for security.",
+                canonical_path.display()
+            );
+            return Err(err_msg);
+        }
+
+        return Ok(canonical_path);
+    }
+
+    // PHASE 2: Full canonicalization failed (path doesn't exist or can't access).
+    // Fall back to parent-based check to avoid info-leak.
+    // Canonicalize PARENT directory (even if file doesn't exist, parent usually does)
+    let parent = abs_path
+        .parent()
+        .ok_or_else(|| "Invalid path: no parent directory".to_string())?;
+    let canonical_parent = match parent.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            // Parent canonicalization failed — could be outside sandbox, or doesn't exist.
+            // Return generic message to avoid info-leak about filesystem layout.
+            return Err("Access denied: path not accessible".to_string());
+        }
+    };
+
+    // Check parent is within sandbox (CWD or /tmp or /var/tmp)
+    let parent_in_cwd = canonical_parent.starts_with(&canonical_cwd);
+    let parent_in_tmp = is_temp_directory(&canonical_parent);
+
+    if !parent_in_cwd && !parent_in_tmp {
+        // Parent is outside sandbox — return generic message (no info-leak)
+        return Err("Access denied: path not accessible".to_string());
+    }
+
+    // Parent is in sandbox, so it's safe to reveal whether the path itself exists
+    if !abs_path.exists() {
         return Err(format!(
             "FILE NOT FOUND: '{}'. The file or directory does not exist.",
             path.display()
         ));
     }
 
-    // Canonicalize to resolve symlinks and normalize
-    let canonical_path = match expanded_path.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(format!("Cannot access path '{}': {}", path.display(), e));
-        }
-    };
+    // Path exists but canonicalization failed earlier — this shouldn't happen normally.
+    // Try canonicalizing again (symlinks may have been resolved by the OS).
+    let canonical_path = abs_path.canonicalize()
+        .map_err(|e| format!("Cannot access path '{}': {}", path.display(), e))?;
 
-    // Sandbox is ALWAYS enforced — check that the path is within CWD
-    // or within allowed temporary directories
-    let cwd = match std::env::current_dir() {
-        Ok(c) => c,
-        Err(_) => {
-            return Err("Could not determine current directory".to_string());
-        }
-    };
-    let canonical_cwd = match cwd.canonicalize() {
-        Ok(c) => c,
-        Err(_) => {
-            return Err("Could not determine current directory".to_string());
-        }
-    };
+    // Re-check sandbox after canonicalization (symlinks can escape sandbox)
+    let in_cwd = canonical_path.starts_with(&canonical_cwd);
+    let in_tmp = is_temp_directory(&canonical_path);
 
-    // Check if path is within CWD
-    if canonical_path.starts_with(&canonical_cwd) {
-        // Check blocklist for sensitive files
-        if is_blocked_for_read(&canonical_path, &BLOCKLIST_CONFIG) {
-            let err_msg = format!(
-                "BLOCKED - '{}' matches a protected file pattern. \
-                 This file may contain sensitive information (credentials, secrets, keys). \
-                 Reading such files is restricted for security.",
-                path.display()
-            );
-            return Err(err_msg);
-        }
-        return Ok(canonical_path);
+    if !in_cwd && !in_tmp {
+        return Err("Access denied: path not accessible".to_string());
     }
 
-    // Allow /tmp and /var/tmp (needed for tool interop, e.g., pdftotext output)
-    if is_temp_directory(&canonical_path) {
-        // Check blocklist for sensitive files in temp directories
-        if is_blocked_for_read(&canonical_path, &BLOCKLIST_CONFIG) {
-            let err_msg = format!(
-                "BLOCKED - '{}' matches a protected file pattern. \
-                 This file may contain sensitive information (credentials, secrets, keys). \
-                 Reading such files is restricted for security.",
-                path.display()
-            );
-            return Err(err_msg);
-        }
-        return Ok(canonical_path);
+    // Re-check blocklist after symlink resolution
+    if is_blocked_for_read(&canonical_path, &BLOCKLIST_CONFIG) {
+        let err_msg = format!(
+            "BLOCKED - '{}' matches a protected file pattern. \
+             This file may contain sensitive information (credentials, secrets, keys). \
+             Reading such files is restricted for security.",
+            canonical_path.display()
+        );
+        return Err(err_msg);
     }
 
-    Err(format!(
-        "Path '{}' is outside the allowed directory. \
-         File operations are restricted to the current working directory \
-         and temporary directories (/tmp, /var/tmp).",
-        path.display()
-    ))
+    Ok(canonical_path)
 }
+
 
 /// Validate multiple paths for vision multi-image support
 ///
@@ -153,13 +200,14 @@ mod tests {
     fn test_validate_subagent_path_nonexistent() {
         let result = validate_subagent_path(Path::new("/nonexistent/file.txt"));
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("FILE NOT FOUND"));
+        assert!(result.unwrap_err().contains("Access denied"));
     }
 
     #[test]
     fn test_validate_subagent_path_current_dir() {
         // Test with current directory (should succeed)
         let result = validate_subagent_path(Path::new("."));
+        if let Err(ref e) = result { eprintln!("DEBUG: validate('.') failed: {}", e); }
         assert!(result.is_ok());
     }
 
