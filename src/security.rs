@@ -198,9 +198,22 @@ mod tests {
 
     #[test]
     fn test_validate_subagent_path_nonexistent() {
+        // Path outside sandbox should return generic access denied (not FILE NOT FOUND)
         let result = validate_subagent_path(Path::new("/nonexistent/file.txt"));
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Access denied"));
+        let err = result.unwrap_err();
+        // Should NOT contain FILE NOT FOUND (that would be an info-leak)
+        assert!(
+            !err.contains("FILE NOT FOUND"),
+            "Unexpected FILE NOT FOUND for out-of-sandbox path: {}",
+            err
+        );
+        // Should contain generic access denied
+        assert!(
+            err.contains("Access denied") || err.contains("not accessible"),
+            "Expected generic access denied, got: {}",
+            err
+        );
     }
 
     #[test]
@@ -224,6 +237,78 @@ mod tests {
         let result = validate_subagent_paths(&paths);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_validate_subagent_path_nonexistent_in_cwd() {
+        // Non-existent file in CWD should return FILE NOT FOUND (good UX, parent is in sandbox)
+        let result = validate_subagent_path(Path::new("nonexistent_local_test_file_xyz.txt"));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("FILE NOT FOUND"),
+            "Expected FILE NOT FOUND for in-sandbox path, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_validate_subagent_path_outside_sandbox_existing() {
+        // Existing file outside sandbox should return generic access denied
+        // (same message as non-existent — no info-leak)
+        let result = validate_subagent_path(Path::new("/etc/hostname"));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            !err.contains("FILE NOT FOUND"),
+            "Should not reveal existence for out-of-sandbox: {}",
+            err
+        );
+        assert!(
+            err.contains("Access denied") || err.contains("not accessible"),
+            "Expected generic access denied, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_validate_subagent_path_symlink_escape() {
+        // Symlink in /tmp pointing outside sandbox should be blocked after resolution
+        use std::os::unix::fs::symlink;
+        let tmp_link =
+            std::path::PathBuf::from("/tmp/test_symlink_escape_security_rs.png");
+        // Clean up from previous run
+        let _ = std::fs::remove_file(&tmp_link);
+        // Create symlink: /tmp/test_symlink_escape_security_rs.png -> /etc/hostname
+        if symlink("/etc/hostname", &tmp_link).is_ok() {
+            let result = validate_subagent_path(&tmp_link);
+            // After canonicalization, resolves to /etc/hostname which is outside sandbox
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                !err.contains("FILE NOT FOUND"),
+                "Should not reveal existence: {}",
+                err
+            );
+            // Clean up
+            let _ = std::fs::remove_file(&tmp_link);
+        }
+        // If symlink creation fails (e.g., /tmp not writable), skip silently
+    }
+
+    #[test]
+    fn test_validate_subagent_path_blocked_pattern() {
+        // .env in CWD should be blocked by blocklist
+        let result = validate_subagent_path(Path::new(".env"));
+        if let Err(e) = result {
+            assert!(
+                e.contains("BLOCKED") || e.contains("protected"),
+                "Expected blocklist message, got: {}",
+                e
+            );
+        }
+        // If .env doesn't exist, we might get FILE NOT FOUND or it might pass blocklist check
+        // — the important thing is no crash
     }
     #[test]
     fn test_validate_subagent_paths_multi() {

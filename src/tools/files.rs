@@ -984,6 +984,57 @@ mod tests {
         let outside_path = PathBuf::from("/etc/passwd");
         let result = validate_path(&outside_path);
         assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            !err.contains("FILE NOT FOUND"),
+            "Should not reveal existence for out-of-sandbox: {}",
+            err
+        );
+        assert!(
+            err.contains("Access denied") || err.contains("not accessible"),
+            "Expected generic access denied, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_validate_path_current_dir() {
+        // Current directory should be allowed
+        let result = validate_path(Path::new("."));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_path_tmp() {
+        // /tmp should be allowed
+        let result = validate_path(Path::new("/tmp"));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_path_nonexistent_in_cwd() {
+        // Non-existent file in CWD should return FILE NOT FOUND
+        let result = validate_path(Path::new("nonexistent_local_test_file_xyz.txt"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("FILE NOT FOUND"),
+            "Expected FILE NOT FOUND for in-sandbox path, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_validate_path_outside_sandbox_existing() {
+        // Existing file outside sandbox — same generic message as non-existent
+        let result = validate_path(Path::new("/etc/hostname"));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            !err.contains("FILE NOT FOUND"),
+            "Should not reveal existence for out-of-sandbox: {}",
+            err
+        );
     }
 
     // --- Tests for empty file_pattern normalization ---
