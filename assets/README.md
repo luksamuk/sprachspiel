@@ -1,78 +1,90 @@
-# Assets
+# ask-ai Test Assets
 
-This directory contains visual assets used by Ask-AI.
+Organized test images and prompts for OCR and Vision testing.
 
-## Extended Mind Braille Art
+## Directory Structure
 
-The welcome banner features a braille art representation of the "Extended Mind" concept — a brain with external connections to tools, memory, and Zettelkasten, generated from `extended-mind.png`.
-
-### Files
-
-| File | Description |
-|------|-------------|
-| `extended-mind-original.png` | Original source image (1536x1024) |
-| `extended-mind.png` | Optimized source image for braille conversion |
-| `extended-mind-resized.png` | Resized for ASCII fallback (120x85) |
-| `extended-mind-ascii.txt` | ASCII art versions (with and without colors, legacy) |
-| `braille_art.py` | Python script that converts images to braille art |
-
-### Generation Process
-
-The braille art is generated using `braille_art.py` (Pillow required):
-
-```bash
-# Color braille art (True Color ANSI) — used in the welcome banner
-python3 braille_art.py extended-mind.png -w 39 --color
-
-# Plain braille art (no colors) — for comparison
-python3 braille_art.py extended-mind.png -w 39
+```
+assets/
+├── ocr/                    # OCR-specific test images
+│   ├── japanese.jpg        # Printed Japanese text (pedagogy)
+│   ├── jpocr.jpg           # Handwritten Japanese (hiragana counters)
+│   └── prompts.md          # OCR test prompts
+├── vision/                 # Vision test images
+│   ├── protagonist.jpg     # Alucard (Castlevania: SotN cover art)
+│   ├── protagonist2.jpg    # Soma Cruz (Castlevania: Aria of Sorrow cover art)
+│   ├── manga.jpg           # Manga/comic panel
+│   ├── manuscrito01.jpg   # Handwritten notes (Portuguese)
+│   ├── manuscrito02.jpg   # Handwritten notes (Portuguese)
+│   └── prompts.md          # Vision test prompts
+├── mixed/                  # Multi-domain test images
+│   ├── redacao.png         # ENEM 2017 essay prompt page (Portuguese)
+│   └── prompts.md          # Mixed test prompts
+├── ask-ai-banner.png       # Project banner
+├── ask-ai-banner.py        # Banner generator script
+├── braille_art.py           # Braille art generator
+├── extended-mind-*.png      # Extended mind map images
+└── README.md               # This file
 ```
 
-The current banner uses **width 39** (14 lines). To regenerate with different parameters:
+## Test Categories
 
-```bash
-# Adjust width (default: 39)
-python3 braille_art.py extended-mind.png -w 35 --color
+### OCR Tests (assets/ocr/)
+Designed to test all 4 OCR modes with varying difficulty:
 
-# Use a different source image
-python3 braille_art.py extended-mind-original.png -w 39 --color
+| Image | Type | Text Difficulty | Modes |
+|-------|------|----------------|-------|
+| japanese.jpg | Printed | High (CJK characters) | text, table |
+| jpocr.jpg | Handwritten | Medium (hiragana) | text |
+
+### Vision Tests (assets/vision/)
+Designed to test multi-image, character recognition, and description:
+
+| Image | Type | Challenge |
+|-------|------|-----------|
+| protagonist.jpg | Game cover art | Character + game identification |
+| protagonist2.jpg | Game cover art | Multi-image comparison |
+| manga.jpg | Manga panel | Scene description |
+| manuscrito01.jpg | Handwritten notes | OCR + description |
+| manuscrito02.jpg | Handwritten notes | OCR + description |
+
+### Mixed Tests (assets/mixed/)
+Cross-domain tests combining OCR, vision, and comprehension:
+
+| Image | Type | Challenge |
+|-------|------|-----------|
+| redacao.png | Official exam page | Text extraction + comprehension + generation |
+
+## Usage in Tests
+
+### With `/ocr` command (chat mode)
+```
+/ocr assets/ocr/japanese.jpg text
+/ocr assets/ocr/japanese.jpg table
+/ocr assets/vision/manuscrito01.jpg text
 ```
 
-### Color Scheme
-
-- **Cyan/Turquoise**: Main brain structure
-- **Orange/Brown/Yellow**: External connections and neural activity
-- **White/Gray**: Supporting elements
-
-### Usage in Code
-
-The braille art is embedded in `src/chat/view/mod.rs` as the `EXTENDED_MIND_ART` constant. The ANSI escape codes are preserved to maintain the color information.
-
-### Legacy ASCII Art
-
-The previous banner used jp2a-generated ASCII art. The process is preserved for reference:
-
-```bash
-# 1. Crop and resize the original image
-magick extended-mind-original.png -crop 900x600+300+200 -resize 120x85 extended-mind-resized.png
-
-# 2. Convert to ASCII with colors
-jp2a --width=40 --colors extended-mind-resized.png
-
-# 3. Convert to plain ASCII
-jp2a --width=40 extended-mind-resized.png
+### With `/vision` command (chat mode)
+```
+/vision assets/vision/protagonist.jpg Describe the character
+/vision assets/vision/protagonist.jpg,assets/vision/protagonist2.jpg Compare these two images
 ```
 
-## Logo (ASK-AI)
-
-The logo uses the `toilet` font "future" pre-rendered as ANSI escape codes:
-
+### With CLI
 ```bash
-# Generate the logo
-toilet -f future "ASK-AI" --metal
+ask-ai ocr assets/ocr/japanese.jpg --mode text
+ask-ai vision assets/vision/protagonist.jpg -- "Describe this character"
+ask-ai vision assets/vision/protagonist.jpg,assets/vision/protagonist2.jpg -- "Compare both"
 ```
 
-The metallic color scheme uses ANSI codes:
-- Bold bright blue: `\x1B[1;34;94m`
-- Blue: `\x1B[0;34m`
-- Reset: `\x1B[0m`
+### With spawn_subagent (LLM tool)
+```
+"Use the spawn_subagent tool with subagent_type='ocr', file_path='assets/ocr/japanese.jpg', and ocr_mode='text'"
+"Use spawn_subagent with subagent_type='vision' and file_path='assets/vision/protagonist.jpg'"
+```
+
+## Notes
+
+- **research/** directory from `~/testfiles` is intentionally excluded
+- All images are real-world test cases (not synthetic) for maximum realism
+- The `prompts.md` files contain curated Portuguese/English prompts suitable for each test category
