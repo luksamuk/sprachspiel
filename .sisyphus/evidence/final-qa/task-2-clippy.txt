@@ -1,5 +1,0 @@
-QA Scenario: No-DB session still allows spawn_subagent
-Command: cargo clippy --features all-tools -- -D warnings
-Result: PASS
-Output: Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
-Zero warnings.

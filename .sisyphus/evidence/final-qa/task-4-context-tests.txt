@@ -1,8 +1,0 @@
-QA Scenario: Context tests pass
-Command: cargo test --lib context -- --nocapture
-Result: PASS
-Output: 3 context-specific tests passed:
-  - tools::context::tests::with_tool_context_scopes_ollama_and_settings ... ok
-  - tools::context::tests::with_full_context_scopes_all_four ... ok
-  - tools::context::tests::get_ollama_returns_none_outside_scope ... ok
-Total: 3 tests pass, 0 failures

@@ -1,2 +1,0 @@
-=== Tag on Remote QA ===
-3e9d53c20b919ea07c3ecdad3cdb640ed1711054	refs/tags/v0.40.0
