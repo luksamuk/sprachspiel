@@ -220,7 +220,6 @@ mod tests {
     fn test_validate_subagent_path_current_dir() {
         // Test with current directory (should succeed)
         let result = validate_subagent_path(Path::new("."));
-        if let Err(ref e) = result { eprintln!("DEBUG: validate('.') failed: {}", e); }
         assert!(result.is_ok());
     }
 
