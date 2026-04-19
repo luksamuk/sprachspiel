@@ -459,6 +459,28 @@ time (timeout 30 ./target/release/ask-ai --soulless --ignore-agents query "2+2" 
 
 ---
 
+
+## 14. Subagent Chat Commands
+
+These commands are always available in chat mode (not feature-gated).
+
+### 14.1 /ocr command
+- [ ] Start chat: `ask-ai chat`
+- [ ] Type `/ocr` with no args → shows usage hint
+- [ ] Type `/ocr .env` → "BLOCKED" error (security blocklist)
+
+### 14.2 /vision command
+- [ ] Type `/vision` with no args → shows usage hint
+
+### 14.3 /translate command
+- [ ] Type `/translate en:pt Hello world` → returns Portuguese translation
+
+### 14.4 /summarize command
+- [ ] Type `/summarize Long text about artificial intelligence` → returns concise summary
+
+### 14.5 Feature flag
+- [ ] Build without subagent-tools: `cargo build --release --no-default-features --features "weather-tools,file-tools"` → chat commands `/ocr`, `/vision`, `/translate`, `/summarize` still work, but LLM cannot call `spawn_subagent`
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.

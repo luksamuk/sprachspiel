@@ -890,6 +890,17 @@ Subagents handle errors gracefully and return informative messages:
 
 The `document` subagent creates a minimal coordinator with ONLY `run_command` registered. The `spawn_subagent` tool is deliberately NOT added to subagents, preventing infinite recursion where subagents could spawn further subagents.
 
+### Subagent Security
+
+All file paths passed to subagent operations (OCR, Vision, Document) are validated through `validate_subagent_path()`, which enforces:
+
+- **Blocklist**: Files matching protected patterns (`.env`, `secrets`, SSH keys, certificates) are always rejected
+- **CWD Sandbox**: Files must be within the current working directory or `/tmp`/`/var/tmp` (for tool interoperability, e.g., pdftotext output)
+- **Symlink resolution**: Paths are canonicalized before validation to prevent symlink escapes
+
+This is the same security model used by file tools, applied consistently to subagent file access.
+
+
 ### See Also
 
 - [Chat Commands](./commands/chat.md) - Complete chat command reference

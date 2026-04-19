@@ -419,7 +419,6 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 - `src/prompts/tools.rs` - Tool prompt for spawn_subagent
 
 **Implementation:** See `IMPLEMENTATION.md` - Priority 4
-**Implementation:** See `IMPLEMENTATION.md` - Priority 4
 
 ---
 

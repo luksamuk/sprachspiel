@@ -29,6 +29,20 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- Fixed double "Error:" prefix in subagent security blocklist messages
+- Fixed broken markdown tables in command documentation (ocr, vision, translate, summarize, query, chat)
+- Fixed stale default feature flags in skills-system-design.md
+- Fixed `led-tools` missing checkmark in README.md features table
+
+### Changed
+
+- Removed module-level `#![allow(dead_code)]` from `security.rs` and `subagent.rs`
+
+### Removed
+
+- Removed dead code from subagent module: `uses_chat_api()`, `tool_whitelist` field, builder methods (`with_tool_whitelist`, `with_max_output_chars`, `with_model_options`), `settings` field on SubagentRunner, and `run_generate()` method (YAGNI)
+- Removed `ARCHITECTURE.md` and `ask-ai-architecture.html` (obsolete draft files)
+- Removed `MANUAL-TEST-SUBAGENT-SECURITY.md` (consolidated into unified test script)
 ## [0.40.0] - 2026-04-17
 
 ### Added

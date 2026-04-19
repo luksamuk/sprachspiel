@@ -2125,6 +2125,8 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 - Updated `/ocr` chat command to accept optional mode parameter
 - Updated all 3 OCR entry points (CLI, chat, subagent) with model-aware prompt selection
 - Removed dead `OCR_SYSTEM_PROMPT` constant
+- YAGNI dead code removal: uses_chat_api(), tool_whitelist, with_tool_whitelist(), with_max_output_chars(), with_model_options(), SubagentRunner::settings, run_generate()
+- Module-level #![allow(dead_code)] removed from security.rs and subagent.rs
 
 **Commits:**
 - `c25be97` feat(ocr): add model-aware prompt selection with descriptive prompts for vision models
