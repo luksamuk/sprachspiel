@@ -8,12 +8,9 @@
 //! - `/api/generate`: For image-based tasks (Ocr, Vision)
 //! - `/api/chat`: For text-based tasks (Translate, Summarize, Document)
 
-use base64::Engine;
 use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::generation::chat::request::ChatMessageRequest;
-use ollama_rs::generation::completion::request::GenerationRequest;
-use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 
 use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
@@ -21,7 +18,6 @@ use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
 use crate::utils::truncate_to_budget;
 use std::path::PathBuf;
 
-use crate::settings::Settings;
 use crate::vision::{VisionArgs, VisionProcessor};
 use std::path::Path;
 
@@ -53,10 +49,6 @@ impl SubagentType {
         matches!(self, SubagentType::Ocr | SubagentType::Vision)
     }
 
-    #[allow(dead_code)]
-    pub fn uses_chat_api(&self) -> bool {
-        !self.uses_generate_api()
-    }
 
     /// Human-readable label for this subagent type.
     pub fn label(&self) -> &'static str {
@@ -113,8 +105,6 @@ pub struct SubagentConfig {
     pub model: String,
     /// System prompt injected before the user prompt.
     pub system_prompt: String,
-    #[allow(dead_code)]
-    pub tool_whitelist: Vec<String>,
     /// Maximum output tokens; results are truncated beyond this.
     pub max_output_chars: usize,
     /// Model options (temperature, num_ctx, etc.) resolved from ModelConfig.
@@ -141,36 +131,13 @@ impl SubagentConfig {
         Self {
             model: resolved_model,
             system_prompt: system_prompt.into(),
-            tool_whitelist: Vec::new(),
             max_output_chars: DEFAULT_MAX_OUTPUT_TOKENS,
             ocr_mode: OcrMode::Text,
             model_options,
         }
     }
 
-    #[allow(dead_code)]
-    /// Set the tool whitelist (only affects Document subagent).
-    pub fn with_tool_whitelist(mut self, tools: Vec<String>) -> Self {
-        self.tool_whitelist = tools;
-        self
-    }
 
-    #[allow(dead_code)]
-    /// Override the default maximum output token budget.
-    pub fn with_max_output_chars(mut self, max: usize) -> Self {
-        self.max_output_chars = max;
-        self
-    }
-
-    #[allow(dead_code)]
-    /// Override the resolved model options.
-    ///
-    /// By default, `new()` resolves model options from the model config.
-    /// Use this to override with custom options if needed.
-    pub fn with_model_options(mut self, options: ModelOptions) -> Self {
-        self.model_options = options;
-        self
-    }
 
     /// Set the OCR extraction mode (only affects OCR subagent).
     pub fn with_ocr_mode(mut self, mode: OcrMode) -> Self {
@@ -187,17 +154,14 @@ impl SubagentConfig {
 pub struct SubagentRunner {
     ollama: Ollama,
     config: SubagentConfig,
-    #[allow(dead_code)]
-    settings: Settings,
 }
 
 impl SubagentRunner {
     /// Create a new runner with the given Ollama client, config, and settings.
-    pub fn new(ollama: Ollama, config: SubagentConfig, settings: Settings) -> Self {
+    pub fn new(ollama: Ollama, config: SubagentConfig) -> Self {
         Self {
             ollama,
             config,
-            settings,
         }
     }
 
@@ -236,46 +200,6 @@ impl SubagentRunner {
         };
 
         Ok(truncate_to_budget(&raw, self.config.max_output_chars))
-    }
-
-    /// Execute via `/api/generate` — used for image-based subagents (Ocr, Vision).
-    ///
-    /// Reads the file at `file_path`, base64-encodes it, attaches it as an
-    /// image to a `GenerationRequest`, and returns the model's response text.
-    #[allow(dead_code)]
-    async fn run_generate(
-        &self,
-        prompt: String,
-        file_path: Option<String>,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let path = file_path.ok_or_else(|| {
-            format!(
-                "Error: file_path is required for {} subagent",
-                self.config.model
-            )
-        })?;
-
-        // Read and encode the image file
-        let image_bytes = tokio::fs::read(&path)
-            .await
-            .map_err(|e| format!("Error: Failed to read image file '{}': {}", path, e))?;
-        let base64_image = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
-        let image = Image::from_base64(base64_image);
-
-        let model_options = self.config.model_options.clone();
-
-        let request = GenerationRequest::new(self.config.model.clone(), prompt)
-            .options(model_options)
-            .add_image(image);
-
-        let response = self.ollama.generate(request).await.map_err(|e| {
-            format!(
-                "Error: /api/generate failed for model '{}': {}",
-                self.config.model, e
-            )
-        })?;
-
-        Ok(response.response.trim().to_string())
     }
 
     /// Execute via `/api/chat` — used for text-based subagents (Translate, Summarize, Document).
@@ -588,14 +512,6 @@ mod tests {
         assert!(!SubagentType::Document.uses_generate_api());
     }
 
-    #[test]
-    fn subagent_type_uses_chat_api() {
-        assert!(!SubagentType::Ocr.uses_chat_api());
-        assert!(!SubagentType::Vision.uses_chat_api());
-        assert!(SubagentType::Translate.uses_chat_api());
-        assert!(SubagentType::Summarize.uses_chat_api());
-        assert!(SubagentType::Document.uses_chat_api());
-    }
 
     #[test]
     fn subagent_type_labels() {
@@ -608,42 +524,21 @@ mod tests {
 
     #[test]
     fn subagent_config_defaults() {
-        // Using model_id "glm-ocr:bf16" should resolve via model_id fallback
         let config = SubagentConfig::new("glm-ocr:bf16", "Extract text from images");
         assert_eq!(config.model, "glm-ocr:bf16");
         assert_eq!(config.system_prompt, "Extract text from images");
-        assert!(config.tool_whitelist.is_empty());
         assert_eq!(config.max_output_chars, DEFAULT_MAX_OUTPUT_TOKENS);
-        // model_options is resolved from built-in config — just verify it's present
-        // (fields are pub(super) so we can't access individually, but Clone works)
         let _opts = config.model_options.clone();
     }
 
     #[test]
     fn subagent_config_builder() {
-        let config = SubagentConfig::new("test-model", "test prompt")
-            .with_tool_whitelist(vec!["run_command".to_string()])
-            .with_max_output_chars(5000);
-        assert_eq!(config.tool_whitelist, vec!["run_command"]);
-        assert_eq!(config.max_output_chars, 5000);
-        // Unknown model falls back to default model options (temperature 0.0)
+        // Verify max_output_chars default
+        let config = SubagentConfig::new("test-model", "test prompt");
+        assert_eq!(config.max_output_chars, DEFAULT_MAX_OUTPUT_TOKENS);
         let _opts = config.model_options.clone();
     }
 
-    #[test]
-    fn subagent_config_with_model_options_override() {
-        use ollama_rs::models::ModelOptions;
-
-        let custom_opts = ModelOptions::default().temperature(0.5).num_ctx(8192);
-        // Using config key "glm-ocr" should resolve to model_id "glm-ocr:bf16"
-        let config = SubagentConfig::new("glm-ocr", "OCR")
-            .with_model_options(custom_opts);
-        assert_eq!(config.model, "glm-ocr:bf16");
-        // with_model_options replaces the resolved options
-        // We can't directly compare ModelOptions (private fields), but
-        // the override should produce a consistent config
-        let _opts = config.model_options.clone();
-    }
     #[test]
     fn subagent_type_from_str() {
         // Valid types — case-insensitive

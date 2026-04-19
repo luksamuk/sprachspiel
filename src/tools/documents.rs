@@ -402,7 +402,7 @@ async fn extract_text_with_skill(
     };
 
     let config = build_document_config(&settings);
-    let runner = SubagentRunner::new(ollama, config, (*settings).clone());
+    let runner = SubagentRunner::new(ollama, config);
 
     match runner.run_document(file_path).await {
         Ok(text) => Ok(text),

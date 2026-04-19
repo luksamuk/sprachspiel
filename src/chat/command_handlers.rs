@@ -2880,7 +2880,7 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
 
     let (model, _, _) = state.settings.get_subcommand_config("ocr");
     let config = SubagentConfig::new(model, "OCR extraction").with_ocr_mode(mode);
-    let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
 
     match runner.run_ocr(&file_path, mode).await {
         Ok(result) => {
@@ -2926,7 +2926,7 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
 
     let (model, _, _) = state.settings.get_subcommand_config("vision");
     let config = SubagentConfig::new(model, "Vision analysis");
-    let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
 
     let prompt_str = prompt.as_deref().unwrap_or("Describe what you see in this image.");
 
@@ -2948,7 +2948,7 @@ pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String,
 
     let (model, _, _) = state.settings.get_subcommand_config("translate");
     let config = SubagentConfig::new(model, "Translation");
-    let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
 
     match runner.run_translate(&lang_pair, &text).await {
         Ok(result) => {
@@ -2968,7 +2968,7 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
 
     let (model, _, _) = state.settings.get_subcommand_config("summarize");
     let config = SubagentConfig::new(model, "Summarization");
-    let runner = SubagentRunner::new(state.ollama.clone(), config, state.settings.clone());
+    let runner = SubagentRunner::new(state.ollama.clone(), config);
 
     match runner.run_summarize(&text).await {
         Ok(result) => {
