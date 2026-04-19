@@ -25,9 +25,9 @@ Create summaries of long documents, articles, or any text. The summarize command
 |----------|-------------|
 | `TEXT` | Text to summarize. Reads from stdin if not provided. |
 
-|| `-v` | Verbose logging |
-|| `-vv` | Trace logging |
-|| `--help` | Show help |
+| `-v` | Verbose logging |
+| `-vv` | Trace logging |
+| `--help` | Show help |
 
 ## Subcommand Options
 

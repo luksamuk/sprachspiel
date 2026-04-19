@@ -295,8 +295,8 @@ make install-local-all-tools
 | `serper-tools` | 2 Web search tools | ✅ Yes | Requires `SERPER_API_KEY` |
 | `system-tools` | 2 System tools | ✅ Yes | System info, current directory |
 | `todo-tools` | 5 Todo tools | ✅ Yes | Task tracking with priorities |
-| `led-tools` | 4 LED control tools | Yes | Control GPIO LEDs (embedded) |
-|| `skill-tools` | 2 AI behavior tools | ✅ Yes | Dynamic skill activation |
+| `led-tools` | 4 LED control tools | ✅ Yes | Control GPIO LEDs (embedded) |
+| `skill-tools` | 2 AI behavior tools | ✅ Yes | Dynamic skill activation |
 | `search-tools` | 3 DuckDuckGo tools | ❌ No | May fail due to CAPTCHA |
 | `finance-tools` | 1 Stock quote tool | ❌ No | Planned |
 

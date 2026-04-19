@@ -24,9 +24,9 @@ OCR (Optical Character Recognition) extracts text from images. GLM-OCR is a mult
 |----------|-------------|
 | `FILE` | One or more image files to process |
 
-|| `-v` | Verbose logging |
-|| `-vv` | Trace logging |
-|| `--help` | Show help |
+| `-v` | Verbose logging |
+| `-vv` | Trace logging |
+| `--help` | Show help |
 
 ## Subcommand Options
 

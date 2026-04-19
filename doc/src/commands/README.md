@@ -45,8 +45,8 @@ cat file.txt | ask-ai summarize
 
 Most commands support these options:
 
-|| `-v, -vv` | Verbosity: verbose / trace level
-|| `-h, --help` | Show command help
+| `-v, -vv` | Verbosity: verbose / trace level
+| `-h, --help` | Show command help
 
 ### Output Redirection
 

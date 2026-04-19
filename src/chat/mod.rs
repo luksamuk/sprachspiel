@@ -35,6 +35,7 @@ pub mod view;
 pub use cli::ChatArgs;
 pub use custom_coordinator::{ContinuationTag, CustomCoordinator, parse_continuation_tag};
 pub use repl::run_chat_repl;
+// Re-exported for external crate usage; not consumed within this crate
 #[allow(unused_imports)]
 pub use subagent::{SubagentConfig, SubagentRunner, SubagentType};
 pub use thinking::{display_thinking, strip_thinking_tags};

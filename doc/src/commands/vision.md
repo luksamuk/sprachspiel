@@ -20,9 +20,9 @@ Vision provides general image understanding capabilities. It can describe images
 | `FILE` | One or more image files to analyze |
 | `PROMPT` | Optional custom prompt (overrides modes) |
 
-|| `-v` | Verbose logging |
-|| `-vv` | Trace logging |
-|| `--help` | Show help |
+| `-v` | Verbose logging |
+| `-vv` | Trace logging |
+| `--help` | Show help |
 
 ## Subcommand Options
 

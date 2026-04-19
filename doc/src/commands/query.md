@@ -41,9 +41,9 @@ This is **read-only** - query mode does not persist new messages.
 
 These options must be placed **before** the `query` subcommand:
 
-|| `-v` | Verbose logging |
-|| `-vv` | Trace logging |
-|| `--help` | Show help |
+| `-v` | Verbose logging |
+| `-vv` | Trace logging |
+| `--help` | Show help |
 
 ## Prompt Modes
 

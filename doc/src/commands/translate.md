@@ -20,9 +20,9 @@ Translate text between languages with automatic source language detection. The c
 | `LANGUAGE` | Language pair in format `[source:]target` or just `target` for auto-detect |
 | `TEXT` | Text to translate. Reads from stdin if not provided. |
 
-|| `-v` | Verbose logging |
-|| `-vv` | Trace logging |
-|| `--help` | Show help |
+| `-v` | Verbose logging |
+| `-vv` | Trace logging |
+| `--help` | Show help |
 
 ## Subcommand Options
 
