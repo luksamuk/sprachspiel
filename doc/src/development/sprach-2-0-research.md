@@ -14,7 +14,7 @@ This document provides the technical design details for the Sprach 2.0 proposals
 1. ✅ CAS properties present: multiple agents (50+ tools), feedback (retrieval → context → response → memory), emergence (fact importance from usage)
 2. ❌ CAS properties absent: open-endedness (tools registered at compile-time), autopoiesis (doesn't produce own components), full embodiment (no continuous sensors or homeostasis)
 3. Proposals S2.1-S2.6 aim to address these gaps
-4. All DEC-001 to DEC-006 decisions validated by state-of-the-art research
+4. All DEC-001 to DEC-007 decisions validated by state-of-the-art research
 
 **Prerequisite:** All P1-P5 current items must be completed before starting P7 work.
 
@@ -391,6 +391,17 @@ allowed = ["db_read", "note_read"]
 denied = ["fs_write", "network_raw", "process_spawn"]
 ```
 
+⚠️ **CRITICAL SECURITY NOTE (2026-04-19):** The DEC-004 `process_spawn` denied capability is now **essential, not optional**. The Anthropic MCP SDK `StdioServerParameters` has a by-design vulnerability (CVE-2025-65720 and related) that allows arbitrary command execution via STDIO transport configuration. Any MCP server connection that uses STDIO spawns an OS process with the parent application's privileges — even if the connection fails. This means `denied = ["process_spawn"]` in a plugin manifest is meaningless if we allow MCP STDIO servers, because MCP STDIO *itself* is process spawning.
+
+**Mitigation strategy for ask-ai:**
+1. MCP STDIO servers MUST be explicitly approved by the user (no auto-discovery, no zero-click install)
+2. MCP server configurations containing `command` fields MUST be treated as arbitrary code execution
+3. An allowlist of approved MCP server commands MUST be maintained in `config.toml`
+4. MCP servers SHOULD prefer Streamable HTTP transport over STDIO when available
+5. When STDIO is required, the server process MUST run in a sandboxed environment (seccomp/cgroups/namespace)
+
+See ADR-007 in IMPLEMENTATION.md for full details.
+
 ### Semantic Versioning (DEC-005)
 
 - Host v0.8 accepts plugins v0.7.x (backward compatible)
@@ -404,6 +415,8 @@ denied = ["fs_write", "network_raw", "process_spawn"]
 | **WASM (wasmer/wasmtime)** | Sandboxed bytecode | Capability-based | Emerging standard (DEC-004) |
 | E2B | Cloud sandbox | Full isolation | Requires network, latency |
 | Daytona | Dev environment | Container-based | Heavier, more ops overhead |
+
+> **DEC-007 (2026-04-19): MCP STDIO Security** — See IMPLEMENTATION.md ADR-007 for the full decision. In summary: the Anthropic MCP SDK `StdioServerParameters` has a by-design RCE vulnerability (CVE-2025-65720 et al.) that executes arbitrary commands before any validation. This affects the DEC-004 capabilities model: `denied = ["process_spawn"]` is meaningless if we allow MCP STDIO servers, because STDIO *is* process spawning. The mitigation requires (1) explicit user approval for every MCP server install, (2) command allowlist in config.toml, (3) HTTP transport preference over STDIO, and (4) sandbox for STDIO processes.
 
 ---
 
@@ -530,6 +543,6 @@ No implementation sketch at this time.
 ## Reference
 
 - **Sprach 2.0 Article:** `~/git/biblio/sprach-2-0-auto-analise.org`
-- **State of Art Research:** See DEC-001 to DEC-006 in article's Apêndice C
+- **State of Art Research:** See DEC-001 to DEC-007 in article's Apêndice C
 - **Competitors:** Joplin GSoC 2026 (note graphs), OpenClaw (WASM sandbox)
 - **Related roadmap items:** P5 (Feedback Infrastructure), P15 (Plugin System)
