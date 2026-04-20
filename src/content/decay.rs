@@ -95,19 +95,21 @@ pub fn compute_content_retention(
 
 /// Record an access event for a content item.
 ///
-/// Increments access_count and sets last_accessed to current Unix epoch.
+/// Increments access_count, sets last_accessed to current Unix epoch,
+/// and adds importance_boost to importance (clamped at 1.0).
 ///
 /// # Arguments
 /// * `conn` - SQLite connection
 /// * `item_id` - ID of the content item to update
+/// * `importance_boost` - Amount to add to importance (use 0.0 for no boost)
 ///
 /// # Returns
 /// Ok(()) on success, Err with message on failure
 #[allow(dead_code)] // Consumed by content system
-pub fn on_content_access(conn: &Connection, item_id: i64) -> Result<(), String> {
+pub fn on_content_access(conn: &Connection, item_id: i64, importance_boost: f32) -> Result<(), String> {
     conn.execute(
-        "UPDATE content_items SET access_count = access_count + 1, last_accessed = unixepoch('now') WHERE id = ?1",
-        params![item_id],
+        "UPDATE content_items SET access_count = access_count + 1, last_accessed = unixepoch('now'), importance = MIN(1.0, importance + ?1) WHERE id = ?2",
+        params![importance_boost, item_id],
     )
     .map_err(|e| format!("Failed to update content access: {}", e))?;
     Ok(())
@@ -434,7 +436,7 @@ mod tests {
             .unwrap();
         assert_eq!(count, 0);
 
-        on_content_access(&conn, 1).unwrap();
+        on_content_access(&conn, 1, 0.0).unwrap();
 
         let count: i32 = conn
             .query_row(
@@ -445,7 +447,7 @@ mod tests {
             .unwrap();
         assert_eq!(count, 1);
 
-        on_content_access(&conn, 1).unwrap();
+        on_content_access(&conn, 1, 0.0).unwrap();
 
         let count: i32 = conn
             .query_row(
@@ -473,6 +475,126 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_on_content_access_with_importance_boost() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE content_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_type TEXT NOT NULL,
+                conversation_id TEXT,
+                role TEXT,
+                message_type TEXT DEFAULT 'normal',
+                previous_item_id INTEGER,
+                prompt_tokens INTEGER,
+                scope TEXT,
+                source TEXT,
+                title TEXT,
+                content TEXT NOT NULL,
+                importance REAL DEFAULT 0.5,
+                access_count INTEGER DEFAULT 0,
+                decay_score REAL DEFAULT 1.0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_accessed INTEGER NOT NULL,
+                has_embedding INTEGER DEFAULT 0,
+                pruned INTEGER NOT NULL DEFAULT 0,
+                project_id TEXT
+            );"
+        )
+        .unwrap();
+
+        // Insert a content item with importance 0.5
+        conn.execute(
+            "INSERT INTO content_items (content_type, content, importance, decay_score, created_at, updated_at, last_accessed)
+             VALUES ('message', 'test', 0.5, 1.0, 1713600000, 1713600000, 1713600000)",
+            rusqlite::params![],
+        )
+        .unwrap();
+        let item_id = conn.last_insert_rowid();
+
+        // Before: importance = 0.5, access_count = 0
+        on_content_access(&conn, item_id, 0.001).unwrap();
+
+        // After: importance = MIN(1.0, 0.5 + 0.001) = 0.501
+        let importance: f32 = conn
+            .query_row(
+                "SELECT importance FROM content_items WHERE id = ?1",
+                rusqlite::params![item_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            (importance - 0.501).abs() < 0.01,
+            "Expected importance ~0.501, got {}",
+            importance
+        );
+
+        // After: access_count = 1
+        let access_count: i32 = conn
+            .query_row(
+                "SELECT access_count FROM content_items WHERE id = ?1",
+                rusqlite::params![item_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(access_count, 1);
+    }
+
+    #[test]
+    fn test_on_content_access_importance_capped_at_one() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE content_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_type TEXT NOT NULL,
+                conversation_id TEXT,
+                role TEXT,
+                message_type TEXT DEFAULT 'normal',
+                previous_item_id INTEGER,
+                prompt_tokens INTEGER,
+                scope TEXT,
+                source TEXT,
+                title TEXT,
+                content TEXT NOT NULL,
+                importance REAL DEFAULT 0.5,
+                access_count INTEGER DEFAULT 0,
+                decay_score REAL DEFAULT 1.0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_accessed INTEGER NOT NULL,
+                has_embedding INTEGER DEFAULT 0,
+                pruned INTEGER NOT NULL DEFAULT 0,
+                project_id TEXT
+            );"
+        )
+        .unwrap();
+
+        // Insert a content item with importance 0.999
+        conn.execute(
+            "INSERT INTO content_items (content_type, content, importance, decay_score, created_at, updated_at, last_accessed)
+             VALUES ('message', 'test', 0.999, 1.0, 1713600000, 1713600000, 1713600000)",
+            rusqlite::params![],
+        )
+        .unwrap();
+        let item_id = conn.last_insert_rowid();
+
+        // Boost by 0.01 → importance would be 1.009, but capped at 1.0
+        on_content_access(&conn, item_id, 0.01).unwrap();
+
+        let importance: f32 = conn
+            .query_row(
+                "SELECT importance FROM content_items WHERE id = ?1",
+                rusqlite::params![item_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            (importance - 1.0).abs() < 0.01,
+            "Expected importance capped at 1.0, got {}",
+            importance
+        );
+    }
     // === run_content_decay_cycle ===
 
     #[test]

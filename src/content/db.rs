@@ -888,7 +888,7 @@ impl Database {
         {
             for result in &results {
                 if let Err(e) = self.with_connection(|conn| {
-                    crate::content::decay::on_content_access(conn, result.item.id)
+                    crate::content::decay::on_content_access(conn, result.item.id, fs.access_reinforcement_boost)
                         .map_err(|e| {
                             rusqlite::Error::ToSqlConversionFailure(Box::new(
                                 std::io::Error::other(e),
