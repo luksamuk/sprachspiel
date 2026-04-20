@@ -1160,6 +1160,14 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Err(e) => return Some(Err(e)),
             }
         }
+        "fg" => {
+            // Shortcut for /feedback good
+            ChatCommand::Feedback {
+                signal_type: crate::feedback::types::FeedbackSignalType::Good,
+                item_id: None,
+                correction_text: None,
+            }
+        }
 
         "content" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
@@ -1232,6 +1240,7 @@ Feedback:
   /feedback correction:fix text      Correction on last assistant message
   /feedback msg:<id> good|bad        Signal on a specific message
   /fb                               Shortcut for /feedback
+  /fg                               Shortcut for /feedback good
 
 Content Management:
   /content prune   Prune low-retention content using decay cycle
@@ -1291,7 +1300,7 @@ Shortcuts:
   /r = /retry, /to = /tools-output, /u = /undo
   /ctx = /context, /f = /search (find)
   /sk = /skill
-  /fb = /feedback, /fp = /fact prune, /fa = /fact add
+  /fb = /feedback, /fg = /feedback good, /fp = /fact prune, /fa = /fact add
   /fl = /fact list, /fr = /fact remove, /fs = /fact search
   /cp = /content prune"#
     );
@@ -2063,5 +2072,19 @@ mod tests {
     fn test_parse_feedback_msg_invalid_id_error() {
         let result = parse_command("/feedback msg:abc good");
         assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[test]
+    fn test_parse_fg_shortcut() {
+        use crate::feedback::types::FeedbackSignalType;
+        let result = parse_command("/fg");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Good,
+                item_id: None,
+                correction_text: None,
+            }))
+        ));
     }
 }
