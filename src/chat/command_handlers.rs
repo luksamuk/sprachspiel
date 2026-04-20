@@ -891,7 +891,7 @@ pub async fn handle_retry(state: &mut ReplState) {
         .await
         {
             Ok(result) => {
-                state
+                let _assistant_msg_id = state
                     .session
                     .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
 
@@ -2882,7 +2882,7 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
         Ok(result) => {
             println!("{}", result);
             // Save result to conversation context so AI can reference it
-            state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
@@ -2922,7 +2922,7 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
     match runner.run_vision(&path_bufs, prompt_str).await {
         Ok(result) => {
             println!("{}", result);
-            state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
@@ -2942,7 +2942,7 @@ pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String,
     match runner.run_translate(&lang_pair, &text).await {
         Ok(result) => {
             println!("{}", result);
-            state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
@@ -2962,7 +2962,7 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
     match runner.run_summarize(&text).await {
         Ok(result) => {
             println!("{}", result);
-            state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }

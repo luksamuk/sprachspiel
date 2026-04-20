@@ -144,6 +144,9 @@ pub struct SavedMessage {
     /// Message type: "normal" or "pre_tool_content"
     #[serde(default)]
     pub message_type: Option<String>,
+    /// Database item ID (in-memory only, not persisted)
+    #[serde(skip)]
+    pub item_id: Option<i64>,
 }
 
 impl Default for SavedMessage {
@@ -154,9 +157,11 @@ impl Default for SavedMessage {
             timestamp: Utc::now(),
             prompt_tokens: None,
             message_type: None,
+            item_id: None,
         }
     }
 }
+
 
 /// Message role
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -230,6 +235,7 @@ impl ChatSession {
                     timestamp: item.created_at,
                     prompt_tokens: item.prompt_tokens.map(|t| t as u64),
                     message_type: item.message_type,
+                    item_id: Some(item.id),
                 })
             })
             .collect();
@@ -313,9 +319,12 @@ impl ChatSession {
             role: MessageRole::User,
             content: content.clone(),
             timestamp: now,
+            item_id: None, // TODO: populated from DB below
             ..Default::default()
         });
         self.updated_at = now;
+
+        let mut result_id: Option<i64> = None;
 
         // Save to SQLite if database is attached (immediate)
         if !self.anonymous
@@ -340,6 +349,11 @@ impl ChatSession {
                 now,
             ) {
                 Ok(item_id) => {
+                    result_id = Some(item_id);
+                    // Update the in-memory message with the item_id
+                    if let Some(last) = self.messages.last_mut() {
+                        last.item_id = Some(item_id);
+                    }
                     // Insert chunks synchronously (guaranteed persistence)
                     // Generate embeddings asynchronously (can be recovered on restart)
                     if let Some(ref client) = self.embedding_client {
@@ -425,14 +439,13 @@ impl ChatSession {
             }
         }
 
-        None
+        result_id
     }
 
     /// Add an assistant message to the session
     ///
-    /// If database is attached, saves to SQLite immediately.
-    /// Applies chunking for long messages (>1024 chars).
-    pub fn add_assistant_message(&mut self, content: String, prompt_tokens: Option<u64>) {
+    /// Returns the message ID if saved to database, None otherwise.
+    pub fn add_assistant_message(&mut self, content: String, prompt_tokens: Option<u64>) -> Option<i64> {
         let now = Utc::now();
 
         // Add to memory (immediate)
@@ -442,8 +455,11 @@ impl ChatSession {
             timestamp: now,
             prompt_tokens,
             message_type: None,
+            item_id: None, // TODO: populated from DB below
         });
         self.updated_at = now;
+
+        let mut result_id: Option<i64> = None;
 
         // Save to SQLite if database is attached (immediate)
         if !self.anonymous
@@ -468,6 +484,11 @@ impl ChatSession {
                 now,
             ) {
                 Ok(item_id) => {
+                    result_id = Some(item_id);
+                    // Update the in-memory message with the item_id
+                    if let Some(last) = self.messages.last_mut() {
+                        last.item_id = Some(item_id);
+                    }
                     // Insert chunks synchronously (guaranteed persistence)
                     // Generate embeddings asynchronously (can be recovered on restart)
                     if let Some(ref client) = self.embedding_client {
@@ -552,6 +573,8 @@ impl ChatSession {
                 }
             }
         }
+
+        result_id
     }
 
     /// Add a pre-tool content message to the database
