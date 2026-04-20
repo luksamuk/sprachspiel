@@ -8,7 +8,7 @@
 //! - facts table (factual memory system)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 9;
+pub const SCHEMA_VERSION: i32 = 10;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS content_items (
     updated_at INTEGER NOT NULL,
     last_accessed INTEGER NOT NULL,
     has_embedding INTEGER DEFAULT 0,
+    pruned INTEGER NOT NULL DEFAULT 0,
     
     -- Project association (NULL for global scope)
     project_id TEXT
@@ -213,6 +214,24 @@ CREATE TRIGGER IF NOT EXISTS content_items_au AFTER UPDATE ON content_items BEGI
     VALUES('delete', old.id, old.content);
     INSERT INTO content_fts(rowid, content) VALUES (new.id, new.content);
 END;
+
+-- Feedback signals table (v10)
+CREATE TABLE IF NOT EXISTS feedback_signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL,
+    session_id TEXT,
+    signal_type TEXT NOT NULL CHECK(signal_type IN ('good', 'bad', 'correction')),
+    base_value REAL NOT NULL,
+    correction_text TEXT,
+    source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (item_id) REFERENCES content_items(id) ON DELETE CASCADE
+);
+
+-- Indexes for feedback_signals
+CREATE INDEX IF NOT EXISTS idx_feedback_signals_item_id ON feedback_signals(item_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_signals_session_id ON feedback_signals(session_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_signals_created_at ON feedback_signals(created_at);
 "#;
 
 /// Version check query

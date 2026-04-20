@@ -162,6 +162,7 @@ impl ReplStateBuilder {
         self
     }
 
+    #[allow(dead_code)] // Used by future feedback feature to restore state on session load
     pub fn last_assistant_message_id(mut self, id: Option<i64>) -> Self {
         self.last_assistant_message_id = id;
         self
