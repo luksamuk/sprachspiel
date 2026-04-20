@@ -36,6 +36,7 @@
 pub mod db;
 pub mod document;
 pub mod types;
+pub mod decay;
 
 pub use db::ContentSearchParams;
 pub use document::{Document, FileType, MAX_DOCUMENT_SIZE, detect_file_type};
