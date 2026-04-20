@@ -93,7 +93,7 @@ pub async fn process_send_result(
         };
 
     // Save the final response (merged with continuations if any)
-    let _assistant_msg_id = state
+    state.last_assistant_message_id = state
         .session
         .add_assistant_message(final_response.clone(), Some(final_metrics.prompt_tokens));
 

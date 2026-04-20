@@ -720,6 +720,7 @@ pub fn handle_tool_output_changed(level: ToolOutputLevel) {
 /// and displays the remaining last user message.
 pub fn handle_undo(state: &mut ReplState) {
     let (removed, _) = state.session.remove_last_assistant_messages_with_content();
+    state.last_assistant_message_id = None;
     if removed > 0 {
         if !state.session.anonymous
             && !state.session.id.is_empty()
@@ -891,7 +892,7 @@ pub async fn handle_retry(state: &mut ReplState) {
         .await
         {
             Ok(result) => {
-                let _assistant_msg_id = state
+                state.last_assistant_message_id = state
                     .session
                     .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
 
@@ -2748,6 +2749,7 @@ mod tests {
             db: None,
             embedding_client: None,
             settings,
+            last_assistant_message_id: None,
         }
     }
 
@@ -2967,4 +2969,3 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
 }
-
