@@ -1580,13 +1580,11 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 
 ### 🟣 PRIORITY 5: Feedback Infrastructure [M1]
 
-**Status:** 📋 PLANNED (depends on: Factual Memory)
+**Status:** 🔄 IN PROGRESS (branch: feat/feedback-infrastructure)
+**Related Issue:** #23 (to be updated for P5 execution)
+**Detailed Plan:** [`.sisyphus/plans/feedback-infrastructure-v4.md`](./.sisyphus/plans/feedback-infrastructure-v4.md) — feedback-driven memory with active forgetting
 
-**Goal:** Capture explicit and implicit feedback signals.
-
-**Documentation:** See [Implementation Directive](./doc/src/development/implementation-directive.md) for complete design.
-
-**Related:** Issue #23
+**Goal:** Implement a complete feedback-driven memory system: capture explicit feedback signals (Good/Bad/Correction) with decay-weighted RRF fusion for retrieval ranking, activate content item decay (ghost fields become functional), and connect feedback to forgetting speed. Feedback is harness-only (no fine-tuning) — signals affect RRF fusion scoring AND content importance/decay, not model weights.
 
 **Key Insight:** Feedback improves *how we retrieve* past messages. Factual Memory provides *what we know* about the user. Both layers work together:
 
@@ -1596,26 +1594,64 @@ Context Assembly:
 │   └── [FACTUAL MEMORY] ← "User prefers Portuguese"
 │       "Docs are in ~/docs"
 ├── Retrieved Context (messages)
-│   └── [FEEDBACK WEIGHT] ← Message #42: +1.2 (good feedback)
-│       Message #15: -0.3 (bad feedback)
+│   └── [FEEDBACK WEIGHT] ← Message #42: +1.0 (good, decayed)
+│       Message #15: -1.0 (bad, decayed)
+│       RRF multiplier: clamp(0.1, 3.0)
+│   └── [CONTENT DECAY] ← Message #42: importance=0.55 (good feedback +0.05)
+│       Message #15: importance=0.30 (bad feedback -0.1 → pruned sooner)
+│       access_count: 12 (retrieved 12 times → reinforced)
 └── Response
 ```
 
-**Implementation Phases:**
+#### Architecture Decision Records (ADRs)
 
-| Phase | Description | Effort |
-|-------|-------------|--------|
-| 1.1 | `/feedback` command + schema | 2 days |
-| 1.2 | Weight propagation | 1 day |
-| 1.3 | `/context` enhancement | 0.5 day |
-| 1.4 | Implicit signal capture | 1 day |
-| 1.5 | Weighted retrieval | 3 days |
-| 1.6 | Decay implementation | 1 day |
-| **Total** | | **8.5 days** |
+| ADR | Decision | Rationale |
+|-----|----------|-----------|
+| ADR-001 | Feedback is harness-only (no fine-tuning) | No GPU, no training pipeline. RAG/ICL/BoN are valid inference-time methods (Krishnamurthy 2026). |
+| ADR-002 | Decay formula: `2^(-t/half_life)` | Aligns with existing facts system (`src/facts/decay.rs`). `exp(-t/h)` is equivalent but confusing; `2^(-t/h)` matches Ebbinghaus curve already in code. |
+| ADR-003 | Messages-only scope is Phase 1 (not permanent) | When Unified Knowledge Store ships, `feedback_signals.item_id` can reference `knowledge_items.id`. Migration: v10→messages, v11+→all sources. |
+| ADR-004 | LLM self-feedback = 30% weight | Self-approval bias defense. Wu et al. (2025): self-verification consistently beaten by majority voting. Chan et al. (2025): ~3% decisions change per reflection step. Configurable via `config.toml [feedback].llm_feedback_weight`. |
+| ADR-005 | Good=+1.0, Bad=-1.0, Correction=+1.0 | Binary-like symmetric signals (no partial credit). Drori et al. (2025): strict 0/1 verification. Granularity comes from temporal decay, not base_value. Correction value is in metadata text, not numerical weight. |
+| ADR-006 | Score clamping: `.clamp(0.1, 3.0)` | Original `.max(-0.9).min(2.0)` allowed negative scores (bug: `1.0 + (-2.0) = -1.0 → max(-1.0, -0.9) = -0.9`). New clamp: min 0.1 (90% max suppression), max 3.0 (3× amplification cap). |
+| ADR-008 | Content Decay Activation | `content_items` ghost fields activated: `decay_score`/`access_count`/`last_accessed` now functional with Ebbinghaus decay. Content-type half-lives: messages=90d, notes=60d, documents=120d. Feedback adjusts importance (good +0.05, bad -0.1), creating a forgetting loop. |
+| ADR-009 | Retrieval Reinforces Retention | `on_content_access()` called on retrieval — increments `access_count`, updates `last_accessed`. Same pattern as facts system. RRF (immediate ranking) and access_count (future retention) are separate signals — not double-counting. |
 
-**Related:** Issue #23
+#### Key Corrections from Original Plan
 
-**Sprach 2.0 Note:** The article's "Learned Personality" proposal (S2.5 — SOUL.md patching) overlaps with but extends P5. P5 captures *what happened* (feedback signals for retrieval weighting); S2.5 adjusts *who I am* (personality modification with human approval). Both are complementary. When designing P5, consider: (1) should feedback influence only facts (safe) or also behavior style (ambitious)?, (2) a `/reflect` command could be the first step toward S2.3 (reflection triggers).
+| Item | Original (implementation-directive.md) | Corrected (v2 plan) | ADR |
+|------|---------------------------------------|---------------------|-----|
+| Bad base_value | -0.5 | **-1.0** | ADR-005 |
+| Correction base_value | 1.2 | **1.0** | ADR-005 |
+| Decay formula | `exp(-t/h)` | **`2^(-t/h)`** | ADR-002 |
+| LLM feedback weight | 1.0 (same as user) | **0.3 (30% discount)** | ADR-004 |
+| RRF score clamping | `.max(-0.9).min(2.0)` | **`.clamp(0.1, 3.0)`** | ADR-006 |
+| `/fc` shortcut | Present | **Removed** (correction always needs text) | — |
+
+#### Key Corrections from V3
+
+| Item | V3 | V4 | ADR |
+|------|----|----|-----|
+| "NO modification of content_items" | Explicit guardrail | REMOVED — feedback adjusts importance | ADR-008 |
+| Content decay | Not addressed | Activated — all content_items decay | ADR-008 |
+| access_count = 0 forever | Implicit limitation | Fixed — on_content_access() on retrieval | ADR-009 |
+| Feedback → importance | Explicitly forbidden | Changed — good/bad adjusts importance | ADR-008 |
+
+#### Implementation Phases
+
+| Phase | Description | Effort | Key Correction |
+|-------|-------------|--------|----------------|
+| 1.1 | `/feedback` command + schema | 2 days | ADR-005 values; `/fc` removed |
+| 1.2 | Weight propagation | 1 day | — |
+| 1.3 | `/context` enhancement | 0.5 day | — |
+| 1.4 | Implicit signal capture | 1 day | — |
+| 1.5 | Weighted retrieval | 3 days | — |
+| 1.6 | Decay implementation | 1 day | `2^(-t/h)` + LLM 30% discount |
+| 1.7 | Content decay module | 2 days | ADR-008: Ebbinghaus for content_items |
+| 1.8 | Access tracking + importance adj. | 2 days | ADR-009: retrieval reinforces retention |
+| 1.9 | Decay cycle integration | 1 day | Startup trigger + /content prune |
+| **Total** | | **13.5 days** | |
+
+**Sprach 2.0 Note:** The article's "Learned Personality" proposal (S2.5 — SOUL.md patching) overlaps with but extends P5. P5 captures *what happened* (feedback signals for retrieval weighting); S2.5 adjusts *who I am* (personality modification with human approval). Both are complementary.
 
 ---
 

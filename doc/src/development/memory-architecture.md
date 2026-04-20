@@ -1,8 +1,8 @@
 # Memory Architecture
 
 **Status:** Active  
-**Version:** v0.37.2  
-**Updated:** 2026-03-21
+**Version:** v0.42.0-dev  
+**Updated:** 2026-04-19
 
 This document provides a unified view of Ask-AI's memory systems and how they compose the LLM context.
 
@@ -10,12 +10,13 @@ This document provides a unified view of Ask-AI's memory systems and how they co
 
 ## Overview
 
-Ask-AI has four layers of memory that work together to provide context-aware responses:
+Ask-AI has four active layers of memory plus one planned layer that work together to provide context-aware responses:
 
 1. **Session Memory** — Volatile, in-memory messages for the current conversation
 2. **Conversation Memory** — Persistent conversation history with semantic retrieval
 3. **Factual Memory** — Long-term storage of user preferences and project facts
 4. **Context Assembly** — How all layers combine into the LLM prompt
+5. **Feedback Memory** 📋 PLANNED — Per-message signal tracking for response quality weighting + feedback-driven content decay
 
 ---
 
@@ -61,6 +62,18 @@ graph TB
     style Layer2 fill:#fff3e0,stroke:#ef6c00,color:#e65100
     style Layer3 fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
     style Layer4 fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+```
+
+```mermaid
+graph TB
+    subgraph Layer5["Layer 5: Feedback Memory 📋 PLANNED"]
+        F1["feedback_signals Table"]
+        F2["Per-Message Quality Signals"]
+        F3["Feedback-Weighted RRF"]
+        F4["Ebbinghaus Decay (2^(-t/h))"]
+    end
+    
+    style Layer5 fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c,stroke-dasharray: 5 5
 ```
 
 ---
@@ -446,6 +459,177 @@ Injected after AGENTS.md:
 
 ---
 
+## Layer 5: Feedback Memory 📋 PLANNED
+
+> **Status:** Not yet implemented. This section documents the planned design for the feedback memory layer, which will add per-message quality signal tracking and feedback-weighted retrieval.
+
+**What it stores:** Per-message feedback signals (explicit and implicit) that indicate response quality, usefulness, and correctness. These signals weight future retrieval so higher-quality past responses are preferred.
+
+**Characteristics:**
+- SQLite `feedback_signals` table storing per-message quality scores
+- Metadata-only layer (no embeddings or full-text search needed)
+- Feedback-weighted RRF retrieval: conversation memory search results are re-ranked by feedback signal strength
+- Ebbinghaus decay (`2^(-t/h)`) — same formula as Factual Memory (ADR decision for consistency)
+- Per-message scope: each signal applies to exactly one message
+- **Content Decay Activation (ADR-008)**: `content_items` ghost fields (`decay_score`, `access_count`, `last_accessed`) activated with Ebbinghaus decay — same formula as Factual Memory
+- **Feedback→Importance Loop**: Good feedback raises `importance` (+0.05), bad feedback lowers it (-0.1), creating a feedback-driven forgetting speed control
+- **Retrieval Reinforcement (ADR-009)**: Every retrieval increments `access_count` and updates `last_accessed`, making frequently-retrieved items decay slower
+- **Content-type half-lives**: Messages = 90 days, Notes = 60 days, Documents = 120 days
+- **Soft-delete (ADR-008)**: Low-retention items are flagged `pruned = 1` (not hard-deleted), preserving `previous_item_id` conversation chains
+- **Pruning**: Items below `MIN_CONTENT_RETENTION` (0.05) are soft-deleted by `run_content_decay_cycle()`, except items with `importance >= 0.8` (never pruned)
+
+**Planned Architecture:**
+
+```mermaid
+graph TB
+    subgraph Input["Signal Sources"]
+        S1["User thumbs up/down"]
+        S2["User edit of response"]
+        S3["User follow-up correction"]
+        S4["LLM self-assessment"]
+    end
+    
+    subgraph Processing["Processing"]
+        P1["Lookup base_value (±1.0)"]
+        P2["Apply source weight"]
+        P3["Compute decay factor"]
+    end
+    
+    subgraph Storage["Storage"]
+        T1["feedback_signals table"]
+        T2["Per-message rows"]
+    end
+    
+    subgraph DecayActivation["Decay Activation (ADR-008/009)"]
+        D1["on_content_access()"]
+        D2["importance adjustment"]
+        D3["decay_score update"]
+    end
+    
+    subgraph Retrieval["Feedback-Weighted RRF"]
+        R1["Conversation Memory results"]
+        R2["Join with feedback_signals"]
+        R3["Re-rank by feedback × decay"]
+        R4["Returned context"]
+    end
+    
+    S1 --> P1
+    S2 --> P1
+    S3 --> P1
+    S4 --> P1
+    P1 --> P2 --> P3 --> T1
+    T1 --> D2
+    D1 --> D3
+    D2 --> D3
+    R1 --> R2
+    T1 --> R2
+    R2 --> R3 --> R4
+    
+    style Input fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
+    style Processing fill:#fff3e0,stroke:#ef6c00,color:#e65100
+    style Storage fill:#fce4ec,stroke:#c2185b,color:#880e4f
+    style Retrieval fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+```
+
+**Decay System — Shared with Factual Memory:**
+
+Feedback Memory uses the same Ebbinghaus-inspired decay as Factual Memory. This is an **ADR (Architecture Decision Record)** decision:
+
+> **ADR: Feedback and Factual Memory share the Ebbinghaus decay formula `2^(-t/h)`**
+>
+> Both layers model memory retention over time using the same exponential decay. This ensures consistent behavior: a feedback signal and a fact with the same half-life decay at identical rates, simplifying reasoning about cross-layer retention and pruning schedules.
+
+```
+Retention = 2^(-t / half_life)
+
+- Feedback half-life: TBD (likely 30 days, matching factual facts)
+- Access reinforcement: Each re-reference of a signaled message bumps retention
+- Pruning: Signals below threshold removed during standard prune cycle
+```
+
+**Content Decay System (NEW — ADR-008/009):**
+
+Feedback Memory now also drives content item decay. This is a significant extension: previously, `content_items` (messages, notes, documents) never decayed — their `decay_score`, `access_count`, and `last_accessed` fields were populated but never updated.
+
+> **Important (P1 fix)**: Content pruning uses **soft-delete** (`pruned = 1`), NOT hard-delete. This preserves `previous_item_id` conversation chains. A `pruned INTEGER DEFAULT 0` column is added in the v10 migration. All search and context queries filter `WHERE pruned = 0`.
+
+**Content Decay Model:**
+```
+Retention = 2^(-t / content_half_life) × importance_mult × access_mult
+
+- Messages: 90-day half-life
+- Notes: 60-day half-life  
+- Documents: 120-day half-life
+- access_mult: 1 + 0.1 × log2(access_count) (same as facts)
+- importance_mult: 1 + 0.5 × importance (same as facts)
+```
+
+**Feedback → Importance → Decay Speed:**
+
+| Feedback | importance change | Decay effect |
+|----------|------------------|-------------|
+| Good (+1.0) | +0.05 | Slower decay, survives longer |
+| Bad (-1.0) | -0.1 | Faster decay, pruned sooner |
+| Correction (+1.0) | None | No decay speed change |
+
+**Retrieval Reinforcement (ADR-009):**
+
+Every time `search_content_hybrid()` returns an item:
+1. `access_count += 1`
+2. `last_accessed = now()`
+3. Tiny importance boost: `+0.001` per retrieval
+
+This means frequently-retrieved content retains longer — a natural "use it or lose it" mechanism that mirrors how the facts system works.
+
+**Source Weight Discount:**
+
+Feedback signals from different sources carry different weights:
+
+| Source type | Weight factor | Rationale |
+|--------|--------|-----------|
+| User (explicit `/feedback good/bad`) | 1.0× | Direct, intentional signal — ground truth |
+| LLM (`feedback_submit()` tool) | 0.3× | Self-feedback discounted — LLMs tend toward overconfidence (ADR-004, Wu+Chan 2025) |
+
+> **Note:** User implicit feedback (continuation signals, requery detection, session abandonment) is deferred to Phase 2. The 3-source model (`user_explicit`, `user_implicit`, `llm_self`) is the Phase 2 target — Phase 1 implements `user` and `llm` only.
+
+> This distinguishes Feedback Memory from Factual Memory: **Facts have no source discount** (all fact sources are weighted equally), while **Feedback signals apply a 0.3× discount for LLM self-feedback** (ADR-004) to counteract model overconfidence bias.
+
+**Planned Table Schema (aligned with directive and v2-plan):**
+
+```sql
+CREATE TABLE IF NOT EXISTS feedback_signals (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id       INTEGER NOT NULL,                         -- FK to content_items (messages only in Phase 1)
+    session_id    TEXT,                                     -- Session context (nullable — metadata only)
+    signal_type   TEXT NOT NULL CHECK(signal_type IN ('good', 'bad', 'correction')),
+    base_value    REAL NOT NULL,                           -- Good=+1.0, Bad=-1.0, Correction=+1.0 (ADR-005)
+    correction_text TEXT,                                  -- For directive signals
+    source        TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+    created_at    INTEGER NOT NULL,
+    FOREIGN KEY (item_id) REFERENCES content_items(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_item ON feedback_signals(item_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_type ON feedback_signals(signal_type);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_signals(created_at DESC);
+```
+
+> **Schema diverges from earlier drafts:** The original schema used `message_id REFERENCES messages(id)`,
+> `signal REAL CHECK 0..1`, and `source IN ('user_explicit', 'user_implicit', 'llm_self')`. These
+> were corrected to align with ADR-003 (content_items, not messages), ADR-005 (Bad=-1.0, not 0..1 range),
+> and Phase 1 scope (2 sources, not 3).
+
+**Relationship to Existing Layers:**
+
+- **Layer 2 (Conversation Memory):** Feedback Memory joins on `message_id` to re-rank RRF results. It does not replace or duplicate conversation storage. Feedback Memory now also **activates content decay** — `content_items` that were previously immortal (`decay_score = 1.0` forever) now decay via Ebbinghaus curve. Feedback adjusts `importance` which controls decay speed. This means Feedback Memory directly shapes what content is **forgotten**, not just what is **retrieved**.
+- **Layer 3 (Factual Memory):** Shares the same decay formula (`2^(-t/h)`) by ADR. Factual Memory has no source discount; Feedback Memory applies a 0.3× LLM self-feedback discount.
+- **Layer 4 (Context Assembly):** Feedback-weighted results replace unweighted results in the "Retrieved Context" section of the assembled prompt.
+
+**Research Basis:**
+
+See [UNIFIED_VISION.md](../../../../testfiles/research/ask-ai-rlvr-docs/article/UNIFIED_VISION.md) for the research foundation behind feedback signals and feedback-weighted retrieval.
+
+---
+
 ## When to Use Each System
 
 | Use Case | System | Command/Tool |
@@ -459,13 +643,13 @@ Injected after AGENTS.md:
 
 **Comparison:**
 
-| Feature | Session Memory | Conversation Memory | Factual Memory | AGENTS.md |
-|---------|----------------|---------------------|----------------|-----------|
-| Scope | Current session | All sessions | Global/Project | Project only |
-| Persistence | RAM | SQLite | SQLite | File |
-| Search | No | Semantic + Keyword | Keyword | No |
-| Decay | No | Compaction | Ebbinghaus | Manual |
-| LLM Access | No | Retrieval | Tools | Prompt |
+| Feature | Session Memory | Conversation Memory | Factual Memory | AGENTS.md | Feedback Memory 📋 |
+|---------|----------------|---------------------|----------------|-----------|---------------------|
+| Scope | Current session | All sessions | Global/Project | Project only | Per-message |
+| Persistence | RAM | SQLite | SQLite | File | SQLite |
+| Search | No | Semantic + Keyword | Keyword | No | None (metadata-only) |
+| Decay | No | Compaction | Ebbinghaus | Manual | Ebbinghaus (2^(-t/h)) + Content Decay (soft-delete) |
+| LLM Access | No | Retrieval | Tools | Prompt | Reranking |
 
 ---
 
@@ -474,6 +658,7 @@ Injected after AGENTS.md:
 - [Ebbinghaus Forgetting Curve](https://en.wikipedia.org/wiki/Forgetting_curve) — The basis for fact decay
 - [Lost in the Middle](https://arxiv.org/abs/2307.03172) — Why context ordering matters
 - [Anthropic Prompt Engineering](https://docs.anthropic.com/claude/docs/prompt-engineering) — Context ordering best practices
+- [UNIFIED_VISION.md](../../../../testfiles/research/ask-ai-rlvr-docs/article/UNIFIED_VISION.md) — Research basis for Feedback Memory layer design
 
 ---
 
