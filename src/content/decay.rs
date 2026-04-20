@@ -139,7 +139,6 @@ pub fn should_prune_content(importance: f32, retention: f32) -> bool {
 
 /// Statistics from running the content decay cycle
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Consumed by content system
 pub struct ContentDecayStats {
     /// Number of content items pruned
     pub pruned: usize,
@@ -159,7 +158,6 @@ pub struct ContentDecayStats {
 ///
 /// # Returns
 /// ContentDecayStats with pruning results
-#[allow(dead_code)] // Consumed by content system
 pub fn run_content_decay_cycle(conn: &Connection) -> Result<ContentDecayStats, String> {
     let now = chrono::Utc::now().timestamp();
 

@@ -427,8 +427,7 @@ pub async fn handle_command(
             HandleResult::Continue
         }
         ChatCommand::ContentPrune => {
-            // Placeholder for Task 13 — not yet implemented
-            println!("Content prune is not yet implemented.");
+            handle_content_prune(state);
             HandleResult::Continue
         }
     }
@@ -978,6 +977,52 @@ pub fn handle_fact_prune(state: &ReplState) {
         }
         Err(e) => {
             eprintln!("\x1B[31m✗ Failed to prune facts: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle content prune command
+///
+/// Runs the content decay cycle and prunes low-retention content items.
+/// Items with importance >= 0.8 are never pruned.
+pub fn handle_content_prune(state: &ReplState) {
+    use crate::content::decay::run_content_decay_cycle;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        eprintln!("Error: Cannot prune content in anonymous mode.");
+        return;
+    }
+
+    println!("\x1B[33m⏳ Running content decay cycle...\x1B[0m");
+
+    match db.with_connection(|conn| {
+        run_content_decay_cycle(conn).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+        })
+    }) {
+        Ok(stats) => {
+            if stats.pruned > 0 {
+                println!(
+                    "\x1B[32m✓ Pruned {} content item(s), {} remaining (avg retention: {:.2}).\x1B[0m",
+                    stats.pruned, stats.remaining, stats.avg_retention
+                );
+            } else {
+                println!(
+                    "\x1B[32m✓ No content to prune. {} item(s) remaining (avg retention: {:.2}).\x1B[0m",
+                    stats.remaining, stats.avg_retention
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to prune content: {}\x1B[0m", e);
         }
     }
 }
@@ -1838,6 +1883,8 @@ pub fn print_context_info(
         println!("  Session:");
         println!("    Total:            {} messages", session.messages.len());
     }
+    println!();
+    println!("  \x1B[90mTip: Use /content prune to prune low-retention content.\x1B[0m");
     println!();
 }
 

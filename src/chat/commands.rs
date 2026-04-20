@@ -171,8 +171,7 @@ pub enum ChatCommand {
         item_id: Option<i64>,
         correction_text: Option<String>,
     },
-    /// Prune content based on decay/importance (placeholder for Task 13)
-    #[allow(dead_code)]
+    /// Prune content based on decay/importance
     ContentPrune,
 }
 
@@ -501,6 +500,17 @@ fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             })
         }
         _ => Err("Usage: /fact <add|list|remove|search|prune>".to_string()),
+    }
+}
+
+/// Parse content subcommand arguments into a ChatCommand.
+///
+/// Extracted from the main parse_command to reduce complexity.
+/// Handles: prune.
+fn parse_content_subcommand(subcmd: &str, _subargs: &str) -> Result<ChatCommand, String> {
+    match subcmd {
+        "prune" | "p" => Ok(ChatCommand::ContentPrune),
+        _ => Err("Usage: /content prune".to_string()),
     }
 }
 
@@ -1127,7 +1137,6 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             ChatCommand::Summarize { text: args.trim().to_string() }
         }
-
         "feedback" | "fb" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
             let subcmd = subcmd_parts.first().unwrap_or(&"");
@@ -1136,6 +1145,20 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 Ok(cmd) => cmd,
                 Err(e) => return Some(Err(e)),
             }
+        }
+
+        "content" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+            match parse_content_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        "cp" => {
+            // Shortcut for /content prune
+            ChatCommand::ContentPrune
         }
         _ => {
             return Some(Err(format!(
@@ -1188,6 +1211,18 @@ Factual Memory:
   /fact prune      Prune old facts using decay cycle
 
   Subcommand shortcuts: /fact a, /fact l, /fact r, /fact s, /fact p
+
+Feedback:
+  /feedback good                    Positive signal on last assistant message
+  /feedback bad                     Negative signal on last assistant message
+  /feedback correction:fix text      Correction on last assistant message
+  /feedback msg:<id> good|bad        Signal on a specific message
+  /fb                               Shortcut for /feedback
+
+Content Management:
+  /content prune   Prune low-retention content using decay cycle
+  /cp              Shortcut for /content prune
+
 
 Notes:
   /note add <content> [--title <title>] [--global]   Add a note
@@ -1242,8 +1277,9 @@ Shortcuts:
   /r = /retry, /to = /tools-output, /u = /undo
   /ctx = /context, /f = /search (find)
   /sk = /skill
-  /fp = /fact prune, /fa = /fact add
-  /fl = /fact list, /fr = /fact remove, /fs = /fact search"#
+  /fb = /feedback, /fp = /fact prune, /fa = /fact add
+  /fl = /fact list, /fr = /fact remove, /fs = /fact search
+  /cp = /content prune"#
     );
 }
 
@@ -1484,6 +1520,26 @@ mod tests {
     fn test_parse_fact_subcommand_invalid() {
         assert!(parse_fact_subcommand("unknown", "").is_err());
     }
+    // --- Content subcommand parser ---
+
+    #[test]
+    fn test_parse_content_prune() {
+        let cmd = parse_content_subcommand("prune", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::ContentPrune));
+    }
+
+    #[test]
+    fn test_parse_content_prune_shortcut() {
+        let cmd = parse_content_subcommand("p", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::ContentPrune));
+    }
+
+    #[test]
+    fn test_parse_content_error() {
+        assert!(parse_content_subcommand("list", "").is_err());
+        assert!(parse_content_subcommand("unknown", "").is_err());
+    }
+
 
     // --- Document subcommand parser ---
 
