@@ -16,6 +16,7 @@ use super::types::{
 use crate::db::Database;
 use crate::db::WhereBuilder;
 use crate::db::fts5_escape;
+use crate::consts::roles::ROLE_USER;
 
 // === SQL Constants ===
 // Extracted from inline to improve maintainability and reduce duplication
@@ -1284,7 +1285,7 @@ impl Database {
             seen_ids.insert(result.item.id);
 
             // Only enrich user messages
-            if result.item.role.as_deref() == Some("user")
+            if result.item.role.as_deref() == Some(ROLE_USER)
                 && let Some(conv_id) = &result.item.conversation_id
             {
                 let subsequent = self.get_content_subsequent_assistant(result.item.id, conv_id)?;
