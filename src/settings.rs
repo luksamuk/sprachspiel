@@ -423,7 +423,6 @@ impl Settings {
                     DEFAULT_CODE_MODEL.to_string()
                 } else if subcommand == "translate" {
                     "translategemma".to_string()
-
                 } else if subcommand == "ocr" {
                     "glm-ocr".to_string()
                 } else {
@@ -861,7 +860,10 @@ tools = false
 "#;
 
         let settings: Settings = toml::from_str(sample).unwrap();
-        assert_eq!(settings.model.ocr.model, Some("custom-ocr:latest".to_string()));
+        assert_eq!(
+            settings.model.ocr.model,
+            Some("custom-ocr:latest".to_string())
+        );
         assert_eq!(settings.model.ocr.thinking, Some(true));
         assert_eq!(settings.model.ocr.tools, Some(false));
     }
@@ -922,7 +924,10 @@ tools = false
         // Verify that config key "translategemma" resolves to model_id via get_model_config
         use crate::user_models::get_model_config;
         let config = get_model_config("translategemma");
-        assert!(config.is_some(), "translategemma should resolve via config key");
+        assert!(
+            config.is_some(),
+            "translategemma should resolve via config key"
+        );
         let config = config.unwrap();
         assert_eq!(config.model_id, "translategemma:4b");
         // The builtin translategemma has temperature 0.2

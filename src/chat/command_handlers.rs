@@ -168,6 +168,7 @@ pub async fn handle_command(
                 state.agents_md.as_deref(),
                 &state.settings,
                 state.cli_soulless,
+                state.db.as_ref(),
             );
             HandleResult::Continue
         }
@@ -422,7 +423,11 @@ pub async fn handle_command(
             handle_subagent_summarize(state, text).await;
             HandleResult::Continue
         }
-        ChatCommand::Feedback { signal_type, item_id, correction_text } => {
+        ChatCommand::Feedback {
+            signal_type,
+            item_id,
+            correction_text,
+        } => {
             handle_feedback(state, signal_type, item_id, correction_text);
             HandleResult::Continue
         }
@@ -1724,6 +1729,7 @@ pub fn print_context_info(
     agents_md: Option<&str>,
     settings: &Settings,
     soulless: bool,
+    db: Option<&Arc<crate::db::Database>>,
 ) {
     use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
     use crate::tools::get_available_tool_names;
@@ -1883,7 +1889,34 @@ pub fn print_context_info(
         println!("  Session:");
         println!("    Total:            {} messages", session.messages.len());
     }
-    println!();
+    // Content Memory section (if database is available)
+    if let Some(db_ref) = db {
+        use crate::content::decay::get_content_decay_stats;
+
+        match db_ref.with_connection(|conn| {
+            get_content_decay_stats(conn).map_err(|e| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+            })
+        }) {
+            Ok(stats) => {
+                println!("  Content Memory:");
+                println!("    Total items:      {}", stats.total_items);
+                println!("    Avg importance:    {:.2}", stats.avg_importance);
+                if stats.items_at_risk > 0 {
+                    println!(
+                        "    \u{26a0} Items at risk:   {} (low decay score)",
+                        stats.items_at_risk
+                    );
+                }
+                println!("    Feedback signals:  {}", stats.total_feedback_signals);
+            }
+            Err(_) => {
+                // Silently skip — don't error out /context if stats fail
+            }
+        }
+        println!();
+    }
+
     println!("  \x1B[90mTip: Use /content prune to prune low-retention content.\x1B[0m");
     println!();
 }
@@ -2924,7 +2957,6 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
         return;
     }
 
-
     // Save user command to conversation context
     let cmd_str = match mode {
         OcrMode::Text => format!("/ocr {}", path),
@@ -2947,7 +2979,11 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
 }
 
 /// Handle /vision command - analyze image(s) with vision model
-pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, prompt: Option<String>) {
+pub async fn handle_subagent_vision(
+    state: &mut ReplState,
+    paths: Vec<String>,
+    prompt: Option<String>,
+) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
     use crate::utils::expand_tilde_path;
     use std::path::PathBuf;
@@ -2963,7 +2999,6 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
         }
     }
 
-
     // Build command string for context
     let cmd_str = match &prompt {
         Some(p) => format!("/vision {} {}", paths.join(" "), p),
@@ -2975,7 +3010,9 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
     let config = SubagentConfig::new(model, "Vision analysis");
     let runner = SubagentRunner::new(state.ollama.clone(), config);
 
-    let prompt_str = prompt.as_deref().unwrap_or("Describe what you see in this image.");
+    let prompt_str = prompt
+        .as_deref()
+        .unwrap_or("Describe what you see in this image.");
 
     match runner.run_vision(&path_bufs, prompt_str).await {
         Ok(result) => {
@@ -2991,7 +3028,9 @@ pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String,
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
 
     // Save user command to conversation context
-    state.session.add_user_message(format!("/translate {} {}", lang_pair, text));
+    state
+        .session
+        .add_user_message(format!("/translate {} {}", lang_pair, text));
 
     let (model, _, _) = state.settings.get_subcommand_config("translate");
     let config = SubagentConfig::new(model, "Translation");
@@ -3011,7 +3050,9 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
 
     // Save user command to conversation context
-    state.session.add_user_message(format!("/summarize {}", text));
+    state
+        .session
+        .add_user_message(format!("/summarize {}", text));
 
     let (model, _, _) = state.settings.get_subcommand_config("summarize");
     let config = SubagentConfig::new(model, "Summarization");
@@ -3076,7 +3117,7 @@ pub fn handle_feedback(
                 println!("No assistant message to give feedback on.");
                 return;
             }
-        }
+        },
     };
 
     // Determine importance delta based on signal type
@@ -3099,18 +3140,23 @@ pub fn handle_feedback(
     };
 
     // Insert feedback signal via db.with_connection()
-    let insert_result: Result<i64, String> = db.with_connection(|conn| {
-        insert_feedback_signal(
-            conn,
-            signal.item_id,
-            signal.session_id.as_deref(),
-            signal.signal_type,
-            signal.base_value,
-            signal.correction_text.as_deref(),
-            signal.source,
-            signal.created_at,
-        ).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e))))
-    }).map_err(|e| format!("{}", e));
+    let insert_result: Result<i64, String> = db
+        .with_connection(|conn| {
+            insert_feedback_signal(
+                conn,
+                signal.item_id,
+                signal.session_id.as_deref(),
+                signal.signal_type,
+                signal.base_value,
+                signal.correction_text.as_deref(),
+                signal.source,
+                signal.created_at,
+            )
+            .map_err(|e| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+            })
+        })
+        .map_err(|e| format!("{}", e));
 
     match insert_result {
         Ok(_row_id) => {
@@ -3122,13 +3168,15 @@ pub fn handle_feedback(
             }
 
             // Get message excerpt for confirmation
-            let excerpt: String = db.with_connection(|conn| {
-                conn.query_row(
-                    "SELECT SUBSTR(content, 1, 80) FROM content_items WHERE id = ?1",
-                    rusqlite::params![target_id],
-                    |row| row.get::<_, String>(0)
-                )
-            }).unwrap_or_else(|_| "(no content)".to_string());
+            let excerpt: String = db
+                .with_connection(|conn| {
+                    conn.query_row(
+                        "SELECT SUBSTR(content, 1, 80) FROM content_items WHERE id = ?1",
+                        rusqlite::params![target_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                })
+                .unwrap_or_else(|_| "(no content)".to_string());
             let signal_label = signal.signal_type.to_string();
             let arrow = match signal.signal_type {
                 FeedbackSignalType::Good => "\x1B[32m↑↑\x1B[0m",
@@ -3136,7 +3184,10 @@ pub fn handle_feedback(
                 FeedbackSignalType::Correction => "\x1B[33m✎\x1B[0m",
             };
 
-            println!("{} {} feedback recorded for msg:{}", arrow, signal_label, target_id);
+            println!(
+                "{} {} feedback recorded for msg:{}",
+                arrow, signal_label, target_id
+            );
             println!("  \x1B[90m{}\x1B[0m", excerpt);
 
             if let Some(ref text) = signal.correction_text {

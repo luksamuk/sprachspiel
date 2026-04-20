@@ -46,10 +46,18 @@ impl OcrMode {
     /// Get the descriptive prompt for vision models
     pub fn into_descriptive_prompt(self) -> &'static str {
         match self {
-            OcrMode::Text => "Extract all text from this image. Preserve layout and structure. Output ONLY the extracted text, no analysis or commentary.",
-            OcrMode::Table => "Extract the table structure from this image. Preserve rows and columns. Output ONLY the table data in markdown format, no analysis or commentary.",
-            OcrMode::Figure => "Extract and describe the figure or diagram in this image. Output ONLY a description of what is depicted, no analysis or commentary beyond the figure content.",
-            OcrMode::Formula => "Extract all mathematical formulas from this image. Output ONLY the formulas in LaTeX notation, no analysis or commentary.",
+            OcrMode::Text => {
+                "Extract all text from this image. Preserve layout and structure. Output ONLY the extracted text, no analysis or commentary."
+            }
+            OcrMode::Table => {
+                "Extract the table structure from this image. Preserve rows and columns. Output ONLY the table data in markdown format, no analysis or commentary."
+            }
+            OcrMode::Figure => {
+                "Extract and describe the figure or diagram in this image. Output ONLY a description of what is depicted, no analysis or commentary beyond the figure content."
+            }
+            OcrMode::Formula => {
+                "Extract all mathematical formulas from this image. Output ONLY the formulas in LaTeX notation, no analysis or commentary."
+            }
         }
     }
 }

@@ -160,7 +160,10 @@ pub enum ChatCommand {
     /// Run OCR on an image file (optional mode: text, table, figure, formula)
     Ocr { path: String, mode: Option<String> },
     /// Analyze image(s) with vision model
-    Vision { paths: Vec<String>, prompt: Option<String> },
+    Vision {
+        paths: Vec<String>,
+        prompt: Option<String>,
+    },
     /// Translate text between languages
     Translate { lang_pair: String, text: String },
     /// Summarize text
@@ -721,19 +724,14 @@ fn parse_doc_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Stri
 ///   `/feedback bad`                — negative signal on last assistant message
 ///   `/feedback correction:fix text` — correction on last assistant message
 ///   `/feedback msg:42 good`        — positive signal on specific message
-fn parse_feedback_subcommand(
-    subcmd: &str,
-    subargs: &str,
-) -> Result<ChatCommand, String> {
+fn parse_feedback_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
     use crate::feedback::types::FeedbackSignalType;
     use std::str::FromStr;
 
     // subcmd is the first argument after /feedback
     // subargs is everything after that
     if subcmd.is_empty() {
-        return Err(
-            "Usage: /feedback <good|bad|correction:text> [msg:id]".to_string(),
-        );
+        return Err("Usage: /feedback <good|bad|correction:text> [msg:id]".to_string());
     }
 
     // Check if first arg starts with msg: — parse item_id then signal type
@@ -744,7 +742,7 @@ fn parse_feedback_subcommand(
                 return Err(format!(
                     "Invalid message ID '{}'. Use msg:<number> (e.g., msg:42).",
                     id_str
-                ))
+                ));
             }
         };
 
@@ -766,7 +764,9 @@ fn parse_feedback_subcommand(
             let text = if correction_text.is_empty() {
                 remainder.trim().to_string()
             } else {
-                format!("{} {}", correction_text, remainder.trim()).trim().to_string()
+                format!("{} {}", correction_text, remainder.trim())
+                    .trim()
+                    .to_string()
             };
             if text.is_empty() {
                 return Err(
@@ -795,12 +795,12 @@ fn parse_feedback_subcommand(
         let text = if correction_text.is_empty() {
             subargs.trim().to_string()
         } else {
-            format!("{} {}", correction_text, subargs.trim()).trim().to_string()
+            format!("{} {}", correction_text, subargs.trim())
+                .trim()
+                .to_string()
         };
         if text.is_empty() {
-            return Err(
-                "Correction requires text. Usage: /feedback correction:<text>".to_string(),
-            );
+            return Err("Correction requires text. Usage: /feedback correction:<text>".to_string());
         }
         return Ok(ChatCommand::Feedback {
             signal_type: FeedbackSignalType::Correction,
@@ -1107,7 +1107,10 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             let parts: Vec<&str> = args.splitn(2, ' ').collect();
             let path = parts.first().unwrap_or(&"").to_string();
-            let mode = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+            let mode = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
             ChatCommand::Ocr { path, mode }
         }
         "vision" => {
@@ -1116,8 +1119,14 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             let parts: Vec<&str> = args.splitn(2, ' ').collect();
             let path = parts.first().unwrap_or(&"").to_string();
-            let prompt = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-            ChatCommand::Vision { paths: vec![path], prompt }
+            let prompt = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            ChatCommand::Vision {
+                paths: vec![path],
+                prompt,
+            }
         }
         "translate" | "tr" => {
             if args.is_empty() {
@@ -1125,7 +1134,10 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             let parts: Vec<&str> = args.splitn(2, ' ').collect();
             let lang_pair = parts.first().unwrap_or(&"").to_string();
-            let text = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+            let text = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             if text.is_empty() {
                 return Some(Err("Usage: /translate <source:target> <text>".to_string()));
             }
@@ -1135,7 +1147,9 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             if args.is_empty() {
                 return Some(Err("Usage: /summarize <text>".to_string()));
             }
-            ChatCommand::Summarize { text: args.trim().to_string() }
+            ChatCommand::Summarize {
+                text: args.trim().to_string(),
+            }
         }
         "feedback" | "fb" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
@@ -1539,7 +1553,6 @@ mod tests {
         assert!(parse_content_subcommand("list", "").is_err());
         assert!(parse_content_subcommand("unknown", "").is_err());
     }
-
 
     // --- Document subcommand parser ---
 
@@ -2051,5 +2064,4 @@ mod tests {
         let result = parse_command("/feedback msg:abc good");
         assert!(matches!(result, Some(Err(_))));
     }
-
 }

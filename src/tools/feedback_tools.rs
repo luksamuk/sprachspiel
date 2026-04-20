@@ -53,10 +53,7 @@ pub async fn feedback_submit(
             ("signal_type".to_string(), signal_type.clone()),
             (
                 "correction_text".to_string(),
-                correction_text
-                    .as_deref()
-                    .unwrap_or("None")
-                    .to_string(),
+                correction_text.as_deref().unwrap_or("None").to_string(),
             ),
         ],
     );
@@ -87,10 +84,7 @@ pub async fn feedback_submit(
     let parsed_signal = match FeedbackSignalType::from_str(&signal_type) {
         Ok(s) => s,
         Err(e) => {
-            let err = format!(
-                "Error: {}. Use 'good', 'bad', or 'correction'.",
-                e
-            );
+            let err = format!("Error: {}. Use 'good', 'bad', or 'correction'.", e);
             log_tool_result("feedback_submit", &err);
             return Ok(err);
         }
@@ -168,7 +162,8 @@ pub async fn feedback_submit(
             let err_msg = format!(
                 "Error: Could not submit feedback for item {}. {}",
                 item_id_parsed,
-                e.to_string().replace("error returned from ToSqlConversionFailure: ", "")
+                e.to_string()
+                    .replace("error returned from ToSqlConversionFailure: ", "")
             );
             log_tool_result("feedback_submit", &err_msg);
             return Ok(err_msg);

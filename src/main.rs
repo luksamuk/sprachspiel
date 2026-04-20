@@ -44,8 +44,8 @@ use clap::Parser;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::ChatArgs;
-use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
 use crate::ocr::mode::is_glm_ocr_model;
+use crate::ocr::{OcrArgs, OcrProcessor, print_results as print_ocr_results};
 use crate::query::{OutputFlags, run_query};
 use crate::settings::Settings;
 use crate::spinner::{create_spinner, finish_spinner};
@@ -502,7 +502,17 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
         Some(args.mode.into_descriptive_prompt())
     };
 
-    let results = match processor.process_batch(&args, prompt_override, &model_id, model_options, &ollama, true).await {
+    let results = match processor
+        .process_batch(
+            &args,
+            prompt_override,
+            &model_id,
+            model_options,
+            &ollama,
+            true,
+        )
+        .await
+    {
         Ok(results) => results,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -680,11 +690,16 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     log::debug!("==========================");
     log::info!("Executing vision analysis with logging enabled...");
 
-    let model_options = model_config.build_model_options().num_predict(args.max_tokens as i32);
+    let model_options = model_config
+        .build_model_options()
+        .num_predict(args.max_tokens as i32);
     let ollama = settings.ollama_client();
     let processor = VisionProcessor::new();
 
-    match processor.process(&args, &model_id, &ollama, model_options, true).await {
+    match processor
+        .process(&args, &model_id, &ollama, model_options, true)
+        .await
+    {
         Ok(result) => {
             if args.json {
                 print_vision_results(&result, true);

@@ -288,7 +288,8 @@ note_delete(id="42")"#.to_string();
     {
         let settings = crate::tools::context::get_settings();
         if let Some(s) = &settings
-            && s.feedback.enabled && !blacklist.contains("feedback_submit")
+            && s.feedback.enabled
+            && !blacklist.contains("feedback_submit")
         {
             sections.push(
                 r#"### FEEDBACK TOOLS
@@ -296,7 +297,8 @@ Use for providing feedback on messages during conversation.
 Available: feedback_submit
 
 feedback_submit allows you to rate messages as good, bad, or provide corrections.
-Feedback helps improve future retrieval quality."#.to_string(),
+Feedback helps improve future retrieval quality."#
+                    .to_string(),
             );
         }
     }
@@ -385,7 +387,8 @@ Types:
 **Example:**
 spawn_subagent("ocr", "Extract all text from this image", Some("/path/to/document.png"))
 spawn_subagent("translate", "Translate this to Portuguese", None)
-spawn_subagent("document", "Analyze this PDF", Some("report.pdf"))"###.to_string(),
+spawn_subagent("document", "Analyze this PDF", Some("report.pdf"))"###
+                    .to_string(),
             );
         }
     }

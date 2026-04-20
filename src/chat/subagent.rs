@@ -49,7 +49,6 @@ impl SubagentType {
         matches!(self, SubagentType::Ocr | SubagentType::Vision)
     }
 
-
     /// Human-readable label for this subagent type.
     pub fn label(&self) -> &'static str {
         match self {
@@ -113,8 +112,6 @@ pub struct SubagentConfig {
     pub ocr_mode: OcrMode,
 }
 impl SubagentConfig {
-
-
     /// Create a new config with the given model config key and system prompt.
     ///
     /// The `model` parameter is a config key (e.g., "translategemma", "glm-ocr")
@@ -125,9 +122,7 @@ impl SubagentConfig {
         let config_key = model.into();
         let (resolved_model, model_options) = crate::user_models::get_model_config(&config_key)
             .map(|mc| (mc.model_id.clone(), mc.build_model_options()))
-            .unwrap_or_else(|| {
-                (config_key.clone(), ModelOptions::default().temperature(0.0))
-            });
+            .unwrap_or_else(|| (config_key.clone(), ModelOptions::default().temperature(0.0)));
         Self {
             model: resolved_model,
             system_prompt: system_prompt.into(),
@@ -136,8 +131,6 @@ impl SubagentConfig {
             model_options,
         }
     }
-
-
 
     /// Set the OCR extraction mode (only affects OCR subagent).
     pub fn with_ocr_mode(mut self, mode: OcrMode) -> Self {
@@ -157,12 +150,9 @@ pub struct SubagentRunner {
 }
 
 impl SubagentRunner {
-        /// Create a new runner with the given Ollama client and config.
+    /// Create a new runner with the given Ollama client and config.
     pub fn new(ollama: Ollama, config: SubagentConfig) -> Self {
-        Self {
-            ollama,
-            config,
-        }
+        Self { ollama, config }
     }
 
     /// Execute a subagent task.
@@ -191,9 +181,7 @@ impl SubagentRunner {
                 }
                 self.run_ocr(&file_paths[0], self.config.ocr_mode).await?
             }
-            SubagentType::Vision => {
-                self.run_vision(&file_paths, &prompt).await?
-            }
+            SubagentType::Vision => self.run_vision(&file_paths, &prompt).await?,
             SubagentType::Translate | SubagentType::Summarize | SubagentType::Document => {
                 self.run_chat(prompt).await?
             }
@@ -221,12 +209,10 @@ impl SubagentRunner {
         )
         .options(model_options);
 
-        let response = self.ollama.send_chat_messages(request).await.map_err(|e| {
-            format!(
-                "/api/chat failed for model '{}': {}",
-                self.config.model, e
-            )
-        })?;
+        let response =
+            self.ollama.send_chat_messages(request).await.map_err(|e| {
+                format!("/api/chat failed for model '{}': {}", self.config.model, e)
+            })?;
 
         Ok(response.message.content.trim().to_string())
     }
@@ -336,7 +322,13 @@ impl SubagentRunner {
 
         let processor = VisionProcessor::new();
         let output = processor
-            .process(&args, &model, &self.ollama, self.config.model_options.clone(), false)
+            .process(
+                &args,
+                &model,
+                &self.ollama,
+                self.config.model_options.clone(),
+                false,
+            )
             .await
             .map_err(|e| format!("Vision processing failed: {}", e))?;
 
@@ -377,7 +369,18 @@ impl SubagentRunner {
             Some(mode.into_descriptive_prompt()) // Vision model: descriptive prompt
         };
 
-        match processor.process_file(path, mode, prompt_override, &self.config.model, self.config.model_options.clone(), &self.ollama, false).await {
+        match processor
+            .process_file(
+                path,
+                mode,
+                prompt_override,
+                &self.config.model,
+                self.config.model_options.clone(),
+                &self.ollama,
+                false,
+            )
+            .await
+        {
             Ok(output) => Ok(truncate_to_budget(
                 &output.content,
                 self.config.max_output_chars,
@@ -487,12 +490,7 @@ impl SubagentRunner {
         let response = coordinator
             .chat(vec![system_message, user_message])
             .await
-            .map_err(|e| {
-                format!(
-                    "Document Extraction failed for '{}': {}",
-                    file_name, e
-                )
-            })?;
+            .map_err(|e| format!("Document Extraction failed for '{}': {}", file_name, e))?;
 
         let content = response.message.content.trim().to_string();
         Ok(truncate_to_budget(&content, self.config.max_output_chars))
@@ -511,7 +509,6 @@ mod tests {
         assert!(!SubagentType::Summarize.uses_generate_api());
         assert!(!SubagentType::Document.uses_generate_api());
     }
-
 
     #[test]
     fn subagent_type_labels() {
@@ -544,14 +541,26 @@ mod tests {
         // Valid types — case-insensitive
         assert_eq!("ocr".parse::<SubagentType>(), Ok(SubagentType::Ocr));
         assert_eq!("vision".parse::<SubagentType>(), Ok(SubagentType::Vision));
-        assert_eq!("translate".parse::<SubagentType>(), Ok(SubagentType::Translate));
-        assert_eq!("summarize".parse::<SubagentType>(), Ok(SubagentType::Summarize));
-        assert_eq!("document".parse::<SubagentType>(), Ok(SubagentType::Document));
+        assert_eq!(
+            "translate".parse::<SubagentType>(),
+            Ok(SubagentType::Translate)
+        );
+        assert_eq!(
+            "summarize".parse::<SubagentType>(),
+            Ok(SubagentType::Summarize)
+        );
+        assert_eq!(
+            "document".parse::<SubagentType>(),
+            Ok(SubagentType::Document)
+        );
 
         // Case-insensitive
         assert_eq!("OCR".parse::<SubagentType>(), Ok(SubagentType::Ocr));
         assert_eq!("Vision".parse::<SubagentType>(), Ok(SubagentType::Vision));
-        assert_eq!("TRANSLATE".parse::<SubagentType>(), Ok(SubagentType::Translate));
+        assert_eq!(
+            "TRANSLATE".parse::<SubagentType>(),
+            Ok(SubagentType::Translate)
+        );
 
         // Invalid types
         assert!("unknown".parse::<SubagentType>().is_err());
@@ -592,7 +601,10 @@ mod tests {
         // temperature should be 0.1 for glm-ocr, not the fallback 0.0
         // Since we can't directly access field, verify via debug output
         let debug_str = format!("{:?}", opts);
-        assert!(debug_str.contains("temperature"), "ModelOptions should contain temperature field");
+        assert!(
+            debug_str.contains("temperature"),
+            "ModelOptions should contain temperature field"
+        );
     }
 
     #[test]
@@ -602,7 +614,10 @@ mod tests {
         // Should fall back to default ModelOptions with temperature 0.0
         let opts = config.model_options.clone();
         let debug_str = format!("{:?}", opts);
-        assert!(debug_str.contains("temperature"), "ModelOptions should contain temperature field");
+        assert!(
+            debug_str.contains("temperature"),
+            "ModelOptions should contain temperature field"
+        );
     }
 
     #[test]
@@ -643,12 +658,10 @@ mod tests {
 
     #[test]
     fn subagent_config_with_ocr_mode() {
-        let config = SubagentConfig::new("glm-ocr", "OCR")
-            .with_ocr_mode(OcrMode::Table);
+        let config = SubagentConfig::new("glm-ocr", "OCR").with_ocr_mode(OcrMode::Table);
         assert_eq!(config.ocr_mode, OcrMode::Table);
 
-        let config = SubagentConfig::new("glm-ocr", "OCR")
-            .with_ocr_mode(OcrMode::Formula);
+        let config = SubagentConfig::new("glm-ocr", "OCR").with_ocr_mode(OcrMode::Formula);
         assert_eq!(config.ocr_mode, OcrMode::Formula);
     }
     #[test]

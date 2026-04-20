@@ -48,8 +48,7 @@ fn half_life(signal_type: FeedbackSignalType) -> f32 {
 /// Decayed weight value (positive for Good/Correction, negative for Bad)
 #[allow(dead_code)] // Consumed by db/prompt (Tasks 4-6)
 pub fn decayed_weight(signal: &FeedbackSignal, now: DateTime<Utc>) -> f32 {
-    let signal_time =
-        DateTime::<Utc>::from_timestamp(signal.created_at, 0).unwrap_or_default();
+    let signal_time = DateTime::<Utc>::from_timestamp(signal.created_at, 0).unwrap_or_default();
     let days_since = (now - signal_time).num_days() as f32;
     let hl = half_life(signal.signal_type);
     let decay_factor = 2f32.powf(-days_since / hl);
@@ -76,7 +75,7 @@ pub fn compute_total_boost(signals: &[FeedbackSignal], now: DateTime<Utc>) -> f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::feedback::types::{FeedbackSource, FeedbackSignalType};
+    use crate::feedback::types::{FeedbackSignalType, FeedbackSource};
 
     /// Helper: create a signal at a known unix timestamp.
     fn make_signal(

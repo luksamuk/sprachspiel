@@ -862,7 +862,7 @@ impl Database {
                     chrono::Utc::now().timestamp(),
                 )
                 .map_err(|e| {
-                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+                    rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
                 })
             })?;
 
@@ -888,14 +888,19 @@ impl Database {
         {
             for result in &results {
                 if let Err(e) = self.with_connection(|conn| {
-                    crate::content::decay::on_content_access(conn, result.item.id, fs.access_reinforcement_boost)
-                        .map_err(|e| {
-                            rusqlite::Error::ToSqlConversionFailure(Box::new(
-                                std::io::Error::other(e),
-                            ))
-                        })
+                    crate::content::decay::on_content_access(
+                        conn,
+                        result.item.id,
+                        fs.access_reinforcement_boost,
+                    )
+                    .map_err(|e| {
+                        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+                    })
                 }) {
-                    eprintln!("Warning: Failed to record content access for item {}: {}", result.item.id, e);
+                    eprintln!(
+                        "Warning: Failed to record content access for item {}: {}",
+                        result.item.id, e
+                    );
                 }
             }
         }

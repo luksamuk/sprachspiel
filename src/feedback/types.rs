@@ -172,8 +172,14 @@ mod tests {
 
     #[test]
     fn test_signal_type_from_str_valid() {
-        assert_eq!(FeedbackSignalType::from_str("good").unwrap(), FeedbackSignalType::Good);
-        assert_eq!(FeedbackSignalType::from_str("bad").unwrap(), FeedbackSignalType::Bad);
+        assert_eq!(
+            FeedbackSignalType::from_str("good").unwrap(),
+            FeedbackSignalType::Good
+        );
+        assert_eq!(
+            FeedbackSignalType::from_str("bad").unwrap(),
+            FeedbackSignalType::Bad
+        );
         assert_eq!(
             FeedbackSignalType::from_str("correction").unwrap(),
             FeedbackSignalType::Correction
@@ -182,8 +188,14 @@ mod tests {
 
     #[test]
     fn test_signal_type_from_str_case_insensitive() {
-        assert_eq!(FeedbackSignalType::from_str("GOOD").unwrap(), FeedbackSignalType::Good);
-        assert_eq!(FeedbackSignalType::from_str("Bad").unwrap(), FeedbackSignalType::Bad);
+        assert_eq!(
+            FeedbackSignalType::from_str("GOOD").unwrap(),
+            FeedbackSignalType::Good
+        );
+        assert_eq!(
+            FeedbackSignalType::from_str("Bad").unwrap(),
+            FeedbackSignalType::Bad
+        );
         assert_eq!(
             FeedbackSignalType::from_str("Correction").unwrap(),
             FeedbackSignalType::Correction
@@ -224,14 +236,26 @@ mod tests {
 
     #[test]
     fn test_source_from_str_valid() {
-        assert_eq!(FeedbackSource::from_str("user").unwrap(), FeedbackSource::User);
-        assert_eq!(FeedbackSource::from_str("llm").unwrap(), FeedbackSource::Llm);
+        assert_eq!(
+            FeedbackSource::from_str("user").unwrap(),
+            FeedbackSource::User
+        );
+        assert_eq!(
+            FeedbackSource::from_str("llm").unwrap(),
+            FeedbackSource::Llm
+        );
     }
 
     #[test]
     fn test_source_from_str_case_insensitive() {
-        assert_eq!(FeedbackSource::from_str("USER").unwrap(), FeedbackSource::User);
-        assert_eq!(FeedbackSource::from_str("LLM").unwrap(), FeedbackSource::Llm);
+        assert_eq!(
+            FeedbackSource::from_str("USER").unwrap(),
+            FeedbackSource::User
+        );
+        assert_eq!(
+            FeedbackSource::from_str("LLM").unwrap(),
+            FeedbackSource::Llm
+        );
     }
 
     #[test]

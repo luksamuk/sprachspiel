@@ -21,7 +21,7 @@
 //! - Soft-delete for pruning (pruned flag, not hard delete)
 //! - Feedback targets content_items only (messages, notes, documents)
 
-pub mod types;
 pub mod db;
 pub mod decay;
 pub mod prompt;
+pub mod types;

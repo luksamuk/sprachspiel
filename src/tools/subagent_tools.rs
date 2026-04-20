@@ -19,7 +19,6 @@ use std::path::PathBuf;
 /// Valid subagent type strings for error messages
 const VALID_SUBAGENT_TYPES: &[&str] = &["ocr", "vision", "translate", "summarize", "document"];
 
-
 const VISION_SYSTEM_PROMPT: &str = "You are a vision model. Analyze the image as instructed. \
     Describe what you see thoroughly and accurately. Output only your analysis.";
 
@@ -104,7 +103,10 @@ pub async fn spawn_subagent(
                 "file_path".to_string(),
                 file_path.clone().unwrap_or_else(|| "(none)".to_string()),
             ),
-            ("ocr_mode".to_string(), ocr_mode.clone().unwrap_or_else(|| "(default)".to_string())),
+            (
+                "ocr_mode".to_string(),
+                ocr_mode.clone().unwrap_or_else(|| "(default)".to_string()),
+            ),
         ],
     );
 

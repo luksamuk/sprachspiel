@@ -216,5 +216,4 @@ mod tests {
         // Nonexistent model_id
         assert!(ModelConfig::get_builtin_by_model_id("nonexistent:7b").is_none());
     }
-
 }

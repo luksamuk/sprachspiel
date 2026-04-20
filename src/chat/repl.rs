@@ -119,11 +119,12 @@ fn init_chat_database(
     (db, embedding, ollama, error_detail)
 }
 
-/// Run startup tasks (decay cycle).
+/// Run startup tasks (decay cycles).
 async fn run_startup_tasks(
     db: &Option<Arc<crate::db::Database>>,
     _embedding_client: &Option<Arc<crate::embeddings::EmbeddingClient>>,
     anonymous: bool,
+    settings: &Settings,
 ) {
     if let Some(db_ref) = db
         && !anonymous
@@ -140,6 +141,33 @@ async fn run_startup_tasks(
             }
             Err(e) => {
                 log::debug!("Warning: Facts decay cycle failed: {}", e);
+            }
+        }
+
+        // Content decay cycle (gated by settings.feedback.content_decay)
+        if settings.feedback.content_decay {
+            match db_ref.with_connection(|conn| {
+                crate::content::decay::run_content_decay_cycle(conn).map_err(|e| {
+                    rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+                })
+            }) {
+                Ok(crate::content::decay::ContentDecayStats {
+                    pruned,
+                    remaining,
+                    avg_retention,
+                }) => {
+                    if pruned > 0 {
+                        log::debug!(
+                            "Content decay: pruned {} items, {} remaining (avg retention: {:.2})",
+                            pruned,
+                            remaining,
+                            avg_retention
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::debug!("Warning: Content decay cycle failed: {}", e);
+                }
             }
         }
     }
@@ -448,7 +476,7 @@ pub async fn run_chat_repl(
         return Ok(());
     }
 
-    run_startup_tasks(&db, &embedding_client, args.anonymous).await;
+    run_startup_tasks(&db, &embedding_client, args.anonymous, settings).await;
 
     // Load or create session (returns info without printing yet)
     let session_load_result = create_session(args, &db, &project_id, model_override, default_model);

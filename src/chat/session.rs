@@ -162,7 +162,6 @@ impl Default for SavedMessage {
     }
 }
 
-
 /// Message role
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -445,7 +444,11 @@ impl ChatSession {
     /// Add an assistant message to the session
     ///
     /// Returns the message ID if saved to database, None otherwise.
-    pub fn add_assistant_message(&mut self, content: String, prompt_tokens: Option<u64>) -> Option<i64> {
+    pub fn add_assistant_message(
+        &mut self,
+        content: String,
+        prompt_tokens: Option<u64>,
+    ) -> Option<i64> {
         let now = Utc::now();
 
         // Add to memory (immediate)

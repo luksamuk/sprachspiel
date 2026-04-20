@@ -3,7 +3,7 @@
 //! Provides insert, retrieval, and boost computation for the Feedback Signal System.
 //! Feedback signals target content_items with content_type='message' only (ADR-003).
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -44,10 +44,7 @@ pub fn insert_feedback_signal(
         Ok(ct) => Some(ct),
         Err(rusqlite::Error::QueryReturnedNoRows) => None,
         Err(e) => {
-            return Err(format!(
-                "Error checking content item {}: {}",
-                item_id, e
-            ));
+            return Err(format!("Error checking content item {}: {}", item_id, e));
         }
     };
 
@@ -122,7 +119,12 @@ pub fn get_feedback_signals_for_item(
                 created_at: row.get(6)?,
             })
         })
-        .map_err(|e| format!("Error querying feedback signals for item {}: {}", item_id, e))?;
+        .map_err(|e| {
+            format!(
+                "Error querying feedback signals for item {}: {}",
+                item_id, e
+            )
+        })?;
 
     let mut results = Vec::new();
     for row in rows {
@@ -172,8 +174,7 @@ pub fn compute_feedback_boost(
         .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
         .collect();
 
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params.iter().map(|p| p.as_ref()).collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let rows = stmt
         .query_map(param_refs.as_slice(), |row| {
@@ -210,18 +211,14 @@ pub fn compute_feedback_boost(
         let source = match FeedbackSource::from_str(&source_str) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!(
-                    "Warning: skipping invalid source '{}': {}",
-                    source_str, e
-                );
+                eprintln!("Warning: skipping invalid source '{}': {}", source_str, e);
                 continue;
             }
         };
 
         // Inline decay computation (refactored to feedback::decay in Task 6)
         let seconds_per_day: f64 = 86400.0;
-        let days_since =
-            ((now - created_at) as f64 / seconds_per_day).max(0.0) as f32;
+        let days_since = ((now - created_at) as f64 / seconds_per_day).max(0.0) as f32;
         let hl = half_life_days(signal_type);
         let decay = 2f32.powf(-days_since / hl);
         let weighted = base_value * decay * source.weight_factor();
@@ -414,10 +411,7 @@ mod tests {
             assert_eq!(signals[0].signal_type, FeedbackSignalType::Good);
             assert_eq!(signals[1].signal_type, FeedbackSignalType::Bad);
             assert_eq!(signals[0].item_id, item_id);
-            assert_eq!(
-                signals[0].session_id,
-                Some("sess_1".to_string())
-            );
+            assert_eq!(signals[0].session_id, Some("sess_1".to_string()));
             assert_eq!(signals[0].source, FeedbackSource::User);
         });
     }
@@ -426,8 +420,7 @@ mod tests {
     fn test_get_feedback_signals_empty() {
         with_test_db(|conn| {
             let item_id = insert_message_item(conn);
-            let signals =
-                get_feedback_signals_for_item(conn, item_id).unwrap();
+            let signals = get_feedback_signals_for_item(conn, item_id).unwrap();
             assert!(signals.is_empty());
         });
     }
@@ -435,8 +428,7 @@ mod tests {
     #[test]
     fn test_compute_feedback_boost_empty_ids() {
         with_test_db(|conn| {
-            let boosts =
-                compute_feedback_boost(conn, &[], 1713600000).unwrap();
+            let boosts = compute_feedback_boost(conn, &[], 1713600000).unwrap();
             assert!(boosts.is_empty());
         });
     }
@@ -445,12 +437,8 @@ mod tests {
     fn test_compute_feedback_boost_no_signals() {
         with_test_db(|conn| {
             let item_id = insert_message_item(conn);
-            let boosts =
-                compute_feedback_boost(conn, &[item_id], 1713600000).unwrap();
-            assert!(
-                boosts.is_empty(),
-                "No signals means no entries in map"
-            );
+            let boosts = compute_feedback_boost(conn, &[item_id], 1713600000).unwrap();
+            assert!(boosts.is_empty(), "No signals means no entries in map");
         });
     }
 
@@ -472,8 +460,7 @@ mod tests {
             .unwrap();
 
             // At the same time as creation, decay = 2^0 = 1.0, weight = 1.0
-            let boosts =
-                compute_feedback_boost(conn, &[item_id], created_at).unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_id], created_at).unwrap();
             let boost = boosts.get(&item_id).expect("should have boost");
             assert!(
                 (boost - 1.0).abs() < 0.01,
@@ -483,8 +470,7 @@ mod tests {
 
             // 30 days later (one half-life for Good), decay = 0.5, boost = 0.5
             let now_30d = created_at + 30 * 86400;
-            let boosts = compute_feedback_boost(conn, &[item_id], now_30d)
-                .unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_id], now_30d).unwrap();
             let boost = boosts.get(&item_id).expect("should have boost");
             assert!(
                 (boost - 0.5).abs() < 0.01,
@@ -494,8 +480,7 @@ mod tests {
 
             // 60 days later (two half-lives for Good), decay = 0.25, boost = 0.25
             let now_60d = created_at + 60 * 86400;
-            let boosts = compute_feedback_boost(conn, &[item_id], now_60d)
-                .unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_id], now_60d).unwrap();
             let boost = boosts.get(&item_id).expect("should have boost");
             assert!(
                 (boost - 0.25).abs() < 0.01,
@@ -524,8 +509,7 @@ mod tests {
 
             // 7 days later (one half-life for Bad), decay = 0.5, boost = -0.5
             let now_7d = created_at + 7 * 86400;
-            let boosts =
-                compute_feedback_boost(conn, &[item_id], now_7d).unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_id], now_7d).unwrap();
             let boost = boosts.get(&item_id).expect("should have boost");
             assert!(
                 (boost - (-0.5)).abs() < 0.01,
@@ -555,8 +539,7 @@ mod tests {
             // 14 days later (one half-life for Correction), decay = 0.5
             // Llm weight = 0.3, boost = 1.0 * 0.5 * 0.3 = 0.15
             let now_14d = created_at + 14 * 86400;
-            let boosts =
-                compute_feedback_boost(conn, &[item_id], now_14d).unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_id], now_14d).unwrap();
             let boost = boosts.get(&item_id).expect("should have boost");
             assert!(
                 (boost - 0.15).abs() < 0.01,
@@ -595,8 +578,7 @@ mod tests {
             )
             .unwrap();
             // Both at full decay: 1.0 + (-1.0) = 0.0
-            let boosts =
-                compute_feedback_boost(conn, &[item_id], created_at).unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_id], created_at).unwrap();
             let boost = boosts.get(&item_id).expect("should have boost");
             assert!(
                 boost.abs() < 0.01,
@@ -625,8 +607,7 @@ mod tests {
                 )
                 .unwrap();
             }
-            let boosts =
-                compute_feedback_boost(conn, &[item_id], created_at).unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_id], created_at).unwrap();
             let boost = boosts.get(&item_id).expect("should have boost");
             assert!(
                 (*boost - 2.0).abs() < 0.01,
@@ -655,8 +636,7 @@ mod tests {
                 )
                 .unwrap();
             }
-            let boosts =
-                compute_feedback_boost(conn, &[item_id], created_at).unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_id], created_at).unwrap();
             let boost = boosts.get(&item_id).expect("should have boost");
             assert!(
                 (*boost - (-2.0)).abs() < 0.01,
@@ -694,12 +674,7 @@ mod tests {
                 created_at,
             )
             .unwrap();
-            let boosts = compute_feedback_boost(
-                conn,
-                &[item_a, item_b],
-                created_at,
-            )
-            .unwrap();
+            let boosts = compute_feedback_boost(conn, &[item_a, item_b], created_at).unwrap();
             assert_eq!(boosts.len(), 2);
             assert!(
                 (boosts[&item_a] - 1.0).abs() < 0.01,

@@ -385,15 +385,15 @@ pub async fn import_document(
 /// the `run_command` tool and the document-processing skill as system prompt.
 /// This respects project-level skill overrides for document processing.
 #[cfg(feature = "skills-tools")]
-async fn extract_text_with_skill(
-    file_path: &std::path::Path,
-) -> Result<String, String> {
+async fn extract_text_with_skill(file_path: &std::path::Path) -> Result<String, String> {
     use crate::chat::subagent::SubagentRunner;
     use crate::tools::subagent_tools::build_document_config;
 
     let ollama = match get_ollama() {
         Some(o) => o,
-        None => return Err("Error: Ollama client not available for document extraction.".to_string()),
+        None => {
+            return Err("Error: Ollama client not available for document extraction.".to_string());
+        }
     };
 
     let settings = match get_settings() {

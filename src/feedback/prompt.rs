@@ -76,8 +76,7 @@ pub fn compute_feedback_boost_map(
         // Group signals by item_id
         let mut signals_by_item: HashMap<i64, Vec<FeedbackSignal>> = HashMap::new();
 
-        let mut rows =
-            stmt.query(rusqlite::params_from_iter(param_values.iter()))?;
+        let mut rows = stmt.query(rusqlite::params_from_iter(param_values.iter()))?;
 
         while let Some(row) = rows.next()? {
             let item_id: i64 = row.get(0)?;
@@ -191,7 +190,7 @@ mod tests {
     use crate::feedback::decay::{
         HALF_LIFE_BAD, HALF_LIFE_CORRECTION, HALF_LIFE_GOOD, MAX_FEEDBACK_BOOST,
     };
-    use crate::feedback::types::{FeedbackSource, FeedbackSignalType};
+    use crate::feedback::types::{FeedbackSignalType, FeedbackSource};
     use rusqlite::params;
 
     // === build_feedback_section tests ===

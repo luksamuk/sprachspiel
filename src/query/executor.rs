@@ -5,8 +5,8 @@
 use std::sync::Arc;
 
 use indicatif::ProgressBar;
-use ollama_rs::generation::chat::ChatMessage;
 use ollama_rs::Ollama;
+use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::coordinator::{
     MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,

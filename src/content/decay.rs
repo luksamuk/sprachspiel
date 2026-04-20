@@ -8,7 +8,7 @@
 //! - Notes: 60 days (personal notes, shorter-lived than documents)
 //! - Documents: 120 days (imported reference material, longest retention)
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 /// Half-life for message content items (days)
 #[allow(dead_code)] // Consumed by content system (search/pruning)
@@ -106,7 +106,11 @@ pub fn compute_content_retention(
 /// # Returns
 /// Ok(()) on success, Err with message on failure
 #[allow(dead_code)] // Consumed by content system
-pub fn on_content_access(conn: &Connection, item_id: i64, importance_boost: f32) -> Result<(), String> {
+pub fn on_content_access(
+    conn: &Connection,
+    item_id: i64,
+    importance_boost: f32,
+) -> Result<(), String> {
     conn.execute(
         "UPDATE content_items SET access_count = access_count + 1, last_accessed = unixepoch('now'), importance = MIN(1.0, importance + ?1) WHERE id = ?2",
         params![importance_boost, item_id],
@@ -225,6 +229,66 @@ pub fn run_content_decay_cycle(conn: &Connection) -> Result<ContentDecayStats, S
         pruned,
         remaining,
         avg_retention,
+    })
+}
+/// Overview statistics for the content decay system, used in /context display.
+///
+/// Provides a snapshot of content memory health without computing
+/// per-item retention (which would be expensive for large datasets).
+/// Uses importance and decay_score as proxies for retention health.
+pub struct ContentDecayOverview {
+    /// Total non-pruned content items
+    pub total_items: usize,
+    /// Average importance across non-pruned items (0.0–1.0)
+    pub avg_importance: f64,
+    /// Items with decay_score < 0.3 (at risk of pruning)
+    pub items_at_risk: usize,
+    /// Total number of feedback signals
+    pub total_feedback_signals: usize,
+}
+
+/// Get content decay statistics for display in /context command.
+///
+/// Returns aggregated stats from the content_items and feedback_signals tables.
+/// Uses importance and decay_score as proxies rather than computing per-item
+/// retention (which requires time-based computation for each item).
+///
+/// # Arguments
+/// * `conn` - SQLite connection
+///
+/// # Returns
+/// ContentDecayOverview with aggregate statistics, or error message on failure
+pub fn get_content_decay_stats(conn: &Connection) -> Result<ContentDecayOverview, String> {
+    // Total non-pruned items and average importance
+    let (total_items, avg_importance): (i64, f64) = conn
+        .query_row(
+            "SELECT COUNT(*), COALESCE(AVG(importance), 0.0) FROM content_items WHERE pruned = 0",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| format!("Failed to query content stats: {}", e))?;
+
+    // Items at risk (low decay_score, not high importance)
+    let items_at_risk: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM content_items WHERE pruned = 0 AND decay_score < 0.3 AND importance < 0.8",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to query at-risk items: {}", e))?;
+
+    // Total feedback signals
+    let total_feedback_signals: i64 = conn
+        .query_row("SELECT COUNT(*) FROM feedback_signals", [], |row| {
+            row.get(0)
+        })
+        .map_err(|e| format!("Failed to query feedback signals count: {}", e))?;
+
+    Ok(ContentDecayOverview {
+        total_items: total_items as usize,
+        avg_importance,
+        items_at_risk: items_at_risk as usize,
+        total_feedback_signals: total_feedback_signals as usize,
     })
 }
 
@@ -498,7 +562,7 @@ mod tests {
                 has_embedding INTEGER DEFAULT 0,
                 pruned INTEGER NOT NULL DEFAULT 0,
                 project_id TEXT
-            );"
+            );",
         )
         .unwrap();
 
@@ -564,7 +628,7 @@ mod tests {
                 has_embedding INTEGER DEFAULT 0,
                 pruned INTEGER NOT NULL DEFAULT 0,
                 project_id TEXT
-            );"
+            );",
         )
         .unwrap();
 
@@ -764,5 +828,192 @@ mod tests {
             "Avg retention for fresh item should be > 0.9, got {}",
             stats.avg_retention
         );
+    }
+    // === get_content_decay_stats ===
+
+    #[test]
+    fn test_get_content_decay_stats_empty() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE content_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_type TEXT NOT NULL,
+                conversation_id TEXT,
+                role TEXT,
+                message_type TEXT DEFAULT 'normal',
+                previous_item_id INTEGER,
+                prompt_tokens INTEGER,
+                scope TEXT,
+                source TEXT,
+                title TEXT,
+                content TEXT NOT NULL,
+                importance REAL DEFAULT 0.5,
+                access_count INTEGER DEFAULT 0,
+                decay_score REAL DEFAULT 1.0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_accessed INTEGER NOT NULL,
+                has_embedding INTEGER DEFAULT 0,
+                pruned INTEGER NOT NULL DEFAULT 0,
+                project_id TEXT
+            );
+            CREATE TABLE feedback_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                session_id TEXT,
+                signal_type TEXT NOT NULL CHECK(signal_type IN ('good', 'bad', 'correction')),
+                base_value REAL NOT NULL,
+                correction_text TEXT,
+                source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (item_id) REFERENCES content_items(id) ON DELETE CASCADE
+            );",
+        )
+        .unwrap();
+
+        let stats = get_content_decay_stats(&conn).unwrap();
+        assert_eq!(stats.total_items, 0);
+        assert_eq!(stats.avg_importance, 0.0);
+        assert_eq!(stats.items_at_risk, 0);
+        assert_eq!(stats.total_feedback_signals, 0);
+    }
+
+    #[test]
+    fn test_get_content_decay_stats_with_items() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE content_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_type TEXT NOT NULL,
+                conversation_id TEXT,
+                role TEXT,
+                message_type TEXT DEFAULT 'normal',
+                previous_item_id INTEGER,
+                prompt_tokens INTEGER,
+                scope TEXT,
+                source TEXT,
+                title TEXT,
+                content TEXT NOT NULL,
+                importance REAL DEFAULT 0.5,
+                access_count INTEGER DEFAULT 0,
+                decay_score REAL DEFAULT 1.0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_accessed INTEGER NOT NULL,
+                has_embedding INTEGER DEFAULT 0,
+                pruned INTEGER NOT NULL DEFAULT 0,
+                project_id TEXT
+            );
+            CREATE TABLE feedback_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                session_id TEXT,
+                signal_type TEXT NOT NULL CHECK(signal_type IN ('good', 'bad', 'correction')),
+                base_value REAL NOT NULL,
+                correction_text TEXT,
+                source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (item_id) REFERENCES content_items(id) ON DELETE CASCADE
+            );",
+        )
+        .unwrap();
+
+        let now = chrono::Utc::now().timestamp();
+
+        // Insert 2 content items with different importance and decay_score
+        conn.execute(
+            "INSERT INTO content_items (content_type, content, importance, decay_score, created_at, updated_at, last_accessed)
+             VALUES ('note', 'important note', 0.7, 0.8, ?1, ?1, ?1)",
+            params![now],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO content_items (content_type, content, importance, decay_score, created_at, updated_at, last_accessed)
+             VALUES ('message', 'at-risk msg', 0.1, 0.2, ?1, ?1, ?1)",
+            params![now],
+        ).unwrap();
+
+        // Insert 1 feedback signal for the first item
+        conn.execute(
+            "INSERT INTO feedback_signals (item_id, signal_type, base_value, source, created_at)
+             VALUES (1, 'good', 1.0, 'user', ?1)",
+            params![now],
+        )
+        .unwrap();
+
+        let stats = get_content_decay_stats(&conn).unwrap();
+        assert_eq!(stats.total_items, 2);
+        assert!(
+            (stats.avg_importance - 0.4).abs() < 0.01,
+            "Expected avg_importance ~0.4, got {}",
+            stats.avg_importance
+        );
+        assert_eq!(stats.items_at_risk, 1); // decay_score 0.2 < 0.3 and importance 0.1 < 0.8
+        assert_eq!(stats.total_feedback_signals, 1);
+    }
+
+    #[test]
+    fn test_get_content_decay_stats_excludes_pruned() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE content_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_type TEXT NOT NULL,
+                conversation_id TEXT,
+                role TEXT,
+                message_type TEXT DEFAULT 'normal',
+                previous_item_id INTEGER,
+                prompt_tokens INTEGER,
+                scope TEXT,
+                source TEXT,
+                title TEXT,
+                content TEXT NOT NULL,
+                importance REAL DEFAULT 0.5,
+                access_count INTEGER DEFAULT 0,
+                decay_score REAL DEFAULT 1.0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_accessed INTEGER NOT NULL,
+                has_embedding INTEGER DEFAULT 0,
+                pruned INTEGER NOT NULL DEFAULT 0,
+                project_id TEXT
+            );
+            CREATE TABLE feedback_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                session_id TEXT,
+                signal_type TEXT NOT NULL CHECK(signal_type IN ('good', 'bad', 'correction')),
+                base_value REAL NOT NULL,
+                correction_text TEXT,
+                source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (item_id) REFERENCES content_items(id) ON DELETE CASCADE
+            );",
+        )
+        .unwrap();
+
+        let now = chrono::Utc::now().timestamp();
+
+        // Insert an active item
+        conn.execute(
+            "INSERT INTO content_items (content_type, content, importance, decay_score, created_at, updated_at, last_accessed)
+             VALUES ('note', 'active note', 0.5, 0.8, ?1, ?1, ?1)",
+            params![now],
+        ).unwrap();
+
+        // Insert a pruned item (should be excluded from stats)
+        conn.execute(
+            "INSERT INTO content_items (content_type, content, importance, decay_score, pruned, created_at, updated_at, last_accessed)
+             VALUES ('note', 'pruned note', 0.3, 0.1, 1, ?1, ?1, ?1)",
+            params![now],
+        ).unwrap();
+
+        let stats = get_content_decay_stats(&conn).unwrap();
+        assert_eq!(stats.total_items, 1); // excludes pruned
+        assert!(
+            (stats.avg_importance - 0.5).abs() < 0.01,
+            "Expected avg_importance ~0.5, got {}",
+            stats.avg_importance
+        );
+        assert_eq!(stats.items_at_risk, 0); // active item has decay_score 0.8 >= 0.3
     }
 }

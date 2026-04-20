@@ -66,8 +66,8 @@ pub fn validate_subagent_path(path: &Path) -> Result<PathBuf, String> {
     }
 
     // Get canonical CWD for sandbox checks
-    let cwd = std::env::current_dir()
-        .map_err(|_| "Could not determine current directory".to_string())?;
+    let cwd =
+        std::env::current_dir().map_err(|_| "Could not determine current directory".to_string())?;
     let canonical_cwd = cwd
         .canonicalize()
         .map_err(|_| "Could not determine current directory".to_string())?;
@@ -134,7 +134,8 @@ pub fn validate_subagent_path(path: &Path) -> Result<PathBuf, String> {
 
     // Path exists but canonicalization failed earlier — this shouldn't happen normally.
     // Try canonicalizing again (symlinks may have been resolved by the OS).
-    let canonical_path = abs_path.canonicalize()
+    let canonical_path = abs_path
+        .canonicalize()
         .map_err(|e| format!("Cannot access path '{}': {}", path.display(), e))?;
 
     // Re-check sandbox after canonicalization (symlinks can escape sandbox)
@@ -158,7 +159,6 @@ pub fn validate_subagent_path(path: &Path) -> Result<PathBuf, String> {
 
     Ok(canonical_path)
 }
-
 
 /// Validate multiple paths for vision multi-image support
 ///
@@ -274,8 +274,7 @@ mod tests {
     fn test_validate_subagent_path_symlink_escape() {
         // Symlink in /tmp pointing outside sandbox should be blocked after resolution
         use std::os::unix::fs::symlink;
-        let tmp_link =
-            std::path::PathBuf::from("/tmp/test_symlink_escape_security_rs.png");
+        let tmp_link = std::path::PathBuf::from("/tmp/test_symlink_escape_security_rs.png");
         // Clean up from previous run
         let _ = std::fs::remove_file(&tmp_link);
         // Create symlink: /tmp/test_symlink_escape_security_rs.png -> /etc/hostname
