@@ -165,6 +165,15 @@ pub enum ChatCommand {
     Translate { lang_pair: String, text: String },
     /// Summarize text
     Summarize { text: String },
+    /// Give feedback on an assistant message
+    Feedback {
+        signal_type: crate::feedback::types::FeedbackSignalType,
+        item_id: Option<i64>,
+        correction_text: Option<String>,
+    },
+    /// Prune content based on decay/importance (placeholder for Task 13)
+    #[allow(dead_code)]
+    ContentPrune,
 }
 
 /// Export format for /export command
@@ -692,6 +701,113 @@ fn parse_doc_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Stri
     }
 }
 
+/// Parse feedback subcommand arguments into a ChatCommand.
+///
+/// Handles signal types: good, bad, correction.
+/// Optional target: msg:<id> to target a specific message.
+///
+/// Examples:
+///   `/feedback good`               — positive signal on last assistant message
+///   `/feedback bad`                — negative signal on last assistant message
+///   `/feedback correction:fix text` — correction on last assistant message
+///   `/feedback msg:42 good`        — positive signal on specific message
+fn parse_feedback_subcommand(
+    subcmd: &str,
+    subargs: &str,
+) -> Result<ChatCommand, String> {
+    use crate::feedback::types::FeedbackSignalType;
+    use std::str::FromStr;
+
+    // subcmd is the first argument after /feedback
+    // subargs is everything after that
+    if subcmd.is_empty() {
+        return Err(
+            "Usage: /feedback <good|bad|correction:text> [msg:id]".to_string(),
+        );
+    }
+
+    // Check if first arg starts with msg: — parse item_id then signal type
+    if let Some(id_str) = subcmd.strip_prefix("msg:") {
+        let item_id: i64 = match id_str.parse() {
+            Ok(id) => id,
+            Err(_) => {
+                return Err(format!(
+                    "Invalid message ID '{}'. Use msg:<number> (e.g., msg:42).",
+                    id_str
+                ))
+            }
+        };
+
+        // Need a signal type after msg:id
+        if subargs.is_empty() {
+            return Err(format!(
+                "Usage: /feedback msg:{} <good|bad|correction:text>",
+                item_id
+            ));
+        }
+
+        // Parse signal type from subargs
+        let parts: Vec<&str> = subargs.splitn(2, ' ').collect();
+        let signal_str = parts.first().unwrap_or(&"");
+        let remainder = parts.get(1).copied().unwrap_or("");
+
+        // Check for correction: prefix
+        if let Some(correction_text) = signal_str.strip_prefix("correction:") {
+            let text = if correction_text.is_empty() {
+                remainder.trim().to_string()
+            } else {
+                format!("{} {}", correction_text, remainder.trim()).trim().to_string()
+            };
+            if text.is_empty() {
+                return Err(
+                    "Correction requires text. Usage: /feedback msg:<id> correction:<text>"
+                        .to_string(),
+                );
+            }
+            return Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Correction,
+                item_id: Some(item_id),
+                correction_text: Some(text),
+            });
+        }
+
+        let signal_type = FeedbackSignalType::from_str(signal_str)?;
+        return Ok(ChatCommand::Feedback {
+            signal_type,
+            item_id: Some(item_id),
+            correction_text: None,
+        });
+    }
+
+    // No msg: prefix — parse signal_type from first arg
+    // Check for correction: prefix
+    if let Some(correction_text) = subcmd.strip_prefix("correction:") {
+        let text = if correction_text.is_empty() {
+            subargs.trim().to_string()
+        } else {
+            format!("{} {}", correction_text, subargs.trim()).trim().to_string()
+        };
+        if text.is_empty() {
+            return Err(
+                "Correction requires text. Usage: /feedback correction:<text>".to_string(),
+            );
+        }
+        return Ok(ChatCommand::Feedback {
+            signal_type: FeedbackSignalType::Correction,
+            item_id: None,
+            correction_text: Some(text),
+        });
+    }
+
+    // Parse as good/bad signal type
+    let signal_type = FeedbackSignalType::from_str(subcmd)?;
+    Ok(ChatCommand::Feedback {
+        signal_type,
+        item_id: None,
+        correction_text: None,
+    })
+}
+
 /// Parse session subcommand arguments into a ChatCommand.
 ///
 /// Extracted from the main parse_command to reduce complexity.
@@ -1012,6 +1128,15 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             ChatCommand::Summarize { text: args.trim().to_string() }
         }
 
+        "feedback" | "fb" => {
+            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+            let subcmd = subcmd_parts.first().unwrap_or(&"");
+            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+            match parse_feedback_subcommand(subcmd, subargs) {
+                Ok(cmd) => cmd,
+                Err(e) => return Some(Err(e)),
+            }
+        }
         _ => {
             return Some(Err(format!(
                 "Unknown command: /{}. Use /help for available commands.",
@@ -1796,4 +1921,79 @@ mod tests {
         assert!(result.is_some());
         assert!(result.unwrap().is_err());
     }
+
+    // --- Feedback subcommand parser ---
+
+    use crate::feedback::types::FeedbackSignalType;
+
+    #[test]
+    fn test_parse_feedback_good() {
+        let result = parse_command("/feedback good");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Good,
+                item_id: None,
+                correction_text: None
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_feedback_bad() {
+        let result = parse_command("/feedback bad");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Bad,
+                item_id: None,
+                correction_text: None
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_feedback_correction() {
+        let result = parse_command("/feedback correction:fix the capital");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Correction,
+                item_id: None,
+                correction_text: Some(_)
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_feedback_msg_id_good() {
+        let result = parse_command("/feedback msg:42 good");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Good,
+                item_id: Some(42),
+                correction_text: None
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_feedback_empty_error() {
+        let result = parse_command("/feedback");
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[test]
+    fn test_parse_feedback_msg_no_signal_error() {
+        let result = parse_command("/feedback msg:42");
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[test]
+    fn test_parse_feedback_msg_invalid_id_error() {
+        let result = parse_command("/feedback msg:abc good");
+        assert!(matches!(result, Some(Err(_))));
+    }
+
 }

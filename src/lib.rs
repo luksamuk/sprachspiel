@@ -14,6 +14,7 @@ pub mod debug_tools;
 pub mod embeddings;
 pub mod external;
 pub mod facts;
+pub mod feedback;
 pub mod logging;
 pub mod macros;
 pub mod markdown;

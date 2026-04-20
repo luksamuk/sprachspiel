@@ -44,6 +44,9 @@ pub struct Settings {
     /// LED control configuration
     #[serde(default)]
     pub led: LedSettings,
+    /// Feedback system configuration
+    #[serde(default)]
+    pub feedback: FeedbackSettings,
 }
 
 /// Model-related settings with per-subcommand configuration
@@ -151,8 +154,110 @@ pub struct LedSettings {
     pub port: u16,
 }
 
+/// Feedback system settings for managing how user feedback affects memory scoring.
+/// Controls RRF boost, LLM feedback weight, Ebbinghaus decay, content aging,
+/// access reinforcement, and content pruning.
+/// See ADR-004 (LLM feedback weight), ADR-008 (content decay), ADR-009 (access reinforcement).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeedbackSettings {
+    /// Whether the feedback system is enabled.
+    /// When enabled, RRF boost and LLM feedback tools are active.
+    /// This does NOT gate the `/feedback` command (that always works).
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Whether implicit (non-explicit) feedback signals are captured.
+    /// Reserved for Phase 2 — currently stored but not used in scoring.
+    #[serde(default = "default_true")]
+    pub implicit_capture: bool,
+
+    /// Weight of LLM-provided feedback relative to explicit user feedback.
+    /// See ADR-004. Range: 0.0–1.0.
+    #[serde(default = "default_llm_feedback_weight")]
+    pub llm_feedback_weight: f32,
+
+    /// Half-life (in days) for decay of positively-rated content.
+    /// Higher = good memories decay slower.
+    #[serde(default = "default_decay_half_life_good")]
+    pub decay_half_life_good: f32,
+
+    /// Half-life (in days) for decay of negatively-rated content.
+    /// Lower = bad memories decay faster.
+    #[serde(default = "default_decay_half_life_bad")]
+    pub decay_half_life_bad: f32,
+
+    /// Half-life (in days) for decay of corrections.
+    /// Between good and bad — corrections age at a moderate rate.
+    #[serde(default = "default_decay_half_life_correction")]
+    pub decay_half_life_correction: f32,
+
+    /// Whether to apply time-based decay to content relevance scores.
+    /// See ADR-008.
+    #[serde(default = "default_true")]
+    pub content_decay: bool,
+
+    /// Whether to apply a small reinforcement boost each time content is accessed.
+    /// See ADR-009.
+    #[serde(default = "default_true")]
+    pub access_reinforcement: bool,
+
+    /// Per-access reinforcement boost amount.
+    /// Applied each time content is retrieved, not per 10 accesses.
+    #[serde(default = "default_access_reinforcement_boost")]
+    pub access_reinforcement_boost: f32,
+
+    /// Threshold below which content is pruned from the knowledge base.
+    /// Content with a score below this value may be removed during maintenance.
+    #[serde(default = "default_content_prune_threshold")]
+    pub content_prune_threshold: f32,
+}
+impl Default for FeedbackSettings {
+    fn default() -> Self {
+        FeedbackSettings {
+            enabled: true,
+            implicit_capture: true,
+            llm_feedback_weight: 0.3,
+            decay_half_life_good: 30.0,
+            decay_half_life_bad: 7.0,
+            decay_half_life_correction: 14.0,
+            content_decay: true,
+            access_reinforcement: true,
+            access_reinforcement_boost: 0.001,
+            content_prune_threshold: 0.05,
+        }
+    }
+}
+
 fn default_led_port() -> u16 {
     80
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_llm_feedback_weight() -> f32 {
+    0.3
+}
+
+fn default_decay_half_life_good() -> f32 {
+    30.0
+}
+
+fn default_decay_half_life_bad() -> f32 {
+    7.0
+}
+
+fn default_decay_half_life_correction() -> f32 {
+    14.0
+}
+
+fn default_access_reinforcement_boost() -> f32 {
+    0.001
+}
+
+fn default_content_prune_threshold() -> f32 {
+    0.05
 }
 
 impl Default for ModelSettings {
@@ -585,6 +690,67 @@ skin = "dark"
 # HTTP port for the LED server.
 # Default: 80
 # port = 80
+
+# =============================================================================
+# FEEDBACK CONFIGURATION (Optional)
+# =============================================================================
+# Control how user and LLM feedback affects memory scoring.
+# These settings govern Ebbinghaus decay, access reinforcement,
+# content pruning, and LLM feedback weight.
+# See ADR-004 (LLM feedback weight), ADR-008 (content decay), ADR-009 (access reinforcement).
+
+# [feedback]
+
+# Whether the feedback system is enabled.
+# When enabled, RRF boost and LLM feedback tools are active.
+# This does NOT gate the /feedback command (that always works).
+# Default: true
+# enabled = true
+
+# Whether implicit (non-explicit) feedback signals are captured.
+# Reserved for Phase 2 — currently stored but not used in scoring.
+# Default: true
+# implicit_capture = true
+
+# Weight of LLM-provided feedback relative to explicit user feedback.
+# See ADR-004. Range: 0.0–1.0.
+# Default: 0.3
+# llm_feedback_weight = 0.3
+
+# Half-life (in days) for decay of positively-rated content.
+# Higher = good memories decay slower.
+# Default: 30
+# decay_half_life_good = 30
+
+# Half-life (in days) for decay of negatively-rated content.
+# Lower = bad memories decay faster.
+# Default: 7
+# decay_half_life_bad = 7
+
+# Half-life (in days) for decay of corrections.
+# Between good and bad — corrections age at a moderate rate.
+# Default: 14
+# decay_half_life_correction = 14
+
+# Whether to apply time-based decay to content relevance scores.
+# See ADR-008.
+# Default: true
+# content_decay = true
+
+# Whether to apply a small reinforcement boost each time content is accessed.
+# See ADR-009.
+# Default: true
+# access_reinforcement = true
+
+# Per-access reinforcement boost amount.
+# Applied each time content is retrieved, not per 10 accesses.
+# Default: 0.001
+# access_reinforcement_boost = 0.001
+
+# Threshold below which content is pruned from the knowledge base.
+# Content with a score below this value may be removed during maintenance.
+# Default: 0.05
+# content_prune_threshold = 0.05
 "#;
 
         std::fs::write(&config_path, sample_config)?;
@@ -773,5 +939,50 @@ tools = false
         assert_eq!(config.model_id, "glm-ocr:bf16");
         // The builtin glm-ocr has temperature 0.1
         assert_eq!(config.temperature, 0.1);
+    }
+
+    #[test]
+    fn test_feedback_settings_defaults() {
+        let settings = Settings::default();
+        assert!(settings.feedback.enabled);
+        assert!(settings.feedback.implicit_capture);
+        assert!((settings.feedback.llm_feedback_weight - 0.3).abs() < f32::EPSILON);
+        assert!((settings.feedback.decay_half_life_good - 30.0).abs() < f32::EPSILON);
+        assert!((settings.feedback.decay_half_life_bad - 7.0).abs() < f32::EPSILON);
+        assert!((settings.feedback.decay_half_life_correction - 14.0).abs() < f32::EPSILON);
+        assert!(settings.feedback.content_decay);
+        assert!(settings.feedback.access_reinforcement);
+        assert!((settings.feedback.access_reinforcement_boost - 0.001).abs() < f32::EPSILON);
+        assert!((settings.feedback.content_prune_threshold - 0.05).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_feedback_settings_parse_defaults() {
+        // Empty config should yield all defaults
+        let settings: Settings = toml::from_str("").unwrap();
+        assert!(settings.feedback.enabled);
+        assert!((settings.feedback.llm_feedback_weight - 0.3).abs() < f32::EPSILON);
+        assert!((settings.feedback.access_reinforcement_boost - 0.001).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_feedback_settings_parse_overrides() {
+        let sample = r#"
+[feedback]
+enabled = false
+llm_feedback_weight = 0.5
+decay_half_life_good = 60
+decay_half_life_bad = 3
+content_prune_threshold = 0.1
+"#;
+        let settings: Settings = toml::from_str(sample).unwrap();
+        assert!(!settings.feedback.enabled);
+        assert!((settings.feedback.llm_feedback_weight - 0.5).abs() < f32::EPSILON);
+        assert!((settings.feedback.decay_half_life_good - 60.0).abs() < f32::EPSILON);
+        assert!((settings.feedback.decay_half_life_bad - 3.0).abs() < f32::EPSILON);
+        // Not overridden fields should keep defaults
+        assert!(settings.feedback.implicit_capture);
+        assert!((settings.feedback.decay_half_life_correction - 14.0).abs() < f32::EPSILON);
+        assert!((settings.feedback.content_prune_threshold - 0.1).abs() < f32::EPSILON);
     }
 }

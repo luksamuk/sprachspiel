@@ -422,6 +422,15 @@ pub async fn handle_command(
             handle_subagent_summarize(state, text).await;
             HandleResult::Continue
         }
+        ChatCommand::Feedback { signal_type, item_id, correction_text } => {
+            handle_feedback(state, signal_type, item_id, correction_text);
+            HandleResult::Continue
+        }
+        ChatCommand::ContentPrune => {
+            // Placeholder for Task 13 — not yet implemented
+            println!("Content prune is not yet implemented.");
+            HandleResult::Continue
+        }
     }
 }
 
@@ -2967,5 +2976,134 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
             let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+    }
+}
+
+/// Handle /feedback command
+///
+/// Records user feedback (good/bad/correction) on an assistant message.
+///
+/// Two-guard anonymous check:
+/// 1. If db is None → error
+/// 2. If session.anonymous → error
+///
+/// Target resolution:
+/// - If item_id provided (msg:N) → use that
+/// - If no item_id → use last_assistant_message_id
+/// - If neither → error: "No assistant message to give feedback on"
+///
+/// Importance adjustment:
+/// - Good: importance + 0.05 (capped at 1.0)
+/// - Bad: importance - 0.1 (floored at 0.0)
+/// - Correction: no importance change
+pub fn handle_feedback(
+    state: &mut ReplState,
+    signal_type: crate::feedback::types::FeedbackSignalType,
+    item_id: Option<i64>,
+    correction_text: Option<String>,
+) {
+    use crate::feedback::db::insert_feedback_signal;
+    use crate::feedback::types::{FeedbackSignal, FeedbackSignalType, FeedbackSource};
+
+    // Anonymous block — first guard: db.is_none()
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    // Second guard: session.anonymous
+    if state.session.anonymous {
+        eprintln!("Error: Cannot give feedback in anonymous mode.");
+        return;
+    }
+
+    // Resolve target item_id
+    let target_id = match item_id {
+        Some(id) => id,
+        None => match state.last_assistant_message_id {
+            Some(id) => id,
+            None => {
+                println!("No assistant message to give feedback on.");
+                return;
+            }
+        }
+    };
+
+    // Determine importance delta based on signal type
+    let importance_delta: f32 = match signal_type {
+        FeedbackSignalType::Good => 0.05,
+        FeedbackSignalType::Bad => -0.1,
+        FeedbackSignalType::Correction => 0.0,
+    };
+
+    // Create feedback signal
+    let now_ts: i64 = chrono::Utc::now().timestamp();
+    let signal = FeedbackSignal {
+        item_id: target_id,
+        session_id: Some(state.session.id.clone()),
+        signal_type,
+        base_value: signal_type.base_value(),
+        correction_text,
+        source: FeedbackSource::User,
+        created_at: now_ts,
+    };
+
+    // Insert feedback signal via db.with_connection()
+    let insert_result: Result<i64, String> = db.with_connection(|conn| {
+        insert_feedback_signal(
+            conn,
+            signal.item_id,
+            signal.session_id.as_deref(),
+            signal.signal_type,
+            signal.base_value,
+            signal.correction_text.as_deref(),
+            signal.source,
+            signal.created_at,
+        ).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e))))
+    }).map_err(|e| format!("{}", e));
+
+    match insert_result {
+        Ok(_row_id) => {
+            // Adjust importance (except for correction which has delta 0.0)
+            if importance_delta != 0.0
+                && let Err(e) = db.adjust_importance(target_id, importance_delta)
+            {
+                eprintln!("\x1B[33mWarning: Could not adjust importance: {}\x1B[0m", e);
+            }
+
+            // Get message excerpt for confirmation
+            let excerpt: String = db.with_connection(|conn| {
+                conn.query_row(
+                    "SELECT SUBSTR(content, 1, 80) FROM content_items WHERE id = ?1",
+                    rusqlite::params![target_id],
+                    |row| row.get::<_, String>(0)
+                )
+            }).unwrap_or_else(|_| "(no content)".to_string());
+            let signal_label = signal.signal_type.to_string();
+            let arrow = match signal.signal_type {
+                FeedbackSignalType::Good => "\x1B[32m↑↑\x1B[0m",
+                FeedbackSignalType::Bad => "\x1B[31m↓↓\x1B[0m",
+                FeedbackSignalType::Correction => "\x1B[33m✎\x1B[0m",
+            };
+
+            println!("{} {} feedback recorded for msg:{}", arrow, signal_label, target_id);
+            println!("  \x1B[90m{}\x1B[0m", excerpt);
+
+            if let Some(ref text) = signal.correction_text {
+                println!("  Correction: {}", text);
+            }
+
+            if importance_delta > 0.0 {
+                println!("  Importance: +{:.2}", importance_delta);
+            } else if importance_delta < 0.0 {
+                println!("  Importance: {:.2}", importance_delta);
+            }
+        }
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Failed to record feedback: {}\x1B[0m", e);
+        }
     }
 }
