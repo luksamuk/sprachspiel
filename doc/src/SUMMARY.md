@@ -38,7 +38,6 @@
 - [Chat Mode Design](./development/chat-mode-design.md)
 - [Contributing](./development/contributing.md)
 - [Pull Request Process](./development/PR-PROCESS.md)
-- [Feedback Manual Tests](./development/MANUAL-TEST-FEEDBACK.md)
 
 ## Research Background
 
