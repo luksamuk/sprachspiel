@@ -229,3 +229,4 @@ _______________________________________
 - [ ] `cargo clippy -- -D warnings` passed
 - [ ] Smoke test (SMOKE_TEST.md) passed
 - [ ] Documentation reviewed (CHANGELOG updated)
+- [ ] PR reviewed and approved

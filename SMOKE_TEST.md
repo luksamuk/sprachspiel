@@ -508,6 +508,8 @@ Test the feedback command infrastructure for recording user feedback on assistan
 
 ### 15.2 Feedback via LLM
 
+**Note:** Use a model that supports tools (qwen3.5:4b or larger).
+
 > **LLM Refusal:** If the model refuses to call `feedback_submit`, rephrase the prompt
 > to be more direct, e.g., "Call the feedback_submit tool with subcommand good."
 
