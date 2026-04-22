@@ -8,6 +8,9 @@ mod operations;
 mod query;
 pub mod schema;
 
+pub mod content_decay_ops;
+pub mod feedback_ops;
+
 pub use connection::Database;
 pub use init::init_database_core;
 pub use operations::{ConversationMetadataParams, SourceType, TodoRow, fts5_escape};

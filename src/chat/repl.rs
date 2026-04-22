@@ -147,7 +147,7 @@ async fn run_startup_tasks(
         // Content decay cycle (gated by settings.feedback.content_decay)
         if settings.feedback.content_decay {
             match db_ref.with_connection(|conn| {
-                crate::content::decay::run_content_decay_cycle(conn).map_err(|e| {
+                crate::db::content_decay_ops::run_content_decay_cycle(conn).map_err(|e| {
                     rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
                 })
             }) {

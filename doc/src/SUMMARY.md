@@ -27,6 +27,7 @@
 - [Overview](./development/README.md)
 - [Implementation Directive](./development/implementation-directive.md)
 - [Architecture](./development/architecture.md)
+- [Feedback Architecture](./development/feedback-architecture.md)
 - [Memory Architecture](./development/memory-architecture.md)
 - [Context Anatomy](./development/context-anatomy.md)
 - [Factual Memory System](./development/factual-memory-system.md)

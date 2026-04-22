@@ -13,10 +13,10 @@ use super::types::{
     ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType,
     Note,
 };
+use crate::consts::roles::ROLE_USER;
 use crate::db::Database;
 use crate::db::WhereBuilder;
 use crate::db::fts5_escape;
-use crate::consts::roles::ROLE_USER;
 
 // === SQL Constants ===
 // Extracted from inline to improve maintainability and reduce duplication
@@ -857,7 +857,7 @@ impl Database {
         {
             let item_ids: Vec<i64> = results.iter().map(|r| r.item.id).collect();
             let boosts = self.with_connection(|conn| {
-                crate::feedback::db::compute_feedback_boost(
+                crate::db::feedback_ops::compute_feedback_boost(
                     conn,
                     &item_ids,
                     chrono::Utc::now().timestamp(),
@@ -889,7 +889,7 @@ impl Database {
         {
             for result in &results {
                 if let Err(e) = self.with_connection(|conn| {
-                    crate::content::decay::on_content_access(
+                    crate::db::content_decay_ops::on_content_access(
                         conn,
                         result.item.id,
                         fs.access_reinforcement_boost,

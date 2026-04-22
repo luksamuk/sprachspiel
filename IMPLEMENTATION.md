@@ -1582,7 +1582,7 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 
 **Status:** 🔄 IN PROGRESS (branch: feat/feedback-infrastructure)
 **Related Issue:** #23 (to be updated for P5 execution)
-**Detailed Plan:** [`.sisyphus/plans/feedback-infrastructure-v4.md`](./.sisyphus/plans/feedback-infrastructure-v4.md) — feedback-driven memory with active forgetting
+**Detailed Plan:** [`doc/src/development/feedback-architecture.md`](./doc/src/development/feedback-architecture.md) — feedback-driven memory with active forgetting (architecture, formulas, and data model)
 
 **Goal:** Implement a complete feedback-driven memory system: capture explicit feedback signals (Good/Bad/Correction) with decay-weighted RRF fusion for retrieval ranking, activate content item decay (ghost fields become functional), and connect feedback to forgetting speed. Feedback is harness-only (no fine-tuning) — signals affect RRF fusion scoring AND content importance/decay, not model weights.
 
@@ -1650,6 +1650,16 @@ Context Assembly:
 | 1.8 | Access tracking + importance adj. | 2 days | ADR-009: retrieval reinforces retention |
 | 1.9 | Decay cycle integration | 1 day | Startup trigger + /content prune |
 | **Total** | | **13.5 days** | |
+
+**Reserved Code (Phase 2):** The following functions in `src/feedback/prompt.rs` are implemented and tested but not yet wired into production. They are reserved for Phase 2 (Feedback-Aware Retrieval) and are documented with `#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval`:
+
+| Function | Purpose | Expected Use |
+|----------|---------|-------------|
+| `compute_feedback_boost_map()` | Database-aware version of `compute_feedback_boost()` using the `Database` type directly | Phase 2 RRF fusion in `search_content_hybrid()` — will replace the direct `feedback::db::compute_feedback_boost` call |
+| `build_feedback_section()` | Format feedback stats for `/context` display | Phase 2 `/context` enhancement — will replace inline formatting in `command_handlers.rs:1892-1916` |
+| `build_decay_section()` | Format decay stats for `/context` display | Phase 2 `/context` enhancement — same as above |
+
+Additionally, `src/feedback/decay.rs` contains pure decay computation functions (`decayed_weight()`, `compute_total_boost()`) that are consumed by `prompt.rs` and will be activated when Phase 2 integrates the boost map into retrieval.
 
 **Sprach 2.0 Note:** The article's "Learned Personality" proposal (S2.5 — SOUL.md patching) overlaps with but extends P5. P5 captures *what happened* (feedback signals for retrieval weighting); S2.5 adjusts *who I am* (personality modification with human approval). Both are complementary.
 

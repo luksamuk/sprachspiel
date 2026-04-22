@@ -1151,36 +1151,38 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
                 text: args.trim().to_string(),
             }
         }
-        "feedback" | "fb" => {
-            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
-            let subcmd = subcmd_parts.first().unwrap_or(&"");
-            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-            match parse_feedback_subcommand(subcmd, subargs) {
-                Ok(cmd) => cmd,
-                Err(e) => return Some(Err(e)),
-            }
-        }
-        "fg" => {
-            // Shortcut for /feedback good
-            ChatCommand::Feedback {
-                signal_type: crate::feedback::types::FeedbackSignalType::Good,
-                item_id: None,
-                correction_text: None,
+        "feedback" | "fb" | "fg" => {
+            if *cmd == "fg" {
+                // Shortcut for /feedback good
+                ChatCommand::Feedback {
+                    signal_type: crate::feedback::types::FeedbackSignalType::Good,
+                    item_id: None,
+                    correction_text: None,
+                }
+            } else {
+                let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+                let subcmd = subcmd_parts.first().unwrap_or(&"");
+                let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+                match parse_feedback_subcommand(subcmd, subargs) {
+                    Ok(cmd) => cmd,
+                    Err(e) => return Some(Err(e)),
+                }
             }
         }
 
-        "content" => {
-            let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
-            let subcmd = subcmd_parts.first().unwrap_or(&"");
-            let subargs = subcmd_parts.get(1).copied().unwrap_or("");
-            match parse_content_subcommand(subcmd, subargs) {
-                Ok(cmd) => cmd,
-                Err(e) => return Some(Err(e)),
+        "content" | "cp" => {
+            if *cmd == "cp" {
+                // Shortcut for /content prune
+                ChatCommand::ContentPrune
+            } else {
+                let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+                let subcmd = subcmd_parts.first().unwrap_or(&"");
+                let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+                match parse_content_subcommand(subcmd, subargs) {
+                    Ok(cmd) => cmd,
+                    Err(e) => return Some(Err(e)),
+                }
             }
-        }
-        "cp" => {
-            // Shortcut for /content prune
-            ChatCommand::ContentPrune
         }
         _ => {
             return Some(Err(format!(

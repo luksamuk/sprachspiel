@@ -162,7 +162,10 @@ impl ReplStateBuilder {
         self
     }
 
-    #[allow(dead_code)] // Used by future feedback feature to restore state on session load
+    // Builder setter for last_assistant_message_id.
+    // The field itself is used in command_handlers.rs (feedback) and continuation.rs.
+    // This setter is kept for builder API completeness but is not currently called.
+    #[allow(dead_code)]
     pub fn last_assistant_message_id(mut self, id: Option<i64>) -> Self {
         self.last_assistant_message_id = id;
         self

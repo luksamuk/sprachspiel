@@ -220,6 +220,17 @@ If the agent skips this phase, the user should send them back to do it.
 
 ### Phase 4: Mark PR Ready for Review
 
+**Before marking ready, run formatters and linters:**
+
+```
+21.5. Run code formatters and verify no warnings:
+    cargo fmt
+    cargo clippy -- -D warnings
+    
+    If clippy reports warnings, fix them before proceeding.
+    This prevents formatting diffs from cluttering the review.
+```
+
 ```
 22. Mark PR as "ready for review":
     gh pr ready <number>

@@ -991,17 +991,19 @@ pub fn handle_fact_prune(state: &ReplState) {
 /// Runs the content decay cycle and prunes low-retention content items.
 /// Items with importance >= 0.8 are never pruned.
 pub fn handle_content_prune(state: &ReplState) {
-    use crate::content::decay::run_content_decay_cycle;
+    use crate::db::content_decay_ops::run_content_decay_cycle;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
+            log::warn!("Cannot prune content: database not initialized (anonymous mode)");
             eprintln!("Error: Database not initialized. Run chat without --anonymous.");
             return;
         }
     };
 
     if state.session.anonymous {
+        log::warn!("Cannot prune content in anonymous mode");
         eprintln!("Error: Cannot prune content in anonymous mode.");
         return;
     }
@@ -1014,6 +1016,12 @@ pub fn handle_content_prune(state: &ReplState) {
         })
     }) {
         Ok(stats) => {
+            log::debug!(
+                "Content prune completed: {} pruned, {} remaining (avg retention: {:.2})",
+                stats.pruned,
+                stats.remaining,
+                stats.avg_retention
+            );
             if stats.pruned > 0 {
                 println!(
                     "\x1B[32m✓ Pruned {} content item(s), {} remaining (avg retention: {:.2}).\x1B[0m",
@@ -1027,6 +1035,7 @@ pub fn handle_content_prune(state: &ReplState) {
             }
         }
         Err(e) => {
+            log::warn!("Failed to prune content: {}", e);
             eprintln!("\x1B[31m✗ Failed to prune content: {}\x1B[0m", e);
         }
     }
@@ -1891,7 +1900,7 @@ pub fn print_context_info(
     }
     // Content Memory section (if database is available)
     if let Some(db_ref) = db {
-        use crate::content::decay::get_content_decay_stats;
+        use crate::db::content_decay_ops::get_content_decay_stats;
 
         match db_ref.with_connection(|conn| {
             get_content_decay_stats(conn).map_err(|e| {
@@ -3090,13 +3099,14 @@ pub fn handle_feedback(
     item_id: Option<i64>,
     correction_text: Option<String>,
 ) {
-    use crate::feedback::db::insert_feedback_signal;
+    use crate::db::feedback_ops::insert_feedback_signal;
     use crate::feedback::types::{FeedbackSignal, FeedbackSignalType, FeedbackSource};
 
     // Anonymous block — first guard: db.is_none()
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
+            log::warn!("Cannot give feedback: database not initialized (anonymous mode)");
             eprintln!("Error: Database not initialized. Run chat without --anonymous.");
             return;
         }
@@ -3104,6 +3114,7 @@ pub fn handle_feedback(
 
     // Second guard: session.anonymous
     if state.session.anonymous {
+        log::warn!("Cannot give feedback in anonymous mode");
         eprintln!("Error: Cannot give feedback in anonymous mode.");
         return;
     }
@@ -3164,8 +3175,16 @@ pub fn handle_feedback(
             if importance_delta != 0.0
                 && let Err(e) = db.adjust_importance(target_id, importance_delta)
             {
+                log::warn!("Could not adjust importance for item {}: {}", target_id, e);
                 eprintln!("\x1B[33mWarning: Could not adjust importance: {}\x1B[0m", e);
             }
+
+            log::debug!(
+                "Feedback recorded: {} for msg:{} (delta: {:+.2})",
+                signal.signal_type,
+                target_id,
+                importance_delta
+            );
 
             // Get message excerpt for confirmation
             let excerpt: String = db
@@ -3201,6 +3220,7 @@ pub fn handle_feedback(
             }
         }
         Err(e) => {
+            log::warn!("Failed to record feedback for item {}: {}", target_id, e);
             eprintln!("\x1B[31m✗ Failed to record feedback: {}\x1B[0m", e);
         }
     }

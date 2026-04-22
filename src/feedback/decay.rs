@@ -11,23 +11,23 @@ use super::types::{FeedbackSignal, FeedbackSignalType};
 use chrono::{DateTime, Utc};
 
 /// Half-life for Good signals (days)
-#[allow(dead_code)] // Consumed by db/prompt (Tasks 4-6)
+#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval
 pub const HALF_LIFE_GOOD: f32 = 30.0;
 
 /// Half-life for Bad signals (days)
-#[allow(dead_code)] // Consumed by db/prompt (Tasks 4-6)
+#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval
 pub const HALF_LIFE_BAD: f32 = 7.0;
 
 /// Half-life for Correction signals (days)
-#[allow(dead_code)] // Consumed by db/prompt (Tasks 4-6)
+#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval
 pub const HALF_LIFE_CORRECTION: f32 = 14.0;
 
 /// Maximum accumulated boost per item (first-stage clamp, ±2.0)
-#[allow(dead_code)] // Consumed by db/prompt (Tasks 4-6)
+#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval
 pub const MAX_FEEDBACK_BOOST: f32 = 2.0;
 
 /// Returns the half-life for a signal type.
-#[allow(dead_code)] // Consumed by prompt (Tasks 6+)
+#[allow(dead_code)] // Internal helper for decayed_weight()
 fn half_life(signal_type: FeedbackSignalType) -> f32 {
     match signal_type {
         FeedbackSignalType::Good => HALF_LIFE_GOOD,
@@ -46,7 +46,7 @@ fn half_life(signal_type: FeedbackSignalType) -> f32 {
 ///
 /// # Returns
 /// Decayed weight value (positive for Good/Correction, negative for Bad)
-#[allow(dead_code)] // Consumed by db/prompt (Tasks 4-6)
+#[allow(dead_code)] // Used by compute_total_boost and tests
 pub fn decayed_weight(signal: &FeedbackSignal, now: DateTime<Utc>) -> f32 {
     let signal_time = DateTime::<Utc>::from_timestamp(signal.created_at, 0).unwrap_or_default();
     let days_since = (now - signal_time).num_days() as f32;
@@ -66,7 +66,7 @@ pub fn decayed_weight(signal: &FeedbackSignal, now: DateTime<Utc>) -> f32 {
 ///
 /// # Returns
 /// Total boost clamped to ±2.0
-#[allow(dead_code)] // Consumed by db/prompt (Tasks 4-6)
+#[allow(dead_code)] // Used by feedback/prompt.rs (Phase 2 RRF integration)
 pub fn compute_total_boost(signals: &[FeedbackSignal], now: DateTime<Utc>) -> f32 {
     let total: f32 = signals.iter().map(|s| decayed_weight(s, now)).sum();
     total.clamp(-MAX_FEEDBACK_BOOST, MAX_FEEDBACK_BOOST)

@@ -3,7 +3,6 @@
 //! Defines the core types: FeedbackSignalType, FeedbackSource, and FeedbackSignal.
 
 /// Type of feedback signal with associated base values (ADR-005)
-#[allow(dead_code)] // Consumed by db/decay/prompt (Tasks 4-6)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeedbackSignalType {
     /// Positive signal from user or LLM
@@ -14,7 +13,6 @@ pub enum FeedbackSignalType {
     Correction,
 }
 
-#[allow(dead_code)] // Consumed by db/decay/prompt (Tasks 4-6)
 impl FeedbackSignalType {
     /// Returns the base value for this signal type (ADR-005).
     ///
@@ -62,7 +60,6 @@ impl std::str::FromStr for FeedbackSignalType {
 }
 
 /// Source of a feedback signal with associated weight factors (ADR-004)
-#[allow(dead_code)] // Consumed by db/decay/prompt (Tasks 4-6)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeedbackSource {
     /// Direct user feedback (weight factor 1.0)
@@ -71,7 +68,6 @@ pub enum FeedbackSource {
     Llm,
 }
 
-#[allow(dead_code)] // Consumed by db/decay/prompt (Tasks 4-6)
 impl FeedbackSource {
     /// Returns the weight factor for this source (ADR-004).
     ///
@@ -115,7 +111,6 @@ impl std::str::FromStr for FeedbackSource {
 }
 
 /// A feedback signal stored in the feedback system
-#[allow(dead_code)] // Consumed by db/decay/prompt (Tasks 4-6)
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeedbackSignal {
     /// ID of the target content item
