@@ -660,6 +660,13 @@ Self-analysis identifying ask-ai-rs as a Complex Adaptive System (CAS) with emer
 | S2.4 | Plugin System (WASM) | — | 📋 P15 (existing) | 3-4 weeks |
 | S2.5 | SOUL.md Patching + `/apply-patch` | S2.3 | 🟡 Research | 3-5 days |
 | S2.6 | Skills Auto-Registration (Meta) | S2.1-S2.5 | 🕐 Wait | TBD |
+| S2.meta1 | Meta-cognition Skill (Layer 1) | None | 🟡 Prototype (Issue #99) | 1h |
+| S2.meta2 | Behavioral Telemetry (Layer 2) | P5 merge, S2.meta1 data | 📋 Planned (Issue #100) | 2-3 days |
+| S2.meta3 | Behavioral Reflection + Personality (Layer 3) | S2.3, S2.5, S2.meta2 | 📋 Planned (Issue #101) | 1-2 weeks |
+
+**Meta-cognition Behavioral Proposals (S2.meta1-S2.meta3):**
+
+Three-layer approach to behavioral self-monitoring. **Layer 1** (skill) is a prototype and data collection instrument — testing confirmed it works with high-reasoning models but cannot guarantee execution, produce structured data, or work with smaller models. **Layer 2** (behavioral telemetry in system prompt) is the real implementation — deterministic heuristic detection in the harness, not dependent on the LLM self-monitoring. **Layer 3** (persistent personality adjustment) requires S2.3 and S2.5. Key reframing: **empathy is not a bug — opacity is.** The goal is not to suppress behavioral shifts, but to make them visible and give the user control. Calibration insight from testing: the detector should focus on **unannounced system drift** rather than **user-initiated topic changes**. See `~/meta-cognition-brainstorm.md` for full design and `~/git/ask-ollama-rs/doc/src/development/meta-cognition-proposal.md` for integration plan.
 
 **Validated Decisions (DEC-001 to DEC-007):**
 
