@@ -44,6 +44,13 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **Embeddings fail on startup when input exceeds context window** (Issue #39)
+  - Proactive context length check in `EmbeddingClient::embed()` before API call — returns `ContextExceeded` early
+  - Cached `context_length` in `EmbeddingClient` via `OnceCell` to avoid repeated `show_model_info` API calls
+  - Handle `EmbeddingError::ContextExceeded` variant in fallback match arms (was only matching `ApiError`)
+  - Replace `panic!` on Ollama unreachable with graceful degradation in `regenerate.rs`
+  - Added empty content validation to `recovery.rs` (was missing, only present in `regenerate.rs`)
+  - Fixed `has_embedding=1` marking logic — only marks item when ALL chunks verified complete
 - Fixed double "Error:" prefix in subagent security blocklist messages
 - Fixed broken markdown tables in command documentation (ocr, vision, translate, summarize, query, chat)
 - Fixed stale default feature flags in skills-system-design.md

@@ -2701,6 +2701,42 @@ Modified truncation handling across three files:
 
 ---
 
+### 🔵 Bug: Embeddings Fail on Startup When Input Exceeds Context Window [M1]
+
+**Status:** 🔄 IN PROGRESS (Issue #39)
+
+**Goal:** Fix embedding generation failures when content exceeds the embedding model's context window during startup regeneration/recovery.
+
+**Problem Statement:**
+- `EmbeddingClient::embed()` sends content to the API without pre-checking if it fits in the context window
+- Startup regeneration panics (`panic!`) when Ollama is unreachable, crashing the application
+- `recovery.rs` lacks empty content validation that `regenerate.rs` has
+- `has_embedding=1` marked on items prematurely (when only some chunks succeeded)
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Proactive context length check in `embed()` | 📋 Planned |
+| 2 | Cache `context_length` in `EmbeddingClient` | 📋 Planned |
+| 3 | Handle `ContextExceeded` variant in fallback match arms | 📋 Planned |
+| 4 | Replace `panic!` with graceful degradation in `regenerate.rs` | 📋 Planned |
+| 5 | Consistent empty content validation in `recovery.rs` | 📋 Planned |
+| 6 | Fix `has_embedding` marking logic | 📋 Planned |
+
+**Files to Modify:**
+- `src/embeddings/client.rs` — Add proactive check, cache context length
+- `src/embeddings/fallback.rs` — Handle `ContextExceeded` variant
+- `src/embeddings/regenerate.rs` — Replace panic with graceful degradation
+- `src/embeddings/recovery.rs` — Add empty content validation
+- `src/db/operations.rs` or `src/content/db.rs` — Helper for chunk embedding verification
+
+**Estimated effort:** 2.5 days
+
+**Related:** Issue #39
+
+---
+
 ## 🔵 LOW PRIORITY: Extended Features
 
 Features planned for future releases:
