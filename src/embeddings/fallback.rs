@@ -278,8 +278,14 @@ pub fn embed_chunk_with_fallback<'a>(
                 )?;
                 Ok(EmbedResult { chunks_created: 1 })
             }
+            Err(EmbeddingError::ContextExceeded { .. }) => {
+                // Context exceeded (proactive check or API response) - need to chunk
+                handle_chunk_context_exceeded(ctx, db, client, context_length, division_count).await
+            }
             Err(EmbeddingError::ApiError(ref msg)) if EmbeddingClient::is_context_exceeded(msg) => {
-                // Context exceeded - need to chunk
+                // Context exceeded (API error message) - need to chunk
+                // This arm catches context-exceeded errors that weren't converted
+                // to ContextExceeded by embed() (e.g., from batch operations).
                 handle_chunk_context_exceeded(ctx, db, client, context_length, division_count).await
             }
             Err(e) => Err(FallbackError::from(e)),
@@ -470,8 +476,14 @@ pub async fn embed_item_with_fallback(
             )?;
             Ok(EmbedResult { chunks_created: 0 })
         }
+        Err(EmbeddingError::ContextExceeded { .. }) => {
+            // Context exceeded (proactive check or API response) - need to create chunks first
+            handle_item_context_exceeded(ctx, db, client, context_length).await
+        }
         Err(EmbeddingError::ApiError(ref msg)) if EmbeddingClient::is_context_exceeded(msg) => {
-            // Context exceeded - need to create chunks first
+            // Context exceeded (API error message) - need to create chunks first
+            // This arm catches context-exceeded errors that weren't converted
+            // to ContextExceeded by embed() (e.g., from batch operations).
             handle_item_context_exceeded(ctx, db, client, context_length).await
         }
         Err(e) => Err(FallbackError::from(e)),

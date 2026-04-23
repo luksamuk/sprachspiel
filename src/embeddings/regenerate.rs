@@ -68,8 +68,10 @@ impl RegenerationStats {
 /// # Returns
 /// Statistics about regeneration (items/chunks processed and failed)
 ///
-/// # Panics
 /// Does not panic - returns stats with failures counted on error.
+/// If Ollama is unreachable, logs a warning and returns partial stats
+/// instead of crashing the application. Recovery will be attempted
+/// on next startup.
 pub async fn regenerate_all_embeddings(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
@@ -173,7 +175,6 @@ pub async fn regenerate_all_embeddings(
         if content.len() > max_chars {
             // Long content - create chunks and embed each chunk with fallback
             let chunks_list = chunk_text_with_config(content, &ChunkConfig::from(&chunk_config));
-            let chunks_before = stats.chunks_processed;
 
             for chunk in &chunks_list {
                 // Insert chunk into database
@@ -223,17 +224,9 @@ pub async fn regenerate_all_embeddings(
                 }
             }
 
-            // Mark item as having embeddings if at least one chunk succeeded
-            // This prevents re-processing on next startup
-            let chunks_succeeded = stats.chunks_processed.saturating_sub(chunks_before);
-            if chunks_succeeded > 0 {
-                let _ = db.with_connection(|conn| {
-                    conn.execute(
-                        "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
-                        rusqlite::params![item_id],
-                    )
-                });
-            }
+            // Mark item as having embeddings ONLY if all chunks are complete
+            // This prevents re-processing items with incomplete chunks on next startup
+            let _ = db.mark_item_embedding_if_complete(*item_id);
             stats.items_processed += 1;
         } else {
             // Short content - embed directly (with fallback for oversized content)
@@ -257,21 +250,25 @@ pub async fn regenerate_all_embeddings(
                     eprintln!("Failed to generate embedding for item {}: {}", item_id, e);
                     stats.items_failed += 1;
 
-                    // If Ollama is down or unreachable, abort completely
+                    // If Ollama is down or unreachable, stop processing gracefully
+                    // instead of panicking. Recovery will be attempted on next startup.
                     let err_str = e.to_string();
                     if err_str.contains("connection refused")
                         || err_str.contains("network")
                         || err_str.contains("timeout")
                     {
                         progress.finish_and_clear();
-                        println!("\nError: Cannot connect to Ollama for embedding generation.");
-                        println!("Please ensure Ollama is running and try again.");
-                        println!(
+                        eprintln!("\nError: Cannot connect to Ollama for embedding generation.");
+                        eprintln!("Please ensure Ollama is running and try again.");
+                        eprintln!(
                             "Progress saved: {}/{} items processed.",
                             stats.items_processed,
                             items.len()
                         );
-                        panic!("Embedding generation failed - Ollama unreachable");
+                        // Count remaining items as failed
+                        let remaining = items.len() - stats.items_processed - stats.items_failed;
+                        stats.items_failed += remaining;
+                        break;
                     }
                 }
             }
@@ -366,21 +363,25 @@ pub async fn regenerate_all_embeddings(
                 );
                 stats.chunks_failed += 1;
 
-                // If Ollama is down or unreachable, abort completely
+                // If Ollama is down or unreachable, stop processing gracefully
+                // instead of panicking. Recovery will be attempted on next startup.
                 let err_str = e.to_string();
                 if err_str.contains("connection refused")
                     || err_str.contains("network")
                     || err_str.contains("timeout")
                 {
                     progress.finish_and_clear();
-                    println!("\nError: Cannot connect to Ollama for embedding generation.");
-                    println!("Please ensure Ollama is running and try again.");
-                    println!(
+                    eprintln!("\nError: Cannot connect to Ollama for embedding generation.");
+                    eprintln!("Please ensure Ollama is running and try again.");
+                    eprintln!(
                         "Progress saved: {}/{} chunks processed.",
                         stats.chunks_processed,
                         chunks.len()
                     );
-                    panic!("Embedding generation failed - Ollama unreachable");
+                    // Count remaining chunks as failed
+                    let remaining = chunks.len() - stats.chunks_processed - stats.chunks_failed;
+                    stats.chunks_failed += remaining;
+                    break;
                 }
             }
         }

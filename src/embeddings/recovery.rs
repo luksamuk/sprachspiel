@@ -101,6 +101,11 @@ pub async fn recover_missing_embeddings(
     for (item_id, content_type, content) in &items {
         let timestamp = now;
 
+        // Skip if content is empty or too short for meaningful embedding
+        if content.trim().is_empty() || content.len() < 10 {
+            continue;
+        }
+
         // Check if item already has chunks (long content that was partially processed)
         // If so, skip item embedding - chunks are handled separately
         if db.content_item_has_chunks(*item_id).unwrap_or(false) {
@@ -167,16 +172,9 @@ pub async fn recover_missing_embeddings(
                 }
             }
 
-            // Mark item as having embeddings if at least one chunk succeeded
-            // This prevents re-processing on next startup
-            if recovered > 0 {
-                let _ = db.with_connection(|conn| {
-                    conn.execute(
-                        "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
-                        rusqlite::params![item_id],
-                    )
-                });
-            }
+            // Mark item as having embeddings ONLY if all chunks are complete
+            // This prevents re-processing items with incomplete chunks on next startup
+            let _ = db.mark_item_embedding_if_complete(*item_id);
         } else {
             // Short content - embed directly with fallback
             let ctx = EmbedItemContext::new(

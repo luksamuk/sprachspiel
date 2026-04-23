@@ -1003,6 +1003,40 @@ impl Database {
         })
     }
 
+    /// Mark item as having embeddings only when all its chunks are complete.
+    ///
+    /// This prevents premature marking where `has_embedding=1` is set on an item
+    /// even though some chunks failed to generate embeddings. On next startup,
+    /// the item would be skipped even though chunks are missing.
+    ///
+    /// For items WITHOUT chunks (short content embedded directly), this sets
+    /// `has_embedding=1` immediately since the embedding was just saved.
+    ///
+    /// For items WITH chunks, this verifies ALL chunks have `has_embedding=1`
+    /// before marking the parent item.
+    pub fn mark_item_embedding_if_complete(&self, item_id: i64) -> Result<bool> {
+        self.with_connection(|conn| {
+            // Count chunks without embeddings
+            let incomplete_chunks: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM content_chunks WHERE item_id = ?1 AND has_embedding = 0",
+                params![item_id],
+                |row| row.get(0),
+            )?;
+
+            if incomplete_chunks == 0 {
+                // All chunks have embeddings (or item has no chunks) — safe to mark complete
+                conn.execute(
+                    "UPDATE content_items SET has_embedding = 1 WHERE id = ?1",
+                    params![item_id],
+                )?;
+                Ok(true)
+            } else {
+                // Some chunks still missing — don't mark yet
+                Ok(false)
+            }
+        })
+    }
+
     /// Get content items for a conversation
     ///
     /// Returns items ordered by creation time (oldest first).
