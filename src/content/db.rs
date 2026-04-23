@@ -13,6 +13,7 @@ use super::types::{
     ContentItem, ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType,
     Note,
 };
+use crate::consts::roles::ROLE_USER;
 use crate::db::Database;
 use crate::db::WhereBuilder;
 use crate::db::fts5_escape;
@@ -75,6 +76,8 @@ pub struct ContentSearchParams<'a> {
     pub keyword_weight: f32,
     /// Weight for semantic search (vector)
     pub semantic_weight: f32,
+    /// Feedback settings for boost and access tracking. None = skip feedback features.
+    pub feedback_settings: Option<&'a crate::settings::FeedbackSettings>,
 }
 
 /// Normalize BM25 score to [0, 1) range
@@ -815,6 +818,9 @@ impl Database {
     }
 
     /// Hybrid search using Reciprocal Rank Fusion
+    ///
+    /// Applies post-RRF feedback boost when settings are enabled,
+    /// and records content access for reinforcement tracking.
     pub fn search_content_hybrid(
         &self,
         params: &ContentSearchParams<'_>,
@@ -845,7 +851,61 @@ impl Database {
             params.limit * 2,
         );
 
+        // Apply feedback boost if enabled
+        if let Some(fs) = params.feedback_settings
+            && fs.enabled
+        {
+            let item_ids: Vec<i64> = results.iter().map(|r| r.item.id).collect();
+            let boosts = self.with_connection(|conn| {
+                crate::db::feedback_ops::compute_feedback_boost(
+                    conn,
+                    &item_ids,
+                    chrono::Utc::now().timestamp(),
+                )
+                .map_err(|e| {
+                    rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+                })
+            })?;
+
+            // Apply post-RRF multiplier: (1.0 + boost).clamp(0.1, 3.0)
+            for result in &mut results {
+                let boost = boosts.get(&result.item.id).copied().unwrap_or(0.0);
+                result.score *= (1.0 + boost).clamp(0.1, 3.0);
+            }
+
+            // Re-sort by score descending since boost may change order
+            results.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+
         results.truncate(params.limit);
+
+        // Record access for reinforcement if enabled
+        if let Some(fs) = params.feedback_settings
+            && fs.access_reinforcement
+        {
+            for result in &results {
+                if let Err(e) = self.with_connection(|conn| {
+                    crate::db::content_decay_ops::on_content_access(
+                        conn,
+                        result.item.id,
+                        fs.access_reinforcement_boost,
+                    )
+                    .map_err(|e| {
+                        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+                    })
+                }) {
+                    eprintln!(
+                        "Warning: Failed to record content access for item {}: {}",
+                        result.item.id, e
+                    );
+                }
+            }
+        }
+
         Ok(results)
     }
 
@@ -1174,6 +1234,7 @@ impl Database {
             limit,
             keyword_weight,
             semantic_weight,
+            feedback_settings: None,
         };
         self.search_content_hybrid(&params)
     }
@@ -1224,7 +1285,7 @@ impl Database {
             seen_ids.insert(result.item.id);
 
             // Only enrich user messages
-            if result.item.role.as_deref() == Some("user")
+            if result.item.role.as_deref() == Some(ROLE_USER)
                 && let Some(conv_id) = &result.item.conversation_id
             {
                 let subsequent = self.get_content_subsequent_assistant(result.item.id, conv_id)?;

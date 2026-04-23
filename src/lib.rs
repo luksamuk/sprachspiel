@@ -14,6 +14,7 @@ pub mod debug_tools;
 pub mod embeddings;
 pub mod external;
 pub mod facts;
+pub mod feedback;
 pub mod logging;
 pub mod macros;
 pub mod markdown;
@@ -23,6 +24,7 @@ pub mod project;
 pub mod prompts;
 pub mod query;
 pub mod retrieval;
+pub mod security;
 pub mod settings;
 pub mod skills;
 pub mod soul;
@@ -35,7 +37,6 @@ pub mod translate;
 pub mod user_models;
 pub mod utils;
 pub mod vision;
-pub mod security;
 
 /// Result type alias for application errors
 pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;

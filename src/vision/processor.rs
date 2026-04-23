@@ -7,9 +7,9 @@ use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 
-use ollama_rs::Ollama;
 use crate::spinner::{create_spinner, finish_spinner};
 use crate::utils::{read_file_as_base64, validate_image_file};
+use ollama_rs::Ollama;
 
 use super::cli::VisionArgs;
 use super::error::{VisionError, VisionResult};

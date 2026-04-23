@@ -33,6 +33,9 @@ pub mod fact_tools;
 // Notes tools (always available)
 pub mod notes;
 
+// Feedback tools (always available, gated by config)
+pub mod feedback_tools;
+
 // Document import tool
 #[cfg(feature = "document-tools")]
 pub mod documents;

@@ -660,17 +660,25 @@ Self-analysis identifying ask-ai-rs as a Complex Adaptive System (CAS) with emer
 | S2.4 | Plugin System (WASM) | — | 📋 P15 (existing) | 3-4 weeks |
 | S2.5 | SOUL.md Patching + `/apply-patch` | S2.3 | 🟡 Research | 3-5 days |
 | S2.6 | Skills Auto-Registration (Meta) | S2.1-S2.5 | 🕐 Wait | TBD |
+| S2.meta1 | Meta-cognition Skill (Layer 1) | None | 🟡 Prototype (Issue #99) | 1h |
+| S2.meta2 | Behavioral Telemetry (Layer 2) | P5 merge, S2.meta1 data | 📋 Planned (Issue #100) | 2-3 days |
+| S2.meta3 | Behavioral Reflection + Personality (Layer 3) | S2.3, S2.5, S2.meta2 | 📋 Planned (Issue #101) | 1-2 weeks |
 
-**Validated Decisions (DEC-001 to DEC-006):**
+**Meta-cognition Behavioral Proposals (S2.meta1-S2.meta3):**
+
+Three-layer approach to behavioral self-monitoring. **Layer 1** (skill) is a prototype and data collection instrument — testing confirmed it works with high-reasoning models but cannot guarantee execution, produce structured data, or work with smaller models. **Layer 2** (behavioral telemetry in system prompt) is the real implementation — deterministic heuristic detection in the harness, not dependent on the LLM self-monitoring. **Layer 3** (persistent personality adjustment) requires S2.3 and S2.5. Key reframing: **empathy is not a bug — opacity is.** The goal is not to suppress behavioral shifts, but to make them visible and give the user control. Calibration insight from testing: the detector should focus on **unannounced system drift** rather than **user-initiated topic changes**. See `~/meta-cognition-brainstorm.md` for full design and `~/git/ask-ollama-rs/doc/src/development/meta-cognition-proposal.md` for integration plan.
+
+**Validated Decisions (DEC-001 to DEC-007):**
 
 | Decision | Ruling | Validation |
 |----------|--------|------------|
 | DEC-001 | Cache incremental for relations (on-demand, not pre-computed) | GraphSeek 2026, Graph RAG 2026 |
 | DEC-002 | Reflection triggers (not periodic) | ICML 2025, MeCo arXiv 2025 |
 | DEC-003 | Curation with human approval (drafts, not auto-publish) | Rewire.it, "Human-in-the-loop" |
-| DEC-004 | WASM sandbox by capabilities (allowed/denied, not total isolation) | The New Stack 2026, MCP-SandboxScan |
+| DEC-004 | WASM sandbox by capabilities (allowed/denied, not total isolation). **CRITICAL:** DEC-007 extends this — `process_spawn` deny is meaningless when MCP STDIO *is* process spawning. STDIO MCP servers require explicit allowlist + sandbox. | The New Stack 2026, MCP-SandboxScan, OX Security 2026 |
 | DEC-005 | Semantic versioning for plugins (major equal, minor ≥) | OpenFang, "Semver + manifest signing" |
 | DEC-006 | SOUL.md patches require human approval (suggestions, not automatic) | MetaMind NeurIPS 2025, "Human oversight" |
+| DEC-007 | MCP STDIO: no untrusted command execution (explicit approval + allowlist + sandbox) | OX Security 2026, CVE-2025-65720, CVE-2026-30623, CVE-2026-30624, CVE-2026-30618, CVE-2026-33224, CVE-2026-30625, CVE-2026-30615, CVE-2026-26015, CVE-2026-40933, CVE-2025-49596, CVE-2026-22252, CVE-2026-22688, CVE-2025-54994, CVE-2025-54136 |
 
 **Competitors:** Joplin GSoC 2026 (note graphs with AI), OpenClaw (WASM sandbox for community skills)
 
@@ -684,6 +692,8 @@ Self-analysis identifying ask-ai-rs as a Complex Adaptive System (CAS) with emer
 **Status:** Not started
 
 User-defined tools via dynamic loading or compilation.
+
+**Security Note (ADR-007):** MCP STDIO transport has a by-design RCE vulnerability (CVE-2025-65720 et al.). When implementing MCP client integration, STDIO servers MUST use an explicit command allowlist in `config.toml` and require user approval. Prefer HTTP/SSE transport. See IMPLEMENTATION.md ADR-007 for full details.
 
 ---
 

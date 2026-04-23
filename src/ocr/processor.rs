@@ -102,7 +102,18 @@ impl OcrProcessor {
         let mut results = Vec::new();
 
         for file in &args.files {
-            match self.process_file(file, args.mode, prompt_override, model, model_options.clone(), ollama, show_spinner).await {
+            match self
+                .process_file(
+                    file,
+                    args.mode,
+                    prompt_override,
+                    model,
+                    model_options.clone(),
+                    ollama,
+                    show_spinner,
+                )
+                .await
+            {
                 Ok(result) => results.push(result),
                 Err(e) => {
                     eprintln!("Error processing {}: {}", file.display(), e);

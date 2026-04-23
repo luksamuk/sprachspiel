@@ -34,6 +34,7 @@
 //! ```
 
 pub mod db;
+pub mod decay;
 pub mod document;
 pub mod types;
 

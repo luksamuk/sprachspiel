@@ -8,7 +8,7 @@ description = "Complete user guide for the Ask-AI CLI tool"
 [output.html]
 default-theme = "ayu"
 preferred-dark-theme = "ayu"
-mathjax-support = false
+mathjax-support = true
 additional-css = ["custom.css"]
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
 

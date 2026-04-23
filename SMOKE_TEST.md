@@ -43,7 +43,7 @@ echo "Test model: $MODEL"
 
 ## LLM Tool Refusal Policy
 
-Some tests require the LLM to call tools (sections 4.1, 4.2, 5, 6, 6.5.5, 10, 10.5). If the model **refuses** to call a tool:
+Some tests require the LLM to call tools (sections 4.1, 4.2, 5, 6, 6.5.5, 10, 10.5, 15.2, 17.1). If the model **refuses** to call a tool:
 
 1. **Retry with an explicit instruction** — rephrase the prompt to make the tool call unavoidable (e.g., "You MUST call the todo_add tool right now, do not just describe it").
 2. **If the model still refuses persistently** — **FAIL the test** and note which model refused which tool.
@@ -305,18 +305,26 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
 ```
 
 - [ ] Tables exist (content, facts, conversations, session_todos, etc.)
-- [ ] Schema version correct (9 or higher)
+- [ ] Schema version correct (10 or higher)
 
 **Explicit verification:**
 ```bash
 SCHEMA_VER=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;")
-[ "$SCHEMA_VER" -ge 9 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 9"
+[ "$SCHEMA_VER" -ge 10 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 10"
 ```
 
 **Verify priority/tags columns in session_todos (v9):**
 ```bash
 sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(session_todos);"
 # Must include columns: priority (TEXT) and tags (TEXT)
+```
+
+**Verify v10 additions:**
+```bash
+# Verify feedback_signals table (v10)
+sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables" | grep -q "feedback_signals" && echo "✓ feedback_signals table" || echo "✗ feedback_signals table missing"
+# Verify pruned column in content_items (v10)
+sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(content_items);" | grep -q "pruned" && echo "✓ pruned column" || echo "✗ pruned column missing"
 ```
 
 ---
@@ -481,6 +489,212 @@ These commands are always available in chat mode (not feature-gated).
 ### 14.5 Feature flag
 - [ ] Build without subagent-tools: `cargo build --release --no-default-features --features "weather-tools,file-tools"` → chat commands `/ocr`, `/vision`, `/translate`, `/summarize` still work, but LLM cannot call `spawn_subagent`
 
+---
+
+## 15. Feedback Commands (New Feature - Issue #23)
+
+Test the feedback command infrastructure for recording user feedback on assistant messages.
+
+### 15.1 Basic Feedback Commands
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] Type a message and receive an assistant response
+- [ ] Type `/feedback good` → `↑↑ good feedback recorded for msg:N` + excerpt (dim) + `Importance: +0.05`
+- [ ] Type `/feedback bad` → `↓↓ bad feedback recorded for msg:N` + excerpt (dim) + `Importance: -0.10`
+- [ ] Type `/feedback correction:actually, the sky is blue` → `✎ correction feedback recorded for msg:N` + excerpt (dim) + `Correction: actually, the sky is blue`
+- [ ] Type `/feedback msg:1 good` → `↑↑ good feedback recorded for msg:1` + excerpt (dim) + `Importance: +0.05`
+- [ ] Type `/feedback msg:2 bad` → `↓↓ bad feedback recorded for msg:2` + excerpt (dim) + `Importance: -0.10`
+- [ ] Type `/feedback msg:3 correction:fixed text` → `✎ correction feedback recorded for msg:3` + excerpt (dim) + `Correction: fixed text`
+
+### 15.2 Feedback via LLM
+
+**Note:** Use a model that supports tools (qwen3.5:4b or larger).
+
+> **LLM Refusal:** If the model refuses to call `feedback_submit`, rephrase the prompt
+> to be more direct, e.g., "Call the feedback_submit tool with subcommand good."
+
+- [ ] Ask the LLM: "Give me good feedback on your last response" → LLM calls `feedback_submit` with `good` → `↑↑ good feedback recorded for msg:N`
+- [ ] Ask the LLM: "Give me bad feedback on your last response" → LLM calls `feedback_submit` with `bad` → `↓↓ bad feedback recorded for msg:N`
+- [ ] Ask the LLM: "Give correction feedback: actually, it's 42" → LLM calls `feedback_submit` with `correction:actually, it's 42` → `✎ correction feedback recorded for msg:N`
+
+### 15.3 Error Tests
+
+- [ ] Type `/feedback` with no subcommand → `Usage: /feedback <good|bad|correction:text> [msg:id]`
+- [ ] Type `/feedback msg:abc good` → `Invalid message ID 'abc'. Use msg:<number> (e.g., msg:42).`
+- [ ] Type `/feedback correction:` → `Correction requires text. Usage: /feedback correction:<text>`
+- [ ] Type `/feedback msg:5 correction:` → `Correction requires text. Usage: /feedback msg:<id> correction:<text>`
+- [ ] Start anonymous chat: `ask-ai chat --anonymous`
+- [ ] Type `/feedback good` in anonymous mode → `Error: Cannot give feedback in anonymous mode.`
+- [ ] Type `/feedback good` before any assistant message → `No assistant message to give feedback on.`
+
+### 15.4 Shortcut Tests
+
+- [ ] Type `/fb good` → `↑↑ good feedback recorded for msg:N` + excerpt (dim) + `Importance: +0.05`
+- [ ] Type `/fb bad` → `↓↓ bad feedback recorded for msg:N` + excerpt (dim) + `Importance: -0.10`
+- [ ] Type `/fb correction:typo fix` → `✎ correction feedback recorded for msg:N` + excerpt (dim) + `Correction: typo fix`
+- [ ] Type `/fg` → `↑↑ good feedback recorded for msg:N` + excerpt (dim) + `Importance: +0.05`
+
+---
+
+## 16. Content Prune & Context Decay Stats (New Feature - Issue #23)
+
+Test the content decay and pruning infrastructure.
+
+### 16.1 Content Prune
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] Import a document first: `/doc import /tmp/test.txt`
+- [ ] Type `/content prune` → shows `⏳ Running content decay cycle...` then result
+- [ ] After prune with items removed: `✓ Pruned N content item(s), N remaining (avg retention: X.XX).`
+- [ ] After prune with no items removed: `✓ No content to prune. N item(s) remaining (avg retention: X.XX).`
+- [ ] Type `/cp` → same behavior as `/content prune` (shortcut works)
+
+### 16.2 Context Decay Stats
+
+- [ ] Type `/context` → shows `Content Memory:` section with:
+  - `Total items: N`
+  - `Avg importance: X.XX`
+  - If items at risk: `⚠ Items at risk: N (low decay score)`
+  - `Feedback signals: N`
+- [ ] After `/content prune`, `/context` shows updated stats
+
+### 16.3 Error Tests
+
+- [ ] Start anonymous chat: `ask-ai chat --anonymous`
+- [ ] Type `/content prune` in anonymous mode → `Error: Cannot prune content in anonymous mode.`
+- [ ] Type `/cp` in anonymous mode → `Error: Cannot prune content in anonymous mode.`
+- [ ] Start chat without database (if possible): `/content prune` without DB → `Error: Database not initialized. Run chat without --anonymous.`
+
+---
+
+## 17. Feedback Tool & Configuration (New Feature - Issue #23)
+
+Test the feedback_submit LLM tool and configuration defaults.
+
+### 17.1 feedback_submit LLM Tool
+
+**Note:** Use a model that supports tools (qwen3.5:4b or larger).
+
+> **LLM Refusal:** If the model refuses to call `feedback_submit`, rephrase the prompt
+> to be more direct, e.g., "Call the feedback_submit tool with item_id='42' and signal_type='good'."
+> If refusal persists, switch to an abliterated model (see LLM Tool Refusal Policy above).
+
+- [ ] `feedback_submit("42", "good", None)` → `Feedback submitted: good signal for item 42 (weight: 30%)`
+- [ ] `feedback_submit("15", "bad", None)` → success message with negative importance adjustment (`Importance adjustment: -0.10`)
+- [ ] `feedback_submit("7", "correction", Some("The capital is Canberra"))` → success message with `Correction: The capital is Canberra`
+- [ ] Verify response includes `weight: 30%` (default llm_feedback_weight=0.3)
+- [ ] `feedback_submit("0", "good", None)` → `Error: item_id must be a positive integer.`
+- [ ] `feedback_submit("42", "invalid", None)` → `Error: Unknown feedback signal type: 'invalid'. Expected: good, bad, or correction. Use 'good', 'bad', or 'correction'.`
+- [ ] `feedback_submit("42", "correction", None)` → `Error: correction_text is required when signal_type is 'correction'.`
+
+### 17.2 Configuration Verification
+
+Verify `[feedback]` section in config.toml (or defaults work without it):
+
+```bash
+# Check schema version (must be 10 or higher)
+sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
+# Expected: 10 or higher
+
+# Check feedback_signals table exists
+sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"
+# Expected: includes feedback_signals
+
+# Check pruned column in content_items
+sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(content_items);"
+# Expected: includes pruned column (INTEGER NOT NULL DEFAULT 0)
+```
+
+- [ ] Schema version is 10 or higher
+- [ ] `feedback_signals` table exists in database
+- [ ] `pruned` column exists in `content_items` table
+
+**Default configuration values (in `[feedback]` section of config.toml or built-in defaults):**
+
+| Setting | Default |
+|---------|----------|
+| `enabled` | `true` |
+| `implicit_capture` | `true` |
+| `llm_feedback_weight` | `0.3` |
+| `decay_half_life_good` | `30.0` |
+| `decay_half_life_bad` | `7.0` |
+| `decay_half_life_correction` | `14.0` |
+| `content_decay` | `true` |
+| `access_reinforcement` | `true` |
+| `access_reinforcement_boost` | `0.001` |
+| `content_prune_threshold` | `0.05` |
+
+- [ ] All 9 default values are correct when `[feedback]` section is omitted from config.toml
+- [ ] Adding `[feedback]` section to config.toml overrides defaults correctly
+
+---
+
+## 18. Feedback Boost Integration & Decay Accuracy (PR #98 Refactoring)
+
+Verify end-to-end feedback boost in retrieval and fractional-day decay accuracy (bug fix).
+
+### 18.1 Feedback Boost Affects Search Ranking
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] Have the LLM respond to two different questions (creates 2+ assistant messages)
+- [ ] Submit positive feedback on message 1: `/feedback good`
+- [ ] Submit negative feedback on message 2: `/feedback bad`
+- [ ] Ask a broad question that could match both messages
+- [ ] Verify message with positive feedback ranks higher in search results
+- [ ] Verify database shows feedback signals with correct boost values:
+  ```bash
+  sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT item_id, signal_type, base_value, source FROM feedback_signals;"
+  ```
+
+### 18.2 Facts Prune Cycle
+
+- [ ] Add fact: `/fact add "Test decay fact"`
+- [ ] Run `/fact prune` → fresh fact NOT pruned
+- [ ] Age a fact in DB: `sqlite3 ~/.local/share/ask-ai/embeddings.db "UPDATE facts SET last_accessed = strftime('%s','now','-365 days') WHERE id = (SELECT MAX(id) FROM facts);"`
+- [ ] Run `/fact prune` → aged fact IS pruned
+- [ ] Add preference with high importance (>=0.8) and age it → NOT pruned
+
+### 18.3 Fractional-Day Decay Verification
+
+Verify the `num_days()` truncation fix produces accurate values at non-boundary times.
+
+- [ ] Insert Good signal at 30.5 days ago:
+  ```bash
+  SIGNAL_TS=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT strftime('%s','now','-30.5 days');")
+  ITEM_ID=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id FROM content_items WHERE content_type='message' ORDER BY id DESC LIMIT 1;")
+  sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO feedback_signals (item_id, session_id, signal_type, base_value, source, created_at) VALUES ($ITEM_ID, 'test', 'good', 1.0, 'user', $SIGNAL_TS);"
+  ```
+- [ ] Computed boost should be ≈ 0.484 (NOT 0.5 which truncated `num_days()` would give)
+- [ ] Verify no hardcoded `2.0` for boost clamping — `MAX_FEEDBACK_BOOST` constant used everywhere:
+  ```bash
+  grep -r "clamp.*2\.0" src/db/feedback_ops.rs src/feedback/decay.rs
+  # Should show MAX_FEEDBACK_BOOST, not hardcoded 2.0
+  ```
+
+### 18.4 Decay Formula Centralization
+
+- [ ] `src/feedback/decay.rs` contains `decayed_weight_raw()` (canonical calculation)
+- [ ] `src/db/feedback_ops.rs::compute_feedback_boost()` calls `decayed_weight_raw()`
+- [ ] Both feedback and content decay use the same `2^(-days/half_life)` formula
+- [ ] `HALF_LIFE_GOOD/BAD/CORRECTION` and `MAX_FEEDBACK_BOOST` are `pub(crate)` constants, not duplicated magic numbers
+
+---
+
+## 19. Fact & Content Prune Command Shortcuts (PR #98 Routing)
+
+Verify consolidated command routing works after the refactoring.
+
+### 19.1 /fact Shortcuts
+
+- [ ] `/fp` → same as `/fact prune` (shortcut)
+- [ ] `/fa "I prefer dark mode"` → same as `/fact add` (shortcut)
+
+### 19.2 /content Shortcut
+
+- [ ] `/cp` → same as `/content prune` (shortcut verified in 16.1, repeated for completeness)
+
+---
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
@@ -549,5 +763,9 @@ The script above runs automated tests. The following tests must be run manually:
 9. **Section 11**: Memory Staleness Warnings (code review + fresh fact check)
 10. **Section 12**: Truncation Warnings in Tool Outputs (via LLM)
 11. **Section 13**: Performance (verify response time)
-
+12. **Section 15**: Feedback Commands (interactive feedback tests)
+13. **Section 16**: Content Prune & Context Decay Stats (interactive tests)
+14. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)
+15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
+16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 These tests require chat interaction and visual verification of results.

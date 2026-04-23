@@ -296,7 +296,10 @@ num_ctx = 16384
         // It should be found via model_id lookup even though there's no config key
         // named "translategemma:4b".
         let config = get_model_config("translategemma:4b");
-        assert!(config.is_some(), "translategemma:4b should resolve via model_id");
+        assert!(
+            config.is_some(),
+            "translategemma:4b should resolve via model_id"
+        );
         let config = config.unwrap();
         assert_eq!(config.model_id, "translategemma:4b");
         assert_eq!(config.temperature, 0.2);

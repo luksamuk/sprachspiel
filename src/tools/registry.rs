@@ -27,6 +27,9 @@ use super::fact_tools::{fact_add, fact_remove, fact_search};
 // Notes tools (always available)
 use super::notes::{note_add, note_delete, note_edit};
 
+// Feedback tools (always available, gated by config)
+use super::feedback_tools::feedback_submit;
+
 // Todo tools (always available)
 use super::todo::{
     todo_add, todo_clear_all, todo_clear_done, todo_delete, todo_edit, todo_get, todo_list,
@@ -466,6 +469,22 @@ fn register_todo_tools<C: ToolRegistrar>(
     (coord, count)
 }
 
+/// Register feedback tools (gated by settings.feedback.enabled)
+fn register_feedback_tools<C: ToolRegistrar>(
+    coordinator: C,
+    settings: &Settings,
+    is_allowed: impl Fn(&str) -> bool,
+) -> (C, usize) {
+    let mut count = 0;
+    let mut coord = coordinator;
+
+    if settings.feedback.enabled {
+        register_if_allowed!(coord, count, is_allowed, "feedback_submit", feedback_submit);
+    }
+
+    (coord, count)
+}
+
 // =============================================================================
 // Tool Name Listing Helpers (by category)
 // =============================================================================
@@ -792,6 +811,12 @@ where
         coordinator = c;
         tool_count += n;
     }
+    // Feedback tools (gated by config)
+    {
+        let (c, n) = register_feedback_tools(coordinator, settings, is_allowed);
+        coordinator = c;
+        tool_count += n;
+    }
 
     // Todo tools (always available)
     {
@@ -885,6 +910,11 @@ pub fn get_available_tool_names(settings: &Settings) -> Vec<String> {
 
     // Todo tools (always available)
     tools.extend(get_todo_tool_names(is_allowed));
+
+    // Feedback tools (gated by config)
+    if settings.feedback.enabled {
+        push_if_allowed!(tools, is_allowed, "feedback_submit");
+    }
 
     tools
 }

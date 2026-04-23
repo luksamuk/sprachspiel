@@ -65,6 +65,9 @@ pub struct ReplState {
 
     // Settings reference (immutable after init)
     pub settings: Settings,
+
+    // UI state
+    pub last_assistant_message_id: Option<i64>,
 }
 
 /// Builder for ReplState
@@ -83,6 +86,7 @@ pub struct ReplStateBuilder {
     db: Option<Arc<Database>>,
     embedding_client: Option<Arc<EmbeddingClient>>,
     settings: Option<Settings>,
+    last_assistant_message_id: Option<i64>,
 }
 
 impl ReplStateBuilder {
@@ -99,6 +103,7 @@ impl ReplStateBuilder {
             db: None,
             embedding_client: None,
             settings: None,
+            last_assistant_message_id: None,
         }
     }
 
@@ -179,6 +184,7 @@ impl ReplStateBuilder {
             db: self.db,
             embedding_client: self.embedding_client,
             settings,
+            last_assistant_message_id: self.last_assistant_message_id,
         })
     }
 }

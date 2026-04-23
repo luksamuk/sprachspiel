@@ -160,11 +160,22 @@ pub enum ChatCommand {
     /// Run OCR on an image file (optional mode: text, table, figure, formula)
     Ocr { path: String, mode: Option<String> },
     /// Analyze image(s) with vision model
-    Vision { paths: Vec<String>, prompt: Option<String> },
+    Vision {
+        paths: Vec<String>,
+        prompt: Option<String>,
+    },
     /// Translate text between languages
     Translate { lang_pair: String, text: String },
     /// Summarize text
     Summarize { text: String },
+    /// Give feedback on an assistant message
+    Feedback {
+        signal_type: crate::feedback::types::FeedbackSignalType,
+        item_id: Option<i64>,
+        correction_text: Option<String>,
+    },
+    /// Prune content based on decay/importance
+    ContentPrune,
 }
 
 /// Export format for /export command
@@ -495,6 +506,17 @@ fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
     }
 }
 
+/// Parse content subcommand arguments into a ChatCommand.
+///
+/// Extracted from the main parse_command to reduce complexity.
+/// Handles: prune.
+fn parse_content_subcommand(subcmd: &str, _subargs: &str) -> Result<ChatCommand, String> {
+    match subcmd {
+        "prune" | "p" => Ok(ChatCommand::ContentPrune),
+        _ => Err("Usage: /content prune".to_string()),
+    }
+}
+
 /// Parse note subcommand arguments into a ChatCommand.
 ///
 /// Extracted from the main parse_command to reduce complexity.
@@ -690,6 +712,110 @@ fn parse_doc_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Stri
         }
         _ => Err("Usage: /doc <import|list|show|delete>".to_string()),
     }
+}
+
+/// Parse feedback subcommand arguments into a ChatCommand.
+///
+/// Handles signal types: good, bad, correction.
+/// Optional target: msg:<id> to target a specific message.
+///
+/// Examples:
+///   `/feedback good`               — positive signal on last assistant message
+///   `/feedback bad`                — negative signal on last assistant message
+///   `/feedback correction:fix text` — correction on last assistant message
+///   `/feedback msg:42 good`        — positive signal on specific message
+fn parse_feedback_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
+    use crate::feedback::types::FeedbackSignalType;
+    use std::str::FromStr;
+
+    // subcmd is the first argument after /feedback
+    // subargs is everything after that
+    if subcmd.is_empty() {
+        return Err("Usage: /feedback <good|bad|correction:text> [msg:id]".to_string());
+    }
+
+    // Check if first arg starts with msg: — parse item_id then signal type
+    if let Some(id_str) = subcmd.strip_prefix("msg:") {
+        let item_id: i64 = match id_str.parse() {
+            Ok(id) => id,
+            Err(_) => {
+                return Err(format!(
+                    "Invalid message ID '{}'. Use msg:<number> (e.g., msg:42).",
+                    id_str
+                ));
+            }
+        };
+
+        // Need a signal type after msg:id
+        if subargs.is_empty() {
+            return Err(format!(
+                "Usage: /feedback msg:{} <good|bad|correction:text>",
+                item_id
+            ));
+        }
+
+        // Parse signal type from subargs
+        let parts: Vec<&str> = subargs.splitn(2, ' ').collect();
+        let signal_str = parts.first().unwrap_or(&"");
+        let remainder = parts.get(1).copied().unwrap_or("");
+
+        // Check for correction: prefix
+        if let Some(correction_text) = signal_str.strip_prefix("correction:") {
+            let text = if correction_text.is_empty() {
+                remainder.trim().to_string()
+            } else {
+                format!("{} {}", correction_text, remainder.trim())
+                    .trim()
+                    .to_string()
+            };
+            if text.is_empty() {
+                return Err(
+                    "Correction requires text. Usage: /feedback msg:<id> correction:<text>"
+                        .to_string(),
+                );
+            }
+            return Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Correction,
+                item_id: Some(item_id),
+                correction_text: Some(text),
+            });
+        }
+
+        let signal_type = FeedbackSignalType::from_str(signal_str)?;
+        return Ok(ChatCommand::Feedback {
+            signal_type,
+            item_id: Some(item_id),
+            correction_text: None,
+        });
+    }
+
+    // No msg: prefix — parse signal_type from first arg
+    // Check for correction: prefix
+    if let Some(correction_text) = subcmd.strip_prefix("correction:") {
+        let text = if correction_text.is_empty() {
+            subargs.trim().to_string()
+        } else {
+            format!("{} {}", correction_text, subargs.trim())
+                .trim()
+                .to_string()
+        };
+        if text.is_empty() {
+            return Err("Correction requires text. Usage: /feedback correction:<text>".to_string());
+        }
+        return Ok(ChatCommand::Feedback {
+            signal_type: FeedbackSignalType::Correction,
+            item_id: None,
+            correction_text: Some(text),
+        });
+    }
+
+    // Parse as good/bad signal type
+    let signal_type = FeedbackSignalType::from_str(subcmd)?;
+    Ok(ChatCommand::Feedback {
+        signal_type,
+        item_id: None,
+        correction_text: None,
+    })
 }
 
 /// Parse session subcommand arguments into a ChatCommand.
@@ -981,7 +1107,10 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             let parts: Vec<&str> = args.splitn(2, ' ').collect();
             let path = parts.first().unwrap_or(&"").to_string();
-            let mode = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+            let mode = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
             ChatCommand::Ocr { path, mode }
         }
         "vision" => {
@@ -990,8 +1119,14 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             let parts: Vec<&str> = args.splitn(2, ' ').collect();
             let path = parts.first().unwrap_or(&"").to_string();
-            let prompt = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-            ChatCommand::Vision { paths: vec![path], prompt }
+            let prompt = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            ChatCommand::Vision {
+                paths: vec![path],
+                prompt,
+            }
         }
         "translate" | "tr" => {
             if args.is_empty() {
@@ -999,7 +1134,10 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             }
             let parts: Vec<&str> = args.splitn(2, ' ').collect();
             let lang_pair = parts.first().unwrap_or(&"").to_string();
-            let text = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+            let text = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             if text.is_empty() {
                 return Some(Err("Usage: /translate <source:target> <text>".to_string()));
             }
@@ -1009,9 +1147,43 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             if args.is_empty() {
                 return Some(Err("Usage: /summarize <text>".to_string()));
             }
-            ChatCommand::Summarize { text: args.trim().to_string() }
+            ChatCommand::Summarize {
+                text: args.trim().to_string(),
+            }
+        }
+        "feedback" | "fb" | "fg" => {
+            if *cmd == "fg" {
+                // Shortcut for /feedback good
+                ChatCommand::Feedback {
+                    signal_type: crate::feedback::types::FeedbackSignalType::Good,
+                    item_id: None,
+                    correction_text: None,
+                }
+            } else {
+                let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+                let subcmd = subcmd_parts.first().unwrap_or(&"");
+                let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+                match parse_feedback_subcommand(subcmd, subargs) {
+                    Ok(cmd) => cmd,
+                    Err(e) => return Some(Err(e)),
+                }
+            }
         }
 
+        "content" | "cp" => {
+            if *cmd == "cp" {
+                // Shortcut for /content prune
+                ChatCommand::ContentPrune
+            } else {
+                let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
+                let subcmd = subcmd_parts.first().unwrap_or(&"");
+                let subargs = subcmd_parts.get(1).copied().unwrap_or("");
+                match parse_content_subcommand(subcmd, subargs) {
+                    Ok(cmd) => cmd,
+                    Err(e) => return Some(Err(e)),
+                }
+            }
+        }
         _ => {
             return Some(Err(format!(
                 "Unknown command: /{}. Use /help for available commands.",
@@ -1063,6 +1235,19 @@ Factual Memory:
   /fact prune      Prune old facts using decay cycle
 
   Subcommand shortcuts: /fact a, /fact l, /fact r, /fact s, /fact p
+
+Feedback:
+  /feedback good                    Positive signal on last assistant message
+  /feedback bad                     Negative signal on last assistant message
+  /feedback correction:fix text      Correction on last assistant message
+  /feedback msg:<id> good|bad        Signal on a specific message
+  /fb                               Shortcut for /feedback
+  /fg                               Shortcut for /feedback good
+
+Content Management:
+  /content prune   Prune low-retention content using decay cycle
+  /cp              Shortcut for /content prune
+
 
 Notes:
   /note add <content> [--title <title>] [--global]   Add a note
@@ -1117,8 +1302,9 @@ Shortcuts:
   /r = /retry, /to = /tools-output, /u = /undo
   /ctx = /context, /f = /search (find)
   /sk = /skill
-  /fp = /fact prune, /fa = /fact add
-  /fl = /fact list, /fr = /fact remove, /fs = /fact search"#
+  /fb = /feedback, /fg = /feedback good, /fp = /fact prune, /fa = /fact add
+  /fl = /fact list, /fr = /fact remove, /fs = /fact search
+  /cp = /content prune"#
     );
 }
 
@@ -1358,6 +1544,25 @@ mod tests {
     #[test]
     fn test_parse_fact_subcommand_invalid() {
         assert!(parse_fact_subcommand("unknown", "").is_err());
+    }
+    // --- Content subcommand parser ---
+
+    #[test]
+    fn test_parse_content_prune() {
+        let cmd = parse_content_subcommand("prune", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::ContentPrune));
+    }
+
+    #[test]
+    fn test_parse_content_prune_shortcut() {
+        let cmd = parse_content_subcommand("p", "").unwrap();
+        assert!(matches!(cmd, ChatCommand::ContentPrune));
+    }
+
+    #[test]
+    fn test_parse_content_error() {
+        assert!(parse_content_subcommand("list", "").is_err());
+        assert!(parse_content_subcommand("unknown", "").is_err());
     }
 
     // --- Document subcommand parser ---
@@ -1795,5 +2000,93 @@ mod tests {
         let result = parse_command("/document-processing");
         assert!(result.is_some());
         assert!(result.unwrap().is_err());
+    }
+
+    // --- Feedback subcommand parser ---
+
+    use crate::feedback::types::FeedbackSignalType;
+
+    #[test]
+    fn test_parse_feedback_good() {
+        let result = parse_command("/feedback good");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Good,
+                item_id: None,
+                correction_text: None
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_feedback_bad() {
+        let result = parse_command("/feedback bad");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Bad,
+                item_id: None,
+                correction_text: None
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_feedback_correction() {
+        let result = parse_command("/feedback correction:fix the capital");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Correction,
+                item_id: None,
+                correction_text: Some(_)
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_feedback_msg_id_good() {
+        let result = parse_command("/feedback msg:42 good");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Good,
+                item_id: Some(42),
+                correction_text: None
+            }))
+        ));
+    }
+
+    #[test]
+    fn test_parse_feedback_empty_error() {
+        let result = parse_command("/feedback");
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[test]
+    fn test_parse_feedback_msg_no_signal_error() {
+        let result = parse_command("/feedback msg:42");
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[test]
+    fn test_parse_feedback_msg_invalid_id_error() {
+        let result = parse_command("/feedback msg:abc good");
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[test]
+    fn test_parse_fg_shortcut() {
+        use crate::feedback::types::FeedbackSignalType;
+        let result = parse_command("/fg");
+        assert!(matches!(
+            result,
+            Some(Ok(ChatCommand::Feedback {
+                signal_type: FeedbackSignalType::Good,
+                item_id: None,
+                correction_text: None,
+            }))
+        ));
     }
 }

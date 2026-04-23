@@ -6,6 +6,21 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Feedback Infrastructure (P5)** - Complete feedback-driven memory system with active forgetting (Issue #23)
+  - `/feedback good|bad|correction:<text>` command with `msg:N` targeting and `/fg`/`/fb` shortcuts
+  - `feedback_signals` DB table (schema v10 migration) with CASCADE on content_items
+  - `src/feedback/` module (types, db, decay, prompt)
+  - Post-RRF boost/suppress multiplier in `search_content_hybrid()` with `.clamp(0.1, 3.0)`
+  - LLM `feedback_submit()` tool (config.toml toggle, default on, 30% weight per ADR-004)
+  - `ReplState.last_assistant_message_id` tracking for implicit feedback targeting
+  - Content Decay Activation (ADR-008): `src/content/decay.rs` with Ebbinghaus formula for content items
+  - Retrieval-Reinforced Retention (ADR-009): `on_content_access()` increments `access_count` + updates `last_accessed`
+  - Feedback → importance adjustment: good (+0.05), bad (-0.1), creating feedback-driven forgetting loop
+  - `/content prune` command + `/cp` shortcut for manual decay trigger
+  - `/context` enhancement showing feedback + decay statistics
+  - Soft-delete pruning (`pruned` column) preserves conversation chain integrity
+  - `[feedback]` config section in config.toml with all canonical fields
+  - 9 Architecture Decision Records (ADR-001 through ADR-009)
 - **Specialized Agent Architecture** - One-shot subagents for OCR, Vision, Translation, Summarization, and Document extraction (Issue #12)
   - `SubagentRunner` - Lightweight one-shot executor with dual API path support (`/api/generate` and `/api/chat`)
   - `spawn_subagent` tool - LLM-initiated subagent invocation with type-safe dispatch

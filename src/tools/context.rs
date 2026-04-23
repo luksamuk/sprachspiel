@@ -54,7 +54,6 @@ pub fn get_settings() -> Option<Arc<Settings>> {
     TOOL_SETTINGS.try_with(|s| s.clone()).ok()
 }
 
-
 /**
  * Run an async function with tool context (TOOL_OLLAMA and TOOL_SETTINGS).
  *
@@ -121,11 +120,18 @@ mod tests {
             let ollama = get_ollama();
             let settings = get_settings();
 
-            assert!(ollama.is_some(), "get_ollama should return Some inside scope");
-            assert!(settings.is_some(), "get_settings should return Some inside scope");
+            assert!(
+                ollama.is_some(),
+                "get_ollama should return Some inside scope"
+            );
+            assert!(
+                settings.is_some(),
+                "get_settings should return Some inside scope"
+            );
 
             (ollama.is_some(), settings.is_some())
-        }).await;
+        })
+        .await;
 
         assert!(result.0, "ollama should be scoped");
         assert!(result.1, "settings should be scoped");
@@ -151,13 +157,28 @@ mod tests {
                 let settings = get_settings();
 
                 assert!(db.is_some(), "get_db should return Some inside full scope");
-                assert!(embedding.is_some(), "get_embedding should return Some inside full scope");
-                assert!(ollama.is_some(), "get_ollama should return Some inside full scope");
-                assert!(settings.is_some(), "get_settings should return Some inside full scope");
+                assert!(
+                    embedding.is_some(),
+                    "get_embedding should return Some inside full scope"
+                );
+                assert!(
+                    ollama.is_some(),
+                    "get_ollama should return Some inside full scope"
+                );
+                assert!(
+                    settings.is_some(),
+                    "get_settings should return Some inside full scope"
+                );
 
-                (db.is_some(), embedding.is_some(), ollama.is_some(), settings.is_some())
-            }
-        ).await;
+                (
+                    db.is_some(),
+                    embedding.is_some(),
+                    ollama.is_some(),
+                    settings.is_some(),
+                )
+            },
+        )
+        .await;
 
         assert!(result.0, "db should be scoped");
         assert!(result.1, "embedding should be scoped");
@@ -174,10 +195,16 @@ mod tests {
             let db = get_db();
             let embedding = get_embedding();
 
-            (ollama.is_none(), settings.is_none(), db.is_none(), embedding.is_none())
-        }).await;
+            (
+                ollama.is_none(),
+                settings.is_none(),
+                db.is_none(),
+                embedding.is_none(),
+            )
+        })
+        .await;
 
-        let (o,s,d,e) = result.unwrap();
+        let (o, s, d, e) = result.unwrap();
         assert!(o, "get_ollama should return None outside scope");
         assert!(s, "get_settings should return None outside scope");
         assert!(d, "get_db should return None outside scope");

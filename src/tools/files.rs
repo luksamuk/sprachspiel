@@ -933,7 +933,6 @@ fn validate_path(path: &Path) -> Result<PathBuf, Box<dyn std::error::Error + Sen
     Ok(canonical_path)
 }
 
-
 /// Check if a canonical path is within an allowed temporary directory.
 fn is_temp_directory(canonical_path: &Path) -> bool {
     // Check /tmp (standard temporary directory)

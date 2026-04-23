@@ -6,7 +6,10 @@ mod connection;
 mod init;
 mod operations;
 mod query;
-mod schema;
+pub mod schema;
+
+pub mod content_decay_ops;
+pub mod feedback_ops;
 
 pub use connection::Database;
 pub use init::init_database_core;

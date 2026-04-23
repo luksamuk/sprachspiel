@@ -502,6 +502,23 @@ impl Database {
             Ok(rows)
         })
     }
+
+    /// Adjust the importance of a content item by a delta, clamped to [0.0, 1.0].
+    ///
+    /// Used by the /feedback command to reflect user sentiment:
+    /// - Good feedback: importance + 0.05 (capped at 1.0)
+    /// - Bad feedback: importance - 0.1 (floored at 0.0)
+    /// - Correction: no importance change
+    pub fn adjust_importance(&self, item_id: i64, delta: f32) -> Result<(), String> {
+        self.with_connection(|conn: &rusqlite::Connection| {
+            conn.execute(
+                "UPDATE content_items SET importance = MIN(1.0, MAX(0.0, importance + ?1)) WHERE id = ?2",
+                params![delta, item_id],
+            )?;
+            Ok(())
+        })
+        .map_err(|e| format!("Error adjusting importance for item {}: {}", item_id, e))
+    }
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@
 use crate::consts::roles::{ROLE_USER, format_role_label};
 use crate::db::SourceType;
 use crate::debug_tools::{log_tool_call, log_tool_result};
-use crate::tools::context::{get_db, get_embedding};
+use crate::tools::context::{get_db, get_embedding, get_settings};
 
 /// Number of chunks to show in preview for large documents
 const MAX_PREVIEW_CHUNKS: i32 = 3;
@@ -669,6 +669,9 @@ async fn remember_by_query(
         }
     };
 
+    // Get feedback settings for boost and access tracking
+    let settings = get_settings();
+    let feedback_settings = settings.as_ref().map(|s| &s.feedback);
     // Search for notes using unified content search
     let note_params = crate::content::ContentSearchParams {
         query,
@@ -680,6 +683,7 @@ async fn remember_by_query(
         limit,
         keyword_weight: 0.4,
         semantic_weight: 0.6,
+        feedback_settings,
     };
 
     let note_results = match db.search_content_hybrid(&note_params) {
@@ -704,6 +708,7 @@ async fn remember_by_query(
         limit,
         keyword_weight: 0.4,
         semantic_weight: 0.6,
+        feedback_settings,
     };
 
     let doc_results = match db.search_content_hybrid(&doc_params) {

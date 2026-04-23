@@ -1580,13 +1580,11 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 
 ### 🟣 PRIORITY 5: Feedback Infrastructure [M1]
 
-**Status:** 📋 PLANNED (depends on: Factual Memory)
+**Status:** 🔄 IN PROGRESS (branch: feat/feedback-infrastructure)
+**Related Issue:** #23 (to be updated for P5 execution)
+**Detailed Plan:** [`doc/src/development/feedback-architecture.md`](./doc/src/development/feedback-architecture.md) — feedback-driven memory with active forgetting (architecture, formulas, and data model)
 
-**Goal:** Capture explicit and implicit feedback signals.
-
-**Documentation:** See [Implementation Directive](./doc/src/development/implementation-directive.md) for complete design.
-
-**Related:** Issue #23
+**Goal:** Implement a complete feedback-driven memory system: capture explicit feedback signals (Good/Bad/Correction) with decay-weighted RRF fusion for retrieval ranking, activate content item decay (ghost fields become functional), and connect feedback to forgetting speed. Feedback is harness-only (no fine-tuning) — signals affect RRF fusion scoring AND content importance/decay, not model weights.
 
 **Key Insight:** Feedback improves *how we retrieve* past messages. Factual Memory provides *what we know* about the user. Both layers work together:
 
@@ -1596,26 +1594,85 @@ Context Assembly:
 │   └── [FACTUAL MEMORY] ← "User prefers Portuguese"
 │       "Docs are in ~/docs"
 ├── Retrieved Context (messages)
-│   └── [FEEDBACK WEIGHT] ← Message #42: +1.2 (good feedback)
-│       Message #15: -0.3 (bad feedback)
+│   └── [FEEDBACK WEIGHT] ← Message #42: +1.0 (good, decayed)
+│       Message #15: -1.0 (bad, decayed)
+│       RRF multiplier: clamp(0.1, 3.0)
+│   └── [CONTENT DECAY] ← Message #42: importance=0.55 (good feedback +0.05)
+│       Message #15: importance=0.30 (bad feedback -0.1 → pruned sooner)
+│       access_count: 12 (retrieved 12 times → reinforced)
 └── Response
 ```
 
-**Implementation Phases:**
+#### Architecture Decision Records (ADRs)
 
-| Phase | Description | Effort |
-|-------|-------------|--------|
-| 1.1 | `/feedback` command + schema | 2 days |
-| 1.2 | Weight propagation | 1 day |
-| 1.3 | `/context` enhancement | 0.5 day |
-| 1.4 | Implicit signal capture | 1 day |
-| 1.5 | Weighted retrieval | 3 days |
-| 1.6 | Decay implementation | 1 day |
-| **Total** | | **8.5 days** |
+| ADR | Decision | Rationale |
+|-----|----------|-----------|
+| ADR-001 | Feedback is harness-only (no fine-tuning) | No GPU, no training pipeline. RAG/ICL/BoN are valid inference-time methods (Krishnamurthy 2026). |
+| ADR-002 | Decay formula: `2^(-t/half_life)` | Aligns with existing facts system (`src/facts/decay.rs`). `exp(-t/h)` is equivalent but confusing; `2^(-t/h)` matches Ebbinghaus curve already in code. |
+| ADR-003 | Messages-only scope is Phase 1 (not permanent) | When Unified Knowledge Store ships, `feedback_signals.item_id` can reference `knowledge_items.id`. Migration: v10→messages, v11+→all sources. |
+| ADR-004 | LLM self-feedback = 30% weight | Self-approval bias defense. Wu et al. (2025): self-verification consistently beaten by majority voting. Chan et al. (2025): ~3% decisions change per reflection step. Configurable via `config.toml [feedback].llm_feedback_weight`. |
+| ADR-005 | Good=+1.0, Bad=-1.0, Correction=+1.0 | Binary-like symmetric signals (no partial credit). Drori et al. (2025): strict 0/1 verification. Granularity comes from temporal decay, not base_value. Correction value is in metadata text, not numerical weight. |
+| ADR-006 | Score clamping: `.clamp(0.1, 3.0)` | Original `.max(-0.9).min(2.0)` allowed negative scores (bug: `1.0 + (-2.0) = -1.0 → max(-1.0, -0.9) = -0.9`). New clamp: min 0.1 (90% max suppression), max 3.0 (3× amplification cap). |
+| ADR-008 | Content Decay Activation | `content_items` ghost fields activated: `decay_score`/`access_count`/`last_accessed` now functional with Ebbinghaus decay. Content-type half-lives: messages=90d, notes=60d, documents=120d. Feedback adjusts importance (good +0.05, bad -0.1), creating a forgetting loop. |
+| ADR-009 | Retrieval Reinforces Retention | `on_content_access()` called on retrieval — increments `access_count`, updates `last_accessed`. Same pattern as facts system. RRF (immediate ranking) and access_count (future retention) are separate signals — not double-counting. |
 
-**Related:** Issue #23
+#### Key Corrections from Original Plan
 
-**Sprach 2.0 Note:** The article's "Learned Personality" proposal (S2.5 — SOUL.md patching) overlaps with but extends P5. P5 captures *what happened* (feedback signals for retrieval weighting); S2.5 adjusts *who I am* (personality modification with human approval). Both are complementary. When designing P5, consider: (1) should feedback influence only facts (safe) or also behavior style (ambitious)?, (2) a `/reflect` command could be the first step toward S2.3 (reflection triggers).
+| Item | Original (implementation-directive.md) | Corrected (v2 plan) | ADR |
+|------|---------------------------------------|---------------------|-----|
+| Bad base_value | -0.5 | **-1.0** | ADR-005 |
+| Correction base_value | 1.2 | **1.0** | ADR-005 |
+| Decay formula | `exp(-t/h)` | **`2^(-t/h)`** | ADR-002 |
+| LLM feedback weight | 1.0 (same as user) | **0.3 (30% discount)** | ADR-004 |
+| RRF score clamping | `.max(-0.9).min(2.0)` | **`.clamp(0.1, 3.0)`** | ADR-006 |
+| `/fc` shortcut | Present | **Removed** (correction always needs text) | — |
+
+#### Key Corrections from V3
+
+| Item | V3 | V4 | ADR |
+|------|----|----|-----|
+| "NO modification of content_items" | Explicit guardrail | REMOVED — feedback adjusts importance | ADR-008 |
+| Content decay | Not addressed | Activated — all content_items decay | ADR-008 |
+| access_count = 0 forever | Implicit limitation | Fixed — on_content_access() on retrieval | ADR-009 |
+| Feedback → importance | Explicitly forbidden | Changed — good/bad adjusts importance | ADR-008 |
+
+#### Implementation Phases
+
+| Phase | Description | Effort | Key Correction |
+|-------|-------------|--------|----------------|
+| 1.1 | `/feedback` command + schema | 2 days | ADR-005 values; `/fc` removed |
+| 1.2 | Weight propagation | 1 day | — |
+| 1.3 | `/context` enhancement | 0.5 day | — |
+| 1.4 | Implicit signal capture | 1 day | — |
+| 1.5 | Weighted retrieval | 3 days | — |
+| 1.6 | Decay implementation | 1 day | `2^(-t/h)` + LLM 30% discount |
+| 1.7 | Content decay module | 2 days | ADR-008: Ebbinghaus for content_items |
+| 1.8 | Access tracking + importance adj. | 2 days | ADR-009: retrieval reinforces retention |
+| 1.9 | Decay cycle integration | 1 day | Startup trigger + /content prune |
+| **Total** | | **13.5 days** | |
+
+**Reserved Code (Phase 2):** The following functions in `src/feedback/prompt.rs` are implemented and tested but not yet wired into production. They are reserved for Phase 2 (Feedback-Aware Retrieval) and are documented with `#[allow(dead_code)] // Reserved for Phase 2`:
+
+| Function | Purpose | Expected Use |
+|----------|---------|-------------|
+| `compute_feedback_boost_map()` | Struct-based version of boost computation using `Database` type directly | Phase 2 RRF fusion in `search_content_hybrid()` — will replace the direct `db::feedback_ops::compute_feedback_boost()` call |
+| `build_feedback_section()` | Format feedback stats for `/context` display | Phase 2 `/context` enhancement — will replace inline formatting in `command_handlers.rs:1892-1916` |
+| `build_decay_section()` | Format decay stats for `/context` display | Phase 2 `/context` enhancement — same as above |
+
+**Boost Computation API Difference:** Two versions exist by design:
+- `db::feedback_ops::compute_feedback_boost()` — DB-query-based, iterates rows directly. **Production (Phase 1).**
+- `feedback::prompt::compute_feedback_boost_map()` → `feedback::decay::compute_total_boost()` → `decayed_weight()` — Struct-based, loads `FeedbackSignal` structs first. **Phase 2.** More composable when retrieval modules already have structs loaded.
+
+Both use the same canonical decay formula via `feedback::decay::decayed_weight_raw()` (ADR-002).
+
+Additionally, `src/feedback/decay.rs` provides the canonical decay computation:
+- `decayed_weight_raw()` — Single point of calculation using unix timestamps with fractional-day precision
+- `decayed_weight()` — Wrapper with `DateTime<Utc>` API (reserved for Phase 2)
+- `compute_total_boost()` — Accumulates weights with first-stage clamping (reserved for Phase 2)
+
+**Future Refactoring Note:** `facts/decay.rs` and `content/decay.rs` share an identical structural pattern (constants for half-lives, `compute_retention()`, `should_prune()`). A future refactoring could extract a shared `Decayable` trait or common `decay` module to eliminate this duplication.
+
+**Sprach 2.0 Note:** The article's "Learned Personality" proposal (S2.5 — SOUL.md patching) overlaps with but extends P5. P5 captures *what happened* (feedback signals for retrieval weighting); S2.5 adjusts *who I am* (personality modification with human approval). Both are complementary.
 
 ---
 
@@ -2914,6 +2971,17 @@ MCP is an open standard for connecting AI applications to external systems:
 - **Dynamic discovery**: Tools are listed at runtime, not compile-time
 - **Security**: Human-in-the-loop for sensitive operations
 
+⚠️ **CRITICAL SECURITY ADVISORY (2026-04-19):** The Anthropic MCP SDK has a **by-design vulnerability** in `StdioServerParameters` that allows arbitrary command execution. The STDIO transport configuration passes commands directly to the OS without validation — even failed connections execute the command. This affects 7,000+ public MCP servers and 150M+ downloads (CVE-2025-65720, CVE-2026-30623, CVE-2026-30624, CVE-2026-30618, CVE-2026-33224, CVE-2026-30625, CVE-2026-30615, CVE-2026-26015, CVE-2026-40933, CVE-2025-49596, CVE-2026-22252, CVE-2026-22688, CVE-2025-54994, CVE-2025-54136). Anthropic has declined to fix this, calling it "expected behavior."
+
+**ask-ai's MCP security requirements (ADR-007):**
+1. `ask-ai` MUST NOT use the Anthropic MCP SDK's `StdioServerParameters` directly for untrusted input
+2. MCP server configurations containing `command` fields MUST be treated as arbitrary code execution — equivalent to running a shell command
+3. User confirmation MUST be required before installing or connecting to any MCP server (no zero-click auto-discovery)
+4. An allowlist of approved MCP server commands MUST be maintained in `config.toml` (`[mcp].allowed_servers`)
+5. MCP servers SHOULD prefer Streamable HTTP transport over STDIO when available (HTTP transport does not spawn arbitrary processes)
+6. When STDIO transport is required, the server process MUST run with minimal privileges (seccomp/cgroups/namespace restrictions)
+7. MCP marketplace/server registry URLs MUST be treated as untrusted input — URLs in server configurations can trigger hidden STDIO configurations (CVE category 4 from the OX Security research)
+
 **Reference:** https://modelcontextprotocol.io
 
 **Example MCP Tool Definition:**
@@ -2935,7 +3003,7 @@ MCP is an open standard for connecting AI applications to external systems:
 
 | System | Approach | Type Safety | Security |
 |--------|----------|-------------|----------|
-| MCP | JSON Schema + server | Runtime validation | Human approval |
+| MCP | JSON Schema + server | Runtime validation | Human approval ⚠️ RCE risk via STDIO (CVE-2025-65720 et al.) |
 | AI SDK (Vercel) | Zod Schema + execute | Compile-time | Needs approval |
 | Hermes Agent | Skills (Markdown) + Tools (Rust) | Compile-time for tools | Sanitization |
 | **ask-ai (current)** | Rust code + feature flags | Compile-time | Blacklist |
@@ -2946,6 +3014,7 @@ MCP is an open standard for connecting AI applications to external systems:
 - Implement MCP client to connect to external tool servers
 - Support `tools/list` and `tools/call` operations
 - Human confirmation UI for tool invocations
+- ⚠️ **ADR-007 constraints:** STDIO transport REQUIRES explicit user approval + command allowlist in `config.toml`. Prefer HTTP/SSE transport. Never use Anthropic SDK `StdioServerParameters` directly.
 
 **Phase 2: Native Plugin System**
 - WASM module loading with sandbox
@@ -3163,7 +3232,7 @@ Meta-level architecture where skills can create and register other skills. Requi
 
 ---
 
-### Sprach 2.0: Validated Decisions (DEC-001 to DEC-006)
+### Sprach 2.0: Validated Decisions (DEC-001 to DEC-007)
 
 The following architectural decisions from the Sprach 2.0 article have been validated by state-of-the-art research:
 
@@ -3172,13 +3241,53 @@ The following architectural decisions from the Sprach 2.0 article have been vali
 | **DEC-001** Cache incremental for `content_relations` | On-demand, not pre-computed | GraphSeek 2026, Graph RAG 2026 |
 | **DEC-002** Reflection triggers over periodic | Specific triggers, not time-based | ICML 2025, MeCo arXiv 2025 |
 | **DEC-003** Curation with human approval | Drafts, not auto-publish | Rewire.it, "Human-in-the-loop" |
-| **DEC-004** WASM sandbox by capabilities | Allowed/denied, not total isolation | The New Stack 2026, MCP-SandboxScan |
+| **DEC-004** WASM sandbox by capabilities | Allowed/denied, not total isolation. **CRITICAL (2026-04-19):** DEC-007 extends this — `process_spawn` deny is meaningless when MCP STDIO transport itself *is* process spawning. STDIO MCP servers require explicit allowlist + sandbox. | The New Stack 2026, MCP-SandboxScan, OX Security 2026 |
 | **DEC-005** Semantic versioning for plugins | Major equal, minor ≥ | OpenFang, "Semver + manifest signing" |
-| **DEC-006** SOUL.md patches with approval | Suggestions, not automatic | MetaMind NeurIPS 2025, "Human oversight" |
+| **DEC-006** SOUL.md patches with human approval | Suggestions, not automatic | MetaMind NeurIPS 2025, "Human oversight" |
+| **DEC-007** MCP STDIO security: no untrusted command execution | Explicit approval + allowlist + sandbox for STDIO | OX Security 2026, CVE-2025-65720 et al., Anthropic MCP SDK vulnerability |
 
 **Competitors identified:**
 - Joplin GSoC 2026: Note graphs with AI (similar to S2.1 + S2.2)
 - OpenClaw: WASM sandbox for community skills (similar to S2.4)
+
+---
+
+### ADR-007: MCP STDIO Transport Security
+
+**Date:** 2026-04-19  
+**Status:** Accepted  
+**Severity:** CRITICAL
+
+#### Context
+
+The Anthropic MCP SDK has a by-design Remote Code Execution (RCE) vulnerability in its STDIO transport. `StdioServerParameters` executes arbitrary OS commands with the parent application's privileges **before any validation or connection attempt occurs**. This means that simply configuring an MCP server connection can execute malicious commands on the host system, even if the connection fails.
+
+**Affected CVEs:** CVE-2025-65720, CVE-2026-30623, CVE-2026-30624, CVE-2026-30618, CVE-2026-33224, CVE-2026-30625, CVE-2026-30615, CVE-2026-26015, CVE-2026-40933, CVE-2025-49596, CVE-2026-22252, CVE-2026-22688, CVE-2025-54994, CVE-2025-54136
+
+**Scope:** 7000+ MCP servers, 150M+ downloads affected. Anthropic declined to fix ("expected behavior").
+
+**Impact on ask-ai:** Currently zero — ask-ai has no MCP code. However, P6 (Phase 1) includes MCP Client Integration (P15/Plugin System), making this a future-critical concern.
+
+#### Decision
+
+1. **Never use `StdioServerParameters` directly.** If STDIO transport is supported, it will be through a sandboxed wrapper that validates commands against an explicit allowlist before execution.
+2. **Mandatory human confirmation for MCP server installation.** Users must explicitly approve each MCP server, with clear warning about the security implications.
+3. **`config.toml` command allowlist.** STDIO MCP server configurations must declare an explicit `allowed_commands` list. Any command not on the list is rejected.
+4. **HTTP transport preference.** Prefer HTTP/SSE transport over STDIO wherever possible. STDIO should require explicit opt-in with security acknowledgment.
+5. **Extend DEC-004 WASM sandbox to MCP processes.** STDIO MCP servers run inside the same WASM sandbox that plugins use, with `process_spawn` capability denied by default.
+
+#### Consequences
+
+- **Positive:** ask-ai users are protected from the RCE vulnerability by design. The allowlist + sandbox approach means even a malicious MCP server config cannot execute arbitrary commands.
+- **Negative:** STDIO MCP servers with complex startup commands may not work out-of-the-box. Users will need to review and approve each server's command list. This is intentional — security over convenience.
+- **Relation to DEC-004:** `denied = ["process_spawn"]` is **meaningless** when MCP STDIO transport itself *is* process spawning. DEC-007 fixes this gap by requiring an explicit allowlist and sandbox for STDIO transport, making the DEC-004 capability model effective even with MCP.
+
+#### References
+
+- OX Security: "MCP Vulnerabilities Could Expose AI Apps to RCE, Data Theft and Other Attacks" (2026)
+- CVE-2025-65720 et al.
+- Anthropic MCP SDK `StdioServerParameters` source code
+- DEC-004: WASM Sandbox by Capabilities
 
 ---
 

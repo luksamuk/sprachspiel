@@ -168,6 +168,7 @@ pub async fn handle_command(
                 state.agents_md.as_deref(),
                 &state.settings,
                 state.cli_soulless,
+                state.db.as_ref(),
             );
             HandleResult::Continue
         }
@@ -420,6 +421,18 @@ pub async fn handle_command(
         }
         ChatCommand::Summarize { text } => {
             handle_subagent_summarize(state, text).await;
+            HandleResult::Continue
+        }
+        ChatCommand::Feedback {
+            signal_type,
+            item_id,
+            correction_text,
+        } => {
+            handle_feedback(state, signal_type, item_id, correction_text);
+            HandleResult::Continue
+        }
+        ChatCommand::ContentPrune => {
+            handle_content_prune(state);
             HandleResult::Continue
         }
     }
@@ -720,6 +733,7 @@ pub fn handle_tool_output_changed(level: ToolOutputLevel) {
 /// and displays the remaining last user message.
 pub fn handle_undo(state: &mut ReplState) {
     let (removed, _) = state.session.remove_last_assistant_messages_with_content();
+    state.last_assistant_message_id = None;
     if removed > 0 {
         if !state.session.anonymous
             && !state.session.id.is_empty()
@@ -891,7 +905,7 @@ pub async fn handle_retry(state: &mut ReplState) {
         .await
         {
             Ok(result) => {
-                state
+                state.last_assistant_message_id = state
                     .session
                     .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
 
@@ -968,6 +982,61 @@ pub fn handle_fact_prune(state: &ReplState) {
         }
         Err(e) => {
             eprintln!("\x1B[31m✗ Failed to prune facts: {}\x1B[0m", e);
+        }
+    }
+}
+
+/// Handle content prune command
+///
+/// Runs the content decay cycle and prunes low-retention content items.
+/// Items with importance >= 0.8 are never pruned.
+pub fn handle_content_prune(state: &ReplState) {
+    use crate::db::content_decay_ops::run_content_decay_cycle;
+
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            log::warn!("Cannot prune content: database not initialized (anonymous mode)");
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    if state.session.anonymous {
+        log::warn!("Cannot prune content in anonymous mode");
+        eprintln!("Error: Cannot prune content in anonymous mode.");
+        return;
+    }
+
+    println!("\x1B[33m⏳ Running content decay cycle...\x1B[0m");
+
+    match db.with_connection(|conn| {
+        run_content_decay_cycle(conn).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+        })
+    }) {
+        Ok(stats) => {
+            log::debug!(
+                "Content prune completed: {} pruned, {} remaining (avg retention: {:.2})",
+                stats.pruned,
+                stats.remaining,
+                stats.avg_retention
+            );
+            if stats.pruned > 0 {
+                println!(
+                    "\x1B[32m✓ Pruned {} content item(s), {} remaining (avg retention: {:.2}).\x1B[0m",
+                    stats.pruned, stats.remaining, stats.avg_retention
+                );
+            } else {
+                println!(
+                    "\x1B[32m✓ No content to prune. {} item(s) remaining (avg retention: {:.2}).\x1B[0m",
+                    stats.remaining, stats.avg_retention
+                );
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to prune content: {}", e);
+            eprintln!("\x1B[31m✗ Failed to prune content: {}\x1B[0m", e);
         }
     }
 }
@@ -1669,6 +1738,7 @@ pub fn print_context_info(
     agents_md: Option<&str>,
     settings: &Settings,
     soulless: bool,
+    db: Option<&Arc<crate::db::Database>>,
 ) {
     use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
     use crate::tools::get_available_tool_names;
@@ -1828,6 +1898,35 @@ pub fn print_context_info(
         println!("  Session:");
         println!("    Total:            {} messages", session.messages.len());
     }
+    // Content Memory section (if database is available)
+    if let Some(db_ref) = db {
+        use crate::db::content_decay_ops::get_content_decay_stats;
+
+        match db_ref.with_connection(|conn| {
+            get_content_decay_stats(conn).map_err(|e| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+            })
+        }) {
+            Ok(stats) => {
+                println!("  Content Memory:");
+                println!("    Total items:      {}", stats.total_items);
+                println!("    Avg importance:    {:.2}", stats.avg_importance);
+                if stats.items_at_risk > 0 {
+                    println!(
+                        "    \u{26a0} Items at risk:   {} (low decay score)",
+                        stats.items_at_risk
+                    );
+                }
+                println!("    Feedback signals:  {}", stats.total_feedback_signals);
+            }
+            Err(_) => {
+                // Silently skip — don't error out /context if stats fail
+            }
+        }
+        println!();
+    }
+
+    println!("  \x1B[90mTip: Use /content prune to prune low-retention content.\x1B[0m");
     println!();
 }
 
@@ -2748,6 +2847,7 @@ mod tests {
             db: None,
             embedding_client: None,
             settings,
+            last_assistant_message_id: None,
         }
     }
 
@@ -2866,7 +2966,6 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
         return;
     }
 
-
     // Save user command to conversation context
     let cmd_str = match mode {
         OcrMode::Text => format!("/ocr {}", path),
@@ -2882,14 +2981,18 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
         Ok(result) => {
             println!("{}", result);
             // Save result to conversation context so AI can reference it
-            state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
 }
 
 /// Handle /vision command - analyze image(s) with vision model
-pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, prompt: Option<String>) {
+pub async fn handle_subagent_vision(
+    state: &mut ReplState,
+    paths: Vec<String>,
+    prompt: Option<String>,
+) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
     use crate::utils::expand_tilde_path;
     use std::path::PathBuf;
@@ -2905,7 +3008,6 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
         }
     }
 
-
     // Build command string for context
     let cmd_str = match &prompt {
         Some(p) => format!("/vision {} {}", paths.join(" "), p),
@@ -2917,12 +3019,14 @@ pub async fn handle_subagent_vision(state: &mut ReplState, paths: Vec<String>, p
     let config = SubagentConfig::new(model, "Vision analysis");
     let runner = SubagentRunner::new(state.ollama.clone(), config);
 
-    let prompt_str = prompt.as_deref().unwrap_or("Describe what you see in this image.");
+    let prompt_str = prompt
+        .as_deref()
+        .unwrap_or("Describe what you see in this image.");
 
     match runner.run_vision(&path_bufs, prompt_str).await {
         Ok(result) => {
             println!("{}", result);
-            state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
@@ -2933,7 +3037,9 @@ pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String,
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
 
     // Save user command to conversation context
-    state.session.add_user_message(format!("/translate {} {}", lang_pair, text));
+    state
+        .session
+        .add_user_message(format!("/translate {} {}", lang_pair, text));
 
     let (model, _, _) = state.settings.get_subcommand_config("translate");
     let config = SubagentConfig::new(model, "Translation");
@@ -2942,7 +3048,7 @@ pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String,
     match runner.run_translate(&lang_pair, &text).await {
         Ok(result) => {
             println!("{}", result);
-            state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
@@ -2953,7 +3059,9 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
 
     // Save user command to conversation context
-    state.session.add_user_message(format!("/summarize {}", text));
+    state
+        .session
+        .add_user_message(format!("/summarize {}", text));
 
     let (model, _, _) = state.settings.get_subcommand_config("summarize");
     let config = SubagentConfig::new(model, "Summarization");
@@ -2962,9 +3070,158 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
     match runner.run_summarize(&text).await {
         Ok(result) => {
             println!("{}", result);
-            state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result, None);
         }
         Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
     }
 }
 
+/// Handle /feedback command
+///
+/// Records user feedback (good/bad/correction) on an assistant message.
+///
+/// Two-guard anonymous check:
+/// 1. If db is None → error
+/// 2. If session.anonymous → error
+///
+/// Target resolution:
+/// - If item_id provided (msg:N) → use that
+/// - If no item_id → use last_assistant_message_id
+/// - If neither → error: "No assistant message to give feedback on"
+///
+/// Importance adjustment:
+/// - Good: importance + 0.05 (capped at 1.0)
+/// - Bad: importance - 0.1 (floored at 0.0)
+/// - Correction: no importance change
+pub fn handle_feedback(
+    state: &mut ReplState,
+    signal_type: crate::feedback::types::FeedbackSignalType,
+    item_id: Option<i64>,
+    correction_text: Option<String>,
+) {
+    use crate::db::feedback_ops::insert_feedback_signal;
+    use crate::feedback::types::{FeedbackSignal, FeedbackSignalType, FeedbackSource};
+
+    // Anonymous block — first guard: db.is_none()
+    let db = match &state.db {
+        Some(d) => Arc::clone(d),
+        None => {
+            log::warn!("Cannot give feedback: database not initialized (anonymous mode)");
+            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
+            return;
+        }
+    };
+
+    // Second guard: session.anonymous
+    if state.session.anonymous {
+        log::warn!("Cannot give feedback in anonymous mode");
+        eprintln!("Error: Cannot give feedback in anonymous mode.");
+        return;
+    }
+
+    // Resolve target item_id
+    let target_id = match item_id {
+        Some(id) => id,
+        None => match state.last_assistant_message_id {
+            Some(id) => id,
+            None => {
+                println!("No assistant message to give feedback on.");
+                return;
+            }
+        },
+    };
+
+    // Determine importance delta based on signal type
+    let importance_delta: f32 = match signal_type {
+        FeedbackSignalType::Good => 0.05,
+        FeedbackSignalType::Bad => -0.1,
+        FeedbackSignalType::Correction => 0.0,
+    };
+
+    // Create feedback signal
+    let now_ts: i64 = chrono::Utc::now().timestamp();
+    let signal = FeedbackSignal {
+        item_id: target_id,
+        session_id: Some(state.session.id.clone()),
+        signal_type,
+        base_value: signal_type.base_value(),
+        correction_text,
+        source: FeedbackSource::User,
+        created_at: now_ts,
+    };
+
+    // Insert feedback signal via db.with_connection()
+    let insert_result: Result<i64, String> = db
+        .with_connection(|conn| {
+            insert_feedback_signal(
+                conn,
+                signal.item_id,
+                signal.session_id.as_deref(),
+                signal.signal_type,
+                signal.base_value,
+                signal.correction_text.as_deref(),
+                signal.source,
+                signal.created_at,
+            )
+            .map_err(|e| {
+                rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+            })
+        })
+        .map_err(|e| format!("{}", e));
+
+    match insert_result {
+        Ok(_row_id) => {
+            // Adjust importance (except for correction which has delta 0.0)
+            if importance_delta != 0.0
+                && let Err(e) = db.adjust_importance(target_id, importance_delta)
+            {
+                log::warn!("Could not adjust importance for item {}: {}", target_id, e);
+                eprintln!("\x1B[33mWarning: Could not adjust importance: {}\x1B[0m", e);
+            }
+
+            log::debug!(
+                "Feedback recorded: {} for msg:{} (delta: {:+.2})",
+                signal.signal_type,
+                target_id,
+                importance_delta
+            );
+
+            // Get message excerpt for confirmation
+            let excerpt: String = db
+                .with_connection(|conn| {
+                    conn.query_row(
+                        "SELECT SUBSTR(content, 1, 80) FROM content_items WHERE id = ?1",
+                        rusqlite::params![target_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                })
+                .unwrap_or_else(|_| "(no content)".to_string());
+            let signal_label = signal.signal_type.to_string();
+            let arrow = match signal.signal_type {
+                FeedbackSignalType::Good => "\x1B[32m↑↑\x1B[0m",
+                FeedbackSignalType::Bad => "\x1B[31m↓↓\x1B[0m",
+                FeedbackSignalType::Correction => "\x1B[33m✎\x1B[0m",
+            };
+
+            println!(
+                "{} {} feedback recorded for msg:{}",
+                arrow, signal_label, target_id
+            );
+            println!("  \x1B[90m{}\x1B[0m", excerpt);
+
+            if let Some(ref text) = signal.correction_text {
+                println!("  Correction: {}", text);
+            }
+
+            if importance_delta > 0.0 {
+                println!("  Importance: +{:.2}", importance_delta);
+            } else if importance_delta < 0.0 {
+                println!("  Importance: {:.2}", importance_delta);
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to record feedback for item {}: {}", target_id, e);
+            eprintln!("\x1B[31m✗ Failed to record feedback: {}\x1B[0m", e);
+        }
+    }
+}

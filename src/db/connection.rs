@@ -521,6 +521,56 @@ impl Database {
             }
         }
 
+        // Migration v9 -> v10: Add feedback_signals table and pruned column to content_items
+        if from_version < 10 {
+            // Create feedback_signals table if not exists
+            let feedback_table_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='feedback_signals'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )? > 0;
+
+            if !feedback_table_exists {
+                conn.execute_batch(
+                    r#"
+                    CREATE TABLE IF NOT EXISTS feedback_signals (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        item_id INTEGER NOT NULL,
+                        session_id TEXT,
+                        signal_type TEXT NOT NULL CHECK(signal_type IN ('good', 'bad', 'correction')),
+                        base_value REAL NOT NULL,
+                        correction_text TEXT,
+                        source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+                        created_at INTEGER NOT NULL,
+                        FOREIGN KEY (item_id) REFERENCES content_items(id) ON DELETE CASCADE
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_feedback_signals_item_id ON feedback_signals(item_id);
+                    CREATE INDEX IF NOT EXISTS idx_feedback_signals_session_id ON feedback_signals(session_id);
+                    CREATE INDEX IF NOT EXISTS idx_feedback_signals_created_at ON feedback_signals(created_at);
+                    "#,
+                )?;
+            }
+
+            // Add pruned column to content_items if not exists
+            let pruned_exists: bool = {
+                let mut stmt = conn.prepare("PRAGMA table_info(content_items)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                names.contains(&"pruned".to_string())
+            };
+
+            if !pruned_exists {
+                conn.execute(
+                    "ALTER TABLE content_items ADD COLUMN pruned INTEGER NOT NULL DEFAULT 0",
+                    [],
+                )?;
+            }
+        }
+
         Ok(())
     }
 
