@@ -29,673 +29,77 @@ This document describes the mandatory workflow for implementing features and fix
 4. **ALWAYS reference the issue in PR body** - Use "Closes #N" or "Related #N"
 5. **ALWAYS add new issues to roadmap** - When creating new issues, add them to IMPLEMENTATION.md with priority label
 
-## Workflow: Step by Step
+## Workflow Summary
 
-### Phase 1: Setup
+The PR workflow consists of 7 phases. **For the complete step-by-step instructions, load the appropriate skill.**
 
-```
-1. Create branch: git checkout -b <type>/<description>
-   Types: feat/, fix/, refactor/, docs/, test/
+| Phase | Description | Skill to Load |
+|-------|-------------|---------------|
+| 1 | Setup: branch, card to "In Progress" | `pr-workflow` |
+| 2 | Documentation FIRST: CHANGELOG, IMPLEMENTATION.md | `pr-workflow` |
+| ⛔ | **STOP**: Create draft PR, wait for authorization | `pr-workflow` |
+| 2.5 | Planning mode (read-only analysis, plan, approval) | `pr-workflow` |
+| 2.6 | Requirements checkpoint (NON-NEGOTIABLE) | `pr-workflow` |
+| 3 | Implementation: code, tests, linters, commit, push | `pr-workflow` |
+| 4 | Mark PR ready, move card to "In Review" | `pr-workflow` |
+| 5 | Review & iteration (respond to each thread) | `pr-workflow` |
+| 6 | Testing: manual tests + smoke test | `pr-testing` |
+| 7 | Merge (after authorization) | `pr-workflow` |
 
-2. Verify you're on the correct branch
+**Phase 2.6 is NON-NEGOTIABLE.** Without the requirements checkpoint, the agent may implement features that already exist, make wrong assumptions, or cause conflicts. Present the requirements table and get explicit user approval.
 
-3. Read IMPLEMENTATION.md to understand the task status
+## Review & Iteration
 
-4. Move GitHub Project card to "In Progress" (both Status and Scrum Status)
-   This signals that work has begun on the task
-```
-
-### Phase 2: Documentation FIRST
-
-```
-5. Update CHANGELOG.md:
-   - Add entry under appropriate version
-   - Use "Added", "Changed", "Fixed", "Removed" sections
-
-6. Update IMPLEMENTATION.md:
-   - Mark task status as 🔄 IN PROGRESS when starting
-   - Will mark as ✅ COMPLETED only after merge
-
-7. Commit documentation: git commit -m "docs: update CHANGELOG for <feature>"
-```
-
-### ⚠️ STOP POINT: Create Draft PR and Wait for Authorization
-
-**CRITICAL: After completing Phase 2, you MUST create the draft PR and STOP.**
-
-After documentation is committed:
+After Phase 4, the review loop begins:
 
 ```
-8. Push branch: git push -u origin <branch>
-
-9. Create PR as DRAFT with issue reference:
-   gh pr create --draft --title "<type>: <description>" --body "..."
-    
-   IMPORTANT: Include "Closes #N" or "Related #N" in PR body to:
-   - Link PR to Issue automatically
-   - Auto-close Issue when PR is merged (Closes #N)
-
-10. Link PR to Issue (Development field):
-    gh issue comment <issue_number> --body "PR #<pr_number> criado para resolver esta issue."
-    
-   This creates a visible link in the Issue's "Development" section.
-
-11. STOP AND WAIT for user authorization
-
-    DO NOT proceed to Phase 3 (Implementation) until authorized.
-    The user will enter "planning mode" to discuss implementation approach.
-    
-    DO NOT move card to "In Review" yet - the PR is still in DRAFT status.
-    Card stays in "In Progress" until Phase 4 (ready for review).
+┌──────────────────────────────────────┐
+│         REVIEW ITERATION              │
+│  Reviewer comments → Agent responds   │
+│  → Implementation if needed → Push    │
+│  → Return for re-review               │
+└──────────────────────────────────────┘
+                   ↓
+┌──────────────────────────────────────┐
+│         MANUAL TESTING                │
+│  Reviewer tests → Bugs? → Fix → Loop │
+└──────────────────────────────────────┘
+                   ↓
+┌──────────────────────────────────────┐
+│    MANUAL TEST SCRIPT (Phase 6.1)     │
+│  Primary agent creates script         │
+│  Hermes Agent executes                │
+└──────────────────────────────────────┘
+                   ↓
+┌──────────────────────────────────────┐
+│    SMOKE TEST UPDATE (Phase 6.3)      │
+│  Agent reviews SMOKE_TEST.md          │
+└──────────────────────────────────────┘
+                   ↓
+┌──────────────────────────────────────┐
+│    SMOKE TEST (Phase 6.4, OPTIONAL)   │
+│  Hermes Agent executes SMOKE_TEST.md │
+└──────────────────────────────────────┘
+                   ↓
+               MERGE
 ```
 
-**Why this stop point exists:**
-- Allows user to review planned changes before code is written
-- Provides opportunity for architecture discussion
-- Prevents wasted effort on wrong approach
-- Enables course correction early
+**For detailed review response format, exact GraphQL commands, and iteration handling, load the `pr-workflow` skill.**
 
-### Phase 2.5: Planning Mode (AFTER Authorization)
+**For manual test script creation, smoke test updates, and result processing, load the `pr-testing` skill.**
 
-**After user authorizes continuation, enter planning mode:**
+## Testing Phases
 
-```
-12. Analyze codebase to understand the implementation context
-    - Read relevant files (READ-ONLY, no modifications)
-    - Identify patterns and conventions
-    - Check for existing abstractions to reuse
-
-13. Create implementation plan:
-    - Specific files to modify/create
-    - Function signatures
-    - Estimated line counts
-    - Complexity reduction targets
-
-14. Ask user questions to clarify approach:
-    - File location preferences
-    - Priority order
-    - Any constraints or preferences
-
-15. WAIT for user approval of plan
-
-    DO NOT make any file modifications during planning mode.
-    The plan is discussed and approved before implementation begins.
-    
-    User will then authorize implementation.
-    
-    16. After user approves plan:
-    a. Update IMPLEMENTATION.md with detailed plan
-    b. Update PR body with implementation plan
-    c. Update TODO list with implementation tasks
-    d. Commit documentation changes
-    e. Push changes
-    f. Proceed to Phase 2.6 (Requirements Checkpoint)
-```
-
-**Why this step exists:**
-- Ensures implementation follows agreed architecture
-- Catches issues before code is written
-- Creates clear record of what will be changed
-- Allows user to course-correct the plan
-- **READ-ONLY during planning** - no file modifications until approved
-
-### Phase 2.6: Requirements Checkpoint (NON-NEGOTIABLE) ⛔
-
-**This phase is MANDATORY. NEVER skip it. NEVER proceed to Phase 3 without it.**
-
-After the plan is approved in Phase 2.5, the agent MUST present a requirements
-review to the user BEFORE writing any code. This is the last gate before implementation.
-
-```
-17. Extract and present ALL requirements from:
-    a. The issue(s) being addressed
-    b. The IMPLEMENTATION.md plan
-    c. The approved Phase 2.5 plan
-    d. Any AGENTS.md guidelines that apply
-
-18. For each requirement, classify it as:
-    ✅ CLEAR  — Well-defined, no ambiguity, ready to implement
-    ⚠️ VAGUE — Needs clarification before implementing
-    ❌ CONFLICT — Contradicts another requirement or existing behavior
-    🔄 REWORK — Duplicates or overlaps with existing code
-
-19. Present the requirements table to the user:
-    | # | Requirement | Source | Status | Notes |
-    |---|-------------|--------|--------|-------|
-    | 1 | ... | Issue #60 | ✅ CLEAR | ... |
-    | 2 | ... | Plan | ⚠️ VAGUE | Need to define X |
-
-20. For any ⚠️ VAGUE or ❌ CONFLICT items:
-    a. Present the specific question to the user
-    b. WAIT for user's decision
-    c. Update the requirement table
-
-21. For any 🔄 REWORK items:
-    a. Explain what existing code already does this
-    b. Ask user: "Should we extend existing code or implement new code?"
-    c. WAIT for user's decision
-    d. Remove duplicated work from the plan
-
-22. After all requirements are ✅ CLEAR:
-    a. Ask user: "All requirements are clear. May I proceed to implementation?"
-    b. WAIT for explicit user authorization
-    c. Only then proceed to Phase 3
-```
-
-**Why this phase is NON-NEGOTIABLE:**
-
-Without this checkpoint, the agent may:
-- Implement features that already exist (wasted effort)
-- Make assumptions about vague requirements (wrong implementation)
-- Miss conflicts between new and existing behavior (bugs)
-- Skip requirement validation entirely (technical debt)
-
-**This phase has already caused real problems:**
-- P5 (Log Crate + Verbosity) was implemented without requirements review
-- The "Normal = warn" vs "Normal = info" decision was never validated with the user
-- Tool call visibility defaults were assumed without confirmation
-- This resulted in potential rework and unclear UX expectations
-
-**The agent MUST present this table and get explicit user approval.**
-If the agent skips this phase, the user should send them back to do it.
-
-### Phase 3: Implementation (AFTER Requirements Checkpoint)
-
-**Only start Phase 3 after Phase 2.6 requirements are all ✅ CLEAR and user has authorized.**
-
-```
-17. Implement tasks from TODO list in order
-
-18. Run tests: cargo test --all-features
-
-19. Run clippy: cargo clippy --all-features -- -D warnings
-
-20. Commit code changes (conventional commits):
-    feat: <description>
-    fix: <description>
-    refactor: <description>
-
-21. Push commits: git push
-```
-
-### Phase 4: Mark PR Ready for Review
-
-**Before marking ready, run formatters and linters:**
-
-```
-21.5. Run code formatters and verify no warnings:
-    cargo fmt
-    cargo clippy -- -D warnings
-    
-    If clippy reports warnings, fix them before proceeding.
-    This prevents formatting diffs from cluttering the review.
-```
-
-```
-22. Mark PR as "ready for review":
-    gh pr ready <number>
-
-23. Move GitHub Project card to "In Review" (both Status and Scrum Status):
-    # Find the item ID (project number 4 = Ask-AI Roadmap)
-    gh project item-list 4 --owner luksamuk --format json | jq '.items[] | select(.title | test("issue_title")) | {id: .id}'
-    
-    # Or find by issue number:
-    gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id'
-    
-    # Update Status field to "In Review":
-    gh api graphql -f query='
-    mutation {
-      updateProjectV2ItemFieldValue(
-        input: {
-          projectId: "PVT_kwHOADplIc4BRnZ9"
-          itemId: "<ITEM_ID>"
-          fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg"
-          value: { singleSelectOptionId: "77520bb7" }
-        }
-      ) { projectV2Item { id } }
-    }'
-    
-    # Update Scrum Status field to "In Review":
-    gh api graphql -f query='
-    mutation {
-      updateProjectV2ItemFieldValue(
-        input: {
-          projectId: "PVT_kwHOADplIc4BRnZ9"
-          itemId: "<ITEM_ID>"
-          fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY"
-          value: { singleSelectOptionId: "d242b7c7" }
-        }
-      ) { projectV2Item { id } }
-    }'
-
-24. Add comment to issue: "PR #N ready for review"
-```
-
-### Phase 5: Review & Iteration (COLLABORATIVE)
-
-This phase repeats until all review comments are resolved.
-
-```
-25. Reviewer adds comments to PR
-
-26. Agent fetches ALL unresolved review comments:
-    gh api graphql -f query='
-    query {
-      repository(owner: "OWNER", name: "REPO") {
-        pullRequest(number: PR_NUMBER) {
-          reviewThreads(last: 50) {
-            totalCount
-            nodes {
-              id
-              path
-              line
-              isResolved
-              comments(first: 1) { nodes { body } }
-            }
-          }
-        }
-      }
-    }'
-
-    IMPORTANT: Use 'last: 50' (not 'first: 30') to get ALL threads.
-    Verify thread count matches totalCount.
-
-27. Agent responds to EACH unresolved comment individually:
-    - Use response prefixes:
-      ✅ Resolvido (for fixed code)
-      ✅ Verificado (for confirmed correct behavior)
-      📋 Acknowledged, deferred (good suggestion, future work)
-      ❌ Declined (with explanation)
-      ❓ Clarification needed
-
-    Example:
-    gh api graphql -f query='
-    mutation {
-      addPullRequestReviewThreadReply(input: {
-        pullRequestReviewThreadId: "THREAD_ID",
-        body: "✅ Resolvido. Fixed in commit abc1234."
-      }) { comment { id } }
-    }'
-
-28. If implementation changes needed:
-    a. Create a todo list overview of changes
-    b. Wait for user confirmation before implementing
-    c. Implement approved changes
-    d. Update documentation as needed
-    e. Push changes
-
-29. If scope creep detected:
-    - Discuss with user
-    - May need to open separate issues
-
-30. Update PR description and documentation if changes were made
-
-31. Agent checks for unresolved comments again:
-    - If unresolved comments exist → return to step 27
-    - If all resolved → inform user and wait for approval
-
-32. User reviews and either:
-    - Approves and proceeds to Phase 6 (manual testing)
-    - Adds more comments → return to step 27
-```
-
-### Phase 6: Review & Approval (REVIEWER)
-
-After all review comments are resolved, the reviewer performs manual testing.
-
-```
-33. Reviewer marks all review comments as resolved
-
-34. Reviewer tests the application manually:
-    - Build and run: cargo build --all-features && cargo run
-    - Test the specific feature/fix
-    - Verify edge cases
-    - Check for regressions
-
-35. If bugs found during testing:
-    a. Reviewer documents bugs in PR comments
-    b. Agent creates todo list of fixes
-    c. User confirms fixes
-    d. Agent implements fixes
-    e. Agent documents bugs fixed in PR body
-    f. Agent pushes changes
-    g. **Return to Step 27 (review iteration)** - new commits need review
-
-36. If testing passes → proceed to Phase 6.1
-```
-
-**IMPORTANT:** Every time the agent pushes commits (whether fixing review comments, 
-bugs from testing, or any other changes), the PR returns to Step 27 for a new 
-review iteration. The reviewer must review the new commits and either:
-- Add more comments → continue iteration
-- Approve → proceed to Phase 6.1
-
-**CRITICAL:** The reviewer can only review after the agent has pushed ALL commits.
-Before informing the reviewer that changes are ready, the agent MUST ensure:
-- All commits are pushed to the remote branch
-- `git status` shows "up to date with 'origin/`<branch>`'"
-- No local commits remain unpushed
-
-### Phase 6.1: Agent Creates Manual Test Script (AFTER Review Approval)
-
-After the reviewer approves the PR, the primary agent (OpenCode, not Hermes) creates
-a manual test script specific to the task being implemented.
-
-**Why the primary agent creates this:** The primary agent knows what code changed,
-what edge cases exist, and what the PR is supposed to do. The Hermes Agent only
-executes the script — it does not decide what to test.
-
-**IMPORTANT:** Manual test files are **NOT versioned**. They are:
-- Created by the primary agent (OpenCode)
-- Stored outside the repository (e.g., `~/MANUAL-TEST-PR_NUMBER.md`)
-- Based on template: `doc/src/development/MANUAL-TEST-TEMPLATE.md`
-- Customized for the specific feature/fix in the PR
-- Deleted after the PR is merged
-- **NEVER committed to git**
-
-```
-37. Primary agent creates manual test file LOCALLY (not in repo):
-    - File: ~/MANUAL-TEST-PR_NUMBER.md (or /tmp/MANUAL-TEST-PR_NUMBER.md)
-    - Based on template: doc/src/development/MANUAL-TEST-TEMPLATE.md
-    - Customized for the specific feature/fix in the PR
-    - Includes test sections for:
-      a. Feature functionality (happy path)
-      b. Edge cases (Unicode, empty input, boundary values)
-      c. Error handling (invalid input, missing dependencies)
-      d. Regression tests (existing features still work)
-    - Uses temporary files for test data
-    - NEVER add to git
-
-38. Wait for user confirmation of the test script
-    - User may suggest additions or modifications
-    - Revise the script if needed
-    - Only proceed after user approves
-```
-
-**Manual Test Principles:**
-
-1. **Task-Specific Testing**
-   - Each feature/bug gets its own test section
-   - Test verifies the specific change, not just the feature
-
-2. **Error Message Quality**
-   - Check for vague errors (e.g., "Some(1)")
-   - Verify actionable suggestions are present
-   - Confirm unit consistency (MB vs Mb, KB vs Kb)
-
-3. **Tool Behavior**
-   - Test synchronous operations work immediately
-   - Verify parameters are passed correctly
-   - Check that limits are enforced
-
-### Phase 6.2: Manual Tests — Executed by Hermes Agent
-
-The Hermes Agent executes the task-specific manual test script created in Phase 6.1.
-
-**IMPORTANT:** The Hermes Agent does NOT create the test script — it only executes it.
-The primary agent creates the script in Phase 6.1.
-
-```
-39. Hermes Agent executes manual test script:
-    - Reads ~/MANUAL-TEST-PR_NUMBER.md
-    - Creates temporary test files
-    - Interacts with LLM to test tool behavior
-    - Verifies error messages are correct
-    - Checks unit consistency (MB/Mb, KB/Kb)
-    - Reports all test results with checkmarks
-    - Notes any failures with detailed error messages
-
-40. Hermes reports results in PR comments (not in the file itself)
-
-41. If manual tests find bugs:
-    a. Hermes documents failures in PR comments
-    b. Current agent (OpenCode) creates todo list of fixes
-    c. User confirms fixes
-    d. Agent implements fixes
-    e. Agent pushes changes
-    f. **Return to Step 27 (review iteration)**
-       - New commits need review
-       - After review, re-run manual tests for the fix
-
-42. If manual tests pass → proceed to Phase 6.3
-```
-
-### Phase 6.3: Agent Reviews and Updates Smoke Test Suite
-
-Before the smoke test, the primary agent checks whether the `SMOKE_TEST.md` file
-in the repository needs updates for the features/fixes in this PR.
-
-**Key distinction:** The smoke test is a **generalized regression suite** versioned in
-the repository. It is NOT task-specific — it tests that nothing is broken overall.
-The agent only adds items when there are new minimum guarantees to enforce.
-
-```
-43. Primary agent reviews SMOKE_TEST.md:
-    - Check if the PR adds features that need minimum regression guarantees
-    - If new guarantees are needed:
-      a. Add test sections to SMOKE_TEST.md
-      b. Commit: git commit -m "test: add smoke test sections for <feature>"
-      c. Push changes
-    - If no new guarantees needed:
-      - Skip this step, proceed to Phase 6.4
-
-44. Wait for user confirmation before proceeding to smoke test
-```
-
-**When to Update SMOKE_TEST.md:**
-
-- **Add sections** when: new user-visible features, new tools, new CLI commands,
-  new error messages that need verification, bug fixes that could regress
-- **Do NOT add sections** when: internal refactors, documentation-only changes,
-  test-only changes, features that are already covered by existing sections
-
-### Phase 6.4: Smoke Test — Executed by Hermes Agent (OPTIONAL)
-
-The Hermes Agent executes the generalized regression suite (`SMOKE_TEST.md`).
-This is optional and typically requested for significant features or before releases.
-
-**Key distinction from manual tests:**
+**Key distinction:**
 - **Manual tests** (Phase 6.2) are task-specific, created per PR, NOT versioned
-- **Smoke tests** (Phase 6.4) are generalized, versioned in `SMOKE_TEST.md`,
-  and ensure minimum guarantees across all features
+- **Smoke tests** (Phase 6.4) are generalized, versioned in `SMOKE_TEST.md`, ensure minimum guarantees
 
-```
-45. User requests smoke test from Hermes Agent:
-    "Execute smoke test on this PR"
+**Who does what:**
+- **Primary agent (OpenCode):** Creates manual test script, reviews SMOKE_TEST.md, processes results
+- **Hermes Agent:** Executes both manual tests and smoke tests, reports results
+- **User:** Approves test scripts, requests smoke tests, reviews results
 
-46. Hermes Agent executes SMOKE_TEST.md:
-    - Preserves user's existing database (backup)
-    - Creates temporary test files
-    - Runs automated checklist (build, unit tests)
-    - Executes manual test sections interactively
-    - Reports all test results with checkmarks
-    - Notes any failures with detailed error messages
-    - Writes report to ~/SMOKE-TEST-RESULTS-PR_NUMBER.md (not in repo)
-
-47. If smoke test passes:
-    - Hermes reports "Aprovado para merge" in PR comments
-    - Current agent (OpenCode) reads the report from ~/SMOKE-TEST-RESULTS-PR_NUMBER.md
-    - Proceed to Phase 7 (Merge)
-
-48. If smoke test fails:
-    - Hermes documents failures in PR comments
-    - Agent creates todo list of fixes
-    - User confirms fixes
-    - Agent implements fixes
-    - Agent pushes changes
-    - **Return to Step 27 (review iteration)**
-```
-
-**Smoke Test Principles:**
-
-1. **Database Isolation**
-   - MUST backup user's existing database before testing
-   - MUST use temporary database for tests
-   - MUST restore user's database after testing
-
-2. **Test Coverage**
-   - Binary execution and version
-   - Chat mode basic functionality
-   - Document import (including bug fixes: tilde, ID formats, titles)
-   - Memory and facts
-   - Notes (regression test)
-   - Query mode
-   - File tools (regression test)
-   - Database schema verification
-
-3. **Bug Fix Verification**
-   - Each bug fix must have explicit test case
-   - Bug #1 (tilde expansion): Test `/doc import ~/path`
-   - Bug #2 (ID formats): Test `/doc show #N`, `doc:N`, `N`
-   - Bug #3 (org title): Test `#+TITLE:` extraction
-
-4. **Regression Testing**
-   - Notes still work after changes
-   - File tools still work after changes
-   - Memory/search still work after changes
-
-### Phase 7: Merge (AGENT, after authorization)
-
-```
-49. User authorizes merge (all comments resolved, manual tests passed, smoke test passed if requested)
-
-50. Agent merges PR using regular merge (NOT squash) with branch deletion:
-    gh pr merge PR_NUMBER --merge --delete-branch
-    
-    IMPORTANT: 
-    - Use --merge (NOT --squash) to preserve commit history
-    - Use --delete-branch to clean up after merge
-    - Branch is deleted after merge
-    - PR is automatically closed
-
-51. Card moves to "Done" automatically (if PR references the card)
-
-52. Issue is closed automatically (via "Closes #N" in PR body)
-```
-
-## GitHub Project Status Flow
-
-```
-Todo → In Progress → In Review → Done
-           ↑            ↑           ↑
-       (start)     (PR ready)    (merged)
-```
-
-- **Todo**: Task is planned but not started
-- **In Progress**: Task is being implemented
-- **In Review**: PR ready for review (not draft)
-- **Done**: PR merged (after merge)
-
-## Review Loop Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    REVIEW ITERATION                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   Step 25: Reviewer adds comments                            │
-│           ↓                                                  │
-│   Step 26: Agent fetches ALL comments                        │
-│           ↓                                                  │
-│   Step 27: Agent responds to each comment                    │
-│           ↓                                                  │
-│   Step 28-30: Implementation if needed                       │
-│           ↓                                                  │
-│   Step 31: Agent pushes changes →──────────┐                 │
-│           ↓                                │                 │
-│   Step 32: User reviews                    │                 │
-│           ↓                                │                 │
-│   ┌─────────────────────┐                 │                 │
-│   │ Need more changes?  │──── Yes ────────┘                 │
-│   └─────────────────────┘                                   │
-│           ↓ No (all resolved)                                │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    MANUAL TESTING                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   Step 33-34: Reviewer tests application                     │
-│           ↓                                                  │
-│   ┌─────────────────────┐                                    │
-│   │ Bugs found?         │──── Yes ──→ Document bugs in PR   │
-│   └─────────────────────┘                 ↓                  │
-│           ↓                            Agent fixes          │
-│           ↓                                ↓                  │
-│           ↓                         Agent pushes ────────────┐│
-│           ↓                                           ↓     ││
-│           ↓                               Return to Step 27 ─┘│
-│           ↓ No bugs                                         │
-├─────────────────────────────────────────────────────────────┤
-│                          ↓                                   │
-└─────────────────────────────────────────────────────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│              MANUAL TEST SCRIPT (Task-Specific)              │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   Step 37-38: Primary agent creates script                    │
-│               ~/MANUAL-TEST-PR_NUMBER.md                     │
-│           ↓                                                  │
-│   Step 39-42: Hermes Agent executes script                    │
-│           ↓                                                  │
-│   ┌─────────────────────┐                                    │
-│   │ Bugs found?         │──── Yes ──→ Document in PR        │
-│   └─────────────────────┘                 ↓                  │
-│           ↓                            Agent fixes           │
-│           ↓                                ↓                  │
-│           ↓                         Agent pushes ────────────┐ │
-│           ↓                                          ↓      │ │
-│           ↓                              Return to Step 27 ──┘ │
-│           ↓ Pass                                             │
-├─────────────────────────────────────────────────────────────┤
-│                          ↓                                   │
-└─────────────────────────────────────────────────────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│              SMOKE TEST UPDATE (If Needed)                   │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   Step 43-44: Agent reviews SMOKE_TEST.md                    │
-│               Adds sections if needed                         │
-│               Commits and pushes changes if any               │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│              SMOKE TEST (Generalized Regression)             │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   Step 45: User requests smoke test                           │
-│           ↓                                                  │
-│   Step 46: Hermes executes SMOKE_TEST.md                      │
-│           ↓                                                  │
-│   ┌─────────────────────┐                                    │
-│   │ Smoke test fails?   │──── Yes ──→ Document in PR         │
-│   └─────────────────────┘                 ↓                  │
-│           ↓                            Agent fixes           │
-│           ↓                                ↓                  │
-│           ↓                         Agent pushes ────────────┐ │
-│           ↓                                          ↓      │ │
-│           ↓                              Return to Step 27 ──┘ │
-│           ↓ Pass (or skipped)                                │
-├─────────────────────────────────────────────────────────────┤
-│                          ↓                                   │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│                         MERGE                                │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│   Step 49: User authorizes merge                             │
-│           ↓                                                  │
-│   Step 50: Agent runs: gh pr merge N --merge --delete-branch│
-│           ↓                                                  │
-│   Step 51-52: Cleanup (branch deleted, PR closed)           │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
+**Load the `pr-testing` skill for complete instructions.**
 
 ## Review Comment Response Prefixes
 
@@ -715,108 +119,22 @@ When responding to review comments, use these prefixes:
 
 During review, several scenarios may occur:
 
-### Scenario: Implementation Changes Needed
+- **Implementation changes needed:** Create todo list → user confirms → implement → push → re-review
+- **Scope creep detected:** Discuss with user → may open separate issues
+- **YAGNI identified:** Explain why code should be removed → remove with agreement
+- **Large issue detected:** Discuss splitting into multiple PRs
+- **Bugs found during testing:** Document → fix → push → return to review iteration
 
-1. Agent creates todo list overview of required changes
-2. User confirms or modifies the plan
-3. Agent implements changes
-4. Agent updates documentation (CHANGELOG, IMPLEMENTATION.md, etc.)
-5. Agent pushes changes
-6. Return to checking for unresolved comments
-
-### Scenario: Scope Creep Detected
-
-1. Agent identifies scope creep during implementation
-2. Discusses with user
-3. May open separate issues for additional work
-4. Defers to future PRs with user agreement
-
-### Scenario: YAGNI (You Ain't Gonna Need It)
-
-1. Agent identifies unnecessary code during review
-2. Explains why code should be removed
-3. Removes code with user agreement
-4. Documents removal in commit message
-
-### Scenario: Large Issue Detected
-
-1. Agent realizes issue is too large for single PR
-2. Discusses with user
-3. May split into multiple issues/PRs
-4. Documents remaining work in IMPLEMENTATION.md
-
-### Scenario: Bugs Found During Testing
-
-Bugs can be found during any testing phase (review, manual tests, or smoke test).
-The flow is the same regardless of which phase finds them.
-
-1. Tester (reviewer or Hermes) documents bugs in PR comments
-2. Agent creates todo list of fixes needed
-3. User confirms the fixes are appropriate
-4. Agent implements fixes
-5. Agent updates PR body to document bugs fixed
-6. Agent pushes changes
-7. **Return to Step 27 (review iteration)** — every push triggers a review cycle
-8. After review, the relevant test phase is re-executed
-
-### Scenario: Scope Creep in PR
-
-Sometimes additional work is needed within a PR that wasn't in the original scope,
-but is appropriate to include (e.g., defining guidelines during implementation).
-
-1. Agent identifies out-of-scope work needed
-2. Discusses with user and gets approval
-3. Agent implements the additional work
-4. Agent documents ALL work in PR body:
-   - Original scope work
-   - Additional out-of-scope work (clearly marked)
-5. Agent updates CHANGELOG/IMPLEMENTATION.md as needed
-6. Continue with normal review process
+**Every push triggers a new review cycle.** The reviewer must review new commits before proceeding.
 
 ## Multiple Issues per PR
 
-Sometimes it makes sense to address multiple related issues in a single PR
-(e.g., two small fixes that touch adjacent code, or complementary features).
-
-### Rules
+When addressing multiple related issues in a single PR:
 
 1. **Both issues must be related** — don't combine unrelated work
 2. **PR title describes both** — e.g., `feat: memory staleness warnings and truncation notices`
 3. **PR body references all issues** — use `Closes #A, Closes #B` for auto-close
 4. **Both cards follow the same flow** — both move to "In Progress" at start, both to "In Review" at Phase 4
-
-### Card Movement
-
-```
-Phase 1: Move ALL cards to "In Progress"
-Phase 4: Move ALL cards to "In Review"
-Phase 7: Cards move to "Done" automatically when PR merges
-```
-
-### Comments on Issues
-
-```
-Phase 2 (Draft PR):
-  gh issue comment #A --body "PR #N criado para resolver esta issue."
-  gh issue comment #B --body "PR #N criado para resolver esta issue (junto com #A)."
-
-Phase 4 (Ready for Review):
-  gh issue comment #A --body "PR #N ready for review"
-  gh issue comment #B --body "PR #N ready for review"
-```
-
-### Manual Test Script
-
-The manual test script (`~/MANUAL-TEST-PR_NUMBER.md`) should include sections for
-each issue's functionality. Group tests by issue number:
-
-```markdown
-## 1. Issue #70: Memory Staleness Warnings
-...
-
-## 2. Issue #71: Truncation Warnings
-...
-```
 
 ## Conventional Commits
 
@@ -855,34 +173,6 @@ Brief description of changes.
 
 Closes #N  (use only when PR will completely close the issue)
 Related #N (use when PR is related but not closing)
-```
-
-## Quick Reference
-
-```bash
-# Create branch
-git checkout -b feat/my-feature
-
-# Create draft PR
-gh pr create --draft --title "feat: my feature" --body "..."
-
-# Move card to In Review (requires project item ID)
-gh api graphql -f query='
-mutation {
-  updateProjectV2ItemFieldValue(
-    input: {
-      projectId: "PVT_kwHOADplIc4BRnZ9"
-      itemId: "ITEM_ID"
-      fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg"
-      value: { singleSelectOptionId: "77520bb7" }
-    }
-  ) { projectV2Item { id } }
-}'
-
-# Mark PR ready for review
-gh pr ready PR_NUMBER
-
-# DO NOT: Close issue, move to Done, merge without approval
 ```
 
 ## Project Information
