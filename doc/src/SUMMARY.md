@@ -10,6 +10,7 @@
 - [Commands](./commands/README.md)
   - [query](./commands/query.md)
   - [chat](./commands/chat.md)
+  - [feedback](./commands/feedback.md)
   - [translate](./commands/translate.md)
   - [ocr](./commands/ocr.md)
   - [vision](./commands/vision.md)

@@ -107,8 +107,18 @@ The `/session` command provides an alternative syntax for session management:
 
 | Command | Description |
 |---------|-------------|
-| `/context`, `/ctx` | Show context metrics and token usage |
+| `/context`, `/ctx` | Show context metrics, token usage, and memory stats |
 | `/search <query>`, `/find <query>`, `/f <query>` | Search conversation history (semantic search) |
+
+### Feedback
+
+| Command | Description |
+|---------|-------------|
+| `/feedback <good|bad|correction:text> [msg:id]`, `/fb` | Record feedback on assistant messages |
+| `/fg` | Shortcut: /feedback good |
+| `/content prune`, `/cp` | Run content decay cycle (prune low-retention items) |
+
+See [Feedback Commands](./feedback.md) for detailed documentation.
 
 ### Facts & Memory
 
@@ -318,6 +328,35 @@ Summarize text using the current chat model with a specialized summarization pro
 
 The subagent uses the same model as the current chat session but with a summarization-specific system prompt (no SOUL personality, no tools). Results are truncated at 10,000 characters.
 
+### Feedback & Content Decay
+
+#### /feedback
+
+Record feedback on assistant messages to influence future search ranking:
+
+```
+/feedback good                    # Mark last message as helpful
+/feedback bad                     # Mark last message as unhelpful
+/feedback correction:Fixed text   # Provide a correction
+/feedback good msg:42             # Target specific message
+```
+
+Shortcuts: `/fb good`, `/fb bad`, `/fb correction:text`, `/fg` (= `/feedback good`)
+
+See [Feedback Commands](./feedback.md) for full documentation including search ranking effects.
+
+#### /content prune
+
+Run the content decay cycle to prune low-retention items:
+
+```
+/content prune                    # Run decay cycle
+/cp                               # Shortcut
+```
+
+Content items lose retention over time following the Ebbinghaus forgetting curve. Items with retention below the threshold (default 5%) and importance below 0.8 are pruned. High-importance items are never pruned.
+
+The `/context` command shows current decay statistics (total items, average importance, items at risk).
 
 ## /context - Context Metrics
 
