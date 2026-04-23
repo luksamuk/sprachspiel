@@ -627,6 +627,74 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(content_items);"
 - [ ] All 9 default values are correct when `[feedback]` section is omitted from config.toml
 - [ ] Adding `[feedback]` section to config.toml overrides defaults correctly
 
+---
+
+## 18. Feedback Boost Integration & Decay Accuracy (PR #98 Refactoring)
+
+Verify end-to-end feedback boost in retrieval and fractional-day decay accuracy (bug fix).
+
+### 18.1 Feedback Boost Affects Search Ranking
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] Have the LLM respond to two different questions (creates 2+ assistant messages)
+- [ ] Submit positive feedback on message 1: `/feedback good`
+- [ ] Submit negative feedback on message 2: `/feedback bad`
+- [ ] Ask a broad question that could match both messages
+- [ ] Verify message with positive feedback ranks higher in search results
+- [ ] Verify database shows feedback signals with correct boost values:
+  ```bash
+  sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT item_id, signal_type, base_value, source FROM feedback_signals;"
+  ```
+
+### 18.2 Facts Prune Cycle
+
+- [ ] Add fact: `/fact add "Test decay fact"`
+- [ ] Run `/fact prune` → fresh fact NOT pruned
+- [ ] Age a fact in DB: `sqlite3 ~/.local/share/ask-ai/embeddings.db "UPDATE facts SET last_accessed = strftime('%s','now','-365 days') WHERE id = (SELECT MAX(id) FROM facts);"`
+- [ ] Run `/fact prune` → aged fact IS pruned
+- [ ] Add preference with high importance (>=0.8) and age it → NOT pruned
+
+### 18.3 Fractional-Day Decay Verification
+
+Verify the `num_days()` truncation fix produces accurate values at non-boundary times.
+
+- [ ] Insert Good signal at 30.5 days ago:
+  ```bash
+  SIGNAL_TS=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT strftime('%s','now','-30.5 days');")
+  ITEM_ID=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id FROM content_items WHERE content_type='message' ORDER BY id DESC LIMIT 1;")
+  sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO feedback_signals (item_id, session_id, signal_type, base_value, source, created_at) VALUES ($ITEM_ID, 'test', 'good', 1.0, 'user', $SIGNAL_TS);"
+  ```
+- [ ] Computed boost should be ≈ 0.484 (NOT 0.5 which truncated `num_days()` would give)
+- [ ] Verify no hardcoded `2.0` for boost clamping — `MAX_FEEDBACK_BOOST` constant used everywhere:
+  ```bash
+  grep -r "clamp.*2\.0" src/db/feedback_ops.rs src/feedback/decay.rs
+  # Should show MAX_FEEDBACK_BOOST, not hardcoded 2.0
+  ```
+
+### 18.4 Decay Formula Centralization
+
+- [ ] `src/feedback/decay.rs` contains `decayed_weight_raw()` (canonical calculation)
+- [ ] `src/db/feedback_ops.rs::compute_feedback_boost()` calls `decayed_weight_raw()`
+- [ ] Both feedback and content decay use the same `2^(-days/half_life)` formula
+- [ ] `HALF_LIFE_GOOD/BAD/CORRECTION` and `MAX_FEEDBACK_BOOST` are `pub(crate)` constants, not duplicated magic numbers
+
+---
+
+## 19. Fact & Content Prune Command Shortcuts (PR #98 Routing)
+
+Verify consolidated command routing works after the refactoring.
+
+### 19.1 /fact Shortcuts
+
+- [ ] `/fp` → same as `/fact prune` (shortcut)
+- [ ] `/fa "I prefer dark mode"` → same as `/fact add` (shortcut)
+
+### 19.2 /content Shortcut
+
+- [ ] `/cp` → same as `/content prune` (shortcut verified in 16.1, repeated for completeness)
+
+---
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
@@ -698,4 +766,6 @@ The script above runs automated tests. The following tests must be run manually:
 12. **Section 15**: Feedback Commands (interactive feedback tests)
 13. **Section 16**: Content Prune & Context Decay Stats (interactive tests)
 14. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)
+15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
+16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 These tests require chat interaction and visual verification of results.
