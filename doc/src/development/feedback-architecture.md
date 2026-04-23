@@ -378,15 +378,15 @@ The feedback infrastructure is organized across two module trees:
 src/feedback/
 ├── mod.rs        # Module root, re-exports
 ├── types.rs      # FeedbackSignalType, FeedbackSource, FeedbackSignal
-├── decay.rs      # Pure decay computation (Phase 2 entry point)
-│                 #   decayed_weight() — W(t) = base × 2^(-d/h) × source
-│                 #   compute_total_boost() — ΣW_i clamped to ±2.0
+├── decay.rs      # Canonical decay computation (single point of calculation)
+│                 #   decayed_weight_raw() — W(t) = base × 2^(-d/h) × source (i64 timestamps)
+│                 #   decayed_weight() — DateTime wrapper for Phase 2
+│                 #   compute_total_boost() — ΣW_i clamped to ±MAX_FEEDBACK_BOOST
 │                 #   Constants: HALF_LIFE_GOOD/BAD/CORRECTION, MAX_FEEDBACK_BOOST
-├── prompt.rs     # Boost map and display formatting (Phase 2)
-│                 #   compute_feedback_boost_map() — DB query + decay for item IDs
-│                 #   build_feedback_section() — /context stats display
-│                 #   build_decay_section() — /context decay stats display
-└── db.rs         # Re-export from crate::db::feedback_ops
+└── prompt.rs     # Boost map and display formatting (Phase 2)
+                  #   compute_feedback_boost_map() — DB query + decay for item IDs
+                  #   build_feedback_section() — /context stats display
+                  #   build_decay_section() — /context decay stats display
 ```
 
 ### `src/content/` and `src/db/` — Content Decay
@@ -406,7 +406,7 @@ src/db/
 ├── feedback_ops.rs     # Insert, query, boost computation
 │                      #   insert_feedback_signal() — validates content_type='message'
 │                      #   get_feedback_signals_for_item()
-│                      #   compute_feedback_boost() — inline decay for DB results
+│                      #   compute_feedback_boost() — delegates to decayed_weight_raw()
 ├── content_decay_ops.rs # Decay cycle and access tracking
 │                      #   on_content_access() — increment + update + importance boost
 │                      #   run_content_decay_cycle() — iterate items, prune low retention
@@ -513,8 +513,10 @@ The following functions are implemented and tested but marked `#[allow(dead_code
 | `compute_feedback_boost_map()` | DB-aware boost computation using `Database` type | Will replace direct `feedback_ops::compute_feedback_boost` calls |
 | `build_feedback_section()` | Format feedback stats for `/context` | Will replace inline formatting in `command_handlers.rs` |
 | `build_decay_section()` | Format decay stats for `/context` | Will replace inline formatting in `command_handlers.rs` |
-| `decayed_weight()` | Single-signal decayed weight computation | Used by `compute_total_boost()` |
+| `decayed_weight()` | DateTime wrapper for single-signal decay weight | Wrapper around `decayed_weight_raw()` for Phase 2 struct-based use |
 | `compute_total_boost()` | Accumulate + clamp signals for an item | Used by `compute_feedback_boost_map()` |
+
+**Note:** `decayed_weight_raw()` (the canonical decay formula) is already used in Phase 1 production by `db::feedback_ops::compute_feedback_boost()`. The `decayed_weight()` wrapper above adds `DateTime<Utc>` convenience for Phase 2 struct-based callers.
 
 ## See Also
 
