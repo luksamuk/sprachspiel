@@ -241,10 +241,20 @@ Where `boost` is the accumulated, clamped feedback signal for the item.
 
 The system applies clamping at two stages to prevent score distortion:
 
-1. **First stage (per-item boost):** $\text{Boost}(item) = \sum W_i(t)$, clamped to $[-2.0, +2.0]$
-   - This prevents a single item from accumulating unlimited feedback influence.
+1. **First stage (per-item boost):**
 
-2. **Second stage (RRF multiplier):** $\text{clamp}(1.0 + \text{boost},\ 0.1,\ 3.0)$
+   $$
+   \text{Boost}(item) = \sum W_i(t) \quad \text{clamped to } [-2.0, +2.0]
+   $$
+
+   This prevents a single item from accumulating unlimited feedback influence.
+
+2. **Second stage (RRF multiplier):**
+
+   $$
+   \text{clamp}(1.0 + \text{boost},\ 0.1,\ 3.0)
+   $$
+
    - The lower bound of 0.1 means even strongly negative feedback only suppresses an item to 10% of its RRF score — it cannot eliminate results entirely (ADR-006).
    - The upper bound of 3.0 means strongly positive feedback can amplify an item to at most 3× its RRF score.
 
