@@ -36,7 +36,11 @@ use crate::db::Database;
 /// # Returns
 /// HashMap mapping item_id → boost value, only for items that have feedback.
 /// Items with no feedback are absent from the map (implicit 0.0 boost).
-#[allow(dead_code)] // Consumed by Tasks 7, 10 (RRF fusion + /context)
+///
+/// Note: `db::feedback_ops::compute_feedback_boost()` is the DB-query-based
+/// version used in production (Phase 1). This struct-based version is reserved
+/// for Phase 2 (feedback-weighted retrieval via RRF fusion).
+#[allow(dead_code)] // Reserved for Phase 2 (RRF fusion + /context)
 pub fn compute_feedback_boost_map(
     db: &Database,
     item_ids: &[i64],
@@ -137,7 +141,7 @@ pub fn compute_feedback_boost_map(
 /// * `session_id` - Current session ID (reserved for future session-scoped stats)
 /// * `signal_count` - Total number of feedback signals
 /// * `avg_boost` - Average boost value across all items with feedback
-#[allow(dead_code)] // Consumed by Task 7 (/context command)
+#[allow(dead_code)] // Reserved for Phase 2 (/context command)
 pub fn build_feedback_section(session_id: &str, signal_count: usize, avg_boost: f32) -> String {
     // session_id is reserved for future session-scoped feedback display
     let _ = session_id;
@@ -167,7 +171,7 @@ pub fn build_feedback_section(session_id: &str, signal_count: usize, avg_boost: 
 /// * `pruned_count` - Number of items pruned by decay cycle
 /// * `avg_retention` - Average retention score across all items
 /// * `at_risk_count` - Number of items with retention below a danger threshold
-#[allow(dead_code)] // Consumed by Task 7 (/context command, V4)
+#[allow(dead_code)] // Reserved for Phase 2 (/context command, V4)
 pub fn build_decay_section(
     total_items: usize,
     pruned_count: usize,

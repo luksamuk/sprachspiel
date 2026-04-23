@@ -48,7 +48,9 @@ pub fn get_half_life(category: Category) -> f32 {
 pub fn compute_retention(fact: &Fact, now: DateTime<Utc>) -> f32 {
     let half_life = get_half_life(fact.category);
 
-    let days_since_access = (now - fact.last_accessed).num_days() as f32;
+    // Use fractional days for accuracy: num_days() truncates whole days,
+    // which causes ~48% overestimation at half-life boundaries.
+    let days_since_access = ((now - fact.last_accessed).num_seconds() as f32) / 86400.0;
 
     // Exponential decay: R = 2^(-t / half_life)
     let decay = 2f32.powf(-days_since_access / half_life);

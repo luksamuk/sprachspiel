@@ -2,21 +2,16 @@
 //!
 //! Provides insert, retrieval, and boost computation for the Feedback Signal System.
 //! Feedback signals target content_items with content_type='message' only (ADR-003).
+//!
+//! Decay computation delegates to `feedback::decay::decayed_weight_raw()` (single point of
+//! calculation, ADR-002).
 
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use crate::feedback::decay::{MAX_FEEDBACK_BOOST, decayed_weight_raw};
 use crate::feedback::types::{FeedbackSignal, FeedbackSignalType, FeedbackSource};
-
-/// Half-life in days for each signal type (inline decay, refactored to feedback::decay in Task 6)
-fn half_life_days(signal_type: FeedbackSignalType) -> f32 {
-    match signal_type {
-        FeedbackSignalType::Good => 30.0,
-        FeedbackSignalType::Bad => 7.0,
-        FeedbackSignalType::Correction => 14.0,
-    }
-}
 
 /// Insert a feedback signal into the database.
 ///
@@ -213,19 +208,15 @@ pub fn compute_feedback_boost(
             }
         };
 
-        // Inline decay computation (refactored to feedback::decay in Task 6)
-        let seconds_per_day: f64 = 86400.0;
-        let days_since = ((now - created_at) as f64 / seconds_per_day).max(0.0) as f32;
-        let hl = half_life_days(signal_type);
-        let decay = 2f32.powf(-days_since / hl);
-        let weighted = base_value * decay * source.weight_factor();
+        // Delegate to canonical decay formula (feedback::decay::decayed_weight_raw)
+        let weighted = decayed_weight_raw(base_value, signal_type, source, created_at, now);
 
         *boosts.entry(item_id).or_insert(0.0) += weighted;
     }
 
-    // Clamp each total to [-2.0, 2.0]
+    // Clamp each total to [-MAX_FEEDBACK_BOOST, MAX_FEEDBACK_BOOST]
     for boost in boosts.values_mut() {
-        *boost = boost.clamp(-2.0, 2.0);
+        *boost = boost.clamp(-MAX_FEEDBACK_BOOST, MAX_FEEDBACK_BOOST);
     }
 
     Ok(boosts)

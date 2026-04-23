@@ -1651,15 +1651,26 @@ Context Assembly:
 | 1.9 | Decay cycle integration | 1 day | Startup trigger + /content prune |
 | **Total** | | **13.5 days** | |
 
-**Reserved Code (Phase 2):** The following functions in `src/feedback/prompt.rs` are implemented and tested but not yet wired into production. They are reserved for Phase 2 (Feedback-Aware Retrieval) and are documented with `#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval`:
+**Reserved Code (Phase 2):** The following functions in `src/feedback/prompt.rs` are implemented and tested but not yet wired into production. They are reserved for Phase 2 (Feedback-Aware Retrieval) and are documented with `#[allow(dead_code)] // Reserved for Phase 2`:
 
 | Function | Purpose | Expected Use |
 |----------|---------|-------------|
-| `compute_feedback_boost_map()` | Database-aware version of `compute_feedback_boost()` using the `Database` type directly | Phase 2 RRF fusion in `search_content_hybrid()` — will replace the direct `feedback::db::compute_feedback_boost` call |
+| `compute_feedback_boost_map()` | Struct-based version of boost computation using `Database` type directly | Phase 2 RRF fusion in `search_content_hybrid()` — will replace the direct `db::feedback_ops::compute_feedback_boost()` call |
 | `build_feedback_section()` | Format feedback stats for `/context` display | Phase 2 `/context` enhancement — will replace inline formatting in `command_handlers.rs:1892-1916` |
 | `build_decay_section()` | Format decay stats for `/context` display | Phase 2 `/context` enhancement — same as above |
 
-Additionally, `src/feedback/decay.rs` contains pure decay computation functions (`decayed_weight()`, `compute_total_boost()`) that are consumed by `prompt.rs` and will be activated when Phase 2 integrates the boost map into retrieval.
+**Boost Computation API Difference:** Two versions exist by design:
+- `db::feedback_ops::compute_feedback_boost()` — DB-query-based, iterates rows directly. **Production (Phase 1).**
+- `feedback::prompt::compute_feedback_boost_map()` → `feedback::decay::compute_total_boost()` → `decayed_weight()` — Struct-based, loads `FeedbackSignal` structs first. **Phase 2.** More composable when retrieval modules already have structs loaded.
+
+Both use the same canonical decay formula via `feedback::decay::decayed_weight_raw()` (ADR-002).
+
+Additionally, `src/feedback/decay.rs` provides the canonical decay computation:
+- `decayed_weight_raw()` — Single point of calculation using unix timestamps with fractional-day precision
+- `decayed_weight()` — Wrapper with `DateTime<Utc>` API (reserved for Phase 2)
+- `compute_total_boost()` — Accumulates weights with first-stage clamping (reserved for Phase 2)
+
+**Future Refactoring Note:** `facts/decay.rs` and `content/decay.rs` share an identical structural pattern (constants for half-lives, `compute_retention()`, `should_prune()`). A future refactoring could extract a shared `Decayable` trait or common `decay` module to eliminate this duplication.
 
 **Sprach 2.0 Note:** The article's "Learned Personality" proposal (S2.5 — SOUL.md patching) overlaps with but extends P5. P5 captures *what happened* (feedback signals for retrieval weighting); S2.5 adjusts *who I am* (personality modification with human approval). Both are complementary.
 

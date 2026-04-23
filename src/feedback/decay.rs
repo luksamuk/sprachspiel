@@ -5,30 +5,31 @@
 //!
 //! First-stage clamp is ±`MAX_FEEDBACK_BOOST` (2.0) on accumulated
 //! boost per item. The second-stage clamp (0.1–3.0) is applied later
-//! as an RRF multiplier (Task 10).
+//! as an RRF multiplier.
+//!
+//! # Single point of calculation
+//!
+//! `decayed_weight_raw()` is the canonical implementation of the decay formula.
+//! Both `decayed_weight()` (struct-based, DateTime API) and
+//! `db::feedback_ops::compute_feedback_boost()` (DB-query-based) call it.
 
-use super::types::{FeedbackSignal, FeedbackSignalType};
+use super::types::{FeedbackSignal, FeedbackSignalType, FeedbackSource};
 use chrono::{DateTime, Utc};
 
 /// Half-life for Good signals (days)
-#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval
-pub const HALF_LIFE_GOOD: f32 = 30.0;
+pub(crate) const HALF_LIFE_GOOD: f32 = 30.0;
 
 /// Half-life for Bad signals (days)
-#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval
-pub const HALF_LIFE_BAD: f32 = 7.0;
+pub(crate) const HALF_LIFE_BAD: f32 = 7.0;
 
 /// Half-life for Correction signals (days)
-#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval
-pub const HALF_LIFE_CORRECTION: f32 = 14.0;
+pub(crate) const HALF_LIFE_CORRECTION: f32 = 14.0;
 
 /// Maximum accumulated boost per item (first-stage clamp, ±2.0)
-#[allow(dead_code)] // Reserved for Phase 2 feedback-weighted retrieval
-pub const MAX_FEEDBACK_BOOST: f32 = 2.0;
+pub(crate) const MAX_FEEDBACK_BOOST: f32 = 2.0;
 
 /// Returns the half-life for a signal type.
-#[allow(dead_code)] // Internal helper for decayed_weight()
-fn half_life(signal_type: FeedbackSignalType) -> f32 {
+pub(crate) fn half_life(signal_type: FeedbackSignalType) -> f32 {
     match signal_type {
         FeedbackSignalType::Good => HALF_LIFE_GOOD,
         FeedbackSignalType::Bad => HALF_LIFE_BAD,
@@ -36,9 +37,43 @@ fn half_life(signal_type: FeedbackSignalType) -> f32 {
     }
 }
 
-/// Compute the decayed weight of a single feedback signal.
+/// Compute the decayed weight of a single feedback signal (raw parameters).
 ///
-/// Formula: `base_value * 2^(-days_since / half_life) * source.weight_factor()`
+/// Canonical implementation of the decay formula:
+/// `base_value * 2^(-days_since / half_life) * source.weight_factor()`
+///
+/// Uses unix timestamps with fractional-day precision (no truncation).
+/// This is the single point of calculation — both `decayed_weight()` and
+/// `db::feedback_ops::compute_feedback_boost()` call this function.
+///
+/// # Arguments
+/// * `base_value` - Signal base value (+1.0 for Good/Correction, -1.0 for Bad)
+/// * `signal_type` - Type of signal (determines half-life)
+/// * `source` - Source of the signal (determines weight factor)
+/// * `created_at` - Unix epoch timestamp when the signal was created
+/// * `now` - Current unix epoch timestamp
+///
+/// # Returns
+/// Decayed weight value (positive for Good/Correction, negative for Bad)
+#[inline]
+pub(crate) fn decayed_weight_raw(
+    base_value: f32,
+    signal_type: FeedbackSignalType,
+    source: FeedbackSource,
+    created_at: i64,
+    now: i64,
+) -> f32 {
+    let days_since = ((now - created_at).max(0) as f32) / 86400.0;
+    let hl = half_life(signal_type);
+    let decay_factor = 2f32.powf(-days_since / hl);
+    base_value * decay_factor * source.weight_factor()
+}
+
+/// Compute the decayed weight of a single feedback signal (struct-based).
+///
+/// Convenience wrapper around `decayed_weight_raw()` that accepts a
+/// `FeedbackSignal` struct and `DateTime<Utc>`. Reserved for Phase 2
+/// (feedback-weighted retrieval via `feedback/prompt.rs`).
 ///
 /// # Arguments
 /// * `signal` - The feedback signal
@@ -46,19 +81,21 @@ fn half_life(signal_type: FeedbackSignalType) -> f32 {
 ///
 /// # Returns
 /// Decayed weight value (positive for Good/Correction, negative for Bad)
-#[allow(dead_code)] // Used by compute_total_boost and tests
 pub fn decayed_weight(signal: &FeedbackSignal, now: DateTime<Utc>) -> f32 {
-    let signal_time = DateTime::<Utc>::from_timestamp(signal.created_at, 0).unwrap_or_default();
-    let days_since = (now - signal_time).num_days() as f32;
-    let hl = half_life(signal.signal_type);
-    let decay_factor = 2f32.powf(-days_since / hl);
-    signal.base_value * decay_factor * signal.source.weight_factor()
+    decayed_weight_raw(
+        signal.base_value,
+        signal.signal_type,
+        signal.source,
+        signal.created_at,
+        now.timestamp(),
+    )
 }
 
 /// Compute the total accumulated boost for an item from all its signals.
 ///
 /// Sums individual `decayed_weight()` values, then clamps to
 /// `[-MAX_FEEDBACK_BOOST, MAX_FEEDBACK_BOOST]` (first-stage clamp).
+/// Reserved for Phase 2 (feedback/prompt.rs RRF integration).
 ///
 /// # Arguments
 /// * `signals` - All feedback signals for a single item
@@ -66,7 +103,6 @@ pub fn decayed_weight(signal: &FeedbackSignal, now: DateTime<Utc>) -> f32 {
 ///
 /// # Returns
 /// Total boost clamped to ±2.0
-#[allow(dead_code)] // Used by feedback/prompt.rs (Phase 2 RRF integration)
 pub fn compute_total_boost(signals: &[FeedbackSignal], now: DateTime<Utc>) -> f32 {
     let total: f32 = signals.iter().map(|s| decayed_weight(s, now)).sum();
     total.clamp(-MAX_FEEDBACK_BOOST, MAX_FEEDBACK_BOOST)

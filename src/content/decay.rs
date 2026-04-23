@@ -8,40 +8,31 @@
 //! - Notes: 60 days (personal notes, shorter-lived than documents)
 //! - Documents: 120 days (imported reference material, longest retention)
 //!
-//! SQL operations (on_content_access, run_content_decay_cycle, get_content_decay_stats)
-//! have been moved to crate::db::content_decay_ops.
-//! They are re-exported here for backward compatibility.
+//! SQL operations are in crate::db::content_decay_ops.
 
 /// Half-life for message content items (days)
-#[allow(dead_code)] // Internal: used by compute_content_retention()
-pub const HALF_LIFE_MESSAGE: f32 = 90.0;
+pub(crate) const HALF_LIFE_MESSAGE: f32 = 90.0;
 
 /// Half-life for note content items (days)
-#[allow(dead_code)] // Internal: used by compute_content_retention()
-pub const HALF_LIFE_NOTE: f32 = 60.0;
+pub(crate) const HALF_LIFE_NOTE: f32 = 60.0;
 
 /// Half-life for document content items (days)
-#[allow(dead_code)] // Internal: used by compute_content_retention()
-pub const HALF_LIFE_DOCUMENT: f32 = 120.0;
+pub(crate) const HALF_LIFE_DOCUMENT: f32 = 120.0;
 
 /// Access boost per access (0.1 = 10%)
-#[allow(dead_code)] // Internal: used by compute_content_retention()
-pub const CONTENT_ACCESS_BOOST: f32 = 0.1;
+pub(crate) const CONTENT_ACCESS_BOOST: f32 = 0.1;
 
 /// Maximum importance boost factor
-#[allow(dead_code)] // Internal: used by compute_content_retention()
-pub const CONTENT_IMPORTANCE_BOOST: f32 = 0.5;
+pub(crate) const CONTENT_IMPORTANCE_BOOST: f32 = 0.5;
 
 /// Minimum retention threshold for pruning (0.05 = 5%)
-#[allow(dead_code)] // Internal: used by should_prune_content()
-pub const MIN_CONTENT_RETENTION: f32 = 0.05;
+pub(crate) const MIN_CONTENT_RETENTION: f32 = 0.05;
 
 /// Get the half-life for a content type.
 ///
 /// Returns the Ebbinghaus half-life in days for the given content type.
 /// Defaults to message half-life for unknown types.
-#[allow(dead_code)] // Internal: used by compute_content_retention()
-pub fn get_content_half_life(content_type: &str) -> f32 {
+pub(crate) fn get_content_half_life(content_type: &str) -> f32 {
     match content_type {
         "message" => HALF_LIFE_MESSAGE,
         "note" => HALF_LIFE_NOTE,
@@ -64,8 +55,7 @@ pub fn get_content_half_life(content_type: &str) -> f32 {
 ///
 /// # Returns
 /// Retention score between 0.0 and 1.0
-#[allow(dead_code)] // Internal: used by run_content_decay_cycle()
-pub fn compute_content_retention(
+pub(crate) fn compute_content_retention(
     importance: f32,
     access_count: u32,
     content_type: &str,
@@ -106,8 +96,7 @@ pub fn compute_content_retention(
 ///
 /// # Returns
 /// true if the item should be pruned
-#[allow(dead_code)] // Internal: used by run_content_decay_cycle()
-pub fn should_prune_content(importance: f32, retention: f32) -> bool {
+pub(crate) fn should_prune_content(importance: f32, retention: f32) -> bool {
     // Never prune high-importance items
     if importance >= 0.8 {
         return false;
@@ -127,13 +116,6 @@ pub struct ContentDecayStats {
     /// Average retention of remaining items
     pub avg_retention: f32,
 }
-
-// Re-export SQL operations from db module for backward compatibility
-#[allow(unused_imports)]
-// Re-exported for backward compatibility; callers use the original paths
-pub use crate::db::content_decay_ops::{
-    ContentDecayOverview, get_content_decay_stats, on_content_access, run_content_decay_cycle,
-};
 
 #[cfg(test)]
 mod tests {

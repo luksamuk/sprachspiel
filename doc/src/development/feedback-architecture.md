@@ -133,9 +133,9 @@ Each feedback signal has a type, base value, and half-life that controls how qui
 
 The weight of a single feedback signal decays exponentially over time:
 
-```
-W(t) = base_value × 2^(-days_since / half_life) × source_weight
-```
+$$
+W(t) = \text{base\_value} \times 2^{-\text{days\_since} / \text{half\_life}} \times \text{source\_weight}
+$$
 
 Where:
 - `base_value` — +1.0 for Good/Correction, -1.0 for Bad
@@ -157,9 +157,9 @@ Where:
 
 For each content item, all feedback signals' decayed weights are summed, then clamped to prevent runaway accumulation:
 
-```
-Boost(item) = ΣW_i(t)   clamped to [-2.0, +2.0]
-```
+$$
+\text{Boost}(item) = \sum W_i(t) \quad \text{clamped to } [-2.0, +2.0]
+$$
 
 This is the **first-stage clamp**. The range ±2.0 means that even 5 fresh Good signals from a user (raw sum = 5.0) still only produce a boost of +2.0.
 
@@ -169,9 +169,9 @@ Content items have a **retention score** that decreases over time, following the
 
 ### Retention Formula
 
-```
-R = 2^(-days_since / half_life) × (1.0 + importance × 0.5) × (1.0 + 0.1 × log2(max(access_count, 1)))
-```
+$$
+R = 2^{-\text{days\_since} / \text{half\_life}} \times (1.0 + \text{importance} \times 0.5) \times (1.0 + 0.1 \times \log_2(\max(\text{access\_count}, 1)))
+$$
 
 Where:
 - `days_since` — Days since `last_accessed`
@@ -223,17 +223,17 @@ The feedback boost is applied as a **post-RRF multiplier**, after the standard R
 
 ### Standard RRF (Without Feedback)
 
-```
-RRF_score = kw_weight / (60 + rank_kw) + sem_weight / (60 + rank_sem)
-```
+$$
+\text{RRF\_score} = \frac{\text{kw\_weight}}{60 + \text{rank\_kw}} + \frac{\text{sem\_weight}}{60 + \text{rank\_sem}}
+$$
 
 Where `k = 60` is the RRF constant.
 
 ### After Feedback Boost
 
-```
-final_score = RRF_score × (1.0 + boost).clamp(0.1, 3.0)
-```
+$$
+\text{final\_score} = \text{RRF\_score} \times (1.0 + \text{boost})_{\text{clamp}(0.1, 3.0)}
+$$
 
 Where `boost` is the accumulated, clamped feedback signal for the item.
 
@@ -415,54 +415,48 @@ sequenceDiagram
     participant DB as Database
     participant Search as content/db (search)
 
-    rect rgb(230, 245, 255)
-        Note over User,Search: Feedback Signal Path
-        User->>Chat: /feedback good 42
-        Chat->>FB: insert_feedback_signal(item_id=42, Good, User)
-        FB->>DB: INSERT INTO feedback_signals
-        DB-->>FB: OK
-        FB-->>Chat: Signal recorded
+    Note over User,Search: Feedback Signal Path
+    User->>Chat: /feedback good 42
+    Chat->>FB: insert_feedback_signal(item_id=42, Good, User)
+    FB->>DB: INSERT INTO feedback_signals
+    DB-->>FB: OK
+    FB-->>Chat: Signal recorded
 
-        User->>Chat: /feedback bad 42
-        Chat->>FB: insert_feedback_signal(item_id=42, Bad, User)
-        FB->>DB: INSERT INTO feedback_signals
-        DB-->>FB: OK
-        Note over FB: Boost for item 42 = (+1.0 + -1.0) × decay = 0.0
-    end
+    User->>Chat: /feedback bad 42
+    Chat->>FB: insert_feedback_signal(item_id=42, Bad, User)
+    FB->>DB: INSERT INTO feedback_signals
+    DB-->>FB: OK
+    Note over FB: Boost for item 42 = (+1.0 + -1.0) × decay = 0.0
 
-    rect rgb(255, 245, 230)
-        Note over User,Search: Retrieval Path (with feedback boost)
-        User->>Chat: "What did we discuss about Rust?"
-        Chat->>Search: search_content_hybrid(query, embedding)
-        Search->>DB: BM25 keyword search
-        Search->>DB: Semantic vector search
-        DB-->>Search: Raw results
-        Search->>Search: RRF fusion (kw_weight/(60+rank) + sem_weight/(60+rank))
-        
-        alt Feedback enabled
-            Search->>FB: compute_feedback_boost(item_ids)
-            FB->>DB: SELECT signals WHERE item_id IN (...)
-            DB-->>FB: Signals
-            FB-->>Search: Boost map {item_id: boost}
-            Search->>Search: final_score = RRF × (1 + boost).clamp(0.1, 3.0)
-        end
-        
-        Search->>Decay: on_content_access(item_id, 0.001)
-        Decay->>DB: UPDATE access_count++, last_accessed=now, importance+=0.001
-        Search-->>Chat: Boosted, reinforced results
-        Chat-->>User: Response
+    Note over User,Search: Retrieval Path (with feedback boost)
+    User->>Chat: "What did we discuss about Rust?"
+    Chat->>Search: search_content_hybrid(query, embedding)
+    Search->>DB: BM25 keyword search
+    Search->>DB: Semantic vector search
+    DB-->>Search: Raw results
+    Search->>Search: RRF fusion (kw_weight/(60+rank) + sem_weight/(60+rank))
+    
+    alt Feedback enabled
+        Search->>FB: compute_feedback_boost(item_ids)
+        FB->>DB: SELECT signals WHERE item_id IN (...)
+        DB-->>FB: Signals
+        FB-->>Search: Boost map {item_id: boost}
+        Search->>Search: final_score = RRF × (1 + boost).clamp(0.1, 3.0)
     end
+    
+    Search->>Decay: on_content_access(item_id, 0.001)
+    Decay->>DB: UPDATE access_count++, last_accessed=now, importance+=0.001
+    Search-->>Chat: Boosted, reinforced results
+    Chat-->>User: Response
 
-    rect rgb(245, 230, 255)
-        Note over User,Search: Prune Cycle Path
-        Chat->>Decay: run_content_decay_cycle()
-        loop For each non-pruned item
-            Decay->>Decay: compute_content_retention(importance, access_count, type, last_accessed)
-            Decay->>Decay: should_prune_content(importance, retention)?
-        end
-        Decay->>DB: UPDATE content_items SET pruned=1 WHERE ...
-        Decay-->>Chat: ContentDecayStats { pruned, remaining, avg_retention }
+    Note over User,Search: Prune Cycle Path
+    Chat->>Decay: run_content_decay_cycle()
+    loop For each non-pruned item
+        Decay->>Decay: compute_content_retention(importance, access_count, type, last_accessed)
+        Decay->>Decay: should_prune_content(importance, retention)?
     end
+    Decay->>DB: UPDATE content_items SET pruned=1 WHERE ...
+    Decay-->>Chat: ContentDecayStats { pruned, remaining, avg_retention }
 ```
 
 ## Architecture Decision Records
