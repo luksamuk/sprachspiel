@@ -1580,8 +1580,8 @@ Automatic context compaction during multi-tool execution (implemented in PR #45)
 
 ### 🟣 PRIORITY 5: Feedback Infrastructure [M1]
 
-**Status:** 🔄 IN PROGRESS (branch: feat/feedback-infrastructure)
-**Related Issue:** #23 (to be updated for P5 execution)
+**Status:** ✅ COMPLETED (merged PR #98)
+**Related Issue:** #23
 **Detailed Plan:** [`doc/src/development/feedback-architecture.md`](./doc/src/development/feedback-architecture.md) — feedback-driven memory with active forgetting (architecture, formulas, and data model)
 
 **Goal:** Implement a complete feedback-driven memory system: capture explicit feedback signals (Good/Bad/Correction) with decay-weighted RRF fusion for retrieval ranking, activate content item decay (ghost fields become functional), and connect feedback to forgetting speed. Feedback is harness-only (no fine-tuning) — signals affect RRF fusion scoring AND content importance/decay, not model weights.
@@ -1638,18 +1638,18 @@ Context Assembly:
 
 #### Implementation Phases
 
-| Phase | Description | Effort | Key Correction |
-|-------|-------------|--------|----------------|
-| 1.1 | `/feedback` command + schema | 2 days | ADR-005 values; `/fc` removed |
-| 1.2 | Weight propagation | 1 day | — |
-| 1.3 | `/context` enhancement | 0.5 day | — |
-| 1.4 | Implicit signal capture | 1 day | — |
-| 1.5 | Weighted retrieval | 3 days | — |
-| 1.6 | Decay implementation | 1 day | `2^(-t/h)` + LLM 30% discount |
-| 1.7 | Content decay module | 2 days | ADR-008: Ebbinghaus for content_items |
-| 1.8 | Access tracking + importance adj. | 2 days | ADR-009: retrieval reinforces retention |
-| 1.9 | Decay cycle integration | 1 day | Startup trigger + /content prune |
-| **Total** | | **13.5 days** | |
+| Phase | Description | Effort | Key Correction | Status |
+|-------|-------------|--------|----------------|--------|
+| 1.1 | `/feedback` command + schema | 2 days | ADR-005 values; `/fc` removed | ✅ Done |
+| 1.2 | Weight propagation | 1 day | — | ✅ Done |
+| 1.3 | `/context` enhancement | 0.5 day | — | ✅ Done |
+| 1.4 | Implicit signal capture | 1 day | — | ✅ Done |
+| 1.5 | Weighted retrieval | 3 days | — | ✅ Done |
+| 1.6 | Decay implementation | 1 day | `2^(-t/h)` + LLM 30% discount | ✅ Done |
+| 1.7 | Content decay module | 2 days | ADR-008: Ebbinghaus for content_items | ✅ Done |
+| 1.8 | Access tracking + importance adj. | 2 days | ADR-009: retrieval reinforces retention | ✅ Done |
+| 1.9 | Decay cycle integration | 1 day | Startup trigger + /content prune | ✅ Done |
+| **Total** | | **13.5 days** | | |
 
 **Reserved Code (Phase 2):** The following functions in `src/feedback/prompt.rs` are implemented and tested but not yet wired into production. They are reserved for Phase 2 (Feedback-Aware Retrieval) and are documented with `#[allow(dead_code)] // Reserved for Phase 2`:
 
