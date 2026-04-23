@@ -232,7 +232,7 @@ Where `k = 60` is the RRF constant.
 ### After Feedback Boost
 
 $$
-\text{final\_score} = \text{RRF\_score} \times (1.0 + \text{boost})_{\text{clamp}(0.1, 3.0)}
+\text{final\_score} = \text{RRF\_score} \times \text{clamp}(1.0 + \text{boost},\ 0.1,\ 3.0)
 $$
 
 Where `boost` is the accumulated, clamped feedback signal for the item.
@@ -241,10 +241,10 @@ Where `boost` is the accumulated, clamped feedback signal for the item.
 
 The system applies clamping at two stages to prevent score distortion:
 
-1. **First stage (per-item boost):** `Boost(item) = ΣW_i(t)  clamped to [-2.0, +2.0]`
+1. **First stage (per-item boost):** $\text{Boost}(item) = \sum W_i(t)$, clamped to $[-2.0, +2.0]$
    - This prevents a single item from accumulating unlimited feedback influence.
 
-2. **Second stage (RRF multiplier):** `(1.0 + boost).clamp(0.1, 3.0)`
+2. **Second stage (RRF multiplier):** $\text{clamp}(1.0 + \text{boost},\ 0.1,\ 3.0)$
    - The lower bound of 0.1 means even strongly negative feedback only suppresses an item to 10% of its RRF score — it cannot eliminate results entirely (ADR-006).
    - The upper bound of 3.0 means strongly positive feedback can amplify an item to at most 3× its RRF score.
 
@@ -265,7 +265,7 @@ The feedback boost is applied in `Database::search_content_hybrid()` (in `src/co
 
 1. Collect all item IDs from RRF results
 2. Call `compute_feedback_boost()` with the current timestamp
-3. Multiply each result's score by `(1.0 + boost).clamp(0.1, 3.0)`
+3. Multiply each result's score by $\text{clamp}(1.0 + \text{boost},\ 0.1,\ 3.0)$
 4. Re-sort results by the adjusted score
 
 ## Access Reinforcement
