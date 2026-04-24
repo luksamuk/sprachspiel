@@ -1,6 +1,6 @@
 ---
 name: pr-testing
-description: Create and manage PR testing. The primary agent creates the manual test script, then waits for the Hermes Agent to execute both manual tests and smoke tests. Processes results and handles bugs found.
+description: Create and manage PR testing. The primary agent creates the manual test script, then the programmer manually invokes the Hermes Agent (a separate program) to execute both manual tests and smoke tests. The primary agent processes results and handles bugs found.
 license: MIT
 compatibility: opencode
 metadata:
@@ -10,9 +10,19 @@ metadata:
 
 ## What I do
 
-I guide the PR testing workflow from the primary agent's perspective. I create task-specific manual test scripts, wait for the Hermes Agent to execute them, process results, and handle any bugs found.
+I guide the PR testing workflow from the primary agent's perspective. I create task-specific manual test scripts, then **the programmer manually invokes the Hermes Agent** to execute them. After execution, I process results and handle any bugs found.
 
-**Important:** The primary agent (OpenCode) does NOT execute tests. It creates scripts and processes results. The Hermes Agent executes tests.
+## Critical Understanding: What Is the Hermes Agent?
+
+**The Hermes Agent is a SEPARATE PROGRAM** with its own skills, routines, and system access. It is NOT a sub-agent or a tool that the primary agent (OpenCode) can invoke programmatically.
+
+Key facts:
+- **Hermes Agent runs as a separate process** — it has its own CLI, its own session, its own tools
+- **The programmer invokes it manually** — the primary agent CANNOT call it, schedule it, or simulate it
+- **It has independent system access** — it can interact with the application, filesystem, and network
+- **Testing via Hermes Agent is MANDATORY** — a PR cannot be merged without manual + smoke test results
+
+**The primary agent (OpenCode) NEVER executes tests.** It creates scripts and processes results. The programmer launches the Hermes Agent separately.
 
 ## When to use me
 
@@ -26,9 +36,11 @@ Use this skill when the PR has been approved in review (Phase 5 complete) and it
 |------|-----|--------|
 | Create manual test script | **Primary agent** (OpenCode) | Write `~/MANUAL-TEST-PR_NUMBER.md` |
 | Approve test script | **User** | Review and confirm |
-| Execute manual tests | **Hermes Agent** | Run the test script |
+| Invoke Hermes Agent | **Programmer (manually)** | Launches Hermes Agent as a separate program |
+| Execute manual tests | **Hermes Agent** | Runs the test script interactively |
 | Review SMOKE_TEST.md | **Primary agent** (OpenCode) | Check if updates needed |
-| Execute smoke test | **Hermes Agent** | Run SMOKE_TEST.md |
+| Invoke Hermes Agent again | **Programmer (manually)** | Launches Hermes Agent for smoke tests |
+| Execute smoke test | **Hermes Agent** | Runs SMOKE_TEST.md |
 | Process results | **Primary agent** (OpenCode) | Read reports, fix bugs |
 | Delete test files | **Primary agent** (OpenCode) | Clean up after merge |
 
@@ -91,24 +103,46 @@ Present the test script to the user. They may:
 
 **DO NOT proceed until user confirms.**
 
-## Step 3: Hermes Executes Manual Tests
+## Step 3: Programmer Invokes Hermes Agent for Manual Tests
 
-**This step is performed by the Hermes Agent, not by you.**
+### MANDATORY Step — No Exceptions
+
+**The programmer must manually invoke the Hermes Agent to execute the manual tests.** This is not optional and cannot be skipped.
+
+The primary agent (OpenCode):
+1. Presents the approved test script path to the programmer
+2. Asks the programmer to launch the Hermes Agent
+3. **WAITS** — does nothing until the programmer provides results
+
+The programmer:
+1. Launches the Hermes Agent separately (it is an independent program)
+2. The Hermes Agent reads `~/MANUAL-TEST-PR_NUMBER.md`
+3. The Hermes Agent executes the test sections interactively
+4. The Hermes Agent reports results back
+
+### What the Hermes Agent Does
 
 The Hermes Agent:
 - Reads `~/MANUAL-TEST-PR_NUMBER.md`
 - Creates temporary test files
-- Interacts with LLM to test tool behavior
+- Interacts with the application to test tool behavior
 - Verifies error messages
 - Reports all test results with checkmarks
 - Notes failures with detailed error messages
-- Reports results in PR comments
+- Reports results (typically as a file or PR comment)
 
-**You (OpenCode) wait for the results.**
+### ⛔ STOP AND WAIT
+
+**You (OpenCode) must wait for the programmer to provide test results.** Do NOT:
+- Simulate test execution yourself
+- Attempt to call the Hermes Agent programmatically
+- Skip the testing phase
+- Assume tests passed without explicit results
 
 The results may come:
-- As PR comments from Hermes
 - As a report file (e.g., `~/MANUAL-TEST-RESULTS-PR_NUMBER.md`)
+- As PR comments from Hermes
+- As the programmer pasting results directly
 - Combined with smoke test results in a single report
 
 ## Step 4: Process Manual Test Results
@@ -125,7 +159,7 @@ Proceed to Step 5 (review SMOKE_TEST.md).
 4. **Implement fixes**
 5. **Push changes**
 6. **Return to review iteration** (PR-PROCESS.md Step 27) — new commits need review
-7. After review, re-run manual tests for the fix
+7. After review, the programmer must invoke Hermes Agent again to re-run tests
 
 ## Step 5: Review and Update SMOKE_TEST.md
 
@@ -159,24 +193,35 @@ git push
 
 **Wait for user confirmation before proceeding to smoke test.**
 
-## Step 6: Hermes Executes Smoke Test (OPTIONAL)
+## Step 6: Programmer Invokes Hermes Agent for Smoke Test
 
-**This step is performed by the Hermes Agent, not by you.**
+### MANDATORY Step — No Exceptions
+
+**The programmer must manually invoke the Hermes Agent again to execute the smoke test.** This is not optional.
+
+The primary agent (OpenCode):
+1. Confirms SMOKE_TEST.md is updated (if needed)
+2. Asks the programmer to launch the Hermes Agent for smoke testing
+3. **WAITS** — does nothing until the programmer provides results
+
+### What the Hermes Agent Does
 
 The Hermes Agent:
 - Preserves user's existing database (backup)
 - Creates temporary database for tests
 - Runs automated checklist (build, unit tests)
-- Executes manual test sections interactively
+- Executes manual test sections from SMOKE_TEST.md interactively
 - Reports results with checkmarks
 - Restores user's database after testing
 - Writes report to `~/SMOKE-TEST-RESULTS-PR_NUMBER.md`
 
-**You (OpenCode) wait for the results.**
+### ⛔ STOP AND WAIT
+
+**You (OpenCode) must wait for the programmer to provide smoke test results.** Do NOT skip or simulate.
 
 ### If Smoke Test Passes
 
-Hermes reports "Aprovado para merge" in PR comments. You read the report and **proceed to Phase 7 (merge).**
+Hermes reports "Aprovado para merge" in results. You read the report and **proceed to Phase 7 (merge).**
 
 ### If Smoke Test Fails
 
@@ -186,6 +231,7 @@ Same flow as manual test bugs:
 3. Get user confirmation
 4. Implement fixes, push
 5. Return to review iteration (Step 27)
+6. Programmer must invoke Hermes Agent again to re-run
 
 ## Step 7: Cleanup (AFTER Merge)
 
@@ -208,3 +254,15 @@ These files are temporary and should NOT remain after merge.
 3. **Tool Behavior** — Test synchronous operations, parameter passing, limits
 4. **Database Isolation** — Hermes MUST backup/restore user's database
 5. **Bug Verification** — Each bug fix must have explicit test case
+6. **Mandatory Execution** — Tests are NEVER optional. Every PR must be tested by the Hermes Agent before merge.
+7. **Separate Program** — The Hermes Agent is invoked manually by the programmer, NOT by OpenCode.
+
+## Summary: What OpenCode Does NOT Do
+
+| Action | Who Does It | Why |
+|--------|-------------|-----|
+| Execute manual tests | Hermes Agent (invoked by programmer) | Independent verification |
+| Execute smoke tests | Hermes Agent (invoked by programmer) | Independent verification |
+| Simulate test results | NOBODY | Real execution required |
+| Skip testing phase | NOBODY | Testing is mandatory |
+| Call Hermes Agent programmatically | NOBODY | It's a separate program |
