@@ -18,6 +18,8 @@ I guide the PR testing workflow from the primary agent's perspective. I create t
 
 Use this skill when the PR has been approved in review (Phase 5 complete) and it's time for testing (Phase 6 in the PR workflow).
 
+**Project board state during testing:** The card should already be in "In Review" (moved in Phase 4 of the PR workflow). Do NOT move it back or forward during testing — it stays "In Review" until Phase 7 (merge).
+
 ## Overview: Who Does What
 
 | Step | Who | Action |
@@ -193,6 +195,11 @@ After the PR is merged:
 - Delete `~/SMOKE-TEST-RESULTS-PR_NUMBER.md` (if exists)
 
 These files are temporary and should NOT remain after merge.
+
+**Also verify:**
+- The project board card moved to "Done" (automatic via "Closes #N", verify manually)
+- Any duplicate issues are closed with cross-reference comments
+- IMPLEMENTATION.md is updated to `✅ COMPLETED`
 
 ## Manual Test Principles
 

@@ -72,6 +72,20 @@ Exclude from candidates:
 - Items in `M2` (Sprach 2.0) milestone — research-only until M1 complete
 - Items in `M3` (Future) — explicitly deferred
 
+### Step 2.5: Duplicate Check (MANDATORY)
+
+Before presenting candidates to the user, verify that each issue is not a duplicate:
+
+```bash
+# For each candidate issue, check for duplicates:
+gh issue list --state all --limit 100 | grep -i "<keyword from title>"
+```
+
+If a duplicate is found:
+1. **If the original is CLOSED** — check whether the PR that closed it fully addressed the issue. If yes, skip this candidate. If the PR only partially addressed it, note the residual work.
+2. **If the original is OPEN** — present only the canonical issue, not the duplicate.
+3. **Close duplicate issues** — leave a comment explaining the duplication and referencing the canonical issue.
+
 ### Step 3: Present Options to User
 
 Present the top 3-5 candidates with:

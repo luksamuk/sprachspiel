@@ -118,3 +118,5 @@ $(head -50 doc/src/CHANGELOG.md)" \
 1. Check the release page on GitHub: all 4 tarballs attached
 2. Verify tarball contents: binary runs, man page present
 3. Update `IMPLEMENTATION.md` version header if needed
+4. Verify project board: all issues in the release should have cards in "Done"
+5. Check for any stale cards (issues that are closed but cards still in "In Progress" or "In Review")

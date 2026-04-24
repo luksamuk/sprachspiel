@@ -28,14 +28,37 @@ git checkout -b <type>/<description>
 git branch --show-current
 
 # Read IMPLEMENTATION.md to understand task status
-# Move GitHub Project card to "In Progress"
 ```
 
-**Moving card to In Progress (project number 4 = Ask-AI Roadmap):**
+### Pre-Setup: Duplicate Issue Check (MANDATORY)
+
+Before creating a branch, verify the issue is not a duplicate:
 
 ```bash
-# Find the item ID by issue number
+# Search for issues with similar titles
+gh issue list --state all --limit 100 | grep -i "<keyword from title>"
+
+# For each match, read the full description
+gh issue view <number>
+```
+
+If a duplicate is found:
+1. **Identify the canonical issue** — the one that was created first, or the one with more context
+2. **If canonical is CLOSED with a merged PR** — check whether the PR fully addressed the issue. If not, note residual work on the canonical issue.
+3. **Close the duplicate** with a comment: `"Closing as duplicate of #<canonical> — both issues describe the same problem."`
+4. **Reference the canonical issue** in your branch name, PR title, and PR body (not the duplicate)
+5. **Update IMPLEMENTATION.md** to reference the canonical issue number
+
+### Move Card to In Progress
+
+Move the GitHub Project card to "In Progress" (project number 4 = Ask-AI Roadmap):
+
+```bash
+# Find the item ID by issue number (use CANONICAL issue number)
 ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
+
+# If item is NOT on the board, add it:
+gh project item-add 4 --owner luksamuk --url https://github.com/luksamuk/ask-ai-rs/issues/<issue_number>
 
 # Update Status field to "In Progress"
 gh api graphql -f query='
@@ -63,6 +86,13 @@ mutation {
   ) { projectV2Item { id } }
 }'
 ```
+
+**Card management rules:**
+- Move card to **In Progress** when starting implementation (Phase 1)
+- Move card to **In Review** when PR is ready for review (Phase 4)
+- Card moves to **Done** automatically when PR merges (via "Closes #N")
+- If the issue is not on the board, **add it** before moving
+- Always use the **canonical issue** for board cards (not duplicates)
 
 ## Phase 2: Documentation FIRST
 
@@ -194,9 +224,14 @@ cargo clippy -- -D warnings
 
 # Mark PR as ready
 gh pr ready <pr_number>
+```
 
-# Move GitHub Project card to "In Review"
-# Find item ID (same method as Phase 1)
+### Update Project Board Card
+
+Move the card to "In Review":
+
+```bash
+# Find item ID (use CANONICAL issue number)
 ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
 
 # Status → "In Review"
@@ -224,8 +259,19 @@ mutation {
     }
   ) { projectV2Item { id } }
 }'
+```
 
-# Comment on issue
+### Cross-Reference Related Issues
+
+If the PR complements a previously merged PR on the same issue:
+
+```bash
+# Comment on the original issue about the supplementing PR
+gh issue comment <issue_number> --body "PR #<pr_number> complements this fix with additional robustness: [list residual fixes]."
+```
+
+```bash
+# Comment on the issue about PR being ready for review
 gh issue comment <issue_number> --body "PR #<pr_number> ready for review"
 ```
 
@@ -306,10 +352,56 @@ gh pr merge PR_NUMBER --merge --delete-branch
 # IMPORTANT:
 # - Use --merge (NOT --squash) to preserve commit history
 # - Use --delete-branch to clean up
-
-# Card moves to "Done" automatically
-# Issue closes automatically (via "Closes #N" in PR body)
 ```
+
+### Post-Merge Cleanup
+
+```bash
+# Update IMPLEMENTATION.md — mark task as ✅ COMPLETED
+# Find the section and update status markers
+
+# Verify card moved to "Done" automatically (via "Closes #N" in PR body)
+# If the issue was CLOSED but card didn't move, manually update:
+ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
+gh api graphql -f query='
+mutation {
+  updateProjectV2ItemFieldValue(
+    input: {
+      projectId: "PVT_kwHOADplIc4BRnZ9"
+      itemId: "'"$ITEM_ID"'"
+      fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg"
+      value: { singleSelectOptionId: "98236657" }
+    }
+  ) { projectV2Item { id } }
+}'
+```
+
+### Duplicate Issue Resolution (if applicable)
+
+If the PR addresses a canonical issue that had duplicates:
+
+1. **Verify all duplicates are closed** — check that duplicate issues have been closed with cross-reference comments
+2. **Remove duplicate cards from board** — if duplicate issues had their own cards, remove them:
+   ```bash
+   gh project item-delete <project-number> --id <duplicate-item-id>
+   ```
+3. **Verify board state** — only the canonical issue card should remain, in "Done"
+
+## Key Rules
+
+1. **NEVER skip the PR-PROCESS.md steps** — follow them in order
+2. **NEVER close issues before PR merge** — they auto-close with "Closes #N"
+3. **NEVER merge without approval** — PRs must be reviewed
+4. **ALWAYS create PR as DRAFT first** — then implement, then mark ready
+5. **ALWAYS check for duplicate issues** before creating a branch — use the duplicate check in Phase 1
+6. **ALWAYS use canonical issue for references** — branch names, PR titles, PR bodies, board cards should all reference the canonical issue (not a duplicate)
+7. **ALWAYS move project board cards** — at every phase transition:
+   - Phase 1 (Setup): → "In Progress"
+   - Phase 4 (Ready for Review): → "In Review"
+   - Phase 7 (Merge): → "Done" (automatic via "Closes #N", verify manually)
+8. **ALWAYS cross-reference related issues** — comment on the canonical issue about the PR, close duplicates with explanation
+9. **ALWAYS update IMPLEMENTATION.md** — mark status on every phase change
+10. **ALWAYS wait for authorization** between phases — no autonomous progression
 
 ## Project Information
 
