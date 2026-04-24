@@ -2,9 +2,18 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
-## [Unreleased]
+ ## [Unreleased]
 
 ### Added
+
+- **Auto Fact Extraction (P6.1 — autoDream-lite)** - Automatic fact extraction from conversation content after each response (Issue #73)
+  - Post-response heuristic extraction of preferences and facts from user messages
+  - FTS5 deduplication against existing facts before insertion
+  - Configurable extraction mode: `off`, `heuristic`, `llm` (default: `heuristic`)
+  - Scope inference: project by default, global for cross-project patterns
+  - Source attribution: auto-extracted facts marked with `Source::Llm`
+  - User notification when facts are auto-extracted (configurable)
+  - `[facts]` config section with `auto_extract` and `auto_extract_notify` fields
 
 - **Feedback Infrastructure (P5)** - Complete feedback-driven memory system with active forgetting (Issue #23)
   - `/feedback good|bad|correction:<text>` command with `msg:N` targeting and `/fg`/`/fb` shortcuts

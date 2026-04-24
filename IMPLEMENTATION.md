@@ -2552,7 +2552,7 @@ vision = true
 
 ### P6.1: Auto Fact Extraction (autoDream-lite)
 
-**Status:** 📋 PLANNED  
+**Status:** 🔄 IN PROGRESS  
 **Depends on:** P0 (Factual Memory System — completed)  
 **Estimated effort:** 3-5 days
 
