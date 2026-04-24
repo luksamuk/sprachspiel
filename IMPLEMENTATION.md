@@ -2703,7 +2703,9 @@ Modified truncation handling across three files:
 
 ### 🔵 Bug: Embeddings Fail on Startup When Input Exceeds Context Window [M1]
 
-**Status:** 🔄 IN PROGRESS (Issue #39)
+**Status:** 🔄 IN PROGRESS (Issue #40, PR #102)
+
+**Complements:** PR #46 (Issue #40) — PR #46 fixed the fallback architecture; this PR fixes residual robustness issues.
 
 **Goal:** Fix embedding generation failures when content exceeds the embedding model's context window during startup regeneration/recovery.
 
@@ -2717,21 +2719,23 @@ Modified truncation handling across three files:
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Proactive context length check in `embed()` | 📋 Planned |
-| 2 | Cache `context_length` in `EmbeddingClient` | 📋 Planned |
-| 3 | Handle `ContextExceeded` variant in fallback match arms | 📋 Planned |
-| 4 | Replace `panic!` with graceful degradation in `regenerate.rs` | 📋 Planned |
-| 5 | Consistent empty content validation in `recovery.rs` | 📋 Planned |
-| 6 | Fix `has_embedding` marking logic | 📋 Planned |
+| 1 | Proactive context length check in `embed()` | ✅ Done |
+| 2 | Cache `context_length` in `EmbeddingClient` | ✅ Done |
+| 3 | Handle `ContextExceeded` variant in fallback match arms | ✅ Done |
+| 4 | Replace `panic!` with graceful degradation in `regenerate.rs` | ✅ Done |
+| 5 | Consistent empty content validation in `recovery.rs` | ✅ Done |
+| 6 | Fix `has_embedding` marking logic | ✅ Done |
 
-**Files to Modify:**
-- `src/embeddings/client.rs` — Add proactive check, cache context length
-- `src/embeddings/fallback.rs` — Handle `ContextExceeded` variant
+**Files Modified:**
+- `src/embeddings/client.rs` — Proactive context check, cached context length, API error → ContextExceeded conversion
+- `src/embeddings/fallback.rs` — Handle `ContextExceeded` variant in both fallback paths
 - `src/embeddings/regenerate.rs` — Replace panic with graceful degradation
-- `src/embeddings/recovery.rs` — Add empty content validation
-- `src/db/operations.rs` or `src/content/db.rs` — Helper for chunk embedding verification
+- `src/embeddings/recovery.rs` — Add empty content validation, fix has_embedding marking
+- `src/content/db.rs` — New `mark_item_embedding_if_complete()` method
 
-**Estimated effort:** 2.5 days
+**Estimated effort:** 2.5 days (actual: 1 day)
+
+**Related:** Issue #40, Issue #39 (duplicate, closed), PR #102
 
 **Related:** Issue #39
 
