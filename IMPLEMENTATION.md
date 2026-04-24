@@ -2701,41 +2701,38 @@ Modified truncation handling across three files:
 
 ---
 
-### 🔵 Bug: Embeddings Fail on Startup When Input Exceeds Context Window [M1]
+### ✅ Bug: Embeddings Fail on Startup When Input Exceeds Context Window [M1]
 
-**Status:** 🔄 IN PROGRESS (Issue #40, PR #102)
+**Status:** ✅ COMPLETED (Issue #40, PR #102, merged 2026-04-24)
 
-**Complements:** PR #46 (Issue #40) — PR #46 fixed the fallback architecture; this PR fixes residual robustness issues.
+**Complements:** PR #46 (Issue #40) — PR #46 fixed the fallback architecture; PR #102 fixed residual robustness issues.
 
 **Goal:** Fix embedding generation failures when content exceeds the embedding model's context window during startup regeneration/recovery.
 
-**Problem Statement:**
-- `EmbeddingClient::embed()` sends content to the API without pre-checking if it fits in the context window
-- Startup regeneration panics (`panic!`) when Ollama is unreachable, crashing the application
-- `recovery.rs` lacks empty content validation that `regenerate.rs` has
-- `has_embedding=1` marked on items prematurely (when only some chunks succeeded)
-
-**Implementation Phases:**
+**Implementation:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 1 | Proactive context length check in `embed()` | ✅ Done |
-| 2 | Cache `context_length` in `EmbeddingClient` | ✅ Done |
+| 2 | Cache `context_length` in `EmbeddingClient` via `OnceCell` | ✅ Done |
 | 3 | Handle `ContextExceeded` variant in fallback match arms | ✅ Done |
 | 4 | Replace `panic!` with graceful degradation in `regenerate.rs` | ✅ Done |
 | 5 | Consistent empty content validation in `recovery.rs` | ✅ Done |
 | 6 | Fix `has_embedding` marking logic | ✅ Done |
+| 7 | Increased safety margins (CONTEXT_SAFETY_MARGIN 10%→20%, EMBEDDING_PREFIX_TOKENS 20→30, DEFAULT_CHUNK_PERCENT 90%→80%, DEFAULT_PREFIX_MARGIN 30→40) | ✅ Done |
+| 8 | Documented token estimation limitations (ollama-rs v0.3.4 ignores `prompt_eval_count`) | ✅ Done |
 
 **Files Modified:**
-- `src/embeddings/client.rs` — Proactive context check, cached context length, API error → ContextExceeded conversion
+- `src/embeddings/client.rs` — Proactive context check, cached context length, API error → ContextExceeded conversion, increased safety margins, documented estimation limitations
 - `src/embeddings/fallback.rs` — Handle `ContextExceeded` variant in both fallback paths
 - `src/embeddings/regenerate.rs` — Replace panic with graceful degradation
 - `src/embeddings/recovery.rs` — Add empty content validation, fix has_embedding marking
 - `src/content/db.rs` — New `mark_item_embedding_if_complete()` method
+- `src/embeddings/chunk_config.rs` — Reduced chunk percent (90%→80%), increased prefix margin (30→40)
+- `SMOKE_TEST.md` — Section 4.3 for embedding startup resilience
+- `.opencode/skills/` — Updated next-demand, pr-workflow, pr-testing, release-process with duplicate checks and card management
 
-**Estimated effort:** 2.5 days (actual: 1 day)
-
-**Related:** Issue #40, Issue #39 (duplicate, closed), PR #102
+**Related:** Issue #40 (canonical), Issue #39 (duplicate, closed), PR #102, Issue #103 (future: exact token counts via reqwest)
 
 **Related:** Issue #39
 
