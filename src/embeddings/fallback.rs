@@ -278,8 +278,14 @@ pub fn embed_chunk_with_fallback<'a>(
                 )?;
                 Ok(EmbedResult { chunks_created: 1 })
             }
+            Err(EmbeddingError::ContextExceeded { .. }) => {
+                // Context exceeded (proactive check or API response) - need to chunk
+                handle_chunk_context_exceeded(ctx, db, client, context_length, division_count).await
+            }
             Err(EmbeddingError::ApiError(ref msg)) if EmbeddingClient::is_context_exceeded(msg) => {
-                // Context exceeded - need to chunk
+                // Context exceeded (API error message) - need to chunk
+                // This arm catches context-exceeded errors that weren't converted
+                // to ContextExceeded by embed() (e.g., from batch operations).
                 handle_chunk_context_exceeded(ctx, db, client, context_length, division_count).await
             }
             Err(e) => Err(FallbackError::from(e)),
@@ -470,8 +476,14 @@ pub async fn embed_item_with_fallback(
             )?;
             Ok(EmbedResult { chunks_created: 0 })
         }
+        Err(EmbeddingError::ContextExceeded { .. }) => {
+            // Context exceeded (proactive check or API response) - need to create chunks first
+            handle_item_context_exceeded(ctx, db, client, context_length).await
+        }
         Err(EmbeddingError::ApiError(ref msg)) if EmbeddingClient::is_context_exceeded(msg) => {
-            // Context exceeded - need to create chunks first
+            // Context exceeded (API error message) - need to create chunks first
+            // This arm catches context-exceeded errors that weren't converted
+            // to ContextExceeded by embed() (e.g., from batch operations).
             handle_item_context_exceeded(ctx, db, client, context_length).await
         }
         Err(e) => Err(FallbackError::from(e)),
@@ -594,7 +606,10 @@ fn create_item_chunks_atomically(
 /// Estimate tokens from content length.
 ///
 /// Uses conservative estimate of 3 chars/token (Portuguese/code average).
+/// This is the same ratio as `CHARS_PER_TOKEN` in client.rs.
+/// See client.rs for why we estimate instead of using exact token counts.
 fn estimate_tokens(content_len: usize) -> usize {
+    // Keep in sync with CHARS_PER_TOKEN in client.rs
     (content_len as f32 / 3.0).ceil() as usize
 }
 

@@ -156,6 +156,14 @@ Via chat with a model that supports tools:
 - [ ] Message explains how to re-import the document
 - [ ] Suggests `/doc delete N` and re-import
 
+### 4.3 Embedding Startup Resilience (Bug #40)
+
+**Objective:** Verify that embedding failures during startup do not crash the application.
+
+- [ ] With Ollama **running**: `./target/release/ask-ai chat` starts without panic
+- [ ] With Ollama **stopped** (pkill ollama): `./target/release/ask-ai chat` starts without panic — graceful error messages only
+- [ ] After restarting Ollama and re-entering chat, "Recovering N missing embedding(s)" message appears and completes successfully
+
 ---
 
 ## 5. Memory (remember/facts)

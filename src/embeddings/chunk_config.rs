@@ -4,7 +4,11 @@
 //! This module provides dynamic chunk sizing based on the model's capabilities.
 
 /// Default percentage of context to use for chunk content (leaves margin for safety)
-const DEFAULT_CHUNK_PERCENT: f32 = 0.90;
+///
+/// Reduced from 0.90 to 0.80 to provide wider safety margin since token counts
+/// are estimated (chars/3.0) rather than exact. The embedding API returns
+/// `prompt_eval_count` but ollama-rs v0.3.4 doesn't capture it.
+const DEFAULT_CHUNK_PERCENT: f32 = 0.80;
 
 /// Default overlap between chunks (percentage of chunk size)
 const DEFAULT_OVERLAP_PERCENT: f32 = 0.20;
@@ -12,11 +16,21 @@ const DEFAULT_OVERLAP_PERCENT: f32 = 0.20;
 /// Default minimum chunk size (percentage of chunk size)
 const DEFAULT_MIN_CHUNK_PERCENT: f32 = 0.25;
 
-/// Token margin for prefix (e.g., "search_document: " is ~20 tokens)
-const DEFAULT_PREFIX_MARGIN: usize = 30;
+/// Token margin for prefix (e.g., "search_document: " is ~20 tokens + 20 overhead)
+///
+/// Increased from 30 to 40 to account for tokenizer overhead and prefix formatting.
+/// When exact token counts become available (via reqwest-based provider), this can
+/// be reduced back to 30 or replaced with actual prefix token counts.
+const DEFAULT_PREFIX_MARGIN: usize = 40;
 
 /// Characters per token ratio (conservative for Portuguese/code)
-/// English is ~4 chars/token, Portuguese/code is ~3 chars/token
+///
+/// This is an estimate. The Ollama embedding API returns `prompt_eval_count`
+/// (exact value) but the ollama-rs library ignores it. When provider abstraction
+/// is implemented with direct reqwest calls, we can use exact counts instead.
+///
+/// English averages ~4 chars/token, Portuguese/code averages ~3 chars/token.
+/// We use the more conservative (lower) ratio to overestimate token count.
 const DEFAULT_CHARS_PER_TOKEN: f32 = 3.0;
 
 /// Dynamic chunk configuration based on model context length.
@@ -98,16 +112,16 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = DynamicChunkConfig::default();
-        // (512 - 30) * 0.90 * 3.0 = 482 * 0.90 * 3.0 = 1301.4 → 1301
-        assert_eq!(config.max_chars(), 1301);
-        assert_eq!(config.overlap_chars(), 260); // 1301 * 0.20
-        assert_eq!(config.min_chunk_chars(), 325); // 1301 * 0.25
+        // (512 - 40) * 0.80 * 3.0 = 472 * 0.80 * 3.0 = 1132.8 → 1132
+        assert_eq!(config.max_chars(), 1132);
+        assert_eq!(config.overlap_chars(), 226); // 1132 * 0.20 = 226.4 → 226
+        assert_eq!(config.min_chunk_chars(), 283); // 1132 * 0.25 = 283
     }
 
     #[test]
     fn test_nomic_v2_moe() {
         let config = DynamicChunkConfig::new(512);
-        assert_eq!(config.max_chars(), 1301);
+        assert_eq!(config.max_chars(), 1132);
         assert!(config.overlap_chars() > 0);
     }
 
@@ -115,17 +129,17 @@ mod tests {
     fn test_nomic_v1_5() {
         // v1.5 has 8192 token context
         let config = DynamicChunkConfig::new(8192);
-        // (8192 - 30) * 0.90 * 3.0 = 8162 * 0.90 * 3.0 = 22037.4 → 22037
-        assert_eq!(config.max_chars(), 22037);
+        // (8192 - 40) * 0.80 * 3.0 = 8152 * 0.80 * 3.0 = 19564.8 → 19564
+        assert_eq!(config.max_chars(), 19564);
     }
 
     #[test]
     fn test_small_context() {
         // Very small context should still work
         let config = DynamicChunkConfig::new(100);
-        // (100 - 30) * 0.90 * 3.0 = 70 * 0.90 * 3.0 = 189 → 189
+        // (100 - 40) * 0.80 * 3.0 = 60 * 0.80 * 3.0 = 144
         assert!(config.max_chars() > 0);
-        assert_eq!(config.max_chars(), 189);
+        assert_eq!(config.max_chars(), 144);
     }
 
     #[test]
@@ -144,19 +158,21 @@ mod tests {
 
         // Full context
         let c1 = DynamicChunkConfig::new(ctx);
-        assert_eq!(c1.max_chars(), 1301); // 512 tokens
+        assert_eq!(c1.max_chars(), 1132); // 512 tokens
 
         // Halved: 256 tokens
         let c2 = DynamicChunkConfig::new(ctx / 2);
-        assert_eq!(c2.max_chars(), 610); // 256 tokens
+        // (256 - 40) * 0.80 * 3.0 = 216 * 0.80 * 3.0 = 518.4 → 518
+        assert_eq!(c2.max_chars(), 518);
 
         // Quarter: 128 tokens
         let c3 = DynamicChunkConfig::new(ctx / 4);
-        assert_eq!(c3.max_chars(), 264); // 128 tokens
+        // (128 - 40) * 0.80 * 3.0 = 88 * 0.80 * 3.0 = 211.2 → 211
+        assert_eq!(c3.max_chars(), 211);
 
         // Eighth: 64 tokens
         let c4 = DynamicChunkConfig::new(ctx / 8);
-        // (64 - 30) * 0.90 * 3.0 = 34 * 0.90 * 3.0 = 91.8 → 91
-        assert_eq!(c4.max_chars(), 91); // 64 tokens
+        // (64 - 40) * 0.80 * 3.0 = 24 * 0.80 * 3.0 = 57.6 → 57
+        assert_eq!(c4.max_chars(), 57);
     }
 }

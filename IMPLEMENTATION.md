@@ -2701,6 +2701,46 @@ Modified truncation handling across three files:
 
 ---
 
+### 🔵 Bug: Embeddings Fail on Startup When Input Exceeds Context Window [M1]
+
+**Status:** 🔄 IN PROGRESS (Issue #40, PR #102)
+
+**Complements:** PR #46 (Issue #40) — PR #46 fixed the fallback architecture; this PR fixes residual robustness issues.
+
+**Goal:** Fix embedding generation failures when content exceeds the embedding model's context window during startup regeneration/recovery.
+
+**Problem Statement:**
+- `EmbeddingClient::embed()` sends content to the API without pre-checking if it fits in the context window
+- Startup regeneration panics (`panic!`) when Ollama is unreachable, crashing the application
+- `recovery.rs` lacks empty content validation that `regenerate.rs` has
+- `has_embedding=1` marked on items prematurely (when only some chunks succeeded)
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Proactive context length check in `embed()` | ✅ Done |
+| 2 | Cache `context_length` in `EmbeddingClient` | ✅ Done |
+| 3 | Handle `ContextExceeded` variant in fallback match arms | ✅ Done |
+| 4 | Replace `panic!` with graceful degradation in `regenerate.rs` | ✅ Done |
+| 5 | Consistent empty content validation in `recovery.rs` | ✅ Done |
+| 6 | Fix `has_embedding` marking logic | ✅ Done |
+
+**Files Modified:**
+- `src/embeddings/client.rs` — Proactive context check, cached context length, API error → ContextExceeded conversion
+- `src/embeddings/fallback.rs` — Handle `ContextExceeded` variant in both fallback paths
+- `src/embeddings/regenerate.rs` — Replace panic with graceful degradation
+- `src/embeddings/recovery.rs` — Add empty content validation, fix has_embedding marking
+- `src/content/db.rs` — New `mark_item_embedding_if_complete()` method
+
+**Estimated effort:** 2.5 days (actual: 1 day)
+
+**Related:** Issue #40, Issue #39 (duplicate, closed), PR #102
+
+**Related:** Issue #39
+
+---
+
 ## 🔵 LOW PRIORITY: Extended Features
 
 Features planned for future releases:
