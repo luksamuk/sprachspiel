@@ -606,7 +606,10 @@ fn create_item_chunks_atomically(
 /// Estimate tokens from content length.
 ///
 /// Uses conservative estimate of 3 chars/token (Portuguese/code average).
+/// This is the same ratio as `CHARS_PER_TOKEN` in client.rs.
+/// See client.rs for why we estimate instead of using exact token counts.
 fn estimate_tokens(content_len: usize) -> usize {
+    // Keep in sync with CHARS_PER_TOKEN in client.rs
     (content_len as f32 / 3.0).ceil() as usize
 }
 

@@ -21,16 +21,34 @@ pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
 pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
 
 /// Characters per token ratio for estimating context overflow.
-/// Conservative estimate: Portuguese/code averages ~3 chars/token.
+///
+/// This is an ESTIMATE, not an exact count. The Ollama embedding API returns
+/// `prompt_eval_count` (exact token count) in its JSON response, but the
+/// `ollama-rs` library v0.3.4 does not capture this field in
+/// `GenerateEmbeddingsResponse`. When we implement provider abstraction with
+/// direct reqwest calls (see GitHub issue for multi-provider embedding support),
+/// we can use exact token counts and remove this estimate.
+///
+/// Portuguese/code content averages ~3 chars/token (lower than English ~4)
+/// because of diacritics and special characters. This conservative ratio
+/// ensures we overestimate rather than underestimate.
+///
+/// See: https://github.com/ollama/ollama/blob/main/docs/api.md
+/// The embeddings endpoint returns `prompt_eval_count` but ollama-rs ignores it.
 const CHARS_PER_TOKEN: f32 = 3.0;
 
 /// Prefix used for nomic-embed-text models.
-/// Approximately 20 tokens ("search_document: " + space + overhead).
-const EMBEDDING_PREFIX_TOKENS: usize = 20;
+/// Approximately 30 tokens ("search_document: " + space + overhead + margin).
+/// Increased from 20 to account for tokenizer overhead and prefix formatting.
+const EMBEDDING_PREFIX_TOKENS: usize = 30;
 
-/// Safety margin as fraction of context length (10%).
+/// Safety margin as fraction of context length (20%).
 /// Prevents borderline content from passing the check but failing at the API.
-const CONTEXT_SAFETY_MARGIN: f32 = 0.10;
+/// Increased from 10% to 20% to account for estimation imprecision — since
+/// we estimate tokens via chars/3.0 rather than exact tokenization, a wider
+/// margin avoids false negatives where estimated tokens fit but actual tokens
+/// exceed the context window.
+const CONTEXT_SAFETY_MARGIN: f32 = 0.20;
 
 /// Client for generating embeddings via Ollama
 pub struct EmbeddingClient {
@@ -121,8 +139,17 @@ impl EmbeddingClient {
 
     /// Estimate the number of tokens in a text using conservative ratio.
     ///
-    /// Uses CHARS_PER_TOKEN (3.0) which accounts for Portuguese/code content
-    /// where tokenization is less efficient than pure English.
+    /// # Why Estimate Instead of Exact Count
+    ///
+    /// The Ollama `/api/embeddings` endpoint returns `prompt_eval_count` in its
+    /// response, which is the exact token count. However, the `ollama-rs` crate
+    /// v0.3.4 only deserializes the `embeddings` field and discards this value.
+    /// Until we implement direct API calls (planned as part of provider abstraction),
+    /// we must estimate token counts proactively to avoid making API calls that
+    /// will fail due to context overflow.
+    ///
+    /// This estimate is intentionally conservative — it overestimates token count
+    /// to ensure borderline content is caught before wasting an API call.
     fn estimate_tokens(text: &str) -> usize {
         (text.len() as f32 / CHARS_PER_TOKEN).ceil() as usize
     }
@@ -134,7 +161,8 @@ impl EmbeddingClient {
     /// available context.
     ///
     /// This avoids making an API call only to receive an error, which wastes
-    /// time and can cause startup failures.
+    /// time and can cause startup failures. The 20% safety margin accounts for
+    /// the imprecision of character-based token estimation.
     fn is_likely_context_exceeded(text: &str, context_length: usize) -> bool {
         let estimated_tokens = Self::estimate_tokens(text);
         // Available context = total - prefix overhead - safety margin
@@ -364,7 +392,7 @@ mod tests {
     #[test]
     fn test_is_likely_context_exceeded_long_text() {
         // Very long text SHOULD exceed context
-        // 512 context - 20 prefix - 51 margin = 441 available tokens ≈ 1323 chars
+        // 512 context - 30 prefix - 102 margin (20%) = 380 available tokens ≈ 1140 chars
         // Create text longer than available context
         let long_text = "a".repeat(5000);
         assert!(EmbeddingClient::is_likely_context_exceeded(&long_text, 512));
@@ -373,9 +401,9 @@ mod tests {
     #[test]
     fn test_is_likely_context_exceeded_edge_case() {
         // Text near the boundary should be detected
-        // 512 - 20 - 51 = 441 tokens available ≈ 1323 chars
-        // 1323 chars / 3.0 = 441 tokens, so 1400 chars should exceed
-        let borderline_text = "x".repeat(1400);
+        // 512 - 30 - 102 = 380 tokens available ≈ 1140 chars
+        // 1200 chars / 3.0 = 400 estimated tokens, which exceeds 380 available
+        let borderline_text = "x".repeat(1200);
         assert!(EmbeddingClient::is_likely_context_exceeded(
             &borderline_text,
             512
@@ -385,8 +413,8 @@ mod tests {
     #[test]
     fn test_context_safety_margin_values() {
         // Verify constants are reasonable
-        assert_eq!(EMBEDDING_PREFIX_TOKENS, 20);
-        assert!((CONTEXT_SAFETY_MARGIN - 0.10).abs() < f32::EPSILON);
+        assert_eq!(EMBEDDING_PREFIX_TOKENS, 30);
+        assert!((CONTEXT_SAFETY_MARGIN - 0.20).abs() < f32::EPSILON);
         assert!((CHARS_PER_TOKEN - 3.0).abs() < f32::EPSILON);
     }
 }
