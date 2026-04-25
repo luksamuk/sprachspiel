@@ -629,9 +629,6 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 | P6.0 | Multi-Provider Support (OpenAI-Compatible) | 📋 Planned | 4-7 weeks |
 | P6.0-sub | Embedding Provider Abstraction | 📋 Planned ([sub-issue #107](https://github.com/luksamuk/ask-ai-rs/issues/107)) | 1-2 weeks |
 | P2 | Configurable Embedding Model + Matryoshka | 📋 Ready ([Issue #106](https://github.com/luksamuk/ask-ai-rs/issues/106)) | 1 week |
-| P6.0-sub | Embedding Provider Abstraction | 📋 Planned (sub-issue #107) | 1-2 weeks |
-| P2 | Configurable Embedding Model + Matryoshka | 📋 Ready | 1 week |
-| P6.1 | Auto Fact Extraction (autoDream-lite) | 🔄 In Progress | 3-5 days |
 | P6.1 | Auto Fact Extraction (autoDream-lite) | 🔄 In Progress | 3-5 days |
 | P6.2 | Context Pinning | 🟡 Research | 2-4 days |
 | P6.3 | Dynamic Context Limits | 🟡 Research | 1-2 days |
@@ -749,10 +746,10 @@ User-defined tools via dynamic loading or compilation.
 
 **Prerequisites:**
 
-| Issue | What | Status |
-|-------|------|--------|
-| #106 | Configurable Embedding Model (P2) | 📋 Ready |
-| #107 | Embedding Provider Abstraction (sub-task) | 📋 Planned |
+| Issue | What | Status | Note |
+|-------|------|--------|------|
+| #106 | Configurable Embedding Model (P2) | 📋 Ready | **Required** before embedding provider swap |
+| #107 | Embedding Provider Abstraction | 📋 Planned | **Sub-task** of P6.0 (not independent prereq) |
 
 > **NOTE:** This feature has been upgraded from LOW priority to P6.0 and is now tracked in IMPLEMENTATION.md under PRIORITY 6: Core Enhancements. The detailed implementation plan is in the P6.0 section of IMPLEMENTATION.md. This roadmap section is kept for architectural reference.
 >

@@ -2445,6 +2445,92 @@ Recent context (47 messages):
 
 ---
 
+## 🟡 PRIORITY 2: Configurable Embedding Model + Server-Side Matryoshka [M1]
+
+**Status:** 📋 READY  
+**Depends on:** None  
+**Estimated effort:** 1 week (4 phases)  
+**Issue:** #106
+
+**Goal:** Make the embedding model configurable in `models.toml` and use Ollama's `dimensions` parameter for server-side Matryoshka truncation instead of client-side truncation.
+
+**Prerequisite for:** #107 (Embedding Provider Abstraction) → #72 (P6.0 Multi-Provider)
+
+**Background:** Currently, the embedding model (`nomic-embed-text-v2-moe:latest`), dimensions (768→256), context length (512), and prefix (`"search_document: "`) are all hardcoded in `src/embeddings/client.rs` and `src/embeddings/truncate.rs`. Additionally, `truncate_and_normalize()` does client-side Matryoshka truncation, which is redundant since Ollama v0.11.11 (Sept 2025) supports the `dimensions` parameter on `/api/embed` for server-side truncation with L2 normalization.
+
+### Current Hardcoded Constants
+
+| Constant | Value | File |
+|---|---|---|
+| `DEFAULT_EMBEDDING_MODEL` | `nomic-embed-text-v2-moe:latest` | `client.rs:16` |
+| `FULL_DIMENSIONS` | 768 | `truncate.rs:7` |
+| `TRUNCATED_DIMENSIONS` | 256 | `truncate.rs:9` |
+| `DEFAULT_CONTEXT_LENGTH` | 512 | `client.rs:21` |
+| `"search_document: "` prefix | Hardcoded | `client.rs:214,266` |
+| `EMBEDDING_PREFIX_TOKENS` | 30 | `client.rs:43` |
+| DB vec0 tables | `FLOAT[256]` | `schema.rs:177,187`; `connection.rs:343,352` |
+
+### Key Discovery: Ollama `dimensions` Parameter
+
+Since Ollama v0.11.11 (Sept 2025), the `/api/embed` endpoint supports a `dimensions` parameter for server-side Matryoshka truncation. The parameter truncates the output embedding vector before L2 normalization. llama.cpp also supports this on its `/v1/embeddings` endpoint.
+
+### Proposed Config (`models.toml`)
+
+```toml
+[embedding]
+model = "nomic-embed-text-v2-moe:latest"
+dimensions = 256        # Matryoshka truncated dims (via Ollama API "dimensions")
+context_length = 8192   # Auto-detected from Ollama model info
+prefix = "search_document: "  # Model-specific prefix, empty string if none
+```
+
+### Implementation Phases
+
+| Phase | Description | Effort |
+|-------|-------------|--------|
+| 1. Config | Add `[embedding]` section to `Settings` / `config.toml`; replace hardcoded constants with config reads (defaults matching current behavior); auto-detect `context_length` from Ollama model info | 2-3 days |
+| 2. Server-side truncation | Add `dimensions` field to Ollama embed API request; remove or bypass `truncate_and_normalize()` when `dimensions` is set; keep client-side truncation as fallback for older Ollama | 1-2 days |
+| 3. DB migration | Migration that recreates `vec0` tables with dynamic `FLOAT[N]` from config; warn user and require reindex when dimensions change; `regenerate_all_embeddings()` already exists via `/reindex` | 2-3 days |
+| 4. Validation | Test alternative models (nomic-embed-text v1.5, mxbai-embed-large, qwen3-embedding:0.6b); verify no regression with current model | 1-2 days |
+
+### Matryoshka-Capable Embedding Models (Ollama)
+
+| Model | Full Dims | Matryoshka → 256? | Context | Size | MTEB | Recommendation |
+|---|---|---|---|---|---|---|
+| nomic-embed-text-v2-moe | 768 | ✅ (64-768) | 8192 | 957MB | ~62 | Current default, multilingual |
+| nomic-embed-text (v1.5) | 768 | ✅ (64-768) | 8192 | 274MB | 62.39 | English-only, lighter |
+| mxbai-embed-large | 1024 | ✅ (64-1024) | 512 | 700MB | 64.68 | Best retrieval, short context |
+| qwen3-embedding (0.6B) | 4096 | ✅ (32-4096) | 8192 | ~400MB | ~60 | Instruction-aware |
+| qwen3-embedding (8B) | 4096 | ✅ (32-4096) | 8192 | ~5GB Q4 | 70.58 | SOTA quality |
+| snowflake-arctic-embed2 | 1024 | ✅ (256) | 8192 | 1.2GB | 55.98 | Multilingual |
+| embeddinggemma | 768 | ✅ (128-768) | 8192 | ~300MB | good/size | Google, no special prefix |
+
+### Matryoshka-Capable Embedding Models (llama.cpp / OpenAI-compatible)
+
+These models work with llama.cpp server's `/v1/embeddings` endpoint which also supports the `dimensions` parameter:
+
+| Provider | Model | Full Dims | Matryoshka? | Context | Notes |
+|---|---|---|---|---|---|
+| OpenAI | text-embedding-3-small | 1536 | ✅ (512) | 8191 | $0.02/M tokens |
+| OpenAI | text-embedding-3-large | 3072 | ✅ (256-3072) | 8191 | $0.13/M tokens |
+| Any HF GGUF | nomic-embed-text-v1.5-GGUF | 768 | ✅ | 8192 | Can load custom fine-tunes |
+| Any HF GGUF | bge-m3-GGUF | 1024 | ✅ | 8192 | Multilingual, dense+sparse+ColBERT |
+| Any HF GGUF | snowflake-arctic-embed-m-GGUF | 768/1024 | ✅ | 8192 | Size variants 22M-335M |
+
+### Validation Criteria
+
+- [ ] `[embedding]` section in config.toml works
+- [ ] Changing `model` triggers reindex prompt
+- [ ] Changing `dimensions` triggers DB migration + reindex
+- [ ] Server-side `dimensions` parameter used when available
+- [ ] Client-side truncation still works as fallback
+- [ ] No regression in search quality with nomic-embed-text-v2-moe (current model)
+- [ ] At least one alternative model tested and validated
+
+**Related:** Issue #106, Issue #107 (Embedding Provider Abstraction), Issue #72 (P6.0 Multi-Provider)
+
+---
+
 ## 🔵 PRIORITY 6: Core Enhancements [M1]
 
 Features that enhance core functionality before Sprach 2.0 work begins.
@@ -2452,7 +2538,7 @@ Features that enhance core functionality before Sprach 2.0 work begins.
 ### P6.0: Multi-Provider Support (OpenAI-Compatible Backends)
 
 **Status:** 📋 PLANNED  
-**Depends on:** None  
+**Depends on:** #106 (Configurable Embedding Model — required before embedding provider swap)  
 **Estimated effort:** 4-7 weeks (5 phases)
 
 **Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (llama.cpp, LM Studio, cloud providers) through a unified interface.
