@@ -47,6 +47,9 @@ pub struct Settings {
     /// Feedback system configuration
     #[serde(default)]
     pub feedback: FeedbackSettings,
+    /// Factual memory auto-extraction configuration
+    #[serde(default)]
+    pub facts: FactSettings,
 }
 
 /// Model-related settings with per-subcommand configuration
@@ -226,6 +229,43 @@ impl Default for FeedbackSettings {
             content_prune_threshold: 0.05,
         }
     }
+}
+
+/// Fact auto-extraction settings (autoDream-lite).
+/// Controls heuristic extraction of preferences and identity facts from user messages.
+/// See ADR-E1 (heuristic-only), ADR-E2 (always Global), ADR-E5 (synchronous).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FactSettings {
+    /// Whether auto-extraction of facts from user messages is enabled.
+    /// When enabled, the system scans recent user messages for preference and
+    /// identity patterns after each response and inserts discovered facts.
+    #[serde(default = "default_true")]
+    pub auto_extract: bool,
+
+    /// Maximum number of facts to extract per response.
+    /// Limits noise from over-extraction. Default: 3.
+    #[serde(default = "default_max_facts")]
+    pub max_facts: u32,
+
+    /// Whether to show a notification when facts are auto-extracted.
+    /// Displays `[Auto-extracted: N fact(s)]` in gray after token metrics.
+    /// Suppressed in Quiet mode regardless of this setting.
+    #[serde(default = "default_true")]
+    pub auto_extract_notify: bool,
+}
+
+impl Default for FactSettings {
+    fn default() -> Self {
+        FactSettings {
+            auto_extract: true,
+            max_facts: 3,
+            auto_extract_notify: true,
+        }
+    }
+}
+
+fn default_max_facts() -> u32 {
+    3
 }
 
 fn default_led_port() -> u16 {
@@ -750,6 +790,34 @@ skin = "dark"
 # Content with a score below this value may be removed during maintenance.
 # Default: 0.05
 # content_prune_threshold = 0.05
+
+# =============================================================================
+# FACT AUTO-EXTRACTION CONFIGURATION (Optional)
+# =============================================================================
+# Control how facts are automatically extracted from user messages.
+# When enabled, the system scans recent user messages after each response
+# and extracts preferences and identity facts using heuristic patterns.
+# Extracted facts are deduplicated against existing facts via FTS5 search.
+# See P6.1 (autoDream-lite) for design details.
+
+# [facts]
+
+# Whether auto-extraction of facts from user messages is enabled.
+# When enabled, the system extracts facts like "I prefer dark mode" or
+# "My name is Lucas" after each response and stores them as facts.
+# Default: true
+# auto_extract = true
+
+# Maximum number of facts to extract per response.
+# Limits noise from over-extraction. Increase for longer conversations.
+# Default: 3
+# max_facts = 3
+
+# Whether to show a notification when facts are auto-extracted.
+# Displays "[Auto-extracted: N fact(s)]" in gray after token metrics.
+# Suppressed in Quiet mode regardless of this setting.
+# Default: true
+# auto_extract_notify = true
 "#;
 
         std::fs::write(&config_path, sample_config)?;

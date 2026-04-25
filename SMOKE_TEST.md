@@ -703,6 +703,56 @@ Verify consolidated command routing works after the refactoring.
 
 ---
 
+## 20. Auto Fact Extraction (P6.1 — autoDream-lite)
+
+Verify that preference and identity facts are auto-extracted from user messages and stored.
+
+### 20.1 Auto-Extraction Happy Path
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] Send: "I prefer dark mode" → response includes `[Auto-extracted: N fact(s)]` notification (gray text)
+- [ ] `/fact list` shows the extracted fact "I prefer dark mode" as a preference
+
+### 20.2 Multiple Preferences Per Message
+
+- [ ] Send: "I like Python and I hate verbose errors" → extraction notification appears
+- [ ] `/fact list` shows both extracted facts
+
+### 20.3 Deduplication
+
+- [ ] Send: "I prefer dark mode" again → no new duplicate fact created
+- [ ] `/fact list` shows only one "I prefer dark mode" fact
+
+### 20.4 Contradiction Resolution
+
+- [ ] Send: "I prefer light mode" → extraction notification says 1 fact extracted/updated
+- [ ] `/fact list` shows "I prefer light mode" (old "dark mode" fact removed)
+
+### 20.5 No Extraction in Anonymous Mode
+
+- [ ] Start: `ask-ai chat --anonymous`
+- [ ] Send: "I prefer dark mode" → NO extraction notification appears
+- [ ] Exit: `/exit`
+
+### 20.6 Config: Disable Notification
+
+- [ ] Edit `~/.config/ask-ai/config.toml`, add `[facts] auto_extract_notify = false`
+- [ ] Start chat, send preference → fact is extracted but NO `[Auto-extracted]` notification
+- [ ] Restore config
+
+### 20.7 Config: Disable Auto-Extract
+
+- [ ] Edit `~/.config/ask-ai/config.toml`, add `[facts] auto_extract = false`
+- [ ] Start chat, send preference → NO extraction, NO notification
+- [ ] Restore config
+
+### 20.8 Third-Person Normalization
+
+- [ ] Send: "My name is Lucas" → extraction notification
+- [ ] New session: ask "What are my preferences/identity?" → model references third-person ("User prefers..." or "User's name is...")
+
+---
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
@@ -776,4 +826,5 @@ The script above runs automated tests. The following tests must be run manually:
 14. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)
 15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
+17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization)
 These tests require chat interaction and visual verification of results.

@@ -3,6 +3,15 @@
 //! Constructs the "## User Facts" section that gets injected into the system prompt,
 //! with Unicode-safe truncation if the total exceeds the limit.
 //!
+//! # Third-Person Normalization (ADR-E4)
+//!
+//! Facts stored in the database preserve the user's original wording (e.g.,
+//! "I prefer dark mode"). When rendered in the system prompt, first-person
+//! pronouns are converted to third-person attribution (e.g., "User prefers
+//! dark mode") to prevent the LLM from confusing user facts with its own
+//! identity. This follows the pattern used by Mem0 and Claude Code, which
+//! store facts in third-person or with explicit attribution blocks.
+//!
 //! Staleness labels are appended to facts when they indicate age or decay:
 //! - `(stale)` — decay_score < 0.3 (badly decayed)
 //! - `(N days ago)` — last_accessed > 30 days (not recently used)
@@ -20,6 +29,90 @@ const DAYS_AGO_THRESHOLD: i64 = 30;
 
 /// Number of days since creation (with zero accesses) before showing "unused" label.
 const UNUSED_AGE_THRESHOLD: i64 = 7;
+
+/// Normalize fact content from first-person to third-person for prompt rendering.
+///
+/// This prevents the LLM from confusing user preferences with its own identity.
+/// For example, "I prefer dark mode" becomes "User prefers dark mode".
+///
+/// The normalization is applied only during prompt rendering — the database
+/// stores the original text as entered by the user or extracted heuristically.
+///
+/// # Rules
+///
+/// - "I prefer" → "User prefers"
+/// - "I like" → "User likes"
+/// - "I hate" → "User hates"
+/// - "I want" → "User wants"
+/// - "I don't want" → "User doesn't want"
+/// - "I don't like" → "User doesn't like"
+/// - "I love" → "User loves"
+/// - "I dislike" → "User dislikes"
+/// - "I'm" / "I am" → "User is"
+/// - "My" → "User's"
+/// - Sentences not starting with first-person pronouns are left unchanged
+///
+/// # ADR Reference
+///
+/// ADR-E4: Third-person normalization in prompt rendering. Research shows LLMs
+/// can misinterpret first-person facts in system prompts as self-descriptions.
+/// See: Mem0 (third-person extraction), Claude Code (third-person with headers),
+/// MemGPT (labeled `<human>` blocks).
+pub fn normalize_to_third_person(content: &str) -> String {
+    let lower = content.to_lowercase();
+
+    // Order matters: longer patterns first to avoid partial matching
+    // e.g., "i don't like" must match before "i like"
+    let replacements: &[(&str, &str)] = &[
+        // English contractions and negations (longest first)
+        ("i don't want ", "User doesn't want "),
+        ("i dont want ", "User doesn't want "),
+        ("i don't like ", "User doesn't like "),
+        ("i dont like ", "User doesn't like "),
+        ("i can't stand ", "User can't stand "),
+        // English preferences
+        ("i prefer ", "User prefers "),
+        ("i like ", "User likes "),
+        ("i hate ", "User hates "),
+        ("i love ", "User loves "),
+        ("i want ", "User wants "),
+        ("i dislike ", "User dislikes "),
+        ("i usually prefer ", "User usually prefers "),
+        ("i usually like ", "User usually likes "),
+        ("i usually hate ", "User usually hates "),
+        ("i usually love ", "User usually loves "),
+        ("i find it ", "User finds it "),
+        // Identity patterns
+        ("my name is ", "User's name is "),
+        ("my ", "User's "), // "My language" → "User's language" etc.
+        ("i'm ", "User is "),
+        ("i am ", "User is "),
+        ("i live in ", "User lives in "),
+        ("i work at ", "User works at "),
+        ("i work for ", "User works for "),
+        ("i'm from ", "User is from "),
+        ("i speak ", "User speaks "),
+        ("call me ", "User's name is "),
+        // Portuguese
+        ("eu prefiro ", "User prefere "),
+        ("eu gosto de ", "User gosta de "),
+        ("eu odeio ", "User odeia "),
+        ("eu quero ", "User quer "),
+        ("eu não quero ", "User não quer "),
+        ("prefiro ", "Prefere "),
+    ];
+
+    for (from, to) in replacements {
+        if lower.starts_with(from) {
+            // Preserve original casing for the rest of the sentence
+            let rest = &content[from.len()..];
+            return format!("{}{}", to, rest);
+        }
+    }
+
+    // No first-person pattern matched — return as-is
+    content.to_string()
+}
 
 /// Returns a staleness label for a fact, or empty string if the fact is fresh.
 ///
@@ -74,7 +167,8 @@ pub fn build_facts_section(facts: &[Fact]) -> String {
         section.push_str("### Preferences\n");
         for fact in preferences {
             let staleness = get_staleness_label(fact);
-            section.push_str(&format!("- {}{}\n", fact.content, staleness));
+            let display = normalize_to_third_person(&fact.content);
+            section.push_str(&format!("- {}{}\n", display, staleness));
         }
         section.push('\n');
     }
@@ -83,7 +177,8 @@ pub fn build_facts_section(facts: &[Fact]) -> String {
         section.push_str("### Facts\n");
         for fact in fact_list {
             let staleness = get_staleness_label(fact);
-            section.push_str(&format!("- {}{}\n", fact.content, staleness));
+            let display = normalize_to_third_person(&fact.content);
+            section.push_str(&format!("- {}{}\n", display, staleness));
         }
     }
 
@@ -192,6 +287,7 @@ mod tests {
     #[test]
     fn test_format() {
         // Fresh facts should have no staleness label
+        // Note: build_facts_section now normalizes to third-person
         let facts = vec![
             create_test_fact("I prefer Portuguese", Category::Preference),
             create_test_fact("The project uses Rust", Category::Fact),
@@ -200,9 +296,136 @@ mod tests {
         let result = build_facts_section(&facts);
 
         let expected =
-            "### Preferences\n- I prefer Portuguese\n\n### Facts\n- The project uses Rust\n";
+            "### Preferences\n- User prefers Portuguese\n\n### Facts\n- The project uses Rust\n";
 
         assert_eq!(result, expected);
+    }
+
+    // --- Third-person normalization tests ---
+
+    #[test]
+    fn test_normalize_preference_english() {
+        assert_eq!(
+            normalize_to_third_person("I prefer dark mode"),
+            "User prefers dark mode"
+        );
+        assert_eq!(
+            normalize_to_third_person("I like Python"),
+            "User likes Python"
+        );
+        assert_eq!(
+            normalize_to_third_person("I hate verbose errors"),
+            "User hates verbose errors"
+        );
+        assert_eq!(
+            normalize_to_third_person("I want short responses"),
+            "User wants short responses"
+        );
+        assert_eq!(
+            normalize_to_third_person("I love concise code"),
+            "User loves concise code"
+        );
+        assert_eq!(
+            normalize_to_third_person("I dislike complexity"),
+            "User dislikes complexity"
+        );
+    }
+
+    #[test]
+    fn test_normalize_negation_english() {
+        assert_eq!(
+            normalize_to_third_person("I don't want to repeat myself"),
+            "User doesn't want to repeat myself"
+        );
+        assert_eq!(
+            normalize_to_third_person("I don't like verbose messages"),
+            "User doesn't like verbose messages"
+        );
+        assert_eq!(
+            normalize_to_third_person("I can't stand slow responses"),
+            "User can't stand slow responses"
+        );
+    }
+
+    #[test]
+    fn test_normalize_identity_english() {
+        assert_eq!(
+            normalize_to_third_person("My name is Lucas"),
+            "User's name is Lucas"
+        );
+        assert_eq!(
+            normalize_to_third_person("I'm a developer"),
+            "User is a developer"
+        );
+        assert_eq!(
+            normalize_to_third_person("I am from Brazil"),
+            "User is from Brazil"
+        );
+        assert_eq!(
+            normalize_to_third_person("I work at Google"),
+            "User works at Google"
+        );
+        assert_eq!(
+            normalize_to_third_person("I live in São Paulo"),
+            "User lives in São Paulo"
+        );
+    }
+
+    #[test]
+    fn test_normalize_third_person_unchanged() {
+        // Facts already in third person should not be changed
+        assert_eq!(
+            normalize_to_third_person("The project uses Rust"),
+            "The project uses Rust"
+        );
+        assert_eq!(
+            normalize_to_third_person("Database is PostgreSQL"),
+            "Database is PostgreSQL"
+        );
+        assert_eq!(
+            normalize_to_third_person("API endpoint is /api/v1"),
+            "API endpoint is /api/v1"
+        );
+    }
+
+    #[test]
+    fn test_normalize_portuguese() {
+        assert_eq!(
+            normalize_to_third_person("eu prefiro respostas curtas"),
+            "User prefere respostas curtas"
+        );
+        assert_eq!(
+            normalize_to_third_person("Eu gosto de café"),
+            "User gosta de café"
+        );
+    }
+
+    #[test]
+    fn test_normalize_my_possessive() {
+        assert_eq!(
+            normalize_to_third_person("My language is Portuguese"),
+            "User's language is Portuguese"
+        );
+    }
+
+    #[test]
+    fn test_normalize_in_section_with_third_person() {
+        // Verify that build_facts_section produces third-person output
+        let facts = vec![
+            create_test_fact("I prefer dark mode", Category::Preference),
+            create_test_fact("The project uses SQLite", Category::Fact),
+        ];
+
+        let result = build_facts_section(&facts);
+
+        assert!(
+            result.contains("- User prefers dark mode"),
+            "Third-person normalization should apply to preferences"
+        );
+        assert!(
+            result.contains("- The project uses SQLite"),
+            "Third-person facts should be unchanged"
+        );
     }
 
     // --- Staleness label tests ---

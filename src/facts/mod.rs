@@ -20,10 +20,17 @@
 //! - FTS5 keyword search only (no embeddings)
 //! - Hard limit: 500 chars per fact
 //! - Soft limit: 2200 chars total in prompt
+//!
+//! # Auto-Extraction (autoDream-lite)
+//!
+//! After each user response, the system can automatically extract
+//! preferences and identity facts using heuristic pattern matching.
+//! See `extract` module for details.
 
 pub mod classify;
 pub mod conflict;
 pub mod db;
 pub mod decay;
+pub mod extract;
 pub mod prompt;
 pub mod types;

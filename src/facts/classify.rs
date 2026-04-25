@@ -55,10 +55,22 @@ fn contains_preference_patterns(lower: &str) -> bool {
     if lower.contains("i prefer") || lower.contains("i like") || lower.contains("i hate") {
         return true;
     }
+    if lower.contains("i usually prefer")
+        || lower.contains("i usually like")
+        || lower.contains("i usually hate")
+    {
+        return true;
+    }
+    if lower.contains("i always") || lower.contains("i never") {
+        return true;
+    }
     if lower.contains("i want") || lower.contains("i don't want") || lower.contains("i dont want") {
         return true;
     }
     if lower.contains("i love") || lower.contains("i dislike") {
+        return true;
+    }
+    if lower.contains("i find") || lower.contains("i find it") {
         return true;
     }
 

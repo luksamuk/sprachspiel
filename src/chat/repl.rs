@@ -22,9 +22,10 @@ use super::continuation::{
 };
 use super::core::send_message;
 use super::input::{InputBackend, InputResult, RustylineInput};
-use super::session::ChatSession;
+use super::session::{ChatSession, MessageRole};
 use super::view::TerminalView;
 use crate::facts::db::DecayStats;
+use crate::facts::extract::extract_and_insert_facts;
 use crate::project::get_project_id;
 
 /// Token overhead for each tool definition (approximate)
@@ -210,7 +211,10 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
         {
             Ok(result) => {
                 match process_send_result(state, result, user_message_id).await {
-                    ProcessResult::Success => {}
+                    ProcessResult::Success => {
+                        // Auto-extract facts from recent user messages (autoDream-lite)
+                        try_auto_extract_facts(state);
+                    }
                     ProcessResult::ContinuationError(e) => {
                         eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
                     }
@@ -260,6 +264,70 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
                     }
                 }
             }
+        }
+    }
+}
+
+/// Attempt auto-extraction of facts from recent user messages (autoDream-lite).
+///
+/// This is called synchronously after each successful response. Extraction is:
+/// - Disabled for anonymous sessions (no database)
+/// - Gated by `settings.facts.auto_extract`
+/// - Limited to `settings.facts.max_facts` per response
+/// - Notification gated by `settings.facts.auto_extract_notify`
+///
+/// See ADR-E1 (heuristic-only), ADR-E2 (always Global), ADR-E5 (synchronous).
+fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
+    // Guard: auto_extract must be enabled
+    if !state.settings.facts.auto_extract {
+        return;
+    }
+
+    // Guard: anonymous sessions have no database
+    if state.session.anonymous {
+        return;
+    }
+
+    // Guard: database must be available
+    let Some(db) = &state.db else {
+        return;
+    };
+
+    // Collect recent user messages (up to MAX_MESSAGES_TO_SCAN)
+    let user_messages: Vec<&str> = state
+        .session
+        .messages
+        .iter()
+        .rev()
+        .filter(|m| m.role == MessageRole::User)
+        .take(5)
+        .map(|m| m.content.as_str())
+        .collect();
+
+    if user_messages.is_empty() {
+        return;
+    }
+
+    let max_facts = state.settings.facts.max_facts as usize;
+    let project_id = state.session.project_id.as_deref();
+
+    let result = extract_and_insert_facts(db, &user_messages, project_id, max_facts);
+
+    // Log the extraction result
+    if result.inserted > 0 || result.updated > 0 {
+        log::debug!(
+            "Auto-extract: {} inserted, {} updated, {} skipped",
+            result.inserted,
+            result.updated,
+            result.skipped
+        );
+    }
+
+    // Show notification if configured and any facts were extracted
+    if state.settings.facts.auto_extract_notify {
+        let total = result.inserted + result.updated;
+        if total > 0 {
+            eprintln!("\x1B[90m[Auto-extracted: {} fact(s)]\x1B[0m", total);
         }
     }
 }
