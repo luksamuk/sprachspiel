@@ -2,7 +2,10 @@
 //!
 //! Classifies facts into preference or fact categories using pattern matching.
 //! No LLM required - pure heuristic with 90%+ accuracy.
+//!
+//! Classification keywords are centralized in `lang::preference_keywords()`.
 
+use super::lang;
 use super::types::Category;
 
 /// Classify a fact into a category using heuristic pattern matching.
@@ -24,56 +27,20 @@ use super::types::Category;
 pub fn classify_fact(content: &str) -> Category {
     let lower = content.to_lowercase();
 
-    // Heuristic for preferences
-    // Portuguese: prefiro, gosto, odeio, não gosto, quero
-    // English: prefer, like, hate, want, don't like
     if contains_preference_patterns(&lower) {
-        return Category::Preference;
+        Category::Preference
+    } else {
+        Category::Fact
     }
-
-    // Default: fact
-    Category::Fact
 }
 
-/// Check if content contains preference patterns
+/// Check if content contains preference patterns using centralized keywords.
 fn contains_preference_patterns(lower: &str) -> bool {
-    // Portuguese preference patterns
-    if lower.contains("prefiro") || lower.contains("prefere") {
-        return true;
+    for (keyword, _lang) in lang::preference_keywords() {
+        if lower.contains(keyword) {
+            return true;
+        }
     }
-    if lower.contains("gosto de") || lower.contains("gosta de") {
-        return true;
-    }
-    if lower.contains("odeio") || lower.contains("não gosto") || lower.contains("nao gosto") {
-        return true;
-    }
-    if lower.contains("quero") || lower.contains("não quero") || lower.contains("nao quero") {
-        return true;
-    }
-
-    // English preference patterns
-    if lower.contains("i prefer") || lower.contains("i like") || lower.contains("i hate") {
-        return true;
-    }
-    if lower.contains("i usually prefer")
-        || lower.contains("i usually like")
-        || lower.contains("i usually hate")
-    {
-        return true;
-    }
-    if lower.contains("i always") || lower.contains("i never") {
-        return true;
-    }
-    if lower.contains("i want") || lower.contains("i don't want") || lower.contains("i dont want") {
-        return true;
-    }
-    if lower.contains("i love") || lower.contains("i dislike") {
-        return true;
-    }
-    if lower.contains("i find") || lower.contains("i find it") {
-        return true;
-    }
-
     false
 }
 
@@ -105,6 +72,11 @@ mod tests {
         ));
         assert!(matches!(
             classify_fact("Quero terminar isso logo"),
+            Category::Preference
+        ));
+        assert!(matches!(classify_fact("Adoro Rust"), Category::Preference));
+        assert!(matches!(
+            classify_fact("Detesto bugs"),
             Category::Preference
         ));
     }
@@ -151,11 +123,12 @@ mod tests {
 
     #[test]
     fn test_classify_edge_cases() {
-        // These should be facts, not preferences
+        // "The user prefers Portuguese" is a statement about user, not a first-person preference.
+        // Since "prefers" (without "i prefer") won't match as a preference keyword,
+        // this should be classified as a fact.
         assert!(matches!(
             classify_fact("The user prefers Portuguese"),
             Category::Fact
         ));
-        // "Prefers" without "I" is a statement about user, not a preference
     }
 }

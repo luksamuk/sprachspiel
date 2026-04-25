@@ -321,6 +321,14 @@ fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
             result.updated,
             result.skipped
         );
+        for detail in &result.details {
+            log::debug!(
+                "Auto-extract detail: {} [{:?}] — {}",
+                detail.action,
+                detail.category,
+                detail.content
+            );
+        }
     }
 
     // Show notification if configured and any facts were extracted

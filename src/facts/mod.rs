@@ -32,5 +32,6 @@ pub mod conflict;
 pub mod db;
 pub mod decay;
 pub mod extract;
+pub mod lang;
 pub mod prompt;
 pub mod types;

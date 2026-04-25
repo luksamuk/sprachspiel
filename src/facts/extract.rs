@@ -40,6 +40,7 @@
 
 use super::classify::classify_fact;
 use super::conflict::{CONFLICT_THRESHOLD, detect_conflicts, resolve_conflict};
+use super::lang;
 use super::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
 use crate::db::Database;
 
@@ -59,67 +60,6 @@ const MAX_EXTRACT_LENGTH: usize = MAX_FACT_CONTENT_SIZE;
 const PREFERENCE_CONFIDENCE: f32 = 0.9;
 const IDENTITY_CONFIDENCE: f32 = 0.8;
 
-// === Pattern Definitions ===
-
-/// Preference patterns that indicate a user preference (first-person).
-/// Each pattern is (regex_pattern, category_override).
-/// Category_override is None to use auto-classification.
-fn preference_patterns() -> Vec<(&'static str, &'static str)> {
-    vec![
-        // English — strong preference
-        (
-            r"(?i)^i\s+(prefer|like|love|hate|dislike|want|don'?t\s+want|don'?t\s+like)\s+",
-            "preference",
-        ),
-        // English — "I usually prefer"
-        (
-            r"(?i)^i\s+usually\s+(prefer|like|love|hate|dislike)\s+",
-            "preference",
-        ),
-        // English — "I find it better/easier"
-        (
-            r"(?i)^i\s+find\s+(it\s+)?(better|worse|easier|harder|nicer)\s+",
-            "preference",
-        ),
-        // English — "Always use X" / "Never use X"
-        (
-            r"(?i)^(always|never)\s+(use|prefer|choose|opt\s+for)\s+",
-            "preference",
-        ),
-        // English — "I can't stand X"
-        (r"(?i)^i\s+can'?t\s+stand\s+", "preference"),
-        // Portuguese — preference
-        (
-            r"(?i)^(eu\s+)?(prefiro|prefere|gosto\s+de|gostamos\s+de|odeio|não?\s+gosto|não?\s+quero|quero)\s+",
-            "preference",
-        ),
-    ]
-}
-
-/// Identity patterns that indicate a user identity fact (first-person only).
-fn identity_patterns() -> Vec<(&'static str, &'static str)> {
-    vec![
-        // Name
-        (r"(?i)^my\s+name\s+is\s+", "identity"),
-        (r"(?i)^i'?m\s+([A-Z][a-z]+)\b", "identity"), // "I'm Lucas"
-        (r"(?i)^call\s+me\s+", "identity"),
-        // Language
-        (r"(?i)^my\s+(main\s+)?language\s+is\s+", "identity"),
-        (r"(?i)^i\s+speak\s+", "identity"),
-        // Work
-        (r"(?i)^i\s+(work|am\s+working)\s+(at|for|in)\s+", "identity"),
-        (r"(?i)^i'?m\s+(a|an)\s+\w+", "identity"), // "I'm a developer" (weaker)
-        // Location
-        (
-            r"(?i)^i\s+(live|am\s+based|am\s+from)\s+(in|at|near)\s+",
-            "identity",
-        ),
-        (r"(?i)^i'?m\s+from\s+", "identity"),
-        // Role
-        (r"(?i)^i'?m\s+the\s+", "identity"),
-    ]
-}
-
 // === Types ===
 
 /// A fact candidate extracted from a message.
@@ -136,10 +76,10 @@ pub struct ExtractedFact {
     /// Always Llm for auto-extracted facts.
     pub source: Source,
     /// Which pattern matched (for debugging).
-    #[allow(dead_code)] // Used in tests, not in production code
+    #[allow(dead_code)] // Used in tests
     pub matched_pattern: String,
     /// The original sentence that was matched.
-    #[allow(dead_code)] // Used in tests, not in production code
+    #[allow(dead_code)] // Used in tests
     pub original_sentence: String,
 }
 
@@ -153,7 +93,6 @@ pub struct ExtractionResult {
     /// Number of facts that updated existing ones (contradictions).
     pub updated: usize,
     /// Details of each extracted fact.
-    #[allow(dead_code)] // Available for verbose/trace output in future
     pub details: Vec<ExtractionDetail>,
 }
 
@@ -161,13 +100,10 @@ pub struct ExtractionResult {
 #[derive(Debug, Clone)]
 pub struct ExtractionDetail {
     /// The fact content that was processed.
-    #[allow(dead_code)] // Available for verbose/trace output in future
     pub content: String,
     /// What happened: "inserted", "skipped (duplicate)", "updated (contradiction)".
-    #[allow(dead_code)] // Available for verbose/trace output in future
     pub action: String,
     /// Category of the fact.
-    #[allow(dead_code)] // Available for verbose/trace output in future
     pub category: Category,
 }
 
@@ -196,76 +132,15 @@ fn is_extractable_sentence(sentence: &str) -> bool {
     }
 
     // Skip commands (starts with imperative verbs commonly used in chat)
-    let command_starters = [
-        "check ",
-        "show ",
-        "list ",
-        "run ",
-        "tell ",
-        "give ",
-        "find ",
-        "search ",
-        "look ",
-        "get ",
-        "help ",
-        "explain ",
-        "describe ",
-        "compare ",
-        "create ",
-        "delete ",
-        "remove ",
-        "update ",
-        "write ",
-        "read ",
-        "open ",
-        "close ",
-        "stop ",
-        "start ",
-        "retry ",
-        "redo ",
-    ];
     let lower = trimmed.to_lowercase();
-    for starter in &command_starters {
+    for starter in lang::command_starters() {
         if lower.starts_with(starter) {
             return false;
         }
     }
 
     // Skip conversational fillers
-    let fillers = [
-        "ok",
-        "okay",
-        "thanks",
-        "thank you",
-        "yes",
-        "no",
-        "sure",
-        "right",
-        "correct",
-        "exactly",
-        "perfect",
-        "great",
-        "cool",
-        "nice",
-        "good",
-        "got it",
-        "understood",
-        "makes sense",
-        "i see",
-        "agreed",
-        "true",
-        "exatamente",
-        "obrigado",
-        "obrigada",
-        "sim",
-        "não",
-        "claro",
-        "certo",
-        "verdade",
-        "entendi",
-        "compreendi",
-    ];
-    if fillers.iter().any(|f| lower == *f) {
+    if lang::filler_words().iter().any(|f| lower == *f) {
         return false;
     }
 
@@ -278,20 +153,15 @@ fn is_extractable_sentence(sentence: &str) -> bool {
 /// Returns Some(ExtractedFact) if a pattern matches, None otherwise.
 fn try_extract(sentence: &str) -> Option<ExtractedFact> {
     // Try preference patterns first (higher confidence)
-    for (pattern, _category) in preference_patterns() {
-        if let Some(fact) = match_pattern(
-            sentence,
-            pattern,
-            Category::Preference,
-            PREFERENCE_CONFIDENCE,
-        ) {
+    for (pattern, _category) in lang::preference_patterns() {
+        if let Some(fact) = match_pattern(sentence, pattern, PREFERENCE_CONFIDENCE) {
             return Some(fact);
         }
     }
 
     // Then identity patterns
-    for (pattern, _category) in identity_patterns() {
-        if let Some(fact) = match_pattern(sentence, pattern, Category::Fact, IDENTITY_CONFIDENCE) {
+    for (pattern, _category) in lang::identity_patterns() {
+        if let Some(fact) = match_pattern(sentence, pattern, IDENTITY_CONFIDENCE) {
             return Some(fact);
         }
     }
@@ -300,28 +170,35 @@ fn try_extract(sentence: &str) -> Option<ExtractedFact> {
 }
 
 /// Match a pattern against a sentence and extract the fact content.
-fn match_pattern(
-    sentence: &str,
-    pattern: &str,
-    _default_category: Category,
-    confidence: f32,
-) -> Option<ExtractedFact> {
+/// Classification is always determined by `classify_fact()`, not by the pattern category.
+///
+/// If the content is in Portuguese, it is translated to English before storage
+/// (ADR-L1). This ensures prompt rendering and FTS5 search work consistently.
+fn match_pattern(sentence: &str, pattern: &str, confidence: f32) -> Option<ExtractedFact> {
     let Ok(re) = regex::Regex::new(pattern) else {
         return None;
     };
 
     if re.is_match(sentence) {
         // Use the full sentence as fact content (preserving context)
-        let content = sentence.trim().to_string();
+        let raw_content = sentence.trim().to_string();
 
         // Validate content length
-        if content.len() < MIN_FACT_LENGTH || content.len() > MAX_EXTRACT_LENGTH {
+        if raw_content.len() < MIN_FACT_LENGTH || raw_content.len() > MAX_EXTRACT_LENGTH {
             return None;
         }
 
+        // Classify using the original (pre-translation) content, since
+        // classification relies on first-person pronouns ("I prefer", "eu prefiro")
+        // that are lost in the English third-person translation.
+        let category = classify_fact(&raw_content);
+
+        // Translate PT→EN before storage (no-op for English content).
+        // ADR-L1: All facts stored in English.
+        let content = lang::translate_pt_to_en(&raw_content);
+
         Some(ExtractedFact {
-            // Use classify_fact for final classification (may override default)
-            category: classify_fact(&content),
+            category,
             content,
             confidence,
             scope: Scope::Global,
@@ -669,6 +546,80 @@ mod tests {
     }
 
     #[test]
+    fn test_preference_pattern_portuguese_full() {
+        // Extended PT preference patterns (reviews #1, #2)
+        let cases = vec![
+            "Eu prefiro respostas curtas",
+            "Prefiro trabalhar de manhã",
+            "Gosto de café",
+            "Odeio quando isso acontece",
+            "Não gosto de código desorganizado",
+            "Adoro Rust",
+            "Detesto bugs",
+            "Eu adoro programar",
+            "Eu detesto esperar",
+            "Quero terminar logo",
+            "Não quero repetir",
+            "Eu quero café",
+            "Eu não quero sair",
+            "Prefiro sempre o plano A",
+        ];
+        for case in cases {
+            let result = try_extract(case);
+            assert!(result.is_some(), "Expected match for: {}", case);
+            assert!(
+                matches!(result.unwrap().category, Category::Preference),
+                "Expected Preference for: {}",
+                case
+            );
+        }
+    }
+
+    #[test]
+    fn test_identity_pattern_portuguese() {
+        // PT identity patterns (review #4)
+        let cases = vec![
+            "Meu nome é Lucas",
+            "Meu nome e Lucas",
+            "Eu me chamo Ana",
+            "Eu trabalho no Google",
+            "Eu moro em São Paulo",
+            "Moro em Brasília",
+            "Eu sou de Recife",
+            "Sou de São Paulo",
+            "Eu falo português",
+            "Falo inglês",
+            "Minha língua é português",
+            "Meu idioma é português",
+            "Eu sou desenvolvedor",
+            "Sou engenheiro",
+        ];
+        for case in cases {
+            let result = try_extract(case);
+            assert!(result.is_some(), "Expected match for: {}", case);
+        }
+    }
+
+    #[test]
+    fn test_extractable_portuguese_command_excluded() {
+        // PT commands should not be extracted (review #4)
+        assert!(!is_extractable_sentence("Mostre os logs"));
+        assert!(!is_extractable_sentence("Busca o arquivo"));
+        assert!(!is_extractable_sentence("Cria um novo diretório"));
+        assert!(!is_extractable_sentence("Executa o script"));
+    }
+
+    #[test]
+    fn test_extractable_portuguese_filler_extended() {
+        // Extended PT fillers (reviews #1, #4)
+        assert!(!is_extractable_sentence("Beleza"));
+        assert!(!is_extractable_sentence("Valeu"));
+        assert!(!is_extractable_sentence("Legal"));
+        assert!(!is_extractable_sentence("Perfeito"));
+        assert!(!is_extractable_sentence("Com certeza"));
+    }
+
+    #[test]
     fn test_identity_pattern_english() {
         let cases = vec![
             "My name is Lucas",
@@ -682,6 +633,41 @@ mod tests {
             let result = try_extract(case);
             assert!(result.is_some(), "Expected match for: {}", case);
         }
+    }
+
+    #[test]
+    fn test_lang_translate_is_accessible() {
+        // Verify super::lang::translate_pt_to_en works from this module
+        assert_eq!(
+            lang::translate_pt_to_en("Eu prefiro respostas curtas"),
+            "User prefers respostas curtas"
+        );
+    }
+
+    #[test]
+    fn test_extracted_content_translated_to_english() {
+        // PT fact content should be translated to English before storage (ADR-L1)
+        let result = try_extract("Eu prefiro respostas curtas");
+        assert!(result.is_some(), "Expected match");
+        let fact = result.unwrap();
+        assert!(
+            fact.content.starts_with("User prefers"),
+            "Content should be translated to English before storage, got: '{}'",
+            fact.content
+        );
+    }
+
+    #[test]
+    fn test_extracted_portuguese_identity_translated() {
+        // PT identity should be translated to English before storage (ADR-L1)
+        let result = try_extract("Meu nome é Lucas");
+        assert!(result.is_some());
+        let fact = result.unwrap();
+        assert!(
+            fact.content.starts_with("My name is"),
+            "Identity content should be translated to English before storage, got: '{}'",
+            fact.content
+        );
     }
 
     #[test]

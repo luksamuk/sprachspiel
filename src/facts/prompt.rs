@@ -17,6 +17,7 @@
 //! - `(N days ago)` — last_accessed > 30 days (not recently used)
 //! - `(unused)` — access_count == 0 and age > 7 days (never retrieved)
 
+use super::lang;
 use super::types::{Category, Fact, MAX_TOTAL_FACTS_CHARS};
 use crate::utils::truncate_chars;
 use chrono::Utc;
@@ -61,48 +62,7 @@ const UNUSED_AGE_THRESHOLD: i64 = 7;
 pub fn normalize_to_third_person(content: &str) -> String {
     let lower = content.to_lowercase();
 
-    // Order matters: longer patterns first to avoid partial matching
-    // e.g., "i don't like" must match before "i like"
-    let replacements: &[(&str, &str)] = &[
-        // English contractions and negations (longest first)
-        ("i don't want ", "User doesn't want "),
-        ("i dont want ", "User doesn't want "),
-        ("i don't like ", "User doesn't like "),
-        ("i dont like ", "User doesn't like "),
-        ("i can't stand ", "User can't stand "),
-        // English preferences
-        ("i prefer ", "User prefers "),
-        ("i like ", "User likes "),
-        ("i hate ", "User hates "),
-        ("i love ", "User loves "),
-        ("i want ", "User wants "),
-        ("i dislike ", "User dislikes "),
-        ("i usually prefer ", "User usually prefers "),
-        ("i usually like ", "User usually likes "),
-        ("i usually hate ", "User usually hates "),
-        ("i usually love ", "User usually loves "),
-        ("i find it ", "User finds it "),
-        // Identity patterns
-        ("my name is ", "User's name is "),
-        ("my ", "User's "), // "My language" → "User's language" etc.
-        ("i'm ", "User is "),
-        ("i am ", "User is "),
-        ("i live in ", "User lives in "),
-        ("i work at ", "User works at "),
-        ("i work for ", "User works for "),
-        ("i'm from ", "User is from "),
-        ("i speak ", "User speaks "),
-        ("call me ", "User's name is "),
-        // Portuguese
-        ("eu prefiro ", "User prefere "),
-        ("eu gosto de ", "User gosta de "),
-        ("eu odeio ", "User odeia "),
-        ("eu quero ", "User quer "),
-        ("eu não quero ", "User não quer "),
-        ("prefiro ", "Prefere "),
-    ];
-
-    for (from, to) in replacements {
+    for (from, to) in lang::normalize_replacements() {
         if lower.starts_with(from) {
             // Preserve original casing for the rest of the sentence
             let rest = &content[from.len()..];
@@ -389,14 +349,40 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_portuguese() {
+    fn test_normalize_portuguese_preference() {
+        // PT preferences now normalize to English
         assert_eq!(
             normalize_to_third_person("eu prefiro respostas curtas"),
-            "User prefere respostas curtas"
+            "User prefers respostas curtas"
         );
         assert_eq!(
             normalize_to_third_person("Eu gosto de café"),
-            "User gosta de café"
+            "User likes café"
+        );
+    }
+
+    #[test]
+    fn test_normalize_portuguese_identity() {
+        // PT identity patterns normalize to English third-person
+        assert_eq!(
+            normalize_to_third_person("Meu nome é Lucas"),
+            "User's name is Lucas"
+        );
+        assert_eq!(
+            normalize_to_third_person("Eu moro em São Paulo"),
+            "User lives in São Paulo"
+        );
+    }
+
+    #[test]
+    fn test_normalize_portuguese_negation() {
+        assert_eq!(
+            normalize_to_third_person("Eu não gosto de código ruins"),
+            "User doesn't like código ruins"
+        );
+        assert_eq!(
+            normalize_to_third_person("Eu não quero repetir"),
+            "User doesn't want repetir"
         );
     }
 
