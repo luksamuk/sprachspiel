@@ -707,7 +707,7 @@ Verify consolidated command routing works after the refactoring.
 
 Verify that preference and identity facts are auto-extracted from user messages and stored.
 
-### 20.1 Auto-Extraction Happy Path
+### 20.1 Auto-Extraction Happy Path (English)
 
 - [ ] Start chat: `ask-ai chat`
 - [ ] Send: "I prefer dark mode" → response includes `[Auto-extracted: N fact(s)]` notification (gray text)
@@ -746,10 +746,36 @@ Verify that preference and identity facts are auto-extracted from user messages 
 - [ ] Start chat, send preference → NO extraction, NO notification
 - [ ] Restore config
 
-### 20.8 Third-Person Normalization
+### 20.8 Third-Person Normalization (English)
 
 - [ ] Send: "My name is Lucas" → extraction notification
 - [ ] New session: ask "What are my preferences/identity?" → model references third-person ("User prefers..." or "User's name is...")
+
+### 20.9 Portuguese Preference Extraction (ADR-L1: PT→EN Storage)
+
+- [ ] Send: "Eu prefiro respostas curtas" → extraction notification
+- [ ] `/fact list` → stored as **"User prefers respostas curtas"** (English)
+- [ ] Send: "Adoro Rust" → extraction notification
+- [ ] `/fact list` → stored as **"User loves Rust"** (English, not "User adora")
+- [ ] Send: "Não gosto de bugs" → extraction notification
+- [ ] `/fact list` → stored as **"User doesn't like bugs"** (English)
+- [ ] Verify: NO Portuguese in prompt rendering (no "User prefere", "User gosta", etc.)
+
+### 20.10 Portuguese Identity Extraction
+
+- [ ] Send: "Meu nome é Ana" → extraction notification
+- [ ] `/fact list` → stored as **"My name is Ana"** (English)
+- [ ] Send: "Eu moro em Brasília" → extraction notification
+- [ ] `/fact list` → stored as **"I live in Brasília"** (English)
+- [ ] Send: "Eu trabalho no Google" → extraction notification
+- [ ] `/fact list` → stored as **"I work at Google"** (English)
+
+### 20.11 Portuguese Exclusions (Commands & Fillers)
+
+- [ ] Send: "Mostre os logs" → NO extraction (PT command)
+- [ ] Send: "Busca o arquivo" → NO extraction (PT command)
+- [ ] Send: "Beleza" → NO extraction (PT filler)
+- [ ] Send: "Valeu" → NO extraction (PT filler)
 
 ---
 
@@ -826,5 +852,5 @@ The script above runs automated tests. The following tests must be run manually:
 14. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)
 15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
-17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization)
+17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation)
 These tests require chat interaction and visual verification of results.
