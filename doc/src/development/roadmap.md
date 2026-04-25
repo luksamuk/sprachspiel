@@ -627,10 +627,11 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 | ID | Feature | Status | Effort |
 |----|---------|--------|--------|
 | P6.0 | Multi-Provider Support (OpenAI-Compatible) | 📋 Planned | 4-7 weeks |
-| P6.1 | Auto Fact Extraction (autoDream-lite) | 📋 Planned | 3-5 days |
+| P6.1 | Auto Fact Extraction (autoDream-lite) | 🔄 In Progress | 3-5 days |
 | P6.2 | Context Pinning | 🟡 Research | 2-4 days |
 | P6.3 | Dynamic Context Limits | 🟡 Research | 1-2 days |
 | P6.4 | Secret Scanning (Content) | 📋 Planned | 1-2 days |
+| P6.5 | Config Upgrade Command | 📋 Planned | 5 days |
 
 **Also in P4 (Code Quality extras) [M1]:**
 

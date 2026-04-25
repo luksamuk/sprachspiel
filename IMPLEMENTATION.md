@@ -2634,6 +2634,47 @@ vision = true
 
 **Related:** Issue #76
 
+### P6.5: Config Upgrade Command
+
+**Status:** 📋 PLANNED  
+**Depends on:** None  
+**Estimated effort:** 5 days
+
+**Goal:** Add a `ask-ai config upgrade` subcommand that merges missing default fields into the user's existing `config.toml`, adding doc comments only for new fields. Users don't have to manually track which config fields are new after each update.
+
+**Problem:**
+- Every release adds new config fields (`[feedback]` in v0.40, `[facts]` in v0.42)
+- `serde(default)` silently fills missing fields — no user-visible indication
+- Users must read CHANGELOG to discover new fields and add them manually
+- `--init-config` creates a full config, but doesn't merge with existing
+
+**Solution:** Two-pass approach using `toml_edit` (comment preservation) + `toml` (value parsing):
+
+```
+ask-ai config upgrade [--dry-run] [--backup]
+```
+
+1. Read user's `config.toml` with `toml_edit::DocumentMut` (preserves comments and formatting)
+2. Parse with `toml::from_str::<Settings>()` to detect which fields are present
+3. Compare against `Settings::default()` to find missing fields
+4. Insert missing fields with doc comments using `toml_edit`
+5. Write back, preserving all existing content
+
+**Design Decisions:**
+- Insert-only: never modify existing fields or comments
+- Cannot distinguish "explicitly set to default" from "missing" — acceptable limitation
+- Comments come from a static const map keyed by field path
+- Backup file created before upgrade (`config.toml.bak`)
+- `--dry-run` flag shows what would be added without modifying
+
+**New Files:**
+- `src/commands/config_upgrade.rs` — `ConfigUpgrader` struct with upgrade algorithm
+
+**New Dependency:**
+- `toml_edit = "0.25"` — parse/write TOML with comment preservation
+
+**Related:** Issue #105
+
 ---
 
 ### 🔵 PRIORITY 4: Code Quality — Memory Staleness Warnings [M1]
