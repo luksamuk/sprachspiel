@@ -6,6 +6,10 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **Bug ADR-E4: PT identity facts stored in first person** — `translate_pt_to_en()` generated first-person English for PT identity patterns (e.g., "Meu nome é Ana" → "My name is Ana" instead of "User's name is Ana"). This violated ADR-E4 (all facts stored in third person). Fixed by changing PT identity outputs in `translate_pt_to_en()` to third person: "Meu nome é Ana" → "User's name is Ana", "Eu moro em São Paulo" → "User lives in São Paulo", etc. Now consistent with EN identity normalization ("My name is Ana" → "User's name is Ana").
+
+- **Bug S42.4/S43.1 (smoke test #3): Layer 2.5 triple-based contradiction detection** — "User prefers dark mode" and "User prefers light mode" coexisted because: (1) Layer 2 `find_normalized_fact()` didn't match them ("prefer dark mode" ≠ "prefer light mode"), so they passed through; (2) FTS5 BM25 tokenize "prefers" ≠ "prefer" (no lemmatization), so low scores; (3) Layer 3.5 cosine = 0.77 < 0.90 threshold (antonym embeddings are quasi-identical). Fixed by adding Layer 2.5: when Layer 2 finds normalized matches but the extracted `FactTriple` shares the same `(subject, predicate)` with a different `object`, it's a contradiction → delete the old fact, insert the new one (→ Updated action). Catches "User prefers dark mode" → "User prefers light mode", "User lives in São Paulo" → "User lives in Recife", "User's name is Lucas" → "User's name is João", and adverb+verb combos like "User really likes vim" → "User really likes emacs". Zero ML, sub-millisecond, covers ~80% of preference/identity contradictions.
+
 - **Bug #1 (smoke test #2): Adverb modifier normalization** — Added regex-based adverb+verb expansion in `normalize_to_storage_format()`. Previously, patterns like "I really like X", "I always prefer X", "I never want X" were not normalized because `normalize_replacements()` only covered the fixed list `"I usually prefer X"` etc. New `normalize_adverb_verb()` function handles EN adverbs (really, usually, always, never, generally, mostly, definitely, absolutely, personally, often, sometimes, quite, particularly, especially, strongly) with all verbs (prefer, like, love, hate, dislike, want, find, use), plus PT adverbs (sempre, nunca, geralmente, definitivamente, absolutamente, pessoalmente, frequentemente, às vezes, bastante, particularmente, especialmente) with PT verbs (prefiro, adoro, detesto, odeio, quero, gosto de). Also handles negation: "I usually don't like X" → "User usually doesn't like X". Falls through to no-change if pattern doesn't match.
 
 - **Bug #2 (smoke test #2): Layer 2 verb lemmatization** — `normalize_for_comparison()` now lemmatizes third-person verbs to base form after stripping the subject: "prefers dark mode" → "prefer dark mode" (not "prefers dark mode"). This ensures Layer 2 dedup catches "I prefer dark mode" and "User prefers dark mode" as equivalent. Added `VERB_LEMMAS` constant and `lemmatize_verb()` function with both explicit verb lemma map (prefers→prefer, likes→like, etc.) and generic trailing-'s' stripping (works→work, speaks→speak) while avoiding over-stripping (class→clas is prevented by 'ss' guard).
@@ -34,9 +38,15 @@ All notable changes to Ask-AI will be documented in this file.
 
 - Layer 3.5 semantic dedup in `src/facts/extract.rs` and `src/tools/fact_tools.rs` — Embedding-based similarity check for preference facts when FTS5 doesn't find conflicts. Catches "prefer dark mode" vs "prefer light mode" contradictions that keyword search misses.
 
+- Layer 2.5 triple-based contradiction detection in `src/facts/conflict.rs` — `FactTriple` struct and `extract_fact_triple()` function for detecting preference overrides and identity changes. When two facts share the same `(subject, predicate)` but differ in `object`, the newer fact replaces the older one. Integrated into `extract.rs` and `command_handlers.rs` Layer 2 before the Skipped return. Covers ~80% of contradictions. Zero ML, sub-millisecond.
+
+- `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` constants in `src/facts/lang.rs` — Source-of-truth triple extraction patterns for `extract_fact_triple()`. Preference patterns cover single verbs (prefers, likes, etc.), adverb+verb combos (usually prefers, really likes, etc.), and negation (doesn't like, etc.). Identity patterns cover name, location, work, language, and role. Includes legacy first-person entries for pre-ADR-E4-fix database data.
+
 - SMOKE_TEST.md sections 21.14 and 21.15 — Test procedures for `/fact add` CLI dedup parity and `/tools` toggle for Layer 3.5 testing.
 
 ### Changed
+
+- **ADR-E4 revised (again)** — PT identity facts now correctly stored in third person. "Meu nome é Ana" → "User's name is Ana" (was "My name is Ana"). "Eu moro em São Paulo" → "User lives in São Paulo" (was "I live in São Paulo"). All PT identity patterns in `translate_pt_to_en()` now output `User *` instead of `I *`/`My *`. Previously, these early-returned from Stage 1 before Stage 2 (`normalize_replacements()`) could apply the EN first→third person conversion.
 
 - **ADR-E4 revised** — Third-person normalization is now applied at storage time (via `normalize_to_storage_format()`), not just at render time. Render-time normalization in `prompt.rs` remains as defense-in-depth.
 

@@ -386,7 +386,36 @@ async fn insert_fact_with_dedup(
     let normalized_query = lang::normalize_for_comparison(&candidate.content);
     match db.find_normalized_fact(&normalized_query) {
         Ok(matches) if !matches.is_empty() => {
-            // Found a normalized match — check for global-wins-project rule
+            // ── Layer 2.5: Triple-based contradiction detection ──────────
+            // Before treating matches as duplicates, check if any is a
+            // contradiction (same predicate, different object). If so,
+            // delete the old fact and insert the new one (→ Updated).
+            if let Some(candidate_triple) = super::conflict::extract_fact_triple(&candidate.content)
+            {
+                for existing in &matches {
+                    if let Some(existing_triple) =
+                        super::conflict::extract_fact_triple(&existing.content)
+                        && candidate_triple.contradicts(&existing_triple)
+                    {
+                        log::debug!(
+                            "Auto-extract: Layer 2.5 contradiction: '{}' contradicts '{}'",
+                            candidate.content,
+                            existing.content
+                        );
+                        if let Err(e) = db.delete_fact(existing.id) {
+                            log::debug!("Auto-extract: Failed to delete contradicted fact: {}", e);
+                            continue;
+                        }
+                        return match insert_new_fact(db, candidate, project_id) {
+                            InsertAction::Inserted => InsertAction::Updated,
+                            other => other,
+                        };
+                    }
+                }
+            }
+            // ── End Layer 2.5 ──
+
+            // No contradiction found — check for global-wins-project rule
             if candidate.scope == Scope::Global {
                 // Remove Project-scope duplicates, keep Global
                 let mut global_match: Option<&Fact> = None;
@@ -892,13 +921,13 @@ mod tests {
 
     #[test]
     fn test_extracted_portuguese_identity_translated() {
-        // PT identity should be translated to English before storage (ADR-L1)
+        // PT identity should be translated to third-person English before storage (ADR-E4)
         let result = try_extract("Meu nome é Lucas");
         assert!(result.is_some());
         let fact = result.unwrap();
         assert!(
-            fact.content.starts_with("My name is"),
-            "Identity content should be translated to English before storage, got: '{}'",
+            fact.content.starts_with("User's name is"),
+            "Identity content should be translated to third-person English, got: '{}'",
             fact.content
         );
     }

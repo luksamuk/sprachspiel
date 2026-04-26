@@ -2659,12 +2659,13 @@ Key files:
 - `src/chat/command_handlers.rs` — `/fact add` CLI with full 5-layer dedup, normalization, and embedding generation (async)
 - `src/embeddings/client.rs` — Semaphore(1) for serialized embedding requests, 30s timeout
 
-**Architecture: Five-layer dedup pipeline:**
+**Architecture: Five-layer dedup pipeline + Layer 2.5:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
 2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects and lemmatizes verbs (3rd person → base form), catches "I prefer X" ≈ "User prefers X" ≈ "prefers X" → all normalize to "prefer X"
-3. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75 (lowered from 0.85)
-4. **Layer 3.5 (NEW): Semantic embedding** — cosine similarity ≥ 0.90 for preference facts, catches "prefer dark mode" ≈ "prefer light mode" via embeddings
-5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) cosine comparison on startup
+3. **Layer 2.5 (NEW): Triple-based contradiction** — `extract_fact_triple()` extracts (subject, predicate, object) from facts in storage format. When two facts share (subject, predicate) but differ in object → contradiction → delete old, insert new. Catches "prefer dark mode" → "prefer light mode" that embeddings miss (cosine ~0.77 < 0.90 threshold). Zero ML, sub-millisecond. Pattern constants in `lang.rs`.
+4. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75 (lowered from 0.85)
+5. **Layer 3.5: Semantic embedding** — cosine similarity ≥ 0.90 for preference facts, catches "prefer dark mode" ≈ "prefer light mode" via embeddings
+6. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) cosine comparison on startup
 
 **Bug fixes (from smoke test #1):**
 - Bug #1: Dedup broken — Fixed with three-layer pipeline, exact match, normalized match, threshold 0.75
@@ -2682,6 +2683,11 @@ Key files:
 - Bug #2: Layer 2 verb lemmatization — `normalize_for_comparison()` now lemmatizes third-person verbs after stripping the subject: "prefers dark mode" → "prefer dark mode" matches "prefer dark mode". Added `VERB_LEMMAS` constant and `lemmatize_verb()` function with explicit lemma map + generic trailing-'s' rule with 'ss' guard.
 - Bug #3: `/fact add` CLI dedup parity — `handle_fact_add()` in `command_handlers.rs` now calls `normalize_to_storage_format()` (ADR-E4), performs Layer 1 (exact match) and Layer 2 (normalized match) dedup before FTS5, performs Layer 3.5 semantic contradiction detection when embedding client is available, and eagerly generates embeddings after insertion. Changed from synchronous `fn` to `async fn`. Previously, `/fact add` stored raw user input without normalization, used only FTS5 dedup, and never generated embeddings (`has_embedding=0` until startup recovery).
 - Bug #4: Layer 3.5 testability documentation — Added SMOKE_TEST.md sections 21.14 (`/fact add` dedup parity test) and 21.15 (`/tools` toggle for auto-extraction-based Layer 3.5 testing). The `/tools` command disables LLM tool calls, forcing contradiction detection through the auto-extraction path, making Layer 3.5 independently testable.
+
+**Bug fixes (from smoke test #3):**
+- Bug S42.4/S43.1: "prefer dark mode" + "prefer light mode" coexist — Layer 2.5 triple-based contradiction detection added. `FactTriple` struct and `extract_fact_triple()` in `conflict.rs` extract (subject, predicate, object) triples from storage-format facts. When Layer 2 finds normalized matches with same predicate but different objects, the new fact replaces the old one. Pattern constants `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` in `lang.rs` serve as source of truth. Covers preference overrides, identity changes, and adverb+verb combos. Zero ML, sub-millisecond.
+- Bug ADR-E4 (PT identity): PT identity facts stored in first person — `translate_pt_to_en()` generated "My name is Ana" and "I live in São Paulo" instead of "User's name is Ana" and "User lives in São Paulo". Fixed by changing PT identity outputs in `translate_pt_to_en()` to third-person English. Now consistent with EN identity normalization.
+- `normalize_for_comparison()` identity prefix "i am a " added — "I am a developer" now correctly strips full prefix including article, consistent with "User is a developer".
 
 **ADR References:**
 - ADR-L1: All fact content stored in English (PT→EN via `lang::translate_pt_to_en()`)

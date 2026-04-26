@@ -446,6 +446,120 @@ const VERB_LEMMAS: &[(&str, &str)] = &[
     ("never wants", "never want"),
 ];
 
+// === Triple Extraction Patterns (Layer 2.5 Contradiction Detection) ===
+
+/// Triple extraction prefixes for preference facts (storage format = third-person).
+///
+/// Each tuple is `(storage_prefix, predicate_label)` where:
+/// - `storage_prefix` is the prefix that facts are stored with after normalization
+///   (e.g., `"User prefers "`)
+/// - `predicate_label` is the canonical predicate for triple comparison
+///   (e.g., `"prefers"`)
+///
+/// When two facts share the same `(subject, predicate)` but have different objects,
+/// the newer fact overrides the older one (Layer 2.5 contradiction detection).
+///
+/// Order matters: longer prefixes first to avoid partial matches
+/// (e.g., `"user usually prefers "` must match before `"user prefers "`).
+///
+/// Used by `conflict::extract_fact_triple()` — no string duplication.
+pub const TRIPLE_PREFERENCE_PREFIXES: &[(&str, &str)] = &[
+    // ── Adverb + verb combos (longest first) ──────────────────────
+    ("user usually doesn't like ", "usually doesn't like"),
+    ("user usually doesn't want ", "usually doesn't want"),
+    ("user usually prefers ", "usually prefers"),
+    ("user usually likes ", "usually likes"),
+    ("user usually hates ", "usually hates"),
+    ("user usually loves ", "usually loves"),
+    ("user always prefers ", "always prefers"),
+    ("user always likes ", "always likes"),
+    ("user always hates ", "always hates"),
+    ("user always loves ", "always loves"),
+    ("user never prefers ", "never prefers"),
+    ("user never likes ", "never likes"),
+    ("user never hates ", "never hates"),
+    ("user never wants ", "never wants"),
+    ("user really prefers ", "really prefers"),
+    ("user really likes ", "really likes"),
+    ("user really loves ", "really loves"),
+    ("user really hates ", "really hates"),
+    ("user really dislikes ", "really dislikes"),
+    ("user really wants ", "really wants"),
+    ("user really finds ", "really finds"),
+    ("user really uses ", "really uses"),
+    ("user strongly prefers ", "strongly prefers"),
+    ("user definitely prefers ", "definitely prefers"),
+    ("user definitely likes ", "definitely likes"),
+    ("user definitely hates ", "definitely hates"),
+    ("user definitely loves ", "definitely loves"),
+    ("user absolutely loves ", "absolutely loves"),
+    ("user absolutely hates ", "absolutely hates"),
+    ("user personally prefers ", "personally prefers"),
+    ("user personally likes ", "personally likes"),
+    ("user personally dislikes ", "personally dislikes"),
+    ("user often prefers ", "often prefers"),
+    ("user often likes ", "often likes"),
+    ("user often finds ", "often finds"),
+    ("user sometimes prefers ", "sometimes prefers"),
+    ("user sometimes likes ", "sometimes likes"),
+    ("user sometimes uses ", "sometimes uses"),
+    ("user generally prefers ", "generally prefers"),
+    ("user generally likes ", "generally likes"),
+    ("user quite likes ", "quite likes"),
+    ("user particularly prefers ", "particularly prefers"),
+    ("user especially prefers ", "especially prefers"),
+    // ── Negation patterns ─────────────────────────────────────────
+    ("user doesn't like ", "doesn't like"),
+    ("user doesn't want ", "doesn't want"),
+    // Legacy edge case: bare PT negation outputs (pre-ADR-E4-fix data)
+    ("doesn't like ", "doesn't like"),
+    ("doesn't want ", "doesn't want"),
+    // ── Single verbs (shortest — must come last) ─────────────────
+    ("user prefers ", "prefers"),
+    ("user likes ", "likes"),
+    ("user loves ", "loves"),
+    ("user hates ", "hates"),
+    ("user dislikes ", "dislikes"),
+    ("user wants ", "wants"),
+    ("user finds it ", "finds it"),
+    ("user can't stand ", "can't stand"),
+];
+
+/// Triple extraction prefixes for identity facts (storage format = third-person).
+///
+/// Same format as `TRIPLE_PREFERENCE_PREFIXES`.
+/// After the ADR-E4 fix, all identity facts start with `"User"` (never `"My"` or `"I"`).
+/// Legacy entries cover pre-fix data that may still exist in the database.
+///
+/// Used by `conflict::extract_fact_triple()` — no string duplication.
+pub const TRIPLE_IDENTITY_PREFIXES: &[(&str, &str)] = &[
+    // ── Identity (longest first) ──────────────────────────────────
+    ("user's name is ", "name is"),
+    ("user's language is ", "language is"),
+    ("user is from ", "is from"),
+    ("user lives in ", "lives in"),
+    ("user works at ", "works at"),
+    ("user works for ", "works for"),
+    ("user works in ", "works in"),
+    ("user speaks ", "speaks"),
+    ("user is a ", "is a"),
+    ("user is ", "is"),
+    ("user's ", "has"),
+    // ── Legacy first-person identity (pre-ADR-E4-fix data) ────────
+    // These may exist in databases from before the fix. Predicates map
+    // to the same canonical label so triples are comparable across formats.
+    ("my name is ", "name is"),
+    ("my language is ", "language is"),
+    ("i live in ", "lives in"),
+    ("i work at ", "works at"),
+    ("i work for ", "works for"),
+    ("i work in ", "works in"),
+    ("i'm from ", "is from"),
+    ("i speak ", "speaks"),
+    ("i am a ", "is a"),
+    ("i am ", "is"),
+];
+
 /// Normalize fact content for deduplication comparison.
 ///
 /// Strips subject pronouns, lemmatizes verbs, and produces a canonical
@@ -486,8 +600,8 @@ const VERB_LEMMAS: &[(&str, &str)] = &[
 /// assert_eq!(normalize_for_comparison("Eu prefiro dark mode"), "prefiro dark mode");
 ///
 /// // Identity: full prefix strip (name, location, etc.)
-/// assert_eq!(normalize_for_comparison("I am a developer"), "a developer");
-/// assert_eq!(normalize_for_comparison("User is a developer"), "a developer");
+/// assert_eq!(normalize_for_comparison("I am a developer"), "developer");
+/// assert_eq!(normalize_for_comparison("User is a developer"), "developer");
 /// assert_eq!(normalize_for_comparison("My name is Lucas"), "lucas");
 ///
 /// // No prefix: lowercase trimmed
@@ -518,6 +632,7 @@ pub fn normalize_for_comparison(content: &str) -> String {
         "i'm from ",
         "i'm a ",
         "i'm ",
+        "i am a ",
         "i am ",
         "i live in ",
         "i work at ",
@@ -803,7 +918,7 @@ pub fn command_starters() -> Vec<&'static str> {
 ///
 /// // PT→EN (third-person output)
 /// assert_eq!(translate_pt_to_en("Eu prefiro respostas curtas"), "User prefers respostas curtas");
-/// assert_eq!(translate_pt_to_en("Meu nome é Ana"), "My name is Ana");
+/// assert_eq!(translate_pt_to_en("Meu nome é Ana"), "User's name is Ana");
 ///
 /// // EN first-person → third-person (new behavior)
 /// assert_eq!(translate_pt_to_en("I prefer dark mode"), "User prefers dark mode");
@@ -856,31 +971,31 @@ pub fn translate_pt_to_en(content: &str) -> String {
         // Second/third-person identity that the LLM might generate
         ("o nome do usuário é ", "User's name is "),
         ("o nome do usuario e ", "User's name is "),
-        // First-person identity with "eu"
-        ("meu nome é ", "My name is "),
-        ("meu nome e ", "My name is "),
-        ("eu me chamo ", "My name is "),
-        ("eu trabalho em ", "I work in "),
-        ("eu trabalho no ", "I work at "),
-        ("eu trabalho na ", "I work at "),
-        ("eu trabalho para ", "I work for "),
-        ("eu moro em ", "I live in "),
-        ("moro em ", "I live in "),
-        ("eu sou de ", "I'm from "),
-        ("sou de ", "I'm from "),
-        ("eu falo ", "I speak "),
-        ("falo ", "I speak "),
-        ("minha língua é ", "My language is "),
-        ("minha lingua e ", "My language is "),
-        ("meu idioma é ", "My language is "),
-        ("meu idioma e ", "My language is "),
-        // "eu sou um/uma" → "I am a"
-        ("eu sou um ", "I am a "),
-        ("eu sou uma ", "I am a "),
-        ("eu sou ", "I am "),
-        ("sou um ", "I am a "),
-        ("sou uma ", "I am a "),
-        ("sou ", "I am "),
+        // First-person identity with "eu" → third-person (ADR-E4)
+        ("meu nome é ", "User's name is "),
+        ("meu nome e ", "User's name is "),
+        ("eu me chamo ", "User's name is "),
+        ("eu trabalho em ", "User works in "),
+        ("eu trabalho no ", "User works at "),
+        ("eu trabalho na ", "User works at "),
+        ("eu trabalho para ", "User works for "),
+        ("eu moro em ", "User lives in "),
+        ("moro em ", "User lives in "),
+        ("eu sou de ", "User is from "),
+        ("sou de ", "User is from "),
+        ("eu falo ", "User speaks "),
+        ("falo ", "User speaks "),
+        ("minha língua é ", "User's language is "),
+        ("minha lingua e ", "User's language is "),
+        ("meu idioma é ", "User's language is "),
+        ("meu idioma e ", "User's language is "),
+        // "eu sou um/uma" → "User is a"
+        ("eu sou um ", "User is a "),
+        ("eu sou uma ", "User is a "),
+        ("eu sou ", "User is "),
+        ("sou um ", "User is a "),
+        ("sou uma ", "User is a "),
+        ("sou ", "User is "),
     ];
 
     for (pt_prefix, en_prefix) in translations {
@@ -963,7 +1078,7 @@ pub fn translate_pt_to_en(content: &str) -> String {
 ///
 /// // PT → EN third person
 /// assert_eq!(normalize_to_storage_format("Eu prefiro respostas curtas"), "User prefers respostas curtas");
-/// assert_eq!(normalize_to_storage_format("Meu nome é Ana"), "My name is Ana");
+/// assert_eq!(normalize_to_storage_format("Meu nome é Ana"), "User's name is Ana");
 ///
 /// // Already third person or factual — no change
 /// assert_eq!(normalize_to_storage_format("The project uses Rust"), "The project uses Rust");
@@ -1109,48 +1224,61 @@ mod tests {
 
     #[test]
     fn test_translate_pt_identity_nome() {
-        assert_eq!(translate_pt_to_en("Meu nome é Lucas"), "My name is Lucas");
+        // ADR-E4: PT identity → third-person English (not "My name is")
+        assert_eq!(
+            translate_pt_to_en("Meu nome é Lucas"),
+            "User's name is Lucas"
+        );
     }
 
     #[test]
     fn test_translate_pt_identity_chamo() {
-        assert_eq!(translate_pt_to_en("Eu me chamo Ana"), "My name is Ana");
+        // ADR-E4: PT identity → third-person English
+        assert_eq!(translate_pt_to_en("Eu me chamo Ana"), "User's name is Ana");
     }
 
     #[test]
     fn test_translate_pt_identity_trabalho() {
+        // ADR-E4: PT identity → third-person English
         assert_eq!(
             translate_pt_to_en("Eu trabalho no Google"),
-            "I work at Google"
+            "User works at Google"
         );
     }
 
     #[test]
     fn test_translate_pt_identity_moro() {
+        // ADR-E4: PT identity → third-person English
         assert_eq!(
             translate_pt_to_en("Eu moro em São Paulo"),
-            "I live in São Paulo"
+            "User lives in São Paulo"
         );
     }
 
     #[test]
     fn test_translate_pt_identity_sou() {
+        // ADR-E4: PT identity → third-person English
         assert_eq!(
             translate_pt_to_en("Eu sou desenvolvedor"),
-            "I am desenvolvedor"
+            "User is desenvolvedor"
         );
     }
 
     #[test]
     fn test_translate_pt_identity_falo() {
-        assert_eq!(translate_pt_to_en("Eu falo português"), "I speak português");
+        // ADR-E4: PT identity → third-person English
+        assert_eq!(
+            translate_pt_to_en("Eu falo português"),
+            "User speaks português"
+        );
     }
 
     #[test]
     fn test_translate_pt_identity_lingua() {
+        // ADR-E4: PT identity → third-person English
         assert_eq!(
             translate_pt_to_en("Minha língua é inglês"),
-            "My language is inglês"
+            "User's language is inglês"
         );
     }
 
@@ -1200,11 +1328,12 @@ mod tests {
 
     #[test]
     fn test_translate_pt_without_eu() {
+        // ADR-E4: PT short-form identity → third-person English
         assert_eq!(
             translate_pt_to_en("Moro em São Paulo"),
-            "I live in São Paulo"
+            "User lives in São Paulo"
         );
-        assert_eq!(translate_pt_to_en("Sou de Recife"), "I'm from Recife");
+        assert_eq!(translate_pt_to_en("Sou de Recife"), "User is from Recife");
     }
 
     // ── Filler and Command Words ───────────────────────────────────
@@ -1260,7 +1389,7 @@ mod tests {
     fn test_normalize_comparison_identity() {
         // Identity/copula forms strip the full prefix (subject + copula verb)
         // because the key content follows: "I am a developer" → "developer"
-        assert_eq!(normalize_for_comparison("I am a developer"), "a developer");
+        assert_eq!(normalize_for_comparison("I am a developer"), "developer");
         // "User is a developer" → "developer" (identity prefix strip)
         assert_eq!(normalize_for_comparison("User is a developer"), "developer");
         // "My name is Lucas" → "Lucas"
@@ -1431,14 +1560,14 @@ mod tests {
 
     #[test]
     fn test_storage_format_pt_to_third_person() {
-        // PT → EN third-person
+        // PT → EN third-person (ADR-E4: all identity facts in third person)
         assert_eq!(
             normalize_to_storage_format("Eu prefiro respostas curtas"),
             "User prefers respostas curtas"
         );
         assert_eq!(
             normalize_to_storage_format("Meu nome é Ana"),
-            "My name is Ana"
+            "User's name is Ana"
         );
     }
 

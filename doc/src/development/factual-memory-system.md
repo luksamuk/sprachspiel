@@ -88,7 +88,7 @@ graph TB
 | Storage | **Same DB (`embeddings.db`)** | No separate database |
 | Per-fact limit | **500 chars (hard limit)** | Rejected at DB insert |
 | Total prompt limit | **2200 chars (soft limit)** | Truncated with Unicode-safe `truncate_chars` |
-| Conflict resolution | **5-layer dedup** | Exact → Normalized → FTS5 (0.75) → Semantic (0.90) → Global-wins-project |
+| Conflict resolution | **5-layer dedup + Layer 2.5** | Exact → Normalized → Triple contradiction → FTS5 (0.75) → Semantic (0.90) → Global-wins-project |
 | Decay | **Startup synchronous** | Background optional later |
 | Embeddings | **Eager with Semaphore(1)** | Serialized embedding generation with 30s timeout |
 | Language | **All content stored in English** | PT→EN prefix translation via `lang::translate_pt_to_en()` (ADR-L1) |
@@ -378,9 +378,18 @@ Facts are deduplicated through a 5-layer pipeline that catches duplicates and co
 
 Case-insensitive, trimmed comparison via `find_exact_fact()`. Catches identical facts regardless of capitalization or whitespace.
 
-### 6.2 Layer 2: Normalized Match
+### 6.2 Layer 2: Normalized Match + Layer 2.5 Triple Contradiction
 
 `normalize_for_comparison()` strips pronouns and subjects, then **lemmatizes verbs** (third-person → base form), then exact match. Catches "I prefer dark mode" ≈ "User prefers dark mode" ≈ "prefers dark mode" → all normalize to "prefer dark mode".
+
+**Layer 2.5** (triple-based contradiction) runs inside Layer 2 when normalized matches are found. Before returning `Skipped` (duplicate), it extracts `FactTriple(subject, predicate, object)` from both the candidate and each existing match. If two triples share the same `(subject, predicate)` but have **different objects**, the newer fact **replaces** the older one (→ `Updated` action).
+
+Example:
+- Existing: "User prefers dark mode" → (user, prefers, dark mode)
+- Candidate: "User prefers light mode" → (user, prefers, light mode)
+- Same predicate (`prefers`), different object → **contradiction** → delete old, insert new
+
+This catches preference overrides and identity changes that embeddings miss (cosine similarity of antonyms is ~0.77, below the 0.90 threshold). Zero ML, sub-millisecond. Covers ~80% of preference/identity contradictions. Uses `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` constants from `lang.rs` as source of truth (no string duplication).
 
 ### 6.3 Layer 3: FTS5 BM25 Keyword Search
 
@@ -432,7 +441,9 @@ The `CONFLICT_THRESHOLD` constant is 0.75 (lowered from the original 0.85) to ca
 
 All facts are normalized to third person ("User prefers X") at storage time via `normalize_to_storage_format()` in `src/facts/lang.rs`. This ensures:
 - EN first-person input: "I prefer dark mode" → "User prefers dark mode"
+- EN first-person identity: "My name is Lucas" → "User's name is Lucas"
 - PT→EN translated input: "Eu prefiro respostas curtas" → "User prefers respostas curtas" (prefix translated, noun preserved — Bug #2 DEFERRED)
+- PT→EN identity: "Meu nome é Ana" → "User's name is Ana" (fixed — was "My name is Ana" before ADR-E4 fix)
 
 The `normalize_to_third_person()` function in `src/facts/prompt.rs` remains as defense-in-depth for any legacy facts that might have been stored before ADR-E4.
 

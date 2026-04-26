@@ -141,14 +141,133 @@ _Copy the section structure above for each test category._
 - [ ] Clean database again: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 - [ ] `/fact add I prefer dark mode` → stored as "User prefers dark mode"
 - [ ] Wait 3 seconds for embedding
-- [ ] `/fact add I prefer light mode` → should **UPDATE** (Layer 3.5 contradiction)
+- [ ] `/fact add I prefer light mode` → should **UPDATE** (Layer 2.5 contradiction — same predicate "prefers", different object "light mode" vs "dark mode")
 - [ ] Verify embedding: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE content LIKE '%light mode%'"` → **has_embedding = 1**
+
+---
+
+## Fact System: Layer 2.5 Contradiction Detection (Bug S42.4/S43.1 smoke test #3)
+
+**Objective:** Verify that preference overrides and identity changes are correctly detected by triple-based contradiction (Layer 2.5), both via `/fact add` CLI and auto-extraction.
+
+### §50 EN Preference Override via `/fact add`
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I prefer dark mode` → **✓ Added**: "User prefers dark mode"
+- [ ] `/fact add I prefer light mode` → **↻ Updated**: "User prefers light mode replaces User prefers dark mode (preference override)"
+- [ ] `/fact list` → shows only "User prefers light mode" (dark mode is gone)
+
+### §51 EN Preference Override via Auto-Extraction
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] Start chat: `ask-ai chat`
+- [ ] `/tools` → **"Tools: disabled"** (force auto-extraction path)
+- [ ] Send: "I prefer dark mode" → auto-extraction stores "User prefers dark mode"
+- [ ] Send: "Actually, I prefer light mode" → auto-extraction detects contradiction, updates to "User prefers light mode"
+- [ ] `/fact list` → shows only "User prefers light mode"
+
+### §52 EN Adverb+Verb Contradiction via `/fact add`
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I really like vim` → **✓ Added**: "User really likes vim"
+- [ ] `/fact add I really like emacs` → **↻ Updated**: "User really likes emacs" replaces "User really likes vim" (same predicate "really likes", different object)
+- [ ] `/fact list` → shows only "User really likes emacs"
+
+### §53 EN Identity Change via `/fact add`
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I live in São Paulo` → **✓ Added**: "User lives in São Paulo"
+- [ ] `/fact add I live in Recife` → **↻ Updated**: "User lives in Recife" replaces "User lives in São Paulo" (same predicate "lives in", different city)
+- [ ] `/fact list` → shows only "User lives in Recife"
+
+### §54 EN Identity Name Change via `/fact add`
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add My name is Lucas` → **✓ Added**: "User's name is Lucas"
+- [ ] `/fact add My name is João` → **↻ Updated**: "User's name is João" replaces "User's name is Lucas"
+- [ ] `/fact list` → shows only "User's name is João"
+
+### §55 EN Negation Contradiction via `/fact add`
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I don't like verbose output` → **✓ Added**: "User doesn't like verbose output"
+- [ ] `/fact add I don't like verbose errors` → **↻ Updated**: "User doesn't like verbose errors" replaces "User doesn't like verbose errors" (same predicate "doesn't like", different object)
+- [ ] `/fact list` → shows only "User doesn't like verbose errors"
+
+### §56 EN No False Positive — Different Predicates
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like Python` → **✓ Added**: "User likes Python"
+- [ ] `/fact add I prefer Rust` → **✓ Added**: "User prefers Rust" (NOT a contradiction — different predicates "likes" vs "prefers")
+- [ ] `/fact list` → shows BOTH facts
+
+### §57 PT Preference Override via `/fact add`
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add Eu prefiro modo escuro` → **✓ Added**: "User prefers modo escuro" (PT→EN translation, noun preserved)
+- [ ] `/fact add Eu prefiro modo claro` → **↻ Updated**: "User prefers modo claro" replaces "User prefers modo escuro" (same predicate "prefers", different object)
+- [ ] `/fact list` → shows only "User prefers modo claro"
+
+### §58 PT Identity Change via `/fact add`
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add Meu nome é Lucas` → **✓ Added**: "User's name is Lucas" (ADR-E4: now third person, was "My name is Lucas")
+- [ ] `/fact add Meu nome é João` → **↻ Updated**: "User's name is João" replaces "User's name is Lucas"
+- [ ] `/fact list` → shows only "User's name is João"
+
+### §59 PT Adverb+Verb Contradiction via Auto-Extraction
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] Start chat: `ask-ai chat`
+- [ ] `/tools` → **"Tools: disabled"**
+- [ ] Send: "Eu sempre prefiro vim" → auto-extraction stores "User always prefers vim"
+- [ ] Send: "Na verdade, eu sempre prefiro emacs" → auto-extraction detects contradiction (same predicate "always prefers", different object), updates
+- [ ] `/fact list` → shows only "User always prefers emacs"
+
+### §60 EN Factual Content Not Affected by Layer 2.5
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add The project uses SQLite` → **✓ Added** (no triple extracted — subject ≠ "user")
+- [ ] `/fact add The project uses PostgreSQL` → **✓ Added** (no triple extracted — not a preference/identity fact)
+- [ ] `/fact list` → shows BOTH facts (factual content coexists, not affected by Layer 2.5)
+
+### §61 ADR-E4 PT Identity Normalization via Auto-Extraction
+
+🗄️ Clean database required.
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] Start chat: `ask-ai chat`
+- [ ] Send: "Meu nome é Ana" → auto-extraction stores "User's name is Ana" (NOT "My name is Ana" — ADR-E4 fix)
+- [ ] Send: "Eu moro em São Paulo" → auto-extraction stores "User lives in São Paulo" (NOT "I live in São Paulo")
+- [ ] `/fact list` → shows both facts in third person
 
 ---
 
 ## Fact System: Layer 3.5 via Auto-Extraction with `/tools` Toggle (Bug #4 smoke test #2)
 
-**Objective:** Verify that Layer 3.5 contradiction detection works through auto-extraction when LLM tool calls are disabled.
+**Objective:** Verify that contradiction detection works through auto-extraction when LLM tool calls are disabled. With Layer 2.5, contradictions are caught at Layer 2 (not just Layer 3.5).
 
 🗄️ Clean database required.
 
@@ -159,7 +278,7 @@ _Copy the section structure above for each test category._
 3. `/tools` → should print **"Tools: disabled"**
 4. Send: "I prefer dark mode" → auto-extraction stores via normalization + embedding
 5. Wait 5 seconds for embedding
-6. Send: "Actually, I prefer light mode" → auto-extraction detects contradiction (Layer 3.5) and updates
+6. Send: "Actually, I prefer light mode" → auto-extraction detects contradiction (Layer 2.5 triple match — same predicate "prefers", different object) and updates
 7. `/fact list` → shows ONE preference: "User prefers light mode"
 8. `/tools` → should print **"Tools: enabled"**
 9. Verify auto-extraction worked independently of LLM tool calls

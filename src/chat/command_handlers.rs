@@ -1135,25 +1135,72 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
     let normalized_query = lang::normalize_for_comparison(&content);
     match db.find_normalized_fact(&normalized_query) {
         Ok(matches) if !matches.is_empty() => {
-            // Found a normalized match
-            if scope == Scope::Global {
-                // Global-wins-project: remove Project-scope duplicates
-                let mut global_match: Option<Fact> = None;
-                for fact in &matches {
-                    if fact.scope == Scope::Project {
+            // ── Layer 2.5: Triple-based contradiction detection ──────────
+            // Before treating matches as duplicates, check if any is a
+            // contradiction (same predicate, different object). If so,
+            // delete the old fact and fall through to insert the new one.
+            let mut contradiction_found = false;
+            if let Some(candidate_triple) = crate::facts::conflict::extract_fact_triple(&content) {
+                for existing in &matches {
+                    if let Some(existing_triple) =
+                        crate::facts::conflict::extract_fact_triple(&existing.content)
+                        && candidate_triple.contradicts(&existing_triple)
+                    {
                         log::debug!(
-                            "/fact add: Global fact overrides Project fact (id={}): '{}'",
-                            fact.id,
-                            fact.content
+                            "/fact add: Layer 2.5 contradiction: '{}' contradicts '{}'",
+                            content,
+                            existing.content
                         );
-                        if let Err(e) = db.delete_fact(fact.id) {
-                            log::debug!("/fact add: Failed to delete Project fact: {}", e);
+                        if let Err(e) = db.delete_fact(existing.id) {
+                            log::debug!("/fact add: Failed to delete contradicted fact: {}", e);
+                            continue;
                         }
-                    } else {
-                        global_match = Some(fact.clone());
+                        println!(
+                            "\x1B[36m↻ Updated: '{}' replaces '{}' (preference override)\x1B[0m",
+                            content, existing.content
+                        );
+                        contradiction_found = true;
+                        break;
                     }
                 }
-                if let Some(existing) = global_match {
+            }
+
+            if !contradiction_found {
+                // No contradiction — existing scope/duplicate logic
+                if scope == Scope::Global {
+                    // Global-wins-project: remove Project-scope duplicates
+                    let mut global_match: Option<Fact> = None;
+                    for fact in &matches {
+                        if fact.scope == Scope::Project {
+                            log::debug!(
+                                "/fact add: Global fact overrides Project fact (id={}): '{}'",
+                                fact.id,
+                                fact.content
+                            );
+                            if let Err(e) = db.delete_fact(fact.id) {
+                                log::debug!("/fact add: Failed to delete Project fact: {}", e);
+                            }
+                        } else {
+                            global_match = Some(fact.clone());
+                        }
+                    }
+                    if let Some(existing) = global_match {
+                        println!(
+                            "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
+                            existing.id
+                        );
+                        println!("  Existing: {}", existing.content);
+                        println!("  New: {}", content);
+                        println!(
+                            "\n  Use /fact remove {} first if you want to replace it.",
+                            existing.id
+                        );
+                        return;
+                    }
+                    // All duplicates were Project-scope and removed — fall through to insert
+                } else {
+                    // Project-scope: any existing match = skip
+                    let existing = &matches[0];
                     println!(
                         "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
                         existing.id
@@ -1166,22 +1213,8 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
                     );
                     return;
                 }
-                // All duplicates were Project-scope and removed — fall through to insert
-            } else {
-                // Project-scope: any existing match = skip
-                let existing = &matches[0];
-                println!(
-                    "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
-                    existing.id
-                );
-                println!("  Existing: {}", existing.content);
-                println!("  New: {}", content);
-                println!(
-                    "\n  Use /fact remove {} first if you want to replace it.",
-                    existing.id
-                );
-                return;
             }
+            // If contradiction found, fall through to insert
         }
         Ok(_) => { /* No normalized match, continue */ }
         Err(e) => {
