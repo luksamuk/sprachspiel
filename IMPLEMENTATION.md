@@ -2649,18 +2649,19 @@ vision = true
 
 Key files:
 - `src/facts/extract.rs` — Heuristic extraction, dedup pipeline, validation, Layer 3.5 semantic dedup
-- `src/facts/lang.rs` — Centralized EN/PT patterns, PT→EN translation, `normalize_to_storage_format()` (ADR-E4)
+- `src/facts/lang.rs` — Centralized EN/PT patterns, PT→EN translation, `normalize_to_storage_format()` (ADR-E4), `normalize_for_comparison()` (Lemma strip), `normalize_adverb_verb()` (adverb expansion), `lemmatize_verb()` (3rd person → base form)
 - `src/facts/conflict.rs` — Conflict detection, preference override, lowered threshold
 - `src/facts/db.rs` — FTS5 search, exact match, normalized match, BM25 scoring
 - `src/facts/prompt.rs` — System prompt scope separation (Global/Project), defense-in-depth normalization
 - `src/facts/types.rs` — Global scope forces project_id=None
 - `src/tools/fact_tools.rs` — LLM tool with PT→EN translation, content validation, layered dedup, Layer 3.5
 - `src/chat/repl.rs` — Async `try_auto_extract_facts()` passes embedding_client for Layer 3.5
+- `src/chat/command_handlers.rs` — `/fact add` CLI with full 5-layer dedup, normalization, and embedding generation (async)
 - `src/embeddings/client.rs` — Semaphore(1) for serialized embedding requests, 30s timeout
 
 **Architecture: Five-layer dedup pipeline:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
-2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects, catches "I prefer X" ≈ "User prefers X"
+2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects and lemmatizes verbs (3rd person → base form), catches "I prefer X" ≈ "User prefers X" ≈ "prefers X" → all normalize to "prefer X"
 3. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75 (lowered from 0.85)
 4. **Layer 3.5 (NEW): Semantic embedding** — cosine similarity ≥ 0.90 for preference facts, catches "prefer dark mode" ≈ "prefer light mode" via embeddings
 5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) cosine comparison on startup
@@ -2677,10 +2678,10 @@ Key files:
 - Preference override — "prefer dark mode" vs "prefer light mode" detected as contradiction
 
 **Bug fixes (from smoke test #2):**
-- Bug #1: Third-person normalization at storage time (ADR-E4 revised) — `normalize_to_storage_format()` in `lang.rs` merges PT→EN + EN 1st→3rd person. All facts stored as "User prefers X", never "I prefer X". `normalize_to_third_person()` in `prompt.rs` retained as defense-in-depth for legacy data.
-- Bug #2: PT noun translation incomplete — Documented as DEFERRED (issue #106). Heuristic mode translates prefixes only ("Eu prefiro" → "User prefers"); nouns remain in original language ("respostas curtas"). Full PT→EN noun translation requires LLM-mode (M2).
-- Bug #3: Contradiction detection via semantic embeddings (Layer 3.5) — When FTS5 finds no conflicts and candidate is `Category::Preference`, generates embedding and searches `fact_embeddings` (cosine ≥ 0.90). Contradictions resolved by replacing old fact; duplicates skipped. Applied in both `extract.rs` and `fact_tools.rs`. Gracefully skips if embedding client unavailable.
-- Bug #4: Embedding serialization and timeout — Added `Semaphore(1)` and 30s timeout to `EmbeddingClient::embed()`. Prevents concurrent embedding requests from overwhelming Ollama. Post-recovery verification in `facts/recovery.rs` warns if facts still lack embeddings after startup recovery.
+- Bug #1: Adverb modifier normalization — `normalize_adverb_verb()` in `lang.rs` handles EN patterns like "I really like X" → "User really likes X" and PT patterns like "Eu sempre prefiro X" → "User always prefers X" via regex expansion after static prefix lists fail. Covers 15 EN adverbs × 8 verbs + 13 PT adverbs × 6 verbs + negation ("I usually don't like" → "User usually doesn't like"). Falls through to no-change if pattern doesn't match.
+- Bug #2: Layer 2 verb lemmatization — `normalize_for_comparison()` now lemmatizes third-person verbs after stripping the subject: "prefers dark mode" → "prefer dark mode" matches "prefer dark mode". Added `VERB_LEMMAS` constant and `lemmatize_verb()` function with explicit lemma map + generic trailing-'s' rule with 'ss' guard.
+- Bug #3: `/fact add` CLI dedup parity — `handle_fact_add()` in `command_handlers.rs` now calls `normalize_to_storage_format()` (ADR-E4), performs Layer 1 (exact match) and Layer 2 (normalized match) dedup before FTS5, performs Layer 3.5 semantic contradiction detection when embedding client is available, and eagerly generates embeddings after insertion. Changed from synchronous `fn` to `async fn`. Previously, `/fact add` stored raw user input without normalization, used only FTS5 dedup, and never generated embeddings (`has_embedding=0` until startup recovery).
+- Bug #4: Layer 3.5 testability documentation — Added SMOKE_TEST.md sections 21.14 (`/fact add` dedup parity test) and 21.15 (`/tools` toggle for auto-extraction-based Layer 3.5 testing). The `/tools` command disables LLM tool calls, forcing contradiction detection through the auto-extraction path, making Layer 3.5 independently testable.
 
 **ADR References:**
 - ADR-L1: All fact content stored in English (PT→EN via `lang::translate_pt_to_en()`)

@@ -383,10 +383,7 @@ pub async fn fact_add(
                                  Existing: {}\n\
                                  New: {}\n\n\
                                  Use fact_remove(id=\"{}\") first if you want to replace it.",
-                                result.fact.id,
-                                result.fact.content,
-                                content,
-                                result.fact.id
+                                result.fact.id, result.fact.content, content, result.fact.id
                             );
                             log_tool_result("fact_add", &result_msg);
                             return Ok(result_msg);

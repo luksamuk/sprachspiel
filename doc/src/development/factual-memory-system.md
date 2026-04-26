@@ -380,7 +380,7 @@ Case-insensitive, trimmed comparison via `find_exact_fact()`. Catches identical 
 
 ### 6.2 Layer 2: Normalized Match
 
-`normalize_for_comparison()` strips pronouns and subjects, then exact match. Catches "I prefer dark mode" ≈ "User prefers dark mode".
+`normalize_for_comparison()` strips pronouns and subjects, then **lemmatizes verbs** (third-person → base form), then exact match. Catches "I prefer dark mode" ≈ "User prefers dark mode" ≈ "prefers dark mode" → all normalize to "prefer dark mode".
 
 ### 6.3 Layer 3: FTS5 BM25 Keyword Search
 
@@ -582,8 +582,8 @@ if let Some(facts) = &self.facts {
 ### 9.1 Command Definitions
 
 ```
-/fact add <text>              # Add project fact (auto-classified)
-/fact add --global <text>     # Add global fact
+/fact add <text>              # Add project fact (auto-classified, 5-layer dedup + normalization + embedding)
+/fact add --global <text>     # Add global fact (5-layer dedup + normalization + embedding)
 /fact list                    # List all facts
 /fact list --global           # List global facts only
 /fact remove <id>             # Remove a fact

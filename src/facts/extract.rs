@@ -462,8 +462,7 @@ async fn insert_fact_with_dedup(
         && candidate.category == Category::Preference
         && let Some(client) = embedding_client
     {
-        match super::embedding::generate_fact_embedding(&candidate.content, client).await
-        {
+        match super::embedding::generate_fact_embedding(&candidate.content, client).await {
             Ok(candidate_embedding) => {
                 match db.search_facts_semantic(&candidate_embedding, None, 5) {
                     Ok(semantic_results) => {

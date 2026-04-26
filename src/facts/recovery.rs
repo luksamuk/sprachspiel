@@ -18,9 +18,9 @@
 
 use std::sync::Arc;
 
+use super::embedding::generate_fact_embedding;
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
-use super::embedding::generate_fact_embedding;
 
 /// Recover missing fact embeddings on startup.
 ///
@@ -85,21 +85,14 @@ pub async fn recover_missing_fact_embeddings(
                 recovered += 1;
             }
             Err(e) => {
-                log::warn!(
-                    "Failed to generate embedding for fact {}: {}",
-                    fact_id,
-                    e
-                );
+                log::warn!("Failed to generate embedding for fact {}: {}", fact_id, e);
                 // has_embedding stays 0, will be retried on next startup
             }
         }
     }
 
     if recovered > 0 {
-        log::info!(
-            "Successfully recovered {} fact embedding(s).",
-            recovered
-        );
+        log::info!("Successfully recovered {} fact embedding(s).", recovered);
     }
 
     // Post-recovery verification: check if any facts still lack embeddings

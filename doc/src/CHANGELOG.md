@@ -6,6 +6,14 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Fixed
 
+- **Bug #1 (smoke test #2): Adverb modifier normalization** — Added regex-based adverb+verb expansion in `normalize_to_storage_format()`. Previously, patterns like "I really like X", "I always prefer X", "I never want X" were not normalized because `normalize_replacements()` only covered the fixed list `"I usually prefer X"` etc. New `normalize_adverb_verb()` function handles EN adverbs (really, usually, always, never, generally, mostly, definitely, absolutely, personally, often, sometimes, quite, particularly, especially, strongly) with all verbs (prefer, like, love, hate, dislike, want, find, use), plus PT adverbs (sempre, nunca, geralmente, definitivamente, absolutamente, pessoalmente, frequentemente, às vezes, bastante, particularmente, especialmente) with PT verbs (prefiro, adoro, detesto, odeio, quero, gosto de). Also handles negation: "I usually don't like X" → "User usually doesn't like X". Falls through to no-change if pattern doesn't match.
+
+- **Bug #2 (smoke test #2): Layer 2 verb lemmatization** — `normalize_for_comparison()` now lemmatizes third-person verbs to base form after stripping the subject: "prefers dark mode" → "prefer dark mode" (not "prefers dark mode"). This ensures Layer 2 dedup catches "I prefer dark mode" and "User prefers dark mode" as equivalent. Added `VERB_LEMMAS` constant and `lemmatize_verb()` function with both explicit verb lemma map (prefers→prefer, likes→like, etc.) and generic trailing-'s' stripping (works→work, speaks→speak) while avoiding over-stripping (class→clas is prevented by 'ss' guard).
+
+- **Bug #3 (smoke test #2): `/fact add` CLI parity with LLM tool** — The `/fact add` CLI command was missing 3 features that `fact_add` LLM tool and auto-extraction had: (1) `normalize_to_storage_format()` — raw user input was stored without ADR-E4 third-person normalization, (2) Layer 1+2 dedup — only FTS5 (Layer 3) was used, (3) `generate_fact_embedding()` — facts were stored without embeddings, causing permanent `has_embedding=0` until startup recovery. Now `/fact add` calls `normalize_to_storage_format()`, checks Layer 1 (exact match) and Layer 2 (normalized match) before FTS5, performs Layer 3.5 semantic contradiction detection when embedding client is available, and eagerly generates embeddings after insertion. Function changed from synchronous `fn` to `async fn` to support embedding generation.
+
+- **Bug #4 (smoke test #2): Layer 3.5 testability documentation** — Added SMOKE_TEST.md sections 21.14 and 21.15 documenting how to test Layer 3.5 via auto-extraction using the `/tools` toggle to disable LLM tool calls, forcing contradiction detection to occur through the auto-extraction path rather than proactive `fact_add` calls.
+
 - **Bug #1: Third-person normalization now applied at storage time (ADR-E4 revised)** — All facts are now stored in third person ("User prefers X"), not just rendered in third person. Previously, English first-person facts like "I prefer dark mode" were stored as-is, causing inconsistency with PT→EN facts that were stored as "User prefers X". New `normalize_to_storage_format()` function in `src/facts/lang.rs` merges PT→EN translation with EN first-person→third-person normalization. `normalize_to_third_person()` in `src/facts/prompt.rs` remains as defense-in-depth for legacy data.
 
 - **Bug #3: Contradiction detection via semantic embeddings (Layer 3.5)** — "I prefer dark mode" vs "I prefer light mode" now correctly resolves as a contradiction. Added Layer 3.5 to both `extract.rs` auto-extraction and `fact_tools.rs` `fact_add`: when FTS5 doesn't find conflicts and the candidate is a preference, generate an embedding and search `fact_embeddings` via `search_facts_semantic()` (cosine ≥ 0.90). Contradictions are resolved by replacing the old fact; duplicates are skipped. Requires embedding client availability; gracefully skips if unavailable.
@@ -16,7 +24,17 @@ All notable changes to Ask-AI will be documented in this file.
 
 - `normalize_to_storage_format()` in `src/facts/lang.rs` — Primary normalization function called before storing any fact. Applies PT→EN prefix translation and EN first-person→third-person normalization. PT noun translation (e.g., "respostas curtas" → "short responses") is deferred to LLM-mode (issue #106).
 
+- `normalize_adverb_verb()` in `src/facts/lang.rs` — Regex-based adverb+verb expansion for storage normalization. Handles EN patterns like "I really like X" → "User really likes X" and PT patterns like "Eu sempre prefiro X" → "User always prefers X" that are not covered by the static prefix lists in `normalize_replacements()` and `translate_pt_to_en()`.
+
+- `lemmatize_verb()` in `src/facts/lang.rs` — Verb lemmatization function for Layer 2 dedup comparison. Strips third-person inflection from verbs: "prefers" → "prefer", "likes" → "like", etc. Includes explicit lemma map and generic trailing-'s' rule with 'ss' guard.
+
+- `VERB_LEMMAS` constant in `src/facts/lang.rs` — Known third-person verb forms and their lemmas for `normalize_for_comparison()`. Covers common preference verbs and adverb+verb phrase combinations.
+
+- `EN_ADVERBS`, `PT_ADVERBS`, `EN_VERBS_FP_TP`, `PT_VERBS_EN_TP` constants in `src/facts/lang.rs` — Adverb and verb lookup tables for `normalize_adverb_verb()` regex expansion.
+
 - Layer 3.5 semantic dedup in `src/facts/extract.rs` and `src/tools/fact_tools.rs` — Embedding-based similarity check for preference facts when FTS5 doesn't find conflicts. Catches "prefer dark mode" vs "prefer light mode" contradictions that keyword search misses.
+
+- SMOKE_TEST.md sections 21.14 and 21.15 — Test procedures for `/fact add` CLI dedup parity and `/tools` toggle for Layer 3.5 testing.
 
 ### Changed
 
@@ -27,6 +45,12 @@ All notable changes to Ask-AI will be documented in this file.
 - `translate_pt_to_en()` now also normalizes English first-person input to third-person — `"I prefer dark mode"` → `"User prefers dark mode"`. This function is the core of `normalize_to_storage_format()`. English passthrough (`"I prefer dark mode"` → `"I prefer dark mode"`) is no longer the default behavior.
 
 - `try_auto_extract_facts()` in `repl.rs` is now `async` — awaits `extract_and_insert_facts()` to support Layer 3.5 embedding generation.
+
+- `handle_fact_add()` in `command_handlers.rs` is now `async` — supports Layer 3.5 embedding generation and contradiction detection.
+
+- `normalize_for_comparison()` in `lang.rs` now lemmatizes third-person verbs after stripping subject — "prefers dark mode" → "prefer dark mode" matches "prefer dark mode" for Layer 2 dedup.
+
+- `translate_pt_to_en()` now attempts regex-based adverb+verb expansion after static prefix lists fail — "I really like X" → "User really likes X", "Eu sempre prefiro X" → "User always prefers X".
 
 ### Deferred
 

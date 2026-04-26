@@ -1030,6 +1030,33 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 - [ ] Preference override contradiction still works ("prefer X" → "prefer Y" replaces)
 - [ ] Global-wins-project rule still works
 
+### 21.14 `/fact add` CLI: Full Dedup Parity (Bug #3 smoke test #2)
+
+> **Bug #3 fix (smoke test #2):** `/fact add` CLI command now uses the same 5-layer dedup pipeline as `fact_add` LLM tool and auto-extraction: normalization (ADR-E4), Layer 1 (exact), Layer 2 (normalized), Layer 3 (FTS5), Layer 3.5 (semantic), plus eager embedding generation.
+
+- [ ] `/fact add I prefer dark mode` → stores "User prefers dark mode" (normalized per ADR-E4)
+- [ ] Wait 3 seconds for embedding generation
+- [ ] `/fact add I prefer dark mode` → **Skipped: Exact duplicate** (Layer 1)
+- [ ] `/fact add User prefers dark mode` → **Skipped: Similar fact** (Layer 2, normalized match)
+- [ ] `/fact add I like dark mode` → Layer 3.5 should catch as paraphrase or FTS5 as similar
+- [ ] `/fact add I prefer light mode` → should **UPDATE** existing preference (Layer 3.5 contradiction)
+- [ ] Verify embedding exists: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE content LIKE '%light mode%'"` → **has_embedding = 1**
+
+### 21.15 `/tools` Toggle for Layer 3.5 Testing (Bug #4 smoke test #2)
+
+> **Bug #4 investigation (smoke test #2):** Some LLM models proactively call `fact_add` when they detect a contradiction, which makes it hard to test auto-extraction-based Layer 3.5. The `/tools` command disables LLM tool calls for the session, allowing auto-extraction to be tested independently.
+
+**Procedure:**
+1. Clean state: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+2. Start chat: `ask-ai chat`
+3. `/tools` → should print **"Tools: disabled"**
+4. Send: "I prefer dark mode" → auto-extraction should store via `normalize_to_storage_format()` and `generate_fact_embedding()`
+5. Wait 5 seconds for embedding
+6. Send: "Actually, I prefer light mode" → auto-extraction should detect contradiction via Layer 3.5 and UPDATE
+7. `/fact list` → should show **one** preference: "User prefers light mode"
+8. `/tools` → should print **"Tools: enabled"**
+9. Verify auto-extraction worked independently of LLM tool calls
+
 ---
 
 ## Results

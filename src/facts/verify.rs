@@ -17,11 +17,11 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::db::Database;
-use crate::embeddings::cosine_similarity;
-use crate::embeddings::EmbeddingClient;
 use super::conflict::is_contradiction;
 use super::types::Scope;
+use crate::db::Database;
+use crate::embeddings::EmbeddingClient;
+use crate::embeddings::cosine_similarity;
 
 /// Threshold for semantic similarity (cosine).
 /// 0.90 = very similar, catches paraphrases and translations.
@@ -92,11 +92,7 @@ pub async fn verify_and_dedup_facts(
                 fact_embeddings.push((fact.id, emb, fact.scope));
             }
             Err(e) => {
-                log::warn!(
-                    "Could not generate embedding for fact {}: {}",
-                    fact.id,
-                    e
-                );
+                log::warn!("Could not generate embedding for fact {}: {}", fact.id, e);
                 continue;
             }
         }
@@ -129,11 +125,7 @@ pub async fn verify_and_dedup_facts(
                 if is_contradiction(&fi.content, &fj.content) {
                     // Contradiction: newer wins (higher id = newer)
                     stats.contradictions_resolved += 1;
-                    let loser_id = if fi.id < fj.id {
-                        fi.id
-                    } else {
-                        fj.id
-                    };
+                    let loser_id = if fi.id < fj.id { fi.id } else { fj.id };
                     to_remove.insert(loser_id);
                 } else {
                     // Duplicate: apply global-wins-project rule
@@ -146,11 +138,7 @@ pub async fn verify_and_dedup_facts(
                     } else {
                         // Same scope duplicate: keep newer
                         stats.duplicates_removed += 1;
-                        let loser_id = if fi.id < fj.id {
-                            fi.id
-                        } else {
-                            fj.id
-                        };
+                        let loser_id = if fi.id < fj.id { fi.id } else { fj.id };
                         to_remove.insert(loser_id);
                     }
                 }

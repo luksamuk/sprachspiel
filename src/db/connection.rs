@@ -574,12 +574,11 @@ impl Database {
         // Migration v10 -> v11: Add fact_embeddings vec0 table and has_embedding column
         if from_version < 11 {
             // Check if fact_embeddings table exists (idempotent)
-            let fact_emb_exists: bool = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='fact_embeddings'",
-                    [],
-                    |row| row.get::<_, i32>(0),
-                )? > 0;
+            let fact_emb_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='fact_embeddings'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )? > 0;
 
             if !fact_emb_exists {
                 conn.execute_batch(

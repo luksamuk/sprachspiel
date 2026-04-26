@@ -356,8 +356,7 @@ async fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
         let db_clone = Arc::clone(db_ref);
         let client_clone = Arc::clone(client);
         tokio::spawn(async move {
-            crate::facts::recovery::recover_missing_fact_embeddings(&db_clone, &client_clone)
-                .await;
+            crate::facts::recovery::recover_missing_fact_embeddings(&db_clone, &client_clone).await;
         });
     }
 }

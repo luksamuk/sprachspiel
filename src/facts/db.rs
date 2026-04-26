@@ -276,7 +276,10 @@ impl Database {
         self.with_connection(|conn| {
             conn.execute("DELETE FROM facts WHERE id = ?1", params![id])?;
             // Also remove the fact embedding from vec0
-            conn.execute("DELETE FROM fact_embeddings WHERE fact_id = ?1", params![id])?;
+            conn.execute(
+                "DELETE FROM fact_embeddings WHERE fact_id = ?1",
+                params![id],
+            )?;
             Ok(())
         })
     }
