@@ -141,14 +141,14 @@ _Copy the section structure above for each test category._
 - [ ] Clean database again: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 - [ ] `/fact add I prefer dark mode` → stored as "User prefers dark mode"
 - [ ] Wait 3 seconds for embedding
-- [ ] `/fact add I prefer light mode` → should **UPDATE** (Layer 2.5 contradiction — same predicate "prefers", different object "light mode" vs "dark mode")
+- [ ] `/fact add I prefer light mode` → should **UPDATE** (semantic triple contradiction — same predicate "prefers", different object "light mode" vs "dark mode")
 - [ ] Verify embedding: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE content LIKE '%light mode%'"` → **has_embedding = 1**
 
 ---
 
-## Fact System: Layer 2.5 Contradiction Detection (Bug S42.4/S43.1 smoke test #3)
+## Fact System: Semantic Triple Contradiction (Bug S42.4/S43.1 smoke test #3)
 
-**Objective:** Verify that preference overrides and identity changes are correctly detected by triple-based contradiction (Layer 2.5), both via `/fact add` CLI and auto-extraction.
+**Objective:** Verify that preference overrides and identity changes are correctly detected by semantic triple disambiguation (Layer 3.5, threshold 0.70), both via `/fact add` CLI and auto-extraction.
 
 ### §50 EN Preference Override via `/fact add`
 
@@ -244,14 +244,14 @@ _Copy the section structure above for each test category._
 - [ ] Send: "Na verdade, eu sempre prefiro emacs" → auto-extraction detects contradiction (same predicate "always prefers", different object), updates
 - [ ] `/fact list` → shows only "User always prefers emacs"
 
-### §60 EN Factual Content Not Affected by Layer 2.5
+### §60 EN Factual Content Not Affected by Semantic Triple
 
 🗄️ Clean database required.
 
 - [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 - [ ] `/fact add The project uses SQLite` → **✓ Added** (no triple extracted — subject ≠ "user")
 - [ ] `/fact add The project uses PostgreSQL` → **✓ Added** (no triple extracted — not a preference/identity fact)
-- [ ] `/fact list` → shows BOTH facts (factual content coexists, not affected by Layer 2.5)
+- [ ] `/fact list` → shows BOTH facts (factual content coexists, not affected by semantic triple)
 
 ### §61 ADR-E4 PT Identity Normalization via Auto-Extraction
 
@@ -267,7 +267,7 @@ _Copy the section structure above for each test category._
 
 ## Fact System: Layer 3.5 via Auto-Extraction with `/tools` Toggle (Bug #4 smoke test #2)
 
-**Objective:** Verify that contradiction detection works through auto-extraction when LLM tool calls are disabled. With Layer 2.5, contradictions are caught at Layer 2 (not just Layer 3.5).
+**Objective:** Verify that contradiction detection works through auto-extraction when LLM tool calls are disabled. With the reordered Layer 3.5, contradictions are caught via semantic search + triple disambiguation (not just FTS5).
 
 🗄️ Clean database required.
 
@@ -278,7 +278,7 @@ _Copy the section structure above for each test category._
 3. `/tools` → should print **"Tools: disabled"**
 4. Send: "I prefer dark mode" → auto-extraction stores via normalization + embedding
 5. Wait 5 seconds for embedding
-6. Send: "Actually, I prefer light mode" → auto-extraction detects contradiction (Layer 2.5 triple match — same predicate "prefers", different object) and updates
+6. Send: "Actually, I prefer light mode" → auto-extraction detects contradiction (semantic triple: same predicate "prefers", different object) and updates
 7. `/fact list` → shows ONE preference: "User prefers light mode"
 8. `/tools` → should print **"Tools: enabled"**
 9. Verify auto-extraction worked independently of LLM tool calls

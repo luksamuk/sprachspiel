@@ -446,7 +446,7 @@ const VERB_LEMMAS: &[(&str, &str)] = &[
     ("never wants", "never want"),
 ];
 
-// === Triple Extraction Patterns (Layer 2.5 Contradiction Detection) ===
+// === Triple Extraction Patterns (Semantic Contradiction Disambiguation) ===
 
 /// Triple extraction prefixes for preference facts (storage format = third-person).
 ///
@@ -457,7 +457,7 @@ const VERB_LEMMAS: &[(&str, &str)] = &[
 ///   (e.g., `"prefers"`)
 ///
 /// When two facts share the same `(subject, predicate)` but have different objects,
-/// the newer fact overrides the older one (Layer 2.5 contradiction detection).
+/// the newer fact overrides the older one (semantic contradiction disambiguation).
 ///
 /// Order matters: longer prefixes first to avoid partial matches
 /// (e.g., `"user usually prefers "` must match before `"user prefers "`).

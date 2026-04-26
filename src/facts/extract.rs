@@ -39,7 +39,9 @@
 //! - **ADR-E6:** Max 3 facts per response to avoid noise.
 
 use super::classify::classify_fact;
-use super::conflict::{CONFLICT_THRESHOLD, detect_conflicts, resolve_conflict};
+use super::conflict::{
+    CONFLICT_THRESHOLD, SEMANTIC_SEARCH_THRESHOLD, detect_conflicts, resolve_conflict,
+};
 use super::lang;
 use super::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
 use crate::db::Database;
@@ -386,36 +388,7 @@ async fn insert_fact_with_dedup(
     let normalized_query = lang::normalize_for_comparison(&candidate.content);
     match db.find_normalized_fact(&normalized_query) {
         Ok(matches) if !matches.is_empty() => {
-            // ── Layer 2.5: Triple-based contradiction detection ──────────
-            // Before treating matches as duplicates, check if any is a
-            // contradiction (same predicate, different object). If so,
-            // delete the old fact and insert the new one (→ Updated).
-            if let Some(candidate_triple) = super::conflict::extract_fact_triple(&candidate.content)
-            {
-                for existing in &matches {
-                    if let Some(existing_triple) =
-                        super::conflict::extract_fact_triple(&existing.content)
-                        && candidate_triple.contradicts(&existing_triple)
-                    {
-                        log::debug!(
-                            "Auto-extract: Layer 2.5 contradiction: '{}' contradicts '{}'",
-                            candidate.content,
-                            existing.content
-                        );
-                        if let Err(e) = db.delete_fact(existing.id) {
-                            log::debug!("Auto-extract: Failed to delete contradicted fact: {}", e);
-                            continue;
-                        }
-                        return match insert_new_fact(db, candidate, project_id) {
-                            InsertAction::Inserted => InsertAction::Updated,
-                            other => other,
-                        };
-                    }
-                }
-            }
-            // ── End Layer 2.5 ──
-
-            // No contradiction found — check for global-wins-project rule
+            // Check for global-wins-project rule
             if candidate.scope == Scope::Global {
                 // Remove Project-scope duplicates, keep Global
                 let mut global_match: Option<&Fact> = None;
@@ -460,6 +433,129 @@ async fn insert_fact_with_dedup(
     }
 
     // ====================================================================
+    // Layer 3.5: Semantic embedding similarity (contradiction + duplicate)
+    //
+    // Runs BEFORE Layer 3 (FTS5 BM25) because:
+    // - Contradictions like "prefer dark mode" vs "prefer light mode" have
+    //   different normalized strings → Layer 2 skips them → FTS5 BM25 also
+    //   misses them (low keyword overlap) → only semantic catches them.
+    // - Embedding cosine ~0.77 for antonym pairs, above the 0.70 threshold.
+    // - Triple-based disambiguation separates contradictions from duplicates.
+    //
+    // Applies when:
+    // 1. An embedding client is available
+    // 2. The candidate is Preference or Identity (substitutive categories)
+    // ====================================================================
+    if matches!(candidate.category, Category::Preference)
+        && let Some(client) = embedding_client
+    {
+        match super::embedding::generate_fact_embedding(&candidate.content, client).await {
+            Ok(candidate_embedding) => {
+                match db.search_facts_semantic(&candidate_embedding, None, 5) {
+                    Ok(semantic_results) => {
+                        for result in &semantic_results {
+                            if result.score < SEMANTIC_SEARCH_THRESHOLD {
+                                continue; // Below semantic search threshold
+                            }
+
+                            // ── Step 1: Triple-based disambiguation ────────────
+                            // Extract triples from both candidate and existing fact.
+                            // Same predicate + different object → contradiction (→ Update).
+                            // Same predicate + same object → semantic duplicate (→ Skip).
+                            // Different predicates → fall through to is_contradiction().
+                            if let Some(candidate_triple) =
+                                super::conflict::extract_fact_triple(&candidate.content)
+                                && let Some(existing_triple) =
+                                    super::conflict::extract_fact_triple(&result.fact.content)
+                            {
+                                if candidate_triple.contradicts(&existing_triple) {
+                                    // Same predicate, different object → contradiction
+                                    log::debug!(
+                                        "Auto-extract: Semantic contradiction \
+                                         (cosine={:.3}, predicate='{}'): '{}' vs '{}'",
+                                        result.score,
+                                        candidate_triple.predicate,
+                                        candidate.content,
+                                        result.fact.content
+                                    );
+                                    if let Err(e) = db.delete_fact(result.fact.id) {
+                                        log::debug!(
+                                            "Auto-extract: Failed to delete contradicted fact: {}",
+                                            e
+                                        );
+                                        continue;
+                                    }
+                                    return match insert_new_fact(db, candidate, project_id) {
+                                        InsertAction::Inserted => InsertAction::Updated,
+                                        other => other,
+                                    };
+                                }
+                                if candidate_triple.predicate == existing_triple.predicate
+                                    && candidate_triple.object == existing_triple.object
+                                {
+                                    // Same triple → semantic duplicate
+                                    log::debug!(
+                                        "Auto-extract: Semantic duplicate \
+                                         (cosine={:.3}): '{}' vs '{}'",
+                                        result.score,
+                                        candidate.content,
+                                        result.fact.content
+                                    );
+                                    return InsertAction::Skipped;
+                                }
+                                // Different predicate, different/same object →
+                                // fall through to is_contradiction() fallback
+                            }
+
+                            // ── Step 2: Polarity opposition fallback ───────────
+                            // Catches same-object opposite-sentiment that triples
+                            // miss: "likes X" vs "hates X", "prefers X" vs
+                            // "doesn't like X", opposite negation.
+                            if super::conflict::is_contradiction(
+                                &candidate.content,
+                                &result.fact.content,
+                            ) {
+                                log::debug!(
+                                    "Auto-extract: Polarity contradiction \
+                                     (cosine={:.3}): '{}' vs '{}'",
+                                    result.score,
+                                    candidate.content,
+                                    result.fact.content
+                                );
+                                if let Err(e) = db.delete_fact(result.fact.id) {
+                                    log::debug!(
+                                        "Auto-extract: Failed to delete contradicted fact: {}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                                return match insert_new_fact(db, candidate, project_id) {
+                                    InsertAction::Inserted => InsertAction::Updated,
+                                    other => other,
+                                };
+                            }
+
+                            // Neither contradiction nor duplicate —
+                            // related but not conflicting. Continue to next result.
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!("Auto-extract: Semantic search failed: {}", e);
+                        // Fall through to FTS5
+                    }
+                }
+            }
+            Err(e) => {
+                log::debug!(
+                    "Auto-extract: Failed to generate embedding for semantic dedup: {}",
+                    e
+                );
+                // Fall through to FTS5 without semantic check
+            }
+        }
+    }
+
+    // ====================================================================
     // Layer 3: FTS5 keyword search with BM25 scoring
     // Catches semantic similarity that exact/normalized match misses
     // ====================================================================
@@ -474,82 +570,6 @@ async fn insert_fact_with_dedup(
 
     // Check for conflicts from FTS5
     let conflicts = detect_conflicts(&candidate.content, &search_results, CONFLICT_THRESHOLD);
-
-    // ====================================================================
-    // Layer 3.5: Semantic embedding similarity (preference override detection)
-    //
-    // If FTS5 didn't find conflicts, check semantic similarity via embeddings.
-    // This catches cases like "I prefer dark mode" vs "I prefer light mode"
-    // where FTS5 BM25 score is too low but embeddings show high similarity.
-    //
-    // Only applies when:
-    // 1. An embedding client is available
-    // 2. The candidate is a preference (preferences are most likely to contradict)
-    // 3. FTS5 didn't find any conflicts (otherwise FTS5 conflicts are sufficient)
-    // ====================================================================
-    if conflicts.is_empty()
-        && candidate.category == Category::Preference
-        && let Some(client) = embedding_client
-    {
-        match super::embedding::generate_fact_embedding(&candidate.content, client).await {
-            Ok(candidate_embedding) => {
-                match db.search_facts_semantic(&candidate_embedding, None, 5) {
-                    Ok(semantic_results) => {
-                        for result in &semantic_results {
-                            if result.score < 0.90 {
-                                continue; // Below semantic similarity threshold
-                            }
-
-                            // Check if this is a preference override (same verb, different object)
-                            if super::conflict::is_contradiction(
-                                &candidate.content,
-                                &result.fact.content,
-                            ) {
-                                log::debug!(
-                                    "Auto-extract: Semantic contradiction found (cosine={:.3}): '{}' vs '{}'",
-                                    result.score,
-                                    candidate.content,
-                                    result.fact.content
-                                );
-                                // Resolve: newer wins (replace the old fact)
-                                if let Err(e) = db.delete_fact(result.fact.id) {
-                                    log::debug!(
-                                        "Auto-extract: Failed to delete contradicting fact: {}",
-                                        e
-                                    );
-                                    continue;
-                                }
-                                return match insert_new_fact(db, candidate, project_id) {
-                                    InsertAction::Inserted => InsertAction::Updated,
-                                    other => other,
-                                };
-                            }
-
-                            // Not a contradiction but high similarity — it's a duplicate
-                            log::debug!(
-                                "Auto-extract: Semantic duplicate found (cosine={:.3}): '{}' vs '{}'",
-                                result.score,
-                                candidate.content,
-                                result.fact.content
-                            );
-                            return InsertAction::Skipped;
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!("Auto-extract: Semantic search failed: {}", e);
-                        // Fall through to insert
-                    }
-                }
-            }
-            Err(e) => {
-                log::debug!(
-                    "Auto-extract: Failed to generate embedding for semantic dedup: {}",
-                    e
-                );
-                // Fall through to insert without semantic check
-            }
-        }
-    }
 
     if conflicts.is_empty() {
         // No conflict — insert new fact

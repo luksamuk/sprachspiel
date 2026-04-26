@@ -2662,10 +2662,9 @@ Key files:
 **Architecture: Six-layer dedup pipeline:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
 2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects and lemmatizes verbs (3rd person → base form), catches "I prefer X" ≈ "User prefers X" ≈ "prefers X" → all normalize to "prefer X"
-3. **Layer 2.5 (NEW): Triple-based contradiction** — `extract_fact_triple()` extracts (subject, predicate, object) from facts in storage format. When two facts share (subject, predicate) but differ in object → contradiction → delete old, insert new. Catches "prefer dark mode" → "prefer light mode" that embeddings miss (cosine ~0.77 < 0.90 threshold). Zero ML, sub-millisecond. Pattern constants in `lang.rs`.
+3. **Layer 3.5: Semantic embedding (insert-time)** — cosine similarity ≥ 0.70 (`SEMANTIC_SEARCH_THRESHOLD` in conflict.rs). Runs BEFORE Layer 3 (FTS5). Triple-based disambiguation: `extract_fact_triple()` distinguishes contradictions (same predicate, different object → Update) from duplicates (same triple → Skip) from related facts (different predicate → fall through). `is_contradiction()` fallback catches polarity opposition (like/hate, negation). Covers `Category::Preference` (includes identity facts).
 4. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75 (lowered from 0.85)
-5. **Layer 3.5: Semantic embedding** — cosine similarity ≥ 0.90 for preference facts, catches "prefer dark mode" ≈ "prefer light mode" via embeddings
-6. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) cosine comparison on startup
+5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) cosine comparison at threshold 0.90
 
 **Bug fixes (from smoke test #1):**
 - Bug #1: Dedup broken — Fixed with three-layer pipeline, exact match, normalized match, threshold 0.75
@@ -2775,10 +2774,9 @@ Key files:
 **Architecture: Six-layer dedup pipeline:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
 2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects
-3. **Layer 2.5: Triple contradiction** — `extract_fact_triple()` extracts (subject, predicate, object); same predicate + different object → contradiction
+3. **Layer 3.5: Semantic embedding (insert-time)** — cosine ≥ 0.70, runs BEFORE FTS5; triple disambiguation + `is_contradiction()` fallback
 4. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75
-5. **Layer 3.5: Semantic embedding** — cosine similarity ≥ 0.90 via `fact_embeddings` vec0 (insert-time, for preferences only)
-6. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) pairwise cosine comparison at threshold 0.90
+5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) pairwise cosine at threshold 0.90
 
 **Schema changes (v10 → v11):**
 - Added `has_embedding INTEGER DEFAULT 0` column to `facts` table

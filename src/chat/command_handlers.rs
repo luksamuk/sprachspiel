@@ -1052,7 +1052,8 @@ pub fn handle_content_prune(state: &ReplState) {
 pub async fn handle_fact_add(state: &mut ReplState, content: String, global: bool) {
     use crate::facts::classify::classify_fact;
     use crate::facts::conflict::{
-        CONFLICT_THRESHOLD, detect_conflicts, is_contradiction, resolve_conflict,
+        CONFLICT_THRESHOLD, SEMANTIC_SEARCH_THRESHOLD, detect_conflicts, is_contradiction,
+        resolve_conflict,
     };
     use crate::facts::lang;
     use crate::facts::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
@@ -1135,72 +1136,25 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
     let normalized_query = lang::normalize_for_comparison(&content);
     match db.find_normalized_fact(&normalized_query) {
         Ok(matches) if !matches.is_empty() => {
-            // ── Layer 2.5: Triple-based contradiction detection ──────────
-            // Before treating matches as duplicates, check if any is a
-            // contradiction (same predicate, different object). If so,
-            // delete the old fact and fall through to insert the new one.
-            let mut contradiction_found = false;
-            if let Some(candidate_triple) = crate::facts::conflict::extract_fact_triple(&content) {
-                for existing in &matches {
-                    if let Some(existing_triple) =
-                        crate::facts::conflict::extract_fact_triple(&existing.content)
-                        && candidate_triple.contradicts(&existing_triple)
-                    {
+            // No contradiction — existing scope/duplicate logic
+            if scope == Scope::Global {
+                // Global-wins-project: remove Project-scope duplicates
+                let mut global_match: Option<Fact> = None;
+                for fact in &matches {
+                    if fact.scope == Scope::Project {
                         log::debug!(
-                            "/fact add: Layer 2.5 contradiction: '{}' contradicts '{}'",
-                            content,
-                            existing.content
+                            "/fact add: Global fact overrides Project fact (id={}): '{}'",
+                            fact.id,
+                            fact.content
                         );
-                        if let Err(e) = db.delete_fact(existing.id) {
-                            log::debug!("/fact add: Failed to delete contradicted fact: {}", e);
-                            continue;
+                        if let Err(e) = db.delete_fact(fact.id) {
+                            log::debug!("/fact add: Failed to delete Project fact: {}", e);
                         }
-                        println!(
-                            "\x1B[36m↻ Updated: '{}' replaces '{}' (preference override)\x1B[0m",
-                            content, existing.content
-                        );
-                        contradiction_found = true;
-                        break;
+                    } else {
+                        global_match = Some(fact.clone());
                     }
                 }
-            }
-
-            if !contradiction_found {
-                // No contradiction — existing scope/duplicate logic
-                if scope == Scope::Global {
-                    // Global-wins-project: remove Project-scope duplicates
-                    let mut global_match: Option<Fact> = None;
-                    for fact in &matches {
-                        if fact.scope == Scope::Project {
-                            log::debug!(
-                                "/fact add: Global fact overrides Project fact (id={}): '{}'",
-                                fact.id,
-                                fact.content
-                            );
-                            if let Err(e) = db.delete_fact(fact.id) {
-                                log::debug!("/fact add: Failed to delete Project fact: {}", e);
-                            }
-                        } else {
-                            global_match = Some(fact.clone());
-                        }
-                    }
-                    if let Some(existing) = global_match {
-                        println!(
-                            "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
-                            existing.id
-                        );
-                        println!("  Existing: {}", existing.content);
-                        println!("  New: {}", content);
-                        println!(
-                            "\n  Use /fact remove {} first if you want to replace it.",
-                            existing.id
-                        );
-                        return;
-                    }
-                    // All duplicates were Project-scope and removed — fall through to insert
-                } else {
-                    // Project-scope: any existing match = skip
-                    let existing = &matches[0];
+                if let Some(existing) = global_match {
                     println!(
                         "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
                         existing.id
@@ -1213,8 +1167,22 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
                     );
                     return;
                 }
+                // All duplicates were Project-scope and removed — fall through to insert
+            } else {
+                // Project-scope: any existing match = skip
+                let existing = &matches[0];
+                println!(
+                    "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
+                    existing.id
+                );
+                println!("  Existing: {}", existing.content);
+                println!("  New: {}", content);
+                println!(
+                    "\n  Use /fact remove {} first if you want to replace it.",
+                    existing.id
+                );
+                return;
             }
-            // If contradiction found, fall through to insert
         }
         Ok(_) => { /* No normalized match, continue */ }
         Err(e) => {
@@ -1223,8 +1191,139 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
     }
 
     // ====================================================================
+    // Layer 3.5: Semantic embedding similarity (contradiction + duplicate)
+    //
+    // Runs BEFORE Layer 3 (FTS5 BM25) because:
+    // - Contradictions like "prefer dark mode" vs "prefer light mode" have
+    //   different normalized strings → Layer 2 skips them → FTS5 BM25 also
+    //   misses them (low keyword overlap) → only semantic catches them.
+    // - Embedding cosine ~0.77 for antonym pairs, above the 0.70 threshold.
+    // - Triple-based disambiguation separates contradictions from duplicates.
+    //
+    // Applies when:
+    // 1. An embedding client is available
+    // 2. The candidate is Preference (covers identity facts too)
+    // ====================================================================
+    if matches!(category, Category::Preference)
+        && let Some(client) = &state.embedding_client
+    {
+        match crate::facts::embedding::generate_fact_embedding(&content, client).await {
+            Ok(candidate_embedding) => {
+                match db.search_facts_semantic(&candidate_embedding, None, 5) {
+                    Ok(semantic_results) => {
+                        for result in &semantic_results {
+                            if result.score < SEMANTIC_SEARCH_THRESHOLD {
+                                continue; // Below semantic search threshold
+                            }
+
+                            // ── Step 1: Triple-based disambiguation ────────────
+                            if let Some(candidate_triple) =
+                                crate::facts::conflict::extract_fact_triple(&content)
+                                && let Some(existing_triple) =
+                                    crate::facts::conflict::extract_fact_triple(
+                                        &result.fact.content,
+                                    )
+                            {
+                                if candidate_triple.contradicts(&existing_triple) {
+                                    // Same predicate, different object → contradiction
+                                    log::debug!(
+                                        "/fact add: Semantic contradiction \
+                                         (cosine={:.3}, predicate='{}'): '{}' vs '{}'",
+                                        result.score,
+                                        candidate_triple.predicate,
+                                        content,
+                                        result.fact.content
+                                    );
+                                    if let Err(e) = db.delete_fact(result.fact.id) {
+                                        log::debug!(
+                                            "/fact add: Failed to delete contradicted fact: {}",
+                                            e
+                                        );
+                                        continue;
+                                    }
+                                    println!(
+                                        "\x1B[36m↻ Updated: '{}' replaces '{}' \
+                                         (preference override)\x1B[0m",
+                                        content, result.fact.content
+                                    );
+                                    // Fall through to insert new fact below
+                                    return;
+                                }
+                                if candidate_triple.predicate == existing_triple.predicate
+                                    && candidate_triple.object == existing_triple.object
+                                {
+                                    // Same triple → semantic duplicate
+                                    log::debug!(
+                                        "/fact add: Semantic duplicate \
+                                         (cosine={:.3}): '{}' vs '{}'",
+                                        result.score,
+                                        content,
+                                        result.fact.content
+                                    );
+                                    println!(
+                                        "\x1B[33m⏭ Skipped: Similar fact already exists \
+                                         (#{})\x1B[0m",
+                                        result.fact.id
+                                    );
+                                    println!("  Existing: {}", result.fact.content);
+                                    println!("  New: {}", content);
+                                    println!(
+                                        "\n  Use /fact remove {} first if you want to replace it.",
+                                        result.fact.id
+                                    );
+                                    return;
+                                }
+                                // Different predicate/object → fall through to is_contradiction
+                            }
+
+                            // ── Step 2: Polarity opposition fallback ───────────
+                            // Catches same-object opposite-sentiment that triples
+                            // miss: "likes X" vs "hates X", opposite negation.
+                            if is_contradiction(&content, &result.fact.content) {
+                                log::debug!(
+                                    "/fact add: Polarity contradiction \
+                                     (cosine={:.3}): '{}' vs '{}'",
+                                    result.score,
+                                    content,
+                                    result.fact.content
+                                );
+                                if let Err(e) = db.delete_fact(result.fact.id) {
+                                    log::debug!(
+                                        "/fact add: Failed to delete contradicted fact: {}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                                println!(
+                                    "\x1B[36m↻ Updated: '{}' replaces '{}' \
+                                     (contradiction)\x1B[0m",
+                                    content, result.fact.content
+                                );
+                                return;
+                            }
+
+                            // Neither contradiction nor duplicate —
+                            // related but not conflicting. Continue to next result.
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!("/fact add: Semantic search failed: {}", e);
+                        // Fall through to FTS5
+                    }
+                }
+            }
+            Err(e) => {
+                log::debug!(
+                    "/fact add: Failed to generate embedding for semantic dedup: {}",
+                    e
+                );
+                // Fall through to FTS5 without semantic check
+            }
+        }
+    }
+
+    // ====================================================================
     // Layer 3: FTS5 keyword search with conflict detection
-    // (existing behavior, preserved)
     // ====================================================================
     let scope_for_search = if global {
         Some(Scope::Global)
@@ -1237,82 +1336,8 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
         Err(_) => Vec::new(),
     };
 
-    // ====================================================================
-    // Layer 3.5: Semantic embedding similarity (preference override detection)
-    // If FTS5 didn't find conflicts, check semantic similarity via embeddings.
-    // This was missing — /fact add had no semantic dedup capability.
-    // ====================================================================
-    let mut semantic_override = false;
-    if conflicts.is_empty()
-        && category == Category::Preference
-        && let Some(client) = &state.embedding_client
-    {
-        match crate::facts::embedding::generate_fact_embedding(&content, client).await {
-            Ok(candidate_embedding) => {
-                match db.search_facts_semantic(&candidate_embedding, None, 5) {
-                    Ok(semantic_results) => {
-                        for result in &semantic_results {
-                            if result.score < 0.90 {
-                                continue; // Below semantic similarity threshold
-                            }
-
-                            if is_contradiction(&content, &result.fact.content) {
-                                log::debug!(
-                                    "/fact add: Semantic contradiction found (cosine={:.3}): '{}' vs '{}'",
-                                    result.score,
-                                    content,
-                                    result.fact.content
-                                );
-                                // Remove the old fact — we'll insert the new one below
-                                if let Err(e) = db.delete_fact(result.fact.id) {
-                                    log::debug!(
-                                        "/fact add: Failed to delete contradicting fact: {}",
-                                        e
-                                    );
-                                    continue;
-                                }
-                                semantic_override = true;
-                                break;
-                            }
-
-                            // Not a contradiction but high similarity — it's a duplicate
-                            log::debug!(
-                                "/fact add: Semantic duplicate found (cosine={:.3}): '{}' vs '{}'",
-                                result.score,
-                                content,
-                                result.fact.content
-                            );
-                            println!(
-                                "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
-                                result.fact.id
-                            );
-                            println!("  Existing: {}", result.fact.content);
-                            println!("  New: {}", content);
-                            println!(
-                                "\n  Use /fact remove {} first if you want to replace it.",
-                                result.fact.id
-                            );
-                            return;
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!("/fact add: Semantic search failed: {}", e);
-                        // Fall through to insert
-                    }
-                }
-            }
-            Err(e) => {
-                log::debug!(
-                    "/fact add: Failed to generate embedding for semantic dedup: {}",
-                    e
-                );
-                // Fall through to insert without semantic check
-            }
-        }
-    }
-
     // Handle FTS5 conflicts (Layer 3)
-    if !conflicts.is_empty() && !semantic_override {
+    if !conflicts.is_empty() {
         // Global-wins-project rule
         if scope == Scope::Global {
             // Remove all conflicting Project-scope facts first

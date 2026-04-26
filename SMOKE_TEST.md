@@ -860,12 +860,12 @@ Verify that preference and identity facts are auto-extracted from user messages 
 - [ ] Ask LLM: "Remember that I prefer dark mode" → fact_add returns **Skipped: Similar fact already exists** (normalized match catches "User prefers dark mode" ≈ "User prefers dark mode")
 - [ ] `/fact list` → only ONE dark mode fact
 
-### 20.20 Contradiction: Preference Override (Retest #3 fix — Layer 2.5)
+### 20.20 Contradiction: Preference Override (Retest #3 fix — semantic triple)
 
-> **Bug S42.4/S43.1 fix:** Layer 2.5 triple-based contradiction detection: extracts (subject, predicate, object) triples; when same predicate but different object → contradiction → replace. Works for preference overrides, identity changes, and adverb+verb combos.
+> **Bug S42.4/S43.1 fix:** Layer 3.5 (after reorder) uses semantic search (cosine ≥ 0.70) with triple disambiguation: extracts (subject, predicate, object) triples; when same predicate but different object → contradiction → replace. Also catches polarity opposition via `is_contradiction()` fallback.
 
 - [ ] Send: "I prefer dark mode" → stored as preference "User prefers dark mode"
-- [ ] Send: "I prefer light mode" → extraction should detect **contradiction** (Layer 2.5: same predicate "prefers", different object) and **update** the existing fact
+- [ ] Send: "I prefer light mode" → extraction should detect **contradiction** (semantic triple: same predicate "prefers", different object) and **update** the existing fact
 - [ ] `/fact list` → "User prefers light mode" replaces "User prefers dark mode" (NOT both present)
 
 ### 20.21 Third-Person PT Translation (Retest #2 fix — ADR-E4)
@@ -939,9 +939,9 @@ Verify that preference and identity facts are auto-extracted from user messages 
 - [ ] Quit and restart chat → recovery generates missing embeddings
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
 
-### 21.6 Semantic Contradiction Detection (Bug #3 fix — Layer 2.5 + Layer 3.5)
+### 21.6 Semantic Contradiction Detection (Bug #3 fix — Layer 3.5 with triple disambiguation)
 
-> **Bug #3 fix:** When FTS5 doesn't find a conflict and the candidate is a preference, **Layer 2.5** checks triple-based contradiction (same predicate, different object). If Layer 2.5 doesn't match, **Layer 3.5** generates an embedding and searches `fact_embeddings` via `search_facts_semantic()` (cosine ≥ 0.90). Contradictions are resolved by replacing the old fact.
+> **Bug #3 fix:** After Layer 2, before FTS5, Layer 3.5 generates an embedding and searches `fact_embeddings` (cosine ≥ 0.70). For each result, it extracts triples: same predicate + different object = contradiction → Update; same triple = duplicate → Skip; different predicates → `is_contradiction()` fallback (polarity opposition).
 
 **Clean state first:**
 ```bash
@@ -951,7 +951,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 - [ ] Send: "I prefer dark mode" → stored as preference "User prefers dark mode"
 - [ ] Wait 5 seconds for embedding
-- [ ] Send: "I prefer light mode" → should UPDATE (not duplicate) the existing fact via Layer 2.5 triple contradiction (same predicate "prefers", different object)
+- [ ] Send: "I prefer light mode" → should UPDATE (not duplicate) the existing fact via semantic triple contradiction (same predicate "prefers", different object)
 - [ ] `/fact list` → shows "User prefers light mode" (NOT both "dark" and "light")
 - [ ] Verify embedding: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE content LIKE '%light mode%' AND has_embedding = 1"` → **1**
 
@@ -1029,19 +1029,19 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 - [ ] `/fact search <query>` → returns matching facts
 - [ ] `/fact remove <id>` → removes fact and its embedding
 - [ ] Auto-extraction still works and generates embeddings
-- [ ] Preference override contradiction still works ("prefer X" → "prefer Y" replaces via Layer 2.5)
+- [ ] Preference override contradiction still works ("prefer X" → "prefer Y" replaces via semantic triple)
 - [ ] Global-wins-project rule still works
 
 ### 21.14 `/fact add` CLI: Full Dedup Parity (Bug #3 smoke test #2)
 
-> **Bug #3 fix (smoke test #2):** `/fact add` CLI command now uses the same 6-layer dedup pipeline as `fact_add` LLM tool and auto-extraction: normalization (ADR-E4), Layer 1 (exact), Layer 2 (normalized), Layer 2.5 (triple contradiction), Layer 3 (FTS5), Layer 3.5 (semantic), plus eager embedding generation.
+> **Bug #3 fix (smoke test #2):** `/fact add` CLI command now uses the same 6-layer dedup pipeline as `fact_add` LLM tool and auto-extraction: normalization (ADR-E4), Layer 1 (exact), Layer 2 (normalized), Layer 3.5 (semantic + triple disambiguation, ≥0.70), Layer 3 (FTS5), plus eager embedding generation.
 
 - [ ] `/fact add I prefer dark mode` → stores "User prefers dark mode" (normalized per ADR-E4)
 - [ ] Wait 3 seconds for embedding generation
 - [ ] `/fact add I prefer dark mode` → **Skipped: Exact duplicate** (Layer 1)
 - [ ] `/fact add User prefers dark mode` → **Skipped: Similar fact** (Layer 2, normalized match)
 - [ ] `/fact add I like dark mode` → Layer 3.5 should catch as paraphrase or FTS5 as similar
-- [ ] `/fact add I prefer light mode` → should **UPDATE** existing preference (Layer 2.5 triple contradiction: same predicate "prefers", different object)
+- [ ] `/fact add I prefer light mode` → should **UPDATE** existing preference (semantic triple contradiction: same predicate "prefers", different object)
 - [ ] Verify embedding exists: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE content LIKE '%light mode%'"` → **has_embedding = 1**
 
 ### 21.15 `/tools` Toggle for Layer 3.5 Testing (Bug #4 smoke test #2)
@@ -1054,14 +1054,14 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 3. `/tools` → should print **"Tools: disabled"**
 4. Send: "I prefer dark mode" → auto-extraction should store via `normalize_to_storage_format()` and `generate_fact_embedding()`
 5. Wait 5 seconds for embedding
-6. Send: "Actually, I prefer light mode" → auto-extraction should detect contradiction via Layer 2.5 (triple-based, same predicate "prefers", different object) and UPDATE
+6. Send: "Actually, I prefer light mode" → auto-extraction should detect contradiction via semantic triple (same predicate "prefers", different object) and UPDATE
 7. `/fact list` → should show **one** preference: "User prefers light mode"
 8. `/tools` → should print **"Tools: enabled"**
 9. Verify auto-extraction worked independently of LLM tool calls
 
-### 21.16 Layer 2.5 Triple Contradiction: EN Preference Override (Bug S42.4/S43.1 retest)
+### 21.16 Semantic Triple Contradiction: EN Preference Override (Bug S42.4/S43.1 retest)
 
-> **Bug S42.4/S43.1 fix:** Layer 2.5 extracts (subject, predicate, object) from stored facts. When two facts share the same predicate but have different objects, the newer one replaces the older one. Zero ML, sub-millisecond.
+> **Bug S42.4/S43.1 fix:** Layer 3.5 (reordered, threshold 0.70) finds semantically similar facts, then triple disambiguation extracts (subject, predicate, object). Same predicate + different object → contradiction → replace. Zero ML, sub-millisecond.
 
 **Clean state first:**
 ```bash
@@ -1072,7 +1072,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] `/fact add I prefer light mode` → ↻ Updated: "User prefers light mode" replaces "User prefers dark mode" (preference override)
 - [ ] `/fact list` → shows only ONE preference: "User prefers light mode" (dark mode is gone)
 
-### 21.17 Layer 2.5: EN Adverb+Verb Contradiction
+### 21.17 Semantic Triple: EN Adverb+Verb Contradiction
 
 **Clean state first:**
 ```bash
@@ -1083,7 +1083,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] `/fact add I really like emacs` → ↻ Updated: "User really likes emacs" replaces "User really likes vim" (same predicate "really likes")
 - [ ] `/fact list` → shows only ONE: "User really likes emacs"
 
-### 21.18 Layer 2.5: EN Identity Change
+### 21.18 Semantic Triple: EN Identity Change
 
 **Clean state first:**
 ```bash
@@ -1094,7 +1094,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] `/fact add I live in Recife` → ↻ Updated: "User lives in Recife" replaces "User lives in São Paulo"
 - [ ] `/fact list` → shows only ONE: "User lives in Recife"
 
-### 21.19 Layer 2.5: EN Name Change
+### 21.19 Semantic Triple: EN Name Change
 
 **Clean state first:**
 ```bash
@@ -1105,7 +1105,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] `/fact add My name is João` → ↻ Updated: "User's name is João" replaces "User's name is Lucas"
 - [ ] `/fact list` → shows only ONE: "User's name is João"
 
-### 21.20 Layer 2.5: EN No False Positive (Different Predicates)
+### 21.20 Semantic Triple: EN No False Positive (Different Predicates)
 
 **Clean state first:**
 ```bash
@@ -1116,7 +1116,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] `/fact add I prefer Rust` → ✓ Added: "User prefers Rust" (NOT a contradiction — different predicates "likes" vs "prefers")
 - [ ] `/fact list` → shows BOTH facts
 
-### 21.21 Layer 2.5: EN Negation Contradiction
+### 21.21 Semantic Triple: EN Negation Contradiction
 
 **Clean state first:**
 ```bash
@@ -1127,7 +1127,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] `/fact add I don't like verbose errors` → ↻ Updated: "User doesn't like verbose errors" replaces "User doesn't like verbose errors" (same predicate "doesn't like")
 - [ ] `/fact list` → shows only ONE: "User doesn't like verbose errors"
 
-### 21.22 Layer 2.5: PT Preference Override
+### 21.22 Semantic Triple: PT Preference Override
 
 **Clean state first:**
 ```bash
@@ -1138,7 +1138,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] `/fact add Eu prefiro modo claro` → ↻ Updated: "User prefers modo claro" replaces "User prefers modo escuro" (same predicate "prefers")
 - [ ] `/fact list` → shows only ONE: "User prefers modo claro"
 
-### 21.23 Layer 2.5: PT Identity Change (ADR-E4 fix)
+### 21.23 Semantic Triple: PT Identity Change (ADR-E4 fix)
 
 **Clean state first:**
 ```bash
@@ -1149,7 +1149,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] `/fact add Meu nome é João` → ↻ Updated: "User's name is João" replaces "User's name is Lucas"
 - [ ] `/fact list` → shows only ONE: "User's name is João"
 
-### 21.24 Layer 2.5: EN Factual Content Not Affected
+### 21.24 Semantic Triple: EN Factual Content Not Affected
 
 **Clean state first:**
 ```bash
@@ -1158,7 +1158,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 - [ ] `/fact add The project uses SQLite` → ✓ Added (no triple extracted — subject ≠ "user")
 - [ ] `/fact add The project uses PostgreSQL` → ✓ Added (not a preference/identity fact)
-- [ ] `/fact list` → shows BOTH facts (factual content coexists, not affected by Layer 2.5)
+- [ ] `/fact list` → shows BOTH facts (factual content coexists, not affected by semantic triple contradiction)
 
 ### 21.25 ADR-E4: PT Identity Normalization via Auto-Extraction
 

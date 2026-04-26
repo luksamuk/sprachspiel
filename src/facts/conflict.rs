@@ -3,22 +3,18 @@
 //! Detects conflicts between new facts and existing facts using FTS5 search,
 //! and resolves them using heuristics.
 //!
-//! # Layer 2.5: Triple-Based Contradiction Detection
+//! # Layer 3.5: Semantic Contradiction Detection (with Triple Disambiguation)
 //!
-//! Before FTS5 (Layer 3) and semantic search (Layer 3.5), a lightweight
-//! triple extraction checks if two facts share the same `(subject, predicate)`
-//! but differ in `object`. This catches preference overrides and identity changes
-//! that embeddings miss (e.g., "User prefers dark mode" → "User prefers light mode"
-//! have cosine similarity ~0.77, but their triples `(user, prefers, dark mode)` vs
-//! `(user, prefers, light mode)` clearly contradict).
-//!
-//! Zero ML, sub-millisecond, covers ~80% of preference/identity contradictions.
+//! After Layer 2 (normalized match) and before Layer 3 (FTS5 BM25), semantic
+//! search via embeddings finds candidate pairs at cosine ≥ 0.70. Triple
+//! extraction then disambiguates: same predicate + different object = contradiction,
+//! same triple = duplicate, different predicate = fall through to is_contradiction().
 
 use super::db::FactSearchResult;
 use super::lang::{TRIPLE_IDENTITY_PREFIXES, TRIPLE_PREFERENCE_PREFIXES};
 use super::types::{Category, Fact};
 
-// === Triple-Based Contradiction Detection (Layer 2.5) ===
+// === Triple Extraction for Semantic Contradiction Disambiguation ===
 
 /// A semantic triple extracted from a fact for contradiction detection.
 ///
@@ -122,14 +118,26 @@ pub fn extract_fact_triple(content: &str) -> Option<FactTriple> {
     None
 }
 
-/// Default threshold for conflict detection (similarity score 0.0-1.0)
+/// Default threshold for FTS5 BM25 conflict detection (similarity score 0.0-1.0)
 ///
 /// Lowered from 0.85 to 0.75 to catch more FTS5 keyword matches.
 /// BM25 normalization maps score -5 (good match) to ~0.83, which was
 /// just below the old 0.85 threshold. At 0.75, most real duplicates
 /// are caught while false positives remain rare due to the layered
-/// dedup pipeline (exact match → normalized match → FTS5).
+/// dedup pipeline (exact match → normalized match → semantic → FTS5).
 pub const CONFLICT_THRESHOLD: f32 = 0.75;
+
+/// Threshold for insert-time semantic search via embeddings (cosine similarity).
+///
+/// Used by Layer 3.5 in `insert_fact_with_dedup()` and `handle_fact_add()`.
+/// Intentionally broad (0.70) to catch contradictions that normalized match
+/// and FTS5 BM25 miss (e.g., "prefer dark mode" vs "prefer light mode" at
+/// cosine ~0.77). Triple-based disambiguation inside the semantic block
+/// separates contradictions from duplicates and related facts.
+///
+/// Separate from `SEMANTIC_DEDUP_THRESHOLD = 0.90` in verify.rs, which is
+/// for startup O(n²) pairwise dedup (intentionally strict — near-identical only).
+pub const SEMANTIC_SEARCH_THRESHOLD: f32 = 0.70;
 
 /// Type of conflict detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,8 +319,11 @@ fn word_overlap_ratio(a: &str, b: &str) -> f32 {
 /// Check if content contains preference-like patterns
 fn contains_preference_like(s: &str) -> bool {
     s.contains("like ")
+        || s.contains("likes ")
         || s.contains("love ")
+        || s.contains("loves ")
         || s.contains("enjoy ")
+        || s.contains("enjoys ")
         || s.contains("prefer")
         || s.contains("gosto de")
         || s.contains("prefiro")
@@ -324,6 +335,7 @@ fn contains_preference_like(s: &str) -> bool {
 /// Check if content contains preference-hate patterns
 fn contains_preference_hate(s: &str) -> bool {
     s.contains("hate ")
+        || s.contains("hates ")
         || s.contains("dislike")
         || s.contains("odeio")
         || s.contains("odeia")
@@ -335,8 +347,16 @@ fn contains_preference_hate(s: &str) -> bool {
 
 /// Check if two strings have opposite negation
 fn has_opposite_negation(a: &str, b: &str) -> bool {
-    let a_neg = a.contains("não ") || a.contains("nao ") || a.contains("not ");
-    let b_neg = b.contains("não ") || b.contains("nao ") || b.contains("not ");
+    let a_neg = a.contains("não ")
+        || a.contains("nao ")
+        || a.contains("not ")
+        || a.contains("doesn't ")
+        || a.contains("don't ");
+    let b_neg = b.contains("não ")
+        || b.contains("nao ")
+        || b.contains("not ")
+        || b.contains("doesn't ")
+        || b.contains("don't ");
 
     // If one has negation and the other doesn't, it might be a contradiction
     // But we need to be careful - this is a heuristic
@@ -693,7 +713,7 @@ mod tests {
         assert!(word_overlap_ratio("dark mode", "python programming") < 0.3);
     }
 
-    // ── FactTriple + extract_fact_triple (Layer 2.5) ──────────────────
+    // ── FactTriple + extract_fact_triple (semantic disambiguation) ──────
 
     #[test]
     fn test_extract_triple_preference_simple() {
@@ -970,5 +990,132 @@ mod tests {
         let triple = extract_fact_triple("USER PREFERS DARK MODE").unwrap();
         assert_eq!(triple.predicate, "prefers");
         // Object preserves original casing from the content string
+    }
+
+    // === Semantic Cascade Tests (Layer 3.5 reorder) ===
+
+    /// Helper: simulate the semantic cascade logic used by Layer 3.5.
+    /// Returns ("contradiction", predicate) | ("duplicate", "") | ("polarity", "")
+    /// | ("neither", "")
+    fn simulate_semantic_cascade(candidate: &str, existing: &str) -> (&'static str, String) {
+        // Step 1: Triple-based disambiguation
+        if let Some(candidate_triple) = extract_fact_triple(candidate)
+            && let Some(existing_triple) = extract_fact_triple(existing)
+        {
+            if candidate_triple.contradicts(&existing_triple) {
+                return ("contradiction", candidate_triple.predicate);
+            }
+            if candidate_triple.predicate == existing_triple.predicate
+                && candidate_triple.object == existing_triple.object
+            {
+                return ("duplicate", String::new());
+            }
+            // Different predicate → fall through
+        }
+        // Step 2: Polarity opposition fallback
+        if is_contradiction(candidate, existing) {
+            return ("polarity", String::new());
+        }
+        ("neither", String::new())
+    }
+
+    #[test]
+    fn test_cascade_preference_contradiction() {
+        // "prefers dark mode" vs "prefers light mode" — same predicate
+        let (action, predicate) =
+            simulate_semantic_cascade("User prefers dark mode", "User prefers light mode");
+        assert_eq!(action, "contradiction");
+        assert_eq!(predicate, "prefers");
+    }
+
+    #[test]
+    fn test_cascade_identity_contradiction() {
+        // "name is Lucas" vs "name is Maria" — same predicate
+        let (action, predicate) =
+            simulate_semantic_cascade("User's name is Lucas", "User's name is Maria");
+        assert_eq!(action, "contradiction");
+        assert_eq!(predicate, "name is");
+    }
+
+    #[test]
+    fn test_cascade_same_triple_duplicate() {
+        // Same predicate, same object → semantic duplicate
+        let (action, _) =
+            simulate_semantic_cascade("User prefers dark mode", "User prefers dark mode");
+        assert_eq!(action, "duplicate");
+    }
+
+    #[test]
+    fn test_cascade_polarity_fallback_like_hate() {
+        // "likes X" vs "hates X" — different predicates (triple skips),
+        // but is_contradiction catches via like/hate polarity (with 3rd-person forms)
+        let (action, _) =
+            simulate_semantic_cascade("User likes verbose output", "User hates verbose output");
+        assert_eq!(action, "polarity");
+    }
+
+    #[test]
+    fn test_cascade_polarity_fallback_negation() {
+        // "likes X" vs "doesn't like X" — triples extract different predicates,
+        // but is_contradiction catches via opposite negation
+        let (action, _) = simulate_semantic_cascade(
+            "User likes verbose output",
+            "User doesn't like verbose output",
+        );
+        assert_eq!(action, "polarity");
+    }
+
+    #[test]
+    fn test_cascade_neither_different_topics() {
+        // "likes Python" vs "prefers Rust" — different predicates, same-polarity, no contradiction
+        let (action, _) = simulate_semantic_cascade("User likes Python", "User prefers Rust");
+        assert_eq!(action, "neither");
+    }
+
+    #[test]
+    fn test_cascade_neither_likes_same_object() {
+        // "likes Python" vs "prefers Python" — different predicates, same object,
+        // same polarity — NOT a contradiction (is_contradiction: both "like" polarity)
+        let (action, _) = simulate_semantic_cascade("User likes Python", "User prefers Python");
+        assert_eq!(action, "neither");
+    }
+
+    #[test]
+    fn test_cascade_adverb_verb_contradiction() {
+        // "really likes vim" vs "really likes emacs" — same adverb+verb predicate
+        let (action, predicate) =
+            simulate_semantic_cascade("User really likes vim", "User really likes emacs");
+        assert_eq!(action, "contradiction");
+        assert_eq!(predicate, "really likes");
+    }
+
+    #[test]
+    fn test_cascade_negation_contradiction() {
+        // "doesn't like verbose output" vs "doesn't like verbose errors"
+        let (action, predicate) = simulate_semantic_cascade(
+            "User doesn't like verbose output",
+            "User doesn't like verbose errors",
+        );
+        assert_eq!(action, "contradiction");
+        assert_eq!(predicate, "doesn't like");
+    }
+
+    #[test]
+    fn test_cascade_location_change() {
+        // "lives in São Paulo" vs "lives in Recife" — same predicate
+        let (action, predicate) =
+            simulate_semantic_cascade("User lives in São Paulo", "User lives in Recife");
+        assert_eq!(action, "contradiction");
+        assert_eq!(predicate, "lives in");
+    }
+
+    #[test]
+    fn test_semantic_search_threshold_value() {
+        // Verify threshold constant matches spec
+        assert!((SEMANTIC_SEARCH_THRESHOLD - 0.70).abs() < f32::EPSILON);
+        // Verify it's below the minimum contradiction cosine (0.7753)
+        assert!(SEMANTIC_SEARCH_THRESHOLD < 0.77);
+        // Verify it's above the maximum different-topic cosine (0.60)
+        assert!(SEMANTIC_SEARCH_THRESHOLD > 0.60);
     }
 }
