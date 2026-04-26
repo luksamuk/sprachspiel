@@ -7,10 +7,12 @@
 //! # Architecture
 //!
 //! ```text
-//! extract.rs  → preference_patterns(), identity_patterns(), filler_words(), command_starters()
-//! prompt.rs    → normalize_replacements()
-//! classify.rs  → preference_keywords()
-//! lang.rs      → PT→EN translation for storage (translate_pt_to_en)
+//! extract.rs    → preference_patterns(), identity_patterns(), filler_words(), command_starters()
+//! prompt.rs      → normalize_replacements() (render-time defense-in-depth)
+//! classify.rs    → preference_keywords()
+//! lang.rs        → normalize_to_storage_format() (storage-time normalization)
+//!                  translate_pt_to_en() (PT→EN + EN 1st→3rd, core logic)
+//!                  normalize_for_comparison() (dedup)
 //! ```
 //!
 //! # Design Decisions
@@ -18,9 +20,15 @@
 //! - **ADR-L1:** All fact content is stored in English. PT input is translated
 //!   to EN before storage via heuristic pattern-based translation. This ensures
 //!   prompt rendering and FTS5 search work consistently regardless of input language.
+//!   Noun translation (e.g., "respostas curtas" → "short responses") is deferred
+//!   to LLM-mode (issue #106, M2).
 //! - **ADR-L2:** Normalization output is always English ("User prefers", not "User prefere").
 //! - **ADR-L3:** Classification keywords include both EN and PT — the classification
 //!   happens before translation, so PT patterns must be recognized.
+//! - **ADR-E4 (revised):** Third-person normalization is applied at storage time,
+//!   not just render time. All facts are stored in third person ("User prefers X",
+//!   not "I prefer X"). Render-time normalization in `prompt.rs` remains as a
+//!   defense-in-depth layer for any legacy first-person data.
 
 // === Extraction Patterns ===
 
@@ -508,26 +516,47 @@ pub fn command_starters() -> Vec<&'static str> {
 
 // === PT→EN Translation for Storage ===
 
-/// Translate PT preference verbs to EN equivalents for storage.
+/// Translate PT→EN and normalize EN first-person to third-person for storage.
 ///
-/// This is a heuristic translation that handles the most common PT
-/// preference patterns. It translates the *prefix* of a sentence,
-/// preserving the rest unchanged.
+/// This function is the core of storage normalization (ADR-E4 revised: all facts
+/// stored in third person). It applies transformations in priority order:
 ///
-/// # Design Decision (ADR-L1)
+/// 1. **PT→EN translation** — Portuguese prefix patterns produce English third-person
+///    output (e.g., `"Eu prefiro X"` → `"User prefers X"`).
 ///
-/// All fact content is stored in English. PT input is translated before
-/// storage via this function, which is called from `extract.rs` after
-/// pattern matching succeeds.
+/// 2. **EN first-person → third-person** — If no PT pattern matched, English
+///    first-person patterns are normalized (e.g., `"I prefer X"` → `"User prefers X"`).
+///
+/// If neither transformation matches, the content is returned as-is.
+///
+/// # Important: Use `normalize_to_storage_format()` instead
+///
+/// This function is kept public for backward compatibility and test coverage,
+/// but new code should prefer `normalize_to_storage_format()` which delegates
+/// to this function. The name `translate_pt_to_en` is a historical artifact;
+/// the function now handles EN normalization as well.
+///
+/// # Limitations (deferred to issue #106)
+///
+/// Only prefixes are translated. Nouns and adjectives after the prefix remain
+/// in their original language. Full PT→EN noun translation will be handled
+/// by LLM-mode (issue #106, M2).
 ///
 /// # Examples
 ///
 /// ```
 /// use ask_ai::facts::lang::translate_pt_to_en;
 ///
+/// // PT→EN (third-person output)
 /// assert_eq!(translate_pt_to_en("Eu prefiro respostas curtas"), "User prefers respostas curtas");
-/// assert_eq!(translate_pt_to_en("Eu gosto de café"), "User likes café");
-/// assert_eq!(translate_pt_to_en("I prefer dark mode"), "I prefer dark mode");
+/// assert_eq!(translate_pt_to_en("Meu nome é Ana"), "My name is Ana");
+///
+/// // EN first-person → third-person (new behavior)
+/// assert_eq!(translate_pt_to_en("I prefer dark mode"), "User prefers dark mode");
+/// assert_eq!(translate_pt_to_en("My name is Lucas"), "User's name is Lucas");
+///
+/// // Already third person or factual — no change
+/// assert_eq!(translate_pt_to_en("The project uses Rust"), "The project uses Rust");
 /// ```
 pub fn translate_pt_to_en(content: &str) -> String {
     let lower = content.to_lowercase();
@@ -607,8 +636,79 @@ pub fn translate_pt_to_en(content: &str) -> String {
         }
     }
 
-    // No PT pattern matched — return as-is (likely already English)
+    // No PT pattern matched — try EN first-person → third-person normalization
+    // (ADR-E4: All facts are stored in third person, not first person)
+    let lower = content.to_lowercase();
+
+    // Try EN first-person → third-person replacements
+    // Order matters: longer patterns first to avoid partial matching
+    // (e.g., "I don't like" must match before "I like")
+    for (from, to) in normalize_replacements() {
+        if lower.starts_with(from) {
+            let rest = &content[from.len()..];
+            return format!("{}{}", to, rest);
+        }
+    }
+
+    // No pattern matched — return as-is
     content.to_string()
+}
+
+// === Storage Normalization ===
+
+/// Normalize fact content for storage (ADR-E4: third-person only).
+///
+/// This is the primary normalization function called before storing any fact,
+/// whether from auto-extraction (`extract.rs`) or the LLM tool (`fact_add`).
+///
+/// It applies two transformations in priority order:
+///
+/// 1. **PT→EN translation** — Portuguese prefix patterns are translated to
+///    English third-person output. E.g., `"Eu prefiro X"` → `"User prefers X"`.
+///
+/// 2. **EN first-person → third-person** — English first-person patterns are
+///    normalized to third-person. E.g., `"I prefer X"` → `"User prefers X"`,
+///    `"My name is X"` → `"User's name is X"`.
+///
+/// # Third-person only (ADR-E4 revised)
+///
+/// All facts are stored in third person. This prevents the LLM from confusing
+/// user preferences with its own identity when facts appear in system prompts.
+/// The prompt-rendering function `normalize_to_third_person()` remains as a
+/// defense-in-depth layer for any legacy data.
+///
+/// # Limitations (Bug #2, deferred to issue #106)
+///
+/// Only prefixes are translated. Nouns and adjectives after the prefix remain
+/// in their original language. For example:
+/// - `"Eu prefiro respostas curtas"` → `"User prefers respostas curtas"`
+///   (not "User prefers short responses" — noun translation deferred to LLM-mode)
+/// - `"Detesto café"` → `"User hates café"`
+///   (not "User hates coffee" — noun translation deferred to LLM-mode)
+///
+/// Full PT→EN noun translation will be handled by LLM-mode (issue #106, M2).
+///
+/// # Examples
+///
+/// ```
+/// use ask_ai::facts::lang::normalize_to_storage_format;
+///
+/// // EN first-person → third person
+/// assert_eq!(normalize_to_storage_format("I prefer dark mode"), "User prefers dark mode");
+/// assert_eq!(normalize_to_storage_format("My name is Lucas"), "User's name is Lucas");
+/// assert_eq!(normalize_to_storage_format("I work at Google"), "User works at Google");
+///
+/// // PT → EN third person
+/// assert_eq!(normalize_to_storage_format("Eu prefiro respostas curtas"), "User prefers respostas curtas");
+/// assert_eq!(normalize_to_storage_format("Meu nome é Ana"), "My name is Ana");
+///
+/// // Already third person or factual — no change
+/// assert_eq!(normalize_to_storage_format("The project uses Rust"), "The project uses Rust");
+/// ```
+pub fn normalize_to_storage_format(content: &str) -> String {
+    // translate_pt_to_en now handles both PT→EN and EN 1st→3rd person
+    // in priority order (PT patterns checked first, then EN patterns)
+    translate_pt_to_en(content)
 }
 
 // === Tests ===
@@ -802,13 +902,37 @@ mod tests {
     }
 
     #[test]
-    fn test_translate_en_passthrough() {
-        // English content should pass through unchanged
+    fn test_translate_en_first_person_to_third_person() {
+        // English first-person content should be normalized to third-person (ADR-E4 revised)
         assert_eq!(
             translate_pt_to_en("I prefer dark mode"),
-            "I prefer dark mode"
+            "User prefers dark mode"
         );
-        assert_eq!(translate_pt_to_en("My name is Lucas"), "My name is Lucas");
+        assert_eq!(
+            translate_pt_to_en("My name is Lucas"),
+            "User's name is Lucas"
+        );
+        assert_eq!(
+            translate_pt_to_en("I work at Google"),
+            "User works at Google"
+        );
+        assert_eq!(
+            translate_pt_to_en("I live in São Paulo"),
+            "User lives in São Paulo"
+        );
+    }
+
+    #[test]
+    fn test_translate_en_third_person_passthrough() {
+        // English third-person/factual content should pass through unchanged
+        assert_eq!(
+            translate_pt_to_en("The project uses Rust"),
+            "The project uses Rust"
+        );
+        assert_eq!(
+            translate_pt_to_en("User prefers dark mode"),
+            "User prefers dark mode"
+        );
     }
 
     #[test]
@@ -954,6 +1078,76 @@ mod tests {
         assert_eq!(
             translate_pt_to_en("Não gosta de bugs"),
             "User doesn't like bugs"
+        );
+    }
+
+    // ── normalize_to_storage_format ──────────────────────────────────
+
+    #[test]
+    fn test_storage_format_en_first_person() {
+        // English first-person → third-person (ADR-E4 revised)
+        assert_eq!(
+            normalize_to_storage_format("I prefer dark mode"),
+            "User prefers dark mode"
+        );
+        assert_eq!(
+            normalize_to_storage_format("I like Python"),
+            "User likes Python"
+        );
+        assert_eq!(
+            normalize_to_storage_format("I hate verbose errors"),
+            "User hates verbose errors"
+        );
+        assert_eq!(
+            normalize_to_storage_format("My name is Lucas"),
+            "User's name is Lucas"
+        );
+        assert_eq!(
+            normalize_to_storage_format("I work at Google"),
+            "User works at Google"
+        );
+        assert_eq!(
+            normalize_to_storage_format("I live in São Paulo"),
+            "User lives in São Paulo"
+        );
+    }
+
+    #[test]
+    fn test_storage_format_pt_to_third_person() {
+        // PT → EN third-person
+        assert_eq!(
+            normalize_to_storage_format("Eu prefiro respostas curtas"),
+            "User prefers respostas curtas"
+        );
+        assert_eq!(
+            normalize_to_storage_format("Meu nome é Ana"),
+            "My name is Ana"
+        );
+    }
+
+    #[test]
+    fn test_storage_format_third_person_passthrough() {
+        // Already third-person or factual — no change
+        assert_eq!(
+            normalize_to_storage_format("The project uses Rust"),
+            "The project uses Rust"
+        );
+        assert_eq!(
+            normalize_to_storage_format("User prefers dark mode"),
+            "User prefers dark mode"
+        );
+    }
+
+    #[test]
+    fn test_storage_format_en_negation() {
+        // English negation patterns → third-person
+        assert_eq!(
+            normalize_to_storage_format("I don't like verbose errors"),
+            "User doesn't like verbose errors"
+        );
+        assert_eq!(
+            normalize_to_storage_format("I don't want to repeat myself"),
+            "User doesn't want to repeat myself"
         );
     }
 }

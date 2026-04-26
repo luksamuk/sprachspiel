@@ -213,7 +213,7 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
                 match process_send_result(state, result, user_message_id).await {
                     ProcessResult::Success => {
                         // Auto-extract facts from recent user messages (autoDream-lite)
-                        try_auto_extract_facts(state);
+                        try_auto_extract_facts(state).await;
                     }
                     ProcessResult::ContinuationError(e) => {
                         eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
@@ -277,7 +277,7 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
 /// - Notification gated by `settings.facts.auto_extract_notify`
 ///
 /// See ADR-E1 (heuristic-only), ADR-E2 (always Global), ADR-E5 (synchronous).
-fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
+async fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
     // Guard: auto_extract must be enabled
     if !state.settings.facts.auto_extract {
         return;
@@ -311,7 +311,14 @@ fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
     let max_facts = state.settings.facts.max_facts as usize;
     let project_id = state.session.project_id.as_deref();
 
-    let result = extract_and_insert_facts(db, &user_messages, project_id, max_facts);
+    let result = extract_and_insert_facts(
+        db,
+        &user_messages,
+        project_id,
+        max_facts,
+        state.embedding_client.as_ref(),
+    )
+    .await;
 
     // Log the extraction result
     if result.inserted > 0 || result.updated > 0 {
@@ -340,7 +347,9 @@ fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
     }
 
     // Generate embeddings for newly inserted facts (eager, fire-and-forget).
-    // If Ollama is offline, has_embedding stays 0 and recovery generates on next startup.
+    // Semantic dedup (Layer 3.5) already generates embeddings for preference facts.
+    // This covers the remaining cases: identity facts, facts added without an
+    // embedding client, and facts where Layer 3.5 was skipped.
     if (result.inserted > 0 || result.updated > 0)
         && let (Some(db_ref), Some(client)) = (&state.db, &state.embedding_client)
     {

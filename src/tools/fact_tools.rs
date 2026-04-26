@@ -167,9 +167,9 @@ pub async fn fact_add(
         return Ok(msg);
     }
 
-    // Translate PT→EN before storage (ADR-L1: all facts stored in English).
-    // Auto-extraction already does this; fact_add must do the same to maintain consistency.
-    let content = lang::translate_pt_to_en(&content);
+    // Normalize to storage format: PT→EN + EN first-person→third-person (ADR-E4 revised).
+    // Auto-extraction already does this; fact_add must do the same for consistency.
+    let content = lang::normalize_to_storage_format(&content);
 
     // Get database
     let db = match get_db() {
@@ -329,7 +329,86 @@ pub async fn fact_add(
         }
     };
 
-    // Handle conflicts
+    // ====================================================================
+    // Layer 3.5: Semantic embedding similarity (preference override detection)
+    //
+    // If FTS5 didn't find conflicts, check semantic similarity via embeddings.
+    // This catches cases like "prefer dark mode" vs "prefer light mode"
+    // where FTS5 BM25 score is too low but embeddings show high similarity.
+    // ====================================================================
+    if conflicts.is_empty()
+        && parsed_category == Category::Preference
+        && let Some(client) = get_embedding()
+    {
+        match crate::facts::embedding::generate_fact_embedding(&content, &client).await {
+            Ok(candidate_embedding) => {
+                match db.search_facts_semantic(&candidate_embedding, None, 5) {
+                    Ok(semantic_results) => {
+                        for result in &semantic_results {
+                            if result.score < 0.90 {
+                                continue; // Below semantic similarity threshold
+                            }
+
+                            if crate::facts::conflict::is_contradiction(
+                                &content,
+                                &result.fact.content,
+                            ) {
+                                log::debug!(
+                                    "fact_add: Semantic contradiction found (cosine={:.3}): '{}' vs '{}'",
+                                    result.score,
+                                    content,
+                                    result.fact.content
+                                );
+                                // Remove the old fact and insert the new one
+                                if let Err(e) = db.delete_fact(result.fact.id) {
+                                    log::debug!(
+                                        "fact_add: Failed to delete contradicting fact: {}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                                // Fall through to insert below with the new fact
+                                break;
+                            }
+
+                            // Not a contradiction but high similarity — it's a duplicate
+                            log::debug!(
+                                "fact_add: Semantic duplicate found (cosine={:.3}): '{}' vs '{}'",
+                                result.score,
+                                content,
+                                result.fact.content
+                            );
+                            let result_msg = format!(
+                                "Skipped: Similar fact already exists (fact:{}).\n\n\
+                                 Existing: {}\n\
+                                 New: {}\n\n\
+                                 Use fact_remove(id=\"{}\") first if you want to replace it.",
+                                result.fact.id,
+                                result.fact.content,
+                                content,
+                                result.fact.id
+                            );
+                            log_tool_result("fact_add", &result_msg);
+                            return Ok(result_msg);
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!("fact_add: Semantic search failed: {}", e);
+                        // Fall through to insert
+                    }
+                }
+            }
+            Err(e) => {
+                log::debug!(
+                    "fact_add: Failed to generate embedding for semantic dedup: {}",
+                    e
+                );
+                // Fall through to insert without semantic check
+            }
+        }
+    }
+
+    // Handle FTS5 conflicts
     if !conflicts.is_empty() {
         // Global-wins-project rule: when adding a Global-scope fact,
         // remove ALL conflicting Project-scope facts first, then resolve

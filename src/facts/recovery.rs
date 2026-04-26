@@ -96,7 +96,21 @@ pub async fn recover_missing_fact_embeddings(
     }
 
     if recovered > 0 {
-        log::info!("Successfully recovered {} fact embedding(s).", recovered);
+        log::info!(
+            "Successfully recovered {} fact embedding(s).",
+            recovered
+        );
+    }
+
+    // Post-recovery verification: check if any facts still lack embeddings
+    if let Ok(remaining) = db.get_facts_for_reindex()
+        && !remaining.is_empty()
+    {
+        log::warn!(
+            "Fact embedding recovery incomplete: {} fact(s) still without embeddings. \
+             This may indicate Ollama was unavailable during startup.",
+            remaining.len()
+        );
     }
 
     recovered

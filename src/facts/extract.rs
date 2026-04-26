@@ -33,9 +33,9 @@
 //! - **ADR-E2:** Always `Scope::Global` for auto-extracted facts. Project-scoped facts
 //!   require explicit `/fact add --project`.
 //! - **ADR-E3:** Source::Llm attribution for all auto-extracted facts.
-//! - **ADR-E4:** Third-person normalization in prompt rendering ("User prefers X"),
-//!   not in storage. Storage preserves original text.
-//! - **ADR-E5:** Synchronous extraction after response. Heuristic is <1ms, no async needed.
+//! - **ADR-E4:** Third-person normalization at storage time and in prompt rendering
+//!   (defense-in-depth). All facts are stored as "User prefers X" — never "I prefer X".
+//! - **ADR-E5:** Synchronous extraction after response (<1ms heuristic).
 //! - **ADR-E6:** Max 3 facts per response to avoid noise.
 
 use super::classify::classify_fact;
@@ -43,6 +43,9 @@ use super::conflict::{CONFLICT_THRESHOLD, detect_conflicts, resolve_conflict};
 use super::lang;
 use super::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
 use crate::db::Database;
+use crate::embeddings::EmbeddingClient;
+
+use std::sync::Arc;
 
 // === Constants ===
 
@@ -196,9 +199,11 @@ fn match_pattern(sentence: &str, pattern: &str, confidence: f32) -> Option<Extra
         // that are lost in the English third-person translation.
         let category = classify_fact(&raw_content);
 
-        // Translate PT→EN before storage (no-op for English content).
-        // ADR-L1: All facts stored in English.
-        let content = lang::translate_pt_to_en(&raw_content);
+        // Normalize to storage format: PT→EN translation + EN first-person→third-person.
+        // ADR-E4 (revised): All facts stored in third person.
+        // ADR-L1: PT content translated to English before storage.
+        // Note: Nouns after the prefix remain in original language (deferred to issue #106).
+        let content = lang::normalize_to_storage_format(&raw_content);
 
         Some(ExtractedFact {
             category,
@@ -252,17 +257,19 @@ fn deduplicate_extracted(facts: &mut Vec<ExtractedFact>) {
 ///
 /// # Arguments
 /// * `db` — Database connection for deduplication and insertion
-/// * `messages` — Iterator of (role, content) pairs from the session
+/// * `user_messages` — Iterator of (role, content) pairs from the session
 /// * `project_id` — Current project ID (for scope, always Global for auto-extraction)
 /// * `max_facts` — Maximum number of facts to extract per response
+/// * `embedding_client` — Optional embedding client for semantic dedup (Layer 3.5)
 ///
 /// # Returns
 /// `ExtractionResult` with counts and details
-pub fn extract_and_insert_facts(
+pub async fn extract_and_insert_facts(
     db: &Database,
     user_messages: &[&str],
     project_id: Option<&str>,
     max_facts: usize,
+    embedding_client: Option<&Arc<EmbeddingClient>>,
 ) -> ExtractionResult {
     let mut candidates: Vec<ExtractedFact> = Vec::new();
 
@@ -296,7 +303,7 @@ pub fn extract_and_insert_facts(
     };
 
     for candidate in candidates {
-        match insert_fact_with_dedup(db, &candidate, project_id) {
+        match insert_fact_with_dedup(db, &candidate, project_id, embedding_client).await {
             InsertAction::Inserted => {
                 result.inserted += 1;
                 result.details.push(ExtractionDetail {
@@ -336,14 +343,19 @@ enum InsertAction {
 
 /// Insert a fact with deduplication against existing facts.
 ///
-/// Uses FTS5 search to find similar existing facts, then:
-/// - If duplicate (similarity >= 0.95, no contradiction) → Skip
-/// - If contradiction (similarity >= 0.85, with contradiction) → Update (invalidate old, insert new)
-/// - If no conflict → Insert
-fn insert_fact_with_dedup(
+/// Uses a layered dedup pipeline:
+/// - Layer 1: Exact content match (case-insensitive, trimmed)
+/// - Layer 2: Normalized content match (strips pronouns/subjects)
+/// - Layer 3: FTS5 keyword search with BM25 scoring
+/// - Layer 3.5: Semantic embedding similarity (only for preferences, requires embedding_client)
+/// - Layer 4: Insert new fact
+///
+/// If no embedding_client is provided, Layer 3.5 is skipped.
+async fn insert_fact_with_dedup(
     db: &Database,
     candidate: &ExtractedFact,
     project_id: Option<&str>,
+    embedding_client: Option<&Arc<EmbeddingClient>>,
 ) -> InsertAction {
     let candidate_trimmed = candidate.content.trim().to_lowercase();
 
@@ -431,8 +443,85 @@ fn insert_fact_with_dedup(
         }
     };
 
-    // Check for conflicts
+    // Check for conflicts from FTS5
     let conflicts = detect_conflicts(&candidate.content, &search_results, CONFLICT_THRESHOLD);
+
+    // ====================================================================
+    // Layer 3.5: Semantic embedding similarity (preference override detection)
+    //
+    // If FTS5 didn't find conflicts, check semantic similarity via embeddings.
+    // This catches cases like "I prefer dark mode" vs "I prefer light mode"
+    // where FTS5 BM25 score is too low but embeddings show high similarity.
+    //
+    // Only applies when:
+    // 1. An embedding client is available
+    // 2. The candidate is a preference (preferences are most likely to contradict)
+    // 3. FTS5 didn't find any conflicts (otherwise FTS5 conflicts are sufficient)
+    // ====================================================================
+    if conflicts.is_empty()
+        && candidate.category == Category::Preference
+        && let Some(client) = embedding_client
+    {
+        match super::embedding::generate_fact_embedding(&candidate.content, client).await
+        {
+            Ok(candidate_embedding) => {
+                match db.search_facts_semantic(&candidate_embedding, None, 5) {
+                    Ok(semantic_results) => {
+                        for result in &semantic_results {
+                            if result.score < 0.90 {
+                                continue; // Below semantic similarity threshold
+                            }
+
+                            // Check if this is a preference override (same verb, different object)
+                            if super::conflict::is_contradiction(
+                                &candidate.content,
+                                &result.fact.content,
+                            ) {
+                                log::debug!(
+                                    "Auto-extract: Semantic contradiction found (cosine={:.3}): '{}' vs '{}'",
+                                    result.score,
+                                    candidate.content,
+                                    result.fact.content
+                                );
+                                // Resolve: newer wins (replace the old fact)
+                                if let Err(e) = db.delete_fact(result.fact.id) {
+                                    log::debug!(
+                                        "Auto-extract: Failed to delete contradicting fact: {}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                                return match insert_new_fact(db, candidate, project_id) {
+                                    InsertAction::Inserted => InsertAction::Updated,
+                                    other => other,
+                                };
+                            }
+
+                            // Not a contradiction but high similarity — it's a duplicate
+                            log::debug!(
+                                "Auto-extract: Semantic duplicate found (cosine={:.3}): '{}' vs '{}'",
+                                result.score,
+                                candidate.content,
+                                result.fact.content
+                            );
+                            return InsertAction::Skipped;
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!("Auto-extract: Semantic search failed: {}", e);
+                        // Fall through to insert
+                    }
+                }
+            }
+            Err(e) => {
+                log::debug!(
+                    "Auto-extract: Failed to generate embedding for semantic dedup: {}",
+                    e
+                );
+                // Fall through to insert without semantic check
+            }
+        }
+    }
 
     if conflicts.is_empty() {
         // No conflict — insert new fact

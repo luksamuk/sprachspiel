@@ -3,14 +3,17 @@
 //! Constructs the "## User Facts" section that gets injected into the system prompt,
 //! with Unicode-safe truncation if the total exceeds the limit.
 //!
-//! # Third-Person Normalization (ADR-E4)
+//! # Third-Person Normalization (ADR-E4 revised)
 //!
-//! Facts stored in the database preserve the user's original wording (e.g.,
-//! "I prefer dark mode"). When rendered in the system prompt, first-person
-//! pronouns are converted to third-person attribution (e.g., "User prefers
-//! dark mode") to prevent the LLM from confusing user facts with its own
-//! identity. This follows the pattern used by Mem0 and Claude Code, which
-//! store facts in third-person or with explicit attribution blocks.
+//! Since storage-time normalization now produces third-person output
+//! (via `normalize_to_storage_format()` in `lang.rs`), the render-time
+//! `normalize_to_third_person()` function serves as a **defense-in-depth**
+//! layer: it converts any remaining first-person facts (e.g., legacy data)
+//! to third person.
+//!
+//! For new facts, both storage and rendering produce third-person output,
+//! so this function is effectively a no-op. It remains to handle edge cases
+//! and any facts that may have been stored before the ADR-E4 revision.
 //!
 //! Staleness labels are appended to facts when they indicate age or decay:
 //! - `(stale)` — decay_score < 0.3 (badly decayed)
@@ -33,32 +36,18 @@ const UNUSED_AGE_THRESHOLD: i64 = 7;
 
 /// Normalize fact content from first-person to third-person for prompt rendering.
 ///
-/// This prevents the LLM from confusing user preferences with its own identity.
-/// For example, "I prefer dark mode" becomes "User prefers dark mode".
+/// Since storage-time normalization (`normalize_to_storage_format()`) now
+/// produces third-person output, this function is a **defense-in-depth** layer
+/// that handles any remaining first-person content (e.g., legacy data, edge cases).
+/// For new facts, this function is effectively a no-op since the content is
+/// already in third person.
 ///
-/// The normalization is applied only during prompt rendering — the database
-/// stores the original text as entered by the user or extracted heuristically.
+/// # Design Decision (ADR-E4 revised)
 ///
-/// # Rules
-///
-/// - "I prefer" → "User prefers"
-/// - "I like" → "User likes"
-/// - "I hate" → "User hates"
-/// - "I want" → "User wants"
-/// - "I don't want" → "User doesn't want"
-/// - "I don't like" → "User doesn't like"
-/// - "I love" → "User loves"
-/// - "I dislike" → "User dislikes"
-/// - "I'm" / "I am" → "User is"
-/// - "My" → "User's"
-/// - Sentences not starting with first-person pronouns are left unchanged
-///
-/// # ADR Reference
-///
-/// ADR-E4: Third-person normalization in prompt rendering. Research shows LLMs
-/// can misinterpret first-person facts in system prompts as self-descriptions.
-/// See: Mem0 (third-person extraction), Claude Code (third-person with headers),
-/// MemGPT (labeled `<human>` blocks).
+/// Third-person normalization is now applied at **storage time**, not just at
+/// render time. The render-time normalization remains as a safety net.
+/// Original ADR-E4 rationale: "I prefer dark mode" → "User prefers dark mode"
+/// prevents the LLM from misinterpreting user facts as self-descriptions.
 pub fn normalize_to_third_person(content: &str) -> String {
     let lower = content.to_lowercase();
 

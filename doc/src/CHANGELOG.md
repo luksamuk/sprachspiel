@@ -2,9 +2,37 @@
 
 All notable changes to Ask-AI will be documented in this file.
 
- ## [Unreleased]
+## [Unreleased]
+
+### Fixed
+
+- **Bug #1: Third-person normalization now applied at storage time (ADR-E4 revised)** — All facts are now stored in third person ("User prefers X"), not just rendered in third person. Previously, English first-person facts like "I prefer dark mode" were stored as-is, causing inconsistency with PT→EN facts that were stored as "User prefers X". New `normalize_to_storage_format()` function in `src/facts/lang.rs` merges PT→EN translation with EN first-person→third-person normalization. `normalize_to_third_person()` in `src/facts/prompt.rs` remains as defense-in-depth for legacy data.
+
+- **Bug #3: Contradiction detection via semantic embeddings (Layer 3.5)** — "I prefer dark mode" vs "I prefer light mode" now correctly resolves as a contradiction. Added Layer 3.5 to both `extract.rs` auto-extraction and `fact_tools.rs` `fact_add`: when FTS5 doesn't find conflicts and the candidate is a preference, generate an embedding and search `fact_embeddings` via `search_facts_semantic()` (cosine ≥ 0.90). Contradictions are resolved by replacing the old fact; duplicates are skipped. Requires embedding client availability; gracefully skips if unavailable.
+
+- **Bug #4: Embedding serialization and timeout** — Added `Semaphore(1)` and 30-second timeout to `EmbeddingClient::embed()`. Previously, multiple concurrent `tokio::spawn` fire-and-forget tasks could overwhelm Ollama, causing silent embedding failures (`has_embedding = 0`). Now all embedding requests are serialized through the client, preventing model loading conflicts and timeouts. Added `EmbeddingError::Timeout` variant. Also added post-recovery verification in `facts/recovery.rs` that logs a warning if facts still lack embeddings after startup recovery.
 
 ### Added
+
+- `normalize_to_storage_format()` in `src/facts/lang.rs` — Primary normalization function called before storing any fact. Applies PT→EN prefix translation and EN first-person→third-person normalization. PT noun translation (e.g., "respostas curtas" → "short responses") is deferred to LLM-mode (issue #106).
+
+- Layer 3.5 semantic dedup in `src/facts/extract.rs` and `src/tools/fact_tools.rs` — Embedding-based similarity check for preference facts when FTS5 doesn't find conflicts. Catches "prefer dark mode" vs "prefer light mode" contradictions that keyword search misses.
+
+### Changed
+
+- **ADR-E4 revised** — Third-person normalization is now applied at storage time (via `normalize_to_storage_format()`), not just at render time. Render-time normalization in `prompt.rs` remains as defense-in-depth.
+
+- `extract_and_insert_facts()` is now `async` — accepts optional `embedding_client` parameter for Layer 3.5.
+
+- `translate_pt_to_en()` now also normalizes English first-person input to third-person — `"I prefer dark mode"` → `"User prefers dark mode"`. This function is the core of `normalize_to_storage_format()`. English passthrough (`"I prefer dark mode"` → `"I prefer dark mode"`) is no longer the default behavior.
+
+- `try_auto_extract_facts()` in `repl.rs` is now `async` — awaits `extract_and_insert_facts()` to support Layer 3.5 embedding generation.
+
+### Deferred
+
+- **Bug #2: PT noun translation** — Nouns after the translated prefix (e.g., "respostas curtas" → "short responses") remain in original language. This is an intentional limitation of heuristic translation. Full PT→EN noun translation will be handled by LLM-mode (issue #106, M2 milestone).
+
+ ### Added
 
 - **Auto Fact Extraction (P6.1 — autoDream-lite)** - Automatic fact extraction from conversation content after each response (Issue #73)
   - Post-response heuristic extraction of preferences and facts from user messages
