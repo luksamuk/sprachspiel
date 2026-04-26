@@ -657,7 +657,7 @@ ask-ai/
 │   │   ├── classify.rs     # Heuristic classification (preference/fact)
 │   │   ├── conflict.rs     # ConflictKind, ConflictResolution
 │   │   ├── prompt.rs        # System prompt injection, ADR-E4 rendering
-│   │   ├── extract.rs       # Auto-extraction (P6.1), 5-layer dedup
+│   │   ├── extract.rs       # Auto-extraction (P6.1), 6-layer dedup
 │   │   ├── lang.rs          # EN/PT patterns, normalize_to_storage_format()
 │   │   ├── embedding.rs    # Fact embedding generation
 │   │   ├── recovery.rs     # Startup recovery + post-recovery verification

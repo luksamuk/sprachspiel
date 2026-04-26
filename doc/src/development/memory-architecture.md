@@ -260,7 +260,7 @@ This design is based on ["Lost in the Middle: How Language Models Use Long Conte
 - SQLite + FTS5 keyword search + fact_embeddings vec0 (256d Matryoshka)
 - Automatic classification (preference vs fact)
 - Ebbinghaus decay curve for automatic pruning
-- 5-layer conflict resolution for duplicate/contradictory facts
+- 6-layer conflict resolution for duplicate/contradictory facts
 - Two scopes: `global` and `project`
 - All content stored in third person per ADR-E4 ("User prefers X", never "I prefer X")
 - Eager embedding generation (serialized via `Semaphore(1)`, 30s timeout)

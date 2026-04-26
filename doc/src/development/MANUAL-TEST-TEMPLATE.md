@@ -129,7 +129,7 @@ _Copy the section structure above for each test category._
 
 ## Fact System: `/fact add` Dedup Parity (Bug #3 smoke test #2)
 
-**Objective:** Verify that `/fact add` CLI command uses the same 5-layer dedup as `fact_add` LLM tool.
+**Objective:** Verify that `/fact add` CLI command uses the same 6-layer dedup as `fact_add` LLM tool.
 
 🗄️ Clean database required.
 

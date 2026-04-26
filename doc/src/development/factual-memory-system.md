@@ -88,7 +88,7 @@ graph TB
 | Storage | **Same DB (`embeddings.db`)** | No separate database |
 | Per-fact limit | **500 chars (hard limit)** | Rejected at DB insert |
 | Total prompt limit | **2200 chars (soft limit)** | Truncated with Unicode-safe `truncate_chars` |
-| Conflict resolution | **5-layer dedup + Layer 2.5** | Exact → Normalized → Triple contradiction → FTS5 (0.75) → Semantic (0.90) → Global-wins-project |
+| Conflict resolution | **6-layer dedup** | Exact → Normalized → Triple contradiction (Layer 2.5) → FTS5 (0.75) → Semantic (0.90) → Startup verification → Global-wins-project |
 | Decay | **Startup synchronous** | Background optional later |
 | Embeddings | **Eager with Semaphore(1)** | Serialized embedding generation with 30s timeout |
 | Language | **All content stored in English** | PT→EN prefix translation via `lang::translate_pt_to_en()` (ADR-L1) |
@@ -370,9 +370,9 @@ fn run_decay_cycle(db: &Database) -> Result<DecayStats, Error> {
 
 ---
 
-## 6. Conflict Resolution (5-Layer Dedup Pipeline)
+## 6. Conflict Resolution (6-Layer Dedup Pipeline)
 
-Facts are deduplicated through a 5-layer pipeline that catches duplicates and contradictions at increasingly sophisticated levels:
+Facts are deduplicated through a 6-layer pipeline that catches duplicates and contradictions at increasingly sophisticated levels:
 
 ### 6.1 Layer 1: Exact Match
 
@@ -593,8 +593,8 @@ if let Some(facts) = &self.facts {
 ### 9.1 Command Definitions
 
 ```
-/fact add <text>              # Add project fact (auto-classified, 5-layer dedup + normalization + embedding)
-/fact add --global <text>     # Add global fact (5-layer dedup + normalization + embedding)
+/fact add <text>              # Add project fact (auto-classified, 6-layer dedup + normalization + embedding)
+/fact add --global <text>     # Add global fact (6-layer dedup + normalization + embedding)
 /fact list                    # List all facts
 /fact list --global           # List global facts only
 /fact remove <id>             # Remove a fact

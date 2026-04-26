@@ -2656,10 +2656,10 @@ Key files:
 - `src/facts/types.rs` — Global scope forces project_id=None
 - `src/tools/fact_tools.rs` — LLM tool with PT→EN translation, content validation, layered dedup, Layer 3.5
 - `src/chat/repl.rs` — Async `try_auto_extract_facts()` passes embedding_client for Layer 3.5
-- `src/chat/command_handlers.rs` — `/fact add` CLI with full 5-layer dedup, normalization, and embedding generation (async)
+- `src/chat/command_handlers.rs` — `/fact add` CLI with full 6-layer dedup, normalization, and embedding generation (async)
 - `src/embeddings/client.rs` — Semaphore(1) for serialized embedding requests, 30s timeout
 
-**Architecture: Five-layer dedup pipeline + Layer 2.5:**
+**Architecture: Six-layer dedup pipeline:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
 2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects and lemmatizes verbs (3rd person → base form), catches "I prefer X" ≈ "User prefers X" ≈ "prefers X" → all normalize to "prefer X"
 3. **Layer 2.5 (NEW): Triple-based contradiction** — `extract_fact_triple()` extracts (subject, predicate, object) from facts in storage format. When two facts share (subject, predicate) but differ in object → contradiction → delete old, insert new. Catches "prefer dark mode" → "prefer light mode" that embeddings miss (cosine ~0.77 < 0.90 threshold). Zero ML, sub-millisecond. Pattern constants in `lang.rs`.
@@ -2772,12 +2772,13 @@ Key files:
 
 **Goal:** Add embedding-based semantic dedup as Layer 4 on top of the existing three-layer dedup pipeline, enabling reliable detection of semantically equivalent facts regardless of phrasing, language, or subject form.
 
-**Architecture: Five-layer dedup pipeline:**
+**Architecture: Six-layer dedup pipeline:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
 2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects
-3. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75
-4. **Layer 3.5 (NEW): Semantic embedding** — cosine similarity ≥ 0.90 via `fact_embeddings` vec0 (insert-time, for preferences only)
-5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) pairwise cosine comparison at threshold 0.90
+3. **Layer 2.5: Triple contradiction** — `extract_fact_triple()` extracts (subject, predicate, object); same predicate + different object → contradiction
+4. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75
+5. **Layer 3.5: Semantic embedding** — cosine similarity ≥ 0.90 via `fact_embeddings` vec0 (insert-time, for preferences only)
+6. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) pairwise cosine comparison at threshold 0.90
 
 **Schema changes (v10 → v11):**
 - Added `has_embedding INTEGER DEFAULT 0` column to `facts` table
