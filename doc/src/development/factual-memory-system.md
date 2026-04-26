@@ -84,12 +84,15 @@ graph TB
 |----------|--------|-----------|
 | Categories | **2: `preference`, `fact`** | `context` is redundant (handled by RAG) |
 | Classification | **Heuristic only** | 90%+ accuracy, no LLM tokens |
-| Search | **FTS5 only** | Simpler, no embeddings needed |
+| Search | **FTS5 + Semantic (Layer 3.5)** | FTS5 for keywords, embeddings for semantic similarity |
 | Storage | **Same DB (`embeddings.db`)** | No separate database |
 | Per-fact limit | **500 chars (hard limit)** | Rejected at DB insert |
 | Total prompt limit | **2200 chars (soft limit)** | Truncated with Unicode-safe `truncate_chars` |
-| Conflict resolution | **Heuristic + FTS5** | Duplicate → Skip, Contradiction → Update |
+| Conflict resolution | **5-layer dedup** | Exact → Normalized → FTS5 (0.75) → Semantic (0.90) → Global-wins-project |
 | Decay | **Startup synchronous** | Background optional later |
+| Embeddings | **Eager with Semaphore(1)** | Serialized embedding generation with 30s timeout |
+| Language | **All content stored in English** | PT→EN prefix translation via `lang::translate_pt_to_en()` (ADR-L1) |
+| Normalization | **Third-person at storage time** | `normalize_to_storage_format()` ensures all facts stored as "User prefers X" (ADR-E4) |
 
 ---
 
@@ -97,10 +100,12 @@ graph TB
 
 | Category | Description | Half-Life | Examples |
 |----------|-------------|-----------|----------|
-| `preference` | User preferences, likes/dislikes | 180 days | "prefiro português", "gosto de respostas curtas" |
-| `fact` | Objective facts about environment/project | 30 days | "docs estão em ~/docs", "projeto usa SQLite" |
+| `preference` | User preferences, likes/dislikes | 180 days | "User prefers Portuguese", "User likes concise responses" |
+| `fact` | Objective facts about environment/project | 30 days | "User's name is Lucas", "Database is SQLite" |
 
-**Note:** The `context` category was removed. Temporary conversation state ("we're working on issue #7") is handled by the existing RAG system - no need to duplicate.
+> **ADR-E4:** All facts are stored in third person ("User prefers X", "User's name is X"), never first person ("I prefer X", "My name is X"). This is applied by `normalize_to_storage_format()` in `src/facts/lang.rs` at storage time. The `normalize_to_third_person()` function in prompt rendering remains as defense-in-depth for legacy data.
+
+> **Bug #2 (DEFERRED to issue #106):** PT noun translation after the prefix is not handled by heuristic mode. "Eu prefiro respostas curtas" → "User prefers respostas curtas" (noun "respostas curtas" remains in PT). Full noun translation requires LLM-mode (M2).
 
 ---
 
@@ -141,13 +146,16 @@ graph LR
 ```markdown
 ## User Facts
 
-### Preferences
-- prefiro respostas em português
-- gosto de respostas curtas
+### Global Preferences
+- User prefers Portuguese
+- User likes concise responses
 
-### Facts
-- o projeto usa SQLite para armazenamento
-- a API está na porta 8080
+### Global Facts
+- User's name is Lucas
+- API uses port 8080
+
+### Project Facts
+- Database is SQLite
 ```
 
 **Limits:**
@@ -161,7 +169,7 @@ graph LR
 ### 3.1 Facts Table
 
 ```sql
--- Facts table (schema v6)
+-- Facts table (schema v11)
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY,
     
@@ -170,6 +178,7 @@ CREATE TABLE IF NOT EXISTS facts (
     category TEXT NOT NULL CHECK(category IN ('preference', 'fact')),
     
     -- Content (application validates <= 500 chars)
+    -- Stored in third person per ADR-E4: "User prefers X", never "I prefer X"
     content TEXT NOT NULL,
     
     -- Decay parameters
@@ -182,21 +191,34 @@ CREATE TABLE IF NOT EXISTS facts (
     last_accessed REAL NOT NULL,
     
     -- Source tracking
-    source TEXT DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+    source TEXT DEFAULT 'user' CHECK(source IN ('user', 'llm', 'auto')),
     
     -- Conflict resolution (soft delete)
     invalidated_at REAL,
     
     -- Project association (NULL for global facts)
-    project_id TEXT
+    project_id TEXT,
+    
+    -- Embedding status (v11)
+    has_embedding INTEGER DEFAULT 0
 );
 
--- Full-text search for keyword matching
+-- Full-text search for keyword matching (BM25)
 CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
     content,
     content='facts',
     content_rowid='id'
 );
+
+-- Semantic search for fact dedup (v11)
+CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+    fact_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256]
+);
+
+-- Partial index for facts missing embeddings (v11)
+CREATE INDEX IF NOT EXISTS idx_facts_embedding
+    ON facts(has_embedding) WHERE has_embedding = 0 AND invalidated_at IS NULL;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_facts_scope_category ON facts(scope, category);
@@ -348,113 +370,71 @@ fn run_decay_cycle(db: &Database) -> Result<DecayStats, Error> {
 
 ---
 
-## 6. Conflict Resolution
+## 6. Conflict Resolution (5-Layer Dedup Pipeline)
 
-### 6.1 Detection (FTS5 + Heuristic)
+Facts are deduplicated through a 5-layer pipeline that catches duplicates and contradictions at increasingly sophisticated levels:
+
+### 6.1 Layer 1: Exact Match
+
+Case-insensitive, trimmed comparison via `find_exact_fact()`. Catches identical facts regardless of capitalization or whitespace.
+
+### 6.2 Layer 2: Normalized Match
+
+`normalize_for_comparison()` strips pronouns and subjects, then exact match. Catches "I prefer dark mode" ≈ "User prefers dark mode".
+
+### 6.3 Layer 3: FTS5 BM25 Keyword Search
+
+`search_facts_by_content(query, 0.75)` catches facts with similar keywords. Lowered threshold from 0.85 to 0.75 to catch more near-duplicates.
+
+### 6.4 Layer 3.5: Semantic Embedding (Insert-Time)
+
+For `Category::Preference` facts only, when FTS5 doesn't find a conflict:
+1. Generate embedding via `EmbeddingClient::embed()` (serialized with `Semaphore(1)`, 30s timeout)
+2. Search `fact_embeddings` via `search_facts_semantic()` (cosine similarity ≥ 0.90)
+3. If contradiction detected (e.g., "prefer dark mode" vs "prefer light mode") → **Update** (replace old)
+4. If duplicate detected → **Skip**
+5. If no similar fact found → **Add**
+
+This layer catches contradictions that keyword search misses because the words are different but the meaning conflicts.
+
+### 6.5 Layer 4: Global-Wins-Project Rule
+
+When a new Global-scope fact conflicts with an existing Project-scope fact, the Global fact wins and the Project fact is removed.
+
+### 6.6 Startup Verification
+
+On startup, `verify_and_dedup_facts()` performs O(n²) pairwise cosine comparison on all facts with embeddings, catching any duplicates that slipped through insert-time checks.
+
+### 6.7 Resolution Actions
 
 ```rust
-enum ConflictType {
-    Duplicate,      // High similarity, no contradiction
-    Contradiction,  // High similarity, with contradiction
+enum ConflictKind {
+    ExactDuplicate,       // Layer 1: identical content
+    NormalizedDuplicate, // Layer 2: normalized content match
+    FtsDuplicate,        // Layer 3: BM25 similarity ≥ 0.75
+    SemanticDuplicate,   // Layer 3.5: cosine ≥ 0.90, no contradiction
+    Contradiction,       // Layer 3/3.5: cosine ≥ 0.90 WITH contradiction
 }
 
-struct Conflict {
-    existing_fact: Fact,
-    conflict_type: ConflictType,
-    similarity: f32,
-}
-
-fn detect_conflicts(content: &str, db: &Database, project_id: Option<&str>) -> Result<Vec<Conflict>, Error> {
-    // 1. Search for similar facts using FTS5
-    let similar = db.search_facts(content, None, 5)?;
-    
-    // 2. For each similar fact, check for contradiction
-    let mut conflicts = Vec::new();
-    for result in similar {
-        // BM25 score normalized to [0, 1) using: (-score) / (1 - score)
-        // Higher = more similar. Threshold 0.85 corresponds to strong matches.
-        let similarity = result.score;
-        
-        if similarity > 0.85 {
-            let conflict_type = if is_contradiction(content, &result.fact.content) {
-                ConflictType::Contradiction
-            } else {
-                ConflictType::Duplicate
-            };
-            conflicts.push(Conflict {
-                existing_fact: result.fact,
-                conflict_type,
-                similarity,
-            });
-        }
-    }
-    
-    Ok(conflicts)
-}
-
-fn is_contradiction(new: &str, existing: &str) -> bool {
-    let new_lower = new.to_lowercase();
-    let existing_lower = existing.to_lowercase();
-    
-    // Patterns for contradiction
-    // "I like X" vs "I hate X"
-    // "X is A" vs "X is B" (where A != B)
-    
-    // Simplified: check for negation patterns
-    // TODO: Can be improved with more patterns
-    
-    false
+enum ConflictResolution {
+    Skip,              // Duplicate — don't add
+    Update,            // Contradiction — replace old with new
+    RemoveOld,         // Global-wins-project — remove project duplicate
+    Add,               // No conflict — add new fact
 }
 ```
 
-### 6.2 Resolution Strategy
+### 6.8 Conflict Threshold
 
-```rust
-enum ResolutionAction {
-    Add,     // No conflict
-    Skip,    // Duplicate
-    Update,  // Contradiction - replace old
-}
+The `CONFLICT_THRESHOLD` constant is 0.75 (lowered from the original 0.85) to catch more near-duplicates at the FTS5 layer. The semantic threshold is 0.90 (cosine similarity) for Layer 3.5.
 
-fn resolve_conflict(conflict: Conflict) -> ResolutionAction {
-    match conflict.conflict_type {
-        ConflictType::Duplicate => ResolutionAction::Skip,
-        ConflictType::Contradiction => {
-            // Temporal resolution: newer wins
-            // High-importance preferences need LLM confirmation (future)
-            ResolutionAction::Update
-        }
-    }
-}
-```
+### 6.9 ADR-E4: Third-Person Normalization at Storage Time
 
-### 6.3 LLM Fallback (For Ambiguous Contradictions)
+All facts are normalized to third person ("User prefers X") at storage time via `normalize_to_storage_format()` in `src/facts/lang.rs`. This ensures:
+- EN first-person input: "I prefer dark mode" → "User prefers dark mode"
+- PT→EN translated input: "Eu prefiro respostas curtas" → "User prefers respostas curtas" (prefix translated, noun preserved — Bug #2 DEFERRED)
 
-When heuristic contradiction detection fails, use stateless LLM call:
-
-```rust
-// In prompts/base.rs
-pub const FACT_CONFLICT_RESOLUTION_PROMPT: &str = r#"
-You are resolving a conflict between two facts about the same topic.
-
-Existing fact: "{existing}"
-New fact: "{new}"
-
-Are these facts:
-1. CONTRADICTORY - They cannot both be true (one must replace the other)
-2. COMPLEMENTARY - They can both be true (keep both)
-3. DUPLICATE - They say the same thing (keep existing)
-
-Return JSON:
-{"resolution": "CONTRICTORY|COMPLEMENTARY|DUPLICATE", "action": "UPDATE|KEEP_BOTH|SKIP"}
-"#;
-
-// Only called when heuristic is uncertain
-async fn resolve_with_llm(existing: &Fact, new: &Fact, ollama: &Ollama) -> ResolutionAction {
-    // ~100-200 tokens
-    // Stateless call
-}
-```
+The `normalize_to_third_person()` function in `src/facts/prompt.rs` remains as defense-in-depth for any legacy facts that might have been stored before ADR-E4.
 
 ---
 

@@ -175,10 +175,11 @@ Ollama-based embedding generation:
 pub struct EmbeddingClient {
     ollama: Ollama,
     model: String,
+    semaphore: Semaphore,  // Serializes embedding requests (Semaphore(1))
 }
 
 impl EmbeddingClient {
-    pub async fn embed(&self, text: &str) -> Result<Vec<f32>>;
+    pub async fn embed(&self, text: &str) -> Result<Vec<f32>>;  // 30s timeout, serialized
 }
 ```
 
@@ -646,8 +647,22 @@ ask-ai/
 │   │   ├── schema.rs
 │   │   └── migrations.rs
 │   ├── embeddings/          # Vector operations
-│   │   ├── client.rs
-│   │   └── chunker.rs
+│   │   ├── client.rs        # EmbeddingClient with Semaphore(1) serialization
+│   │   ├── chunker.rs
+│   │   └── fallback.rs
+│   ├── facts/               # Factual memory system
+│   │   ├── mod.rs
+│   │   ├── types.rs         # Category, Scope, Fact structs
+│   │   ├── db.rs            # CRUD operations, FTS5 + semantic search
+│   │   ├── classify.rs     # Heuristic classification (preference/fact)
+│   │   ├── conflict.rs     # ConflictKind, ConflictResolution
+│   │   ├── prompt.rs        # System prompt injection, ADR-E4 rendering
+│   │   ├── extract.rs       # Auto-extraction (P6.1), 5-layer dedup
+│   │   ├── lang.rs          # EN/PT patterns, normalize_to_storage_format()
+│   │   ├── embedding.rs    # Fact embedding generation
+│   │   ├── recovery.rs     # Startup recovery + post-recovery verification
+│   │   ├── verify.rs       # O(n²) semantic dedup on startup
+│   │   └── decay.rs         # Ebbinghaus decay calculations
 │   ├── retrieval/          # Search system
 │   │   ├── search.rs
 │   │   └── context_builder.rs

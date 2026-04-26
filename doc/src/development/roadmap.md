@@ -630,11 +630,15 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 | P6.0 | Multi-Provider Support (OpenAI-Compatible) | 📋 Planned | 4-7 weeks |
 | P6.0-sub | Embedding Provider Abstraction | 📋 Planned ([sub-issue #107](https://github.com/luksamuk/ask-ai-rs/issues/107)) | 1-2 weeks |
 | P2 | Configurable Embedding Model + Matryoshka | 📋 Ready ([Issue #106](https://github.com/luksamuk/ask-ai-rs/issues/106)) | 1 week |
-| P6.1 | Auto Fact Extraction (autoDream-lite) | 🔄 In Progress | 3-5 days |
+| P6.1 | Auto Fact Extraction (autoDream-lite) | ✅ Completed | 3-5 days + 2 days (bug fixes) |
+| P6.7 | Fact Embedding & Semantic Dedup | ✅ Completed | 5-7 days |
 | P6.2 | Context Pinning | 🟡 Research | 2-4 days |
 | P6.3 | Dynamic Context Limits | 🟡 Research | 1-2 days |
 | P6.4 | Secret Scanning (Content) | 📋 Planned | 1-2 days |
 | P6.5 | Config Upgrade Command | 📋 Planned | 5 days |
+
+**P6.1 Bug Notes:**
+- Bug #2 (PT noun translation) is **DEFERRED** to issue #106 (M2 milestone). Heuristic mode only translates prefixes; full noun translation requires LLM-mode.
 
 **Also in P4 (Code Quality extras) [M1]:**
 

@@ -14,7 +14,16 @@ Run these tests after automated tests pass, before finalizing a merge.
 cd /path/to/ask-ai-rs
 cargo build --release --features all-tools
 ollama serve  # In another terminal
+
+# Backup and reset the database for clean state
+cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.backup 2>/dev/null || true
+rm -f ~/.local/share/ask-ai/embeddings.db
 ```
+
+> **⚠️ Clean database:** Many tests require a clean database to avoid interference from previous test data. Sections requiring this are marked with 🗑️. Reset with:
+> ```bash
+> rm -f ~/.local/share/ask-ai/embeddings.db
+> ```
 
 ## Test Model
 
@@ -24,6 +33,17 @@ MODEL=${SMOKE_MODEL:-qwen3.5:4b}
 ollama list | grep -q "$MODEL" || ollama pull "$MODEL"
 echo "Test model: $MODEL"
 ```
+
+## Schema Version Check
+
+After starting the application, verify the database schema version:
+
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
+# Expected: 11 or higher (v11 adds fact_embeddings and has_embedding column)
+```
+
+---
 
 ---
 
@@ -86,6 +106,10 @@ _Copy the section structure above for each test category._
 # Remove any test documents from database (if needed)
 # /doc list to see IDs
 # /doc delete N for each test document
+
+# Restore original database
+rm -f ~/.local/share/ask-ai/embeddings.db
+cp ~/.local/share/ask-ai/embeddings.db.backup ~/.local/share/ask-ai/embeddings.db 2>/dev/null || true
 ```
 
 ---
