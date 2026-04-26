@@ -100,6 +100,72 @@ _Copy the section structure above for each test category._
 
 ---
 
+## Fact System: Adverb Normalization (Bug #1 smoke test #2)
+
+**Objective:** Verify that adverb+verb patterns are correctly normalized to third person.
+
+🗄️ Clean database required.
+
+- [ ] `/fact add I really like dark mode` → stored as "User really likes dark mode"
+- [ ] `/fact add I always prefer concise answers` → stored as "User always prefers concise answers"
+- [ ] `/fact add I never want verbose output` → stored as "User never wants verbose output"
+- [ ] `/fact add Eu sempre prefiro respostas curtas` → stored as "User always prefers respostas curtas"
+- [ ] `/fact add Eu realmente gosto de café` → stored as "User really likes café"
+- [ ] `/fact add I usually don't like verbose errors` → stored as "User usually doesn't like verbose errors"
+
+---
+
+## Fact System: Layer 2 Verb Lemma (Bug #2 smoke test #2)
+
+**Objective:** Verify that third-person verbs are lemmatized in dedup comparison, so "User prefers X" and "I prefer X" match at Layer 2.
+
+🗄️ Clean database required.
+
+- [ ] `/fact add I prefer dark mode` → stored as "User prefers dark mode"
+- [ ] `/fact add I prefer dark mode` → **Skipped: Exact duplicate** (Layer 1)
+- [ ] `/fact add User prefers dark mode` → **Skipped: Similar fact** (Layer 2, normalized match)
+
+---
+
+## Fact System: `/fact add` Dedup Parity (Bug #3 smoke test #2)
+
+**Objective:** Verify that `/fact add` CLI command uses the same 5-layer dedup as `fact_add` LLM tool.
+
+🗄️ Clean database required.
+
+- [ ] `/fact add I prefer dark mode` → stored as "User prefers dark mode" (ADR-E4 normalization)
+- [ ] Wait 3 seconds for embedding generation
+- [ ] `/fact add I prefer dark mode` → **Skipped: Exact duplicate** (Layer 1)
+- [ ] `/fact add User prefers dark mode` → **Skipped: Similar fact** (Layer 2)
+- [ ] `/fact add I like dark mode` → Layer 3.5 catches as paraphrase or FTS5 as similar
+- [ ] Clean database again: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I prefer dark mode` → stored as "User prefers dark mode"
+- [ ] Wait 3 seconds for embedding
+- [ ] `/fact add I prefer light mode` → should **UPDATE** (Layer 3.5 contradiction)
+- [ ] Verify embedding: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE content LIKE '%light mode%'"` → **has_embedding = 1**
+
+---
+
+## Fact System: Layer 3.5 via Auto-Extraction with `/tools` Toggle (Bug #4 smoke test #2)
+
+**Objective:** Verify that Layer 3.5 contradiction detection works through auto-extraction when LLM tool calls are disabled.
+
+🗄️ Clean database required.
+
+> **Why `/tools`:** Some models proactively call `fact_add` to resolve contradictions, bypassing auto-extraction. The `/tools` command disables LLM tool calls, forcing contradiction detection through the auto-extraction path.
+
+1. Clean state: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+2. Start chat: `ask-ai chat`
+3. `/tools` → should print **"Tools: disabled"**
+4. Send: "I prefer dark mode" → auto-extraction stores via normalization + embedding
+5. Wait 5 seconds for embedding
+6. Send: "Actually, I prefer light mode" → auto-extraction detects contradiction (Layer 3.5) and updates
+7. `/fact list` → shows ONE preference: "User prefers light mode"
+8. `/tools` → should print **"Tools: enabled"**
+9. Verify auto-extraction worked independently of LLM tool calls
+
+---
+
 ## Cleanup
 
 ```bash
