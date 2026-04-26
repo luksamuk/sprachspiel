@@ -2641,27 +2641,31 @@ vision = true
 
 ### P6.1: Auto Fact Extraction (autoDream-lite)
 
-**Status:** ✅ COMPLETED → 🔄 PHASE 1 RETEST (bug fixes from smoke test)  
+**Status:** ✅ COMPLETED  
 **Depends on:** P0 (Factual Memory System — completed)  
 **Estimated effort:** 3-5 days (original) + 2 days (bug fixes)
 
 **Implementation summary:**
 
 Key files:
-- `src/facts/extract.rs` — Heuristic extraction, dedup pipeline, validation
-- `src/facts/lang.rs` — Centralized EN/PT patterns, PT→EN translation, normalization
+- `src/facts/extract.rs` — Heuristic extraction, dedup pipeline, validation, Layer 3.5 semantic dedup
+- `src/facts/lang.rs` — Centralized EN/PT patterns, PT→EN translation, `normalize_to_storage_format()` (ADR-E4)
 - `src/facts/conflict.rs` — Conflict detection, preference override, lowered threshold
 - `src/facts/db.rs` — FTS5 search, exact match, normalized match, BM25 scoring
-- `src/facts/prompt.rs` — System prompt scope separation (Global/Project)
+- `src/facts/prompt.rs` — System prompt scope separation (Global/Project), defense-in-depth normalization
 - `src/facts/types.rs` — Global scope forces project_id=None
-- `src/tools/fact_tools.rs` — LLM tool with PT→EN translation, content validation, layered dedup
+- `src/tools/fact_tools.rs` — LLM tool with PT→EN translation, content validation, layered dedup, Layer 3.5
+- `src/chat/repl.rs` — Async `try_auto_extract_facts()` passes embedding_client for Layer 3.5
+- `src/embeddings/client.rs` — Semaphore(1) for serialized embedding requests, 30s timeout
 
-**Architecture: Three-layer dedup pipeline:**
+**Architecture: Five-layer dedup pipeline:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
 2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects, catches "I prefer X" ≈ "User prefers X"
 3. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75 (lowered from 0.85)
+4. **Layer 3.5 (NEW): Semantic embedding** — cosine similarity ≥ 0.90 for preference facts, catches "prefer dark mode" ≈ "prefer light mode" via embeddings
+5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) cosine comparison on startup
 
-**Bug fixes (from smoke test retest):**
+**Bug fixes (from smoke test #1):**
 - Bug #1: Dedup broken — Fixed with three-layer pipeline, exact match, normalized match, threshold 0.75
 - Bug #2: PT→EN inconsistent — Fixed with expanded `translate_pt_to_en()` (3rd-person PT, hybrid LLM forms), `fact_add` English-only instruction
 - Bug #3: `/fact list` scope — Fixed with `FactListScope::All/Global/Project`, separate sections
@@ -2672,11 +2676,18 @@ Key files:
 - Global-wins-project — New Global fact removes conflicting Project facts
 - Preference override — "prefer dark mode" vs "prefer light mode" detected as contradiction
 
+**Bug fixes (from smoke test #2):**
+- Bug #1: Third-person normalization at storage time (ADR-E4 revised) — `normalize_to_storage_format()` in `lang.rs` merges PT→EN + EN 1st→3rd person. All facts stored as "User prefers X", never "I prefer X". `normalize_to_third_person()` in `prompt.rs` retained as defense-in-depth for legacy data.
+- Bug #2: PT noun translation incomplete — Documented as DEFERRED (issue #106). Heuristic mode translates prefixes only ("Eu prefiro" → "User prefers"); nouns remain in original language ("respostas curtas"). Full PT→EN noun translation requires LLM-mode (M2).
+- Bug #3: Contradiction detection via semantic embeddings (Layer 3.5) — When FTS5 finds no conflicts and candidate is `Category::Preference`, generates embedding and searches `fact_embeddings` (cosine ≥ 0.90). Contradictions resolved by replacing old fact; duplicates skipped. Applied in both `extract.rs` and `fact_tools.rs`. Gracefully skips if embedding client unavailable.
+- Bug #4: Embedding serialization and timeout — Added `Semaphore(1)` and 30s timeout to `EmbeddingClient::embed()`. Prevents concurrent embedding requests from overwhelming Ollama. Post-recovery verification in `facts/recovery.rs` warns if facts still lack embeddings after startup recovery.
+
 **ADR References:**
 - ADR-L1: All fact content stored in English (PT→EN via `lang::translate_pt_to_en()`)
 - ADR-L2: Normalization output always English ("User prefers" not "User prefere")
 - ADR-L3: EN+PT classification keywords in `lang::preference_keywords()`
 - ADR-L4/L5: All string patterns centralized in `lang.rs`, no duplication
+- ADR-E4 (revised): Third-person normalization applied at storage time (not just render time). All facts stored as "User prefers X". `normalize_to_third_person()` in prompt rendering remains as defense-in-depth.
 
 **Phase 2 (P6.7, planned):** Embedding-based semantic dedup — ✅ COMPLETED (see P6.7 below)
 
@@ -2754,11 +2765,12 @@ Key files:
 
 **Goal:** Add embedding-based semantic dedup as Layer 4 on top of the existing three-layer dedup pipeline, enabling reliable detection of semantically equivalent facts regardless of phrasing, language, or subject form.
 
-**Architecture: Four-layer dedup pipeline:**
+**Architecture: Five-layer dedup pipeline:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
 2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects
 3. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75
-4. **Layer 4 (NEW): Semantic similarity** — cosine similarity ≥ 0.90 via `fact_embeddings` vec0
+4. **Layer 3.5 (NEW): Semantic embedding** — cosine similarity ≥ 0.90 via `fact_embeddings` vec0 (insert-time, for preferences only)
+5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) pairwise cosine comparison at threshold 0.90
 
 **Schema changes (v10 → v11):**
 - Added `has_embedding INTEGER DEFAULT 0` column to `facts` table
@@ -2777,10 +2789,10 @@ Key files:
 - `delete_fact()` now also removes from `fact_embeddings`
 
 **Embedding lifecycle:**
-- **Eager (insert-time):** After `insert_fact()` in both auto-extraction and `fact_add`, `tokio::spawn` generates embedding via `EmbeddingClient::embed()`. Fire-and-forget; if Ollama offline, `has_embedding = 0` and startup recovery catches up.
-- **Startup recovery:** `recover_missing_fact_embeddings()` — generates embeddings for all facts with `has_embedding = 0`
-- **Startup verification:** `verify_and_dedup_facts()` — pair-wise cosine comparison, resolves duplicates/contradictions/global-wins-project
-- **Shutdown:** `flush_pending_fact_embeddings()` — completes pending embedding generation before exit
+- **Eager (insert-time):** After `insert_fact()` in both auto-extraction and `fact_add`, `EmbeddingClient::embed()` generates embedding synchronously via `Semaphore(1)` (serialized, 30s timeout). If Ollama offline, `has_embedding = 0` and startup recovery catches up.
+- **Startup recovery:** `recover_missing_fact_embeddings()` — generates embeddings for all facts with `has_embedding = 0`, then verifies no facts remain without embeddings (logs warning if any still missing).
+- **Startup verification:** `verify_and_dedup_facts()` — pair-wise cosine comparison, resolves duplicates/contradictions/global-wins-project.
+- **Shutdown:** `flush_pending_fact_embeddings()` — completes pending embedding generation before exit.
 
 **Startup sequence:**
 ```
