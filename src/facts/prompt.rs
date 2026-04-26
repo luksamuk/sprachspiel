@@ -18,7 +18,7 @@
 //! - `(unused)` — access_count == 0 and age > 7 days (never retrieved)
 
 use super::lang;
-use super::types::{Category, Fact, MAX_TOTAL_FACTS_CHARS};
+use super::types::{Category, Fact, MAX_TOTAL_FACTS_CHARS, Scope};
 use crate::utils::truncate_chars;
 use chrono::Utc;
 
@@ -97,8 +97,9 @@ fn get_staleness_label(fact: &Fact) -> String {
 
 /// Build the facts section for the system prompt.
 ///
-/// Groups facts by category (preferences first, then facts) and
-/// truncates to MAX_TOTAL_FACTS_CHARS if necessary.
+/// Groups facts by scope (Global first, then Project) and by category
+/// (preferences first, then facts) within each scope. Truncates to
+/// MAX_TOTAL_FACTS_CHARS if necessary.
 ///
 /// # Arguments
 /// * `facts` - Slice of facts to include
@@ -112,34 +113,19 @@ pub fn build_facts_section(facts: &[Fact]) -> String {
 
     let mut section = String::new();
 
-    // Group by category (preferences first)
-    let preferences: Vec<&Fact> = facts
-        .iter()
-        .filter(|f| f.category == Category::Preference)
-        .collect();
+    // Separate by scope: Global first, then Project
+    let global_facts: Vec<&Fact> = facts.iter().filter(|f| f.scope == Scope::Global).collect();
 
-    let fact_list: Vec<&Fact> = facts
-        .iter()
-        .filter(|f| f.category == Category::Fact)
-        .collect();
+    let project_facts: Vec<&Fact> = facts.iter().filter(|f| f.scope == Scope::Project).collect();
 
-    if !preferences.is_empty() {
-        section.push_str("### Preferences\n");
-        for fact in preferences {
-            let staleness = get_staleness_label(fact);
-            let display = normalize_to_third_person(&fact.content);
-            section.push_str(&format!("- {}{}\n", display, staleness));
-        }
-        section.push('\n');
+    // Render Global scope facts
+    if !global_facts.is_empty() {
+        render_scope_section(&mut section, "Global", &global_facts);
     }
 
-    if !fact_list.is_empty() {
-        section.push_str("### Facts\n");
-        for fact in fact_list {
-            let staleness = get_staleness_label(fact);
-            let display = normalize_to_third_person(&fact.content);
-            section.push_str(&format!("- {}{}\n", display, staleness));
-        }
+    // Render Project scope facts
+    if !project_facts.is_empty() {
+        render_scope_section(&mut section, "Project", &project_facts);
     }
 
     // Truncate if over limit (Unicode-safe)
@@ -149,6 +135,43 @@ pub fn build_facts_section(facts: &[Fact]) -> String {
     }
 
     section
+}
+
+/// Render a scope section (Global or Project) with preferences and facts.
+fn render_scope_section(section: &mut String, scope_label: &str, facts: &[&Fact]) {
+    let preferences: Vec<&&Fact> = facts
+        .iter()
+        .filter(|f| f.category == Category::Preference)
+        .collect();
+
+    let fact_list: Vec<&&Fact> = facts
+        .iter()
+        .filter(|f| f.category == Category::Fact)
+        .collect();
+
+    section.push_str(&format!("### {} Preferences\n", scope_label));
+    if preferences.is_empty() {
+        section.push_str("(none)\n");
+    } else {
+        for fact in preferences {
+            let staleness = get_staleness_label(fact);
+            let display = normalize_to_third_person(&fact.content);
+            section.push_str(&format!("- {}{}\n", display, staleness));
+        }
+    }
+    section.push('\n');
+
+    section.push_str(&format!("### {} Facts\n", scope_label));
+    if fact_list.is_empty() {
+        section.push_str("(none)\n");
+    } else {
+        for fact in fact_list {
+            let staleness = get_staleness_label(fact);
+            let display = normalize_to_third_person(&fact.content);
+            section.push_str(&format!("- {}{}\n", display, staleness));
+        }
+    }
+    section.push('\n');
 }
 
 #[cfg(test)]
@@ -171,6 +194,25 @@ mod tests {
             source: Source::User,
             invalidated_at: None,
             project_id: None,
+            has_embedding: false,
+        }
+    }
+
+    fn create_test_fact_with_scope(content: &str, category: Category, scope: Scope) -> Fact {
+        Fact {
+            id: 1,
+            scope,
+            category,
+            content: content.to_string(),
+            importance: 0.5,
+            access_count: 0,
+            decay_score: 1.0,
+            created_at: Utc::now(),
+            last_accessed: Utc::now(),
+            source: Source::User,
+            invalidated_at: None,
+            project_id: None,
+            has_embedding: false,
         }
     }
 
@@ -189,11 +231,13 @@ mod tests {
 
         let result = build_facts_section(&facts);
 
-        // Preferences should come first
+        // Within each scope section, preferences should come before facts
         let pref_pos = result
-            .find("### Preferences")
-            .expect("Should have preferences");
-        let fact_pos = result.find("### Facts").expect("Should have facts");
+            .find("### Project Preferences")
+            .expect("Should have project preferences");
+        let fact_pos = result
+            .find("### Project Facts")
+            .expect("Should have project facts");
 
         assert!(pref_pos < fact_pos, "Preferences should come before facts");
     }
@@ -207,8 +251,9 @@ mod tests {
 
         let result = build_facts_section(&facts);
 
-        assert!(result.contains("### Preferences"));
-        assert!(!result.contains("### Facts"));
+        assert!(result.contains("### Project Preferences"));
+        // Facts section is present but empty
+        assert!(result.contains("### Project Facts"));
     }
 
     #[test]
@@ -220,8 +265,9 @@ mod tests {
 
         let result = build_facts_section(&facts);
 
-        assert!(!result.contains("### Preferences"));
-        assert!(result.contains("### Facts"));
+        // Preferences section is present but empty
+        assert!(result.contains("### Project Preferences"));
+        assert!(result.contains("### Project Facts"));
     }
 
     #[test]
@@ -237,8 +283,8 @@ mod tests {
 
         let result = build_facts_section(&facts);
 
-        // Result should be well-formed
-        assert!(result.contains("### Facts"));
+        // Result should be well-formed with scope sections
+        assert!(result.contains("### Project Facts"));
 
         // Should end at valid char boundary
         assert!(result.is_char_boundary(result.len()));
@@ -247,18 +293,20 @@ mod tests {
     #[test]
     fn test_format() {
         // Fresh facts should have no staleness label
-        // Note: build_facts_section now normalizes to third-person
+        // Note: build_facts_section now normalizes to third-person and groups by scope
         let facts = vec![
-            create_test_fact("I prefer Portuguese", Category::Preference),
-            create_test_fact("The project uses Rust", Category::Fact),
+            create_test_fact_with_scope("I prefer Portuguese", Category::Preference, Scope::Global),
+            create_test_fact_with_scope("The project uses Rust", Category::Fact, Scope::Project),
         ];
 
         let result = build_facts_section(&facts);
 
-        let expected =
-            "### Preferences\n- User prefers Portuguese\n\n### Facts\n- The project uses Rust\n";
-
-        assert_eq!(result, expected);
+        // Global preferences come first
+        assert!(result.contains("### Global Preferences"));
+        assert!(result.contains("- User prefers Portuguese"));
+        // Project facts come second
+        assert!(result.contains("### Project Facts"));
+        assert!(result.contains("- The project uses Rust"));
     }
 
     // --- Third-person normalization tests ---
@@ -414,6 +462,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_scope_separation() {
+        // Facts are grouped by scope: Global first, then Project
+        let facts = vec![
+            create_test_fact_with_scope("I prefer dark mode", Category::Preference, Scope::Global),
+            create_test_fact_with_scope("The project uses Rust", Category::Fact, Scope::Project),
+            create_test_fact_with_scope(
+                "I like short responses",
+                Category::Preference,
+                Scope::Global,
+            ),
+            create_test_fact_with_scope("API is REST", Category::Fact, Scope::Project),
+        ];
+
+        let result = build_facts_section(&facts);
+
+        // Global section comes first
+        let global_pos = result
+            .find("### Global Preferences")
+            .expect("Should have global preferences");
+        // Project section comes second
+        let project_pos = result
+            .find("### Project Preferences")
+            .expect("Should have project preferences");
+
+        assert!(
+            global_pos < project_pos,
+            "Global section should come before Project section"
+        );
+
+        // Each scope has its own preferences and facts
+        assert!(result.contains("### Global Preferences"));
+        assert!(result.contains("### Global Facts"));
+        assert!(result.contains("### Project Preferences"));
+        assert!(result.contains("### Project Facts"));
+    }
+
     // --- Staleness label tests ---
 
     fn create_stale_fact(content: &str, category: Category, decay_score: f32) -> Fact {
@@ -430,6 +515,7 @@ mod tests {
             source: Source::User,
             invalidated_at: None,
             project_id: None,
+            has_embedding: false,
         }
     }
 
@@ -455,6 +541,7 @@ mod tests {
             source: Source::User,
             invalidated_at: None,
             project_id: None,
+            has_embedding: false,
         }
     }
 

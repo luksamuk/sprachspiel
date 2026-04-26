@@ -7,8 +7,13 @@ use super::db::FactSearchResult;
 use super::types::{Category, Fact};
 
 /// Default threshold for conflict detection (similarity score 0.0-1.0)
-/// After proper BM25 normalization, 0.85 corresponds to strong matches (score ~-7)
-pub const CONFLICT_THRESHOLD: f32 = 0.85;
+///
+/// Lowered from 0.85 to 0.75 to catch more FTS5 keyword matches.
+/// BM25 normalization maps score -5 (good match) to ~0.83, which was
+/// just below the old 0.85 threshold. At 0.75, most real duplicates
+/// are caught while false positives remain rare due to the layered
+/// dedup pipeline (exact match → normalized match → FTS5).
+pub const CONFLICT_THRESHOLD: f32 = 0.75;
 
 /// Type of conflict detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,13 +51,15 @@ pub enum ResolutionAction {
 /// Check if two facts are contradictory
 ///
 /// Uses simple heuristics to detect contradictions:
-/// - "I like X" vs "I hate X"
+/// - "I like X" vs "I hate X" (preference conflict)
+/// - "I prefer X" vs "I prefer Y" (preference override with different object)
 /// - "X is A" vs "X is B" with negation
+/// - PT equivalents of the above
 pub fn is_contradiction(new: &str, existing: &str) -> bool {
     let new_lower = new.to_lowercase();
     let existing_lower = existing.to_lowercase();
 
-    // Check for negation patterns
+    // Check for preference conflict patterns
     // "I like X" vs "I hate X"
     if (contains_preference_like(&new_lower) && contains_preference_hate(&existing_lower))
         || (contains_preference_hate(&new_lower) && contains_preference_like(&existing_lower))
@@ -60,8 +67,13 @@ pub fn is_contradiction(new: &str, existing: &str) -> bool {
         return true;
     }
 
+    // Check for preference override: "I prefer X" vs "I prefer Y"
+    // Both talk about preferences but with different objects
+    if is_preference_override(&new_lower, &existing_lower) {
+        return true;
+    }
+
     // Check for "not" / "não" contradiction
-    // This is a simplified check - real contradiction detection would need more sophisticated NLP
     if has_opposite_negation(&new_lower, &existing_lower) {
         return true;
     }
@@ -69,14 +81,140 @@ pub fn is_contradiction(new: &str, existing: &str) -> bool {
     false
 }
 
+/// Check if two statements are preference overrides.
+///
+/// Detects patterns like "I prefer dark mode" vs "I prefer light mode"
+/// where both contain preference verbs but the objects differ.
+/// This is a contradiction because the user's preference has changed.
+fn is_preference_override(a: &str, b: &str) -> bool {
+    // Both must contain preference verbs
+    let a_has_pref = contains_preference_verb(a);
+    let b_has_pref = contains_preference_verb(b);
+
+    if !a_has_pref || !b_has_pref {
+        return false;
+    }
+
+    // Extract the object of the preference (everything after the verb)
+    let a_object = extract_preference_object(a);
+    let b_object = extract_preference_object(b);
+
+    // If both have objects and they differ, it's a preference override
+    if let (Some(a_obj), Some(b_obj)) = (a_object, b_object) {
+        // Must have significant word overlap to be about the same topic
+        // but different specific preference
+        let overlap = word_overlap_ratio(&a_obj, &b_obj);
+        // Low overlap means completely different topics (not a contradiction)
+        // High overlap means same topic, different preference
+        overlap > 0.3 && overlap < 0.95 && a_obj != b_obj
+    } else {
+        false
+    }
+}
+
+/// Check if content contains any preference verb
+fn contains_preference_verb(s: &str) -> bool {
+    s.contains("prefer")
+        || s.contains("like ")
+        || s.contains("love ")
+        || s.contains("hate ")
+        || s.contains("dislike")
+        || s.contains("want ")
+        || s.contains("wish ")
+        || s.contains("enjoy ")
+        || s.contains("gosto de")
+        || s.contains("prefiro")
+        || s.contains("prefere")
+        || s.contains("adoro")
+        || s.contains("adora")
+        || s.contains("odeio")
+        || s.contains("odeia")
+        || s.contains("detesto")
+        || s.contains("detesta")
+}
+
+/// Extract the object of a preference statement.
+///
+/// Given "i prefer dark mode" → Some("dark mode")
+/// Given "user likes python" → Some("python")
+/// Given "the project uses rust" → None
+fn extract_preference_object(s: &str) -> Option<String> {
+    // Preference verbs and their lengths
+    let verbs: &[&str] = &[
+        "i prefer ",
+        "i like ",
+        "i hate ",
+        "i love ",
+        "i dislike ",
+        "i want ",
+        "i enjoy ",
+        "user prefers ",
+        "user likes ",
+        "user hates ",
+        "user loves ",
+        "user dislikes ",
+        "user wants ",
+        "user enjoys ",
+        "prefiro ",
+        "prefere ",
+        "gosto de ",
+        "gosta de ",
+        "adoro ",
+        "adora ",
+        "odeio ",
+        "odeia ",
+        "detesto ",
+        "detesta ",
+    ];
+
+    for verb in verbs {
+        if s.starts_with(verb) {
+            let rest = s.strip_prefix(verb).unwrap_or(s);
+            if !rest.is_empty() {
+                return Some(rest.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Calculate word overlap ratio between two strings.
+fn word_overlap_ratio(a: &str, b: &str) -> f32 {
+    let a_words: std::collections::HashSet<&str> = a.split_whitespace().collect();
+    let b_words: std::collections::HashSet<&str> = b.split_whitespace().collect();
+
+    if a_words.is_empty() || b_words.is_empty() {
+        return 0.0;
+    }
+
+    let intersection = a_words.intersection(&b_words).count();
+    let total = a_words.len().max(b_words.len());
+    intersection as f32 / total as f32
+}
+
 /// Check if content contains preference-like patterns
 fn contains_preference_like(s: &str) -> bool {
-    s.contains("like ") || s.contains("gosto de") || s.contains("prefiro")
+    s.contains("like ")
+        || s.contains("love ")
+        || s.contains("enjoy ")
+        || s.contains("prefer")
+        || s.contains("gosto de")
+        || s.contains("prefiro")
+        || s.contains("prefere")
+        || s.contains("adoro")
+        || s.contains("adora")
 }
 
 /// Check if content contains preference-hate patterns
 fn contains_preference_hate(s: &str) -> bool {
-    s.contains("hate ") || s.contains("odeio") || s.contains("não gosto")
+    s.contains("hate ")
+        || s.contains("dislike")
+        || s.contains("odeio")
+        || s.contains("odeia")
+        || s.contains("não gosto")
+        || s.contains("nao gosto")
+        || s.contains("detesto")
+        || s.contains("detesta")
 }
 
 /// Check if two strings have opposite negation
@@ -152,11 +290,12 @@ pub fn detect_conflicts(
         if similarity >= threshold {
             let conflict_type = if is_contradiction(new_content, &result.fact.content) {
                 ConflictType::Contradiction
-            } else if similarity > 0.95 {
-                // Very high similarity but no contradiction = likely duplicate
-                ConflictType::Duplicate
             } else {
-                continue; // Not a conflict
+                // Any similarity >= threshold without contradiction = duplicate.
+                // Previously had a gap (0.85-0.95) where facts were silently ignored,
+                // causing exact duplicates to be inserted. Now all scores >= threshold
+                // are treated as either contradiction or duplicate.
+                ConflictType::Duplicate
             };
 
             conflicts.push(Conflict {
@@ -190,6 +329,7 @@ mod tests {
                 source: Source::User,
                 invalidated_at: None,
                 project_id: None,
+                has_embedding: false,
             },
             score: 0.9, // High similarity by default
         }
@@ -213,9 +353,9 @@ mod tests {
     #[test]
     fn test_detect_conficts_duplicate() {
         // Test that detect_conflicts works as expected
-        // A duplicate needs similarity > 0.95 to be detected
+        // Any similarity >= threshold (0.75) without contradiction = duplicate
         let mut existing = create_test_fact_with_content("The project uses SQLite");
-        existing.score = 0.96; // High enough to be detected as duplicate
+        existing.score = 0.80; // Above threshold (0.75), no contradiction = duplicate
         let results = vec![existing];
 
         let conflicts = detect_conflicts("The project uses SQLite", &results, CONFLICT_THRESHOLD);
@@ -244,6 +384,7 @@ mod tests {
                 source: Source::User,
                 invalidated_at: None,
                 project_id: None,
+                has_embedding: false,
             },
             conflict_type: ConflictType::Duplicate,
         };
@@ -267,6 +408,7 @@ mod tests {
                 source: Source::User,
                 invalidated_at: None,
                 project_id: None,
+                has_embedding: false,
             },
             conflict_type: ConflictType::Contradiction,
         };
@@ -294,6 +436,7 @@ mod tests {
                 source: Source::User,
                 invalidated_at: None,
                 project_id: None,
+                has_embedding: false,
             },
             score: 0.90,
         };
@@ -326,8 +469,9 @@ mod tests {
                 source: Source::User,
                 invalidated_at: None,
                 project_id: None,
+                has_embedding: false,
             },
-            score: 0.50, // Below threshold (0.85)
+            score: 0.50, // Below threshold (0.75)
         };
         let results = vec![existing];
 
@@ -336,5 +480,100 @@ mod tests {
 
         // No conflict because similarity is below threshold
         assert!(conflicts.is_empty());
+    }
+
+    #[test]
+    fn test_detect_conflicts_gap_0_85_to_0_95_is_duplicate() {
+        // Bug #1 fix: similarity between old threshold range was silently ignored.
+        // Now all scores >= threshold (0.75) are treated as either duplicate or contradiction.
+        let mut existing = create_test_fact_with_content("The project uses SQLite");
+        existing.score = 0.80; // Above current threshold (0.75), no contradiction = duplicate
+        let results = vec![existing];
+
+        let conflicts = detect_conflicts("The project uses SQLite", &results, CONFLICT_THRESHOLD);
+
+        // Should be detected as duplicate (not silently ignored)
+        assert_eq!(conflicts.len(), 1);
+        assert!(matches!(
+            conflicts[0].conflict_type,
+            ConflictType::Duplicate
+        ));
+    }
+
+    #[test]
+    fn test_detect_conflicts_exact_match_is_duplicate() {
+        // Exact similarity at threshold (0.75) is a duplicate
+        let mut existing = create_test_fact_with_content("The project uses SQLite");
+        existing.score = 0.75; // Exactly at threshold
+        let results = vec![existing];
+
+        let conflicts = detect_conflicts("The project uses SQLite", &results, CONFLICT_THRESHOLD);
+
+        assert_eq!(conflicts.len(), 1);
+        assert!(matches!(
+            conflicts[0].conflict_type,
+            ConflictType::Duplicate
+        ));
+    }
+
+    // ── Preference Override Detection ─────────────────────────────────
+
+    #[test]
+    fn test_contradiction_preference_override_dark_light() {
+        // "I prefer dark mode" vs "I prefer light mode" = contradiction
+        assert!(is_contradiction(
+            "I prefer dark mode",
+            "I prefer light mode"
+        ));
+    }
+
+    #[test]
+    fn test_contradiction_preference_override_third_person() {
+        // "User prefers dark mode" vs "User prefers light mode" = contradiction
+        assert!(is_contradiction(
+            "User prefers dark mode",
+            "User prefers light mode"
+        ));
+    }
+
+    #[test]
+    fn test_contradiction_preference_like_hate() {
+        assert!(is_contradiction("I like Python", "I hate Python"));
+    }
+
+    #[test]
+    fn test_no_contradiction_different_topics() {
+        // "I prefer dark mode" vs "I like Python" are NOT contradictions
+        // (preferences about different topics)
+        assert!(!is_contradiction("I prefer dark mode", "I like Python"));
+    }
+
+    #[test]
+    fn test_no_contradiction_same_preference() {
+        // "I prefer dark mode" vs "I prefer dark mode" are NOT contradictions
+        // (same preference)
+        assert!(!is_contradiction(
+            "I prefer dark mode",
+            "I prefer dark mode"
+        ));
+    }
+
+    #[test]
+    fn test_extract_preference_object() {
+        assert_eq!(
+            extract_preference_object("i prefer dark mode"),
+            Some("dark mode".to_string())
+        );
+        assert_eq!(
+            extract_preference_object("user likes python"),
+            Some("python".to_string())
+        );
+        assert_eq!(extract_preference_object("the project uses rust"), None);
+    }
+
+    #[test]
+    fn test_word_overlap_ratio() {
+        assert!(word_overlap_ratio("dark mode", "light mode") > 0.3);
+        assert!(word_overlap_ratio("dark mode", "python programming") < 0.3);
     }
 }

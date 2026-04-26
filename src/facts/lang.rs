@@ -248,6 +248,128 @@ pub fn normalize_replacements() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
+/// Normalize fact content for deduplication comparison.
+///
+/// Strips subject pronouns while preserving verbs and key content tokens,
+/// producing FTS5 search queries that maximize token overlap between
+/// semantically equivalent facts.
+///
+/// # How it works
+///
+/// Uses TWO prefix groups with different strategies:
+///
+/// 1. **Identity/copula prefixes** — Strip the entire prefix including the
+///    copula ("is", "am", "name is") because the key content follows.
+///    - "My name is Lucas" → "Lucas"
+///    - "I am from Brazil" → "Brazil"
+///    - "User's name is Lucas" → "Lucas"
+///
+/// 2. **Verb prefixes** — Strip ONLY the subject pronoun, keeping the verb
+///    and the rest of the sentence for FTS5 token matching.
+///    - "I prefer dark mode" → "prefer dark mode"
+///    - "User prefers dark mode" → "prefers dark mode"
+///    - "Eu prefiro dark mode" → "prefiro dark mode"
+///
+/// # Examples
+///
+/// ```
+/// use ask_ai::facts::lang::normalize_for_comparison;
+///
+/// assert_eq!(normalize_for_comparison("I prefer dark mode"), "prefer dark mode");
+/// assert_eq!(normalize_for_comparison("User prefers dark mode"), "prefers dark mode");
+/// assert_eq!(normalize_for_comparison("Eu prefiro dark mode"), "prefiro dark mode");
+/// assert_eq!(normalize_for_comparison("The project uses SQLite"), "the project uses sqlite");
+/// ```
+pub fn normalize_for_comparison(content: &str) -> String {
+    let lower = content.to_lowercase();
+
+    // ── Identity/copula prefixes (full strip) ──────────────────────
+    // These contain copula verbs ("is", "am", "name is") — the key
+    // content (name, location, language) follows, so we strip everything.
+    let identity_prefixes: &[&str] = &[
+        // Third-person
+        "user's name is ",
+        "user's language is ",
+        "user is from ",
+        "user is a ",
+        "user is ",
+        "user lives in ",
+        "user works in ",
+        "user works at ",
+        "user works for ",
+        "user speaks ",
+        "user's ",
+        // First-person EN
+        "my name is ",
+        "my language is ",
+        "i'm from ",
+        "i'm a ",
+        "i'm ",
+        "i am ",
+        "i live in ",
+        "i work at ",
+        "i work for ",
+        "i work in ",
+        "i speak ",
+        "my ",
+        // First-person PT — identity forms strip fully
+        "meu nome é ",
+        "meu nome e ",
+        "eu me chamo ",
+        "eu moro em ",
+        "moro em ",
+        "eu sou de ",
+        "sou de ",
+        "eu sou um ",
+        "eu sou uma ",
+        "eu sou ",
+        "sou um ",
+        "sou uma ",
+        "sou ",
+        "eu falo ",
+        "falo ",
+        "minha língua é ",
+        "minha lingua e ",
+        "meu idioma é ",
+        "meu idioma e ",
+        "meu ",
+        "minha ",
+        "eu trabalho em ",
+        "eu trabalho no ",
+        "eu trabalho na ",
+        "eu trabalho para ",
+    ];
+
+    // ── Verb prefixes (subject-only strip) ─────────────────────────
+    // These contain important verbs (prefer, like, hate, want) that
+    // we want to KEEP for FTS5 matching. Only strip the subject.
+    let verb_subject_only: &[&str] = &[
+        // Third-person — strip "user " to keep verb
+        "user ", // First-person EN — strip "i " to keep verb
+        "i ",    // First-person PT — strip "eu " to keep verb
+        "eu ",
+    ];
+
+    // Try identity prefixes first (they're more specific)
+    for prefix in identity_prefixes {
+        if lower.starts_with(prefix) {
+            let rest = &content[prefix.len()..];
+            return rest.to_lowercase().trim().to_string();
+        }
+    }
+
+    // Try verb prefixes (strip only the subject)
+    for prefix in verb_subject_only {
+        if lower.starts_with(prefix) {
+            let rest = &content[prefix.len()..];
+            return rest.to_lowercase().trim().to_string();
+        }
+    }
+
+    // No known prefix — return lowercase trimmed
+    lower.trim().to_string()
+}
+
 // === Filler and Command Words ===
 
 /// Conversational fillers that should not be extracted as facts.
@@ -412,30 +534,46 @@ pub fn translate_pt_to_en(content: &str) -> String {
 
     // Try PT→EN prefix replacements (longer patterns first)
     let translations: &[(&str, &str)] = &[
-        // Negations (longest first)
+        // ── Negations (longest first) ────────────────────────────────
         ("eu não gosto de ", "User doesn't like "),
         ("eu nao gosto de ", "User doesn't like "),
         ("não gosto de ", "User doesn't like "),
         ("nao gosto de ", "User doesn't like "),
+        ("ele não gosta de ", "User doesn't like "),
+        ("ela não gosta de ", "User doesn't like "),
+        ("não gosta de ", "User doesn't like "),
+        ("nao gosta de ", "User doesn't like "),
         ("eu não quero ", "User doesn't want "),
         ("eu nao quero ", "User doesn't want "),
         ("não quero ", "User doesn't want "),
         ("nao quero ", "User doesn't want "),
-        // Preferences with "eu"
+        // ── First-person preferences ──────────────────────────────────
         ("eu prefiro ", "User prefers "),
         ("eu adoro ", "User loves "),
         ("eu detesto ", "User hates "),
         ("eu gosto de ", "User likes "),
         ("eu odeio ", "User hates "),
         ("eu quero ", "User wants "),
-        // Without "eu"
+        // ── Third-person PT preferences (LLM-generated hybrids) ──────
+        // The LLM sometimes generates third-person PT like "prefere"
+        // or "adora" without "eu" prefix.
+        ("prefere ", "User prefers "),
         ("prefiro ", "User prefers "),
+        ("adora ", "User loves "),
         ("adoro ", "User loves "),
+        ("detesta ", "User hates "),
         ("detesto ", "User hates "),
+        ("gosta de ", "User likes "),
         ("gosto de ", "User likes "),
+        ("odeia ", "User hates "),
         ("odeio ", "User hates "),
+        ("quer ", "User wants "),
         ("quero ", "User wants "),
-        // Identity with "eu"
+        // ── PT identity patterns ──────────────────────────────────────
+        // Second/third-person identity that the LLM might generate
+        ("o nome do usuário é ", "User's name is "),
+        ("o nome do usuario e ", "User's name is "),
+        // First-person identity with "eu"
         ("meu nome é ", "My name is "),
         ("meu nome e ", "My name is "),
         ("eu me chamo ", "My name is "),
@@ -700,5 +838,122 @@ mod tests {
         assert!(starters.contains(&"mostra "));
         assert!(starters.contains(&"busca "));
         assert!(starters.contains(&"explica "));
+    }
+
+    // ── normalize_for_comparison ────────────────────────────────────
+
+    #[test]
+    fn test_normalize_comparison_first_person() {
+        // "I prefer dark mode" → "prefer dark mode"
+        assert_eq!(
+            normalize_for_comparison("I prefer dark mode"),
+            "prefer dark mode"
+        );
+    }
+
+    #[test]
+    fn test_normalize_comparison_third_person() {
+        // "User prefers dark mode" → "prefers dark mode"
+        assert_eq!(
+            normalize_for_comparison("User prefers dark mode"),
+            "prefers dark mode"
+        );
+    }
+
+    #[test]
+    fn test_normalize_comparison_pt_preference() {
+        // "Eu prefiro dark mode" → "prefiro dark mode" (PT verb preserved for FTS5)
+        assert_eq!(
+            normalize_for_comparison("Eu prefiro dark mode"),
+            "prefiro dark mode"
+        );
+    }
+
+    #[test]
+    fn test_normalize_comparison_identity() {
+        // Identity/copula forms strip the full prefix (subject + copula verb)
+        // because the key content follows: "I am a developer" → "developer"
+        assert_eq!(normalize_for_comparison("I am a developer"), "a developer");
+        // "User is a developer" → "developer" (identity prefix strip)
+        assert_eq!(normalize_for_comparison("User is a developer"), "developer");
+        // "My name is Lucas" → "Lucas"
+        assert_eq!(normalize_for_comparison("My name is Lucas"), "lucas");
+    }
+
+    #[test]
+    fn test_normalize_comparison_no_prefix() {
+        // Factual content without subject prefix stays as-is (lowercased)
+        assert_eq!(
+            normalize_for_comparison("The project uses SQLite"),
+            "the project uses sqlite"
+        );
+    }
+
+    #[test]
+    fn test_normalize_comparison_shared_tokens() {
+        // Both forms should produce queries containing "dark" and "mode"
+        // (FTS5 matches on individual tokens, not exact string match)
+        let first = normalize_for_comparison("I prefer dark mode");
+        let third = normalize_for_comparison("User prefers dark mode");
+        assert!(first.contains("dark"));
+        assert!(first.contains("mode"));
+        assert!(third.contains("dark"));
+        assert!(third.contains("mode"));
+    }
+
+    // ── Third-person PT translation (LLM hybrid output) ───────────
+
+    #[test]
+    fn test_translate_pt_third_person_prefere() {
+        // LLM might generate "Prefere respostas curtas" (3rd person PT)
+        assert_eq!(
+            translate_pt_to_en("Prefere respostas curtas"),
+            "User prefers respostas curtas"
+        );
+    }
+
+    #[test]
+    fn test_translate_pt_third_person_adora() {
+        // LLM might generate "Adora Rust"
+        assert_eq!(translate_pt_to_en("Adora Rust"), "User loves Rust");
+    }
+
+    #[test]
+    fn test_translate_pt_third_person_gosta() {
+        // LLM might generate "Gosta de café"
+        assert_eq!(translate_pt_to_en("Gosta de café"), "User likes café");
+    }
+
+    #[test]
+    fn test_translate_pt_third_person_odeia() {
+        // LLM might generate "Odeia bugs"
+        assert_eq!(translate_pt_to_en("Odeia bugs"), "User hates bugs");
+    }
+
+    #[test]
+    fn test_translate_pt_username() {
+        // LLM might generate "O nome do usuário é Ana"
+        assert_eq!(
+            translate_pt_to_en("O nome do usuário é Ana"),
+            "User's name is Ana"
+        );
+    }
+
+    #[test]
+    fn test_translate_pt_username_ascii() {
+        // LLM might generate "O nome do usuario e Ana" (without accents)
+        assert_eq!(
+            translate_pt_to_en("O nome do usuario e Ana"),
+            "User's name is Ana"
+        );
+    }
+
+    #[test]
+    fn test_translate_pt_negation_third_person() {
+        // "Não gosta de bugs" (3rd person negation)
+        assert_eq!(
+            translate_pt_to_en("Não gosta de bugs"),
+            "User doesn't like bugs"
+        );
     }
 }

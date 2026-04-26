@@ -38,13 +38,24 @@ All notable changes to Ask-AI will be documented in this file.
   - Config support for `[model.ocr]` and `[model.document]` sections
   - Feature flag: `subagent-tools` (default enabled)
 
-- **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
+ - **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
   - `OcrMode::into_descriptive_prompt()` returns mode-specific restricted prompts for vision models (Text/Table/Figure/Formula)
   - `is_glm_ocr_model()` utility for detecting GLM-OCR models vs. vision models
   - `parse_ocr_mode()` convenience function for parsing OCR mode from LLM string parameters
   - `ocr_mode` parameter on `spawn_subagent` tool — LLMs can now specify Text/Table/Figure/Formula OCR mode
   - `/ocr` chat command now accepts an optional mode parameter (e.g., `/ocr image.png table`)
   - All 3 OCR entry points (CLI, chat `/ocr`, subagent `spawn_subagent`) use model-aware prompt selection
+
+- **Fact Embedding & Semantic Dedup (P6.7)** - Embedding-based Layer 4 dedup for facts (Issue #73)
+  - Schema v11: `has_embedding INTEGER DEFAULT 0` column on `facts` table + `fact_embeddings` vec0 virtual table (256d Matryoshka)
+  - `src/facts/embedding.rs` — `generate_fact_embedding()` wrapper for fact content embedding
+  - `src/facts/recovery.rs` — Startup/shutdown recovery of missing fact embeddings
+  - `src/facts/verify.rs` — O(n²) semantic dedup at startup with cosine similarity ≥ 0.90 threshold
+  - Eager embedding: `tokio::spawn` after fact insertion; graceful fallback when Ollama offline
+  - Startup sequence: `recover_missing_embeddings()` → `recover_missing_fact_embeddings()` → `verify_and_dedup_facts()`
+  - Shutdown: `flush_pending_fact_embeddings()` on `/exit`
+  - Conflict resolution: duplicate → keep newer, contradiction → keep newer, global-wins-project
+  - Silent by design: all operations use `log::info/debug` only
 
 ### Changed
 

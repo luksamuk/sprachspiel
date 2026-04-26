@@ -6,9 +6,12 @@
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::facts::classify::classify_fact;
 use crate::facts::conflict::{CONFLICT_THRESHOLD, detect_conflicts, resolve_conflict};
+use crate::facts::extract::is_extractable_sentence;
+use crate::facts::lang;
 use crate::facts::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
+use crate::tools::context::get_embedding;
 use crate::utils::parse_bounded_number;
 use ollama_rs::function;
 
@@ -33,13 +36,17 @@ fn parse_fact_id(id: &str) -> Result<i64, String> {
 
 /// Store a fact or preference about the user or project.
 ///
+/// **IMPORTANT: Content must be in English.** If the user speaks Portuguese
+/// or any other language, translate the fact to English before storing.
+/// Example: User says "Eu prefiro respostas curtas" → store "I prefer short responses".
+///
 /// The system automatically classifies facts as "preference" (user likes/dislikes)
 /// or "fact" (objective information). You can override this with the category parameter.
 ///
 /// Facts are stored globally by default. Use scope="project" for project-specific information.
 ///
 /// # Arguments
-/// * `content` - The fact to store (max 500 characters). Required.
+/// * `content` - The fact to store in English (max 500 characters). Required.
 ///   - Preferences: "I prefer short responses", "I dislike verbose explanations"
 ///   - Facts: "Database uses PostgreSQL", "API endpoint is /api/v1/users"
 /// * `category` - Override automatic classification: "preference" or "fact". Optional.
@@ -58,6 +65,10 @@ fn parse_fact_id(id: &str) -> Result<i64, String> {
 ///
 /// // Store a project-specific fact
 /// fact_add(content="Project uses SQLite for storage", scope="project")
+///
+/// // Translate from Portuguese before storing
+/// // User said: "Eu prefiro respostas curtas"
+/// fact_add(content="I prefer short responses")
 ///
 /// // Override category detection
 /// fact_add(content="User prefers Portuguese", category="fact")
@@ -100,6 +111,65 @@ pub async fn fact_add(
         log_tool_result("fact_add", &err);
         return Ok(err);
     }
+
+    // Validate content: reject fillers, commands, questions, and short text
+    // This prevents the LLM from storing non-fact content that bypasses auto-extraction filtering.
+    let lower = content.trim().to_lowercase();
+
+    // Reject questions
+    if content.trim().ends_with('?') {
+        let msg = format!(
+            "Skipped: '{}' appears to be a question, not a fact.",
+            content.trim()
+        );
+        log_tool_result("fact_add", &msg);
+        return Ok(msg);
+    }
+
+    // Reject conversational fillers
+    if lang::filler_words().iter().any(|f| lower == *f) {
+        let msg = format!(
+            "Skipped: '{}' appears to be a conversational filler, not a fact.",
+            content.trim()
+        );
+        log_tool_result("fact_add", &msg);
+        return Ok(msg);
+    }
+
+    // Reject commands
+    for starter in lang::command_starters() {
+        if lower.starts_with(starter) {
+            let msg = format!(
+                "Skipped: '{}' appears to be a command, not a fact.",
+                content.trim()
+            );
+            log_tool_result("fact_add", &msg);
+            return Ok(msg);
+        }
+    }
+
+    // Reject very short content (less than minimum extractable length)
+    if content.trim().len() < 10 {
+        let msg = "Skipped: Fact content is too short (minimum 10 characters).".to_string();
+        log_tool_result("fact_add", &msg);
+        return Ok(msg);
+    }
+
+    // Use is_extractable_sentence for additional validation.
+    // This catches third-person statements, short phrases, and other non-fact content
+    // that the simpler checks above might miss.
+    if !is_extractable_sentence(&content) {
+        let msg = format!(
+            "Skipped: '{}' does not appear to be a personal fact or preference.",
+            content.trim()
+        );
+        log_tool_result("fact_add", &msg);
+        return Ok(msg);
+    }
+
+    // Translate PT→EN before storage (ADR-L1: all facts stored in English).
+    // Auto-extraction already does this; fact_add must do the same to maintain consistency.
+    let content = lang::translate_pt_to_en(&content);
 
     // Get database
     let db = match get_db() {
@@ -157,7 +227,7 @@ pub async fn fact_add(
         content.clone(),
         parsed_category,
         parsed_scope,
-        project_id,
+        project_id.clone(),
         Source::Llm,
     ) {
         Ok(f) => f,
@@ -168,9 +238,90 @@ pub async fn fact_add(
         }
     };
 
-    // Check for conflicts (Phase 0.7)
-    // Search for similar facts
-    let conflicts = match db.search_facts(&content, parsed_scope.into(), 5) {
+    // ====================================================================
+    // Layer 1: Exact content match (case-insensitive, trimmed)
+    // Catches obvious duplicates like "I prefer dark mode" == "i prefer dark mode"
+    // ====================================================================
+    let content_trimmed = content.trim().to_lowercase();
+    match db.find_exact_fact(&content_trimmed) {
+        Ok(Some(existing)) => {
+            let result = format!(
+                "Skipped: Exact duplicate already exists (fact:{}).\n\n\
+                 Existing: {}\n\
+                 New: {}\n\n\
+                 Use fact_remove(id=\"{}\") first if you want to replace it.",
+                existing.id, existing.content, content, existing.id
+            );
+            log_tool_result("fact_add", &result);
+            return Ok(result);
+        }
+        Ok(None) => { /* No exact match, continue */ }
+        Err(e) => {
+            log::debug!("fact_add: Exact match query failed: {}", e);
+        }
+    }
+
+    // ====================================================================
+    // Layer 2: Normalized content match (strips pronouns/subjects)
+    // Catches "I prefer dark mode" ≈ "User prefers dark mode"
+    // ====================================================================
+    let normalized_query = lang::normalize_for_comparison(&content);
+    match db.find_normalized_fact(&normalized_query) {
+        Ok(matches) if !matches.is_empty() => {
+            // Found a normalized match — handle conflicts
+            if parsed_scope == Scope::Global {
+                // Global-wins-project: remove Project duplicates
+                let mut global_match: Option<&crate::facts::types::Fact> = None;
+                for fact in &matches {
+                    if fact.scope == Scope::Project {
+                        log::debug!(
+                            "fact_add: Global fact overrides Project fact (id={}): '{}'",
+                            fact.id,
+                            fact.content
+                        );
+                        if let Err(e) = db.delete_fact(fact.id) {
+                            log::debug!("fact_add: Failed to delete Project fact: {}", e);
+                        }
+                    } else {
+                        global_match = Some(fact);
+                    }
+                }
+                if let Some(existing) = global_match {
+                    let result = format!(
+                        "Skipped: Similar fact already exists (fact:{}).\n\n\
+                         Existing: {}\n\
+                         New: {}\n\n\
+                         Use fact_remove(id=\"{}\") first if you want to replace it.",
+                        existing.id, existing.content, content, existing.id
+                    );
+                    log_tool_result("fact_add", &result);
+                    return Ok(result);
+                }
+                // All duplicates were Project-scope and removed — fall through to insert
+            } else {
+                // Project-scope: any existing match = skip
+                let existing = &matches[0];
+                let result = format!(
+                    "Skipped: Similar fact already exists (fact:{}).\n\n\
+                     Existing: {}\n\
+                     New: {}\n\n\
+                     Use fact_remove(id=\"{}\") first if you want to replace it.",
+                    existing.id, existing.content, content, existing.id
+                );
+                log_tool_result("fact_add", &result);
+                return Ok(result);
+            }
+        }
+        Ok(_) => { /* No normalized match, continue */ }
+        Err(e) => {
+            log::debug!("fact_add: Normalized match query failed: {}", e);
+        }
+    }
+
+    // ====================================================================
+    // Layer 3: FTS5 keyword search with BM25 scoring
+    // ====================================================================
+    let conflicts = match db.search_facts(&normalized_query, None, 5) {
         Ok(results) => detect_conflicts(&content, &results, CONFLICT_THRESHOLD),
         Err(_) => {
             // If search fails, continue without conflict check
@@ -180,63 +331,95 @@ pub async fn fact_add(
 
     // Handle conflicts
     if !conflicts.is_empty() {
-        let conflict = &conflicts[0]; // Take the most similar conflict
-
-        match resolve_conflict(conflict.clone()) {
-            crate::facts::conflict::ResolutionAction::Skip => {
-                // Duplicate - skip adding
-                let result = format!(
-                    "Skipped: Similar fact already exists (fact:{}).\n\n\
-                     Existing: {}\n\
-                     New: {}\n\n\
-                     Use fact_remove(id=\"{}\") first if you want to replace it.",
-                    conflict.existing_fact.id,
-                    conflict.existing_fact.content,
-                    content,
-                    conflict.existing_fact.id
-                );
-                log_tool_result("fact_add", &result);
-                return Ok(result);
-            }
-            crate::facts::conflict::ResolutionAction::Update => {
-                // Contradiction - update existing fact
-                // Delete old fact first
-                if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                    let err = format!("Error resolving conflict: {}", e);
-                    log_tool_result("fact_add", &err);
-                    return Ok(err);
+        // Global-wins-project rule: when adding a Global-scope fact,
+        // remove ALL conflicting Project-scope facts first, then resolve
+        // remaining Global conflicts normally.
+        if parsed_scope == Scope::Global {
+            // Remove all conflicting Project-scope facts
+            let mut remaining_conflicts = Vec::new();
+            for conflict in &conflicts {
+                if conflict.existing_fact.scope == Scope::Project {
+                    log::debug!(
+                        "fact_add: Global fact overrides Project fact (id={}): '{}'",
+                        conflict.existing_fact.id,
+                        conflict.existing_fact.content
+                    );
+                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
+                        log::debug!(
+                            "fact_add: Failed to delete Project fact (id={}): {}",
+                            conflict.existing_fact.id,
+                            e
+                        );
+                    }
+                } else {
+                    remaining_conflicts.push(conflict);
                 }
+            }
 
-                // Insert new fact
-                let id = match db.insert_fact(&fact) {
-                    Ok(id) => id,
-                    Err(e) => {
-                        let err = format!("Error storing fact: {}", e);
+            // If only Project conflicts existed, they've been removed — proceed to insert
+            if remaining_conflicts.is_empty() {
+                // Fall through to insert below
+            } else {
+                // Resolve remaining Global conflicts
+                let conflict = remaining_conflicts[0];
+                match resolve_conflict(conflict.clone()) {
+                    crate::facts::conflict::ResolutionAction::Skip => {
+                        let result = format!(
+                            "Skipped: Similar fact already exists (fact:{}).\n\n\
+                             Existing: {}\n\
+                             New: {}\n\n\
+                             Use fact_remove(id=\"{}\") first if you want to replace it.",
+                            conflict.existing_fact.id,
+                            conflict.existing_fact.content,
+                            content,
+                            conflict.existing_fact.id
+                        );
+                        log_tool_result("fact_add", &result);
+                        return Ok(result);
+                    }
+                    crate::facts::conflict::ResolutionAction::Update => {
+                        if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
+                            let err = format!("Error resolving conflict: {}", e);
+                            log_tool_result("fact_add", &err);
+                            return Ok(err);
+                        }
+                        // Insert new fact below
+                    }
+                    crate::facts::conflict::ResolutionAction::Add => {
+                        // No conflict - continue with insert below
+                    }
+                }
+            }
+        } else {
+            // Project-scope fact: normal conflict resolution
+            let conflict = &conflicts[0];
+
+            match resolve_conflict(conflict.clone()) {
+                crate::facts::conflict::ResolutionAction::Skip => {
+                    let result = format!(
+                        "Skipped: Similar fact already exists (fact:{}).\n\n\
+                         Existing: {}\n\
+                         New: {}\n\n\
+                         Use fact_remove(id=\"{}\") first if you want to replace it.",
+                        conflict.existing_fact.id,
+                        conflict.existing_fact.content,
+                        content,
+                        conflict.existing_fact.id
+                    );
+                    log_tool_result("fact_add", &result);
+                    return Ok(result);
+                }
+                crate::facts::conflict::ResolutionAction::Update => {
+                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
+                        let err = format!("Error resolving conflict: {}", e);
                         log_tool_result("fact_add", &err);
                         return Ok(err);
                     }
-                };
-
-                let scope_label = match parsed_scope {
-                    Scope::Global => "global",
-                    Scope::Project => "project",
-                };
-                let category_label = match parsed_category {
-                    Category::Preference => "preference",
-                    Category::Fact => "fact",
-                };
-
-                let result = format!(
-                    "Updated fact:{} (category: {}, scope: {})\n\
-                     Replaced conflicting fact with: {}\n\
-                     Previously: {}",
-                    id, category_label, scope_label, content, conflict.existing_fact.content
-                );
-                log_tool_result("fact_add", &result);
-                return Ok(result);
-            }
-            crate::facts::conflict::ResolutionAction::Add => {
-                // No conflict - continue with insert below
+                    // Insert new fact below
+                }
+                crate::facts::conflict::ResolutionAction::Add => {
+                    // No conflict - continue with insert below
+                }
             }
         }
     }
@@ -250,6 +433,34 @@ pub async fn fact_add(
             return Ok(err);
         }
     };
+
+    // Generate embedding for the newly inserted fact (eager, fire-and-forget).
+    // If Ollama is offline, has_embedding stays 0 and recovery generates on next startup.
+    if let (Some(db_arc), Some(client)) = (get_db(), get_embedding()) {
+        let scope_str = parsed_scope.to_string();
+        let category_str = parsed_category.to_string();
+        let pid = project_id.clone();
+        let content_for_emb = content.clone();
+        tokio::spawn(async move {
+            match crate::facts::embedding::generate_fact_embedding(&content_for_emb, &client).await
+            {
+                Ok(emb) => {
+                    if let Err(e) = db_arc.update_fact_embedding(
+                        id,
+                        &emb,
+                        &scope_str,
+                        &category_str,
+                        pid.as_deref(),
+                    ) {
+                        log::debug!("fact_add: failed to store embedding: {}", e);
+                    }
+                }
+                Err(e) => {
+                    log::debug!("fact_add: failed to generate embedding: {}", e);
+                }
+            }
+        });
+    }
 
     let scope_label = match parsed_scope {
         Scope::Global => "global",

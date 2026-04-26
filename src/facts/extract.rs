@@ -118,7 +118,10 @@ fn split_into_sentences(text: &str) -> Vec<&str> {
 }
 
 /// Check if a sentence is extractable (not a question, not too short, not conversational).
-fn is_extractable_sentence(sentence: &str) -> bool {
+///
+/// Used by the auto-extraction pipeline and by the `fact_add` LLM tool to validate
+/// that content looks like a fact or preference, not a command, filler, or question.
+pub fn is_extractable_sentence(sentence: &str) -> bool {
     let trimmed = sentence.trim();
 
     // Skip empty or very short
@@ -214,13 +217,18 @@ fn match_pattern(sentence: &str, pattern: &str, confidence: f32) -> Option<Extra
 // === Deduplication ===
 
 /// Deduplicate extracted facts against each other (remove near-identical candidates).
+///
+/// Uses word overlap with a 0.6 threshold to catch candidates that differ
+/// in subject ("I prefer" vs "User prefers") but refer to the same fact.
 fn deduplicate_extracted(facts: &mut Vec<ExtractedFact>) {
     let mut seen_contents: Vec<String> = Vec::new();
     facts.retain(|f| {
         let normalized = f.content.to_lowercase();
         // Check if we already have a very similar fact
         let is_duplicate = seen_contents.iter().any(|s| {
-            // Simple word overlap heuristic
+            // Word overlap heuristic with 0.6 threshold
+            // Catches "prefer dark mode" ≈ "prefer light mode" (overlap: "prefer")
+            // Catches "User prefers dark mode" ≈ "I prefer dark mode" (after normalization)
             let overlap = s
                 .split_whitespace()
                 .filter(|w| normalized.split_whitespace().any(|w2| w2 == *w))
@@ -229,7 +237,7 @@ fn deduplicate_extracted(facts: &mut Vec<ExtractedFact>) {
                 .split_whitespace()
                 .count()
                 .max(normalized.split_whitespace().count());
-            overlap as f32 / total as f32 > 0.8
+            overlap as f32 / total as f32 > 0.6
         });
         if !is_duplicate {
             seen_contents.push(normalized);
@@ -337,8 +345,84 @@ fn insert_fact_with_dedup(
     candidate: &ExtractedFact,
     project_id: Option<&str>,
 ) -> InsertAction {
-    // Search for similar existing facts
-    let search_results = match db.search_facts(&candidate.content, None, 5) {
+    let candidate_trimmed = candidate.content.trim().to_lowercase();
+
+    // ====================================================================
+    // Layer 1: Exact content match (case-insensitive, trimmed)
+    // Catches obvious duplicates like "I prefer dark mode" == "i prefer dark mode"
+    // ====================================================================
+    match db.find_exact_fact(&candidate_trimmed) {
+        Ok(Some(existing)) => {
+            log::debug!(
+                "Auto-extract: Exact duplicate found (id={}): '{}'",
+                existing.id,
+                existing.content
+            );
+            return InsertAction::Skipped;
+        }
+        Ok(None) => { /* No exact match, continue */ }
+        Err(e) => {
+            log::debug!("Auto-extract: Exact match query failed: {}", e);
+            // Continue with other dedup methods
+        }
+    }
+
+    // ====================================================================
+    // Layer 2: Normalized content match (strips pronouns/subjects)
+    // Catches "I prefer dark mode" ≈ "User prefers dark mode"
+    // ====================================================================
+    let normalized_query = lang::normalize_for_comparison(&candidate.content);
+    match db.find_normalized_fact(&normalized_query) {
+        Ok(matches) if !matches.is_empty() => {
+            // Found a normalized match — check for global-wins-project rule
+            if candidate.scope == Scope::Global {
+                // Remove Project-scope duplicates, keep Global
+                let mut global_match: Option<&Fact> = None;
+                for fact in &matches {
+                    if fact.scope == Scope::Project {
+                        log::debug!(
+                            "Auto-extract: Global fact overrides Project fact (id={}): '{}'",
+                            fact.id,
+                            fact.content
+                        );
+                        if let Err(e) = db.delete_fact(fact.id) {
+                            log::debug!("Auto-extract: Failed to delete Project fact: {}", e);
+                        }
+                    } else {
+                        global_match = Some(fact);
+                    }
+                }
+                if let Some(existing) = global_match {
+                    log::debug!(
+                        "Auto-extract: Skipping duplicate Global fact (id={}): '{}'",
+                        existing.id,
+                        existing.content
+                    );
+                    return InsertAction::Skipped;
+                }
+                // All duplicates were Project-scope and removed — insert Global
+                return insert_new_fact(db, candidate, project_id);
+            } else {
+                // Project-scope: any existing match (Global or Project) = skip
+                log::debug!(
+                    "Auto-extract: Skipping duplicate fact (normalized match): '{}'",
+                    candidate.content
+                );
+                return InsertAction::Skipped;
+            }
+        }
+        Ok(_) => { /* No normalized match, continue */ }
+        Err(e) => {
+            log::debug!("Auto-extract: Normalized match query failed: {}", e);
+            // Continue with FTS5
+        }
+    }
+
+    // ====================================================================
+    // Layer 3: FTS5 keyword search with BM25 scoring
+    // Catches semantic similarity that exact/normalized match misses
+    // ====================================================================
+    let search_results = match db.search_facts(&normalized_query, None, 5) {
         Ok(results) => results,
         Err(e) => {
             log::debug!("Auto-extract: FTS5 search failed: {}", e);
@@ -354,37 +438,98 @@ fn insert_fact_with_dedup(
         // No conflict — insert new fact
         insert_new_fact(db, candidate, project_id)
     } else {
-        // Resolve conflict
-        let conflict = &conflicts[0]; // Handle first conflict
-        let action = resolve_conflict(conflict.clone());
+        // Global-wins-project rule: when inserting a Global-scope fact,
+        // remove ALL conflicting Project-scope facts, then insert the Global one.
+        // This prevents the same fact from existing in both scopes.
+        if candidate.scope == Scope::Global {
+            for conflict in &conflicts {
+                if conflict.existing_fact.scope == Scope::Project {
+                    log::debug!(
+                        "Auto-extract: Global fact overrides Project fact (id={}): '{}'",
+                        conflict.existing_fact.id,
+                        conflict.existing_fact.content
+                    );
+                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
+                        log::debug!(
+                            "Auto-extract: Failed to delete Project fact (id={}): {}",
+                            conflict.existing_fact.id,
+                            e
+                        );
+                    }
+                }
+            }
+            // After removing Project duplicates, check if any Global conflicts remain
+            let global_conflicts: Vec<_> = conflicts
+                .iter()
+                .filter(|c| c.existing_fact.scope == Scope::Global)
+                .collect();
 
-        match action {
-            super::conflict::ResolutionAction::Skip => {
-                log::debug!(
-                    "Auto-extract: Skipping duplicate fact (similarity >= 0.95): {}",
-                    candidate.content
-                );
-                InsertAction::Skipped
+            if global_conflicts.is_empty() {
+                // All conflicts were Project-scope and have been removed
+                return insert_new_fact(db, candidate, project_id);
             }
-            super::conflict::ResolutionAction::Update => {
-                // Invalidate the old fact and insert the new one
-                if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                    log::debug!("Auto-extract: Failed to invalidate old fact: {}", e);
-                    return InsertAction::Skipped;
+
+            // Resolve remaining Global conflicts normally
+            let conflict = global_conflicts[0];
+            let action = resolve_conflict(conflict.clone());
+            match action {
+                super::conflict::ResolutionAction::Skip => {
+                    log::debug!(
+                        "Auto-extract: Skipping duplicate Global fact: {}",
+                        candidate.content
+                    );
+                    InsertAction::Skipped
                 }
-                log::debug!(
-                    "Auto-extract: Updating contradictory fact (old: '{}', new: '{}')",
-                    conflict.existing_fact.content,
-                    candidate.content
-                );
-                match insert_new_fact(db, candidate, project_id) {
-                    InsertAction::Inserted => InsertAction::Updated,
-                    other => other,
+                super::conflict::ResolutionAction::Update => {
+                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
+                        log::debug!("Auto-extract: Failed to invalidate old fact: {}", e);
+                        return InsertAction::Skipped;
+                    }
+                    log::debug!(
+                        "Auto-extract: Updating contradictory Global fact (old: '{}', new: '{}')",
+                        conflict.existing_fact.content,
+                        candidate.content
+                    );
+                    match insert_new_fact(db, candidate, project_id) {
+                        InsertAction::Inserted => InsertAction::Updated,
+                        other => other,
+                    }
+                }
+                super::conflict::ResolutionAction::Add => {
+                    insert_new_fact(db, candidate, project_id)
                 }
             }
-            super::conflict::ResolutionAction::Add => {
-                // Should not happen (Add is never produced by our detection)
-                insert_new_fact(db, candidate, project_id)
+        } else {
+            // Project-scope fact: normal conflict resolution
+            let conflict = &conflicts[0];
+            let action = resolve_conflict(conflict.clone());
+
+            match action {
+                super::conflict::ResolutionAction::Skip => {
+                    log::debug!(
+                        "Auto-extract: Skipping duplicate fact (similarity >= threshold): {}",
+                        candidate.content
+                    );
+                    InsertAction::Skipped
+                }
+                super::conflict::ResolutionAction::Update => {
+                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
+                        log::debug!("Auto-extract: Failed to invalidate old fact: {}", e);
+                        return InsertAction::Skipped;
+                    }
+                    log::debug!(
+                        "Auto-extract: Updating contradictory fact (old: '{}', new: '{}')",
+                        conflict.existing_fact.content,
+                        candidate.content
+                    );
+                    match insert_new_fact(db, candidate, project_id) {
+                        InsertAction::Inserted => InsertAction::Updated,
+                        other => other,
+                    }
+                }
+                super::conflict::ResolutionAction::Add => {
+                    insert_new_fact(db, candidate, project_id)
+                }
             }
         }
     }
@@ -734,7 +879,7 @@ mod tests {
     #[test]
     fn test_deduplicate_extracted() {
         // "I prefer dark mode" and "I prefer dark themes" are similar (75% word overlap)
-        // but below 0.8 threshold, so they're NOT deduplicated
+        // which is above the 0.6 threshold, so they ARE deduplicated
         let mut facts = vec![
             ExtractedFact {
                 content: "I prefer dark mode".to_string(),
@@ -746,7 +891,7 @@ mod tests {
                 original_sentence: "I prefer dark mode".to_string(),
             },
             ExtractedFact {
-                content: "I prefer dark themes".to_string(), // Very similar but different
+                content: "I prefer dark themes".to_string(), // Very similar (75% overlap > 0.6)
                 category: Category::Preference,
                 confidence: 0.9,
                 scope: Scope::Global,
@@ -766,9 +911,10 @@ mod tests {
         ];
 
         deduplicate_extracted(&mut facts);
-        // word overlap for "i prefer dark mode" vs "i prefer dark themes" = 3/4 = 0.75 < 0.8
-        // So all 3 are kept
-        assert_eq!(facts.len(), 3);
+        // word overlap for "i prefer dark mode" vs "i prefer dark themes" = 3/4 = 0.75 > 0.6
+        // So "I prefer dark themes" is deduplicated against "I prefer dark mode"
+        // Keeping 2 facts: "I prefer dark mode" and "My name is Lucas"
+        assert_eq!(facts.len(), 2);
 
         // Now test actual duplicates: identical content should be deduplicated
         let mut dup_facts = vec![

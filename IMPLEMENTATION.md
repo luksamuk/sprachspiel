@@ -135,8 +135,11 @@
 | Milestone | Codename | Description | Priorities |
 |-----------|----------|-------------|------------|
 | **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
-| **[M2]** | Sprach 2.0 | CAS research, cognitive extensions | P7 (S2.1-S2.6), P14, P15 |
-| **[M3]** | Future | Deferred, no current priority | Cost tracking, team features, speculation, VCR |
+| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design phase) |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (implementation), P15 |
+| **[M4]** | Future | Deferred, no current priority | Cost tracking, team features, speculation, VCR |
+
+**M2 rationale:** The TUI is the milestone that will likely coincide with a public release. It warrants dedicated UX research, private feedback rounds, and careful design before implementation. Separating design (M2) from implementation (M3) ensures the TUI gets the attention it deserves as a public-facing product, while Sprach 2.0 research and Plugin System (also complex) move to M3 alongside TUI coding.
 
 ### ✅ PRIORITY 0: Factual Memory System (COMPLETED) [M1]
 
@@ -2638,29 +2641,44 @@ vision = true
 
 ### P6.1: Auto Fact Extraction (autoDream-lite)
 
-**Status:** 🔄 IN PROGRESS  
+**Status:** ✅ COMPLETED → 🔄 PHASE 1 RETEST (bug fixes from smoke test)  
 **Depends on:** P0 (Factual Memory System — completed)  
-**Estimated effort:** 3-5 days
+**Estimated effort:** 3-5 days (original) + 2 days (bug fixes)
 
-**Goal:** Extract facts automatically from conversation content after each response, instead of relying solely on manual `/fact add` or LLM-initiated `fact_add` calls.
+**Implementation summary:**
 
-**Current state:** Facts can only be added via `/fact add` command or `fact_add` tool. The LLM must explicitly decide to add a fact. There is no automatic extraction.
+Key files:
+- `src/facts/extract.rs` — Heuristic extraction, dedup pipeline, validation
+- `src/facts/lang.rs` — Centralized EN/PT patterns, PT→EN translation, normalization
+- `src/facts/conflict.rs` — Conflict detection, preference override, lowered threshold
+- `src/facts/db.rs` — FTS5 search, exact match, normalized match, BM25 scoring
+- `src/facts/prompt.rs` — System prompt scope separation (Global/Project)
+- `src/facts/types.rs` — Global scope forces project_id=None
+- `src/tools/fact_tools.rs` — LLM tool with PT→EN translation, content validation, layered dedup
 
-**Proposal:** Post-response hook that analyzes conversation content and extracts new facts (preferences, corrections, objective facts), deduplicating against existing facts via FTS5 similarity.
+**Architecture: Three-layer dedup pipeline:**
+1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
+2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects, catches "I prefer X" ≈ "User prefers X"
+3. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75 (lowered from 0.85)
 
-**Design notes:**
-- Extraction should be lightweight — either heuristic classification (same as `src/facts/classify.rs`) or a small/fast LLM call specifically for extraction
-- Deduplication against existing facts via FTS5 search before insertion
-- Auto-extracted facts marked with `Source::Llm` (already supported)
-- Scope: project by default, global if pattern matches
-- A full 4-phase consolidation daemon (Orient → Gather → Consolidate → Prune) is deferred to after Sprach 2.0
+**Bug fixes (from smoke test retest):**
+- Bug #1: Dedup broken — Fixed with three-layer pipeline, exact match, normalized match, threshold 0.75
+- Bug #2: PT→EN inconsistent — Fixed with expanded `translate_pt_to_en()` (3rd-person PT, hybrid LLM forms), `fact_add` English-only instruction
+- Bug #3: `/fact list` scope — Fixed with `FactListScope::All/Global/Project`, separate sections
+- Bug #4: Non-fact validation — Fixed with `is_extractable_sentence()` in `fact_add`
+- Bug #5: PT commands — Fixed with `command_starters()` check in `fact_add`
+- Bug #1/6: Global project_id — Fixed with `Fact::new()` forcing `project_id=None` for Global scope
+- Scope separation — System prompt groups facts by scope (Global Preferences/Facts, then Project)
+- Global-wins-project — New Global fact removes conflicting Project facts
+- Preference override — "prefer dark mode" vs "prefer light mode" detected as contradiction
 
-**Open questions:**
-- Heuristic vs. LLM-based extraction? Heuristics are cheaper but less accurate.
-- Cost budget: how many tokens per extraction call?
-- Should user be notified when facts are auto-extracted?
+**ADR References:**
+- ADR-L1: All fact content stored in English (PT→EN via `lang::translate_pt_to_en()`)
+- ADR-L2: Normalization output always English ("User prefers" not "User prefere")
+- ADR-L3: EN+PT classification keywords in `lang::preference_keywords()`
+- ADR-L4/L5: All string patterns centralized in `lang.rs`, no duplication
 
-**Related:** Issue #73
+**Phase 2 (P6.7, planned):** Embedding-based semantic dedup — ✅ COMPLETED (see P6.7 below)
 
 ---
 
@@ -2722,9 +2740,65 @@ vision = true
 
 ### P6.5: Config Upgrade Command
 
-**Status:** 📋 PLANNED  
-**Depends on:** None  
+**Status:** 📋 PLANNED
+**Depends on:** None
 **Estimated effort:** 5 days
+
+---
+
+### P6.7: Fact Embedding & Semantic Dedup
+
+**Status:** ✅ COMPLETED [M1]
+**Depends on:** P6.1 (Auto Fact Extraction — completed)
+**Estimated effort:** 5-7 days (completed)
+
+**Goal:** Add embedding-based semantic dedup as Layer 4 on top of the existing three-layer dedup pipeline, enabling reliable detection of semantically equivalent facts regardless of phrasing, language, or subject form.
+
+**Architecture: Four-layer dedup pipeline:**
+1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
+2. **Layer 2: Normalized content match** — `normalize_for_comparison()` strips pronouns/subjects
+3. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75
+4. **Layer 4 (NEW): Semantic similarity** — cosine similarity ≥ 0.90 via `fact_embeddings` vec0
+
+**Schema changes (v10 → v11):**
+- Added `has_embedding INTEGER DEFAULT 0` column to `facts` table
+- Added `fact_embeddings` vec0 virtual table (256d Matryoshka, same model as content embeddings)
+- Added `idx_facts_embedding` partial index on `has_embedding WHERE has_embedding = 0 AND invalidated_at IS NULL`
+
+**New modules:**
+- `src/facts/embedding.rs` — `generate_fact_embedding()` wrapper around `EmbeddingClient::embed()`
+- `src/facts/recovery.rs` — `recover_missing_fact_embeddings()` + `flush_pending_fact_embeddings()` for startup/shutdown
+- `src/facts/verify.rs` — `verify_and_dedup_facts()` with O(n²) pair-wise cosine similarity comparison at threshold 0.90
+
+**New DB methods:**
+- `update_fact_embedding()` — Insert into `fact_embeddings` vec0, set `has_embedding = 1`
+- `search_facts_semantic()` — KNN search via vec0, filter by scope
+- `get_facts_for_reindex()` — Find facts with `has_embedding = 0`
+- `delete_fact()` now also removes from `fact_embeddings`
+
+**Embedding lifecycle:**
+- **Eager (insert-time):** After `insert_fact()` in both auto-extraction and `fact_add`, `tokio::spawn` generates embedding via `EmbeddingClient::embed()`. Fire-and-forget; if Ollama offline, `has_embedding = 0` and startup recovery catches up.
+- **Startup recovery:** `recover_missing_fact_embeddings()` — generates embeddings for all facts with `has_embedding = 0`
+- **Startup verification:** `verify_and_dedup_facts()` — pair-wise cosine comparison, resolves duplicates/contradictions/global-wins-project
+- **Shutdown:** `flush_pending_fact_embeddings()` — completes pending embedding generation before exit
+
+**Startup sequence:**
+```
+recover_missing_embeddings()           ← Content embeddings (existing)
+recover_missing_fact_embeddings()      ← Fact embeddings (NEW)
+verify_and_dedup_facts()               ← Semantic dedup (NEW)
+```
+
+**Conflict resolution (semantic):**
+- Duplicate (cos ≥ 0.90, no contradiction) → Keep newer, remove older
+- Contradiction (cos ≥ 0.90, with `is_contradiction()`) → Keep newer, remove older
+- Global-wins-project → Global fact removes Project duplicate
+
+**Silent by design:** All startup/shutdown operations use `log::info/debug` only; no visual output unless errors occur.
+
+**Re-exports:** `EmbeddingError` and `cosine_similarity` now re-exported from `embeddings` module for use by fact modules.
+
+**Related:** Issue #73
 
 **Goal:** Add a `ask-ai config upgrade` subcommand that merges missing default fields into the user's existing `config.toml`, adding doc comments only for new fields. Users don't have to manually track which config fields are new after each update.
 
@@ -3056,13 +3130,17 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
-### 🔵 PRIORITY 14: TUI (Terminal User Interface) [M2]
+### 🔵 PRIORITY 14: TUI (Terminal User Interface) [M2 → M3]
 
 **Status:** ❌ NOT STARTED
 
 **Goal:** Build a responsive TUI using Ratatui-rs.
 
 See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
+
+**Milestone split (2025-04-25):**
+- **M2 (UX & TUI Design):** UX research, design mockups, prototyping, private feedback rounds. This is the design phase that will shape the public-facing product.
+- **M3 (TUI Implementation):** Coding the TUI based on M2's design decisions. Happens alongside Sprach 2.0 research.
 
 **Components:**
 - Chat pane with markdown rendering
@@ -3078,7 +3156,7 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 
 ---
 
-### 🔵 PRIORITY 15: Plugin System [M2]
+### 🔵 PRIORITY 15: Plugin System [M2 → M3]
 
 **Status:** ❌ NOT STARTED
 
@@ -3210,7 +3288,7 @@ The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not 
 
 ---
 
-## 🟣 PRIORITY 7: Sprach 2.0 — CAS Research [M2]
+## 🟣 PRIORITY 7: Sprach 2.0 — CAS Research [M2 → M3]
 
 **Status:** 🟡 RESEARCH NEEDED  
 **Reference:** `~/git/biblio/sprach-2-0-auto-analise.org`  
@@ -3523,3 +3601,4 @@ The original detailed implementation notes have been moved to:
 ## Last Updated
 
 2026-04-11 - P6 Core Enhancements added, milestone tags [M1]/[M2]/[M3], P4 extras, P5 verbosity merge, P15 sub-items with scope clarification
+2026-04-25 - Milestones restructured: M2→UX & TUI Design (design phase), M3→Sprach 2.0+CAS+TUI impl+Plugin System, M4→Future (was M3). P14 TUI split into M2(design) and M3(impl). P7,P14,P15 moved from M2 to M3.

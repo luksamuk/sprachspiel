@@ -338,6 +338,19 @@ fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
             eprintln!("\x1B[90m[Auto-extracted: {} fact(s)]\x1B[0m", total);
         }
     }
+
+    // Generate embeddings for newly inserted facts (eager, fire-and-forget).
+    // If Ollama is offline, has_embedding stays 0 and recovery generates on next startup.
+    if (result.inserted > 0 || result.updated > 0)
+        && let (Some(db_ref), Some(client)) = (&state.db, &state.embedding_client)
+    {
+        let db_clone = Arc::clone(db_ref);
+        let client_clone = Arc::clone(client);
+        tokio::spawn(async move {
+            crate::facts::recovery::recover_missing_fact_embeddings(&db_clone, &client_clone)
+                .await;
+        });
+    }
 }
 
 /// Information about loaded session (for display after banner)
@@ -637,6 +650,28 @@ pub async fn run_chat_repl(
         let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client).await;
         if recovered > 0 {
             println!("Recovered {} missing embedding(s)", recovered);
+        }
+
+        // Recover missing fact embeddings and verify semantic dedup
+        let fact_recovered =
+            crate::facts::recovery::recover_missing_fact_embeddings(db_ref, client).await;
+        if fact_recovered > 0 {
+            log::info!("Recovered {} fact embedding(s)", fact_recovered);
+        }
+
+        let stats = crate::facts::verify::verify_and_dedup_facts(db_ref, client).await;
+        if stats.facts_checked > 0
+            && (stats.duplicates_removed > 0
+                || stats.contradictions_resolved > 0
+                || stats.global_wins > 0)
+        {
+            log::info!(
+                "Fact verification: checked {}, removed {} duplicates, {} contradictions, {} global-wins",
+                stats.facts_checked,
+                stats.duplicates_removed,
+                stats.contradictions_resolved,
+                stats.global_wins
+            );
         }
     }
 

@@ -26,12 +26,23 @@
 //! After each user response, the system can automatically extract
 //! preferences and identity facts using heuristic pattern matching.
 //! See `extract` module for details.
+//!
+//! # Embedding-Based Semantic Dedup (P6.7)
+//!
+//! Facts also have vector embeddings stored in `fact_embeddings` vec0.
+//! These enable semantic similarity comparison for deduplication:
+//! - Layer 4: Cosine similarity >= 0.90 catches paraphrases and translations
+//! - Startup verification removes semantic duplicates
+//! - Eager embedding generation at insert time (fire-and-forget)
 
 pub mod classify;
 pub mod conflict;
 pub mod db;
 pub mod decay;
+pub mod embedding;
 pub mod extract;
 pub mod lang;
 pub mod prompt;
+pub mod recovery;
 pub mod types;
+pub mod verify;

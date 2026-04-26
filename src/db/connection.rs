@@ -571,6 +571,53 @@ impl Database {
             }
         }
 
+        // Migration v10 -> v11: Add fact_embeddings vec0 table and has_embedding column
+        if from_version < 11 {
+            // Check if fact_embeddings table exists (idempotent)
+            let fact_emb_exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='fact_embeddings'",
+                    [],
+                    |row| row.get::<_, i32>(0),
+                )? > 0;
+
+            if !fact_emb_exists {
+                conn.execute_batch(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+                        fact_id INTEGER PRIMARY KEY,
+                        embedding FLOAT[256],
+                        +scope TEXT,
+                        +category TEXT,
+                        +project_id TEXT
+                    );",
+                )?;
+            }
+
+            // Add has_embedding column to facts if not exists
+            let has_emb_exists: bool = {
+                let mut stmt = conn.prepare("PRAGMA table_info(facts)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                names.contains(&"has_embedding".to_string())
+            };
+
+            if !has_emb_exists {
+                conn.execute(
+                    "ALTER TABLE facts ADD COLUMN has_embedding INTEGER DEFAULT 0",
+                    [],
+                )?;
+            }
+
+            // Create index for finding facts without embeddings
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_facts_embedding ON facts(has_embedding) WHERE has_embedding = 0 AND invalidated_at IS NULL",
+                [],
+            )?;
+        }
+
         Ok(())
     }
 
@@ -780,12 +827,13 @@ mod tests {
         assert!(columns.contains(&"source".to_string()));
         assert!(columns.contains(&"invalidated_at".to_string()));
         assert!(columns.contains(&"project_id".to_string()));
+        assert!(columns.contains(&"has_embedding".to_string()));
 
         // Check facts_fts virtual table exists
         let vtables: Vec<String> = db
             .with_connection(|conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='facts_fts'",
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('facts_fts', 'fact_embeddings')",
                 )?;
                 let rows = stmt.query_map([], |row| row.get(0))?;
                 rows.collect::<Result<Vec<_>>>()
@@ -793,6 +841,7 @@ mod tests {
             .expect("Failed to list virtual tables");
 
         assert!(vtables.contains(&"facts_fts".to_string()));
+        assert!(vtables.contains(&"fact_embeddings".to_string()));
     }
 
     #[test]

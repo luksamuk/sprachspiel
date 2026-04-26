@@ -7,8 +7,9 @@ This document outlines planned features and the current state of Ask-AI.
 | Milestone | Codename | Description | Priorities |
 |-----------|----------|-------------|------------|
 | **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
-| **[M2]** | Sprach 2.0 | CAS research, cognitive extensions | P7 (S2.1-S2.6), P14, P15 |
-| **[M3]** | Future | Deferred, no current priority | Cost tracking, team features, speculation |
+| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design phase) |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (implementation), P15 |
+| **[M4]** | Future | Deferred, no current priority | Cost tracking, team features, speculation |
 
 ## Current State
 
@@ -646,7 +647,7 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 
 ---
 
-### Sprach 2.0: CAS Research [M2]
+### Sprach 2.0: CAS Research [M2 → M3]
 
 **Priority:** P7 (after all P1-P5 current items are resolved)  
 **Status:** 🟡 RESEARCH NEEDED  
@@ -700,12 +701,16 @@ User-defined tools via dynamic loading or compilation.
 
 ---
 
-### TUI (Terminal User Interface)
+### TUI (Terminal User Interface) [M2 → M3]
 
-**Priority:** Low  
+**Priority:** P14
 **Status:** 🟡 IN PROGRESS (Architecture refactoring)
 
 **Goal:** Build a responsive TUI using Ratatui-rs.
+
+**Milestone split (2025-04-25):**
+- **M2 (UX & TUI Design):** UX research, design mockups, prototyping, private feedback rounds. This phase focuses on user experience design before writing production code.
+- **M3 (TUI Implementation):** Coding the TUI based on M2's design decisions. Happens alongside Sprach 2.0 research.
 
 **Architecture Preparation (Current Phase):**
 - ✅ `InputBackend` trait - abstracts input handling (Phase 1-5 complete)
@@ -912,7 +917,7 @@ thinking = false
 
 ---
 
-## [M3] Future — Deferred
+## [M4] Future — Deferred
 
 Features explicitly deferred with no current priority:
 

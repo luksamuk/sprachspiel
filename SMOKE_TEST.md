@@ -777,6 +777,147 @@ Verify that preference and identity facts are auto-extracted from user messages 
 - [ ] Send: "Beleza" → NO extraction (PT filler)
 - [ ] Send: "Valeu" → NO extraction (PT filler)
 
+### 20.12 fact_add LLM Tool: Content Validation (Bug #4/#5 fix)
+
+- [ ] Ask LLM: "Remember that I like cats" → LLM calls `fact_add(content="I like cats")`, tool adds successfully
+- [ ] Ask LLM: "Remember this: What time is it?" → LLM calls `fact_add(content="What time is it?")`, tool returns **Skipped: question**
+- [ ] Ask LLM: "Remember: Thanks" → LLM calls `fact_add(content="Thanks")`, tool returns **Skipped: filler**
+- [ ] Ask LLM: "Remember: Show me the logs" → LLM calls `fact_add(content="Show me the logs")`, tool returns **Skipped: command**
+- [ ] Ask LLM: "Remember: hi" → LLM calls `fact_add(content="hi")`, tool returns **Skipped: too short** (min 10 chars)
+
+### 20.13 fact_add LLM Tool: PT→EN Translation (Bug #2 fix)
+
+- [ ] Ask LLM (in Portuguese): "Lembre que eu prefiro respostas curtas" → LLM calls `fact_add(content="Eu prefiro respostas curtas")`
+- [ ] `/fact list` → stored as **"User prefers respostas curtas"** (English, not PT)
+- [ ] Ask LLM: "Remember: adoro Rust" → `fact_add(content="adoro Rust")`
+- [ ] `/fact list` → stored as **"User loves Rust"** (English)
+- [ ] Verify: NO Portuguese content in stored facts
+
+### 20.14 Deduplication: Gap Fix & Cross-Scope (Bug #1 fix)
+
+- [ ] Send: "I prefer dark mode" → extraction notification, stored as Global preference
+- [ ] Ask LLM: "Remember that I prefer dark mode" → `fact_add` returns **Skipped: duplicate** (even at similarity ~0.85)
+- [ ] `/fact list` → only ONE "prefer dark mode" fact exists (no duplicates)
+- [ ] If a Project-scope "prefer dark mode" exists, adding a Global-scope one should **replace** the Project one
+
+### 20.15 /fact list: Scope Separation (Bug #3 fix)
+
+- [ ] `/fact list` → shows **Global** and **Project** sections with headers
+- [ ] Global facts listed under "Global Preferences" and "Global Facts"
+- [ ] Project facts listed under "Project Preferences" and "Project Facts"
+- [ ] `/fact list --global` → shows only Global facts
+- [ ] `/fact list --project` → shows only Project facts
+
+### 20.16 System Prompt: Scope Separation (user request)
+
+- [ ] Store a Global preference: "I prefer dark mode"
+- [ ] Store a Project fact: "The project uses Rust"
+- [ ] New session → ask: "What do you know about me?"
+- [ ] Model response should reference "User prefers dark mode" (Global)
+- [ ] `/system` or check logs → system prompt has **"### Global Preferences"** and **"### Project Facts"** headers
+
+### 20.17 Global Facts: project_id=None (Bug #1/6 fix)
+
+- [ ] Send: "I prefer dark mode" → fact auto-extracted as Global
+- [ ] Check database: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, content, scope, project_id FROM facts WHERE content LIKE '%dark mode%'"`
+- [ ] Verify: `project_id` column is **NULL** for Global scope facts
+
+### 20.18 Exact Content Dedup (Retest #1 fix)
+
+- [ ] Send: "I prefer dark mode" → extraction notification
+- [ ] Send: "I prefer dark mode" again (exact same text) → NO duplicate created
+- [ ] Send: "i prefer dark mode" (lowercase) → NO duplicate (case-insensitive exact match)
+- [ ] `/fact list` → only ONE dark mode fact
+
+### 20.19 Normalized Content Dedup (Retest #1 fix)
+
+- [ ] Send: "I prefer dark mode" → extraction notification
+- [ ] Ask LLM: "Remember that I prefer dark mode" → fact_add returns **Skipped: Similar fact already exists** (normalized match)
+- [ ] `/fact list` → only ONE dark mode fact (not "User prefers" AND "I prefer")
+
+### 20.20 Contradiction: Preference Override (Retest #3 fix)
+
+- [ ] Send: "I prefer dark mode" → stored as preference
+- [ ] Send: "I prefer light mode" → extraction should detect **contradiction** and **update** the existing fact
+- [ ] `/fact list` → "prefer light mode" replaces "prefer dark mode" (NOT both present)
+
+### 20.21 Third-Person PT Translation (Retest #2 fix)
+
+- [ ] Ask LLM (in Portuguese): "Lembre que prefere respostas curtas" → `fact_add(content="Prefere respostas curtas")`
+- [ ] Verify: stored as **"User prefers respostas curtas"** (EN, not hybrid PT "Prefere")
+- [ ] Ask LLM: "Remember that o nome do usuário é Ana" → stored as **"User's name is Ana"** (EN)
+
+### 20.22 Conflict Threshold (Retest #1 fix)
+
+- [ ] This is indirectly tested by 20.14, 20.18, and 20.19
+- [ ] Verify: `CONFLICT_THRESHOLD` is 0.75 (reduced from 0.85) in `src/facts/conflict.rs`
+
+### 20.23 Deduplicate Extracted Threshold (Retest explosion fix)
+
+- [ ] Send: "Eu moro em Brasília e meu nome é Ana e trabalho no Google" (3 identity facts)
+- [ ] Verify: at most 2 facts extracted per message (not 6+)
+- [ ] `/fact list` → no obvious duplicates from single message
+
+---
+
+## 21. Fact Embedding & Semantic Dedup (P6.7)
+
+**Prerequisites:** Ollama must be running with the embedding model available.
+
+### 21.1 Schema Migration: v10 → v11
+
+- [ ] Start a fresh chat session → no errors
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"` → returns **11**
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
+
+### 21.2 Fact Insertion Generates Embedding (Eager)
+
+- [ ] Ask LLM: "Remember that I prefer concise output" (triggers `fact_add`)
+- [ ] Wait 3 seconds for async embedding generation
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%concise%'"` → **has_embedding = 1**
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM fact_embeddings"` → **≥ 1** row
+
+### 21.3 Auto-Extraction Generates Embedding (Eager)
+
+- [ ] Send: "I prefer dark mode" → wait for `[Auto-extracted]` notification
+- [ ] Wait 3 seconds for async embedding generation
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%dark mode%'"` → **has_embedding = 1**
+
+### 21.4 Startup Recovery: Missing Embeddings
+
+- [ ] Manually set embeddding flag back: `sqlite3 ~/.local/share/ask-ai/embeddings.db "UPDATE facts SET has_embedding = 0"`
+- [ ] Quit and restart chat → should see `Recovering N missing fact embedding(s)` in logs (or silent if no output)
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
+
+### 21.5 Ollama Offline: Graceful Degradation
+
+- [ ] Stop Ollama (`pkill ollama` or similar)
+- [ ] Start chat with `ask-ai chat` → should NOT crash
+- [ ] Ask LLM: "Remember that my favorite color is blue" → fact stored, `has_embedding = 0` (no crash)
+- [ ] Restart Ollama
+- [ ] Quit and restart chat → recovery generates missing embeddings
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
+
+### 21.6 Semantic Dedup: Paraphrase Detection
+
+- [ ] Send: "I prefer dark mode" → stored as fact
+- [ ] Ask LLM: "Remember that I like dark mode" (semantic equivalent)
+- [ ] `fact_add` should return **Skipped: Similar fact already exists** or **duplicate** (FTS5 or exact match may catch it first)
+- [ ] `/fact list` → only ONE dark mode preference
+
+### 21.7 Delete Fact Removes Embedding
+
+- [ ] Note the ID of a fact with `has_embedding = 1`
+- [ ] `/fact remove id <ID>` → removes fact
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM fact_embeddings WHERE fact_id = <ID>"` → **0** (embedding also removed)
+
+### 21.8 Shutdown Flush
+
+- [ ] Start chat, extract some facts
+- [ ] Immediately `/exit` → should complete without error
+- [ ] Restart → no "Recovering" message for facts (embeddings flushed on exit)
+
 ---
 
 ## Results

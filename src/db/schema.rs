@@ -6,9 +6,10 @@
 //! - content_chunks, content_embeddings, content_fts
 //! - session_todos table (for task tracking)
 //! - facts table (factual memory system)
+//! - fact_embeddings (vec0 vector index for facts)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 10;
+pub const SCHEMA_VERSION: i32 = 11;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -74,7 +75,10 @@ CREATE TABLE IF NOT EXISTS facts (
     invalidated_at INTEGER,
     
     -- Project association (NULL for global facts)
-    project_id TEXT
+    project_id TEXT,
+
+    -- Whether this fact has a vector embedding in fact_embeddings
+    has_embedding INTEGER DEFAULT 0
 );
 
 -- Full-text search for facts (keyword matching)
@@ -106,6 +110,16 @@ CREATE INDEX IF NOT EXISTS idx_facts_scope_category ON facts(scope, category);
 CREATE INDEX IF NOT EXISTS idx_facts_decay ON facts(decay_score) WHERE invalidated_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 'project';
 CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
+CREATE INDEX IF NOT EXISTS idx_facts_embedding ON facts(has_embedding) WHERE has_embedding = 0 AND invalidated_at IS NULL;
+
+-- Vector embeddings for facts (256-dim Matryoshka, v11)
+CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+    fact_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256],
+    +scope TEXT,
+    +category TEXT,
+    +project_id TEXT
+);
 
 -- Content items table (unified storage for messages, notes, documents, v8)
 -- Stores messages, notes, and documents in a unified schema

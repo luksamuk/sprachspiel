@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use super::commands::ChatCommand;
+use super::commands::{ChatCommand, FactListScope};
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
 
@@ -95,6 +95,8 @@ pub async fn handle_command(
                 // Flush pending embeddings before exit
                 if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
                     flush_pending_embeddings(Arc::clone(db), Arc::clone(client)).await;
+                    // Flush pending fact embeddings
+                    crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
                 }
             }
             HandleResult::Exit
@@ -246,8 +248,8 @@ pub async fn handle_command(
             HandleResult::Continue
         }
 
-        ChatCommand::FactList { global } => {
-            handle_fact_list(state, global);
+        ChatCommand::FactList { scope } => {
+            handle_fact_list(state, scope);
             HandleResult::Continue
         }
 
@@ -1202,7 +1204,7 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
 /// Handle fact list command
 ///
 /// Lists all facts for the current scope.
-pub fn handle_fact_list(state: &ReplState, global: bool) {
+pub fn handle_fact_list(state: &ReplState, scope: FactListScope) {
     use crate::facts::types::{Category, Scope};
 
     let db = match &state.db {
@@ -1218,58 +1220,200 @@ pub fn handle_fact_list(state: &ReplState, global: bool) {
         return;
     }
 
-    let scope = if global {
-        Scope::Global
-    } else {
-        Scope::Project
-    };
+    let project_id = state.session.project_id.clone();
 
-    let project_id = if global {
-        None
-    } else {
-        state.session.project_id.clone()
-    };
+    match scope {
+        FactListScope::All => {
+            // Show both Global and Project facts separated by sections
+            let global_facts = db.list_facts(Some(Scope::Global), None, None);
+            let project_facts = db.list_facts(Some(Scope::Project), None, project_id.as_deref());
 
-    match db.list_facts(Some(scope), None, project_id.as_deref()) {
-        Ok(facts) => {
-            let scope_str = if global { "global" } else { "project" };
-            println!("\x1B[36mFacts ({scope_str}):\x1B[0m");
+            println!("\x1B[36mFacts:\x1B[0m");
 
-            if facts.is_empty() {
-                println!("  No facts stored.");
-                return;
-            }
+            let mut total = 0;
 
-            // Group by category
-            let preferences: Vec<_> = facts
-                .iter()
-                .filter(|f| f.category == Category::Preference)
-                .collect();
-            let regular_facts: Vec<_> = facts
-                .iter()
-                .filter(|f| f.category == Category::Fact)
-                .collect();
+            // Global section
+            match &global_facts {
+                Ok(facts) => {
+                    println!("\n  \x1B[1m\x1B[36m--- Global ---\x1B[0m");
+                    if facts.is_empty() {
+                        println!("    No global facts stored.");
+                    } else {
+                        let preferences: Vec<_> = facts
+                            .iter()
+                            .filter(|f| f.category == Category::Preference)
+                            .collect();
+                        let regular_facts: Vec<_> = facts
+                            .iter()
+                            .filter(|f| f.category == Category::Fact)
+                            .collect();
 
-            if !preferences.is_empty() {
-                println!("\n  \x1B[33mPreferences:\x1B[0m");
-                for f in preferences {
-                    let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                    println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        if !preferences.is_empty() {
+                            println!("\n    \x1B[33mPreferences:\x1B[0m");
+                            for f in preferences {
+                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                                println!(
+                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
+                                    f.id, f.content, age_days
+                                );
+                            }
+                        }
+
+                        if !regular_facts.is_empty() {
+                            println!("\n    \x1B[33mFacts:\x1B[0m");
+                            for f in regular_facts {
+                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                                println!(
+                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
+                                    f.id, f.content, age_days
+                                );
+                            }
+                        }
+                        total += facts.len();
+                    }
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to list global facts: {}\x1B[0m", e);
                 }
             }
 
-            if !regular_facts.is_empty() {
-                println!("\n  \x1B[33mFacts:\x1B[0m");
-                for f in regular_facts {
-                    let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                    println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+            // Project section
+            match &project_facts {
+                Ok(facts) => {
+                    let project_label = project_id.as_deref().unwrap_or("unknown");
+                    println!(
+                        "\n  \x1B[1m\x1B[36m--- Project: {} ---\x1B[0m",
+                        project_label
+                    );
+                    if facts.is_empty() {
+                        println!("    No project facts stored.");
+                    } else {
+                        let preferences: Vec<_> = facts
+                            .iter()
+                            .filter(|f| f.category == Category::Preference)
+                            .collect();
+                        let regular_facts: Vec<_> = facts
+                            .iter()
+                            .filter(|f| f.category == Category::Fact)
+                            .collect();
+
+                        if !preferences.is_empty() {
+                            println!("\n    \x1B[33mPreferences:\x1B[0m");
+                            for f in preferences {
+                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                                println!(
+                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
+                                    f.id, f.content, age_days
+                                );
+                            }
+                        }
+
+                        if !regular_facts.is_empty() {
+                            println!("\n    \x1B[33mFacts:\x1B[0m");
+                            for f in regular_facts {
+                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                                println!(
+                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
+                                    f.id, f.content, age_days
+                                );
+                            }
+                        }
+                        total += facts.len();
+                    }
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to list project facts: {}\x1B[0m", e);
                 }
             }
 
-            println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
+            println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", total);
         }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
+        FactListScope::Global => {
+            // Show only global facts
+            match db.list_facts(Some(Scope::Global), None, None) {
+                Ok(facts) => {
+                    println!("\x1B[36mFacts (global):\x1B[0m");
+
+                    if facts.is_empty() {
+                        println!("  No global facts stored.");
+                        return;
+                    }
+
+                    let preferences: Vec<_> = facts
+                        .iter()
+                        .filter(|f| f.category == Category::Preference)
+                        .collect();
+                    let regular_facts: Vec<_> = facts
+                        .iter()
+                        .filter(|f| f.category == Category::Fact)
+                        .collect();
+
+                    if !preferences.is_empty() {
+                        println!("\n  \x1B[33mPreferences:\x1B[0m");
+                        for f in preferences {
+                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        }
+                    }
+
+                    if !regular_facts.is_empty() {
+                        println!("\n  \x1B[33mFacts:\x1B[0m");
+                        for f in regular_facts {
+                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        }
+                    }
+
+                    println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
+                }
+            }
+        }
+        FactListScope::Project => {
+            // Show only project facts
+            match db.list_facts(Some(Scope::Project), None, project_id.as_deref()) {
+                Ok(facts) => {
+                    let project_label = project_id.as_deref().unwrap_or("unknown");
+                    println!("\x1B[36mFacts (project: {}):\x1B[0m", project_label);
+
+                    if facts.is_empty() {
+                        println!("  No project facts stored.");
+                        return;
+                    }
+
+                    let preferences: Vec<_> = facts
+                        .iter()
+                        .filter(|f| f.category == Category::Preference)
+                        .collect();
+                    let regular_facts: Vec<_> = facts
+                        .iter()
+                        .filter(|f| f.category == Category::Fact)
+                        .collect();
+
+                    if !preferences.is_empty() {
+                        println!("\n  \x1B[33mPreferences:\x1B[0m");
+                        for f in preferences {
+                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        }
+                    }
+
+                    if !regular_facts.is_empty() {
+                        println!("\n  \x1B[33mFacts:\x1B[0m");
+                        for f in regular_facts {
+                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        }
+                    }
+
+                    println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
+                }
+            }
         }
     }
 }

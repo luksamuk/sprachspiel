@@ -25,6 +25,17 @@ fn parse_document_id(input: &str) -> Result<i64, String> {
     })
 }
 
+/// Scope filter for `/fact list` command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FactListScope {
+    /// Show Global + Project facts separated by sections
+    All,
+    /// Show only Global-scope facts
+    Global,
+    /// Show only Project-scope facts
+    Project,
+}
+
 /// Parsed chat command
 #[derive(Debug, Clone)]
 pub enum ChatCommand {
@@ -83,7 +94,7 @@ pub enum ChatCommand {
     /// Add a new fact
     FactAdd { content: String, global: bool },
     /// List facts
-    FactList { global: bool },
+    FactList { scope: FactListScope },
     /// Remove a fact by ID
     FactRemove { id: i64 },
     /// Search facts
@@ -468,8 +479,21 @@ fn parse_fact_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             Ok(ChatCommand::FactAdd { content, global })
         }
         "list" | "l" => {
-            let global = subargs.trim() == "--global";
-            Ok(ChatCommand::FactList { global })
+            let trimmed = subargs.trim();
+            if trimmed == "--global" {
+                Ok(ChatCommand::FactList {
+                    scope: FactListScope::Global,
+                })
+            } else if trimmed == "--project" {
+                Ok(ChatCommand::FactList {
+                    scope: FactListScope::Project,
+                })
+            } else {
+                // Default: show all scopes separated by sections
+                Ok(ChatCommand::FactList {
+                    scope: FactListScope::All,
+                })
+            }
         }
         "remove" | "r" => {
             if subargs.is_empty() {
@@ -1499,13 +1523,23 @@ mod tests {
     #[test]
     fn test_parse_fact_subcommand_list() {
         let cmd = parse_fact_subcommand("list", "").unwrap();
-        assert!(matches!(cmd, ChatCommand::FactList { global: false }));
+        assert!(matches!(
+            cmd,
+            ChatCommand::FactList {
+                scope: FactListScope::All
+            }
+        ));
     }
 
     #[test]
     fn test_parse_fact_subcommand_list_global() {
         let cmd = parse_fact_subcommand("list", "--global").unwrap();
-        assert!(matches!(cmd, ChatCommand::FactList { global: true }));
+        assert!(matches!(
+            cmd,
+            ChatCommand::FactList {
+                scope: FactListScope::Global
+            }
+        ));
     }
 
     #[test]
