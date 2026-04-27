@@ -762,7 +762,7 @@ User-defined tools via dynamic loading or compilation.
 
 > **NOTE:** This feature has been upgraded from LOW priority to P6.0 and is now tracked in IMPLEMENTATION.md under PRIORITY 6: Core Enhancements. The detailed implementation plan is in the P6.0 section of IMPLEMENTATION.md. This roadmap section is kept for architectural reference.
 >
-> **Embedding dependency:** Before P6.0 can swap between Ollama and llama.cpp (/v1 embeddings), the embedding model must be configurable (#106) and the embedding client must support provider abstraction (#107). The chat/query provider abstraction alone is insufficient — embeddings need their own provider layer. See IMPLEMENTATION.md P2 for the configurable embedding plan.</parameter>
+> **Embedding dependency:** Before P6.0 can swap between Ollama and llama.cpp (/v1 embeddings), the embedding model must be configurable (#106) and the embedding client must support provider abstraction (#107). The chat/query provider abstraction alone is insufficient — embeddings need their own provider layer. See IMPLEMENTATION.md P2 for the configurable embedding plan.
 
 **Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (cloud/local) through a unified interface.
 
