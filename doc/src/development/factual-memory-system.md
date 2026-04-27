@@ -171,7 +171,7 @@ graph LR
 ### 3.1 Facts Table
 
 ```sql
--- Facts table (schema v11)
+-- Facts table (schema v12; table structure unchanged since v11, v12 only changed vec0 tables)
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY,
     

@@ -1045,10 +1045,11 @@ pub fn handle_content_prune(state: &ReplState) {
 
 /// Handle fact add command
 ///
-/// Adds a new fact to the database with full 5-layer dedup:
-/// Layer 1 (exact match), Layer 2 (normalized match), Layer 3 (FTS5),
-/// Layer 3.5 (semantic embedding), plus normalization (ADR-E4) and
-/// eager embedding generation.
+/// Adds a new fact to the database with full 6-layer dedup:
+/// Normalization (ADR-E4), Layer 1 (exact match), Layer 2 (normalized match),
+/// Layer 3.5 (semantic embedding + triple disambiguation, ≥0.70),
+/// Layer 3 (FTS5 BM25, ≥0.75), plus Global-wins-project rule
+/// and synchronous embedding generation.
 pub async fn handle_fact_add(state: &mut ReplState, content: String, global: bool) {
     use crate::facts::classify::classify_fact;
     use crate::facts::conflict::{

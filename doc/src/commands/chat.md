@@ -556,7 +556,7 @@ Run manual cleanup:
 3. **Embeddings**: Each fact gets an embedding via `EmbeddingClient::embed()` (serialized with `Semaphore(1)`, 30s timeout)
 4. **Prompt Injection**: Facts injected into system prompt grouped by scope (max 2200 chars)
 5. **Decay**: Ebbinghaus forgetting curve with access reinforcement
-6. **Dedup**: 6-layer dedup pipeline (Exact → Normalized → Triple contradiction → FTS5 → Semantic → Global-wins-project)
+6. **Dedup**: 6-layer dedup pipeline (Exact → Normalized → Semantic + Triple contradiction → FTS5 → Startup verification → Global-wins-project)
 
 ### [facts] Configuration
 

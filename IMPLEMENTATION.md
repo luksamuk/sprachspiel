@@ -173,8 +173,8 @@
 │  Scope: project (default) + global (override)               │
 │  Categories: preference (180d), fact (30d)                  │
 │  Classification: Heuristic only (no LLM)                   │
-│  Search: FTS5 keyword search (no embeddings)                 │
-│  Conflict Resolution: Heuristic → FTS5 → LLM fallback      │
+│  Search: FTS5 + Semantic (Layer 3.5, cosine ≥ 0.70)       │
+│  Conflict Resolution: 6-layer dedup pipeline                │
 │  Decay: Ebbinghaus curve with access reinforcement          │
 │  Limits: 500 chars/fact, 2200 chars total in prompt         │
 └─────────────────────────────────────────────────────────────┘
@@ -2665,6 +2665,7 @@ Key files:
 3. **Layer 3.5: Semantic embedding (insert-time)** — cosine similarity ≥ 0.70 (`SEMANTIC_SEARCH_THRESHOLD` in conflict.rs). Runs BEFORE Layer 3 (FTS5). Triple-based disambiguation: `extract_fact_triple()` distinguishes contradictions (same predicate, different object → Update) from duplicates (same triple → Skip) from related facts (different predicate → fall through). `is_contradiction()` fallback catches polarity opposition (like/hate, negation). Covers `Category::Preference` (includes identity facts).
 4. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75 (lowered from 0.85)
 5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) cosine comparison at threshold 0.90
+6. **Global-wins-project** — When a Global-scope fact conflicts with an existing Project-scope fact, the Global fact wins and the Project fact is removed
 
 **Bug fixes (from smoke test #1):**
 - Bug #1: Dedup broken — Fixed with three-layer pipeline, exact match, normalized match, threshold 0.75
@@ -2773,7 +2774,7 @@ Key files:
 **Depends on:** P6.1 (Auto Fact Extraction — completed)
 **Estimated effort:** 5-7 days (completed)
 
-**Goal:** Add embedding-based semantic dedup as Layer 4 on top of the existing three-layer dedup pipeline, enabling reliable detection of semantically equivalent facts regardless of phrasing, language, or subject form.
+**Goal:** Add embedding-based semantic dedup as Layer 3.5/4 on top of the existing dedup pipeline, enabling reliable detection of semantically equivalent facts regardless of phrasing, language, or subject form.
 
 **Architecture: Six-layer dedup pipeline:**
 1. **Layer 1: Exact content match** — case-insensitive, trimmed comparison via `find_exact_fact()`
@@ -2781,6 +2782,7 @@ Key files:
 3. **Layer 3.5: Semantic embedding (insert-time)** — cosine ≥ 0.70, runs BEFORE FTS5; triple disambiguation + `is_contradiction()` fallback
 4. **Layer 3: FTS5 BM25 search** — keyword matching with threshold 0.75
 5. **Layer 4 (startup): Semantic verification** — `verify_and_dedup_facts()` O(n²) pairwise cosine at threshold 0.90
+6. **Global-wins-project** — Global-scope facts override conflicting Project-scope facts
 
 **Schema changes (v10 → v11):**
 - Added `has_embedding INTEGER DEFAULT 0` column to `facts` table
