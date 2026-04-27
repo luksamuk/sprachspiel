@@ -219,7 +219,7 @@ pub const CONFLICT_THRESHOLD: f32 = 0.75;
 
 /// Threshold for insert-time semantic search via embeddings (cosine similarity).
 ///
-/// Used by Layer 3.5 in `insert_fact_with_dedup()` and `handle_fact_add()`.
+/// Used by Layer 3.5 in `dedup::deduplicate_and_insert()` (the centralized pipeline).
 /// Intentionally broad (0.70) to catch contradictions that normalized match
 /// and FTS5 BM25 miss (e.g., "prefer dark mode" vs "prefer light mode" at
 /// cosine ~0.77). Triple-based disambiguation inside the semantic block

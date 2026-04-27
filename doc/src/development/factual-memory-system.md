@@ -377,6 +377,8 @@ fn run_decay_cycle(db: &Database) -> Result<DecayStats, Error> {
 
 Facts are deduplicated through a 6-layer pipeline that catches duplicates and contradictions at increasingly sophisticated levels:
 
+**Architecture:** All three insertion paths (`/fact add` CLI, `fact_add` LLM tool, auto-extraction `insert_fact_with_dedup`) delegate to a single centralized function: [`dedup::deduplicate_and_insert()`](src/facts/dedup.rs). Each caller is a thin wrapper that formats the `DedupResult` for its UI (CLI colors, LLM tool text, extraction counts). This eliminates the previous ~65-75% code duplication across the three callers and fixes 4 behavioral bugs that had diverged in the LLM tool path (see §6.5).
+
 ### 6.1 Layer 1: Exact Match
 
 Case-insensitive, trimmed comparison via `find_exact_fact()`. Catches identical facts regardless of capitalization or whitespace.
@@ -421,7 +423,7 @@ This layer catches contradictions that keyword search misses because the words a
 
 **Dead code removed:** The former Layer 2.5 contradiction check inside the Layer 2 `if !matches.is_empty()` block has been removed — it was dead code because contradictory facts always have different normalized strings, making the block unreachable. The reordered Layer 3.5 supersedes it.
 
-**`command_handlers.rs` sync:** The same dedup/contradiction pipeline changes must be applied to `command_handlers.rs` if it has its own insertion path (avoid logic divergence).
+**`command_handlers.rs` sync:** ✅ RESOLVED — All three callers (CLI `/fact add`, LLM `fact_add`, auto-extraction `insert_fact_with_dedup`) now delegate to the centralized `dedup::deduplicate_and_insert()` pipeline. No logic divergence is possible since there is a single source of truth.
 
 #### 6.4.0 sqlite-vec L2 → Cosine Metric Bug (Critical, Fixed)
 
@@ -503,6 +505,58 @@ Factual facts like "The project uses SQLite" vs "The project uses PostgreSQL" ha
 | "My name is Lucas" → "My name is Lucas Samuk" | UPDATE (refinement, loses "Lucas" → "Lucas Samuk") | ✅ Correct — user gave more specific info |
 | "I live in Diamantina" → "I live in Minas Gerais" | May or may not trigger — cosine("Diamantina", "MG") likely <0.70 | ✅ If it triggers, UPDATE is acceptable (rare, reversible via `/fact remove`) |
 | "I live in BH" → "I live in Belo Horizonte" | Same triple (lives in, BH ≅ Belo Horizonte)? Depends on normalization | ⚠️ If different objects → UPDATE (acceptable, refinement). If same → SKIP. |
+
+#### 6.4.2 Centralized Pipeline (P6.7 Refactoring)
+
+**Status:** ✅ IMPLEMENTED — commit b5f0ba1
+
+The dedup pipeline was previously duplicated across three callers (`command_handlers.rs`, `fact_tools.rs`, `extract.rs`) with ~65-75% code overlap. This caused 4 behavioral bugs in the LLM tool path (see below) and made maintenance error-prone.
+
+**Solution:** All three callers now delegate to `dedup::deduplicate_and_insert()` in `src/facts/dedup.rs`. Each caller is a thin wrapper that:
+
+1. Validates input (LLM tool: empty, length, filler, command; CLI: anonymous mode, length; auto-extract: pattern matching)
+2. Normalizes content to storage format
+3. Calls `deduplicate_and_insert()` with a `DedupConfig` (source: User/Llm, generate_embedding: bool)
+4. Formats the `DedupResult` for its UI (CLI: ANSI colors; LLM tool: text message; auto-extract: `InsertAction` enum)
+
+**`DedupResult` variants:**
+
+| Variant | Meaning |
+|---------|---------|
+| `Inserted { id, category, scope }` | New fact created |
+| `ExactDuplicate { existing_id, existing_content }` | Layer 1 match |
+| `NormalizedDuplicate { existing_id, existing_content }` | Layer 2 match |
+| `SemanticDuplicate { existing_id, existing_content, score }` | Layer 3.5 duplicate |
+| `Updated { id, old_content, reason, category, scope }` | Contradiction replaced |
+| `Fts5Conflict { existing_id, existing_content, is_contradiction }` | Layer 3 conflict |
+| `Error(String)` | Validation/DB error |
+
+**`UpdateReason` variants:**
+
+| Variant | Meaning |
+|---------|---------|
+| `PreferenceOverride` | Same predicate, different object (triple) |
+| `PolarityContradiction` | Like/hate or negation (polarity fallback) |
+| `Fts5Contradiction` | FTS5 detected contradiction (temporal: newer wins) |
+
+**4 bugs fixed by unification:**
+
+| Bug | Location | Before | After |
+|-----|----------|--------|-------|
+| Wrong threshold | `fact_tools.rs` | `0.90` (SEMANTIC_DEDUP_THRESHOLD) | `0.70` (SEMANTIC_SEARCH_THRESHOLD) |
+| Missing triple disambiguation | `fact_tools.rs` | Only `is_contradiction()` | Full cascade: triple → polarity → FTS5 |
+| Wrong layer order | `fact_tools.rs` | Layer 3.5 AFTER Layer 3 | Layer 3.5 BEFORE Layer 3 |
+| Fire-and-forget embedding | `fact_tools.rs` | `tokio::spawn` | Synchronous `await` |
+
+**Line counts:**
+
+| Caller | Before | After | Reduction |
+|--------|--------|-------|-----------|
+| `handle_fact_add` (CLI) | 555 lines | ~170 lines | -69% |
+| `fact_add` (LLM tool) | 317 lines | ~170 lines | -46% |
+| `insert_fact_with_dedup` (auto-extract) | 334 lines | ~30 lines | -91% |
+| `dedup.rs` (new central) | — | 798 lines | — |
+| **Net** | 1206 lines | ~1168 lines | **-1229** |
 
 ### 6.5 Layer 4: Global-Wins-Project Rule
 

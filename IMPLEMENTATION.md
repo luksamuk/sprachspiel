@@ -2648,15 +2648,16 @@ vision = true
 **Implementation summary:**
 
 Key files:
-- `src/facts/extract.rs` — Heuristic extraction, dedup pipeline, validation, Layer 3.5 semantic dedup
+- `src/facts/dedup.rs` — Centralized dedup pipeline (`DedupResult`, `DedupConfig`, `deduplicate_and_insert()`), single source of truth for all 3 callers
+- `src/facts/extract.rs` — Heuristic extraction, thin dedup wrapper (delegates to `dedup::deduplicate_and_insert()`), validation
 - `src/facts/lang.rs` — Centralized EN/PT patterns, PT→EN translation, `normalize_to_storage_format()` (ADR-E4), `normalize_for_comparison()` (Lemma strip), `normalize_adverb_verb()` (adverb expansion), `lemmatize_verb()` (3rd person → base form)
 - `src/facts/conflict.rs` — Conflict detection, preference override, lowered threshold
 - `src/facts/db.rs` — FTS5 search, exact match, normalized match, BM25 scoring
 - `src/facts/prompt.rs` — System prompt scope separation (Global/Project), defense-in-depth normalization
 - `src/facts/types.rs` — Global scope forces project_id=None
-- `src/tools/fact_tools.rs` — LLM tool with PT→EN translation, content validation, layered dedup, Layer 3.5
+- `src/tools/fact_tools.rs` — LLM tool with validation + thin dedup wrapper (delegates to `dedup::deduplicate_and_insert()`)
 - `src/chat/repl.rs` — Async `try_auto_extract_facts()` passes embedding_client for Layer 3.5
-- `src/chat/command_handlers.rs` — `/fact add` CLI with full 6-layer dedup, normalization, and embedding generation (async)
+- `src/chat/command_handlers.rs` — `/fact add` CLI with validation + thin dedup wrapper (delegates to `dedup::deduplicate_and_insert()`)
 - `src/embeddings/client.rs` — Semaphore(1) for serialized embedding requests, 30s timeout
 
 **Architecture: Six-layer dedup pipeline:**

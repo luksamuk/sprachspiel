@@ -5,7 +5,7 @@
 //!
 //! 1. `/fact add` CLI command (`handle_fact_add`)
 //! 2. LLM tool `fact_add`
-//! 3. Auto-extraction (`insert_fact_with_dedup`)
+//! 3. Auto-extraction (`extract_and_insert_facts` via `insert_fact_with_dedup`)
 //!
 //! # Pipeline Order
 //!
