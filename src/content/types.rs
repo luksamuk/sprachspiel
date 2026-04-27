@@ -232,7 +232,7 @@ pub struct SubsequentItem {
 pub struct ContentSearchResult {
     /// Content item
     pub item: ContentItem,
-    /// Search score (BM25 or vector distance)
+    /// Search score (BM25 or cosine similarity)
     pub score: f32,
     /// Search type (keyword, semantic, hybrid)
     pub search_type: ContentSearchType,

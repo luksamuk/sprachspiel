@@ -907,19 +907,19 @@ Verify that preference and identity facts are auto-extracted from user messages 
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
 
-### 21.2 Fact Insertion Generates Embedding (Serialized, 30s Timeout)
+### 21.2 Fact Insertion Generates Embedding (Synchronous)
 
-> **Bug #4 fix:** All embedding requests now go through `Semaphore(1)` and have a 30-second timeout. No more fire-and-forget `tokio::spawn`.
+> **Bug #4 fix + race condition fix:** Embedding generation is now **synchronous** (await, not fire-and-forget). After inserting a fact, the embedding is generated and stored before returning. This ensures that subsequent Layer 3.5 searches can find the new fact's embedding. If Ollama is offline, `has_embedding` stays 0 and recovery generates on next startup.
 
 - [ ] Ask LLM: "Remember that I prefer concise output" (triggers `fact_add`)
-- [ ] Wait 5 seconds for embedding generation (serialized, no concurrent overload)
+- [ ] Embedding is generated **synchronously** — no need to wait
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%concise%'"` → **has_embedding = 1**
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM fact_embeddings"` → **≥ 1** row
 
-### 21.3 Auto-Extraction Generates Embedding (Serialized)
+### 21.3 Auto-Extraction Generates Embedding (Synchronous)
 
 - [ ] Send: "I prefer dark mode" → wait for `[Auto-extracted]` notification
-- [ ] Wait 5 seconds for embedding generation
+- [ ] Embedding is generated **synchronously** — no need to wait
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%dark mode%'"` → **has_embedding = 1**
 
 ### 21.4 Startup Recovery: Missing Embeddings
@@ -941,7 +941,7 @@ Verify that preference and identity facts are auto-extracted from user messages 
 
 ### 21.6 Semantic Contradiction Detection (Bug #3 fix — Layer 3.5 with triple disambiguation)
 
-> **Bug #3 fix:** After Layer 2, before FTS5, Layer 3.5 generates an embedding and searches `fact_embeddings` (cosine ≥ 0.70). For each result, it extracts triples: same predicate + different object = contradiction → Update; same triple = duplicate → Skip; different predicates → `is_contradiction()` fallback (polarity opposition).
+> **Bug #3 fix + race condition fix:** After Layer 2, before FTS5, Layer 3.5 generates an embedding and searches `fact_embeddings` (cosine ≥ 0.70). For each result, it extracts triples: same predicate + different object = contradiction → Update; same triple = duplicate → Skip; different predicates → `is_contradiction()` fallback (polarity opposition). Embedding generation is now **synchronous** (await, not fire-and-forget), so fact #1's embedding is guaranteed to exist when fact #2's Layer 3.5 search runs.
 
 **Clean state first:**
 ```bash
@@ -950,7 +950,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 ```
 
 - [ ] Send: "I prefer dark mode" → stored as preference "User prefers dark mode"
-- [ ] Wait 5 seconds for embedding
+- [ ] Embedding is generated synchronously — no need to wait
 - [ ] Send: "I prefer light mode" → should UPDATE (not duplicate) the existing fact via semantic triple contradiction (same predicate "prefers", different object)
 - [ ] `/fact list` → shows "User prefers light mode" (NOT both "dark" and "light")
 - [ ] Verify embedding: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE content LIKE '%light mode%' AND has_embedding = 1"` → **1**
@@ -958,7 +958,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 ### 21.7 Semantic Duplicate Detection: Paraphrase (Layer 3.5)
 
 - [ ] Send: "I prefer dark mode" → stored as fact
-- [ ] Wait 5 seconds for embedding
+- [ ] Embedding is generated synchronously — no need to wait
 - [ ] Ask LLM: "Remember that I like using dark mode" → `fact_add` should return **Skipped: Similar fact already exists** or **duplicate** (FTS5 or Layer 3.5 catches it)
 - [ ] `/fact list` → only ONE dark mode preference
 
@@ -972,7 +972,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 - [ ] Start chat, extract some facts
 - [ ] Immediately `/exit` → should complete without error
-- [ ] Restart → no "Recovering" message for facts (embeddings flushed on exit)
+- [ ] Restart → no "Recovering" message for facts (embeddings generated synchronously at insert time)
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
 
 ### 21.10 Startup Semantic Dedup Verification
@@ -993,7 +993,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 
 ### 21.11 Embedding Serialization: No Concurrent Overload (Bug #4)
 
-> **Bug #4 fix:** `EmbeddingClient` now serializes all embedding requests through `Semaphore(1)` with a 30-second timeout. Previously, concurrent `tokio::spawn` fire-and-forget tasks could overwhelm Ollama.
+> **Bug #4 fix:** `EmbeddingClient` now serializes all embedding requests through `Semaphore(1)` with a 30-second timeout. Additionally, embedding generation is now **synchronous** (await, not fire-and-forget `tokio::spawn`), so each fact's embedding is guaranteed ready before the next fact's Layer 3.5 search runs. This eliminates the race condition where fact #2's semantic search couldn't find fact #1's embedding.
 
 - [ ] **Rapid-fire test:** Send 5+ preference messages in quick succession:
   ```
@@ -1004,7 +1004,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
   "I love Rust"
   ```
 - [ ] NO crash or panic during rapid insertion
-- [ ] After 10 seconds, all 5 facts should have embeddings:
+- [ ] All 5 facts should have embeddings (generated synchronously — no need to wait):
   ```bash
   sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 1 AND invalidated_at IS NULL"
   ```
@@ -1028,16 +1028,16 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 - [ ] `/fact list` → shows facts correctly with scope headers
 - [ ] `/fact search <query>` → returns matching facts
 - [ ] `/fact remove <id>` → removes fact and its embedding
-- [ ] Auto-extraction still works and generates embeddings
+- [ ] Auto-extraction still works and generates embeddings synchronously
 - [ ] Preference override contradiction still works ("prefer X" → "prefer Y" replaces via semantic triple)
 - [ ] Global-wins-project rule still works
 
 ### 21.14 `/fact add` CLI: Full Dedup Parity (Bug #3 smoke test #2)
 
-> **Bug #3 fix (smoke test #2):** `/fact add` CLI command now uses the same 6-layer dedup pipeline as `fact_add` LLM tool and auto-extraction: normalization (ADR-E4), Layer 1 (exact), Layer 2 (normalized), Layer 3.5 (semantic + triple disambiguation, ≥0.70), Layer 3 (FTS5), plus eager embedding generation.
+> **Bug #3 fix (smoke test #2):** `/fact add` CLI command now uses the same 6-layer dedup pipeline as `fact_add` LLM tool and auto-extraction: normalization (ADR-E4), Layer 1 (exact), Layer 2 (normalized), Layer 3.5 (semantic + triple disambiguation, ≥0.70), Layer 3 (FTS5), plus synchronous embedding generation.
 
 - [ ] `/fact add I prefer dark mode` → stores "User prefers dark mode" (normalized per ADR-E4)
-- [ ] Wait 3 seconds for embedding generation
+- [ ] Embedding is generated synchronously — no need to wait
 - [ ] `/fact add I prefer dark mode` → **Skipped: Exact duplicate** (Layer 1)
 - [ ] `/fact add User prefers dark mode` → **Skipped: Similar fact** (Layer 2, normalized match)
 - [ ] `/fact add I like dark mode` → Layer 3.5 should catch as paraphrase or FTS5 as similar
@@ -1052,8 +1052,8 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 1. Clean state: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 2. Start chat: `ask-ai chat`
 3. `/tools` → should print **"Tools: disabled"**
-4. Send: "I prefer dark mode" → auto-extraction should store via `normalize_to_storage_format()` and `generate_fact_embedding()`
-5. Wait 5 seconds for embedding
+4. Send: "I prefer dark mode" → auto-extraction should store via `normalize_to_storage_format()` (embedding generated synchronously)
+5. Embedding is generated synchronously — no need to wait
 6. Send: "Actually, I prefer light mode" → auto-extraction should detect contradiction via semantic triple (same predicate "prefers", different object) and UPDATE
 7. `/fact list` → should show **one** preference: "User prefers light mode"
 8. `/tools` → should print **"Tools: enabled"**
@@ -1172,6 +1172,64 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 - [ ] Send: "Eu moro em São Paulo" → auto-extraction stores "User lives in São Paulo" (NOT "I live in São Paulo")
 - [ ] `/fact list` → shows both facts in third person
 
+### 21.26 Bug #3 (Hermes): sqlite-vec L2 vs Cosine Metric Fix
+
+> **ROOT CAUSE of S42.4/S43.1:** `search_facts_semantic()` used `1.0 - distance`, which is only correct for cosine distance. sqlite-vec defaults to L2 distance; the correct conversion is `1.0 - (distance² / 2.0)`. The broken formula scored "prefer dark mode" vs "prefer light mode" as 0.6304 instead of 0.9317. This one bug made the entire Layer 3.5 pipeline non-functional from day one. Also fixed in `content/db.rs` (both content and chunk search) and comparison direction (`<` → `>`). *Discovered by Hermes Agent.*
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I prefer dark mode` → ✓ Added (embedding generated synchronously)
+- [ ] `/fact add I prefer light mode` → ↻ Updated: "User prefers light mode" replaces "User prefers dark mode" (Layer 3.5 now works because similarity is correctly ~0.93, not ~0.63)
+- [ ] `/fact list` → shows only ONE preference: "User prefers light mode"
+
+> **If this fails (both facts coexist), the L2→cosine conversion is still broken.**
+
+### 21.27 Bug #4 (Hermes): Missing Replacement Fact Insertion
+
+> **Bug #4 (Hermes):** In `command_handlers.rs`, after detecting a contradiction and deleting the old fact, `return;` exited the function without inserting the replacement. The old fact was deleted; the new one was lost. Fixed in both triple and polarity paths. *Discovered by Hermes Agent.*
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I prefer dark mode` → ✓ Added: "User prefers dark mode"
+- [ ] `/fact add I prefer light mode` → ↻ Updated
+- [ ] `/fact list` → shows **"User prefers light mode"** (NOT empty — replacement was inserted)
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE invalidated_at IS NULL"` → exactly ONE fact with **has_embedding = 1**
+
+**Also test polarity path:**
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like hiking` → ✓ Added: "User likes hiking"
+- [ ] `/fact add I hate hiking` → ↻ Updated: "User hates hiking" replaces "User likes hiking" (polarity opposition)
+- [ ] `/fact list` → shows **"User hates hiking"** (NOT empty — replacement was inserted)
+
+> **If the fact list is empty after a contradiction, the replacement insertion code is missing.**
+
+### 21.28 S42.4/S43.1 End-to-End: Full Pipeline Verification
+
+> **Why all bugs matter together:** The L2→cosine metric bug (Bug #3) was the ROOT CAUSE — without correct similarity scores, Layer 3.5 couldn't find candidates. The race condition meant even with correct scores, fact #1's embedding might not exist. Bug #4 meant even after correct detection, the replacement was lost. All three had to be fixed simultaneously for S42.4/S43.1 to pass.
+
+**Clean state first:**
+```bash
+rm -f ~/.local/share/ask-ai/embeddings.db
+```
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] `/fact add I prefer dark mode` → ✓ Added
+- [ ] `/fact add I prefer light mode` → ↻ Updated (triple contradiction)
+- [ ] `/fact add I like dark mode` → ↻ Updated or Skipped (polarity/semantic catch)
+- [ ] `/fact add My name is Lucas` → ✓ Added
+- [ ] `/fact add My name is Maria` → ↻ Updated (identity change via triple)
+- [ ] `/fact add I live in São Paulo` → ✓ Added
+- [ ] `/fact add I live in Recife` → ↻ Updated (location change via triple)
+- [ ] `/fact list` → shows exactly THREE facts: one about display mode, "User's name is Maria", "User lives in Recife", all with has_embedding = 1
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE invalidated_at IS NULL"` → **3**
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
+
 ---
 
 ## Results
@@ -1248,5 +1306,5 @@ The script above runs automated tests. The following tests must be run manually:
 15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
-18. **Section 21**: Fact Embedding & Semantic Dedup (schema v11, embedding generation, recovery, Layer 3.5, Bug #3/#4, serialization)
+18. **Section 21**: Fact Embedding & Semantic Dedup (schema v11, synchronous embedding, recovery, Layer 3.5, Bug #3/#4, serialization, L2→cosine metric fix, replacement insertion fix, end-to-end verification)
 These tests require chat interaction and visual verification of results.

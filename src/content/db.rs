@@ -701,9 +701,12 @@ impl Database {
                 .collect::<Result<Vec<_>, _>>()?;
 
             for (_item_id, item, distance) in rows {
+                // Convert L2 distance to cosine similarity for unit vectors.
+                // See facts/db.rs Bug #3 for the full derivation.
+                let similarity = 1.0 - (distance * distance / 2.0);
                 results.push(ContentSearchResult {
                     item,
-                    score: distance,
+                    score: similarity,
                     search_type: ContentSearchType::Semantic,
                     chunk_content: None,
                     chunk_offsets: None,
@@ -767,9 +770,11 @@ impl Database {
                 .collect::<Result<Vec<_>, _>>()?;
 
             for (_item_id, item, distance, chunk_content, chunk_offsets) in rows {
+                // Convert L2 distance to cosine similarity for unit vectors.
+                let similarity = 1.0 - (distance * distance / 2.0);
                 results.push(ContentSearchResult {
                     item,
-                    score: distance,
+                    score: similarity,
                     search_type: ContentSearchType::Semantic,
                     chunk_content,
                     chunk_offsets,
@@ -782,7 +787,7 @@ impl Database {
                 let entry = best_results.entry(result.item.id);
                 match entry {
                     std::collections::hash_map::Entry::Occupied(mut e) => {
-                        if result.score < e.get().score {
+                        if result.score > e.get().score {
                             e.insert(result);
                         }
                     }

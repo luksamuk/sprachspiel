@@ -1202,10 +1202,12 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
     //
     // Applies when:
     // 1. An embedding client is available
-    // 2. The candidate is Preference (covers identity facts too)
+    // 2. The candidate has an extractable triple (preference or identity)
+    //    — extract_fact_triple() handles both via TRIPLE_PREFERENCE_PREFIXES
+    //      and TRIPLE_IDENTITY_PREFIXES, so no category guard needed
     // ====================================================================
-    if matches!(category, Category::Preference)
-        && let Some(client) = &state.embedding_client
+    if let Some(client) = &state.embedding_client
+        && crate::facts::conflict::extract_fact_triple(&content).is_some()
     {
         match crate::facts::embedding::generate_fact_embedding(&content, client).await {
             Ok(candidate_embedding) => {
@@ -1246,7 +1248,66 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
                                          (preference override)\x1B[0m",
                                         content, result.fact.content
                                     );
-                                    // Fall through to insert new fact below
+                                    // Delete old + insert new, then return
+                                    // (previously just `return;` which skipped insertion — Bug #4)
+                                    let project_id = if global {
+                                        None
+                                    } else {
+                                        state.session.project_id.clone()
+                                    };
+                                    match Fact::new(
+                                        content.clone(),
+                                        category,
+                                        scope,
+                                        project_id,
+                                        Source::User,
+                                    ) {
+                                        Ok(fact) => match db.insert_fact(&fact) {
+                                            Ok(id) => {
+                                                let scope_str =
+                                                    if global { "global" } else { "project" };
+                                                let category_str = match category {
+                                                    Category::Preference => "preference",
+                                                    Category::Fact => "fact",
+                                                };
+                                                println!(
+                                                    "  → New fact #{} (scope: {}, category: {})",
+                                                    id, scope_str, category_str
+                                                );
+                                                // Generate embedding synchronously for the replacement fact
+                                                if let Some(client) = &state.embedding_client {
+                                                    match crate::facts::embedding::generate_fact_embedding(&content, client).await {
+                                                        Ok(emb) => {
+                                                            if let Err(e) = db.update_fact_embedding(
+                                                                id,
+                                                                &emb,
+                                                                &scope.to_string(),
+                                                                &category.to_string(),
+                                                                if global { None } else { state.session.project_id.as_deref() },
+                                                            ) {
+                                                                log::debug!("/fact add: failed to store embedding: {}", e);
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            log::debug!("/fact add: failed to generate embedding: {}", e);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                eprintln!(
+                                                    "\x1B[31m✗ Failed to insert replacement fact: {}\x1B[0m",
+                                                    e
+                                                );
+                                            }
+                                        },
+                                        Err(e) => {
+                                            eprintln!(
+                                                "\x1B[31m✗ Invalid replacement fact: {}\x1B[0m",
+                                                e
+                                            );
+                                        }
+                                    }
                                     return;
                                 }
                                 if candidate_triple.predicate == existing_triple.predicate
@@ -1299,6 +1360,66 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
                                      (contradiction)\x1B[0m",
                                     content, result.fact.content
                                 );
+                                // Delete old + insert new, then return
+                                // (previously just `return;` which skipped insertion — Bug #4)
+                                let project_id = if global {
+                                    None
+                                } else {
+                                    state.session.project_id.clone()
+                                };
+                                match Fact::new(
+                                    content.clone(),
+                                    category,
+                                    scope,
+                                    project_id,
+                                    Source::User,
+                                ) {
+                                    Ok(fact) => match db.insert_fact(&fact) {
+                                        Ok(id) => {
+                                            let scope_str =
+                                                if global { "global" } else { "project" };
+                                            let category_str = match category {
+                                                Category::Preference => "preference",
+                                                Category::Fact => "fact",
+                                            };
+                                            println!(
+                                                "  → New fact #{} (scope: {}, category: {})",
+                                                id, scope_str, category_str
+                                            );
+                                            // Generate embedding synchronously for the replacement fact
+                                            if let Some(client) = &state.embedding_client {
+                                                match crate::facts::embedding::generate_fact_embedding(&content, client).await {
+                                                    Ok(emb) => {
+                                                        if let Err(e) = db.update_fact_embedding(
+                                                            id,
+                                                            &emb,
+                                                            &scope.to_string(),
+                                                            &category.to_string(),
+                                                            if global { None } else { state.session.project_id.as_deref() },
+                                                        ) {
+                                                            log::debug!("/fact add: failed to store embedding: {}", e);
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        log::debug!("/fact add: failed to generate embedding: {}", e);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!(
+                                                "\x1B[31m✗ Failed to insert replacement fact: {}\x1B[0m",
+                                                e
+                                            );
+                                        }
+                                    },
+                                    Err(e) => {
+                                        eprintln!(
+                                            "\x1B[31m✗ Invalid replacement fact: {}\x1B[0m",
+                                            e
+                                        );
+                                    }
+                                }
                                 return;
                             }
 
@@ -1454,39 +1575,28 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
             );
             println!("  {}", content);
 
-            // Generate embedding for the newly inserted fact (eager, fire-and-forget).
+            // Generate embedding for the newly inserted fact (eager, synchronous).
+            // This MUST be synchronous (await, not fire-and-forget) so that when
+            // a subsequent /fact add triggers Layer 3.5, this fact's embedding
+            // is already stored in fact_embeddings.
             // If Ollama is offline, has_embedding stays 0 and recovery generates on next startup.
-            // This was missing — /fact add never generated embeddings.
             if let Some(client) = &state.embedding_client {
-                let client_clone = Arc::clone(client);
-                let db_clone = Arc::clone(&db);
-                let scope_str_emb = scope.to_string();
-                let category_str_emb = category.to_string();
-                let pid = project_id.clone();
-                let content_for_emb = content.clone();
-                tokio::spawn(async move {
-                    match crate::facts::embedding::generate_fact_embedding(
-                        &content_for_emb,
-                        &client_clone,
-                    )
-                    .await
-                    {
-                        Ok(emb) => {
-                            if let Err(e) = db_clone.update_fact_embedding(
-                                id,
-                                &emb,
-                                &scope_str_emb,
-                                &category_str_emb,
-                                pid.as_deref(),
-                            ) {
-                                log::debug!("/fact add: failed to store embedding: {}", e);
-                            }
-                        }
-                        Err(e) => {
-                            log::debug!("/fact add: failed to generate embedding: {}", e);
+                match crate::facts::embedding::generate_fact_embedding(&content, client).await {
+                    Ok(emb) => {
+                        if let Err(e) = db.update_fact_embedding(
+                            id,
+                            &emb,
+                            &scope.to_string(),
+                            &category.to_string(),
+                            project_id.as_deref(),
+                        ) {
+                            log::debug!("/fact add: failed to store embedding: {}", e);
                         }
                     }
-                });
+                    Err(e) => {
+                        log::debug!("/fact add: failed to generate embedding: {}", e);
+                    }
+                }
             }
         }
         Err(e) => {

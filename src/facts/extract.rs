@@ -349,7 +349,7 @@ enum InsertAction {
 /// - Layer 1: Exact content match (case-insensitive, trimmed)
 /// - Layer 2: Normalized content match (strips pronouns/subjects)
 /// - Layer 3: FTS5 keyword search with BM25 scoring
-/// - Layer 3.5: Semantic embedding similarity (only for preferences, requires embedding_client)
+/// - Layer 3.5: Semantic embedding similarity (triple-extractable facts, requires embedding_client)
 /// - Layer 4: Insert new fact
 ///
 /// If no embedding_client is provided, Layer 3.5 is skipped.
@@ -415,7 +415,7 @@ async fn insert_fact_with_dedup(
                     return InsertAction::Skipped;
                 }
                 // All duplicates were Project-scope and removed — insert Global
-                return insert_new_fact(db, candidate, project_id);
+                return insert_new_fact(db, candidate, project_id, embedding_client).await;
             } else {
                 // Project-scope: any existing match (Global or Project) = skip
                 log::debug!(
@@ -444,10 +444,12 @@ async fn insert_fact_with_dedup(
     //
     // Applies when:
     // 1. An embedding client is available
-    // 2. The candidate is Preference or Identity (substitutive categories)
+    // 2. The candidate has an extractable triple (preference or identity)
+    //    — extract_fact_triple() handles both via TRIPLE_PREFERENCE_PREFIXES
+    //      and TRIPLE_IDENTITY_PREFIXES, so no category guard needed
     // ====================================================================
-    if matches!(candidate.category, Category::Preference)
-        && let Some(client) = embedding_client
+    if let Some(client) = embedding_client
+        && super::conflict::extract_fact_triple(&candidate.content).is_some()
     {
         match super::embedding::generate_fact_embedding(&candidate.content, client).await {
             Ok(candidate_embedding) => {
@@ -485,7 +487,14 @@ async fn insert_fact_with_dedup(
                                         );
                                         continue;
                                     }
-                                    return match insert_new_fact(db, candidate, project_id) {
+                                    return match insert_new_fact(
+                                        db,
+                                        candidate,
+                                        project_id,
+                                        embedding_client,
+                                    )
+                                    .await
+                                    {
                                         InsertAction::Inserted => InsertAction::Updated,
                                         other => other,
                                     };
@@ -529,7 +538,14 @@ async fn insert_fact_with_dedup(
                                     );
                                     continue;
                                 }
-                                return match insert_new_fact(db, candidate, project_id) {
+                                return match insert_new_fact(
+                                    db,
+                                    candidate,
+                                    project_id,
+                                    embedding_client,
+                                )
+                                .await
+                                {
                                     InsertAction::Inserted => InsertAction::Updated,
                                     other => other,
                                 };
@@ -564,7 +580,7 @@ async fn insert_fact_with_dedup(
         Err(e) => {
             log::debug!("Auto-extract: FTS5 search failed: {}", e);
             // If search fails, try to insert anyway
-            return insert_new_fact(db, candidate, project_id);
+            return insert_new_fact(db, candidate, project_id, embedding_client).await;
         }
     };
 
@@ -573,7 +589,7 @@ async fn insert_fact_with_dedup(
 
     if conflicts.is_empty() {
         // No conflict — insert new fact
-        insert_new_fact(db, candidate, project_id)
+        insert_new_fact(db, candidate, project_id, embedding_client).await
     } else {
         // Global-wins-project rule: when inserting a Global-scope fact,
         // remove ALL conflicting Project-scope facts, then insert the Global one.
@@ -603,7 +619,7 @@ async fn insert_fact_with_dedup(
 
             if global_conflicts.is_empty() {
                 // All conflicts were Project-scope and have been removed
-                return insert_new_fact(db, candidate, project_id);
+                return insert_new_fact(db, candidate, project_id, embedding_client).await;
             }
 
             // Resolve remaining Global conflicts normally
@@ -627,13 +643,13 @@ async fn insert_fact_with_dedup(
                         conflict.existing_fact.content,
                         candidate.content
                     );
-                    match insert_new_fact(db, candidate, project_id) {
+                    match insert_new_fact(db, candidate, project_id, embedding_client).await {
                         InsertAction::Inserted => InsertAction::Updated,
                         other => other,
                     }
                 }
                 super::conflict::ResolutionAction::Add => {
-                    insert_new_fact(db, candidate, project_id)
+                    insert_new_fact(db, candidate, project_id, embedding_client).await
                 }
             }
         } else {
@@ -659,13 +675,13 @@ async fn insert_fact_with_dedup(
                         conflict.existing_fact.content,
                         candidate.content
                     );
-                    match insert_new_fact(db, candidate, project_id) {
+                    match insert_new_fact(db, candidate, project_id, embedding_client).await {
                         InsertAction::Inserted => InsertAction::Updated,
                         other => other,
                     }
                 }
                 super::conflict::ResolutionAction::Add => {
-                    insert_new_fact(db, candidate, project_id)
+                    insert_new_fact(db, candidate, project_id, embedding_client).await
                 }
             }
         }
@@ -673,10 +689,16 @@ async fn insert_fact_with_dedup(
 }
 
 /// Insert a new fact into the database.
-fn insert_new_fact(
+///
+/// After inserting, eagerly generates the embedding so that subsequent
+/// Layer 3.5 semantic searches can find the new fact. If embedding
+/// generation fails, `has_embedding` stays 0 and recovery will retry
+/// on next startup.
+async fn insert_new_fact(
     db: &Database,
     candidate: &ExtractedFact,
     project_id: Option<&str>,
+    embedding_client: Option<&Arc<EmbeddingClient>>,
 ) -> InsertAction {
     let fact = match Fact::for_insert(
         candidate.content.clone(),
@@ -700,6 +722,35 @@ fn insert_new_fact(
                 candidate.confidence,
                 candidate.content
             );
+
+            // Eagerly generate embedding for the newly inserted fact.
+            // This MUST be synchronous (await, not fire-and-forget) so that
+            // when the next fact's Layer 3.5 search runs, this fact's
+            // embedding is already stored in fact_embeddings.
+            if let Some(client) = embedding_client {
+                match super::embedding::generate_fact_embedding(&candidate.content, client).await {
+                    Ok(emb) => {
+                        if let Err(e) = db.update_fact_embedding(
+                            id,
+                            &emb,
+                            &candidate.scope.to_string(),
+                            &candidate.category.to_string(),
+                            project_id,
+                        ) {
+                            log::debug!("Auto-extract: Failed to store embedding: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!(
+                            "Auto-extract: Failed to generate embedding for fact #{}: {}",
+                            id,
+                            e
+                        );
+                        // has_embedding stays 0; recovery generates on next startup.
+                    }
+                }
+            }
+
             InsertAction::Inserted
         }
         Err(e) => {
