@@ -1,0 +1,43 @@
+# Clippy configuration for ask-ai
+# These thresholds enforce code quality without being overly strict.
+
+# Maximum number of arguments before clippy warns.
+# Current max: 8 (feedback_ops). Keep threshold at 7 to flag new violations
+# that require explicit #[allow] with justification.
+too-many-arguments-threshold = 7
+
+# Maximum cognitive complexity per function.
+# Functions exceeding this should be refactored into smaller functions.
+# Note: cognitive_complexity lint requires nightly. Configure here for
+# when it becomes stable; until then, manual review catches violations.
+cognitive-complexity-threshold = 25
+
+# Maximum number of lines per type definition before clippy warns.
+# Large types should be refactored or documented.
+type-complexity-threshold = 250
+
+# Maximum number of struct fields before clippy warns.
+single-char-binding-names-threshold = 8
+
+# Allow certain words in doc comments without marking them as code.
+doc-valid-idents = [
+    "AskAI",
+    "Ollama",
+    "SQLite",
+    "Vec0",
+    "nomic-embed-text",
+    "GGUF",
+    "CPU",
+    "GPU",
+    "API",
+    "CLI",
+    "TUI",
+    "REPL",
+    "OCR",
+    "HTTP",
+    "HTTPS",
+    "URL",
+    "LLM",
+    "NLI",
+    "XDG",
+]

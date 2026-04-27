@@ -84,3 +84,12 @@ landlock = { version = "0.4", optional = true }
 # Development dependencies
 [dev-dependencies]
 tempfile = "3"
+
+# Lint configuration — enforces code quality standards across CI and local dev.
+# Individual #[allow(clippy::...)] must include a justification comment.
+[lints.clippy]
+too_many_arguments = "warn"
+type_complexity = "warn"
+enum_variant_names = "warn"
+redundant_async_block = "warn"
+missing_transmute_annotations = "allow"
