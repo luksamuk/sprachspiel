@@ -669,7 +669,7 @@ pub async fn run_chat_repl(
         let fact_recovered =
             crate::facts::recovery::recover_missing_fact_embeddings(db_ref, client).await;
         if fact_recovered > 0 {
-            log::info!("Recovered {} fact embedding(s)", fact_recovered);
+            log::debug!("Recovered {} fact embedding(s)", fact_recovered);
         }
 
         let stats = crate::facts::verify::verify_and_dedup_facts(db_ref, client).await;
@@ -678,7 +678,7 @@ pub async fn run_chat_repl(
                 || stats.contradictions_resolved > 0
                 || stats.global_wins > 0)
         {
-            log::info!(
+            log::debug!(
                 "Fact verification: checked {}, removed {} duplicates, {} contradictions, {} global-wins",
                 stats.facts_checked,
                 stats.duplicates_removed,

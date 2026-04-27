@@ -51,7 +51,7 @@ pub async fn recover_missing_fact_embeddings(
         return 0;
     }
 
-    log::info!("Recovering {} missing fact embedding(s)...", total);
+    log::debug!("Recovering {} missing fact embedding(s)...", total);
 
     let mut recovered = 0;
     for (fact_id, content) in &facts_for_reindex {
@@ -92,7 +92,7 @@ pub async fn recover_missing_fact_embeddings(
     }
 
     if recovered > 0 {
-        log::info!("Successfully recovered {} fact embedding(s).", recovered);
+        log::debug!("Successfully recovered {} fact embedding(s).", recovered);
     }
 
     // Post-recovery verification: check if any facts still lack embeddings

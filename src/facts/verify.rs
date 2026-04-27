@@ -155,7 +155,7 @@ pub async fn verify_and_dedup_facts(
     }
 
     if total_removed > 0 {
-        log::info!(
+        log::debug!(
             "Fact verification: removed {} duplicates ({} semantic, {} contradictions, {} global-wins-project)",
             total_removed,
             stats.duplicates_removed,

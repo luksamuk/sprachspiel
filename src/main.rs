@@ -201,7 +201,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         log::debug!("Text:              {}", preview);
     }
     log::debug!("==========================");
-    log::info!("Executing translation with logging enabled...");
+    log::debug!("Executing translation with logging enabled...");
 
     let mapper = LanguageMapper::new();
 
@@ -495,7 +495,7 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
     log::debug!("JSON Output:       {}", args.json);
     log::debug!("Files:             {:?}", args.files);
     log::debug!("==========================");
-    log::info!("Executing OCR with logging enabled...");
+    log::debug!("Executing OCR with logging enabled...");
 
     let processor = OcrProcessor::new();
     let ollama = settings.ollama_client();
@@ -575,7 +575,7 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
     log::debug!("Style:             {:?}", args.style);
     log::debug!("Plain Output:      {}", output_flags.plain);
     log::debug!("==========================");
-    log::info!("Executing summarization with logging enabled...");
+    log::debug!("Executing summarization with logging enabled...");
 
     let text = if let Some(ref text) = args.text {
         text.clone()
@@ -695,7 +695,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     log::debug!("JSON Output:       {}", args.json);
     log::debug!("Max Tokens:        {}", args.max_tokens);
     log::debug!("==========================");
-    log::info!("Executing vision analysis with logging enabled...");
+    log::debug!("Executing vision analysis with logging enabled...");
 
     let model_options = model_config
         .build_model_options()

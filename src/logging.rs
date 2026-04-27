@@ -1,54 +1,67 @@
-//! Logging initialization and verbosity configuration
+//! Logging initialization with dual output (stderr + file) and data sensitivity policy.
 //!
-//! Provides a unified logging system using the `log` crate with `env_logger` backend.
-//! Verbosity is controlled via:
-//! - CLI flags: `-q` (quiet), `-v` (verbose), `-vv` (trace)
-//! - Environment variable: `RUST_LOG=ask_ai=debug` (fine-grained control)
-//! - Config file: `[output] verbosity = "verbose"` in config.toml
+//! Provides a unified logging system using the `log` crate with a custom `MultiLogger`
+//! that routes messages to both stderr (colored, level-filtered) and a log file
+//! (`~/.local/share/ask-ai/ask-ai.log`, always warn+).
 //!
 //! # Verbosity Levels
 //!
-//! | Level   | Flag   | Log Level | Shows                                    |
-//! |---------|--------|-----------|------------------------------------------|
-//! | Quiet   | `-q`   | `error`   | Errors only (no spinner, no tool calls)  |
-//! | Normal  | (def)  | `info`    | Tool calls (compact), warnings, errors  |
-//! | Verbose | `-v`   | `debug`   | Detailed tool calls, results, internals  |
-//! | Trace   | `-vv`  | `trace`   | Everything (embedding internals, tokens) |
+//! | Level   | Flag   | Terminal | File | Shows                                    |
+//! |---------|--------|----------|------|------------------------------------------|
+//! | Quiet   | `-q`   | `error`  | warn | Errors only (no spinner, no tool calls)  |
+//! | Normal  | (def)  | `warn`   | warn | Warnings + errors                        |
+//! | Verbose | `-v`   | `debug`  | warn | Detailed internals + warnings + errors   |
+//! | Trace   | `-vv`  | `trace`  | info | Everything including embedding internals  |
 //!
 //! # Priority
 //!
 //! CLI flags > RUST_LOG env var > config.toml > default
 //!
-//! The default level is `info` (normal) so that tool calls are visible
-//! in normal operation — users should see what tools the LLM is calling.
+//! # Data Sensitivity Policy
+//!
+//! **NEVER log the following at any level:**
+//! - API keys, tokens, or secrets (log only "key found" / "key missing")
+//! - Raw user message content or LLM response text
+//! - File paths that reveal personal information (use `<redacted>` for content)
+//!
+//! **Safe to log:**
+//! - Counts, sizes, durations (`"Recovered {} embeddings"`)
+//! - Status transitions (`"Service started"`, `"Compaction triggered"`)
+//! - Error descriptions without user content (`"Failed to store embedding: {}"`)
+//! - Metadata (`"Loaded {} facts"`, `"{} tokens estimated"`)
+//!
+//! When logging potentially sensitive data (e.g., fact content for dedup debugging),
+//! truncate to 80 chars and append `"..."`. Never log full user text at debug or below.
+//!
+//! # File Logging
+//!
+//! Logs are written to `~/.local/share/ask-ai/ask-ai.log` by default.
+//! Rotation: when the file exceeds 5 MB, it is renamed to `ask-ai.log.1`
+//! (previous backup deleted). The file always receives warn+ messages
+//! regardless of terminal verbosity; trace verbose mode raises file level to info.
 //!
 //! # Rustyline Suppression
 //!
 //! Rustyline's internal debug output is always suppressed (filtered to `warn`)
-//! regardless of the application's verbosity level. This prevents noisy readline
-//! internals from cluttering the output even at trace level.
-//!
-//! # Known Limitation: Chat Mode and Verbose/Trace
-//!
-//! In interactive chat mode, the terminal is managed by rustyline which captures
-//! the screen. `env_logger` output goes to stderr, which may not be visible inline
-//! in the chat terminal. This means `-v`/`-vv` flags are primarily useful in
-//! **query mode** (non-interactive). In chat mode, only tool call display
-//! (via `eprintln!` with `suspend_for_print`) is reliably visible.
-//!
-//! The `/debug` command toggles the log level but trace/debug output from
-//! `log::debug!()` / `log::trace!()` will appear on stderr, which may be
-//! scrolled off or not visible depending on the terminal.
-//!
-//! # Future Note (TUI)
-//!
-//! When the TUI (ratatui.rs) is implemented, the chat REPL will be replaced.
-//! At that point, debug/trace logging should be redirected to a file
-//! (`~/.local/share/ask-ai/debug.log`) rather than stderr, keeping the TUI
-//! output clean. The `/debug` command will toggle file logging instead of
-//! stderr output.
+//! regardless of the application's verbosity level.
 
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Mutex;
+
+use chrono::Local;
+use log::{Level, LevelFilter, Metadata, Record};
+
+/// Maximum log file size before rotation (5 MB)
+const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
+/// Maximum backup log files to keep
+const MAX_BACKUPS: usize = 1;
+
+// ---------------------------------------------------------------------------
+// Verbosity enum
+// ---------------------------------------------------------------------------
 
 /// Verbosity levels for the application
 #[derive(
@@ -65,29 +78,40 @@ use std::str::FromStr;
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Verbosity {
-    /// Only errors — no spinner, no tool calls, no thinking
+    /// Only errors
     Quiet,
-    /// Tool calls (compact) + warnings + errors (default)
+    /// Warnings + errors (default)
     #[default]
     Normal,
-    /// Detailed tool calls + results + internal state
+    /// Detailed internals + warnings + errors
     Verbose,
     /// Everything including embedding internals, token budgets
     Trace,
 }
 
 impl Verbosity {
-    /// Convert to `log::LevelFilter` for the `log` crate
-    pub fn to_level_filter(self) -> log::LevelFilter {
+    /// Convert to terminal `log::LevelFilter`.
+    pub fn to_level_filter(self) -> LevelFilter {
         match self {
-            Verbosity::Quiet => log::LevelFilter::Error,
-            Verbosity::Normal => log::LevelFilter::Info,
-            Verbosity::Verbose => log::LevelFilter::Debug,
-            Verbosity::Trace => log::LevelFilter::Trace,
+            Verbosity::Quiet => LevelFilter::Error,
+            Verbosity::Normal => LevelFilter::Warn,
+            Verbosity::Verbose => LevelFilter::Debug,
+            Verbosity::Trace => LevelFilter::Trace,
         }
     }
 
-    /// Get the effective verbosity from CLI flags, RUST_LOG, and config
+    /// Convert to file `log::LevelFilter`.
+    /// File always gets at least `warn`; trace mode raises to `info`.
+    pub fn to_file_level_filter(self) -> LevelFilter {
+        match self {
+            Verbosity::Quiet => LevelFilter::Warn,
+            Verbosity::Normal => LevelFilter::Warn,
+            Verbosity::Verbose => LevelFilter::Warn,
+            Verbosity::Trace => LevelFilter::Info,
+        }
+    }
+
+    /// Resolve effective verbosity from CLI flags, RUST_LOG, and config.
     ///
     /// Priority: explicit_cli > RUST_LOG > config > default
     pub fn resolve(
@@ -95,33 +119,27 @@ impl Verbosity {
         verbose_count: u8,
         config_verbosity: Option<Verbosity>,
     ) -> Verbosity {
-        // CLI flags take highest priority
         if quiet {
             return Verbosity::Quiet;
         }
         match verbose_count {
-            0 => {} // No CLI flag, check other sources
+            0 => {}
             1 => return Verbosity::Verbose,
             _ => return Verbosity::Trace,
         }
 
-        // Check if RUST_LOG is set (user explicitly wants fine-grained control)
         if std::env::var("RUST_LOG").is_ok() {
-            // RUST_LOG takes precedence over config
-            // env_logger will handle it when we init with builder
             return Verbosity::Normal;
         }
 
-        // Config file setting
         if let Some(v) = config_verbosity {
             return v;
         }
 
-        // Default
         Verbosity::Normal
     }
 
-    /// Check if RUST_LOG env var is set (for env_logger passthrough)
+    /// Check if RUST_LOG env var is set.
     pub fn has_rust_log_env() -> bool {
         std::env::var("RUST_LOG").is_ok()
     }
@@ -133,7 +151,7 @@ impl FromStr for Verbosity {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "quiet" | "q" | "error" => Ok(Verbosity::Quiet),
-            "normal" | "n" | "info" => Ok(Verbosity::Normal),
+            "normal" | "n" | "warn" => Ok(Verbosity::Normal),
             "verbose" | "v" | "debug" => Ok(Verbosity::Verbose),
             "trace" | "t" => Ok(Verbosity::Trace),
             _ => Err(format!(
@@ -155,92 +173,284 @@ impl std::fmt::Display for Verbosity {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Colored stderr logger
+// ---------------------------------------------------------------------------
+
+struct StderrLogger {
+    level: LevelFilter,
+}
+
+impl StderrLogger {
+    fn new(level: LevelFilter) -> Self {
+        Self { level }
+    }
+
+    fn colored_level(level: Level) -> &'static str {
+        match level {
+            Level::Error => "\x1B[31mERROR\x1B[0m",
+            Level::Warn => "\x1B[33mWARN\x1B[0m",
+            Level::Info => "\x1B[36mINFO\x1B[0m",
+            Level::Debug => "\x1B[90mDEBUG\x1B[0m",
+            Level::Trace => "\x1B[35mTRACE\x1B[0m",
+        }
+    }
+}
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= self.level
+    }
+
+    fn log(&self, record: &Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        // Suppress rustyline internals
+        if record.target().starts_with("rustyline") {
+            return;
+        }
+        let level = Self::colored_level(record.level());
+        eprintln!(
+            "[{} {}] {}",
+            level,
+            record.module_path().unwrap_or("ask-ai"),
+            record.args()
+        );
+    }
+
+    fn flush(&self) {
+        // stderr flushes automatically
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File logger with rotation
+// ---------------------------------------------------------------------------
+
+struct FileLogger {
+    level: LevelFilter,
+    file: Mutex<File>,
+}
+
+impl FileLogger {
+    fn new(path: PathBuf, level: LevelFilter) -> Self {
+        // Ensure directory exists
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        // Rotate if needed
+        Self::rotate_if_needed(&path);
+
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to open log file {}: {}", path.display(), e);
+                // Fallback to /dev/null equivalent — we just silently skip
+                OpenOptions::new()
+                    .write(true)
+                    .open("/dev/null")
+                    .unwrap_or_else(|_| File::open("/dev/null").unwrap())
+            });
+
+        Self {
+            level,
+            file: Mutex::new(file),
+        }
+    }
+
+    fn rotate_if_needed(path: &PathBuf) {
+        let Ok(metadata) = fs::metadata(path) else {
+            return;
+        };
+        if metadata.len() < MAX_LOG_SIZE {
+            return;
+        }
+
+        // Rotate: ask-ai.log → ask-ai.log.1 (delete old .1 first)
+        for i in (1..=MAX_BACKUPS).rev() {
+            let backup = PathBuf::from(format!("{}.{}", path.display(), i));
+            if backup.exists() {
+                let _ = fs::remove_file(&backup);
+            }
+        }
+
+        let backup = PathBuf::from(format!("{}.1", path.display()));
+        let _ = fs::rename(path, &backup);
+    }
+
+    /// Get the default log file path.
+    fn default_path() -> PathBuf {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("ask-ai")
+            .join("ask-ai.log")
+    }
+}
+
+impl log::Log for FileLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= self.level
+    }
+
+    fn log(&self, record: &Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        // Suppress rustyline internals
+        if record.target().starts_with("rustyline") {
+            return;
+        }
+
+        let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let line = format!(
+            "[{} {} {}] {}\n",
+            timestamp,
+            record.level(),
+            record.module_path().unwrap_or("ask-ai"),
+            record.args()
+        );
+
+        if let Ok(mut file) = self.file.lock() {
+            let _ = file.write_all(line.as_bytes());
+            let _ = file.flush();
+        }
+    }
+
+    fn flush(&self) {
+        if let Ok(mut file) = self.file.lock() {
+            let _ = file.flush();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MultiLogger — combines stderr + file
+// ---------------------------------------------------------------------------
+
+struct MultiLogger {
+    stderr: StderrLogger,
+    file: Option<FileLogger>,
+}
+
+impl MultiLogger {
+    fn new(stderr_level: LevelFilter, file_level: LevelFilter, log_path: Option<PathBuf>) -> Self {
+        let path = log_path.unwrap_or_else(FileLogger::default_path);
+        let file_logger = FileLogger::new(path, file_level);
+        Self {
+            stderr: StderrLogger::new(stderr_level),
+            file: Some(file_logger),
+        }
+    }
+}
+
+impl log::Log for MultiLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        self.stderr.enabled(metadata) || self.file.as_ref().is_some_and(|f| f.enabled(metadata))
+    }
+
+    fn log(&self, record: &Record) {
+        self.stderr.log(record);
+        if let Some(ref file) = self.file {
+            file.log(record);
+        }
+    }
+
+    fn flush(&self) {
+        self.stderr.flush();
+        if let Some(ref file) = self.file {
+            file.flush();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public init API
+// ---------------------------------------------------------------------------
+
 /// Initialize the logging system with the given verbosity level.
 ///
-/// This should be called once at program startup, before any `log::info!()` etc. calls.
-/// If `RUST_LOG` is set, it takes precedence (env_logger handles this natively).
+/// Sets up a `MultiLogger` that writes to both stderr (colored) and a log file.
+/// If `RUST_LOG` is set, it overrides the terminal level.
+/// Rustyline's internal logging is always suppressed to `warn` level.
 ///
-/// Rustyline's internal logging is always suppressed to `warn` level,
-/// preventing noisy readline internals from cluttering output at debug/trace.
+/// This should be called once at program startup, before any `log::info!()` etc. calls.
 pub fn init(verbosity: Verbosity) {
-    let mut builder = env_logger::Builder::new();
+    init_with_path(verbosity, None);
+}
 
-    // If RUST_LOG is set, let env_logger handle it (fine-grained control)
-    if std::env::var("RUST_LOG").is_ok() {
-        builder.parse_default_env();
+/// Initialize logging with a custom log file path (useful for tests).
+pub fn init_with_path(verbosity: Verbosity, log_path: Option<PathBuf>) {
+    let term_level = if std::env::var("RUST_LOG").is_ok() {
+        // Let RUST_LOG control terminal output level
+        LevelFilter::Trace
     } else {
-        // Set the level from our verbosity
-        builder.filter_level(verbosity.to_level_filter());
-    }
+        verbosity.to_level_filter()
+    };
 
-    // Always suppress rustyline's internal debug/trace output
-    builder.filter_module("rustyline", log::LevelFilter::Warn);
+    let file_level = verbosity.to_file_level_filter();
 
-    // Custom format: [LEVEL] message (without timestamp by default)
-    // Timestamps are only shown at verbose/trace level
-    let show_timestamp = matches!(verbosity, Verbosity::Verbose | Verbosity::Trace);
-    if show_timestamp {
-        builder.format_timestamp_secs();
-    } else {
-        builder.format_timestamp(None);
-    }
+    // Box::leak to get a &'static reference — the logger lives for the program lifetime
+    let logger: &'static MultiLogger = Box::leak(Box::new(MultiLogger::new(term_level, file_level, log_path)));
 
-    // Custom format that matches our existing debug output style
-    builder.format(move |buf, record| {
-        use std::io::Write;
-        let level = match record.level() {
-            log::Level::Error => "\x1B[31mERROR\x1B[0m", // Red
-            log::Level::Warn => "\x1B[33mWARN\x1B[0m",   // Yellow
-            log::Level::Info => "\x1B[36mINFO\x1B[0m",   // Cyan
-            log::Level::Debug => "\x1B[90mDEBUG\x1B[0m", // Gray
-            log::Level::Trace => "\x1B[35mTRACE\x1B[0m", // Magenta
-        };
-
-        if show_timestamp {
-            writeln!(
-                buf,
-                "[{} {} {}] {}",
-                buf.timestamp(),
-                level,
-                record.module_path().unwrap_or("ask-ai"),
-                record.args()
-            )
-        } else {
-            writeln!(
-                buf,
-                "[{} {}] {}",
-                level,
-                record.module_path().unwrap_or("ask-ai"),
-                record.args()
-            )
-        }
-    });
-
-    // Initialize the logger
-    if builder.try_init().is_err() {
+    if log::set_logger(logger).is_err() {
         // Logger already initialized (e.g., in tests) — just set the level
-        log::set_max_level(verbosity.to_level_filter());
     }
+    // Set max level to the most permissive of the two
+    let max = std::cmp::max(term_level, file_level);
+    log::set_max_level(max);
 }
 
 /// Re-initialize logging at a different level (e.g., when /debug is toggled)
 pub fn set_verbosity(verbosity: Verbosity) {
-    log::set_max_level(verbosity.to_level_filter());
+    let term_level = verbosity.to_level_filter();
+    let file_level = verbosity.to_file_level_filter();
+    log::set_max_level(std::cmp::max(term_level, file_level));
 }
 
 /// Toggle verbosity between Normal and Trace.
 /// Used by the /debug command in chat mode — full debug output when enabled.
 pub fn toggle_verbosity() -> Verbosity {
     let current = log::max_level();
-    let new_verbosity = if current >= log::LevelFilter::Trace {
+    let new_verbosity = if current >= LevelFilter::Trace {
         Verbosity::Normal
     } else {
-        // When toggling debug ON via /debug, go to Trace for maximum information
         Verbosity::Trace
     };
     set_verbosity(new_verbosity);
     new_verbosity
 }
+
+/// Truncate a string for safe logging (data sensitivity policy).
+///
+/// Returns the first `max_len` characters with `"..."` appended if truncated.
+/// Use this when logging potentially sensitive content like fact text or
+/// user messages.
+///
+/// # Examples
+/// ```ignore
+/// log::debug!("Fact content: {}", truncate_for_log(&content, 80));
+/// ```
+pub fn truncate_for_log(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        // Find a safe char boundary near max_len
+        let boundary = s.char_indices()
+            .take_while(|(i, _)| *i < max_len)
+            .last()
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(max_len.min(s.len()));
+        format!("{}...", &s[..boundary])
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -248,13 +458,18 @@ mod tests {
 
     #[test]
     fn test_verbosity_to_level_filter() {
-        assert_eq!(Verbosity::Quiet.to_level_filter(), log::LevelFilter::Error);
-        assert_eq!(Verbosity::Normal.to_level_filter(), log::LevelFilter::Info);
-        assert_eq!(
-            Verbosity::Verbose.to_level_filter(),
-            log::LevelFilter::Debug
-        );
-        assert_eq!(Verbosity::Trace.to_level_filter(), log::LevelFilter::Trace);
+        assert_eq!(Verbosity::Quiet.to_level_filter(), LevelFilter::Error);
+        assert_eq!(Verbosity::Normal.to_level_filter(), LevelFilter::Warn);
+        assert_eq!(Verbosity::Verbose.to_level_filter(), LevelFilter::Debug);
+        assert_eq!(Verbosity::Trace.to_level_filter(), LevelFilter::Trace);
+    }
+
+    #[test]
+    fn test_verbosity_to_file_level_filter() {
+        assert_eq!(Verbosity::Quiet.to_file_level_filter(), LevelFilter::Warn);
+        assert_eq!(Verbosity::Normal.to_file_level_filter(), LevelFilter::Warn);
+        assert_eq!(Verbosity::Verbose.to_file_level_filter(), LevelFilter::Warn);
+        assert_eq!(Verbosity::Trace.to_file_level_filter(), LevelFilter::Info);
     }
 
     #[test]
@@ -263,10 +478,10 @@ mod tests {
         assert_eq!(Verbosity::from_str("normal").unwrap(), Verbosity::Normal);
         assert_eq!(Verbosity::from_str("verbose").unwrap(), Verbosity::Verbose);
         assert_eq!(Verbosity::from_str("trace").unwrap(), Verbosity::Trace);
-        // Aliases
+        // Aliases — note: "info" removed since Normal now = warn
         assert_eq!(Verbosity::from_str("q").unwrap(), Verbosity::Quiet);
         assert_eq!(Verbosity::from_str("v").unwrap(), Verbosity::Verbose);
-        assert_eq!(Verbosity::from_str("info").unwrap(), Verbosity::Normal);
+        assert_eq!(Verbosity::from_str("warn").unwrap(), Verbosity::Normal);
         assert!(Verbosity::from_str("invalid").is_err());
     }
 
@@ -304,5 +519,15 @@ mod tests {
         assert!(Verbosity::Quiet < Verbosity::Normal);
         assert!(Verbosity::Normal < Verbosity::Verbose);
         assert!(Verbosity::Verbose < Verbosity::Trace);
+    }
+
+    #[test]
+    fn test_truncate_for_log() {
+        assert_eq!(truncate_for_log("hello", 80), "hello");
+        assert_eq!(truncate_for_log("hello", 3), "hel...");
+        // UTF-8 safe boundary
+        assert_eq!(truncate_for_log("café", 3), "caf...");
+        // Short string
+        assert_eq!(truncate_for_log("ab", 5), "ab");
     }
 }
