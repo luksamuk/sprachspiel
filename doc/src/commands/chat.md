@@ -609,7 +609,7 @@ Press Tab to complete:
 
 ## Session Storage
 
-Sessions are stored in a SQLite database at `~/.local/share/ask-ai/embeddings.db`:
+Sessions are stored in a SQLite database at `~/.local/share/ask-ai/ask-ai.db`:
 
 - **Primary storage**: SQLite database with full-text search (FTS5) and vector embeddings
 - **Automatic persistence**: Every message is saved immediately
@@ -657,7 +657,7 @@ Recent context (47 messages):
 
 ```
 ~/.local/share/ask-ai/
-├── embeddings.db              # SQLite database (conversations + embeddings)
+├── ask-ai.db              # SQLite database (conversations + embeddings)
 ├── chat_history.txt           # Readline history
 └── archived/                  # Archived JSON sessions (after migration)
     └── github.com/

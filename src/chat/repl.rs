@@ -2,6 +2,7 @@
 //!
 //! Handles the main chat loop, user input, and model interaction.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use termimad::terminal_size;
@@ -74,6 +75,7 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 fn init_chat_database(
     args: &super::ChatArgs,
     settings: &Settings,
+    db_path: Option<PathBuf>,
 ) -> (
     Option<Arc<crate::db::Database>>,
     Option<Arc<crate::embeddings::EmbeddingClient>>,
@@ -86,7 +88,7 @@ fn init_chat_database(
         return (None, None, ollama, None);
     }
 
-    let (db, embedding) = crate::db::init_database_core(ollama.clone(), false, false);
+    let (db, embedding) = crate::db::init_database_core(ollama.clone(), false, false, db_path);
 
     let error_detail = if db.is_none() {
         let storage_path = crate::db::Database::get_storage_path();
@@ -539,6 +541,7 @@ pub async fn run_chat_repl(
     cli_code: bool,
     cli_ignore_agents: bool,
     cli_soulless: bool,
+    db_path: Option<PathBuf>,
 ) -> AppResult<()> {
     let project_id = if args.anonymous {
         None
@@ -563,7 +566,7 @@ pub async fn run_chat_repl(
         &settings.model.default
     };
 
-    let (db, embedding_client, ollama, db_error) = init_chat_database(args, settings);
+    let (db, embedding_client, ollama, db_error) = init_chat_database(args, settings, db_path);
 
     // FAIL FAST: Cannot continue without database for non-anonymous session
     if !args.anonymous && db.is_none() {

@@ -123,6 +123,10 @@ struct Cli {
     /// Initialize/create sample configuration file
     #[arg(long)]
     init_config: bool,
+
+    /// Custom database path (overrides default ~/.local/share/ask-ai/ask-ai.db)
+    #[arg(long, value_name = "PATH")]
+    db: Option<String>,
 }
 
 #[tokio::main]
@@ -534,6 +538,8 @@ async fn handle_chat(args: ChatArgs, cli: &Cli, settings: &Settings) -> AppResul
         crate::logging::set_verbosity(chat_verbosity);
     }
 
+    let db_path: Option<std::path::PathBuf> = cli.db.as_ref().map(std::path::PathBuf::from);
+
     chat::run_chat_repl(
         settings,
         &args,
@@ -543,6 +549,7 @@ async fn handle_chat(args: ChatArgs, cli: &Cli, settings: &Settings) -> AppResul
         cli.code,
         cli.ignore_agents,
         args.soulless, // Use chat-specific flag, not global CLI flag
+        db_path,
     )
     .await
 }
