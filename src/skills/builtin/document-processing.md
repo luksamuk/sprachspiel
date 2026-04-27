@@ -61,8 +61,9 @@ Pages that `pdftotext` couldn't properly extract need further processing. **Choo
 
 **Important: tool access depends on context:**
 - **In chat mode (with tools)**: Call the `ocr` and `vision` tools directly — these invoke the built-in sub-agents.
-  - ⚠️ **Limitation**: The vision tool does NOT support `--pages` parameter. For PDF page selection, use `pdftoppm` to convert specific pages to images first, then pass those images to the vision/ocr tool.
-  - Example workflow: `run_command("pdftoppm", ["-png", "-f", "3", "-l", "3", "-r", "150", "doc.pdf", "page"])` → then `vision tool with page-3.png`
+  - The vision tool supports `pages` parameter for PDF page selection (e.g., `"1-5"` or `"1,3,7"`).
+  - For OCR of specific PDF pages, use `pdftoppm` to convert to images first, then pass to the ocr tool.
+  - Example: `spawn_subagent("vision", "Analyze charts", "doc.pdf", None, "1-5")`
 - **In CLI mode (standalone)**: Use `ask-ai ocr <image.png>` or `ask-ai vision --pages <range> <file.pdf>`. The `--pages` flag works in CLI mode.
 - **In the document subagent**: Only `run_command` is available. Convert pages with `pdftoppm`, then recommend the user run OCR/vision on the resulting images.
 
@@ -321,8 +322,7 @@ pdfinfo document.pdf | grep Pages
 # CLI mode:
 ask-ai vision --pages 1-5 document.pdf
 # Chat mode (with tools):
-# Use the vision tool with the PDF file path
-# Note: page selection via tool is not yet supported — use pdftoppm to convert specific pages first
+# spawn_subagent("vision", "Analyze charts", "document.pdf", None, "1-5")
 ```
 
 ### Extract text from ePub preserving chapters

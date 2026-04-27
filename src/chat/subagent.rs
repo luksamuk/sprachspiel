@@ -110,6 +110,9 @@ pub struct SubagentConfig {
     pub model_options: ModelOptions,
     /// OCR extraction mode (Text, Table, Figure, Formula).
     pub ocr_mode: OcrMode,
+    /// Page range for PDF vision analysis (e.g., "1-5" or "1,3,7").
+    /// Only used by the Vision subagent. None means all pages.
+    pub pages: Option<String>,
 }
 impl SubagentConfig {
     /// Create a new config with the given model config key and system prompt.
@@ -129,12 +132,20 @@ impl SubagentConfig {
             max_output_chars: DEFAULT_MAX_OUTPUT_TOKENS,
             ocr_mode: OcrMode::Text,
             model_options,
+            pages: None,
         }
     }
 
     /// Set the OCR extraction mode (only affects OCR subagent).
     pub fn with_ocr_mode(mut self, mode: OcrMode) -> Self {
         self.ocr_mode = mode;
+        self
+    }
+
+    /// Set the page range for PDF vision analysis (only affects Vision subagent).
+    /// Accepts formats like "1-5" or "1,3,7". None means all pages.
+    pub fn with_pages(mut self, pages: impl Into<String>) -> Self {
+        self.pages = Some(pages.into());
         self
     }
 }
@@ -318,7 +329,7 @@ impl SubagentRunner {
             json: false,
             model: None,
             max_tokens: 2048,
-            pages: None,
+            pages: self.config.pages.clone(),
         };
 
         let processor = VisionProcessor::new();

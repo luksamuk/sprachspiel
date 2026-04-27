@@ -61,6 +61,11 @@ const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_
 ///   - `"formula"` — Mathematical formula extraction (LaTeX)
 ///   - If not specified, defaults to "text"
 ///
+/// * `pages` - **Optional.** Page range for PDF vision analysis. Only used when `subagent_type` is "vision".
+///   - `"1-5"` — Process pages 1 through 5
+///   - `"1,3,7"` — Process specific pages
+///   - If not specified, all pages are processed
+///
 /// # Returns
 /// The subagent result as plain text, or an error message if the subagent fails.
 ///
@@ -71,10 +76,11 @@ const DOCUMENT_SYSTEM_PROMPT: &str = "You are a document processor. Use the run_
 ///
 /// # Example
 /// ```ignore
-/// spawn_subagent("ocr".to_string(), "Extract all text from this image".to_string(), Some("/tmp/document.png".to_string()), None)
-/// spawn_subagent("ocr".to_string(), "Extract table structure".to_string(), Some("/tmp/table.png".to_string()), Some("table".to_string()))
-/// spawn_subagent("vision".to_string(), "Describe these images".to_string(), Some("img1.png,img2.jpg".to_string()), None)
-/// spawn_subagent("summarize".to_string(), "Summarize this long text...".to_string(), None, None)
+/// spawn_subagent("ocr".to_string(), "Extract all text from this image".to_string(), Some("/tmp/document.png".to_string()), None, None)
+/// spawn_subagent("ocr".to_string(), "Extract table structure".to_string(), Some("/tmp/table.png".to_string()), Some("table".to_string()), None)
+/// spawn_subagent("vision".to_string(), "Describe these images".to_string(), Some("img1.png,img2.jpg".to_string()), None, None)
+/// spawn_subagent("vision".to_string(), "Analyze charts on pages 1-5".to_string(), Some("doc.pdf".to_string()), None, Some("1-5".to_string()))
+/// spawn_subagent("summarize".to_string(), "Summarize this long text...".to_string(), None, None, None)
 /// ```
 #[ollama_rs::function]
 pub async fn spawn_subagent(
@@ -82,10 +88,12 @@ pub async fn spawn_subagent(
     prompt: String,
     file_path: Option<String>,
     ocr_mode: Option<String>,
+    pages: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     // Normalize empty strings to None
     let file_path = file_path.filter(|s| !s.is_empty());
     let ocr_mode = ocr_mode.filter(|s| !s.is_empty());
+    let pages = pages.filter(|s| !s.is_empty());
 
     log_tool_call(
         "spawn_subagent",
@@ -107,6 +115,10 @@ pub async fn spawn_subagent(
                 "ocr_mode".to_string(),
                 ocr_mode.clone().unwrap_or_else(|| "(default)".to_string()),
             ),
+            (
+                "pages".to_string(),
+                pages.clone().unwrap_or_else(|| "(all)".to_string()),
+            ),
         ],
     );
 
@@ -123,6 +135,14 @@ pub async fn spawn_subagent(
             return Ok(err);
         }
     };
+
+    // Validate pages parameter: only used by vision subagent
+    if pages.is_some() && agent_type != SubagentType::Vision {
+        log::debug!(
+            "spawn_subagent: pages parameter ignored for '{}' subagent (only vision supports it)",
+            agent_type.label()
+        );
+    }
 
     // Parse file paths based on subagent type
     // Vision supports comma-separated paths for multi-image analysis
@@ -216,7 +236,13 @@ pub async fn spawn_subagent(
             }
             cfg
         }
-        SubagentType::Vision => build_vision_config(&settings),
+        SubagentType::Vision => {
+            let mut cfg = build_vision_config(&settings);
+            if let Some(ref page_range) = pages {
+                cfg = cfg.with_pages(page_range);
+            }
+            cfg
+        }
         SubagentType::Translate => build_translate_config(&settings),
         SubagentType::Summarize => build_summarize_config(&settings),
         SubagentType::Document => build_document_config(&settings),
