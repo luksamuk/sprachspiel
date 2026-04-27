@@ -212,13 +212,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
     content_rowid='id'
 );
 
--- Semantic search for fact dedup (v11)
--- NOTE: Currently lacks distance_metric=cosine, so sqlite-vec defaults to L2 distance.
--- Application-level conversion: cosine = 1 - (L2² / 2) for normalized vectors (§6.4.0).
--- Future migration: ALTER to add distance_metric=cosine, then remove application conversion.
+-- Semantic search for fact dedup (v12, distance_metric=cosine)
+-- sqlite-vec returns cosine distance; similarity = 1.0 - distance.
 CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
     fact_id INTEGER PRIMARY KEY,
-    embedding FLOAT[256]
+    embedding FLOAT[256] distance_metric=cosine
 );
 
 -- Partial index for facts missing embeddings (v11)
@@ -428,15 +426,15 @@ This layer catches contradictions that keyword search misses because the words a
 #### 6.4.0 sqlite-vec L2 → Cosine Metric Bug (Critical, Fixed)
 
 **Bug discovered by:** Hermes Agent (empirical benchmark + documentation research)
-**Status:** ✅ FIXED in `facts/db.rs` and `content/db.rs`
+**Status:** ✅ FIXED — application-level workaround in code, then schema v12 migration
 
-sqlite-vec's `vec0` virtual table uses **L2 (Euclidean) distance** by default when `distance_metric=cosine` is not specified in the CREATE TABLE statement. All 3 vec0 tables in `schema.rs` lack `distance_metric=cosine`:
+sqlite-vec's `vec0` virtual table uses **L2 (Euclidean) distance** by default when `distance_metric=cosine` is not specified in the CREATE TABLE statement. All 3 vec0 tables in `schema.rs` lacked `distance_metric=cosine`:
 
-- `fact_embeddings` (schema.rs line 116)
-- `content_embeddings` (schema.rs line 189)
-- `chunk_embeddings_v2` (schema.rs line 199)
+- `fact_embeddings`
+- `content_embeddings`
+- `chunk_embeddings_v2`
 
-The code previously computed: `similarity = 1.0 - distance`, which is only correct for **cosine distance**. For L2-normalized (unit) vectors, the correct conversion is:
+The code originally computed: `similarity = 1.0 - distance`, which is only correct for **cosine distance**. For L2-normalized (unit) vectors, the correct conversion is:
 
 ```
 cosine_similarity = 1.0 - (L2_distance² / 2.0)
@@ -453,7 +451,9 @@ This derives from `‖a−b‖² = 2(1 − cos(a,b))` for unit vectors, so `cos 
 
 The effective thresholds were so strict that Layer 3.5 **never fired** during insert-time — no pair ever exceeded 0.70 in the broken metric. The startup verification (`verify_and_dedup_facts`) also never removed semantic duplicates. The irony: **the pipeline design was correct all along — the metric bug killed the entire pipeline.**
 
-**Files fixed:**
+**Fix applied in two phases:**
+
+**Phase 1 (Bug #3 fix):** Application-level L2→cosine conversion in code:
 
 | File | Line | Change |
 |------|------|--------|
@@ -463,7 +463,7 @@ The effective thresholds were so strict that Layer 3.5 **never fired** during in
 | `src/content/db.rs` | 790 | `result.score < e.get().score` → `result.score > e.get().score` (highest cosine wins, not lowest L2) |
 | `src/content/types.rs` | 235 | Docstring: "BM25 or vector distance" → "BM25 or cosine similarity" |
 
-**Long-term recommendation:** Add `distance_metric=cosine` to all 3 vec0 table definitions in `schema.rs`. The application-level fix (`1.0 - L2²/2`) is mathematically equivalent for L2-normalized vectors, but an explicit metric in the schema is cleaner, future-proof, and lets sqlite-vec skip the conversion in the hot path.
+**Phase 2 (Schema v12 migration):** Added `distance_metric=cosine` to all 3 vec0 tables. This eliminates the application-level conversion entirely — with cosine distance, `similarity = 1.0 - distance` (no squaring needed). The v12 migration drops and recreates vec0 tables, resets `has_embedding` flags, and startup recovery regenerates all embeddings.
 
 ### 6.4.1 Decision: Layer 3.5 Already Covers Identity (via Classification)
 
@@ -1042,7 +1042,7 @@ if let Some(facts) = &self.facts {
 4. **Standard embeddings can't detect contradictions** - Li et al. (2017) proved antonyms map to similar vectors. Our measured data confirms: cosine 0.93 for "dark mode" vs "light mode"
 5. **LLMs are unreliable for contradiction detection** - Gokul et al. (2025) showed SOTA LLMs miss >30% of contradictions
 6. **Triple extraction + semantic search is the viable path** - synapse-ai-memory's approach adapted for Rust + SQLite
-7. **L2 ≠ cosine in sqlite-vec** - sqlite-vec defaults to L2 distance, not cosine. The formula `1.0 - L2_distance` is wrong; use `1.0 - (L2_distance² / 2.0)` for L2-normalized vectors. This bug caused the entire Layer 3.5 pipeline to silently fail (all scores ~0.25–0.35 too low)
+7. **L2 ≠ cosine in sqlite-vec** - sqlite-vec defaults to L2 distance, not cosine. The formula `1.0 - L2_distance` is wrong for L2; the correct conversion is `1.0 - (L2_distance² / 2.0)` for L2-normalized vectors. This bug caused the entire Layer 3.5 pipeline to silently fail (all scores ~0.25–0.35 too low). Fixed in schema v12 by adding `distance_metric=cosine` to all vec0 tables, which eliminates the application-level conversion entirely: `similarity = 1.0 - distance`.
 8. **Embedding generation must be synchronous** - Fire-and-forget `tokio::spawn` causes race conditions: fact #2's semantic search can't find fact #1's embedding. Use synchronous await instead
 9. **Replacement fact insertion cannot be skipped** - After deleting an old fact in a contradiction path, the replacement MUST be explicitly inserted in the same code path before returning. Bare `return;` after delete loses the replacement fact
 10. **Not all same-predicate pairs are contradictions** - `likes` is accumulative (you can like both Python and Rust), while `prefers` is exclusive (you can only prefer one). Word overlap catches same-category pairs ("likes dark mode" vs "likes light mode" share "mode") but not different topics ("likes Python" vs "likes Rust"). Classification constants in `lang.rs` with enforcement test guarantee completeness.

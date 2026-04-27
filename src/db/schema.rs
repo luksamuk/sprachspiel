@@ -9,7 +9,7 @@
 //! - fact_embeddings (vec0 vector index for facts)
 
 /// Schema version for migrations
-pub const SCHEMA_VERSION: i32 = 11;
+pub const SCHEMA_VERSION: i32 = 12;
 
 /// Create all tables and indexes
 pub const SCHEMA_SQL: &str = r#"
@@ -112,10 +112,10 @@ CREATE INDEX IF NOT EXISTS idx_facts_project ON facts(project_id) WHERE scope = 
 CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
 CREATE INDEX IF NOT EXISTS idx_facts_embedding ON facts(has_embedding) WHERE has_embedding = 0 AND invalidated_at IS NULL;
 
--- Vector embeddings for facts (256-dim Matryoshka, v11)
+-- Vector embeddings for facts (256-dim Matryoshka, v12 with distance_metric=cosine)
 CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
     fact_id INTEGER PRIMARY KEY,
-    embedding FLOAT[256],
+    embedding FLOAT[256] distance_metric=cosine,
     +scope TEXT,
     +category TEXT,
     +project_id TEXT
@@ -185,20 +185,20 @@ CREATE TABLE IF NOT EXISTS content_chunks (
 CREATE INDEX IF NOT EXISTS idx_content_chunks_item ON content_chunks(item_id);
 CREATE INDEX IF NOT EXISTS idx_content_chunks_order ON content_chunks(item_id, chunk_index);
 
--- Vector embeddings for content items (256-dim Matryoshka, v7)
+-- Vector embeddings for content items (256-dim Matryoshka, v12 with distance_metric=cosine)
 CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
     item_id INTEGER PRIMARY KEY,
-    embedding FLOAT[256],
+    embedding FLOAT[256] distance_metric=cosine,
     +content_type TEXT,
     +conversation_id TEXT,
     +project_id TEXT,
     +timestamp INTEGER
 );
 
--- Vector embeddings for content chunks (v7)
+-- Vector embeddings for content chunks (v12 with distance_metric=cosine)
 CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
     chunk_id INTEGER PRIMARY KEY,
-    embedding FLOAT[256],
+    embedding FLOAT[256] distance_metric=cosine,
     +content_type TEXT,
     +conversation_id TEXT,
     +project_id TEXT,

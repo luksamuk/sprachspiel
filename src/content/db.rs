@@ -701,9 +701,10 @@ impl Database {
                 .collect::<Result<Vec<_>, _>>()?;
 
             for (_item_id, item, distance) in rows {
-                // Convert L2 distance to cosine similarity for unit vectors.
-                // See facts/db.rs Bug #3 for the full derivation.
-                let similarity = 1.0 - (distance * distance / 2.0);
+                // Convert cosine distance to cosine similarity.
+                // With distance_metric=cosine (schema v12), sqlite-vec returns
+                // cosine distance directly: similarity = 1.0 - distance.
+                let similarity = 1.0 - distance;
                 results.push(ContentSearchResult {
                     item,
                     score: similarity,
@@ -770,8 +771,10 @@ impl Database {
                 .collect::<Result<Vec<_>, _>>()?;
 
             for (_item_id, item, distance, chunk_content, chunk_offsets) in rows {
-                // Convert L2 distance to cosine similarity for unit vectors.
-                let similarity = 1.0 - (distance * distance / 2.0);
+                // Convert cosine distance to cosine similarity.
+                // With distance_metric=cosine (schema v12), sqlite-vec returns
+                // cosine distance directly: similarity = 1.0 - distance.
+                let similarity = 1.0 - distance;
                 results.push(ContentSearchResult {
                     item,
                     score: similarity,
@@ -798,9 +801,11 @@ impl Database {
             }
 
             let mut results: Vec<ContentSearchResult> = best_results.into_values().collect();
+            // Sort descending by similarity score (most similar first).
+            // This ensures RRF assigns rank 1 to the best match.
             results.sort_by(|a, b| {
-                a.score
-                    .partial_cmp(&b.score)
+                b.score
+                    .partial_cmp(&a.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
 

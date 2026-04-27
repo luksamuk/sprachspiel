@@ -437,13 +437,10 @@ impl Database {
             let rows = stmt.query_map(params![embedding_bytes, limit as i32], |row| {
                 let _fact_id: i64 = row.get(0)?;
                 let distance: f32 = row.get(1)?;
-                // Convert L2 distance to cosine similarity for unit vectors.
-                // sqlite-vec defaults to L2 metric (not cosine), so we must convert:
-                //   For L2-normalized vectors: cosine_sim = 1 - (L2_distance² / 2)
-                // This is equivalent to:  cos_sim = 1 - (||a-b||² / 2) = <a,b>
-                // Previously this was `1.0 - distance` (wrong for L2), causing all
-                // similarity scores to be ~0.25-0.35 too low (Bug #3).
-                let similarity = 1.0 - (distance * distance / 2.0);
+                // Convert cosine distance to cosine similarity.
+                // With distance_metric=cosine (schema v12), sqlite-vec returns
+                // cosine distance directly: similarity = 1.0 - distance.
+                let similarity = 1.0 - distance;
 
                 // Read the fact columns starting from column 2
                 let fact = Fact {

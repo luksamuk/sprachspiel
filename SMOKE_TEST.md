@@ -313,7 +313,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
 ```
 
 - [ ] Tables exist (content, facts, conversations, session_todos, etc.)
-- [ ] Schema version correct (11 or higher)
+- [ ] Schema version correct (12 or higher)
 
 **Explicit verification:**
 ```bash
@@ -335,11 +335,11 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables" | grep -q "feedback_signal
 sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(content_items);" | grep -q "pruned" && echo "✓ pruned column" || echo "✗ pruned column missing"
 ```
 
-**Verify v11 additions:**
-```bash
-# Verify has_embedding column in facts table (v11)
-sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(facts);" | grep -q "has_embedding" && echo "✓ has_embedding column" || echo "✗ has_embedding column missing"
-# Verify fact_embeddings vec0 table (v11)
+**Verify v12 additions:**
+
+# Verify has_embedding column in facts table
+
+# Verify fact_embeddings vec0 table with distance_metric=cosine
 sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables" | grep -q "fact_embeddings" && echo "✓ fact_embeddings table" || echo "✗ fact_embeddings table missing"
 ```
 
@@ -608,7 +608,7 @@ Test the feedback_submit LLM tool and configuration defaults.
 Verify `[feedback]` section in config.toml (or defaults work without it):
 
 ```bash
-# Check schema version (must be 10 or higher)
+# Check schema version (must be 12 or higher)
 sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
 # Expected: 10 or higher
 
@@ -900,12 +900,13 @@ Verify that preference and identity facts are auto-extracted from user messages 
 > ```
 > This ensures a clean state for embedding and dedup tests.
 
-### 21.1 Schema Migration: v10 → v11
+### 21.1 Schema Migration: v11 → v12
 
 - [ ] Start a fresh chat session → no errors
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"` → returns **11**
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"` → returns **12**
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
+- [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
 
 ### 21.2 Fact Insertion Generates Embedding (Synchronous)
 
@@ -1351,5 +1352,5 @@ The script above runs automated tests. The following tests must be run manually:
 15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
-18. **Section 21**: Fact Embedding & Semantic Dedup (schema v11, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, serialization, L2→cosine metric fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
+18. **Section 21**: Fact Embedding & Semantic Dedup (schema v12, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, schema v12 distance_metric=cosine, ascending sort fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
 These tests require chat interaction and visual verification of results.

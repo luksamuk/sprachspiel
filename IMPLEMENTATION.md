@@ -2787,6 +2787,11 @@ Key files:
 - Added `fact_embeddings` vec0 virtual table (256d Matryoshka, same model as content embeddings)
 - Added `idx_facts_embedding` partial index on `has_embedding WHERE has_embedding = 0 AND invalidated_at IS NULL`
 
+**Schema changes (v11 → v12):**
+- All 3 vec0 tables now use `distance_metric=cosine` (was default L2)
+- Migration drops and recreates vec0 tables, resets `has_embedding` flags for startup recovery
+- Application-level L2→cosine conversion removed: `1.0 - (distance²/2)` → `1.0 - distance`
+
 **New modules:**
 - `src/facts/embedding.rs` — `generate_fact_embedding()` wrapper around `EmbeddingClient::embed()`
 - `src/facts/recovery.rs` — `recover_missing_fact_embeddings()` + `flush_pending_fact_embeddings()` for startup/shutdown
@@ -2820,7 +2825,9 @@ verify_and_dedup_facts()               ← Semantic dedup (NEW)
 
 **Re-exports:** `EmbeddingError` and `cosine_similarity` now re-exported from `embeddings` module for use by fact modules.
 
-**Bug discovered (2026-04-26):** sqlite-vec L2 vs cosine metric mismatch — `search_facts_semantic()` used `1.0 - distance` (only correct for cosine distance), but sqlite-vec defaults to L2 distance. Fixed to `1.0 - (distance² / 2.0)` for L2-normalized vectors. The same bug existed in `content/db.rs` for content and chunk search. Also fixed comparison direction in `content/db.rs:790` (`<` → `>`, highest cosine wins). This was the root cause of S42.4/S43.1 — the entire Layer 3.5 pipeline was non-functional because all similarity scores were ~0.25–0.35 too low. *Discovered by Hermes Agent.*
+**Bug discovered (2026-04-26):** sqlite-vec L2 vs cosine metric mismatch — `search_facts_semantic()` used `1.0 - distance` (only correct for cosine distance), but sqlite-vec defaults to L2 distance. Fixed to `1.0 - (distance² / 2.0)` for L2-normalized vectors. The same bug existed in `content/db.rs` for content and chunk search. Also fixed comparison direction in `content/db.rs:790` (`<` → `>`, highest cosine wins). This was the root cause of S42.4/S43.1 — the entire Layer 3.5 pipeline was non-functional because all similarity scores were ~0.25–0.35 too low. **Phase 2 fix:** Schema v12 added `distance_metric=cosine` to all vec0 tables, eliminating the application-level conversion entirely. *Discovered by Hermes Agent.*
+
+**Bug discovered (2026-04-26):** Ascending sort in `search_content_semantic()` — results were sorted ascending by score (least similar first), then truncated. This inverted RRF ranking: the least similar semantic result received the highest RRF weight. Changed to descending sort (most similar first) so rank 1 = best match.
 
 **Bug discovered (2026-04-26):** Accumulative predicates false positives — `FactTriple::contradicts()` treated all same-predicate pairs as contradictions, so "likes Python" vs "likes Rust" was incorrectly flagged. Fixed with two-tier logic: exclusive vs accumulative predicates + `object_word_overlap()` for same-category detection. Known limitation: "likes vim" vs "likes emacs" (no word overlap) is not a contradiction — deferred to Phase 2 (LLM adjudication). *Discovered by Hermes Agent.*
 

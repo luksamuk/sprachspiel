@@ -617,6 +617,60 @@ impl Database {
             )?;
         }
 
+        // Migration v11 -> v12: Add distance_metric=cosine to vec0 tables
+        //
+        // sqlite-vec defaults to L2 (Euclidean) distance. All 3 vec0 tables were
+        // created without `distance_metric=cosine`, causing Bug #3 (L2 vs cosine
+        // metric mismatch). The application-level fix `1.0 - (L2²/2)` worked but
+        // adding the explicit metric is cleaner and eliminates the conversion.
+        //
+        // sqlite-vec does not support ALTER TABLE on virtual tables, so we must
+        // DROP and re-CREATE. This loses all embeddings, but startup recovery
+        // regenerates them (has_embedding flags are reset below).
+        if from_version < 12 {
+            conn.execute_batch("DROP TABLE IF EXISTS fact_embeddings;")?;
+            conn.execute_batch("DROP TABLE IF EXISTS content_embeddings;")?;
+            conn.execute_batch("DROP TABLE IF EXISTS chunk_embeddings_v2;")?;
+
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+                    fact_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256] distance_metric=cosine,
+                    +scope TEXT,
+                    +category TEXT,
+                    +project_id TEXT
+                );",
+            )?;
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
+                    item_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256] distance_metric=cosine,
+                    +content_type TEXT,
+                    +conversation_id TEXT,
+                    +project_id TEXT,
+                    +timestamp INTEGER
+                );",
+            )?;
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
+                    chunk_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256] distance_metric=cosine,
+                    +content_type TEXT,
+                    +conversation_id TEXT,
+                    +project_id TEXT,
+                    +timestamp INTEGER
+                );",
+            )?;
+
+            // Reset embedding flags so startup recovery regenerates all embeddings
+            conn.execute(
+                "UPDATE facts SET has_embedding = 0 WHERE invalidated_at IS NULL",
+                [],
+            )?;
+            conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
+            conn.execute("UPDATE content_chunks SET has_embedding = 0", [])?;
+        }
+
         Ok(())
     }
 
