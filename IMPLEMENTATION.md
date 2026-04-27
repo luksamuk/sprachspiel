@@ -3603,6 +3603,105 @@ See: `doc/src/development/roadmap.md` - TUI section for detailed streaming appro
 
 ---
 
+## Small Features [branch: small-features]
+
+### ✅ SF1: Colored User Prompt After Enter [COMPLETED]
+
+**Status:** ✅ COMPLETED
+**Commit:** `635ae55`
+
+User input now displays with `BOLD_CYAN` on `>>>` and `CYAN` on the text after pressing Enter, matching the User role label style in context display.
+
+**Changes:**
+- `src/chat/view/mod.rs`: Made `colors` module `pub` so repl.rs can access it
+- `src/chat/repl.rs`: Import `colors`, styled `println!(">>> {}", line)` with ANSI colors
+
+---
+
+### ✅ SF2: Clippy Configuration [COMPLETED]
+
+**Status:** ✅ COMPLETED
+**Commit:** `0e8b459`
+
+Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enforce code quality standards in CI and local dev.
+
+**Changes:**
+- `clippy.toml`: Thresholds for `too-many-arguments` (7), `cognitive-complexity` (25), `type-complexity` (250), `doc-valid-idents` (project-specific terms like AskAI, Vec0, GGUF, etc.)
+- `Cargo.toml`: `[lints.clippy]` section — `too_many_arguments` and `type_complexity` as "warn", `missing_transmute_annotations` as "allow"
+
+---
+
+### 📋 SF3: Rename Database to `ask-ai.db` + `--db` CLI Flag [NOT STARTED]
+
+**Status:** 📋 NOT STARTED
+
+**Goal:** Rename `embeddings.db` → `ask-ai.db` and add `--db <path>` CLI flag for custom database location (useful for testing).
+
+**Scope:**
+1. Change 3 occurrences of `"embeddings.db"` → `"ask-ai.db"` in `src/db/connection.rs`
+2. Add migration: if `embeddings.db` exists but `ask-ai.db` doesn't, auto-rename the file (preserve user data)
+3. Add `--db <path>` global CLI flag in `src/main.rs` / `src/config.rs`
+4. Propagate custom path through `Settings` / `get_storage_path()` with override
+5. Update SMOKE_TEST.md paths
+6. Update doc references (IMPLEMENTATION.md, architecture.md, etc.)
+
+**Open questions:**
+- Should `--db` override XDG path entirely, or just the filename?
+- Should `--db :memory:` be supported for ephemeral testing?
+
+---
+
+### 📋 SF4: Logging Overhaul [NOT STARTED]
+
+**Status:** 📋 NOT STARTED
+
+**Goal:** Clean up log levels, add file-based logging, enforce data sensitivity policy.
+
+**Current state:** Uses `log` + `env_logger`, default level = info (shows in terminal). ~170 `debug!`, ~6 `info!`, ~20 `warn!`, ~3 `error!`. All output goes to stderr. No file logging.
+
+**Scope:**
+1. **Audit `log::info!` calls** — Promote to `warn!` if important ("service started"), demote to `debug!` otherwise. Target: 0 `info!` in normal operation.
+2. **Raise terminal default to `warn`** — Only warnings and errors in stderr by default. `-v` for debug, `-vv` for trace.
+3. **Add file logging** to `~/.local/share/ask-ai/ask-ai.log`:
+   - Minimum level = `warn` (or `info` when verbose)
+   - Respects config verbosity for file level
+   - No trace/debug in file unless explicitly enabled
+4. **Data sensitivity audit** — Ensure no user content, API keys, or PII in any log level. Establish policy in `src/logging.rs` doc comments.
+5. **Consider `env_logger` replacement** — For dual-output (stderr + file), may need custom `log::Log` implementation or `tracing-subscriber`.
+
+**Open questions:**
+- Use `tracing` ecosystem or stick with `log` + custom `Log` trait implementation?
+- Log rotation policy (size? time-based?)
+- Should file logging be opt-in or default?
+
+---
+
+### 📋 SF5: PDF Reading Pipeline Redesign [NOT STARTED]
+
+**Status:** 📋 NOT STARTED
+
+**Goal:** Redesign PDF ingestion to leverage competent OCR and vision models for tables, formulas, and charts that `pdftotext` misses.
+
+**Current state:** PDF processing relies entirely on external CLI tools (`pdftotext` for text, `pdftoppm` + `tesseract` for OCR). OCR and vision modules reject `.pdf` files. The `document-processing` skill is generic and doesn't guide the LLM to use vision/OCR for PDF pages.
+
+**Scope:**
+1. **Redesign `src/skills/builtin/document-processing.md`** — Add structured PDF pipeline:
+   - Text-heavy PDF → `pdftotext` (fast, current path)
+   - PDF with images/tables → `pdftoppm` → `ocr` tool (GLM-OCR)
+   - PDF with charts/diagrams → `pdftoppm` → `vision` tool
+   - Coordinated multi-page extraction with per-page strategy selection
+2. **Prompt engineering** — Teach the LLM to choose the right extraction method per page type
+3. **Code evaluation** — Decide: skill-guided (LLM orchestrates) vs. automated pipeline in Rust
+
+**Recommended approach:** Skill + prompt engineering. Keeps binary small, leverages existing OCR/vision tools, LLM decides strategy per document.
+
+**Open questions:**
+- Should we add a `/doc analyze` command that forces vision-based extraction?
+- How to handle very large PDFs (100+ pages)?
+- Should page-level strategy be automatic or user-directed?
+
+---
+
 ## Documentation
 
 Full documentation is available in the `doc/` directory:
@@ -3640,3 +3739,4 @@ The original detailed implementation notes have been moved to:
 
 2026-04-11 - P6 Core Enhancements added, milestone tags [M1]/[M2]/[M3], P4 extras, P5 verbosity merge, P15 sub-items with scope clarification
 2026-04-25 - Milestones restructured: M2→UX & TUI Design (design phase), M3→Sprach 2.0+CAS+TUI impl+Plugin System, M4→Future (was M3). P14 TUI split into M2(design) and M3(impl). P7,P14,P15 moved from M2 to M3.
+2026-04-27 - SF1 (colored prompt) and SF2 (clippy config) completed. SF3 (db rename), SF4 (logging), SF5 (PDF pipeline) documented as NOT STARTED.
