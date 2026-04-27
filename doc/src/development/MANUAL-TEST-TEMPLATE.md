@@ -40,7 +40,7 @@ After starting the application, verify the database schema version:
 
 ```bash
 sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
-# Expected: 11 or higher (v11 adds fact_embeddings and has_embedding column)
+# Expected: 12 or higher (v12 adds distance_metric=cosine to vec0 tables)
 ```
 
 ---
