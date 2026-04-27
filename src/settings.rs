@@ -1,3 +1,23 @@
+//! Settings module — application configuration from `~/.config/ask-ai/config.toml`.
+//!
+//! Provides [`Settings`] and its sub-structs for configuring models, tools, output,
+//! display, LED, feedback, and fact auto-extraction. Settings are loaded from TOML
+//! at startup via [`Settings::load`], with sensible defaults when no config file exists.
+//!
+//! # Configuration hierarchy
+//!
+//! 1. CLI flags (highest priority)
+//! 2. `config.toml` per-subcommand settings (e.g., `[model.chat]`)
+//! 3. `config.toml` global settings
+//! 4. Built-in defaults ([`DEFAULT_MODEL`], [`DEFAULT_CODE_MODEL`])
+//!
+//! # Key structs
+//!
+//! - [`ModelSettings`] — model, host, port, per-subcommand overrides
+//! - [`ToolSettings`] — tool blacklist
+//! - [`FeedbackSettings`] — RRF boost, LLM feedback weight, decay, reinforcement
+//! - [`FactSettings`] — auto-extraction toggle, max facts per response, notification
+
 use ollama_rs::Ollama;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
