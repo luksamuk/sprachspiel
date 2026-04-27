@@ -93,6 +93,8 @@ graph TB
 | Embeddings | **Synchronous (await) with Semaphore(1)** | Serialized embedding generation with 30s timeout; synchronous (not fire-and-forget) to guarantee availability for subsequent Layer 3.5 searches |
 | Language | **All content stored in English** | PT→EN prefix translation via `lang::translate_pt_to_en()` (ADR-L1) |
 | Normalization | **Third-person at storage time** | `normalize_to_storage_format()` ensures all facts stored as "User prefers X" (ADR-E4) |
+| Predicate classification | **4 categories: exclusive, positive, negative, neutral** | `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES` in `lang.rs` as source of truth; `test_all_predicates_classified` enforcement test guarantees completeness |
+| Contradiction logic | **Two-tier: exclusive vs accumulative** | Exclusive predicates (prefers, name is) → any different object = contradiction; Accumulative predicates (likes, hates) → only if object word overlap > 0.3 |
 
 ---
 
@@ -404,7 +406,10 @@ Steps:
 2. Search `fact_embeddings` via `search_facts_semantic()` (cosine similarity ≥ **0.70** — see `SEMANTIC_SEARCH_THRESHOLD` in conflict.rs)
 3. For each result ≥ 0.70:
    a. Extract triples via `extract_fact_triple()` for both candidate and existing fact
-   b. If triples **contradict** (same predicate, different object) → **Update** (delete old, insert new + sync embedding)
+   b. If triples **contradict** → **Update** (delete old, insert new + sync embedding). Contradiction logic is two-tier:
+      - **Polarity flip** (like vs hate on same object) → always contradiction
+      - **Exclusive predicate** (`prefers`, `name is`, `lives in`) → any different object = contradiction
+      - **Accumulative predicate** (`likes`, `loves`, `hates`, `uses`) → only contradiction if objects share content words (`object_word_overlap()` > 0.3). "likes dark mode" vs "likes light mode" shares "mode" → contradiction. "likes Python" vs "likes Rust" shares nothing → can coexist.
    c. If triples are **identical** (same predicate, same object) → **Skip** (semantic duplicate)
    d. If `is_contradiction()` fallback fires (polarity opposition: like/hate, negation) → **Update** (delete old, insert new + sync embedding)
    e. Neither → continue to next result
@@ -612,6 +617,57 @@ return;
 This bug affected both the triple contradiction path and the `is_contradiction()` polarity path in `command_handlers.rs`. The auto-extraction path in `extract.rs` was not affected because it calls `insert_new_fact()` which handles the insert. The `/fact add` path has a different control flow (prints messages then returns) which made it vulnerable to this pattern.
 
 **Lesson:** When a contradiction is detected, the replacement fact must be inserted in the **same code path** that detected the contradiction — never assume "fall through to insert below" works, because `return;` exits the entire function.
+
+### 6.12 Bug #5: Accumulative Predicates False Positives
+
+**Discovered by:** Hermes Agent (during smoke test of Bug #3 + #4 fixes)
+**Status:** ✅ FIXED
+
+**Root cause:** `FactTriple::contradicts()` treated ALL same-predicate pairs as contradictions. So "User likes Python" vs "User likes Rust" was flagged as a contradiction. But `likes` is **accumulative** — you CAN like both Python and Rust. Only **exclusive** predicates like `prefers` and `name is` should auto-contradict on different objects.
+
+The nuance: "likes dark mode" vs "likes light mode" SHOULD contradict (same category), but "likes Python" vs "likes Rust" should NOT (different categories).
+
+**Fix — Two-tier logic in `contradicts()`:**
+
+1. **Polarity flip** (`likes X` vs `hates X`) → always contradiction
+2. **Exclusive predicate** (`prefers`, `always prefers`, `name is`, `language is`, `is from`, `lives in`) → any different object = contradiction
+3. **Accumulative predicate** (`likes`, `loves`, `hates`, `uses`) → only contradiction if objects share content words (`object_word_overlap()` > 0.3). "likes dark mode" vs "likes light mode" shares "mode" (overlap = 0.5) → contradiction. "likes Python" vs "likes Rust" shares nothing (overlap = 0.0) → can coexist.
+
+**New code added:**
+
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `is_exclusive_predicate()` | `conflict.rs` | Delegates to `lang::EXCLUSIVE_PREDICATES` |
+| `is_polarity_flip()` | `conflict.rs` | Checks positive vs negative predicate pair |
+| `is_positive_predicate()` | `conflict.rs` | Delegates to `lang::POSITIVE_PREDICATES` |
+| `is_negative_predicate()` | `conflict.rs` | Delegates to `lang::NEGATIVE_PREDICATES` |
+| `object_word_overlap()` | `conflict.rs` | Jaccard-like overlap of content words, excluding stop words |
+
+**New constants in `lang.rs`:**
+
+| Constant | Purpose |
+|----------|---------|
+| `EXCLUSIVE_PREDICATES` | Predicates where only ONE value makes sense (prefers, name is, lives in, etc.) |
+| `POSITIVE_PREDICATES` | Affinity/enjoyment predicates (likes, loves, enjoys, adores) |
+| `NEGATIVE_PREDICATES` | Aversion/dislike predicates (hates, dislikes, doesn't like, detesta, odeia) |
+| `STOP_WORDS` | EN + PT stop words filtered by `object_word_overlap()` (the, a, de, em, etc.) |
+
+**Classification centralization:** All predicate labels in `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` must be classified in exactly one of: `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES`, or `NEUTRAL_PREDICATES`. The `test_all_predicates_classified` unit test enforces this — it panics if any label is missing.
+
+**Known limitation:** "likes vim" vs "likes emacs" → overlap = 0, NOT a contradiction. Arguably correct (you CAN like both editors), but pragmatically most people pick one. Deferred to Phase 2 (LLM adjudication) for gray-area cases.
+
+### 6.13 Exclusive vs Accumulative Predicates
+
+Predicates are classified by their **exclusivity** — whether having one value precludes having another:
+
+| Category | Predicates | Behavior | Examples |
+|----------|-----------|----------|----------|
+| **Exclusive** | prefers, usually prefers, always prefers, never prefers, really prefers, strongly prefers, definitely prefers, personally prefers, often prefers, sometimes prefers, generally prefers, particularly prefers, especially prefers, name is, language is, is from, lives in | Any different object = contradiction | "prefers dark mode" vs "prefers light mode" → UPDATE |
+| **Positive** (accumulative) | likes, usually likes, always likes, really likes, definitely likes, personally likes, often likes, sometimes likes, generally likes, quite likes, loves, usually loves, always loves, really loves, definitely loves, absolutely loves, enjoys, adores | Like + same-category object = contradiction (word overlap > 0.3). Like + different-topic object = coexist. | "likes dark mode" vs "likes light mode" → UPDATE (overlap "mode"). "likes Python" vs "likes Rust" → COEXIST |
+| **Negative** (accumulative) | hates, usually hates, always hates, really hates, definitely hates, absolutely hates, dislikes, really dislikes, personally dislikes, doesn't like, usually doesn't like, can't stand, detesta, odeia | Same logic as positive | "hates verbose output" vs "hates verbose errors" → UPDATE (overlap "verbose") |
+| **Neutral** | works at, works for, works in, speaks, is a, is, has, never prefers, never likes, never hates | No contradiction detection via triples | "works at Google" vs "works at Meta" → COEXIST |
+
+**`object_word_overlap()` threshold:** 0.3 — calculated as `|intersection| / max(|a|, |b|)` where stop words are excluded. This threshold catches same-category pairs ("dark mode" vs "light mode" share "mode" = 0.5) while allowing different-topic pairs ("Python" vs "Rust" = 0.0) to coexist.
 
 ---
 
@@ -989,6 +1045,7 @@ if let Some(facts) = &self.facts {
 7. **L2 ≠ cosine in sqlite-vec** - sqlite-vec defaults to L2 distance, not cosine. The formula `1.0 - L2_distance` is wrong; use `1.0 - (L2_distance² / 2.0)` for L2-normalized vectors. This bug caused the entire Layer 3.5 pipeline to silently fail (all scores ~0.25–0.35 too low)
 8. **Embedding generation must be synchronous** - Fire-and-forget `tokio::spawn` causes race conditions: fact #2's semantic search can't find fact #1's embedding. Use synchronous await instead
 9. **Replacement fact insertion cannot be skipped** - After deleting an old fact in a contradiction path, the replacement MUST be explicitly inserted in the same code path before returning. Bare `return;` after delete loses the replacement fact
+10. **Not all same-predicate pairs are contradictions** - `likes` is accumulative (you can like both Python and Rust), while `prefers` is exclusive (you can only prefer one). Word overlap catches same-category pairs ("likes dark mode" vs "likes light mode" share "mode") but not different topics ("likes Python" vs "likes Rust"). Classification constants in `lang.rs` with enforcement test guarantee completeness.
 
 ---
 

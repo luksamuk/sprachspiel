@@ -1230,6 +1230,51 @@ rm -f ~/.local/share/ask-ai/embeddings.db
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE invalidated_at IS NULL"` → **3**
 - [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
 
+### 21.29 Bug #5 (Hermes): Accumulative Predicates False Positives
+
+> **Bug #5 (Hermes):** `contradicts()` treated ALL same-predicate pairs as contradictions, so "likes Python" vs "likes Rust" was incorrectly flagged. Fixed with two-tier logic: exclusive predicates (prefers, name is) → any different object = contradiction; accumulative predicates (likes, loves, hates) → only if objects share content words (overlap > 0.3). Added `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES`, `STOP_WORDS` in `lang.rs` with enforcement test.
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+#### Accumulative predicates coexist (different topics)
+
+- [ ] `/fact add I like Python` → ✓ Added: "User likes Python"
+- [ ] `/fact add I like Rust` → ✓ Added: "User likes Rust" (NOT a contradiction — different topics, no word overlap)
+- [ ] `/fact list` → shows BOTH facts
+
+#### Accumulative predicates contradict (same category)
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like dark mode` → ✓ Added: "User likes dark mode"
+- [ ] `/fact add I like light mode` → ↻ Updated: "User likes light mode" replaces "User likes dark mode" (overlap "mode" > 0.3)
+- [ ] `/fact list` → shows only ONE fact: "User likes light mode"
+
+#### Exclusive predicates still contradict
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I prefer dark mode` → ✓ Added: "User prefers dark mode"
+- [ ] `/fact add I prefer light mode` → ↻ Updated: "User prefers light mode" (exclusive predicate → always contradiction)
+- [ ] `/fact list` → shows only ONE fact: "User prefers light mode"
+
+#### Polarity flip still contradicts
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like hiking` → ✓ Added: "User likes hiking"
+- [ ] `/fact add I hate hiking` → ↻ Updated: "User hates hiking" replaces "User likes hiking" (polarity flip: likes → hates)
+- [ ] `/fact list` → shows only ONE fact: "User hates hiking"
+
+#### Known limitation: vim/emacs
+
+> "likes vim" vs "likes emacs" → overlap = 0, NOT a contradiction. You CAN like both editors, but pragmatically most people pick one. Deferred to Phase 2 (LLM adjudication).
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like vim` → ✓ Added
+- [ ] `/fact add I like emacs` → ✓ Added (NO word overlap → coexist — this is correct behavior, not a bug)
+- [ ] `/fact list` → shows BOTH facts (this is expected)
+
 ---
 
 ## Results
@@ -1306,5 +1351,5 @@ The script above runs automated tests. The following tests must be run manually:
 15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
-18. **Section 21**: Fact Embedding & Semantic Dedup (schema v11, synchronous embedding, recovery, Layer 3.5, Bug #3/#4, serialization, L2→cosine metric fix, replacement insertion fix, end-to-end verification)
+18. **Section 21**: Fact Embedding & Semantic Dedup (schema v11, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, serialization, L2→cosine metric fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
 These tests require chat interaction and visual verification of results.
