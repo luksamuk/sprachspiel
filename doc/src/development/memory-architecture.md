@@ -105,7 +105,7 @@ User sends message → Add to session → Display to user → End session → Lo
 **What it stores:** All conversation messages with embeddings for semantic search.
 
 **Characteristics:**
-- Persistent SQLite database (`~/.local/share/ask-ai/embeddings.db`)
+- Persistent SQLite database (`~/.local/share/ask-ai/ask-ai.db`)
 - Full-text search via FTS5
 - Vector embeddings for semantic similarity
 - Hybrid retrieval (BM25 + Vector + RRF)

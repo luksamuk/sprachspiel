@@ -85,7 +85,7 @@ graph TB
 | Categories | **2: `preference`, `fact`** | `context` is redundant (handled by RAG) |
 | Classification | **Heuristic only** | 90%+ accuracy, no LLM tokens |
 | Search | **FTS5 + Semantic (Layer 3.5)** | FTS5 for keywords, embeddings for semantic similarity |
-| Storage | **Same DB (`embeddings.db`)** | No separate database |
+| Storage | **Same DB (`ask-ai.db`)** | No separate database |
 | Per-fact limit | **500 chars (hard limit)** | Rejected at DB insert |
 | Total prompt limit | **2200 chars (soft limit)** | Truncated with Unicode-safe `truncate_chars` |
 | Conflict resolution | **6-layer dedup** | Exact → Normalized → Semantic (0.70, triple + polarity) → FTS5 (0.75) → Startup verification (0.90) → Global-wins-project |
@@ -118,7 +118,7 @@ graph TB
 | `project` | Facts specific to current project | `project_id` column in facts table |
 | `global` | Facts that apply to all projects | `project_id = NULL` |
 
-**Note:** Both use the same database (`embeddings.db`), not separate files.
+**Note:** Both use the same database (`ask-ai.db`), not separate files.
 
 ---
 
@@ -232,7 +232,7 @@ CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
 
 ### 3.2 Storage Location
 
-- **All facts**: Same database as embeddings (`~/.local/share/ask-ai/embeddings.db`)
+- **All facts**: Same database as embeddings (`~/.local/share/ask-ai/ask-ai.db`)
 - **Project facts**: Filtered by `project_id` column
 - **Global facts**: `project_id = NULL`
 

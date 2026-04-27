@@ -15,13 +15,24 @@ pub struct Database {
 }
 
 impl Database {
-    /// Create a new database at the default storage location
+    /// Create a new database at the default storage location.
+    ///
+    /// Also handles migration from the legacy `embeddings.db` filename.
     pub fn new() -> Result<Self> {
         let path = Self::get_storage_path();
+        Self::with_path(&path)
+    }
+
+    /// Create a database at an explicit path.
+    ///
+    /// Creates parent directories if they don't exist.
+    /// Does NOT perform legacy filename migration (caller should use
+    /// `get_storage_path()` for default paths where migration is desired).
+    pub fn with_path(path: &PathBuf) -> Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        Self::open(&path)
+        Self::open(path)
     }
 
     /// Create an in-memory database (for testing)
@@ -685,20 +696,60 @@ impl Database {
         }
     }
 
-    /// Get the default storage path (~/.local/share/ask-ai/embeddings.db)
+    /// Get the default storage path (~/.local/share/ask-ai/ask-ai.db)
+    ///
+    /// Also handles migration from the legacy `embeddings.db` filename:
+    /// if `embeddings.db` exists but `ask-ai.db` doesn't, it will be
+    /// automatically renamed.
     pub fn get_storage_path() -> PathBuf {
+        let path = Self::resolve_storage_path();
+        Self::migrate_legacy_db(&path);
+        path
+    }
+
+    /// Resolve the storage path without performing migration.
+    fn resolve_storage_path() -> PathBuf {
+        const DB_FILENAME: &str = "ask-ai.db";
+
         if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
-            PathBuf::from(data_home)
-                .join("ask-ai")
-                .join("embeddings.db")
+            PathBuf::from(data_home).join("ask-ai").join(DB_FILENAME)
         } else if let Some(home_dir) = dirs::home_dir() {
             home_dir
                 .join(".local")
                 .join("share")
                 .join("ask-ai")
-                .join("embeddings.db")
+                .join(DB_FILENAME)
         } else {
-            PathBuf::from(".ask-ai").join("embeddings.db")
+            PathBuf::from(".ask-ai").join(DB_FILENAME)
+        }
+    }
+
+    /// Rename `embeddings.db` → `ask-ai.db` if the old file exists and the new one doesn't.
+    fn migrate_legacy_db(new_path: &PathBuf) {
+        let new_filename = new_path.file_name().unwrap_or_default().to_string_lossy();
+        let old_filename = "embeddings.db";
+
+        if new_filename == old_filename {
+            return; // Already using legacy name, nothing to migrate
+        }
+
+        let old_path = new_path.with_file_name(old_filename);
+
+        if old_path.exists() && !new_path.exists() {
+            if let Err(e) = std::fs::rename(&old_path, new_path) {
+                log::warn!(
+                    "Failed to migrate legacy database {} → {}: {}",
+                    old_path.display(),
+                    new_path.display(),
+                    e
+                );
+            } else {
+                log::info!(
+                    "Migrated legacy database: {} → {}",
+                    old_path.display(),
+                    new_path.display()
+                );
+            }
         }
     }
 

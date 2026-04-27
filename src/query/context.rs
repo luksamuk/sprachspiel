@@ -165,6 +165,7 @@ impl QueryContextBuilder {
             ollama.clone(),
             skip_persistence,
             log::log_enabled!(log::Level::Debug),
+            None, // Use default database path
         );
 
         let retrieval_enabled = db.is_some() && embedding_client.is_some();

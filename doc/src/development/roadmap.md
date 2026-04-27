@@ -349,7 +349,7 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 
 | Storage | Status | Description |
 |---------|--------|-------------|
-| SQLite | 🟢 Primary | `~/.local/share/ask-ai/embeddings.db` |
+| SQLite | 🟢 Primary | `~/.local/share/ask-ai/ask-ai.db` |
 | JSON | 🟡 Backup | Only for `/export json` and `/restore` command |
 
 **Note:** `/restore` command is kept indefinitely for disaster recovery from JSON backups.

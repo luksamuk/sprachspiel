@@ -24,10 +24,10 @@ cargo build --release --features all-tools
 ollama serve  # In another terminal
 
 # Backup user's existing database
-cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.smoke-backup 2>/dev/null || true
+cp ~/.local/share/ask-ai/ask-ai.db ~/.local/share/ask-ai/ask-ai.db.smoke-backup 2>/dev/null || true
 
 # Use temporary database for tests (isolation)
-rm -f ~/.local/share/ask-ai/embeddings.db
+rm -f ~/.local/share/ask-ai/ask-ai.db
 ```
 
 ## Test Model
@@ -308,8 +308,8 @@ timeout 120 ./target/release/ask-ai query "What is 2+2?"
 ## 9. Database
 
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"
-sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db ".tables"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA user_version;"
 ```
 
 - [ ] Tables exist (content, facts, conversations, session_todos, etc.)
@@ -317,22 +317,22 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
 
 **Explicit verification:**
 ```bash
-SCHEMA_VER=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;")
+SCHEMA_VER=$(sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA user_version;")
 [ "$SCHEMA_VER" -ge 11 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 11"
 ```
 
 **Verify priority/tags columns in session_todos (v9):**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(session_todos);"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA table_info(session_todos);"
 # Must include columns: priority (TEXT) and tags (TEXT)
 ```
 
 **Verify v10 additions:**
 ```bash
 # Verify feedback_signals table (v10)
-sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables" | grep -q "feedback_signals" && echo "✓ feedback_signals table" || echo "✗ feedback_signals table missing"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db ".tables" | grep -q "feedback_signals" && echo "✓ feedback_signals table" || echo "✗ feedback_signals table missing"
 # Verify pruned column in content_items (v10)
-sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(content_items);" | grep -q "pruned" && echo "✓ pruned column" || echo "✗ pruned column missing"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA table_info(content_items);" | grep -q "pruned" && echo "✓ pruned column" || echo "✗ pruned column missing"
 ```
 
 **Verify v12 additions:**
@@ -340,7 +340,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(content_items);" 
 # Verify has_embedding column in facts table
 
 # Verify fact_embeddings vec0 table with distance_metric=cosine
-sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables" | grep -q "fact_embeddings" && echo "✓ fact_embeddings table" || echo "✗ fact_embeddings table missing"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db ".tables" | grep -q "fact_embeddings" && echo "✓ fact_embeddings table" || echo "✗ fact_embeddings table missing"
 ```
 
 ---
@@ -455,8 +455,8 @@ rm -f /tmp/truncation_test.txt /tmp/search_truncation_test.txt /tmp/unicode_test
 
 ```bash
 # Restore user's database
-rm -f ~/.local/share/ask-ai/embeddings.db
-mv ~/.local/share/ask-ai/embeddings.db.smoke-backup ~/.local/share/ask-ai/embeddings.db 2>/dev/null || true
+rm -f ~/.local/share/ask-ai/ask-ai.db
+mv ~/.local/share/ask-ai/ask-ai.db.smoke-backup ~/.local/share/ask-ai/ask-ai.db 2>/dev/null || true
 
 # Clean up test files (/tmp and ~)
 rm -f /tmp/test.txt /tmp/test.md /tmp/test.org /tmp/empty.txt
@@ -609,15 +609,15 @@ Verify `[feedback]` section in config.toml (or defaults work without it):
 
 ```bash
 # Check schema version (must be 12 or higher)
-sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA user_version;"
 # Expected: 10 or higher
 
 # Check feedback_signals table exists
-sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db ".tables"
 # Expected: includes feedback_signals
 
 # Check pruned column in content_items
-sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(content_items);"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA table_info(content_items);"
 # Expected: includes pruned column (INTEGER NOT NULL DEFAULT 0)
 ```
 
@@ -659,14 +659,14 @@ Verify end-to-end feedback boost in retrieval and fractional-day decay accuracy 
 - [ ] Verify message with positive feedback ranks higher in search results
 - [ ] Verify database shows feedback signals with correct boost values:
   ```bash
-  sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT item_id, signal_type, base_value, source FROM feedback_signals;"
+  sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT item_id, signal_type, base_value, source FROM feedback_signals;"
   ```
 
 ### 18.2 Facts Prune Cycle
 
 - [ ] Add fact: `/fact add "Test decay fact"`
 - [ ] Run `/fact prune` → fresh fact NOT pruned
-- [ ] Age a fact in DB: `sqlite3 ~/.local/share/ask-ai/embeddings.db "UPDATE facts SET last_accessed = strftime('%s','now','-365 days') WHERE id = (SELECT MAX(id) FROM facts);"`
+- [ ] Age a fact in DB: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "UPDATE facts SET last_accessed = strftime('%s','now','-365 days') WHERE id = (SELECT MAX(id) FROM facts);"`
 - [ ] Run `/fact prune` → aged fact IS pruned
 - [ ] Add preference with high importance (>=0.8) and age it → NOT pruned
 
@@ -676,9 +676,9 @@ Verify the `num_days()` truncation fix produces accurate values at non-boundary 
 
 - [ ] Insert Good signal at 30.5 days ago:
   ```bash
-  SIGNAL_TS=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT strftime('%s','now','-30.5 days');")
-  ITEM_ID=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id FROM content_items WHERE content_type='message' ORDER BY id DESC LIMIT 1;")
-  sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO feedback_signals (item_id, session_id, signal_type, base_value, source, created_at) VALUES ($ITEM_ID, 'test', 'good', 1.0, 'user', $SIGNAL_TS);"
+  SIGNAL_TS=$(sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT strftime('%s','now','-30.5 days');")
+  ITEM_ID=$(sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT id FROM content_items WHERE content_type='message' ORDER BY id DESC LIMIT 1;")
+  sqlite3 ~/.local/share/ask-ai/ask-ai.db "INSERT INTO feedback_signals (item_id, session_id, signal_type, base_value, source, created_at) VALUES ($ITEM_ID, 'test', 'good', 1.0, 'user', $SIGNAL_TS);"
   ```
 - [ ] Computed boost should be ≈ 0.484 (NOT 0.5 which truncated `num_days()` would give)
 - [ ] Verify no hardcoded `2.0` for boost clamping — `MAX_FEEDBACK_BOOST` constant used everywhere:
@@ -717,7 +717,7 @@ Verify that preference and identity facts are auto-extracted from user messages 
 
 > **⚠️ Clean database recommended before starting this section.**  
 > ```bash
-> rm -f ~/.local/share/ask-ai/embeddings.db
+> rm -f ~/.local/share/ask-ai/ask-ai.db
 > ```
 > This ensures a clean state for dedup and embedding tests.
 
@@ -844,7 +844,7 @@ Verify that preference and identity facts are auto-extracted from user messages 
 ### 20.17 Global Facts: project_id=None (Bug #1/6 fix)
 
 - [ ] Send: "I prefer dark mode" → fact auto-extracted as Global
-- [ ] Check database: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, content, scope, project_id FROM facts WHERE content LIKE '%dark mode%'"`
+- [ ] Check database: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT id, content, scope, project_id FROM facts WHERE content LIKE '%dark mode%'"`
 - [ ] Verify: `project_id` column is **NULL** for Global scope facts
 
 ### 20.18 Exact Content Dedup (Retest #1 fix)
@@ -896,17 +896,17 @@ Verify that preference and identity facts are auto-extracted from user messages 
 
 > **⚠️ Clean database recommended before starting this section.**  
 > ```bash
-> rm -f ~/.local/share/ask-ai/embeddings.db
+> rm -f ~/.local/share/ask-ai/ask-ai.db
 > ```
 > This ensures a clean state for embedding and dedup tests.
 
 ### 21.1 Schema Migration: v11 → v12
 
 - [ ] Start a fresh chat session → no errors
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"` → returns **12**
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
-- [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA user_version;"` → returns **12**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
+- [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
 
 ### 21.2 Fact Insertion Generates Embedding (Synchronous)
 
@@ -914,20 +914,20 @@ Verify that preference and identity facts are auto-extracted from user messages 
 
 - [ ] Ask LLM: "Remember that I prefer concise output" (triggers `fact_add`)
 - [ ] Embedding is generated **synchronously** — no need to wait
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%concise%'"` → **has_embedding = 1**
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM fact_embeddings"` → **≥ 1** row
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%concise%'"` → **has_embedding = 1**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM fact_embeddings"` → **≥ 1** row
 
 ### 21.3 Auto-Extraction Generates Embedding (Synchronous)
 
 - [ ] Send: "I prefer dark mode" → wait for `[Auto-extracted]` notification
 - [ ] Embedding is generated **synchronously** — no need to wait
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%dark mode%'"` → **has_embedding = 1**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%dark mode%'"` → **has_embedding = 1**
 
 ### 21.4 Startup Recovery: Missing Embeddings
 
-- [ ] Manually reset embedding flag: `sqlite3 ~/.local/share/ask-ai/embeddings.db "UPDATE facts SET has_embedding = 0"`
+- [ ] Manually reset embedding flag: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "UPDATE facts SET has_embedding = 0"`
 - [ ] Quit and restart chat → should see `Recovering N missing fact embedding(s)` in logs (or silent if no output)
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
 - [ ] Check logs for post-recovery verification: should warn if any facts still lack embeddings after recovery
 
 ### 21.5 Ollama Offline: Graceful Degradation
@@ -935,10 +935,10 @@ Verify that preference and identity facts are auto-extracted from user messages 
 - [ ] Stop Ollama (`pkill ollama` or similar)
 - [ ] Start chat with `ask-ai chat` → should NOT crash
 - [ ] Ask LLM: "Remember that my favorite color is blue" → fact stored, `has_embedding = 0` (no crash)
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%blue%'"` → **has_embedding = 0**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%blue%'"` → **has_embedding = 0**
 - [ ] Restart Ollama
 - [ ] Quit and restart chat → recovery generates missing embeddings
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
 
 ### 21.6 Semantic Contradiction Detection (Bug #3 fix — Layer 3.5 with triple disambiguation)
 
@@ -947,14 +947,14 @@ Verify that preference and identity facts are auto-extracted from user messages 
 **Clean state first:**
 ```bash
 # Remove all facts for clean test
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] Send: "I prefer dark mode" → stored as preference "User prefers dark mode"
 - [ ] Embedding is generated synchronously — no need to wait
 - [ ] Send: "I prefer light mode" → should UPDATE (not duplicate) the existing fact via semantic triple contradiction (same predicate "prefers", different object)
 - [ ] `/fact list` → shows "User prefers light mode" (NOT both "dark" and "light")
-- [ ] Verify embedding: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE content LIKE '%light mode%' AND has_embedding = 1"` → **1**
+- [ ] Verify embedding: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM facts WHERE content LIKE '%light mode%' AND has_embedding = 1"` → **1**
 
 ### 21.7 Semantic Duplicate Detection: Paraphrase (Layer 3.5)
 
@@ -967,14 +967,14 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 - [ ] Note the ID of a fact with `has_embedding = 1`: `/fact list`
 - [ ] `/fact remove <ID>` → removes fact
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM fact_embeddings WHERE fact_id = <ID>"` → **0** (embedding also removed)
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM fact_embeddings WHERE fact_id = <ID>"` → **0** (embedding also removed)
 
 ### 21.9 Shutdown Flush
 
 - [ ] Start chat, extract some facts
 - [ ] Immediately `/exit` → should complete without error
 - [ ] Restart → no "Recovering" message for facts (embeddings generated synchronously at insert time)
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
 
 ### 21.10 Startup Semantic Dedup Verification
 
@@ -982,8 +982,8 @@ This test requires manually inserting two semantically similar facts (without em
 
 ```bash
 # Insert two similar facts about the same preference
-sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category, content, importance, decay_score, created_at, last_accessed, source, has_embedding) VALUES ('global', 'preference', 'I prefer dark mode', 0.5, 1.0, $(date +%s), $(date +%s), 'user', 0);"
-sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category, content, importance, decay_score, created_at, last_accessed, source, has_embedding) VALUES ('global', 'preference', 'I like dark mode', 0.5, 1.0, $(date +%s), $(date +%s), 'user', 0);"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "INSERT INTO facts (scope, category, content, importance, decay_score, created_at, last_accessed, source, has_embedding) VALUES ('global', 'preference', 'I prefer dark mode', 0.5, 1.0, $(date +%s), $(date +%s), 'user', 0);"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "INSERT INTO facts (scope, category, content, importance, decay_score, created_at, last_accessed, source, has_embedding) VALUES ('global', 'preference', 'I like dark mode', 0.5, 1.0, $(date +%s), $(date +%s), 'user', 0);"
 ```
 
 - [ ] Insert two similar facts (as above)
@@ -1007,7 +1007,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 - [ ] NO crash or panic during rapid insertion
 - [ ] All 5 facts should have embeddings (generated synchronously — no need to wait):
   ```bash
-  sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 1 AND invalidated_at IS NULL"
+  sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 1 AND invalidated_at IS NULL"
   ```
   Should be **≥ 5** (more if previous facts exist)
 - [ ] Check for timeout errors in logs (should be none or very rare under normal conditions)
@@ -1043,14 +1043,14 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 - [ ] `/fact add User prefers dark mode` → **Skipped: Similar fact** (Layer 2, normalized match)
 - [ ] `/fact add I like dark mode` → Layer 3.5 should catch as paraphrase or FTS5 as similar
 - [ ] `/fact add I prefer light mode` → should **UPDATE** existing preference (semantic triple contradiction: same predicate "prefers", different object)
-- [ ] Verify embedding exists: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE content LIKE '%light mode%'"` → **has_embedding = 1**
+- [ ] Verify embedding exists: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT content, has_embedding FROM facts WHERE content LIKE '%light mode%'"` → **has_embedding = 1**
 
 ### 21.15 `/tools` Toggle for Layer 3.5 Testing (Bug #4 smoke test #2)
 
 > **Bug #4 investigation (smoke test #2):** Some LLM models proactively call `fact_add` when they detect a contradiction, which makes it hard to test auto-extraction-based Layer 3.5. The `/tools` command disables LLM tool calls for the session, allowing auto-extraction to be tested independently.
 
 **Procedure:**
-1. Clean state: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+1. Clean state: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 2. Start chat: `ask-ai chat`
 3. `/tools` → should print **"Tools: disabled"**
 4. Send: "I prefer dark mode" → auto-extraction should store via `normalize_to_storage_format()` (embedding generated synchronously)
@@ -1066,7 +1066,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category,
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add I prefer dark mode` → ✓ Added: "User prefers dark mode"
@@ -1077,7 +1077,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add I really like vim` → ✓ Added: "User really likes vim"
@@ -1088,7 +1088,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add I live in São Paulo` → ✓ Added: "User lives in São Paulo"
@@ -1099,7 +1099,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add My name is Lucas` → ✓ Added: "User's name is Lucas"
@@ -1110,7 +1110,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add I like Python` → ✓ Added: "User likes Python"
@@ -1121,7 +1121,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add I don't like verbose output` → ✓ Added: "User doesn't like verbose output"
@@ -1132,7 +1132,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add Eu prefiro modo escuro` → ✓ Added: "User prefers modo escuro" (PT→EN translation, noun preserved)
@@ -1143,7 +1143,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add Meu nome é Lucas` → ✓ Added: "User's name is Lucas" (NOT "My name is Lucas" — ADR-E4 fix)
@@ -1154,7 +1154,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add The project uses SQLite` → ✓ Added (no triple extracted — subject ≠ "user")
@@ -1165,7 +1165,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] Start chat: `ask-ai chat`
@@ -1179,7 +1179,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add I prefer dark mode` → ✓ Added (embedding generated synchronously)
@@ -1194,16 +1194,16 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 - [ ] `/fact add I prefer dark mode` → ✓ Added: "User prefers dark mode"
 - [ ] `/fact add I prefer light mode` → ↻ Updated
 - [ ] `/fact list` → shows **"User prefers light mode"** (NOT empty — replacement was inserted)
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE invalidated_at IS NULL"` → exactly ONE fact with **has_embedding = 1**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT content, has_embedding FROM facts WHERE invalidated_at IS NULL"` → exactly ONE fact with **has_embedding = 1**
 
 **Also test polarity path:**
-- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 - [ ] `/fact add I like hiking` → ✓ Added: "User likes hiking"
 - [ ] `/fact add I hate hiking` → ↻ Updated: "User hates hiking" replaces "User likes hiking" (polarity opposition)
 - [ ] `/fact list` → shows **"User hates hiking"** (NOT empty — replacement was inserted)
@@ -1216,7 +1216,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 **Clean state first:**
 ```bash
-rm -f ~/.local/share/ask-ai/embeddings.db
+rm -f ~/.local/share/ask-ai/ask-ai.db
 ```
 
 - [ ] Start chat: `ask-ai chat`
@@ -1228,8 +1228,8 @@ rm -f ~/.local/share/ask-ai/embeddings.db
 - [ ] `/fact add I live in São Paulo` → ✓ Added
 - [ ] `/fact add I live in Recife` → ↻ Updated (location change via triple)
 - [ ] `/fact list` → shows exactly THREE facts: one about display mode, "User's name is Maria", "User lives in Recife", all with has_embedding = 1
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE invalidated_at IS NULL"` → **3**
-- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM facts WHERE invalidated_at IS NULL"` → **3**
+- [ ] `sqlite3 ~/.local/share/ask-ai/ask-ai.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
 
 ### 21.29 Bug #5 (Hermes): Accumulative Predicates False Positives
 
@@ -1237,7 +1237,7 @@ rm -f ~/.local/share/ask-ai/embeddings.db
 
 **Clean state first:**
 ```bash
-sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
 #### Accumulative predicates coexist (different topics)
@@ -1248,21 +1248,21 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 #### Accumulative predicates contradict (same category)
 
-- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 - [ ] `/fact add I like dark mode` → ✓ Added: "User likes dark mode"
 - [ ] `/fact add I like light mode` → ↻ Updated: "User likes light mode" replaces "User likes dark mode" (overlap "mode" > 0.3)
 - [ ] `/fact list` → shows only ONE fact: "User likes light mode"
 
 #### Exclusive predicates still contradict
 
-- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 - [ ] `/fact add I prefer dark mode` → ✓ Added: "User prefers dark mode"
 - [ ] `/fact add I prefer light mode` → ↻ Updated: "User prefers light mode" (exclusive predicate → always contradiction)
 - [ ] `/fact list` → shows only ONE fact: "User prefers light mode"
 
 #### Polarity flip still contradicts
 
-- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 - [ ] `/fact add I like hiking` → ✓ Added: "User likes hiking"
 - [ ] `/fact add I hate hiking` → ↻ Updated: "User hates hiking" replaces "User likes hiking" (polarity flip: likes → hates)
 - [ ] `/fact list` → shows only ONE fact: "User hates hiking"
@@ -1271,7 +1271,7 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated
 
 > "likes vim" vs "likes emacs" → overlap = 0, NOT a contradiction. You CAN like both editors, but pragmatically most people pick one. Deferred to Phase 2 (LLM adjudication).
 
-- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
 - [ ] `/fact add I like vim` → ✓ Added
 - [ ] `/fact add I like emacs` → ✓ Added (NO word overlap → coexist — this is correct behavior, not a bug)
 - [ ] `/fact list` → shows BOTH facts (this is expected)
@@ -1305,7 +1305,7 @@ echo "=== Automated Smoke Test ==="
 
 # 1. Backup database
 echo "Backing up database..."
-cp ~/.local/share/ask-ai/embeddings.db ~/.local/share/ask-ai/embeddings.db.smoke-backup 2>/dev/null || true
+cp ~/.local/share/ask-ai/ask-ai.db ~/.local/share/ask-ai/ask-ai.db.smoke-backup 2>/dev/null || true
 
 # 2. Build
 echo "Building..."
@@ -1322,7 +1322,7 @@ cargo test --lib 2>&1 | tail -5
 echo "✓ Unit tests"
 
 # 5. Restore
-mv ~/.local/share/ask-ai/embeddings.db.smoke-backup ~/.local/share/ask-ai/embeddings.db 2>/dev/null || true
+mv ~/.local/share/ask-ai/ask-ai.db.smoke-backup ~/.local/share/ask-ai/ask-ai.db 2>/dev/null || true
 
 echo ""
 echo "=== Automated Smoke Test Complete ==="
