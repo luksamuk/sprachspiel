@@ -1,5 +1,7 @@
 # Ask-AI Documentation
 
+<img src="assets/ask-ai-banner.png" alt="Ask-AI banner" width="100%">
+
 Welcome to the Ask-AI documentation! This is a comprehensive guide for the Ask-AI command-line tool - a powerful Rust CLI for interacting with Ollama LLM models.
 
 ## What is Ask-AI?

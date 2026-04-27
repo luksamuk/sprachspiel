@@ -1,7 +1,5 @@
 # Introduction
 
-<img src="assets/ask-ai-banner.png" alt="Ask-AI banner" width="100%">
-
 Ask-AI is a powerful command-line interface for interacting with Large Language Models (LLMs) through Ollama. Built in Rust for performance and reliability, it brings AI capabilities directly to your terminal with an elegant, markdown-rendered output.
 
 ## Why Ask-AI?
