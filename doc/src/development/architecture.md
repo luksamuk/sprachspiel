@@ -132,38 +132,65 @@ graph LR
 
 #### Database (`src/db/`)
 
-SQLite database for conversation history and embeddings:
+SQLite database for conversation history, content, facts, and embeddings:
 
-- **Messages**: User/assistant/tool messages
-- **Conversations**: Session metadata with project tracking  
-- **Embeddings**: Vector embeddings for semantic search
-- **Chunks**: Long message segments for retrieval
+- **Content Items**: Messages, notes, and documents (unified in v4)
+- **Content Chunks**: Long message segments for retrieval
+- **Facts**: User preferences and project facts with 6-layer dedup
+- **Feedback Signals**: Per-message quality tracking
+- **Conversations**: Session metadata with project tracking
+- **Embeddings**: Vector embeddings (cosine distance, v12)
 
 ```mermaid
 erDiagram
-    CONVERSATIONS ||--o{ MESSAGES : contains
-    MESSAGES ||--o{ MESSAGE_CHUNKS : has
-    MESSAGES ||--o| MESSAGE_EMBEDDINGS : has
-    CHUNKS ||--o| CHUNK_EMBEDDINGS : has
-    
+    CONVERSATIONS ||--o{ CONTENT_ITEMS : contains
+    CONTENT_ITEMS ||--o{ CONTENT_CHUNKS : has
+    CONTENT_ITEMS ||--o| CONTENT_EMBEDDINGS : has
+    CONTENT_CHUNKS ||--o| CHUNK_EMBEDDINGS : has
+    CONTENT_ITEMS ||--o{ FEEDBACK_SIGNALS : receives
+    FACTS ||--o| FACT_EMBEDDINGS : has
+
     CONVERSATIONS {
         string id PK
         string project_id
         datetime created_at
         string model_id
     }
-    
-    MESSAGES {
+
+    CONTENT_ITEMS {
         int id PK
         string conversation_id FK
+        string content_type
         string role
         string content
         datetime timestamp
+        float importance
+        float decay_score
+        int has_embedding
     }
-    
+
+    FACTS {
+        int id PK
+        string scope
+        string category
+        string content
+        float importance
+        float decay_score
+        int has_embedding
+        datetime invalidated_at
+    }
+
+    FEEDBACK_SIGNALS {
+        int id PK
+        int item_id FK
+        string signal_type
+        datetime created_at
+    }
+
     EMBEDDINGS {
-        blob embedding
+        int id PK
         float distance
+        string vec0_cosine_distance_metric
     }
 ```
 

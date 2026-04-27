@@ -257,7 +257,7 @@ This design is based on ["Lost in the Middle: How Language Models Use Long Conte
 **What it stores:** Extracted facts and user preferences that persist across sessions.
 
 **Characteristics:**
-- SQLite + FTS5 keyword search + fact_embeddings vec0 (256d Matryoshka)
+- SQLite + FTS5 keyword search + fact_embeddings vec0 (256d nomic-embed-text-v2-moe, distance_metric=cosine)
 - Automatic classification (preference vs fact)
 - Ebbinghaus decay curve for automatic pruning
 - 6-layer conflict resolution for duplicate/contradictory facts
@@ -345,17 +345,19 @@ Retention = e^(-t / half_life)
 
 **Embedding-Based Semantic Dedup (Layer 3.5):**
 
-When FTS5 doesn't find a conflict and the candidate is a `Category::Preference` fact, Layer 3.5 generates an embedding and searches `fact_embeddings` via `search_facts_semantic()`:
-- **Cosine similarity ≥ 0.90** → semantic match found
+When FTS5 doesn't find a conflict and the candidate is a `Category::Preference` fact, Layer 3.5 generates an embedding and searches `fact_embeddings` via `search_facts_semantic()` (cosine ≥ 0.70):
+- **Cosine similarity ≥ 0.70** → semantic match found (candidate for contradiction or duplicate)
 - **Contradiction detected** (e.g., "prefer dark mode" vs "prefer light mode") → **Update** (replace old)
 - **Duplicate, no contradiction** (e.g., "prefer dark mode" vs "like dark mode") → **Skip**
 - **No similar fact found** → **Add** (insert new fact)
 
+Triple-based disambiguation classifies predicates as **exclusive** (`prefers`, `name is`, `works at`) — always contradictory — or **accumulative** (`likes`, `loves`, `enjoys`) — contradictory only when objects share word overlap > 0.3. Polarity flips (`likes` → `hates`) always contradict.
+
 Embeddings are generated eagerly at insert time via `EmbeddingClient::embed()` serialized through `Semaphore(1)` with a 30-second timeout. If Ollama is unavailable, `has_embedding = 0` and startup recovery catches up.
 
-**Startup Verification:** `verify_and_dedup_facts()` performs O(n²) pair-wise cosine comparison on all facts with embeddings, catching any duplicates that slipped through insert-time checks.
+**Startup Verification:** `verify_and_dedup_facts()` performs O(n²) pair-wise cosine comparison on all facts with embeddings (threshold ≥ 0.90), catching any duplicates that slipped through insert-time checks.
 
-**Conflict Resolution (5-Layer Dedup):**
+**Conflict Resolution (6-Layer Dedup):**
 
 ```mermaid
 graph LR
@@ -363,16 +365,16 @@ graph LR
     B -->|Found| C{Duplicate?}
     B -->|Not found| D[Layer 2: Normalized Match]
     D -->|Found| C
-    D -->|Not found| E[Layer 3: FTS5 BM25 ≥ 0.75]
-    E -->|Found| F{Contradiction?}
-    E -->|Not found| G[Layer 3.5: Semantic Embedding ≥ 0.90]
-    G -->|Found| F
-    G -->|Not found| H[Layer 4: Insert New]
+    D -->|Not found| E2[Layer 3.5: Semantic + Triple Disambiguation ≥ 0.70]
+    E2 -->|Found| F{Contradiction?}
+    E2 -->|Not found| E[Layer 3: FTS5 BM25 ≥ 0.75]
+    E -->|Found| F
+    E -->|Not found| H[Insert New + Generate Embedding]
     F -->|Yes| I[Update Existing]
     F -->|No| J[Skip Duplicate]
     C -->|Yes| J
     C -->|Contradiction| I
-    
+
     style A fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
     style H fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
     style I fill:#fff3e0,stroke:#ef6c00,color:#e65100
@@ -381,10 +383,11 @@ graph LR
 
 **Layers:**
 1. **Exact match** — case-insensitive, trimmed comparison
-2. **Normalized match** — `normalize_for_comparison()` strips pronouns/subjects
-3. **FTS5 BM25** — keyword search, threshold 0.75
-4. **Layer 3.5: Semantic embedding** — cosine similarity ≥ 0.90 for preference facts (catches "prefer dark mode" vs "prefer light mode")
-5. **Global-wins-project** — Global fact replaces conflicting Project fact
+2. **Normalized match** — `normalize_for_comparison()` strips pronouns/subjects, third-person normalization (ADR-E4)
+3. **Layer 3.5: Semantic embedding + triple disambiguation** — cosine ≥ 0.70; exclusive predicates always contradict, accumulative predicates contradict only with word overlap > 0.3, polarity flips always contradict
+4. **FTS5 BM25** — keyword search, threshold 0.75
+5. **Startup verification** — O(n²) pairwise cosine ≥ 0.90
+6. **Global-wins-project** — Global fact replaces conflicting Project fact
 
 **User Commands:**
 
