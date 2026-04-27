@@ -49,16 +49,22 @@ Pages that `pdftotext` couldn't properly extract need further processing. **Choo
    ```bash
    run_command("pdftoppm", ["-png", "-f", "<start>", "-l", "<end>", "-r", "150", "<file.pdf>", "output"])
    ```
-2. For tables, formulas, or scanned text — use OCR:
+2. For tables, formulas, or scanned text — use the **OCR tool** (calls GLM-OCR internally):
    ```
-   ask ocr --table output-3.png
-   ask ocr --formula output-5.png
+   Use the ocr tool with the page image file(s)
    ```
-3. For charts, graphs, diagrams, or visual figures — use vision:
+3. For charts, graphs, diagrams, or visual figures — use the **vision tool** (calls vision model internally):
    ```
-   ask vision --pages <range> <file.pdf>
+   Use the vision tool with the PDF file (use --pages for specific pages)
    ```
-4. If OCR results are unsatisfying (e.g., a chart with labels OCR can't interpret), escalate to vision
+4. If OCR results are unsatisfying (e.g., a chart with labels OCR can't interpret), escalate to the vision tool
+
+**Important: tool access depends on context:**
+- **In chat mode (with tools)**: Call the `ocr` and `vision` tools directly — these invoke the built-in sub-agents.
+  - ⚠️ **Limitation**: The vision tool does NOT support `--pages` parameter. For PDF page selection, use `pdftoppm` to convert specific pages to images first, then pass those images to the vision/ocr tool.
+  - Example workflow: `run_command("pdftoppm", ["-png", "-f", "3", "-l", "3", "-r", "150", "doc.pdf", "page"])` → then `vision tool with page-3.png`
+- **In CLI mode (standalone)**: Use `ask-ai ocr <image.png>` or `ask-ai vision --pages <range> <file.pdf>`. The `--pages` flag works in CLI mode.
+- **In the document subagent**: Only `run_command` is available. Convert pages with `pdftoppm`, then recommend the user run OCR/vision on the resulting images.
 
 **Quick reference:**
 | Content type | Primary tool | When to escalate |
@@ -279,7 +285,7 @@ binary = "epub2txt"
 
 ### PDF Errors
 
-- **Empty output from pdftotext**: Page likely contains images/charts. Use `ask vision --pages <N> <file.pdf>`.
+- **Empty output from pdftotext**: Page likely contains images/charts. Use the vision tool with the PDF file, or run `ask-ai vision --pages <N> <file.pdf>` in CLI mode.
 - **Permission denied**: File may be encrypted or DRM-protected.
 - **Memory issues**: Large files may need page-by-page processing using `-f` and `-l` flags.
 - **Invalid PDF**: File may be corrupted. Try `pdfinfo` first to check validity.
@@ -312,7 +318,11 @@ pdfinfo document.pdf | grep Pages
 
 ### Analyze PDF pages with vision (tables, charts, formulas)
 ```bash
-ask vision --pages 1-5 document.pdf
+# CLI mode:
+ask-ai vision --pages 1-5 document.pdf
+# Chat mode (with tools):
+# Use the vision tool with the PDF file path
+# Note: page selection via tool is not yet supported — use pdftoppm to convert specific pages first
 ```
 
 ### Extract text from ePub preserving chapters
@@ -333,5 +343,6 @@ pdftotext document.pdf - | grep -n "search term"
 ### Convert specific page to image for vision
 ```bash
 pdftoppm -png -f 3 -l 3 -r 150 document.pdf output
-ask vision output-3.png "Describe the table in this image"
+# Then use the vision tool with output-3.png, or in CLI mode:
+ask-ai vision output-3.png "Describe the table in this image"
 ```
