@@ -560,6 +560,119 @@ pub const TRIPLE_IDENTITY_PREFIXES: &[(&str, &str)] = &[
     ("i am ", "is"),
 ];
 
+// === Predicate Classification Constants (for contradiction detection) ===
+//
+// These classify the predicate labels from TRIPLE_PREFERENCE_PREFIXES and
+// TRIPLE_IDENTITY_PREFIXES by their semantic properties. Used by
+// `conflict::FactTriple::contradicts()` and `conflict::is_polarity_flip()`.
+//
+// When adding a new predicate label to TRIPLE_*_PREFIXES, you MUST also
+// classify it here. The `test_all_predicates_classified` unit test enforces
+// this — it will fail if any label is missing.
+
+/// Predicate labels that are **mutually exclusive** — you can only have one.
+///
+/// "prefers X" means X is THE choice, so "prefers Y" is a contradiction.
+/// "name is X" means your name IS X, so "name is Y" replaces it.
+///
+/// All other predicates (likes, loves, hates, etc.) are **accumulative** —
+/// you can like both Python and Rust.
+pub const EXCLUSIVE_PREDICATES: &[&str] = &[
+    // Preference variants (all "prefers" combos)
+    "prefers",
+    "usually prefers",
+    "always prefers",
+    "never prefers",
+    "really prefers",
+    "strongly prefers",
+    "definitely prefers",
+    "personally prefers",
+    "often prefers",
+    "sometimes prefers",
+    "generally prefers",
+    "particularly prefers",
+    "especially prefers",
+    // Identity — single-value facts
+    "name is",
+    "language is",
+    "is from",
+    "lives in",
+];
+
+/// Predicate labels with **positive polarity** (affinity, enjoyment).
+///
+/// "likes X" vs "hates X" is a polarity flip — always a contradiction.
+pub const POSITIVE_PREDICATES: &[&str] = &[
+    "likes",
+    "usually likes",
+    "always likes",
+    "really likes",
+    "definitely likes",
+    "personally likes",
+    "often likes",
+    "sometimes likes",
+    "generally likes",
+    "quite likes",
+    "loves",
+    "usually loves",
+    "always loves",
+    "really loves",
+    "definitely loves",
+    "absolutely loves",
+    "enjoys",
+    "adores", // PT
+];
+
+/// Predicate labels with **negative polarity** (aversion, dislike).
+///
+/// Paired with POSITIVE_PREDICATES to detect polarity flips.
+pub const NEGATIVE_PREDICATES: &[&str] = &[
+    "hates",
+    "usually hates",
+    "always hates",
+    "really hates",
+    "definitely hates",
+    "absolutely hates",
+    "dislikes",
+    "really dislikes",
+    "personally dislikes",
+    "doesn't like",
+    "usually doesn't like",
+    "can't stand",
+    "detesta", // PT
+    "odeia",   // PT
+];
+
+// === Stop Words for Object Comparison (EN + PT) ===
+//
+// Used by `conflict::object_word_overlap()` to filter out function words
+// so that overlap measures semantic content, not grammar particles.
+//
+// When adding a new language, add its stop words here and verify with
+// the `test_stop_words_covers_common` unit test.
+
+/// Common stop words (EN + PT) for content word extraction.
+///
+/// These are filtered out when comparing objects of two facts for
+/// word overlap. Keeping the list small avoids false negatives
+/// (over-filtering content words).
+///
+/// # Dedup note
+///
+/// Some words exist in both EN and PT (e.g., "a", "do", "no").
+/// Each word appears only once — the overlap section comes first.
+pub const STOP_WORDS: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "been", "being", "but", "by", "can", "com", "could",
+    "da", "dare", "das", "de", "did", "do", "does", "dos", "em", "eram", "estar", "está", "foi",
+    "for", "from", "had", "has", "have", "he", "her", "him", "how", "i", "in", "into", "is", "it",
+    "its", "mais", "may", "me", "might", "muito", "must", "my", "na", "nas", "need", "no", "nor",
+    "nos", "not", "não", "o", "of", "on", "or", "os", "our", "para", "por", "que", "se", "sem",
+    "ser", "shall", "she", "should", "so", "são", "também", "than", "that", "the", "their", "them",
+    "then", "these", "they", "this", "those", "to", "um", "uma", "us", "was", "we", "were", "what",
+    "when", "where", "which", "who", "whom", "whose", "will", "with", "would", "yet", "you",
+    "your", "é",
+];
+
 /// Normalize fact content for deduplication comparison.
 ///
 /// Strips subject pronouns, lemmatizes verbs, and produces a canonical
@@ -1762,5 +1875,132 @@ mod tests {
             normalize_to_storage_format("I think this is fine"),
             "I think this is fine" // "think" is not in our verb list
         );
+    }
+
+    // === Predicate Classification Coverage Tests ===
+
+    /// Predicate labels that are deliberately "neutral" — not exclusive,
+    /// not positive, not negative. These are accumulative with no polarity.
+    /// Examples: "wants", "uses", "finds it", "speaks", "works at", etc.
+    const NEUTRAL_PREDICATES: &[&str] = &[
+        // From TRIPLE_PREFERENCE_PREFIXES — verbs without exclusivity or polarity
+        "usually doesn't want",
+        "doesn't want",
+        "never wants",
+        "really wants",
+        "wants",
+        "really finds",
+        "often finds",
+        "finds it",
+        "really uses",
+        "sometimes uses",
+        "never prefers", // "never" makes it negation, classified as exclusive (prefers variant)
+        "never likes",
+        "never hates",
+        // From TRIPLE_IDENTITY_PREFIXES — factual, not exclusive
+        "works at",
+        "works for",
+        "works in",
+        "speaks",
+        "is a",
+        "is",
+        "has",
+    ];
+
+    #[test]
+    fn test_all_predicates_classified() {
+        // Every predicate label from TRIPLE_*_PREFIXES must appear in exactly
+        // one of: EXCLUSIVE_PREDICATES, POSITIVE_PREDICATES, NEGATIVE_PREDICATES,
+        // or NEUTRAL_PREDICATES (this test's allowlist).
+
+        let all_classified: std::collections::HashSet<&str> = EXCLUSIVE_PREDICATES
+            .iter()
+            .chain(POSITIVE_PREDICATES.iter())
+            .chain(NEGATIVE_PREDICATES.iter())
+            .chain(NEUTRAL_PREDICATES.iter())
+            .copied()
+            .collect();
+
+        let mut unclassified: Vec<&str> = Vec::new();
+
+        for (_, label) in TRIPLE_PREFERENCE_PREFIXES.iter() {
+            if !all_classified.contains(label) {
+                unclassified.push(label);
+            }
+        }
+        for (_, label) in TRIPLE_IDENTITY_PREFIXES.iter() {
+            if !all_classified.contains(label) {
+                unclassified.push(label);
+            }
+        }
+
+        if !unclassified.is_empty() {
+            panic!(
+                "Unclassified predicate labels (add to EXCLUSIVE/POSITIVE/NEGATIVE or NEUTRAL):\n  {}",
+                unclassified
+                    .iter()
+                    .map(|s| format!("\"{}\"", s))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_predicate_double_classification() {
+        // No predicate should appear in more than one classification
+        let exclusive: std::collections::HashSet<&str> =
+            EXCLUSIVE_PREDICATES.iter().copied().collect();
+        let positive: std::collections::HashSet<&str> =
+            POSITIVE_PREDICATES.iter().copied().collect();
+        let negative: std::collections::HashSet<&str> =
+            NEGATIVE_PREDICATES.iter().copied().collect();
+
+        let overlap_ep: Vec<&&str> = exclusive.intersection(&positive).collect();
+        let overlap_en: Vec<&&str> = exclusive.intersection(&negative).collect();
+        let overlap_pn: Vec<&&str> = positive.intersection(&negative).collect();
+
+        assert!(
+            overlap_ep.is_empty(),
+            "Exclusive+Positive overlap: {:?}",
+            overlap_ep
+        );
+        assert!(
+            overlap_en.is_empty(),
+            "Exclusive+Negative overlap: {:?}",
+            overlap_en
+        );
+        assert!(
+            overlap_pn.is_empty(),
+            "Positive+Negative overlap: {:?}",
+            overlap_pn
+        );
+    }
+
+    #[test]
+    fn test_stop_words_no_duplicates() {
+        // Stop words list should have no duplicates
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut dupes: Vec<&str> = Vec::new();
+        for word in STOP_WORDS.iter() {
+            if !seen.insert(word) {
+                dupes.push(word);
+            }
+        }
+        assert!(dupes.is_empty(), "Duplicate stop words: {:?}", dupes);
+    }
+
+    #[test]
+    fn test_stop_words_filters_common() {
+        // Verify common function words are in the list
+        let set: std::collections::HashSet<&str> = STOP_WORDS.iter().copied().collect();
+        // EN
+        for word in &["the", "is", "a", "and", "or", "not", "in", "with"] {
+            assert!(set.contains(word), "Missing EN stop word: '{}'", word);
+        }
+        // PT
+        for word in &["de", "em", "com", "que", "não", "por"] {
+            assert!(set.contains(word), "Missing PT stop word: '{}'", word);
+        }
     }
 }

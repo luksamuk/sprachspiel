@@ -11,7 +11,10 @@
 //! same triple = duplicate, different predicate = fall through to is_contradiction().
 
 use super::db::FactSearchResult;
-use super::lang::{TRIPLE_IDENTITY_PREFIXES, TRIPLE_PREFERENCE_PREFIXES};
+use super::lang::{
+    EXCLUSIVE_PREDICATES, NEGATIVE_PREDICATES, POSITIVE_PREDICATES, STOP_WORDS,
+    TRIPLE_IDENTITY_PREFIXES, TRIPLE_PREFERENCE_PREFIXES,
+};
 use super::types::{Category, Fact};
 
 // === Triple Extraction for Semantic Contradiction Disambiguation ===
@@ -48,20 +51,107 @@ pub struct FactTriple {
 impl FactTriple {
     /// Check if two triples contradict each other.
     ///
-    /// Two facts contradict if they share the same subject and predicate
-    /// but have different objects. This means the user's preference has
-    /// changed or their identity fact has been updated.
+    /// Two facts contradict if they share the same subject and a **mutually
+    /// exclusive** predicate but have different objects. Predicates like
+    /// "prefers", "always prefers", "name is" are exclusive — you can only
+    /// have ONE preference or ONE name. Predicates like "likes", "loves",
+    /// "hates", "uses" are **accumulative** — you can like both Python and Rust.
     ///
     /// # Examples
     ///
-    /// - `(user, prefers, dark mode)` vs `(user, prefers, light mode)` → **true**
-    /// - `(user, likes, python)` vs `(user, prefers, rust)` → **false** (different predicate)
+    /// - `(user, prefers, dark mode)` vs `(user, prefers, light mode)` → **true** (exclusive)
+    /// - `(user, likes, python)` vs `(user, likes, rust)` → **false** (accumulative)
+    /// - `(user, likes, python)` vs `(user, hates, python)` → **true** (polarity flip)
     /// - `(user, prefers, dark mode)` vs `(user, prefers, dark mode)` → **false** (same object)
     pub fn contradicts(&self, other: &FactTriple) -> bool {
-        self.subject == other.subject
-            && self.predicate == other.predicate
-            && self.object != other.object
+        if self.subject != other.subject || self.object == other.object {
+            return false;
+        }
+
+        // Check for polarity flip: like/hate on the same object
+        if is_polarity_flip(&self.predicate, &other.predicate) {
+            return true;
+        }
+
+        // Same predicate: contradiction depends on exclusivity
+        if self.predicate == other.predicate {
+            if is_exclusive_predicate(&self.predicate) {
+                // Exclusive: any different object = contradiction (e.g., prefers X vs prefers Y)
+                return true;
+            }
+            // Accumulative: only a contradiction if objects share significant words
+            // (e.g., "likes dark mode" vs "likes light mode" share "mode" — same category)
+            // but "likes Python" vs "likes Rust" share nothing — different topics, can coexist
+            return object_word_overlap(&self.object, &other.object) > 0.3;
+        }
+
+        // Different predicates, different objects — not a contradiction
+        // (e.g., "likes python" vs "prefers rust" can coexist)
+        false
     }
+}
+
+/// Calculate word overlap ratio between two objects (used by `contradicts()`).
+///
+/// Returns the Jaccard-like overlap: `|intersection| / max(|a|, |b|)`.
+/// Stop words (defined in `lang::STOP_WORDS`) are excluded to focus on
+/// content words.
+///
+/// # Examples
+///
+/// - `"dark mode"` vs `"light mode"` → overlap = 1/2 = 0.5 (shared "mode") → contradiction
+/// - `"Python"` vs `"Rust"` → overlap = 0/1 = 0.0 → no contradiction (can coexist)
+/// - `"verbose output"` vs `"verbose errors"` → overlap = 1/2 = 0.5 (shared "verbose")
+fn object_word_overlap(a: &str, b: &str) -> f32 {
+    use std::collections::HashSet;
+
+    fn content_words(s: &str) -> HashSet<String> {
+        s.split_whitespace()
+            .map(|w| w.to_lowercase())
+            .filter(|w| !STOP_WORDS.contains(&w.as_str()))
+            .collect()
+    }
+
+    let a_words = content_words(a);
+    let b_words = content_words(b);
+
+    if a_words.is_empty() || b_words.is_empty() {
+        return 0.0;
+    }
+
+    let intersection = a_words.intersection(&b_words).count();
+    let total = a_words.len().max(b_words.len());
+    intersection as f32 / total as f32
+}
+
+/// Check if a predicate is **mutually exclusive** — you can only have one.
+///
+/// Delegates to `lang::EXCLUSIVE_PREDICATES` as the source of truth.
+fn is_exclusive_predicate(predicate: &str) -> bool {
+    EXCLUSIVE_PREDICATES.contains(&predicate)
+}
+
+/// Check if two predicates form a polarity flip (like vs hate on same object).
+///
+/// "likes X" vs "hates X" is a contradiction regardless of predicate exclusivity.
+fn is_polarity_flip(a: &str, b: &str) -> bool {
+    let a_positive = is_positive_predicate(a) && is_negative_predicate(b);
+    let b_positive = is_positive_predicate(b) && is_negative_predicate(a);
+    a_positive || b_positive
+}
+
+/// Check if a predicate has **positive polarity** (affinity, enjoyment).
+///
+/// Delegates to `lang::POSITIVE_PREDICATES` as the source of truth.
+fn is_positive_predicate(predicate: &str) -> bool {
+    POSITIVE_PREDICATES.contains(&predicate)
+}
+
+/// Check if a predicate has **negative polarity** (aversion, dislike).
+///
+/// Delegates to `lang::NEGATIVE_PREDICATES` as the source of truth.
+fn is_negative_predicate(predicate: &str) -> bool {
+    NEGATIVE_PREDICATES.contains(&predicate)
 }
 
 /// Extract a semantic triple from fact content in storage format.
@@ -912,18 +1002,37 @@ mod tests {
     }
 
     #[test]
-    fn test_triple_contradicts_adverb_verb() {
+    fn test_triple_contradicts_adverb_verb_same_category() {
+        // "really likes dark mode" vs "really likes light mode" — accumulative verb
+        // but objects share "mode" (word overlap 0.5 > 0.3) → IS contradiction (same category)
         let a = FactTriple {
             subject: "user".into(),
             predicate: "really likes".into(),
-            object: "vim".into(),
+            object: "dark mode".into(),
         };
         let b = FactTriple {
             subject: "user".into(),
             predicate: "really likes".into(),
-            object: "emacs".into(),
+            object: "light mode".into(),
         };
-        assert!(a.contradicts(&b));
+        assert!(a.contradicts(&b)); // shared "mode" → same category → override
+    }
+
+    #[test]
+    fn test_triple_contradicts_adverb_verb_different_topics() {
+        // "really likes Python" vs "really likes Rust" — accumulative verb
+        // objects share NO words (overlap 0.0) → can coexist, NOT contradiction
+        let a = FactTriple {
+            subject: "user".into(),
+            predicate: "really likes".into(),
+            object: "Python".into(),
+        };
+        let b = FactTriple {
+            subject: "user".into(),
+            predicate: "really likes".into(),
+            object: "Rust".into(),
+        };
+        assert!(!a.contradicts(&b)); // no shared words → different topics → coexist
     }
 
     #[test]
@@ -1081,10 +1190,22 @@ mod tests {
     }
 
     #[test]
-    fn test_cascade_adverb_verb_contradiction() {
-        // "really likes vim" vs "really likes emacs" — same adverb+verb predicate
-        let (action, predicate) =
+    fn test_cascade_adverb_verb_different_topics() {
+        // "really likes vim" vs "really likes emacs" — same adverb+accumulative verb
+        // but "vim" and "emacs" share NO words → can coexist, NOT contradiction
+        let (action, _) =
             simulate_semantic_cascade("User really likes vim", "User really likes emacs");
+        assert_eq!(action, "neither"); // accumulative + no word overlap = coexist
+    }
+
+    #[test]
+    fn test_cascade_adverb_verb_same_category() {
+        // "really likes dark mode" vs "really likes light mode" — same adverb+accumulative verb
+        // objects share "mode" → IS contradiction (same category, preference override)
+        let (action, predicate) = simulate_semantic_cascade(
+            "User really likes dark mode",
+            "User really likes light mode",
+        );
         assert_eq!(action, "contradiction");
         assert_eq!(predicate, "really likes");
     }
