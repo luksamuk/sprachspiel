@@ -4,7 +4,104 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bug ADR-E4: PT identity facts stored in first person** — `translate_pt_to_en()` generated first-person English for PT identity patterns (e.g., "Meu nome é Ana" → "My name is Ana" instead of "User's name is Ana"). This violated ADR-E4 (all facts stored in third person). Fixed by changing PT identity outputs in `translate_pt_to_en()` to third person: "Meu nome é Ana" → "User's name is Ana", "Eu moro em São Paulo" → "User lives in São Paulo", etc. Now consistent with EN identity normalization ("My name is Ana" → "User's name is Ana").
+
+- **Bug S42.4/S43.1 (smoke test #3): Layer 3.5 semantic contradiction detection (reordered)** — "User prefers dark mode" and "User prefers light mode" coexisted because: (1) Layer 2 `find_normalized_fact()` didn't match them ("prefer dark mode" ≠ "prefer light mode"), so they passed through; (2) FTS5 BM25 tokenizes "prefers" ≠ "prefer" (no lemmatization), so low scores; (3) Layer 3.5 cosine = 0.77 < 0.90 threshold. Fixed by: **(a)** lowering `SEMANTIC_SEARCH_THRESHOLD` from 0.90 to 0.70 (measured gap: all contradictions sit ≥0.77, different topics ≤0.60), **(b)** moving Layer 3.5 BEFORE Layer 3 (FTS5 BM25) so it runs when Layer 2 misses, **(c)** adding triple-based disambiguation inside the semantic block: `extract_fact_triple()` distinguishes contradictions (same predicate, different object → Update) from duplicates (same triple → Skip) from related facts (different predicate → fall through), **(d)** keeping `is_contradiction()` as polarity fallback for like/hate pairs that triples miss, **(e)** removing dead Layer 2.5 code that was nested inside Layer 2's `if !matches.is_empty()` (by definition, contradictory facts have different normalized strings, so the block was unreachable). Identity facts ("name is Lucas" → "name is Maria", cosine 0.875) are covered automatically since they classify as `Category::Preference`.
+
+- **Bug S42.4 race condition: async embedding missing on Layer 3.5 search** — When fact #2 was auto-extracted, fact #1's embedding might not yet exist in `fact_embeddings` because it was generated via fire-and-forget `tokio::spawn`. Layer 3.5's `search_facts_semantic()` found no results → contradictions were missed. Fixed by making embedding generation **synchronous** (await, not fire-and-forget) in both `insert_new_fact()` (auto-extraction path) and `handle_fact_add()` (`/fact add` path). After DB insert, the embedding is now generated and stored before returning, guaranteeing it's available for the next fact's Layer 3.5 search. If Ollama is offline, `has_embedding` stays 0 and recovery generates on next startup. Also changed Layer 3.5 gate from `Category::Preference` to `extract_fact_triple().is_some()` (more precise, covers both preference and identity triples).
+
+- **Bug #3: sqlite-vec L2 vs cosine metric mismatch (ROOT CAUSE of S42.4 failure)** — `search_facts_semantic()` in `facts/db.rs` computed `similarity = 1.0 - distance`, which is only correct for cosine distance. But sqlite-vec's `vec0` virtual table uses **L2 (Euclidean) distance** by default when `distance_metric=cosine` is not specified. All 3 vec0 tables (`fact_embeddings`, `content_embeddings`, `chunk_embeddings_v2`) in `schema.rs` lacked the `distance_metric=cosine` parameter (fixed in schema v12). For L2-normalized vectors, the correct conversion is `cosine_similarity = 1.0 - (L2_distance² / 2.0)`, derived from `‖a−b‖² = 2(1 − cos(a,b))`. The broken formula caused ALL fact similarity scores to be ~0.25–0.35 too low — the effective 0.70 threshold actually required cosine > 0.955, making Layer 3.5 completely non-functional. The same bug existed in `content/db.rs` for content and chunk semantic search. Empirically verified: "prefers dark mode" vs "prefers light mode" scored **0.6304** (broken) vs **0.9317** (correct). Fixed in `facts/db.rs:446`, `content/db.rs:706`, `content/db.rs:774`. Also fixed comparison direction: `content/db.rs:790` changed from `<` to `>` (highest cosine wins, not lowest L2). *Discovered by Hermes Agent.*
+
+- **Schema v12: `distance_metric=cosine` + ascending sort fix** — Two improvements to the semantic search pipeline: (1) Added `distance_metric=cosine` to all 3 vec0 table definitions in `schema.rs`, eliminating the application-level L2→cosine conversion (`1.0 - L2²/2` → `1.0 - distance`). Schema v11→v12 migration drops and recreates vec0 tables, resets `has_embedding` flags for startup recovery. (2) Fixed ascending sort bug in `search_content_semantic()` — results were sorted ascending by score (least similar first), then truncated. This inverted RRF ranking: the least similar semantic result received the highest RRF weight. Changed to descending sort (most similar first) to ensure rank 1 = best match.
+
+- **Bug #4: Missing replacement fact insertion in `/fact add` contradiction paths** — In `command_handlers.rs`, after detecting a contradiction (both triple-based and `is_contradiction()` polarity paths) and deleting the old fact, `return;` exited the entire function without inserting the new replacement fact. The old fact was deleted and the new one was lost. Fixed by replacing bare `return;` with explicit `Fact::new()` + `db.insert_fact()` + synchronous embedding generation in both paths. The auto-extraction path in `extract.rs` was not affected (it calls `insert_new_fact()` which handles the insert). *Discovered by Hermes Agent.*
+
+- **Bug #5: Accumulative predicates false positives** — `FactTriple::contradicts()` treated ALL same-predicate pairs as contradictions, so "User likes Python" vs "User likes Rust" was incorrectly flagged as a contradiction. Fixed with two-tier logic: **exclusive predicates** (`prefers`, `name is`, `lives in`) → any different object = contradiction; **accumulative predicates** (`likes`, `loves`, `hates`, `uses`) → only contradiction if objects share content words (`object_word_overlap()` > 0.3). "likes dark mode" vs "likes light mode" shares "mode" → contradiction. "likes Python" vs "likes Rust" shares nothing → coexist. Added polarity flip detection (`likes X` vs `hates X` → always contradiction). Centralized classification constants `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES`, `STOP_WORDS` in `lang.rs` with enforcement test `test_all_predicates_classified`. *Discovered by Hermes Agent.*
+
+- **`is_contradiction()` now handles third-person forms** — Added "likes ", "loves ", "enjoys ", "hates " to `contains_preference_like()`/`contains_preference_hate()`, and "doesn't "/"don't " to `has_opposite_negation()`. Previously only first-person forms ("like ", "hate ", "not ") were recognized, so stored facts in third person ("User likes X" vs "User hates X") were missed by the polarity fallback.
+
+- **Bug #1 (smoke test #2): Adverb modifier normalization** — Added regex-based adverb+verb expansion in `normalize_to_storage_format()`. Previously, patterns like "I really like X", "I always prefer X", "I never want X" were not normalized because `normalize_replacements()` only covered the fixed list `"I usually prefer X"` etc. New `normalize_adverb_verb()` function handles EN adverbs (really, usually, always, never, generally, mostly, definitely, absolutely, personally, often, sometimes, quite, particularly, especially, strongly) with all verbs (prefer, like, love, hate, dislike, want, find, use), plus PT adverbs (sempre, nunca, geralmente, definitivamente, absolutamente, pessoalmente, frequentemente, às vezes, bastante, particularmente, especialmente) with PT verbs (prefiro, adoro, detesto, odeio, quero, gosto de). Also handles negation: "I usually don't like X" → "User usually doesn't like X". Falls through to no-change if pattern doesn't match.
+
+- **Bug #2 (smoke test #2): Layer 2 verb lemmatization** — `normalize_for_comparison()` now lemmatizes third-person verbs to base form after stripping the subject: "prefers dark mode" → "prefer dark mode" (not "prefers dark mode"). This ensures Layer 2 dedup catches "I prefer dark mode" and "User prefers dark mode" as equivalent. Added `VERB_LEMMAS` constant and `lemmatize_verb()` function with both explicit verb lemma map (prefers→prefer, likes→like, etc.) and generic trailing-'s' stripping (works→work, speaks→speak) while avoiding over-stripping (class→clas is prevented by 'ss' guard).
+
+- **Bug #3 (smoke test #2): `/fact add` CLI parity with LLM tool** — The `/fact add` CLI command was missing 3 features that `fact_add` LLM tool and auto-extraction had: (1) `normalize_to_storage_format()` — raw user input was stored without ADR-E4 third-person normalization, (2) Layer 1+2 dedup — only FTS5 (Layer 3) was used, (3) `generate_fact_embedding()` — facts were stored without embeddings, causing permanent `has_embedding=0` until startup recovery. Now `/fact add` calls `normalize_to_storage_format()`, checks Layer 1 (exact match) and Layer 2 (normalized match) before FTS5, performs Layer 3.5 semantic contradiction detection when embedding client is available, and eagerly generates embeddings after insertion. Function changed from synchronous `fn` to `async fn` to support embedding generation.
+
+- **Bug #4 (smoke test #2): Layer 3.5 testability documentation** — Added SMOKE_TEST.md sections 21.14 and 21.15 documenting how to test Layer 3.5 via auto-extraction using the `/tools` toggle to disable LLM tool calls, forcing contradiction detection to occur through the auto-extraction path rather than proactive `fact_add` calls.
+
+- **Bug #1: Third-person normalization now applied at storage time (ADR-E4 revised)** — All facts are now stored in third person ("User prefers X"), not just rendered in third person. Previously, English first-person facts like "I prefer dark mode" were stored as-is, causing inconsistency with PT→EN facts that were stored as "User prefers X". New `normalize_to_storage_format()` function in `src/facts/lang.rs` merges PT→EN translation with EN first-person→third-person normalization. `normalize_to_third_person()` in `src/facts/prompt.rs` remains as defense-in-depth for legacy data.
+
+- **Bug #3: Contradiction detection via semantic embeddings (Layer 3.5)** — "I prefer dark mode" vs "I prefer light mode" now correctly resolves as a contradiction. Added Layer 3.5 to both `extract.rs` auto-extraction and `fact_tools.rs` `fact_add`: when FTS5 doesn't find conflicts and the candidate is a preference, generate an embedding and search `fact_embeddings` via `search_facts_semantic()` (cosine ≥ 0.90). Contradictions are resolved by replacing the old fact; duplicates are skipped. Requires embedding client availability; gracefully skips if unavailable.
+
+- **Bug #4: Embedding serialization and timeout** — Added `Semaphore(1)` and 30-second timeout to `EmbeddingClient::embed()`. Previously, multiple concurrent `tokio::spawn` fire-and-forget tasks could overwhelm Ollama, causing silent embedding failures (`has_embedding = 0`). Now all embedding requests are serialized through the client, preventing model loading conflicts and timeouts. **Additionally**, embedding generation is now **synchronous** (await, not fire-and-forget) in both `insert_new_fact()` and `handle_fact_add()`, eliminating the race condition where a subsequent fact's Layer 3.5 search couldn't find the previous fact's embedding. Added `EmbeddingError::Timeout` variant. Also added post-recovery verification in `facts/recovery.rs` that logs a warning if facts still lack embeddings after startup recovery.
+
 ### Added
+
+- `normalize_to_storage_format()` in `src/facts/lang.rs` — Primary normalization function called before storing any fact. Applies PT→EN prefix translation and EN first-person→third-person normalization. PT noun translation (e.g., "respostas curtas" → "short responses") is deferred to LLM-mode (issue #106).
+
+- `normalize_adverb_verb()` in `src/facts/lang.rs` — Regex-based adverb+verb expansion for storage normalization. Handles EN patterns like "I really like X" → "User really likes X" and PT patterns like "Eu sempre prefiro X" → "User always prefers X" that are not covered by the static prefix lists in `normalize_replacements()` and `translate_pt_to_en()`.
+
+- `lemmatize_verb()` in `src/facts/lang.rs` — Verb lemmatization function for Layer 2 dedup comparison. Strips third-person inflection from verbs: "prefers" → "prefer", "likes" → "like", etc. Includes explicit lemma map and generic trailing-'s' rule with 'ss' guard.
+
+- `VERB_LEMMAS` constant in `src/facts/lang.rs` — Known third-person verb forms and their lemmas for `normalize_for_comparison()`. Covers common preference verbs and adverb+verb phrase combinations.
+
+- `EN_ADVERBS`, `PT_ADVERBS`, `EN_VERBS_FP_TP`, `PT_VERBS_EN_TP` constants in `src/facts/lang.rs` — Adverb and verb lookup tables for `normalize_adverb_verb()` regex expansion.
+
+- Layer 3.5 semantic dedup in `src/facts/extract.rs` and `src/tools/fact_tools.rs` — Embedding-based similarity check for preference facts when FTS5 doesn't find conflicts. Catches "prefer dark mode" vs "prefer light mode" contradictions that keyword search misses.
+
+- Triple-based contradiction disambiguation in `src/facts/conflict.rs` — `FactTriple` struct and `extract_fact_triple()` function for separating contradictions (same predicate, different object → Update) from duplicates (same triple → Skip) inside the semantic block. Now integrated into Layer 3.5 (after reorder) rather than Layer 2. Covers ~80% of preference/identity contradictions. Zero ML, sub-millisecond.
+
+- `SEMANTIC_SEARCH_THRESHOLD = 0.70` in `src/facts/conflict.rs` — Insert-time semantic search threshold. Lowered from the previous hardcoded 0.90 that missed all contradictions (antonym cosine ~0.77). Measured gap: all contradictions ≥0.77, different topics ≤0.60. Separate from `SEMANTIC_DEDUP_THRESHOLD = 0.90` in verify.rs for startup O(n²) dedup.
+
+- `is_contradiction()` now handles third-person forms — Added "likes ", "loves ", "enjoys ", "hates " to polarity detection, and "doesn't "/"don't " to negation detection. Previously only first-person forms were recognized.
+
+- **Fact dedup pipeline centralized in `src/facts/dedup.rs`** — The three fact insertion callers (`/fact add` CLI command, `fact_add` LLM tool, auto-extraction `insert_fact_with_dedup`) previously duplicated ~65-75% of the dedup pipeline logic, diverging in behavior. Created `DedupResult` enum (`Inserted`, `ExactDuplicate`, `NormalizedDuplicate`, `SemanticDuplicate`, `Updated`, `Fts5Conflict`, `Error`), `DedupConfig` struct, and `deduplicate_and_insert()` function as the single source of truth. Each caller is now a thin wrapper that formats the `DedupResult` for its UI. This fixes 4 behavioral bugs in the LLM tool path: (1) threshold 0.90 → 0.70, (2) missing triple disambiguation in Layer 3.5, (3) Layer 3.5 running after Layer 3 instead of before, (4) fire-and-forget embedding instead of synchronous. Removed `Fact::for_insert()` (dead code, `deduplicate_and_insert` uses `Fact::new` internally).
+
+- `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` constants in `src/facts/lang.rs` — Source-of-truth triple extraction patterns for `extract_fact_triple()`. Preference patterns cover single verbs (prefers, likes, etc.), adverb+verb combos (usually prefers, really likes, etc.), and negation (doesn't like, etc.). Identity patterns cover name, location, work, language, and role. Includes legacy first-person entries for pre-ADR-E4-fix database data.
+
+- `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES` constants in `src/facts/lang.rs` — Predicate classification for contradiction detection. Exclusive predicates (prefers, name is, lives in) → any different object = contradiction. Positive predicates (likes, loves, enjoys, adores) → accumulative, contradiction only with word overlap > 0.3. Negative predicates (hates, dislikes, doesn't like, detesta, odeia) → accumulative, paired with positive for polarity flip detection. Enforced by `test_all_predicates_classified` unit test.
+
+- `STOP_WORDS` constant in `src/facts/lang.rs` — EN + PT stop words for `object_word_overlap()` content word extraction. Keeps the list small to avoid false negatives from over-filtering.
+
+- `object_word_overlap()`, `is_exclusive_predicate()`, `is_polarity_flip()`, `is_positive_predicate()`, `is_negative_predicate()` functions in `src/facts/conflict.rs` — Helper functions for the two-tier contradiction logic in `FactTriple::contradicts()`.
+
+- `FactTriple::contradicts()` rewritten with two-tier logic — Exclusive predicates → any different object = contradiction; Accumulative predicates → only if `object_word_overlap()` > 0.3; Polarity flip → always contradiction.
+
+- SMOKE_TEST.md sections 21.14 and 21.15 — Test procedures for `/fact add` CLI dedup parity and `/tools` toggle for Layer 3.5 testing.
+
+### Changed
+
+- **ADR-E4 revised (again)** — PT identity facts now correctly stored in third person. "Meu nome é Ana" → "User's name is Ana" (was "My name is Ana"). "Eu moro em São Paulo" → "User lives in São Paulo" (was "I live in São Paulo"). All PT identity patterns in `translate_pt_to_en()` now output `User *` instead of `I *`/`My *`. Previously, these early-returned from Stage 1 before Stage 2 (`normalize_replacements()`) could apply the EN first→third person conversion.
+
+- **ADR-E4 revised** — Third-person normalization is now applied at storage time (via `normalize_to_storage_format()`), not just at render time. Render-time normalization in `prompt.rs` remains as defense-in-depth.
+
+- `extract_and_insert_facts()` is now `async` — accepts optional `embedding_client` parameter for Layer 3.5.
+
+- `translate_pt_to_en()` now also normalizes English first-person input to third-person — `"I prefer dark mode"` → `"User prefers dark mode"`. This function is the core of `normalize_to_storage_format()`. English passthrough (`"I prefer dark mode"` → `"I prefer dark mode"`) is no longer the default behavior.
+
+- `try_auto_extract_facts()` in `repl.rs` is now `async` — awaits `extract_and_insert_facts()` to support Layer 3.5 embedding generation.
+
+- `handle_fact_add()` in `command_handlers.rs` is now `async` — supports Layer 3.5 embedding generation and contradiction detection.
+
+- `normalize_for_comparison()` in `lang.rs` now lemmatizes third-person verbs after stripping subject — "prefers dark mode" → "prefer dark mode" matches "prefer dark mode" for Layer 2 dedup.
+
+- `translate_pt_to_en()` now attempts regex-based adverb+verb expansion after static prefix lists fail — "I really like X" → "User really likes X", "Eu sempre prefiro X" → "User always prefers X".
+
+### Deferred
+
+- **Bug #2: PT noun translation** — Nouns after the translated prefix (e.g., "respostas curtas" → "short responses") remain in original language. This is an intentional limitation of heuristic translation. Full PT→EN noun translation will be handled by LLM-mode (issue #106, M2 milestone).
+
+ ### Added
+
+- **Auto Fact Extraction (P6.1 — autoDream-lite)** - Automatic fact extraction from conversation content after each response (Issue #73)
+  - Post-response heuristic extraction of preferences and facts from user messages
+  - FTS5 deduplication against existing facts before insertion
+  - Configurable extraction mode: `off`, `heuristic`, `llm` (default: `heuristic`)
+  - Scope inference: project by default, global for cross-project patterns
+  - Source attribution: auto-extracted facts marked with `Source::Llm`
+  - User notification when facts are auto-extracted (configurable)
+  - `[facts]` config section with `auto_extract` and `auto_extract_notify` fields
 
 - **Feedback Infrastructure (P5)** - Complete feedback-driven memory system with active forgetting (Issue #23)
   - `/feedback good|bad|correction:<text>` command with `msg:N` targeting and `/fg`/`/fb` shortcuts
@@ -29,13 +126,24 @@ All notable changes to Ask-AI will be documented in this file.
   - Config support for `[model.ocr]` and `[model.document]` sections
   - Feature flag: `subagent-tools` (default enabled)
 
-- **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
+ - **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
   - `OcrMode::into_descriptive_prompt()` returns mode-specific restricted prompts for vision models (Text/Table/Figure/Formula)
   - `is_glm_ocr_model()` utility for detecting GLM-OCR models vs. vision models
   - `parse_ocr_mode()` convenience function for parsing OCR mode from LLM string parameters
   - `ocr_mode` parameter on `spawn_subagent` tool — LLMs can now specify Text/Table/Figure/Formula OCR mode
   - `/ocr` chat command now accepts an optional mode parameter (e.g., `/ocr image.png table`)
   - All 3 OCR entry points (CLI, chat `/ocr`, subagent `spawn_subagent`) use model-aware prompt selection
+
+- **Fact Embedding & Semantic Dedup (P6.7)** - Embedding-based Layer 4 dedup for facts (Issue #73)
+  - Schema v11: `has_embedding INTEGER DEFAULT 0` column on `facts` table + `fact_embeddings` vec0 virtual table (256d Matryoshka)
+  - `src/facts/embedding.rs` — `generate_fact_embedding()` wrapper for fact content embedding
+  - `src/facts/recovery.rs` — Startup/shutdown recovery of missing fact embeddings
+  - `src/facts/verify.rs` — O(n²) semantic dedup at startup with cosine similarity ≥ 0.90 threshold
+  - Eager embedding: `tokio::spawn` after fact insertion; graceful fallback when Ollama offline
+  - Startup sequence: `recover_missing_embeddings()` → `recover_missing_fact_embeddings()` → `verify_and_dedup_facts()`
+  - Shutdown: `flush_pending_fact_embeddings()` on `/exit`
+  - Conflict resolution: duplicate → keep newer, contradiction → keep newer, global-wins-project
+  - Silent by design: all operations use `log::info/debug` only
 
 ### Changed
 

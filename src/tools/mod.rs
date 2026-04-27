@@ -1,3 +1,25 @@
+//! Tools module — LLM-callable tool implementations.
+//!
+//! Provides all tools that the model can invoke during a conversation, including
+//! file operations, web search, weather, todos, fact management, and more.
+//! Tools are feature-gated and registered at startup via [`registry`].
+//!
+//! # Feature gates
+//!
+//! - `all-tools` — enables all optional tools
+//! - `calc-tools` — calculator
+//! - `file-tools` / `file-write-tools` — filesystem operations and write access
+//! - `finance-tools` — currency conversion
+//! - `led-tools` — LED strip control (Raspberry Pi Pico W)
+//! - `pokemon-tools` — Pokédex lookup
+//! - `search-tools` — built-in web search
+//! - `serper-tools` — Serper.dev API search
+//! - `system-tools` — system info commands
+//! - `document-tools` — document import (PDF, DOCX, etc.)
+//!
+//! Always-available tools: [`fact_tools`], [`notes`], [`feedback_tools`], [`remember`],
+//! [`mod@todo`], [`context`], [`misc`], [`files`], [`files_blocklist`], [`registry`].
+
 // Pokemon data structures only available when pokemon-tools feature is enabled
 #[cfg(feature = "pokemon-tools")]
 use serde::Deserialize;

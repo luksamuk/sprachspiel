@@ -446,7 +446,17 @@ Example: A 3000-character message creates 4 overlapping chunks, ensuring phrases
 
 ## /fact - Factual Memory
 
-The factual memory system allows the AI to remember preferences and facts across sessions.
+The factual memory system allows the AI to remember preferences and facts across sessions. Facts can be added manually via commands or automatically extracted from conversation content.
+
+### Auto-Extraction
+
+After each assistant response, the system automatically extracts preference and identity facts from user messages. When facts are extracted, a gray notification appears:
+
+```
+[Auto-extracted: 2 fact(s)]
+```
+
+This behavior is controlled by the `[facts]` configuration section. All auto-extracted facts are stored in third person per ADR-E4 ("User prefers X", not "I prefer X").
 
 ### Adding Facts
 
@@ -470,9 +480,15 @@ Add facts that the AI should remember:
 - `preference` - User preferences ("I prefer...", "I like...")
 - `fact` - Objective information ("The API is...", "Database uses...")
 
-**Conflict Resolution:** When adding a similar fact:
-- **Duplicate** (very similar, no contradiction): Skipped
-- **Contradiction** ("I like X" vs "I hate X"): Replaces old fact
+**Conflict Resolution (5-Layer Dedup):** When adding a similar fact:
+- **Layer 1: Exact match** — case-insensitive identical content → Skip
+- **Layer 2: Normalized match** — pronouns/subjects stripped → Skip
+- **Layer 3: FTS5 BM25** — keyword similarity ≥ 0.75 → Skip or Update
+- **Layer 3.5: Semantic embedding** — cosine similarity ≥ 0.90 for preferences → Skip or Update
+- **Layer 4: Global-wins-project** — Global fact replaces Project duplicate
+
+**Contradiction example:** "I like dark mode" vs "I like light mode" → old fact replaced with new.
+**Duplicate example:** "I like dark mode" vs "I prefer dark mode" → skipped (already stored).
 
 ### Listing Facts
 
@@ -489,8 +505,8 @@ View all stored facts:
 Facts (project):
 
   Preferences:
-    #1 I prefer short explanations (5d)
-    #2 I like code examples (3d)
+    #1 User prefers short explanations (5d)
+    #2 User likes code examples (3d)
 
   Facts:
     #3 Project uses SQLite (7d)
@@ -535,17 +551,32 @@ Run manual cleanup:
 
 ### How It Works
 
-1. **Storage**: Facts stored in SQLite with FTS5 full-text search
-2. **Prompt Injection**: Facts injected into system prompt (max 2200 chars)
-3. **Decay**: Ebbinghaus forgetting curve with access reinforcement
-4. **Conflict Detection**: Similar facts detected via FTS5, contradictions resolved
+1. **Storage**: Facts stored in SQLite with FTS5 full-text search and `fact_embeddings` vec0 table (256d Matryoshka)
+2. **Normalization**: All facts stored in third person ("User prefers X") via `normalize_to_storage_format()` (ADR-E4)
+3. **Embeddings**: Each fact gets an embedding via `EmbeddingClient::embed()` (serialized with `Semaphore(1)`, 30s timeout)
+4. **Prompt Injection**: Facts injected into system prompt grouped by scope (max 2200 chars)
+5. **Decay**: Ebbinghaus forgetting curve with access reinforcement
+6. **Dedup**: 6-layer dedup pipeline (Exact → Normalized → Semantic + Triple contradiction → FTS5 → Startup verification → Global-wins-project)
+
+### [facts] Configuration
+
+```toml
+[facts]
+auto_extract = true          # Enable/disable auto-extraction
+max_facts = 3               # Max facts extracted per response
+auto_extract_notify = true  # Show [Auto-extracted: N fact(s)] notification
+```
+
+- `auto_extract`: When `true`, preferences and identity facts are automatically extracted from user messages after each response. When `false`, no auto-extraction occurs.
+- `max_facts`: Maximum number of facts extracted per response (default: 3).
+- `auto_extract_notify`: When `true`, shows a gray notification when facts are auto-extracted. When `false`, extraction still occurs but no notification is shown.
 
 ### Fact Scope
 
 | Scope | Description | Use Case |
 |-------|-------------|----------|
-| `project` | Current project only | "API uses port 8080", "Database is SQLite" |
-| `global` | All projects | "I prefer Portuguese", "I like concise responses" |
+| `project` | Current project only | "Project uses SQLite", "API uses port 8080" |
+| `global` | All projects | "User prefers Portuguese", "User likes concise responses" |
 
 ### LLM Integration
 

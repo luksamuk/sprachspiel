@@ -3,7 +3,7 @@
 **Status:** ✅ COMPLETED  
 **Priority:** P0 (before Feedback System)  
 **Created:** 2026-03-14  
-**Updated:** 2026-03-15  
+**Updated:** 2026-04-26  
 **Depends on:** None (standalone feature)
 **See also:** [Memory Architecture](./memory-architecture.md) — Unified overview of all memory systems
 
@@ -84,12 +84,17 @@ graph TB
 |----------|--------|-----------|
 | Categories | **2: `preference`, `fact`** | `context` is redundant (handled by RAG) |
 | Classification | **Heuristic only** | 90%+ accuracy, no LLM tokens |
-| Search | **FTS5 only** | Simpler, no embeddings needed |
+| Search | **FTS5 + Semantic (Layer 3.5)** | FTS5 for keywords, embeddings for semantic similarity |
 | Storage | **Same DB (`embeddings.db`)** | No separate database |
 | Per-fact limit | **500 chars (hard limit)** | Rejected at DB insert |
 | Total prompt limit | **2200 chars (soft limit)** | Truncated with Unicode-safe `truncate_chars` |
-| Conflict resolution | **Heuristic + FTS5** | Duplicate → Skip, Contradiction → Update |
+| Conflict resolution | **6-layer dedup** | Exact → Normalized → Semantic (0.70, triple + polarity) → FTS5 (0.75) → Startup verification (0.90) → Global-wins-project |
 | Decay | **Startup synchronous** | Background optional later |
+| Embeddings | **Synchronous (await) with Semaphore(1)** | Serialized embedding generation with 30s timeout; synchronous (not fire-and-forget) to guarantee availability for subsequent Layer 3.5 searches |
+| Language | **All content stored in English** | PT→EN prefix translation via `lang::translate_pt_to_en()` (ADR-L1) |
+| Normalization | **Third-person at storage time** | `normalize_to_storage_format()` ensures all facts stored as "User prefers X" (ADR-E4) |
+| Predicate classification | **4 categories: exclusive, positive, negative, neutral** | `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES` in `lang.rs` as source of truth; `test_all_predicates_classified` enforcement test guarantees completeness |
+| Contradiction logic | **Two-tier: exclusive vs accumulative** | Exclusive predicates (prefers, name is) → any different object = contradiction; Accumulative predicates (likes, hates) → only if object word overlap > 0.3 |
 
 ---
 
@@ -97,10 +102,12 @@ graph TB
 
 | Category | Description | Half-Life | Examples |
 |----------|-------------|-----------|----------|
-| `preference` | User preferences, likes/dislikes | 180 days | "prefiro português", "gosto de respostas curtas" |
-| `fact` | Objective facts about environment/project | 30 days | "docs estão em ~/docs", "projeto usa SQLite" |
+| `preference` | User preferences, likes/dislikes | 180 days | "User prefers Portuguese", "User likes concise responses" |
+| `fact` | Objective facts about environment/project | 30 days | "User's name is Lucas", "Database is SQLite" |
 
-**Note:** The `context` category was removed. Temporary conversation state ("we're working on issue #7") is handled by the existing RAG system - no need to duplicate.
+> **ADR-E4:** All facts are stored in third person ("User prefers X", "User's name is X"), never first person ("I prefer X", "My name is X"). This is applied by `normalize_to_storage_format()` in `src/facts/lang.rs` at storage time. The `normalize_to_third_person()` function in prompt rendering remains as defense-in-depth for legacy data.
+
+> **Bug #2 (DEFERRED to issue #106):** PT noun translation after the prefix is not handled by heuristic mode. "Eu prefiro respostas curtas" → "User prefers respostas curtas" (noun "respostas curtas" remains in PT). Full noun translation requires LLM-mode (M2).
 
 ---
 
@@ -141,13 +148,16 @@ graph LR
 ```markdown
 ## User Facts
 
-### Preferences
-- prefiro respostas em português
-- gosto de respostas curtas
+### Global Preferences
+- User prefers Portuguese
+- User likes concise responses
 
-### Facts
-- o projeto usa SQLite para armazenamento
-- a API está na porta 8080
+### Global Facts
+- User's name is Lucas
+- API uses port 8080
+
+### Project Facts
+- Database is SQLite
 ```
 
 **Limits:**
@@ -161,7 +171,7 @@ graph LR
 ### 3.1 Facts Table
 
 ```sql
--- Facts table (schema v6)
+-- Facts table (schema v12; table structure unchanged since v11, v12 only changed vec0 tables)
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY,
     
@@ -170,6 +180,7 @@ CREATE TABLE IF NOT EXISTS facts (
     category TEXT NOT NULL CHECK(category IN ('preference', 'fact')),
     
     -- Content (application validates <= 500 chars)
+    -- Stored in third person per ADR-E4: "User prefers X", never "I prefer X"
     content TEXT NOT NULL,
     
     -- Decay parameters
@@ -182,21 +193,35 @@ CREATE TABLE IF NOT EXISTS facts (
     last_accessed REAL NOT NULL,
     
     -- Source tracking
-    source TEXT DEFAULT 'user' CHECK(source IN ('user', 'llm')),
+    source TEXT DEFAULT 'user' CHECK(source IN ('user', 'llm', 'auto')),
     
     -- Conflict resolution (soft delete)
     invalidated_at REAL,
     
     -- Project association (NULL for global facts)
-    project_id TEXT
+    project_id TEXT,
+    
+    -- Embedding status (v11)
+    has_embedding INTEGER DEFAULT 0
 );
 
--- Full-text search for keyword matching
+-- Full-text search for keyword matching (BM25)
 CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
     content,
     content='facts',
     content_rowid='id'
 );
+
+-- Semantic search for fact dedup (v12, distance_metric=cosine)
+-- sqlite-vec returns cosine distance; similarity = 1.0 - distance.
+CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+    fact_id INTEGER PRIMARY KEY,
+    embedding FLOAT[256] distance_metric=cosine
+);
+
+-- Partial index for facts missing embeddings (v11)
+CREATE INDEX IF NOT EXISTS idx_facts_embedding
+    ON facts(has_embedding) WHERE has_embedding = 0 AND invalidated_at IS NULL;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_facts_scope_category ON facts(scope, category);
@@ -348,113 +373,355 @@ fn run_decay_cycle(db: &Database) -> Result<DecayStats, Error> {
 
 ---
 
-## 6. Conflict Resolution
+## 6. Conflict Resolution (6-Layer Dedup Pipeline)
 
-### 6.1 Detection (FTS5 + Heuristic)
+Facts are deduplicated through a 6-layer pipeline that catches duplicates and contradictions at increasingly sophisticated levels:
+
+**Architecture:** All three insertion paths (`/fact add` CLI, `fact_add` LLM tool, auto-extraction `insert_fact_with_dedup`) delegate to a single centralized function: [`dedup::deduplicate_and_insert()`](src/facts/dedup.rs). Each caller is a thin wrapper that formats the `DedupResult` for its UI (CLI colors, LLM tool text, extraction counts). This eliminates the previous ~65-75% code duplication across the three callers and fixes 4 behavioral bugs that had diverged in the LLM tool path (see §6.5).
+
+### 6.1 Layer 1: Exact Match
+
+Case-insensitive, trimmed comparison via `find_exact_fact()`. Catches identical facts regardless of capitalization or whitespace.
+
+### 6.2 Layer 2: Normalized Match
+
+`normalize_for_comparison()` strips pronouns and subjects, then **lemmatizes verbs** (third-person → base form), then exact match. Catches "I prefer dark mode" ≈ "User prefers dark mode" ≈ "prefers dark mode" → all normalize to "prefer dark mode".
+
+**Limitation:** Contradictory facts with same predicate but different objects (e.g., "prefer dark mode" vs "prefer light mode") have different normalized strings, so Layer 2 returns empty. This is handled by Layer 3.5 (semantic) which runs after Layer 2.
+
+### 6.3 Layer 3: FTS5 BM25 Keyword Search
+
+`search_facts_by_content(query, 0.75)` catches facts with similar keywords. Lowered threshold from 0.85 to 0.75 to catch more near-duplicates.
+
+### 6.4 Layer 3.5: Semantic Embedding (Insert-Time)
+
+**Activation gate:** `extract_fact_triple(candidate_content).is_some()` — when an embedding client is available AND the candidate has an extractable triple (preference or identity). This replaces the previous `Category::Preference` gate, which was insufficient because `Category::Identity` does not exist in the enum (only `Preference` and `Fact`). Identity facts are classified as `Category::Preference` by the heuristic classifier, but the triple gate is more precise and covers both preference and identity triples automatically via `TRIPLE_PREFERENCE_PREFIXES` + `TRIPLE_IDENTITY_PREFIXES`.
+
+**Pipeline position:** AFTER Layer 2, BEFORE Layer 3 (FTS5). Contradictory facts always have different normalized strings (e.g., "prefer dark mode" ≠ "prefer light mode"), so Layer 2 returns empty. Layer 3.5 must come next to catch these before the less-effective FTS5 BM25.
+
+**Embedding generation:** Synchronous (await, not fire-and-forget). After inserting a fact, the embedding is generated and stored before returning. This guarantees that when fact #2's Layer 3.5 search runs, fact #1's embedding is already in `fact_embeddings`. Previously, async `tokio::spawn` fire-and-forget meant fact #2's `search_facts_semantic()` could return no results for fact #1, missing the contradiction.
+
+Steps:
+1. Generate embedding via `EmbeddingClient::embed()` (serialized with `Semaphore(1)`, 30s timeout)
+2. Search `fact_embeddings` via `search_facts_semantic()` (cosine similarity ≥ **0.70** — see `SEMANTIC_SEARCH_THRESHOLD` in conflict.rs)
+3. For each result ≥ 0.70:
+   a. Extract triples via `extract_fact_triple()` for both candidate and existing fact
+   b. If triples **contradict** → **Update** (delete old, insert new + sync embedding). Contradiction logic is two-tier:
+      - **Polarity flip** (like vs hate on same object) → always contradiction
+      - **Exclusive predicate** (`prefers`, `name is`, `lives in`) → any different object = contradiction
+      - **Accumulative predicate** (`likes`, `loves`, `hates`, `uses`) → only contradiction if objects share content words (`object_word_overlap()` > 0.3). "likes dark mode" vs "likes light mode" shares "mode" → contradiction. "likes Python" vs "likes Rust" shares nothing → can coexist.
+   c. If triples are **identical** (same predicate, same object) → **Skip** (semantic duplicate)
+   d. If `is_contradiction()` fallback fires (polarity opposition: like/hate, negation) → **Update** (delete old, insert new + sync embedding)
+   e. Neither → continue to next result
+4. If no semantic result triggered an action → fall through to Layer 3 (FTS5 BM25)
+
+This layer catches contradictions that keyword search misses because the words are different but the meaning conflicts. The triple extraction step deterministically distinguishes "contradiction" (same predicate, different object) from "duplicate" (same predicate, same object) or "related" (different predicate).
+
+**Key threshold difference from startup verification:**
+- `SEMANTIC_SEARCH_THRESHOLD = 0.70` (conflict.rs) — for insert-time candidate retrieval, intentionally broad
+- `SEMANTIC_DEDUP_THRESHOLD = 0.90` (verify.rs) — for startup O(n²) pairwise dedup, intentionally strict
+
+**Dead code removed:** The former Layer 2.5 contradiction check inside the Layer 2 `if !matches.is_empty()` block has been removed — it was dead code because contradictory facts always have different normalized strings, making the block unreachable. The reordered Layer 3.5 supersedes it.
+
+**`command_handlers.rs` sync:** ✅ RESOLVED — All three callers (CLI `/fact add`, LLM `fact_add`, auto-extraction `insert_fact_with_dedup`) now delegate to the centralized `dedup::deduplicate_and_insert()` pipeline. No logic divergence is possible since there is a single source of truth.
+
+#### 6.4.0 sqlite-vec L2 → Cosine Metric Bug (Critical, Fixed)
+
+**Bug discovered by:** Hermes Agent (empirical benchmark + documentation research)
+**Status:** ✅ FIXED — application-level workaround in code, then schema v12 migration
+
+sqlite-vec's `vec0` virtual table uses **L2 (Euclidean) distance** by default when `distance_metric=cosine` is not specified in the CREATE TABLE statement. All 3 vec0 tables in `schema.rs` lacked `distance_metric=cosine`:
+
+- `fact_embeddings`
+- `content_embeddings`
+- `chunk_embeddings_v2`
+
+The code originally computed: `similarity = 1.0 - distance`, which is only correct for **cosine distance**. For L2-normalized (unit) vectors, the correct conversion is:
+
+```
+cosine_similarity = 1.0 - (L2_distance² / 2.0)
+```
+
+This derives from `‖a−b‖² = 2(1 − cos(a,b))` for unit vectors, so `cos = 1 − (L2²/2)`.
+
+**Impact of the bug:** All fact similarity scores were ~0.25–0.35 too low.
+
+| Threshold | Intended Meaning | Actual Meaning (with L2 bug) |
+|-----------|------------------|-------------------------------|
+| 0.70 (SEMANTIC_SEARCH_THRESHOLD) | cosine > 0.70 | L2 < 0.30 → cosine > 0.955 |
+| 0.90 (SEMANTIC_DEDUP_THRESHOLD) | cosine > 0.90 | L2 < 0.10 → cosine > 0.995 |
+
+The effective thresholds were so strict that Layer 3.5 **never fired** during insert-time — no pair ever exceeded 0.70 in the broken metric. The startup verification (`verify_and_dedup_facts`) also never removed semantic duplicates. The irony: **the pipeline design was correct all along — the metric bug killed the entire pipeline.**
+
+**Fix applied in two phases:**
+
+**Phase 1 (Bug #3 fix):** Application-level L2→cosine conversion in code:
+
+| File | Line | Change |
+|------|------|--------|
+| `src/facts/db.rs` | 446 | `1.0 - distance` → `1.0 - (distance * distance / 2.0)` |
+| `src/content/db.rs` | 706 | `score: distance` → `score: 1.0 - (distance * distance / 2.0)` |
+| `src/content/db.rs` | 774 | Same fix for chunk search |
+| `src/content/db.rs` | 790 | `result.score < e.get().score` → `result.score > e.get().score` (highest cosine wins, not lowest L2) |
+| `src/content/types.rs` | 235 | Docstring: "BM25 or vector distance" → "BM25 or cosine similarity" |
+
+**Phase 2 (Schema v12 migration):** Added `distance_metric=cosine` to all 3 vec0 tables. This eliminates the application-level conversion entirely — with cosine distance, `similarity = 1.0 - distance` (no squaring needed). The v12 migration drops and recreates vec0 tables, resets `has_embedding` flags, and startup recovery regenerates all embeddings.
+
+### 6.4.1 Decision: Layer 3.5 Already Covers Identity (via Classification)
+
+**Decision: NO new `Category::Identity` needed — identity facts are already `Category::Preference`.**
+
+**Decision date:** 2026-04-26  
+**Proposed by:** OpenCode (code review of extract.rs line 491)  
+**Validated by:** Hermes Agent
+
+#### Why
+
+1. **The data proves it works.** With the correct cosine metric (Bug #3 fixed), Cosine("name is Lucas", "name is Maria") = **0.8895** — well above the 0.70 threshold. The signal is even stronger than preference pairs (0.7753).
+
+2. **Identity facts are classified as `Category::Preference`.** The heuristic classifier (`classify_fact()`) in `classify.rs` treats all personal facts (name, location, language, workplace) as `Preference` because they share the same "one active value per predicate" semantics. Therefore, `Category::Preference` already covers identity.
+
+3. **`TRIPLE_IDENTITY_PREFIXES` covers identity triple extraction.** `extract_fact_triple()` handles "name is", "lives in", "works at", etc. The current gate uses `extract_fact_triple().is_some()` which naturally covers both preference and identity triples — no category guard needed.
+
+4. **`Category::Identity` does NOT exist** in the `Category` enum (only `Preference` and `Fact`). An earlier attempt to use `matches!(candidate.category, Category::Preference | Category::Identity)` caused a build break. The `extract_fact_triple().is_some()` gate avoids this entirely.
+
+5. **Not covering identity would leave S42.4 partially broken.** Smoke test S42.4 explicitly documents "name is Lucas" + "name is Maria" coexisting as a bug. Since identity triples are covered by `extract_fact_triple()`, they're automatically handled.
+
+6. **`is_contradiction()` is category-agnostic.** The polarity fallback works for all content regardless of category.
+
+#### Why NOT all categories
+
+Factual facts like "The project uses SQLite" vs "The project uses PostgreSQL" have different semantics:
+- These may be **temporal transitions** ("migrated from SQLite to PostgreSQL") — not contradictions, chronological updates
+- The system has no timestamp or versioning concept for facts, so it can't distinguish "changed" from "contradicts"
+- This would require archival/history semantics, a significantly more complex design
+- **Criterion for scope:** Only categories where facts are **substitutive by nature** (only one active value per predicate makes sense) should use semantic contradiction detection. Preference and Identity meet this; Factual does not.
+
+#### Edge cases acknowledged
+
+| Case | Behavior | Acceptable? |
+|------|----------|-------------|
+| "I live in Diamantina" → "I live in BH" | UPDATE (city change, correct) | ✅ |
+| "My name is Lucas" → "My name is Lucas Samuk" | UPDATE (refinement, loses "Lucas" → "Lucas Samuk") | ✅ Correct — user gave more specific info |
+| "I live in Diamantina" → "I live in Minas Gerais" | May or may not trigger — cosine("Diamantina", "MG") likely <0.70 | ✅ If it triggers, UPDATE is acceptable (rare, reversible via `/fact remove`) |
+| "I live in BH" → "I live in Belo Horizonte" | Same triple (lives in, BH ≅ Belo Horizonte)? Depends on normalization | ⚠️ If different objects → UPDATE (acceptable, refinement). If same → SKIP. |
+
+#### 6.4.2 Centralized Pipeline (P6.7 Refactoring)
+
+**Status:** ✅ IMPLEMENTED — commit b5f0ba1
+
+The dedup pipeline was previously duplicated across three callers (`command_handlers.rs`, `fact_tools.rs`, `extract.rs`) with ~65-75% code overlap. This caused 4 behavioral bugs in the LLM tool path (see below) and made maintenance error-prone.
+
+**Solution:** All three callers now delegate to `dedup::deduplicate_and_insert()` in `src/facts/dedup.rs`. Each caller is a thin wrapper that:
+
+1. Validates input (LLM tool: empty, length, filler, command; CLI: anonymous mode, length; auto-extract: pattern matching)
+2. Normalizes content to storage format
+3. Calls `deduplicate_and_insert()` with a `DedupConfig` (source: User/Llm, generate_embedding: bool)
+4. Formats the `DedupResult` for its UI (CLI: ANSI colors; LLM tool: text message; auto-extract: `InsertAction` enum)
+
+**`DedupResult` variants:**
+
+| Variant | Meaning |
+|---------|---------|
+| `Inserted { id, category, scope }` | New fact created |
+| `ExactDuplicate { existing_id, existing_content }` | Layer 1 match |
+| `NormalizedDuplicate { existing_id, existing_content }` | Layer 2 match |
+| `SemanticDuplicate { existing_id, existing_content, score }` | Layer 3.5 duplicate |
+| `Updated { id, old_content, reason, category, scope }` | Contradiction replaced |
+| `Fts5Conflict { existing_id, existing_content, is_contradiction }` | Layer 3 conflict |
+| `Error(String)` | Validation/DB error |
+
+**`UpdateReason` variants:**
+
+| Variant | Meaning |
+|---------|---------|
+| `PreferenceOverride` | Same predicate, different object (triple) |
+| `PolarityContradiction` | Like/hate or negation (polarity fallback) |
+| `Fts5Contradiction` | FTS5 detected contradiction (temporal: newer wins) |
+
+**4 bugs fixed by unification:**
+
+| Bug | Location | Before | After |
+|-----|----------|--------|-------|
+| Wrong threshold | `fact_tools.rs` | `0.90` (SEMANTIC_DEDUP_THRESHOLD) | `0.70` (SEMANTIC_SEARCH_THRESHOLD) |
+| Missing triple disambiguation | `fact_tools.rs` | Only `is_contradiction()` | Full cascade: triple → polarity → FTS5 |
+| Wrong layer order | `fact_tools.rs` | Layer 3.5 AFTER Layer 3 | Layer 3.5 BEFORE Layer 3 |
+| Fire-and-forget embedding | `fact_tools.rs` | `tokio::spawn` | Synchronous `await` |
+
+**Line counts:**
+
+| Caller | Before | After | Reduction |
+|--------|--------|-------|-----------|
+| `handle_fact_add` (CLI) | 555 lines | ~170 lines | -69% |
+| `fact_add` (LLM tool) | 317 lines | ~170 lines | -46% |
+| `insert_fact_with_dedup` (auto-extract) | 334 lines | ~30 lines | -91% |
+| `dedup.rs` (new central) | — | 798 lines | — |
+| **Net** | 1206 lines | ~1168 lines | **-1229** |
+
+### 6.5 Layer 4: Global-Wins-Project Rule
+
+When a new Global-scope fact conflicts with an existing Project-scope fact, the Global fact wins and the Project fact is removed.
+
+### 6.6 Startup Verification
+
+On startup, `verify_and_dedup_facts()` performs O(n²) pairwise cosine comparison on all facts with embeddings, catching any duplicates that slipped through insert-time checks.
+
+### 6.7 Resolution Actions
 
 ```rust
-enum ConflictType {
-    Duplicate,      // High similarity, no contradiction
-    Contradiction,  // High similarity, with contradiction
+enum ConflictKind {
+    ExactDuplicate,       // Layer 1: identical content
+    NormalizedDuplicate, // Layer 2: normalized content match
+    SemanticDuplicate,   // Layer 3.5: cosine ≥ 0.70, same triple (no contradiction)
+    SemanticContradiction, // Layer 3.5: cosine ≥ 0.70, triple contradicts OR is_contradiction() fires
+    FtsDuplicate,        // Layer 3: BM25 similarity ≥ 0.75 (fallback for non-semantic matches)
 }
 
-struct Conflict {
-    existing_fact: Fact,
-    conflict_type: ConflictType,
-    similarity: f32,
-}
-
-fn detect_conflicts(content: &str, db: &Database, project_id: Option<&str>) -> Result<Vec<Conflict>, Error> {
-    // 1. Search for similar facts using FTS5
-    let similar = db.search_facts(content, None, 5)?;
-    
-    // 2. For each similar fact, check for contradiction
-    let mut conflicts = Vec::new();
-    for result in similar {
-        // BM25 score normalized to [0, 1) using: (-score) / (1 - score)
-        // Higher = more similar. Threshold 0.85 corresponds to strong matches.
-        let similarity = result.score;
-        
-        if similarity > 0.85 {
-            let conflict_type = if is_contradiction(content, &result.fact.content) {
-                ConflictType::Contradiction
-            } else {
-                ConflictType::Duplicate
-            };
-            conflicts.push(Conflict {
-                existing_fact: result.fact,
-                conflict_type,
-                similarity,
-            });
-        }
-    }
-    
-    Ok(conflicts)
-}
-
-fn is_contradiction(new: &str, existing: &str) -> bool {
-    let new_lower = new.to_lowercase();
-    let existing_lower = existing.to_lowercase();
-    
-    // Patterns for contradiction
-    // "I like X" vs "I hate X"
-    // "X is A" vs "X is B" (where A != B)
-    
-    // Simplified: check for negation patterns
-    // TODO: Can be improved with more patterns
-    
-    false
+enum ConflictResolution {
+    Skip,              // Duplicate — don't add
+    Update,            // Contradiction — replace old with new
+    RemoveOld,         // Global-wins-project — remove project duplicate
+    Add,               // No conflict — add new fact
 }
 ```
 
-### 6.2 Resolution Strategy
+### 6.8 Conflict Thresholds
+
+Three distinct thresholds serve different purposes:
+
+| Constant | Value | Location | Purpose |
+|----------|-------|----------|---------|
+| `SEMANTIC_SEARCH_THRESHOLD` | 0.70 | conflict.rs | Insert-time candidate retrieval (intentionally broad — catches contradictions at 0.77+) |
+| `SEMANTIC_DEDUP_THRESHOLD` | 0.90 | verify.rs | Startup O(n²) pairwise dedup (intentionally strict — only near-identical) |
+| `CONFLICT_THRESHOLD` | 0.75 | conflict.rs | FTS5 BM25 keyword similarity (unchanged) |
+
+#### Empirical Cosine Similarity Data (nomic-embed-text-v2-moe, 2026-04-26)
+
+These measurements validate the 0.70 threshold — there is a **natural gap between 0.60 and 0.70**: everything "same topic" sits ≥0.77; different topics sit ≤0.60. With the L2→cosine metric bug fixed (§6.4.0), antonym pairs score 0.88–0.93 (well above 0.70). Under the broken metric (`1.0 - L2`), these same pairs scored 0.53–0.63 (below 0.70), which is why Layer 3.5 never fired.
+
+| Pair | cos256 (true) | L2 dist | 1-L2 (bug) | 1-L2²/2 (correct) | Category |
+|------|---------------|---------|------------|-------------------|----------|
+| "prefers dark mode" vs "prefers light mode" | **0.9317** | 0.3696 | 0.6304 | 0.9317 | Contradiction (same predicate, diff object) |
+| "name is Lucas" vs "name is Maria" | **0.8895** | 0.4701 | 0.5299 | 0.8895 | Identity contradiction |
+| "lives in Brazil" vs "lives in Argentina" | **0.9321** | 0.3685 | 0.6315 | 0.9321 | Same predicate, diff place |
+| "likes dark mode" vs "prefers dark mode" | **0.9714** | 0.2392 | 0.7608 | 0.9714 | Near-duplicate (synonym verb, same object) |
+| "likes Python" vs "prefers Python" | **0.9716** | 0.2382 | 0.7618 | 0.9716 | Semantic duplicate (verb variant) |
+| "prefers dark mode" vs "prefers Python" | **0.7750** | 0.6708 | 0.3292 | 0.7750 | Different topics |
+| "likes hiking" vs "hates hiking" | **0.9363** | 0.3568 | 0.6432 | 0.9363 | Polarity opposition (like/hate) |
+| IDENTICAL | **1.0000** | 0.0000 | 1.0000 | 1.0000 | Identical |
+
+**Key insight:** With the correct cosine metric, antonym pairs score 0.88–0.93 because they share context ("dark mode" and "light mode" both appear near "display", "theme", "settings"). The triple cascade then correctly distinguishes: `(user, prefers, dark mode)` vs `(user, prefers, light mode)` → same predicate, different object → **CONTRADICTION**.
+
+### 6.9 ADR-E4: Third-Person Normalization at Storage Time
+
+All facts are normalized to third person ("User prefers X") at storage time via `normalize_to_storage_format()` in `src/facts/lang.rs`. This ensures:
+- EN first-person input: "I prefer dark mode" → "User prefers dark mode"
+- EN first-person identity: "My name is Lucas" → "User's name is Lucas"
+- PT→EN translated input: "Eu prefiro respostas curtas" → "User prefers respostas curtas" (prefix translated, noun preserved — Bug #2 DEFERRED)
+- PT→EN identity: "Meu nome é Ana" → "User's name is Ana" (fixed — was "My name is Ana" before ADR-E4 fix)
+
+The `normalize_to_third_person()` function in `src/facts/prompt.rs` remains as defense-in-depth for any legacy facts that might have been stored before ADR-E4.
+
+### 6.10 Why Antonyms Have High Cosine Similarity
+
+A counter-intuitive but well-documented property of word embeddings: **antonym pairs consistently map to similar vectors** because they share the same context. Both "dark mode" and "light mode" appear near "display", "theme", "settings" in training data, producing cosine similarity of 0.93. This is not a flaw — it's how embeddings work.
+
+This is why the system uses a **two-step approach**: semantic search retrieves candidates (cosine ≥ 0.70), then **triple disambiguation** deterministically distinguishes contradictions from duplicates. Embeddings find the neighborhood; triples draw the boundary.
+
+#### SOTA References
+
+1. **Li, Qin & Liu (2017)** — "Contradiction Detection with Contradiction-Specific Word Embedding" (MDPI Information, 10(2), 59, [DOI: 10.3390/info10020059](https://www.mdpi.com/1999-4893/10/2/59))
+   - Standard word embeddings (Word2Vec, GloVe) map antonyms to close vectors — "overfull" and "empty" become near-neighbors
+   - **Our response:** Semantic search (cosine ≥ 0.70) retrieves candidates, then triple extraction deterministically distinguishes contradiction from duplicate
+
+2. **Boratko et al. (2025)** — "On the Theoretical Limitations of Embedding-Based Retrieval" ([arXiv:2508.21038v1](https://arxiv.org/html/2508.21038v1))
+   - Embedding dimension limits distinguishable top-k subsets
+   - Even SOTA models fail on LIMIT dataset with simple queries
+   - **Relevance:** Validates the need for post-retrieval disambiguation (triples) rather than relying on embedding scores alone
+
+3. **"How Small Transformations Expose the Weakness of Semantic Similarity Measures" (2025)** ([arXiv:2509.09714v1](https://arxiv.org/html/2509.09714v1))
+   - 18 similarity methods tested; antonyms misidentified as similar up to 99.9%
+   - **Key finding:** "Using Euclidean distance instead of cosine similarity improved results by 24–66%"
+   - **Our takeaway:** The L2→cosine conversion bug (§6.4.0) wasn't just wrong — it was using the wrong metric entirely. The correct L2-to-cosine conversion restores the intended semantic behavior.
+
+4. **Nomic Embed task_type** ([docs.nomic.ai](https://docs.nomic.ai/atlas/embeddings-and-retrieval/generate-embeddings))
+   - 4 task types: `search_query`, `search_document`, `classification`, `clustering`
+   - For semantic similarity (not QA retrieval): encode BOTH with `search_document`
+   - ask-ai does this correctly — `search_document: ` prefix on all embeddings
+
+### 6.11 Implementation Pitfall: Missing Replacement Fact Insertion (Bug #4)
+
+After detecting a contradiction in the `/fact add` command and deleting the old fact, the code must **explicitly insert the replacement fact** before returning. The naive pattern is:
 
 ```rust
-enum ResolutionAction {
-    Add,     // No conflict
-    Skip,    // Duplicate
-    Update,  // Contradiction - replace old
-}
+// ❌ WRONG — exits without inserting the replacement fact
+db.delete_fact(old_id)?;
+println!("↻ Updated: '...' replaces '...'");
+return;  // New fact is LOST
 
-fn resolve_conflict(conflict: Conflict) -> ResolutionAction {
-    match conflict.conflict_type {
-        ConflictType::Duplicate => ResolutionAction::Skip,
-        ConflictType::Contradiction => {
-            // Temporal resolution: newer wins
-            // High-importance preferences need LLM confirmation (future)
-            ResolutionAction::Update
-        }
-    }
-}
+// ✅ CORRECT — explicitly create + insert the replacement fact
+db.delete_fact(old_id)?;
+println!("↻ Updated: '...' replaces '...'");
+let replacement = Fact::new(content.clone(), category, scope, project_id, Source::User)?;
+let id = db.insert_fact(&replacement)?;
+// + synchronous embedding generation
+return;
 ```
 
-### 6.3 LLM Fallback (For Ambiguous Contradictions)
+This bug affected both the triple contradiction path and the `is_contradiction()` polarity path in `command_handlers.rs`. The auto-extraction path in `extract.rs` was not affected because it calls `insert_new_fact()` which handles the insert. The `/fact add` path has a different control flow (prints messages then returns) which made it vulnerable to this pattern.
 
-When heuristic contradiction detection fails, use stateless LLM call:
+**Lesson:** When a contradiction is detected, the replacement fact must be inserted in the **same code path** that detected the contradiction — never assume "fall through to insert below" works, because `return;` exits the entire function.
 
-```rust
-// In prompts/base.rs
-pub const FACT_CONFLICT_RESOLUTION_PROMPT: &str = r#"
-You are resolving a conflict between two facts about the same topic.
+### 6.12 Bug #5: Accumulative Predicates False Positives
 
-Existing fact: "{existing}"
-New fact: "{new}"
+**Discovered by:** Hermes Agent (during smoke test of Bug #3 + #4 fixes)
+**Status:** ✅ FIXED
 
-Are these facts:
-1. CONTRADICTORY - They cannot both be true (one must replace the other)
-2. COMPLEMENTARY - They can both be true (keep both)
-3. DUPLICATE - They say the same thing (keep existing)
+**Root cause:** `FactTriple::contradicts()` treated ALL same-predicate pairs as contradictions. So "User likes Python" vs "User likes Rust" was flagged as a contradiction. But `likes` is **accumulative** — you CAN like both Python and Rust. Only **exclusive** predicates like `prefers` and `name is` should auto-contradict on different objects.
 
-Return JSON:
-{"resolution": "CONTRICTORY|COMPLEMENTARY|DUPLICATE", "action": "UPDATE|KEEP_BOTH|SKIP"}
-"#;
+The nuance: "likes dark mode" vs "likes light mode" SHOULD contradict (same category), but "likes Python" vs "likes Rust" should NOT (different categories).
 
-// Only called when heuristic is uncertain
-async fn resolve_with_llm(existing: &Fact, new: &Fact, ollama: &Ollama) -> ResolutionAction {
-    // ~100-200 tokens
-    // Stateless call
-}
-```
+**Fix — Two-tier logic in `contradicts()`:**
+
+1. **Polarity flip** (`likes X` vs `hates X`) → always contradiction
+2. **Exclusive predicate** (`prefers`, `always prefers`, `name is`, `language is`, `is from`, `lives in`) → any different object = contradiction
+3. **Accumulative predicate** (`likes`, `loves`, `hates`, `uses`) → only contradiction if objects share content words (`object_word_overlap()` > 0.3). "likes dark mode" vs "likes light mode" shares "mode" (overlap = 0.5) → contradiction. "likes Python" vs "likes Rust" shares nothing (overlap = 0.0) → can coexist.
+
+**New code added:**
+
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `is_exclusive_predicate()` | `conflict.rs` | Delegates to `lang::EXCLUSIVE_PREDICATES` |
+| `is_polarity_flip()` | `conflict.rs` | Checks positive vs negative predicate pair |
+| `is_positive_predicate()` | `conflict.rs` | Delegates to `lang::POSITIVE_PREDICATES` |
+| `is_negative_predicate()` | `conflict.rs` | Delegates to `lang::NEGATIVE_PREDICATES` |
+| `object_word_overlap()` | `conflict.rs` | Jaccard-like overlap of content words, excluding stop words |
+
+**New constants in `lang.rs`:**
+
+| Constant | Purpose |
+|----------|---------|
+| `EXCLUSIVE_PREDICATES` | Predicates where only ONE value makes sense (prefers, name is, lives in, etc.) |
+| `POSITIVE_PREDICATES` | Affinity/enjoyment predicates (likes, loves, enjoys, adores) |
+| `NEGATIVE_PREDICATES` | Aversion/dislike predicates (hates, dislikes, doesn't like, detesta, odeia) |
+| `STOP_WORDS` | EN + PT stop words filtered by `object_word_overlap()` (the, a, de, em, etc.) |
+
+**Classification centralization:** All predicate labels in `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` must be classified in exactly one of: `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES`, or `NEUTRAL_PREDICATES`. The `test_all_predicates_classified` unit test enforces this — it panics if any label is missing.
+
+**Known limitation:** "likes vim" vs "likes emacs" → overlap = 0, NOT a contradiction. Arguably correct (you CAN like both editors), but pragmatically most people pick one. Deferred to Phase 2 (LLM adjudication) for gray-area cases.
+
+### 6.13 Exclusive vs Accumulative Predicates
+
+Predicates are classified by their **exclusivity** — whether having one value precludes having another:
+
+| Category | Predicates | Behavior | Examples |
+|----------|-----------|----------|----------|
+| **Exclusive** | prefers, usually prefers, always prefers, never prefers, really prefers, strongly prefers, definitely prefers, personally prefers, often prefers, sometimes prefers, generally prefers, particularly prefers, especially prefers, name is, language is, is from, lives in | Any different object = contradiction | "prefers dark mode" vs "prefers light mode" → UPDATE |
+| **Positive** (accumulative) | likes, usually likes, always likes, really likes, definitely likes, personally likes, often likes, sometimes likes, generally likes, quite likes, loves, usually loves, always loves, really loves, definitely loves, absolutely loves, enjoys, adores | Like + same-category object = contradiction (word overlap > 0.3). Like + different-topic object = coexist. | "likes dark mode" vs "likes light mode" → UPDATE (overlap "mode"). "likes Python" vs "likes Rust" → COEXIST |
+| **Negative** (accumulative) | hates, usually hates, always hates, really hates, definitely hates, absolutely hates, dislikes, really dislikes, personally dislikes, doesn't like, usually doesn't like, can't stand, detesta, odeia | Same logic as positive | "hates verbose output" vs "hates verbose errors" → UPDATE (overlap "verbose") |
+| **Neutral** | works at, works for, works in, speaks, is a, is, has, never prefers, never likes, never hates | No contradiction detection via triples | "works at Google" vs "works at Meta" → COEXIST |
+
+**`object_word_overlap()` threshold:** 0.3 — calculated as `|intersection| / max(|a|, |b|)` where stop words are excluded. This threshold catches same-category pairs ("dark mode" vs "light mode" share "mode" = 0.5) while allowing different-topic pairs ("Python" vs "Rust" = 0.0) to coexist.
 
 ---
 
@@ -602,8 +869,8 @@ if let Some(facts) = &self.facts {
 ### 9.1 Command Definitions
 
 ```
-/fact add <text>              # Add project fact (auto-classified)
-/fact add --global <text>     # Add global fact
+/fact add <text>              # Add project fact (auto-classified, 6-layer dedup + normalization + embedding)
+/fact add --global <text>     # Add global fact (6-layer dedup + normalization + embedding)
 /fact list                    # List all facts
 /fact list --global           # List global facts only
 /fact remove <id>             # Remove a fact
@@ -756,24 +1023,83 @@ if let Some(facts) = &self.facts {
 
 ## 13. Research References
 
-### Hermes Agent
+### Existing Systems
+
+#### Hermes Agent
 - Storage: Plain text Markdown files (`MEMORY.md`, `USER.md`)
 - Character limits: 2200 chars (memory), 1375 chars (user)
 - No decay mechanism
 - No categorization (just target: memory vs user)
 - LLM tool with `add/replace/remove` actions
 
-### Mem0
+#### Mem0
 - Storage: Vector DB + graph DB
 - Four operations: ADD, UPDATE, DELETE, NOOP
 - Conflict detection via semantic similarity
 - Feedback as ranking weight
 
+#### Letta/MemGPT
+- LLM-based `core_memory_replace` for memory updates
+- No local contradiction detection — every memory op requires LLM API call
+- Not applicable to ask-ai's offline/local-first design
+
+#### synapse-ai-memory (PyPI)
+- Triple extraction: SPO + polarity + tense
+- Contradiction types: polarity flip, preference override, identity change
+- Pure Python, zero LLM, MIT license
+- **Our `extract_fact_triple()` design is adapted from this approach** — prefix-based triple extraction with `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` as the source of truth
+
+### Academic Papers
+
+#### Li, Qin & Liu (2017) — Contradiction Detection with Contradiction-Specific Word Embedding
+- **Venue:** Information, 10(2), 59 — [DOI: 10.3390/info10020059](https://www.mdpi.com/1999-4893/10/2/59)
+- **Key finding:** Standard word embeddings (Word2Vec, GloVe) map antonyms to *close* vectors — "overfull" and "empty" become near-neighbors
+- **Relevance:** Explains why `cosine("User prefers dark mode", "User prefers light mode") = 0.78` — embeddings cannot distinguish contradictions from similarities
+- **Our response:** We don't rely on embedding polarity for contradiction detection. Instead, semantic search (cosine ≥ 0.70) retrieves candidates, then triple extraction deterministically distinguishes contradiction from duplicate
+
+#### Gokul, Tenneti & Nakkiran (2025) — Contradiction Detection in RAG Systems
+- **Venue:** arXiv:2504.00180 — [PDF](https://arxiv.org/pdf/2504.00180)
+- **Key finding:** LLMs (Claude-3 Sonnet, Llama-70B) achieve at most 71% F1 on contradiction detection. High precision but low recall — they miss >30% of actual contradictions
+- **Defines 3 contradiction types:** Self-contradiction (within doc), Pair contradiction (between docs), Conditional contradiction (triplet)
+- **Scaling problem:** Evaluating all pairs is O(n²) — infeasible with 20+ documents (190 pairs)
+- **Relevance:** Validates our decision to NOT use LLM API calls for contradiction detection. Confirms that pair contradictions (our use case: "prefer dark" vs "prefer light") are the easiest type, yet still missed by LLMs
+
+#### Boratko et al. (2025) — On the Theoretical Limitations of Embedding-Based Retrieval
+- **Venue:** arXiv:2508.21038 — [HTML](https://arxiv.org/html/2508.21038v1)
+- **Key finding:** Embedding dimension limits distinguishable top-k subsets. Even SOTA models fail on LIMIT dataset with simple queries
+- **Relevance:** Validates the need for post-retrieval disambiguation (triple cascade) rather than relying on embedding scores alone. Embeddings narrow the search space; triples make the final call
+
+#### "How Small Transformations Expose the Weakness of Semantic Similarity Measures" (2025)
+- **Venue:** arXiv:2509.09714 — [HTML](https://arxiv.org/html/2509.09714v1)
+- **Key finding:** 18 similarity methods tested; antonyms misidentified as similar up to 99.9%. "Using Euclidean distance instead of cosine similarity improved results by 24–66%"
+- **Relevance:** This explains why the L2→cosine metric bug (§6.4.0) had such catastrophic impact — `1.0 - L2_distance` is not cosine similarity for L2-normalized vectors. The correct conversion (`1.0 - L2²/2`) restored the intended behavior
+
+#### Nomic Embed task_type — Best Practice for Encoding
+- **Source:** [Nomic Atlas docs](https://docs.nomic.ai/atlas/embeddings-and-retrieval/generate-embeddings)
+- **4 task types:** `search_query`, `search_document`, `classification`, `clustering`
+- **For semantic similarity (not QA retrieval):** encode BOTH documents with `search_document` — ask-ai does this correctly via the `search_document: ` prefix on all embeddings
+
+### ML Models Evaluated and Rejected
+
+| Model | Approach | Result | Why Rejected |
+|-------|----------|--------|---------------|
+| `onnx-community/deberta-base-long-nli` | Zero-shot NLI via ONNX Runtime | **Benchmarked: FAILED** — "prefer dark" vs "prefer light" → neutral; identical sentences → contradiction | Trained on SNLI/MultiNLI (scene descriptions), lacks preference patterns. ~115ms/pair. +30MB binary weight. |
+| `cross-encoder/nli-deberta-v3-small` | True cross-encoder NLI | Not tested (Python 3.14 incompatibility) but projected to fail for same reasons | SNLI/MultiNLI training data has no "same predicate, different object" preference patterns |
+| `fastembed-rs` + ONNX reranking | Rust-native ONNX embedding + NLI | Not tested | Available if future need, but benchmark of similar models shows fundamental limitation |
+
+**Full research index and paper notes:** `~/testfiles/research/contradiction-detection/README.md`
+
 ### Key Learnings Applied
 1. **Two categories is enough** - Hermes proves categorization isn't strictly necessary
 2. **Character limits force prioritization** - No need for complex decay if limits are enforced
 3. **Heuristic classification is sufficient** - Simple patterns cover 90%+ of cases
-4. **FTS5 is enough for conflict detection** - No embeddings needed for text matching
+4. **Standard embeddings can't detect contradictions** - Li et al. (2017) proved antonyms map to similar vectors. Our measured data confirms: cosine 0.93 for "dark mode" vs "light mode"
+5. **LLMs are unreliable for contradiction detection** - Gokul et al. (2025) showed SOTA LLMs miss >30% of contradictions
+6. **Triple extraction + semantic search is the viable path** - synapse-ai-memory's approach adapted for Rust + SQLite
+7. **L2 ≠ cosine in sqlite-vec** - sqlite-vec defaults to L2 distance, not cosine. The formula `1.0 - L2_distance` is wrong for L2; the correct conversion is `1.0 - (L2_distance² / 2.0)` for L2-normalized vectors. This bug caused the entire Layer 3.5 pipeline to silently fail (all scores ~0.25–0.35 too low). Fixed in schema v12 by adding `distance_metric=cosine` to all vec0 tables, which eliminates the application-level conversion entirely: `similarity = 1.0 - distance`.
+8. **Embedding generation must be synchronous** - Fire-and-forget `tokio::spawn` causes race conditions: fact #2's semantic search can't find fact #1's embedding. Use synchronous await instead
+9. **Replacement fact insertion cannot be skipped** - After deleting an old fact in a contradiction path, the replacement MUST be explicitly inserted in the same code path before returning. Bare `return;` after delete loses the replacement fact
+10. **Not all same-predicate pairs are contradictions** - `likes` is accumulative (you can like both Python and Rust), while `prefers` is exclusive (you can only prefer one). Word overlap catches same-category pairs ("likes dark mode" vs "likes light mode" share "mode") but not different topics ("likes Python" vs "likes Rust"). Classification constants in `lang.rs` with enforcement test guarantee completeness.
 
 ---
 
@@ -788,4 +1114,4 @@ if let Some(facts) = &self.facts {
 
 **Document Status:** CANONICAL - Implementation should follow this design.
 
-**Last Updated:** 2026-03-15
+**Last Updated:** 2026-04-26

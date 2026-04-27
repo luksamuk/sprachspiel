@@ -571,6 +571,106 @@ impl Database {
             }
         }
 
+        // Migration v10 -> v11: Add fact_embeddings vec0 table and has_embedding column
+        if from_version < 11 {
+            // Check if fact_embeddings table exists (idempotent)
+            let fact_emb_exists: bool = conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='fact_embeddings'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )? > 0;
+
+            if !fact_emb_exists {
+                conn.execute_batch(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+                        fact_id INTEGER PRIMARY KEY,
+                        embedding FLOAT[256],
+                        +scope TEXT,
+                        +category TEXT,
+                        +project_id TEXT
+                    );",
+                )?;
+            }
+
+            // Add has_embedding column to facts if not exists
+            let has_emb_exists: bool = {
+                let mut stmt = conn.prepare("PRAGMA table_info(facts)")?;
+                let rows = stmt.query_map([], |row| {
+                    let name: String = row.get(1)?;
+                    Ok(name)
+                })?;
+                let names: Vec<String> = rows.collect::<Result<Vec<_>, _>>()?;
+                names.contains(&"has_embedding".to_string())
+            };
+
+            if !has_emb_exists {
+                conn.execute(
+                    "ALTER TABLE facts ADD COLUMN has_embedding INTEGER DEFAULT 0",
+                    [],
+                )?;
+            }
+
+            // Create index for finding facts without embeddings
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_facts_embedding ON facts(has_embedding) WHERE has_embedding = 0 AND invalidated_at IS NULL",
+                [],
+            )?;
+        }
+
+        // Migration v11 -> v12: Add distance_metric=cosine to vec0 tables
+        //
+        // sqlite-vec defaults to L2 (Euclidean) distance. All 3 vec0 tables were
+        // created without `distance_metric=cosine`, causing Bug #3 (L2 vs cosine
+        // metric mismatch). The application-level fix `1.0 - (L2²/2)` worked but
+        // adding the explicit metric is cleaner and eliminates the conversion.
+        //
+        // sqlite-vec does not support ALTER TABLE on virtual tables, so we must
+        // DROP and re-CREATE. This loses all embeddings, but startup recovery
+        // regenerates them (has_embedding flags are reset below).
+        if from_version < 12 {
+            conn.execute_batch("DROP TABLE IF EXISTS fact_embeddings;")?;
+            conn.execute_batch("DROP TABLE IF EXISTS content_embeddings;")?;
+            conn.execute_batch("DROP TABLE IF EXISTS chunk_embeddings_v2;")?;
+
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
+                    fact_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256] distance_metric=cosine,
+                    +scope TEXT,
+                    +category TEXT,
+                    +project_id TEXT
+                );",
+            )?;
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS content_embeddings USING vec0(
+                    item_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256] distance_metric=cosine,
+                    +content_type TEXT,
+                    +conversation_id TEXT,
+                    +project_id TEXT,
+                    +timestamp INTEGER
+                );",
+            )?;
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS chunk_embeddings_v2 USING vec0(
+                    chunk_id INTEGER PRIMARY KEY,
+                    embedding FLOAT[256] distance_metric=cosine,
+                    +content_type TEXT,
+                    +conversation_id TEXT,
+                    +project_id TEXT,
+                    +timestamp INTEGER
+                );",
+            )?;
+
+            // Reset embedding flags so startup recovery regenerates all embeddings
+            conn.execute(
+                "UPDATE facts SET has_embedding = 0 WHERE invalidated_at IS NULL",
+                [],
+            )?;
+            conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
+            conn.execute("UPDATE content_chunks SET has_embedding = 0", [])?;
+        }
+
         Ok(())
     }
 
@@ -780,12 +880,13 @@ mod tests {
         assert!(columns.contains(&"source".to_string()));
         assert!(columns.contains(&"invalidated_at".to_string()));
         assert!(columns.contains(&"project_id".to_string()));
+        assert!(columns.contains(&"has_embedding".to_string()));
 
         // Check facts_fts virtual table exists
         let vtables: Vec<String> = db
             .with_connection(|conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='facts_fts'",
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('facts_fts', 'fact_embeddings')",
                 )?;
                 let rows = stmt.query_map([], |row| row.get(0))?;
                 rows.collect::<Result<Vec<_>>>()
@@ -793,6 +894,7 @@ mod tests {
             .expect("Failed to list virtual tables");
 
         assert!(vtables.contains(&"facts_fts".to_string()));
+        assert!(vtables.contains(&"fact_embeddings".to_string()));
     }
 
     #[test]

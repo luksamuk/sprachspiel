@@ -7,8 +7,9 @@ This document outlines planned features and the current state of Ask-AI.
 | Milestone | Codename | Description | Priorities |
 |-----------|----------|-------------|------------|
 | **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
-| **[M2]** | Sprach 2.0 | CAS research, cognitive extensions | P7 (S2.1-S2.6), P14, P15 |
-| **[M3]** | Future | Deferred, no current priority | Cost tracking, team features, speculation |
+| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design phase) |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (implementation), P15 |
+| **[M4]** | Future | Deferred, no current priority | Cost tracking, team features, speculation |
 
 ## Current State
 
@@ -627,10 +628,17 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 | ID | Feature | Status | Effort |
 |----|---------|--------|--------|
 | P6.0 | Multi-Provider Support (OpenAI-Compatible) | 📋 Planned | 4-7 weeks |
-| P6.1 | Auto Fact Extraction (autoDream-lite) | 📋 Planned | 3-5 days |
+| P6.0-sub | Embedding Provider Abstraction | 📋 Planned ([sub-issue #107](https://github.com/luksamuk/ask-ai-rs/issues/107)) | 1-2 weeks |
+| P2 | Configurable Embedding Model + Matryoshka | 📋 Ready ([Issue #106](https://github.com/luksamuk/ask-ai-rs/issues/106)) | 1 week |
+| P6.1 | Auto Fact Extraction (autoDream-lite) | ✅ Completed | 3-5 days + 2 days (bug fixes) |
+| P6.7 | Fact Embedding & Semantic Dedup | ✅ Completed | 5-7 days |
 | P6.2 | Context Pinning | 🟡 Research | 2-4 days |
 | P6.3 | Dynamic Context Limits | 🟡 Research | 1-2 days |
 | P6.4 | Secret Scanning (Content) | 📋 Planned | 1-2 days |
+| P6.5 | Config Upgrade Command | 📋 Planned | 5 days |
+
+**P6.1 Bug Notes:**
+- Bug #2 (PT noun translation) is **DEFERRED** to issue #106 (M2 milestone). Heuristic mode only translates prefixes; full noun translation requires LLM-mode.
 
 **Also in P4 (Code Quality extras) [M1]:**
 
@@ -643,7 +651,7 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 
 ---
 
-### Sprach 2.0: CAS Research [M2]
+### Sprach 2.0: CAS Research [M2 → M3]
 
 **Priority:** P7 (after all P1-P5 current items are resolved)  
 **Status:** 🟡 RESEARCH NEEDED  
@@ -697,12 +705,16 @@ User-defined tools via dynamic loading or compilation.
 
 ---
 
-### TUI (Terminal User Interface)
+### TUI (Terminal User Interface) [M2 → M3]
 
-**Priority:** Low  
+**Priority:** P14
 **Status:** 🟡 IN PROGRESS (Architecture refactoring)
 
 **Goal:** Build a responsive TUI using Ratatui-rs.
+
+**Milestone split (2025-04-25):**
+- **M2 (UX & TUI Design):** UX research, design mockups, prototyping, private feedback rounds. This phase focuses on user experience design before writing production code.
+- **M3 (TUI Implementation):** Coding the TUI based on M2's design decisions. Happens alongside Sprach 2.0 research.
 
 **Architecture Preparation (Current Phase):**
 - ✅ `InputBackend` trait - abstracts input handling (Phase 1-5 complete)
@@ -741,7 +753,16 @@ User-defined tools via dynamic loading or compilation.
 **Status:** 📋 PLANNED  
 **Issue:** #72
 
+**Prerequisites:**
+
+| Issue | What | Status | Note |
+|-------|------|--------|------|
+| #106 | Configurable Embedding Model (P2) | 📋 Ready | **Required** before embedding provider swap |
+| #107 | Embedding Provider Abstraction | 📋 Planned | **Sub-task** of P6.0 (not independent prereq) |
+
 > **NOTE:** This feature has been upgraded from LOW priority to P6.0 and is now tracked in IMPLEMENTATION.md under PRIORITY 6: Core Enhancements. The detailed implementation plan is in the P6.0 section of IMPLEMENTATION.md. This roadmap section is kept for architectural reference.
+>
+> **Embedding dependency:** Before P6.0 can swap between Ollama and llama.cpp (/v1 embeddings), the embedding model must be configurable (#106) and the embedding client must support provider abstraction (#107). The chat/query provider abstraction alone is insufficient — embeddings need their own provider layer. See IMPLEMENTATION.md P2 for the configurable embedding plan.
 
 **Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (cloud/local) through a unified interface.
 
@@ -900,7 +921,7 @@ thinking = false
 
 ---
 
-## [M3] Future — Deferred
+## [M4] Future — Deferred
 
 Features explicitly deferred with no current priority:
 

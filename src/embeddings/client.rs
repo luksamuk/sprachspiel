@@ -2,13 +2,29 @@
 //!
 //! Generates embeddings using nomic-embed-text-v2-moe model.
 //!
-//! For content that exceeds the model's context window, use the `fallback` module
-//! which provides `embed_chunk_with_fallback` and `embed_item_with_fallback`.
+//! # Concurrency
+//!
+//! All embedding requests are serialized through an internal semaphore
+//! (max concurrency = 1). This prevents overwhelming the Ollama server
+//! when multiple embedding requests arrive simultaneously (e.g., fact
+//! insertion + message embedding + document indexing). Without serialization,
+//! concurrent requests can cause timeouts, model loading conflicts, or
+//! silent failures that leave `has_embedding = 0` in the database.
+//!
+//! # Timeout
+//!
+//! Each embedding request has a 30-second timeout. If Ollama is loading
+//! a model or is otherwise slow, the request will fail with
+//! `EmbeddingError::Timeout` rather than hanging indefinitely. Failed
+//! requests are recovered on the next startup via
+//! `recover_missing_embeddings()` / `recover_missing_fact_embeddings()`.
+
+use std::time::Duration;
 
 use ollama_rs::Ollama;
 use ollama_rs::generation::embeddings::request::GenerateEmbeddingsRequest;
 use ollama_rs::models::ModelInfo;
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, Semaphore};
 
 use super::truncate::{FULL_DIMENSIONS, TRUNCATED_DIMENSIONS, truncate_and_normalize};
 
@@ -19,6 +35,13 @@ pub const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text-v2-moe:latest";
 /// Conservative value suitable for most embedding models.
 /// Use this for spawned tasks that can't await context_length.
 pub const DEFAULT_CONTEXT_LENGTH: usize = 512;
+
+/// Timeout for individual embedding requests (30 seconds).
+///
+/// Ollama may need to load the embedding model on first use, which can take
+/// several seconds. 30 seconds provides a generous window while still
+/// preventing indefinite hangs when the server is unresponsive.
+const EMBEDDING_TIMEOUT_SECS: u64 = 30;
 
 /// Characters per token ratio for estimating context overflow.
 ///
@@ -51,12 +74,22 @@ const EMBEDDING_PREFIX_TOKENS: usize = 30;
 const CONTEXT_SAFETY_MARGIN: f32 = 0.20;
 
 /// Client for generating embeddings via Ollama
+///
+/// Wraps the Ollama API with concurrency control (serialized requests via
+/// an internal semaphore) and a request timeout to prevent indefinite hangs.
 pub struct EmbeddingClient {
     ollama: Ollama,
     model: String,
     /// Cached context length to avoid repeated API calls.
     /// Once set, the same value is used for the lifetime of the client.
     cached_context_length: OnceCell<usize>,
+    /// Semaphore controlling concurrency for embedding requests.
+    /// Max permits = 1 means requests are serialized: only one embedding
+    /// request is sent to Ollama at a time. This prevents model loading
+    /// conflicts, timeouts, and silent failures when multiple callers
+    /// (message embedding, fact embedding, document indexing) request
+    /// embeddings concurrently.
+    semaphore: Semaphore,
 }
 
 impl EmbeddingClient {
@@ -66,6 +99,7 @@ impl EmbeddingClient {
             ollama,
             model: DEFAULT_EMBEDDING_MODEL.to_string(),
             cached_context_length: OnceCell::new(),
+            semaphore: Semaphore::new(1),
         }
     }
 
@@ -76,6 +110,7 @@ impl EmbeddingClient {
             ollama,
             model,
             cached_context_length: OnceCell::new(),
+            semaphore: Semaphore::new(1),
         }
     }
 
@@ -177,6 +212,18 @@ impl EmbeddingClient {
     /// Uses the prefix "search_document: " for nomic-embed-text-v2-moe model.
     /// Truncates to 256 dimensions and normalizes.
     ///
+    /// # Concurrency
+    ///
+    /// Requests are serialized through an internal semaphore (max concurrency = 1)
+    /// to prevent overwhelming the Ollama server. If Ollama is loading a model
+    /// or processing another request, this call will wait for its turn.
+    ///
+    /// # Timeout
+    ///
+    /// Each request has a 30-second timeout. If the server is unresponsive or
+    /// the model is still loading, the request will fail with
+    /// `EmbeddingError::Timeout`.
+    ///
     /// # Proactive Context Check
     ///
     /// Before sending to the API, estimates whether the text exceeds the model's
@@ -210,24 +257,37 @@ impl EmbeddingClient {
             });
         }
 
+        // Acquire semaphore permit — serializes all embedding requests
+        // so only one request is sent to Ollama at a time.
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|_| EmbeddingError::ApiError("Semaphore closed".to_string()))?;
+
         // Add prefix for nomic-embed-text-v2-moe
         let prefixed_text = format!("search_document: {}", text);
 
         let request = GenerateEmbeddingsRequest::new(self.model.clone(), prefixed_text.into());
 
-        let response = self
-            .ollama
-            .generate_embeddings(request)
-            .await
-            .map_err(|e| {
-                // Check if the API error is a context exceeded error
-                let error_msg = e.to_string();
-                if Self::is_context_exceeded(&error_msg) {
-                    EmbeddingError::ContextExceeded { message: error_msg }
-                } else {
-                    EmbeddingError::ApiError(error_msg)
-                }
-            })?;
+        // Send request with timeout to prevent indefinite hangs
+        let response = tokio::time::timeout(
+            Duration::from_secs(EMBEDDING_TIMEOUT_SECS),
+            self.ollama.generate_embeddings(request),
+        )
+        .await
+        .map_err(|_| EmbeddingError::Timeout {
+            duration_secs: EMBEDDING_TIMEOUT_SECS,
+        })?
+        .map_err(|e| {
+            // Check if the API error is a context exceeded error
+            let error_msg = e.to_string();
+            if Self::is_context_exceeded(&error_msg) {
+                EmbeddingError::ContextExceeded { message: error_msg }
+            } else {
+                EmbeddingError::ApiError(error_msg)
+            }
+        })?;
 
         let embedding = response
             .embeddings
@@ -310,6 +370,8 @@ pub enum EmbeddingError {
     InvalidDimensions { expected: usize, got: usize },
     /// Content exceeds model's context window
     ContextExceeded { message: String },
+    /// Embedding request timed out
+    Timeout { duration_secs: u64 },
 }
 
 impl std::fmt::Display for EmbeddingError {
@@ -326,6 +388,13 @@ impl std::fmt::Display for EmbeddingError {
             }
             Self::ContextExceeded { message } => {
                 write!(f, "Content exceeds context limit: {}", message)
+            }
+            Self::Timeout { duration_secs } => {
+                write!(
+                    f,
+                    "Embedding request timed out after {} seconds",
+                    duration_secs
+                )
             }
         }
     }

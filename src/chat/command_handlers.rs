@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use super::commands::ChatCommand;
+use super::commands::{ChatCommand, FactListScope};
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
 
@@ -95,6 +95,8 @@ pub async fn handle_command(
                 // Flush pending embeddings before exit
                 if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
                     flush_pending_embeddings(Arc::clone(db), Arc::clone(client)).await;
+                    // Flush pending fact embeddings
+                    crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
                 }
             }
             HandleResult::Exit
@@ -242,12 +244,12 @@ pub async fn handle_command(
         }
 
         ChatCommand::FactAdd { content, global } => {
-            handle_fact_add(state, content, global);
+            handle_fact_add(state, content, global).await;
             HandleResult::Continue
         }
 
-        ChatCommand::FactList { global } => {
-            handle_fact_list(state, global);
+        ChatCommand::FactList { scope } => {
+            handle_fact_list(state, scope);
             HandleResult::Continue
         }
 
@@ -1043,12 +1045,16 @@ pub fn handle_content_prune(state: &ReplState) {
 
 /// Handle fact add command
 ///
-/// Adds a new fact to the database.
-/// Includes conflict detection (Phase 0.7).
-pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
+/// Adds a new fact to the database with full 6-layer dedup:
+/// Normalization (ADR-E4), Layer 1 (exact match), Layer 2 (normalized match),
+/// Layer 3.5 (semantic embedding + triple disambiguation, ≥0.70),
+/// Layer 3 (FTS5 BM25, ≥0.75), plus Global-wins-project rule
+/// and synchronous embedding generation.
+pub async fn handle_fact_add(state: &mut ReplState, content: String, global: bool) {
     use crate::facts::classify::classify_fact;
-    use crate::facts::conflict::{CONFLICT_THRESHOLD, detect_conflicts, resolve_conflict};
-    use crate::facts::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
+    use crate::facts::dedup::{DedupConfig, DedupResult, deduplicate_and_insert};
+    use crate::facts::lang;
+    use crate::facts::types::{Category, MAX_FACT_CONTENT_SIZE, Scope};
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
@@ -1074,115 +1080,49 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
         return;
     }
 
-    // Classify the fact
+    // Normalize to storage format (ADR-E4: third-person storage).
+    let content = lang::normalize_to_storage_format(&content);
+
+    // Classify the fact (after normalization so category is based on canonical form)
     let category = classify_fact(&content);
 
-    // Determine scope
+    // Determine scope and project_id
     let scope = if global {
         Scope::Global
     } else {
         Scope::Project
     };
-
-    // Get project ID for project-scoped facts
     let project_id = if global {
         None
     } else {
         state.session.project_id.clone()
     };
 
-    // Check for conflicts (Phase 0.7)
-    let scope_for_search = if global {
-        Some(Scope::Global)
-    } else {
-        Some(Scope::Project)
-    };
+    // Delegate to centralized dedup pipeline
+    let config = DedupConfig::user();
+    let result = deduplicate_and_insert(
+        &db,
+        &content,
+        category,
+        scope,
+        project_id.as_deref(),
+        &config,
+        state.embedding_client.as_ref(),
+    )
+    .await;
 
-    let conflicts = match db.search_facts(&content, scope_for_search, 5) {
-        Ok(results) => detect_conflicts(&content, &results, CONFLICT_THRESHOLD),
-        Err(_) => Vec::new(),
-    };
-
-    // Handle conflicts
-    if !conflicts.is_empty() {
-        let conflict = &conflicts[0];
-
-        match resolve_conflict(conflict.clone()) {
-            crate::facts::conflict::ResolutionAction::Skip => {
-                println!(
-                    "\x1B[33m⏭ Skipped: Duplicate fact exists (#{})\x1B[0m",
-                    conflict.existing_fact.id
-                );
-                println!("  Existing: {}", conflict.existing_fact.content);
-                println!("  New: {}", content);
-                println!(
-                    "\n  Use /fact remove {} first if you want to replace it.",
-                    conflict.existing_fact.id
-                );
-                return;
-            }
-            crate::facts::conflict::ResolutionAction::Update => {
-                // Delete old fact
-                if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                    eprintln!("\x1B[31m✗ Error resolving conflict: {}\x1B[0m", e);
-                    return;
-                }
-
-                // Create new fact
-                let fact = match Fact::new(
-                    content.clone(),
-                    category,
-                    scope,
-                    project_id.clone(),
-                    Source::User,
-                ) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        eprintln!("\x1B[31m✗ Failed to create fact: {}\x1B[0m", e);
-                        return;
-                    }
-                };
-
-                // Insert new fact
-                match db.insert_fact(&fact) {
-                    Ok(id) => {
-                        let scope_str = if global { "global" } else { "project" };
-                        let category_str = match category {
-                            Category::Preference => "preference",
-                            Category::Fact => "fact",
-                        };
-                        println!(
-                            "\x1B[32m✓ Updated fact #{} (scope: {}, category: {})\x1B[0m",
-                            id, scope_str, category_str
-                        );
-                        println!("  Replaced: {}", conflict.existing_fact.content);
-                        println!("  With: {}", content);
-                    }
-                    Err(e) => {
-                        eprintln!("\x1B[31m✗ Failed to store fact: {}\x1B[0m", e);
-                    }
-                }
-                return;
-            }
-            crate::facts::conflict::ResolutionAction::Add => {
-                // No conflict - continue to insert below
-            }
-        }
-    }
-
-    // Create the fact (no conflicts)
-    let fact = match Fact::new(content.clone(), category, scope, project_id, Source::User) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to create fact: {}\x1B[0m", e);
-            return;
-        }
-    };
-
-    // Insert into database
-    match db.insert_fact(&fact) {
-        Ok(id) => {
-            let scope_str = if global { "global" } else { "project" };
+    // Format result for CLI
+    match result {
+        DedupResult::Inserted {
+            id,
+            category,
+            scope,
+        } => {
+            let scope_str = if scope == Scope::Global {
+                "global"
+            } else {
+                "project"
+            };
             let category_str = match category {
                 Category::Preference => "preference",
                 Category::Fact => "fact",
@@ -1193,16 +1133,103 @@ pub fn handle_fact_add(state: &ReplState, content: String, global: bool) {
             );
             println!("  {}", content);
         }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to add fact: {}\x1B[0m", e);
+        DedupResult::ExactDuplicate {
+            existing_id,
+            existing_content,
+        } => {
+            println!(
+                "\x1B[33m⏭ Skipped: Exact duplicate already exists (#{})\x1B[0m",
+                existing_id
+            );
+            println!("  Existing: {}", existing_content);
+            println!("  New: {}", content);
+            println!(
+                "\n  Use /fact remove {} first if you want to replace it.",
+                existing_id
+            );
+        }
+        DedupResult::NormalizedDuplicate {
+            existing_id,
+            existing_content,
+        } => {
+            println!(
+                "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
+                existing_id
+            );
+            println!("  Existing: {}", existing_content);
+            println!("  New: {}", content);
+            println!(
+                "\n  Use /fact remove {} first if you want to replace it.",
+                existing_id
+            );
+        }
+        DedupResult::SemanticDuplicate {
+            existing_id,
+            existing_content,
+            score,
+        } => {
+            println!(
+                "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
+                existing_id
+            );
+            println!("  Existing: {}", existing_content);
+            println!("  New: {}", content);
+            println!(
+                "\n  Use /fact remove {} first if you want to replace it.",
+                existing_id
+            );
+            log::debug!("/fact add: Semantic duplicate (cosine={:.3})", score);
+        }
+        DedupResult::Updated {
+            id,
+            old_content,
+            reason,
+            category,
+            scope,
+        } => {
+            let scope_str = if scope == Scope::Global {
+                "global"
+            } else {
+                "project"
+            };
+            let category_str = match category {
+                Category::Preference => "preference",
+                Category::Fact => "fact",
+            };
+            println!(
+                "\x1B[36m↻ Updated: '{}' replaces '{}' ({})\x1B[0m",
+                content, old_content, reason
+            );
+            println!(
+                "  → New fact #{} (scope: {}, category: {})",
+                id, scope_str, category_str
+            );
+        }
+        DedupResult::Fts5Conflict {
+            existing_id,
+            existing_content,
+            is_contradiction: _,
+        } => {
+            println!(
+                "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
+                existing_id
+            );
+            println!("  Existing: {}", existing_content);
+            println!("  New: {}", content);
+            println!(
+                "\n  Use /fact remove {} first if you want to replace it.",
+                existing_id
+            );
+        }
+        DedupResult::Error(e) => {
+            eprintln!("\x1B[31m✗ Error: {}\x1B[0m", e);
         }
     }
 }
-
 /// Handle fact list command
 ///
 /// Lists all facts for the current scope.
-pub fn handle_fact_list(state: &ReplState, global: bool) {
+pub fn handle_fact_list(state: &ReplState, scope: FactListScope) {
     use crate::facts::types::{Category, Scope};
 
     let db = match &state.db {
@@ -1218,58 +1245,200 @@ pub fn handle_fact_list(state: &ReplState, global: bool) {
         return;
     }
 
-    let scope = if global {
-        Scope::Global
-    } else {
-        Scope::Project
-    };
+    let project_id = state.session.project_id.clone();
 
-    let project_id = if global {
-        None
-    } else {
-        state.session.project_id.clone()
-    };
+    match scope {
+        FactListScope::All => {
+            // Show both Global and Project facts separated by sections
+            let global_facts = db.list_facts(Some(Scope::Global), None, None);
+            let project_facts = db.list_facts(Some(Scope::Project), None, project_id.as_deref());
 
-    match db.list_facts(Some(scope), None, project_id.as_deref()) {
-        Ok(facts) => {
-            let scope_str = if global { "global" } else { "project" };
-            println!("\x1B[36mFacts ({scope_str}):\x1B[0m");
+            println!("\x1B[36mFacts:\x1B[0m");
 
-            if facts.is_empty() {
-                println!("  No facts stored.");
-                return;
-            }
+            let mut total = 0;
 
-            // Group by category
-            let preferences: Vec<_> = facts
-                .iter()
-                .filter(|f| f.category == Category::Preference)
-                .collect();
-            let regular_facts: Vec<_> = facts
-                .iter()
-                .filter(|f| f.category == Category::Fact)
-                .collect();
+            // Global section
+            match &global_facts {
+                Ok(facts) => {
+                    println!("\n  \x1B[1m\x1B[36m--- Global ---\x1B[0m");
+                    if facts.is_empty() {
+                        println!("    No global facts stored.");
+                    } else {
+                        let preferences: Vec<_> = facts
+                            .iter()
+                            .filter(|f| f.category == Category::Preference)
+                            .collect();
+                        let regular_facts: Vec<_> = facts
+                            .iter()
+                            .filter(|f| f.category == Category::Fact)
+                            .collect();
 
-            if !preferences.is_empty() {
-                println!("\n  \x1B[33mPreferences:\x1B[0m");
-                for f in preferences {
-                    let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                    println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        if !preferences.is_empty() {
+                            println!("\n    \x1B[33mPreferences:\x1B[0m");
+                            for f in preferences {
+                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                                println!(
+                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
+                                    f.id, f.content, age_days
+                                );
+                            }
+                        }
+
+                        if !regular_facts.is_empty() {
+                            println!("\n    \x1B[33mFacts:\x1B[0m");
+                            for f in regular_facts {
+                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                                println!(
+                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
+                                    f.id, f.content, age_days
+                                );
+                            }
+                        }
+                        total += facts.len();
+                    }
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to list global facts: {}\x1B[0m", e);
                 }
             }
 
-            if !regular_facts.is_empty() {
-                println!("\n  \x1B[33mFacts:\x1B[0m");
-                for f in regular_facts {
-                    let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                    println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+            // Project section
+            match &project_facts {
+                Ok(facts) => {
+                    let project_label = project_id.as_deref().unwrap_or("unknown");
+                    println!(
+                        "\n  \x1B[1m\x1B[36m--- Project: {} ---\x1B[0m",
+                        project_label
+                    );
+                    if facts.is_empty() {
+                        println!("    No project facts stored.");
+                    } else {
+                        let preferences: Vec<_> = facts
+                            .iter()
+                            .filter(|f| f.category == Category::Preference)
+                            .collect();
+                        let regular_facts: Vec<_> = facts
+                            .iter()
+                            .filter(|f| f.category == Category::Fact)
+                            .collect();
+
+                        if !preferences.is_empty() {
+                            println!("\n    \x1B[33mPreferences:\x1B[0m");
+                            for f in preferences {
+                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                                println!(
+                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
+                                    f.id, f.content, age_days
+                                );
+                            }
+                        }
+
+                        if !regular_facts.is_empty() {
+                            println!("\n    \x1B[33mFacts:\x1B[0m");
+                            for f in regular_facts {
+                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                                println!(
+                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
+                                    f.id, f.content, age_days
+                                );
+                            }
+                        }
+                        total += facts.len();
+                    }
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to list project facts: {}\x1B[0m", e);
                 }
             }
 
-            println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
+            println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", total);
         }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
+        FactListScope::Global => {
+            // Show only global facts
+            match db.list_facts(Some(Scope::Global), None, None) {
+                Ok(facts) => {
+                    println!("\x1B[36mFacts (global):\x1B[0m");
+
+                    if facts.is_empty() {
+                        println!("  No global facts stored.");
+                        return;
+                    }
+
+                    let preferences: Vec<_> = facts
+                        .iter()
+                        .filter(|f| f.category == Category::Preference)
+                        .collect();
+                    let regular_facts: Vec<_> = facts
+                        .iter()
+                        .filter(|f| f.category == Category::Fact)
+                        .collect();
+
+                    if !preferences.is_empty() {
+                        println!("\n  \x1B[33mPreferences:\x1B[0m");
+                        for f in preferences {
+                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        }
+                    }
+
+                    if !regular_facts.is_empty() {
+                        println!("\n  \x1B[33mFacts:\x1B[0m");
+                        for f in regular_facts {
+                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        }
+                    }
+
+                    println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
+                }
+            }
+        }
+        FactListScope::Project => {
+            // Show only project facts
+            match db.list_facts(Some(Scope::Project), None, project_id.as_deref()) {
+                Ok(facts) => {
+                    let project_label = project_id.as_deref().unwrap_or("unknown");
+                    println!("\x1B[36mFacts (project: {}):\x1B[0m", project_label);
+
+                    if facts.is_empty() {
+                        println!("  No project facts stored.");
+                        return;
+                    }
+
+                    let preferences: Vec<_> = facts
+                        .iter()
+                        .filter(|f| f.category == Category::Preference)
+                        .collect();
+                    let regular_facts: Vec<_> = facts
+                        .iter()
+                        .filter(|f| f.category == Category::Fact)
+                        .collect();
+
+                    if !preferences.is_empty() {
+                        println!("\n  \x1B[33mPreferences:\x1B[0m");
+                        for f in preferences {
+                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        }
+                    }
+
+                    if !regular_facts.is_empty() {
+                        println!("\n  \x1B[33mFacts:\x1B[0m");
+                        for f in regular_facts {
+                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
+                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
+                        }
+                    }
+
+                    println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
+                }
+                Err(e) => {
+                    eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
+                }
+            }
         }
     }
 }

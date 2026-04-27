@@ -313,12 +313,12 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
 ```
 
 - [ ] Tables exist (content, facts, conversations, session_todos, etc.)
-- [ ] Schema version correct (10 or higher)
+- [ ] Schema version correct (12 or higher)
 
 **Explicit verification:**
 ```bash
 SCHEMA_VER=$(sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;")
-[ "$SCHEMA_VER" -ge 10 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 10"
+[ "$SCHEMA_VER" -ge 11 ] && echo "✓ schema v$SCHEMA_VER" || echo "✗ schema v$SCHEMA_VER < 11"
 ```
 
 **Verify priority/tags columns in session_todos (v9):**
@@ -333,6 +333,14 @@ sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(session_todos);"
 sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables" | grep -q "feedback_signals" && echo "✓ feedback_signals table" || echo "✗ feedback_signals table missing"
 # Verify pruned column in content_items (v10)
 sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(content_items);" | grep -q "pruned" && echo "✓ pruned column" || echo "✗ pruned column missing"
+```
+
+**Verify v12 additions:**
+
+# Verify has_embedding column in facts table
+
+# Verify fact_embeddings vec0 table with distance_metric=cosine
+sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables" | grep -q "fact_embeddings" && echo "✓ fact_embeddings table" || echo "✗ fact_embeddings table missing"
 ```
 
 ---
@@ -600,7 +608,7 @@ Test the feedback_submit LLM tool and configuration defaults.
 Verify `[feedback]` section in config.toml (or defaults work without it):
 
 ```bash
-# Check schema version (must be 10 or higher)
+# Check schema version (must be 12 or higher)
 sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"
 # Expected: 10 or higher
 
@@ -703,6 +711,573 @@ Verify consolidated command routing works after the refactoring.
 
 ---
 
+## 20. Auto Fact Extraction (P6.1 — autoDream-lite)
+
+Verify that preference and identity facts are auto-extracted from user messages and stored.
+
+> **⚠️ Clean database recommended before starting this section.**  
+> ```bash
+> rm -f ~/.local/share/ask-ai/embeddings.db
+> ```
+> This ensures a clean state for dedup and embedding tests.
+
+> **⚠️ Bug #2 (DEFERRED to issue #106):** PT noun translation after the prefix is NOT handled by heuristic mode. "Eu prefiro respostas curtas" → "User prefers respostas curtas" (noun "respostas curtas" remains in PT). Full noun translation requires LLM-mode (M2).
+
+### 20.1 Auto-Extraction Happy Path (English)
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] Send: "I prefer dark mode" → response includes `[Auto-extracted: N fact(s)]` notification (gray text)
+- [ ] `/fact list` shows the extracted fact **"User prefers dark mode"** (NOT "I prefer dark mode" — ADR-E4 revised)
+
+### 20.2 Multiple Preferences Per Message
+
+- [ ] Send: "I like Python and I hate verbose errors" → extraction notification appears
+- [ ] `/fact list` shows both extracted facts, both in **third person** ("User likes Python", "User hates verbose errors")
+
+### 20.3 Deduplication
+
+- [ ] Send: "I prefer dark mode" again → no new duplicate fact created
+- [ ] `/fact list` shows only one "prefer dark mode" fact
+
+### 20.4 Contradiction Resolution
+
+- [ ] Send: "I prefer light mode" → extraction notification says 1 fact extracted/updated
+- [ ] `/fact list` shows "User prefers light mode" (old "dark mode" fact removed)
+
+### 20.5 No Extraction in Anonymous Mode
+
+- [ ] Start: `ask-ai chat --anonymous`
+- [ ] Send: "I prefer dark mode" → NO extraction notification appears
+- [ ] Exit: `/exit`
+
+### 20.6 Config: Disable Notification
+
+- [ ] Edit `~/.config/ask-ai/config.toml`, add `[facts] auto_extract_notify = false`
+- [ ] Start chat, send preference → fact is extracted but NO `[Auto-extracted]` notification
+- [ ] Restore config
+
+### 20.7 Config: Disable Auto-Extract
+
+- [ ] Edit `~/.config/ask-ai/config.toml`, add `[facts] auto_extract = false`
+- [ ] Start chat, send preference → NO extraction, NO notification
+- [ ] Restore config
+
+### 20.8 Third-Person Normalization (English — ADR-E4 Revised)
+
+> **ADR-E4 revised:** All facts are now stored in third person ("User prefers X"), not just rendered in third person. `normalize_to_storage_format()` in `lang.rs` applies EN 1st→3rd person normalization at storage time. `normalize_to_third_person()` in `prompt.rs` remains as defense-in-depth for legacy data.
+
+- [ ] Send: "My name is Lucas" → extraction notification
+- [ ] `/fact list` → verify stored as **"User's name is Lucas"** (NOT "My name is Lucas")
+- [ ] New session: ask "What are my preferences/identity?" → model references third-person form
+- [ ] Send: "I prefer dark mode" → extraction notification
+- [ ] `/fact list` → verify stored as **"User prefers dark mode"** (NOT "I prefer dark mode")
+
+### 20.9 Portuguese Preference Extraction (ADR-L1: PT→EN Storage)
+
+> **⚠️ Bug #2 (DEFERRED):** PT nouns after the prefix remain in original language. "Eu prefiro respostas curtas" → "User prefers respostas curtas" (noun preserved). This is expected behavior until LLM-mode.
+
+- [ ] Send: "Eu prefiro respostas curtas" → extraction notification
+- [ ] `/fact list` → stored as **"User prefers respostas curtas"** (EN prefix, PT noun — known limitation)
+- [ ] Send: "Adoro Rust" → extraction notification
+- [ ] `/fact list` → stored as **"User loves Rust"** (English, not "User adora")
+- [ ] Send: "Não gosto de bugs" → extraction notification
+- [ ] `/fact list` → stored as **"User doesn't like bugs"** (English)
+- [ ] Verify: NO Portuguese prefixes in stored facts (no "User prefere", "User gosta", etc.)
+
+### 20.10 Portuguese Identity Extraction
+
+- [ ] Send: "Meu nome é Ana" → extraction notification
+- [ ] `/fact list` → stored as **"User's name is Ana"** (EN, NOT "My name is Ana" — ADR-E4)
+- [ ] Send: "Eu moro em Brasília" → extraction notification
+- [ ] `/fact list` → stored as **"User lives in Brasília"** (EN, NOT "I live in Brasília")
+- [ ] Send: "Eu trabalho no Google" → extraction notification
+- [ ] `/fact list` → stored as **"User works at Google"** (EN, NOT "I work at Google")
+
+### 20.11 Portuguese Exclusions (Commands & Fillers)
+
+- [ ] Send: "Mostre os logs" → NO extraction (PT command)
+- [ ] Send: "Busca o arquivo" → NO extraction (PT command)
+- [ ] Send: "Beleza" → NO extraction (PT filler)
+- [ ] Send: "Valeu" → NO extraction (PT filler)
+
+### 20.12 fact_add LLM Tool: Content Validation (Bug #4/#5 fix)
+
+- [ ] Ask LLM: "Remember that I like cats" → LLM calls `fact_add(content="I like cats")`, tool adds successfully
+- [ ] Ask LLM: "Remember this: What time is it?" → LLM calls `fact_add(content="What time is it?")`, tool returns **Skipped: question**
+- [ ] Ask LLM: "Remember: Thanks" → LLM calls `fact_add(content="Thanks")`, tool returns **Skipped: filler**
+- [ ] Ask LLM: "Remember: Show me the logs" → LLM calls `fact_add(content="Show me the logs")`, tool returns **Skipped: command**
+- [ ] Ask LLM: "Remember: hi" → LLM calls `fact_add(content="hi")`, tool returns **Skipped: too short** (min 10 chars)
+
+### 20.13 fact_add LLM Tool: PT→EN Translation (Bug #2 retest)
+
+> **⚠️ Bug #2 (DEFERRED):** PT nouns after the prefix remain in original language. "Lembre que prefere respostas curtas" → "User prefers respostas curtas".
+
+- [ ] Ask LLM (in Portuguese): "Lembre que eu prefiro respostas curtas" → LLM calls `fact_add(content="Eu prefiro respostas curtas")`
+- [ ] `/fact list` → stored as **"User prefers respostas curtas"** (EN prefix, PT noun — known limitation)
+- [ ] Ask LLM: "Remember: adoro Rust" → `fact_add(content="adoro Rust")`
+- [ ] `/fact list` → stored as **"User loves Rust"** (English)
+- [ ] Verify: NO Portuguese-only prefixes in stored facts (no "Prefere", no "O nome do usuário")
+
+### 20.14 Deduplication: Gap Fix & Cross-Scope (Bug #1 fix)
+
+- [ ] Send: "I prefer dark mode" → extraction notification, stored as Global preference
+- [ ] Ask LLM: "Remember that I prefer dark mode" → `fact_add` returns **Skipped: duplicate** (normalized match catches "User prefers dark mode")
+- [ ] `/fact list` → only ONE "prefer dark mode" fact exists (no duplicates)
+- [ ] If a Project-scope "prefer dark mode" exists, adding a Global-scope one should **replace** the Project one
+
+### 20.15 /fact list: Scope Separation (Bug #3 fix)
+
+- [ ] `/fact list` → shows **Global** and **Project** sections with headers
+- [ ] Global facts listed under "Global Preferences" and "Global Facts"
+- [ ] Project facts listed under "Project Preferences" and "Project Facts"
+- [ ] `/fact list --global` → shows only Global facts
+- [ ] `/fact list --project` → shows only Project facts
+
+### 20.16 System Prompt: Scope Separation (user request)
+
+- [ ] Store a Global preference: "I prefer dark mode"
+- [ ] Store a Project fact: "The project uses Rust"
+- [ ] New session → ask: "What do you know about me?"
+- [ ] Model response should reference "User prefers dark mode" (Global)
+- [ ] `/system` or check logs → system prompt has **"### Global Preferences"** and **"### Project Facts"** headers
+
+### 20.17 Global Facts: project_id=None (Bug #1/6 fix)
+
+- [ ] Send: "I prefer dark mode" → fact auto-extracted as Global
+- [ ] Check database: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, content, scope, project_id FROM facts WHERE content LIKE '%dark mode%'"`
+- [ ] Verify: `project_id` column is **NULL** for Global scope facts
+
+### 20.18 Exact Content Dedup (Retest #1 fix)
+
+- [ ] Send: "I prefer dark mode" → extraction notification
+- [ ] Send: "I prefer dark mode" again (exact same text) → NO duplicate created
+- [ ] Send: "i prefer dark mode" (lowercase) → NO duplicate (case-insensitive exact match)
+- [ ] `/fact list` → only ONE dark mode fact
+
+### 20.19 Normalized Content Dedup (Retest #1 fix)
+
+- [ ] Send: "I prefer dark mode" → extraction notification
+- [ ] Ask LLM: "Remember that I prefer dark mode" → fact_add returns **Skipped: Similar fact already exists** (normalized match catches "User prefers dark mode" ≈ "User prefers dark mode")
+- [ ] `/fact list` → only ONE dark mode fact
+
+### 20.20 Contradiction: Preference Override (Retest #3 fix — semantic triple)
+
+> **Bug S42.4/S43.1 fix:** Layer 3.5 (after reorder) uses semantic search (cosine ≥ 0.70) with triple disambiguation: extracts (subject, predicate, object) triples; when same predicate but different object → contradiction → replace. Also catches polarity opposition via `is_contradiction()` fallback.
+
+- [ ] Send: "I prefer dark mode" → stored as preference "User prefers dark mode"
+- [ ] Send: "I prefer light mode" → extraction should detect **contradiction** (semantic triple: same predicate "prefers", different object) and **update** the existing fact
+- [ ] `/fact list` → "User prefers light mode" replaces "User prefers dark mode" (NOT both present)
+
+### 20.21 Third-Person PT Translation (Retest #2 fix — ADR-E4)
+
+> **ADR-E4 revised:** Storage-time normalization. All facts stored as "User prefers X", never "I prefer X".
+
+- [ ] Ask LLM (in Portuguese): "Lembre que prefere respostas curtas" → `fact_add(content="Prefere respostas curtas")`
+- [ ] Verify: stored as **"User prefers respostas curtas"** (EN prefix, PT noun — known limitation)
+- [ ] Ask LLM: "Remember that o nome do usuário é Ana" → stored as **"User's name is Ana"** (EN, NOT "My name is Ana")
+- [ ] `/fact list` → verify ALL facts stored in third person ("User prefers...", "User's name is...", NOT "I prefer...")
+
+### 20.22 Conflict Threshold (Retest #1 fix)
+
+- [ ] This is indirectly tested by 20.14, 20.18, and 20.19
+- [ ] Verify: `CONFLICT_THRESHOLD` is 0.75 (reduced from 0.85) in `src/facts/conflict.rs`
+
+### 20.23 Deduplicate Extracted Threshold (Retest explosion fix)
+
+- [ ] Send: "Eu moro em Brasília e meu nome é Ana e trabalho no Google" (3 identity facts)
+- [ ] Verify: at most 3 facts extracted per message (respecting `max_facts = 3` limit)
+- [ ] `/fact list` → no obvious duplicates from single message
+
+---
+
+## 21. Fact Embedding & Semantic Dedup (P6.7)
+
+**Prerequisites:** Ollama must be running with the embedding model available.
+
+> **⚠️ Clean database recommended before starting this section.**  
+> ```bash
+> rm -f ~/.local/share/ask-ai/embeddings.db
+> ```
+> This ensures a clean state for embedding and dedup tests.
+
+### 21.1 Schema Migration: v11 → v12
+
+- [ ] Start a fresh chat session → no errors
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA user_version;"` → returns **12**
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "PRAGMA table_info(facts);"` → includes **has_embedding** column (type INTEGER, default 0)
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db ".tables"` → includes **fact_embeddings** (vec0 virtual table)
+- [ ] Verify distance_metric=cosine: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT sql FROM sqlite_master WHERE name='fact_embeddings'"` → contains **distance_metric=cosine**
+
+### 21.2 Fact Insertion Generates Embedding (Synchronous)
+
+> **Bug #4 fix + race condition fix:** Embedding generation is now **synchronous** (await, not fire-and-forget). After inserting a fact, the embedding is generated and stored before returning. This ensures that subsequent Layer 3.5 searches can find the new fact's embedding. If Ollama is offline, `has_embedding` stays 0 and recovery generates on next startup.
+
+- [ ] Ask LLM: "Remember that I prefer concise output" (triggers `fact_add`)
+- [ ] Embedding is generated **synchronously** — no need to wait
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%concise%'"` → **has_embedding = 1**
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM fact_embeddings"` → **≥ 1** row
+
+### 21.3 Auto-Extraction Generates Embedding (Synchronous)
+
+- [ ] Send: "I prefer dark mode" → wait for `[Auto-extracted]` notification
+- [ ] Embedding is generated **synchronously** — no need to wait
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%dark mode%'"` → **has_embedding = 1**
+
+### 21.4 Startup Recovery: Missing Embeddings
+
+- [ ] Manually reset embedding flag: `sqlite3 ~/.local/share/ask-ai/embeddings.db "UPDATE facts SET has_embedding = 0"`
+- [ ] Quit and restart chat → should see `Recovering N missing fact embedding(s)` in logs (or silent if no output)
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
+- [ ] Check logs for post-recovery verification: should warn if any facts still lack embeddings after recovery
+
+### 21.5 Ollama Offline: Graceful Degradation
+
+- [ ] Stop Ollama (`pkill ollama` or similar)
+- [ ] Start chat with `ask-ai chat` → should NOT crash
+- [ ] Ask LLM: "Remember that my favorite color is blue" → fact stored, `has_embedding = 0` (no crash)
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%blue%'"` → **has_embedding = 0**
+- [ ] Restart Ollama
+- [ ] Quit and restart chat → recovery generates missing embeddings
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0** (all recovered)
+
+### 21.6 Semantic Contradiction Detection (Bug #3 fix — Layer 3.5 with triple disambiguation)
+
+> **Bug #3 fix + race condition fix:** After Layer 2, before FTS5, Layer 3.5 generates an embedding and searches `fact_embeddings` (cosine ≥ 0.70). For each result, it extracts triples: same predicate + different object = contradiction → Update; same triple = duplicate → Skip; different predicates → `is_contradiction()` fallback (polarity opposition). Embedding generation is now **synchronous** (await, not fire-and-forget), so fact #1's embedding is guaranteed to exist when fact #2's Layer 3.5 search runs.
+
+**Clean state first:**
+```bash
+# Remove all facts for clean test
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] Send: "I prefer dark mode" → stored as preference "User prefers dark mode"
+- [ ] Embedding is generated synchronously — no need to wait
+- [ ] Send: "I prefer light mode" → should UPDATE (not duplicate) the existing fact via semantic triple contradiction (same predicate "prefers", different object)
+- [ ] `/fact list` → shows "User prefers light mode" (NOT both "dark" and "light")
+- [ ] Verify embedding: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE content LIKE '%light mode%' AND has_embedding = 1"` → **1**
+
+### 21.7 Semantic Duplicate Detection: Paraphrase (Layer 3.5)
+
+- [ ] Send: "I prefer dark mode" → stored as fact
+- [ ] Embedding is generated synchronously — no need to wait
+- [ ] Ask LLM: "Remember that I like using dark mode" → `fact_add` should return **Skipped: Similar fact already exists** or **duplicate** (FTS5 or Layer 3.5 catches it)
+- [ ] `/fact list` → only ONE dark mode preference
+
+### 21.8 Delete Fact Removes Embedding
+
+- [ ] Note the ID of a fact with `has_embedding = 1`: `/fact list`
+- [ ] `/fact remove <ID>` → removes fact
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM fact_embeddings WHERE fact_id = <ID>"` → **0** (embedding also removed)
+
+### 21.9 Shutdown Flush
+
+- [ ] Start chat, extract some facts
+- [ ] Immediately `/exit` → should complete without error
+- [ ] Restart → no "Recovering" message for facts (embeddings generated synchronously at insert time)
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
+
+### 21.10 Startup Semantic Dedup Verification
+
+This test requires manually inserting two semantically similar facts (without embeddings):
+
+```bash
+# Insert two similar facts about the same preference
+sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category, content, importance, decay_score, created_at, last_accessed, source, has_embedding) VALUES ('global', 'preference', 'I prefer dark mode', 0.5, 1.0, $(date +%s), $(date +%s), 'user', 0);"
+sqlite3 ~/.local/share/ask-ai/embeddings.db "INSERT INTO facts (scope, category, content, importance, decay_score, created_at, last_accessed, source, has_embedding) VALUES ('global', 'preference', 'I like dark mode', 0.5, 1.0, $(date +%s), $(date +%s), 'user', 0);"
+```
+
+- [ ] Insert two similar facts (as above)
+- [ ] `/fact list` → should show TWO similar facts initially
+- [ ] Restart chat (triggers `verify_and_dedup_facts()`)
+- [ ] `/fact list` → should show ONE fact (duplicate removed by semantic dedup)
+- [ ] Optionally check logs for "Fact verification: removed 1 duplicates"
+
+### 21.11 Embedding Serialization: No Concurrent Overload (Bug #4)
+
+> **Bug #4 fix:** `EmbeddingClient` now serializes all embedding requests through `Semaphore(1)` with a 30-second timeout. Additionally, embedding generation is now **synchronous** (await, not fire-and-forget `tokio::spawn`), so each fact's embedding is guaranteed ready before the next fact's Layer 3.5 search runs. This eliminates the race condition where fact #2's semantic search couldn't find fact #1's embedding.
+
+- [ ] **Rapid-fire test:** Send 5+ preference messages in quick succession:
+  ```
+  "I prefer dark mode"
+  "I like Python"
+  "I hate verbose errors"
+  "I want short responses"
+  "I love Rust"
+  ```
+- [ ] NO crash or panic during rapid insertion
+- [ ] All 5 facts should have embeddings (generated synchronously — no need to wait):
+  ```bash
+  sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 1 AND invalidated_at IS NULL"
+  ```
+  Should be **≥ 5** (more if previous facts exist)
+- [ ] Check for timeout errors in logs (should be none or very rare under normal conditions)
+
+### 21.12 Post-Recovery Verification Warning (Bug #4)
+
+- [ ] Stop Ollama (`pkill ollama`)
+- [ ] Start chat: `ask-ai chat`
+- [ ] Ask: "Remember that my favorite color is purple" → stored with `has_embedding = 0`
+- [ ] `/exit`
+- [ ] Restart Ollama
+- [ ] Start chat: `ask-ai chat`
+- [ ] If embedding recovery succeeds for all facts, no warning should appear
+- [ ] If some facts remain without embeddings after recovery, a `log::warn!` message should appear (visible with `-v` verbose mode)
+
+### 21.13 Regression — Existing Fact Features Still Work
+
+- [ ] `/fact add` via LLM tool → works as before
+- [ ] `/fact list` → shows facts correctly with scope headers
+- [ ] `/fact search <query>` → returns matching facts
+- [ ] `/fact remove <id>` → removes fact and its embedding
+- [ ] Auto-extraction still works and generates embeddings synchronously
+- [ ] Preference override contradiction still works ("prefer X" → "prefer Y" replaces via semantic triple)
+- [ ] Global-wins-project rule still works
+
+### 21.14 `/fact add` CLI: Full Dedup Parity (Bug #3 smoke test #2)
+
+> **Bug #3 fix (smoke test #2):** `/fact add` CLI command now uses the same 6-layer dedup pipeline as `fact_add` LLM tool and auto-extraction: normalization (ADR-E4), Layer 1 (exact), Layer 2 (normalized), Layer 3.5 (semantic + triple disambiguation, ≥0.70), Layer 3 (FTS5), plus synchronous embedding generation.
+
+- [ ] `/fact add I prefer dark mode` → stores "User prefers dark mode" (normalized per ADR-E4)
+- [ ] Embedding is generated synchronously — no need to wait
+- [ ] `/fact add I prefer dark mode` → **Skipped: Exact duplicate** (Layer 1)
+- [ ] `/fact add User prefers dark mode` → **Skipped: Similar fact** (Layer 2, normalized match)
+- [ ] `/fact add I like dark mode` → Layer 3.5 should catch as paraphrase or FTS5 as similar
+- [ ] `/fact add I prefer light mode` → should **UPDATE** existing preference (semantic triple contradiction: same predicate "prefers", different object)
+- [ ] Verify embedding exists: `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE content LIKE '%light mode%'"` → **has_embedding = 1**
+
+### 21.15 `/tools` Toggle for Layer 3.5 Testing (Bug #4 smoke test #2)
+
+> **Bug #4 investigation (smoke test #2):** Some LLM models proactively call `fact_add` when they detect a contradiction, which makes it hard to test auto-extraction-based Layer 3.5. The `/tools` command disables LLM tool calls for the session, allowing auto-extraction to be tested independently.
+
+**Procedure:**
+1. Clean state: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+2. Start chat: `ask-ai chat`
+3. `/tools` → should print **"Tools: disabled"**
+4. Send: "I prefer dark mode" → auto-extraction should store via `normalize_to_storage_format()` (embedding generated synchronously)
+5. Embedding is generated synchronously — no need to wait
+6. Send: "Actually, I prefer light mode" → auto-extraction should detect contradiction via semantic triple (same predicate "prefers", different object) and UPDATE
+7. `/fact list` → should show **one** preference: "User prefers light mode"
+8. `/tools` → should print **"Tools: enabled"**
+9. Verify auto-extraction worked independently of LLM tool calls
+
+### 21.16 Semantic Triple Contradiction: EN Preference Override (Bug S42.4/S43.1 retest)
+
+> **Bug S42.4/S43.1 fix:** Layer 3.5 (reordered, threshold 0.70) finds semantically similar facts, then triple disambiguation extracts (subject, predicate, object). Same predicate + different object → contradiction → replace. Zero ML, sub-millisecond.
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I prefer dark mode` → ✓ Added: "User prefers dark mode"
+- [ ] `/fact add I prefer light mode` → ↻ Updated: "User prefers light mode" replaces "User prefers dark mode" (preference override)
+- [ ] `/fact list` → shows only ONE preference: "User prefers light mode" (dark mode is gone)
+
+### 21.17 Semantic Triple: EN Adverb+Verb Contradiction
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I really like vim` → ✓ Added: "User really likes vim"
+- [ ] `/fact add I really like emacs` → ↻ Updated: "User really likes emacs" replaces "User really likes vim" (same predicate "really likes")
+- [ ] `/fact list` → shows only ONE: "User really likes emacs"
+
+### 21.18 Semantic Triple: EN Identity Change
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I live in São Paulo` → ✓ Added: "User lives in São Paulo"
+- [ ] `/fact add I live in Recife` → ↻ Updated: "User lives in Recife" replaces "User lives in São Paulo"
+- [ ] `/fact list` → shows only ONE: "User lives in Recife"
+
+### 21.19 Semantic Triple: EN Name Change
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add My name is Lucas` → ✓ Added: "User's name is Lucas"
+- [ ] `/fact add My name is João` → ↻ Updated: "User's name is João" replaces "User's name is Lucas"
+- [ ] `/fact list` → shows only ONE: "User's name is João"
+
+### 21.20 Semantic Triple: EN No False Positive (Different Predicates)
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I like Python` → ✓ Added: "User likes Python"
+- [ ] `/fact add I prefer Rust` → ✓ Added: "User prefers Rust" (NOT a contradiction — different predicates "likes" vs "prefers")
+- [ ] `/fact list` → shows BOTH facts
+
+### 21.21 Semantic Triple: EN Negation Contradiction
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I don't like verbose output` → ✓ Added: "User doesn't like verbose output"
+- [ ] `/fact add I don't like verbose errors` → ↻ Updated: "User doesn't like verbose errors" replaces "User doesn't like verbose errors" (same predicate "doesn't like")
+- [ ] `/fact list` → shows only ONE: "User doesn't like verbose errors"
+
+### 21.22 Semantic Triple: PT Preference Override
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add Eu prefiro modo escuro` → ✓ Added: "User prefers modo escuro" (PT→EN translation, noun preserved)
+- [ ] `/fact add Eu prefiro modo claro` → ↻ Updated: "User prefers modo claro" replaces "User prefers modo escuro" (same predicate "prefers")
+- [ ] `/fact list` → shows only ONE: "User prefers modo claro"
+
+### 21.23 Semantic Triple: PT Identity Change (ADR-E4 fix)
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add Meu nome é Lucas` → ✓ Added: "User's name is Lucas" (NOT "My name is Lucas" — ADR-E4 fix)
+- [ ] `/fact add Meu nome é João` → ↻ Updated: "User's name is João" replaces "User's name is Lucas"
+- [ ] `/fact list` → shows only ONE: "User's name is João"
+
+### 21.24 Semantic Triple: EN Factual Content Not Affected
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add The project uses SQLite` → ✓ Added (no triple extracted — subject ≠ "user")
+- [ ] `/fact add The project uses PostgreSQL` → ✓ Added (not a preference/identity fact)
+- [ ] `/fact list` → shows BOTH facts (factual content coexists, not affected by semantic triple contradiction)
+
+### 21.25 ADR-E4: PT Identity Normalization via Auto-Extraction
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] Send: "Meu nome é Ana" → auto-extraction stores "User's name is Ana" (NOT "My name is Ana" — ADR-E4 fix)
+- [ ] Send: "Eu moro em São Paulo" → auto-extraction stores "User lives in São Paulo" (NOT "I live in São Paulo")
+- [ ] `/fact list` → shows both facts in third person
+
+### 21.26 Bug #3 (Hermes): sqlite-vec L2 vs Cosine Metric Fix
+
+> **ROOT CAUSE of S42.4/S43.1:** `search_facts_semantic()` used `1.0 - distance`, which is only correct for cosine distance. sqlite-vec defaults to L2 distance; the correct conversion is `1.0 - (distance² / 2.0)`. The broken formula scored "prefer dark mode" vs "prefer light mode" as 0.6304 instead of 0.9317. This one bug made the entire Layer 3.5 pipeline non-functional from day one. Also fixed in `content/db.rs` (both content and chunk search) and comparison direction (`<` → `>`). *Discovered by Hermes Agent.*
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I prefer dark mode` → ✓ Added (embedding generated synchronously)
+- [ ] `/fact add I prefer light mode` → ↻ Updated: "User prefers light mode" replaces "User prefers dark mode" (Layer 3.5 now works because similarity is correctly ~0.93, not ~0.63)
+- [ ] `/fact list` → shows only ONE preference: "User prefers light mode"
+
+> **If this fails (both facts coexist), the L2→cosine conversion is still broken.**
+
+### 21.27 Bug #4 (Hermes): Missing Replacement Fact Insertion
+
+> **Bug #4 (Hermes):** In `command_handlers.rs`, after detecting a contradiction and deleting the old fact, `return;` exited the function without inserting the replacement. The old fact was deleted; the new one was lost. Fixed in both triple and polarity paths. *Discovered by Hermes Agent.*
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+- [ ] `/fact add I prefer dark mode` → ✓ Added: "User prefers dark mode"
+- [ ] `/fact add I prefer light mode` → ↻ Updated
+- [ ] `/fact list` → shows **"User prefers light mode"** (NOT empty — replacement was inserted)
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT content, has_embedding FROM facts WHERE invalidated_at IS NULL"` → exactly ONE fact with **has_embedding = 1**
+
+**Also test polarity path:**
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like hiking` → ✓ Added: "User likes hiking"
+- [ ] `/fact add I hate hiking` → ↻ Updated: "User hates hiking" replaces "User likes hiking" (polarity opposition)
+- [ ] `/fact list` → shows **"User hates hiking"** (NOT empty — replacement was inserted)
+
+> **If the fact list is empty after a contradiction, the replacement insertion code is missing.**
+
+### 21.28 S42.4/S43.1 End-to-End: Full Pipeline Verification
+
+> **Why all bugs matter together:** The L2→cosine metric bug (Bug #3) was the ROOT CAUSE — without correct similarity scores, Layer 3.5 couldn't find candidates. The race condition meant even with correct scores, fact #1's embedding might not exist. Bug #4 meant even after correct detection, the replacement was lost. All three had to be fixed simultaneously for S42.4/S43.1 to pass.
+
+**Clean state first:**
+```bash
+rm -f ~/.local/share/ask-ai/embeddings.db
+```
+
+- [ ] Start chat: `ask-ai chat`
+- [ ] `/fact add I prefer dark mode` → ✓ Added
+- [ ] `/fact add I prefer light mode` → ↻ Updated (triple contradiction)
+- [ ] `/fact add I like dark mode` → ↻ Updated or Skipped (polarity/semantic catch)
+- [ ] `/fact add My name is Lucas` → ✓ Added
+- [ ] `/fact add My name is Maria` → ↻ Updated (identity change via triple)
+- [ ] `/fact add I live in São Paulo` → ✓ Added
+- [ ] `/fact add I live in Recife` → ↻ Updated (location change via triple)
+- [ ] `/fact list` → shows exactly THREE facts: one about display mode, "User's name is Maria", "User lives in Recife", all with has_embedding = 1
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE invalidated_at IS NULL"` → **3**
+- [ ] `sqlite3 ~/.local/share/ask-ai/embeddings.db "SELECT COUNT(*) FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL"` → **0**
+
+### 21.29 Bug #5 (Hermes): Accumulative Predicates False Positives
+
+> **Bug #5 (Hermes):** `contradicts()` treated ALL same-predicate pairs as contradictions, so "likes Python" vs "likes Rust" was incorrectly flagged. Fixed with two-tier logic: exclusive predicates (prefers, name is) → any different object = contradiction; accumulative predicates (likes, loves, hates) → only if objects share content words (overlap > 0.3). Added `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES`, `STOP_WORDS` in `lang.rs` with enforcement test.
+
+**Clean state first:**
+```bash
+sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
+```
+
+#### Accumulative predicates coexist (different topics)
+
+- [ ] `/fact add I like Python` → ✓ Added: "User likes Python"
+- [ ] `/fact add I like Rust` → ✓ Added: "User likes Rust" (NOT a contradiction — different topics, no word overlap)
+- [ ] `/fact list` → shows BOTH facts
+
+#### Accumulative predicates contradict (same category)
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like dark mode` → ✓ Added: "User likes dark mode"
+- [ ] `/fact add I like light mode` → ↻ Updated: "User likes light mode" replaces "User likes dark mode" (overlap "mode" > 0.3)
+- [ ] `/fact list` → shows only ONE fact: "User likes light mode"
+
+#### Exclusive predicates still contradict
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I prefer dark mode` → ✓ Added: "User prefers dark mode"
+- [ ] `/fact add I prefer light mode` → ↻ Updated: "User prefers light mode" (exclusive predicate → always contradiction)
+- [ ] `/fact list` → shows only ONE fact: "User prefers light mode"
+
+#### Polarity flip still contradicts
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like hiking` → ✓ Added: "User likes hiking"
+- [ ] `/fact add I hate hiking` → ↻ Updated: "User hates hiking" replaces "User likes hiking" (polarity flip: likes → hates)
+- [ ] `/fact list` → shows only ONE fact: "User hates hiking"
+
+#### Known limitation: vim/emacs
+
+> "likes vim" vs "likes emacs" → overlap = 0, NOT a contradiction. You CAN like both editors, but pragmatically most people pick one. Deferred to Phase 2 (LLM adjudication).
+
+- [ ] Clean: `sqlite3 ~/.local/share/ask-ai/embeddings.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
+- [ ] `/fact add I like vim` → ✓ Added
+- [ ] `/fact add I like emacs` → ✓ Added (NO word overlap → coexist — this is correct behavior, not a bug)
+- [ ] `/fact list` → shows BOTH facts (this is expected)
+
+---
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
@@ -776,4 +1351,6 @@ The script above runs automated tests. The following tests must be run manually:
 14. **Section 17**: Feedback Tool & Configuration (via LLM + database verification)
 15. **Section 18**: Feedback Boost Integration & Decay Accuracy (end-to-end, DB inspection)
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
+17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
+18. **Section 21**: Fact Embedding & Semantic Dedup (schema v12, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, schema v12 distance_metric=cosine, ascending sort fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
 These tests require chat interaction and visual verification of results.

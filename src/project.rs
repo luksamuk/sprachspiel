@@ -41,9 +41,9 @@ fn get_folder_name() -> Option<String> {
 /// Normalize a git URL to a consistent format.
 ///
 /// Examples:
-/// - git@github.com:user/repo.git -> github.com/user/repo
-/// - https://github.com/user/repo.git -> github.com/user/repo
-/// - git@gitlab.com:user/repo -> gitlab.com/user/repo
+/// - `git@github.com:user/repo.git` -> `github.com/user/repo`
+/// - `https://github.com/user/repo.git` -> `github.com/user/repo`
+/// - `git@gitlab.com:user/repo` -> `gitlab.com/user/repo`
 pub fn normalize_git_url(url: &str) -> String {
     let url = url.trim();
 

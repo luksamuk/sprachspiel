@@ -701,9 +701,13 @@ impl Database {
                 .collect::<Result<Vec<_>, _>>()?;
 
             for (_item_id, item, distance) in rows {
+                // Convert cosine distance to cosine similarity.
+                // With distance_metric=cosine (schema v12), sqlite-vec returns
+                // cosine distance directly: similarity = 1.0 - distance.
+                let similarity = 1.0 - distance;
                 results.push(ContentSearchResult {
                     item,
-                    score: distance,
+                    score: similarity,
                     search_type: ContentSearchType::Semantic,
                     chunk_content: None,
                     chunk_offsets: None,
@@ -767,9 +771,13 @@ impl Database {
                 .collect::<Result<Vec<_>, _>>()?;
 
             for (_item_id, item, distance, chunk_content, chunk_offsets) in rows {
+                // Convert cosine distance to cosine similarity.
+                // With distance_metric=cosine (schema v12), sqlite-vec returns
+                // cosine distance directly: similarity = 1.0 - distance.
+                let similarity = 1.0 - distance;
                 results.push(ContentSearchResult {
                     item,
-                    score: distance,
+                    score: similarity,
                     search_type: ContentSearchType::Semantic,
                     chunk_content,
                     chunk_offsets,
@@ -782,7 +790,7 @@ impl Database {
                 let entry = best_results.entry(result.item.id);
                 match entry {
                     std::collections::hash_map::Entry::Occupied(mut e) => {
-                        if result.score < e.get().score {
+                        if result.score > e.get().score {
                             e.insert(result);
                         }
                     }
@@ -793,9 +801,11 @@ impl Database {
             }
 
             let mut results: Vec<ContentSearchResult> = best_results.into_values().collect();
+            // Sort descending by similarity score (most similar first).
+            // This ensures RRF assigns rank 1 to the best match.
             results.sort_by(|a, b| {
-                a.score
-                    .partial_cmp(&b.score)
+                b.score
+                    .partial_cmp(&a.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
 

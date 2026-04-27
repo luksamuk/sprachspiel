@@ -5,6 +5,7 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{Result, params};
 use std::str::FromStr;
+use zerocopy::IntoBytes;
 
 use super::decay::should_prune;
 use super::types::{Category, Fact, Scope, Source};
@@ -57,7 +58,8 @@ pub struct DecayStats {
 
 const LIST_FACTS_SQL: &str = "
     SELECT id, scope, category, content, importance, access_count,
-           decay_score, created_at, last_accessed, source, invalidated_at, project_id
+           decay_score, created_at, last_accessed, source, invalidated_at, project_id,
+           has_embedding
     FROM facts";
 
 impl Database {
@@ -91,8 +93,9 @@ impl Database {
         self.with_connection(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, scope, category, content, importance, access_count, 
-                        decay_score, created_at, last_accessed, source, invalidated_at, project_id
-                 FROM facts WHERE id = ?1 AND invalidated_at IS NULL",
+                         decay_score, created_at, last_accessed, source, invalidated_at, project_id,
+                         has_embedding
+                  FROM facts WHERE id = ?1 AND invalidated_at IS NULL",
             )?;
             let mut rows = stmt.query_map(params![id], |row| {
                 Ok(Fact {
@@ -115,10 +118,61 @@ impl Database {
                         .get::<_, Option<i64>>(10)?
                         .map(|t| DateTime::from_timestamp(t, 0).unwrap_or_else(Utc::now)),
                     project_id: row.get(11)?,
+                    has_embedding: row.get::<_, i32>(12)? != 0,
                 })
             })?;
             rows.next().transpose()
         })
+    }
+
+    /// Find a fact by exact content match (case-insensitive, trimmed).
+    ///
+    /// Searches across all scopes for a fact whose content matches exactly
+    /// after lowercasing and trimming. Used for deduplication before FTS5 search.
+    ///
+    /// # Arguments
+    /// * `content` - The content to search for (will be compared lowercased and trimmed)
+    ///
+    /// # Returns
+    /// The first matching fact, or None if no exact match is found.
+    pub fn find_exact_fact(&self, content: &str) -> Result<Option<Fact>> {
+        let normalized = content.trim().to_lowercase();
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, scope, category, content, importance, access_count,
+                         decay_score, created_at, last_accessed, source, invalidated_at, project_id,
+                         has_embedding
+                 FROM facts
+                 WHERE LOWER(TRIM(content)) = ?1 AND invalidated_at IS NULL
+                 LIMIT 1",
+            )?;
+            let mut rows = stmt.query_map(params![normalized], row_to_fact)?;
+            rows.next().transpose()
+        })
+    }
+
+    /// Find a fact by normalized content match.
+    ///
+    /// Compares the `normalize_for_comparison()` output of the candidate
+    /// against all existing facts. Detects duplicates like
+    /// "I prefer dark mode" ≈ "User prefers dark mode" that exact match misses.
+    ///
+    /// # Arguments
+    /// * `normalized_content` - Output of `normalize_for_comparison()` for the candidate
+    ///
+    /// # Returns
+    /// All facts whose normalized content matches, or empty vec if none found.
+    pub fn find_normalized_fact(&self, normalized_content: &str) -> Result<Vec<Fact>> {
+        let candidate = normalized_content.trim().to_lowercase();
+        let all_facts = self.list_facts(None, None, None)?;
+        let matches: Vec<Fact> = all_facts
+            .into_iter()
+            .filter(|f| {
+                let fact_normalized = crate::facts::lang::normalize_for_comparison(&f.content);
+                fact_normalized == candidate
+            })
+            .collect();
+        Ok(matches)
     }
 
     /// Search facts using FTS5 keyword search
@@ -136,7 +190,7 @@ impl Database {
             if let Some(s) = scope {
                 let sql = "SELECT f.id, f.scope, f.category, f.content, f.importance, f.access_count, \
                             f.decay_score, f.created_at, f.last_accessed, f.source, f.invalidated_at, \
-                            f.project_id, bm25(facts_fts) as score \
+                            f.project_id, f.has_embedding, bm25(facts_fts) as score \
                      FROM facts_fts fts \
                      JOIN facts f ON fts.rowid = f.id \
                      WHERE facts_fts MATCH ?1 AND f.scope = ?2 AND f.invalidated_at IS NULL \
@@ -145,7 +199,7 @@ impl Database {
 
                 let mut stmt = conn.prepare(sql)?;
                 let rows = stmt.query_map(params![escaped_query, s.to_string(), limit as i32], |row| {
-                    let score: f32 = row.get(12)?;
+                    let score: f32 = row.get(13)?;
                     Ok(FactSearchResult {
                         fact: row_to_fact(row)?,
                         score: normalize_bm25_score(score),
@@ -158,7 +212,7 @@ impl Database {
             } else {
                 let sql = "SELECT f.id, f.scope, f.category, f.content, f.importance, f.access_count, \
                             f.decay_score, f.created_at, f.last_accessed, f.source, f.invalidated_at, \
-                            f.project_id, bm25(facts_fts) as score \
+                            f.project_id, f.has_embedding, bm25(facts_fts) as score \
                      FROM facts_fts fts \
                      JOIN facts f ON fts.rowid = f.id \
                      WHERE facts_fts MATCH ?1 AND f.invalidated_at IS NULL \
@@ -167,7 +221,7 @@ impl Database {
 
                 let mut stmt = conn.prepare(sql)?;
                 let rows = stmt.query_map(params![escaped_query, limit as i32], |row| {
-                    let score: f32 = row.get(12)?;
+                    let score: f32 = row.get(13)?;
                     Ok(FactSearchResult {
                         fact: row_to_fact(row)?,
                         score: normalize_bm25_score(score),
@@ -217,10 +271,15 @@ impl Database {
         })
     }
 
-    /// Delete a fact by ID
+    /// Delete a fact by ID (also removes associated embedding)
     pub fn delete_fact(&self, id: i64) -> Result<()> {
         self.with_connection(|conn| {
             conn.execute("DELETE FROM facts WHERE id = ?1", params![id])?;
+            // Also remove the fact embedding from vec0
+            conn.execute(
+                "DELETE FROM fact_embeddings WHERE fact_id = ?1",
+                params![id],
+            )?;
             Ok(())
         })
     }
@@ -270,20 +329,22 @@ impl Database {
             let sql = match project_id {
                 Some(_pid) => {
                     // Get global facts + project facts
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE (scope = 'global' OR project_id = ?1) \
-                     AND invalidated_at IS NULL ORDER BY \
-                     CASE WHEN category = 'preference' THEN 0 ELSE 1 END, \
+                    "SELECT id, scope, category, content, importance, access_count, 
+                            decay_score, created_at, last_accessed, source, invalidated_at, project_id,
+                            has_embedding
+                     FROM facts WHERE (scope = 'global' OR project_id = ?1) 
+                     AND invalidated_at IS NULL ORDER BY 
+                     CASE WHEN category = 'preference' THEN 0 ELSE 1 END, 
                      created_at DESC"
                 }
                 None => {
                     // Get only global facts
-                    "SELECT id, scope, category, content, importance, access_count, \
-                            decay_score, created_at, last_accessed, source, invalidated_at, project_id \
-                     FROM facts WHERE scope = 'global' \
-                     AND invalidated_at IS NULL ORDER BY \
-                     CASE WHEN category = 'preference' THEN 0 ELSE 1 END, \
+                    "SELECT id, scope, category, content, importance, access_count, 
+                            decay_score, created_at, last_accessed, source, invalidated_at, project_id,
+                            has_embedding
+                     FROM facts WHERE scope = 'global' 
+                     AND invalidated_at IS NULL ORDER BY 
+                     CASE WHEN category = 'preference' THEN 0 ELSE 1 END, 
                      created_at DESC"
                 }
             };
@@ -302,9 +363,156 @@ impl Database {
             Ok(results)
         })
     }
+
+    /// Store a fact embedding and mark has_embedding = 1.
+    ///
+    /// Inserts the embedding into the fact_embeddings vec0 table and updates
+    /// the fact's has_embedding flag. This follows the same pattern as
+    /// `update_content_item_embedding()`.
+    pub fn update_fact_embedding(
+        &self,
+        fact_id: i64,
+        embedding: &[f32],
+        scope: &str,
+        category: &str,
+        project_id: Option<&str>,
+    ) -> Result<()> {
+        self.with_connection(|conn| {
+            let embedding_bytes = embedding.as_bytes();
+
+            conn.execute(
+                "INSERT INTO fact_embeddings (fact_id, embedding, scope, category, project_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![fact_id, embedding_bytes, scope, category, project_id],
+            )?;
+
+            conn.execute(
+                "UPDATE facts SET has_embedding = 1 WHERE id = ?1",
+                params![fact_id],
+            )?;
+
+            Ok(())
+        })
+    }
+
+    /// Search facts by embedding similarity (semantic search).
+    ///
+    /// Uses vec0 KNN search to find facts with the most similar embeddings.
+    /// Returns results sorted by cosine similarity (highest first).
+    /// The `scope` parameter filters by scope using a WHERE clause.
+    #[allow(dead_code)] // Used by future semantic search features
+    pub fn search_facts_semantic(
+        &self,
+        embedding: &[f32],
+        scope: Option<Scope>,
+        limit: usize,
+    ) -> Result<Vec<FactSearchResult>> {
+        self.with_connection(|conn| {
+            let embedding_bytes = embedding.as_bytes();
+            let mut results = Vec::new();
+
+            let sql = match scope {
+                Some(_) => {
+                    "SELECT fe.fact_id, fe.distance, f.id, f.scope, f.category, f.content, f.importance,
+                            f.access_count, f.decay_score, f.created_at, f.last_accessed, f.source,
+                            f.invalidated_at, f.project_id, f.has_embedding
+                     FROM fact_embeddings fe
+                     JOIN facts f ON fe.fact_id = f.id
+                     WHERE fe.embedding MATCH ? AND fe.k = ?
+                     AND f.invalidated_at IS NULL"
+                }
+                None => {
+                    "SELECT fe.fact_id, fe.distance, f.id, f.scope, f.category, f.content, f.importance,
+                            f.access_count, f.decay_score, f.created_at, f.last_accessed, f.source,
+                            f.invalidated_at, f.project_id, f.has_embedding
+                     FROM fact_embeddings fe
+                     JOIN facts f ON fe.fact_id = f.id
+                     WHERE fe.embedding MATCH ? AND fe.k = ?
+                     AND f.invalidated_at IS NULL"
+                }
+            };
+
+            let mut stmt = conn.prepare(sql)?;
+
+            let rows = stmt.query_map(params![embedding_bytes, limit as i32], |row| {
+                let _fact_id: i64 = row.get(0)?;
+                let distance: f32 = row.get(1)?;
+                // Convert cosine distance to cosine similarity.
+                // With distance_metric=cosine (schema v12), sqlite-vec returns
+                // cosine distance directly: similarity = 1.0 - distance.
+                let similarity = 1.0 - distance;
+
+                // Read the fact columns starting from column 2
+                let fact = Fact {
+                    id: row.get(2)?,
+                    scope: Scope::from_str(&row.get::<_, String>(3)?)
+                        .map_err(rusqlite::Error::InvalidParameterName)?,
+                    category: Category::from_str(&row.get::<_, String>(4)?)
+                        .map_err(rusqlite::Error::InvalidParameterName)?,
+                    content: row.get(5)?,
+                    importance: row.get(6)?,
+                    access_count: row.get::<_, i32>(7)? as u32,
+                    decay_score: row.get(8)?,
+                    created_at: DateTime::from_timestamp(row.get::<_, i64>(9)?, 0)
+                        .unwrap_or_else(Utc::now),
+                    last_accessed: DateTime::from_timestamp(row.get::<_, i64>(10)?, 0)
+                        .unwrap_or_else(Utc::now),
+                    source: Source::from_str(&row.get::<_, String>(11)?)
+                        .map_err(rusqlite::Error::InvalidParameterName)?,
+                    invalidated_at: row
+                        .get::<_, Option<i64>>(12)?
+                        .map(|t| DateTime::from_timestamp(t, 0).unwrap_or_else(Utc::now)),
+                    project_id: row.get(13)?,
+                    has_embedding: row.get::<_, i32>(14)? != 0,
+                };
+
+                Ok(FactSearchResult {
+                    fact,
+                    score: similarity,
+                })
+            })?;
+
+            // Filter by scope if specified (can't filter in vec0, so do it in Rust)
+            for r in rows {
+                let result = r?;
+                if let Some(s) = scope {
+                    if result.fact.scope == s {
+                        results.push(result);
+                    }
+                } else {
+                    results.push(result);
+                }
+            }
+
+            Ok(results)
+        })
+    }
+
+    /// Get facts that need embedding generation (has_embedding = 0).
+    ///
+    /// Returns (id, content) pairs for all active facts without embeddings.
+    /// Called by the recovery pipeline on startup to fill in missing embeddings.
+    pub fn get_facts_for_reindex(&self) -> Result<Vec<(i64, String)>> {
+        self.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, content FROM facts WHERE has_embedding = 0 AND invalidated_at IS NULL",
+            )?;
+            let rows = stmt.query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let content: String = row.get(1)?;
+                Ok((id, content))
+            })?;
+
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+    }
 }
 
 /// Helper function to map a row to a Fact
+///
+/// Expects columns in this order:
+/// id, scope, category, content, importance, access_count, decay_score,
+/// created_at, last_accessed, source, invalidated_at, project_id, has_embedding
 fn row_to_fact(row: &rusqlite::Row) -> Result<Fact> {
     Ok(Fact {
         id: row.get(0)?,
@@ -324,6 +532,7 @@ fn row_to_fact(row: &rusqlite::Row) -> Result<Fact> {
             .get::<_, Option<i64>>(10)?
             .map(|t| DateTime::from_timestamp(t, 0).unwrap_or_else(Utc::now)),
         project_id: row.get(11)?,
+        has_embedding: row.get::<_, i32>(12)? != 0,
     })
 }
 
@@ -490,6 +699,7 @@ mod tests {
             source: Source::User,
             invalidated_at: None,
             project_id: None,
+            has_embedding: false,
         };
 
         // Insert a fact that will be kept (recent)

@@ -257,11 +257,13 @@ This design is based on ["Lost in the Middle: How Language Models Use Long Conte
 **What it stores:** Extracted facts and user preferences that persist across sessions.
 
 **Characteristics:**
-- SQLite + FTS5 keyword search (no embeddings needed)
+- SQLite + FTS5 keyword search + fact_embeddings vec0 (256d nomic-embed-text-v2-moe, distance_metric=cosine)
 - Automatic classification (preference vs fact)
 - Ebbinghaus decay curve for automatic pruning
-- Conflict resolution for duplicate/contradictory facts
+- 6-layer conflict resolution for duplicate/contradictory facts
 - Two scopes: `global` and `project`
+- All content stored in third person per ADR-E4 ("User prefers X", never "I prefer X")
+- Eager embedding generation (serialized via `Semaphore(1)`, 30s timeout)
 
 **Architecture:**
 
@@ -281,6 +283,7 @@ graph TB
     subgraph Storage["Storage"]
         F[Facts Table]
         FT[FTS5 Index]
+        FE[fact_embeddings<br/>vec0 256d]
         D[Decay Scores]
     end
     
@@ -299,6 +302,7 @@ graph TB
     R -->|Contradiction| UPD[Update existing]
     R -->|New| F
     F --> FT
+    F --> FE
     F --> D
     G --> M
     P --> M
@@ -314,8 +318,10 @@ graph TB
 
 | Category | Description | Half-Life | Examples |
 |----------|-------------|-----------|----------|
-| `preference` | User likes/dislikes | 180 days | "I prefer Portuguese", "I like concise responses" |
-| `fact` | Objective information | 30 days | "Database is SQLite", "API on port 8080" |
+| `preference` | User likes/dislikes | 180 days | "User prefers Portuguese", "User likes concise responses" |
+| `fact` | Objective information | 30 days | "User's name is Lucas", "Project uses SQLite" |
+
+> **ADR-E4:** All facts are stored in third person ("User prefers X", "User's name is X"), never first person. Applied by `normalize_to_storage_format()` at storage time. PT noun translation is DEFERRED to issue #106 — "Eu prefiro respostas curtas" → "User prefers respostas curtas" (noun preserved).
 
 **Decay System:**
 
@@ -337,22 +343,51 @@ Retention = e^(-t / half_life)
 | `global` | Applies to all projects | `project_id = NULL` |
 | `project` | Specific to current project | `project_id = <git remote or folder name>` |
 
-**Conflict Resolution:**
+**Embedding-Based Semantic Dedup (Layer 3.5):**
+
+When FTS5 doesn't find a conflict and the candidate is a `Category::Preference` fact, Layer 3.5 generates an embedding and searches `fact_embeddings` via `search_facts_semantic()` (cosine ≥ 0.70):
+- **Cosine similarity ≥ 0.70** → semantic match found (candidate for contradiction or duplicate)
+- **Contradiction detected** (e.g., "prefer dark mode" vs "prefer light mode") → **Update** (replace old)
+- **Duplicate, no contradiction** (e.g., "prefer dark mode" vs "like dark mode") → **Skip**
+- **No similar fact found** → **Add** (insert new fact)
+
+Triple-based disambiguation classifies predicates as **exclusive** (`prefers`, `name is`, `works at`) — always contradictory — or **accumulative** (`likes`, `loves`, `enjoys`) — contradictory only when objects share word overlap > 0.3. Polarity flips (`likes` → `hates`) always contradict.
+
+Embeddings are generated eagerly at insert time via `EmbeddingClient::embed()` serialized through `Semaphore(1)` with a 30-second timeout. If Ollama is unavailable, `has_embedding = 0` and startup recovery catches up.
+
+**Startup Verification:** `verify_and_dedup_facts()` performs O(n²) pair-wise cosine comparison on all facts with embeddings (threshold ≥ 0.90), catching any duplicates that slipped through insert-time checks.
+
+**Conflict Resolution (6-Layer Dedup):**
 
 ```mermaid
 graph LR
-    A[New Fact] --> B[Search Similar FTS5]
-    B --> C{Similarity Score}
-    C -->|Greater than 0.95| D{Contradiction?}
-    C -->|Less than 0.95| E[Insert New]
-    D -->|Yes| F[Update Existing]
-    D -->|No| G[Skip Duplicate]
-    
+    A[New Fact] --> B[Layer 1: Exact Match]
+    B -->|Found| C{Duplicate?}
+    B -->|Not found| D[Layer 2: Normalized Match]
+    D -->|Found| C
+    D -->|Not found| E2[Layer 3.5: Semantic + Triple Disambiguation ≥ 0.70]
+    E2 -->|Found| F{Contradiction?}
+    E2 -->|Not found| E[Layer 3: FTS5 BM25 ≥ 0.75]
+    E -->|Found| F
+    E -->|Not found| H[Insert New + Generate Embedding]
+    F -->|Yes| I[Update Existing]
+    F -->|No| J[Skip Duplicate]
+    C -->|Yes| J
+    C -->|Contradiction| I
+
     style A fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
-    style E fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
-    style F fill:#fff3e0,stroke:#ef6c00,color:#e65100
-    style G fill:#ffcdd2,stroke:#c62828,color:#b71c1c
+    style H fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    style I fill:#fff3e0,stroke:#ef6c00,color:#e65100
+    style J fill:#ffcdd2,stroke:#c62828,color:#b71c1c
 ```
+
+**Layers:**
+1. **Exact match** — case-insensitive, trimmed comparison
+2. **Normalized match** — `normalize_for_comparison()` strips pronouns/subjects, third-person normalization (ADR-E4)
+3. **Layer 3.5: Semantic embedding + triple disambiguation** — cosine ≥ 0.70; exclusive predicates always contradict, accumulative predicates contradict only with word overlap > 0.3, polarity flips always contradict
+4. **FTS5 BM25** — keyword search, threshold 0.75
+5. **Startup verification** — O(n²) pairwise cosine ≥ 0.90
+6. **Global-wins-project** — Global fact replaces conflicting Project fact
 
 **User Commands:**
 

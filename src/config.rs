@@ -1,3 +1,11 @@
+//! Configuration module — built-in model presets and defaults.
+//!
+//! Provides [`ModelConfig`] structs with optimized inference parameters (context window,
+//! temperature, top_k, etc.) for each supported model. These presets serve as defaults
+//! when the user has no `models.toml` override.
+//!
+//! Loaded at startup and merged with user-defined presets in the [`settings`](crate::settings) module.
+
 use std::collections::HashMap;
 use std::sync::LazyLock;
 

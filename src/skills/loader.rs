@@ -1,8 +1,8 @@
 //! Skill loading and directory scanning.
 //!
 //! Loads skills from three sources with priority:
-//! 1. Project skills: .ask-ai/skills/<name>/SKILL.md
-//! 2. User skills: ~/.config/ask-ai/skills/<name>/SKILL.md
+//! 1. Project skills: .ask-ai/skills/\<name\>/SKILL.md
+//! 2. User skills: ~/.config/ask-ai/skills/\<name\>/SKILL.md
 //! 3. Builtin skills: embedded in binary via include_str!
 
 use std::collections::HashMap;

@@ -131,6 +131,8 @@ pub struct Fact {
     pub invalidated_at: Option<DateTime<Utc>>,
     /// Project ID (for project-scoped facts)
     pub project_id: Option<String>,
+    /// Whether this fact has a vector embedding in fact_embeddings
+    pub has_embedding: bool,
 }
 
 impl Fact {
@@ -156,6 +158,13 @@ impl Fact {
             return Err("Fact content has invalid unicode".to_string());
         }
 
+        // Global facts must not have a project_id
+        let project_id = if scope == Scope::Global {
+            None
+        } else {
+            project_id
+        };
+
         let now = Utc::now();
 
         Ok(Fact {
@@ -171,18 +180,8 @@ impl Fact {
             source,
             invalidated_at: None,
             project_id,
+            has_embedding: false,
         })
-    }
-
-    /// Create a new fact for insertion (no id)
-    pub fn for_insert(
-        content: String,
-        category: Category,
-        scope: Scope,
-        project_id: Option<String>,
-        source: Source,
-    ) -> Result<Self, String> {
-        Self::new(content, category, scope, project_id, source)
     }
 }
 
@@ -257,5 +256,38 @@ mod tests {
         content.push_str("🌍");
         let result = Fact::new(content, Category::Fact, Scope::Project, None, Source::User);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_fact_global_forces_project_id_none() {
+        // Global facts must always have project_id = None
+        let fact = Fact::new(
+            "Test fact".to_string(),
+            Category::Fact,
+            Scope::Global,
+            Some("my-project".to_string()), // Should be ignored
+            Source::User,
+        )
+        .unwrap();
+        assert_eq!(fact.scope, Scope::Global);
+        assert_eq!(
+            fact.project_id, None,
+            "Global facts must have project_id = None"
+        );
+    }
+
+    #[test]
+    fn test_fact_project_keeps_project_id() {
+        // Project facts should keep their project_id
+        let fact = Fact::new(
+            "Test fact".to_string(),
+            Category::Fact,
+            Scope::Project,
+            Some("my-project".to_string()),
+            Source::User,
+        )
+        .unwrap();
+        assert_eq!(fact.scope, Scope::Project);
+        assert_eq!(fact.project_id, Some("my-project".to_string()));
     }
 }

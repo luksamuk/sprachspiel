@@ -125,6 +125,7 @@ mod tests {
             source: super::super::types::Source::User,
             invalidated_at: None,
             project_id: Some("test".to_string()),
+            has_embedding: false,
         }
     }
 
