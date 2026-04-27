@@ -24,6 +24,8 @@ use super::core::send_message;
 use super::input::{InputBackend, InputResult, RustylineInput};
 use super::session::{ChatSession, MessageRole};
 use super::view::TerminalView;
+use super::view::colors;
+
 use crate::facts::db::DecayStats;
 use crate::facts::extract::extract_and_insert_facts;
 use crate::project::get_project_id;
@@ -787,7 +789,7 @@ pub async fn run_chat_repl(
 
                 // Clear status bar and input lines
                 print!("{}", build_clear_code(visual_lines));
-                println!(">>> {}", line);
+                println!("{}>>>{} {}{}{}", colors::BOLD_CYAN, colors::RESET, colors::CYAN, line, colors::RESET);
 
                 if line.starts_with('/') {
                     match parse_command(line) {

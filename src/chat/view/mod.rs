@@ -23,7 +23,7 @@
 pub const STATUS_BAR_LINES: usize = 3;
 
 // ANSI color codes for banner styling
-mod colors {
+pub mod colors {
     pub const CYAN: &str = "\x1B[36m";
     pub const YELLOW: &str = "\x1B[33m";
     pub const BOLD: &str = "\x1B[1m";
