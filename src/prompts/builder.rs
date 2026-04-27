@@ -68,7 +68,7 @@ pub struct PromptConfig<'a> {
     pub is_anonymous: bool,
     /// Todo list section to inject (from TodoState)
     pub todos: Option<&'a str>,
-    /// Active skill content (from /skill <name> command)
+    /// Active skill content (from /skill \<name\> command)
     pub active_skill: Option<&'a str>,
 }
 
@@ -154,7 +154,7 @@ impl<'a> PromptConfig<'a> {
         self
     }
 
-    /// Set active skill (from /skill <name> command)
+    /// Set active skill (from /skill \<name\> command)
     pub fn with_active_skill(mut self, active_skill: Option<&'a str>) -> Self {
         self.active_skill = active_skill;
         self

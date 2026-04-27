@@ -29,8 +29,8 @@ pub struct ProcessedContent {
 /// Handles multiple thinking tag formats:
 /// - Unicode thinking tags (special character pair)
 /// - HTML think tag: <think attr="...">...</think>
-/// - Standard thinking: <thinking>...</thinking>
-/// - Orphan closing: content before </thinking>
+/// - Standard thinking: \<thinking>...\</thinking>
+/// - Orphan closing: content before \</thinking>
 pub fn process_thinking(content: &str) -> ProcessedContent {
     let mut thinking_parts = Vec::new();
     let mut result = content.to_string();

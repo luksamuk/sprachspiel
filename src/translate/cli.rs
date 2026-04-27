@@ -72,7 +72,7 @@ EXAMPLES:
 "#
 )]
 pub struct TranslateArgs {
-    /// Language specification in format [source:]target
+    /// Language specification in format \[source:\]target
     /// Examples: en:pt, :pt, pt, english:brazilian
     #[arg(value_name = "LANGUAGE")]
     pub language: Option<String>,

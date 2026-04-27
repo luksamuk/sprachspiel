@@ -208,7 +208,7 @@ pub fn is_blocked_for_read(path: &Path, config: &BlocklistConfig) -> bool {
 /// Check if a filename should be hidden in directory listings.
 ///
 /// Returns true if the path matches a blocked pattern and `block_list` is enabled.
-/// When enabled, blocked filenames are replaced with "[BLOCKED]" in listings.
+/// When enabled, blocked filenames are replaced with "\[BLOCKED\]" in listings.
 #[inline]
 pub fn is_blocked_for_list(path: &Path, config: &BlocklistConfig) -> bool {
     config.block_list && config.is_blocked(path)

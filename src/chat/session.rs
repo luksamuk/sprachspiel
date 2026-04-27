@@ -118,12 +118,12 @@ pub struct ChatSession {
     /// Last time retrieval was performed (for throttling)
     #[serde(skip)]
     pub last_retrieval_time: Option<Instant>,
-    /// Currently active skill (activated via /skill <name> command)
+    /// Currently active skill (activated via /skill \<name\> command)
     #[serde(default)]
     pub active_skill: Option<ActiveSkill>,
 }
 
-/// An active skill loaded via /skill <name> command
+/// An active skill loaded via /skill \<name\> command
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveSkill {
     /// Skill name

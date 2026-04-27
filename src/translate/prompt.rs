@@ -1,7 +1,7 @@
 //! Prompt builder for TranslateGemma
 //!
 //! Formats prompts according to TranslateGemma's expected format:
-//! https://ollama.com/library/translategemma
+//! <https://ollama.com/library/translategemma>
 
 use super::language::LanguageCode;
 use super::style::TranslationStyle;
