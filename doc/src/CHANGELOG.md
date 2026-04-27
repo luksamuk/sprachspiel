@@ -38,6 +38,10 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **SF1: Colored user prompt** — User input now displays with `BOLD_CYAN` on `>>>` and `CYAN` on the text after pressing Enter, matching the User role label style in context display. The `colors` module in `view/mod.rs` was made public for cross-module reuse.
+
+- **SF2: Clippy configuration** — Added `clippy.toml` with thresholds for `too-many-arguments` (7), `cognitive-complexity` (25), `type-complexity` (250), and project-specific `doc-valid-idents` (AskAI, Ollama, SQLite, Vec0, GGUF, etc.). Added `[lints.clippy]` section in `Cargo.toml` enforcing `too_many_arguments`, `type_complexity`, `enum_variant_names`, `redundant_async_block` as warnings. `missing_transmute_annotations` set to allow (FFI requirement). Existing `#[allow]` attributes remain valid with justification comments; new violations produce warnings in CI and local dev.
+
 - `normalize_to_storage_format()` in `src/facts/lang.rs` — Primary normalization function called before storing any fact. Applies PT→EN prefix translation and EN first-person→third-person normalization. PT noun translation (e.g., "respostas curtas" → "short responses") is deferred to LLM-mode (issue #106).
 
 - `normalize_adverb_verb()` in `src/facts/lang.rs` — Regex-based adverb+verb expansion for storage normalization. Handles EN patterns like "I really like X" → "User really likes X" and PT patterns like "Eu sempre prefiro X" → "User always prefers X" that are not covered by the static prefix lists in `normalize_replacements()` and `translate_pt_to_en()`.

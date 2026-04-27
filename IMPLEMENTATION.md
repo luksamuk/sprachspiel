@@ -3608,7 +3608,9 @@ See: `doc/src/development/roadmap.md` - TUI section for detailed streaming appro
 ### ✅ SF1: Colored User Prompt After Enter [COMPLETED]
 
 **Status:** ✅ COMPLETED
+**Priority:** P2 (High)
 **Commit:** `635ae55`
+**PR:** #112
 
 User input now displays with `BOLD_CYAN` on `>>>` and `CYAN` on the text after pressing Enter, matching the User role label style in context display.
 
@@ -3621,7 +3623,9 @@ User input now displays with `BOLD_CYAN` on `>>>` and `CYAN` on the text after p
 ### ✅ SF2: Clippy Configuration [COMPLETED]
 
 **Status:** ✅ COMPLETED
+**Priority:** P2 (High)
 **Commit:** `0e8b459`
+**PR:** #112
 
 Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enforce code quality standards in CI and local dev.
 
@@ -3634,6 +3638,8 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 ### 📋 SF3: Rename Database to `ask-ai.db` + `--db` CLI Flag [NOT STARTED]
 
 **Status:** 📋 NOT STARTED
+**Priority:** P2 (High)
+**Issue:** #109
 
 **Goal:** Rename `embeddings.db` → `ask-ai.db` and add `--db <path>` CLI flag for custom database location (useful for testing).
 
@@ -3654,6 +3660,8 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 ### 📋 SF4: Logging Overhaul [NOT STARTED]
 
 **Status:** 📋 NOT STARTED
+**Priority:** P2 (High)
+**Issue:** #110
 
 **Goal:** Clean up log levels, add file-based logging, enforce data sensitivity policy.
 
@@ -3679,6 +3687,8 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 ### 📋 SF5: PDF Reading Pipeline Redesign [NOT STARTED]
 
 **Status:** 📋 NOT STARTED
+**Priority:** P2 (High)
+**Issue:** #111
 
 **Goal:** Redesign PDF ingestion to leverage competent OCR and vision models for tables, formulas, and charts that `pdftotext` misses.
 
