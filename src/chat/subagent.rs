@@ -318,6 +318,7 @@ impl SubagentRunner {
             json: false,
             model: None,
             max_tokens: 2048,
+            pages: None,
         };
 
         let processor = VisionProcessor::new();

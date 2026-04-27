@@ -1,7 +1,7 @@
 //! Vision module
 //!
 //! Provides image analysis functionality using vision models via Ollama.
-//! Supports single and multi-image processing.
+//! Supports single and multi-image processing, plus PDF page-by-page analysis.
 
 pub mod cli;
 pub mod error;

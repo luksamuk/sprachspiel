@@ -3678,31 +3678,21 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 SF5: PDF Reading Pipeline Redesign [NOT STARTED]
+### ✅ SF5: PDF Reading Pipeline Redesign [COMPLETED]
 
-**Status:** 📋 NOT STARTED
+**Status:** ✅ COMPLETED
 **Priority:** P2 (High)
 **Issue:** #111
 
-**Goal:** Redesign PDF ingestion to leverage competent OCR and vision models for tables, formulas, and charts that `pdftotext` misses.
+**Goal:** Redesign PDF ingestion to leverage vision models for tables, formulas, and charts that `pdftotext` misses.
 
-**Current state:** PDF processing relies entirely on external CLI tools (`pdftotext` for text, `pdftoppm` + `tesseract` for OCR). OCR and vision modules reject `.pdf` files. The `document-processing` skill is generic and doesn't guide the LLM to use vision/OCR for PDF pages.
-
-**Scope:**
-1. **Redesign `src/skills/builtin/document-processing.md`** — Add structured PDF pipeline:
-   - Text-heavy PDF → `pdftotext` (fast, current path)
-   - PDF with images/tables → `pdftoppm` → `ocr` tool (GLM-OCR)
-   - PDF with charts/diagrams → `pdftoppm` → `vision` tool
-   - Coordinated multi-page extraction with per-page strategy selection
-2. **Prompt engineering** — Teach the LLM to choose the right extraction method per page type
-3. **Code evaluation** — Decide: skill-guided (LLM orchestrates) vs. automated pipeline in Rust
-
-**Recommended approach:** Skill + prompt engineering. Keeps binary small, leverages existing OCR/vision tools, LLM decides strategy per document.
-
-**Open questions:**
-- Should we add a `/doc analyze` command that forces vision-based extraction?
-- How to handle very large PDFs (100+ pages)?
-- Should page-level strategy be automatic or user-directed?
+**Implementation:**
+1. **Vision tool accepts PDF** — Auto-converts pages via `pdftoppm` (150 DPI PNG), processes each page with vision model. `--pages` flag for page range selection (e.g., `1-5`, `1,3,7`). Default: all pages.
+2. **Two-phase skill pipeline** — Updated `document-processing.md` skill: Phase 1 = `pdftotext` (full text, fast), Phase 2 = `vision` on pages with little/garbled text (charts, tables, formulas, diagrams).
+3. **Vision for visuals, OCR for structure** — Skill pipeline: OCR first for tables/formulas/scanned text (structured text), Vision for charts/graphs/diagrams (visual interpretation). Escalate from OCR to Vision when results are unsatisfying.
+4. **Checkpoint every 20 pages** — Progress saved as JSON in temp dir. Resume from checkpoint if interrupted. Temp files auto-cleaned on completion (RAII).
+5. **New error types** — `VisionError::PdfConversionError` (pdftoppm failed), `VisionError::PdfSupport` (poppler not installed). Helpful install instructions in error messages.
+6. **New utils** — `validate_file_for_vision()` accepts both images and PDFs (separate from `validate_image_file` which OCR still uses). `VISION_EXTENSIONS`, `PDF_EXTENSION` constants.
 
 ---
 
@@ -3745,3 +3735,4 @@ The original detailed implementation notes have been moved to:
 2026-04-25 - Milestones restructured: M2→UX & TUI Design (design phase), M3→Sprach 2.0+CAS+TUI impl+Plugin System, M4→Future (was M3). P14 TUI split into M2(design) and M3(impl). P7,P14,P15 moved from M2 to M3.
 2026-04-27 - SF1 (colored prompt) and SF2 (clippy config) completed. SF3 (db rename), SF4 (logging), SF5 (PDF pipeline) documented as NOT STARTED.
 2026-04-27b - SF3 (db rename + --db flag) completed and merged (#113). SF4 (logging overhaul) completed.
+2026-04-27c - SF4 merged (#114). SF5 (PDF vision pipeline) completed.
