@@ -3635,9 +3635,9 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 SF3: Rename Database to `ask-ai.db` + `--db` CLI Flag [NOT STARTED]
+### ✅ SF3: Rename Database to `ask-ai.db` + `--db` CLI Flag [COMPLETED]
 
-**Status:** 📋 NOT STARTED
+**Status:** ✅ COMPLETED (merged #113)
 **Priority:** P2 (High)
 **Issue:** #109
 
@@ -3657,30 +3657,24 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 SF4: Logging Overhaul [NOT STARTED]
+### ✅ SF4: Logging Overhaul [COMPLETED]
 
-**Status:** 📋 NOT STARTED
+**Status:** ✅ COMPLETED
 **Priority:** P2 (High)
 **Issue:** #110
 
 **Goal:** Clean up log levels, add file-based logging, enforce data sensitivity policy.
 
-**Current state:** Uses `log` + `env_logger`, default level = info (shows in terminal). ~170 `debug!`, ~6 `info!`, ~20 `warn!`, ~3 `error!`. All output goes to stderr. No file logging.
-
-**Scope:**
-1. **Audit `log::info!` calls** — Promote to `warn!` if important ("service started"), demote to `debug!` otherwise. Target: 0 `info!` in normal operation.
-2. **Raise terminal default to `warn`** — Only warnings and errors in stderr by default. `-v` for debug, `-vv` for trace.
-3. **Add file logging** to `~/.local/share/ask-ai/ask-ai.log`:
-   - Minimum level = `warn` (or `info` when verbose)
-   - Respects config verbosity for file level
-   - No trace/debug in file unless explicitly enabled
-4. **Data sensitivity audit** — Ensure no user content, API keys, or PII in any log level. Establish policy in `src/logging.rs` doc comments.
-5. **Consider `env_logger` replacement** — For dual-output (stderr + file), may need custom `log::Log` implementation or `tracing-subscriber`.
-
-**Open questions:**
-- Use `tracing` ecosystem or stick with `log` + custom `Log` trait implementation?
-- Log rotation policy (size? time-based?)
-- Should file logging be opt-in or default?
+**Implementation:**
+1. **Replaced `env_logger` with custom `MultiLogger`** — Implements `log::Log` trait with dual output: colored stderr + file (`~/.local/share/ask-ai/ask-ai.log`). Removed `env_logger` dependency.
+2. **Audited all `log::info!` calls** — Demoted operational info (recovery stats, execution notices) → `debug!`. Promoted service events (DB migration) → `warn!`. Target: 0 `info!` in normal operation. ✅
+3. **Raised terminal default from `info` → `warn`** — Only warnings/errors visible by default. `-v` for debug, `-vv` for trace.
+4. **Added file logging** — Default to `~/.local/share/ask-ai/ask-ai.log`. File always receives `warn+`. Trace mode raises file level to `info`. Rotation: 5 MB, keeps 1 backup (`.1`).
+5. **Data sensitivity audit** — Truncated PII leakage in 3 locations:
+   - `custom_coordinator.rs:609` — message content truncated to 80 chars
+   - `dedup.rs:502,676` — fact content truncated to 80 chars
+   - Added `truncate_for_log()` public helper + policy documented in `src/logging.rs` doc comments
+6. **Verbosity alias update** — `"info"` alias removed (Normal now = warn), added `"warn"` alias
 
 ---
 
@@ -3750,3 +3744,4 @@ The original detailed implementation notes have been moved to:
 2026-04-11 - P6 Core Enhancements added, milestone tags [M1]/[M2]/[M3], P4 extras, P5 verbosity merge, P15 sub-items with scope clarification
 2026-04-25 - Milestones restructured: M2→UX & TUI Design (design phase), M3→Sprach 2.0+CAS+TUI impl+Plugin System, M4→Future (was M3). P14 TUI split into M2(design) and M3(impl). P7,P14,P15 moved from M2 to M3.
 2026-04-27 - SF1 (colored prompt) and SF2 (clippy config) completed. SF3 (db rename), SF4 (logging), SF5 (PDF pipeline) documented as NOT STARTED.
+2026-04-27b - SF3 (db rename + --db flag) completed and merged (#113). SF4 (logging overhaul) completed.

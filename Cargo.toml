@@ -38,7 +38,6 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive", "cargo"] }
 clap_complete = "4.5"
 dirs = "5.0"
-env_logger = "0.11"
 futures = "0.3.31"
 # html2md is also in ollama-rs, needed for search_builtin tool
 html2md = { version = "0.2", optional = true }

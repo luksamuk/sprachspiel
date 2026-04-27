@@ -499,7 +499,7 @@ pub async fn deduplicate_and_insert(
         let conflict = remaining_conflicts[0].clone();
         match resolve_conflict(conflict.clone()) {
             ResolutionAction::Skip => {
-                log::debug!("dedup: Skipping duplicate Global fact: {}", content);
+                log::debug!("dedup: Skipping duplicate Global fact: {}", crate::logging::truncate_for_log(content, 80));
                 DedupResult::Fts5Conflict {
                     existing_id: conflict.existing_fact.id,
                     existing_content: conflict.existing_fact.content.clone(),
@@ -673,7 +673,7 @@ async fn do_insert(
         }
     };
 
-    log::debug!("dedup: Inserted fact #{}: {}", id, content);
+    log::debug!("dedup: Inserted fact #{}: {}", id, crate::logging::truncate_for_log(content, 80));
 
     // Eagerly generate embedding for the newly inserted fact.
     // This MUST be synchronous (await, not fire-and-forget) so that

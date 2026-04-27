@@ -744,7 +744,7 @@ impl Database {
                     e
                 );
             } else {
-                log::info!(
+                log::warn!(
                     "Migrated legacy database: {} → {}",
                     old_path.display(),
                     new_path.display()

@@ -4,6 +4,10 @@ All notable changes to Ask-AI will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **SF4: Logging Overhaul (Issue #110)** — Replaced `env_logger` with custom `MultiLogger` implementing `log::Log` for dual output: colored stderr + file (`~/.local/share/ask-ai/ask-ai.log`). Terminal default raised from `info` to `warn` — only warnings/errors shown by default. `-v` enables debug, `-vv` enables trace. File always receives `warn+` (trace mode: `info+`). Log rotation at 5 MB with 1 backup. Data sensitivity audit: added `truncate_for_log()` helper, truncated PII leakage in 3 locations (message content, fact content). Verbosity alias `"info"` removed (Normal now = warn), added `"warn"` alias.
+
 ### Fixed
 
 - **Bug ADR-E4: PT identity facts stored in first person** — `translate_pt_to_en()` generated first-person English for PT identity patterns (e.g., "Meu nome é Ana" → "My name is Ana" instead of "User's name is Ana"). This violated ADR-E4 (all facts stored in third person). Fixed by changing PT identity outputs in `translate_pt_to_en()` to third person: "Meu nome é Ana" → "User's name is Ana", "Eu moro em São Paulo" → "User lives in São Paulo", etc. Now consistent with EN identity normalization ("My name is Ana" → "User's name is Ana").
