@@ -2834,6 +2834,8 @@ verify_and_dedup_facts()               ← Semantic dedup (NEW)
 
 **Bug discovered (2026-04-26):** Accumulative predicates false positives — `FactTriple::contradicts()` treated all same-predicate pairs as contradictions, so "likes Python" vs "likes Rust" was incorrectly flagged. Fixed with two-tier logic: exclusive vs accumulative predicates + `object_word_overlap()` for same-category detection. Known limitation: "likes vim" vs "likes emacs" (no word overlap) is not a contradiction — deferred to Phase 2 (LLM adjudication). *Discovered by Hermes Agent.*
 
+**Refactoring (2026-04-27):** Centralized fact dedup pipeline into `src/facts/dedup.rs`. The three insertion callers (`command_handlers.rs`, `fact_tools.rs`, `extract.rs`) previously duplicated ~65-75% of the dedup pipeline logic, diverging in behavior. Created `DedupResult` enum (7 variants: Inserted, ExactDuplicate, NormalizedDuplicate, SemanticDuplicate, Updated, Fts5Conflict, Error), `DedupConfig` struct, and `deduplicate_and_insert()` as the single source of truth. Each caller is now a thin wrapper that formats `DedupResult` for its UI. This fixes 4 behavioral bugs in the LLM tool path: (1) threshold 0.90→0.70, (2) missing triple disambiguation, (3) Layer 3.5 after Layer 3, (4) fire-and-forget embedding. Net line reduction: -1229. Removed `Fact::for_insert()` (dead code).
+
 **Related:** Issue #73
 
 **Goal:** Add a `ask-ai config upgrade` subcommand that merges missing default fields into the user's existing `config.toml`, adding doc comments only for new fields. Users don't have to manually track which config fields are new after each update.
