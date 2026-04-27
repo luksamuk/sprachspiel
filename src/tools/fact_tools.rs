@@ -5,10 +5,10 @@
 
 use crate::debug_tools::{log_tool_call, log_tool_result};
 use crate::facts::classify::classify_fact;
-use crate::facts::conflict::{CONFLICT_THRESHOLD, detect_conflicts, resolve_conflict};
+use crate::facts::dedup::{DedupConfig, DedupResult, deduplicate_and_insert};
 use crate::facts::extract::is_extractable_sentence;
 use crate::facts::lang;
-use crate::facts::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
+use crate::facts::types::{Category, MAX_FACT_CONTENT_SIZE, Scope};
 use crate::project::get_project_id;
 use crate::tools::context::get_db;
 use crate::tools::context::get_embedding;
@@ -222,340 +222,116 @@ pub async fn fact_add(
         }
     };
 
-    // Create fact
-    let fact = match Fact::for_insert(
-        content.clone(),
+    // Delegate to centralized dedup pipeline
+    let config = DedupConfig::llm();
+    let result = deduplicate_and_insert(
+        &db,
+        &content,
         parsed_category,
         parsed_scope,
-        project_id.clone(),
-        Source::Llm,
-    ) {
-        Ok(f) => f,
-        Err(e) => {
-            let err = format!("Error creating fact: {}", e);
-            log_tool_result("fact_add", &err);
-            return Ok(err);
-        }
-    };
+        project_id.as_deref(),
+        &config,
+        get_embedding().as_ref(),
+    )
+    .await;
 
-    // ====================================================================
-    // Layer 1: Exact content match (case-insensitive, trimmed)
-    // Catches obvious duplicates like "I prefer dark mode" == "i prefer dark mode"
-    // ====================================================================
-    let content_trimmed = content.trim().to_lowercase();
-    match db.find_exact_fact(&content_trimmed) {
-        Ok(Some(existing)) => {
-            let result = format!(
+    let result_str = match result {
+        DedupResult::Inserted {
+            id,
+            category,
+            scope,
+        } => {
+            let scope_label = match scope {
+                Scope::Global => "global",
+                Scope::Project => "project",
+            };
+            let category_label = match category {
+                Category::Preference => "preference",
+                Category::Fact => "fact",
+            };
+            format!(
+                "Stored fact:{} (category: {}, scope: {})\n\nContent: {}",
+                id, category_label, scope_label, content
+            )
+        }
+        DedupResult::ExactDuplicate {
+            existing_id,
+            existing_content,
+        } => {
+            format!(
                 "Skipped: Exact duplicate already exists (fact:{}).\n\n\
                  Existing: {}\n\
                  New: {}\n\n\
                  Use fact_remove(id=\"{}\") first if you want to replace it.",
-                existing.id, existing.content, content, existing.id
-            );
-            log_tool_result("fact_add", &result);
-            return Ok(result);
+                existing_id, existing_content, content, existing_id
+            )
         }
-        Ok(None) => { /* No exact match, continue */ }
-        Err(e) => {
-            log::debug!("fact_add: Exact match query failed: {}", e);
+        DedupResult::NormalizedDuplicate {
+            existing_id,
+            existing_content,
+        } => {
+            format!(
+                "Skipped: Similar fact already exists (fact:{}).\n\n\
+                 Existing: {}\n\
+                 New: {}\n\n\
+                 Use fact_remove(id=\"{}\") first if you want to replace it.",
+                existing_id, existing_content, content, existing_id
+            )
         }
-    }
-
-    // ====================================================================
-    // Layer 2: Normalized content match (strips pronouns/subjects)
-    // Catches "I prefer dark mode" ≈ "User prefers dark mode"
-    // ====================================================================
-    let normalized_query = lang::normalize_for_comparison(&content);
-    match db.find_normalized_fact(&normalized_query) {
-        Ok(matches) if !matches.is_empty() => {
-            // Found a normalized match — handle conflicts
-            if parsed_scope == Scope::Global {
-                // Global-wins-project: remove Project duplicates
-                let mut global_match: Option<&crate::facts::types::Fact> = None;
-                for fact in &matches {
-                    if fact.scope == Scope::Project {
-                        log::debug!(
-                            "fact_add: Global fact overrides Project fact (id={}): '{}'",
-                            fact.id,
-                            fact.content
-                        );
-                        if let Err(e) = db.delete_fact(fact.id) {
-                            log::debug!("fact_add: Failed to delete Project fact: {}", e);
-                        }
-                    } else {
-                        global_match = Some(fact);
-                    }
-                }
-                if let Some(existing) = global_match {
-                    let result = format!(
-                        "Skipped: Similar fact already exists (fact:{}).\n\n\
-                         Existing: {}\n\
-                         New: {}\n\n\
-                         Use fact_remove(id=\"{}\") first if you want to replace it.",
-                        existing.id, existing.content, content, existing.id
-                    );
-                    log_tool_result("fact_add", &result);
-                    return Ok(result);
-                }
-                // All duplicates were Project-scope and removed — fall through to insert
-            } else {
-                // Project-scope: any existing match = skip
-                let existing = &matches[0];
-                let result = format!(
-                    "Skipped: Similar fact already exists (fact:{}).\n\n\
-                     Existing: {}\n\
-                     New: {}\n\n\
-                     Use fact_remove(id=\"{}\") first if you want to replace it.",
-                    existing.id, existing.content, content, existing.id
-                );
-                log_tool_result("fact_add", &result);
-                return Ok(result);
-            }
+        DedupResult::SemanticDuplicate {
+            existing_id,
+            existing_content,
+            ..
+        } => {
+            format!(
+                "Skipped: Similar fact already exists (fact:{}).\n\n\
+                 Existing: {}\n\
+                 New: {}\n\n\
+                 Use fact_remove(id=\"{}\") first if you want to replace it.",
+                existing_id, existing_content, content, existing_id
+            )
         }
-        Ok(_) => { /* No normalized match, continue */ }
-        Err(e) => {
-            log::debug!("fact_add: Normalized match query failed: {}", e);
+        DedupResult::Updated {
+            id,
+            old_content,
+            reason,
+            category,
+            scope,
+        } => {
+            let scope_label = match scope {
+                Scope::Global => "global",
+                Scope::Project => "project",
+            };
+            let category_label = match category {
+                Category::Preference => "preference",
+                Category::Fact => "fact",
+            };
+            format!(
+                "Updated fact:{} (category: {}, scope: {})\n\n\
+                 '{}' replaces '{}' ({})\n\n\
+                 Content: {}",
+                id, category_label, scope_label, content, old_content, reason, content
+            )
         }
-    }
-
-    // ====================================================================
-    // Layer 3: FTS5 keyword search with BM25 scoring
-    // ====================================================================
-    let conflicts = match db.search_facts(&normalized_query, None, 5) {
-        Ok(results) => detect_conflicts(&content, &results, CONFLICT_THRESHOLD),
-        Err(_) => {
-            // If search fails, continue without conflict check
-            Vec::new()
+        DedupResult::Fts5Conflict {
+            existing_id,
+            existing_content,
+            ..
+        } => {
+            format!(
+                "Skipped: Similar fact already exists (fact:{}).\n\n\
+                 Existing: {}\n\
+                 New: {}\n\n\
+                 Use fact_remove(id=\"{}\") first if you want to replace it.",
+                existing_id, existing_content, content, existing_id
+            )
         }
+        DedupResult::Error(e) => format!("Error: {}", e),
     };
 
-    // ====================================================================
-    // Layer 3.5: Semantic embedding similarity (preference override detection)
-    //
-    // If FTS5 didn't find conflicts, check semantic similarity via embeddings.
-    // This catches cases like "prefer dark mode" vs "prefer light mode"
-    // where FTS5 BM25 score is too low but embeddings show high similarity.
-    // ====================================================================
-    if conflicts.is_empty()
-        && parsed_category == Category::Preference
-        && let Some(client) = get_embedding()
-    {
-        match crate::facts::embedding::generate_fact_embedding(&content, &client).await {
-            Ok(candidate_embedding) => {
-                match db.search_facts_semantic(&candidate_embedding, None, 5) {
-                    Ok(semantic_results) => {
-                        for result in &semantic_results {
-                            if result.score < 0.90 {
-                                continue; // Below semantic similarity threshold
-                            }
-
-                            if crate::facts::conflict::is_contradiction(
-                                &content,
-                                &result.fact.content,
-                            ) {
-                                log::debug!(
-                                    "fact_add: Semantic contradiction found (cosine={:.3}): '{}' vs '{}'",
-                                    result.score,
-                                    content,
-                                    result.fact.content
-                                );
-                                // Remove the old fact and insert the new one
-                                if let Err(e) = db.delete_fact(result.fact.id) {
-                                    log::debug!(
-                                        "fact_add: Failed to delete contradicting fact: {}",
-                                        e
-                                    );
-                                    continue;
-                                }
-                                // Fall through to insert below with the new fact
-                                break;
-                            }
-
-                            // Not a contradiction but high similarity — it's a duplicate
-                            log::debug!(
-                                "fact_add: Semantic duplicate found (cosine={:.3}): '{}' vs '{}'",
-                                result.score,
-                                content,
-                                result.fact.content
-                            );
-                            let result_msg = format!(
-                                "Skipped: Similar fact already exists (fact:{}).\n\n\
-                                 Existing: {}\n\
-                                 New: {}\n\n\
-                                 Use fact_remove(id=\"{}\") first if you want to replace it.",
-                                result.fact.id, result.fact.content, content, result.fact.id
-                            );
-                            log_tool_result("fact_add", &result_msg);
-                            return Ok(result_msg);
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!("fact_add: Semantic search failed: {}", e);
-                        // Fall through to insert
-                    }
-                }
-            }
-            Err(e) => {
-                log::debug!(
-                    "fact_add: Failed to generate embedding for semantic dedup: {}",
-                    e
-                );
-                // Fall through to insert without semantic check
-            }
-        }
-    }
-
-    // Handle FTS5 conflicts
-    if !conflicts.is_empty() {
-        // Global-wins-project rule: when adding a Global-scope fact,
-        // remove ALL conflicting Project-scope facts first, then resolve
-        // remaining Global conflicts normally.
-        if parsed_scope == Scope::Global {
-            // Remove all conflicting Project-scope facts
-            let mut remaining_conflicts = Vec::new();
-            for conflict in &conflicts {
-                if conflict.existing_fact.scope == Scope::Project {
-                    log::debug!(
-                        "fact_add: Global fact overrides Project fact (id={}): '{}'",
-                        conflict.existing_fact.id,
-                        conflict.existing_fact.content
-                    );
-                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                        log::debug!(
-                            "fact_add: Failed to delete Project fact (id={}): {}",
-                            conflict.existing_fact.id,
-                            e
-                        );
-                    }
-                } else {
-                    remaining_conflicts.push(conflict);
-                }
-            }
-
-            // If only Project conflicts existed, they've been removed — proceed to insert
-            if remaining_conflicts.is_empty() {
-                // Fall through to insert below
-            } else {
-                // Resolve remaining Global conflicts
-                let conflict = remaining_conflicts[0];
-                match resolve_conflict(conflict.clone()) {
-                    crate::facts::conflict::ResolutionAction::Skip => {
-                        let result = format!(
-                            "Skipped: Similar fact already exists (fact:{}).\n\n\
-                             Existing: {}\n\
-                             New: {}\n\n\
-                             Use fact_remove(id=\"{}\") first if you want to replace it.",
-                            conflict.existing_fact.id,
-                            conflict.existing_fact.content,
-                            content,
-                            conflict.existing_fact.id
-                        );
-                        log_tool_result("fact_add", &result);
-                        return Ok(result);
-                    }
-                    crate::facts::conflict::ResolutionAction::Update => {
-                        if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                            let err = format!("Error resolving conflict: {}", e);
-                            log_tool_result("fact_add", &err);
-                            return Ok(err);
-                        }
-                        // Insert new fact below
-                    }
-                    crate::facts::conflict::ResolutionAction::Add => {
-                        // No conflict - continue with insert below
-                    }
-                }
-            }
-        } else {
-            // Project-scope fact: normal conflict resolution
-            let conflict = &conflicts[0];
-
-            match resolve_conflict(conflict.clone()) {
-                crate::facts::conflict::ResolutionAction::Skip => {
-                    let result = format!(
-                        "Skipped: Similar fact already exists (fact:{}).\n\n\
-                         Existing: {}\n\
-                         New: {}\n\n\
-                         Use fact_remove(id=\"{}\") first if you want to replace it.",
-                        conflict.existing_fact.id,
-                        conflict.existing_fact.content,
-                        content,
-                        conflict.existing_fact.id
-                    );
-                    log_tool_result("fact_add", &result);
-                    return Ok(result);
-                }
-                crate::facts::conflict::ResolutionAction::Update => {
-                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                        let err = format!("Error resolving conflict: {}", e);
-                        log_tool_result("fact_add", &err);
-                        return Ok(err);
-                    }
-                    // Insert new fact below
-                }
-                crate::facts::conflict::ResolutionAction::Add => {
-                    // No conflict - continue with insert below
-                }
-            }
-        }
-    }
-
-    // Insert into database (no conflicts)
-    let id = match db.insert_fact(&fact) {
-        Ok(id) => id,
-        Err(e) => {
-            let err = format!("Error storing fact: {}", e);
-            log_tool_result("fact_add", &err);
-            return Ok(err);
-        }
-    };
-
-    // Generate embedding for the newly inserted fact (eager, fire-and-forget).
-    // If Ollama is offline, has_embedding stays 0 and recovery generates on next startup.
-    if let (Some(db_arc), Some(client)) = (get_db(), get_embedding()) {
-        let scope_str = parsed_scope.to_string();
-        let category_str = parsed_category.to_string();
-        let pid = project_id.clone();
-        let content_for_emb = content.clone();
-        tokio::spawn(async move {
-            match crate::facts::embedding::generate_fact_embedding(&content_for_emb, &client).await
-            {
-                Ok(emb) => {
-                    if let Err(e) = db_arc.update_fact_embedding(
-                        id,
-                        &emb,
-                        &scope_str,
-                        &category_str,
-                        pid.as_deref(),
-                    ) {
-                        log::debug!("fact_add: failed to store embedding: {}", e);
-                    }
-                }
-                Err(e) => {
-                    log::debug!("fact_add: failed to generate embedding: {}", e);
-                }
-            }
-        });
-    }
-
-    let scope_label = match parsed_scope {
-        Scope::Global => "global",
-        Scope::Project => "project",
-    };
-    let category_label = match parsed_category {
-        Category::Preference => "preference",
-        Category::Fact => "fact",
-    };
-
-    let result = format!(
-        "Stored fact:{} (category: {}, scope: {})\n\n\
-         Content: {}",
-        id, category_label, scope_label, content
-    );
-    log_tool_result("fact_add", &result);
-    Ok(result)
+    log_tool_result("fact_add", &result_str);
+    Ok(result_str)
 }
-
 /// Search stored facts using keyword search.
 ///
 /// Uses full-text search (FTS5) to find facts matching the query.

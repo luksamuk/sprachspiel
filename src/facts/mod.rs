@@ -33,12 +33,20 @@
 //! These enable semantic similarity comparison for deduplication:
 //! - Layer 4: Cosine similarity >= 0.90 catches paraphrases and translations
 //! - Startup verification removes semantic duplicates
-//! - Eager embedding generation at insert time (fire-and-forget)
+//! - Eager embedding generation at insert time (synchronous)
+//!
+//! # Fact Dedup Pipeline
+//!
+//! All fact insertion paths share a centralized dedup pipeline in the `dedup`
+//! module. See [`dedup::deduplicate_and_insert`] for the canonical order and
+//! behavioral spec. The three callers (CLI `/fact add`, LLM `fact_add` tool,
+//! auto-extraction) are thin wrappers that format the `DedupResult` for their UI.
 
 pub mod classify;
 pub mod conflict;
 pub mod db;
 pub mod decay;
+pub mod dedup;
 pub mod embedding;
 pub mod extract;
 pub mod lang;

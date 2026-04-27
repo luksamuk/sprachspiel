@@ -183,17 +183,6 @@ impl Fact {
             has_embedding: false,
         })
     }
-
-    /// Create a new fact for insertion (no id)
-    pub fn for_insert(
-        content: String,
-        category: Category,
-        scope: Scope,
-        project_id: Option<String>,
-        source: Source,
-    ) -> Result<Self, String> {
-        Self::new(content, category, scope, project_id, source)
-    }
 }
 
 #[cfg(test)]

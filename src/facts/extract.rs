@@ -39,11 +39,9 @@
 //! - **ADR-E6:** Max 3 facts per response to avoid noise.
 
 use super::classify::classify_fact;
-use super::conflict::{
-    CONFLICT_THRESHOLD, SEMANTIC_SEARCH_THRESHOLD, detect_conflicts, resolve_conflict,
-};
+use super::dedup::{DedupConfig, DedupResult, deduplicate_and_insert};
 use super::lang;
-use super::types::{Category, Fact, MAX_FACT_CONTENT_SIZE, Scope, Source};
+use super::types::{Category, MAX_FACT_CONTENT_SIZE, Scope, Source};
 use crate::db::Database;
 use crate::embeddings::EmbeddingClient;
 
@@ -79,6 +77,7 @@ pub struct ExtractedFact {
     /// Always Global for auto-extracted facts.
     pub scope: Scope,
     /// Always Llm for auto-extracted facts.
+    #[allow(dead_code)] // Used in tests
     pub source: Source,
     /// Which pattern matched (for debugging).
     #[allow(dead_code)] // Used in tests
@@ -337,6 +336,9 @@ pub async fn extract_and_insert_facts(
 }
 
 /// Action taken when inserting a fact.
+///
+/// Maps from [`DedupResult`] to a simpler tri-state for extraction callers
+/// that only need to know whether a fact was inserted, skipped, or updated.
 enum InsertAction {
     Inserted,
     Skipped,
@@ -345,416 +347,35 @@ enum InsertAction {
 
 /// Insert a fact with deduplication against existing facts.
 ///
-/// Uses a layered dedup pipeline:
-/// - Layer 1: Exact content match (case-insensitive, trimmed)
-/// - Layer 2: Normalized content match (strips pronouns/subjects)
-/// - Layer 3: FTS5 keyword search with BM25 scoring
-/// - Layer 3.5: Semantic embedding similarity (triple-extractable facts, requires embedding_client)
-/// - Layer 4: Insert new fact
-///
-/// If no embedding_client is provided, Layer 3.5 is skipped.
+/// Delegates to the centralized [`deduplicate_and_insert`] pipeline and maps
+/// the result to [`InsertAction`] for extraction callers.
 async fn insert_fact_with_dedup(
     db: &Database,
     candidate: &ExtractedFact,
     project_id: Option<&str>,
     embedding_client: Option<&Arc<EmbeddingClient>>,
 ) -> InsertAction {
-    let candidate_trimmed = candidate.content.trim().to_lowercase();
-
-    // ====================================================================
-    // Layer 1: Exact content match (case-insensitive, trimmed)
-    // Catches obvious duplicates like "I prefer dark mode" == "i prefer dark mode"
-    // ====================================================================
-    match db.find_exact_fact(&candidate_trimmed) {
-        Ok(Some(existing)) => {
-            log::debug!(
-                "Auto-extract: Exact duplicate found (id={}): '{}'",
-                existing.id,
-                existing.content
-            );
-            return InsertAction::Skipped;
-        }
-        Ok(None) => { /* No exact match, continue */ }
-        Err(e) => {
-            log::debug!("Auto-extract: Exact match query failed: {}", e);
-            // Continue with other dedup methods
-        }
-    }
-
-    // ====================================================================
-    // Layer 2: Normalized content match (strips pronouns/subjects)
-    // Catches "I prefer dark mode" ≈ "User prefers dark mode"
-    // ====================================================================
-    let normalized_query = lang::normalize_for_comparison(&candidate.content);
-    match db.find_normalized_fact(&normalized_query) {
-        Ok(matches) if !matches.is_empty() => {
-            // Check for global-wins-project rule
-            if candidate.scope == Scope::Global {
-                // Remove Project-scope duplicates, keep Global
-                let mut global_match: Option<&Fact> = None;
-                for fact in &matches {
-                    if fact.scope == Scope::Project {
-                        log::debug!(
-                            "Auto-extract: Global fact overrides Project fact (id={}): '{}'",
-                            fact.id,
-                            fact.content
-                        );
-                        if let Err(e) = db.delete_fact(fact.id) {
-                            log::debug!("Auto-extract: Failed to delete Project fact: {}", e);
-                        }
-                    } else {
-                        global_match = Some(fact);
-                    }
-                }
-                if let Some(existing) = global_match {
-                    log::debug!(
-                        "Auto-extract: Skipping duplicate Global fact (id={}): '{}'",
-                        existing.id,
-                        existing.content
-                    );
-                    return InsertAction::Skipped;
-                }
-                // All duplicates were Project-scope and removed — insert Global
-                return insert_new_fact(db, candidate, project_id, embedding_client).await;
-            } else {
-                // Project-scope: any existing match (Global or Project) = skip
-                log::debug!(
-                    "Auto-extract: Skipping duplicate fact (normalized match): '{}'",
-                    candidate.content
-                );
-                return InsertAction::Skipped;
-            }
-        }
-        Ok(_) => { /* No normalized match, continue */ }
-        Err(e) => {
-            log::debug!("Auto-extract: Normalized match query failed: {}", e);
-            // Continue with FTS5
-        }
-    }
-
-    // ====================================================================
-    // Layer 3.5: Semantic embedding similarity (contradiction + duplicate)
-    //
-    // Runs BEFORE Layer 3 (FTS5 BM25) because:
-    // - Contradictions like "prefer dark mode" vs "prefer light mode" have
-    //   different normalized strings → Layer 2 skips them → FTS5 BM25 also
-    //   misses them (low keyword overlap) → only semantic catches them.
-    // - Embedding cosine ~0.77 for antonym pairs, above the 0.70 threshold.
-    // - Triple-based disambiguation separates contradictions from duplicates.
-    //
-    // Applies when:
-    // 1. An embedding client is available
-    // 2. The candidate has an extractable triple (preference or identity)
-    //    — extract_fact_triple() handles both via TRIPLE_PREFERENCE_PREFIXES
-    //      and TRIPLE_IDENTITY_PREFIXES, so no category guard needed
-    // ====================================================================
-    if let Some(client) = embedding_client
-        && super::conflict::extract_fact_triple(&candidate.content).is_some()
-    {
-        match super::embedding::generate_fact_embedding(&candidate.content, client).await {
-            Ok(candidate_embedding) => {
-                match db.search_facts_semantic(&candidate_embedding, None, 5) {
-                    Ok(semantic_results) => {
-                        for result in &semantic_results {
-                            if result.score < SEMANTIC_SEARCH_THRESHOLD {
-                                continue; // Below semantic search threshold
-                            }
-
-                            // ── Step 1: Triple-based disambiguation ────────────
-                            // Extract triples from both candidate and existing fact.
-                            // Same predicate + different object → contradiction (→ Update).
-                            // Same predicate + same object → semantic duplicate (→ Skip).
-                            // Different predicates → fall through to is_contradiction().
-                            if let Some(candidate_triple) =
-                                super::conflict::extract_fact_triple(&candidate.content)
-                                && let Some(existing_triple) =
-                                    super::conflict::extract_fact_triple(&result.fact.content)
-                            {
-                                if candidate_triple.contradicts(&existing_triple) {
-                                    // Same predicate, different object → contradiction
-                                    log::debug!(
-                                        "Auto-extract: Semantic contradiction \
-                                         (cosine={:.3}, predicate='{}'): '{}' vs '{}'",
-                                        result.score,
-                                        candidate_triple.predicate,
-                                        candidate.content,
-                                        result.fact.content
-                                    );
-                                    if let Err(e) = db.delete_fact(result.fact.id) {
-                                        log::debug!(
-                                            "Auto-extract: Failed to delete contradicted fact: {}",
-                                            e
-                                        );
-                                        continue;
-                                    }
-                                    return match insert_new_fact(
-                                        db,
-                                        candidate,
-                                        project_id,
-                                        embedding_client,
-                                    )
-                                    .await
-                                    {
-                                        InsertAction::Inserted => InsertAction::Updated,
-                                        other => other,
-                                    };
-                                }
-                                if candidate_triple.predicate == existing_triple.predicate
-                                    && candidate_triple.object == existing_triple.object
-                                {
-                                    // Same triple → semantic duplicate
-                                    log::debug!(
-                                        "Auto-extract: Semantic duplicate \
-                                         (cosine={:.3}): '{}' vs '{}'",
-                                        result.score,
-                                        candidate.content,
-                                        result.fact.content
-                                    );
-                                    return InsertAction::Skipped;
-                                }
-                                // Different predicate, different/same object →
-                                // fall through to is_contradiction() fallback
-                            }
-
-                            // ── Step 2: Polarity opposition fallback ───────────
-                            // Catches same-object opposite-sentiment that triples
-                            // miss: "likes X" vs "hates X", "prefers X" vs
-                            // "doesn't like X", opposite negation.
-                            if super::conflict::is_contradiction(
-                                &candidate.content,
-                                &result.fact.content,
-                            ) {
-                                log::debug!(
-                                    "Auto-extract: Polarity contradiction \
-                                     (cosine={:.3}): '{}' vs '{}'",
-                                    result.score,
-                                    candidate.content,
-                                    result.fact.content
-                                );
-                                if let Err(e) = db.delete_fact(result.fact.id) {
-                                    log::debug!(
-                                        "Auto-extract: Failed to delete contradicted fact: {}",
-                                        e
-                                    );
-                                    continue;
-                                }
-                                return match insert_new_fact(
-                                    db,
-                                    candidate,
-                                    project_id,
-                                    embedding_client,
-                                )
-                                .await
-                                {
-                                    InsertAction::Inserted => InsertAction::Updated,
-                                    other => other,
-                                };
-                            }
-
-                            // Neither contradiction nor duplicate —
-                            // related but not conflicting. Continue to next result.
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!("Auto-extract: Semantic search failed: {}", e);
-                        // Fall through to FTS5
-                    }
-                }
-            }
-            Err(e) => {
-                log::debug!(
-                    "Auto-extract: Failed to generate embedding for semantic dedup: {}",
-                    e
-                );
-                // Fall through to FTS5 without semantic check
-            }
-        }
-    }
-
-    // ====================================================================
-    // Layer 3: FTS5 keyword search with BM25 scoring
-    // Catches semantic similarity that exact/normalized match misses
-    // ====================================================================
-    let search_results = match db.search_facts(&normalized_query, None, 5) {
-        Ok(results) => results,
-        Err(e) => {
-            log::debug!("Auto-extract: FTS5 search failed: {}", e);
-            // If search fails, try to insert anyway
-            return insert_new_fact(db, candidate, project_id, embedding_client).await;
-        }
-    };
-
-    // Check for conflicts from FTS5
-    let conflicts = detect_conflicts(&candidate.content, &search_results, CONFLICT_THRESHOLD);
-
-    if conflicts.is_empty() {
-        // No conflict — insert new fact
-        insert_new_fact(db, candidate, project_id, embedding_client).await
-    } else {
-        // Global-wins-project rule: when inserting a Global-scope fact,
-        // remove ALL conflicting Project-scope facts, then insert the Global one.
-        // This prevents the same fact from existing in both scopes.
-        if candidate.scope == Scope::Global {
-            for conflict in &conflicts {
-                if conflict.existing_fact.scope == Scope::Project {
-                    log::debug!(
-                        "Auto-extract: Global fact overrides Project fact (id={}): '{}'",
-                        conflict.existing_fact.id,
-                        conflict.existing_fact.content
-                    );
-                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                        log::debug!(
-                            "Auto-extract: Failed to delete Project fact (id={}): {}",
-                            conflict.existing_fact.id,
-                            e
-                        );
-                    }
-                }
-            }
-            // After removing Project duplicates, check if any Global conflicts remain
-            let global_conflicts: Vec<_> = conflicts
-                .iter()
-                .filter(|c| c.existing_fact.scope == Scope::Global)
-                .collect();
-
-            if global_conflicts.is_empty() {
-                // All conflicts were Project-scope and have been removed
-                return insert_new_fact(db, candidate, project_id, embedding_client).await;
-            }
-
-            // Resolve remaining Global conflicts normally
-            let conflict = global_conflicts[0];
-            let action = resolve_conflict(conflict.clone());
-            match action {
-                super::conflict::ResolutionAction::Skip => {
-                    log::debug!(
-                        "Auto-extract: Skipping duplicate Global fact: {}",
-                        candidate.content
-                    );
-                    InsertAction::Skipped
-                }
-                super::conflict::ResolutionAction::Update => {
-                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                        log::debug!("Auto-extract: Failed to invalidate old fact: {}", e);
-                        return InsertAction::Skipped;
-                    }
-                    log::debug!(
-                        "Auto-extract: Updating contradictory Global fact (old: '{}', new: '{}')",
-                        conflict.existing_fact.content,
-                        candidate.content
-                    );
-                    match insert_new_fact(db, candidate, project_id, embedding_client).await {
-                        InsertAction::Inserted => InsertAction::Updated,
-                        other => other,
-                    }
-                }
-                super::conflict::ResolutionAction::Add => {
-                    insert_new_fact(db, candidate, project_id, embedding_client).await
-                }
-            }
-        } else {
-            // Project-scope fact: normal conflict resolution
-            let conflict = &conflicts[0];
-            let action = resolve_conflict(conflict.clone());
-
-            match action {
-                super::conflict::ResolutionAction::Skip => {
-                    log::debug!(
-                        "Auto-extract: Skipping duplicate fact (similarity >= threshold): {}",
-                        candidate.content
-                    );
-                    InsertAction::Skipped
-                }
-                super::conflict::ResolutionAction::Update => {
-                    if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                        log::debug!("Auto-extract: Failed to invalidate old fact: {}", e);
-                        return InsertAction::Skipped;
-                    }
-                    log::debug!(
-                        "Auto-extract: Updating contradictory fact (old: '{}', new: '{}')",
-                        conflict.existing_fact.content,
-                        candidate.content
-                    );
-                    match insert_new_fact(db, candidate, project_id, embedding_client).await {
-                        InsertAction::Inserted => InsertAction::Updated,
-                        other => other,
-                    }
-                }
-                super::conflict::ResolutionAction::Add => {
-                    insert_new_fact(db, candidate, project_id, embedding_client).await
-                }
-            }
-        }
-    }
-}
-
-/// Insert a new fact into the database.
-///
-/// After inserting, eagerly generates the embedding so that subsequent
-/// Layer 3.5 semantic searches can find the new fact. If embedding
-/// generation fails, `has_embedding` stays 0 and recovery will retry
-/// on next startup.
-async fn insert_new_fact(
-    db: &Database,
-    candidate: &ExtractedFact,
-    project_id: Option<&str>,
-    embedding_client: Option<&Arc<EmbeddingClient>>,
-) -> InsertAction {
-    let fact = match Fact::for_insert(
-        candidate.content.clone(),
+    let config = DedupConfig::llm();
+    let result = deduplicate_and_insert(
+        db,
+        &candidate.content,
         candidate.category,
         candidate.scope,
-        project_id.map(|s| s.to_string()),
-        candidate.source,
-    ) {
-        Ok(f) => f,
-        Err(e) => {
-            log::debug!("Auto-extract: Fact validation failed: {}", e);
-            return InsertAction::Skipped;
-        }
-    };
+        project_id,
+        &config,
+        embedding_client,
+    )
+    .await;
 
-    match db.insert_fact(&fact) {
-        Ok(id) => {
-            log::debug!(
-                "Auto-extract: Inserted fact #{} (confidence: {:.1}): {}",
-                id,
-                candidate.confidence,
-                candidate.content
-            );
-
-            // Eagerly generate embedding for the newly inserted fact.
-            // This MUST be synchronous (await, not fire-and-forget) so that
-            // when the next fact's Layer 3.5 search runs, this fact's
-            // embedding is already stored in fact_embeddings.
-            if let Some(client) = embedding_client {
-                match super::embedding::generate_fact_embedding(&candidate.content, client).await {
-                    Ok(emb) => {
-                        if let Err(e) = db.update_fact_embedding(
-                            id,
-                            &emb,
-                            &candidate.scope.to_string(),
-                            &candidate.category.to_string(),
-                            project_id,
-                        ) {
-                            log::debug!("Auto-extract: Failed to store embedding: {}", e);
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!(
-                            "Auto-extract: Failed to generate embedding for fact #{}: {}",
-                            id,
-                            e
-                        );
-                        // has_embedding stays 0; recovery generates on next startup.
-                    }
-                }
-            }
-
-            InsertAction::Inserted
-        }
-        Err(e) => {
-            log::debug!("Auto-extract: Failed to insert fact: {}", e);
+    match result {
+        DedupResult::Inserted { .. } => InsertAction::Inserted,
+        DedupResult::Updated { .. } => InsertAction::Updated,
+        DedupResult::ExactDuplicate { .. }
+        | DedupResult::NormalizedDuplicate { .. }
+        | DedupResult::SemanticDuplicate { .. }
+        | DedupResult::Fts5Conflict { .. } => InsertAction::Skipped,
+        DedupResult::Error(e) => {
+            log::debug!("Auto-extract: Dedup pipeline error: {}", e);
             InsertAction::Skipped
         }
     }
