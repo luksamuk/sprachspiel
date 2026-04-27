@@ -1,12 +1,12 @@
 //! Subagent Runner - lightweight one-shot executor for specialized tasks.
 //!
 //! Provides a minimal interface for dispatching sub-tasks (OCR, Vision,
-//! Translate, Summarize, Document) to Ollama models without the overhead
+//! Translate, Summarize) to Ollama models without the overhead
 //! of `CustomCoordinator` (no history, no callbacks, no overflow detection).
 //!
 //! Two API paths:
 //! - `/api/generate`: For image-based tasks (Ocr, Vision)
-//! - `/api/chat`: For text-based tasks (Translate, Summarize, Document)
+//! - `/api/chat`: For text-based tasks (Translate, Summarize)
 
 use ollama_rs::Ollama;
 use ollama_rs::generation::chat::ChatMessage;
@@ -39,24 +39,23 @@ pub enum SubagentType {
     Translate,
     /// Summarize long text (uses /api/chat).
     Summarize,
-    /// Process structured documents (uses /api/chat, may use tools).
-    Document,
 }
 
 impl SubagentType {
     /// Returns `true` for variants that use `/api/generate` (image-based).
+    #[allow(dead_code)] // Public API method used in tests
     pub fn uses_generate_api(&self) -> bool {
         matches!(self, SubagentType::Ocr | SubagentType::Vision)
     }
 
     /// Human-readable label for this subagent type.
+    #[allow(dead_code)] // Public API method used in tests
     pub fn label(&self) -> &'static str {
         match self {
             SubagentType::Ocr => "OCR",
             SubagentType::Vision => "Vision",
             SubagentType::Translate => "Translate",
             SubagentType::Summarize => "Summarize",
-            SubagentType::Document => "Document",
         }
     }
 }
@@ -74,7 +73,6 @@ impl std::str::FromStr for SubagentType {
             "vision" => Ok(Self::Vision),
             "translate" => Ok(Self::Translate),
             "summarize" => Ok(Self::Summarize),
-            "document" => Ok(Self::Document),
             _ => Err(()),
         }
     }
@@ -87,6 +85,7 @@ impl SubagentType {
     /// Case-insensitive matching.
     ///
     /// This is a convenience method that wraps the `FromStr` implementation.
+    #[allow(dead_code)] // Public API method used in tests
     pub fn parse(s: &str) -> Option<Self> {
         s.parse().ok()
     }
@@ -110,9 +109,6 @@ pub struct SubagentConfig {
     pub model_options: ModelOptions,
     /// OCR extraction mode (Text, Table, Figure, Formula).
     pub ocr_mode: OcrMode,
-    /// Page range for PDF vision analysis (e.g., "1-5" or "1,3,7").
-    /// Only used by the Vision subagent. None means all pages.
-    pub pages: Option<String>,
 }
 impl SubagentConfig {
     /// Create a new config with the given model config key and system prompt.
@@ -132,20 +128,12 @@ impl SubagentConfig {
             max_output_chars: DEFAULT_MAX_OUTPUT_TOKENS,
             ocr_mode: OcrMode::Text,
             model_options,
-            pages: None,
         }
     }
 
     /// Set the OCR extraction mode (only affects OCR subagent).
     pub fn with_ocr_mode(mut self, mode: OcrMode) -> Self {
         self.ocr_mode = mode;
-        self
-    }
-
-    /// Set the page range for PDF vision analysis (only affects Vision subagent).
-    /// Accepts formats like "1-5" or "1,3,7". None means all pages.
-    pub fn with_pages(mut self, pages: impl Into<String>) -> Self {
-        self.pages = Some(pages.into());
         self
     }
 }
@@ -170,7 +158,7 @@ impl SubagentRunner {
     ///
     /// Dispatches to the correct Ollama API based on `subagent_type`:
     /// - `Ocr` / `Vision` → `/api/generate` (with image from `file_path`)
-    /// - `Translate` / `Summarize` / `Document` → `/api/chat`
+    /// - `Translate` / `Summarize` → `/api/chat`
     ///
     /// Results are truncated at `config.max_output_chars` tokens via
     /// `truncate_to_budget()`.
@@ -178,7 +166,7 @@ impl SubagentRunner {
     /// # Arguments
     /// * `subagent_type` - Which specialization to invoke.
     /// * `prompt` - The user-facing prompt (e.g. "Extract all text" or "Translate to Portuguese").
-    /// * `file_path` - Required for Ocr/Vision; optional for Document; ignored for Translate/Summarize.
+    /// * `file_path` - Required for Ocr/Vision; ignored for Translate/Summarize.
     pub async fn run(
         &self,
         subagent_type: SubagentType,
@@ -193,15 +181,13 @@ impl SubagentRunner {
                 self.run_ocr(&file_paths[0], self.config.ocr_mode).await?
             }
             SubagentType::Vision => self.run_vision(&file_paths, &prompt).await?,
-            SubagentType::Translate | SubagentType::Summarize | SubagentType::Document => {
-                self.run_chat(prompt).await?
-            }
+            SubagentType::Translate | SubagentType::Summarize => self.run_chat(prompt).await?,
         };
 
         Ok(truncate_to_budget(&raw, self.config.max_output_chars))
     }
 
-    /// Execute via `/api/chat` — used for text-based subagents (Translate, Summarize, Document).
+    /// Execute via `/api/chat` — used for text-based subagents (Translate, Summarize).
     ///
     /// Constructs a system message from the config's system prompt and a user
     /// message from the provided prompt, then sends a `ChatMessageRequest`.
@@ -329,7 +315,6 @@ impl SubagentRunner {
             json: false,
             model: None,
             max_tokens: 2048,
-            pages: self.config.pages.clone(),
         };
 
         let processor = VisionProcessor::new();
@@ -401,112 +386,6 @@ impl SubagentRunner {
             Err(e) => Ok(format!("Error: OCR processing failed: {}", e)),
         }
     }
-
-    /// Process a document (PDF/EPUB) by delegating to a model with `run_command` tool.
-    ///
-    /// Creates a minimal `CustomCoordinator` with ONLY `run_command` registered
-    /// (no `spawn_subagent` — recursion prevention). Loads the document-processing
-    /// skill as the system prompt to guide the model in using `pdftotext`, `epub2txt`,
-    /// etc. The model calls these tools via `run_command` to extract text.
-    ///
-    /// # Arguments
-    /// * `path` - Path to the PDF or EPUB file to process.
-    ///
-    /// # Returns
-    /// Extracted text content on success, or an error message string on failure.
-    /// All errors are returned as `Ok(String)` per the tool error philosophy.
-    ///
-    /// # Recursion Prevention
-    /// The `spawn_subagent` tool is deliberately NOT registered in the coordinator.
-    /// This prevents the document subagent from spawning further subagents,
-    /// which could cause infinite recursion.
-    ///
-    /// # Security
-    /// Only `run_command` is available to the model. The `run_command` tool already
-    /// enforces its own whitelist of allowed commands via `tools.toml`.
-    /// No database access, no file read/write tools, no web search.
-    #[cfg(feature = "skills-tools")]
-    pub async fn run_document(
-        &self,
-        path: &Path,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        use crate::chat::CustomCoordinator;
-        use crate::skills::get_skill_content;
-        use crate::tools::run_command;
-
-        // Load the document-processing skill content as system prompt.
-        // This gives the model detailed instructions on which tools to use
-        // (pdftotext, epub2txt, etc.) and how.
-        let skill = match get_skill_content("document-processing") {
-            Some(s) => s,
-            None => {
-                let err_msg = "Error: document-processing skill not found.".to_string();
-                log::warn!("[Document] Skill not found");
-                return Ok(err_msg);
-            }
-        };
-
-        // Document subagent uses tools=true, thinking=false by default.
-        let doc_model = self.config.model.clone();
-
-        // Build user prompt describing the file to process.
-        let file_name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-        let extension = path
-            .extension()
-            .map(|e| e.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-
-        // Validate file type.
-        if !matches!(extension.as_str(), "pdf" | "epub") {
-            let err_msg = format!(
-                "Error: Unsupported file type '.{}'. Document subagent supports PDF and EPUB files only.",
-                extension
-            );
-            return Ok(err_msg);
-        }
-
-        // Verify file exists.
-        if !path.exists() {
-            let err_msg = format!("Error: File not found: {}", path.display());
-            return Ok(err_msg);
-        }
-
-        let user_prompt = format!(
-            "Extract all text content from the file at: {}\n\
-             File type: {}\n\
-             File name: {}\n\
-             \n\
-             Use the appropriate tool (pdftotext for PDF, epub2txt for EPUB) to extract the text.\n\
-             Return the complete extracted text.",
-            path.display(),
-            extension,
-            file_name
-        );
-
-        // Create minimal CustomCoordinator with ONLY run_command.
-        // spawn_subagent is deliberately NOT added (recursion prevention).
-        let mut coordinator = CustomCoordinator::new(self.ollama.clone(), doc_model, vec![])
-            .options(self.config.model_options.clone())
-            .add_tool(run_command);
-
-        // Set system prompt from the skill content.
-        // The skill content includes frontmatter-parsed instructions for
-        // how to use run_command for document processing.
-        let system_message = ChatMessage::system(skill.content.clone());
-        let user_message = ChatMessage::user(user_prompt);
-
-        // Execute the chat with tool support.
-        let response = coordinator
-            .chat(vec![system_message, user_message])
-            .await
-            .map_err(|e| format!("Document Extraction failed for '{}': {}", file_name, e))?;
-
-        let content = response.message.content.trim().to_string();
-        Ok(truncate_to_budget(&content, self.config.max_output_chars))
-    }
 }
 
 #[cfg(test)]
@@ -519,7 +398,6 @@ mod tests {
         assert!(SubagentType::Vision.uses_generate_api());
         assert!(!SubagentType::Translate.uses_generate_api());
         assert!(!SubagentType::Summarize.uses_generate_api());
-        assert!(!SubagentType::Document.uses_generate_api());
     }
 
     #[test]
@@ -528,7 +406,6 @@ mod tests {
         assert_eq!(SubagentType::Vision.label(), "Vision");
         assert_eq!(SubagentType::Translate.label(), "Translate");
         assert_eq!(SubagentType::Summarize.label(), "Summarize");
-        assert_eq!(SubagentType::Document.label(), "Document");
     }
 
     #[test]
@@ -560,10 +437,6 @@ mod tests {
         assert_eq!(
             "summarize".parse::<SubagentType>(),
             Ok(SubagentType::Summarize)
-        );
-        assert_eq!(
-            "document".parse::<SubagentType>(),
-            Ok(SubagentType::Document)
         );
 
         // Case-insensitive

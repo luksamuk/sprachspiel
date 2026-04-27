@@ -394,7 +394,8 @@ pub fn init_with_path(verbosity: Verbosity, log_path: Option<PathBuf>) {
     let file_level = verbosity.to_file_level_filter();
 
     // Box::leak to get a &'static reference — the logger lives for the program lifetime
-    let logger: &'static MultiLogger = Box::leak(Box::new(MultiLogger::new(term_level, file_level, log_path)));
+    let logger: &'static MultiLogger =
+        Box::leak(Box::new(MultiLogger::new(term_level, file_level, log_path)));
 
     if log::set_logger(logger).is_err() {
         // Logger already initialized (e.g., in tests) — just set the level
@@ -439,7 +440,8 @@ pub fn truncate_for_log(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         // Find a safe char boundary near max_len
-        let boundary = s.char_indices()
+        let boundary = s
+            .char_indices()
             .take_while(|(i, _)| *i < max_len)
             .last()
             .map(|(i, c)| i + c.len_utf8())

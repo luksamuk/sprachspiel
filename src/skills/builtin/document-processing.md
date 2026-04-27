@@ -38,34 +38,33 @@ run_command("pdftotext", ["<file.pdf>", "-"])
 
 Pages that `pdftotext` couldn't properly extract need further processing. **Choose the right tool based on content type:**
 
-- **OCR (GLM-OCR)** — Best for: **tables**, **formulas**, **scanned text**, **structured text in images**. OCR preserves table layout and mathematical notation accurately.
-- **Vision (qwen3.5, llava)** — Best for: **charts**, **graphs**, **diagrams**, **figures**, **visual content requiring interpretation**. Vision describes what it *sees* — colors, trends, layout, relationships.
+- **spawn_ocr_agent** — Best for: **tables**, **formulas**, **scanned text**, **structured text in images**. OCR preserves table layout and mathematical notation accurately.
+- **spawn_vision_agent** — Best for: **charts**, **graphs**, **diagrams**, **figures**, **visual content requiring interpretation**. Vision describes what it *sees* — colors, trends, layout, relationships.
 
 **Strategy: try OCR first, then vision if needed.** OCR is faster and more precise for structured text content. Vision is better for visual content that requires interpretation beyond what text extraction can provide.
 
-**How to use these tools for PDF pages:**
+**How to process PDF pages with visual content:**
 
 1. Convert specific pages to images:
    ```bash
    run_command("pdftoppm", ["-png", "-f", "<start>", "-l", "<end>", "-r", "150", "<file.pdf>", "output"])
    ```
-2. For tables, formulas, or scanned text — use the **OCR tool** (calls GLM-OCR internally):
+2. For tables, formulas, or scanned text — use **spawn_ocr_agent**:
    ```
-   Use the ocr tool with the page image file(s)
+   spawn_ocr_agent("Extract the table structure", "output-3.png", "table")
    ```
-3. For charts, graphs, diagrams, or visual figures — use the **vision tool** (calls vision model internally):
+3. For charts, graphs, diagrams, or visual figures — use **spawn_vision_agent**:
    ```
-   Use the vision tool with the PDF file (use --pages for specific pages)
+   spawn_vision_agent("Analyze the charts in this diagram", "output-3.png")
    ```
-4. If OCR results are unsatisfying (e.g., a chart with labels OCR can't interpret), escalate to the vision tool
+4. If OCR results are unsatisfying (e.g., a chart with labels OCR can't interpret), escalate to spawn_vision_agent
 
 **Important: tool access depends on context:**
-- **In chat mode (with tools)**: Call the `ocr` and `vision` tools directly — these invoke the built-in sub-agents.
-  - The vision tool supports `pages` parameter for PDF page selection (e.g., `"1-5"` or `"1,3,7"`).
-  - For OCR of specific PDF pages, use `pdftoppm` to convert to images first, then pass to the ocr tool.
-  - Example: `spawn_subagent("vision", "Analyze charts", "doc.pdf", None, "1-5")`
-- **In CLI mode (standalone)**: Use `ask-ai ocr <image.png>` or `ask-ai vision --pages <range> <file.pdf>`. The `--pages` flag works in CLI mode.
-- **In the document subagent**: Only `run_command` is available. Convert pages with `pdftoppm`, then recommend the user run OCR/vision on the resulting images.
+- **In chat mode (with tools)**: Call `spawn_ocr_agent` and `spawn_vision_agent` directly.
+  - For OCR of specific PDF pages, use `pdftoppm` to convert to images first, then pass to spawn_ocr_agent.
+  - Example: `spawn_ocr_agent("Extract tables", "page-3.png", "table")`
+  - Example: `spawn_vision_agent("Analyze charts in this diagram", "page-5.png")`
+- **In CLI mode (standalone)**: Use `ask-ai ocr <image.png>` or `ask-ai vision <file.pdf>`.
 
 **Quick reference:**
 | Content type | Primary tool | When to escalate |
@@ -286,7 +285,7 @@ binary = "epub2txt"
 
 ### PDF Errors
 
-- **Empty output from pdftotext**: Page likely contains images/charts. Use the vision tool with the PDF file, or run `ask-ai vision --pages <N> <file.pdf>` in CLI mode.
+- **Empty output from pdftotext**: Page likely contains images/charts. Convert pages with `pdftoppm`, then use `spawn_ocr_agent` or `spawn_vision_agent` on the resulting images.
 - **Permission denied**: File may be encrypted or DRM-protected.
 - **Memory issues**: Large files may need page-by-page processing using `-f` and `-l` flags.
 - **Invalid PDF**: File may be corrupted. Try `pdfinfo` first to check validity.
@@ -320,9 +319,13 @@ pdfinfo document.pdf | grep Pages
 ### Analyze PDF pages with vision (tables, charts, formulas)
 ```bash
 # CLI mode:
-ask-ai vision --pages 1-5 document.pdf
-# Chat mode (with tools):
-# spawn_subagent("vision", "Analyze charts", "document.pdf", None, "1-5")
+ask-ai vision document.pdf
+# Chat mode:
+# 1. Convert pages to images:
+#    run_command("pdftoppm", ["-png", "-f", "1", "-l", "5", "-r", "150", "document.pdf", "output"])
+# 2. Then use agent spawning tools:
+#    spawn_ocr_agent("Extract tables", "output-1.png", "table")
+#    spawn_vision_agent("Analyze charts", "output-3.png")
 ```
 
 ### Extract text from ePub preserving chapters

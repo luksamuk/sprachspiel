@@ -35,10 +35,6 @@ pub enum FileType {
     Md,
     /// Org-mode file
     Org,
-    /// PDF document (requires skills-tools)
-    Pdf,
-    /// EPUB ebook (requires skills-tools)
-    Epub,
 }
 
 impl std::fmt::Display for FileType {
@@ -47,8 +43,6 @@ impl std::fmt::Display for FileType {
             FileType::Txt => write!(f, "txt"),
             FileType::Md => write!(f, "md"),
             FileType::Org => write!(f, "org"),
-            FileType::Pdf => write!(f, "pdf"),
-            FileType::Epub => write!(f, "epub"),
         }
     }
 }
@@ -61,10 +55,8 @@ impl std::str::FromStr for FileType {
             "txt" => Ok(FileType::Txt),
             "md" | "markdown" => Ok(FileType::Md),
             "org" => Ok(FileType::Org),
-            "pdf" => Ok(FileType::Pdf),
-            "epub" => Ok(FileType::Epub),
             _ => Err(format!(
-                "Unsupported file type: {}. Supported: txt, md, org, pdf, epub",
+                "Unsupported file type: {}. Supported: txt, md, org",
                 s
             )),
         }
@@ -78,16 +70,7 @@ impl FileType {
             FileType::Txt => "txt",
             FileType::Md => "md",
             FileType::Org => "org",
-            FileType::Pdf => "pdf",
-            FileType::Epub => "epub",
         }
-    }
-
-    /// Check if this file type requires skills-tools feature
-    /// Only compiled when skills-tools is NOT enabled
-    #[cfg(not(feature = "skills-tools"))]
-    pub fn requires_skills(&self) -> bool {
-        matches!(self, FileType::Pdf | FileType::Epub)
     }
 }
 
@@ -97,6 +80,20 @@ pub fn detect_file_type(path: &Path) -> Result<FileType, String> {
         .extension()
         .and_then(|e| e.to_str())
         .ok_or_else(|| format!("File has no extension: {}", path.display()))?;
+
+    // Provide helpful error for PDF/EPUB — these require text extraction first
+    let lower = extension.to_lowercase();
+    if matches!(lower.as_str(), "pdf" | "epub") {
+        return Err(format!(
+            "Direct import of '{}' files is not supported. \
+             Extract the text first using run_command(\"pdftotext\", [\"{}\", \"-\"]) \
+             for PDFs or run_command(\"epub2txt\", [\"{}\", \"-\"]) for EPUBs, \
+             then import the extracted text as a TXT or MD file.",
+            lower,
+            path.display(),
+            path.display()
+        ));
+    }
 
     FileType::from_str(extension)
 }
@@ -253,8 +250,6 @@ mod tests {
         assert_eq!(FileType::Txt.extension(), "txt");
         assert_eq!(FileType::Md.extension(), "md");
         assert_eq!(FileType::Org.extension(), "org");
-        assert_eq!(FileType::Pdf.extension(), "pdf");
-        assert_eq!(FileType::Epub.extension(), "epub");
     }
 
     #[test]
@@ -269,10 +264,8 @@ mod tests {
             detect_file_type(&PathBuf::from("test.md")),
             Ok(FileType::Md)
         ));
-        assert!(matches!(
-            detect_file_type(&PathBuf::from("test.pdf")),
-            Ok(FileType::Pdf)
-        ));
+        assert!(detect_file_type(&PathBuf::from("test.pdf")).is_err());
+        assert!(detect_file_type(&PathBuf::from("test.epub")).is_err());
         assert!(detect_file_type(&PathBuf::from("test")).is_err());
     }
 

@@ -14,9 +14,9 @@ Then follow up:
 - `Quais são os textos motivadores apresentados?`
 - `Crie uma redação nota 1000 sobre este tema, seguindo todas as instruções do enunciado.`
 
-### Full Pipeline Test (spawn_subagent)
+### Full Pipeline Test (spawn_ocr_agent)
 ```
-"Use the spawn_subagent tool with subagent_type='ocr' and file_path='assets/mixed/redacao.png' to extract all text from this ENEM exam page. Then, based on the extracted content, write an argumentative essay following the prompt instructions."
+"Use the spawn_ocr_agent tool with file_path='assets/mixed/redacao.png' and ocr_mode='text' to extract all text from this ENEM exam page. Then, based on the extracted content, write an argumentative essay following the prompt instructions."
 ```
 
 ### Table Extraction

@@ -503,7 +503,7 @@ These commands are always available in chat mode (not feature-gated).
 - [ ] Type `/summarize Long text about artificial intelligence` → returns concise summary
 
 ### 14.5 Feature flag
-- [ ] Build without subagent-tools: `cargo build --release --no-default-features --features "weather-tools,file-tools"` → chat commands `/ocr`, `/vision`, `/translate`, `/summarize` still work, but LLM cannot call `spawn_subagent`
+- [ ] Build without subagent-tools: `cargo build --release --no-default-features --features "weather-tools,file-tools"` → chat commands `/ocr`, `/vision`, `/translate`, `/summarize` still work, but LLM cannot call the spawn tools
 
 ---
 

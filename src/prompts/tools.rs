@@ -330,7 +330,8 @@ Available: import_document
 
 **File limits:**
 - Maximum 2.5 MB (2,500,000 bytes) per file
-- Supported: .txt, .md, .org (builtin), .pdf, .epub (requires skills-tools)
+- Supported: .txt, .md, .org only
+- **PDF/EPUB not supported** — extract text first with run_command("pdftotext"), then import
 
 **Example:**
 // Plain text file - provide title
@@ -340,54 +341,63 @@ import_document("/path/to/notes.txt", None, Some("Project Planning Notes Q1"))
 import_document("/path/to/reference.org", None, None)
 
 // Global scope for reference material
-import_document("~/docs/glossary.md", Some("global"), None)"#
+import_document("~/docs/glossary.md", Some("global"), None)
+
+// PDF workflow: extract first, then import
+// 1. run_command("pdftotext", ["report.pdf", "-"])  → get text output
+// 2. Save output to a .txt file using write_file
+// 3. import_document("report.txt", None, Some("Q3 Report"))"#
                     .to_string(),
             );
         }
     }
-    // Subagent tools (requires subagent-tools feature)
+    // Agent spawning tools (requires subagent-tools feature)
     #[cfg(feature = "subagent-tools")]
     {
-        if !blacklist.contains("spawn_subagent") {
+        if !blacklist.contains("spawn_ocr_agent") {
             sections.push(
-                r###"### SPAWN SUBAGENT TOOL
+                r###"### AGENT SPAWNING TOOLS
 Use for offloading specialized tasks to dedicated subagents.
-Available: spawn_subagent
 
-**When to delegate to subagents:**
-- Use **OCR** for extracting text from images (screenshots, scanned documents)
-- Use **Vision** for analyzing or describing images in detail
-- Use **Translate** for translating text between languages
-- Use **Summarize** for condensing long text into key points
-- Use **Document** for extracting text from PDF or EPUB files
+Each tool is purpose-built for its task type with only the relevant parameters:
 
-**When NOT to delegate:**
-- The main model can handle the task directly (simple questions, short text)
-- The task requires access to conversation history or tools only the main model has
-- The input is too short to benefit from a specialized model
+- **spawn_ocr_agent** — Extract text from images via OCR
+  Best for: tables, formulas, scanned documents, structured text
+  Requires: `prompt` (what to extract), `file_path` (image path)
+  Optional: `ocr_mode` ("text", "table", "figure", "formula")
 
-Types:
-- `ocr`: Extract text from images (requires `file_path`)
-- `vision`: Analyze images (requires `file_path`)
-- `translate`: Translate text between languages
-- `summarize`: Summarize long text
-- `document`: Process PDF/EPUB documents (requires `file_path`)
+- **spawn_vision_agent** — Analyze or describe images via vision model
+  Best for: charts, graphs, diagrams, visual content, comparisons
+  Requires: `prompt` (what to analyze), `file_path` (image path(s))
+  Supports comma-separated paths for multi-image analysis
 
-**When to use each type:**
-- Use `ocr` when you need to extract text from image files (PNG, JPG, etc.)
-- Use `vision` when you need to understand or describe image content
-- Use `translate` for converting text between languages
-- Use `summarize` for condensing long text into shorter versions
-- Use `document` for working with PDF or EPUB files
+- **spawn_translate_agent** — Translate text between languages
+  Requires: `prompt` (text + translation direction)
+  No file needed — provide text directly in the prompt
 
-**file_path requirement:**
-- OCR, vision, and document types require `file_path` parameter with absolute or relative path
-- Text-based types (translate, summarize) work with stdin or direct text input
+- **spawn_summarize_agent** — Summarize long text into key points
+  Requires: `prompt` (text + summarization instructions)
+  No file needed — provide text directly in the prompt
 
-**Example:**
-spawn_subagent("ocr", "Extract all text from this image", Some("/path/to/document.png"))
-spawn_subagent("translate", "Translate this to Portuguese", None)
-spawn_subagent("document", "Analyze this PDF", Some("report.pdf"))"###
+**When to use each:**
+- OCR → extracting text from images (screenshots, scanned docs)
+- Vision → understanding visual content (charts, diagrams, photos)
+- Translate → converting text between languages
+- Summarize → condensing long text
+
+**For PDF documents:** Use `run_command` with PDF tools (pdftotext, pdfinfo, pdftoppm).
+See the document-processing skill for the complete PDF pipeline.
+For PDF pages with visual content (charts, formulas, tables):
+1. Use run_command("pdftoppm") to convert pages to images
+2. Then call spawn_vision_agent or spawn_ocr_agent on the resulting images
+
+**Examples:**
+spawn_ocr_agent("Extract all text from this image", "/tmp/document.png", None)
+spawn_ocr_agent("Extract table structure", "/tmp/table.png", Some("table"))
+spawn_vision_agent("Describe this chart", "/tmp/chart.png")
+spawn_vision_agent("Compare these images", "/tmp/a.png,/tmp/b.png")
+spawn_translate_agent("Translate to Portuguese: Hello world")
+spawn_summarize_agent("Summarize this text in 3 bullet points: ...")"###
                     .to_string(),
             );
         }

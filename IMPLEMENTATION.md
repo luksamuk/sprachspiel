@@ -2158,7 +2158,7 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 **Implementation:**
 - Created `src/chat/subagent.rs` - `SubagentRunner` for one-shot execution with dual API path support
-- Added `spawn_subagent` tool in `src/tools/spawn_subagent.rs` - LLM-initiated subagent invocation with type-safe dispatch
+- Added dedicated spawn tools in `src/tools/subagent_tools.rs` - `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`
 - Implemented chat commands: `/ocr`, `/vision`, `/translate`, `/summarize` in `src/chat/commands/`
 - Refactored document extraction to use subagent architecture (Issue #9)
 - Added config support for `[model.ocr]` and `[model.document]` in `src/config/models.rs`
@@ -2167,7 +2167,7 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 **Key Files Modified:**
 - `src/chat/subagent.rs` (new) - Core subagent execution engine
-- `src/tools/spawn_subagent.rs` (new) - Tool for LLM-initiated subagent spawning
+- `src/tools/subagent_tools.rs` (new) - Tools for LLM-initiated subagent spawning
 - `src/chat/commands/mod.rs` - Added specialized command handlers
 - `src/config/models.rs` - Added OCR and document model configuration
 - `Cargo.toml` - Added `subagent-tools` feature flag
@@ -2181,7 +2181,7 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 - Added `parse_ocr_mode()` — convenience parser for LLM string parameters
 - Added `prompt_override: Option<&str>` on `OcrProcessor::process_file()` and `process_batch()`
 - Added `ocr_mode: OcrMode` field on `SubagentConfig` with builder method
-- Added `ocr_mode: Option<String>` parameter on `spawn_subagent()` tool
+- Added `ocr_mode: Option<String>` parameter on `spawn_ocr_agent()` tool
 - Updated `/ocr` chat command to accept optional mode parameter
 - Updated all 3 OCR entry points (CLI, chat, subagent) with model-aware prompt selection
 - Removed dead `OCR_SYSTEM_PROMPT` constant
@@ -3678,21 +3678,22 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### ✅ SF5: PDF Reading Pipeline Redesign [COMPLETED]
+### ✅ SF5: Agent Spawning Tools [COMPLETED]
 
 **Status:** ✅ COMPLETED
 **Priority:** P2 (High)
 **Issue:** #111
 
-**Goal:** Redesign PDF ingestion to leverage vision models for tables, formulas, and charts that `pdftotext` misses.
+**Goal:** Replace generic `spawn_subagent` tool with dedicated spawning tools for each agent type, removing hardcoded PDF pipeline in favor of LLM-orchestrated document processing via skills.
 
 **Implementation:**
-1. **Vision tool accepts PDF** — Auto-converts pages via `pdftoppm` (150 DPI PNG), processes each page with vision model. `--pages` flag for page range selection (e.g., `1-5`, `1,3,7`). Default: all pages.
-2. **Two-phase skill pipeline** — Updated `document-processing.md` skill: Phase 1 = `pdftotext` (full text, fast), Phase 2 = `vision` on pages with little/garbled text (charts, tables, formulas, diagrams).
-3. **Vision for visuals, OCR for structure** — Skill pipeline: OCR first for tables/formulas/scanned text (structured text), Vision for charts/graphs/diagrams (visual interpretation). Escalate from OCR to Vision when results are unsatisfying.
-4. **Checkpoint every 20 pages** — Progress saved as JSON in temp dir. Resume from checkpoint if interrupted. Temp files auto-cleaned on completion (RAII).
-5. **New error types** — `VisionError::PdfConversionError` (pdftoppm failed), `VisionError::PdfSupport` (poppler not installed). Helpful install instructions in error messages.
-6. **New utils** — `validate_file_for_vision()` accepts both images and PDFs (separate from `validate_image_file` which OCR still uses). `VISION_EXTENSIONS`, `PDF_EXTENSION` constants.
+1. **4 dedicated spawning tools** — `spawn_ocr_agent` (text extraction from images), `spawn_vision_agent` (image analysis), `spawn_translate_agent` (translation), `spawn_summarize_agent` (summarization). Each has only its relevant parameters, eliminating irrelevant optional parameters.
+2. **Removed `spawn_document_agent`** — Redundant: the LLM already has `run_command` + spawning tools and follows the `document-processing` skill. The document subagent was limited (only `run_command`, no OCR/vision) and created unnecessary indirection.
+3. **Removed PDF pipeline from Rust** — No hardcoded `pdftoppm`/checkpoint/etc. in the harness. The LLM orchestrates PDF processing via `run_command("pdftotext")` → `run_command("pdftoppm")` → `spawn_ocr_agent`/`spawn_vision_agent` following the `document-processing` skill.
+4. **Removed `--pages` flag** — Not the harness's responsibility. When Ollama models support PDF natively, it can be added back.
+5. **Removed `FileType::Pdf`/`FileType::Epub`** — `import_document` only accepts TXT, MD, ORG. For PDFs/EPUBs, the LLM extracts text via `run_command("pdftotext")` first, then imports the resulting text file.
+6. **Removed `SubagentType::Document`** — No longer needed. `SubagentRunner::run_document()` method removed.
+7. **Updated `document-processing` skill** — References new tool names, describes LLM-orchestrated two-phase pipeline.
 
 ---
 
@@ -3736,3 +3737,4 @@ The original detailed implementation notes have been moved to:
 2026-04-27 - SF1 (colored prompt) and SF2 (clippy config) completed. SF3 (db rename), SF4 (logging), SF5 (PDF pipeline) documented as NOT STARTED.
 2026-04-27b - SF3 (db rename + --db flag) completed and merged (#113). SF4 (logging overhaul) completed.
 2026-04-27c - SF4 merged (#114). SF5 (PDF vision pipeline) completed.
+2026-04-27d - SF5 revised per PR review: replaced spawn_subagent with 4 dedicated spawning tools, removed spawn_document_agent, removed PDF pipeline from Rust, removed FileType::Pdf/Epub, updated document-processing skill.

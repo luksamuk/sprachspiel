@@ -23,14 +23,6 @@ pub enum VisionError {
         message: String,
     },
     NoImages,
-    /// PDF-specific errors (tool not found, conversion failed, etc.)
-    PdfConversionError {
-        message: String,
-    },
-    /// PDF support is not available (missing tools or other issues)
-    PdfSupport {
-        message: String,
-    },
 }
 
 impl fmt::Display for VisionError {
@@ -76,26 +68,6 @@ impl fmt::Display for VisionError {
                     "Usage: ask vision [OPTIONS] <FILE>...\nTry 'ask vision --help' for more information."
                 )
             }
-            VisionError::PdfConversionError { message } => {
-                writeln!(f, "Error: PDF conversion failed: {}", message)?;
-                writeln!(f)?;
-                writeln!(f, "Common causes:")?;
-                writeln!(f, "  1. poppler-utils is not installed")?;
-                writeln!(f, "  2. The PDF file may be corrupted or password-protected")?;
-                writeln!(f)?;
-                write!(
-                    f,
-                    "Install poppler-utils:\n  Arch: sudo pacman -S poppler\n  Debian: sudo apt install poppler-utils\n  Fedora: sudo dnf install poppler-utils"
-                )
-            }
-            VisionError::PdfSupport { message } => {
-                writeln!(f, "Error: PDF support unavailable: {}", message)?;
-                writeln!(f)?;
-                write!(
-                    f,
-                    "PDF processing requires poppler-utils (pdftoppm, pdfinfo, pdftotext).\nInstall with:\n  Arch: sudo pacman -S poppler\n  Debian: sudo apt install poppler-utils\n  Fedora: sudo dnf install poppler-utils\n  Termux: pkg install poppler"
-                )
-            }
         }
     }
 }
@@ -129,27 +101,5 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("Connection refused"));
         assert!(msg.contains("ollama serve"));
-    }
-
-    #[test]
-    fn test_pdf_conversion_error() {
-        let err = VisionError::PdfConversionError {
-            message: "pdftoppm failed".to_string(),
-        };
-        let msg = format!("{}", err);
-        assert!(msg.contains("PDF conversion failed"));
-        assert!(msg.contains("pdftoppm failed"));
-        assert!(msg.contains("poppler-utils"));
-    }
-
-    #[test]
-    fn test_pdf_support_error() {
-        let err = VisionError::PdfSupport {
-            message: "pdftoppm not found".to_string(),
-        };
-        let msg = format!("{}", err);
-        assert!(msg.contains("PDF support unavailable"));
-        assert!(msg.contains("pdftoppm not found"));
-        assert!(msg.contains("poppler-utils"));
     }
 }

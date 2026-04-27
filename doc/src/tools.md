@@ -42,7 +42,7 @@ The default build includes:
 - `skills-tools` - AI behavior skills (skill_list, skill_view)
 - `todo-tools` - Session todo list management
 - `document-tools` - Document import
-- `subagent-tools` - Specialized subagent delegation (spawn_subagent)
+- `subagent-tools` - Specialized subagent delegation (spawn_ocr_agent, spawn_vision_agent, spawn_translate_agent, spawn_summarize_agent)
 
 ### Available Features
 
@@ -59,7 +59,7 @@ The default build includes:
 | `skills-tools` | AI behavior patterns | skill_list, skill_view | ✅ Yes |
 | `document-tools` | Document import | import_document | ✅ Yes |
 | `todo-tools` | Session todo list | todo_add, todo_update, todo_list, todo_clear_done, todo_clear_all | ✅ Yes |
-| `subagent-tools` | Specialized subagent delegation | spawn_subagent | ✅ Yes |
+| `subagent-tools` | Specialized subagent delegation | spawn_ocr_agent, spawn_vision_agent, spawn_translate_agent, spawn_summarize_agent | ✅ Yes |
 | `led-tools` | NeoPixel LED control | led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color | ❌ No |
 | `all-tools` | Enable all tool categories | All of the above | - |
 
@@ -780,27 +780,40 @@ Chat commands provide direct access to subagent functionality and are **always a
 - Automatically route to the appropriate subagent model
 - Support file paths, piped input, and inline text
 
-### LLM Delegation via spawn_subagent
+### LLM Delegation via Spawn Tools
 
-When the main chat model determines a task requires specialized processing, it can invoke the `spawn_subagent` tool to delegate the work:
+When the main chat model determines a task requires specialized processing, it can invoke one of the dedicated spawn tools to delegate the work:
 
 ```
-Function: spawn_subagent
+Function: spawn_ocr_agent
 Args:
-  - subagent_type (string, required): One of "ocr", "vision", "translate", "summarize", "document"
-  - prompt (string, required): The task description or text to process
-  - file_path (string, optional): Path to image/document file (required for ocr, vision, document)
-  - ocr_mode (string, optional): OCR extraction mode — one of "text" (default), "table", "figure", "formula". Only applicable when subagent_type is "ocr".
-Example: spawn_subagent(subagent_type: "ocr", prompt: "Extract all text", file_path: "/tmp/image.png", ocr_mode: "table")
-Example: spawn_subagent(subagent_type: "translate", prompt: "Translate to Portuguese: Hello world")
-Example: spawn_subagent(subagent_type: "summarize", prompt: "Summarize this article...")
+  - prompt (string, required): What to extract or describe
+  - file_path (string, required): Path to the image file
+  - ocr_mode (string, optional): "text" (default), "table", "figure", "formula"
+Example: spawn_ocr_agent(prompt: "Extract all text", file_path: "/tmp/image.png", ocr_mode: "table")
+
+Function: spawn_vision_agent
+Args:
+  - prompt (string, required): What to analyze or describe
+  - file_path (string, required): Path(s) to image file(s), comma-separated for multi-image
+Example: spawn_vision_agent(prompt: "Describe this chart", file_path: "/tmp/chart.png")
+
+Function: spawn_translate_agent
+Args:
+  - prompt (string, required): Text + translation direction
+Example: spawn_translate_agent(prompt: "Translate to Portuguese: Hello world")
+
+Function: spawn_summarize_agent
+Args:
+  - prompt (string, required): Text + summarization instructions
+Example: spawn_summarize_agent(prompt: "Summarize this article...")
 ```
 
 **How Delegation Works:**
 
 1. User asks a question or provides a task
 2. Main LLM analyzes the request and identifies it requires specialized processing
-3. LLM calls `spawn_subagent` with appropriate type and parameters
+3. LLM calls the appropriate spawn tool with its parameters
 4. Subagent executes the task with its specialized model
 5. Result returns to main LLM, which incorporates it into the response
 
@@ -809,15 +822,13 @@ Example: spawn_subagent(subagent_type: "summarize", prompt: "Summarize this arti
 ```
 User: "I have a scanned document in Japanese. Can you extract the text and translate it to English?"
 
-Main LLM: [Calls spawn_subagent for OCR]
-  → subagent_type: "ocr"
+Main LLM: [Calls spawn_ocr_agent]
   → file_path: "/tmp/scan.png"
   → prompt: "Extract all text from this image"
 
 OCR Subagent: [Returns extracted Japanese text]
 
-Main LLM: [Calls spawn_subagent for Translation]
-  → subagent_type: "translate"
+Main LLM: [Calls spawn_translate_agent]
   → prompt: "Translate to English: [Japanese text]"
 
 Translation Subagent: [Returns English translation]
@@ -843,9 +854,6 @@ model = "translategemma:4b"
 
 [model.summarize]
 model = "qwen3.5:4b"
-
-[model.document]
-model = "qwen3.5:4b"
 ```
 
 **Configuration Notes:**
@@ -854,12 +862,12 @@ model = "qwen3.5:4b"
 - OCR requires a model with OCR capabilities (e.g., `glm-ocr:bf16`)
 - Vision requires a multimodal model (e.g., `qwen3.5:4b`, `moondream:1.8b`)
 - Translation works best with dedicated translation models (e.g., `translategemma:4b`)
-- Summarization and document processing can use general-purpose models
+- Summarization can use general-purpose models
 - If a subagent model is not configured, the system uses sensible defaults
 
 ### Feature Flag
 
-The `spawn_subagent` tool is controlled by the `subagent-tools` feature flag, which is **enabled by default**:
+The spawn tools are controlled by the `subagent-tools` feature flag, which is **enabled by default**:
 
 ```bash
 # Default build includes subagent-tools
@@ -868,11 +876,11 @@ cargo build --release
 # Explicitly enable (same as default)
 cargo build --release --features subagent-tools
 
-# Disable subagent tool (chat commands still work)
+# Disable spawn tools (chat commands still work)
 cargo build --release --no-default-features --features "weather-tools,file-tools"
 ```
 
-**Important:** The `subagent-tools` feature flag only controls the `spawn_subagent` tool available to the LLM. The chat commands (`/ocr`, `/vision`, `/translate`, `/summarize`) are part of the chat module and are **always available** regardless of feature flags.
+**Important:** The `subagent-tools` feature flag only controls the spawn tools available to the LLM. The chat commands (`/ocr`, `/vision`, `/translate`, `/summarize`) are part of the chat module and are **always available** regardless of feature flags.
 
 ### Error Handling
 
@@ -880,19 +888,13 @@ Subagents handle errors gracefully and return informative messages:
 
 | Situation | Error Message |
 |-----------|---------------|
-| Unknown subagent type | `Error: Unknown subagent type 'X'. Valid types: ocr, vision, translate, summarize, document` |
-| Missing file_path for OCR/Vision | `Error: file_path is required for OCR subagent. Provide the path to an image file.` |
+| Missing file_path for OCR | `Error: file_path is required for OCR agent. Provide the path to an image file.` |
 | File not found | `Error: Failed to read image file 'X': ...` |
-| Unsupported document type | `Error: Unsupported file type '.docx'. Document subagent supports PDF and EPUB files only.` |
-| Subagent execution failure | `Error: X subagent execution failed: ...` |
-
-### Recursion Prevention
-
-The `document` subagent creates a minimal coordinator with ONLY `run_command` registered. The `spawn_subagent` tool is deliberately NOT added to subagents, preventing infinite recursion where subagents could spawn further subagents.
+| Subagent execution failure | `Error: X agent execution failed: ...` |
 
 ### Subagent Security
 
-All file paths passed to subagent operations (OCR, Vision, Document) are validated through `validate_subagent_path()`, which enforces:
+All file paths passed to subagent operations (OCR, Vision) are validated through `validate_subagent_path()`, which enforces:
 
 - **Blocklist**: Files matching protected patterns (`.env`, `secrets`, SSH keys, certificates) are always rejected
 - **CWD Sandbox**: Files must be within the current working directory or `/tmp`/`/var/tmp` (for tool interoperability, e.g., pdftotext output)
@@ -1010,14 +1012,14 @@ Import documents for semantic search and retrieval. Documents are stored in the 
 
 ### import_document
 
-Import a document file (TXT, MD, ORG, PDF, EPUB) for semantic search.
+Import a document file (TXT, MD, ORG) for semantic search.
 
 ```
 Function: import_document
 Args:
   - path (string, required): File path (absolute or relative, supports ~ expansion)
   - scope (string, optional): "project" (default) or "global"
-Example: import_document(path: "docs/report.pdf")
+Example: import_document(path: "docs/report.txt")
 Example: import_document(path: "~/notes.org", scope: "global")
 ```
 
@@ -1028,8 +1030,8 @@ Example: import_document(path: "~/notes.org", scope: "global")
 | Plain Text | `.txt` | Builtin |
 | Markdown | `.md` | Builtin |
 | Org Mode | `.org` | Builtin |
-| PDF | `.pdf` | `skills-tools` + `pdftotext` |
-| EPUB | `.epub` | `skills-tools` + `epub2txt` |
+
+**PDF/EPUB Files:** Not supported directly. Extract text first using `run_command("pdftotext", ["file.pdf", "-"])`, then import the resulting text file.
 
 **File Size Limit:** 2.5 MB (2,500,000 bytes) maximum. Larger files are rejected with a helpful error.
 

@@ -77,10 +77,10 @@ ask-ai vision assets/vision/protagonist.jpg -- "Describe this character"
 ask-ai vision assets/vision/protagonist.jpg,assets/vision/protagonist2.jpg -- "Compare both"
 ```
 
-### With spawn_subagent (LLM tool)
+### With spawn tools (LLM tool)
 ```
-"Use the spawn_subagent tool with subagent_type='ocr', file_path='assets/ocr/japanese.jpg', and ocr_mode='text'"
-"Use spawn_subagent with subagent_type='vision' and file_path='assets/vision/protagonist.jpg'"
+"Use the spawn_ocr_agent tool with file_path='assets/ocr/japanese.jpg' and ocr_mode='text'"
+"Use spawn_vision_agent with file_path='assets/vision/protagonist.jpg'"
 ```
 
 ## Notes

@@ -70,7 +70,7 @@ pub mod tool_check;
 #[cfg(feature = "skills-tools")]
 pub mod skill_tools;
 
-// Subagent tools (LLM-initiated subagent invocation)
+// Subagent spawning tools (dedicated per agent type)
 #[cfg(feature = "subagent-tools")]
 pub mod subagent_tools;
 

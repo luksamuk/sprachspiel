@@ -64,12 +64,6 @@ pub fn read_stdin() -> Result<String, String> {
 /// Supported image extensions
 pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif"];
 
-/// Supported PDF extension
-pub const PDF_EXTENSION: &str = "pdf";
-
-/// All extensions accepted by the vision processor (images + PDF)
-pub const VISION_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "pdf"];
-
 /// Validate that a file exists and has a supported image extension
 pub fn validate_image_file(path: &std::path::Path) -> Result<(), String> {
     // Expand tilde if present
@@ -98,44 +92,6 @@ pub fn validate_image_file(path: &std::path::Path) -> Result<(), String> {
             "Unsupported image format: {}. Supported: {}",
             e,
             IMAGE_EXTENSIONS.join(", ")
-        )),
-        None => Err("Invalid file extension: unknown".to_string()),
-    }
-}
-
-/// Validate that a file exists and has a supported extension for the vision
-/// processor (images and PDFs).
-///
-/// Returns `Ok(())` if valid, or an `Err` with a descriptive message.
-/// This is separate from `validate_image_file` which only accepts image formats,
-/// because the OCR module should not accept PDFs (that's vision-specific).
-pub fn validate_file_for_vision(path: &std::path::Path) -> Result<(), String> {
-    // Expand tilde if present
-    let expanded_path = if path.to_str().map(|s| s.starts_with('~')).unwrap_or(false) {
-        expand_tilde_path(path.to_str().unwrap_or(""))
-    } else {
-        path.to_path_buf()
-    };
-
-    if !expanded_path.exists() {
-        return Err(format!("File not found: {}", path.display()));
-    }
-
-    if !expanded_path.is_file() {
-        return Err(format!("{} is not a file", path.display()));
-    }
-
-    let ext = expanded_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.to_lowercase());
-
-    match ext {
-        Some(ref e) if VISION_EXTENSIONS.contains(&e.as_str()) => Ok(()),
-        Some(e) => Err(format!(
-            "Unsupported format for vision: {}. Supported: {}",
-            e,
-            VISION_EXTENSIONS.join(", ")
         )),
         None => Err("Invalid file extension: unknown".to_string()),
     }

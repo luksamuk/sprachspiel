@@ -39,7 +39,7 @@ pub mod document;
 pub mod types;
 
 pub use db::ContentSearchParams;
-pub use document::{Document, FileType, MAX_DOCUMENT_SIZE, detect_file_type};
+pub use document::{Document, MAX_DOCUMENT_SIZE, detect_file_type};
 pub use types::{
     ContentScope, ContentSearchResult, ContentSearchType, ContentSource, ContentType,
     MAX_NOTE_CONTENT_SIZE, Note,

@@ -391,8 +391,8 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 **v0.42.0-dev Update — OCR Prompt Strategy:**
 - OCR prompts now adapt to model type: GLM-OCR keeps rigid prefixes, vision models use descriptive restricted prompts
 - `/ocr` chat command accepts optional mode parameter (text, table, figure, formula)
-- `spawn_subagent` tool now accepts `ocr_mode` parameter for LLM-driven mode selection
-- All 3 OCR entry points (CLI, `/ocr`, `spawn_subagent`) use model-aware prompt selection
+- `spawn_ocr_agent` tool accepts `ocr_mode` parameter for LLM-driven mode selection
+- All 3 OCR entry points (CLI, `/ocr`, `spawn_ocr_agent`) use model-aware prompt selection
 
 **Chat Commands:**
 
@@ -403,21 +403,23 @@ All critical bugs have been resolved in v0.26.2 - v0.26.7:
 | `/translate <lang> <text>` | Translation via specialized agent |
 | `/summarize <text>` | Summarization via specialized agent |
 
-**LLM Tool:**
+**LLM Tools:**
 
 | Tool | Description |
 |------|-------------|
-| `spawn_subagent(type, prompt, file_path?)` | Spawn a specialized subagent from within chat |
+| `spawn_ocr_agent(prompt, file_path, ocr_mode?)` | Extract text from images via OCR |
+| `spawn_vision_agent(prompt, file_path)` | Analyze or describe images via vision model |
+| `spawn_translate_agent(prompt)` | Translate text between languages |
+| `spawn_summarize_agent(prompt)` | Summarize long text |
 
 **Technical Debt Resolved:**
-- `import_document` calling `Command::new()` directly → uses `spawn_subagent(type="document")`
-- Skills can now override document-processing behavior at project level
-- Document subagent prevents recursion (spawn_subagent not registered in its coordinator)
+- Replaced generic `spawn_subagent` with dedicated per-type tools (clearer LLM docstrings, no irrelevant parameters)
+- PDF/EPUB import: `import_document` no longer accepts PDF/EPUB directly; extract via `run_command("pdftotext")` first
 
 **Key Files:**
 - `src/chat/subagent.rs` - SubagentRunner and SubagentConfig
-- `src/tools/subagent_tools.rs` - spawn_subagent LLM tool
-- `src/prompts/tools.rs` - Tool prompt for spawn_subagent
+- `src/tools/subagent_tools.rs` - spawn_ocr_agent, spawn_vision_agent, spawn_translate_agent, spawn_summarize_agent
+- `src/prompts/tools.rs` - Tool prompts for spawn tools
 
 **Implementation:** See `IMPLEMENTATION.md` - Priority 4
 
