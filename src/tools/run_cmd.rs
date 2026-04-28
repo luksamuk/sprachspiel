@@ -109,6 +109,17 @@ pub async fn run_command(
     let command = &parts[0];
     let args: Vec<String> = parts[1..].to_vec();
 
+    // Expand tilde (~) in arguments that look like file paths.
+    // This allows commands like `pdftotext ~/document.pdf -` to work.
+    // After expansion, check against the sensitive file blocklist.
+    let args = match expand_args_tilde(&args) {
+        Ok(args) => args,
+        Err(e) => {
+            log_tool_result("run_command", &e);
+            return Ok(e);
+        }
+    };
+
     // Load configuration (cached)
     let config = get_config();
     let platform = get_platform();
@@ -653,6 +664,42 @@ async fn execute_command(
     }
 }
 
+/// Expand tilde (~) in arguments that look like file paths.
+///
+/// Only arguments starting with `~` are expanded (e.g., `~/doc.pdf` → `/home/user/doc.pdf`).
+/// After expansion, the path is checked against the sensitive file blocklist
+/// (`.env`, `.ssh/`, `.pem`, credentials, etc.) to prevent access to protected files.
+///
+/// Non-tilde arguments (absolute paths, relative paths, flags, values) are left unchanged.
+fn expand_args_tilde(args: &[String]) -> Result<Vec<String>, String> {
+    use crate::tools::files_blocklist::BlocklistConfig;
+
+    let config = BlocklistConfig::default();
+
+    args.iter()
+        .map(|arg| {
+            // Only expand arguments that start with ~
+            if arg.starts_with('~') {
+                let expanded = crate::utils::expand_tilde_path(arg);
+                let expanded_str = expanded.to_string_lossy().to_string();
+
+                // Check against sensitive file blocklist after expansion
+                if crate::tools::files_blocklist::is_blocked_for_read(&expanded, &config) {
+                    return Err(format!(
+                        "Error: Path '{}' is blocked (protected file pattern). \
+                         Access to .env, .ssh, credentials, and similar sensitive files is restricted.",
+                        arg
+                    ));
+                }
+
+                Ok(expanded_str)
+            } else {
+                Ok(arg.clone())
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -813,6 +860,124 @@ mod tests {
         let head: Option<String> = Some(" 50 ".to_string());
         let head_val: Option<usize> = head.as_deref().and_then(|h| h.trim().parse().ok());
         assert_eq!(head_val, Some(50));
+    }
+
+    #[test]
+    fn test_expand_args_tilde_expands_home() {
+        // ~/document.pdf should be expanded to /home/user/document.pdf
+        let home = dirs::home_dir().expect("home directory should exist");
+        let args = vec![
+            "-f".to_string(),
+            "1".to_string(),
+            "~/document.pdf".to_string(),
+            "-".to_string(),
+        ];
+        let result = expand_args_tilde(&args).unwrap();
+
+        assert_eq!(result[0], "-f");
+        assert_eq!(result[1], "1");
+        assert_eq!(
+            result[2],
+            home.join("document.pdf").to_string_lossy().to_string()
+        );
+        assert_eq!(result[3], "-");
+    }
+
+    #[test]
+    fn test_expand_args_tilde_bare_tilde() {
+        // ~ alone should expand to home directory
+        let home = dirs::home_dir().expect("home directory should exist");
+        let args = vec!["~".to_string()];
+        let result = expand_args_tilde(&args).unwrap();
+
+        assert_eq!(result[0], home.to_string_lossy().to_string());
+    }
+
+    #[test]
+    fn test_expand_args_tilde_no_tilde() {
+        // Arguments without ~ should pass through unchanged
+        let args = vec![
+            "pdftotext".to_string(),
+            "/absolute/path/file.pdf".to_string(),
+            "-".to_string(),
+        ];
+        let result = expand_args_tilde(&args).unwrap();
+
+        assert_eq!(result[0], "pdftotext");
+        assert_eq!(result[1], "/absolute/path/file.pdf");
+        assert_eq!(result[2], "-");
+    }
+
+    #[test]
+    fn test_expand_args_tilde_blocks_env() {
+        // ~/.env should be blocked by the sensitive file blocklist
+        let args = vec!["~/.env".to_string()];
+        let result = expand_args_tilde(&args);
+
+        assert!(result.is_err(), "~/.env should be blocked");
+        assert!(
+            result.unwrap_err().contains("blocked"),
+            "Error message should mention 'blocked'"
+        );
+    }
+
+    #[test]
+    fn test_expand_args_tilde_blocks_ssh() {
+        // ~/.ssh/ should be blocked
+        let args = vec!["~/.ssh/id_rsa".to_string()];
+        let result = expand_args_tilde(&args);
+
+        assert!(result.is_err(), "~/.ssh/id_rsa should be blocked");
+        assert!(
+            result.unwrap_err().contains("blocked"),
+            "Error message should mention 'blocked'"
+        );
+    }
+
+    #[test]
+    fn test_expand_args_tilde_blocks_pem() {
+        // ~/certs/server.pem should be blocked
+        let args = vec!["~/certs/server.pem".to_string()];
+        let result = expand_args_tilde(&args);
+
+        assert!(result.is_err(), "~/certs/server.pem should be blocked");
+    }
+
+    #[test]
+    fn test_expand_args_tilde_allows_normal_files() {
+        // ~/document.pdf should be allowed (not blocked)
+        let home = dirs::home_dir().expect("home directory should exist");
+        let args = vec!["~/document.pdf".to_string(), "-".to_string()];
+        let result = expand_args_tilde(&args).unwrap();
+
+        assert_eq!(
+            result[0],
+            home.join("document.pdf").to_string_lossy().to_string()
+        );
+        assert_eq!(result[1], "-");
+    }
+
+    #[test]
+    fn test_expand_args_tilde_mixed_args() {
+        // Mix of tilde args, flags, and plain values
+        let home = dirs::home_dir().expect("home directory should exist");
+        let args = vec![
+            "-png".to_string(),
+            "-r".to_string(),
+            "150".to_string(),
+            "~/input.pdf".to_string(),
+            "/tmp/output".to_string(),
+        ];
+        let result = expand_args_tilde(&args).unwrap();
+
+        assert_eq!(result[0], "-png");
+        assert_eq!(result[1], "-r");
+        assert_eq!(result[2], "150");
+        assert_eq!(
+            result[3],
+            home.join("input.pdf").to_string_lossy().to_string()
+        );
+        assert_eq!(result[4], "/tmp/output");
     }
 }
 
