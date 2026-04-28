@@ -7,8 +7,9 @@
 use std::str::FromStr;
 
 use crate::db::feedback_ops::insert_feedback_signal;
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::feedback::types::{FeedbackSignalType, FeedbackSource};
+use crate::spinner::suspend_for_print;
 use crate::tools::context::{get_db, get_settings};
 
 /// Submit feedback on a message from the LLM's perspective.
@@ -187,6 +188,21 @@ pub async fn feedback_submit(
             item_id_parsed, e
         );
     }
+
+    // Visual indicator for feedback submission
+    let emoji = match parsed_signal {
+        FeedbackSignalType::Good => "👍",
+        FeedbackSignalType::Bad => "👎",
+        FeedbackSignalType::Correction => "✎",
+    };
+    suspend_for_print(|| {
+        eprintln!(
+            "{TOOL_DIM}{} feedback submitted (msg:{}, weight: {:.0}%){RESET}",
+            emoji,
+            item_id_parsed,
+            llm_weight * 100.0
+        );
+    });
 
     // Build success message
     let signal_label = match parsed_signal {

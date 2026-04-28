@@ -3,13 +3,14 @@
 //! Provides tools for the LLM to autonomously store facts about the user
 //! and project, enabling personalization across sessions.
 
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::facts::classify::classify_fact;
 use crate::facts::dedup::{DedupConfig, DedupResult, deduplicate_and_insert};
 use crate::facts::extract::is_extractable_sentence;
 use crate::facts::lang;
 use crate::facts::types::{Category, MAX_FACT_CONTENT_SIZE, Scope};
 use crate::project::get_project_id;
+use crate::spinner::suspend_for_print;
 use crate::tools::context::get_db;
 use crate::tools::context::get_embedding;
 use crate::utils::parse_bounded_number;
@@ -249,6 +250,12 @@ pub async fn fact_add(
                 Category::Preference => "preference",
                 Category::Fact => "fact",
             };
+            suspend_for_print(|| {
+                eprintln!(
+                    "{TOOL_DIM}💾 Stored fact #{} ({}, {}){RESET}",
+                    id, category_label, scope_label
+                );
+            });
             format!(
                 "Stored fact:{} (category: {}, scope: {})\n\nContent: {}",
                 id, category_label, scope_label, content
@@ -258,6 +265,12 @@ pub async fn fact_add(
             existing_id,
             existing_content,
         } => {
+            suspend_for_print(|| {
+                eprintln!(
+                    "{TOOL_DIM}⏭ Skipped: duplicate fact (fact:{}){RESET}",
+                    existing_id
+                );
+            });
             format!(
                 "Skipped: Exact duplicate already exists (fact:{}).\n\n\
                  Existing: {}\n\
@@ -270,6 +283,12 @@ pub async fn fact_add(
             existing_id,
             existing_content,
         } => {
+            suspend_for_print(|| {
+                eprintln!(
+                    "{TOOL_DIM}⏭ Skipped: similar fact (fact:{}){RESET}",
+                    existing_id
+                );
+            });
             format!(
                 "Skipped: Similar fact already exists (fact:{}).\n\n\
                  Existing: {}\n\
@@ -283,6 +302,12 @@ pub async fn fact_add(
             existing_content,
             ..
         } => {
+            suspend_for_print(|| {
+                eprintln!(
+                    "{TOOL_DIM}⏭ Skipped: similar fact (fact:{}){RESET}",
+                    existing_id
+                );
+            });
             format!(
                 "Skipped: Similar fact already exists (fact:{}).\n\n\
                  Existing: {}\n\
@@ -306,6 +331,12 @@ pub async fn fact_add(
                 Category::Preference => "preference",
                 Category::Fact => "fact",
             };
+            suspend_for_print(|| {
+                eprintln!(
+                    "{TOOL_DIM}💾 Updated fact #{} ({}, {}){RESET}",
+                    id, category_label, scope_label
+                );
+            });
             format!(
                 "Updated fact:{} (category: {}, scope: {})\n\n\
                  '{}' replaces '{}' ({})\n\n\
@@ -318,6 +349,12 @@ pub async fn fact_add(
             existing_content,
             ..
         } => {
+            suspend_for_print(|| {
+                eprintln!(
+                    "{TOOL_DIM}⏭ Skipped: similar fact (fact:{}){RESET}",
+                    existing_id
+                );
+            });
             format!(
                 "Skipped: Similar fact already exists (fact:{}).\n\n\
                  Existing: {}\n\

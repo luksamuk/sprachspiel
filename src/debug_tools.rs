@@ -30,10 +30,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::spinner::suspend_for_print;
 
-/// ANSI style: DIM (faint) + light gray text — same as `[Thinking]` blocks
-const TOOL_DIM: &str = "\x1B[2m\x1B[37m";
-/// ANSI reset
-const RESET: &str = "\x1B[0m";
+/// ANSI style: DIM (faint) + light gray text — same as `[Thinking]` blocks.
+///
+/// Shared across all tool indicator displays (tool calls, skill loading,
+/// document import, notes, facts, feedback, command execution).
+pub const TOOL_DIM: &str = "\x1B[2m\x1B[37m";
+/// ANSI reset — shared across all indicator displays.
+pub const RESET: &str = "\x1B[0m";
 
 /// Maximum display width for tool call lines (80-column terminal minus margin)
 const MAX_LINE_WIDTH: usize = 74;

@@ -1883,6 +1883,37 @@ Tool calls and results are displayed with tiered visibility based on verbosity:
 
 In chat mode, tool calls appear during execution and the LLM's thinking process before tool calls is also displayed. Use `/debug` to toggle between Normal and Trace verbosity mid-session.
 
+### Visual Indicators
+
+In addition to the `🔧 name(args)` tool call display, some tools show **succinct one-line indicators** when they complete important actions. These indicators provide immediate visual feedback about what happened, using emoji prefixes and DIM gray styling to match tool calls.
+
+| Emoji | Tool | Meaning |
+|-------|------|---------|
+| 📖 | `skill_view` | Skill loaded successfully |
+| 📄 | `import_document` | Document imported and indexed |
+| 📝 | `note_add` / `note_edit` | Note created or updated |
+| 🗑️ | `note_delete` | Note deleted |
+| 👍 | `feedback_submit` | Positive feedback submitted |
+| 👎 | `feedback_submit` | Negative feedback submitted |
+| ✎ | `feedback_submit` | Correction feedback submitted |
+| 💾 | `fact_add` | Fact stored or updated |
+| ⏭ | `fact_add` | Fact skipped (duplicate or similar) |
+| ⚡ | `run_command` | Command executing |
+
+Example output in Normal mode:
+```
+🔧 fact_add(content="I prefer short responses", category="auto", scope="global")
+💾 Stored fact #42 (preference, global)
+🔧 import_document(path="report.md", scope="project", title="Q3 Report")
+📄 Imported doc #7: "Q3 Report" (3 chunks, project 'my-project')
+🔧 run_command(command_line="pdftotext -f 1 -l 5 doc.pdf -")
+⚡ pdftotext -f 1 -l 5 doc.pdf -
+🔧 feedback_submit(item_id="15", signal_type="good", correction_text=None)
+👍 feedback submitted (msg:15, weight:30%)
+```
+
+All indicators use DIM gray styling (`\x1B[2m\x1B[37m`) consistent with tool calls and `[Thinking]` blocks. They are hidden in Quiet mode.
+
 ### Error Display in Verbose/Trace Mode
 
 When errors occur, verbose/trace mode shows additional diagnostic information:

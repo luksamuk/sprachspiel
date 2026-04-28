@@ -1,7 +1,8 @@
 //! Tool to execute external CLI commands.
 
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::external::{CommandOutput, ExternalToolsConfig, Platform, load_tools_config};
+use crate::spinner::suspend_for_print;
 use ollama_rs::function;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -178,6 +179,12 @@ pub async fn run_command(
         log_tool_result("run_command", &e);
         return Ok(e);
     }
+
+    // Visual indicator: show which command is about to execute
+    let display_cmd = crate::utils::truncate_chars(&command_line, 60);
+    suspend_for_print(|| {
+        eprintln!("{TOOL_DIM}⚡ {display_cmd}{RESET}");
+    });
 
     // Determine timeout
     let timeout_duration = timeout_val

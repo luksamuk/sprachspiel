@@ -53,6 +53,8 @@ Tool call and result visibility follows the global verbosity level:
 
 Use `/debug` to toggle between Normal and Trace verbosity mid-session.
 
+In addition to tool calls, some tools show **visual indicators** (one-line emoji summaries) when they complete important actions — for example, `💾 Stored fact #42` or `📄 Imported doc #7`. See the [Tools documentation](../tools.md#visual-indicators) for the full list.
+
 ## Interactive Commands
 
 Once inside the chat, these commands are available:

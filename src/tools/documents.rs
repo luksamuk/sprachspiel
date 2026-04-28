@@ -16,9 +16,10 @@
 
 use crate::content::document::{Document, MAX_DOCUMENT_SIZE, detect_file_type};
 use crate::content::types::ContentScope;
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
 use crate::project::get_project_id;
+use crate::spinner::suspend_for_print;
 use crate::tools::context::{get_db, get_embedding};
 use crate::utils::expand_tilde_path;
 use std::fs;
@@ -292,6 +293,12 @@ pub async fn import_document(
         match embed_result {
             Ok(embed_result) => {
                 let chunks = embed_result.chunks_created.max(1);
+                suspend_for_print(|| {
+                    eprintln!(
+                        "{TOOL_DIM}📄 Imported doc #{}: \"{}\" ({} chunks, {}){RESET}",
+                        doc_id, final_title, chunks, scope_str
+                    );
+                });
                 format!(
                     "Imported document {} ({})\n\
                      **Title:** {}\n\
@@ -314,6 +321,12 @@ pub async fn import_document(
                 )
             }
             Err(e) => {
+                suspend_for_print(|| {
+                    eprintln!(
+                        "{TOOL_DIM}📄 Imported doc #{}: \"{}\" (indexing failed, {}){RESET}",
+                        doc_id, final_title, scope_str
+                    );
+                });
                 format!(
                     "Imported document {} ({}) BUT indexing failed: {}\n\
                      **Title:** {}\n\
@@ -332,6 +345,12 @@ pub async fn import_document(
             }
         }
     } else {
+        suspend_for_print(|| {
+            eprintln!(
+                "{TOOL_DIM}📄 Imported doc #{}: \"{}\" (no embedding, {} words, {}){RESET}",
+                doc_id, final_title, document.word_count, scope_str
+            );
+        });
         format!(
             "Imported document {} ({})\n\
              **Title:** {}\n\

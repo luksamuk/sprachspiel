@@ -3,15 +3,10 @@
 //! Skills are Markdown files with YAML frontmatter that define AI behaviors.
 //! They are loaded on-demand when the LLM requests them.
 
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::skills::{get_available_skill_names, get_skill_content, load_skill_indexes};
 use crate::spinner::suspend_for_print;
 use ollama_rs::function;
-
-/// ANSI style: DIM (faint) + light gray text — matches tool call display
-const SKILL_DIM: &str = "\x1B[2m\x1B[37m";
-/// ANSI reset
-const RESET: &str = "\x1B[0m";
 ///
 /// Returns a list of skill names and descriptions from the SKILLS INDEX.
 /// Use this to discover what skills are available before loading one with skill_view.
@@ -122,7 +117,7 @@ pub async fn skill_view(name: String) -> Result<String, Box<dyn std::error::Erro
             // Visual indicator that a skill was loaded (matches tool call styling)
             suspend_for_print(|| {
                 eprintln!(
-                    "{SKILL_DIM}📖 Loaded skill: {} ({}){RESET}",
+                    "{TOOL_DIM}📖 Loaded skill: {} ({}){RESET}",
                     skill.name, skill.source
                 );
             });
