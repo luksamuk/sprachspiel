@@ -20,9 +20,9 @@ tokio::task_local! {
     pub static REMEMBER_DB: Arc<Database>;
     /// Embedding client for tools that need semantic search
     pub static REMEMBER_EMBEDDING: Arc<EmbeddingClient>;
-    /// Ollama client for tools that need LLM access (e.g., spawn_subagent)
+    /// Ollama client for tools that need LLM access (e.g., agent spawning tools)
     pub static TOOL_OLLAMA: Ollama;
-    /// Settings for tools that need configuration (e.g., spawn_subagent)
+    /// Settings for tools that need configuration (e.g., agent spawning tools)
     pub static TOOL_SETTINGS: Arc<Settings>;
 }
 
@@ -82,7 +82,7 @@ where
 
 /// Run an async function with full tool context including Ollama and Settings
 ///
-/// This allows tools like spawn_subagent to access the Ollama client
+/// This allows tools like agent spawning tools to access the Ollama client
 /// and Settings while still having DB and Embedding access.
 #[allow(clippy::redundant_async_block)]
 pub async fn with_full_context<F, T>(

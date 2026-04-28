@@ -1701,8 +1701,8 @@ mod tests {
         let doc2 = Document::new(
             "Document 2 content.".to_string(),
             "Doc 2".to_string(),
-            "doc2.pdf".to_string(),
-            FileType::Pdf,
+            "doc2.md".to_string(),
+            FileType::Md,
             ContentScope::Global,
             None,
         )

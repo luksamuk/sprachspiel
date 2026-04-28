@@ -1,6 +1,6 @@
 ---
 name: ocr-images
-description: Perform OCR on images to extract text content using tesseract.
+description: MUST LOAD when processing images, screenshots, scanned documents, photos of text, or any image needing text extraction. OCR pipeline using tesseract with table, formula, and structured text support.
 ---
 
 # OCR Image Processing

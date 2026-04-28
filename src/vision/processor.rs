@@ -3,13 +3,13 @@
 //! Handles image analysis using vision models via Ollama.
 //! Uses /api/generate endpoint with images array for multi-image support.
 
+use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;
 use ollama_rs::models::ModelOptions;
 
 use crate::spinner::{create_spinner, finish_spinner};
-use crate::utils::{read_file_as_base64, validate_image_file};
-use ollama_rs::Ollama;
+use crate::utils::read_file_as_base64;
 
 use super::cli::VisionArgs;
 use super::error::{VisionError, VisionResult};
@@ -33,31 +33,16 @@ impl VisionProcessor {
             return Err(VisionError::NoImages);
         }
 
-        let mut images = Vec::new();
+        // Validate all image files
         for file in &args.files {
-            validate_image_file(file).map_err(VisionError::FileNotFound)?;
-
-            let base64_image =
-                read_file_as_base64(file)
-                    .await
-                    .map_err(|e| VisionError::ReadFailed {
-                        file: file.to_string_lossy().to_string(),
-                        error: e,
-                    })?;
-
-            images.push(Image::from_base64(base64_image));
+            crate::utils::validate_image_file(file).map_err(VisionError::FileNotFound)?;
         }
+
+        // Load images as base64
+        let images = self.load_images(&args.files).await?;
 
         let prompt = args.get_prompt().to_string();
-
-        // Layer num_predict on top of the passed model_options (per-request concern)
-        let model_options = model_options.num_predict(args.max_tokens as i32);
-
-        let mut request = GenerationRequest::new(model.to_string(), prompt).options(model_options);
-
-        for image in images {
-            request = request.add_image(image);
-        }
+        let model_opts = model_options.num_predict(args.max_tokens as i32);
 
         let file_count = args.files.len();
         let spinner_msg = if file_count == 1 {
@@ -71,18 +56,13 @@ impl VisionProcessor {
             None
         };
 
-        let response = ollama
-            .generate(request)
-            .await
-            .map_err(|e| VisionError::OllamaError {
-                message: format!("Failed to process image(s): {}", e),
-            })?;
+        let result = self
+            .call_vision_model(model, &prompt, images, model_opts, ollama)
+            .await?;
 
         if let Some(sp) = spinner {
             finish_spinner(sp);
         }
-
-        let content = response.response.trim().to_string();
 
         Ok(VisionOutput {
             files: args
@@ -90,9 +70,50 @@ impl VisionProcessor {
                 .iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect(),
-            prompt: args.get_prompt(),
-            content,
+            prompt,
+            content: result,
         })
+    }
+
+    /// Load multiple image files as base64 Image objects
+    async fn load_images(&self, files: &[std::path::PathBuf]) -> VisionResult<Vec<Image>> {
+        let mut images = Vec::new();
+        for file in files {
+            let base64 = read_file_as_base64(file)
+                .await
+                .map_err(|e| VisionError::ReadFailed {
+                    file: file.to_string_lossy().to_string(),
+                    error: e,
+                })?;
+            images.push(Image::from_base64(base64));
+        }
+        Ok(images)
+    }
+
+    /// Call the vision model with images and prompt
+    async fn call_vision_model(
+        &self,
+        model: &str,
+        prompt: &str,
+        images: Vec<Image>,
+        model_options: ModelOptions,
+        ollama: &Ollama,
+    ) -> VisionResult<String> {
+        let mut request =
+            GenerationRequest::new(model.to_string(), prompt.to_string()).options(model_options);
+
+        for image in images {
+            request = request.add_image(image);
+        }
+
+        let response = ollama
+            .generate(request)
+            .await
+            .map_err(|e| VisionError::OllamaError {
+                message: format!("Failed to process image(s): {}", e),
+            })?;
+
+        Ok(response.response.trim().to_string())
     }
 }
 
@@ -101,6 +122,10 @@ impl Default for VisionProcessor {
         Self::new()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Output types and printing
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct VisionOutput {
@@ -136,8 +161,8 @@ mod tests {
 
     #[test]
     fn test_validate_image_file() {
-        assert!(validate_image_file(Path::new("test.png")).is_err());
-        assert!(validate_image_file(Path::new("test.jpg")).is_err());
-        assert!(validate_image_file(Path::new("test.pdf")).is_err());
+        assert!(crate::utils::validate_image_file(Path::new("test.png")).is_err()); // doesn't exist
+        assert!(crate::utils::validate_image_file(Path::new("test.jpg")).is_err());
+        assert!(crate::utils::validate_image_file(Path::new("test.pdf")).is_err());
     }
 }

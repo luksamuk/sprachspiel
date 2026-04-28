@@ -493,8 +493,16 @@ These commands are always available in chat mode (not feature-gated).
 - [ ] Type `/ocr` with no args → shows usage hint
 - [ ] Type `/ocr .env` → "BLOCKED" error (security blocklist)
 
+#### With repository assets
+- [ ] `/ocr assets/ocr/japanese.jpg text` → extracts Japanese text (printed CJK characters)
+- [ ] `/ocr assets/mixed/redacao.png table` → extracts table structure from ENEM exam page
+
 ### 14.2 /vision command
 - [ ] Type `/vision` with no args → shows usage hint
+
+#### With repository assets
+- [ ] `/vision assets/vision/protagonist.jpg Identify the character and the game`
+- [ ] `/vision assets/vision/protagonist.jpg,assets/vision/protagonist2.jpg Compare both characters and their games`
 
 ### 14.3 /translate command
 - [ ] Type `/translate en:pt Hello world` → returns Portuguese translation
@@ -503,7 +511,50 @@ These commands are always available in chat mode (not feature-gated).
 - [ ] Type `/summarize Long text about artificial intelligence` → returns concise summary
 
 ### 14.5 Feature flag
-- [ ] Build without subagent-tools: `cargo build --release --no-default-features --features "weather-tools,file-tools"` → chat commands `/ocr`, `/vision`, `/translate`, `/summarize` still work, but LLM cannot call `spawn_subagent`
+- [ ] Build without subagent-tools: `cargo build --release --no-default-features --features "weather-tools,file-tools"` → chat commands `/ocr`, `/vision`, `/translate`, `/summarize` still work, but LLM cannot call the spawn tools
+
+### 14.6 LLM Spawn Tools (with repository assets)
+
+**Note:** Use a model that supports tools (qwen3.5:4b or larger).
+
+> **LLM Refusal:** If the model refuses to call a spawn tool, rephrase the prompt
+> more explicitly. If refusal persists, switch to an abliterated model (see LLM Tool Refusal Policy above).
+
+- [ ] Ask: "Use spawn_ocr_agent to extract all text from assets/ocr/japanese.jpg with ocr_mode='text'" → LLM calls `spawn_ocr_agent`
+- [ ] Ask: "Use spawn_ocr_agent to extract the table from assets/mixed/redacao.png with ocr_mode='table'" → LLM calls `spawn_ocr_agent`
+- [ ] Ask: "Use spawn_vision_agent to identify the character in assets/vision/protagonist.jpg" → LLM calls `spawn_vision_agent`
+- [ ] Ask: "Use spawn_vision_agent to compare assets/vision/protagonist.jpg,assets/vision/protagonist2.jpg" → LLM calls `spawn_vision_agent` with multi-image paths
+- [ ] Ask: "Use spawn_translate_agent to translate 'Bom dia, como vai?' to English" → LLM calls `spawn_translate_agent`
+- [ ] Ask: "Use spawn_summarize_agent to summarize: Artificial intelligence is transforming the way we interact with technology, enabling natural language understanding, computer vision, and autonomous decision-making across many domains." → LLM calls `spawn_summarize_agent`
+
+### 14.7 PDF Two-Phase Pipeline (LLM-orchestrated)
+
+**Note:** Use a model that supports tools and has vision capability. Use the cloud model configured in the project's config.toml.
+
+**Prerequisites:** `pdftotext` and `pdftoppm` must be installed (`poppler-utils`).
+
+- [ ] Ask: "I have a PDF at assets/mixed/ask-ai-architecture.pdf. Please process it — extract all text, and for any pages with diagrams, convert them to images and describe what you see."
+- [ ] Verify the LLM calls `run_command("pdftotext", [...])` for Phase 1
+- [ ] Verify the LLM identifies that page 2 has a diagram (little text / visual content)
+- [ ] Verify the LLM calls `run_command("pdftoppm", [...])` to convert page 2 to an image
+- [ ] Verify the LLM calls `spawn_vision_agent` or `spawn_ocr_agent` on the resulting image
+- [ ] Verify the LLM combines results and presents a complete answer
+- [ ] **Negative test:** Verify the LLM does NOT try to pass a `.pdf` file directly to `spawn_ocr_agent` or `spawn_vision_agent`
+
+### 14.8 PDF Import via Skill (end-to-end with cloud model)
+
+**Note:** Use the cloud model configured in the project's config.toml (checks `[models]` section for a cloud/vision-capable model). This test verifies the complete import pipeline orchestrated by a cloud LLM.
+
+**Prerequisites:** `pdftotext` must be installed (`poppler-utils`).
+
+- [ ] Ask: "I have a PDF at assets/mixed/ask-ai-architecture.pdf. Process it and import the text as a document."
+- [ ] Verify the LLM:
+  1. Does NOT attempt `import_document` with the `.pdf` file directly (PDF is not a supported import format)
+  2. Uses `run_command("pdftotext", [...])` to extract text from the PDF
+  3. Uses `write_file` to save the extracted text to a `.txt` file
+  4. Calls `import_document` with the `.txt` file
+  5. Returns confirmation with a document ID
+- [ ] Verify via `/doc list` that the document was imported successfully with the extracted text
 
 ---
 

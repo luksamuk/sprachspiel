@@ -143,7 +143,7 @@ Available: read_file, read_file_segment, count_lines, list_directory, search_fil
 
 Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines.
 
-**PDFs:** read_file cannot read PDFs (binary format). Call skill_view("document-processing") for detailed instructions."#
+**PDFs:** read_file cannot read PDFs (binary format). **Load the document-processing skill FIRST** with skill_view(name="document-processing") for the complete two-phase pipeline (text extraction + vision analysis)."#
                     .to_string(),
             );
         }
@@ -330,7 +330,8 @@ Available: import_document
 
 **File limits:**
 - Maximum 2.5 MB (2,500,000 bytes) per file
-- Supported: .txt, .md, .org (builtin), .pdf, .epub (requires skills-tools)
+- Supported: .txt, .md, .org only
+- **PDF/EPUB not supported** — extract text first with run_command("pdftotext"), then import
 
 **Example:**
 // Plain text file - provide title
@@ -340,56 +341,152 @@ import_document("/path/to/notes.txt", None, Some("Project Planning Notes Q1"))
 import_document("/path/to/reference.org", None, None)
 
 // Global scope for reference material
-import_document("~/docs/glossary.md", Some("global"), None)"#
+import_document("~/docs/glossary.md", Some("global"), None)
+
+// PDF workflow: extract first, then import
+// 1. run_command("pdftotext", ["report.pdf", "-"])  → get text output
+// 2. Save output to a .txt file using write_file
+// 3. import_document("report.txt", None, Some("Q3 Report"))"#
                     .to_string(),
             );
         }
     }
-    // Subagent tools (requires subagent-tools feature)
+    // Agent spawning tools (requires subagent-tools feature)
     #[cfg(feature = "subagent-tools")]
     {
-        if !blacklist.contains("spawn_subagent") {
-            sections.push(
-                r###"### SPAWN SUBAGENT TOOL
-Use for offloading specialized tasks to dedicated subagents.
-Available: spawn_subagent
+        let agent_tools = [
+            "spawn_ocr_agent",
+            "spawn_vision_agent",
+            "spawn_translate_agent",
+            "spawn_summarize_agent",
+        ];
+        let available: Vec<&&str> = agent_tools
+            .iter()
+            .filter(|t| !blacklist.contains(*t))
+            .collect();
 
-**When to delegate to subagents:**
-- Use **OCR** for extracting text from images (screenshots, scanned documents)
-- Use **Vision** for analyzing or describing images in detail
-- Use **Translate** for translating text between languages
-- Use **Summarize** for condensing long text into key points
-- Use **Document** for extracting text from PDF or EPUB files
+        if !available.is_empty() {
+            let has_tool = |name: &&str| available.contains(&name);
 
-**When NOT to delegate:**
-- The main model can handle the task directly (simple questions, short text)
-- The task requires access to conversation history or tools only the main model has
-- The input is too short to benefit from a specialized model
-
-Types:
-- `ocr`: Extract text from images (requires `file_path`)
-- `vision`: Analyze images (requires `file_path`)
-- `translate`: Translate text between languages
-- `summarize`: Summarize long text
-- `document`: Process PDF/EPUB documents (requires `file_path`)
-
-**When to use each type:**
-- Use `ocr` when you need to extract text from image files (PNG, JPG, etc.)
-- Use `vision` when you need to understand or describe image content
-- Use `translate` for converting text between languages
-- Use `summarize` for condensing long text into shorter versions
-- Use `document` for working with PDF or EPUB files
-
-**file_path requirement:**
-- OCR, vision, and document types require `file_path` parameter with absolute or relative path
-- Text-based types (translate, summarize) work with stdin or direct text input
-
-**Example:**
-spawn_subagent("ocr", "Extract all text from this image", Some("/path/to/document.png"))
-spawn_subagent("translate", "Translate this to Portuguese", None)
-spawn_subagent("document", "Analyze this PDF", Some("report.pdf"))"###
-                    .to_string(),
+            let mut section = String::from(
+                "### AGENT SPAWNING TOOLS\n\
+                Use for offloading specialized tasks to dedicated subagents.\n\n\
+                Each tool is purpose-built for its task type with only the relevant parameters:\n",
             );
+
+            if has_tool(&"spawn_ocr_agent") {
+                section.push_str(
+                    "\n- **spawn_ocr_agent** — Extract text from images via OCR\n\
+                      Best for: tables, formulas, scanned documents, structured text\n\
+                      Requires: `prompt` (what to extract), `file_path` (image path)\n\
+                      Optional: `ocr_mode` (\"text\", \"table\", \"figure\", \"formula\")\n",
+                );
+            }
+
+            if has_tool(&"spawn_vision_agent") {
+                section.push_str(
+                    "\n- **spawn_vision_agent** — Analyze or describe images via vision model\n\
+                      Best for: charts, graphs, diagrams, visual content, comparisons\n\
+                      Requires: `prompt` (what to analyze), `file_path` (image path(s))\n\
+                      Supports comma-separated paths for multi-image analysis\n",
+                );
+            }
+
+            if has_tool(&"spawn_translate_agent") {
+                section.push_str(
+                    "\n- **spawn_translate_agent** — Translate text between languages\n\
+                      Requires: `prompt` (text + translation direction)\n\
+                      No file needed — provide text directly in the prompt\n",
+                );
+            }
+
+            if has_tool(&"spawn_summarize_agent") {
+                section.push_str(
+                    "\n- **spawn_summarize_agent** — Summarize long text into key points\n\
+                      Requires: `prompt` (text + summarization instructions)\n\
+                      No file needed — provide text directly in the prompt\n",
+                );
+            }
+
+            // "When to use each" — built dynamically
+            let mut when_to_use = String::from("\n**When to use each:**\n");
+            let mut has_when = false;
+
+            if has_tool(&"spawn_ocr_agent") {
+                when_to_use
+                    .push_str("- OCR → extracting text from images (screenshots, scanned docs)\n");
+                has_when = true;
+            }
+            if has_tool(&"spawn_vision_agent") {
+                when_to_use.push_str(
+                    "- Vision → understanding visual content (charts, diagrams, photos)\n",
+                );
+                has_when = true;
+            }
+            if has_tool(&"spawn_translate_agent") {
+                when_to_use.push_str("- Translate → converting text between languages\n");
+                has_when = true;
+            }
+            if has_tool(&"spawn_summarize_agent") {
+                when_to_use.push_str("- Summarize → condensing long text\n");
+                has_when = true;
+            }
+
+            if has_when {
+                section.push_str(&when_to_use);
+            }
+
+            // PDF section — only if OCR or vision tools are available
+            if has_tool(&"spawn_ocr_agent") || has_tool(&"spawn_vision_agent") {
+                section.push_str(
+                    "\n**For PDF documents:** Load the document-processing skill FIRST with \
+                    skill_view(name=\"document-processing\") — it provides the complete \
+                    two-phase pipeline (text extraction → OCR/vision for visual content) \
+                    with detection heuristics for tables, charts, formulas, and scanned pages.\n\
+                    Quick reference: For pages with visual content:\n\
+                    1. run_command(\"pdftoppm\") to convert pages to images\n\
+                    2. spawn_ocr_agent for tables/formulas/scanned text\n\
+                    3. spawn_vision_agent for charts/diagrams/visual analysis\n",
+                );
+            }
+
+            // Examples — built dynamically per available tool
+            let mut examples = String::from("\n**Examples:**\n");
+            let mut has_examples = false;
+
+            if has_tool(&"spawn_ocr_agent") {
+                examples.push_str(
+                    "spawn_ocr_agent(\"Extract all text from this image\", \
+                    \"/tmp/document.png\", None)\n\
+                    spawn_ocr_agent(\"Extract table structure\", \"/tmp/table.png\", \
+                    Some(\"table\"))\n",
+                );
+                has_examples = true;
+            }
+            if has_tool(&"spawn_vision_agent") {
+                examples.push_str(
+                    "spawn_vision_agent(\"Describe this chart\", \"/tmp/chart.png\")\n\
+                    spawn_vision_agent(\"Compare these images\", \"/tmp/a.png,/tmp/b.png\")\n",
+                );
+                has_examples = true;
+            }
+            if has_tool(&"spawn_translate_agent") {
+                examples
+                    .push_str("spawn_translate_agent(\"Translate to Portuguese: Hello world\")\n");
+                has_examples = true;
+            }
+            if has_tool(&"spawn_summarize_agent") {
+                examples.push_str(
+                    "spawn_summarize_agent(\"Summarize this text in 3 bullet points: ...\")\n",
+                );
+                has_examples = true;
+            }
+
+            if has_examples {
+                section.push_str(&examples);
+            }
+
+            sections.push(section);
         }
     }
 

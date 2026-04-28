@@ -53,6 +53,8 @@ Tool call and result visibility follows the global verbosity level:
 
 Use `/debug` to toggle between Normal and Trace verbosity mid-session.
 
+In addition to tool calls, some tools show **visual indicators** (one-line emoji summaries) when they complete important actions — for example, `💾 Stored fact #42` or `📄 Imported doc #7`. See the [Tools documentation](../tools.md#visual-indicators) for the full list.
+
 ## Interactive Commands
 
 Once inside the chat, these commands are available:
@@ -165,9 +167,9 @@ Notes support project-level (default) and global scope. Global notes are visible
 
 | Command | Description |
 |---------|-------------|
-| `/doc import <path> [--global] [--nowait]`, `/di` | Import a document (TXT, MD, ORG, PDF, EPUB) |
+| `/doc import <path> [--global] [--nowait]`, `/di` | Import a document (TXT, MD, ORG only; use run_command for PDF/EPUB) |
 | `/doc list [--global]`, `/dl` | List imported documents |
-| `/doc show <id>`, `/ds` | Show document content by ID (accepts `#N`, `doc:N`, or `N`) |
+| `/doc show <id>`, `/ds` | Show document content as rendered markdown (accepts `#N`, `doc:N`, or `N`) |
 | `/doc delete <id>`, `/dd` | Delete a document by ID (accepts `#N`, `doc:N`, or `N`) |
 
 Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
@@ -179,8 +181,8 @@ Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
 | Plain Text | `.txt` | Builtin |
 | Markdown | `.md` | Builtin |
 | Org Mode | `.org` | Builtin |
-| PDF | `.pdf` | `pdftotext` (poppler-utils) |
-| EPUB | `.epub` | `epub2txt` or `ebook-convert` (Calibre) |
+
+**For PDF and EPUB files:** Use `run_command` to extract text first (e.g., `run_command("pdftotext", ["file.pdf", "-"])`), then import the resulting text file. Load the `document-processing` skill for detailed guidance.
 
 **File Size Limit:** 2.5 MB (2,500,000 bytes) maximum. Larger files are rejected.
 
@@ -200,7 +202,7 @@ The `/doc show` and `/doc delete` commands accept multiple ID formats:
 - `doc:N` - Prefixed format: `/doc show doc:1`
 - `N` - Numeric format: `/doc show 1`
 
-All three formats are equivalent and interchangeable.
+All three formats are equivalent and interchangeable. `/doc show` renders markdown content at 80 columns, consistent with `/note show`.
 
 **Scope:**
 - Project scope (default): Document visible only in current project
@@ -228,13 +230,13 @@ The LLM can import documents autonomously using the `import_document(path, scope
 | `/skill`, `/sk` | List available skills |
 | `/skill <name>`, `/sk <name>` | Activate a skill for the current session |
 
-Skills are Markdown files that define AI behaviors for specific tasks. When activated, a skill's instructions are injected into the system prompt.
+Skills are Markdown files that define AI behaviors for specific tasks. When activated, a skill's instructions are injected into the system prompt. The LLM also loads skills **proactively** via `skill_view()` when it detects a task matching a skill's description.
 
 **Built-in Skills:**
-- `document-processing` - Extract content from PDF and ePub files
-- `ocr-images` - Process images with OCR
-- `code-analysis` - Analyze code structure
-- `web-scraping` - Scrape web content
+- `document-processing` - Extract content from PDFs, eBooks, documents, reports (two-phase pipeline: text extraction → OCR/vision)
+- `ocr-images` - OCR on images, screenshots, scanned documents
+- `code-analysis` - Analyze code structure, find patterns, understand codebases
+- `web-scraping` - Search the web, scrape and analyze web content
 
 **User Skills:** Place custom skills in `~/.config/ask-ai/skills/<name>/SKILL.md`
 
@@ -242,10 +244,10 @@ Skills are Markdown files that define AI behaviors for specific tasks. When acti
 ```
 lfm> /skill
 Available skills:
-  document-processing - Extract content from PDF and ePub files
-  ocr-images - Process images with OCR
-  code-analysis - Analyze code structure
-  web-scraping - Scrape web content
+  document-processing - MUST LOAD when processing PDFs, eBooks, documents...
+  ocr-images - MUST LOAD when processing images, screenshots, scanned documents...
+  code-analysis - Load when analyzing code, exploring a codebase...
+  web-scraping - Load when searching the web, scraping web pages...
 
 Use /skill <name> to activate a skill.
 
@@ -254,7 +256,7 @@ lfm> /skill document-processing
 Skill instructions will be followed when relevant to the conversation.
 ```
 
-Use `skill_list()` (LLM tool) to see available skills from within a conversation.
+Use `skill_list()` to see available skills from within a conversation, or `skill_view(name="skill-name")` to load a skill proactively.
 
 ### Subagent Commands
 

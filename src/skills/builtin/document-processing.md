@@ -1,11 +1,11 @@
 ---
 name: document-processing
-description: Extract and process content from PDF and ePub files with metadata extraction, TOC, and structured output.
+description: MUST LOAD when processing PDFs, eBooks, documents, reports, papers, articles, or any file needing ingestion, analysis, or extraction. Two-phase pipeline (text → OCR/vision for visual content) with detection heuristics for tables, charts, formulas, and scanned pages.
 ---
 
 # Document Processing (PDF, ePub)
 
-When asked to process PDF or ePub files:
+**Load this skill whenever you encounter PDFs, documents, reports, papers, or any file needing ingestion or analysis.** This skill provides the complete processing pipeline that goes far beyond what individual tool descriptions can convey.
 
 ## 1. Tool Availability Check
 
@@ -15,21 +15,94 @@ First, check available tools using `check_tool_availability`:
 - `pdftotext` - Extract text from PDF
 - `pdfinfo` - PDF metadata (pages, title, author)
 - `pdftoppm` - Convert PDF pages to images
-- `tesseract` - OCR for scanned documents
 
 **ePub Tools:**
 - `ebook-convert` - Calibre's ePub converter (full-featured)
 - `epub2txt` - Lightweight ePub to text (fallback)
 
-## 2. PDF Processing
+## 2. PDF Processing — Two-Phase Pipeline
 
-### Full Text Extraction
+### Phase 1: Full Text Extraction (always run first)
+
+Extract text from the entire PDF using `pdftotext`:
 
 ```bash
 run_command("pdftotext", ["<file.pdf>", "-"])
 ```
 
-Outputs to stdout. Parse and analyze the text.
+**Evaluate the output — check EVERY page for these escalation signals:**
+
+#### Definite signs a page needs OCR (spawn_ocr_agent):
+- Page returns **less than 50 characters** of text (likely scanned/image-based)
+- Text contains **garbled characters**, mojibake, or random symbol sequences (e.g., "μ∂†≈" mixed into prose)
+- `pdftotext` output has **many blank lines** between sparse text fragments (columns misread as blanks)
+
+#### Strong signs a page needs vision analysis (spawn_vision_agent):
+- Text mentions **"Figure", "Table", "Chart", "Diagram", "Graph", "Equation", "Plate", "Illustration"**
+- Text contains **numbered references** like "see Figure 3.2" or "as shown in Table 1"
+- Page has **structural content** that plain text cannot capture (mathematical formulas, chemical structures, floor plans, circuit diagrams, flowcharts)
+- Text contains **fragmented table data** — misaligned rows, numbers without column headers, or tabular data that lost its grid structure
+- Page appears to be a **title page, cover, or acknowledgments** that may have visual elements worth preserving
+
+#### If you detect ANY of these signals:
+1. Note the page number(s) where text extraction was insufficient
+2. Convert those specific pages: `run_command("pdftoppm", ["-png", "-f", "<start>", "-l", "<end>", "-r", "150", "<file.pdf>", "output"])`
+3. Use `spawn_ocr_agent` for tables/formulas/scanned text, or `spawn_vision_agent` for charts/diagrams/visual analysis
+4. **Combine the visual analysis with the text extraction** for a complete understanding — don't discard Phase 1 text
+
+### Phase 2: OCR + Vision (for non-text content)
+
+Pages that `pdftotext` couldn't properly extract need further processing. **Choose the right tool based on content type:**
+
+- **spawn_ocr_agent** — Best for: **tables**, **formulas**, **scanned text**, **structured text in images**. OCR preserves table layout and mathematical notation accurately.
+- **spawn_vision_agent** — Best for: **charts**, **graphs**, **diagrams**, **figures**, **visual content requiring interpretation**. Vision describes what it *sees* — colors, trends, layout, relationships.
+
+**Strategy: try OCR first, then vision if needed.** OCR is faster and more precise for structured text content. Vision is better for visual content that requires interpretation beyond what text extraction can provide.
+
+**How to process PDF pages with visual content:**
+
+1. Convert specific pages to images:
+   ```bash
+   run_command("pdftoppm", ["-png", "-f", "<start>", "-l", "<end>", "-r", "150", "<file.pdf>", "output"])
+   ```
+2. For tables, formulas, or scanned text — use **spawn_ocr_agent**:
+   ```
+   spawn_ocr_agent("Extract the table structure", "output-3.png", "table")
+   ```
+3. For charts, graphs, diagrams, or visual figures — use **spawn_vision_agent**:
+   ```
+   spawn_vision_agent("Analyze the charts in this diagram", "output-3.png")
+   ```
+4. If OCR results are unsatisfying (e.g., a chart with labels OCR can't interpret), escalate to spawn_vision_agent
+
+**Important: tool access depends on context:**
+- **In chat mode (with tools)**: Call `spawn_ocr_agent` and `spawn_vision_agent` directly.
+  - For OCR of specific PDF pages, use `pdftoppm` to convert to images first, then pass to spawn_ocr_agent.
+  - Example: `spawn_ocr_agent("Extract tables", "page-3.png", "table")`
+  - Example: `spawn_vision_agent("Analyze charts in this diagram", "page-5.png")`
+- **In CLI mode (standalone)**: Use `ask-ai ocr <image.png>` or `ask-ai vision <file.pdf>`.
+
+**Quick reference:**
+| Content type | Primary tool | When to escalate |
+|---|---|---|
+| Text-heavy pages | pdftotext | — |
+| Tables | OCR (`--table`) | Vision if table has visual layout |
+| Formulas / equations | OCR (`--formula`) | Vision if formula is in a diagram |
+| Scanned pages | OCR (default mode) | Vision if page has mixed content |
+| Charts / graphs | Vision | — |
+| Diagrams / figures | Vision | — |
+| Mixed content | OCR first, then Vision | — |
+
+### Page Selection Strategy
+
+When determining which pages need vision:
+
+1. Run `pdftotext` page by page for large PDFs:
+   ```bash
+   run_command("pdftotext", ["-f", "1", "-l", "1", "<file.pdf>", "-"])
+   ```
+2. If a page returns very little text (<100 chars) or garbled output → that page needs vision
+3. For short PDFs (<20 pages), just use vision on all pages if content is visual
 
 ### Page Range Extraction
 
@@ -68,20 +141,6 @@ To find a term inside a PDF:
 1. Extract full text: `run_command("pdftotext", ["<file.pdf>", "-"])`
 2. Search in the result for the term
 3. Note page numbers if visible in text
-
-### OCR Fallback (for scanned PDFs)
-
-If `pdftotext` returns empty or garbled text, the PDF is likely scanned.
-
-1. Convert pages to images:
-   ```bash
-   run_command("pdftoppm", ["-png", "<file.pdf>", "output"])
-   ```
-2. OCR each image:
-   ```bash
-   run_command("tesseract", ["output-1.png", "stdout"])
-   ```
-3. Combine OCR results for all pages
 
 ## 3. ePub Processing
 
@@ -131,10 +190,9 @@ ePub TOC is typically in `OEBPS/toc.ncx` or `OEBPS/nav.xhtml`.
 
 ePub can contain embedded images (covers, illustrations, manga).
 
-To extract and OCR images:
+To extract images:
 1. Extract ePub: `run_command("unzip", ["-o", "<file.epub>", "-d", "temp_epub"])`
 2. Find images: `run_command("find", ["temp_epub", "-name", "*.png", "-o", "-name", "*.jpg"])`
-3. OCR with tesseract: `run_command("tesseract", ["<image>", "stdout"])`
 
 ## 4. Installation Instructions
 
@@ -143,7 +201,7 @@ If tools are not installed, provide installation commands:
 ### Debian/Ubuntu
 
 ```bash
-sudo apt install poppler-utils calibre tesseract-ocr
+sudo apt install poppler-utils calibre
 
 # Optional lightweight ePub fallback:
 pip install epub2txt
@@ -152,7 +210,7 @@ pip install epub2txt
 ### Arch Linux
 
 ```bash
-sudo pacman -S poppler calibre tesseract
+sudo pacman -S poppler calibre
 
 # Optional AUR package:
 yay -S epub2txt
@@ -161,7 +219,7 @@ yay -S epub2txt
 ### Void Linux
 
 ```bash
-sudo xbps-install -S poppler calibre tesseract
+sudo xbps-install -S poppler calibre
 
 # epub2txt is available:
 sudo xbps-install -S epub2txt
@@ -170,7 +228,7 @@ sudo xbps-install -S epub2txt
 ### Alpine Linux
 
 ```bash
-sudo apk add poppler tesseract-ocr
+sudo apk add poppler
 
 # calibre is in testing/edge only:
 sudo apk add calibre --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing
@@ -182,7 +240,7 @@ sudo apk add epub2txt
 ### Fedora
 
 ```bash
-sudo dnf install poppler-utils calibre tesseract
+sudo dnf install poppler-utils calibre
 
 # epub2txt from PyPI:
 pip install epub2txt
@@ -213,19 +271,12 @@ timeout = 5
 binary = "pdfinfo"
 
 [external.tools.pdftoppm]
-# Convert PDF pages to images (PNG, JPEG) for OCR
-# USAGE: pdftoppm -png <file.pdf> <output_prefix>
+# Convert PDF pages to images (PNG, JPEG) for vision analysis
+# USAGE: pdftoppm -png [-f <first>] [-l <last>] [-r <dpi>] <file.pdf> <output_prefix>
 # NOTE: Output goes to files, not stdout
 enabled = true
 timeout = 60
 binary = "pdftoppm"
-
-[external.tools.tesseract]
-# OCR engine for scanned documents
-# USAGE: tesseract <image.png> stdout
-enabled = true
-timeout = 60
-binary = "tesseract"
 
 [external.tools.ebook-convert]
 # Calibre's ePub to text converter (full-featured)
@@ -250,10 +301,11 @@ binary = "epub2txt"
 
 ### PDF Errors
 
-- **Empty output from pdftotext**: File is likely scanned. Use OCR with `tesseract`.
+- **Empty output from pdftotext**: Page likely contains images/charts. Convert pages with `pdftoppm`, then use `spawn_ocr_agent` or `spawn_vision_agent` on the resulting images.
 - **Permission denied**: File may be encrypted or DRM-protected.
 - **Memory issues**: Large files may need page-by-page processing using `-f` and `-l` flags.
 - **Invalid PDF**: File may be corrupted. Try `pdfinfo` first to check validity.
+- **pdftoppm not found**: Install poppler-utils (see Section 4).
 
 ### ePub Errors
 
@@ -280,6 +332,22 @@ pdftotext -f 5 -l 10 -layout document.pdf -
 pdfinfo document.pdf | grep Pages
 ```
 
+### Analyze PDF pages with vision (tables, charts, formulas)
+```bash
+# CLI mode — PDFs are NOT directly supported by vision command.
+# Convert pages to images first:
+pdftoppm -png -f 1 -l 5 -r 150 document.pdf output
+# Then analyze the resulting image(s):
+ask-ai vision output-1.png "Describe the table in this image"
+
+# Chat mode — the LLM orchestrates the pipeline automatically:
+# 1. Convert pages to images:
+#    run_command("pdftoppm", ["-png", "-f", "1", "-l", "5", "-r", "150", "document.pdf", "output"])
+# 2. Then use agent spawning tools:
+#    spawn_ocr_agent("Extract tables", "output-1.png", "table")
+#    spawn_vision_agent("Analyze charts", "output-3.png")
+```
+
 ### Extract text from ePub preserving chapters
 ```bash
 ebook-convert book.epub .txt --txt
@@ -295,8 +363,9 @@ epub2txt book.epub -
 pdftotext document.pdf - | grep -n "search term"
 ```
 
-### OCR a scanned PDF page
+### Convert specific page to image for vision
 ```bash
-pdftoppm -png -f 1 -l 1 document.pdf output
-tesseract output-1.png stdout
+pdftoppm -png -f 3 -l 3 -r 150 document.pdf output
+# Then use the vision tool with output-3.png, or in CLI mode:
+ask-ai vision output-3.png "Describe the table in this image"
 ```

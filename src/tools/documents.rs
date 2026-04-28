@@ -1,6 +1,6 @@
 //! Document import tool for LLM
 //!
-//! Allows the LLM to import documents (TXT, MD, ORG, PDF, EPUB) for
+//! Allows the LLM to import documents (TXT, MD, ORG) for
 //! semantic search and retrieval.
 //!
 //! # File Size Limit
@@ -8,17 +8,19 @@
 //! Maximum file size is 2.5 MB (2,500,000 bytes). Larger files are rejected
 //! with a helpful error message.
 //!
-//! # Feature Dependencies
+//! # Supported Formats
 //!
-//! - TXT/MD/ORG: Builtin support, no dependencies
-//! - PDF/EPUB: Requires `skills-tools` feature (uses document-processing skill)
+//! Only plain-text formats are supported: TXT, MD, ORG.
+//! For PDF/EPUB files, extract the text first using run_command
+//! (pdftotext, epub2txt), then import the resulting text file.
 
-use crate::content::document::{Document, FileType, MAX_DOCUMENT_SIZE, detect_file_type};
+use crate::content::document::{Document, MAX_DOCUMENT_SIZE, detect_file_type};
 use crate::content::types::ContentScope;
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::embeddings::{DEFAULT_CONTEXT_LENGTH, EmbedItemContext, embed_item_with_fallback};
 use crate::project::get_project_id;
-use crate::tools::context::{get_db, get_embedding, get_ollama, get_settings};
+use crate::spinner::suspend_for_print;
+use crate::tools::context::{get_db, get_embedding};
 use crate::utils::expand_tilde_path;
 use std::fs;
 
@@ -33,7 +35,8 @@ use std::fs;
 /// # Arguments
 /// * `path` - **Required.** Absolute or relative path to the file.
 ///   - Supports `~` home directory expansion
-///   - Example: `"~/documents/report.pdf"` or `"/tmp/notes.txt"`
+///   - Example: `"~/documents/notes.txt"` or `"/tmp/report.md"`
+///   - **Only TXT, MD, and ORG files are supported.**
 ///
 /// * `scope` - **Optional.** Search visibility.
 ///   - `"project"` (default): Only searchable in current project
@@ -57,8 +60,14 @@ use std::fs;
 /// | .txt   | None (provide via `title`) | Plain text |
 /// | .md    | First `# Heading` | Markdown |
 /// | .org   | `#+TITLE:` or first `* Heading` | Org-mode |
-/// | .pdf   | Filename | Requires `skills-tools` feature |
-/// | .epub  | Filename | Requires `skills-tools` feature |
+///
+/// # PDF/EPUB Files
+///
+/// Direct import of PDF and EPUB files is NOT supported.
+/// To import content from PDF/EPUB files:
+/// 1. Extract text using run_command: `run_command("pdftotext", ["file.pdf", "-"])`
+/// 2. Save the extracted text to a .txt or .md file
+/// 3. Import the text file with import_document
 ///
 /// # Returns
 /// Returns confirmation with document ID, word count, and chunk count.
@@ -68,7 +77,7 @@ use std::fs;
 ///
 /// * `"File not found"` - Check the path is correct
 /// * `"Document too large"` - Split the file first (max 2.5MB)
-/// * `"Requires skills-tools"` - Recompile with `--features skills-tools`
+/// * `"Unsupported file type"` - PDF/EPUB not supported; extract text first
 ///
 /// # After Importing
 ///
@@ -84,18 +93,18 @@ use std::fs;
 ///
 /// # Example
 /// ```ignore
-/// // PDF with automatic title extraction
-/// import_document(
-///     "/path/to/report.pdf".to_string(),
-///     None,              // default scope (project)
-///     None               // auto-extract title
-/// )
-///
 /// // Plain text with custom title (RECOMMENDED)
 /// import_document(
 ///     "/path/to/notes.txt".to_string(),
 ///     None,
 ///     Some("Meeting Notes with Team 2026-03-29".to_string())
+/// )
+///
+/// // Markdown with automatic title extraction
+/// import_document(
+///     "/path/to/report.md".to_string(),
+///     None,
+///     None
 /// )
 ///
 /// // Global scope for reference material
@@ -181,7 +190,7 @@ pub async fn import_document(
         return Ok(err);
     }
 
-    // Detect file type
+    // Detect file type (rejects PDF/EPUB with helpful message)
     let file_type = match detect_file_type(&file_path) {
         Ok(ft) => ft,
         Err(e) => {
@@ -190,21 +199,6 @@ pub async fn import_document(
             return Ok(err);
         }
     };
-
-    // Check if PDF/EPUB requires skills-tools
-    #[cfg(not(feature = "skills-tools"))]
-    {
-        if file_type.requires_skills() {
-            let err = format!(
-                "Error: Importing '{}' files requires the 'skills-tools' feature.\n\
-                 Recompile with: cargo build --features skills-tools\n\
-                 Alternatively, convert to TXT/MD/ORG format first.",
-                file_type.extension()
-            );
-            log_tool_result("import_document", &err);
-            return Ok(err);
-        }
-    }
 
     // Get database context
     let db = match get_db() {
@@ -224,31 +218,13 @@ pub async fn import_document(
         None
     };
 
-    // Read file content
-    let content = match file_type {
-        FileType::Txt | FileType::Md | FileType::Org => match fs::read_to_string(&file_path) {
-            Ok(c) => c,
-            Err(e) => {
-                let err = format!("Error: Cannot read file: {}", e);
-                log_tool_result("import_document", &err);
-                return Ok(err);
-            }
-        },
-        FileType::Pdf | FileType::Epub => {
-            #[cfg(feature = "skills-tools")]
-            {
-                match extract_text_with_skill(&file_path).await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        log_tool_result("import_document", &e);
-                        return Ok(e);
-                    }
-                }
-            }
-            #[cfg(not(feature = "skills-tools"))]
-            {
-                unreachable!("Already checked above");
-            }
+    // Read file content (only TXT/MD/ORG supported after detect_file_type)
+    let content = match fs::read_to_string(&file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            let err = format!("Error: Cannot read file: {}", e);
+            log_tool_result("import_document", &err);
+            return Ok(err);
         }
     };
 
@@ -317,6 +293,12 @@ pub async fn import_document(
         match embed_result {
             Ok(embed_result) => {
                 let chunks = embed_result.chunks_created.max(1);
+                suspend_for_print(|| {
+                    eprintln!(
+                        "{TOOL_DIM}📄 Imported doc #{}: \"{}\" ({} chunks, {}){RESET}",
+                        doc_id, final_title, chunks, scope_str
+                    );
+                });
                 format!(
                     "Imported document {} ({})\n\
                      **Title:** {}\n\
@@ -339,6 +321,12 @@ pub async fn import_document(
                 )
             }
             Err(e) => {
+                suspend_for_print(|| {
+                    eprintln!(
+                        "{TOOL_DIM}📄 Imported doc #{}: \"{}\" (indexing failed, {}){RESET}",
+                        doc_id, final_title, scope_str
+                    );
+                });
                 format!(
                     "Imported document {} ({}) BUT indexing failed: {}\n\
                      **Title:** {}\n\
@@ -357,6 +345,12 @@ pub async fn import_document(
             }
         }
     } else {
+        suspend_for_print(|| {
+            eprintln!(
+                "{TOOL_DIM}📄 Imported doc #{}: \"{}\" (no embedding, {} words, {}){RESET}",
+                doc_id, final_title, document.word_count, scope_str
+            );
+        });
         format!(
             "Imported document {} ({})\n\
              **Title:** {}\n\
@@ -377,35 +371,4 @@ pub async fn import_document(
 
     log_tool_result("import_document", &result);
     Ok(result)
-}
-
-/// Extract text from PDF/EPUB using the document-processing subagent.
-///
-/// Delegates to `SubagentRunner::run_document()` which uses a model with
-/// the `run_command` tool and the document-processing skill as system prompt.
-/// This respects project-level skill overrides for document processing.
-#[cfg(feature = "skills-tools")]
-async fn extract_text_with_skill(file_path: &std::path::Path) -> Result<String, String> {
-    use crate::chat::subagent::SubagentRunner;
-    use crate::tools::subagent_tools::build_document_config;
-
-    let ollama = match get_ollama() {
-        Some(o) => o,
-        None => {
-            return Err("Error: Ollama client not available for document extraction.".to_string());
-        }
-    };
-
-    let settings = match get_settings() {
-        Some(s) => s,
-        None => return Err("Error: Settings not available for document extraction.".to_string()),
-    };
-
-    let config = build_document_config(&settings);
-    let runner = SubagentRunner::new(ollama, config);
-
-    match runner.run_document(file_path).await {
-        Ok(text) => Ok(text),
-        Err(e) => Err(format!("Error: Document extraction failed: {}", e)),
-    }
 }

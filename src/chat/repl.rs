@@ -792,7 +792,14 @@ pub async fn run_chat_repl(
 
                 // Clear status bar and input lines
                 print!("{}", build_clear_code(visual_lines));
-                println!("{}>>>{} {}{}{}", colors::BOLD_CYAN, colors::RESET, colors::CYAN, line, colors::RESET);
+                println!(
+                    "{}>>>{} {}{}{}",
+                    colors::BOLD_CYAN,
+                    colors::RESET,
+                    colors::CYAN,
+                    line,
+                    colors::RESET
+                );
 
                 if line.starts_with('/') {
                     match parse_command(line) {

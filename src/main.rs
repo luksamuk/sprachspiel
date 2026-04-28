@@ -162,6 +162,9 @@ async fn main() -> AppResult<()> {
     // Initialize markdown skin with user configuration
     markdown::init_markdown_skin(&settings.display.skin);
 
+    // Initialize tool call display flag from configuration
+    crate::debug_tools::set_show_tool_calls(settings.display.show_tool_calls);
+
     if let Some(ref command) = cli.command {
         match command {
             Commands::Translate(args) => {

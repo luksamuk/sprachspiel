@@ -287,7 +287,7 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
             let skills = crate::skills::load_skill_indexes();
             if !skills.is_empty() {
                 prompt.push_str("\n### SKILLS\n\n");
-                prompt.push_str("Specialized behaviors available on-demand. Use skill_view() to load detailed instructions.\n\n");
+                prompt.push_str("Proactive behaviors that enhance your capabilities. **Always load relevant skills BEFORE starting complex tasks** — they contain detailed step-by-step instructions, tool examples, and troubleshooting guides that go beyond what tool descriptions provide.\n\n");
 
                 for skill in skills {
                     prompt.push_str(&format!(
@@ -297,7 +297,7 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
                 }
 
                 prompt.push_str(
-                    "\nUse `skill_view(name=\"skill-name\")` to load the full skill content.\n",
+                    "\n**Important:** Load a skill with `skill_view(name=\"skill-name\")` as soon as you recognize a task that matches. Do NOT wait until you encounter problems — load the skill proactively.\n",
                 );
             }
         }

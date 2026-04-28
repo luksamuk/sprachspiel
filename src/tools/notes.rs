@@ -16,8 +16,9 @@
 //! - Settings and configuration snippets
 
 use crate::content::types::{ContentScope, ContentSource, MAX_NOTE_CONTENT_SIZE, Note};
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::project::get_project_id;
+use crate::spinner::suspend_for_print;
 use crate::tools::context::get_db;
 use crate::utils::truncate_chars;
 
@@ -152,6 +153,13 @@ pub async fn note_add(
     let title_str = title.as_deref().unwrap_or("Untitled");
     let preview = truncate_chars(&content, 200);
 
+    suspend_for_print(|| {
+        eprintln!(
+            "{TOOL_DIM}📝 Created note #{}: \"{}\"{RESET}",
+            note_id, title_str
+        );
+    });
+
     let result = format!(
         "Created note {} (project-scoped)\n\n**Title:** {}\n\n**Preview:**\n{}\n\n\
          Use remember(id=\"note:{}\") to retrieve full content, or remember(query=\"...\") to search notes.",
@@ -267,6 +275,9 @@ pub async fn note_edit(
     match db.get_note(parsed_id) {
         Ok(Some(_)) => match db.update_note(parsed_id, title.as_deref(), content.as_deref()) {
             Ok(()) => {
+                suspend_for_print(|| {
+                    eprintln!("{TOOL_DIM}📝 Updated note #{}{RESET}", parsed_id);
+                });
                 let mut result = format!("Updated note #{}", parsed_id);
                 if let Some(t) = &title {
                     result.push_str(&format!("\n**Title:** {}", t));
@@ -349,6 +360,12 @@ pub async fn note_delete(id: String) -> Result<String, Box<dyn std::error::Error
         Ok(Some(note)) => match db.delete_note(parsed_id) {
             Ok(()) => {
                 let title_str = note.title.as_deref().unwrap_or("Untitled");
+                suspend_for_print(|| {
+                    eprintln!(
+                        "{TOOL_DIM}🗑️ Deleted note #{}: \"{}\"{RESET}",
+                        parsed_id, title_str
+                    );
+                });
                 let preview = truncate_chars(&note.content, 200);
                 let result = format!(
                     "Deleted note #{}\n\n**Title:** {}\n**Preview:** {}\n\n\

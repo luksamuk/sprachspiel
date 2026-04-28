@@ -163,6 +163,11 @@ pub struct DisplaySettings {
     /// Terminal skin/theme
     #[serde(default = "default_skin")]
     pub skin: String,
+    /// Whether to show 🔧 tool call indicators during chat (compact format).
+    /// Default: true. Set to false to hide tool call display entirely.
+    /// Quiet mode (-q) overrides this to false regardless.
+    #[serde(default = "default_true")]
+    pub show_tool_calls: bool,
 }
 
 /// LED control settings
@@ -342,6 +347,7 @@ impl Default for DisplaySettings {
     fn default() -> Self {
         DisplaySettings {
             skin: default_skin(),
+            show_tool_calls: true,
         }
     }
 }
@@ -733,6 +739,15 @@ plain_default = false
 # Default: "dark"
 skin = "dark"
 
+# Whether to show 🔧 tool call indicators during chat.
+# When enabled, each tool call is displayed as a compact single line:
+#   🔧 read_file(path=/tmp/test.txt)
+# This is independent of the verbosity setting — tool calls are shown
+# even in Normal mode. Set to false to hide tool call display entirely.
+# Quiet mode (-q) overrides this to false regardless.
+# Default: true
+# show_tool_calls = true
+
 # =============================================================================
 # LED CONTROL CONFIGURATION (Optional)
 # =============================================================================
@@ -856,6 +871,7 @@ mod tests {
         assert_eq!(settings.model.ollama_host, "127.0.0.1");
         assert_eq!(settings.model.ollama_port, 11434);
         assert_eq!(settings.display.skin, "dark");
+        assert!(settings.display.show_tool_calls);
         // These should be false by default
         assert!(!settings.output.plain_default);
         // Translate model defaults to None (uses builtin "translategemma")

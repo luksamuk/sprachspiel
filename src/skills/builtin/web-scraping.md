@@ -1,6 +1,6 @@
 ---
 name: web-scraping
-description: Scrape web content using search tools and analyze results.
+description: Load when searching the web, scraping web pages, or fetching online content. Provides search strategies, content extraction, and result analysis workflows.
 ---
 
 # Web Scraping

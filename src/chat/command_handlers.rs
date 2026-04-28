@@ -2555,7 +2555,7 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
 /// Handle document import command
 #[cfg(feature = "document-tools")]
 pub fn handle_document_import(state: &ReplState, path: String, global: bool, nowait: bool) {
-    use crate::content::{ContentScope, Document, FileType, MAX_DOCUMENT_SIZE, detect_file_type};
+    use crate::content::{ContentScope, Document, MAX_DOCUMENT_SIZE, detect_file_type};
     use crate::utils::expand_tilde_path;
     use std::fs;
 
@@ -2604,76 +2604,13 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
         }
     };
 
-    #[cfg(not(feature = "skills-tools"))]
-    if file_type.requires_skills() {
-        eprintln!(
-            "\x1B[31m✗ Importing '{}' files requires the 'skills-tools' feature.\x1B[0m",
-            file_type.extension()
-        );
-        println!("  Recompile with: cargo build --features skills-tools");
-        println!("  Alternatively, convert to TXT/MD/ORG format first.");
-        return;
-    }
-
-    let content = match file_type {
-        FileType::Txt | FileType::Md | FileType::Org => match fs::read_to_string(&file_path) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("\x1B[31m✗ Cannot read file: {}\x1B[0m", e);
-                return;
-            }
-        },
-        FileType::Pdf | FileType::Epub => {
-            #[cfg(feature = "skills-tools")]
-            {
-                use std::process::Command;
-
-                let (program, args) = match file_type {
-                    FileType::Pdf => (
-                        "pdftotext",
-                        vec![file_path.to_string_lossy().to_string(), "-".to_string()],
-                    ),
-                    FileType::Epub => (
-                        "epub2txt",
-                        vec![file_path.to_string_lossy().to_string(), "-".to_string()],
-                    ),
-                    _ => unreachable!(),
-                };
-
-                let output = Command::new(program).args(&args).output();
-
-                match output {
-                    Ok(output) => {
-                        if output.status.success() {
-                            match String::from_utf8(output.stdout) {
-                                Ok(c) => c,
-                                Err(e) => {
-                                    eprintln!(
-                                        "\x1B[31m✗ Failed to parse output as UTF-8: {}\x1B[0m",
-                                        e
-                                    );
-                                    return;
-                                }
-                            }
-                        } else {
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            eprintln!("\x1B[31m✗ {} failed: {}\x1B[0m", program, stderr.trim());
-                            return;
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "\x1B[31m✗ Could not run '{}' - {}. Install with your package manager.\x1B[0m",
-                            program, e
-                        );
-                        return;
-                    }
-                }
-            }
-            #[cfg(not(feature = "skills-tools"))]
-            {
-                unreachable!("Already checked above");
-            }
+    // detect_file_type will reject PDF/EPUB with helpful error message,
+    // so only TXT/MD/ORG reach here
+    let content = match fs::read_to_string(&file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("\x1B[31m✗ Cannot read file: {}\x1B[0m", e);
+            return;
         }
     };
 
@@ -2899,18 +2836,25 @@ pub fn handle_document_show(state: &ReplState, id: i64) {
                     doc.project_id.as_deref().unwrap_or("project").to_string()
                 }
             };
-            println!("\x1B[36mDocument #{}:\x1B[0m", doc.id);
-            println!("  \x1B[1m{}\x1B[0m", doc.title);
-            println!(
-                "  \x1B[90mFile: {} | Type: {} | Words: {} | Age: {}d | Scope: {}\x1B[0m",
+
+            // Build header (rendered as markdown)
+            let mut header = format!("## Document #{}\n\n", doc.id);
+            header.push_str(&format!("**Title:** {}\n\n", doc.title));
+            header.push_str(&format!(
+                "**File:** {} | **Type:** {} | **Words:** {} | **Age:** {}d | **Scope:** {}\n\n",
                 doc.filename,
                 doc.file_type.extension(),
                 doc.word_count,
                 age_days,
                 scope_str
-            );
-            println!();
-            println!("{}", doc.content);
+            ));
+            header.push_str("---\n");
+
+            // Print header with markdown
+            crate::markdown::print_markdown_chat(&header);
+
+            // Print content as markdown
+            crate::markdown::print_markdown_chat(&doc.content);
         }
         Ok(None) => {
             eprintln!("\x1B[31m✗ Document #{} not found.\x1B[0m", id);

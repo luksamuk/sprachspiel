@@ -3,8 +3,9 @@
 //! Skills are Markdown files with YAML frontmatter that define AI behaviors.
 //! They are loaded on-demand when the LLM requests them.
 
-use crate::debug_tools::{log_tool_call, log_tool_result};
+use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::skills::{get_available_skill_names, get_skill_content, load_skill_indexes};
+use crate::spinner::suspend_for_print;
 use ollama_rs::function;
 ///
 /// Returns a list of skill names and descriptions from the SKILLS INDEX.
@@ -112,6 +113,14 @@ pub async fn skill_view(name: String) -> Result<String, Box<dyn std::error::Erro
                 log_tool_result("skill_view", &result);
                 return Ok(result);
             }
+
+            // Visual indicator that a skill was loaded (matches tool call styling)
+            suspend_for_print(|| {
+                eprintln!(
+                    "{TOOL_DIM}📖 Loaded skill: {} ({}){RESET}",
+                    skill.name, skill.source
+                );
+            });
 
             // Format skill content
             let mut lines = Vec::new();

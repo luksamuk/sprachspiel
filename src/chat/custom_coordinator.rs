@@ -606,7 +606,11 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
         for m in &messages {
             log::debug!("Hit {} with:", self.model);
-            log::debug!("\t{:?}: '{}'", m.role, crate::logging::truncate_for_log(&m.content, 80));
+            log::debug!(
+                "\t{:?}: '{}'",
+                m.role,
+                crate::logging::truncate_for_log(&m.content, 80)
+            );
         }
 
         let request =

@@ -11,7 +11,7 @@ use std::path::PathBuf;
     about = "Analyze and describe images using vision models",
     long_about = r#"Analyze and describe images using vision models like qwen3.5, moondream, llava, or minicpm-v.
 
-SUPPORTED IMAGE FORMATS:
+SUPPORTED FORMATS:
   - PNG (.png)
   - JPEG (.jpg, .jpeg)
   - WebP (.webp)
@@ -99,7 +99,6 @@ impl VisionArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_vision_args_validation() {

@@ -6,9 +6,21 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Added
 
+- **Visual indicators for tool actions** — Tools now show succinct one-line emoji indicators in DIM gray when they complete important actions, providing immediate visual feedback alongside the existing `🔧 name(args)` tool call display. Indicators: 📖 (`skill_view`), 📄 (`import_document`), 📝 (`note_add`/`note_edit`), 🗑️ (`note_delete`), 👍👎✎ (`feedback_submit`), 💾/⏭ (`fact_add` stored/skipped), ⚡ (`run_command` executing). All indicators use the shared `TOOL_DIM`/`RESET` ANSI constants from `debug_tools.rs` and `suspend_for_print()` for spinner compatibility. Hidden in Quiet mode.
+
+- **Proactive skill loading** — System prompt SKILLS section now instructs the LLM to load relevant skills **before** starting complex tasks, not just "on-demand". Skill descriptions redesigned with `MUST LOAD` trigger words and domain-specific keywords (e.g., "PDFs, eBooks, documents, reports, papers" for `document-processing`). The `document-processing` skill now includes concrete detection heuristics for when to escalate to OCR/vision (garbled text, <50 chars per page, table/chart/formula references). Tool prompt sections for PDFs and agent spawning now explicitly direct the LLM to `skill_view(name="document-processing")` first.
+
+- **Tool call display decoupled from `log` crate** — Implemented `SHOW_TOOL_CALLS` AtomicBool in `debug_tools.rs` so tool call visibility is controlled by a dedicated flag rather than `log::LevelFilter`. Compact `🔧 name(k=v)` now always shows in Normal+ mode regardless of log level. Added `show_tool_calls: bool` to `DisplaySettings` and `set_show_tool_calls()` called at startup. Quiet mode (`-q`) overrides to hide.
+
+- **`run_command` tilde expansion with blocklist** — Added `expand_args_tilde()` in `run_cmd.rs` that expands `~` in command arguments (e.g., `pdftotext ~/doc.pdf -` → `/home/user/doc.pdf`). After expansion, paths are checked against the sensitive file blocklist (`.env`, `.ssh/`, `*.pem`, etc.) to prevent access to protected files. Environment variable expansion is intentionally NOT supported (security). 8 unit tests.
+
 - **SF4: Logging Overhaul (Issue #110)** — Replaced `env_logger` with custom `MultiLogger` implementing `log::Log` for dual output: colored stderr + file (`~/.local/share/ask-ai/ask-ai.log`). Terminal default raised from `info` to `warn` — only warnings/errors shown by default. `-v` enables debug, `-vv` enables trace. File always receives `warn+` (trace mode: `info+`). Log rotation at 5 MB with 1 backup. Data sensitivity audit: added `truncate_for_log()` helper, truncated PII leakage in 3 locations (message content, fact content). Verbosity alias `"info"` removed (Normal now = warn), added `"warn"` alias.
 
+- **SF5: Agent Spawning Tools (Issue #111)** — Replaced generic `spawn_subagent` tool with 4 dedicated spawning tools: `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`. Each tool has only its relevant parameters (e.g., `ocr_mode` only on OCR agent), improving LLM docstring clarity and eliminating irrelevant optional parameters. Removed `spawn_document_agent` — the LLM already has `run_command` + spawning tools and follows the `document-processing` skill, making a limited document subagent redundant. Removed direct PDF/EPUB import from `import_document` — PDFs/EPUBs must be extracted to text via `run_command("pdftotext")` first, then imported as TXT/MD/ORG. Removed `--pages` flag, PDF pipeline code, checkpoint system, and `PdfConversionError`/`PdfSupport` error types from vision tool. Updated `document-processing.md` skill to reference new tool names and LLM-orchestrated two-phase pipeline (Phase 1: `pdftotext`, Phase 2: `pdftoppm` → `spawn_ocr_agent`/`spawn_vision_agent`).
+
 ### Fixed
+
+- **`/doc show` now renders markdown content in 80 columns** — Previously, `/doc show` used `println!()` to dump raw document content, meaning `.md` files showed `#`, `**`, `*` etc. as literal text instead of rendered headings, bold, and italic. It also ignored the 80-column chat terminal width, causing long lines to overflow. Now uses `print_markdown_chat()` — the same renderer as `/note show` — which formats markdown properly and wraps at the `CHAT_TERMINAL_WIDTH` (80 columns). Header also rebuilt as markdown with `## Document #N`, `**Title:**`, `**File:**` labels for consistent styling.
 
 - **Bug ADR-E4: PT identity facts stored in first person** — `translate_pt_to_en()` generated first-person English for PT identity patterns (e.g., "Meu nome é Ana" → "My name is Ana" instead of "User's name is Ana"). This violated ADR-E4 (all facts stored in third person). Fixed by changing PT identity outputs in `translate_pt_to_en()` to third person: "Meu nome é Ana" → "User's name is Ana", "Eu moro em São Paulo" → "User lives in São Paulo", etc. Now consistent with EN identity normalization ("My name is Ana" → "User's name is Ana").
 
@@ -126,21 +138,18 @@ All notable changes to Ask-AI will be documented in this file.
   - Soft-delete pruning (`pruned` column) preserves conversation chain integrity
   - `[feedback]` config section in config.toml with all canonical fields
   - 9 Architecture Decision Records (ADR-001 through ADR-009)
-- **Specialized Agent Architecture** - One-shot subagents for OCR, Vision, Translation, Summarization, and Document extraction (Issue #12)
-  - `SubagentRunner` - Lightweight one-shot executor with dual API path support (`/api/generate` and `/api/chat`)
-  - `spawn_subagent` tool - LLM-initiated subagent invocation with type-safe dispatch
+- **Specialized Agent Architecture** - One-shot subagents for OCR, Vision, Translation, Summarization (Issue #12)
+  - 4 dedicated spawning tools: `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`
   - `/ocr`, `/vision`, `/translate`, `/summarize` chat commands - Direct user access to subagents
-  - Document extraction refactor - Replaces `Command::new()` with `spawn_subagent(type="document")`
-  - Config support for `[model.ocr]` and `[model.document]` sections
   - Feature flag: `subagent-tools` (default enabled)
 
  - **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
   - `OcrMode::into_descriptive_prompt()` returns mode-specific restricted prompts for vision models (Text/Table/Figure/Formula)
   - `is_glm_ocr_model()` utility for detecting GLM-OCR models vs. vision models
   - `parse_ocr_mode()` convenience function for parsing OCR mode from LLM string parameters
-  - `ocr_mode` parameter on `spawn_subagent` tool — LLMs can now specify Text/Table/Figure/Formula OCR mode
+  - `ocr_mode` parameter on `spawn_ocr_agent` tool — LLMs can now specify Text/Table/Figure/Formula OCR mode
   - `/ocr` chat command now accepts an optional mode parameter (e.g., `/ocr image.png table`)
-  - All 3 OCR entry points (CLI, chat `/ocr`, subagent `spawn_subagent`) use model-aware prompt selection
+  - All 3 OCR entry points (CLI, chat `/ocr`, `spawn_ocr_agent`) use model-aware prompt selection
 
 - **Fact Embedding & Semantic Dedup (P6.7)** - Embedding-based Layer 4 dedup for facts (Issue #73)
   - Schema v11: `has_embedding INTEGER DEFAULT 0` column on `facts` table + `fact_embeddings` vec0 virtual table (256d Matryoshka)
@@ -480,18 +489,16 @@ All notable changes to Ask-AI will be documented in this file.
 ### Added
 
 - **Document Import Tool** - Import documents for semantic search and retrieval
-  - **File Formats:** TXT, MD, ORG (builtin), PDF, EPUB (requires `skills-tools` feature)
-  - **File Size Limit:** 5MB for uploaded files; larger files rejected with helpful error
+  - **File Formats:** TXT, MD, ORG only (PDF/EPUB: extract text via `run_command("pdftotext")` first)
+  - **File Size Limit:** 2.5MB for uploaded files; larger files rejected with helpful error
   - **Commands:** `/doc import`, `/doc list`, `/doc show`, `/doc delete` (shortcuts: `/di`, `/dl`, `/ds`, `/dd`)
   - **LLM Tool:** `import_document(path, scope?)` for autonomous document import
   - **Chunking:** Uses same system as notes/messages (~512 tokens)
   - **Scope:** Project-scoped by default, optional global scope
   - **Storage:** Documents stored in `content_items` table (ContentType::Document)
   - **Retrieval:** Integrated with `remember()` tool via hybrid search (BM25 + vector)
-  - **PDF/EPUB Processing:** Uses builtin `document-processing` skill with `pdftotext`/`epub2txt`
   - **Title Extraction:** Automatic from filename or first heading
   - **Feature Flag:** `document-tools` feature (enabled by default, included in `all-tools`)
-  - **Dependencies:** PDF/EPUB require `skills-tools` feature; TXT/MD/ORG work standalone
   - Related: Issue #9
 
 - **Document Retrieval Integration** - Documents now searchable via `remember()` tool
@@ -546,9 +553,8 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Technical Debt
 
-- **Document Extraction Direct Command Invocation** - `import_document` calls `Command::new("pdftotext")` directly, bypassing the skills system
-  - Project-level skill overrides are not respected for PDF/EPUB extraction
-  - Planned solution: Specialized Agent Architecture (Priority 4) with `spawn_subagent(type="document")`
+- **Document Import: No Direct PDF/EPUB Support** - `import_document` only accepts TXT, MD, ORG files.
+  - For PDF/EPUB content: extract text via `run_command("pdftotext")` first, then import as TXT/MD
   - Related: Issue #12, Issue #9
 
 ## [0.38.0] - 2026-03-27
