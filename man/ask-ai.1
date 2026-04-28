@@ -93,6 +93,9 @@ Skip SOUL.md personality (use neutral personality).
 .BR \-\-init\-config
 Initialize/create sample configuration file.
 .TP
+.BR \-\-db " " \fIPATH\fR
+Custom database path (overrides default ~/.local/share/ask-ai/ask-ai.db).
+.TP
 .BR \-h ", " \-\-help
 Show help message and exit.
 .TP
@@ -163,7 +166,7 @@ Interactive commands available inside chat:
 .br
 /info \- Show current session information
 .br
-/context, /ctx \- Show context metrics and token usage
+/context, /ctx \- Show context metrics, token usage, and decay statistics
 .br
 /search, /find, /f \- Search conversation history (semantic search)
 .br
@@ -197,6 +200,12 @@ Interactive commands available inside chat:
 .br
 /doc delete <id>, /dd \- Delete a document by ID
 .br
+/feedback good|bad|correction:<text> [msg:id], /fg|/fb \- Submit feedback on assistant response
+.br
+/feedback good \- Shortcut: /fg
+.br
+/content prune, /cp \- Manually trigger content decay cycle
+.br
 /skill, /sk \- List available skills
 .br
 /skill <name>, /sk <name> \- Activate a skill for this session
@@ -215,14 +224,22 @@ Interactive commands available inside chat:
 .br
 /todo done <id>, /td \- Mark todo as done
 .br
-/todo remove <id>, /tr \- Remove a todo
+/todo get <id>, /tg \- Get a todo by ID
 .br
-/todo update <id> [options], /tu \- Update a todo
+/todo edit <id> [options], /te \- Edit a todo (title, description, priority)
+.br
+/todo update <id> [options], /tu \- Update a todo (status, priority)
+.br
+/todo delete <id>, /tr \- Delete a todo
+.br
+/todo clear-done \- Clear completed todos
+.br
+/todo clear-all \- Clear all todos
 .in -4
 .PP
 Tab completion available for commands and model names.
 .br
-Prompt shows active modes: [t] for think, [T] for tools.
+Prompt shows active modes in the status bar: 🧠 for think, 🔧 for tools. User input is displayed in cyan with a bold >>> prompt marker.
 .br
 Visual indicators show tool activity in DIM gray (hidden in quiet mode):
 .br
@@ -250,6 +267,30 @@ a task matching a skill's description (PDF processing, OCR, code analysis, etc.)
 Session storage: ~/.local/share/ask-ai/conversations/<project-id>/default.json
 .br
 Project ID is derived from git remote URL or folder name.
+.SH LOGGING
+Logs are written to both stderr and a log file:
+.TP
+.I ~/.local/share/ask-ai/ask-ai.log
+Default log file (always warn level and above).
+.PP
+Log rotation: when the file exceeds 5 MB, it is renamed to
+.IR ask-ai.log.1
+and a new file is created.
+.PP
+PII audit: sensitive data (API keys, tokens, personal identifiers) is automatically truncated in log output.
+.PP
+Verbosity levels:
+.in +4
+\fBQuiet\fR (\-q): errors only
+.br
+\fBNormal\fR (default): warnings + errors
+.br
+\fBVerbose\fR (\-v): debug + warnings + errors
+.br
+\fBTrace\fR (\-vv): all internals including embedding and token budgets
+.in -4
+.PP
+Terminal output uses colored log levels; file output uses plain timestamps.
 .SH TRANSLATE OPTIONS
 .TP
 .BR \-m ", " \-\-model " " \fIMODEL\fR
