@@ -2836,18 +2836,25 @@ pub fn handle_document_show(state: &ReplState, id: i64) {
                     doc.project_id.as_deref().unwrap_or("project").to_string()
                 }
             };
-            println!("\x1B[36mDocument #{}:\x1B[0m", doc.id);
-            println!("  \x1B[1m{}\x1B[0m", doc.title);
-            println!(
-                "  \x1B[90mFile: {} | Type: {} | Words: {} | Age: {}d | Scope: {}\x1B[0m",
+
+            // Build header (rendered as markdown)
+            let mut header = format!("## Document #{}\n\n", doc.id);
+            header.push_str(&format!("**Title:** {}\n\n", doc.title));
+            header.push_str(&format!(
+                "**File:** {} | **Type:** {} | **Words:** {} | **Age:** {}d | **Scope:** {}\n\n",
                 doc.filename,
                 doc.file_type.extension(),
                 doc.word_count,
                 age_days,
                 scope_str
-            );
-            println!();
-            println!("{}", doc.content);
+            ));
+            header.push_str("---\n");
+
+            // Print header with markdown
+            crate::markdown::print_markdown_chat(&header);
+
+            // Print content as markdown
+            crate::markdown::print_markdown_chat(&doc.content);
         }
         Ok(None) => {
             eprintln!("\x1B[31m✗ Document #{} not found.\x1B[0m", id);
