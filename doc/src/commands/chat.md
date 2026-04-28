@@ -230,13 +230,13 @@ The LLM can import documents autonomously using the `import_document(path, scope
 | `/skill`, `/sk` | List available skills |
 | `/skill <name>`, `/sk <name>` | Activate a skill for the current session |
 
-Skills are Markdown files that define AI behaviors for specific tasks. When activated, a skill's instructions are injected into the system prompt.
+Skills are Markdown files that define AI behaviors for specific tasks. When activated, a skill's instructions are injected into the system prompt. The LLM also loads skills **proactively** via `skill_view()` when it detects a task matching a skill's description.
 
 **Built-in Skills:**
-- `document-processing` - Extract content from PDF and ePub files
-- `ocr-images` - Process images with OCR
-- `code-analysis` - Analyze code structure
-- `web-scraping` - Scrape web content
+- `document-processing` - Extract content from PDFs, eBooks, documents, reports (two-phase pipeline: text extraction → OCR/vision)
+- `ocr-images` - OCR on images, screenshots, scanned documents
+- `code-analysis` - Analyze code structure, find patterns, understand codebases
+- `web-scraping` - Search the web, scrape and analyze web content
 
 **User Skills:** Place custom skills in `~/.config/ask-ai/skills/<name>/SKILL.md`
 
@@ -244,10 +244,10 @@ Skills are Markdown files that define AI behaviors for specific tasks. When acti
 ```
 lfm> /skill
 Available skills:
-  document-processing - Extract content from PDF and ePub files
-  ocr-images - Process images with OCR
-  code-analysis - Analyze code structure
-  web-scraping - Scrape web content
+  document-processing - MUST LOAD when processing PDFs, eBooks, documents...
+  ocr-images - MUST LOAD when processing images, screenshots, scanned documents...
+  code-analysis - Load when analyzing code, exploring a codebase...
+  web-scraping - Load when searching the web, scraping web pages...
 
 Use /skill <name> to activate a skill.
 
@@ -256,7 +256,7 @@ lfm> /skill document-processing
 Skill instructions will be followed when relevant to the conversation.
 ```
 
-Use `skill_list()` (LLM tool) to see available skills from within a conversation.
+Use `skill_list()` to see available skills from within a conversation, or `skill_view(name="skill-name")` to load a skill proactively.
 
 ### Subagent Commands
 

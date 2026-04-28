@@ -1,6 +1,6 @@
 ---
 name: code-analysis
-description: Analyze code structure, find patterns, and understand codebases using file tools.
+description: Load when analyzing code, exploring a codebase, understanding architecture, or finding patterns. Provides structured workflows for code exploration, pattern discovery, and code review using file tools.
 ---
 
 # Code Analysis

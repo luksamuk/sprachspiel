@@ -423,7 +423,7 @@ Example: get_project_context()
 
 Tools for discovering and loading AI behavior skills. Skills are Markdown files that define instructions for specific tasks (PDF processing, OCR, code analysis, etc.).
 
-These tools are **enabled by default** and provide progressive disclosure - the system prompt contains only skill names and descriptions, while full content is loaded on-demand when needed.
+These tools are **enabled by default** and provide progressive disclosure - the system prompt contains only skill names and descriptions, while full content is loaded on-demand when needed. **The LLM should load skills proactively** before starting complex tasks that match a skill's description.
 
 ### skill_list
 
@@ -444,12 +444,12 @@ Example: skill_list()
 ```
 Available skills (4):
 
-- **document-processing** (builtin): Extract content from PDF and ePub files
-- **ocr-images** (builtin): Process images with OCR
-- **code-analysis** (builtin): Analyze code structure
-- **web-scraping** (builtin): Scrape web content
+- **document-processing** (builtin): MUST LOAD when processing PDFs, eBooks, documents...
+- **ocr-images** (builtin): MUST LOAD when processing images, screenshots...
+- **code-analysis** (builtin): Load when analyzing code, exploring a codebase...
+- **web-scraping** (builtin): Load when searching the web, scraping web pages...
 
-Use skill_view(name="skill-name") to load a specific skill.
+Use skill_view(name="skill-name") to load a specific skill proactively.
 ```
 
 **Use case:** Discover available skills before loading one that matches your task.
@@ -474,7 +474,7 @@ Example: skill_view(name="document-processing")
 ```
 # Skill: document-processing (builtin)
 
-**Description:** Extract and process content from PDF and ePub files
+**Description:** MUST LOAD when processing PDFs, eBooks, documents, reports...
 
 ---
 [Full skill content with instructions...]

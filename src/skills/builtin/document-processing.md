@@ -1,11 +1,11 @@
 ---
 name: document-processing
-description: Extract and process content from PDF and ePub files with two-phase pipeline, vision analysis for charts/tables/formulas, and structured output.
+description: MUST LOAD when processing PDFs, eBooks, documents, reports, papers, articles, or any file needing ingestion, analysis, or extraction. Two-phase pipeline (text → OCR/vision for visual content) with detection heuristics for tables, charts, formulas, and scanned pages.
 ---
 
 # Document Processing (PDF, ePub)
 
-When asked to process PDF or ePub files:
+**Load this skill whenever you encounter PDFs, documents, reports, papers, or any file needing ingestion or analysis.** This skill provides the complete processing pipeline that goes far beyond what individual tool descriptions can convey.
 
 ## 1. Tool Availability Check
 
@@ -30,9 +30,25 @@ Extract text from the entire PDF using `pdftotext`:
 run_command("pdftotext", ["<file.pdf>", "-"])
 ```
 
-**Evaluate the output:**
-- If the text is rich and complete → done, no need for Phase 2
-- If pages have very little text, garbled text, or the PDF contains tables, charts, formulas, or diagrams → proceed to Phase 2
+**Evaluate the output — check EVERY page for these escalation signals:**
+
+#### Definite signs a page needs OCR (spawn_ocr_agent):
+- Page returns **less than 50 characters** of text (likely scanned/image-based)
+- Text contains **garbled characters**, mojibake, or random symbol sequences (e.g., "μ∂†≈" mixed into prose)
+- `pdftotext` output has **many blank lines** between sparse text fragments (columns misread as blanks)
+
+#### Strong signs a page needs vision analysis (spawn_vision_agent):
+- Text mentions **"Figure", "Table", "Chart", "Diagram", "Graph", "Equation", "Plate", "Illustration"**
+- Text contains **numbered references** like "see Figure 3.2" or "as shown in Table 1"
+- Page has **structural content** that plain text cannot capture (mathematical formulas, chemical structures, floor plans, circuit diagrams, flowcharts)
+- Text contains **fragmented table data** — misaligned rows, numbers without column headers, or tabular data that lost its grid structure
+- Page appears to be a **title page, cover, or acknowledgments** that may have visual elements worth preserving
+
+#### If you detect ANY of these signals:
+1. Note the page number(s) where text extraction was insufficient
+2. Convert those specific pages: `run_command("pdftoppm", ["-png", "-f", "<start>", "-l", "<end>", "-r", "150", "<file.pdf>", "output"])`
+3. Use `spawn_ocr_agent` for tables/formulas/scanned text, or `spawn_vision_agent` for charts/diagrams/visual analysis
+4. **Combine the visual analysis with the text extraction** for a complete understanding — don't discard Phase 1 text
 
 ### Phase 2: OCR + Vision (for non-text content)
 

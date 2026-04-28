@@ -143,7 +143,7 @@ Available: read_file, read_file_segment, count_lines, list_directory, search_fil
 
 Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines.
 
-**PDFs:** read_file cannot read PDFs (binary format). Call skill_view("document-processing") for detailed instructions."#
+**PDFs:** read_file cannot read PDFs (binary format). **Load the document-processing skill FIRST** with skill_view(name="document-processing") for the complete two-phase pipeline (text extraction + vision analysis)."#
                     .to_string(),
             );
         }
@@ -439,13 +439,14 @@ import_document("~/docs/glossary.md", Some("global"), None)
             // PDF section — only if OCR or vision tools are available
             if has_tool(&"spawn_ocr_agent") || has_tool(&"spawn_vision_agent") {
                 section.push_str(
-                    "\n**For PDF documents:** Use `run_command` with PDF tools \
-                    (pdftotext, pdfinfo, pdftoppm).\n\
-                    See the document-processing skill for the complete PDF pipeline.\n\
-                    For PDF pages with visual content (charts, formulas, tables):\n\
-                    1. Use run_command(\"pdftoppm\") to convert pages to images\n\
-                    2. Then call spawn_vision_agent or spawn_ocr_agent on the \
-                    resulting images\n",
+                    "\n**For PDF documents:** Load the document-processing skill FIRST with \
+                    skill_view(name=\"document-processing\") — it provides the complete \
+                    two-phase pipeline (text extraction → OCR/vision for visual content) \
+                    with detection heuristics for tables, charts, formulas, and scanned pages.\n\
+                    Quick reference: For pages with visual content:\n\
+                    1. run_command(\"pdftoppm\") to convert pages to images\n\
+                    2. spawn_ocr_agent for tables/formulas/scanned text\n\
+                    3. spawn_vision_agent for charts/diagrams/visual analysis\n",
                 );
             }
 
