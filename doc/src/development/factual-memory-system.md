@@ -649,6 +649,22 @@ This is why the system uses a **two-step approach**: semantic search retrieves c
    - For semantic similarity (not QA retrieval): encode BOTH with `search_document`
    - ask-ai does this correctly — `search_document: ` prefix on all embeddings
 
+5. **Tosun & Buldur (2026)** — "Beyond Cosine Similarity: Taming Semantic Drift and Antonym Intrusion in a 15-Million Node Turkish Synonym Graph" ([arXiv:2601.13251v1](https://arxiv.org/html/2601.13251v1))
+   - Neural embeddings systematically place antonyms as near-neighbors due to shared context
+   - Confirms semantic collision is **language-agnostic** — observed in Turkish and English equally
+   - **Relevance:** Reinforces that cosine similarity alone cannot distinguish contradictions; our two-step approach (embeddings for retrieval, triples for decision) is the correct architecture
+
+6. **Gokul, Tenneti & Nakkiran (2025)** — "Contradiction Detection in RAG Systems: Evaluating LLMs as Context Validators" ([arXiv:2504.00180](https://arxiv.org/abs/2504.00180))
+   - LLMs (Claude-3 Sonnet, Llama-70B) achieve at most 71% F1 on contradiction detection
+   - Defines 3 contradiction types: Self-contradiction (within doc), Pair contradiction (between docs), Conditional contradiction (triplet)
+   - Scaling problem: O(n²) pair evaluation is infeasible with 20+ documents
+   - **Relevance:** Validates our decision to NOT use LLM API calls for contradiction detection. Pair contradictions (our use case: "prefer dark" vs "prefer light") are the easiest type yet still missed >30% of the time by SOTA LLMs
+
+7. **Cattan et al. (2025)** — "DRAGged into Conflicts: Detecting and Addressing Conflicting Sources in Search-Augmented LLMs" ([arXiv:2506.08500](https://arxiv.org/abs/2506.08500))
+   - Introduces CONFLICTS benchmark — first benchmark for tracking progress on knowledge conflicts in RAG
+   - Taxonomy of conflict categories with expected model behaviors per category
+   - **Relevance:** Our "exclusive vs accumulative" predicate classification (§6.13) is an instance of the broader conflict taxonomy. Future work could align our categories with their formal taxonomy
+
 ### 6.11 Implementation Pitfall: Missing Replacement Fact Insertion (Bug #4)
 
 After detecting a contradiction in the `/fact add` command and deleting the old fact, the code must **explicitly insert the replacement fact** before returning. The naive pattern is:
@@ -1049,6 +1065,18 @@ if let Some(facts) = &self.facts {
 - Pure Python, zero LLM, MIT license
 - **Our `extract_fact_triple()` design is adapted from this approach** — prefix-based triple extraction with `TRIPLE_PREFERENCE_PREFIXES` and `TRIPLE_IDENTITY_PREFIXES` as the source of truth
 
+#### Comparison of Existing Systems
+
+| System | Approach | Result | Lesson |
+|--------|----------|--------|--------|
+| Mem0 v2 | LLM prompts for conflict detection | **BUG** — semantic conflict resolution not implemented (issue #4904) | LLM prompting alone is unreliable for contradiction detection |
+| Letta/MemGPT | LLM decides memory updates | Inconsistent — LLM can fail detection, no deterministic guarantee | Not applicable to local-first design; requires LLM API call per memory op |
+| Supermemory | LLM + relational versioning | 88-90% on LongMemEval knowledge-update | Versioning is the key insight, but LLM dependency is a bottleneck |
+| Zep/Graphiti | Temporal KG + LLM | 94.8% DMR | High accuracy but requires Neo4j + LLM; too heavy for local-first |
+| synapse-ai-memory | Triple extraction + polarity | No formal benchmark | Architecture is correct (our design adapts this); needs validation |
+
+**Conclusion:** No existing system solves automatic, local, LLM-free contradiction detection. Our Phase 1 (triple-based) approach innovates by combining synapse-ai-memory's triple extraction with nomic-embed-text semantic search, achieving deterministic contradiction resolution at sub-millisecond latency with zero ML dependency beyond embeddings.
+
 ### Academic Papers
 
 #### Li, Qin & Liu (2017) — Contradiction Detection with Contradiction-Specific Word Embedding
@@ -1057,8 +1085,8 @@ if let Some(facts) = &self.facts {
 - **Relevance:** Explains why `cosine("User prefers dark mode", "User prefers light mode") = 0.78` — embeddings cannot distinguish contradictions from similarities
 - **Our response:** We don't rely on embedding polarity for contradiction detection. Instead, semantic search (cosine ≥ 0.70) retrieves candidates, then triple extraction deterministically distinguishes contradiction from duplicate
 
-#### Gokul, Tenneti & Nakkiran (2025) — Contradiction Detection in RAG Systems
-- **Venue:** arXiv:2504.00180 — [PDF](https://arxiv.org/pdf/2504.00180)
+#### Gokul, Tenneti & Nakkiran (2025) — Contradiction Detection in RAG Systems: Evaluating LLMs as Context Validators
+- **Venue:** arXiv:2504.00180 — [PDF](https://arxiv.org/pdf/2504.00180) | [HTML](https://arxiv.org/html/2504.00180v1)
 - **Key finding:** LLMs (Claude-3 Sonnet, Llama-70B) achieve at most 71% F1 on contradiction detection. High precision but low recall — they miss >30% of actual contradictions
 - **Defines 3 contradiction types:** Self-contradiction (within doc), Pair contradiction (between docs), Conditional contradiction (triplet)
 - **Scaling problem:** Evaluating all pairs is O(n²) — infeasible with 20+ documents (190 pairs)
@@ -1081,11 +1109,28 @@ if let Some(facts) = &self.facts {
 
 ### ML Models Evaluated and Rejected
 
+#### Benchmarked: Failed
+
 | Model | Approach | Result | Why Rejected |
 |-------|----------|--------|---------------|
 | `onnx-community/deberta-base-long-nli` | Zero-shot NLI via ONNX Runtime | **Benchmarked: FAILED** — "prefer dark" vs "prefer light" → neutral; identical sentences → contradiction | Trained on SNLI/MultiNLI (scene descriptions), lacks preference patterns. ~115ms/pair. +30MB binary weight. |
 | `cross-encoder/nli-deberta-v3-small` | True cross-encoder NLI | Not tested (Python 3.14 incompatibility) but projected to fail for same reasons | SNLI/MultiNLI training data has no "same predicate, different object" preference patterns |
 | `fastembed-rs` + ONNX reranking | Rust-native ONNX embedding + NLI | Not tested | Available if future need, but benchmark of similar models shows fundamental limitation |
+
+#### Evaluated in Literature: Not Adopted
+
+| Approach | Source | Latency | Local? | Why Not Adopted |
+|----------|--------|----------|--------|----------------|
+| **SparseCL** (ICML 2025) | arXiv:2406.10746 | ~5-10ms/pair | ✅ | Trains sparse embeddings where contradictions manifest as sparse semantic differences. +30% accuracy on MSMARCO/HotpotQA. **Rejected:** Requires domain-specific fine-tuning — violates ADR-001 (harness-only, no fine-tuning infrastructure). |
+| **SetCSE** (ICLR 2024) | — | ~10ms/pair | ✅ | Set operations on embeddings detect set differences. **Rejected:** Set difference captures what differs but cannot distinguish contradiction from related-but-different; triples are more precise. |
+| **SARCSE** (Feb 2024) | — | ~10ms/pair | ✅ | Subtle-aware contrastive learning detects fine-grained semantic differences. **Rejected:** Optimized for subtle attribution differences, not preference contradictions; our triple extraction achieves the same goal deterministically. |
+| **Atomic-SNLI** (NAACL 2025) | — | ~15ms/pair | ✅ | Decomposes NLI into atomic facts for fine-grained reasoning. **Rejected:** Designed for long sentences with multiple atomic claims; our facts are already atomic ("User prefers dark mode"). Decomposition adds overhead with no benefit. |
+| **Zep/Graphiti** (Jan 2025) | — | LLM-required | ❌ | Temporal knowledge graph with 94.8% DMR accuracy. **Rejected:** Requires Neo4j + LLM dependency; too heavy for local-first design. |
+| **Supermemory** (2025) | — | LLM-required | ❌ | 88-90% on LongMemEval knowledge-update via LLM + versioning. **Rejected:** LLM-dependent for conflict detection; our deterministic approach avoids LLM latency and inconsistency. |
+| **Mem0 v2** | — | LLM-required | ❌ | **BUG:** v2 does not implement semantic conflict resolution (issue #4904). | 
+| **Letta/MemGPT** | — | LLM-required | ❌ | Delegates memory management to LLM decisions. **Rejected:** No deterministic guarantee; inconsistent detection; requires LLM API per memory op. |
+
+> **Note: ONNX NLI and SparseCL are OUT OF SCOPE.** The DeBERTa-v3 NLI cross-encoder was benchmarked and **failed** (SNLI/MultiNLI training data lacks preference patterns). SparseCL requires domain-specific fine-tuning, which violates ADR-001 (feedback is harness-only, no fine-tuning). The current triple-based approach (Layer 3.5) resolves >80% of contradictions deterministically at sub-millisecond latency with zero additional model dependency. If future requirements demand >95% coverage, the path forward is fine-tuning nomic-embed-text with SparseCL on preference contradiction data — but this requires GPU infrastructure not available in a local-first design.
 
 **Full research index and paper notes:** `~/testfiles/research/contradiction-detection/README.md`
 

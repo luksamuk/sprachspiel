@@ -6,7 +6,7 @@ This directory contains research documents that informed the development of Ask-
 
 | Document | Description |
 |----------|-------------|
-| [Papers Reference](./papers-reference.md) | arXiv links and citations for MemOS, OpenClaw-RL, MemGPT |
+| [Papers Reference](./papers-reference.md) | arXiv links and citations for MemOS, OpenClaw-RL, MemGPT, and contradiction detection papers |
 | [Research Synthesis](./research-appendix.md) | Complete synthesis of all research |
 | [OpenClaw-RL Analysis](./openclaw-rl-analysis.md) | Original analysis of OpenClaw-RL framework |
 | [Effective Agents Analysis](./effective-agents-analysis.md) | Research on effective agent architectures |
