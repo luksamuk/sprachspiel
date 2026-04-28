@@ -6,9 +6,9 @@ This document outlines planned features and the current state of Ask-AI.
 
 | Milestone | Codename | Description | Priorities |
 |-----------|----------|-------------|------------|
-| **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
-| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design phase) |
-| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (implementation), P15 |
+| **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6 (incl. P6.0a-g: provider migration), P8-P13 |
+| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design + interaction modes design) |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (TUI + `/queue` + `/steer`), P15 |
 | **[M4]** | Future | Deferred, no current priority | Cost tracking, team features, speculation |
 
 ## Current State
@@ -629,7 +629,15 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 
 | ID | Feature | Status | Effort |
 |----|---------|--------|--------|
-| P6.0 | Multi-Provider Support (OpenAI-Compatible) | 📋 Planned | 4-7 weeks |
+| P6.0a | Retry Threshold with Backoff | 📋 Ready | 1.5-2 days |
+| P6.0 | Multi-Provider Support (ollama-rs removal) | 📋 Planned ([Issue #72](https://github.com/luksamuk/ask-ai-rs/issues/72)) | 10-12 weeks (7 sub-phases) |
+| P6.0b | Tool Trait + `#[ask_ai::tool]` Proc Macro | 📋 Planned | 1-1.5 weeks |
+| P6.0c | Agnostic Provider Types | 📋 Planned | 1 week |
+| P6.0d | OllamaProvider (reqwest direct) | 📋 Planned | 2-3 weeks |
+| P6.0d-s | Streaming SSE | 📋 Planned | 1 week |
+| P6.0e | Consumer Migration | 📋 Planned | 2-3 weeks |
+| P6.0f | OpenAI-Compatible Provider | 📋 Planned | 2 weeks |
+| P6.0g | Remove ollama-rs from Cargo.toml | 📋 Planned | 2-3 days |
 | P6.0-sub | Embedding Provider Abstraction | 📋 Planned ([sub-issue #107](https://github.com/luksamuk/ask-ai-rs/issues/107)) | 1-2 weeks |
 | P2 | Configurable Embedding Model + Matryoshka | 📋 Ready ([Issue #106](https://github.com/luksamuk/ask-ai-rs/issues/106)) | 1 week |
 | P6.1 | Auto Fact Extraction (autoDream-lite) | ✅ Completed | 3-5 days + 2 days (bug fixes) |
@@ -715,8 +723,8 @@ User-defined tools via dynamic loading or compilation.
 **Goal:** Build a responsive TUI using Ratatui-rs.
 
 **Milestone split (2025-04-25):**
-- **M2 (UX & TUI Design):** UX research, design mockups, prototyping, private feedback rounds. This phase focuses on user experience design before writing production code.
-- **M3 (TUI Implementation):** Coding the TUI based on M2's design decisions. Happens alongside Sprach 2.0 research.
+- **M2 (UX & TUI Design):** UX research, design mockups, prototyping, private feedback rounds. This phase focuses on user experience design before writing production code. Includes **Interaction Modes Design** (`/queue`, `/steer`) as a core UX feature.
+- **M3 (TUI Implementation):** Coding the TUI based on M2's design decisions. Happens alongside Sprach 2.0 research. Includes **Interaction Modes Implementation** (`/queue`, `/steer` concurrent input channels).
 
 **Architecture Preparation (Current Phase):**
 - ✅ `InputBackend` trait - abstracts input handling (Phase 1-5 complete)
@@ -729,10 +737,29 @@ User-defined tools via dynamic loading or compilation.
 - [ ] Research: Ratatui-rs best practices
 - [ ] Research: Terminal resize handling patterns
 - [ ] Design: UX wireframes for main views
+- [ ] Design: Interaction modes (`/queue`, `/steer`, `interrupt`) — busy-input UX for running agent
 - [ ] Prototype: `TuiInput` implementing `InputBackend`
 - [ ] Prototype: `TuiView` implementing `ChatView`
 
-**Reference:** See `IMPLEMENTATION.md` - Priority 3 for refactoring progress.
+**Interaction Modes Design (P14.IM):**
+
+Three busy-input modes for the TUI, inspired by Hermes Agent's `/queue` and `/steer` commands:
+
+| Mode | Input during execution | UX | Use case |
+|------|----------------------|-----|----------|
+| `interrupt` (default) | Ctrl+C kills current run | Current CLI behavior | "Stop everything" |
+| `queue` | `/queue <prompt>` enqueues for next turn | `"Queued: check logs"` | Sequential tasks: "do A, then B" |
+| `steer` | `/steer <prompt>` injects guidance mid-run | `"⏩ Steer: focus on errors"` | Mid-course correction |
+
+**Why TUI-only:** The current rustyline input is blocking — it cannot receive input while the LLM is running. `/queue` and `/steer` require a concurrent input channel (`mpsc`), which the TUI naturally provides via its event loop.
+
+**Config:**
+```toml
+[tui]
+busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
+```
+
+**Reference:** See `IMPLEMENTATION.md` - Priority 14 for detailed interaction modes architecture.
 
 ---
 
@@ -752,7 +779,7 @@ User-defined tools via dynamic loading or compilation.
 ### Multi-Provider Support (OpenAI-Compatible Backends) → Moved to P6.0 [M1]
 
 **Priority:** P6.0 (was LOW, upgraded)  
-**Status:** 📋 PLANNED  
+**Status:** 📋 PLANNED (full ollama-rs removal)  
 **Issue:** #72
 
 **Prerequisites:**
@@ -762,9 +789,19 @@ User-defined tools via dynamic loading or compilation.
 | #106 | Configurable Embedding Model (P2) | 📋 Ready | **Required** before embedding provider swap |
 | #107 | Embedding Provider Abstraction | 📋 Planned | **Sub-task** of P6.0 (not independent prereq) |
 
-> **NOTE:** This feature has been upgraded from LOW priority to P6.0 and is now tracked in IMPLEMENTATION.md under PRIORITY 6: Core Enhancements. The detailed implementation plan is in the P6.0 section of IMPLEMENTATION.md. This roadmap section is kept for architectural reference.
+> **NOTE:** This feature has been upgraded from LOW priority to P6.0 and is now tracked in IMPLEMENTATION.md under PRIORITY 6: Core Enhancements. The detailed implementation plan (7 sequential sub-phases P6.0a–P6.0g) is in the P6.0 section of IMPLEMENTATION.md. This roadmap section is kept for architectural reference.
 >
-> **Embedding dependency:** Before P6.0 can swap between Ollama and llama.cpp (/v1 embeddings), the embedding model must be configurable (#106) and the embedding client must support provider abstraction (#107). The chat/query provider abstraction alone is insufficient — embeddings need their own provider layer. See IMPLEMENTATION.md P2 for the configurable embedding plan.
+> **Design decision (2026-04-28):** Full removal of `ollama-rs` dependency (Opção B), replaced by reqwest-based `OllamaProvider` and `OpenAICompatibleProvider`. Rationale: full control over error formatting (including recovery prompts when LLM calls wrong tool), no ollama-rs API limitations (e.g., `prompt_eval_count` bug in v0.3.4), ownership of tool macro.
+>
+> **Decomposition:** P6.0 is split into 7 independently mergable sub-phases:
+> - **P6.0a** (1.5-2 days) — Retry threshold with backoff (independent, do first)
+> - **P6.0b** (1-1.5 weeks) — Own Tool trait + `#[ask_ai::tool]` proc macro
+> - **P6.0c** (1 week) — Agnostic types (`LlmMessage`, `LlmResponse`, `ProviderError`)
+> - **P6.0d** (2-3 weeks) — `OllamaProvider` via reqwest direct
+> - **P6.0d-s** (1 week) — Streaming SSE
+> - **P6.0e** (2-3 weeks) — Migrate all consumers to `LlmProvider` trait
+> - **P6.0f** (2 weeks) — `OpenAICompatibleProvider`
+> - **P6.0g** (2-3 days) — Remove `ollama-rs` from `Cargo.toml`
 
 **Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (cloud/local) through a unified interface.
 

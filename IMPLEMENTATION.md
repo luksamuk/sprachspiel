@@ -135,11 +135,11 @@
 | Milestone | Codename | Description | Priorities |
 |-----------|----------|-------------|------------|
 | **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
-| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design phase) |
-| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (implementation), P15 |
+| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design + interaction modes design) |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (TUI implementation + /queue + /steer), P15 |
 | **[M4]** | Future | Deferred, no current priority | Cost tracking, team features, speculation, VCR |
 
-**M2 rationale:** The TUI is the milestone that will likely coincide with a public release. It warrants dedicated UX research, private feedback rounds, and careful design before implementation. Separating design (M2) from implementation (M3) ensures the TUI gets the attention it deserves as a public-facing product, while Sprach 2.0 research and Plugin System (also complex) move to M3 alongside TUI coding.
+**M2 rationale:** The TUI is the milestone that will likely coincide with a public release. It warrants dedicated UX research, private feedback rounds, and careful design before implementation. Separating design (M2) from implementation (M3) ensures the TUI gets the attention it deserves as a public-facing product, while Sprach 2.0 research and Plugin System (also complex) move to M3 alongside TUI coding. Interaction modes (`/queue`, `/steer`) are designed in M2 and implemented in M3.
 
 ### ✅ PRIORITY 0: Factual Memory System (COMPLETED) [M1]
 
@@ -2538,102 +2538,344 @@ These models work with llama.cpp server's `/v1/embeddings` endpoint which also s
 
 Features that enhance core functionality before Sprach 2.0 work begins.
 
-### P6.0: Multi-Provider Support (OpenAI-Compatible Backends)
+### P6.0a: Retry Threshold with Backoff
+
+**Status:** 📋 READY  
+**Depends on:** None  
+**Estimated effort:** 1.5–2 days  
+**Issue:** (new)
+
+**Goal:** Make server errors (500, OOM, cold start) and tool execution errors recoverable with exponential backoff, instead of immediately failing.
+
+**Problem:**
+- `OllamaError::InternalError` (HTTP 500) is classified as **non-recoverable** — conversations die immediately when Ollama has transient issues
+- `ToolCallError::InternalToolError` (tool execution failure) is also **non-recoverable** — the model never sees the error and cannot self-correct
+- No backoff strategy — all 3 retries happen at 0ms interval, potentially worsening server load
+- No per-category retry limits — network errors and tool errors share the same `MAX_RETRIES = 3`
+
+**Solution:** Classify errors into `RetryCategory` with per-category retry limits and backoff strategies.
+
+**Proposed types:**
+
+```rust
+enum RetryCategory {
+    /// Tool errors (UnknownTool, InvalidArgs) — immediate retry, 3 attempts
+    ImmediateRetry { max_attempts: usize },
+    /// Network errors (timeout, connection) — exponential backoff, 5 attempts
+    NetworkRetry { max_attempts: usize },
+    /// Server errors (500, OOM, cold start) — long backoff, 3 attempts
+    ServerRetry { max_attempts: usize },
+    /// Parsing errors (malformed JSON from model) — no automatic retry
+    NoRetry,
+}
+
+fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
+    match category {
+        ImmediateRetry { .. } => Duration::ZERO,
+        NetworkRetry { .. } => Duration::from_millis(100 * 2^attempt),  // 100ms, 200ms, 400ms...
+        ServerRetry { .. } => Duration::from_secs(5 * attempt),        // 5s, 10s, 15s
+        NoRetry => Duration::ZERO,
+    }
+}
+```
+
+**Key behavior changes:**
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| Ollama 500 (cold start) | Fail immediately | Retry 5s/10s/15s, model continues |
+| Network timeout | 3 retries, 0ms delay | 5 retries with backoff (100ms→1.6s) |
+| Tool execution failure | Non-recoverable (conversation dies) | Recoverable — model sees error, can self-correct |
+| JSON parse error | Retry with 0ms | No automatic retry (model self-corrects naturally) |
+
+**Implementation:**
+
+| File | Change |
+|------|--------|
+| `src/retry.rs` (NEW) | `RetryCategory`, `classify_for_retry()`, `retry_delay()`, retry loop logic |
+| `src/chat/coordinator.rs` | `InternalError` → `ServerRetry` (recoverable). `InternalToolError` → `ImmediateRetry`. Deprecate `is_ollama_error_recoverable()`, replace with `classify_for_retry()` |
+| `src/chat/core.rs` (lines 492-545) | Use `retry_delay()` between attempts. Show "Retrying in Xs" for backoff > 0 |
+| `src/chat/custom_coordinator.rs` (lines 759-771) | Tool `Err` → `ChatMessage::tool(error_msg)` instead of `OllamaError::ToolCallError(InternalToolError)`, so model sees the error |
+
+**Related:** Issue #72 (P6.0 parent)
+
+---
+
+### P6.0: Multi-Provider Support — Full ollama-rs Removal
 
 **Status:** 📋 PLANNED  
-**Depends on:** #106 (Configurable Embedding Model — required before embedding provider swap)  
-**Estimated effort:** 4-7 weeks (5 phases)
+**Depends on:** P6.0a (retry — do first), #106 (Configurable Embedding Model)  
+**Estimated effort:** 10–12 weeks (7 sequential sub-phases, each independently mergable)  
+**Issue:** #72
 
-**Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (llama.cpp, LM Studio, cloud providers) through a unified interface.
+**Goal:** Remove `ollama-rs` dependency entirely and implement a generic `LlmProvider` trait with direct reqwest-based Ollama and OpenAI-compatible implementations.
 
 **Motivation:**
-- **Performance:** llama.cpp server with OpenAI-compatible endpoints can be significantly faster than Ollama for local models
-- **Flexibility:** Users without local GPU can use cloud models (OpenAI, Together, etc.)
-- **Compatibility:** llama.cpp and LM Studio gain compatibility through the OpenAI-compatible adapter
-- **Extensibility:** Future providers (Anthropic, Google) fit naturally into the abstraction
+- **Full control:** No limitations from ollama-rs (e.g., missing `prompt_eval_count` in v0.3.4)
+- **Multi-provider:** Support Ollama (local) and OpenAI-compatible APIs (llama.cpp, LM Studio, cloud)
+- **Extensibility:** Future providers (Anthropic, Google) fit naturally into the trait
+- **Tool macro ownership:** Our own `#[ask_ai::tool]` proc macro, not dependent on third-party
+- **Error handling control:** Full control over error formatting, including recovery messages when LLM calls wrong tool
 
-**Architecture:** Provider abstraction with `LlmProvider` trait:
+**Architecture:**
 
 ```
-┌─────────────────────────────────┐
-│        ask-ai (business logic)   │
-│   Uses agnostic types:          │
-│   LlmMessage, LlmResponse,       │
-│   ModelParams, ProviderError     │
-├─────────────────────────────────┤
-│         LlmProvider trait        │
-│   chat_complete()                │
-│   generate()                     │
-│   embed()                        │
-│   model_info()                   │
-│   list_models()                  │
-├──────────┬───────────────────────┤
-│ Ollama   │  OpenAI-compatible    │
-│ Provider │  Provider             │
-│ (ollama  │  (reqwest +           │
-│  -rs)    │   serde_json)         │
-└──────────┴───────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│           ask-ai (business logic)                    │
+│   Uses agnostic types:                                │
+│   LlmMessage, LlmResponse, ToolInfo, ProviderError    │
+├──────────────────────────────────────────────────────┤
+│              LlmProvider trait                        │
+│   chat() → LlmResponse                                │
+│   generate() → String                                  │
+│   embed() → Vec<f32>                                   │
+│   detect_capabilities() → ProviderCapabilities        │
+│   list_models() → Vec<ProviderModel>                  │
+├──────────┬──────────────┬────────────────────────────┤
+│ Ollama   │  OpenAI-     │  (future)                  │
+│ Native   │  Compatible  │  Anthropic, Google          │
+│ (reqwest │  (reqwest +  │                            │
+│  direto) │   serde)     │                            │
+└──────────┴──────────────┴────────────────────────────┘
 ```
 
-**Impact analysis:** ~770 lines across ~27 files. Breaking changes but refactoring, not rewrite.
+**Coupling analysis (current state):**
 
-| Category | Files | Lines affected | Type |
-|----------|-------|----------------|------|
-| CustomCoordinator | 1 | ~200 | Breaking |
-| ChatMessage/Message types | 12 | ~150 | Breaking |
-| Error handling | 2 | ~105 | Breaking |
-| ModelOptions/ModelInfo | 3 | ~90 | Breaking |
-| Vision/OCR processors | 2 | ~95 | Breaking |
-| Client/Provider creation | 5 | ~70 | Breaking |
-| Tool macro/trait | 19 | ~39 | Aditivo (keep ollama-rs) |
-| Config files | 0 | 0 | Aditivo |
+| Metric | Count |
+|--------|-------|
+| Files with `ollama_rs` imports | 36 |
+| Total `ollama_rs` type references | 131 |
+| Tools using `#[ollama_rs::function]` macro | 36 |
+| Files with direct `Ollama` client usage | 14 |
+| Files with `ChatMessage` usage | 14 |
 
-**Key design decisions:**
-- `#[ollama_rs::function]` macro **preserved** — ollama-rs stays as dependency
-- Tool format conversion at provider boundary (Ollama vs OpenAI function calling)
-- Config-based capabilities (no `show_model_info` equivalent in OpenAI)
-- Per-model provider in `models.toml`
+**Implementation phases (each independently mergable):**
 
-**Implementation phases:**
+```
+P6.0a ──► P6.0b ──► P6.0c ──► P6.0d ──► P6.0d-s ──► P6.0e ──► P6.0f ──► P6.0g
+Retry    Tool     Tipos     Ollama    Streaming    Migração  OpenAI    Remove
+Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
+         Macro
+```
 
-| Phase | Description | Effort |
-|-------|-------------|--------|
-| 1. Foundation | Create `src/provider/` with agnostic types + `LlmProvider` trait + `OllamaProvider` wrapper | 1-2 weeks |
-| 2. Core migration | Migrate `CustomCoordinator`, error handling, chat/query modules | 2-3 weeks |
-| 3. OpenAI-compatible | Implement `OpenAICompatibleProvider` with reqwest, tool calling, embeddings | 1-2 weeks |
-| 4. Config & UX | Extend `models.toml`/`config.toml`, config-based capabilities, integration tests | 1 week |
-| 5. Subcommands | Migrate Vision, OCR, Translate, Summarize | 1 week |
+---
 
-**Configuration example:**
+#### P6.0b: Tool Trait + Proc Macro `#[ask_ai::tool]`
+
+**Status:** 📋 PLANNED  
+**Depends on:** None (can start in parallel with P6.0a)  
+**Estimated effort:** 1–1.5 weeks  
+**Merge criterion:** All 36 tools use `#[ask_ai::tool]`, no tool uses `#[ollama_rs::function]`
+
+**Goal:** Replace `ollama_rs::generation::tools::Tool` trait and `#[ollama_rs::function]` macro with our own, removing the tightest coupling surface (36 tools across 12+ files).
+
+**Files to create:**
+
+| File | Content |
+|------|---------|
+| `ask-ai-tool-derive/Cargo.toml` | Proc-macro crate, depends on `syn`, `quote`, `proc-macro2`, `schemars` |
+| `ask-ai-tool-derive/src/lib.rs` | `#[proc_macro_attribute] fn tool` — reads docstring, params, generates `Params` struct + `Tool` impl |
+| `src/tools/tool_trait.rs` | Trait `Tool` with `name()`, `description()`, `Params`, `call()` + `ToolHolder`/`ToolInfo` types |
+
+**Our `Tool` trait:**
+
+```rust
+pub trait Tool: Send + Sync {
+    type Params: DeserializeOwned + JsonSchema;
+    fn name() -> &'static str;
+    fn description() -> &'static str;
+    async fn call(params: Self::Params) -> Result<String, Box<dyn std::error::Error + Send + Sync>>;
+}
+```
+
+**Migration strategy:** Tools are migrated one by one. During migration, both `#[ollama_rs::function]` and `#[ask_ai::tool]` coexist. Groups: weather-tools → file-tools → calc-tools → ... → pokemon-tools.
+
+**Files to modify:**
+- 12+ tool files — change `#[ollama_rs::function]` → `#[ask_ai::tool]`
+- `src/tools/registry.rs` — `ToolRegistrar` uses new trait
+- `src/chat/custom_coordinator.rs` — `ToolHolder` impl uses new trait
+
+---
+
+#### P6.0c: Agnostic Provider Types
+
+**Status:** 📋 PLANNED  
+**Depends on:** P6.0b (error types should be compatible with new Tool trait)  
+**Estimated effort:** 1 week  
+**Merge criterion:** Types compile, `From` conversions tested, no existing files changed
+
+**Goal:** Define `LlmMessage`, `LlmResponse`, `ProviderError` and bidirectional conversions from ollama-rs types.
+
+**Files to create:**
+
+| File | Content |
+|------|---------|
+| `src/provider/mod.rs` | Module exports, `LlmProvider` trait definition |
+| `src/provider/types.rs` | `LlmMessage`, `LlmRole`, `LlmResponse`, `ToolCallInfo`, `ProviderError`, `ProviderCapabilities`, `ProviderOptions` |
+| `src/provider/conversions.rs` | `From<ollama_rs::ChatMessage>` / `Into<ollama_rs::ChatMessage>`, `From<OllamaError> for ProviderError` |
+
+**LlmProvider trait:**
+
+```rust
+pub trait LlmProvider: Send + Sync {
+    async fn chat(&self, messages: Vec<LlmMessage>, tools: Vec<ToolInfo>, options: ProviderOptions) -> ProviderResult<LlmResponse>;
+    async fn generate(&self, prompt: &str, images: Vec<String>, options: ProviderOptions) -> ProviderResult<String>;
+    async fn embed(&self, text: &str, model: &str, dimensions: Option<usize>) -> ProviderResult<Vec<f32>>;
+    async fn detect_capabilities(&self, model: &str) -> ProviderResult<ProviderCapabilities>;
+    fn provider_name(&self) -> &str;
+}
+```
+
+**No existing files are modified in this phase.** Types are defined + conversions are implemented, but business code still uses ollama-rs directly.
+
+---
+
+#### P6.0d: OllamaProvider (reqwest direct)
+
+**Status:** 📋 PLANNED  
+**Depends on:** P6.0c (uses agnostic types)  
+**Estimated effort:** 2–3 weeks  
+**Merge criterion:** OllamaProvider passes same smoke tests as ollama-rs client
+
+**Goal:** Implement `OllamaProvider` that talks to Ollama API via reqwest, without depending on `ollama-rs::Ollama`.
+
+**Files to create:**
+
+| File | Content |
+|------|---------|
+| `src/provider/ollama.rs` | `OllamaProvider` struct, `LlmProvider` impl |
+| `src/provider/ollama_api.rs` | Ollama API request/response structs (serde), endpoint URLs |
+
+**Sub-deliverables (each testable independently):**
+
+| Sub | Endpoint | Description | Effort |
+|-----|----------|-------------|--------|
+| P6.0d.1 | `POST /api/chat` | Send messages, receive response with/without tool_calls | 1 week |
+| P6.0d.2 | Tool calling | Parse `tool_calls` from response, format tool results in next request | 3-5 days |
+| P6.0d.3 | `POST /api/generate` | Vision/OCR (base64 images) | 2-3 days |
+| P6.0d.4 | `POST /api/embed` | Embeddings with `dimensions` parameter (server-side Matryoshka) | 2 days |
+| P6.0d.5 | `GET /api/show` | Capability detection | 1 day |
+| P6.0d.6 | Keep-alive, format, options | Minor parameters | 1 day |
+
+**Key benefit over ollama-rs:** Resolves the `prompt_eval_count` bug (ollama-rs v0.3.4 ignores it) — with reqwest direct, we parse the full response JSON.
+
+---
+
+#### P6.0d-s: Streaming SSE
+
+**Status:** 📋 PLANNED  
+**Depends on:** P6.0d  
+**Estimated effort:** 1 week  
+**Merge criterion:** SSE parsing works, testable via `ask-ai query "text" --stream`
+
+**Goal:** Add SSE (Server-Sent Events) streaming to `OllamaProvider`. Not currently used by the CLI, but required for the TUI (M3). Can be tested independently via query mode with `--stream` flag (plain text, no markdown rendering).
+
+**Files to create:**
+
+| File | Content |
+|------|---------|
+| `src/provider/streaming.rs` | SSE parser, `StreamEvent` type, `StreamChunk` type |
+| `src/provider/ollama.rs` extension | `chat_streamed()` / `generate_streamed()` methods |
+
+---
+
+#### P6.0e: Consumer Migration
+
+**Status:** 📋 PLANNED  
+**Depends on:** P6.0b (Tool trait) + P6.0c (agnostic types) + P6.0d (OllamaProvider)  
+**Estimated effort:** 2–3 weeks  
+**Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`)
+
+**Goal:** Migrate all consumers from `ollama_rs` types to `LlmProvider` and agnostic types.
+
+**Sub-deliverables (each mergable independently):**
+
+| Sub | Component | Files | Effort | Prerequisite |
+|-----|-----------|-------|--------|-------------|
+| P6.0e.1 | `capabilities.rs` → `LlmProvider::detect_capabilities()` | 1 | 0.5 day | P6.0d |
+| P6.0e.2 | `embeddings/client.rs` → `LlmProvider::embed()` | 1 | 1 day | P6.0d |
+| P6.0e.3 | `subagent.rs` → `LlmProvider::chat()/generate()` | 1 | 1-2 days | P6.0d |
+| P6.0e.4 | `custom_coordinator.rs` → uses `LlmProvider` + agnostic types | 1 | 1 week | P6.0b+c+d |
+| P6.0e.5 | `core.rs` → receives `Box<dyn LlmProvider>` | 1 | 0.5 day | P6.0e.4 |
+| P6.0e.6 | `repl.rs`, `repl_state.rs`, `model_switch.rs` | 3 | 0.5 day | P6.0e.5 |
+| P6.0e.7 | `query/*.rs` | 4 | 1 day | P6.0e.4 |
+| P6.0e.8 | `vision/processor.rs`, `ocr/processor.rs`, `summarize/processor.rs` | 3 | 1 day | P6.0e.3 |
+| P6.0e.9 | `main.rs` — provider construction | 1 | 0.5 day | P6.0e.6 |
+
+---
+
+#### P6.0f: OpenAI-Compatible Provider
+
+**Status:** 📋 PLANNED  
+**Depends on:** P6.0e (all consumers using LlmProvider)  
+**Estimated effort:** 2 weeks  
+**Merge criterion:** `--provider openai` works with OpenAI / llama.cpp / LM Studio
+
+**Goal:** Implement `OpenAICompatibleProvider` supporting `/v1/chat/completions`, function calling, and `/v1/embeddings`.
+
+**Files to create:**
+
+| File | Content |
+|------|---------|
+| `src/provider/openai_compat.rs` | `OpenAICompatibleProvider` struct, `LlmProvider` impl |
+| `src/provider/openai_types.rs` | OpenAI API request/response structs (serde) |
+
+**Sub-deliverables:**
+
+| Sub | Description | Effort |
+|-----|-------------|--------|
+| P6.0f.1 | Chat completions (with streaming) | 1 week |
+| P6.0f.2 | Function calling (Ollama ↔ OpenAI tool format conversion) | 3 days |
+| P6.0f.3 | Embeddings (`/v1/embeddings`) | 2 days |
+| P6.0f.4 | Configuration (`[providers.openai]` in models.toml, `api_key_env`) | 1 day |
+
+**Configuration:**
 
 ```toml
 # models.toml
-[carnice-9b-local]
-model_id = "carnice-9b"
-provider = "openai-compatible"
-base_url = "http://127.0.0.1:12434"  # llama.cpp / llama-swap
-tools = true
+[providers.ollama]
+base_url = "http://localhost:11434"
 
-[gpt-4o]
-model_id = "gpt-4o"
-provider = "openai-compatible"
+[providers.openai]
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
+
+[models."gpt-4o"]
+provider = "openai"
 tools = true
 vision = true
 ```
 
-**Key risks:**
+---
 
-| Risk | Mitigation |
-|------|-----------|
-| Tool calling format incompatibility | Adapter pattern: `ToolInfo` → OpenAI format at boundary |
-| `show_model_info()` absent in OpenAI | Config-based capability declaration in `models.toml` |
-| `KeepAlive` is Ollama-only | Param ignored by OpenAI provider |
-| Vision API completely different | Two paths: Ollama uses `/api/generate`, OpenAI uses chat + `image_url` |
-| SSE vs JSON lines streaming | Not currently used — deferred |
+#### P6.0g: Remove ollama-rs
 
-**Reference:** See `doc/src/development/roadmap.md` - Multi-Provider Support section for architectural details and type definitions.
+**Status:** 📋 PLANNED  
+**Depends on:** P6.0e (all consumers migrated)  
+**Estimated effort:** 2–3 days  
+**Merge criterion:** `cargo build --all-features` without `ollama-rs` in Cargo.toml
+
+**Goal:** Remove `ollama-rs` from `Cargo.toml`. Everything works via `OllamaProvider` (reqwest direct).
+
+**Checklist:**
+- Verify NO `use ollama_rs` remains in `src/` (except `src/provider/` serde types)
+- Verify `calc`, `html2md`, `scraper` declared directly in Cargo.toml (already done ✅)
+- Remove `tool-implementations` feature (DDGSearcher) — we have our own ✅
+- `cargo clippy --all-features` clean
+- `cargo test --all-features` passing
+- Smoke test manual with Ollama local
+- Binary size check (expected: smaller without ollama-rs)
+
+**Open topics (to refine outside the main migration):**
+
+| Topic | Decision needed | When |
+|-------|----------------|------|
+| Anthropic provider | Natural extension of trait | When demand exists |
+| Google/Gemini provider | Same | When demand exists |
+| MCP Client Integration | See S2.4 and ADR-007 | P15 |
+| Rate limiting per provider | Config in `config.toml` | P15 or earlier |
+| Provider health check | `is_available()` on trait | P6.0f |
+| Streaming integration in TUI | Requires TUI first | M3 |
 
 **Related:** Issue #72
 
@@ -3190,6 +3432,69 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 
 **Mascote idea:** An ASCII mascote (Sprach described itself as "Nó de Ideias" — Idea Knot) could serve as a visual indicator of system state. When reflection triggers fire (see S2.3), the mascote's expression could change to signal the user. This follows patterns from other agent frameworks where visual feedback helps users understand internal state. Note for P14 implementation.
 
+#### P14.IM: TUI Interaction Modes (`/queue` and `/steer`)
+
+**Status:** 📋 PLANNED (design in M2, implementation in M3)  
+**Depends on:** TUI must exist first (concurrent input requires async input backend)  
+**Estimated effort:** 2-3 days (design, M2) + 1-2 weeks (implementation, M3)  
+**Inspiration:** Hermes Agent `/queue` and `/steer` commands
+
+**Goal:** Enable three busy-input modes in the TUI so users can interact with a running agent without destructive interruption.
+
+**Three modes:**
+
+| Mode | Input during execution | UX |
+|------|----------------------|-----|
+| `interrupt` (default) | Ctrl+C kills current run, starts new | Current CLI behavior |
+| `queue` | `/queue <prompt>` enqueues for next turn | `"Queued: check logs" → waits for current run` |
+| `steer` | `/steer <prompt>` injects guidance mid-run | `"⏩ Steer: focus on errors" → arrives after next tool call` |
+
+**Config:**
+```toml
+[tui]
+busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
+```
+
+**Architecture (M3 — TUI Implementation):**
+
+```
+┌─ TUI Thread ─────────────────┐     ┌─ Agent Thread ───────────────┐
+│                               │     │                               │
+│  Input: "check logs"         │────►│  mpsc::Receiver               │
+│  ↓ match busy_input_mode     │     │  ↓                            │
+│  ├─ interrupt → send Cancel  │     │  Agent Loop:                  │
+│  ├─ queue → push PendingQueue│     │    coordinator.chat()         │
+│  └─ steer → push PendingSteer│     │    ↓                          │
+│                               │     │    process_response()         │
+│  Status: "⏩ Steer queued"    │     │      ↓ after tool result     │
+│                               │     │      inject_steer_if_pending │
+└───────────────────────────────┘     └───────────────────────────────┘
+```
+
+**Key design decisions (from Hermes Agent analysis):**
+
+| Aspect | `/queue` | `/steer` |
+|--------|----------|----------|
+| Turn boundary | New turn after current finishes | Same turn, after next tool |
+| Role alternation | New user message | Injected into tool result (no violation) |
+| Merging | Never merges (each = separate turn) | Multiple steers concatenate |
+| Use case | Sequential tasks: "do A, then B" | Mid-course correction: "actually focus on X" |
+| Cache impact | Full new turn | Minimal (single message modification) |
+
+**New components:**
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `PendingQueue` | `src/chat/busy_input.rs` | FIFO of messages, each becomes a separate turn |
+| `PendingSteer` | `src/chat/busy_input.rs` | Steer buffer, injected after tool result |
+| `BusyInputMode` | `src/chat/busy_input.rs` | Enum: Interrupt, Queue, Steer |
+| `inject_steer()` | `src/chat/custom_coordinator.rs` | Appends steer text to last tool result |
+| Concurrent input | `src/chat/input/tui.rs` | `TuiInput` with `mpsc` channel for busy-input |
+
+**Why TUI-only:** The current rustyline input is blocking — it cannot receive input while the LLM is running. `/queue` and `/steer` require a concurrent input channel, which the TUI naturally provides via its event loop.
+
+**Reference:** Hermes Agent `agent/run_agent.py` (steer: line 4151, queue: gateway/run.py line 685), `cli.py` (lines 6295-6330)
+
 **Related:** Issue #16
 
 ---
@@ -3738,3 +4043,4 @@ The original detailed implementation notes have been moved to:
 2026-04-27b - SF3 (db rename + --db flag) completed and merged (#113). SF4 (logging overhaul) completed.
 2026-04-27c - SF4 merged (#114). SF5 (PDF vision pipeline) completed.
 2026-04-27d - SF5 revised per PR review: replaced spawn_subagent with 4 dedicated spawning tools, removed spawn_document_agent, removed PDF pipeline from Rust, removed FileType::Pdf/Epub, updated document-processing skill.
+2026-04-28 - P6.0 decomposed into 7 sub-phases (P6.0a–P6.0g) for full ollama-rs removal. Added P6.0a (retry threshold with backoff). Added P14.IM (TUI interaction modes: /queue, /steer). Updated milestones M1–M3 with provider migration and interaction modes.
