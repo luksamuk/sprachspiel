@@ -19,6 +19,7 @@ assets/
 │   └── prompts.md          # Vision test prompts
 ├── mixed/                  # Multi-domain test images
 │   ├── redacao.png         # ENEM 2017 essay prompt page (Portuguese)
+│   ├── ask-ai-architecture.pdf  # 3-page architecture PDF (tables + diagram)
 │   └── prompts.md          # Mixed test prompts
 ├── ask-ai-banner.png       # Project banner
 ├── ask-ai-banner.py        # Banner generator script
@@ -54,6 +55,28 @@ Cross-domain tests combining OCR, vision, and comprehension:
 | Image | Type | Challenge |
 |-------|------|-----------|
 | redacao.png | Official exam page | Text extraction + comprehension + generation |
+| ask-ai-architecture.pdf | 3-page PDF | Two-phase pipeline: pdftotext + pdftoppm→vision/OCR |
+
+#### With PDF Pipeline (chat mode)
+
+The `ask-ai-architecture.pdf` tests the LLM-orchestrated two-phase document processing pipeline:
+
+1. **Phase 1 (pdftotext):** Extract text from PDF → `run_command("pdftotext", [...])`
+2. **Phase 2 (pdftoppm → vision/OCR):** For pages with diagrams → `run_command("pdftoppm", [...])` then `spawn_vision_agent` or `spawn_ocr_agent`
+
+**Important:** OCR and Vision tools do NOT accept PDF files directly. PDFs must be converted to images first via `pdftoppm`.
+
+#### With PDF Pipeline (CLI mode)
+
+```bash
+# Phase 1: Extract text
+pdftotext assets/mixed/ask-ai-architecture.pdf -
+
+# Phase 2: Convert page to image, then analyze
+pdftoppm -png -f 2 -l 2 -r 150 assets/mixed/ask-ai-architecture.pdf /tmp/arch-page2
+ask-ai vision /tmp/arch-page2-2.png -- "Describe the diagram"
+ask-ai ocr /tmp/arch-page2-2.png --mode table   # For tables
+```
 
 ## Usage in Tests
 

@@ -4,12 +4,16 @@ Tests combining OCR, vision, and comprehension in a single prompt.
 
 ## Ask-AI Architecture PDF (ask-ai-architecture.pdf)
 
-A 3-page PDF with real content from the ask-ai project. Tests the two-phase document processing pipeline.
+A 3-page PDF with real content from the ask-ai project. Tests the two-phase document processing pipeline (LLM-orchestrated).
 
-### Phase 1: Text Extraction (pdftotext)
+### Chat Mode: Phase 1 — Text Extraction
+
+Ask the LLM in chat mode:
+
 ```
-/ocr assets/mixed/ask-ai-architecture.pdf text
+Use run_command("pdftotext", ["assets/mixed/ask-ai-architecture.pdf", "-"]) to extract all text from this PDF.
 ```
+
 Then follow up:
 - `List the five layers of the chat architecture and their purposes.`
 - `What are the four context overflow thresholds and what does each trigger?`
@@ -17,27 +21,81 @@ Then follow up:
 
 Expected: All text from pages 1 and 3 should extract cleanly. Page 2 text extracts but the diagram's spatial structure is lost.
 
-### Phase 2: Vision Analysis of Diagram (pdftoppm → spawn_vision_agent)
-```
-/ocr assets/mixed/ask-ai-architecture.pdf figure
-```
-Then follow up:
-- `Describe the sub-agent architecture diagram. What does each colored box represent?`
-- `Explain the two-phase pipeline shown in the diagram — how does Phase 1 differ from Phase 2?`
+### Chat Mode: Phase 2 — Vision Analysis of Diagram
 
-Expected: OCR figure mode describes the diagram elements. Vision gives richer spatial interpretation (hierarchy, connections, color-coded phases).
+Ask the LLM to convert the diagram page to an image and analyze it:
 
-### Full Pipeline Test (spawn_vision_agent with pages)
 ```
-"Use the spawn_vision_agent tool with file_path='assets/mixed/ask-ai-architecture.pdf' and pages='2' to analyze the sub-agent architecture diagram on page 2. Describe the flow of data from the main LLM to the external tools."
+Use run_command("pdftoppm", ["-png", "-f", "2", "-l", "2", "-r", "150", "assets/mixed/ask-ai-architecture.pdf", "/tmp/arch-page2"]) to convert page 2 to an image.
+Then use spawn_vision_agent("Describe the sub-agent architecture diagram. What does each colored box represent?", "/tmp/arch-page2-2.png") to analyze the diagram.
 ```
 
-Expected: Vision agent processes only page 2, describes the diagram with color-coding and hierarchy that pdftotext cannot capture.
+Or for OCR of tables:
+```
+Use run_command("pdftoppm", ["-png", "-f", "1", "-l", "1", "-r", "150", "assets/mixed/ask-ai-architecture.pdf", "/tmp/arch-page1"]) to convert page 1 to an image.
+Then use spawn_ocr_agent("Extract the tables from this page", "/tmp/arch-page1-1.png", "table") to extract table structure.
+```
+
+Expected: Vision gives richer spatial interpretation (hierarchy, connections, color-coded phases). OCR preserves table layout accurately.
+
+### Chat Mode: Full Pipeline Test
+
+```
+I have a PDF at assets/mixed/ask-ai-architecture.pdf. Please process it — extract all text, and for any pages with diagrams, convert them to images and describe what you see.
+```
+
+Expected:
+1. LLM calls `run_command("pdftotext", [...])` for Phase 1
+2. LLM identifies that page 2 has a diagram
+3. LLM calls `run_command("pdftoppm", [...])` to convert page 2 to image
+4. LLM calls `spawn_vision_agent` or `spawn_ocr_agent` on the resulting image
+5. LLM combines results and presents a complete answer
+
+### Chat Mode: PDF Import Pipeline
+
+```
+I have a PDF at assets/mixed/ask-ai-architecture.pdf. Extract the text and import it as a document.
+```
+
+Expected:
+1. LLM does NOT try `import_document` with the `.pdf` directly
+2. LLM uses `run_command("pdftotext")` to extract text
+3. LLM uses `write_file` to save the extracted text to a `.txt` file
+4. LLM calls `import_document` with the `.txt` file
+5. LLM returns confirmation with doc ID
+
+### CLI Mode: Phase 1 — Text Extraction
+
+```bash
+# Extract text to stdout
+pdftotext assets/mixed/ask-ai-architecture.pdf -
+
+# Or extract page by page
+pdftotext -f 1 -l 1 assets/mixed/ask-ai-architecture.pdf -
+```
+
+### CLI Mode: Phase 2 — Vision of Diagram
+
+```bash
+# Convert page 2 to image
+pdftoppm -png -f 2 -l 2 -r 150 assets/mixed/ask-ai-architecture.pdf /tmp/arch-page2
+# Then analyze with vision CLI
+ask-ai vision /tmp/arch-page2-2.png -- "Describe the sub-agent architecture diagram"
+```
 
 ### Table Extraction from PDF
+
+```bash
+# CLI: Convert page 1 to image, then OCR in table mode
+pdftoppm -png -f 1 -l 1 -r 150 assets/mixed/ask-ai-architecture.pdf /tmp/arch-page1
+ask-ai ocr /tmp/arch-page1-1.png --mode table
 ```
-/ocr assets/mixed/ask-ai-architecture.pdf table
+
+Chat mode:
 ```
+Use run_command("pdftoppm", ["-png", "-f", "1", "-l", "1", "-r", "150", "assets/mixed/ask-ai-architecture.pdf", "/tmp/arch-page1"]) then spawn_ocr_agent("Extract table structure", "/tmp/arch-page1-1.png", "table").
+```
+
 Expected: The two tables (layer architecture, overflow thresholds) on page 1 should be extracted as structured data.
 
 ### Regression Notes
@@ -47,7 +105,8 @@ Expected: The two tables (layer architecture, overflow thresholds) on page 1 sho
 - Page 2: diagram with colored boxes, arrows, and phase labels → requires vision for spatial interpretation
 - Page 3: text-only RAG section → pdftotext sufficient
 - The diagram's box labels (e.g., "OCR Agent", "Vision Agent") DO extract as text via pdftotext, but the arrows, hierarchy, and color-coded phases are lost — this is the exact scenario where Phase 2 is needed
-- Tests the full two-phase pipeline: Phase 1 (pdftotext) for text → Phase 2 (pdftoppm → vision) for visual content
+- Tests the full two-phase pipeline: Phase 1 (pdftotext) for text → Phase 2 (pdftoppm → vision/OCR) for visual content
+- **Important:** OCR and Vision tools do NOT accept PDF files directly — PDFs must be converted to images first via `pdftoppm`
 
 ## ENEM Redação (redacao.png)
 

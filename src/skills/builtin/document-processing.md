@@ -318,9 +318,13 @@ pdfinfo document.pdf | grep Pages
 
 ### Analyze PDF pages with vision (tables, charts, formulas)
 ```bash
-# CLI mode:
-ask-ai vision document.pdf
-# Chat mode:
+# CLI mode — PDFs are NOT directly supported by vision command.
+# Convert pages to images first:
+pdftoppm -png -f 1 -l 5 -r 150 document.pdf output
+# Then analyze the resulting image(s):
+ask-ai vision output-1.png "Describe the table in this image"
+
+# Chat mode — the LLM orchestrates the pipeline automatically:
 # 1. Convert pages to images:
 #    run_command("pdftoppm", ["-png", "-f", "1", "-l", "5", "-r", "150", "document.pdf", "output"])
 # 2. Then use agent spawning tools:
