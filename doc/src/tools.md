@@ -1105,9 +1105,9 @@ remember(query="authentication implementation")
 
 | Command | Shortcut | Description |
 |---------|----------|-------------|
-| `/doc import <path> [--global] [--nowait]` | `/di` | Import a document |
+| `/doc import <path> [--global] [--nowait]` | `/di` | Import a document (TXT, MD, ORG only) |
 | `/doc list [--global]` | `/dl` | List imported documents |
-| `/doc show <id>` | `/ds` | Show document content (accepts #N, doc:N, or N) |
+| `/doc show <id>` | `/ds` | Show document content as markdown (accepts #N, doc:N, or N) |
 | `/doc delete <id>` | `/dd` | Delete a document (accepts #N, doc:N, or N) |
 
 **ID Formats:**

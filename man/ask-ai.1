@@ -1,4 +1,4 @@
-.TH ASK-AI 1 "2026-04-17" "ask-ai 0.40.0" "User Commands"
+.TH ASK-AI 1 "2026-04-28" "ask-ai 0.40.0" "User Commands"
 .SH NAME
 ask-ai \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
@@ -35,7 +35,7 @@ If an AGENTS.md file exists in the current directory, it is automatically loaded
 Execute a query with the default or specified model. This is the default mode when no subcommand is given.
 .TP
 .B chat, c
-Start interactive chat session with persistent conversation history. Conversations are saved per project.
+Start interactive chat session with persistent conversation history. Conversations are saved per project. Documents and notes are rendered as markdown at 80 columns.
 .TP
 .B translate, t
 Translate text between 50+ languages using TranslateGemma model.
@@ -189,11 +189,11 @@ Interactive commands available inside chat:
 .br
 /note search <query> [--global] [limit] \- Search stored notes
 .br
-/doc import <path> [--global], /di \- Import a document (TXT, MD, ORG, PDF, EPUB)
+/doc import <path> [--global], /di \- Import a document (TXT, MD, ORG only; use run_command for PDF/EPUB)
 .br
 /doc list [--global], /dl \- List imported documents
 .br
-/doc show <id>, /ds \- Show document content by ID
+/doc show <id>, /ds \- Show document content (rendered as markdown)
 .br
 /doc delete <id>, /dd \- Delete a document by ID
 .br
@@ -223,6 +223,29 @@ Interactive commands available inside chat:
 Tab completion available for commands and model names.
 .br
 Prompt shows active modes: [t] for think, [T] for tools.
+.br
+Visual indicators show tool activity in DIM gray (hidden in quiet mode):
+.br
+.in +4
+\fB🔧\fR tool call (always visible in Normal+ mode)
+.br
+\fB📖\fR skill loaded
+.br
+\fB📄\fR document imported
+.br
+\fB📝\fR note created/updated
+.br
+\fB🗑️\fR note deleted
+.br
+\fB👍\fR/\fB👎\fR/\fB✎\fR feedback submitted
+.br
+\fB💾\fR/\fB⏭\fR fact stored/skipped
+.br
+\fB⚡\fR command executing
+.in -4
+.br
+Skills are loaded proactively — the LLM calls skill_view() when it detects
+a task matching a skill's description (PDF processing, OCR, code analysis, etc.).
 .br
 Session storage: ~/.local/share/ask-ai/conversations/<project-id>/default.json
 .br

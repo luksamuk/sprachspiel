@@ -167,9 +167,9 @@ Notes support project-level (default) and global scope. Global notes are visible
 
 | Command | Description |
 |---------|-------------|
-| `/doc import <path> [--global] [--nowait]`, `/di` | Import a document (TXT, MD, ORG, PDF, EPUB) |
+| `/doc import <path> [--global] [--nowait]`, `/di` | Import a document (TXT, MD, ORG only; use run_command for PDF/EPUB) |
 | `/doc list [--global]`, `/dl` | List imported documents |
-| `/doc show <id>`, `/ds` | Show document content by ID (accepts `#N`, `doc:N`, or `N`) |
+| `/doc show <id>`, `/ds` | Show document content as rendered markdown (accepts `#N`, `doc:N`, or `N`) |
 | `/doc delete <id>`, `/dd` | Delete a document by ID (accepts `#N`, `doc:N`, or `N`) |
 
 Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
@@ -181,8 +181,8 @@ Subcommand shortcuts: `/di` (import), `/dl` (list), `/ds` (show), `/dd` (delete)
 | Plain Text | `.txt` | Builtin |
 | Markdown | `.md` | Builtin |
 | Org Mode | `.org` | Builtin |
-| PDF | `.pdf` | `pdftotext` (poppler-utils) |
-| EPUB | `.epub` | `epub2txt` or `ebook-convert` (Calibre) |
+
+**For PDF and EPUB files:** Use `run_command` to extract text first (e.g., `run_command("pdftotext", ["file.pdf", "-"])`), then import the resulting text file. Load the `document-processing` skill for detailed guidance.
 
 **File Size Limit:** 2.5 MB (2,500,000 bytes) maximum. Larger files are rejected.
 
@@ -202,7 +202,7 @@ The `/doc show` and `/doc delete` commands accept multiple ID formats:
 - `doc:N` - Prefixed format: `/doc show doc:1`
 - `N` - Numeric format: `/doc show 1`
 
-All three formats are equivalent and interchangeable.
+All three formats are equivalent and interchangeable. `/doc show` renders markdown content at 80 columns, consistent with `/note show`.
 
 **Scope:**
 - Project scope (default): Document visible only in current project
