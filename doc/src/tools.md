@@ -20,7 +20,7 @@ Ask-AI provides tools that enhance queries with real-time data from external sou
 | Memory Retrieval | 1 | SQLite + FTS5 | ✅ Working | ✅ Enabled |
 | Skills | 2 | Local skill files | ✅ Working | ✅ Enabled |
 | Todo | 5 | Session state | ✅ Working | ✅ Enabled |
-| Subagent | 1 | SubagentRunner | ✅ Working | ✅ Enabled |
+| Subagent | 4 | SubagentRunner | ✅ Working | ✅ Enabled |
 | LED Control | 5 | Raspberry Pi Pico W | ✅ Working | ❌ Disabled** |
 
 \* **Web search requires SERPER_API_KEY environment variable.** If not set, DuckDuckGo is used as fallback (may be blocked by CAPTCHA).
@@ -728,7 +728,7 @@ Users can also manage todos via chat commands:
 - Status values: pending, in_progress, done
 - Task IDs are auto-incremented integers
 
-## Subagent System
+## Subagent Tools (4)
 
 The subagent system provides specialized one-shot models for specific tasks that require capabilities different from the main chat model. Instead of using the general-purpose chat model for everything, ask-ai can delegate specialized tasks to purpose-built models configured for specific purposes.
 
@@ -740,7 +740,6 @@ Subagents are specialized AI models that handle specific tasks:
 - **Vision** - Analyze and describe images using vision-capable models
 - **Translation** - Translate text between languages using dedicated translation models
 - **Summarization** - Create concise summaries of long text
-- **Document Processing** - Extract and process content from PDF and EPUB files
 
 **Key Characteristics:**
 
@@ -761,7 +760,6 @@ Subagents are specialized AI models that handle specific tasks:
 | `vision` | Image analysis/description | ✅ Yes | `qwen3.5:4b` |
 | `translate` | Translation between languages | ❌ No | `translategemma:4b` |
 | `summarize` | Text summarization | ❌ No | `qwen3.5:4b` |
-| `document` | PDF/EPUB text extraction | ✅ Yes | `qwen3.5:4b` |
 
 ### Using Chat Commands
 
@@ -939,7 +937,7 @@ Example: remember(query="database design", limit="10")
 |--------|---------------|-------------|
 | `msg:N` | Conversation | Chat message from history |
 | `note:N` | Note | User-created note |
-| `doc:N` | Document | Imported document (TXT, MD, ORG, PDF, EPUB) |
+| `doc:N` | Document | Imported document (TXT, MD, ORG) |
 | `web:N` | Web | Web-scraped content (future) |
 
 **Chunk Retrieval for Large Documents:**
@@ -1058,31 +1056,39 @@ Documents automatically extract titles from:
 3. Org-mode `* heading`
 4. Filename (fallback)
 
-**PDF/EPUB Dependencies:**
+**Handling PDF and EPUB Files:**
 
-PDF and EPUB files require:
-1. `skills-tools` feature (enabled by default)
-2. External tools installed:
-   - PDF: `pdftotext` (poppler-utils package)
-   - EPUB: `epub2txt` (AUR: `epub2txt-bin`) or `ebook-convert` (Calibre)
+PDF and EPUB files are not imported directly. Instead, extract the text first using `run_command`, then import the resulting text file. Load the `document-processing` skill for detailed guidance:
 
-**Installation:**
+```
+# Extract text from PDF
+run_command(command_line="pdftotext document.pdf -")
 
-| Distro | Command |
-|--------|---------|
-| Arch | `sudo pacman -S poppler-utils` + `yay -S epub2txt-bin` |
-| Debian/Ubuntu | `sudo apt install poppler-utils` + download epub2txt from GitHub |
-| Void | `sudo xbps-install -S poppler` + compile epub2txt |
-| Fedora | `sudo dnf install poppler-utils` + compile epub2txt |
+# Extract text from EPUB
+run_command(command_line="epub2txt book.epub -")
+
+# Then import the extracted text
+import_document(path="/tmp/extracted.txt")
+```
+
+**External Tool Installation (for PDF/EPUB extraction):**
+
+| Tool | Distro | Command |
+|------|--------|---------|
+| `pdftotext` | Arch | `sudo pacman -S poppler-utils` |
+| `pdftotext` | Debian/Ubuntu | `sudo apt install poppler-utils` |
+| `pdftotext` | Void | `sudo xbps-install -S poppler` |
+| `pdftotext` | Fedora | `sudo dnf install poppler-utils` |
+| `epub2txt` | Arch | `yay -S epub2txt-bin` |
+| `ebook-convert` | Any | Install Calibre |
 
 **Error Handling:**
 
 | Situation | Error Message |
 |-----------|---------------|
-| File not found | `Error: File not found: 'report.pdf'. Please check the path and try again.` |
+| File not found | `Error: File not found: 'report.txt'. Please check the path and try again.` |
 | File too large | `Error: File too large (3.0 MB = 3,000,000 bytes). Maximum is 2.5 MB (2,500,000 bytes).` |
-| Unsupported type | `Error: Unsupported file type '.docx'. Supported: .txt, .md, .org, .pdf, .epub` |
-| Missing dependency | `Error: Importing 'pdf' files requires the 'skills-tools' feature. Recompile with: cargo build --features skills-tools` |
+| Unsupported type | `Error: Unsupported file type '.pdf'. Supported: .txt, .md, .org. For PDFs/EPUBs, use run_command to extract text first.` |
 
 **Integration with remember():**
 
