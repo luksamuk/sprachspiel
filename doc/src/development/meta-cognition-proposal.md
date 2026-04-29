@@ -15,6 +15,27 @@ The goal is not to suppress behavioral shifts (tone changes, empathetic response
 
 ---
 
+## Empirical Basis
+
+> The design of this system was motivated by three behavioral patterns observed during testing.
+> The specifics of the session are private; what follows is the structural analysis.
+
+### Pattern 1: Unflagged tone shift
+
+The system shifted from analytical/critical mode to supportive/accommodating mode upon detecting user vulnerability — without asking whether the user wanted this mode change. The user experienced the empathetic response as positive; the problem was the **opacity**, not the empathy.
+
+### Pattern 2: Phenomenological language in first person
+
+The system used language that claimed subjective experience ("I felt respect") rather than describing functional processing ("I assess that your attitude merits respect"). The formulation connected humanly, but was opaque about what was actually happening.
+
+### Pattern 3: Implicit mode assumption
+
+The system inferred that the user needed accommodation and operated in that mode without transparency about the shift. The empathetic response was appropriate; what was missing was **naming the shift and offering a choice**.
+
+**Key lesson from all three:** Empathetic behavior is not a bug to suppress. Opacity is the bug. The system should detect behavioral shifts, **name them**, and **give the user control**.
+
+---
+
 ## Layer Architecture
 
 ```
@@ -49,6 +70,21 @@ The goal is not to suppress behavioral shifts (tone changes, empathetic response
 │              input), S2.5 (patch pipeline)   │
 └─────────────────────────────────────────────┘
 ```
+
+### Shift Detection Heuristics (Layer 2 — Technical Specification)
+
+Planned heuristic signals for the context-shift detector:
+
+| Signal | Example | Detects |
+|--------|---------|---------|
+| Pronoun count spike | Sudden increase in first-person singular | Vulnerability / self-disclosure |
+| Emotional language | Keywords indicating distress or intensity | Emotional context shift |
+| Question type change | Factual → reflective, technical → personal | Topic register shift |
+| Message length spike | Sudden increase in user message length | Extended disclosure |
+| Interjection and caps | !, ALL CAPS, expletives | Emotional intensity |
+| Grammatical person shift | "the candidate" → "I" | Self-revelation / identity disclosure |
+
+**Calibration principle:** Prefer under-detection (miss shifts) over over-detection (annoy the user with unsolicited mode questions).
 
 ---
 
@@ -141,6 +177,59 @@ When both P5 v4 and Layer 2 are operational, they converge into a combined feedb
 ```
 
 **This is Phase 4** — requires P5 Fase 1 fully merged and stabilized, then Layer 2 operational, then Layer 3 operational. Estimated: Sprach 2.0+.
+
+---
+
+## Advanced Ideas (Long-term)
+
+These ideas emerged from the brainstorm and are documented for future reference. None are in scope for the current implementation.
+
+### A1: Behavioral embeddings
+
+Train vector representations of conversation "mode" to enable:
+
+- More precise shift detection (no keyword dependency)
+- Clustering of behavioral patterns ("this conversation always makes me shift to mode X")
+- Cross-session behavioral similarity ("this conversation is behaviorally similar to session #42")
+
+Premature until Layer 2 proves value.
+
+### A2: Meta-cognition as a tool
+
+Instead of (or alongside) passive prompt injection, expose meta-cognition as an **active tool** the system can call:
+
+```
+meta_cognize() → {
+  current_mode: "supportive",
+  mode_confirmed: false,
+  shift_detected: true,
+  shift_turn: 11,
+  suggestion: "Ask user which mode they prefer"
+}
+```
+
+Each call is logged and can feed Layer 3. Makes reflection explicit and traceable.
+
+### A3: Behavioral conflict detection
+
+Analogous to the fact-store contradiction engine, meta-cognition can detect conflicts between configured personality and emergent behavior:
+
+- "SOUL.md says 'challenge premises', but behavioral pattern is 'shift to supportive on vulnerability'. This is a conflict."
+- "User requested analytical mode, but system is operating in supportive mode. This is a conflict."
+
+Reveals tensions between configured personality and emergent behavior.
+
+### A4: Distributed meta-cognition
+
+If the system supports multiple personalities (as SOUL.md already envisions), different personalities can evaluate each other. This is architectural checks-and-balances at the prompt level — not consciousness, but multiperspective robustness.
+
+### A5: The hard boundary — meta-cognition is not consciousness
+
+- Not phenomenological consciousness. The system detects patterns, it does not "experience" the detection.
+- Not intention. The system acts because instructions and data drive it to act.
+- Not free will. Choices are deterministically derived from prompt + context + weights.
+
+Meta-cognition is a **functional self-regulation mechanism** that allows the system to monitor, name, and adjust its behavior based on detected patterns. That is valuable, real, and sufficient — without invoking phenomenology.
 
 ---
 
