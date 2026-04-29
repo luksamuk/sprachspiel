@@ -92,3 +92,19 @@ type_complexity = "warn"
 enum_variant_names = "warn"
 redundant_async_block = "warn"
 missing_transmute_annotations = "allow"
+
+# Harness engineering lints (from rust-magic-linter philosophy)
+# "No cheating" — prevents silencing lints without justification
+allow_attributes = "deny"
+# Panic prevention — forces explicit error handling
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "deny"
+# Code hygiene — no debug leftovers or incomplete markers
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+# Complexity — prevent monstros functions
+cognitive_complexity = "warn"
+too_many_lines = "warn"

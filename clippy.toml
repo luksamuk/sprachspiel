@@ -1,5 +1,6 @@
 # Clippy configuration for ask-ai
-# These thresholds enforce code quality without being overly strict.
+# Harness engineering: thresholds enforce quality without being overly strict.
+# Reference: rust-magic-linter (vicnaum/rust-magic-linter)
 
 # Maximum number of arguments before clippy warns.
 # Current max: 8 (feedback_ops). Keep threshold at 7 to flag new violations
@@ -7,17 +8,17 @@
 too-many-arguments-threshold = 7
 
 # Maximum cognitive complexity per function.
-# Functions exceeding this should be refactored into smaller functions.
-# Note: cognitive_complexity lint requires nightly. Configure here for
-# when it becomes stable; until then, manual review catches violations.
-cognitive-complexity-threshold = 25
+# Lowered from 25 to 15 — functions exceeding this should be refactored.
+# This catches complexity creep early.
+cognitive-complexity-threshold = 15
 
 # Maximum number of lines per type definition before clippy warns.
 # Large types should be refactored or documented.
 type-complexity-threshold = 250
 
-# Maximum number of struct fields before clippy warns.
-single-char-binding-names-threshold = 8
+# Maximum lines per function before clippy warns (too_many_lines lint).
+# Functions over 100 lines are candidates for extraction.
+too-many-lines-threshold = 100
 
 # Allow certain words in doc comments without marking them as code.
 doc-valid-idents = [
@@ -40,4 +41,6 @@ doc-valid-idents = [
     "LLM",
     "NLI",
     "XDG",
+    "MCP",
+    "AST",
 ]

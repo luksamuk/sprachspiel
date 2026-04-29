@@ -31,110 +31,18 @@ cargo install mdbook-mermaid
 
 ## Development Workflow
 
-### 1. Create a Branch
+Ask-AI uses a structured PR workflow. **See `doc/src/development/PR-PROCESS.md` for the complete process.**
 
-```bash
-git checkout -b feature/my-feature
-```
+Quick summary:
+1. Create a branch with conventional prefix (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`)
+2. Update documentation BEFORE writing code (CHANGELOG, IMPLEMENTATION.md)
+3. Create a DRAFT PR, then implement
+4. Run quality gates before each commit and PR (load `quality-gates` skill for details)
+5. Mark PR ready for review after passing all checks
+6. Respond to review comments individually
+7. Manual testing via Hermes Agent before merge
 
-### 2. Make Changes
-
-- Follow the code style guidelines (see AGENTS.md)
-- Write tests for new features
-- Update documentation
-
-### 3. Test
-
-```bash
-# Run all tests
-cargo test
-
-# Run tests with all features
-make test-all
-
-# Run clippy
-cargo clippy -- -D warnings
-
-# Format code
-cargo fmt
-
-# Build (default features)
-make build
-
-# Build with all tools
-make build-all-tools
-```
-
-### 4. Build Features
-
-Ask-AI uses compile-time feature flags for tools:
-
-```bash
-# Default build (weather, file, web-search)
-make build
-
-# With Pokémon tools
-make build-pokemon
-
-# With all tools
-make build-all-tools
-
-# Minimal build (only file tools)
-cargo build --release --no-default-features --features file-tools
-```
-
-Available features:
-- `weather-tools` - Weather lookup tools (default)
-- `file-tools` - File system operations (default)
-- `pokemon-tools` - Pokémon data tools (opt-in)
-- `calc-tools` - Mathematical calculator (default)
-- `serper-tools` - Serper API web search (default, requires `SERPER_API_KEY`)
-- `system-tools` - System information tools (default)
-- `search-tools` - DuckDuckGo web search (disabled by default, may fail due to CAPTCHA)
-- `finance-tools` - Stock quotes (disabled by default, planned)
-- `all-tools` - Enable all feature categories
-
-### 4. Update Documentation
-
-When adding features, update:
-
-1. **User documentation** in `doc/src/`
-   - Relevant command documentation
-   - Examples and use cases
-   - Troubleshooting if applicable
-
-2. **Man page** in `man/ask-ai.1`
-   - New flags/options
-   - New commands
-   - Examples
-
-3. **Development docs** in `doc/src/development/`
-   - Architecture changes
-   - Roadmap updates
-
-### 5. Commit
-
-```bash
-git add .
-git commit -m "feat: add new feature"
-```
-
-Follow conventional commits:
-
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation
-- `refactor:` Code refactoring
-- `test:` Tests
-- `chore:` Maintenance
-
-### 6. Push and Create PR
-
-```bash
-git push origin feature/my-feature
-```
-
-Then create a Pull Request on GitHub.
+For the full step-by-step workflow, load the `pr-workflow` skill.
 
 ## Code Style
 
@@ -159,30 +67,28 @@ async fn fetch_data() -> AppResult<Data> {
 }
 ```
 
-## Documentation Guidelines
+## Adding a New Tool
 
-### User Documentation
+**For the complete guide, load the `project-conventions` skill.**
 
-- Keep it functional, not technical
-- Include examples
-- Use clear, concise language
-- Add diagrams where helpful (Mermaid)
+Quick summary:
+1. Add feature flag to `Cargo.toml`
+2. Create tool module in `src/tools/my_tool.rs`
+3. Register in `src/tools/registry.rs`
+4. Add tool prompts in `src/prompts/tools.rs`
+5. Test with `cargo test --features my-tools`
 
-### Development Documentation
+**For detailed tool development guidelines (error handling, parameter types, logging, etc.), load the `tool-guidelines` skill.**
 
-- Explain architecture decisions
-- Document APIs
-- Add troubleshooting for developers
+## Adding a New Command
 
-### When to Update
-
-Update documentation when:
-
-- Adding new commands
-- Adding new flags/options
-- Changing behavior
-- Adding new models
-- Adding new tools
+1. Create module in `src/`
+2. Add CLI struct with `clap`
+3. Implement handler
+4. Add to main router
+5. Write tests
+6. Update documentation
+7. Update man page
 
 ## Testing
 
@@ -209,121 +115,60 @@ cargo test translate
 
 # Test all
 cargo test
+
+# Test with all features
+cargo test --features all-tools
 ```
 
 ### Manual Testing
 
+Before merging, PRs must pass manual testing via the Hermes Agent. See `doc/src/development/MANUAL-TEST-TEMPLATE.md` for the template.
+
+**Load the `pr-testing` skill for the complete manual testing workflow.**
+
+## Documentation
+
+### When to Update
+
+- **New commands** → Add page in `doc/src/commands/`
+- **New flags/options** → Update relevant command documentation and man page
+- **New models** → Update `doc/src/models.md`
+- **New tools** → Update `doc/src/tools.md`
+- **Behavior changes** → Update relevant documentation with migration notes
+
+**For the complete documentation checklist and update process, load the `project-conventions` skill.**
+
+### Building Documentation
+
 ```bash
-# Build and run
-cargo build --release
-./target/release/ask-ai "Test query"
-
-# Test subcommands
-./target/release/ask-ai translate en:pt "Hello"
-./target/release/ask-ai ocr image.png
-./target/release/ask-ai summarize "Text"
+cd doc
+mdbook serve     # Serve locally for testing
+mdbook build      # Build static site → doc/book/
 ```
-
-## Adding a New Command
-
-1. Create module in `src/`
-2. Add CLI struct with `clap`
-3. Implement handler
-4. Add to main router
-5. Write tests
-6. Update documentation
-7. Update man page
-
-Example structure:
-
-```rust
-// src/mycommand/cli.rs
-use clap::Args;
-
-#[derive(Args, Debug)]
-pub struct MyCommandArgs {
-    #[arg(short, long)]
-    pub option: String,
-}
-
-// src/mycommand/mod.rs
-pub mod cli;
-pub mod processor;
-
-// src/mycommand/processor.rs
-use crate::AppResult;
-
-pub async fn process(args: cli::MyCommandArgs) -> AppResult<()> {
-    // Implementation
-    Ok(())
-}
-```
-
-## Adding a New Tool
-
-1. Define function in `src/tools/`
-2. Use `#[ollama_rs::function]` macro
-3. Add to coordinator in `main.rs`
-4. Update tools documentation
-5. Test with capable model
-
-Example:
-
-```rust
-// src/tools/my_tool.rs
-use ollama_rs::function;
-
-#[function]
-pub async fn my_tool(param: String) -> Result<String, Error> {
-    // Implementation
-    Ok(result)
-}
-```
-
-## Adding a New Model
-
-1. Add to `src/config.rs`
-2. Update `ask-ai --list` output
-3. Document in `doc/src/models.md`
-4. Update man page
-
-## Documentation Checklist
-
-Before submitting PR:
-
-- [ ] Updated relevant doc pages in `doc/src/`
-- [ ] Updated man page if CLI changed
-- [ ] Updated README.md if needed
-- [ ] Added examples to documentation
-- [ ] Tested with `mdbook serve`
-- [ ] All links work
 
 ## Pull Request Checklist
 
-- [ ] Code builds without warnings
-- [ ] Tests pass
-- [ ] Clippy clean
-- [ ] Code formatted
-- [ ] Documentation updated
-- [ ] Man page updated (if needed)
-- [ ] Commit messages follow conventions
+- [ ] Code builds without warnings (`cargo check --all-features`)
+- [ ] Tests pass (`cargo test --all-features`)
+- [ ] Clippy clean (`cargo clippy --all-features -- -D warnings`)
+- [ ] Code formatted (`cargo fmt`)
+- [ ] No bare `#[allow(dead_code)]` without justification
+- [ ] Documentation updated (CHANGELOG, relevant doc pages)
+- [ ] Man page updated (if CLI changed)
+- [ ] Commit messages follow conventional commits (`feat:`, `fix:`, `docs:`, etc.)
+- [ ] PR created as DRAFT first
+- [ ] Quality gates passed (load `quality-gates` skill for details)
 
 ## Getting Help
 
 - GitHub Issues: Bug reports, feature requests
 - Discussions: General questions
 - Documentation: Check `doc/src/development/`
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
-
-## Acknowledgments
-
-Thank you to all contributors who make Ask-AI better!
+- AGENTS.md: Development guidelines and project conventions
 
 ## See Also
 
-- [Architecture](./architecture.md) - Technical details
-- [Roadmap](./roadmap.md) - Future plans
-- AGENTS.md - Development guidelines
+- [PR Process](./PR-PROCESS.md) — Mandatory workflow for all PRs
+- [Architecture](./architecture.md) — Technical details
+- [Roadmap](./roadmap.md) — Future plans
+- [AGENTS.md](../../AGENTS.md) — Development guidelines and coding rules

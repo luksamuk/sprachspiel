@@ -1329,6 +1329,27 @@ sqlite3 ~/.local/share/ask-ai/ask-ai.db "DELETE FROM facts WHERE invalidated_at 
 
 ---
 
+## 22. Bare #[allow(dead_code)] Check
+
+Run this before release to ensure no dead code is silenced without justification:
+
+```bash
+BARE_ALLOWS=$(rg '#\[allow\(dead_code\)\]' --glob '*.rs' src/ | grep -v '// ' | wc -l)
+if [ "$BARE_ALLOWS" -gt 0 ]; then
+  echo "FAIL: Found $BARE_ALLOWS bare #[allow(dead_code)] without justification:"
+  rg '#\[allow\(dead_code\)\]' --glob '*.rs' src/ | grep -v '// '
+  exit 1
+fi
+echo "OK: All #[allow(dead_code)] have justification comments"
+```
+
+Every `#[allow(dead_code)]` MUST have a `//` comment on the same line explaining why:
+- ✅ `#[allow(dead_code)] // Reserved for Phase 2: TUI commands`
+- ✅ `#[allow(dead_code)] // Used in integration tests`
+- ❌ `#[allow(dead_code)]` — no justification, will fail the check
+
+---
+
 ## Results
 
 **IMPORTANT:** Smoke test results must be saved **outside the project** (e.g., PR comment, issue, or external document). **DO NOT MODIFY THIS FILE** with results — it is a reusable template.
@@ -1404,4 +1425,5 @@ The script above runs automated tests. The following tests must be run manually:
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
 18. **Section 21**: Fact Embedding & Semantic Dedup (schema v12, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, schema v12 distance_metric=cosine, ascending sort fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
+19. **Section 22**: Bare #[allow(dead_code)] Check (automated, no justification = fail)
 These tests require chat interaction and visual verification of results.

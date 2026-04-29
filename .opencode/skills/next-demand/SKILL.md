@@ -100,88 +100,17 @@ Then **WAIT for user selection**. Do NOT proceed without explicit choice.
 
 ### Step 4: Initiate PR Process (AFTER user selection)
 
-Once the user picks a demand, follow **PR-PROCESS.md** Phase 1-2:
+Once the user picks a demand, **load the `pr-workflow` skill** to continue from Phase 1 (Setup) through the complete PR workflow.
 
-**Phase 1: Setup**
-```bash
-git checkout master
-git pull origin master
-git checkout -b <type>/<description>
-# Types: feat/, fix/, refactor/, docs/, test/
-```
+The pr-workflow skill covers: branch creation, documentation, draft PR, planning mode, requirements checkpoint, implementation, review, testing, and merge.
 
-**Phase 2: Documentation FIRST**
-1. Update `doc/src/CHANGELOG.md` — add entry under `[Unreleased]`
-2. Update `IMPLEMENTATION.md` — mark task as `🔄 IN PROGRESS`
-3. Commit: `git commit -m "docs: update CHANGELOG for <feature>"`
-
-**Phase 2 STOP: Create Draft PR**
-```bash
-git push -u origin <branch>
-gh pr create --draft --title "<type>: <description>" --body "$(cat <<'EOF'
-## Summary
-
-Brief description of changes.
-
-## Changes
-
-| File | Change |
-|------|--------|
-| `src/...` | Added ... |
-
-## Testing
-
-- [ ] `cargo build --all-features`
-- [ ] `cargo clippy --all-features -- -D warnings`
-- [ ] `cargo test --all-features`
-
-## Related
-
-Closes #<issue_number>
-EOF
-)"
-```
-
-Link PR to issue:
-```bash
-gh issue comment <issue_number> --body "PR #<pr_number> criado para resolver esta issue."
-```
-
-**STOP AND WAIT** — Do NOT implement until user authorizes. The PR is in DRAFT.
-
-### Step 5: Planning Mode (AFTER authorization)
-
-After user authorizes continuation:
-1. Analyze codebase — read relevant files (READ-ONLY, no modifications)
-2. Create detailed implementation plan with:
-   - Specific files to create/modify
-   - Function signatures
-   - Estimated line counts
-   - Complexity targets
-3. Ask clarifying questions if any
-4. **WAIT for user approval of plan**
-
-### Step 6: Requirements Checkpoint (MANDATORY)
-
-Before writing ANY code, present a requirements table:
-
-| # | Requirement | Source | Status | Notes |
-|---|-------------|--------|--------|-------|
-| 1 | ... | Issue #N | ✅ CLEAR | ... |
-| 2 | ... | Plan | ⚠️ VAGUE | Need to define X |
-
-For any ⚠️ VAGUE or ❌ CONFLICT items:
-- Present the specific question to the user
-- WAIT for decision
-- Update the table
-
-Only proceed to implementation when ALL requirements are ✅ CLEAR and user has explicitly authorized.
+**Do NOT duplicate the workflow steps here.** The pr-workflow skill is the single source of truth for all PR process steps.
 
 ## Key Rules
 
 1. **NEVER skip the PR-PROCESS.md steps** — follow them in order
 2. **NEVER close issues before PR merge** — they auto-close with "Closes #N"
-3. **NEVER move cards to "Done"** — only the reviewer does this after approval
+3. **NEVER move cards to "Done" manually** — cards move to "Done" automatically when PR merges (via "Closes #N"), verify manually afterward
 4. **ALWAYS create PR as DRAFT first** — then implement, then mark ready
 5. **ALWAYS read PR-PROCESS.md before starting** — the process has been updated multiple times
 6. **ALWAYS present candidates before choosing** — let the user decide
@@ -212,6 +141,5 @@ Only proceed to implementation when ALL requirements are ✅ CLEAR and user has 
 
 - **GitHub:** `luksamuk/ask-ollama-rs`
 - **Project Board:** Number 4 (Ask-AI Roadmap)
-- **Project ID:** `PVT_kwHOADplIc4BRnZ9`
-- **Status Field ID:** `PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg`
-- **Scrum Status Field ID:** `PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY`
+
+For project board field IDs and status option IDs, load the `pr-workflow` skill.

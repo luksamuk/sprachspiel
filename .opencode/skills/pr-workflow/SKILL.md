@@ -208,12 +208,22 @@ gh issue comment <issue_number> --body "PR #<pr_number> criado para resolver est
 cargo test --all-features
 cargo clippy --all-features -- -D warnings
 
-# Commit with conventional commits
-git commit -m "feat: <description>"
-# or: fix:, refactor:, docs:, test:, chore:
-
+# Commit with conventional commits (see below)
 git push
 ```
+
+### Conventional Commits
+
+Format: `<type>: <description>`
+
+| Type | Description |
+|------|-------------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `refactor` | Code refactoring |
+| `docs` | Documentation only |
+| `test` | Adding/updating tests |
+| `chore` | Maintenance tasks |
 
 ## Phase 4: Mark PR Ready for Review
 
@@ -311,7 +321,7 @@ Use response prefixes:
 
 | Prefix | Meaning | When to Use |
 |--------|---------|-------------|
-| ✅ Resolvido | Code fixed | Changed code to address the comment |
+| ✅ Resolvido | Code fixed/removed | Changed code to address the comment |
 | ✅ Verificado | Correct as-is | Behavior is intentional |
 | 📋 | Deferred | Good suggestion, future PR |
 | ❌ | Declined | Not applicable, with explanation |
@@ -337,6 +347,40 @@ mutation {
 3. Implement approved changes
 4. Push changes
 5. **Return to fetching review threads** (new commits need review)
+
+### Review Iteration Scenarios
+
+During review, several scenarios may occur:
+
+- **Implementation changes needed:** Create todo list → user confirms → implement → push → re-review
+- **Scope creep detected:** Discuss with user → may open separate issues
+- **YAGNI identified:** Explain why code should be removed → remove with agreement
+- **Large issue detected:** Discuss splitting into multiple PRs
+- **Bugs found during testing:** Document → fix → push → return to review iteration
+
+**Every push triggers a new review cycle.** The reviewer must review new commits before proceeding.
+
+### Multiple Issues per PR
+
+When addressing multiple related issues in a single PR:
+
+1. **Both issues must be related** — don't combine unrelated work
+2. **PR title describes both** — e.g., `feat: memory staleness warnings and truncation notices`
+3. **PR body references all issues** — use `Closes #A, Closes #B` for auto-close
+4. **Both cards follow the same flow** — both move to "In Progress" at start, both to "In Review" at Phase 4
+
+### Quality Gates
+
+Before each commit and PR, run the quality gate sensors. **Load the `quality-gates` skill for the complete sensor hierarchy.**
+
+Minimum before each commit:
+1. `cargo fmt --check` — formatting violations
+2. `cargo check --all-features` — compilation errors
+
+Minimum before each PR:
+3. `cargo clippy --all-features -- -D warnings` — lints
+4. `cargo test --all-features` — regressions
+5. Bare `#[allow(dead_code)]` check — unjustified dead code
 
 ### After All Threads Resolved
 
@@ -402,6 +446,7 @@ If the PR addresses a canonical issue that had duplicates:
 8. **ALWAYS cross-reference related issues** — comment on the canonical issue about the PR, close duplicates with explanation
 9. **ALWAYS update IMPLEMENTATION.md** — mark status on every phase change
 10. **ALWAYS wait for authorization** between phases — no autonomous progression
+11. **ALWAYS run quality gates** before commits and PRs — load `quality-gates` skill for the complete sensor hierarchy
 
 ## Project Information
 

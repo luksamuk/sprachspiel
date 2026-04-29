@@ -17,17 +17,17 @@ This document describes the mandatory workflow for implementing features and fix
 
 ### NEVER Do These
 
-1. **NEVER close issues before PR merge** - Issues are closed automatically when PR is merged
-2. **NEVER move cards to "Done"** - Only the reviewer moves cards to "Done" after approval
-3. **NEVER merge without approval** - PRs must be reviewed before merge
+1. **NEVER close issues before PR merge** — Issues are closed automatically when PR is merged via "Closes #N"
+2. **NEVER move cards to "Done"** — Cards move to "Done" automatically when PR merges (via "Closes #N"), verify manually afterward
+3. **NEVER merge without approval** — PRs must be reviewed before merge
 
 ### ALWAYS Do These
 
-1. **ALWAYS create PR as DRAFT first** - Then implement, then mark "ready for review"
-2. **ALWAYS move card to "In Review"** - After creating PR and before marking ready
-3. **ALWAYS update CHANGELOG and IMPLEMENTATION.md** - Before committing code changes
-4. **ALWAYS reference the issue in PR body** - Use "Closes #N" or "Related #N"
-5. **ALWAYS add new issues to roadmap** - When creating new issues, add them to IMPLEMENTATION.md with priority label
+1. **ALWAYS create PR as DRAFT first** — Then implement, then mark "ready for review"
+2. **ALWAYS move card to "In Review"** — After creating PR and before marking ready
+3. **ALWAYS update CHANGELOG and IMPLEMENTATION.md** — Before committing code changes
+4. **ALWAYS reference the issue in PR body** — Use "Closes #N" or "Related #N"
+5. **ALWAYS add new issues to roadmap** — When creating new issues, add them to IMPLEMENTATION.md with priority label
 
 ## Workflow Summary
 
@@ -48,46 +48,6 @@ The PR workflow consists of 7 phases. **For the complete step-by-step instructio
 
 **Phase 2.6 is NON-NEGOTIABLE.** Without the requirements checkpoint, the agent may implement features that already exist, make wrong assumptions, or cause conflicts. Present the requirements table and get explicit user approval.
 
-## Review & Iteration
-
-After Phase 4, the review loop begins:
-
-```
-┌──────────────────────────────────────┐
-│         REVIEW ITERATION              │
-│  Reviewer comments → Agent responds   │
-│  → Implementation if needed → Push    │
-│  → Return for re-review               │
-└──────────────────────────────────────┘
-                   ↓
-┌──────────────────────────────────────┐
-│         MANUAL TESTING                │
-│  Reviewer tests → Bugs? → Fix → Loop │
-└──────────────────────────────────────┘
-                   ↓
-┌──────────────────────────────────────┐
-│    MANUAL TEST SCRIPT (Phase 6.1)     │
-│  Primary agent creates script         │
-│  Hermes Agent executes                │
-└──────────────────────────────────────┘
-                   ↓
-┌──────────────────────────────────────┐
-│    SMOKE TEST UPDATE (Phase 6.3)      │
-│  Agent reviews SMOKE_TEST.md          │
-└──────────────────────────────────────┘
-                   ↓
-┌──────────────────────────────────────┐
-│    SMOKE TEST (Phase 6.4, OPTIONAL)   │
-│  Hermes Agent executes SMOKE_TEST.md │
-└──────────────────────────────────────┘
-                   ↓
-               MERGE
-```
-
-**For detailed review response format, exact GraphQL commands, and iteration handling, load the `pr-workflow` skill.**
-
-**For manual test script creation, smoke test updates, and result processing, load the `pr-testing` skill.**
-
 ## Testing Phases
 
 **Key distinction:**
@@ -101,6 +61,14 @@ After Phase 4, the review loop begins:
 
 **Load the `pr-testing` skill for complete instructions.**
 
+## Quality Gates
+
+Before each commit and each PR, run quality gate sensors in order of cost. **Load the `quality-gates` skill for the complete sensor hierarchy and enforcement scripts.**
+
+Minimum checks:
+- Before each commit: `cargo fmt --check`, `cargo check --all-features`
+- Before each PR: `cargo clippy --all-features -- -D warnings`, `cargo test --all-features`, bare `#[allow(dead_code)]` check
+
 ## Review Comment Response Prefixes
 
 When responding to review comments, use these prefixes:
@@ -108,33 +76,14 @@ When responding to review comments, use these prefixes:
 | Prefix | Meaning | When to Use |
 |--------|---------|-------------|
 | ✅ Resolvido | Code fixed/removed | Changed code to address the comment |
-| ✅ Verificado | Code is correct as-is | Confirmed the code behavior is intentional |
+| ✅ Verificado | Correct as-is | Confirmed the code behavior is intentional |
 | 📋 | Acknowledged, deferred | Good suggestion, will address in future PR |
-| ❌ | Declined | Suggestion not applicable, with explanation |
+| ❌ | Declined | Not applicable, with explanation |
 | ❓ | Clarification needed | Question about the comment |
 
 **CRITICAL:** Respond to EACH thread individually, not in a single summary comment. Each comment needs its own reply for the reviewer to mark as resolved.
 
-## Iteration Scenarios
-
-During review, several scenarios may occur:
-
-- **Implementation changes needed:** Create todo list → user confirms → implement → push → re-review
-- **Scope creep detected:** Discuss with user → may open separate issues
-- **YAGNI identified:** Explain why code should be removed → remove with agreement
-- **Large issue detected:** Discuss splitting into multiple PRs
-- **Bugs found during testing:** Document → fix → push → return to review iteration
-
-**Every push triggers a new review cycle.** The reviewer must review new commits before proceeding.
-
-## Multiple Issues per PR
-
-When addressing multiple related issues in a single PR:
-
-1. **Both issues must be related** — don't combine unrelated work
-2. **PR title describes both** — e.g., `feat: memory staleness warnings and truncation notices`
-3. **PR body references all issues** — use `Closes #A, Closes #B` for auto-close
-4. **Both cards follow the same flow** — both move to "In Progress" at start, both to "In Review" at Phase 4
+**For detailed review response formats and exact GraphQL commands, load the `pr-workflow` skill.**
 
 ## Conventional Commits
 
@@ -181,22 +130,5 @@ Related #N (use when PR is related but not closing)
 - **Project URL**: https://github.com/users/luksamuk/projects/4/views/4
 - **Project Number**: 4
 - **Project ID**: `PVT_kwHOADplIc4BRnZ9`
-- **Status Field ID**: `PVTSSF_lAHOADplIc4BRnZ9zg_ZGpg`
-- **Scrum Status Field ID**: `PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY`
 
-**Status Options:**
-| Name | ID |
-|------|-----|
-| Todo | `f75ad846` |
-| In Progress | `47fc9ee4` |
-| In Review | `77520bb7` |
-| Done | `98236657` |
-
-**Scrum Status Options:**
-| Name | ID |
-|------|-----|
-| Backlog | `94ed2e0f` |
-| Ready | `70e88e2e` |
-| In Progress | `c2eae8ae` |
-| In Review | `d242b7c7` |
-| Done | `a456e7a8` |
+**For project board field IDs and status option IDs, load the `pr-workflow` skill.**

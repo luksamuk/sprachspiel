@@ -731,6 +731,20 @@ User-defined tools via dynamic loading or compilation.
 - ✅ `ReplState` struct - separates state from I/O
 - ✅ `core.rs` - business logic isolated from I/O
 - 📋 Phase 7-9: Command handlers extraction, refactoring, tests
+- 📋 `ApplicationBackend` trait - decouples core logic from I/O for CLI/TUI/ACP backends (see B8.1)
+
+**Architectural Requirement (ACP Prerequisite):**
+
+The TUI implementation MUST create a clean `ApplicationBackend` trait that decouples core logic (ChatCore, ChatSession, CustomCoordinator) from the I/O layer. This decoupling is required for B8 (ACP Agent Integration) — the ACP adapter will be a third I/O backend alongside CLI and TUI, consuming the same ChatCore via JSON-RPC over stdio instead of rustyline or ratatui.
+
+```
+ApplicationBackend (trait)
+   ├── CLI (RustylineInput + TerminalView) — current
+   ├── TUI (TuiInput + TuiView) — P14
+   └── ACP (stdio JSON-RPC) — B8
+```
+
+See IMPLEMENTATION.md (P14 and B8) for full details.
 
 **Future Tasks:**
 - [ ] Research: Ratatui-rs best practices
@@ -972,6 +986,7 @@ Features explicitly deferred with no current priority:
 | VCR Testing | When CI is robust |
 | Speculation | Indefinite deferral |
 | Remote Agent | P15+ |
+| ACP Agent Integration | B8 — after TUI decoupling (P14) |
 | Team Memory Sync | Team use only |
 | Remote Managed Settings | Enterprise |
 | Worktree-aware sessions | Niche |

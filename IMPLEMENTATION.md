@@ -137,7 +137,7 @@
 | **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
 | **[M2]** | UX & Pre-Launch | TUI design, UX research, prototyping, private feedback, benchmarks, learned patterns | P14 (UX design + interaction modes design), B1 (benchmarks), B6 (learned patterns) |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6, **S2.2 elevated to MEDIUM**), P14 (TUI implementation + /queue + /steer), P15 |
-| **[M4]** | Future | Deferred features and research | B2-B5, B7+, context engineering, speculation, VCR |
+| **[M4]** | Future | Deferred features and research | B2-B5, B7-B8+, context engineering, speculation, VCR |
 
 **M2 rationale:** The TUI design milestone now also serves as the pre-launch validation gate. Benchmarks (B1) are the last thing completed before public release — they validate claims about feedback-driven memory and hybrid retrieval. Learned patterns (B6) provides behavioral intelligence infrastructure (system reminders, auto-extraction of usage patterns, decay visibility) that enriches the TUI experience. Separating design (M2) from implementation (M3) ensures the TUI gets the attention it deserves as a public-facing product.
 
@@ -3434,7 +3434,34 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 - Status bar showing model, context usage, tokens
 - Sidebar for tools/messages (optional)
 
-**Estimated effort:** 3-4 weeks
+**Estimated effort:** 3-4 weeks (plus 1-2 weeks for ApplicationBackend decoupling)
+
+**Architectural Requirement (ACP/B8 Prerequisite):**
+
+The TUI implementation MUST create a clean application layer decoupling core logic from I/O. This decoupling is required for ACP (B8) — the ACP adapter will be a third I/O backend consuming the same application layer via JSON-RPC.
+
+Current architecture (tight coupling):
+```
+repl.rs → ChatCore::send_message() → CustomCoordinator → Ollama
+   ↑ direct calls, inline rendering, blocking I/O
+```
+
+Target architecture (decoupled):
+```
+ApplicationBackend (trait)
+   ├── CLI (RustylineInput + TerminalView) — current
+   ├── TUI (TuiInput + TuiView) — P14
+   └── ACP (stdio JSON-RPC) — B8
+```
+
+The `ApplicationBackend` trait should expose:
+- `send_message(&mut self, msg: &str) -> EventStream` — sends message, returns stream of events
+- `create_session(&mut self) -> SessionId` — creates new session
+- `load_session(&mut self, id: &SessionId) -> Result<Session>` — loads existing session
+- `list_sessions(&mut self) -> Vec<SessionInfo>` — lists available sessions
+- `cancel(&mut self) -> Result<()>` — cancels ongoing operation
+
+This refactoring is a prerequisite for B8 (ACP) and should be done as part of P14 (TUI) to avoid double refactoring. See B8 for ACP-specific requirements.
 
 **Mascote idea:** An ASCII mascote (Sprach described itself as "Nó de Ideias" — Idea Knot) could serve as a visual indicator of system state. When reflection triggers fire (see S2.3), the mascote's expression could change to signal the user. This follows patterns from other agent frameworks where visual feedback helps users understand internal state. Note for P14 implementation.
 
@@ -4155,6 +4182,8 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 **Reference:** Research icebox R-09
 
+**Relationship to B8 (ACP Agent Integration):** B8 (ACP) subsumes B5's use case. ACP's MCP-over-ACP capability allows ACP clients (editors) to inject MCP servers into ask-ai sessions, providing the same tool-level access that B5 would offer. Additionally, ACP gives users session management, streaming, and the full agent experience — not just individual tool calls. If B8 is implemented, B5 becomes redundant unless there's demand for a standalone memory API that doesn't require ACP session setup. **Recommendation:** Implement B8 first, evaluate if B5 is still needed.
+
 ---
 
 ### 📋 DRAFT B7: Content Relations Graph — Priority Elevation [M3]
@@ -4163,6 +4192,101 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 **No new card or issue.** This records the decision to elevate S2.2's priority when M3 work begins.
 
 **Rationale:** YourMemory's graph layer with BFS expansion is their killer feature after Ebbinghaus decay. It accounts for their LoCoMo performance lead. A memory system without content relations is incomplete in 2026.
+
+---
+
+### 📋 DRAFT B8: ACP Agent Integration [M3/M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** P14 TUI (ApplicationBackend decoupling — B8.1, B8.2)
+**Estimated effort:** 4-8 weeks
+**Priority within M4:** After B2-B4. If TUI decoupling is done in M3, ACP can start in M3.
+
+**Goal:** Implement the Agent Client Protocol (ACP) to expose ask-ai as an agent that editors (Zed, JetBrains, Neovim, VS Code) and other ACP-compatible clients can use directly, replacing the need for a standalone MCP Server (B5).
+
+**Rationale:** ACP is the emerging standard (like LSP for language servers) for editor↔agent communication. Instead of exposing individual tools via MCP (B5), ACP exposes the entire agent — sessions, conversation history, tools, memory, facts, and all. This gives users the ability to use ask-ai directly inside their editor with full session persistence, facts, and tool integration, rather than having another agent call ask-ai's tools piecemeal.
+
+**Key insight — ACP vs MCP:**
+- **MCP Server (B5):** Exposes ask-ai's memory as individual tools (search_facts, add_fact, etc). Other agents call these tools.
+- **ACP Agent (B8):** Exposes ask-ai as a complete agent. The user talks to ask-ai inside their editor, with full sessions, tools, and memory.
+- **ACP subsumes B5's use case** via MCP-over-ACP: ACP clients can inject MCP servers that provide the same individual tool access.
+- **Recommendation:** Implement B8 first. B5 becomes a subset of B8's MCP-over-ACP capability, not a separate deliverable.
+
+**Prerequisite: ApplicationBackend Decoupling (P14 architectural requirement)**
+
+The TUI implementation must create a clean `ApplicationBackend` trait that separates core logic from I/O. Currently, `ChatCore` and `repl.rs` are tightly coupled — the REPL directly calls `send_message()` and renders output inline.
+
+The TUI refactoring creates this separation (see P14 for the target architecture). ACP will be the third implementation:
+
+```
+ApplicationBackend (trait)
+   ├── CLI (RustylineInput + TerminalView) — current
+   ├── TUI (TuiInput + TuiView) — P14
+   └── ACP (stdio JSON-RPC → AcpBackend) — B8
+```
+
+**Sub-items:**
+
+| Sub | Description | Effort | Priority |
+|-----|-------------|--------|----------|
+| B8.1 | Create `ApplicationBackend` trait in `src/chat/backend.rs` with event stream architecture | 1 week | **High** (prerequisite for TUI and ACP) |
+| B8.2 | Refactor `repl.rs` to use `ApplicationBackend` instead of direct ChatCore calls | 3-5 days | **High** (prerequisite) |
+| B8.3 | Add `ask-ai acp` subcommand that starts ACP server over stdio | 1-2 weeks | High |
+| B8.4 | Implement ACP Agent trait: initialize, session/new, session/load, session/prompt | 2-3 weeks | High |
+| B8.5 | Bridge ChatEvent → ACP session/update notifications (text, tool_call, plan) | 1-2 weeks | High |
+| B8.6 | Implement session/resume and session/close for SQLite persistence | 1 week | Medium |
+| B8.7 | Tool call reporting: map CustomToolInfo to ACP tool_call notifications with kind/status | 3-5 days | Medium |
+| B8.8 | Permission system: session/request_permission for destructive tool calls | 1 week | Medium |
+| B8.9 | MCP-over-ACP: allow ACP clients to inject MCP servers into ask-ai sessions | 2-3 weeks | Low (M4-later) |
+
+**Architecture:**
+
+```
+ask-ai (binário único)
+├── CLI mode (atual)
+│   └── RustylineInput + TerminalView → ApplicationBackend → ChatCore → Ollama
+├── TUI mode (P14)
+│   └── TuiInput + TuiView → ApplicationBackend → ChatCore → Ollama
+└── ACP mode (B8)
+    └── stdio JSON-RPC → AcpBackend → ApplicationBackend → ChatCore → Ollama
+```
+
+**What already maps to ACP:**
+
+| ACP Concept | ask-ai Equivalent | Status |
+|-------------|-------------------|--------|
+| session/new | ChatSession::new() | ✅ Exists |
+| session/load | ChatSession::load_from_sqlite() | ✅ Exists |
+| session/prompt | ChatCore::send_message() | ✅ Exists |
+| session/update (agent_message) | ChatEvent::PreToolContent | ✅ Exists as events |
+| session/update (tool_call) | ChatEvent::ToolCall | ✅ Exists as events |
+| session/update (plan) | — | 🟡 Could use /plan |
+| session/request_permission | — | ❌ New (B8.8) |
+| session/cancel | — | ❌ New |
+| Tool schemas (JSON Schema) | CustomToolInfo | ✅ Exists |
+| fs/read_text_file (Client) | File tools exist | ✅ Adapt |
+| terminal/create (Client) | run_command exists | ✅ Adapt |
+
+**SDK choices:**
+
+| SDK | Status | Recommendation |
+|-----|--------|----------------|
+| agent-client-protocol v0.x (trait-based) | Stable, published on crates.io | Start here, migrate later |
+| agent-client-protocol v1.0 (SACP builder-based) | In development, more ergonomic | Migrate when stable |
+
+**Open questions:**
+- Transport: stdio only (matches ACP spec, simpler) or stdio + HTTP/SSE (remote access)?
+- Authentication model for remote access (if HTTP transport added)
+- How to handle tool permissions (some tools are destructive, ACP has request_permission)
+- Relationship between ACP's MCP-over-ACP and B5 (MCP Server): should B5 be deprecated in favor of B8?
+- SDK version: start with v0.x and migrate to v1.0 SACP when stable?
+
+**Reference:**
+- ACP specification: https://agentclientprotocol.com/
+- ACP Rust SDK: https://agentclientprotocol.com/libraries/rust/
+- ACP clients: Zed, JetBrains, Neovim (CodeCompanion/Avante), VS Code, Obsidian, Unity
+- ACP agents: Claude Agent, Codex CLI, OpenCode, Cline, Cursor CLI, Gemini CLI
+- OpenCode ACP support: https://opencode.ai/docs/acp/
 
 ---
 
@@ -4209,3 +4333,4 @@ The original detailed implementation notes have been moved to:
 2026-04-27d - SF5 revised per PR review: replaced spawn_subagent with 4 dedicated spawning tools, removed spawn_document_agent, removed PDF pipeline from Rust, removed FileType::Pdf/Epub, updated document-processing skill.
 2026-04-28 - P6.0 decomposed into 7 sub-phases (P6.0a–P6.0g) for full ollama-rs removal. Added P6.0a (retry threshold with backoff). Added P14.IM (TUI interaction modes: /queue, /steer). Updated milestones M1–M3 with provider migration and interaction modes.
 2026-04-28 - Draft priorities B1-B7 added. Milestones restructured: M2 now includes B1 (benchmarks) and B6 (learned patterns). M4 now has structured draft priorities (B2-B5). S2.2 (Content Relations) elevated to MEDIUM. Research icebox created at doc/src/development/research-icebox.md.
+2026-04-29 - Added B8 (ACP Agent Integration) as draft priority. Updated P14 to include ApplicationBackend decoupling as architectural requirement for TUI/ACP. Updated B5 to note subsumption by B8 (ACP's MCP-over-ACP). Added R-11 (ACP) and R-12 (ApplicationBackend) to research icebox. Updated R-09 (MCP Server) to reference B5/B8.

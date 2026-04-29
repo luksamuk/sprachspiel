@@ -94,13 +94,15 @@
 
 ---
 
-### R-09: MCP Server (Memory as Service)
+### R-09: MCP Server (Memory as Service) — See B5 and B8
 
 - **Source:** Roadmap gap analysis; competitive landscape
-- **Current state:** Not started. P15 covers MCP Client only (consuming external MCP servers).
-- **Why deferred:** Building an MCP server is a different product direction (API/library vs CLI tool). Needs careful design around what to expose (facts? content? search? decay?) and authentication model.
-- **Prerequisite:** P15 (MCP Client) implemented; understanding of which memory primitives other tools would consume
-- **Revisit when:** MCP Client is stable; at least 2 external tools express interest in consuming ask-ai's memory
+- **Current state:** Draft priority B5 (MCP Server) and B8 (ACP Agent Integration) in IMPLEMENTATION.md. B8 subsumes B5's use case via MCP-over-ACP.
+- **Why deferred to M4:** B8 (ACP) exposes ask-ai as a complete agent to editors, which is a more valuable integration than exposing individual memory tools. Implementing B8 first eliminates the need for a standalone MCP server.
+- **Prerequisite:** P14 TUI (decoupling via ApplicationBackend trait), then B8 (ACP adapter)
+- **Revisit when:** TUI is implemented with ApplicationBackend decoupling; evaluate based on user demand for standalone memory API vs full agent experience
+
+---
 
 ---
 
@@ -111,6 +113,28 @@
 - **Why deferred:** Requires B2 (Belief Engine) to be stable first. Multi-source reconciliation (user says X, docs say Y) is a fundamentally harder problem that needs clear UX for conflict surfacing.
 - **Prerequisite:** B2 (Belief Engine) implemented and proven for single-source contradictions
 - **Revisit when:** B2 is production-stable and users report cross-source contradictions that the current system misses
+
+---
+
+### R-11: ACP (Agent Client Protocol) Integration
+
+- **Source:** OpenCode ACP support, Zed ACP integration, ACP specification (agentclientprotocol.com)
+- **Current state:** Draft priority B8 in IMPLEMENTATION.md. ACP is the emerging standard for editor↔agent communication (like LSP for language servers).
+- **Why M3/M4:** Requires TUI decoupling (P14 ApplicationBackend trait). ACP exposes ask-ai as a complete agent — sessions, memory, tools — rather than individual MCP tools.
+- **Key insight:** ACP replaces MCP Server (B5) as the primary integration path. MCP-over-ACP provides tool-level access when needed. 30+ ACP agents and 20+ ACP clients (editors) already exist.
+- **Prerequisite:** P14 TUI with ApplicationBackend decoupling (B8.1, B8.2)
+- **Revisit when:** ACP v1.0 SDK (SACP) stabilizes; Zed/JetBrains ACP support matures
+- **Reference:** https://agentclientprotocol.com/, https://opencode.ai/docs/acp/
+
+---
+
+### R-12: ApplicationBackend Decoupling (TUI/ACP Prerequisite)
+
+- **Source:** P14 (TUI) and B8 (ACP) architectural requirement
+- **Current state:** `InputBackend` and `ChatView` traits exist but are thin abstractions (not yet an ApplicationBackend). `ChatCore` and `repl.rs` are tightly coupled.
+- **Why important:** Both TUI and ACP need the same decoupling. Without it, each new I/O backend requires duplicating REPL logic. With it, CLI/TUI/ACP share the same core through `ApplicationBackend` trait.
+- **Target architecture:** `ApplicationBackend` trait with event stream (`send_message() → EventStream`), session management, and cancel support — used by CLI, TUI, and ACP backends
+- **Revisit when:** P14 (TUI) implementation starts — this must be the first architectural step
 
 ---
 
