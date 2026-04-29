@@ -1132,7 +1132,7 @@ if let Some(facts) = &self.facts {
 
 > **Note: ONNX NLI and SparseCL are OUT OF SCOPE.** The DeBERTa-v3 NLI cross-encoder was benchmarked and **failed** (SNLI/MultiNLI training data lacks preference patterns). SparseCL requires domain-specific fine-tuning, which violates ADR-001 (feedback is harness-only, no fine-tuning). The current triple-based approach (Layer 3.5) resolves >80% of contradictions deterministically at sub-millisecond latency with zero additional model dependency. If future requirements demand >95% coverage, the path forward is fine-tuning nomic-embed-text with SparseCL on preference contradiction data — but this requires GPU infrastructure not available in a local-first design.
 
-**Full research index and paper notes:** `~/testfiles/research/contradiction-detection/README.md`
+**Full research index and paper notes:** See `doc/src/development/research/papers-reference.md` for arXiv links and benchmark references.
 
 ### Key Learnings Applied
 1. **Two categories is enough** - Hermes proves categorization isn't strictly necessary

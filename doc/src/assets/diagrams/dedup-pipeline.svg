@@ -1,0 +1,377 @@
+<svg viewBox="0 0 900 1930" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#11131a"/>
+      <stop offset="100%" stop-color="#0b0d13"/>
+    </linearGradient>
+    <linearGradient id="inputGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="l1Grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#0891b2"/>
+    </linearGradient>
+    <linearGradient id="l2Grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="l35Grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="l3Grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="l4Grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#e11d48"/>
+    </linearGradient>
+    <linearGradient id="gwGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#64748b"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+    <linearGradient id="insertGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+
+    <!-- Glow filters -->
+    <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feFlood flood-color="#06b6d4" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowEmerald" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feFlood flood-color="#10b981" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowAmber" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feFlood flood-color="#f59e0b" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowViolet" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feFlood flood-color="#8b5cf6" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowRose" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feFlood flood-color="#f43f5e" flood-opacity="0.35"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowInsert" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feFlood flood-color="#22d3ee" flood-opacity="0.45"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Arrow marker -->
+    <marker id="arrowGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b"/>
+    </marker>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#ef4444"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#22c55e"/>
+    </marker>
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#22d3ee"/>
+    </marker>
+
+    <!-- Dashed pattern for reject paths -->
+    <pattern id="rejectDash" patternUnits="userSpaceOnUse" width="12" height="1">
+      <line x1="0" y1="0" x2="8" y2="0" stroke="#ef4444" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="2800" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- ===== TITLE ===== -->
+  <text x="450" y="52" text-anchor="middle" fill="#e2e8f0" font-size="28" font-weight="700" letter-spacing="1">Ask-AI Fact Dedup Pipeline</text>
+  <text x="450" y="78" text-anchor="middle" fill="#94a3b8" font-size="14" font-weight="400">6-Layer Progressive Deduplication · Reject Early · Verify Late</text>
+  <line x1="150" y1="96" x2="750" y2="96" stroke="#334155" stroke-width="1"/>
+
+  <!-- ===== LAYER NUMBERS COLUMN (left side) ===== -->
+  <text x="52" y="180" text-anchor="middle" fill="#475569" font-size="11" font-weight="600" letter-spacing="2">INPUT</text>
+  <text x="52" y="305" text-anchor="middle" fill="#06b6d4" font-size="11" font-weight="600" letter-spacing="2">L1</text>
+  <text x="52" y="445" text-anchor="middle" fill="#10b981" font-size="11" font-weight="600" letter-spacing="2">L2</text>
+  <text x="52" y="660" text-anchor="middle" fill="#f59e0b" font-size="11" font-weight="600" letter-spacing="2">L3.5</text>
+  <text x="52" y="1140" text-anchor="middle" fill="#8b5cf6" font-size="11" font-weight="600" letter-spacing="2">L3</text>
+  <text x="52" y="1400" text-anchor="middle" fill="#f43f5e" font-size="11" font-weight="600" letter-spacing="2">L4</text>
+  <text x="52" y="1700" text-anchor="middle" fill="#64748b" font-size="11" font-weight="600" letter-spacing="2">GW</text>
+  <text x="52" y="1900" text-anchor="middle" fill="#22d3ee" font-size="11" font-weight="600" letter-spacing="2">OUT</text>
+
+  <!-- ===== VERTICAL RAIL LINE ===== -->
+  <line x1="52" y1="200" x2="52" y2="1880" stroke="#1e293b" stroke-width="2" stroke-dasharray="4,6"/>
+
+  <!-- ===== INPUT NODE ===== -->
+  <rect x="180" y="130" width="540" height="72" rx="10" fill="url(#inputGrad)" stroke="#475569" stroke-width="1.5"/>
+  <text x="450" y="160" text-anchor="middle" fill="#e2e8f0" font-size="16" font-weight="600">INPUT — New Fact</text>
+  <text x="450" y="184" text-anchor="middle" fill="#94a3b8" font-size="13" font-style="italic">"User prefers dark mode"</text>
+
+  <!-- Arrow INPUT → L1 -->
+  <line x1="450" y1="202" x2="450" y2="250" stroke="#64748b" stroke-width="2" marker-end="url(#arrowGray)"/>
+
+  <!-- ===== L1: EXACT MATCH ===== -->
+  <rect x="160" y="252" width="580" height="82" rx="10" fill="#0c1a22" stroke="#06b6d4" stroke-width="2" filter="url(#glowCyan)"/>
+  <rect x="160" y="252" width="8" height="82" rx="4" fill="url(#l1Grad)"/>
+  <text x="450" y="280" text-anchor="middle" fill="#06b6d4" font-size="17" font-weight="700">L1 — Exact Match</text>
+  <text x="450" y="302" text-anchor="middle" fill="#cbd5e1" font-size="12">String equality check on raw fact text</text>
+  <text x="450" y="320" text-anchor="middle" fill="#94a3b8" font-size="11">If exact duplicate found → REJECT (O(1) hash lookup)</text>
+
+  <!-- Pass label -->
+  <rect x="700" y="262" width="60" height="22" rx="6" fill="#06b6d420" stroke="#06b6d4" stroke-width="1"/>
+  <text x="730" y="278" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="600">PASS ▼</text>
+
+  <!-- Arrow L1 → L2 -->
+  <line x1="450" y1="334" x2="450" y2="392" stroke="#64748b" stroke-width="2" marker-end="url(#arrowGray)"/>
+
+  <!-- ===== L2: NORMALIZED ===== -->
+  <rect x="160" y="394" width="580" height="82" rx="10" fill="#0c1a17" stroke="#10b981" stroke-width="2" filter="url(#glowEmerald)"/>
+  <rect x="160" y="394" width="8" height="82" rx="4" fill="url(#l2Grad)"/>
+  <text x="450" y="422" text-anchor="middle" fill="#10b981" font-size="17" font-weight="700">L2 — Normalized Match</text>
+  <text x="450" y="444" text-anchor="middle" fill="#cbd5e1" font-size="12">Lowercase · trim · collapse whitespace · Unicode NFC</text>
+  <text x="450" y="462" text-anchor="middle" fill="#94a3b8" font-size="11">If normalized duplicate found → REJECT</text>
+
+  <rect x="700" y="404" width="60" height="22" rx="6" fill="#10b98120" stroke="#10b981" stroke-width="1"/>
+  <text x="730" y="420" text-anchor="middle" fill="#10b981" font-size="10" font-weight="600">PASS ▼</text>
+
+  <!-- Arrow L2 → L3.5 -->
+  <line x1="450" y1="476" x2="450" y2="534" stroke="#64748b" stroke-width="2" marker-end="url(#arrowGray)"/>
+
+  <!-- ===== CARD 1: Early Rejection (below L2, right column) ===== -->
+  <rect x="730" y="540" width="148" height="170" rx="8" fill="#1a1d27" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="804" y="562" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="700" letter-spacing="1.5">CARD 1</text>
+  <text x="804" y="580" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Early Rejection</text>
+  <line x1="745" y1="590" x2="863" y2="590" stroke="#334155" stroke-width="1"/>
+  <text x="804" y="610" text-anchor="middle" fill="#94a3b8" font-size="10">L1 + L2 catch ~60%</text>
+  <text x="804" y="628" text-anchor="middle" fill="#94a3b8" font-size="10">of duplicates at near-</text>
+  <text x="804" y="646" text-anchor="middle" fill="#94a3b8" font-size="10">zero cost. O(1) each.</text>
+  <text x="804" y="673" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="600">L1 · hash lookup</text>
+  <text x="804" y="691" text-anchor="middle" fill="#10b981" font-size="10" font-weight="600">L2 · norm + hash</text>
+
+  <!-- ===== L3.5: SEMANTIC + TRIPLE ===== -->
+  <rect x="30" y="536" width="700" height="560" rx="12" fill="#1a1708" stroke="#f59e0b" stroke-width="2" filter="url(#glowAmber)" opacity="0.95"/>
+  <rect x="30" y="536" width="10" height="560" rx="5" fill="url(#l35Grad)"/>
+
+  <text x="380" y="566" text-anchor="middle" fill="#f59e0b" font-size="17" font-weight="700">L3.5 — Semantic + Triple Analysis</text>
+  <text x="380" y="588" text-anchor="middle" fill="#cbd5e1" font-size="12">Embedding similarity ∧ knowledge-graph triple comparison (subject–predicate–object)</text>
+
+  <!-- Diamond decision -->
+  <polygon points="380,610 440,660 380,710 320,660" fill="#2a2210" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="380" y="654" text-anchor="middle" fill="#f59e0b" font-size="11" font-weight="600">Triple</text>
+  <text x="380" y="668" text-anchor="middle" fill="#f59e0b" font-size="11" font-weight="600">Compare</text>
+
+  <!-- ===== Four sub-paths ===== -->
+  <!-- Sub-path 1: Exclusive → CONTRADICTION -->
+  <line x1="320" y1="660" x2="155" y2="740" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="6,3" marker-end="url(#arrowRed)"/>
+  <rect x="68" y="748" width="190" height="72" rx="8" fill="#1c0a0a" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="163" y="770" text-anchor="middle" fill="#ef4444" font-size="13" font-weight="700">Exclusive</text>
+  <text x="163" y="790" text-anchor="middle" fill="#fca5a5" font-size="11">Subject–predicate pair</text>
+  <text x="163" y="806" text-anchor="middle" fill="#fca5a5" font-size="11">is exclusive → cannot coexist</text>
+  <rect x="96" y="828" width="134" height="24" rx="6" fill="#7f1d1d" stroke="#ef4444" stroke-width="1"/>
+  <text x="163" y="845" text-anchor="middle" fill="#fca5a5" font-size="11" font-weight="700">→ CONTRADICTION</text>
+
+  <!-- Sub-path 2: Same triple → DUPLICATE -->
+  <line x1="350" y1="710" x2="280" y2="900" stroke="#22c55e" stroke-width="1.8" marker-end="url(#arrowGreen)"/>
+  <rect x="68" y="908" width="190" height="72" rx="8" fill="#0a1c0a" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="163" y="930" text-anchor="middle" fill="#22c55e" font-size="13" font-weight="700">Same Triple</text>
+  <text x="163" y="950" text-anchor="middle" fill="#86efac" font-size="11">Identical (s, p, o) triple</text>
+  <text x="163" y="966" text-anchor="middle" fill="#86efac" font-size="11">already exists in knowledge graph</text>
+  <rect x="96" y="988" width="134" height="24" rx="6" fill="#14532d" stroke="#22c55e" stroke-width="1"/>
+  <text x="163" y="1005" text-anchor="middle" fill="#86efac" font-size="11" font-weight="700">→ DUPLICATE</text>
+
+  <!-- Sub-path 3: Accumulative + overlap > 0.3 → CONTRADICTION -->
+  <line x1="410" y1="710" x2="480" y2="900" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="6,3" marker-end="url(#arrowRed)"/>
+  <rect x="380" y="908" width="220" height="76" rx="8" fill="#1c0a0a" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="490" y="930" text-anchor="middle" fill="#ef4444" font-size="13" font-weight="700">Accumulative + High Overlap</text>
+  <text x="490" y="950" text-anchor="middle" fill="#fca5a5" font-size="11">New fact + existing fact are accumulative</text>
+  <text x="490" y="966" text-anchor="middle" fill="#fca5a5" font-size="11">AND similarity overlap &gt; 0.3</text>
+  <rect x="390" y="992" width="200" height="24" rx="6" fill="#7f1d1d" stroke="#ef4444" stroke-width="1"/>
+  <text x="490" y="1009" text-anchor="middle" fill="#fca5a5" font-size="11" font-weight="700">→ CONTRADICTION</text>
+
+  <!-- Sub-path 4: Accumulative + overlap ≤ 0.3 → COEXIST -->
+  <line x1="440" y1="660" x2="595" y2="748" stroke="#f59e0b" stroke-width="1.8" marker-end="url(#arrowAmber)"/>
+  <rect x="480" y="756" width="220" height="76" rx="8" fill="#1a1708" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="590" y="778" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="700">Accumulative + Low Overlap</text>
+  <text x="590" y="798" text-anchor="middle" fill="#fcd34d" font-size="11">Facts are accumulative</text>
+  <text x="590" y="814" text-anchor="middle" fill="#fcd34d" font-size="11">AND overlap ≤ 0.3 → compatible</text>
+  <rect x="500" y="836" width="180" height="24" rx="6" fill="#422006" stroke="#f59e0b" stroke-width="1"/>
+  <text x="590" y="853" text-anchor="middle" fill="#fcd34d" font-size="11" font-weight="700">→ COEXIST ✓</text>
+
+  <!-- Outcome merge lines from L3.5 sub-paths -->
+  <!-- DUPLICATE → REJECT exit -->
+  <line x1="163" y1="1012" x2="163" y2="1060" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <rect x="100" y="1062" width="126" height="28" rx="6" fill="#450a0a" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="163" y="1081" text-anchor="middle" fill="#ef4444" font-size="12" font-weight="700">✕ REJECT</text>
+
+  <!-- COEXIST → PASS exit -->
+  <line x1="590" y1="860" x2="590" y2="1060" stroke="#22c55e" stroke-width="1.5"/>
+  <line x1="590" y1="1060" x2="450" y2="1060" stroke="#22c55e" stroke-width="1.5"/>
+
+  <!-- CONTRADICTION → REJECT exit (right path) -->
+  <line x1="490" y1="1016" x2="490" y2="1060" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <line x1="490" y1="1060" x2="340" y2="1060" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+  <!-- Arrow L3.5 → L3 (PASS path) -->
+  <line x1="450" y1="1096" x2="450" y2="1150" stroke="#64748b" stroke-width="2" marker-end="url(#arrowGray)"/>
+
+  <!-- ===== L3: FTS5 ===== -->
+  <rect x="160" y="1152" width="580" height="82" rx="10" fill="#110c22" stroke="#8b5cf6" stroke-width="2" filter="url(#glowViolet)"/>
+  <rect x="160" y="1152" width="8" height="82" rx="4" fill="url(#l3Grad)"/>
+  <text x="450" y="1180" text-anchor="middle" fill="#8b5cf6" font-size="17" font-weight="700">L3 — FTS5 Full-Text Search</text>
+  <text x="450" y="1202" text-anchor="middle" fill="#cbd5e1" font-size="12">SQLite FTS5 token overlap · threshold = 0.75</text>
+  <text x="450" y="1220" text-anchor="middle" fill="#94a3b8" font-size="11">If FTS5 similarity ≥ 0.75 → REJECT as near-duplicate</text>
+
+  <rect x="700" y="1160" width="60" height="22" rx="6" fill="#8b5cf620" stroke="#8b5cf6" stroke-width="1"/>
+  <text x="730" y="1176" text-anchor="middle" fill="#8b5cf6" font-size="10" font-weight="600">PASS ▼</text>
+
+  <!-- ===== CARD 2: Semantic Analysis (floating right) ===== -->
+  <rect x="730" y="876" width="148" height="310" rx="8" fill="#1a1d27" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="804" y="898" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="700" letter-spacing="1.5">CARD 2</text>
+  <text x="804" y="916" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Triple Semantics</text>
+  <line x1="745" y1="926" x2="863" y2="926" stroke="#334155" stroke-width="1"/>
+  <text x="804" y="946" text-anchor="middle" fill="#94a3b8" font-size="10">Facts decomposed into</text>
+  <text x="804" y="962" text-anchor="middle" fill="#94a3b8" font-size="10">(subject, predicate, obj)</text>
+  <text x="804" y="982" text-anchor="middle" fill="#94a3b8" font-size="10">triples. Predicates can</text>
+  <text x="804" y="998" text-anchor="middle" fill="#94a3b8" font-size="10">be exclusive (xor) or</text>
+  <text x="804" y="1014" text-anchor="middle" fill="#94a3b8" font-size="10">accumulative (additive).</text>
+  <text x="804" y="1042" text-anchor="middle" fill="#ef4444" font-size="10" font-weight="600">exclusive → conflict</text>
+  <text x="804" y="1060" text-anchor="middle" fill="#22c55e" font-size="10" font-weight="600">same triple → dup</text>
+  <text x="804" y="1078" text-anchor="middle" fill="#f59e0b" font-size="10" font-weight="600">accumulative → check</text>
+  <text x="804" y="1096" text-anchor="middle" fill="#f59e0b" font-size="10" font-weight="600">  overlap threshold</text>
+  <!-- overlap visual -->
+  <rect x="768" y="1150" width="72" height="18" rx="5" fill="#f59e0b20" stroke="#f59e0b" stroke-width="1"/>
+  <text x="804" y="1163" text-anchor="middle" fill="#f59e0b" font-size="9" font-weight="600">overlap τ=0.3</text>
+
+  <!-- Arrow L3 → L4 -->
+  <line x1="450" y1="1234" x2="450" y2="1290" stroke="#64748b" stroke-width="2" marker-end="url(#arrowGray)"/>
+
+  <!-- ===== L4: VERIFICATION ===== -->
+  <rect x="160" y="1292" width="580" height="100" rx="10" fill="#1c0814" stroke="#f43f5e" stroke-width="2" filter="url(#glowRose)"/>
+  <rect x="160" y="1292" width="8" height="100" rx="4" fill="url(#l4Grad)"/>
+  <text x="450" y="1322" text-anchor="middle" fill="#f43f5e" font-size="17" font-weight="700">L4 — Verification</text>
+  <text x="450" y="1346" text-anchor="middle" fill="#cbd5e1" font-size="12">Pairwise embedding cosine similarity · O(n²) comparison</text>
+  <text x="450" y="1366" text-anchor="middle" fill="#94a3b8" font-size="11">Exhaustive cross-check of candidates surviving earlier layers</text>
+  <text x="450" y="1382" text-anchor="middle" fill="#64748b" font-size="10">If cosine_sim ≥ threshold → REJECT as semantic duplicate</text>
+
+  <rect x="700" y="1300" width="60" height="22" rx="6" fill="#f43f5e20" stroke="#f43f5e" stroke-width="1"/>
+  <text x="730" y="1316" text-anchor="middle" fill="#f43f5e" font-size="10" font-weight="600">PASS ▼</text>
+
+  <!-- ===== CARD 3: Cost Escalation (floating right) ===== -->
+  <rect x="730" y="1292" width="148" height="200" rx="8" fill="#1a1d27" stroke="#334155" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="804" y="1314" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="700" letter-spacing="1.5">CARD 3</text>
+  <text x="804" y="1332" text-anchor="middle" fill="#e2e8f0" font-size="11" font-weight="600">Cost Escalation</text>
+  <line x1="745" y1="1342" x2="863" y2="1342" stroke="#334155" stroke-width="1"/>
+  <text x="804" y="1362" text-anchor="middle" fill="#94a3b8" font-size="10">Cost grows per layer:</text>
+  <text x="804" y="1384" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="600">L1·L2  → O(1)</text>
+  <text x="804" y="1402" text-anchor="middle" fill="#f59e0b" font-size="10" font-weight="600">L3.5   → O(k)</text>
+  <text x="804" y="1420" text-anchor="middle" fill="#8b5cf6" font-size="10" font-weight="600">L3     → O(k log n)</text>
+  <text x="804" y="1438" text-anchor="middle" fill="#f43f5e" font-size="10" font-weight="600">L4     → O(n²)</text>
+  <text x="804" y="1460" text-anchor="middle" fill="#94a3b8" font-size="9">"Reject early, verify late"</text>
+  <text x="804" y="1474" text-anchor="middle" fill="#94a3b8" font-size="9">minimizes expensive ops</text>
+
+  <!-- Arrow L4 → Global Wins -->
+  <line x1="450" y1="1392" x2="450" y2="1448" stroke="#64748b" stroke-width="2" marker-end="url(#arrowGray)"/>
+
+  <!-- ===== GLOBAL WINS ===== -->
+  <rect x="160" y="1450" width="580" height="82" rx="10" fill="#111827" stroke="#64748b" stroke-width="2"/>
+  <rect x="160" y="1450" width="8" height="82" rx="4" fill="url(#gwGrad)"/>
+  <text x="450" y="1478" text-anchor="middle" fill="#cbd5e1" font-size="17" font-weight="700">Global Wins · Dedup Resolution</text>
+  <text x="450" y="1500" text-anchor="middle" fill="#94a3b8" font-size="12">Merge winners across candidates · highest-confidence fact survives</text>
+  <text x="450" y="1518" text-anchor="middle" fill="#64748b" font-size="11">Fact with best source quality / recency score wins the slot</text>
+
+  <!-- Arrow Global Wins → INSERT -->
+  <line x1="450" y1="1532" x2="450" y2="1588" stroke="#64748b" stroke-width="2" marker-end="url(#arrowGray)"/>
+
+  <!-- ===== INSERT NODE ===== -->
+  <rect x="220" y="1590" width="460" height="68" rx="14" fill="#042f2e" stroke="#22d3ee" stroke-width="2.5" filter="url(#glowInsert)"/>
+  <text x="450" y="1622" text-anchor="middle" fill="#22d3ee" font-size="20" font-weight="700">✓ INSERT INTO KNOWLEDGE GRAPH</text>
+  <text x="450" y="1646" text-anchor="middle" fill="#67e8f9" font-size="12">New fact stored · embeddings indexed · triples linked</text>
+
+  <!-- ===== REJECT EXIT PATH (left side) ===== -->
+  <!-- Vertical REJECT rail -->
+  <line x1="100" y1="290" x2="100" y2="1560" stroke="#ef4444" stroke-width="1" stroke-dasharray="5,4" opacity="0.4"/>
+  <text x="100" y="1580" text-anchor="middle" fill="#ef4444" font-size="13" font-weight="700">REJECT ✕</text>
+
+  <!-- Small reject arrows from layers to reject rail -->
+  <line x1="160" y1="293" x2="110" y2="293" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+  <line x1="160" y1="435" x2="110" y2="435" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+  <line x1="230" y1="1080" x2="110" y2="1080" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+  <line x1="160" y1="1193" x2="110" y2="1193" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+  <line x1="160" y1="1342" x2="110" y2="1342" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+
+  <!-- ===== LEGEND BAR (bottom) ===== -->
+  <line x1="80" y1="1700" x2="820" y2="1700" stroke="#1e293b" stroke-width="1"/>
+
+  <text x="450" y="1730" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="600" letter-spacing="1">LEGEND</text>
+
+  <!-- Row 1 -->
+  <rect x="100" y="1748" width="14" height="14" rx="3" fill="#06b6d4"/>
+  <text x="122" y="1760" fill="#cbd5e1" font-size="11">Exact Match (L1)</text>
+
+  <rect x="260" y="1748" width="14" height="14" rx="3" fill="#10b981"/>
+  <text x="282" y="1760" fill="#cbd5e1" font-size="11">Normalized (L2)</text>
+
+  <rect x="430" y="1748" width="14" height="14" rx="3" fill="#f59e0b"/>
+  <text x="452" y="1760" fill="#cbd5e1" font-size="11">Semantic+Triple (L3.5)</text>
+
+  <rect x="630" y="1748" width="14" height="14" rx="3" fill="#8b5cf6"/>
+  <text x="652" y="1760" fill="#cbd5e1" font-size="11">FTS5 (L3)</text>
+
+  <!-- Row 2 -->
+  <rect x="100" y="1778" width="14" height="14" rx="3" fill="#f43f5e"/>
+  <text x="122" y="1790" fill="#cbd5e1" font-size="11">Verification (L4)</text>
+
+  <rect x="260" y="1778" width="14" height="14" rx="3" fill="#64748b"/>
+  <text x="282" y="1790" fill="#cbd5e1" font-size="11">Global Wins</text>
+
+  <rect x="430" y="1778" width="14" height="14" rx="3" fill="#22d3ee"/>
+  <text x="452" y="1790" fill="#cbd5e1" font-size="11">INSERT (accepted)</text>
+
+  <line x1="610" y1="1785" x2="660" y2="1785" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="670" y="1790" fill="#cbd5e1" font-size="11">Reject path</text>
+
+  <!-- Row 3: Decision outcomes -->
+  <rect x="100" y="1818" width="80" height="18" rx="4" fill="#7f1d1d" stroke="#ef4444" stroke-width="1"/>
+  <text x="140" y="1831" text-anchor="middle" fill="#fca5a5" font-size="9" font-weight="600">CONTRADICTION</text>
+
+  <rect x="210" y="1818" width="80" height="18" rx="4" fill="#14532d" stroke="#22c55e" stroke-width="1"/>
+  <text x="250" y="1831" text-anchor="middle" fill="#86efac" font-size="9" font-weight="600">DUPLICATE</text>
+
+  <rect x="320" y="1818" width="70" height="18" rx="4" fill="#422006" stroke="#f59e0b" stroke-width="1"/>
+  <text x="355" y="1831" text-anchor="middle" fill="#fcd34d" font-size="9" font-weight="600">COEXIST</text>
+
+  <!-- ===== FLOW DIRECTION LABELS ===== -->
+  <rect x="422" y="346" width="56" height="18" rx="4" fill="#334155" opacity="0.5"/>
+  <text x="450" y="359" text-anchor="middle" fill="#94a3b8" font-size="9">▼ flow</text>
+
+  <rect x="422" y="488" width="56" height="18" rx="4" fill="#334155" opacity="0.5"/>
+  <text x="450" y="501" text-anchor="middle" fill="#94a3b8" font-size="9">▼ flow</text>
+
+  <rect x="422" y="1120" width="56" height="18" rx="4" fill="#334155" opacity="0.5"/>
+  <text x="450" y="1133" text-anchor="middle" fill="#94a3b8" font-size="9">▼ flow</text>
+
+  <rect x="422" y="1262" width="56" height="18" rx="4" fill="#334155" opacity="0.5"/>
+  <text x="450" y="1275" text-anchor="middle" fill="#94a3b8" font-size="9">▼ flow</text>
+
+  <!-- Subtle watermark -->
+  <text x="450" y="1870" text-anchor="middle" fill="#1e293b" font-size="11" letter-spacing="2">Ask-AI · Dedup Pipeline v1.0</text>
+
+</svg>

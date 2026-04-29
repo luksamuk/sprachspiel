@@ -665,7 +665,6 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 
 **Priority:** P7 (after all P1-P5 current items are resolved)  
 **Status:** 🟡 RESEARCH NEEDED  
-**Reference:** `~/git/biblio/sprach-2-0-auto-analise.org`  
 **Full Design:** See [Sprach 2.0 Research](./sprach-2-0-research.md) for open questions, code analysis, and implementation details.
 
 Self-analysis identifying ask-ai-rs as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. Proposals aim to increase emergent connectivity and adaptive behavior.
@@ -684,7 +683,7 @@ Self-analysis identifying ask-ai-rs as a Complex Adaptive System (CAS) with emer
 
 **Meta-cognition Behavioral Proposals (S2.meta1-S2.meta3):**
 
-Three-layer approach to behavioral self-monitoring. **Layer 1** (skill) is a prototype and data collection instrument — testing confirmed it works with high-reasoning models but cannot guarantee execution, produce structured data, or work with smaller models. **Layer 2** (behavioral telemetry in system prompt) is the real implementation — deterministic heuristic detection in the harness, not dependent on the LLM self-monitoring. **Layer 3** (persistent personality adjustment) requires S2.3 and S2.5. Key reframing: **empathy is not a bug — opacity is.** The goal is not to suppress behavioral shifts, but to make them visible and give the user control. Calibration insight from testing: the detector should focus on **unannounced system drift** rather than **user-initiated topic changes**. See `~/meta-cognition-brainstorm.md` for full design and `~/git/ask-ollama-rs/doc/src/development/meta-cognition-proposal.md` for integration plan.
+Three-layer approach to behavioral self-monitoring. **Layer 1** (skill) is a prototype and data collection instrument — testing confirmed it works with high-reasoning models but cannot guarantee execution, produce structured data, or work with smaller models. **Layer 2** (behavioral telemetry in system prompt) is the real implementation — deterministic heuristic detection in the harness, not dependent on the LLM self-monitoring. **Layer 3** (persistent personality adjustment) requires S2.3 and S2.5. Key reframing: **empathy is not a bug — opacity is.** The goal is not to suppress behavioral shifts, but to make them visible and give the user control. Calibration insight from testing: the detector should focus on **unannounced system drift** rather than **user-initiated topic changes**. See [Meta-cognition Proposal](./meta-cognition-proposal.md) for the integration plan.
 
 **Validated Decisions (DEC-001 to DEC-007):**
 

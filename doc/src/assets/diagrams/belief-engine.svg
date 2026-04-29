@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1460">
+        <defs>
+          <marker id="ah" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+          </marker>
+          <marker id="ah-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399"/>
+          </marker>
+          <marker id="ah-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/>
+          </marker>
+          <marker id="ah-rose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/>
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <rect width="100%" height="100%" fill="url(#grid)"/>
+
+        <!-- ===== BELIEF ENGINE (top) ===== -->
+        <rect x="50" y="30" width="900" height="680" rx="8" fill="#0f172a" stroke="none"/>
+        <rect x="50" y="30" width="900" height="680" rx="8" fill="rgba(6, 78, 59, 0.2)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="75" y="58" fill="#34d399" font-size="12" font-weight="700">BeliefEngine</text>
+        <text x="300" y="58" fill="#94a3b8" font-size="9">(domain-independent)</text>
+
+        <!-- analyze method -->
+        <rect x="90" y="80" width="820" height="300" rx="6" fill="rgba(15, 23, 42, 0.6)" stroke="#1e293b" stroke-width="1"/>
+        <text x="110" y="105" fill="white" font-size="11" font-weight="600">analyze(a, b) → ConflictVerdict</text>
+
+        <!-- Contradiction branch -->
+        <rect x="120" y="120" width="760" height="240" rx="6" fill="rgba(136, 19, 55, 0.1)" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="140" y="145" fill="#fb7185" font-size="10" font-weight="600">Contradiction { reason }</text>
+
+        <rect x="150" y="160" width="210" height="50" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="150" y="160" width="210" height="50" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="255" y="183" fill="white" font-size="9" font-weight="600" text-anchor="middle">PreferenceOverride</text>
+        <text x="255" y="200" fill="#94a3b8" font-size="8" text-anchor="middle">"prefers X vs Y"</text>
+
+        <rect x="390" y="160" width="210" height="50" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="390" y="160" width="210" height="50" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="495" y="183" fill="white" font-size="9" font-weight="600" text-anchor="middle">PolarityFlip</text>
+        <text x="495" y="200" fill="#94a3b8" font-size="8" text-anchor="middle">"likes vs hates"</text>
+
+        <rect x="630" y="160" width="210" height="50" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="630" y="160" width="210" height="50" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="735" y="183" fill="white" font-size="9" font-weight="600" text-anchor="middle">AccumulativeOverlap</text>
+        <text x="735" y="200" fill="#94a3b8" font-size="8" text-anchor="middle">"dark vs light mode"</text>
+
+        <!-- Duplicate -->
+        <rect x="150" y="230" width="280" height="40" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="150" y="230" width="280" height="40" rx="6" fill="rgba(34, 197, 94, 0.15)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="290" y="254" fill="#22c55e" font-size="10" font-weight="600" text-anchor="middle">Duplicate (same triple)</text>
+
+        <!-- Coexist -->
+        <rect x="460" y="230" width="280" height="40" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="460" y="230" width="280" height="40" rx="6" fill="rgba(59, 130, 246, 0.15)" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="600" y="254" fill="#3b82f6" font-size="10" font-weight="600" text-anchor="middle">Coexist (different predicates)</text>
+
+        <!-- Rules summary -->
+        <text x="150" y="300" fill="#94a3b8" font-size="8">Exclusive predicate + diff object → always contradiction</text>
+        <text x="150" y="318" fill="#94a3b8" font-size="8">Accumulative + overlap &gt; 0.3 → contradiction</text>
+        <text x="150" y="336" fill="#94a3b8" font-size="8">Accumulative + overlap ≤ 0.3 → coexist (likes Python + likes Rust)</text>
+        <text x="150" y="354" fill="#94a3b8" font-size="8">Positive → negative predicate flip → always contradiction</text>
+
+        <!-- Helper methods -->
+        <rect x="90" y="400" width="820" height="120" rx="6" fill="rgba(15, 23, 42, 0.6)" stroke="#1e293b" stroke-width="1"/>
+        <text x="110" y="425" fill="white" font-size="10" font-weight="600">Helper Methods</text>
+
+        <rect x="120" y="440" width="230" height="35" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="235" y="462" fill="#22d3ee" font-size="9" font-weight="500" text-anchor="middle">is_exclusive(pred) → bool</text>
+
+        <rect x="380" y="440" width="230" height="35" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="495" y="462" fill="#22d3ee" font-size="9" font-weight="500" text-anchor="middle">is_polarity_flip(a, b) → bool</text>
+
+        <rect x="640" y="440" width="240" height="35" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="760" y="462" fill="#22d3ee" font-size="9" font-weight="500" text-anchor="middle">object_overlap(a, b) → f32</text>
+
+        <!-- Sources -->
+        <rect x="90" y="540" width="820" height="60" rx="6" fill="rgba(15, 23, 42, 0.6)" stroke="#1e293b" stroke-width="1"/>
+        <text x="110" y="565" fill="#94a3b8" font-size="9">Sources:</text>
+        <text x="180" y="565" fill="#34d399" font-size="9" font-weight="500">lang.rs</text>
+        <text x="260" y="565" fill="#94a3b8" font-size="9">(EXCLUSIVE_PREDICATES, POSITIVE/NEGATIVE predicates, STOP_WORDS)</text>
+        <text x="180" y="585" fill="#fb7185" font-size="9" font-weight="500">conflict.rs</text>
+        <text x="270" y="585" fill="#94a3b8" font-size="9">(contradiction logic, triple disambiguation)</text>
+
+        <!-- Predicate counts -->
+        <rect x="640" y="540" width="240" height="60" rx="6" fill="rgba(15, 23, 42, 0.6)" stroke="#1e293b" stroke-width="1"/>
+        <text x="760" y="562" fill="#94a3b8" font-size="8" text-anchor="middle">17 exclusive predicates</text>
+        <text x="760" y="580" fill="#94a3b8" font-size="8" text-anchor="middle">18 accumulative predicates</text>
+
+        <!-- Arrows to stores -->
+        <line x1="300" y1="710" x2="300" y2="760" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ah-violet)"/>
+        <line x1="700" y1="710" x2="700" y2="760" stroke="#fb7185" stroke-width="1.5" marker-end="url(#ah-rose)"/>
+
+        <!-- ===== FACT STORE (current) ===== -->
+        <rect x="50" y="770" width="420" height="360" rx="8" fill="#0f172a" stroke="none"/>
+        <rect x="50" y="770" width="420" height="360" rx="8" fill="rgba(76, 29, 149, 0.15)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="75" y="798" fill="#a78bfa" font-size="11" font-weight="700">FACT STORE</text>
+        <text x="260" y="798" fill="#94a3b8" font-size="9">(current policy)</text>
+
+        <text x="75" y="830" fill="#94a3b8" font-size="9">Policy for contradictions:</text>
+
+        <!-- Contradiction row -->
+        <rect x="80" y="845" width="130" height="30" rx="4" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1"/>
+        <text x="145" y="864" fill="#fb7185" font-size="9" font-weight="500" text-anchor="middle">Contradiction</text>
+        <line x1="210" y1="860" x2="240" y2="860" stroke="#94a3b8" stroke-width="1" marker-end="url(#ah)"/>
+        <rect x="250" y="845" width="190" height="30" rx="4" fill="rgba(136, 19, 55, 0.15)" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="345" y="864" fill="white" font-size="9" text-anchor="middle">delete old, insert new</text>
+
+        <!-- Duplicate row -->
+        <rect x="80" y="890" width="130" height="30" rx="4" fill="rgba(34, 197, 94, 0.15)" stroke="#22c55e" stroke-width="1"/>
+        <text x="145" y="909" fill="#22c55e" font-size="9" font-weight="500" text-anchor="middle">Duplicate</text>
+        <line x1="210" y1="905" x2="240" y2="905" stroke="#94a3b8" stroke-width="1" marker-end="url(#ah)"/>
+        <rect x="250" y="890" width="190" height="30" rx="4" fill="rgba(34, 197, 94, 0.08)" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="345" y="909" fill="#94a3b8" font-size="9" text-anchor="middle">skip</text>
+
+        <!-- Coexist row -->
+        <rect x="80" y="935" width="130" height="30" rx="4" fill="rgba(59, 130, 246, 0.15)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="145" y="954" fill="#3b82f6" font-size="9" font-weight="500" text-anchor="middle">Coexist</text>
+        <line x1="210" y1="950" x2="240" y2="950" stroke="#94a3b8" stroke-width="1" marker-end="url(#ah)"/>
+        <rect x="250" y="935" width="190" height="30" rx="4" fill="rgba(59, 130, 246, 0.08)" stroke="#3b82f6" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="345" y="954" fill="white" font-size="9" text-anchor="middle">insert</text>
+
+        <!-- Warning -->
+        <rect x="80" y="990" width="360" height="50" rx="4" fill="rgba(251, 191, 36, 0.08)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="260" y="1012" fill="#fbbf24" font-size="8" text-anchor="middle">⚠ Destructive: original fact is permanently lost</text>
+        <text x="260" y="1028" fill="#94a3b8" font-size="7" text-anchor="middle">No audit trail of what was superseded</text>
+
+        <!-- ===== CONTENT STORE (proposed B2.2) ===== -->
+        <rect x="530" y="770" width="420" height="360" rx="8" fill="#0f172a" stroke="none"/>
+        <rect x="530" y="770" width="420" height="360" rx="8" fill="rgba(136, 19, 55, 0.1)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="555" y="798" fill="#fb7185" font-size="11" font-weight="700">CONTENT STORE</text>
+        <text x="740" y="798" fill="#94a3b8" font-size="9">(proposed B2.2)</text>
+
+        <text x="555" y="830" fill="#94a3b8" font-size="9">Policy for contradictions:</text>
+
+        <!-- Contradiction row -->
+        <rect x="560" y="845" width="130" height="30" rx="4" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1"/>
+        <text x="625" y="864" fill="#fb7185" font-size="9" font-weight="500" text-anchor="middle">Contradiction</text>
+        <line x1="690" y1="860" x2="720" y2="860" stroke="#94a3b8" stroke-width="1" marker-end="url(#ah)"/>
+        <rect x="730" y="845" width="190" height="30" rx="4" fill="rgba(136, 19, 55, 0.15)" stroke="#fb7185" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="825" y="862" fill="white" font-size="8" text-anchor="middle">mark as superseded</text>
+        <text x="825" y="872" fill="#94a3b8" font-size="7" text-anchor="middle">invalidated_at, keep original</text>
+
+        <!-- Duplicate row -->
+        <rect x="560" y="890" width="130" height="30" rx="4" fill="rgba(34, 197, 94, 0.15)" stroke="#22c55e" stroke-width="1"/>
+        <text x="625" y="909" fill="#22c55e" font-size="9" font-weight="500" text-anchor="middle">Duplicate</text>
+        <line x1="690" y1="905" x2="720" y2="905" stroke="#94a3b8" stroke-width="1" marker-end="url(#ah)"/>
+        <rect x="730" y="890" width="190" height="30" rx="4" fill="rgba(34, 197, 94, 0.08)" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="825" y="909" fill="#94a3b8" font-size="9" text-anchor="middle">skip</text>
+
+        <!-- Coexist row -->
+        <rect x="560" y="935" width="130" height="30" rx="4" fill="rgba(59, 130, 246, 0.15)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="625" y="954" fill="#3b82f6" font-size="9" font-weight="500" text-anchor="middle">Coexist</text>
+        <line x1="690" y1="950" x2="720" y2="950" stroke="#94a3b8" stroke-width="1" marker-end="url(#ah)"/>
+        <rect x="730" y="935" width="190" height="30" rx="4" fill="rgba(59, 130, 246, 0.08)" stroke="#3b82f6" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="825" y="954" fill="white" font-size="9" text-anchor="middle">insert</text>
+
+        <!-- Benefit -->
+        <rect x="560" y="990" width="360" height="50" rx="4" fill="rgba(34, 197, 94, 0.08)" stroke="#22c55e" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="740" y="1012" fill="#22c55e" font-size="8" text-anchor="middle">✓ Non-destructive: audit trail preserved</text>
+        <text x="740" y="1028" fill="#94a3b8" font-size="7" text-anchor="middle">Can reconstruct belief evolution over time</text>
+
+        <!-- ===== REFINEMENT TOPICS ===== -->
+        <rect x="100" y="1180" width="800" height="140" rx="8" fill="#0f172a" stroke="none"/>
+        <rect x="100" y="1180" width="800" height="140" rx="8" fill="rgba(120, 53, 15, 0.15)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="120" y="1208" fill="#fbbf24" font-size="11" font-weight="700">REFINEMENT TOPICS</text>
+        <text x="350" y="1208" fill="#94a3b8" font-size="9">(see research-icebox.md)</text>
+
+        <rect x="130" y="1225" width="220" height="55" rx="4" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="240" y="1248" fill="#fbbf24" font-size="9" font-weight="600" text-anchor="middle">R-05</text>
+        <text x="240" y="1268" fill="#94a3b8" font-size="8" text-anchor="middle">LLM adjudication (15%)</text>
+
+        <rect x="390" y="1225" width="220" height="55" rx="4" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="500" y="1248" fill="#fbbf24" font-size="9" font-weight="600" text-anchor="middle">R-06</text>
+        <text x="500" y="1268" fill="#94a3b8" font-size="8" text-anchor="middle">Crepe/Datalog rule engine</text>
+
+        <rect x="650" y="1225" width="220" height="55" rx="4" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="760" y="1248" fill="#fbbf24" font-size="9" font-weight="600" text-anchor="middle">R-10</text>
+        <text x="760" y="1268" fill="#94a3b8" font-size="8" text-anchor="middle">Multi-source reconciliation</text>
+
+        <!-- ===== LEGEND ===== -->
+        <text x="60" y="1380" fill="white" font-size="10" font-weight="600">Legend</text>
+        <rect x="60" y="1392" width="14" height="9" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="80" y="1400" fill="#94a3b8" font-size="7">Engine</text>
+        <rect x="60" y="1407" width="14" height="9" rx="2" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="80" y="1415" fill="#94a3b8" font-size="7">Fact Store (current)</text>
+        <rect x="60" y="1422" width="14" height="9" rx="2" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1"/>
+        <text x="80" y="1430" fill="#94a3b8" font-size="7">Content Store (proposed)</text>
+        <rect x="220" y="1392" width="14" height="9" rx="2" fill="rgba(136, 19, 55, 0.3)" stroke="#fb7185" stroke-width="1"/>
+        <text x="240" y="1400" fill="#94a3b8" font-size="7">Contradiction</text>
+        <rect x="220" y="1407" width="14" height="9" rx="2" fill="rgba(34, 197, 94, 0.15)" stroke="#22c55e" stroke-width="1"/>
+        <text x="240" y="1415" fill="#94a3b8" font-size="7">Duplicate</text>
+        <rect x="220" y="1422" width="14" height="9" rx="2" fill="rgba(59, 130, 246, 0.15)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="240" y="1430" fill="#94a3b8" font-size="7">Coexist</text>
+      </svg>

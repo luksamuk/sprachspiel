@@ -135,11 +135,17 @@
 | Milestone | Codename | Description | Priorities |
 |-----------|----------|-------------|------------|
 | **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
-| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design + interaction modes design) |
-| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (TUI implementation + /queue + /steer), P15 |
-| **[M4]** | Future | Deferred, no current priority | Cost tracking, team features, speculation, VCR |
+| **[M2]** | UX & Pre-Launch | TUI design, UX research, prototyping, private feedback, benchmarks, learned patterns | P14 (UX design + interaction modes design), B1 (benchmarks), B6 (learned patterns) |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6, **S2.2 elevated to MEDIUM**), P14 (TUI implementation + /queue + /steer), P15 |
+| **[M4]** | Future | Deferred features and research | B2-B5, B7+, context engineering, speculation, VCR |
 
-**M2 rationale:** The TUI is the milestone that will likely coincide with a public release. It warrants dedicated UX research, private feedback rounds, and careful design before implementation. Separating design (M2) from implementation (M3) ensures the TUI gets the attention it deserves as a public-facing product, while Sprach 2.0 research and Plugin System (also complex) move to M3 alongside TUI coding. Interaction modes (`/queue`, `/steer`) are designed in M2 and implemented in M3.
+**M2 rationale:** The TUI design milestone now also serves as the pre-launch validation gate. Benchmarks (B1) are the last thing completed before public release — they validate claims about feedback-driven memory and hybrid retrieval. Learned patterns (B6) provides behavioral intelligence infrastructure (system reminders, auto-extraction of usage patterns, decay visibility) that enriches the TUI experience. Separating design (M2) from implementation (M3) ensures the TUI gets the attention it deserves as a public-facing product.
+
+**M3 change:** S2.2 (Content Relations Graph) elevated from LOW to MEDIUM priority. Competitive analysis shows that graph-based retrieval is a key differentiator in the memory-augmented agent space, and delay risks falling behind.
+
+**M4 change:** Structured with draft priorities (B2-B5). See `doc/src/development/research-icebox.md` for deferred topics and competitive research.
+
+> **See also:** [Research Icebox](./doc/src/development/research-icebox.md) for deferred refinement topics, competitive research, and decision records.
 
 ### ✅ PRIORITY 0: Factual Memory System (COMPLETED) [M1]
 
@@ -3634,7 +3640,6 @@ The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not 
 ## 🟣 PRIORITY 7: Sprach 2.0 — CAS Research [M2 → M3]
 
 **Status:** 🟡 RESEARCH NEEDED  
-**Reference:** `~/git/biblio/sprach-2-0-auto-analise.org`  
 **Comprehensive Design:** See [Sprach 2.0 Research](./doc/src/development/sprach-2-0-research.md) for open questions, code analysis, and implementation details.
 
 Based on the Sprach 2.0 self-analysis article, which identifies ask-ai-rs as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. The proposals below aim to increase emergent connectivity and adaptive behavior.
@@ -4002,6 +4007,165 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
+## Draft Priorities (M2, M4)
+
+> **Note:** These are draft priorities — not yet issues or cards. They document planned work that has been researched and designed but not yet scheduled for implementation. For deferred topics and competitive research, see [Research Icebox](./doc/src/development/research-icebox.md).
+
+---
+
+### 📋 DRAFT B1: Benchmark Infrastructure [M2]
+
+**Status:** 📋 DRAFT
+**Depends on:** P6.0 (multi-provider, for cloud model benchmarks)
+**Estimated effort:** 4-6 weeks (all tiers)
+**Priority within M2:** End of milestone — last thing before public release
+
+**Goal:** Establish benchmarks that validate ask-ai's unique memory features with published numbers. No other CLI tool has published benchmarks for feedback-driven memory decay or retrieval-reinforced retention.
+
+**Rationale:** Without benchmarks, claims about memory architecture are assertions. YourMemory published 59% Recall@5 on LoCoMo and established credibility. ask-ai needs equivalent validation.
+
+**Sub-items:**
+
+| Sub | Description | Effort | Tier |
+|-----|-------------|--------|------|
+| B1.1 | LoCoMo benchmark adaptation (Recall@K, category breakdown, Stale Memory Precision) | 1-2 weeks | 1 (must-have before launch) |
+| B1.2 | Custom "Feedback-Driven Decay" benchmark — first ever published (precision@K over time, decay curve alignment, retrieval-reinforced retention) | 2-3 weeks | 1 (must-have before launch) |
+| B1.3 | RAG quality benchmark (BM25-only vs vector-only vs hybrid+RRF, with and without feedback boost) | 1 week | 2 (nice-to-have) |
+| B1.4 | Stale Memory Precision benchmark (does decay correctly suppress outdated info?) | 3-5 days | 2 (nice-to-have) |
+
+**Key metric targets:**
+
+| Metric | Baseline (no memory) | YourMemory | ask-ai Target |
+|--------|---------------------|------------|----------------|
+| LoCoMo Recall@5 | ~20-30% | 59% | ≥55% |
+| Feedback impact on recall | N/A | N/A | +15-25% for "good" items |
+| Stale memory precision | 0% | 100% (claimed) | ≥80% |
+
+**Dependencies:** B1.1 requires P6.0 (multi-provider) to test with cloud models. B1.2 can run with Ollama only.
+
+---
+
+### 📋 DRAFT B6: Learned Patterns / Behavioral Intelligence [M2]
+
+**Status:** 📋 DRAFT
+**Depends on:** P5 (feedback — ✅ COMPLETED)
+**Estimated effort:** 2-3 weeks
+**Priority within M2:** Medium
+
+**Goal:** Enable the system to detect and adapt to user behavior patterns, and provide system reminders triggered by operational events.
+
+**Sub-items:**
+
+| Sub | Description | Effort |
+|-----|-------------|--------|
+| B6.1 | System Reminders — `ReminderTrigger` enum (TurnCount, ToolFailure, ContextLow, etc.), templates for each trigger, conditional injection into context | 3-5 days |
+| B6.2 | Auto-extraction of usage patterns — "User often asks about X" → boost relevant memories; "User prefers style Y" → adapt prompts | 5-7 days |
+| B6.3 | Decay Management UI — `/memory stats` (show decay status), `/memory forget <id>` (manual decay boost), `/memory prune` (force decay of low-importance) | 3-5 days |
+
+**Reference:** Unified Vision (see `doc/src/development/unified-vision.md`), Phase 5
+
+---
+
+### 📋 DRAFT B3: Verification Layer (Study Sessions) [M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** P5 (feedback — ✅ COMPLETED)
+**Estimated effort:** 3-4 weeks
+**Priority within M4:** First (before B2)
+
+**Goal:** Content that passes verification (quizzes, cross-model checks) receives importance boosts and slower decay, creating a "verified knowledge" tier in the memory system.
+
+**Sub-items:**
+
+| Sub | Description | Effort |
+|-----|-------------|--------|
+| B3.1 | `study` source type in `content_items` + differentiated importance (verified content starts at importance 0.9, decays with 180d half-life) | 2-3 days |
+| B3.2 | `/study import <files>` and `/study quiz` commands — import study material, generate quiz questions, verify answers | 5-7 days |
+| B3.3 | Verifier trait — `Verifier` trait with `verify()` method; CodeVerifier (sandbox + test execution), CrossModelVerifier (second model checks), StudyVerifier (quiz check) | 5-7 days |
+| B3.4 | Best-of-N implementation — generate N candidates, verify each, return first that passes | 3-5 days |
+
+**Reference:** Unified Vision (see `doc/src/development/unified-vision.md`), Phase 4
+
+---
+
+### 📋 DRAFT B2: Belief Engine Abstraction [M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** B3 (Verification Layer — first in M4)
+**Estimated effort:** 2-3 weeks
+**Priority within M4:** After B3
+
+**Goal:** Extract the contradiction detection engine from `conflict.rs` into a domain-independent `BeliefEngine` that can be used by both the fact store and the content store.
+
+**Sub-items:**
+
+| Sub | Description | Effort |
+|-----|-------------|--------|
+| B2.1 | Extract `BeliefEngine` from `conflict.rs` — `analyze()` returns `ConflictVerdict` without taking action; fact store calls `BeliefEngine::analyze()` then decides policy | 3-5 days |
+| B2.2 | Content store calls `BeliefEngine` for belief revision — conflicting beliefs between conversations marked as "superseded" (not deleted) | 3-5 days |
+| B2.3 | Expand verbs and PT patterns in `lang.rs` — more triple prefixes, PT irregular patterns, negation patterns | 2-3 days |
+| B2.4 | Belief versioning — `invalidated_at` timestamp instead of delete (inspired by Kumiho AGM postulates; immutable revisions + mutable tag pointers) | 3-5 days |
+
+**Refinement topics (see research-icebox.md):** R-05 (LLM adjudication for edge cases), R-06 (Crepe/Datalog rule engine), R-10 (multi-source belief reconciliation)
+
+**Reference:** `doc/src/development/belief-system-design.md`
+
+---
+
+### 📋 DRAFT B4: Context Engineering Evolution [M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** P6.0 (provider migration for `prompt_eval_count`)
+**Estimated effort:** 4-6 weeks (filtered subset)
+**Priority within M4:** B4.1 high, B4.2 medium, B4.3-B4.4 research
+
+**Goal:** Improve context management with better token estimation, resilience patterns, and non-destructive archival — filtered from 10 recommendations in evolution research to only the viable ones.
+
+**Sub-items:**
+
+| Sub | Description | Effort | Priority |
+|-----|-------------|--------|----------|
+| B4.1 | **Anchor-based token estimation** — Calibrate word-based estimates using known token patterns (Rust keywords, Markdown structures, common code patterns). Avoids tiktoken dependency while improving accuracy from ~80% to ~90-95%. | 1 week | **High** |
+| B4.2 | **Circuit breaker for context operations** — Rate limiting + fallback strategies for long-running context operations (embedding, compaction, recovery). Prevents cascading failures during concurrent access. | 1 week | Medium |
+| B4.3 | **Importance-based eviction** — Evict content based on importance_score + feedback_weight rather than LRU during compaction. Research needed to understand how importance_score and feedback_score interact. | 2 weeks | 🟡 Research |
+| B4.4 | **Non-destructive context collapse** — Archive original messages instead of deleting during compaction; enable on-demand recovery of archived content. Low priority, needs schema changes. | 2 weeks | Low |
+
+**Excluded (see research-icebox.md R-01, R-02, R-03, R-04):** 5-level compression pipeline, tiktoken integration, speculative execution, attention-based prompt optimization.
+
+**Token estimation philosophy:** The project prefers avoiding tiktoken wherever possible. Approach: (1) anchor-based estimation (B4.1), (2) `prompt_eval_count` from Ollama API (P6.0d) for exact post-hoc counts, (3) tiktoken only as last resort if both above prove insufficient.
+
+---
+
+### 📋 DRAFT B5: MCP Server (Memory as Service) [M4]
+
+**Status:** 📋 DRAFT — needs further reflection
+**Depends on:** P15 (MCP Client — Phase 1)
+**Estimated effort:** 2-3 weeks
+**Priority within M4:** Final — after other M4 items
+
+**Goal:** Expose ask-ai's memory system (feedback-driven decay, hybrid retrieval, fact dedup) as an MCP server that other tools (Claude Code, Cursor, Cline) can consume.
+
+**Note:** This is distinct from P15 (MCP Client). P15 is about consuming external MCP servers. B5 is about providing ask-ai's memory as an MCP server. They are complementary but independent.
+
+**Open questions:**
+- What to expose? Facts? Content? Search? All three?
+- Authentication model for API access
+- How decay and feedback signals translate to MCP tool interfaces
+- Whether this positions ask-ai as a CLI tool or a memory library/service
+
+**Reference:** Research icebox R-09
+
+---
+
+### 📋 DRAFT B7: Content Relations Graph — Priority Elevation [M3]
+
+**Status:** Priority elevation: S2.2 from LOW → **MEDIUM**
+**No new card or issue.** This records the decision to elevate S2.2's priority when M3 work begins.
+
+**Rationale:** YourMemory's graph layer with BFS expansion is their killer feature after Ebbinghaus decay. It accounts for their LoCoMo performance lead. A memory system without content relations is incomplete in 2026.
+
+---
+
 ## Documentation
 
 Full documentation is available in the `doc/` directory:
@@ -4044,3 +4208,4 @@ The original detailed implementation notes have been moved to:
 2026-04-27c - SF4 merged (#114). SF5 (PDF vision pipeline) completed.
 2026-04-27d - SF5 revised per PR review: replaced spawn_subagent with 4 dedicated spawning tools, removed spawn_document_agent, removed PDF pipeline from Rust, removed FileType::Pdf/Epub, updated document-processing skill.
 2026-04-28 - P6.0 decomposed into 7 sub-phases (P6.0a–P6.0g) for full ollama-rs removal. Added P6.0a (retry threshold with backoff). Added P14.IM (TUI interaction modes: /queue, /steer). Updated milestones M1–M3 with provider migration and interaction modes.
+2026-04-28 - Draft priorities B1-B7 added. Milestones restructured: M2 now includes B1 (benchmarks) and B6 (learned patterns). M4 now has structured draft priorities (B2-B5). S2.2 (Content Relations) elevated to MEDIUM. Research icebox created at doc/src/development/research-icebox.md.

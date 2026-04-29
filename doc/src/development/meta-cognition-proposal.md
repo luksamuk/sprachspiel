@@ -1,7 +1,6 @@
 # Meta-cognition Behavioral Integration Plan
 
 **Status:** Triaged (2026-04-21)  
-**Source:** `~/meta-cognition-brainstorm.md`  
 **Issues:** #99 (S2.meta1), #100 (S2.meta2), #101 (S2.meta3)
 
 ---

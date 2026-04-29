@@ -50,6 +50,7 @@
   - [Effective Agents Analysis](./development/research/effective-agents-analysis.md)
   - [Context Management Research](./development/research/context_management_research.md)
   - [Sprach 2.0 Research](./development/sprach-2-0-research.md)
+  - [Research Icebox](./development/research-icebox.md)
 
 ## Legacy Documentation
 
@@ -66,6 +67,9 @@
 - [Prompt Refactoring](./development/prompt-refactor.md)
 - [Source Attribution Plan](./development/plan-source-attribution.md)
 - [Implementation History](./development/implementation-history.md)
+- [Unified Vision](./development/unified-vision.md)
+- [Belief System Design](./development/belief-system-design.md)
+- [Meta-Cognition Proposal](./development/meta-cognition-proposal.md)
 
 ---
 

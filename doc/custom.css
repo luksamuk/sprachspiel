@@ -1,5 +1,16 @@
 /* Custom styles for Ask-AI documentation */
 
+/* Wider content area on desktop, normal on mobile */
+:root {
+    --content-max-width: 960px;
+}
+
+@media (max-width: 1080px) {
+    :root {
+        --content-max-width: 100%;
+    }
+}
+
 /* Code blocks */
 pre {
     background-color: #2d2d2d;

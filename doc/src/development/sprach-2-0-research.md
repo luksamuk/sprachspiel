@@ -1,7 +1,6 @@
 # Sprach 2.0: CAS Research — Technical Design Document
 
 **Status:** 🟡 RESEARCH NEEDED  
-**Reference:** `~/git/biblio/sprach-2-0-auto-analise.org`  
 **Created:** 2026-04-11  
 **Priority:** P7 (after all P1-P5 current items)
 
@@ -542,7 +541,7 @@ No implementation sketch at this time.
 
 ## Reference
 
-- **Sprach 2.0 Article:** `~/git/biblio/sprach-2-0-auto-analise.org`
-- **State of Art Research:** See DEC-001 to DEC-007 in article's Apêndice C
+- **Sprach 2.0 Article:** Self-analysis identifying ask-ai-rs as a Complex Adaptive System (original in private notes, design details in this document)
+- **State of Art Research:** See DEC-001 to DEC-007 in this document
 - **Competitors:** Joplin GSoC 2026 (note graphs), OpenClaw (WASM sandbox)
 - **Related roadmap items:** P5 (Feedback Infrastructure), P15 (Plugin System)

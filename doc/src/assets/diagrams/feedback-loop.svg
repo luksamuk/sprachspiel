@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1700">
+        <defs>
+          <marker id="ah" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+          </marker>
+          <marker id="ah-amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24"/>
+          </marker>
+          <marker id="ah-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399"/>
+          </marker>
+          <marker id="ah-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa"/>
+          </marker>
+          <marker id="ah-rose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/>
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <rect width="100%" height="100%" fill="url(#grid)"/>
+
+        <!-- ===== 1. USER INPUT ===== -->
+        <rect x="370" y="30" width="360" height="55" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="370" y="30" width="360" height="55" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="550" y="54" fill="white" font-size="12" font-weight="600" text-anchor="middle">USER INPUT</text>
+        <text x="550" y="70" fill="#94a3b8" font-size="9" text-anchor="middle">/feedback good · bad · correction</text>
+
+        <line x1="550" y1="85" x2="550" y2="110" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah-amber)"/>
+
+        <!-- ===== 2. FEEDBACK SIGNAL ===== -->
+        <rect x="50" y="120" width="1000" height="160" rx="8" fill="rgba(120, 53, 15, 0.06)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="6,3"/>
+        <text x="70" y="140" fill="#fbbf24" font-size="10" font-weight="600">FEEDBACK SIGNAL</text>
+
+        <rect x="80" y="155" width="220" height="55" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="80" y="155" width="220" height="55" rx="6" fill="rgba(34, 197, 94, 0.15)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="190" y="177" fill="#22c55e" font-size="10" font-weight="600" text-anchor="middle">good</text>
+        <text x="190" y="197" fill="#94a3b8" font-size="8" text-anchor="middle">base=+1.0, importance += 0.05</text>
+
+        <rect x="340" y="155" width="220" height="55" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="340" y="155" width="220" height="55" rx="6" fill="rgba(239, 68, 68, 0.15)" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="450" y="177" fill="#ef4444" font-size="10" font-weight="600" text-anchor="middle">bad</text>
+        <text x="450" y="197" fill="#94a3b8" font-size="8" text-anchor="middle">base=-1.0, importance -= 0.1</text>
+
+        <rect x="600" y="155" width="220" height="55" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="600" y="155" width="220" height="55" rx="6" fill="rgba(59, 130, 246, 0.15)" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="710" y="177" fill="#3b82f6" font-size="10" font-weight="600" text-anchor="middle">correction</text>
+        <text x="710" y="197" fill="#94a3b8" font-size="8" text-anchor="middle">base=+1.0, text = correction</text>
+
+        <rect x="860" y="155" width="170" height="55" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="860" y="155" width="170" height="55" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="945" y="177" fill="#fbbf24" font-size="9" font-weight="600" text-anchor="middle">LLM Self-Feedback</text>
+        <text x="945" y="197" fill="#94a3b8" font-size="8" text-anchor="middle">weight = 0.3 (30% off)</text>
+
+        <text x="550" y="260" fill="#94a3b8" font-size="8" text-anchor="middle">ADR-004: self-approval bias defense — LLM self-feedback discounted to 30%</text>
+
+        <line x1="550" y1="280" x2="550" y2="310" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah-amber)"/>
+
+        <!-- ===== 3. IMPORTANCE ADJUSTMENT ===== -->
+        <rect x="100" y="320" width="900" height="110" rx="8" fill="#0f172a" stroke="none"/>
+        <rect x="100" y="320" width="900" height="110" rx="8" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="120" y="345" fill="#34d399" font-size="11" font-weight="600">IMPORTANCE ADJUSTMENT</text>
+        <text x="140" y="370" fill="white" font-size="9">content_items.importance += feedback_effect</text>
+        <text x="140" y="390" fill="#94a3b8" font-size="9">.clamp(0.1, 3.0) — ADR-006</text>
+        <text x="500" y="370" fill="#94a3b8" font-size="9">High importance → slower decay (longer half-life)</text>
+        <text x="500" y="390" fill="#94a3b8" font-size="9">Low importance → faster decay (shorter half-life)</text>
+
+        <line x1="550" y1="430" x2="550" y2="460" stroke="#34d399" stroke-width="1.5" marker-end="url(#ah-emerald)"/>
+
+        <!-- ===== 4. DECAY (EBBINGHAUS) ===== -->
+        <rect x="100" y="470" width="900" height="250" rx="8" fill="#0f172a" stroke="none"/>
+        <rect x="100" y="470" width="900" height="250" rx="8" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="120" y="495" fill="#a78bfa" font-size="11" font-weight="600">DECAY — Ebbinghaus</text>
+
+        <text x="140" y="520" fill="white" font-size="10" font-weight="600">decay_score = 2^(-days / half_life)</text>
+
+        <text x="140" y="550" fill="#94a3b8" font-size="9">Half-lives per type:</text>
+        <text x="160" y="570" fill="#34d399" font-size="9">message  = 90 days</text>
+        <text x="160" y="588" fill="#fbbf24" font-size="9">note     = 60 days</text>
+        <text x="160" y="606" fill="#a78bfa" font-size="9">document = 120 days</text>
+        <text x="400" y="570" fill="#7c3aed" font-size="9">fact (pref) = 180 days</text>
+        <text x="400" y="588" fill="#fb7185" font-size="9">fact (reg)  = 30 days</text>
+
+        <text x="700" y="555" fill="#34d399" font-size="9" font-weight="500">importance &gt; 0.8</text>
+        <text x="840" y="555" fill="#34d399" font-size="9">→ protected from pruning</text>
+        <text x="700" y="575" fill="#fb7185" font-size="9" font-weight="500">importance &lt; 0.2</text>
+        <text x="840" y="575" fill="#fb7185" font-size="9">→ pruned during /content prune</text>
+
+        <line x1="550" y1="720" x2="550" y2="750" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#ah-violet)"/>
+
+        <!-- ===== 5. RETRIEVAL (HYBRID RRF) ===== -->
+        <rect x="50" y="760" width="1000" height="540" rx="8" fill="rgba(8, 51, 68, 0.08)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="6,3"/>
+        <text x="70" y="785" fill="#22d3ee" font-size="10" font-weight="600">RETRIEVAL — Hybrid RRF</text>
+
+        <!-- Path 1: vec0 KNN -->
+        <rect x="120" y="810" width="350" height="140" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="120" y="810" width="350" height="140" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="295" y="835" fill="#22d3ee" font-size="10" font-weight="600" text-anchor="middle">vec0 KNN</text>
+        <text x="295" y="858" fill="white" font-size="9" text-anchor="middle">Query → Embed → cosine similarity</text>
+        <text x="295" y="878" fill="#94a3b8" font-size="8" text-anchor="middle">256d Matryoshka embeddings</text>
+        <text x="295" y="898" fill="#94a3b8" font-size="8" text-anchor="middle">threshold = configurable</text>
+        <text x="295" y="930" fill="#22d3ee" font-size="8" text-anchor="middle">weight: 0.6 in RRF</text>
+
+        <!-- Path 2: FTS5 BM25 -->
+        <rect x="630" y="810" width="350" height="140" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="630" y="810" width="350" height="140" rx="6" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="805" y="835" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">FTS5 BM25</text>
+        <text x="805" y="858" fill="white" font-size="9" text-anchor="middle">Query → Full-text search</text>
+        <text x="805" y="878" fill="#94a3b8" font-size="8" text-anchor="middle">Keyword matching</text>
+        <text x="805" y="898" fill="#94a3b8" font-size="8" text-anchor="middle">top-K results</text>
+        <text x="805" y="930" fill="#a78bfa" font-size="8" text-anchor="middle">weight: 0.4 in RRF</text>
+
+        <!-- Query split -->
+        <rect x="470" y="800" width="160" height="35" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="470" y="800" width="160" height="35" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="550" y="821" fill="white" font-size="10" font-weight="600" text-anchor="middle">Query</text>
+        <line x1="470" y1="815" x2="470" y2="815" stroke="#94a3b8" stroke-width="1.5"/>
+        <path d="M 470 815 L 400 880" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+        <path d="M 630 815 L 700 880" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+
+        <!-- RRF Merge -->
+        <rect x="350" y="970" width="400" height="50" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="350" y="970" width="400" height="50" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="550" y="993" fill="white" font-size="10" font-weight="600" text-anchor="middle">Reciprocal Rank Fusion (RRF)</text>
+        <text x="550" y="1010" fill="#94a3b8" font-size="8" text-anchor="middle">k = 60</text>
+        <path d="M 295 950 L 295 960 Q 295 970 350 985" fill="none" stroke="#22d3ee" stroke-width="1.5"/>
+        <path d="M 805 950 L 805 960 Q 805 970 750 985" fill="none" stroke="#a78bfa" stroke-width="1.5"/>
+
+        <!-- Feedback Boost -->
+        <line x1="550" y1="1020" x2="550" y2="1050" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#ah)"/>
+
+        <rect x="350" y="1060" width="400" height="50" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="350" y="1060" width="400" height="50" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="550" y="1083" fill="#fbbf24" font-size="10" font-weight="600" text-anchor="middle">Feedback Boost</text>
+        <text x="550" y="1100" fill="#94a3b8" font-size="8" text-anchor="middle">decayed_weight().clamp(0.1, 3.0)</text>
+
+        <line x1="550" y1="1110" x2="550" y2="1140" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ah-amber)"/>
+
+        <rect x="430" y="1150" width="240" height="40" rx="6" fill="#0f172a" stroke="none"/>
+        <rect x="430" y="1150" width="240" height="40" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="550" y="1174" fill="white" font-size="10" font-weight="600" text-anchor="middle">Top-K Results</text>
+
+        <line x1="550" y1="1300" x2="550" y2="1340" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#ah)"/>
+
+        <!-- ===== 6. RETRIEVAL REINFORCES RETENTION ===== -->
+        <rect x="100" y="1350" width="900" height="200" rx="8" fill="#0f172a" stroke="none"/>
+        <rect x="100" y="1350" width="900" height="200" rx="8" fill="rgba(6, 78, 59, 0.3)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="120" y="1378" fill="#34d399" font-size="11" font-weight="600">RETRIEVAL REINFORCES RETENTION</text>
+        <text x="120" y="1400" fill="#94a3b8" font-size="9">ADR-009</text>
+
+        <text x="140" y="1430" fill="white" font-size="10" font-weight="600">on_content_access():</text>
+        <text x="160" y="1455" fill="white" font-size="9">access_count += 1</text>
+        <text x="160" y="1475" fill="white" font-size="9">importance += 0.001</text>
+        <text x="340" y="1475" fill="#94a3b8" font-size="8">(tiny per-retrieval boost)</text>
+        <text x="160" y="1495" fill="white" font-size="9">last_accessed = now</text>
+
+        <text x="500" y="1430" fill="#fbbf24" font-size="9" font-weight="600">This is SEPARATE from feedback boost:</text>
+        <text x="520" y="1455" fill="#94a3b8" font-size="8">• RRF boost: immediate ranking effect</text>
+        <text x="520" y="1475" fill="#94a3b8" font-size="8">• access_count: future retention effect</text>
+        <text x="520" y="1495" fill="#94a3b8" font-size="8">• NOT double-counting</text>
+
+        <!-- Loop arrow back -->
+        <path d="M 1000 1450 L 1050 1450 Q 1070 1450 1070 1430 L 1070 350 Q 1070 320 1050 320 L 1000 320" fill="none" stroke="#34d399" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ah-emerald)"/>
+        <text x="1078" y="900" fill="#34d399" font-size="8" transform="rotate(-90, 1078, 900)">retrieval → reinforcement → better future retrieval</text>
+
+        <!-- ===== LEGEND ===== -->
+        <text x="60" y="1620" fill="white" font-size="10" font-weight="600">Legend</text>
+        <rect x="60" y="1632" width="14" height="9" rx="2" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="80" y="1640" fill="#94a3b8" font-size="7">Feedback</text>
+        <rect x="60" y="1647" width="14" height="9" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="80" y="1655" fill="#94a3b8" font-size="7">Importance / Retention</text>
+        <rect x="60" y="1662" width="14" height="9" rx="2" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="80" y="1670" fill="#94a3b8" font-size="7">Decay</text>
+        <rect x="200" y="1632" width="14" height="9" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="220" y="1640" fill="#94a3b8" font-size="7">Retrieval</text>
+        <line x1="200" y1="1651" x2="214" y2="1651" stroke="#34d399" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="220" y="1655" fill="#94a3b8" font-size="7">Reinforcement Loop</text>
+      </svg>

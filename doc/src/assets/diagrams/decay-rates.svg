@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 900" width="100%">
+<style>
+  text { font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace; }
+  .bg { fill: #020617; }
+  .grid { fill: none; stroke: #1e293b; stroke-width: 0.5; }
+  .title { fill: #f0f6fc; font-size: 18px; font-weight: 700; }
+  .subtitle { fill: #94a3b8; font-size: 12px; }
+  .thead { fill: #94a3b8; font-size: 11px; font-weight: 600; }
+  .trow { fill: #c9d1d9; font-size: 10px; }
+  .label { fill: #94a3b8; font-size: 10px; }
+  .axis { fill: #94a3b8; font-size: 11px; }
+  .formula { fill: #a78bfa; font-size: 13px; font-weight: 600; }
+  .card-title { fill: #f0f6fc; font-size: 12px; font-weight: 600; }
+  .card-text { fill: #94a3b8; font-size: 10px; }
+</style>
+
+<!-- Background -->
+<rect width="100%" height="100%" class="bg"/>
+<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+  <path d="M 40 0 L 0 0 0 40" class="grid"/>
+</pattern>
+<rect width="100%" height="100%" fill="url(#grid)"/>
+
+<!-- Title -->
+<circle cx="30" cy="28" r="6" fill="#a78bfa"/>
+<text x="45" y="34" class="title">Ask-AI Content Type Decay Rates</text>
+<text x="45" y="52" class="subtitle">Half-life reference and Ebbinghaus forgetting curves</text>
+
+<!-- ===== SECTION A: Table ===== -->
+<rect x="30" y="70" width="1040" height="200" rx="8" fill="rgba(15,23,42,0.6)" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="95" class="thead" fill="#a78bfa" font-weight="700">HALF-LIFE REFERENCE</text>
+
+<!-- Table header -->
+<rect x="50" y="108" width="1010" height="25" rx="2" fill="rgba(30,41,59,0.8)"/>
+<text x="70" y="125" class="thead">CONTENT TYPE</text>
+<text x="280" y="125" class="thead">HALF-LIFE</text>
+<text x="410" y="125" class="thead">RATIONALE</text>
+
+<!-- Rows -->
+<circle cx="70" cy="153" r="4" fill="#7c3aed"/>
+<text x="85" y="157" class="trow" fill="#a78bfa">fact (preference)</text>
+<text x="280" y="157" class="trow">180 days</text>
+<text x="410" y="157" class="trow">Self-reinforcing preferences, longest retention</text>
+
+<circle cx="70" cy="178" r="4" fill="#7c3aed"/>
+<text x="85" y="182" class="trow" fill="#c4b5fd">document</text>
+<text x="280" y="182" class="trow">120 days</text>
+<text x="410" y="182" class="trow">Explicitly saved, longest content half-life</text>
+
+<circle cx="70" cy="203" r="4" fill="#34d399"/>
+<text x="85" y="207" class="trow" fill="#34d399">message</text>
+<text x="280" y="207" class="trow">90 days</text>
+<text x="410" y="207" class="trow">Conversations carry nuance, moderate decay</text>
+
+<circle cx="70" cy="228" r="4" fill="#fbbf24"/>
+<text x="85" y="232" class="trow" fill="#fbbf24">note</text>
+<text x="280" y="232" class="trow">60 days</text>
+<text x="410" y="232" class="trow">User-curated, moderate persistence</text>
+
+<circle cx="70" cy="253" r="4" fill="#fb7185"/>
+<text x="85" y="257" class="trow" fill="#fb7185">fact (regular)</text>
+<text x="280" y="257" class="trow">30 days</text>
+<text x="410" y="257" class="trow">Project-contextual, ephemeral</text>
+
+<!-- ===== SECTION B: Decay Curves ===== -->
+<rect x="30" y="290" width="1040" height="420" rx="8" fill="rgba(15,23,42,0.6)" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="315" class="formula">R(t) = 2^(-t / half_life)</text>
+<text x="450" y="315" fill="#64748b" font-size="10">Ebbinghaus forgetting curve</text>
+
+<!-- Y-axis labels -->
+<text x="80" y="340" class="label" text-anchor="end">1.0</text>
+<line x1="85" y1="337" x2="1000" y2="337" stroke="#1e293b" stroke-width="0.5"/>
+<text x="80" y="420" class="label" text-anchor="end">0.75</text>
+<line x1="85" y1="417" x2="1000" y2="417" stroke="#1e293b" stroke-width="0.5" stroke-dasharray="2,4"/>
+<text x="80" y="503" class="label" text-anchor="end">0.50</text>
+<line x1="85" y1="500" x2="1000" y2="500" stroke="#475569" stroke-width="1" stroke-dasharray="6,4"/>
+<text x="80" y="587" class="label" text-anchor="end">0.25</text>
+<line x1="85" y1="583" x2="1000" y2="583" stroke="#1e293b" stroke-width="0.5" stroke-dasharray="2,4"/>
+<text x="80" y="670" class="label" text-anchor="end">0.00</text>
+<line x1="85" y1="667" x2="1000" y2="667" stroke="#1e293b" stroke-width="0.5"/>
+
+<!-- Axes -->
+<line x1="85" y1="337" x2="85" y2="667" stroke="#475569" stroke-width="1.5"/>
+<line x1="85" y1="667" x2="1000" y2="667" stroke="#475569" stroke-width="1.5"/>
+
+<!-- X-axis labels -->
+<text x="130" y="685" class="label" text-anchor="middle">0</text>
+<text x="270" y="685" class="label" text-anchor="middle">30d</text>
+<line x1="270" y1="337" x2="270" y2="667" stroke="#1e293b" stroke-width="0.5" stroke-dasharray="2,4"/>
+<text x="410" y="685" class="label" text-anchor="middle">60d</text>
+<line x1="410" y1="337" x2="410" y2="667" stroke="#1e293b" stroke-width="0.5" stroke-dasharray="2,4"/>
+<text x="550" y="685" class="label" text-anchor="middle">90d</text>
+<line x1="550" y1="337" x2="550" y2="667" stroke="#1e293b" stroke-width="0.5" stroke-dasharray="2,4"/>
+<text x="690" y="685" class="label" text-anchor="middle">120d</text>
+<line x1="690" y1="337" x2="690" y2="667" stroke="#1e293b" stroke-width="0.5" stroke-dasharray="2,4"/>
+<text x="830" y="685" class="label" text-anchor="middle">150d</text>
+<line x1="830" y1="337" x2="830" y2="667" stroke="#1e293b" stroke-width="0.5" stroke-dasharray="2,4"/>
+<text x="980" y="685" class="label" text-anchor="middle">180d</text>
+
+<!-- Decay curves: R(t) = 2^(-days/half_life)
+     Chart area: x=[85,1000], y=[337,667] (660px height from 1.0 to 0.0)
+     x_scale = (1000-85) / 180 = 5.083 px/day
+     y at value v = 337 + (1-v)*330
+     half_life values: 180, 120, 90, 60, 30
+-->
+
+<!-- fact(pref) 180d - violet -->
+<path d="M 85,337 L 270,401 L 410,449 L 550,490 L 690,525 L 830,554 L 980,578" fill="none" stroke="#7c3aed" stroke-width="2.5"/>
+<!-- document 120d - dark violet -->
+<path d="M 85,337 L 270,473 L 410,540 L 550,583 L 690,613 L 830,634 L 980,649" fill="none" stroke="#a78bfa" stroke-width="2.5"/>
+<!-- message 90d - emerald -->
+<path d="M 85,337 L 270,525 L 410,583 L 550,620 L 690,643 L 830,658 L 980,664" fill="none" stroke="#34d399" stroke-width="2.5"/>
+<!-- note 60d - amber -->
+<path d="M 85,337 L 270,583 L 410,631 L 550,653 L 690,661 L 830,665 L 980,666" fill="none" stroke="#fbbf24" stroke-width="2.5"/>
+<!-- fact(reg) 30d - rose -->
+<path d="M 85,337 L 270,631 L 410,657 L 550,664 L 690,666 L 830,667 L 980,667" fill="none" stroke="#fb7185" stroke-width="2.5"/>
+
+<!-- Half-life markers (0.5 line at y=500) -->
+<circle cx="270" cy="631" r="4" fill="#fb7185" stroke="#020617" stroke-width="1.5"/>
+<text x="270" y="625" fill="#fb7185" font-size="8" text-anchor="middle">30d</text>
+<circle cx="410" cy="631" r="4" fill="#fbbf24" stroke="#020617" stroke-width="1.5"/>
+<text x="410" y="625" fill="#fbbf24" font-size="8" text-anchor="middle">60d</text>
+<circle cx="550" cy="590" r="4" fill="#34d399" stroke="#020617" stroke-width="1.5"/>
+<text x="550" y="584" fill="#34d399" font-size="8" text-anchor="middle">90d</text>
+<circle cx="690" cy="540" r="4" fill="#a78bfa" stroke="#020617" stroke-width="1.5"/>
+<text x="690" y="534" fill="#a78bfa" font-size="8" text-anchor="middle">120d</text>
+<circle cx="980" cy="500" r="4" fill="#7c3aed" stroke="#020617" stroke-width="1.5"/>
+<text x="980" y="494" fill="#7c3aed" font-size="8" text-anchor="middle">180d</text>
+
+<!-- 0.5 reference line label -->
+<text x="1005" y="504" fill="#475569" font-size="9">retention = 0.5</text>
+
+<!-- Legend -->
+<line x1="100" y1="710" x2="130" y2="710" stroke="#7c3aed" stroke-width="2.5"/>
+<text x="135" y="714" fill="#7c3aed" font-size="10">fact (pref) — 180d</text>
+
+<line x1="290" y1="710" x2="320" y2="710" stroke="#a78bfa" stroke-width="2.5"/>
+<text x="325" y="714" fill="#a78bfa" font-size="10">document — 120d</text>
+
+<line x1="475" y1="710" x2="505" y2="710" stroke="#34d399" stroke-width="2.5"/>
+<text x="510" y="714" fill="#34d399" font-size="10">message — 90d</text>
+
+<line x1="645" y1="710" x2="675" y2="710" stroke="#fbbf24" stroke-width="2.5"/>
+<text x="680" y="714" fill="#fbbf24" font-size="10">note — 60d</text>
+
+<line x1="790" y1="710" x2="820" y2="710" stroke="#fb7185" stroke-width="2.5"/>
+<text x="825" y="714" fill="#fb7185" font-size="10">fact (reg) — 30d</text>
+
+<!-- Summary cards -->
+<rect x="30" y="740" width="310" height="80" rx="8" fill="rgba(15,23,42,0.6)" stroke="#1e293b"/>
+<circle cx="50" cy="764" r="5" fill="#7c3aed"/>
+<text x="62" y="768" class="card-title">Longest Half-life</text>
+<text x="50" y="785" class="card-text">180 days — fact (preference)</text>
+<text x="50" y="800" class="card-text">Self-reinforcing, decays slowest</text>
+
+<rect x="365" y="740" width="310" height="80" rx="8" fill="rgba(15,23,42,0.6)" stroke="#1e293b"/>
+<circle cx="385" cy="764" r="5" fill="#fb7185"/>
+<text x="397" y="768" class="card-title">Steepest Decay</text>
+<text x="385" y="785" class="card-text">30 days — fact (regular)</text>
+<text x="385" y="800" class="card-text">Project-contextual, ephemeral</text>
+
+<rect x="700" y="740" width="310" height="80" rx="8" fill="rgba(15,23,42,0.6)" stroke="#1e293b"/>
+<circle cx="720" cy="764" r="5" fill="#34d399"/>
+<text x="732" y="768" class="card-title">Protection Rules</text>
+<text x="720" y="785" class="card-text">importance &gt; 0.8 → protected from pruning</text>
+<text x="720" y="800" class="card-text">importance &lt; 0.2 → prune candidate</text>
+
+<!-- Footer -->
+<text x="550" y="860" fill="#475569" font-size="10" text-anchor="middle">Ask-AI · Content Type Decay Rates · P5 V4 · 2026-04-28</text>
+</svg>
