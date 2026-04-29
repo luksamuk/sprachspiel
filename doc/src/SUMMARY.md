@@ -26,14 +26,11 @@
 # Development
 
 - [Overview](./development/README.md)
-
-## Canonical
-
 - [Implementation Directive](./development/implementation-directive.md)
 - [Architecture](./development/architecture.md)
 - [Roadmap](./development/roadmap.md)
 
-## Memory & Context
+# Memory & Context
 
 - [Memory Architecture](./development/memory-architecture.md)
 - [Factual Memory System](./development/factual-memory-system.md)
@@ -42,20 +39,20 @@
 - [Context Continuity](./development/context-continuity.md)
 - [Inter-Tool Compaction](./development/inter-tool-compaction-design.md)
 
-## Features
+# Features
 
 - [Skills System Design](./development/skills-system-design.md)
 - [Chat Mode Design](./development/chat-mode-design.md)
 - [File Write Tools](./development/file-write-tools.md)
 - [Unified Vision](./development/unified-vision.md)
 
-## Process
+# Process
 
 - [Contributing](./development/contributing.md)
 - [Pull Request Process](./development/PR-PROCESS.md)
 - [Manual Test Template](./development/MANUAL-TEST-TEMPLATE.md)
 
-## Design & Planning
+# Design & Planning
 
 - [Belief System Design](./development/belief-system-design.md)
 - [Meta-cognition Proposal](./development/meta-cognition-proposal.md)
@@ -64,7 +61,7 @@
 - [Source Attribution](./development/plan-source-attribution.md)
 - [Implementation History](./development/implementation-history.md)
 
-## Research
+# Research
 
 - [Research Index](./development/research/index.md)
   - [Papers Reference](./development/research/papers-reference.md)
@@ -76,13 +73,13 @@
 - [Query Routing Research](./development/research-query-routing.md)
 - [Research Icebox](./development/research-icebox.md)
 
-## Completed Research
+# Completed Research
 
 - [CLI Tools Research](./development/cli-tools-research.md)
 - [CLI Tools Planning Session](./development/planning-session-cli-tools.md)
 - [Code Mode Research](./development/code_mode_research.md)
 
-## Legacy Documentation
+# Legacy Documentation
 
 - [Legacy Overview](./development/legacy.md)
   - [Context Composition Design](./development/context_composition_design.md)
