@@ -42,6 +42,11 @@ th {
     font-weight: bold;
 }
 
+/* Sidebar: indent section items to visually separate from part titles */
+.chapter li:not(.part-title) {
+    padding-inline-start: 0.5em;
+}
+
 /* Headers */
 h1, h2, h3, h4 {
     margin-top: 1.5em;
