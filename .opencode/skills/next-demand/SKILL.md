@@ -89,32 +89,44 @@ If a duplicate is found:
 
 Present the top 3-5 candidates with:
 - **Title** and **Issue number** (card #)
-- **M1 Wave** (W1=W2=W3=W4=W5)
+- **Status** (`🟡 RESEARCH NEEDED` or `📋 PLANNED`/`📋 READY`)
+- **M1 Wave** (W1-W5)
 - **Estimated effort** (days/weeks)
 - **Dependencies/blockers**
+- **Open questions** (if 🟡 RESEARCH — list key unresolved questions)
 - **Why it's a good candidate** (no blockers, quick win, high value, etc.)
 - **Brief implementation outline** (files to create/modify, approach)
+
+**Flag research cards explicitly.** When presenting a `🟡 RESEARCH NEEDED` candidate, note that Phase 0 (Research) will be required before implementation, and estimate the research effort separately from implementation effort.
 
 Then **WAIT for user selection**. Do NOT proceed without explicit choice.
 
 ### Step 4: Initiate PR Process (AFTER user selection)
 
-Once the user picks a demand, **load the `pr-workflow` skill** to continue from Phase 1 (Setup) through the complete PR workflow.
+Once the user picks a demand, determine the card's status:
 
-The pr-workflow skill covers: branch creation, documentation, draft PR, planning mode, requirements checkpoint, implementation, review, testing, and merge.
+**If the card is `🟡 RESEARCH NEEDED`:**
+→ **Load the `pr-workflow` skill and start at Phase 0 (Research).**
+Phase 0 is MANDATORY for research cards — it answers open questions before any branch is created. The pr-workflow skill covers the complete Phase 0 process: identify questions, investigate, produce Research Summary, update documentation, gate approval.
 
-**Do NOT duplicate the workflow steps here.** The pr-workflow skill is the single source of truth for all PR process steps.
+**If the card is `📋 PLANNED` or `📋 READY`:**
+→ **Load the `pr-workflow` skill and start at Phase 1 (Setup).**
+The card's open questions are already answered; proceed directly to branch creation.
+
+**Do NOT determine this yourself.** Always check the card's status in IMPLEMENTATION.md before selecting the starting phase.
 
 ## Key Rules
 
 1. **NEVER skip the PR-PROCESS.md steps** — follow them in order
-2. **NEVER close issues before PR merge** — they auto-close with "Closes #N"
-3. **NEVER move cards to "Done" manually** — cards move to "Done" automatically when PR merges (via "Closes #N"), verify manually afterward
-4. **ALWAYS create PR as DRAFT first** — then implement, then mark ready
-5. **ALWAYS read PR-PROCESS.md before starting** — the process has been updated multiple times
-6. **ALWAYS present candidates before choosing** — let the user decide
-7. **ALWAYS wait for authorization between phases** — no autonomous progression
-8. **NEVER merge without approval** — PRs must be reviewed
+2. **NEVER skip Phase 0** — if a card is `🟡 RESEARCH NEEDED`, research MUST complete before Phase 1
+3. **NEVER close issues before PR merge** — they auto-close with "Closes #N"
+4. **NEVER move cards to "Done" manually** — cards move to "Done" automatically when PR merges (via "Closes #N"), verify manually afterward
+5. **ALWAYS create PR as DRAFT first** — then implement, then mark ready
+6. **ALWAYS read PR-PROCESS.md before starting** — the process has been updated multiple times
+7. **ALWAYS present candidates before choosing** — let the user decide
+8. **ALWAYS wait for authorization between phases** — no autonomous progression
+9. **NEVER merge without approval** — PRs must be reviewed
+10. **ALWAYS flag research cards** — mark `🟡 RESEARCH NEEDED` candidates explicitly with open questions
 
 ## Priority Labels Reference
 

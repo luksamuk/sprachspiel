@@ -12,9 +12,135 @@ metadata:
 
 I guide the complete PR workflow for the ask-ai project, from branch creation through merge. I cover every phase with exact commands and decision points.
 
+**If the selected card has `🟡 RESEARCH NEEDED` status, Phase 0 (Research) is MANDATORY before any branch creation.**
+
 ## When to use me
 
 Use this skill when you are implementing a feature or fix that requires a PR. Load me after the next-demand skill has identified the task and the user has approved it.
+
+**Research gate:** If the card status is `🟡 RESEARCH NEEDED`, Phase 0 must complete before Phase 1.
+
+## Phase 0: Research (MANDATORY for 🟡 RESEARCH NEEDED cards)
+
+**When:** The selected card has status `🟡 RESEARCH NEEDED` in IMPLEMENTATION.md or the issue description contains "open questions" that are not yet answered.
+
+**Why:** Cards marked 🟡 RESEARCH have unresolved design questions. Without research, Phase 2.5 (planning) and Phase 2.6 (requirements checkpoint) will stall on ⚠️ VAGUE items. Creating a branch before answering these questions wastes effort if the approach changes.
+
+**NO branch is created in this phase.** This is a read-only investigation.
+
+### Step 0.1: Identify Research Questions
+
+1. Read the card's section in `IMPLEMENTATION.md` — look for "Open questions:" lists
+2. Read the GitHub issue body — look for checkboxes that are unchecked, "TBD" effort estimates, or "Research needed" labels
+3. Compile a **Research Question List**:
+
+```
+| # | Question | Source | Answered? |
+|---|----------|--------|-----------|
+| 1 | ... | IMPLEMENTATION.md §#74 | ❌ |
+```
+
+### Step 0.2: Investigate (READ-ONLY)
+
+Investigate each question without modifying any code:
+
+1. **Read codebase** — search for relevant files, patterns, existing abstractions
+2. **Check dependencies** — verify if prerequisites exist or are planned
+3. **Evaluate trade-offs** — for architecture decisions with multiple approaches
+4. **Test assumptions** — write throwaway snippets if needed (do NOT commit)
+
+Research activities:
+```bash
+# Read relevant source files
+rg "pattern" src/ --type rust
+
+# Check existing interfaces and types
+rg "struct|trait|enum" src/relevant_module/
+
+# Review dependency docs
+cargo doc --open  # if helpful
+```
+
+### Step 0.3: Produce Research Summary
+
+Write a Research Summary document (as an issue comment) with:
+
+```markdown
+## Research Summary — #<issue_number>
+
+### Questions Answered
+
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | ... | ✅ Answer | ... |
+
+### Questions Still Open (Deferred)
+
+| # | Question | Why Deferred | Impact on Implementation |
+|---|----------|-------------|--------------------------|
+| 1 | ... | Needs runtime testing | Low — can implement core first |
+
+### Architecture Proposal
+[Detailed architecture if the research produced a design]
+
+### Revised Effort Estimate
+[Original] → [Revised] (explain change if any)
+
+### Recommendation
+[READY to implement / DEFER to later / SPLIT into smaller issues]
+```
+
+### Step 0.4: Update Documentation
+
+1. **Post Research Summary** as a comment on the GitHub issue:
+   ```bash
+   gh issue comment <issue_number> --body "$(cat <<'EOF'
+   ## Research Summary
+
+   [paste Research Summary here]
+   EOF
+   )"
+   ```
+
+2. **Update IMPLEMENTATION.md** — replace `🟡 RESEARCH NEEDED` with `📋 PLANNED`:
+   - Fill in answered open questions
+   - Update effort estimate if revised
+   - Add architecture proposal section if produced
+
+3. **Update Scrum Status** on the board: `Backlog → Ready`
+   ```bash
+   ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
+   gh api graphql -f query='
+   mutation {
+     updateProjectV2ItemFieldValue(
+       input: {
+         projectId: "PVT_kwHOADplIc4BRnZ9"
+         itemId: "'"$ITEM_ID"'"
+         fieldId: "PVTSSF_lAHOADplIc4BRnZ9zg_ZHUY"
+         value: { singleSelectOptionId: "70e88e2e" }
+       }
+     ) { projectV2Item { id } }
+   }'
+   ```
+
+### Step 0.5: ⛔ WAIT for User Approval
+
+**Present the Research Summary to the user and WAIT.** The user must approve before proceeding:
+
+- ✅ **Approved** → Proceed to Phase 1 (Setup). The card is now `📋 PLANNED` / Scrum `Ready`.
+- 📋 **Partially approved** — Some questions need more investigation. Loop back to Step 0.2 for specific questions.
+- ❌ **Not viable now** — Document why in the issue, move card back to `Backlog`, do NOT create a branch.
+
+**Gate rule:** Phase 0 MUST produce all ⚠️ VAGUE → ✅ CLEAR transitions before Phase 1 starts. If any open questions remain that block implementation, the card is not ready for a branch.
+
+### Research Outcomes
+
+| Outcome | Status Change | Next Step |
+|---------|---------------|-----------|
+| All questions answered | `🟡 RESEARCH` → `📋 PLANNED` (Scrum: Ready) | Phase 1 |
+| Partially answered, core viable | `🟡 RESEARCH` → `📋 PLANNED` with caveats | Phase 1 (document deferred items) |
+| Not viable now | `🟡 RESEARCH` → stays `🟡 RESEARCH` (Scrum: Backlog) | Stop, no branch |
+| Should be split | Close original, create focused sub-issues | Return to next-demand |
 
 ## Phase 1: Setup
 
@@ -434,19 +560,21 @@ If the PR addresses a canonical issue that had duplicates:
 ## Key Rules
 
 1. **NEVER skip the PR-PROCESS.md steps** — follow them in order
-2. **NEVER close issues before PR merge** — they auto-close with "Closes #N"
-3. **NEVER merge without approval** — PRs must be reviewed
-4. **ALWAYS create PR as DRAFT first** — then implement, then mark ready
-5. **ALWAYS check for duplicate issues** before creating a branch — use the duplicate check in Phase 1
-6. **ALWAYS use canonical issue for references** — branch names, PR titles, PR bodies, board cards should all reference the canonical issue (not a duplicate)
-7. **ALWAYS move project board cards** — at every phase transition:
+2. **NEVER skip Phase 0** — if a card is `🟡 RESEARCH NEEDED`, research MUST complete before creating a branch
+3. **NEVER close issues before PR merge** — they auto-close with "Closes #N"
+4. **NEVER merge without approval** — PRs must be reviewed
+5. **ALWAYS create PR as DRAFT first** — then implement, then mark ready
+6. **ALWAYS check for duplicate issues** before creating a branch — use the duplicate check in Phase 1
+7. **ALWAYS use canonical issue for references** — branch names, PR titles, PR bodies, board cards should all reference the canonical issue (not a duplicate)
+8. **ALWAYS move project board cards** — at every phase transition:
+   - Phase 0 (Research): Scrum → `Ready` (when research complete)
    - Phase 1 (Setup): → "In Progress"
    - Phase 4 (Ready for Review): → "In Review"
    - Phase 7 (Merge): → "Done" (automatic via "Closes #N", verify manually)
-8. **ALWAYS cross-reference related issues** — comment on the canonical issue about the PR, close duplicates with explanation
-9. **ALWAYS update IMPLEMENTATION.md** — mark status on every phase change
-10. **ALWAYS wait for authorization** between phases — no autonomous progression
-11. **ALWAYS run quality gates** before commits and PRs — load `quality-gates` skill for the complete sensor hierarchy
+9. **ALWAYS cross-reference related issues** — comment on the canonical issue about the PR, close duplicates with explanation
+10. **ALWAYS update IMPLEMENTATION.md** — mark status on every phase change
+11. **ALWAYS wait for authorization** between phases — no autonomous progression
+12. **ALWAYS run quality gates** before commits and PRs — load `quality-gates` skill for the complete sensor hierarchy
 
 ## Project Information
 
