@@ -134,12 +134,14 @@
 
 | Milestone | Codename | Description | Priorities |
 |-----------|----------|-------------|------------|
-| **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
-| **[M2]** | UX & Pre-Launch | TUI design, UX research, prototyping, private feedback, benchmarks, learned patterns | P14 (UX design + interaction modes design), B1 (benchmarks), B6 (learned patterns) |
-| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6, **S2.2 elevated to MEDIUM**), P14 (TUI implementation + /queue + /steer), P15 |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 | P0-P6, P8-P13, Parallel Tool Execution |
+| **[M2]** | UX & Pre-Launch | TUI design + implementation, UX research, prototyping, private feedback, benchmarks, learned patterns | P14 (TUI full stack), B1 (benchmarks), B6 (learned patterns) |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions | P7 (S2.1-S2.6, **S2.2 elevated to MEDIUM**), P15 |
 | **[M4]** | Future | Deferred features and research | B2-B5, B7-B8+, context engineering, speculation, VCR |
 
-**M2 rationale:** The TUI design milestone now also serves as the pre-launch validation gate. Benchmarks (B1) are the last thing completed before public release — they validate claims about feedback-driven memory and hybrid retrieval. Learned patterns (B6) provides behavioral intelligence infrastructure (system reminders, auto-extraction of usage patterns, decay visibility) that enriches the TUI experience. Separating design (M2) from implementation (M3) ensures the TUI gets the attention it deserves as a public-facing product.
+**M2 rationale:** M2 is the complete TUI milestone — design, prototyping, and implementation. Benchmarks (B1) are the last thing completed before public release — they validate claims about feedback-driven memory and hybrid retrieval. Learned patterns (B6) provides behavioral intelligence infrastructure (system reminders, auto-extraction of usage patterns, decay visibility) that enriches the TUI experience.
+
+**M1 note:** Parallel Tool Execution (formerly P5/P7) depends on P6.0e (coordinator refactoring) and belongs in M1. It reuses the P5 number in the roadmap but is a separate priority from the completed Feedback Infrastructure.
 
 **M3 change:** S2.2 (Content Relations Graph) elevated from LOW to MEDIUM priority. Competitive analysis shows that graph-based retrieval is a key differentiator in the memory-augmented agent space, and delay risks falling behind.
 
@@ -2204,7 +2206,10 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ### 🟡 PRIORITY 5: Parallel Tool Execution [M1]
 
-**Status:** ❌ NOT STARTED
+**Status:** ❌ NOT STARTED  
+**GitHub Issue:** #11  
+**Depends on:** P6.0e (coordinator refactoring to use agnostic types)  
+**Note:** Issue #11 labels this as P7, but it belongs in M1 per roadmap. Renumbered to P5 in the roadmap to reflect priority (medium, after P6.0 core).
 
 **Goal:** Execute independent tool calls in parallel for faster response times.
 
@@ -3419,7 +3424,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
-### 🔵 PRIORITY 14: TUI (Terminal User Interface) [M2 → M3]
+### 🔵 PRIORITY 14: TUI (Terminal User Interface) [M2]
 
 **Status:** ❌ NOT STARTED
 
@@ -3427,9 +3432,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
 
-**Milestone split (2025-04-25):**
-- **M2 (UX & TUI Design):** UX research, design mockups, prototyping, private feedback rounds. This is the design phase that will shape the public-facing product.
-- **M3 (TUI Implementation):** Coding the TUI based on M2's design decisions. Happens alongside Sprach 2.0 research.
+**Milestone:** M2 — full design + implementation. TUI is the pre-launch product experience.
 
 **Components:**
 - Chat pane with markdown rendering
@@ -3470,9 +3473,9 @@ This refactoring is a prerequisite for B8 (ACP) and should be done as part of P1
 
 #### P14.IM: TUI Interaction Modes (`/queue` and `/steer`)
 
-**Status:** 📋 PLANNED (design in M2, implementation in M3)  
+**Status:** 📋 PLANNED (part of P14 TUI milestone, M2)  
 **Depends on:** TUI must exist first (concurrent input requires async input backend)  
-**Estimated effort:** 2-3 days (design, M2) + 1-2 weeks (implementation, M3)  
+**Estimated effort:** 2-3 days (design) + 1-2 weeks (implementation)  
 **Inspiration:** Hermes Agent `/queue` and `/steer` commands
 
 **Goal:** Enable three busy-input modes in the TUI so users can interact with a running agent without destructive interruption.
@@ -3535,7 +3538,7 @@ busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
 
 ---
 
-### 🔵 PRIORITY 15: Plugin System [M2 → M3]
+### 🔵 PRIORITY 15: Plugin System [M3]
 
 **Status:** ❌ NOT STARTED
 
@@ -3667,7 +3670,7 @@ The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not 
 
 ---
 
-## 🟣 PRIORITY 7: Sprach 2.0 — CAS Research [M2 → M3]
+## 🟣 PRIORITY 7: Sprach 2.0 — CAS Research [M3]
 
 **Status:** 🟡 RESEARCH NEEDED  
 **Comprehensive Design:** See [Sprach 2.0 Research](./doc/src/development/sprach-2-0-research.md) for open questions, code analysis, and implementation details.
@@ -4198,12 +4201,12 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B8: ACP Agent Integration [M3/M4]
+### 📋 DRAFT B8: ACP Agent Integration [M2/M3]
 
 **Status:** 📋 DRAFT
 **Depends on:** P14 TUI (ApplicationBackend decoupling — B8.1, B8.2)
 **Estimated effort:** 4-8 weeks
-**Priority within M4:** After B2-B4. If TUI decoupling is done in M3, ACP can start in M3.
+**Priority within M2/M3:** After P14 (TUI) decoupling. ACP requires ApplicationBackend trait.
 
 **Goal:** Implement the Agent Client Protocol (ACP) to expose ask-ai as an agent that editors (Zed, JetBrains, Neovim, VS Code) and other ACP-compatible clients can use directly, replacing the need for a standalone MCP Server (B5).
 
@@ -4338,4 +4341,4 @@ The original detailed implementation notes have been moved to:
 2026-04-28 - Draft priorities B1-B7 added. Milestones restructured: M2 now includes B1 (benchmarks) and B6 (learned patterns). M4 now has structured draft priorities (B2-B5). S2.2 (Content Relations) elevated to MEDIUM. Research icebox created at doc/src/development/research-icebox.md.
 2026-04-29 - Added B8 (ACP Agent Integration) as draft priority. Updated P14 to include ApplicationBackend decoupling as architectural requirement for TUI/ACP. Updated B5 to note subsumption by B8 (ACP's MCP-over-ACP). Added R-11 (ACP) and R-12 (ApplicationBackend) to research icebox. Updated R-09 (MCP Server) to reference B5/B8.
 2026-04-30 - M1 reorganized into 3 phases (Feedback+QuickWins → P6.0 Core → Low Priority). P6.5 consolidated with P1 #105 (duplicate). P5.1 verified as ~95% implemented (ADR-008/009). #103 and #17 marked for closure (obsolete). #90 (P5.1) flagged for verification and potential closure.
-2026-05-06 - Board cleanup: 12 missing issues added to project board (#36,#90-97,#99-101). P6.0 sub-issues created: #118 (P6.0b), #119 (P6.0c), #120 (P6.0d), #121 (P6.0e), #122 (P6.0f), #123 (P6.0g). Closed #103 (resolved in P6.0d) and #17 (obsolete). Fixed P5.1 decay_score persistence gap: `run_content_decay_cycle()` now updates `decay_score` for all items, enabling accurate "items at risk" in `/context`. Scrum Status synced for all 77 board items.
+2026-05-06 - Board cleanup: 12 missing issues added to project board (#36,#90-97,#99-101). P6.0 sub-issues created: #118 (P6.0b), #119 (P6.0c), #120 (P6.0d), #121 (P6.0e), #122 (P6.0f), #123 (P6.0g). Closed #103 (resolved in P6.0d) and #17 (obsolete). Fixed P5.1 decay_score persistence gap. Scrum Status synced for all 77 board items. Milestone corrections: M2 now includes TUI design+implementation (not split M2/M3). M3 is Sprach 2.0 only (P7, P15). Parallel Tool Execution (#11) confirmed as M1 (P5, depends on P6.0e). Updated #11 title from [P7] to [P5].
