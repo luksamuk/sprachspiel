@@ -70,7 +70,7 @@ pub fn run_content_decay_cycle(conn: &Connection) -> Result<ContentDecayStats, S
 
     let items: Vec<(i64, f32, u32, String, i64, i32)> = rows.filter_map(|r| r.ok()).collect();
 
-    // Find items to prune
+    // Find items to prune and update decay_score for all items
     let mut pruned_ids: Vec<i64> = Vec::new();
     let mut retention_sum: f32 = 0.0;
 
@@ -82,6 +82,13 @@ pub fn run_content_decay_cycle(conn: &Connection) -> Result<ContentDecayStats, S
             *last_accessed,
             now,
         );
+
+        // Persist decay_score so /context "items at risk" query works
+        conn.execute(
+            "UPDATE content_items SET decay_score = ?1 WHERE id = ?2",
+            params![retention, id],
+        )
+        .map_err(|e| format!("Failed to update decay_score for item {}: {}", id, e))?;
 
         if should_prune_content(*importance, retention) {
             pruned_ids.push(*id);
@@ -116,9 +123,9 @@ pub fn run_content_decay_cycle(conn: &Connection) -> Result<ContentDecayStats, S
 
 /// Overview statistics for the content decay system, used in /context display.
 ///
-/// Provides a snapshot of content memory health without computing
-/// per-item retention (which would be expensive for large datasets).
-/// Uses importance and decay_score as proxies for retention health.
+/// Provides a snapshot of content memory health.
+/// `decay_score` is persisted during `run_content_decay_cycle()`, so
+/// "items at risk" queries are accurate after each cycle run.
 pub struct ContentDecayOverview {
     /// Total non-pruned content items
     pub total_items: usize,
@@ -133,8 +140,8 @@ pub struct ContentDecayOverview {
 /// Get content decay statistics for display in /context command.
 ///
 /// Returns aggregated stats from the content_items and feedback_signals tables.
-/// Uses importance and decay_score as proxies rather than computing per-item
-/// retention (which requires time-based computation for each item).
+/// `decay_score` values are persisted by `run_content_decay_cycle()`,
+/// so "items at risk" is accurate after each cycle run.
 ///
 /// # Arguments
 /// * `conn` - SQLite connection
@@ -470,6 +477,34 @@ mod tests {
             )
             .unwrap();
         assert_eq!(pruned, 0, "High-importance document should not be pruned");
+
+        // Verify decay_score was persisted for non-pruned items
+        let note_decay: f32 = conn
+            .query_row(
+                "SELECT decay_score FROM content_items WHERE content = 'recent note'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            note_decay > 0.9,
+            "Recent note decay_score should be > 0.9, got {}",
+            note_decay
+        );
+
+        let doc_decay: f32 = conn
+            .query_row(
+                "SELECT decay_score FROM content_items WHERE content = 'important doc'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        // Old document with high importance: decay is low but importance multiplier boosts it
+        assert!(
+            doc_decay > 0.0,
+            "Important doc decay_score should be > 0, got {}",
+            doc_decay
+        );
     }
 
     #[test]
@@ -552,6 +587,99 @@ mod tests {
             stats.avg_retention > 0.9,
             "Avg retention for fresh item should be > 0.9, got {}",
             stats.avg_retention
+        );
+
+        // Verify decay_score was persisted (fresh item should have high score)
+        let decay_score: f32 = conn
+            .query_row(
+                "SELECT decay_score FROM content_items WHERE content = 'fresh note'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            decay_score > 0.9,
+            "Fresh note decay_score should be > 0.9 after cycle, got {}",
+            decay_score
+        );
+    }
+
+    #[test]
+    fn test_decay_score_persisted_after_cycle() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE content_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_type TEXT NOT NULL,
+                conversation_id TEXT,
+                role TEXT,
+                message_type TEXT DEFAULT 'normal',
+                previous_item_id INTEGER,
+                prompt_tokens INTEGER,
+                scope TEXT,
+                source TEXT,
+                title TEXT,
+                content TEXT NOT NULL,
+                importance REAL DEFAULT 0.5,
+                access_count INTEGER DEFAULT 0,
+                decay_score REAL DEFAULT 1.0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_accessed INTEGER NOT NULL,
+                has_embedding INTEGER DEFAULT 0,
+                pruned INTEGER NOT NULL DEFAULT 0,
+                project_id TEXT
+            );",
+        )
+        .unwrap();
+
+        let now = chrono::Utc::now().timestamp();
+
+        // Insert item with default decay_score = 1.0 but old last_accessed
+        // (should get a lower decay_score after the cycle)
+        let six_months_ago = now - (180 * 86400);
+        conn.execute(
+            "INSERT INTO content_items (content_type, content, importance, access_count, created_at, updated_at, last_accessed)
+             VALUES ('note', 'old note', 0.3, 0, ?1, ?1, ?1)",
+            params![six_months_ago],
+        )
+        .unwrap();
+
+        // Verify initial decay_score is 1.0 (default)
+        let initial_decay: f32 = conn
+            .query_row(
+                "SELECT decay_score FROM content_items WHERE content = 'old note'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            (initial_decay - 1.0).abs() < 0.01,
+            "Initial decay_score should be 1.0, got {}",
+            initial_decay
+        );
+
+        // Run decay cycle
+        let stats = run_content_decay_cycle(&conn).unwrap();
+        assert_eq!(stats.pruned, 0, "Old note should not be pruned (importance < 0.8 but retention > 0.05)");
+
+        // Verify decay_score was updated (should be < 1.0 for an old item)
+        let updated_decay: f32 = conn
+            .query_row(
+                "SELECT decay_score FROM content_items WHERE content = 'old note'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            updated_decay < 1.0,
+            "Old note decay_score should be < 1.0 after cycle, got {}",
+            updated_decay
+        );
+        assert!(
+            updated_decay > 0.0,
+            "Old note decay_score should be > 0 (not pruned), got {}",
+            updated_decay
         );
     }
 
