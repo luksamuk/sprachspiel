@@ -1622,7 +1622,7 @@ Context Assembly:
 | ADR-004 | LLM self-feedback = 30% weight | Self-approval bias defense. Wu et al. (2025): self-verification consistently beaten by majority voting. Chan et al. (2025): ~3% decisions change per reflection step. Configurable via `config.toml [feedback].llm_feedback_weight`. |
 | ADR-005 | Good=+1.0, Bad=-1.0, Correction=+1.0 | Binary-like symmetric signals (no partial credit). Drori et al. (2025): strict 0/1 verification. Granularity comes from temporal decay, not base_value. Correction value is in metadata text, not numerical weight. |
 | ADR-006 | Score clamping: `.clamp(0.1, 3.0)` | Original `.max(-0.9).min(2.0)` allowed negative scores (bug: `1.0 + (-2.0) = -1.0 → max(-1.0, -0.9) = -0.9`). New clamp: min 0.1 (90% max suppression), max 3.0 (3× amplification cap). |
-| ADR-008 | Content Decay Activation | `content_items` ghost fields activated: `decay_score`/`access_count`/`last_accessed` now functional with Ebbinghaus decay. Content-type half-lives: messages=90d, notes=60d, documents=120d. Feedback adjusts importance (good +0.05, bad -0.1), creating a forgetting loop. |
+| ADR-008 | Content Decay Activation | `content_items` ghost fields activated: `decay_score`/`access_count`/`last_accessed` now functional with Ebbinghaus decay. Content-type half-lives: messages=90d, notes=60d, documents=120d. Feedback adjusts importance (good +0.05, bad -0.1), creating a forgetting loop. **⚠️ Gap:** `decay_score` is never updated in the DB (always 1.0) — only `importance`, `access_count`, and `last_accessed` are persisted on access. Retention is computed on-the-fly by `compute_content_retention()`, so pruning works correctly, but "items at risk" in `/context` (`WHERE decay_score < 0.3`) always returns 0. P4.X (#96) depends on this gap being fixed. |
 | ADR-009 | Retrieval Reinforces Retention | `on_content_access()` called on retrieval — increments `access_count`, updates `last_accessed`. Same pattern as facts system. RRF (immediate ranking) and access_count (future retention) are separate signals — not double-counting. |
 
 #### Key Corrections from Original Plan
@@ -2544,7 +2544,7 @@ These models work with llama.cpp server's `/v1/embeddings` endpoint which also s
 
 Features that enhance core functionality before Sprach 2.0 work begins.
 
-### P6.0a: Retry Threshold with Backoff
+### P6.0a: Retry Threshold with Backoff — #116
 
 **Status:** 📋 READY  
 **Depends on:** None  
@@ -2666,7 +2666,7 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 ---
 
-#### P6.0b: Tool Trait + Proc Macro `#[ask_ai::tool]`
+#### P6.0b: Tool Trait + Proc Macro `#[ask_ai::tool]` — #118
 
 **Status:** 📋 PLANNED  
 **Depends on:** None (can start in parallel with P6.0a)  
@@ -2703,10 +2703,10 @@ pub trait Tool: Send + Sync {
 
 ---
 
-#### P6.0c: Agnostic Provider Types
+#### P6.0c: Agnostic Provider Types — #119
 
 **Status:** 📋 PLANNED  
-**Depends on:** P6.0b (error types should be compatible with new Tool trait)  
+**Depends on:** #118 (P6.0b — error types should be compatible with new Tool trait)  
 **Estimated effort:** 1 week  
 **Merge criterion:** Types compile, `From` conversions tested, no existing files changed
 
@@ -2736,10 +2736,10 @@ pub trait LlmProvider: Send + Sync {
 
 ---
 
-#### P6.0d: OllamaProvider (reqwest direct)
+#### P6.0d: OllamaProvider (reqwest direct) — #120
 
 **Status:** 📋 PLANNED  
-**Depends on:** P6.0c (uses agnostic types)  
+**Depends on:** #119 (P6.0c — uses agnostic types)  
 **Estimated effort:** 2–3 weeks  
 **Merge criterion:** OllamaProvider passes same smoke tests as ollama-rs client
 
@@ -2785,10 +2785,10 @@ pub trait LlmProvider: Send + Sync {
 
 ---
 
-#### P6.0e: Consumer Migration
+#### P6.0e: Consumer Migration — #121
 
 **Status:** 📋 PLANNED  
-**Depends on:** P6.0b (Tool trait) + P6.0c (agnostic types) + P6.0d (OllamaProvider)  
+**Depends on:** #118 (P6.0b Tool trait) + #119 (P6.0c agnostic types) + #120 (P6.0d OllamaProvider)  
 **Estimated effort:** 2–3 weeks  
 **Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`)
 
@@ -2810,10 +2810,10 @@ pub trait LlmProvider: Send + Sync {
 
 ---
 
-#### P6.0f: OpenAI-Compatible Provider
+#### P6.0f: OpenAI-Compatible Provider — #122
 
 **Status:** 📋 PLANNED  
-**Depends on:** P6.0e (all consumers using LlmProvider)  
+**Depends on:** #121 (P6.0e — all consumers using LlmProvider)  
 **Estimated effort:** 2 weeks  
 **Merge criterion:** `--provider openai` works with OpenAI / llama.cpp / LM Studio
 
@@ -2854,10 +2854,10 @@ vision = true
 
 ---
 
-#### P6.0g: Remove ollama-rs
+#### P6.0g: Remove ollama-rs — #123
 
 **Status:** 📋 PLANNED  
-**Depends on:** P6.0e (all consumers migrated)  
+**Depends on:** #121 (P6.0e — all consumers migrated)  
 **Estimated effort:** 2–3 days  
 **Merge criterion:** `cargo build --all-features` without `ollama-rs` in Cargo.toml
 
@@ -3009,11 +3009,14 @@ Key files:
 
 **Related:** Issue #76
 
-### P6.5: Config Upgrade Command
+### P6.5: Config Upgrade Command — Same as P1 (#105)
 
 **Status:** 📋 PLANNED
 **Depends on:** None
 **Estimated effort:** 5 days
+**Issue:** #105 (canonical — P6.5 and P1 #105 are the same task)
+
+**Note:** P6.5 and P1 #105 describe the same feature. Use #105 as the canonical issue. See P1 section for full implementation details.
 
 ---
 
@@ -4334,3 +4337,5 @@ The original detailed implementation notes have been moved to:
 2026-04-28 - P6.0 decomposed into 7 sub-phases (P6.0a–P6.0g) for full ollama-rs removal. Added P6.0a (retry threshold with backoff). Added P14.IM (TUI interaction modes: /queue, /steer). Updated milestones M1–M3 with provider migration and interaction modes.
 2026-04-28 - Draft priorities B1-B7 added. Milestones restructured: M2 now includes B1 (benchmarks) and B6 (learned patterns). M4 now has structured draft priorities (B2-B5). S2.2 (Content Relations) elevated to MEDIUM. Research icebox created at doc/src/development/research-icebox.md.
 2026-04-29 - Added B8 (ACP Agent Integration) as draft priority. Updated P14 to include ApplicationBackend decoupling as architectural requirement for TUI/ACP. Updated B5 to note subsumption by B8 (ACP's MCP-over-ACP). Added R-11 (ACP) and R-12 (ApplicationBackend) to research icebox. Updated R-09 (MCP Server) to reference B5/B8.
+2026-04-30 - M1 reorganized into 3 phases (Feedback+QuickWins → P6.0 Core → Low Priority). P6.5 consolidated with P1 #105 (duplicate). P5.1 verified as ~95% implemented (ADR-008/009). #103 and #17 marked for closure (obsolete). #90 (P5.1) flagged for verification and potential closure.
+2026-05-06 - Board cleanup: 12 missing issues added to project board (#36,#90-97,#99-101). P6.0 sub-issues created: #118 (P6.0b), #119 (P6.0c), #120 (P6.0d), #121 (P6.0e), #122 (P6.0f), #123 (P6.0g). Closed #103 (resolved in P6.0d) and #17 (obsolete). #90 (P5.1) kept open: decay_score column never updated (always 1.0) — "items at risk" in /context never shows anything. P4.X (#96) depends on this gap. Scrum Status synced for all 77 board items.
