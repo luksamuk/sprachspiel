@@ -400,11 +400,11 @@ fn apply_sandbox_if_enabled(
 
     debug_log!("CWD: {}", cwd);
 
-    // Get ask-ai config directory (read-only)
+    // Get sprachspiel config directory (read-only)
     let config_dir = get_config_dir();
     debug_log!("Config dir: {:?}", config_dir);
 
-    // Get ask-ai data directory (read/write)
+    // Get sprachspiel data directory (read/write)
     let data_dir = get_data_dir();
     debug_log!("Data dir: {:?}", data_dir);
 
@@ -447,7 +447,7 @@ fn apply_sandbox_if_enabled(
         .add_rules(path_beneath_rules([&cwd], AccessFs::from_all(abi)))
         .map_err(|e| format!("Failed to add CWD rule: {}", e))?;
 
-    // Add ask-ai data directory with full access (for database/conversations)
+    // Add sprachspiel data directory with full access (for database/conversations)
     if let Some(ref data) = data_dir {
         debug_log!("Adding data dir rule (from_all): {:?}", data);
         ruleset_created = ruleset_created
@@ -463,7 +463,7 @@ fn apply_sandbox_if_enabled(
             .map_err(|e| format!("Failed to add read-only rules: {}", e))?;
     }
 
-    // Add ask-ai config directory (read-only, for tools.toml, config.toml)
+    // Add sprachspiel config directory (read-only, for tools.toml, config.toml)
     if let Some(ref config_path) = config_dir {
         debug_log!("Adding config dir rule (from_read): {:?}", config_path);
         ruleset_created = ruleset_created
@@ -519,21 +519,23 @@ fn apply_sandbox_if_enabled(
     Ok(())
 }
 
-/// Get the ask-ai config directory path.
+/// Get the Sprachspiel config directory path.
 /// Returns None if the directory doesn't exist.
 #[cfg(all(feature = "sandbox", target_os = "linux"))]
 fn get_config_dir() -> Option<String> {
+    use crate::consts::app;
+
     // Check XDG_CONFIG_HOME first
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        let path = std::path::PathBuf::from(xdg_config).join("ask-ai");
+        let path = std::path::PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR);
         if path.exists() {
             return Some(path.to_string_lossy().to_string());
         }
     }
 
-    // Fall back to ~/.config/ask-ai
+    // Fall back to ~/.config/sprachspiel
     if let Some(home) = dirs::home_dir() {
-        let path = home.join(".config").join("ask-ai");
+        let path = home.join(".config").join(app::APP_CONFIG_DIR);
         if path.exists() {
             return Some(path.to_string_lossy().to_string());
         }
@@ -542,21 +544,23 @@ fn get_config_dir() -> Option<String> {
     None
 }
 
-/// Get the ask-ai data directory path.
+/// Get the Sprachspiel data directory path.
 /// Returns None if the directory doesn't exist.
 #[cfg(all(feature = "sandbox", target_os = "linux"))]
 fn get_data_dir() -> Option<String> {
+    use crate::consts::app;
+
     // Check XDG_DATA_HOME first
     if let Ok(xdg_data) = std::env::var("XDG_DATA_HOME") {
-        let path = std::path::PathBuf::from(xdg_data).join("ask-ai");
+        let path = std::path::PathBuf::from(xdg_data).join(app::APP_DATA_DIR);
         if path.exists() {
             return Some(path.to_string_lossy().to_string());
         }
     }
 
-    // Fall back to ~/.local/share/ask-ai
+    // Fall back to ~/.local/share/sprachspiel
     if let Some(home) = dirs::home_dir() {
-        let path = home.join(".local").join("share").join("ask-ai");
+        let path = home.join(".local").join("share").join(app::APP_DATA_DIR);
         if path.exists() {
             return Some(path.to_string_lossy().to_string());
         }

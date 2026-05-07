@@ -1,12 +1,12 @@
-# Ask-AI
+# Sprachspiel
 
-<img src="assets/ask-ai-banner.png" alt="ask-ai banner" width="100%">
+<img src="assets/sprachspiel-banner.png" alt="sprachspiel banner" width="100%">
 
 A Rust CLI harness for research, interaction, and cognitive evolution with local and cloud LLMs.
 
 ## Overview
 
-Ask-AI is a cognitive interaction harness — not a code-specific tool — built around Ollama LLMs. It provides persistent memory (factual + semantic), adaptive personality (SOUL.md), 50+ extensible tools, and conversational agent capabilities. Designed for research, knowledge management, and open-ended cognitive interaction rather than narrowly scoped development workflows.
+Sprachspiel is a cognitive interaction harness — not a code-specific tool — built around Ollama LLMs. It provides persistent memory (factual + semantic), adaptive personality (SOUL.md), 50+ extensible tools, and conversational agent capabilities. Designed for research, knowledge management, and open-ended cognitive interaction rather than narrowly scoped development workflows.
 
 Key capabilities:
 - **Persistent memory** — facts, notes, documents with semantic search and Ebbinghaus decay
@@ -19,25 +19,25 @@ Key capabilities:
 
 ```bash
 # Install (one-liner)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
 
 # Basic query
-ask-ai "What is Rust?"
+sprachspiel "What is Rust?"
 
 # Interactive chat with semantic search
-ask-ai chat
+sprachspiel chat
 
 # Translate
-ask-ai translate en:pt "Hello world"
+sprachspiel translate en:pt "Hello world"
 
 # OCR
-ask-ai ocr document.png
+sprachspiel ocr document.png
 
 # Summarize
-echo "Long text..." | ask-ai summarize
+echo "Long text..." | sprachspiel summarize
 
 # List models
-ask-ai --list
+sprachspiel --list
 ```
 
 ## Installation
@@ -48,16 +48,16 @@ Install directly from GitHub releases:
 
 ```bash
 # Latest version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
 
 # Specific version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --version 0.26.0
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.26.0
 
 # With all tools
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --tools all
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --tools all
 
 # System-wide (requires sudo)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --prefix /usr
 ```
 
 Installs to `~/.local/bin` by default. The manpage is installed to `~/.local/share/man/man1`.
@@ -68,8 +68,8 @@ Download from [GitHub Releases](https://github.com/luksamuk/ask-ai-rs/releases):
 
 ```bash
 # Download and extract
-tar -xzf ask-ai-0.26.0-linux-x86_64.tar.gz
-cd ask-ai-0.26.0-linux-x86_64
+tar -xzf sprachspiel-0.26.0-linux-x86_64.tar.gz
+cd sprachspiel-0.26.0-linux-x86_64
 
 # Install
 ./install.sh
@@ -102,20 +102,20 @@ make install-local
 
 ### Termux (Android)
 
-Ask-AI works on Termux! Download the Termux tarball from releases:
+Sprachspiel works on Termux! Download the Termux tarball from releases:
 
 ```bash
 # In Termux
 pkg install wget
 
 # Download and install
-wget https://github.com/luksamuk/ask-ai-rs/releases/download/v0.26.0/ask-ai-0.26.0-termux-aarch64.tar.gz
-tar -xzf ask-ai-0.26.0-termux-aarch64.tar.gz
-cd ask-ai-0.26.0-termux-aarch64
+wget https://github.com/luksamuk/ask-ai-rs/releases/download/v0.26.0/sprachspiel-0.26.0-termux-aarch64.tar.gz
+tar -xzf sprachspiel-0.26.0-termux-aarch64.tar.gz
+cd sprachspiel-0.26.0-termux-aarch64
 ./install.sh
 ```
 
-**Note:** Ollama must run on a separate machine. Configure in `~/.config/ask-ai/config.toml`:
+**Note:** Ollama must run on a separate machine. Configure in `~/.config/sprachspiel/config.toml`:
 
 ```toml
 [ollama]
@@ -142,7 +142,7 @@ source ~/.bashrc  # or ~/.zshrc
 **Complete documentation** is available at `doc/`:
 
 - **User Guide**: `cd doc && mdbook serve`
-- **Man Page**: `man ask-ai`
+- **Man Page**: `man sprachspiel`
 - **Online**: Build with `cd doc && mdbook build`
 
 ## Commands
@@ -150,10 +150,10 @@ source ~/.bashrc  # or ~/.zshrc
 ### Query Mode (Default)
 
 ```bash
-ask-ai "What is Rust?"           # Basic query
-ask-ai -m qwen3.5:4b "Explain async"  # Specific model
-ask-ai -c "Write a Python function"  # Code mode
-ask-ai -t "Think step by step"   # Think mode
+sprachspiel "What is Rust?"           # Basic query
+sprachspiel -m qwen3.5:4b "Explain async"  # Specific model
+sprachspiel -c "Write a Python function"  # Code mode
+sprachspiel -t "Think step by step"   # Think mode
 ```
 
 ### Chat Mode
@@ -161,10 +161,10 @@ ask-ai -t "Think step by step"   # Think mode
 Interactive chat with persistent history and semantic search:
 
 ```bash
-ask-ai chat                      # Start chat session
-ask-ai chat -m glm-5:cloud       # Specific model
-ask-ai chat -t                   # Chat with thinking
-ask-ai chat --anonymous          # Anonymous session (no history)
+sprachspiel chat                      # Start chat session
+sprachspiel chat -m glm-5:cloud       # Specific model
+sprachspiel chat -t                   # Chat with thinking
+sprachspiel chat --anonymous          # Anonymous session (no history)
 ```
 
 **Chat Commands:**
@@ -189,59 +189,59 @@ ask-ai chat --anonymous          # Anonymous session (no history)
 ### Translate
 
 ```bash
-ask-ai translate en:pt "Hello world"    # English to Portuguese
-ask-ai translate :es "Bonjour"          # Auto-detect to Spanish
-cat file.txt | ask-ai translate :pt     # Pipe input
+sprachspiel translate en:pt "Hello world"    # English to Portuguese
+sprachspiel translate :es "Bonjour"          # Auto-detect to Spanish
+cat file.txt | sprachspiel translate :pt     # Pipe input
 ```
 
 ### OCR
 
 ```bash
-ask-ai ocr document.png                 # Extract text
-ask-ai ocr --detailed image.jpg         # Detailed extraction
-ask-ai ocr page1.png page2.png           # Multiple files
+sprachspiel ocr document.png                 # Extract text
+sprachspiel ocr --detailed image.jpg         # Detailed extraction
+sprachspiel ocr page1.png page2.png           # Multiple files
 ```
 
 ### Summarize
 
 ```bash
-ask-ai summarize "Long text..."         # Summarize text
-cat article.txt | ask-ai summarize      # Pipe input
-ask-ai summarize --style bullets file.txt  # Bullet points
+sprachspiel summarize "Long text..."         # Summarize text
+cat article.txt | sprachspiel summarize      # Pipe input
+sprachspiel summarize --style bullets file.txt  # Bullet points
 ```
 
 ### Vision
 
 ```bash
-ask-ai vision photo.jpg "What's in this image?"
-ask-ai vision screenshot.png "Describe the UI"
+sprachspiel vision photo.jpg "What's in this image?"
+sprachspiel vision screenshot.png "Describe the UI"
 ```
 
 ## Examples
 
 ```bash
 # OCR → Summarize → Translate
-ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
 
 # Translate a file
-cat article.txt | ask-ai translate :es
+cat article.txt | sprachspiel translate :es
 
 # Code with specific model
-ask-ai -m qwen3-coder "Write a Python function"
+sprachspiel -m qwen3-coder "Write a Python function"
 
 # Interactive chat with semantic search
-ask-ai chat
+sprachspiel chat
 >>> /search "What did we discuss about databases?"
 >>> /context
 >>> /model glm-5:cloud
 
 # Query with tools
-ask-ai "What's the weather in Tokyo?"
-ask-ai "Read the README.md and explain the project"
-ask-ai "Calculate 15% of 847"
+sprachspiel "What's the weather in Tokyo?"
+sprachspiel "Read the README.md and explain the project"
+sprachspiel "Calculate 15% of 847"
 
 # Think mode for complex reasoning
-ask-ai -m glm-5:cloud -t "Explain quantum computing step by step"
+sprachspiel -m glm-5:cloud -t "Explain quantum computing step by step"
 ```
 
 ## Requirements
@@ -252,7 +252,7 @@ ask-ai -m glm-5:cloud -t "Explain quantum computing step by step"
 
 ## Installing Models
 
-Ask-AI uses **modelfiles** that must be **built** with custom parameters. Simply pulling models directly won't work.
+Sprachspiel uses **modelfiles** that must be **built** with custom parameters. Simply pulling models directly won't work.
 
 ```bash
 cd modelfiles
@@ -270,14 +270,14 @@ See `modelfiles/README.md` for details.
 
 ## Project Context (AGENTS.md)
 
-Ask-AI automatically loads `AGENTS.md` from the current directory to provide project-specific context:
+Sprachspiel automatically loads `AGENTS.md` from the current directory to provide project-specific context:
 
 ```bash
 # If AGENTS.md exists, context is automatically injected
-ask-ai "Explain the project structure"
+sprachspiel "Explain the project structure"
 
 # Disable with --ignore-agents
-ask-ai --ignore-agents "General question"
+sprachspiel --ignore-agents "General question"
 ```
 
 Content is sanitized for security (injection patterns, executable code blocks removed).
@@ -315,7 +315,7 @@ make install-local-all-tools
 
 ## Configuration
 
-Create `~/.config/ask-ai/config.toml`:
+Create `~/.config/sprachspiel/config.toml`:
 
 ```toml
 [ollama]
@@ -354,15 +354,15 @@ make all-tarballs
 ```
 
 Tarballs include:
-- Binary (`ask-ai`)
-- Manpage (`ask-ai.1`)
+- Binary (`sprachspiel`)
+- Manpage (`sprachspiel.1`)
 - Installation scripts (`install.sh`, `uninstall.sh`)
 - Documentation (`README.md`, `LICENSE.txt`)
 - Platform-specific instructions (Termux includes `README-TERMUX.txt`)
 
 ## Semantic Search & RAG
 
-Ask-AI features intelligent context retrieval:
+Sprachspiel features intelligent context retrieval:
 
 - **Chat Mode**: Automatically retrieves relevant past conversations
 - **Query Mode**: Access to project-wide conversation history
@@ -397,4 +397,4 @@ Copyright (c) 2026 Lucas S. Vieira
 
 ---
 
-For complete documentation, see the `doc/` directory or run `man ask-ai`.
+For complete documentation, see the `doc/` directory or run `man sprachspiel`.

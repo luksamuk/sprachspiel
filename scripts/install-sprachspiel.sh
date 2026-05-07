@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Ask AI Remote Installer
+# Sprachspiel Remote Installer
 # =============================================================================
-# This script downloads and installs ask-ai from GitHub releases.
+# This script downloads and installs sprachspiel from GitHub releases.
 #
 # Usage:
-#   curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
-#   curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
-#   curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --tools all
-#   curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
+#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash
+#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.25.0
+#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --tools all
+#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --prefix /usr
 #
 # Platform Detection:
-#   - Linux x86_64: Downloads ask-ai-VERSION-linux-x86_64.tar.gz
-#   - Termux/Android: Downloads ask-ai-VERSION-termux-aarch64.tar.gz
-#   - macOS (ARM): Downloads ask-ai-VERSION-darwin-arm64.tar.gz (future)
-#   - macOS (Intel): Downloads ask-ai-VERSION-darwin-x86_64.tar.gz (future)
+#   - Linux x86_64: Downloads sprachspiel-VERSION-linux-x86_64.tar.gz
+#   - Termux/Android: Downloads sprachspiel-VERSION-termux-aarch64.tar.gz
+#   - macOS (ARM): Downloads sprachspiel-VERSION-darwin-arm64.tar.gz (future)
+#   - macOS (Intel): Downloads sprachspiel-VERSION-darwin-x86_64.tar.gz (future)
 #
 # Requirements:
 #   - curl
@@ -25,7 +25,7 @@
 set -e
 
 # Repository information
-REPO="luksamuk/ask-ai-rs"
+REPO="luksamuk/sprachspiel"
 RELEASES_URL="https://github.com/$REPO/releases/download"
 LATEST_API_URL="https://api.github.com/repos/$REPO/releases/latest"
 
@@ -59,11 +59,12 @@ print_error() {
 
 show_banner() {
     echo -e "${CYAN}"
-    echo "    _    ____  ____   _____ ___  _   _  ____ "
-    echo "   / \\  |  _ \\|  _ \\ |_   _/ _ \\| \\ | |/ ___|"
-    echo "  / _ \\ | |_) | |_) |  | || | | |  \\| | |  _ "
-    echo " / ___ \\|  __/|  __/   | || |_| | |\\  | |_| |"
-    echo "/_/   \\_\\_|   |_|      |_| \\___/|_| \\_|\\____|"
+    echo "  ███████╗███████╗ █████╗ ██████╗ ███████╗"
+    echo "  ██╔════╝██╔════╝██╔══██╗██╔══██╗██╔════╝"
+    echo "  ███████╗█████╗  ███████║██████╔╝█████╗  "
+    echo "  ╚════██║██╔══╝  ██╔══██║██╔══██╗██╔══╝  "
+    echo "  ███████║███████╗██║  ██║██║  ██║███████╗"
+    echo "  ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝"
     echo -e "${NC}"
     echo ""
 }
@@ -129,11 +130,11 @@ detect_platform() {
 
 show_help() {
     cat << EOF
-Ask AI Remote Installer
+Sprachspiel Remote Installer
 
 Usage:
-  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
-  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- [OPTIONS]
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- [OPTIONS]
 
 Options:
   --version VERSION   Install specific version (default: latest)
@@ -146,18 +147,18 @@ Options:
 
 Examples:
   # Install latest version
-  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash
 
   # Install specific version
-  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.25.0
 
   # Install with all tools
-  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --tools all
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --tools all
 
   # Install system-wide (requires sudo for /usr)
-  curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --prefix /usr
 
-For more information: https://github.com/luksamuk/ask-ai-rs
+For more information: https://github.com/luksamuk/sprachspiel
 EOF
 }
 
@@ -262,14 +263,14 @@ if [[ -z "$INSTALL_VERSION" ]]; then
     INSTALL_VERSION=$(get_latest_version)
 fi
 
-print_info "Installing ask-ai version $INSTALL_VERSION"
+print_info "Installing sprachspiel version $INSTALL_VERSION"
 
 # Detect platform
 PLATFORM=$(detect_platform)
 print_info "Platform: $PLATFORM"
 
 # Build tarball name
-TARBALL="ask-ai-${INSTALL_VERSION}-${PLATFORM}${TOOLS_SUFFIX}.tar.gz"
+TARBALL="sprachspiel-${INSTALL_VERSION}-${PLATFORM}${TOOLS_SUFFIX}.tar.gz"
 DOWNLOAD_URL="${RELEASES_URL}/v${INSTALL_VERSION}/${TARBALL}"
 
 print_info "Downloading: $DOWNLOAD_URL"
@@ -334,4 +335,4 @@ fi
 
 # Cleanup is automatic via trap
 echo ""
-print_success "ask-ai $INSTALL_VERSION installed successfully!"
+print_success "sprachspiel $INSTALL_VERSION installed successfully!"

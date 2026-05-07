@@ -6,8 +6,8 @@ SOUL.md is a configuration file that defines your AI assistant's personality, be
 
 The SOUL.md file is loaded from (in order):
 
-1. `$XDG_CONFIG_HOME/ask-ai/SOUL.md`
-2. `~/.config/ask-ai/SOUL.md`
+1. `$XDG_CONFIG_HOME/sprachspiel/SOUL.md`
+2. `~/.config/sprachspiel/SOUL.md`
 
 If no SOUL.md file exists, the assistant uses a default personality.
 
@@ -16,7 +16,7 @@ If no SOUL.md file exists, the assistant uses a default personality.
 You can maintain multiple personality files and switch between them:
 
 ```bash
-~/.config/ask-ai/
+~/.config/sprachspiel/
 ├── SOUL.md         # Active personality (symlink or copy)
 ├── PEPE.md         # Sarcastic senior developer
 ├── SPRACH.md      # Cognitive companion for research
@@ -27,10 +27,10 @@ You can maintain multiple personality files and switch between them:
 
 ```bash
 # Symlink approach (recommended)
-ln -sf ~/.config/ask-ai/SPRACH.md ~/.config/ask-ai/SOUL.md
+ln -sf ~/.config/sprachspiel/SPRACH.md ~/.config/sprachspiel/SOUL.md
 
 # Copy approach
-cp ~/.config/ask-ai/PEPE.md ~/.config/ask-ai/SOUL.md
+cp ~/.config/sprachspiel/PEPE.md ~/.config/sprachspiel/SOUL.md
 ```
 
 ## Structure
@@ -430,7 +430,7 @@ Be helpful.
 To see how your SOUL.md affects the system prompt:
 
 ```bash
-ask-ai -v "test query" 2>&1 | head -100
+sprachspiel -v "test query" 2>&1 | head -100
 ```
 
 This shows the complete prompt being sent to the model.

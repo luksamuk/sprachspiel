@@ -696,11 +696,12 @@ impl Database {
         }
     }
 
-    /// Get the default storage path (~/.local/share/ask-ai/ask-ai.db)
+    /// Get the default storage path (~/.local/share/sprachspiel/sprachspiel.db)
     ///
-    /// Also handles migration from the legacy `embeddings.db` filename:
-    /// if `embeddings.db` exists but `ask-ai.db` doesn't, it will be
-    /// automatically renamed.
+    /// Also handles migration from legacy database filenames:
+    /// - `embeddings.db` → `sprachspiel.db` (v0.27 and earlier)
+    /// - `ask-ai.db` → `sprachspiel.db` (v0.42 and earlier)
+    /// Migration only happens if the old file exists and the new one doesn't.
     pub fn get_storage_path() -> PathBuf {
         let path = Self::resolve_storage_path();
         Self::migrate_legacy_db(&path);
@@ -709,46 +710,55 @@ impl Database {
 
     /// Resolve the storage path without performing migration.
     fn resolve_storage_path() -> PathBuf {
-        const DB_FILENAME: &str = "ask-ai.db";
+        use crate::consts::app;
 
         if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
-            PathBuf::from(data_home).join("ask-ai").join(DB_FILENAME)
+            PathBuf::from(data_home).join(app::APP_DATA_DIR).join(app::DB_FILENAME)
         } else if let Some(home_dir) = dirs::home_dir() {
             home_dir
                 .join(".local")
                 .join("share")
-                .join("ask-ai")
-                .join(DB_FILENAME)
+                .join(app::APP_DATA_DIR)
+                .join(app::DB_FILENAME)
         } else {
-            PathBuf::from(".ask-ai").join(DB_FILENAME)
+            PathBuf::from(app::APP_PROJECT_DIR).join(app::DB_FILENAME)
         }
     }
 
-    /// Rename `embeddings.db` → `ask-ai.db` if the old file exists and the new one doesn't.
+    /// Rename legacy database files if they exist and the new one doesn't.
+    ///
+    /// Migration chain: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db`
     fn migrate_legacy_db(new_path: &PathBuf) {
+        use crate::consts::app;
+
         let new_filename = new_path.file_name().unwrap_or_default().to_string_lossy();
-        let old_filename = "embeddings.db";
 
-        if new_filename == old_filename {
-            return; // Already using legacy name, nothing to migrate
-        }
+        // Try each legacy filename in reverse chronological order
+        let legacy_names = [app::DB_FILENAME_LEGACY_V2, app::DB_FILENAME_LEGACY_V1];
 
-        let old_path = new_path.with_file_name(old_filename);
+        for old_filename in legacy_names {
+            if new_filename == old_filename {
+                continue; // Already using this name, skip
+            }
 
-        if old_path.exists() && !new_path.exists() {
-            if let Err(e) = std::fs::rename(&old_path, new_path) {
-                log::warn!(
-                    "Failed to migrate legacy database {} → {}: {}",
-                    old_path.display(),
-                    new_path.display(),
-                    e
-                );
-            } else {
-                log::warn!(
-                    "Migrated legacy database: {} → {}",
-                    old_path.display(),
-                    new_path.display()
-                );
+            let old_path = new_path.with_file_name(old_filename);
+
+            if old_path.exists() && !new_path.exists() {
+                if let Err(e) = std::fs::rename(&old_path, new_path) {
+                    log::warn!(
+                        "Failed to migrate legacy database {} → {}: {}",
+                        old_path.display(),
+                        new_path.display(),
+                        e
+                    );
+                } else {
+                    log::warn!(
+                        "Migrated legacy database: {} → {}",
+                        old_path.display(),
+                        new_path.display()
+                    );
+                }
+                return; // Only migrate one file
             }
         }
     }

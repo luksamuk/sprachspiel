@@ -1,6 +1,6 @@
 //! Test ollama-rs built-in DDGSearcher
 //!
-//! Run with: cargo test --package ask-ai --test test_ddg_searcher -- --nocapture
+//! Run with: cargo test --package sprachspiel --test test_ddg_searcher -- --nocapture
 
 use ollama_rs::generation::tools::implementations::DDGSearcher;
 

@@ -82,7 +82,7 @@ fn test_token_count_tool_user_prompt() {
     let blacklist = HashSet::new();
 
     // New prompt
-    let new_prompt = ask_ai::prompts::build_tool_user_prompt(&blacklist);
+    let new_prompt = sprachspiel::prompts::build_tool_user_prompt(&blacklist);
     let new_tokens = estimate_tokens(&new_prompt);
 
     println!("New prompt length: {} chars", new_prompt.len());
@@ -102,7 +102,7 @@ fn test_token_count_code_prompt() {
     println!("TOKEN COUNT: CODE PROMPT");
     println!("========================================\n");
 
-    let new_prompt = ask_ai::prompts::SYSTEM_PROMPT_CODE;
+    let new_prompt = sprachspiel::prompts::SYSTEM_PROMPT_CODE;
     let new_tokens = estimate_tokens(new_prompt);
 
     println!("New CODE prompt tokens: {}", new_tokens);
@@ -117,7 +117,7 @@ fn test_token_count_summarize_prompt() {
     println!("TOKEN COUNT: SUMMARIZE PROMPT");
     println!("========================================\n");
 
-    let new_prompt = ask_ai::prompts::SYSTEM_PROMPT_SUMMARIZE;
+    let new_prompt = sprachspiel::prompts::SYSTEM_PROMPT_SUMMARIZE;
     let new_tokens = estimate_tokens(new_prompt);
 
     println!("New SUMMARIZE prompt tokens: {}", new_tokens);
@@ -139,13 +139,13 @@ fn test_negative_instructions_in_prompts() {
     let blacklist = HashSet::new();
 
     // Check built-in prompts (excluding user SOUL.md which may have negative instructions)
-    let new_tool_user = ask_ai::prompts::build_system_prompt(
-        ask_ai::prompts::PromptConfig::new(ask_ai::prompts::PromptType::ToolUser)
+    let new_tool_user = sprachspiel::prompts::build_system_prompt(
+        sprachspiel::prompts::PromptConfig::new(sprachspiel::prompts::PromptType::ToolUser)
             .with_blacklist(Some(&blacklist))
             .with_soulless(true),
     );
-    let new_code = ask_ai::prompts::SYSTEM_PROMPT_CODE;
-    let new_summarize = ask_ai::prompts::SYSTEM_PROMPT_SUMMARIZE;
+    let new_code = sprachspiel::prompts::SYSTEM_PROMPT_CODE;
+    let new_summarize = sprachspiel::prompts::SYSTEM_PROMPT_SUMMARIZE;
 
     println!("--- TOOL_USER PROMPT ---");
     let tool_negatives = contains_negative_instructions(&new_tool_user);
@@ -215,7 +215,7 @@ fn test_new_prompt_structure() {
     println!("========================================\n");
 
     let blacklist = HashSet::new();
-    let new_prompt = ask_ai::prompts::build_tool_user_prompt(&blacklist);
+    let new_prompt = sprachspiel::prompts::build_tool_user_prompt(&blacklist);
 
     println!("--- NEW TOOL_USER PROMPT STRUCTURE ---");
     let structure = check_structure(&new_prompt);
@@ -275,7 +275,7 @@ fn test_few_shot_examples_present() {
     println!("========================================\n");
 
     let blacklist = HashSet::new();
-    let new_prompt = ask_ai::prompts::build_tool_user_prompt(&blacklist);
+    let new_prompt = sprachspiel::prompts::build_tool_user_prompt(&blacklist);
 
     // Count examples
     let examples = count_examples(&new_prompt);
@@ -329,7 +329,7 @@ fn test_platform_detection() {
     println!("PLATFORM DETECTION");
     println!("========================================\n");
 
-    let info = ask_ai::platform::PlatformInfo::detect();
+    let info = sprachspiel::platform::PlatformInfo::detect();
 
     println!("Detected platform: {:?}", info.platform);
     println!("Linux distro: {:?}", info.linux_distro);
@@ -346,12 +346,12 @@ fn test_platform_detection() {
     if info.is_android {
         assert_eq!(
             info.platform,
-            ask_ai::platform::Platform::Termux,
+            sprachspiel::platform::Platform::Termux,
             "Android should be Termux platform"
         );
     }
 
-    if info.platform == ask_ai::platform::Platform::Linux {
+    if info.platform == sprachspiel::platform::Platform::Linux {
         // Linux should have a prompt string
         let prompt_str = info.prompt_string();
         assert!(
@@ -374,8 +374,8 @@ fn test_agents_md_injection() {
     let test_agents = "Test project context\nBuild: cargo build";
     let blacklist = HashSet::new();
 
-    let new_prompt = ask_ai::prompts::build_system_prompt(
-        ask_ai::prompts::PromptConfig::new(ask_ai::prompts::PromptType::ToolUser)
+    let new_prompt = sprachspiel::prompts::build_system_prompt(
+        sprachspiel::prompts::PromptConfig::new(sprachspiel::prompts::PromptType::ToolUser)
             .with_blacklist(Some(&blacklist))
             .with_agents_md(Some(test_agents)),
     );
@@ -422,9 +422,9 @@ fn test_no_hardcoded_platform_in_base_prompts() {
     println!("========================================\n");
 
     // Check BASE prompts (not built prompts which have dynamic platform detection)
-    let code = ask_ai::prompts::SYSTEM_PROMPT_CODE;
-    let summarize = ask_ai::prompts::SYSTEM_PROMPT_SUMMARIZE;
-    let base = ask_ai::prompts::SYSTEM_PROMPT_BASE;
+    let code = sprachspiel::prompts::SYSTEM_PROMPT_CODE;
+    let summarize = sprachspiel::prompts::SYSTEM_PROMPT_SUMMARIZE;
+    let base = sprachspiel::prompts::SYSTEM_PROMPT_BASE;
 
     // Check for hardcoded "Arch Linux" in base prompts
     let hardcoded_strings = [("Arch Linux", "Hardcoded platform")];
@@ -462,7 +462,7 @@ fn test_no_hardcoded_platform_in_base_prompts() {
 
     // Now check that BUILT prompt DOES have platform (dynamically detected)
     let blacklist = HashSet::new();
-    let built_prompt = ask_ai::prompts::build_tool_user_prompt(&blacklist);
+    let built_prompt = sprachspiel::prompts::build_tool_user_prompt(&blacklist);
 
     println!("\n--- BUILT PROMPT (should have dynamic platform) ---");
     let has_platform = built_prompt.contains("Platform:");
@@ -513,9 +513,9 @@ fn test_full_prompt_comparison() {
     let blacklist = HashSet::new();
 
     // Build prompts
-    let tool_user = ask_ai::prompts::build_tool_user_prompt(&blacklist);
-    let code = ask_ai::prompts::SYSTEM_PROMPT_CODE;
-    let summarize = ask_ai::prompts::SYSTEM_PROMPT_SUMMARIZE;
+    let tool_user = sprachspiel::prompts::build_tool_user_prompt(&blacklist);
+    let code = sprachspiel::prompts::SYSTEM_PROMPT_CODE;
+    let summarize = sprachspiel::prompts::SYSTEM_PROMPT_SUMMARIZE;
 
     // Calculate metrics
     let tool_tokens = estimate_tokens(&tool_user);

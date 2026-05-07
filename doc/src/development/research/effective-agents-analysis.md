@@ -334,7 +334,7 @@ O sistema atual já tem middle compaction. Melhorias:
 Para o caso de uso do ask-ollama-rs (single-user local), um sistema simpler:
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 [approval]
 # Nível de aprovação: auto, semi-auto, manual
 level = "semi-auto"
@@ -369,7 +369,7 @@ require_approval = [
 **Implementação sugerida (média prioridade):**
 
 ```toml
-# ~/.config/ask-ai/models.toml
+# ~/.config/sprachspiel/models.toml
 [workflows]
 # Modelo principal para chat/código
 execution = "llama3.1:8b"

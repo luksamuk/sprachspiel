@@ -2,7 +2,7 @@
 //!
 //! Provides a unified logging system using the `log` crate with a custom `MultiLogger`
 //! that routes messages to both stderr (colored, level-filtered) and a log file
-//! (`~/.local/share/ask-ai/ask-ai.log`, always warn+).
+//! (`~/.local/share/sprachspiel/sprachspiel.log`, always warn+).
 //!
 //! # Verbosity Levels
 //!
@@ -35,8 +35,8 @@
 //!
 //! # File Logging
 //!
-//! Logs are written to `~/.local/share/ask-ai/ask-ai.log` by default.
-//! Rotation: when the file exceeds 5 MB, it is renamed to `ask-ai.log.1`
+//! Logs are written to `~/.local/share/sprachspiel/sprachspiel.log` by default.
+//! Rotation: when the file exceeds 5 MB, it is renamed to `sprachspiel.log.1`
 //! (previous backup deleted). The file always receives warn+ messages
 //! regardless of terminal verbosity; trace verbose mode raises file level to info.
 //!
@@ -214,7 +214,7 @@ impl log::Log for StderrLogger {
         eprintln!(
             "[{} {}] {}",
             level,
-            record.module_path().unwrap_or("ask-ai"),
+            record.module_path().unwrap_or("sprachspiel"),
             record.args()
         );
     }
@@ -270,7 +270,7 @@ impl FileLogger {
             return;
         }
 
-        // Rotate: ask-ai.log → ask-ai.log.1 (delete old .1 first)
+        // Rotate: sprachspiel.log → sprachspiel.log.1 (delete old .1 first)
         for i in (1..=MAX_BACKUPS).rev() {
             let backup = PathBuf::from(format!("{}.{}", path.display(), i));
             if backup.exists() {
@@ -284,10 +284,12 @@ impl FileLogger {
 
     /// Get the default log file path.
     fn default_path() -> PathBuf {
+        use crate::consts::app;
+
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("ask-ai")
-            .join("ask-ai.log")
+            .join(app::APP_DATA_DIR)
+            .join("sprachspiel.log")
     }
 }
 
@@ -310,7 +312,7 @@ impl log::Log for FileLogger {
             "[{} {} {}] {}\n",
             timestamp,
             record.level(),
-            record.module_path().unwrap_or("ask-ai"),
+            record.module_path().unwrap_or("sprachspiel"),
             record.args()
         );
 

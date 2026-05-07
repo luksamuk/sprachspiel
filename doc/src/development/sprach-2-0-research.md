@@ -392,7 +392,7 @@ denied = ["fs_write", "network_raw", "process_spawn"]
 
 ⚠️ **CRITICAL SECURITY NOTE (2026-04-19):** The DEC-004 `process_spawn` denied capability is now **essential, not optional**. The Anthropic MCP SDK `StdioServerParameters` has a by-design vulnerability (CVE-2025-65720 and related) that allows arbitrary command execution via STDIO transport configuration. Any MCP server connection that uses STDIO spawns an OS process with the parent application's privileges — even if the connection fails. This means `denied = ["process_spawn"]` in a plugin manifest is meaningless if we allow MCP STDIO servers, because MCP STDIO *itself* is process spawning.
 
-**Mitigation strategy for ask-ai:**
+**Mitigation strategy for sprachspiel:**
 1. MCP STDIO servers MUST be explicitly approved by the user (no auto-discovery, no zero-click install)
 2. MCP server configurations containing `command` fields MUST be treated as arbitrary code execution
 3. An allowlist of approved MCP server commands MUST be maintained in `config.toml`

@@ -1,4 +1,4 @@
-# Clippy configuration for ask-ai
+# Clippy configuration for sprachspiel
 # Harness engineering: thresholds enforce quality without being overly strict.
 # Reference: rust-magic-linter (vicnaum/rust-magic-linter)
 
@@ -23,6 +23,7 @@ too-many-lines-threshold = 100
 # Allow certain words in doc comments without marking them as code.
 doc-valid-idents = [
     "AskAI",
+    "Sprachspiel",
     "Ollama",
     "SQLite",
     "Vec0",

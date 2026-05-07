@@ -1,10 +1,10 @@
 # Introduction
 
-Ask-AI is a powerful command-line interface for interacting with Large Language Models (LLMs) through Ollama. Built in Rust for performance and reliability, it brings AI capabilities directly to your terminal with an elegant, markdown-rendered output.
+Sprachspiel is a powerful command-line interface for interacting with Large Language Models (LLMs) through Ollama. Built in Rust for performance and reliability, it brings AI capabilities directly to your terminal with an elegant, markdown-rendered output.
 
-## Why Ask-AI?
+## Why Sprachspiel?
 
-In a world of web-based AI interfaces, Ask-AI stands out by:
+In a world of web-based AI interfaces, Sprachspiel stands out by:
 
 - **Keeping you in the terminal** - No context switching, no browser tabs
 - **Working offline** - Uses local Ollama models when available
@@ -19,9 +19,9 @@ In a world of web-based AI interfaces, Ask-AI stands out by:
 Get answers from AI models with beautiful markdown formatting:
 
 ```bash
-ask-ai "Explain quantum computing in simple terms"
-ask-ai -m qwen3.5:4b "Generate a Python function for Fibonacci"
-ask-ai -t "Solve this step by step"  # Think mode
+sprachspiel "Explain quantum computing in simple terms"
+sprachspiel -m qwen3.5:4b "Generate a Python function for Fibonacci"
+sprachspiel -t "Solve this step by step"  # Think mode
 ```
 
 ### 2. Translate Text
@@ -29,9 +29,9 @@ ask-ai -t "Solve this step by step"  # Think mode
 Translate between 50+ languages with the TranslateGemma model:
 
 ```bash
-ask-ai translate en:pt "Hello world"
-ask-ai translate :pt "Auto-detected source language"
-cat document.txt | ask-ai translate :es
+sprachspiel translate en:pt "Hello world"
+sprachspiel translate :pt "Auto-detected source language"
+cat document.txt | sprachspiel translate :es
 ```
 
 ### 3. Extract Text from Images (OCR)
@@ -39,9 +39,9 @@ cat document.txt | ask-ai translate :es
 Use GLM-OCR to extract text, tables, formulas, and figures:
 
 ```bash
-ask-ai ocr document.png
-ask-ai ocr --mode table spreadsheet.png
-ask-ai ocr --formula equation.png
+sprachspiel ocr document.png
+sprachspiel ocr --mode table spreadsheet.png
+sprachspiel ocr --formula equation.png
 ```
 
 ### 4. Summarize Documents
@@ -49,9 +49,9 @@ ask-ai ocr --formula equation.png
 Create concise summaries with customizable styles:
 
 ```bash
-ask-ai summarize "Long text here..."
-ask-ai summarize --style academic research-paper.txt
-ask-ai summarize --format bullets --max-length 200
+sprachspiel summarize "Long text here..."
+sprachspiel summarize --style academic research-paper.txt
+sprachspiel summarize --format bullets --max-length 200
 ```
 
 ### 5. Chain Commands
@@ -60,18 +60,18 @@ Build powerful pipelines by combining commands:
 
 ```bash
 # OCR → Translate
-ask-ai ocr japanese.png | ask-ai translate ja:pt
+sprachspiel ocr japanese.png | sprachspiel translate ja:pt
 
 # OCR → Summarize
-ask-ai ocr report.png | ask-ai summarize --style technical
+sprachspiel ocr report.png | sprachspiel summarize --style technical
 
 # OCR → Summarize → Translate
-ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
 ```
 
 ## Target Users
 
-Ask-AI is designed for:
+Sprachspiel is designed for:
 
 - **Developers** who live in the terminal and want AI assistance without leaving it
 - **Researchers** who need to process documents, extract text, and summarize papers
@@ -82,7 +82,7 @@ Ask-AI is designed for:
 
 ## Design Philosophy
 
-Ask-AI follows these principles:
+Sprachspiel follows these principles:
 
 1. **Terminal-First**: Everything should work beautifully in a terminal
 2. **Unix Philosophy**: Do one thing well, compose with pipes
@@ -92,7 +92,7 @@ Ask-AI follows these principles:
 
 ## How It Works
 
-Ask-AI communicates with Ollama, a local LLM server. When you run a command:
+Sprachspiel communicates with Ollama, a local LLM server. When you run a command:
 
 1. **Input is collected** - From arguments or stdin
 2. **Model is selected** - Based on flags or defaults
@@ -113,13 +113,13 @@ graph LR
 
 ## Getting Help
 
-- Use `ask-ai --help` for quick reference
-- Use `man ask-ai` for detailed man page
+- Use `sprachspiel --help` for quick reference
+- Use `man sprachspiel` for detailed man page
 - Check this documentation for comprehensive guides
 - Enable debug mode with `-d` flag for troubleshooting
 
 ## Next Steps
 
-- **[Install Ask-AI](./installation.md)** - Get it running on your system
-- **[Quick Start Guide](./quickstart.md)** - Your first 5 minutes with Ask-AI
+- **[Install Sprachspiel](./installation.md)** - Get it running on your system
+- **[Quick Start Guide](./quickstart.md)** - Your first 5 minutes with Sprachspiel
 - **[Commands Reference](./commands/README.md)** - Detailed command documentation

@@ -1,10 +1,10 @@
 # Architecture
 
-This document describes the architecture and design decisions of Ask-AI.
+This document describes the architecture and design decisions of Sprachspiel.
 
 ## Overview
 
-Ask-AI is a Rust CLI tool that provides an interface to Ollama LLM models. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
+Sprachspiel is a Rust CLI tool that provides an interface to Ollama LLM models. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
 
 ## System Architecture
 
@@ -66,7 +66,7 @@ Uses `clap` with derive macros for type-safe argument parsing.
 
 ```rust
 #[derive(Parser)]
-#[command(name = "ask-ai")]
+#[command(name = "sprachspiel")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -376,7 +376,7 @@ Tool categories (feature-flags):
 Skills are Markdown files that define AI behavior and tool usage patterns:
 
 ```
-~/.config/ask-ai/skills/
+~/.config/sprachspiel/skills/
 ├── document-processing.md
 ├── ocr-images.md
 └── custom-skill.md
@@ -411,7 +411,7 @@ pub fn run_command(
 ) -> Result<String, ...>
 ```
 
-Configuration via `~/.config/ask-ai/tools.toml`:
+Configuration via `~/.config/sprachspiel/tools.toml`:
 
 ```toml
 [pdftotext]
@@ -635,7 +635,7 @@ sequenceDiagram
 ## Project Structure
 
 ```
-ask-ai/
+sprachspiel/
 ├── src/
 │   ├── main.rs              # Entry point + CLI
 │   ├── query.rs             # Query execution (shared logic)

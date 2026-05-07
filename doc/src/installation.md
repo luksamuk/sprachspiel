@@ -1,18 +1,18 @@
 # Installation Guide
 
-This guide covers all the ways to install Ask-AI on your system.
+This guide covers all the ways to install Sprachspiel on your system.
 
 ## Prerequisites
 
-Before installing Ask-AI, ensure you have:
+Before installing Sprachspiel, ensure you have:
 
-1. **Ollama** - The LLM server that Ask-AI communicates with
+1. **Ollama** - The LLM server that Sprachspiel communicates with
 2. **Rust toolchain** - Only needed if building from source
 3. **Git** - For cloning the repository
 
 ### Installing Ollama
 
-Ask-AI requires Ollama to be running. Install it from [ollama.ai](https://ollama.ai):
+Sprachspiel requires Ollama to be running. Install it from [ollama.ai](https://ollama.ai):
 
 ```bash
 # Linux
@@ -48,16 +48,16 @@ Install directly from GitHub releases:
 
 ```bash
 # Install latest version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
 
 # Install specific version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --version 0.25.0
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.25.0
 
 # Install with all tools enabled
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --tools all
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --tools all
 
 # Install system-wide (requires sudo)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash -s -- --prefix /usr
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --prefix /usr
 ```
 
 **What it does:**
@@ -80,11 +80,11 @@ Download from [GitHub Releases](https://github.com/luksamuk/ask-ai-rs/releases):
 
 ```bash
 # Download latest release
-wget https://github.com/luksamuk/ask-ai-rs/releases/latest/download/ask-ai-0.25.0-linux-x86_64.tar.gz
+wget https://github.com/luksamuk/ask-ai-rs/releases/latest/download/sprachspiel-0.25.0-linux-x86_64.tar.gz
 
 # Extract
-tar -xzf ask-ai-0.25.0-linux-x86_64.tar.gz
-cd ask-ai-0.25.0-linux-x86_64
+tar -xzf sprachspiel-0.25.0-linux-x86_64.tar.gz
+cd sprachspiel-0.25.0-linux-x86_64
 
 # Install (interactive)
 ./install.sh
@@ -98,8 +98,8 @@ cd ask-ai-0.25.0-linux-x86_64
 ```
 
 **Tarball contents:**
-- `ask-ai` - Binary
-- `ask-ai.1` - Manpage
+- `sprachspiel` - Binary
+- `sprachspiel.1` - Manpage
 - `install.sh` - Installation script
 - `uninstall.sh` - Uninstallation script
 - `README.md` - Documentation
@@ -112,7 +112,7 @@ The traditional way using Make:
 ```bash
 # Clone the repository
 git clone https://github.com/luksamuk/ask-ai-rs.git
-cd ask-ai
+cd sprachspiel
 
 # Build and install (default: /usr/local)
 make install
@@ -126,18 +126,18 @@ make install PREFIX=/usr
 
 This will:
 1. Build the release binary
-2. Install it to `/usr/local/bin/ask-ai` (or your chosen prefix)
+2. Install it to `/usr/local/bin/sprachspiel` (or your chosen prefix)
 3. Install the man page to `/usr/local/share/man/man1/`
 
 ### Method 4: Termux (Android)
 
-Ask-AI can run on Android via Termux. Since Ollama doesn't run on Android, you'll need a remote Ollama server.
+Sprachspiel can run on Android via Termux. Since Ollama doesn't run on Android, you'll need a remote Ollama server.
 
 #### Quick Install (One-Liner)
 
 ```bash
 # In Termux
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-ask-ai.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
 ```
 
 The installer automatically detects Termux and configures the correct paths.
@@ -149,11 +149,11 @@ The installer automatically detects Termux and configures the correct paths.
 pkg install wget
 
 # Download the tarball from GitHub releases
-wget https://github.com/luksamuk/ask-ai-rs/releases/download/v0.25.0/ask-ai-0.25.0-termux-aarch64.tar.gz
+wget https://github.com/luksamuk/ask-ai-rs/releases/download/v0.25.0/sprachspiel-0.25.0-termux-aarch64.tar.gz
 
 # Extract
-tar -xzf ask-ai-0.25.0-termux-aarch64.tar.gz
-cd ask-ai-0.25.0-termux-aarch64
+tar -xzf sprachspiel-0.25.0-termux-aarch64.tar.gz
+cd sprachspiel-0.25.0-termux-aarch64
 
 # Install (creates ~/bin and adds to PATH)
 ./install.sh
@@ -162,10 +162,10 @@ cd ask-ai-0.25.0-termux-aarch64
 ./install.sh --bin ~/.local/bin --man ~/.local/share/man/man1
 
 # Create config directory
-mkdir -p ~/.config/ask-ai
+mkdir -p ~/.config/sprachspiel
 
 # Configure remote Ollama
-cat > ~/.config/ask-ai/config.toml << 'EOF'
+cat > ~/.config/sprachspiel/config.toml << 'EOF'
 [ollama]
 host = "192.168.1.100:11434"  # Replace with your desktop/server IP
 EOF
@@ -174,9 +174,9 @@ EOF
 #### Termux-Specific Notes
 
 - **Binary location**: `~/bin` (or `~/.local/bin`)
-- **Manpage**: `~/.local/share/man/man1/ask-ai.1`
+- **Manpage**: `~/.local/share/man/man1/sprachspiel.1`
 - **Ollama**: Must run on a separate machine (desktop/laptop/server)
-- **Configuration**: `~/.config/ask-ai/config.toml`
+- **Configuration**: `~/.config/sprachspiel/config.toml`
 - **See**: `README-TERMUX.txt` included in the tarball
 
 #### Building for Termux (Developers)
@@ -193,7 +193,7 @@ If you're building from source for Termux (requires cross-compilation):
 ```bash
 # On your development machine
 git clone https://github.com/luksamuk/ask-ai-rs.git
-cd ask-ai
+cd sprachspiel
 
 # Build for Termux (aarch64)
 make termux
@@ -221,16 +221,16 @@ Build from source manually:
 ```bash
 # Clone and enter repository
 git clone https://github.com/luksamuk/ask-ai-rs.git
-cd ask-ai
+cd sprachspiel
 
 # Build release binary
 cargo build --release
 
 # Copy to your PATH
-sudo cp target/release/ask-ai /usr/local/bin/ask-ai
+sudo cp target/release/sprachspiel /usr/local/bin/sprachspiel
 
 # Optional: Install man page
-sudo cp man/ask-ai.1 /usr/local/share/man/man1/
+sudo cp man/sprachspiel.1 /usr/local/share/man/man1/
 ```
 
 ### Method 6: Development Build
@@ -245,19 +245,19 @@ cargo run -- "Your query here"
 cargo build
 
 # Run debug binary
-./target/debug/ask-ai "Your query"
+./target/debug/sprachspiel "Your query"
 ```
 
 ## Installing Models
 
-⚠️ **Important:** Ask-AI models **must be built** using the provided modelfiles. Simply pulling models directly from Ollama won't work because our models require custom parameters (context window, temperature, etc.) that are configured in the modelfiles.
+⚠️ **Important:** Sprachspiel models **must be built** using the provided modelfiles. Simply pulling models directly from Ollama won't work because our models require custom parameters (context window, temperature, etc.) that are configured in the modelfiles.
 
 ### How Model Building Works
 
 Each modelfile:
 1. Pulls the base model from Ollama or Hugging Face
-2. Creates a new model with **custom parameters** optimized for Ask-AI
-3. Names it with the exact ID that Ask-AI expects
+2. Creates a new model with **custom parameters** optimized for Sprachspiel
+3. Names it with the exact ID that Sprachspiel expects
 
 **Always use the Makefile targets** - never use `ollama pull` directly.
 
@@ -283,7 +283,7 @@ Optional alternatives:
 - **moondream:1.8b** - Lightweight vision model
 - **llama3.1:8b** - General queries (alternative)
 
-Note: Context window sizes are configured in `~/.config/ask-ai/models.toml`, not in model tags.
+Note: Context window sizes are configured in `~/.config/sprachspiel/models.toml`, not in model tags.
 
 ### Installing Cloud Models
 
@@ -316,7 +316,7 @@ ollama pull ministral-3:3b       # Fast + vision support
 
 ### Additional Models
 
-Additional models (qwen3.5:9b, nanbeige4.1:3b, ministral-3:3b, etc.) are configured via `~/.config/ask-ai/models.toml`. A default configuration file is created automatically with recommended settings.
+Additional models (qwen3.5:9b, nanbeige4.1:3b, ministral-3:3b, etc.) are configured via `~/.config/sprachspiel/models.toml`. A default configuration file is created automatically with recommended settings.
 
 See [Custom Models](./configuration.md#custom-models) for details.
 
@@ -328,8 +328,8 @@ After installation, ensure `~/.local/bin` is in your PATH:
 
 ```bash
 # Check if installed binary is in PATH
-which ask-ai
-# Should show: /home/youruser/.local/bin/ask-ai
+which sprachspiel
+# Should show: /home/youruser/.local/bin/sprachspiel
 
 # If not found, add to your shell config
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
@@ -346,10 +346,10 @@ echo 'export MANPATH="$HOME/.local/share/man:$MANPATH"' >> ~/.bashrc
 source ~/.bashrc
 
 # Then you can use
-man ask-ai
+man sprachspiel
 
 # Or use man -M without setting MANPATH
-man -M ~/.local/share/man ask-ai
+man -M ~/.local/share/man sprachspiel
 ```
 
 ### Shell Completion (Optional)
@@ -360,31 +360,31 @@ Generate shell completions using the built-in `completion` subcommand:
 
 ```bash
 # Bash (current session only - add to ~/.bashrc for persistence)
-eval "$(ask-ai completion bash)"
+eval "$(sprachspiel completion bash)"
 
 # Bash (permanent, user-local)
-ask-ai completion bash >> ~/.bash_completion
+sprachspiel completion bash >> ~/.bash_completion
 
 # Zsh (user-local)
-ask-ai completion zsh > ~/.zsh_completions/_ask-ai
+sprachspiel completion zsh > ~/.zsh_completions/_sprachspiel
 
 # Fish (user-local)
-ask-ai completion fish > ~/.config/fish/completions/ask-ai.fish
+sprachspiel completion fish > ~/.config/fish/completions/sprachspiel.fish
 ```
 
 #### System-wide Setup (requires root)
 
 ```bash
 # Bash - system-wide
-sudo ask-ai completion bash > /etc/bash_completion.d/ask-ai
+sudo sprachspiel completion bash > /etc/bash_completion.d/sprachspiel
 
 # Zsh - system-wide (verify your zsh site-functions location)
-sudo ask-ai completion zsh > /usr/local/share/zsh/site-functions/_ask-ai
+sudo sprachspiel completion zsh > /usr/local/share/zsh/site-functions/_sprachspiel
 # OR
-sudo ask-ai completion zsh > /usr/share/zsh/site-functions/_ask-ai
+sudo sprachspiel completion zsh > /usr/share/zsh/site-functions/_sprachspiel
 
 # Fish - system-wide
-sudo ask-ai completion fish > /usr/share/fish/vendor_completions.d/ask-ai.fish
+sudo sprachspiel completion fish > /usr/share/fish/vendor_completions.d/sprachspiel.fish
 ```
 
 #### Supported Shells
@@ -431,14 +431,14 @@ exec fish
 
 **Test completions are working**:
 ```bash
-ask-ai <TAB>          # Should show subcommands
-ask-ai --<TAB>        # Should show options
-ask-ai translate <TAB> # Should show translate options
+sprachspiel <TAB>          # Should show subcommands
+sprachspiel --<TAB>        # Should show options
+sprachspiel translate <TAB> # Should show translate options
 ```
 
 ### Environment Variables
 
-You can configure Ask-AI with environment variables:
+You can configure Sprachspiel with environment variables:
 
 ```bash
 # Ollama server location (default: localhost:11434)
@@ -450,16 +450,16 @@ echo 'export OLLAMA_HOST="localhost:11434"' >> ~/.bashrc
 
 ## Troubleshooting Installation
 
-### "command not found: ask-ai"
+### "command not found: sprachspiel"
 
 The binary is not in your PATH. Check:
 
 ```bash
 # Find where it was installed
-which ask-ai
+which sprachspiel
 
 # If not found, check installation prefix
-ls /usr/local/bin/ask-ai
+ls /usr/local/bin/sprachspiel
 
 # Add to PATH if needed
 export PATH="/usr/local/bin:$PATH"
@@ -520,7 +520,7 @@ ollama pull qwen3.5:4b
 
 ## Next Steps
 
-Now that Ask-AI is installed:
+Now that Sprachspiel is installed:
 
 1. **[Quick Start](./quickstart.md)** - Learn the basics in 5 minutes
 2. **[Commands](./commands/README.md)** - Explore all available commands

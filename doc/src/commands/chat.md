@@ -238,7 +238,7 @@ Skills are Markdown files that define AI behaviors for specific tasks. When acti
 - `code-analysis` - Analyze code structure, find patterns, understand codebases
 - `web-scraping` - Search the web, scrape and analyze web content
 
-**User Skills:** Place custom skills in `~/.config/ask-ai/skills/<name>/SKILL.md`
+**User Skills:** Place custom skills in `~/.config/sprachspiel/skills/<name>/SKILL.md`
 
 **Example:**
 ```
@@ -611,7 +611,7 @@ Press Tab to complete:
 
 ## Session Storage
 
-Sessions are stored in a SQLite database at `~/.local/share/ask-ai/ask-ai.db`:
+Sessions are stored in a SQLite database at `~/.local/share/sprachspiel/sprachspiel.db`:
 
 - **Primary storage**: SQLite database with full-text search (FTS5) and vector embeddings
 - **Automatic persistence**: Every message is saved immediately
@@ -620,7 +620,7 @@ Sessions are stored in a SQLite database at `~/.local/share/ask-ai/ask-ai.db`:
 
 ### Session Resume Context
 
-When resuming a previous session, ask-ai displays the last 3 conversation exchanges after the welcome banner:
+When resuming a previous session, sprachspiel displays the last 3 conversation exchanges after the welcome banner:
 
 ```
 Resumed session: default (47 messages)
@@ -658,8 +658,8 @@ Recent context (47 messages):
 ### Storage Location
 
 ```
-~/.local/share/ask-ai/
-├── ask-ai.db              # SQLite database (conversations + embeddings)
+~/.local/share/sprachspiel/
+├── sprachspiel.db              # SQLite database (conversations + embeddings)
 ├── chat_history.txt           # Readline history
 └── archived/                  # Archived JSON sessions (after migration)
     └── github.com/
@@ -709,7 +709,7 @@ Export sessions for backup or transfer:
 ```
 
 **Note**: JSON export is for backup purposes. Sessions are stored in SQLite and don't need manual export.
-~/.local/share/ask-ai/
+~/.local/share/sprachspiel/
 ├── chat_history.txt           # Readline history
 └── conversations/
     └── github.com/

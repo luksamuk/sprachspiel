@@ -5,8 +5,8 @@ The `ocr` command extracts text from images using the GLM-OCR model. It supports
 ## Synopsis
 
 ```bash
-ask-ai [GLOBAL OPTIONS] ocr <FILE>...
-ask-ai [GLOBAL OPTIONS] o <FILE>...
+sprachspiel [GLOBAL OPTIONS] ocr <FILE>...
+sprachspiel [GLOBAL OPTIONS] o <FILE>...
 ```
 
 ## Description
@@ -60,20 +60,20 @@ These options are specific to the ocr subcommand:
 
 ```bash
 # Extract text from document
-ask-ai ocr document.png
+sprachspiel ocr document.png
 
 # Extract from multiple files
-ask-ai ocr page1.png page2.png page3.png
+sprachspiel ocr page1.png page2.png page3.png
 
 # Using alias
-ask-ai o letter.jpg
+sprachspiel o letter.jpg
 ```
 
 ### Table Extraction
 
 ```bash
 # Extract table structure
-ask-ai ocr --mode table spreadsheet.png
+sprachspiel ocr --mode table spreadsheet.png
 
 # The output preserves table formatting:
 # | Column 1 | Column 2 | Column 3 |
@@ -85,7 +85,7 @@ ask-ai ocr --mode table spreadsheet.png
 
 ```bash
 # Extract mathematical formulas
-ask-ai ocr --mode formula equation.png
+sprachspiel ocr --mode formula equation.png
 
 # Output in LaTeX format:
 # $$E = mc^2$$
@@ -96,37 +96,37 @@ ask-ai ocr --mode formula equation.png
 
 ```bash
 # Extract text from diagrams
-ask-ai ocr --mode figure chart.png
-ask-ai ocr --mode figure diagram.jpg
+sprachspiel ocr --mode figure chart.png
+sprachspiel ocr --mode figure diagram.jpg
 ```
 
 ### JSON Output
 
 ```bash
 # Output as JSON for programmatic use
-ask-ai ocr --json document.png
+sprachspiel ocr --json document.png
 
 # Example output:
 # {"text": "Extracted content...", "mode": "text"}
 
 # Batch processing with JSON
-ask-ai ocr --json *.png > output.jsonl
+sprachspiel ocr --json *.png > output.jsonl
 ```
 
 ### Custom Token Limit
 
 ```bash
 # Increase token limit for complex images
-ask-ai ocr --max-tokens 16384 large-document.png
+sprachspiel ocr --max-tokens 16384 large-document.png
 
 # Decrease for quick extraction
-ask-ai ocr --max-tokens 4096 simple.png
+sprachspiel ocr --max-tokens 4096 simple.png
 ```
 ### Logging
 
 ```bash
 # See processing details
-ask-ai ocr -v document.png
+sprachspiel ocr -v document.png
 #
 # Shows:
 # - Model being used
@@ -140,16 +140,16 @@ OCR works great in pipelines:
 
 ```bash
 # OCR → Translate
-ask-ai ocr japanese.png | ask-ai translate ja:pt
+sprachspiel ocr japanese.png | sprachspiel translate ja:pt
 
 # OCR → Summarize
-ask-ai ocr report.png | ask-ai summarize --style technical
+sprachspiel ocr report.png | sprachspiel summarize --style technical
 
 # OCR → Summarize → Translate
-ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
 
 # OCR → Save to file
-ask-ai ocr scanned-document.png > extracted.txt
+sprachspiel ocr scanned-document.png > extracted.txt
 ```
 
 ### Batch Processing
@@ -158,12 +158,12 @@ ask-ai ocr scanned-document.png > extracted.txt
 # Process multiple images
 for img in *.png; do
     echo "Processing $img..."
-    ask-ai ocr "$img" > "${img%.png}.txt"
+    sprachspiel ocr "$img" > "${img%.png}.txt"
 done
 
 # With JSON output
 for img in scans/*.png; do
-    ask-ai ocr --json "$img" >> output.jsonl
+    sprachspiel ocr --json "$img" >> output.jsonl
 done
 ```
 
@@ -174,7 +174,7 @@ done
 Convert scanned documents to text:
 
 ```bash
-ask-ai ocr scanned-contract.png > contract.txt
+sprachspiel ocr scanned-contract.png > contract.txt
 ```
 
 ### 2. Data Extraction
@@ -182,7 +182,7 @@ ask-ai ocr scanned-contract.png > contract.txt
 Extract tables from invoices or reports:
 
 ```bash
-ask-ai ocr --mode table invoice.png | tee invoice-data.txt
+sprachspiel ocr --mode table invoice.png | tee invoice-data.txt
 ```
 
 ### 3. Formula Collection
@@ -190,7 +190,7 @@ ask-ai ocr --mode table invoice.png | tee invoice-data.txt
 Extract math equations for LaTeX documents:
 
 ```bash
-ask-ai ocr --mode formula math-problems.png > formulas.tex
+sprachspiel ocr --mode formula math-problems.png > formulas.tex
 ```
 
 ### 4. Multilingual Documents
@@ -199,10 +199,10 @@ Process documents in any language:
 
 ```bash
 # Japanese document
-ask-ai ocr japanese-paper.png | ask-ai translate ja:en
+sprachspiel ocr japanese-paper.png | sprachspiel translate ja:en
 
 # Hebrew text
-ask-ai ocr hebrew-document.png | ask-ai translate he:pt
+sprachspiel ocr hebrew-document.png | sprachspiel translate he:pt
 ```
 
 ### 5. Research Paper Processing
@@ -210,7 +210,7 @@ ask-ai ocr hebrew-document.png | ask-ai translate he:pt
 Extract and analyze research papers:
 
 ```bash
-ask-ai ocr research-paper.png | ask-ai summarize --style academic
+sprachspiel ocr research-paper.png | sprachspiel summarize --style academic
 ```
 
 ## Best Practices
@@ -234,16 +234,16 @@ ask-ai ocr research-paper.png | ask-ai summarize --style academic
 
 ```bash
 # Documents with mixed content
-ask-ai ocr document.png  # Default text mode
+sprachspiel ocr document.png  # Default text mode
 
 # Structured data (spreadsheets, tables)
-ask-ai ocr --mode table data.png
+sprachspiel ocr --mode table data.png
 
 # Scientific papers
-ask-ai ocr --mode formula equations.png
+sprachspiel ocr --mode formula equations.png
 
 # Charts and diagrams
-ask-ai ocr --mode figure diagram.png
+sprachspiel ocr --mode figure diagram.png
 ```
 
 ## Limitations
@@ -263,7 +263,7 @@ Common errors and solutions:
 ollama pull glm-ocr:bf16
 
 # File not found
-ask-ai ocr /path/to/exists.png
+sprachspiel ocr /path/to/exists.png
 
 # Unsupported format
 # Convert to PNG first: convert image.bmp image.png

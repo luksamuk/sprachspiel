@@ -1,6 +1,6 @@
-//! Ask-Ollama: A CLI tool for querying Ollama LLM models
+//! Sprachspiel: A CLI tool for querying Ollama LLM models
 //!
-//! This is an evolution of the Python ask-ai.py script, rewritten in Rust
+//! Originally evolved from the Python ask-ai.py script, rewritten in Rust
 //! with enhanced features including markdown rendering, tool support,
 //! model capability detection, and translation support.
 
@@ -58,12 +58,12 @@ use crate::vision::{VisionArgs, VisionProcessor, print_results as print_vision_r
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-/// CLI for ask-ai
+/// CLI for sprachspiel
 #[derive(Parser, Debug)]
 #[command(
-    name = "ask-ai",
-    bin_name = "ask-ai",
-    about = "CLI tool for querying Ollama LLM models and translating text",
+    name = crate::consts::app::APP_NAME,
+    bin_name = crate::consts::app::APP_NAME,
+    about = "Cognitive interaction harness for LLMs — memory, tools, personality, and RAG",
     version,
     subcommand_required = false,
     arg_required_else_help = false
@@ -124,7 +124,7 @@ struct Cli {
     #[arg(long)]
     init_config: bool,
 
-    /// Custom database path (overrides default ~/.local/share/ask-ai/ask-ai.db)
+    /// Custom database path (overrides default ~/.local/share/sprachspiel/sprachspiel.db)
     #[arg(long, value_name = "PATH")]
     db: Option<String>,
 }
@@ -141,7 +141,7 @@ async fn main() -> AppResult<()> {
         match Settings::create_sample_config() {
             Ok(path) => {
                 println!("Configuration file created at: {}", path.display());
-                println!("\nEdit this file to customize your Ask-AI settings.");
+                println!("\nEdit this file to customize your Sprachspiel settings.");
                 return Ok(());
             }
             Err(e) => {
@@ -229,8 +229,8 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
             Ok(t) => t,
             Err(e) => {
                 eprintln!("Error: {}", e);
-                eprintln!("Usage: ask translate LANGUAGE \"text to translate\"");
-                eprintln!("   or: echo \"text\" | ask translate LANGUAGE");
+                eprintln!("Usage: sprachspiel translate LANGUAGE \"text to translate\"");
+                eprintln!("   or: echo \"text\" | sprachspiel translate LANGUAGE");
                 std::process::exit(1);
             }
         }
@@ -238,8 +238,8 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
 
     if text.is_empty() {
         eprintln!("Error: No text provided for translation.");
-        eprintln!("Usage: ask translate LANGUAGE \"text to translate\"");
-        eprintln!("   or: echo \"text\" | ask translate LANGUAGE");
+        eprintln!("Usage: sprachspiel translate LANGUAGE \"text to translate\"");
+        eprintln!("   or: echo \"text\" | sprachspiel translate LANGUAGE");
         std::process::exit(1);
     }
 
@@ -259,9 +259,9 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let model_config = match user_models::get_model_config(&translate_model) {
         Some(cfg) => cfg,
         None => {
-            eprintln!(
-                "Error: Translate model '{}' not found. \
-                 Add it to ~/.config/ask-ai/models.toml or use a built-in model.",
+                eprintln!(
+                    "Error: Translate model '{}' not found. \
+                     Add it to ~/.config/sprachspiel/models.toml or use a built-in model.",
                 translate_model
             );
             eprintln!("Built-in models: qwen3.5:4b, translategemma, glm-ocr");
@@ -326,7 +326,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let query = get_query_legacy(&cli)?;
     if query.is_empty() {
         eprintln!("Error: No query provided. Use positional argument or pipe input.");
-        eprintln!("Try 'ask-ai --help' for usage information.");
+        eprintln!("Try 'sprachspiel --help' for usage information.");
         std::process::exit(1);
     }
 
@@ -392,11 +392,11 @@ fn print_supported_languages(mapper: &LanguageMapper, filter: Option<&str>) {
 
     println!();
     println!("Usage examples:");
-    println!("  ask translate en:pt \"Hello\"        # English to Portuguese");
-    println!("  ask translate :pt \"Hello\"          # Auto-detect to Portuguese");
-    println!("  ask translate pt \"Hello\"           # Auto-detect to Portuguese");
-    println!("  ask translate he:en \"שלום\"        # Hebrew to English");
-    println!("  ask translate en:br \"Hello\"        # English to Brazilian Portuguese");
+    println!("  sprachspiel translate en:pt \"Hello\"        # English to Portuguese");
+    println!("  sprachspiel translate :pt \"Hello\"          # Auto-detect to Portuguese");
+    println!("  sprachspiel translate pt \"Hello\"           # Auto-detect to Portuguese");
+    println!("  sprachspiel translate he:en \"שלום\"        # Hebrew to English");
+    println!("  sprachspiel translate en:br \"Hello\"        # English to Brazilian Portuguese");
     println!();
     println!("Tip: Use ambiguous codes like 'zh' or 'pt' for specific variants:");
     println!("  zh-Hans = Chinese Simplified, zh-Hant = Chinese Traditional");
@@ -444,11 +444,11 @@ fn print_available_options() {
     println!("  query QUERY             Query an LLM (default if no subcommand)");
     println!();
     println!("Examples:");
-    println!("  ask \"What is Rust?\"");
-    println!("  ask translate en:pt \"Hello world\"");
-    println!("  ask -m lfm \"Explain async/await\"");
-    println!("  ask translate --list");
-    println!("  ask translate --list port");
+    println!("  sprachspiel \"What is Rust?\"");
+    println!("  sprachspiel translate en:pt \"Hello world\"");
+    println!("  sprachspiel -m lfm \"Explain async/await\"");
+    println!("  sprachspiel translate --list");
+    println!("  sprachspiel translate --list port");
 }
 
 fn get_query_legacy(cli: &Cli) -> AppResult<String> {
@@ -587,8 +587,8 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
             Ok(t) => t,
             Err(e) => {
                 eprintln!("Error: {}", e);
-                eprintln!("Usage: ask summarize [OPTIONS] <TEXT>");
-                eprintln!("   or: echo \"text\" | ask summarize");
+                eprintln!("Usage: sprachspiel summarize [OPTIONS] <TEXT>");
+                eprintln!("   or: echo \"text\" | sprachspiel summarize");
                 std::process::exit(1);
             }
         }

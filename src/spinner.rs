@@ -142,7 +142,7 @@ impl Drop for SpinnerGuard {
 ///
 /// # Example
 /// ```ignore
-/// use ask_ai::spinner::create_spinner;
+/// use sprachspiel::spinner::create_spinner;
 ///
 /// let spinner = create_spinner("Thinking...");
 /// // Do work...

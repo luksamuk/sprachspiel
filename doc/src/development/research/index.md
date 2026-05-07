@@ -1,6 +1,6 @@
 # Research Background
 
-This directory contains research documents that informed the development of Ask-AI's continuous learning system.
+This directory contains research documents that informed the development of Sprachspiel's continuous learning system.
 
 ## Documents
 

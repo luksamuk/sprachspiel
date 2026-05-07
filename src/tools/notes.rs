@@ -121,7 +121,7 @@ pub async fn note_add(
         Some(d) => d,
         None => {
             let err = "Error: Database not available. Notes require a database connection.\n\
-                       Start ask-ai without --anonymous to use notes.";
+                       Start sprachspiel without --anonymous to use notes.";
             log_tool_result("note_add", err);
             return Ok(err.to_string());
         }
@@ -266,7 +266,7 @@ pub async fn note_edit(
         Some(d) => d,
         None => {
             let err = "Error: Database not available. Notes require a database connection.\n\
-                       Start ask-ai without --anonymous to use notes.";
+                       Start sprachspiel without --anonymous to use notes.";
             log_tool_result("note_edit", err);
             return Ok(err.to_string());
         }
@@ -350,7 +350,7 @@ pub async fn note_delete(id: String) -> Result<String, Box<dyn std::error::Error
         Some(d) => d,
         None => {
             let err = "Error: Database not available. Notes require a database connection.\n\
-                       Start ask-ai without --anonymous to use notes.";
+                       Start sprachspiel without --anonymous to use notes.";
             log_tool_result("note_delete", err);
             return Ok(err.to_string());
         }

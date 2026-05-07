@@ -1,6 +1,6 @@
-# Contributing to Ask-AI
+# Contributing to Sprachspiel
 
-Thank you for your interest in contributing to Ask-AI! This guide will help you get started.
+Thank you for your interest in contributing to Sprachspiel! This guide will help you get started.
 
 ## Getting Started
 
@@ -16,7 +16,7 @@ Thank you for your interest in contributing to Ask-AI! This guide will help you 
 ```bash
 # Clone the repository
 git clone <your-repo-url>
-cd ask-ai
+cd sprachspiel
 
 # Install dependencies
 cargo build
@@ -31,7 +31,7 @@ cargo install mdbook-mermaid
 
 ## Development Workflow
 
-Ask-AI uses a structured PR workflow. **See `doc/src/development/PR-PROCESS.md` for the complete process.**
+Sprachspiel uses a structured PR workflow. **See `doc/src/development/PR-PROCESS.md` for the complete process.**
 
 Quick summary:
 1. Create a branch with conventional prefix (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`)

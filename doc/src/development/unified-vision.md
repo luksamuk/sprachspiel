@@ -1,4 +1,4 @@
-# Unified Vision: Ask-AI Architecture Reconciliation
+# Unified Vision: Sprachspiel Architecture Reconciliation
 
 **Status:** Reference document (reconciled with actual implementation)
 **Original Date:** 2026-03-13 (Portuguese, original in external research notes)
@@ -191,13 +191,13 @@ Original proposal → Actual implementation:
 
 ## 6. Diagrams
 
-The following diagrams illustrate the key architectural flows and data structures of Ask-AI. Each diagram is a standalone HTML file with dark-themed SVG, versioned alongside the documentation source.
+The following diagrams illustrate the key architectural flows and data structures of Sprachspiel. Each diagram is a standalone HTML file with dark-themed SVG, versioned alongside the documentation source.
 
 ### 6.1 Data Flow Architecture
 
 End-to-end pipeline from user input through ingestion, storage, retrieval, context building, verification, and feedback loop.
 
-<img src="../assets/diagrams/data-flow.svg" alt="Ask-AI Data Flow Architecture" style="width:100%; max-width:1200px;">
+<img src="../assets/diagrams/data-flow.svg" alt="Sprachspiel Data Flow Architecture" style="width:100%; max-width:1200px;">
 
 ### 6.2 Content Type Decay Rates
 
@@ -233,7 +233,7 @@ Proposed domain-independent BeliefEngine with ConflictVerdict types (Contradicti
 
 Reconciled milestone progression: M1 Core Evolution → M2 UX & Pre-Launch → M3 Sprach 2.0 → M4 Future.
 
-<img src="../assets/diagrams/milestone-map.svg" alt="Ask-AI Milestone Map" style="width:100%; max-width:1200px;">
+<img src="../assets/diagrams/milestone-map.svg" alt="Sprachspiel Milestone Map" style="width:100%; max-width:1200px;">
 
 ---
 
@@ -249,4 +249,4 @@ Reconciled milestone progression: M1 Core Evolution → M2 UX & Pre-Launch → M
 
 ---
 
-*This document was originally created in Portuguese on 2026-03-13 as "Visão Unificada do Ask-AI: Confronto de Ideias e Roadmap Final". It was translated, reconciled with actual implementation decisions, and updated on 2026-04-28. Sections that diverged from the original proposal are clearly marked.*
+*This document was originally created in Portuguese on 2026-03-13 as "Visão Unificada do Sprachspiel: Confronto de Ideias e Roadmap Final". It was translated, reconciled with actual implementation decisions, and updated on 2026-04-28. Sections that diverged from the original proposal are clearly marked.*

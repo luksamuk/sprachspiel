@@ -2,11 +2,11 @@
 
 **Status:** Research Complete  
 **Created:** 2026-03-09  
-**Purpose:** Reference for external CLI tools that can be integrated with ask-ai
+**Purpose:** Reference for external CLI tools that can be integrated with sprachspiel
 
 ## Executive Summary
 
-This document catalogs CLI tools available on Linux distributions that can be used by ask-ai for PDF processing, OCR, image manipulation, and other tasks. Using CLI tools instead of Rust crates offers:
+This document catalogs CLI tools available on Linux distributions that can be used by sprachspiel for PDF processing, OCR, image manipulation, and other tasks. Using CLI tools instead of Rust crates offers:
 
 - **Smaller binary**: -2 to -10MB vs embedding lopdf/pdfium
 - **Better OCR support**: tesseract + pdftoppm for scanned PDFs
@@ -630,7 +630,7 @@ magick -sandbox input.png -resize 100x100 output.png
 
 4. **Avoid URLs** - Never process images from untrusted URLs
 
-### Recommendations for ask-ai
+### Recommendations for sprachspiel
 
 1. **Default: disabled** in `tools.toml` (opt-in)
 2. **If enabled: sandbox = true**
@@ -937,7 +937,7 @@ pkg install poppler tesseract imagemagick exiftool
 
 # 7. Recommended Tool Availability
 
-For ask-ai to work optimally with external tools:
+For sprachspiel to work optimally with external tools:
 
 | Tool | Priority | Feature |
 |------|----------|---------|

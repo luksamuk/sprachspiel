@@ -10,7 +10,7 @@ metadata:
 
 ## What I do
 
-I identify the next implementation demand for the ask-ai project by:
+I identify the next implementation demand for the sprachspiel project by:
 1. Reading `IMPLEMENTATION.md` to understand completed and planned work
 2. Reading `doc/src/development/roadmap.md` for strategic context
 3. Checking open GitHub issues via `gh issue list` and `gh issue view`
@@ -42,7 +42,7 @@ Read the four mandatory documents above, then:
 # List all open issues
 gh issue list --state open --limit 100
 
-# Check project board (project number 4 = Ask-AI Roadmap)
+# Check project board (project number 4 = Sprachspiel Roadmap)
 gh project item-list 4 --owner luksamuk --format json
 
 # Check recent PRs
@@ -244,6 +244,6 @@ When assessing drafts for promotion, use these quick-win criteria:
 ## Project Info
 
 - **GitHub:** `luksamuk/ask-ollama-rs`
-- **Project Board:** Number 4 (Ask-AI Roadmap)
+- **Project Board:** Number 4 (Sprachspiel Roadmap)
 - **Priority within milestones:** determined by card order on the board (top = highest priority)
 - **Cards referenced by issue number** (e.g., #72, #116) — P-code prefixes retired

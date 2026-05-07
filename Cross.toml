@@ -1,6 +1,6 @@
 # Cross-Compilation Configuration for Android/Termux
 #
-# This file configures the `cross` tool for building ask-ai for Android devices.
+# This file configures the `cross` tool for building sprachspiel for Android devices.
 # See: https://github.com/cross-rs/cross
 #
 # Usage:

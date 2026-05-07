@@ -17,14 +17,14 @@
 //!
 //! # SOUL System
 //!
-//! Personality comes from ~/.config/ask-ai/SOUL.md (user-defined),
+//! Personality comes from ~/.config/sprachspiel/SOUL.md (user-defined),
 //! falling back to PERSONALITY_DEFAULT when missing.
 //! Use --soulless to skip personality entirely.
 //!
 //! # Usage
 //!
 //! ```ignore
-//! use ask_ai::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
+//! use sprachspiel::prompts::builder::{build_system_prompt, PromptConfig, PromptType};
 //!
 //! let prompt = build_system_prompt(
 //!     PromptConfig::new(PromptType::ToolUser)

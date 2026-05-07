@@ -1,12 +1,12 @@
-# Ask-AI Documentation
+# Sprachspiel Documentation
 
-<img src="assets/ask-ai-banner.png" alt="Ask-AI banner" width="100%">
+<img src="assets/sprachspiel-banner.png" alt="Sprachspiel banner" width="100%">
 
-Welcome to the Ask-AI documentation! This is a comprehensive guide for the Ask-AI command-line tool - a powerful Rust CLI for interacting with Ollama LLM models.
+Welcome to the Sprachspiel documentation! This is a comprehensive guide for the Sprachspiel command-line tool - a powerful Rust CLI for interacting with Ollama LLM models.
 
-## What is Ask-AI?
+## What is Sprachspiel?
 
-Ask-AI is a feature-rich command-line interface that brings the power of Large Language Models (LLMs) to your terminal. Whether you need to:
+Sprachspiel is a feature-rich command-line interface that brings the power of Large Language Models (LLMs) to your terminal. Whether you need to:
 
 - **Get quick answers** to questions
 - **Translate text** between 50+ languages
@@ -14,7 +14,7 @@ Ask-AI is a feature-rich command-line interface that brings the power of Large L
 - **Summarize long documents**
 - **Chain commands** for complex workflows
 
-Ask-AI provides an elegant, markdown-rendered interface that makes working with AI models feel natural and efficient.
+Sprachspiel provides an elegant, markdown-rendered interface that makes working with AI models feel natural and efficient.
 
 ## Key Features
 
@@ -31,26 +31,26 @@ Ask-AI provides an elegant, markdown-rendered interface that makes working with 
 
 ```bash
 # Ask a question
-ask-ai "What is the capital of France?"
+sprachspiel "What is the capital of France?"
 
 # Translate text
-ask-ai translate en:pt "Hello, how are you?"
+sprachspiel translate en:pt "Hello, how are you?"
 
 # Extract text from an image
-ask-ai ocr document.png
+sprachspiel ocr document.png
 
 # Summarize a document
-cat long-article.txt | ask-ai summarize --style academic
+cat long-article.txt | sprachspiel summarize --style academic
 
 # Chain commands for powerful workflows
-ask-ai ocr japanese-document.png | ask-ai translate ja:pt | ask-ai summarize
+sprachspiel ocr japanese-document.png | sprachspiel translate ja:pt | sprachspiel summarize
 ```
 
 ## Getting Started
 
-New to Ask-AI? Start here:
+New to Sprachspiel? Start here:
 
-1. **[Installation](./installation.md)** - Install Ask-AI on your system
+1. **[Installation](./installation.md)** - Install Sprachspiel on your system
 2. **[Quick Start](./quickstart.md)** - Get up and running in 5 minutes
 3. **[Commands](./commands/README.md)** - Learn about all available commands
 
@@ -58,7 +58,7 @@ New to Ask-AI? Start here:
 
 This documentation is organized into sections:
 
-- **User Guide**: Complete reference for using Ask-AI
+- **User Guide**: Complete reference for using Sprachspiel
   - Commands and subcommands
   - Available models and their capabilities
   - Tools and integrations
@@ -74,15 +74,15 @@ This documentation is organized into sections:
 For quick reference while working in the terminal, consult the man page:
 
 ```bash
-man ask-ai
+man sprachspiel
 ```
 
 Or use the built-in help:
 
 ```bash
-ask-ai --help
-ask-ai query --help
-ask-ai translate --help
+sprachspiel --help
+sprachspiel query --help
+sprachspiel translate --help
 ```
 
 ## Requirements
@@ -98,7 +98,7 @@ ask-ai translate --help
 
 ## License
 
-Ask-AI is licensed under the MIT License. See the [LICENSE](../LICENSE.txt) file for details.
+Sprachspiel is licensed under the MIT License. See the [LICENSE](../LICENSE.txt) file for details.
 
 Copyright (c) 2026 Lucas S. Vieira
 

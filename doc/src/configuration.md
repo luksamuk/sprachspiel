@@ -1,33 +1,33 @@
 # Configuration Guide
 
-This guide covers how to configure Ask-AI for your specific needs.
+This guide covers how to configure Sprachspiel for your specific needs.
 
 ## Configuration File
 
-Ask-AI supports a user configuration file for persistent settings. This is the recommended way to customize the tool.
+Sprachspiel supports a user configuration file for persistent settings. This is the recommended way to customize the tool.
 
 ### Creating the Config File
 
 Generate a sample configuration file:
 
 ```bash
-ask-ai --init-config
+sprachspiel --init-config
 ```
 
-This creates `~/.config/ask-ai/config.toml` with all available options commented out.
+This creates `~/.config/sprachspiel/config.toml` with all available options commented out.
 
 ### Config File Location
 
-Ask-AI looks for the config file in this order:
+Sprachspiel looks for the config file in this order:
 
-1. `$XDG_CONFIG_HOME/ask-ai/config.toml` (if XDG_CONFIG_HOME is set)
-2. `~/.config/ask-ai/config.toml` (default)
+1. `$XDG_CONFIG_HOME/sprachspiel/config.toml` (if XDG_CONFIG_HOME is set)
+2. `~/.config/sprachspiel/config.toml` (default)
 
 ### Configuration Options
 
 ```toml
-# Ask-AI Configuration File
-# Location: ~/.config/ask-ai/config.toml
+# Sprachspiel Configuration File
+# Location: ~/.config/sprachspiel/config.toml
 # 
 # This is a complete example configuration showing all available options.
 # Lines starting with '#' are comments and are ignored.
@@ -43,7 +43,7 @@ Ask-AI looks for the config file in this order:
 [model]
 
 # The default model preset to use for general queries.
-# See all available models with: ask-ai --list-models
+# See all available models with: sprachspiel --list-models
 # Default: "qwen3.5:4b"
 default = "qwen3.5:4b"
 
@@ -218,18 +218,18 @@ Note: If thinking is enabled in config but the model doesn't support it, a warni
 
 ## Custom Models
 
-Ask-AI supports user-defined models via a TOML file. This allows you to:
+Sprachspiel supports user-defined models via a TOML file. This allows you to:
 
 - Add new models not included in the built-in presets
 - Override parameters for existing models (partial override)
 
 ### Creating Custom Models
 
-Create `~/.config/ask-ai/models.toml`:
+Create `~/.config/sprachspiel/models.toml`:
 
 ```toml
 # Custom model definitions
-# Location: ~/.config/ask-ai/models.toml
+# Location: ~/.config/sprachspiel/models.toml
 
 # Add a new model
 [models.my-coder]
@@ -253,13 +253,13 @@ temperature = 0.15            # Only override what you want to change
 
 ```bash
 # Use a custom model
-ask-ai -m my-coder "Write a function"
+sprachspiel -m my-coder "Write a function"
 
 # Use in chat mode
-ask-ai chat -m simple
+sprachspiel chat -m simple
 
 # Override built-in model parameters
-ask-ai -m lfm "query"  # Uses modified temperature from models.toml
+sprachspiel -m lfm "query"  # Uses modified temperature from models.toml
 ```
 
 ### Model Parameter Defaults
@@ -297,7 +297,7 @@ When `thinking = true` is set:
 ### Listing All Models
 
 ```bash
-ask-ai --list
+sprachspiel --list
 ```
 
 This shows both built-in models and user-defined models (marked with `[user]`).
@@ -385,7 +385,7 @@ Each subcommand section supports:
 
 ### How Tool Filtering Works
 
-Ask-AI uses a two-layer filtering system for tools:
+Sprachspiel uses a two-layer filtering system for tools:
 
 1. **Compile-time (Feature Flags)**: Tools are included/excluded at build time
    - See [Tools documentation](./tools.md#compilation-features) for feature flags
@@ -427,7 +427,7 @@ cargo build --release --features all-tools
 
 Then, to use them:
 ```bash
-ask-ai --tools "Tell me about Pikachu"
+sprachspiel --tools "Tell me about Pikachu"
 ```
 
 ## Environment Variables
@@ -520,8 +520,8 @@ Verbose logging shows:
 - Raw responses (when verbose level is enabled)
 
 Enable via:
-- CLI flag: `ask-ai -v "query"` (verbose), `ask-ai -vv "query"` (trace)
-- Environment: `RUST_LOG=trace ask-ai command` or `RUST_LOG=debug ask-ai command)`
+- CLI flag: `sprachspiel -v "query"` (verbose), `sprachspiel -vv "query"` (trace)
+- Environment: `RUST_LOG=trace sprachspiel command` or `RUST_LOG=debug sprachspiel command)`
 
 ## Performance Tuning
 
@@ -557,17 +557,17 @@ export OLLAMA_TIMEOUT=120  # seconds
 
 ### Default Paths
 
-- Binary: `/usr/local/bin/ask-ai`
-- Man page: `/usr/local/share/man/man1/ask-ai.1`
-- Config: `~/.config/ask-ai/config.toml`
+- Binary: `/usr/local/bin/sprachspiel`
+- Man page: `/usr/local/share/man/man1/sprachspiel.1`
+- Config: `~/.config/sprachspiel/config.toml`
 
 ### Custom Prefix
 
 ```bash
 make install PREFIX=$HOME/.local
 # Installs to:
-# - $HOME/.local/bin/ask-ai
-# - $HOME/.local/share/man/man1/ask-ai.1
+# - $HOME/.local/bin/sprachspiel
+# - $HOME/.local/share/man/man1/sprachspiel.1
 ```
 
 ## Shell Completion
@@ -576,14 +576,14 @@ Generate completions for your shell:
 
 ```bash
 # Bash
-ask-ai completion bash >~/.bash_completion
+sprachspiel completion bash >~/.bash_completion
 
 # Zsh
-ask-ai completion zsh > ~/.zsh_completions/_ask-ai
+sprachspiel completion zsh > ~/.zsh_completions/_sprachspiel
 # Add to ~/.zshrc: fpath+=(~/.zsh_completions)
 
 # Fish
-ask-ai completion fish > ~/.config/fish/completions/ask-ai.fish
+sprachspiel completion fish > ~/.config/fish/completions/sprachspiel.fish
 ```
 
 See [Installation Guide](./installation.md#shell-completions) for more details.
@@ -600,7 +600,7 @@ See [Installation Guide](./installation.md#shell-completions) for more details.
 
 ## AGENTS.md Context
 
-Ask-AI automatically loads `AGENTS.md` from the current directory to provide project-specific context to the model.
+Sprachspiel automatically loads `AGENTS.md` from the current directory to provide project-specific context to the model.
 
 ### How It Works
 
@@ -644,7 +644,7 @@ Content is sanitized to prevent prompt injection:
 Use `--ignore-agents` to skip loading:
 
 ```bash
-ask-ai --ignore-agents "General programming question"
+sprachspiel --ignore-agents "General programming question"
 ```
 
 ## Troubleshooting
@@ -654,14 +654,14 @@ ask-ai --ignore-agents "General programming question"
 Check that the file exists and has correct permissions:
 
 ```bash
-ls -la ~/.config/ask-ai/config.toml
+ls -la ~/.config/sprachspiel/config.toml
 ```
 
 Test with debug mode to see active configuration:
 
 ```bash
-ask-ai -d --init-config  # Shows where config was created
-ask-ai -d "test query"   # Shows active settings
+sprachspiel -d --init-config  # Shows where config was created
+sprachspiel -d "test query"   # Shows active settings
 ```
 
 ### Changes not taking effect

@@ -1,4 +1,4 @@
-# Implementation Plan for ask-ai
+# Implementation Plan for sprachspiel
 
 **Note**: This document tracks implementation status. For strategic direction, see:
 
@@ -34,7 +34,7 @@
 
 - Core CLI with 5 subcommands (query, chat, translate, ocr, summarize)
 - Interactive chat mode with persistent sessions
-- Custom models support via `~/.config/ask-ai/models.toml`
+- Custom models support via `~/.config/sprachspiel/models.toml`
 - Built-in models: llama3.1, translategemma, glm-ocr (user models in config)
 - Thinking support for cloud models (configurable via `thinking = true`)
 - Dynamic model selection with capability detection

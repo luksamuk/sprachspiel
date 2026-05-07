@@ -36,10 +36,11 @@ pub mod colors {
 }
 
 /// ASCII art logo using toilet "future" font (pre-rendered)
+/// SPRACH in gold (#220), SPIEL in cyan (#45)
 const BANNER_LOGO: &str = "\
-\x1B[1;34;94m┏━┓┏━┓╻┏\x1B[0m    \x1B[1;34;94m┏━┓╻\x1B[0m
-\x1B[1;34;94m┣━┫┗━┓┣┻\x1B[0;34m┓╺━╸┣━┫┃\x1B[0m
-\x1B[0;34m╹\x1B[0m \x1B[0;34m╹┗━┛╹\x1B[0m \x1B[0;34m╹\x1B[0m   \x1B[0;34m╹\x1B[0m \x1B[0;34m╹╹\x1B[0m";
+\x1B[38;5;220m┏━┓┏━┓┏━┓┏━┓┏━╸╻ ╻\x1B[0m\x1B[38;5;45m┏━┓┏━┓╻┏━╸╻  \x1B[0m\n\
+\x1B[38;5;220m┗━┓┣━┛┣┳┛┣━┫┃  ┣━┫\x1B[0m\x1B[38;5;45m┗━┓┣━┛┃┣╸ ┃  \x1B[0m\n\
+\x1B[38;5;136m┗━┛╹  ╹┗╸╹ ╹┗━╸╹ ╹\x1B[0m\x1B[0;36m┗━┛╹  ╹┗━╸┗━╸\x1B[0m";
 
 /// Extended mind braille art - generated from extended-mind.png via braille_art.py
 /// Connected mind representing tools/memory/Zettelkasten

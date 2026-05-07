@@ -1,5 +1,5 @@
 [package]
-name = "ask-ai"
+name = "sprachspiel"
 version = "0.40.0"
 edition = "2024"
 

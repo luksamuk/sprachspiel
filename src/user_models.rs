@@ -1,7 +1,7 @@
 //! User-defined model configurations
 //!
 //! Allows users to define custom models or override built-in model parameters
-//! via a TOML file at ~/.config/ask-ai/models.toml
+//! via a TOML file at ~/.config/sprachspiel/models.toml
 
 use std::collections::HashMap;
 use std::env;
@@ -38,12 +38,14 @@ impl UserModelDefaults {
 }
 
 pub fn get_user_models_path() -> PathBuf {
+    use crate::consts::app;
+
     if let Ok(data_home) = env::var("XDG_DATA_HOME") {
-        PathBuf::from(data_home).join("ask-ai").join("models.toml")
+        PathBuf::from(data_home).join(app::APP_CONFIG_DIR).join("models.toml")
     } else if let Some(home_dir) = dirs::home_dir() {
-        home_dir.join(".config").join("ask-ai").join("models.toml")
+        home_dir.join(".config").join(app::APP_CONFIG_DIR).join("models.toml")
     } else {
-        PathBuf::from(".ask-ai").join("models.toml")
+        PathBuf::from(app::APP_PROJECT_DIR).join("models.toml")
     }
 }
 

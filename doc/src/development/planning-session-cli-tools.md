@@ -85,7 +85,7 @@ Skills define **how the model should use tools**, not what tools do:
 ```
 ┌─────────────────────────────────────────────────┐
 │  Skills (Markdown)                              │
-│  ~/.config/ask-ai/skills/pdf-processing.md      │
+│  ~/.config/sprachspiel/skills/pdf-processing.md      │
 │                                                 │
 │  "When asked about PDFs:                        │
 │   1. Check tool availability with                │
@@ -112,7 +112,7 @@ Skills define **how the model should use tools**, not what tools do:
 Users configure which commands are allowed:
 
 ```toml
-# ~/.config/ask-ai/tools.toml
+# ~/.config/sprachspiel/tools.toml
 
 [pdftotext]
 enabled = true
@@ -144,8 +144,8 @@ Based on dependencies and usefulness:
 - `src/skills/` module structure
 - `SkillsLoader` for Markdown files
 - Builtin skills (pdf-processing, ocr-images)
-- User skills (`~/.config/ask-ai/skills/`)
-- Project skills (`.ask-ai/skills/`)
+- User skills (`~/.config/sprachspiel/skills/`)
+- Project skills (`.sprachspiel/skills/`)
 - Prompt injection
 
 **Phase 3: Document Import** (2-3 days)
@@ -189,14 +189,14 @@ src/
 ## Configuration Files
 
 ```
-~/.config/ask-ai/
+~/.config/sprachspiel/
 ├── config.toml            # Existing
 ├── models.toml            # Existing
 ├── tools.toml             # NEW: External tool whitelist
 └── skills/                # NEW: User skills
     └── custom-skill.md
 
-.ask-ai/
+.sprachspiel/
 └── skills/                # NEW: Project skills
     └── project-skill.md
 ```

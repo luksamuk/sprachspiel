@@ -1,4 +1,4 @@
-# ask-ai Test Assets
+# Sprachspiel Test Assets
 
 Organized test images and prompts for OCR and Vision testing.
 
@@ -19,10 +19,10 @@ assets/
 │   └── prompts.md          # Vision test prompts
 ├── mixed/                  # Multi-domain test images
 │   ├── redacao.png         # ENEM 2017 essay prompt page (Portuguese)
-│   ├── ask-ai-architecture.pdf  # 3-page architecture PDF (tables + diagram)
+│   ├── sprachspiel-architecture.pdf  # 3-page architecture PDF (tables + diagram)
 │   └── prompts.md          # Mixed test prompts
-├── ask-ai-banner.png       # Project banner
-├── ask-ai-banner.py        # Banner generator script
+├── sprachspiel-banner.png   # Project banner
+├── sprachspiel-banner.py    # Banner generator script
 ├── braille_art.py           # Braille art generator
 ├── extended-mind-*.png      # Extended mind map images
 └── README.md               # This file
@@ -55,11 +55,11 @@ Cross-domain tests combining OCR, vision, and comprehension:
 | Image | Type | Challenge |
 |-------|------|-----------|
 | redacao.png | Official exam page | Text extraction + comprehension + generation |
-| ask-ai-architecture.pdf | 3-page PDF | Two-phase pipeline: pdftotext + pdftoppm→vision/OCR |
+| sprachspiel-architecture.pdf | 3-page PDF | Two-phase pipeline: pdftotext + pdftoppm→vision/OCR |
 
 #### With PDF Pipeline (chat mode)
 
-The `ask-ai-architecture.pdf` tests the LLM-orchestrated two-phase document processing pipeline:
+The `sprachspiel-architecture.pdf` tests the LLM-orchestrated two-phase document processing pipeline:
 
 1. **Phase 1 (pdftotext):** Extract text from PDF → `run_command("pdftotext", [...])`
 2. **Phase 2 (pdftoppm → vision/OCR):** For pages with diagrams → `run_command("pdftoppm", [...])` then `spawn_vision_agent` or `spawn_ocr_agent`
@@ -70,12 +70,12 @@ The `ask-ai-architecture.pdf` tests the LLM-orchestrated two-phase document proc
 
 ```bash
 # Phase 1: Extract text
-pdftotext assets/mixed/ask-ai-architecture.pdf -
+pdftotext assets/mixed/sprachspiel-architecture.pdf -
 
 # Phase 2: Convert page to image, then analyze
-pdftoppm -png -f 2 -l 2 -r 150 assets/mixed/ask-ai-architecture.pdf /tmp/arch-page2
-ask-ai vision /tmp/arch-page2-2.png -- "Describe the diagram"
-ask-ai ocr /tmp/arch-page2-2.png --mode table   # For tables
+pdftoppm -png -f 2 -l 2 -r 150 assets/mixed/sprachspiel-architecture.pdf /tmp/arch-page2
+sprachspiel vision /tmp/arch-page2-2.png -- "Describe the diagram"
+sprachspiel ocr /tmp/arch-page2-2.png --mode table   # For tables
 ```
 
 ## Usage in Tests
@@ -95,9 +95,9 @@ ask-ai ocr /tmp/arch-page2-2.png --mode table   # For tables
 
 ### With CLI
 ```bash
-ask-ai ocr assets/ocr/japanese.jpg --mode text
-ask-ai vision assets/vision/protagonist.jpg -- "Describe this character"
-ask-ai vision assets/vision/protagonist.jpg,assets/vision/protagonist2.jpg -- "Compare both"
+sprachspiel ocr assets/ocr/japanese.jpg --mode text
+sprachspiel vision assets/vision/protagonist.jpg -- "Describe this character"
+sprachspiel vision assets/vision/protagonist.jpg,assets/vision/protagonist2.jpg -- "Compare both"
 ```
 
 ### With spawn tools (LLM tool)

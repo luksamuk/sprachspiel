@@ -10,7 +10,7 @@ metadata:
 
 ## What I do
 
-I guide the complete PR workflow for the ask-ai project, from branch creation through merge. I cover every phase with exact commands and decision points.
+I guide the complete PR workflow for the sprachspiel project, from branch creation through merge. I cover every phase with exact commands and decision points.
 
 **If the selected card has `🟡 RESEARCH NEEDED` status, Phase 0 (Research) is MANDATORY before any branch creation.**
 
@@ -177,7 +177,7 @@ If a duplicate is found:
 
 ### Move Card to In Progress
 
-Move the GitHub Project card to "In Progress" (project number 4 = Ask-AI Roadmap):
+Move the GitHub Project card to "In Progress" (project number 4 = Sprachspiel Roadmap):
 
 ```bash
 # Find the item ID by issue number (use CANONICAL issue number)
@@ -578,7 +578,7 @@ If the PR addresses a canonical issue that had duplicates:
 
 ## Project Information
 
-- **Project Name**: Ask-AI Roadmap
+- **Project Name**: Sprachspiel Roadmap
 - **Project URL**: https://github.com/users/luksamuk/projects/4/views/4
 - **Project Number**: 4
 - **Project ID**: `PVT_kwHOADplIc4BRnZ9`

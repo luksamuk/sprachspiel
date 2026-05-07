@@ -1,14 +1,14 @@
 # Pipeline Examples
 
-Ask-AI commands can be chained together using pipes to create powerful workflows. This page showcases practical pipeline examples.
+Sprachspiel commands can be chained together using pipes to create powerful workflows. This page showcases practical pipeline examples.
 
 ## Basic Pipe Concept
 
-Ask-AI commands read from stdin when no argument is provided:
+Sprachspiel commands read from stdin when no argument is provided:
 
 ```bash
 # Output of first command becomes input of second
-cat file.txt | ask-ai summarize
+cat file.txt | sprachspiel summarize
 ```
 
 ## OCR → Summarize
@@ -16,20 +16,20 @@ cat file.txt | ask-ai summarize
 Extract text from an image and create a summary:
 
 ```bash
-ask-ai ocr document.png | ask-ai summarize
+sprachspiel ocr document.png | sprachspiel summarize
 ```
 
 **With options:**
 
 ```bash
 # OCR → Academic summary
-ask-ai ocr research-paper.png | ask-ai summarize --style academic
+sprachspiel ocr research-paper.png | sprachspiel summarize --style academic
 
 # OCR → Technical summary with length limit
-ask-ai ocr manual.png | ask-ai summarize --style technical -l 150
+sprachspiel ocr manual.png | sprachspiel summarize --style technical -l 150
 
 # OCR → Bullet summary
-ask-ai ocr report.png | ask-ai summarize -f bullets
+sprachspiel ocr report.png | sprachspiel summarize -f bullets
 ```
 
 ## OCR → Translate
@@ -38,13 +38,13 @@ Extract text from an image and translate it:
 
 ```bash
 # Japanese document to Portuguese
-ask-ai ocr japanese.png | ask-ai translate ja:pt
+sprachspiel ocr japanese.png | sprachspiel translate ja:pt
 
 # Chinese to English
-ask-ai ocr chinese.png | ask-ai translate zh-Hans:en
+sprachspiel ocr chinese.png | sprachspiel translate zh-Hans:en
 
 # Auto-detect to Portuguese
-ask-ai ocr document.png | ask-ai translate :pt
+sprachspiel ocr document.png | sprachspiel translate :pt
 ```
 
 ## OCR → Summarize → Translate
@@ -52,7 +52,7 @@ ask-ai ocr document.png | ask-ai translate :pt
 Full document processing pipeline:
 
 ```bash
-ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
 ```
 
 **Breakdown:**
@@ -64,13 +64,13 @@ ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
 
 ```bash
 # Research paper pipeline
-ask-ai ocr paper.png | ask-ai summarize --style academic | ask-ai translate :pt
+sprachspiel ocr paper.png | sprachspiel summarize --style academic | sprachspiel translate :pt
 
 # Technical manual pipeline
-ask-ai ocr manual.png | ask-ai summarize --style technical | ask-ai translate :es
+sprachspiel ocr manual.png | sprachspiel summarize --style technical | sprachspiel translate :es
 
 # Business report pipeline
-ask-ai ocr report.png | ask-ai summarize --style business | ask-ai translate :fr
+sprachspiel ocr report.png | sprachspiel summarize --style business | sprachspiel translate :fr
 ```
 
 ## File → Summarize
@@ -79,13 +79,13 @@ Process text files:
 
 ```bash
 # Summarize text file
-cat article.txt | ask-ai summarize
+cat article.txt | sprachspiel summarize
 
 # With specific style
-cat documentation.md | ask-ai summarize --style technical
+cat documentation.md | sprachspiel summarize --style technical
 
 # Academic paper
-pdftotext paper.pdf - | ask-ai summarize --style academic
+pdftotext paper.pdf - | sprachspiel summarize --style academic
 ```
 
 ## File → Summarize → Translate
@@ -94,10 +94,10 @@ Process files in other languages:
 
 ```bash
 # English to Portuguese
-cat report.txt | ask-ai summarize | ask-ai translate :pt
+cat report.txt | sprachspiel summarize | sprachspiel translate :pt
 
 # Technical docs to Spanish
-cat api-docs.md | ask-ai summarize --style technical | ask-ai translate :es
+cat api-docs.md | sprachspiel summarize --style technical | sprachspiel translate :es
 ```
 
 ## PDF Processing
@@ -106,13 +106,13 @@ Process PDF documents (requires `pdftotext`):
 
 ```bash
 # PDF → Summary
-pdftotext document.pdf - | ask-ai summarize
+pdftotext document.pdf - | sprachspiel summarize
 
 # PDF → Summary → Translate
-pdftotext document.pdf - | ask-ai summarize | ask-ai translate :pt
+pdftotext document.pdf - | sprachspiel summarize | sprachspiel translate :pt
 
 # PDF → OCR → Summary
-pdftotext scanned.pdf - | ask-ai summarize --style academic
+pdftotext scanned.pdf - | sprachspiel summarize --style academic
 ```
 
 ## Batch Processing
@@ -123,14 +123,14 @@ Process multiple files:
 # OCR all images and summarize
 for img in *.png; do
     echo "=== $img ==="
-    ask-ai ocr "$img" | ask-ai summarize
+    sprachspiel ocr "$img" | sprachspiel summarize
     echo
 done
 
 # OCR → Translate all images
 for img in scans/*.png; do
     out="${img%.png}-pt.txt"
-    ask-ai ocr "$img" | ask-ai translate :pt > "$out"
+    sprachspiel ocr "$img" | sprachspiel translate :pt > "$out"
     echo "Created $out"
 done
 ```
@@ -143,9 +143,9 @@ Translate documents while preserving structure:
 
 ```bash
 # Complete workflow for scanned documents
-ask-ai ocr scanned-ja.png | \
-    ask-ai translate ja:pt | \
-    ask-ai summarize -l 200 | \
+sprachspiel ocr scanned-ja.png | \
+    sprachspiel translate ja:pt | \
+    sprachspiel summarize -l 200 | \
     tee translated-summary.txt
 ```
 
@@ -153,9 +153,9 @@ ask-ai ocr scanned-ja.png | \
 
 ```bash
 # Extract and analyze research
-ask-ai ocr paper.png | \
-    ask-ai summarize --style academic -l 300 | \
-    ask-ai translate :pt | \
+sprachspiel ocr paper.png | \
+    sprachspiel summarize --style academic -l 300 | \
+    sprachspiel translate :pt | \
     tee analysis-pt.txt
 ```
 
@@ -164,8 +164,8 @@ ask-ai ocr paper.png | \
 ```bash
 # Generate documentation from code
 head -50 src/main.rs | \
-    ask-ai summarize --style technical | \
-    ask-ai translate :pt
+    sprachspiel summarize --style technical | \
+    sprachspiel translate :pt
 ```
 
 ### Multi-Document Processing
@@ -173,8 +173,8 @@ head -50 src/main.rs | \
 ```bash
 # Combine multiple documents
 for doc in chapter*.txt; do
-    cat "$doc" | ask-ai summarize -l 100
-done | ask-ai summarize -l 300 > book-summary.txt
+    cat "$doc" | sprachspiel summarize -l 100
+done | sprachspiel summarize -l 300 > book-summary.txt
 ```
 
 ## Common Patterns
@@ -182,32 +182,32 @@ done | ask-ai summarize -l 300 > book-summary.txt
 ### 1. OCR → Process → Save
 
 ```bash
-ask-ai ocr document.png | ask-ai summarize > output.txt
+sprachspiel ocr document.png | sprachspiel summarize > output.txt
 ```
 
 ### 2. File → Translate → Save
 
 ```bash
-cat document.txt | ask-ai translate :pt > translated.txt
+cat document.txt | sprachspiel translate :pt > translated.txt
 ```
 
 ### 3. Query → Process → Query
 
 ```bash
-ask-ai "Find information" | ask-ai summarize | ask-ai "Analyze this"
+sprachspiel "Find information" | sprachspiel summarize | sprachspiel "Analyze this"
 ```
 
 ### 4. Chain with Unix Tools
 
 ```bash
 # Sort results
-ask-ai ocr doc.png | sort | ask-ai summarize
+sprachspiel ocr doc.png | sort | sprachspiel summarize
 
 # Filter content
-ask-ai ocr doc.png | grep "important" | ask-ai translate :pt
+sprachspiel ocr doc.png | grep "important" | sprachspiel translate :pt
 
 # Word count
-ask-ai summarize text.txt | wc -w
+sprachspiel summarize text.txt | wc -w
 ```
 
 ## Error Handling
@@ -217,12 +217,12 @@ Handle errors in pipelines:
 ```bash
 # Continue on error
 for img in *.png; do
-    ask-ai ocr "$img" 2>/dev/null | ask-ai summarize || echo "Failed: $img"
+    sprachspiel ocr "$img" 2>/dev/null | sprachspiel summarize || echo "Failed: $img"
 done
 
 # Stop on first error
 set -e
-ask-ai ocr doc.png | ask-ai summarize
+sprachspiel ocr doc.png | sprachspiel summarize
 ```
 
 ## Performance Tips
@@ -234,7 +234,7 @@ ask-ai ocr doc.png | ask-ai summarize
 
 ```bash
 # Save intermediate results
-ask-ai ocr doc.png | tee extracted.txt | ask-ai summarize | tee summary.txt | ask-ai translate :pt
+sprachspiel ocr doc.png | tee extracted.txt | sprachspiel summarize | tee summary.txt | sprachspiel translate :pt
 ```
 
 ## Debugging Pipelines
@@ -243,13 +243,13 @@ Add debug output:
 
 ```bash
 # Show each step
-ask-ai ocr doc.png | tee /dev/tty | ask-ai summarize
+sprachspiel ocr doc.png | tee /dev/tty | sprachspiel summarize
 
 # Debug with timing
-time ask-ai ocr doc.png | time ask-ai summarize
+time sprachspiel ocr doc.png | time sprachspiel summarize
 
 # Full debug
-ask-ai ocr -v doc.png 2> debug.log | ask-ai summarize -v 2> summary.log
+sprachspiel ocr -v doc.png 2> debug.log | sprachspiel summarize -v 2> summary.log
 ```
 
 ## Creating Scripts
@@ -268,9 +268,9 @@ fi
 IMAGE=$1
 LANG=$2
 
-ask-ai ocr "$IMAGE" | \
-    ask-ai summarize | \
-    ask-ai translate ":$LANG"
+sprachspiel ocr "$IMAGE" | \
+    sprachspiel summarize | \
+    sprachspiel translate ":$LANG"
 ```
 
 Usage:

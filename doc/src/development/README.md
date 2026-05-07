@@ -1,6 +1,6 @@
 # Development Documentation
 
-Welcome to the Ask-AI development documentation. This section contains technical information for contributors and developers.
+Welcome to the Sprachspiel development documentation. This section contains technical information for contributors and developers.
 
 ## Quick Navigation
 
@@ -58,11 +58,11 @@ See **[Implementation Directive](./implementation-directive.md)** for the canoni
 ## Project Structure
 
 ```
-ask-ai/
+sprachspiel/
 ├── Cargo.toml              # Dependencies
 ├── Makefile                # Build automation
 ├── man/
-│   └── ask-ai.1           # Man page
+│   └── sprachspiel.1           # Man page
 ├── doc/
 │   ├── book.toml          # mdBook configuration
 │   └── src/               # Documentation source

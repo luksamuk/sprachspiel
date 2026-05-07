@@ -81,7 +81,7 @@ pub struct ChatSession {
 
 ```rust
 pub struct ConversationStorage {
-    base_path: PathBuf,  // ~/.local/share/ask-ai/conversations/
+    base_path: PathBuf,  // ~/.local/share/sprachspiel/conversations/
 }
 ```
 
@@ -101,7 +101,7 @@ pub fn get_project_id() -> Option<String> {
 ### Directory Structure
 
 ```
-~/.local/share/ask-ai/
+~/.local/share/sprachspiel/
 └── conversations/
     └── github.com/
         └── user/

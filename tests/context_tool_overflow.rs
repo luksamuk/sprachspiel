@@ -5,11 +5,11 @@
 //! 2. During-tool context check
 //! 3. Error recovery
 
-use ask_ai::context_overflow::{
+use sprachspiel::context_overflow::{
     COMPACTION_MIN, CRITICAL_USAGE_PERCENT, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD,
     MODERATE_USAGE_PERCENT, PRE_TOOL_MIN, calculate_thresholds,
 };
-use ask_ai::tokens::estimate_tokens;
+use sprachspiel::tokens::estimate_tokens;
 
 /// Minimum messages to preserve (must match src/context_overflow.rs)
 const MIN_PRESERVE_LAST: usize = 1;

@@ -5,8 +5,8 @@ The `vision` command analyzes and describes images using vision models. Unlike O
 ## Synopsis
 
 ```bash
-ask-ai [GLOBAL OPTIONS] vision <FILE>... [-- <PROMPT>]
-ask-ai [GLOBAL OPTIONS] v <FILE>... [-- <PROMPT>]
+sprachspiel [GLOBAL OPTIONS] vision <FILE>... [-- <PROMPT>]
+sprachspiel [GLOBAL OPTIONS] v <FILE>... [-- <PROMPT>]
 ```
 
 ## Description
@@ -55,17 +55,17 @@ These options are specific to the vision subcommand:
 
 ```bash
 # Describe an image
-ask-ai vision photo.png
+sprachspiel vision photo.png
 
 # Using alias
-ask-ai v screenshot.jpg
+sprachspiel v screenshot.jpg
 ```
 
 ### Detailed Analysis
 
 ```bash
 # Get comprehensive image analysis
-ask-ai vision --detailed artwork.png
+sprachspiel vision --detailed artwork.png
 
 # Output includes:
 # - Composition and layout
@@ -79,47 +79,47 @@ ask-ai vision --detailed artwork.png
 
 ```bash
 # Plain text without markdown rendering
-ask-ai --plain vision photo.png
+sprachspiel --plain vision photo.png
 
 # Useful for piping to other commands
-ask-ai --plain vision screenshot.png | grep "button"
+sprachspiel --plain vision screenshot.png | grep "button"
 ```
 
 ### Custom Prompts
 
 ```bash
 # Ask specific questions (use -- before prompt)
-ask-ai vision photo.png -- "What objects are visible in this image?"
-ask-ai vision screenshot.png -- "What UI components are used?"
-ask-ai vision chart.png -- "Describe the data visualization"
-ask-ai vision diagram.png -- "Explain the workflow shown"
+sprachspiel vision photo.png -- "What objects are visible in this image?"
+sprachspiel vision screenshot.png -- "What UI components are used?"
+sprachspiel vision chart.png -- "Describe the data visualization"
+sprachspiel vision diagram.png -- "Explain the workflow shown"
 ```
 
 ### Multi-Image Analysis
 
 ```bash
 # Analyze multiple images together
-ask-ai vision img1.png img2.png
+sprachspiel vision img1.png img2.png
 
 # Compare images with custom prompt (use -- before prompt)
-ask-ai vision before.png after.png -- "What changed between these images?"
+sprachspiel vision before.png after.png -- "What changed between these images?"
 
 # For best multi-image results, use minicpm-v
-ask-ai vision -m minicpm-v:8b img1.png img2.png -- "Compare these"
+sprachspiel vision -m minicpm-v:8b img1.png img2.png -- "Compare these"
 ```
 
 ### JSON Output
 
 ```bash
 # Output as JSON for programmatic use
-ask-ai vision --json photo.png
+sprachspiel vision --json photo.png
 
 # Example output:
 # {"files": ["photo.png"], "prompt": "Describe this image.", "content": "A cat sitting on..."}
 
 # Batch processing
 for img in *.png; do
-    ask-ai vision --json "$img" >> results.jsonl
+    sprachspiel vision --json "$img" >> results.jsonl
 done
 ```
 
@@ -127,11 +127,11 @@ done
 
 ```bash
 # Use specific model
-ask-ai vision -m llava:13b photo.png
-ask-ai vision -m qwen3.5:4b screenshot.png
-ask-ai vision -m ministral-3:14b img1.png img2.png -- "Compare these"
+sprachspiel vision -m llava:13b photo.png
+sprachspiel vision -m qwen3.5:4b screenshot.png
+sprachspiel vision -m ministral-3:14b img1.png img2.png -- "Compare these"
 
-# Via config file (~/.config/ask-ai/config.toml):
+# Via config file (~/.config/sprachspiel/config.toml):
 # [model.vision]
 # model = "qwen3.5:4b"
 ```
@@ -152,46 +152,46 @@ ask-ai vision -m ministral-3:14b img1.png img2.png -- "Compare these"
 ### 1. Image Description
 
 ```bash
-ask-ai vision photo.png
+sprachspiel vision photo.png
 ```
 
 ### 2. UI Analysis
 
 ```bash
-ask-ai vision screenshot.png -- "What UI framework might this be using?"
-ask-ai vision mockup.png -- "Describe the user interface"
+sprachspiel vision screenshot.png -- "What UI framework might this be using?"
+sprachspiel vision mockup.png -- "Describe the user interface"
 ```
 
 ### 3. Content Moderation
 
 ```bash
-ask-ai vision image.png -- "Is this image appropriate for a general audience?"
+sprachspiel vision image.png -- "Is this image appropriate for a general audience?"
 ```
 
 ### 4. Accessibility
 
 ```bash
-ask-ai vision --detailed photo.png
+sprachspiel vision --detailed photo.png
 # Generate alt text for web images
 ```
 
 ### 5. Visual Q&A
 
 ```bash
-ask-ai vision diagram.png -- "Explain what this diagram shows"
-ask-ai vision chart.png -- "What trends does this chart show?"
+sprachspiel vision diagram.png -- "Explain what this diagram shows"
+sprachspiel vision chart.png -- "What trends does this chart show?"
 ```
 
 ### 6. Comparison Tasks
 
 ```bash
 # Multi-image comparison (requires model with multi-image support)
-ask-ai vision -m ministral-3:14b v1.png v2.png -- "What are the differences?"
+sprachspiel vision -m ministral-3:14b v1.png v2.png -- "What are the differences?"
 ```
 
 ## Configuration
 
-Default model can be set in `~/.config/ask-ai/config.toml`:
+Default model can be set in `~/.config/sprachspiel/config.toml`:
 
 ```toml
 [model.vision]
@@ -210,13 +210,13 @@ tools = false
 
 ```bash
 # Vision → Summarize
-ask-ai vision --detailed photo.png | ask-ai summarize
+sprachspiel vision --detailed photo.png | sprachspiel summarize
 
 # Vision → Translate
-ask-ai vision photo.png "Describe in Portuguese"
+sprachspiel vision photo.png "Describe in Portuguese"
 
 # Multiple images with JSON for processing
-ask-ai vision --json *.png | jq '.content' > descriptions.txt
+sprachspiel vision --json *.png | jq '.content' > descriptions.txt
 ```
 
 ## Tips for Better Results
@@ -232,13 +232,13 @@ ask-ai vision --json *.png | jq '.content' > descriptions.txt
 
 ```bash
 # Be specific
-ask-ai vision photo.png "List all visible objects"
+sprachspiel vision photo.png "List all visible objects"
 
 # Ask for structure
-ask-ai vision diagram.png "Describe this as a numbered list"
+sprachspiel vision diagram.png "Describe this as a numbered list"
 
 # Request format
-ask-ai vision chart.png "Extract the data as a markdown table"
+sprachspiel vision chart.png "Extract the data as a markdown table"
 ```
 
 ### Multi-Image Tasks
@@ -263,7 +263,7 @@ Common errors and solutions:
 ollama pull qwen3.5:4b
 
 # File not found
-ask-ai vision /path/to/existing/file.png
+sprachspiel vision /path/to/existing/file.png
 
 # Unsupported format
 # Convert to PNG: convert image.bmp image.png

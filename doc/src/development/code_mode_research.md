@@ -287,7 +287,7 @@ thinking = false
 | `doc/src/configuration.md` | Document per-subcommand config |
 | `doc/src/models.md` | Add deepseek-coder-v2 info |
 | `doc/src/tools.md` | Document code_with_tools mode |
-| `man/ask-ai.1` | Update man page |
+| `man/sprachspiel.1` | Update man page |
 
 ---
 
@@ -363,7 +363,7 @@ curl http://localhost:11434/api/chat -d '{
 
 ### To compare with devstral-small-2:
 ```bash
-# Test via ask-ai
+# Test via sprachspiel
 ask query -c -m devstral-small-2 "Your query"
 ask query -c -m deepseek-coder-v2 "Your query"
 ```

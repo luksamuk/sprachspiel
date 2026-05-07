@@ -5,8 +5,8 @@ The `translate` command translates text between 50+ languages using the Translat
 ## Synopsis
 
 ```bash
-ask-ai [GLOBAL OPTIONS] translate <LANGUAGE> [TEXT]
-ask-ai [GLOBAL OPTIONS] t <LANGUAGE> [TEXT]
+sprachspiel [GLOBAL OPTIONS] translate <LANGUAGE> [TEXT]
+sprachspiel [GLOBAL OPTIONS] t <LANGUAGE> [TEXT]
 ```
 
 ## Description
@@ -59,13 +59,13 @@ These options are specific to the translate subcommand:
 
 ```bash
 # Explicit source and target
-ask-ai translate en:pt "Hello"
+sprachspiel translate en:pt "Hello"
 
 # Auto-detect source (colon required)
-ask-ai translate :pt "Hello"
+sprachspiel translate :pt "Hello"
 
 # Just target language (auto-detect implied)
-ask-ai translate pt "Hello"
+sprachspiel translate pt "Hello"
 ```
 
 ## Examples
@@ -74,15 +74,15 @@ ask-ai translate pt "Hello"
 
 ```bash
 # English to Portuguese
-ask-ai translate en:pt "Hello world"
+sprachspiel translate en:pt "Hello world"
 # Output: Olá mundo
 
 # Spanish to English
-ask-ai translate es:en "Hola mundo"
+sprachspiel translate es:en "Hola mundo"
 # Output: Hello world
 
 # French to Portuguese
-ask-ai translate fr:pt "Bonjour le monde"
+sprachspiel translate fr:pt "Bonjour le monde"
 # Output: Olá mundo
 ```
 
@@ -90,25 +90,25 @@ ask-ai translate fr:pt "Bonjour le monde"
 
 ```bash
 # Auto-detect to Portuguese
-ask-ai translate :pt "Hello world"
-ask-ai translate pt "Hello world"
+sprachspiel translate :pt "Hello world"
+sprachspiel translate pt "Hello world"
 
 # Works with any language
-ask-ai translate :en "こんにちは"
-ask-ai translate :pt "שלום"
+sprachspiel translate :en "こんにちは"
+sprachspiel translate :pt "שלום"
 ```
 
 ### From Stdin
 
 ```bash
 # Translate file content
-cat document.txt | ask-ai translate :pt
+cat document.txt | sprachspiel translate :pt
 
 # Translate command output
-echo "Hello world" | ask-ai translate :es
+echo "Hello world" | sprachspiel translate :es
 
 # Chain with OCR
-ask-ai ocr japanese.png | ask-ai translate ja:pt
+sprachspiel ocr japanese.png | sprachspiel translate ja:pt
 ```
 
 ### Translation Styles
@@ -117,42 +117,42 @@ Use `-p` or `--prompt` for different styles:
 
 ```bash
 # Formal style
-ask-ai translate en:pt -p formal "Hey, what's up?"
+sprachspiel translate en:pt -p formal "Hey, what's up?"
 
 # Casual style
-ask-ai translate en:pt -p casual "Greetings and salutations"
+sprachspiel translate en:pt -p casual "Greetings and salutations"
 
 # Technical style
-ask-ai translate en:pt -p technical "API endpoint response"
+sprachspiel translate en:pt -p technical "API endpoint response"
 
 # Literary style
-ask-ai translate en:pt -p literary "It was the best of times"
+sprachspiel translate en:pt -p literary "It was the best of times"
 ```
 
 ### List Languages
 
 ```bash
 # List all supported languages
-ask-ai translate --list
+sprachspiel translate --list
 
 # Filter by substring
-ask-ai translate --list portuguese
-ask-ai translate --list pt
-ask-ai translate --list spanish
+sprachspiel translate --list portuguese
+sprachspiel translate --list pt
+sprachspiel translate --list spanish
 ```
 
 ### Plain Text Output
 
 ```bash
 # No markdown formatting
-ask-ai --plain translate :pt "Hello **world**"
+sprachspiel --plain translate :pt "Hello **world**"
 # Output: Olá **mundo**
 ```
 ### Logging
 
 ```bash
 # See translation process
-ask-ai -v translate en:pt "Test"
+sprachspiel -v translate en:pt "Test"
 # Shows model configuration and processing
 ```
 
@@ -179,13 +179,13 @@ Translation works great in pipelines:
 
 ```bash
 # OCR → Translate
-ask-ai ocr japanese.png | ask-ai translate ja:pt
+sprachspiel ocr japanese.png | sprachspiel translate ja:pt
 
 # OCR → Summarize → Translate
-ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
 
 # File → Translate → Save
-cat english.txt | ask-ai translate :pt > portuguese.txt
+cat english.txt | sprachspiel translate :pt > portuguese.txt
 ```
 
 ## Best Practices

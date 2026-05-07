@@ -1,6 +1,6 @@
 # Roadmap
 
-This document outlines planned features and the current state of Ask-AI.
+This document outlines planned features and the current state of Sprachspiel.
 
 ## Milestones
 
@@ -18,14 +18,14 @@ This document outlines planned features and the current state of Ask-AI.
 **Core CLI:**
 - 5 subcommands (query, chat, translate, ocr, summarize)
 - 3 built-in model presets (llama3.1, translategemma, glm-ocr)
-- User-defined models via `~/.config/ask-ai/models.toml`
+- User-defined models via `~/.config/sprachspiel/models.toml`
 - Optional model parameters (top_k, top_p, repeat_penalty)
 - Thinking support for cloud models (`thinking = true` in config)
 - Markdown rendering via termimad
 - Model capability detection (tools, vision, ocr)
 - Pipe support for all commands
 - Debug mode, Think mode, Code mode
-- Configuration file support (`~/.config/ask-ai/config.toml`)
+- Configuration file support (`~/.config/sprachspiel/config.toml`)
 - Per-subcommand model configuration
 - AGENTS.md context injection with security sanitization
 - Shell argument handling
@@ -136,12 +136,12 @@ This document outlines planned features and the current state of Ask-AI.
 ### v0.43.0 (Planned)
 
 **Features:**
-- Config Upgrade Command (#105) — `ask-ai config upgrade` merges missing default fields into existing config.toml
+- Config Upgrade Command (#105) — `sprachspiel config upgrade` merges missing default fields into existing config.toml
 - `/session forget` (#36) — Destructive session deletion with confirmations
 
 **Infrastructure:**
 - Retry Threshold with Backoff (#116) — Recoverable server errors with exponential backoff
-- Tool Trait + Proc Macro (#118) — `#[ask_ai::tool]` replacing `#[ollama_rs::function]`
+- Tool Trait + Proc Macro (#118) — `#[sprachspiel::tool]` replacing `#[ollama_rs::function]`
 
 ---
 
@@ -171,7 +171,7 @@ This document outlines planned features and the current state of Ask-AI.
 **Features:**
 - Document Import Tool — TXT, MD, ORG import with semantic search
 - Query module refactoring — reduced cognitive complexity
-- DB rename: `embeddings.db` → `ask-ai.db` + `--db` CLI flag
+- DB rename: `embeddings.db` → `sprachspiel.db` + `--db` CLI flag
 - Logging overhaul — `MultiLogger` with file logging, data sensitivity policy
 - Agent spawning tools — 4 dedicated tools replacing generic `spawn_subagent`
 
@@ -233,7 +233,7 @@ No critical bugs currently open. See [GitHub Issues](https://github.com/luksamuk
 
 | Storage | Status | Description |
 |---------|--------|-------------|
-| SQLite | 🟢 Primary | `~/.local/share/ask-ai/ask-ai.db` |
+| SQLite | 🟢 Primary | `~/.local/share/sprachspiel/sprachspiel.db` |
 | JSON | 🟡 Backup | Only for `/export json` and `/restore` command |
 
 **Note:** `/restore` command is kept indefinitely for disaster recovery from JSON backups.
@@ -473,7 +473,7 @@ No critical bugs currently open. See [GitHub Issues](https://github.com/luksamuk
 **Priority:** Medium  
 **Status:** Research needed
 
-**Goal:** Load custom behaviors from `.ask-ai/skills/` or `~/.config/ask-ai/skills/`.
+**Goal:** Load custom behaviors from `.sprachspiel/skills/` or `~/.config/sprachspiel/skills/`.
 
 **Tasks:**
 - [ ] Research: Skill systems in other agents
@@ -513,7 +513,7 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 | Card # | Feature | Status | Effort |
 |--------|---------|--------|--------|
 | #116 | Retry Threshold with Backoff | 📋 Ready | 1.5-2 days |
-| #118 | Tool Trait + `#[ask_ai::tool]` Proc Macro | 📋 Ready | 1-1.5 weeks |
+| #118 | Tool Trait + `#[sprachspiel::tool]` Proc Macro | 📋 Ready | 1-1.5 weeks |
 | #119 | Agnostic Provider Types | 📋 Planned | 1 week |
 | #120 | OllamaProvider (reqwest direct) | 📋 Planned | 2-3 weeks |
 | #121 | Consumer Migration | 📋 Planned | 2-3 weeks |
@@ -754,7 +754,7 @@ enum Provider {
 **Configuration:**
 
 ```toml
-# ~/.config/ask-ai/models.toml
+# ~/.config/sprachspiel/models.toml
 
 # Default provider (ollama or openai)
 default_provider = "ollama"

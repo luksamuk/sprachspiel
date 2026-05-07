@@ -1,4 +1,4 @@
-//! Settings module — application configuration from `~/.config/ask-ai/config.toml`.
+//! Settings module — application configuration from `~/.config/sprachspiel/config.toml`.
 //!
 //! Provides [`Settings`] and its sub-structs for configuring models, tools, output,
 //! display, LED, feedback, and fact auto-extraction. Settings are loaded from TOML
@@ -395,17 +395,19 @@ impl Settings {
 
     /// Get the config file path
     pub fn config_path() -> Option<PathBuf> {
+        use crate::consts::app;
+
         // Check XDG_CONFIG_HOME first
         if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-            let path = PathBuf::from(xdg_config).join("ask-ai").join("config.toml");
+            let path = PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR).join("config.toml");
             if path.exists() {
                 return Some(path);
             }
         }
 
-        // Fall back to ~/.config/ask-ai/config.toml
+        // Fall back to ~/.config/sprachspiel/config.toml
         if let Some(home_dir) = dirs::home_dir() {
-            let path = home_dir.join(".config").join("ask-ai").join("config.toml");
+            let path = home_dir.join(".config").join(app::APP_CONFIG_DIR).join("config.toml");
             if path.exists() {
                 return Some(path);
             }
@@ -416,12 +418,14 @@ impl Settings {
 
     /// Get the config directory path (for creating new config)
     pub fn config_dir() -> Option<PathBuf> {
+        use crate::consts::app;
+
         if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-            return Some(PathBuf::from(xdg_config).join("ask-ai"));
+            return Some(PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR));
         }
 
         if let Some(home_dir) = dirs::home_dir() {
-            return Some(home_dir.join(".config").join("ask-ai"));
+            return Some(home_dir.join(".config").join(app::APP_CONFIG_DIR));
         }
 
         None
@@ -548,8 +552,8 @@ impl Settings {
             return Ok(config_path);
         }
 
-        let sample_config = r#"# Ask-AI Configuration File
-# Location: ~/.config/ask-ai/config.toml
+        let sample_config = r#"# Sprachspiel Configuration File
+# Location: ~/.config/sprachspiel/config.toml
 # 
 # This is a complete example configuration showing all available options.
 # Lines starting with '#' are comments and are ignored.
@@ -565,7 +569,7 @@ impl Settings {
 [model]
 
 # The default model preset to use for general queries.
-# See all available models with: ask-ai --list-models
+# See all available models with: sprachspiel --list-models
 # Recommended: "qwen3.5:4b" (built-in, multimodal) or "ministral" (from models.toml)
 # Default: "qwen3.5:4b"
 default = "qwen3.5:4b"

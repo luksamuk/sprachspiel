@@ -1,6 +1,6 @@
 ---
 name: tool-guidelines
-description: Complete guidelines for developing LLM tools in ask-ai: error handling philosophy, parameter types for LLM compatibility, empty string normalization, docstrings, API response structs, file write security, and output conventions.
+description: Complete guidelines for developing LLM tools in sprachspiel: error handling philosophy, parameter types for LLM compatibility, empty string normalization, docstrings, API response structs, file write security, and output conventions.
 license: MIT
 compatibility: opencode
 metadata:
@@ -10,7 +10,7 @@ metadata:
 
 ## What I do
 
-I provide comprehensive guidelines for creating and modifying LLM tools in the ask-ai project. I cover error handling, parameter types, security, documentation, and output conventions.
+I provide comprehensive guidelines for creating and modifying LLM tools in the sprachspiel project. I cover error handling, parameter types, security, documentation, and output conventions.
 
 ## When to use me
 

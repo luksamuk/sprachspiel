@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Ask AI Uninstaller
+# Sprachspiel Uninstaller
 # =============================================================================
-# This script removes ask-ai from your system.
+# This script removes sprachspiel from your system.
 #
 # Usage:
-#   ./uninstall.sh    # Remove ask-ai
+#   ./uninstall.sh    # Remove sprachspiel
 #   ./uninstall.sh --help  # Show help
 # =============================================================================
 

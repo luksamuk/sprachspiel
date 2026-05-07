@@ -11,7 +11,7 @@
       <rect width="1000" height="2000" fill="#020617"/>
       <rect width="1000" height="2000" fill="url(#grid)"/>
       <!-- Title -->
-      <text x="500" y="60" text-anchor="middle" fill="#e2e8f0" font-size="28" font-weight="700">Ask-AI Milestone Map</text>
+      <text x="500" y="60" text-anchor="middle" fill="#e2e8f0" font-size="28" font-weight="700">Sprachspiel Milestone Map</text>
       <!-- M1 -->
       <rect x="90" y="100" width="820" height="520" rx="16" fill="rgba(15,23,42,0.85)" stroke="rgba(245,158,11,0.2)" stroke-width="1"/>
       <rect x="90" y="100" width="820" height="3" rx="1" fill="#f59e0b"/>
@@ -75,5 +75,5 @@
       <text x="130" y="1450" fill="#60a5fa" font-size="10">📝 DRAFT</text><text x="210" y="1450" fill="#cbd5e1" font-size="12">B5 MCP Server</text><text x="360" y="1450" fill="#64748b" font-size="10">— end, needs reflection</text>
       <text x="130" y="1485" fill="#60a5fa" font-size="10">📝 DRAFT</text><text x="210" y="1485" fill="#cbd5e1" font-size="12">… + research icebox items</text>
       <!-- Watermark -->
-      <text x="500" y="1980" text-anchor="middle" fill="#1e293b" font-size="10">Ask-AI Milestone Map · viewBox 1000×2000</text>
+      <text x="500" y="1980" text-anchor="middle" fill="#1e293b" font-size="10">Sprachspiel Milestone Map · viewBox 1000×2000</text>
     </svg>

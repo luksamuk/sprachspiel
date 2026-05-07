@@ -108,7 +108,7 @@ fn init_chat_database(
              \n\
              To diagnose:\n\
              - Check if Ollama is running: ollama list\n\
-             - Check directory permissions: ls -la ~/.local/share/ask-ai/\n\
+                           - Check directory permissions: ls -la ~/.local/share/sprachspiel/\n\
              -               Run with -v for more information\n\
              \n\
              Use --anonymous for anonymous mode without database persistence.\n\

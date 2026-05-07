@@ -1,18 +1,18 @@
 # query Command
 
-The `query` command is the default mode of Ask-AI. It sends your question or prompt to an LLM and returns a formatted response.
+The `query` command is the default mode of Sprachspiel. It sends your question or prompt to an LLM and returns a formatted response.
 
 ## Synopsis
 
 ```bash
-ask-ai [GLOBAL OPTIONS] query [QUERY]
-ask-ai [GLOBAL OPTIONS] [QUERY]
-ask-ai [GLOBAL OPTIONS] q [QUERY]
+sprachspiel [GLOBAL OPTIONS] query [QUERY]
+sprachspiel [GLOBAL OPTIONS] [QUERY]
+sprachspiel [GLOBAL OPTIONS] q [QUERY]
 ```
 
 ## Description
 
-The query command is the most flexible way to interact with LLMs through Ask-AI. It supports:
+The query command is the most flexible way to interact with LLMs through Sprachspiel. It supports:
 
 - **Multiple models** - Switch between different LLMs
 - **Tool integration** - Automatic use of Pokémon, Weather, and Web Search tools
@@ -62,24 +62,24 @@ The `-p` flag selects different system prompts:
 
 ```bash
 # Simple question
-ask-ai "What is the capital of France?"
+sprachspiel "What is the capital of France?"
 
 # Equivalent explicit forms
-ask-ai query "What is the capital of France?"
-ask-ai q "What is the capital of France?"
+sprachspiel query "What is the capital of France?"
+sprachspiel q "What is the capital of France?"
 ```
 
 ### Model Selection
 
 ```bash
 # Use a different model
-ask-ai -m qwen2.5-coder:7b query "Generate a Python function"
+sprachspiel -m qwen2.5-coder:7b query "Generate a Python function"
 
 # Code-focused model
-ask-ai -m qwen3-coder query "Write a Rust struct for users"
+sprachspiel -m qwen3-coder query "Write a Rust struct for users"
 
 # Smaller model for quick answers
-ask-ai -m nanbeige4.1:3b query "What is 2+2?"
+sprachspiel -m nanbeige4.1:3b query "What is 2+2?"
 ```
 
 ### Think Mode
@@ -88,10 +88,10 @@ Think mode enables reasoning models to show their thought process:
 
 ```bash
 # Enable thinking
-ask-ai -t query "Explain step by step how to solve x^2 + 5x + 6 = 0"
+sprachspiel -t query "Explain step by step how to solve x^2 + 5x + 6 = 0"
 
 # Combine with specific model
-ask-ai -m lfm -t query "What are the ethical implications of AI?"
+sprachspiel -m lfm -t query "What are the ethical implications of AI?"
 ```
 
 ### Code Mode
@@ -100,13 +100,13 @@ Code mode optimizes responses for code output. Use the `-c` flag or `--code`:
 
 ```bash
 # Basic code mode (uses [model.code] config)
-ask-ai -c query "Write a Python function to sort a list"
+sprachspiel -c query "Write a Python function to sort a list"
 
 # Code with tools (file operations)
-ask-ai -c --tools query "Read my config.rs and suggest improvements"
+sprachspiel -c --tools query "Read my config.rs and suggest improvements"
 
 # Explicit model selection
-ask-ai -m qwen2.5-coder:7b -c query "Implement a thread pool in Rust"
+sprachspiel -m qwen2.5-coder:7b -c query "Implement a thread pool in Rust"
 ```
 
 #### Code Mode Configuration
@@ -114,7 +114,7 @@ ask-ai -m qwen2.5-coder:7b -c query "Implement a thread pool in Rust"
 Code mode uses settings from `[model.code]` in your config file:
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 [model.code]
 model = "qwen2.5-coder:7b"  # Recommended: fast and accurate
 thinking = false
@@ -125,20 +125,20 @@ With tools enabled, the model can read your files before generating code:
 
 ```bash
 # Model reads your project files first, then generates code
-ask-ai -c "Add error handling to my API handlers"
+sprachspiel -c "Add error handling to my API handlers"
 ```
 
 #### Code Mode Examples
 
 ```bash
 # Generate code only (minimal explanation)
-ask-ai -c query "Rust function to parse JSON"
+sprachspiel -c query "Rust function to parse JSON"
 
 # With file context (if tools enabled in config)
-ask-ai -c query "Convert this function to async"
+sprachspiel -c query "Convert this function to async"
 
 # Debug with code mode
-ask-ai -c query "Why does this code panic?"
+sprachspiel -c query "Why does this code panic?"
 ```
 
 ### Logging
@@ -147,7 +147,7 @@ Logging shows what's happening under the hood:
 
 ```bash
 # See model configuration
-ask-ai -v query "Test query"
+sprachspiel -v query "Test query"
 #
 # Shows:
 # - Model being used
@@ -161,13 +161,13 @@ ask-ai -v query "Test query"
 
 ```bash
 # Read from stdin
-echo "What is this?" | ask-ai
+echo "What is this?" | sprachspiel
 
 # Process file content
-cat code.rs | ask-ai "Review this code"
+cat code.rs | sprachspiel "Review this code"
 
 # Chain commands
-cat error.log | ask-ai "Explain this error"
+cat error.log | sprachspiel "Explain this error"
 ```
 
 ### Tool Usage
@@ -176,16 +176,16 @@ Tools are automatically enabled for capable models:
 
 ```bash
 # Pokémon tool (auto-enabled)
-ask-ai query "Tell me about Pikachu"
+sprachspiel query "Tell me about Pikachu"
 
 # Weather tool (auto-enabled)
-ask-ai query "What's the weather in Tokyo?"
+sprachspiel query "What's the weather in Tokyo?"
 
 # Web search tool (auto-enabled)
-ask-ai query "Latest news about Rust programming"
+sprachspiel query "Latest news about Rust programming"
 
 # Force tools on any model
-ask-ai --tools query "Tell me about Charizard"
+sprachspiel --tools query "Tell me about Charizard"
 ```
 
 ## Tool Integration
@@ -219,7 +219,7 @@ When tools are enabled, the model can access:
 Responses are formatted with markdown:
 
 ```bash
-ask-ai "Create a simple table"
+sprachspiel "Create a simple table"
 # Output:
 # | Column 1 | Column 2 |
 # |----------|----------|
@@ -231,18 +231,18 @@ ask-ai "Create a simple table"
 For piping to other programs:
 
 ```bash
-ask-ai --plain query "List files" | wc -w
+sprachspiel --plain query "List files" | wc -w
 ```
 
 ## Common Patterns
 # Think + specific model
-ask-ai -m glm-5 -t query "Complex reasoning task"
+sprachspiel -m glm-5 -t query "Complex reasoning task"
 #
 # Code + verbose
-ask-ai -c -v query "Debug this function"
+sprachspiel -c -v query "Debug this function"
 #
 # Tools + plain
-ask-ai --tools --plain query "Get weather" | grep temperature
+sprachspiel --tools --plain query "Get weather" | grep temperature
 
 ### Error Handling
 
@@ -250,7 +250,7 @@ If a model doesn't support a feature:
 
 ```bash
 # Warning if think mode not supported
-ask-ai -m ministral-3:14b -t query "Question"
+sprachspiel -m ministral-3:14b -t query "Question"
 # Output: Warning: ministral-3:14b does not support think mode. Ignoring -t.
 ```
 
@@ -277,10 +277,10 @@ Content is sanitized to remove:
 
 ```bash
 # If AGENTS.md exists, context is automatically loaded
-ask-ai "Explain the project structure"
+sprachspiel "Explain the project structure"
 
 # Disable AGENTS.md context
-ask-ai --ignore-agents "General question"
+sprachspiel --ignore-agents "General question"
 ```
 
 ## Best Practices
