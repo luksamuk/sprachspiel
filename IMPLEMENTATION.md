@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.40.0** - 2026-03-29 (Document Import Tool)
+**v0.43.0** - 2026-05-07 (Sprachspiel Rename)
 
 ## Current Implementation Status
 
@@ -159,7 +159,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
-| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | Rename complete; both commands merged and functional |
+| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | Rename complete; both commands merged and functional; #126 IN PROGRESS |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding | Configurable model + provider abstraction | #106, #107 | Config.toml `[embedding]` section works; at least one alternative model validated |
@@ -172,6 +172,68 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 - **W3**: `#90` is closable now (decay fix merged); `#91`-`#97` need research before implementation can be sized
 - **W4**: independent of W2 (embedding config is orthogonal to provider migration)
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
+
+### 🔄 PRIORITY 0: Rename ask-ai → Sprachspiel (IN PROGRESS) [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #126
+**Branch:** `feat/rename-to-sprachspiel`
+
+**Goal:** Complete project rename from ask-ai to Sprachspiel.
+
+**Design Decisions:**
+- **No migration code:** No fallback paths, no `APP_DIR_LEGACY`, no backward compatibility dirs. Users rename manually.
+- **No transition period:** No symlink/wrapper. Clean cut.
+- **DB migration only:** `migrate_legacy_db()` extended: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (simple rename-if-exists).
+- **Full rename:** Binary, crate, all paths, all docs, all scripts, man page, assets, module names.
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 0 | Art generation (BANNER_LOGO for SPRACHSPIEL) | ✅ Done (Hermes Agent) |
+| 1 | Constants & path centralization (APP_NAME, DB_FILENAME, .join() calls) | 🔄 In Progress |
+| 2 | Binary & module rename (Cargo.toml, main.rs, doc comments) | 📋 Pending |
+| 3 | Data paths & DB migration (all path functions, .sprachspiel/, sprachspiel.db) | 📋 Pending |
+| 4 | Makefile, scripts & man page | 📋 Pending |
+| 5 | Assets & art (scripts rename, PDF rename, BANNER_LOGO update) | 📋 Pending |
+| 6 | Documentation (doc/, CHANGELOG, AGENTS.md, IMPLEMENTATION.md, .opencode/) | 📋 Pending |
+| 7 | Testing (cargo build, clippy, test, manual) | 📋 Pending |
+| 8 | GitHub repo rename (post-merge) | 📋 Pending |
+
+**Files to Create:**
+- `src/consts/app.rs` — Centralized app name constants (`APP_NAME`, `DB_FILENAME`)
+
+**Files to Modify (major):**
+- `Cargo.toml` — `name`, `bin_name`
+- `src/main.rs` — `name`, `bin_name`, `about`
+- `src/chat/view/mod.rs` — `BANNER_LOGO` constant
+- `src/db/connection.rs` — DB path, migration logic
+- `src/settings.rs` — config paths
+- `src/skills/loader.rs` — skills directory paths
+- `src/chat/input/mod.rs` — history path
+- `src/external/config.rs` — tools config path
+- `src/tools/run_cmd.rs` — sandbox paths
+- `src/logging.rs` — log path, module path
+- `src/soul.rs` — SOUL.md path
+- `src/user_models.rs` — models.toml path
+- `Makefile` — `BINARY`, `TARGET`, all tarball names
+- `man/ask-ai.1` → `man/sprachspiel.1`
+- `scripts/install-ask-ai.sh` → `scripts/install-sprachspiel.sh`
+- `scripts/install.sh`, `scripts/uninstall.sh`
+
+**Extra scope:**
+- All `ask-ollama-rs` remnants in docs, assets, .opencode skills, SMOKE_TEST, STRESS_TEST
+- All `ask-ai` references in documentation (~1295 refs)
+- `assets/ask-ai-banner.py` → `assets/sprachspiel-banner.py`
+- `assets/ask-ai-architecture.pdf` → `assets/sprachspiel-architecture.pdf`
+- `.ask-ai/` → `.sprachspiel/` (project skills directory)
+- `ask-ai.db` → `sprachspiel.db` (with migration from old names)
+- GitHub repo rename (`ask-ollama-rs` → `sprachspiel`) — last step, post-merge
+
+**Related:** Issue #126
+
+---
 
 ### ✅ PRIORITY 0: Factual Memory System (COMPLETED) [M1]
 
