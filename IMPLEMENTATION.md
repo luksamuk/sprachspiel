@@ -159,7 +159,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
-| **W1** | Quick Wins | Small independent commands, no dependencies | #105, #36 | Both commands merged and functional |
+| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | Rename complete; both commands merged and functional |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding | Configurable model + provider abstraction | #106, #107 | Config.toml `[embedding]` section works; at least one alternative model validated |
@@ -167,7 +167,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 
 **Wave dependencies:**
 
-- **W1** has no blockers — can start immediately
+- **W1** has no blockers — can start immediately. #126 (rename) touches many files but is independent; do it first since it's `priority:critical`
 - **W2** has internal dependency chain: `#116 → #118 → #119 → #120 → #121 → #122 → #123`; `#11` depends on `#121`; `#72` closes when chain completes
 - **W3**: `#90` is closable now (decay fix merged); `#91`-`#97` need research before implementation can be sized
 - **W4**: independent of W2 (embedding config is orthogonal to provider migration)
