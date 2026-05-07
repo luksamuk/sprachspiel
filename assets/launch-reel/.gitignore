@@ -1,0 +1,23 @@
+# Rendered video outputs — regenerate with npx hyperframes render
+renders/
+
+# Reference video and audio (large binaries, not source)
+ref/heygen_ref.mp4
+ref/frame_*.png
+assets/vo_final.mp3
+assets/v2/
+
+# Node modules (installed by npx hyperframes)
+node_modules/
+
+# HyperFrames cache
+.hyperframes/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~

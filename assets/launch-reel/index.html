@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sprachspiel</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; background: #000; }
+    </style>
+  </head>
+  <body>
+    <div data-composition-id="root" data-width="1920" data-height="1080" data-start="0" data-duration="38.0" style="width:1920px;height:1080px;position:relative;overflow:hidden;background:#000;">
+
+      <!-- Single canvas — everything rendered here -->
+      <canvas id="c" style="position:absolute;inset:0;width:100%;height:100%;z-index:1;"></canvas>
+
+      <!-- Captions overlay — auto-sizing -->
+      <div id="caps" style="position:absolute;left:50%;bottom:80px;transform:translateX(-50%);width:1600px;z-index:50;pointer-events:none;text-align:center;">
+        <div id="cg0" class="cg"><span class="ct" style="font-size:48px;">Sprachspiel.</span></div>
+        <div id="cg1" class="cg"><span class="ct" style="font-size:28px;">Cognitive interaction harness. Open source. Rust-native.</span></div>
+        <div id="cg2" class="cg"><span class="ct" style="font-size:36px;">Persistent memory. Semantic search.</span></div>
+        <div id="cg3" class="cg"><span class="ct" style="font-size:26px;">Hybrid RAG. BM25. Vector. Reciprocal rank fusion.</span></div>
+        <div id="cg4" class="cg"><span class="ct" style="font-size:30px;">Fifty tools. File ops. Web search. Vision. OCR.</span></div>
+        <div id="cg5" class="cg"><span class="ct" style="font-size:32px;">Adaptive personality. Your agent. Your rules.</span></div>
+        <div id="cg6" class="cg"><span class="ct" style="font-size:32px;">One binary. Zero dependencies. Local-first.</span></div>
+        <div id="cg7" class="cg"><span class="ct" style="font-size:40px;">Your terminal. Your LLM.</span></div>
+      </div>
+
+      <!-- CRT layers -->
+      <div style="position:absolute;inset:0;z-index:80;pointer-events:none;background:repeating-linear-gradient(to bottom,transparent 0px,transparent 2px,rgba(0,0,0,0.12) 2px,rgba(0,0,0,0.12) 4px);"></div>
+      <div style="position:absolute;inset:0;z-index:85;pointer-events:none;background:radial-gradient(ellipse at center,transparent 30%,rgba(0,0,0,0.6) 100%);"></div>
+      <div style="position:absolute;top:0;left:0;width:100%;height:3px;z-index:90;background:linear-gradient(90deg,rgba(0,120,255,0.4),rgba(255,180,70,0.3),rgba(0,200,200,0.4));"></div>
+      <div style="position:absolute;bottom:0;left:0;width:100%;height:5px;z-index:90;background:linear-gradient(90deg,rgba(200,0,200,0.4),rgba(0,200,200,0.35),rgba(255,180,70,0.4),rgba(0,120,255,0.35));box-shadow:0 0 16px rgba(200,0,200,0.15);"></div>
+
+      <!-- Fade-out -->
+      <div id="fo" style="position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:99;"></div>
+
+      <!-- Audio -->
+<audio id="vo" src="assets/vo_final.mp3" data-start="0" data-duration="38.0" data-track-index="10" data-volume="1.0"></audio>
+
+      <style>
+        .cg { position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);opacity:0;will-change:transform,opacity;white-space:nowrap; }
+        .ct { font-family:'JetBrains Mono',ui-monospace,monospace;font-weight:500;letter-spacing:0.04em;color:#D4E2D0;text-shadow:0 0 2px rgba(0,0,0,0.9),0 0 6px rgba(0,0,0,0.7),0 0 14px rgba(0,0,0,0.5),0 0 1px rgba(124,180,132,0.55),0 0 18px rgba(124,180,132,0.22); }
+      </style>
+
+      <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+      <script>
+      (function(){
+        window.__timelines = window.__timelines || {};
+        var tl = gsap.timeline({ paused: true });
+
+        // === CANVAS ENGINE ===
+        var canvas = document.getElementById("c");
+        var W = 480, H = 270;
+        canvas.width = W; canvas.height = H;
+        var ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+        // Seeded PRNG
+        var pseed = 42;
+        function prng() { pseed = (pseed * 1664525 + 1013904223) >>> 0; return pseed / 4294967296; }
+        function hash2(ix, iy) { var n = (ix * 374761393 + iy * 668265263) | 0; n = ((n ^ (n >>> 13)) * 1274126177) | 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296; }
+        function sm(v) { return v * v * v * (v * (v * 6 - 15) + 10); }
+        function vn(x, y) {
+          var ix = Math.floor(x), iy = Math.floor(y);
+          var fx = sm(x - ix), fy = sm(y - iy);
+          var n00 = hash2(ix, iy), n10 = hash2(ix + 1, iy), n01 = hash2(ix, iy + 1), n11 = hash2(ix + 1, iy + 1);
+          return (n00 * (1 - fx) + n10 * fx) * (1 - fy) + (n01 * (1 - fx) + n11 * fx) * fy;
+        }
+        function fbm(x, y, oct) {
+          oct = oct || 4; var v = 0, a = 1, fx = 1, fy = 0.85, m = 0;
+          for (var i = 0; i < oct; i++) { v += vn(x * fx + i * 13.7, y * fy + i * 27.3) * a; m += a; a *= 0.5; fx *= 2; fy *= 2; }
+          return v / m;
+        }
+        function ahex(hex, a) { var m = hex.replace("#",""); return "rgba("+parseInt(m.substr(0,2),16)+","+parseInt(m.substr(2,2),16)+","+parseInt(m.substr(4,2),16)+","+a+")"; }
+        function bg() { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
+
+        // Palettes
+        var P = {
+          green:  { dim:"#0e1a12", mid:"#4a8a5a", accent:"#7CB484", hi:"#D4E2D0" },
+          amber:  { dim:"#1a0e06", mid:"#7a5a3a", accent:"#A87850", hi:"#E0D0B8" },
+          purple: { dim:"#170a26", mid:"#6a4a8a", accent:"#9966CC", hi:"#D8C8E8" },
+          blue:   { dim:"#0c1626", mid:"#3e5e8a", accent:"#5599DD", hi:"#C8DCEC" },
+          cyan:   { dim:"#061a1a", mid:"#3a7a7a", accent:"#55CCBB", hi:"#D0E8E0" },
+        };
+
+        // ASCII shader bg
+        var AR = " .·:-=+*#%@";
+        function asciiBg(t, p, o) {
+          o = o || {};
+          var cols = o.cols || 60, rows = o.rows || 20;
+          var cw = W / cols, ch = H / rows;
+          var sp = o.speed != null ? o.speed : 0.35, sc = o.scale != null ? o.scale : 0.18;
+          var ba = o.alpha != null ? o.alpha : 0.35;
+          ctx.font = (o.fontSize || 12) + "px 'VT323', monospace";
+          ctx.textBaseline = "top"; ctx.textAlign = "left";
+          for (var y = 0; y < rows; y++)
+            for (var x = 0; x < cols; x++) {
+              var v = fbm(x * sc + t * sp, y * sc * 0.85 + t * sp * 0.5, 4);
+              var idx = Math.floor(v * (AR.length - 1));
+              var c = AR[Math.max(0, Math.min(AR.length - 1, idx))];
+              if (c === " ") continue;
+              ctx.fillStyle = ahex(v > 0.65 ? p.accent : p.mid, ba * (0.25 + v * 0.85));
+              ctx.fillText(c, x * cw, y * ch);
+            }
+        }
+
+        // Chromatic text (centered)
+        function cC(txt, x, y, col, fs, fam, t, ints, wt) {
+          var w = Math.sin(t * 0.8) * 1.2, I = ints || 1.5;
+          ctx.font = (wt ? wt+" " : "") + fs + "px '" + fam + "', monospace";
+          ctx.textBaseline = "top"; ctx.textAlign = "center";
+          ctx.fillStyle = "rgba(220,40,80,0.28)"; ctx.fillText(txt, x - I - w, y);
+          ctx.fillStyle = "rgba(40,140,220,0.28)"; ctx.fillText(txt, x + I + w, y);
+          ctx.fillStyle = col; ctx.fillText(txt, x, y);
+          ctx.textAlign = "left";
+        }
+
+        // Glitch
+        function glitch(t) {
+          var per = 3.0, dur = 0.08, ph = t % per;
+          if (ph >= dur) return;
+          var gs = Math.floor(t / per) * 1009;
+          var by = ((gs * 131) & 0xff) / 255 * (H - 20) | 0;
+          var bh = 6 + ((gs * 47) & 0xf);
+          var dx = ((((gs * 7) & 0xff) / 255) - 0.5) * 14 | 0;
+          try { var sl = ctx.getImageData(0, by, W, bh); ctx.putImageData(sl, dx, by); } catch(e) {}
+          ctx.fillStyle = "rgba(220,40,80,0.07)"; ctx.fillRect(0, 0, W, H);
+          ctx.fillStyle = "rgba(40,140,220,0.07)"; ctx.fillRect(2, 0, W, H);
+        }
+
+        // === 3D WIREFRAME BRAIN (MRI-derived, decimated) ===
+        // Real human brain mesh from MRI (brainder.org, CC BY-SA 3.0)
+        // 120 vertices, 467 edges — vertex clustering decimation of pial surface
+        var brainV = [[-0.3109,-0.8923,-0.1131],[-0.0987,-0.8861,-0.0849],[-0.3060,-0.8414,0.1658],[-0.0986,-0.8376,0.1536],[-0.5852,-0.8009,-0.1267],[-0.5600,-0.7749,0.1243],[-0.6485,-0.5328,-0.1410],[-0.2587,-0.7405,0.4174],[-0.3046,-0.5445,-0.1510],[-0.0914,-0.5384,0.2056],[-0.6112,-0.5113,0.1852],[-0.3227,-0.5827,0.2198],[-0.1048,-0.7414,0.4189],[-0.1022,-0.5725,-0.0495],[-0.3110,-0.5057,0.4745],[-0.1018,-0.5163,0.4829],[-0.5646,-0.4563,0.4407],[-0.6442,-0.4494,-0.3668],[-0.4395,-0.4361,-0.3542],[-0.6783,-0.1647,-0.1359],[-0.3576,-0.2284,-0.1875],[-0.1054,-0.1821,0.5201],[-0.0820,-0.2085,0.2245],[-0.3643,-0.1853,0.2658],[-0.6602,-0.1747,0.2069],[-0.0854,-0.1652,-0.1364],[-0.3208,-0.1818,0.5198],[-0.5919,-0.1907,0.4532],[-0.6480,-0.1803,-0.4404],[-0.3816,-0.1512,-0.4347],[-0.1304,-0.1334,-0.3293],[-0.6409,0.1535,-0.1375],[-0.6258,0.1269,-0.4581],[-0.6408,0.1504,0.1942],[-0.3901,0.1970,0.2810],[-0.3510,0.1658,-0.4448],[-0.5558,0.1000,0.4268],[-0.3071,0.1556,0.4879],[-0.0855,0.1497,0.4860],[-0.0919,0.1800,0.2179],[-0.4310,0.1913,-0.1440],[-0.0760,0.1575,-0.1625],[-0.0960,0.1990,-0.3826],[-0.3375,0.5057,0.1959],[-0.5766,0.4476,0.1351],[-0.3813,0.5566,-0.1243],[-0.1001,0.4119,0.4350],[-0.2575,0.4087,0.4361],[-0.0969,0.5291,-0.1396],[-0.6056,0.4934,-0.1504],[-0.3217,0.5010,-0.4065],[-0.0851,0.5136,0.1917],[-0.5841,0.4940,-0.3680],[-0.0955,0.5215,-0.4229],[-0.2595,0.7450,0.1036],[-0.3170,0.7818,-0.1623],[-0.0787,0.7666,0.1440],[-0.5438,0.7294,-0.2155],[-0.0899,0.7958,-0.1453],[-0.5240,0.7227,-0.3574],[-0.2920,0.7768,-0.4008],[-0.0949,0.7691,-0.4130],[0.1086,-0.8151,0.1428],[0.1069,-0.8430,-0.1135],[0.3893,-0.7998,-0.1254],[0.3610,-0.7600,0.1134],[0.1222,-0.7185,0.3992],[0.1278,-0.5032,-0.1212],[0.2976,-0.6980,0.3885],[0.0904,-0.5260,0.1843],[0.4769,-0.5029,-0.1782],[0.1194,-0.4805,0.4703],[0.4656,-0.4930,0.1682],[0.3896,-0.4518,0.4472],[0.6754,-0.4375,-0.1717],[0.4698,-0.4149,-0.3914],[0.6588,-0.4069,0.1254],[0.6659,-0.3996,-0.3882],[0.0943,-0.1715,-0.1976],[0.2501,-0.3626,-0.3697],[0.4801,-0.1460,0.2005],[0.4704,-0.1397,-0.1711],[0.4446,-0.1379,-0.4851],[0.1164,-0.1554,0.5186],[0.4075,-0.1486,0.4524],[0.0345,-0.1439,0.2233],[0.6953,-0.1562,-0.1826],[0.2237,-0.1051,-0.4749],[0.6809,-0.1335,0.1461],[0.6718,-0.1469,-0.4372],[0.6450,-0.1477,0.3758],[0.6749,0.1762,-0.1423],[0.4648,0.2127,-0.1733],[0.4528,0.1684,-0.4811],[0.6564,0.1370,-0.4275],[0.4042,0.1650,0.4307],[0.4781,0.2016,0.2068],[0.0575,0.2097,0.2183],[0.1299,0.2158,-0.4232],[0.1207,0.1822,0.4762],[-0.0030,0.2003,-0.1970],[0.6289,0.0383,0.3575],[0.6800,0.1592,0.1434],[0.1262,0.5514,0.1746],[0.1243,0.4559,0.4179],[0.3309,0.4086,0.3906],[0.4498,0.5560,-0.1686],[0.4172,0.5132,0.1320],[0.6503,0.4493,-0.1576],[0.6457,0.4221,0.0255],[0.0471,0.5759,-0.1790],[0.4269,0.5286,-0.4099],[0.0890,0.5518,-0.4545],[0.6345,0.4548,-0.3645],[0.3480,0.7849,-0.1901],[0.1082,0.7821,0.0888],[0.3208,0.7551,0.0363],[0.3634,0.7732,-0.4074],[0.1188,0.8225,-0.1830],[0.1180,0.8038,-0.4151]];
+var brainE = [[15,21],[55,57],[96,104],[29,32],[70,82],[8,9],[40,41],[8,18],[21,37],[11,14],[11,23],[100,110],[92,106],[111,119],[10,27],[41,42],[81,87],[73,83],[14,15],[74,75],[66,71],[95,107],[106,107],[106,116],[7,12],[96,99],[107,108],[99,104],[70,77],[40,45],[80,81],[48,58],[80,90],[62,69],[110,118],[25,29],[81,82],[81,91],[22,23],[43,55],[103,106],[103,115],[87,98],[114,115],[106,111],[76,88],[88,90],[96,103],[29,40],[48,53],[77,89],[40,49],[69,85],[80,85],[92,96],[62,64],[33,37],[102,109],[81,86],[95,97],[103,110],[87,93],[114,119],[7,11],[55,60],[99,103],[6,24],[21,22],[29,35],[69,71],[39,48],[54,55],[91,113],[3,9],[43,45],[43,54],[103,105],[35,50],[95,101],[106,110],[65,69],[17,29],[28,29],[9,25],[47,51],[6,10],[6,19],[50,53],[6,28],[29,30],[21,26],[98,111],[80,84],[39,43],[2,3],[10,16],[2,12],[62,63],[110,112],[91,108],[102,108],[24,27],[32,40],[72,76],[24,36],[32,49],[43,49],[84,96],[95,96],[95,105],[9,11],[36,37],[65,73],[58,61],[42,53],[90,102],[101,102],[82,98],[31,34],[10,11],[2,7],[91,94],[23,39],[31,52],[83,99],[13,22],[32,35],[24,31],[64,67],[43,44],[16,27],[72,80],[35,40],[17,19],[65,68],[9,15],[38,51],[17,28],[68,73],[50,52],[50,61],[82,93],[20,29],[39,51],[23,34],[2,11],[83,85],[75,81],[24,26],[38,46],[57,59],[65,72],[49,55],[97,104],[117,119],[78,100],[27,36],[19,32],[90,101],[20,24],[31,33],[91,93],[45,53],[16,26],[93,111],[108,109],[49,50],[97,99],[49,59],[79,87],[98,100],[71,83],[12,15],[39,41],[23,24],[83,84],[115,116],[34,39],[75,89],[45,48],[53,61],[45,57],[64,70],[108,113],[26,34],[5,11],[67,81],[78,81],[86,94],[97,103],[70,86],[8,13],[19,31],[19,40],[111,114],[82,87],[20,23],[4,6],[31,32],[1,9],[34,43],[45,52],[74,88],[64,65],[85,97],[5,6],[86,89],[70,72],[67,85],[78,85],[70,81],[89,94],[0,4],[8,17],[11,13],[71,73],[4,10],[52,59],[112,119],[1,13],[34,47],[37,43],[96,107],[18,29],[107,116],[70,76],[0,8],[11,26],[63,64],[111,113],[4,5],[37,38],[34,51],[45,51],[37,47],[7,15],[96,102],[26,37],[0,3],[48,61],[80,102],[111,117],[33,36],[44,45],[25,41],[3,13],[22,26],[34,37],[66,69],[114,118],[103,118],[106,114],[55,59],[96,97],[67,70],[88,102],[107,115],[70,75],[8,11],[48,56],[11,16],[80,88],[100,103],[100,112],[111,112],[92,108],[62,67],[44,49],[33,49],[103,104],[14,26],[22,39],[74,77],[106,109],[66,73],[106,118],[7,14],[96,101],[118,119],[0,2],[48,51],[80,83],[80,92],[92,94],[10,24],[54,58],[62,71],[33,44],[73,80],[81,93],[3,12],[43,48],[22,25],[14,21],[84,95],[35,53],[95,104],[66,68],[114,117],[87,100],[106,113],[28,32],[55,58],[96,105],[58,60],[77,82],[40,42],[21,38],[80,96],[91,102],[62,66],[73,84],[51,56],[14,16],[32,52],[84,90],[84,99],[95,99],[106,108],[17,18],[106,117],[6,8],[88,96],[6,17],[50,60],[77,86],[10,14],[2,10],[110,119],[13,25],[24,34],[3,11],[43,47],[84,85],[43,56],[103,107],[35,52],[28,31],[36,44],[76,80],[2,5],[20,41],[91,92],[2,14],[62,65],[110,114],[83,97],[13,20],[43,51],[65,66],[9,13],[9,22],[97,107],[50,59],[90,95],[69,72],[2,9],[31,45],[91,96],[75,79],[54,56],[72,73],[24,33],[105,107],[43,46],[35,42],[5,10],[65,70],[86,102],[42,50],[98,112],[20,31],[23,27],[2,4],[20,40],[31,40],[31,49],[1,8],[38,39],[86,88],[9,12],[49,57],[89,93],[20,35],[31,35],[104,105],[31,44],[23,40],[1,3],[75,87],[45,55],[85,100],[93,113],[46,47],[67,79],[86,92],[49,52],[8,20],[19,20],[27,33],[8,29],[71,85],[41,53],[20,30],[23,26],[115,118],[75,82],[45,50],[74,86],[37,46],[93,108],[26,27],[26,36],[46,51],[70,79],[19,24],[63,67],[82,89],[41,48],[20,25],[4,8],[60,61],[52,57],[75,77],[1,2],[34,36],[74,81],[93,94],[45,54],[15,22],[67,69],[67,78],[107,114],[86,91],[70,74],[67,87],[78,87],[97,100],[0,6],[19,28],[92,98],[81,88],[22,38],[34,40],[74,76],[45,49],[93,98],[56,58],[59,60],[96,109],[107,109],[78,82],[70,78],[0,1],[48,50],[19,23],[92,93],[92,102],[92,111],[33,34],[25,30],[33,43],[81,92],[25,39],[34,44],[114,116],[103,116]];
+
+        function drawBrain(t, color) {
+          // MRI FreeSurfer axes: X=left/right, Y=posterior/anterior, Z=inferior/superior
+          // Canvas mapping: screen-X = X, screen-Y = Z (up), depth = Y (front/back)
+          var rotY = t * 0.55;
+          var rotX = 0.4 + Math.sin(t * 0.1) * 0.06;
+          var fov = 300, cx = W/2, cy = H/2;
+          var cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+          var cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+          var scale3d = 130;
+          // Transform & project vertices — remap MRI Y→depth, MRI Z→screen-Y (flipped)
+          var proj = [];
+          for(var i=0;i<brainV.length;i++){
+            var vx=brainV[i][0]*scale3d, vy=-brainV[i][2]*scale3d, vz=brainV[i][1]*scale3d;
+            var x1=vx*cosY-vz*sinY, z1=vx*sinY+vz*cosY;
+            var y1=vy*cosX-z1*sinX, z2=vy*sinX+z1*cosX;
+            var s=fov/(fov+z2+150);
+            proj.push({sx:cx+x1*s, sy:cy+y1*s, z:z2});
+          }
+          // Sort edges back-to-front
+          var sorted=brainE.slice().sort(function(a,b){
+            return ((proj[a[0]].z+proj[a[1]].z)/2)-((proj[b[0]].z+proj[b[1]].z)/2);
+          });
+          // Draw edges with depth fade + glow
+          var maxZ=scale3d, minZ=-scale3d;
+          for(var i=0;i<sorted.length;i++){
+            var e=sorted[i], p1=proj[e[0]], p2=proj[e[1]];
+            var avgZ=(p1.z+p2.z)/2;
+            var depth=(avgZ-minZ)/(maxZ-minZ);
+            var alpha=0.05+0.5*depth;
+            if(depth>0.55){
+              ctx.strokeStyle=ahex(color,alpha*0.2);
+              ctx.lineWidth=2.5;
+              ctx.beginPath();ctx.moveTo(p1.sx,p1.sy);ctx.lineTo(p2.sx,p2.sy);ctx.stroke();
+            }
+            ctx.strokeStyle=ahex(color,alpha);
+            ctx.lineWidth=0.6;
+            ctx.beginPath();ctx.moveTo(p1.sx,p1.sy);ctx.lineTo(p2.sx,p2.sy);ctx.stroke();
+          }
+          // Front vertices as bright dots
+          for(var i=0;i<proj.length;i++){
+            var p=proj[i];var depth=(p.z-minZ)/(maxZ-minZ);
+            if(depth>0.35){
+              ctx.fillStyle=ahex(color,0.15+0.5*depth);
+              ctx.fillRect(p.sx-0.8,p.sy-0.8,1.6,1.6);
+            }
+          }
+        }
+
+        // Binary rain
+        var rainData = [];
+        (function(){ pseed = 42; for (var i = 0; i < 96; i++) { var txt=""; for(var j=0;j<80;j++) txt += prng()>0.5?"1":"0"; rainData.push({x:i*(W/96),bright:prng()>0.7,op:0.3+prng()*0.7,spd:30+prng()*60,txt:txt}); }})();
+        function drawRain(t, a) {
+          ctx.font = "6px 'VT323', monospace"; ctx.textBaseline = "top";
+          for (var i = 0; i < rainData.length; i++) {
+            var r = rainData[i], yo = (t * r.spd) % (H + 100);
+            ctx.fillStyle = r.bright ? ahex("#88FFAA", a * r.op) : ahex("#33FF33", a * r.op * 0.6);
+            var st = Math.floor(yo / 8) % r.txt.length;
+            for (var row = 0; row < 35; row++) {
+              var ry = row * 8 - (yo % 8);
+              if (ry < -8 || ry > H + 8) continue;
+              ctx.fillText(r.txt[(st + row) % r.txt.length], r.x, ry);
+            }
+          }
+        }
+
+        // Dream shader (pixel-level FBM, 2x2 blocks)
+        function dream(t, p) {
+          var id = ctx.getImageData(0, 0, W, H), d = id.data;
+          var ac = p.accent, hi = p.hi;
+          var ar = parseInt(ac.substr(1,2),16), ag = parseInt(ac.substr(3,2),16), ab = parseInt(ac.substr(5,2),16);
+          var hr = parseInt(hi.substr(1,2),16), hg = parseInt(hi.substr(3,2),16), hb = parseInt(hi.substr(5,2),16);
+          for (var y = 0; y < H; y += 2)
+            for (var x = 0; x < W; x += 2) {
+              var v = fbm(x * 0.012 + t * 0.15, y * 0.012 + t * 0.08, 5);
+              var v2 = fbm(x * 0.025 - t * 0.1, y * 0.025 + t * 0.12, 3);
+              var m = v * 0.7 + v2 * 0.3;
+              for (var dy = 0; dy < 2 && y+dy < H; dy++)
+                for (var dx = 0; dx < 2 && x+dx < W; dx++) {
+                  var idx = ((y+dy) * W + (x+dx)) * 4;
+                  d[idx] = Math.min(255, (ar*m + hr*(1-m)) * m * 255);
+                  d[idx+1] = Math.min(255, (ag*m + hg*(1-m)) * m * 0.8 * 255);
+                  d[idx+2] = Math.min(255, (ab*m + hb*(1-m)) * m * 0.5 * 255);
+                  d[idx+3] = 255;
+                }
+            }
+          ctx.putImageData(id, 0, 0);
+        }
+
+        // Boot terminal (canvas-rendered)
+        function drawBoot(t) {
+          bg();
+          asciiBg(t, P.green, {cols:48, rows:16, speed:0.15, scale:0.25, alpha:0.1});
+          var lines = [
+            ["LUKSAMUK (C) 2026", "#33FF33", 12, "VT323"],
+            ["SPRACHSPIEL BIOS v0.26", "rgba(51,255,51,0.35)", 11, "VT323"],
+            ["", "", 0, ""],
+            ["Scanning neural memory.......... [ 2M ctx OK ]", "rgba(51,255,51,0.5)", 11, "VT323"],
+            ["Detecting tool subsystems....... [ 50 tools ]", "rgba(51,255,51,0.5)", 11, "VT323"],
+            ["Loading semantic search.......... [ BM25+vec+RRF ]", "rgba(51,255,51,0.5)", 11, "VT323"],
+            ["Mounting personality engine...... [ SOUL.md OK ]", "rgba(51,255,51,0.5)", 11, "VT323"],
+          ];
+          var startY = 40;
+          ctx.textAlign = "left"; ctx.textBaseline = "top";
+          for (var i = 0; i < lines.length; i++) {
+            var lineStart = 0.05 + i * 0.22;
+            if (t < lineStart) continue;
+            var l = lines[i];
+            if (!l[0]) continue;
+            var prog = Math.min(1, (t - lineStart) / 0.12);
+            var vis = l[0].substring(0, Math.floor(l[0].length * prog));
+            ctx.font = l[2] + "px '" + l[3] + "', monospace";
+            // Green glow
+            ctx.shadowColor = "rgba(51,255,51,0.3)"; ctx.shadowBlur = 4;
+            ctx.fillStyle = l[1];
+            ctx.fillText(vis, 20, startY + i * 16);
+            ctx.shadowBlur = 0;
+          }
+          // [NEW LANGUAGE DETECTED] flash
+          if (t > 1.5 && t < 2.0) {
+            var flash = Math.abs(Math.sin((t - 1.5) * 20));
+            ctx.fillStyle = "rgba(255,180,70," + (flash * 0.2) + ")";
+            ctx.fillRect(0, 0, W, H);
+          }
+          if (t > 1.7) {
+            cC("[ NEW LANGUAGE DETECTED ]", W/2, 170, "#FFB446", 18, "VT323", t, 2.5);
+          }
+          if (t > 2.2) {
+            cC("SPRACHSPIEL", W/2, 195, "#FFD080", 36, "IBM Plex Mono", t, 3, "700");
+          }
+          if (t > 2.8) {
+            ctx.font = "12px 'VT323', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+            ctx.fillStyle = "rgba(51,255,51,0.5)";
+            ctx.fillText("v0.26.0 • cognitive interaction harness • MIT", W/2, 235);
+            ctx.fillText("source: luksamuk/ask-ai-rs • local-first / Rust", W/2, 250);
+            ctx.textAlign = "left";
+          }
+          // Blink cursor
+          if (t > 3.0 && Math.floor(t * 4) % 2 === 0) {
+            ctx.fillStyle = "#33FF33";
+            ctx.fillRect(20, startY + lines.length * 16, 5, 11);
+          }
+          glitch(t);
+        }
+
+        // Title break (canvas-rendered)
+        function drawTitle(t) {
+          bg();
+          var localT = t - 3.5;
+          // Binary rain
+          drawRain(t, Math.min(1, localT * 2) * 0.6);
+          // Interference sweep
+          if (localT < 0.8) {
+            var sweep = localT * W * 3;
+            ctx.fillStyle = "rgba(255,200,100,0.4)";
+            ctx.fillRect(sweep - 60, 0, 2, H);
+            ctx.fillStyle = "rgba(0,200,200,0.3)";
+            ctx.fillRect(sweep - 30, 0, 1, H);
+          }
+          // Radial burst
+          if (localT > 0.3) {
+            var br = Math.min(400, (localT - 0.3) * 200);
+            var gr = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, br);
+            gr.addColorStop(0, "rgba(255,200,100,0.15)");
+            gr.addColorStop(0.3, "rgba(200,100,255,0.08)");
+            gr.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+          }
+          // Title
+          if (localT > 1.0) {
+            // Dim rain for readability
+            ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(0, 0, W, H);
+            cC("SPRACHSPIEL", W/2, H/2 - 30, "#FFD080", 52, "IBM Plex Mono", t, 3, "700");
+            cC("COGNITIVE INTERACTION HARNESS", W/2, H/2 + 30, "rgba(255,255,255,0.3)", 14, "VT323", t, 1.5);
+          }
+          glitch(t);
+        }
+
+        // Architecture section
+        function drawArch(t) {
+          dream(t * 0.5, P.amber);
+          ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, H);
+          drawBrain(t, "#1a4a2a");
+          asciiBg(t, P.amber, {cols:48, rows:16, speed:0.12, scale:0.2, alpha:0.2});
+          // Nested layers
+          var cx = W/2, cy = H/2;
+          var layers = [
+            {label:"ask-ai", w:160, h:80, c:P.amber.hi},
+            {label:"Ollama", w:240, h:120, c:P.amber.accent},
+            {label:"Rust", w:320, h:160, c:P.amber.mid},
+            {label:"Local LLM", w:400, h:200, c:P.amber.dim},
+          ];
+          for (var i = layers.length - 1; i >= 0; i--) {
+            var l = layers[i], p = 0.3 + 0.7 * Math.abs(Math.sin(t * 1.5 - i * 0.4));
+            ctx.strokeStyle = ahex(l.c, p * 0.6);
+            ctx.strokeRect(cx - l.w/2, cy - l.h/2, l.w, l.h);
+            ctx.font = "11px 'IBM Plex Mono', monospace";
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillStyle = ahex(l.c, p * 0.8);
+            ctx.fillText(l.label, cx, cy - l.h/2 + 12);
+          }
+          ctx.textAlign = "left"; ctx.textBaseline = "top";
+          cC("OPEN SOURCE", W/2, 18, P.amber.hi, 22, "IBM Plex Mono", t, 2.5, "700");
+          cC("RUST-NATIVE · ZERO DEPENDENCIES", W/2, H - 30, P.amber.mid, 11, "VT323", t, 1.2);
+          glitch(t);
+        }
+
+        // Persistent memory + Ebbinghaus
+        function drawMemory(t) {
+          dream(t * 0.3, P.green);
+          ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(0, 0, W, H);
+          drawBrain(t, "#2a6a3a");
+          asciiBg(t, P.green, {cols:48, rows:16, speed:0.12, scale:0.2, alpha:0.15});
+          // Ebbinghaus curve
+          var cy = H/2 - 15;
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = ahex(P.green.accent, 0.8);
+          ctx.beginPath();
+          for (var i = 0; i < 40; i++) {
+            var x = 40 + (i/40) * (W-80);
+            var r = Math.exp(-(i/40) * 3 + Math.sin(t * 2) * 0.3);
+            r = Math.max(0, Math.min(1, r));
+            var y = cy - r * 70;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+          // Glow duplicate
+          ctx.strokeStyle = ahex(P.green.hi, 0.15);
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          for (var i = 0; i < 40; i++) {
+            var x = 40 + (i/40) * (W-80);
+            var r = Math.exp(-(i/40) * 3 + Math.sin(t * 2) * 0.3);
+            r = Math.max(0, Math.min(1, r));
+            if (i === 0) ctx.moveTo(x, cy - r * 70); else ctx.lineTo(x, cy - r * 70);
+          }
+          ctx.stroke(); ctx.lineWidth = 1;
+          // Memory bars
+          for (var b = 0; b < 20; b++) {
+            var x = 30 + b * ((W - 60) / 20);
+            var f = 0.3 + 0.7 * Math.exp(-b * 0.15 + Math.sin(t + b * 0.3) * 0.3);
+            ctx.fillStyle = ahex(P.green.accent, f * 0.6);
+            ctx.fillRect(x, H - 50, (W-60)/20 - 4, f * 25);
+          }
+          cC("PERSISTENT MEMORY", W/2, 18, P.green.hi, 20, "IBM Plex Mono", t, 2, "700");
+          cC("Semantic Search · Ebbinghaus Decay", W/2, 42, P.green.mid, 11, "VT323", t, 1.2);
+          glitch(t);
+        }
+
+        // RAG pipeline
+        function drawRAG(t) {
+          dream(t * 0.25, P.blue);
+          ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, H);
+          drawBrain(t, "#4a8aaa");
+          // Pipeline stages
+          var stages = ["QUERY","BM25","VECTOR","RRF","CONTEXT"];
+          var sw = W / stages.length;
+          for (var i = 0; i < stages.length; i++) {
+            var x = sw * i + sw/2, y = H/2 + 15;
+            var pulse = 0.4 + 0.6 * Math.abs(Math.sin(t * 2 + i * 0.8));
+            ctx.fillStyle = ahex(P.blue.dim, 0.8);
+            ctx.fillRect(x - 36, y - 14, 72, 28);
+            ctx.strokeStyle = ahex(P.blue.accent, pulse * 0.6);
+            ctx.strokeRect(x - 36, y - 14, 72, 28);
+            ctx.font = "10px 'IBM Plex Mono', monospace";
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillStyle = ahex(P.blue.hi, pulse);
+            ctx.fillText(stages[i], x, y);
+            // Arrow + dot
+            if (i < stages.length - 1) {
+              ctx.fillStyle = ahex(P.blue.accent, 0.4);
+              ctx.beginPath(); ctx.moveTo(x+40,y); ctx.lineTo(x+50,y-4); ctx.lineTo(x+50,y+4); ctx.fill();
+              var dpx = x + 40 + ((t * 40 + i * 20) % 10);
+              ctx.fillStyle = ahex(P.blue.hi, 0.8);
+              ctx.fillRect(dpx, y-1, 3, 3);
+            }
+          }
+          ctx.textAlign = "left"; ctx.textBaseline = "top";
+          // Vector space dots
+          pseed = 77;
+          var pts = [];
+          for (var i = 0; i < 20; i++) pts.push({x: 40 + prng()*(W-80), y: 70 + prng()*80});
+          for (var i = 0; i < pts.length; i++) {
+            for (var j = i+1; j < pts.length; j++) {
+              var d = Math.sqrt(Math.pow(pts[i].x-pts[j].x,2)+Math.pow(pts[i].y-pts[j].y,2));
+              if (d < 55) {
+                ctx.strokeStyle = ahex(P.blue.accent, (1-d/55)*0.3);
+                ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(pts[i].x,pts[i].y); ctx.lineTo(pts[j].x,pts[j].y); ctx.stroke();
+              }
+            }
+            var pulse = 0.4+0.6*Math.abs(Math.sin(t*2+i));
+            ctx.fillStyle = ahex(P.blue.hi, pulse*0.8);
+            ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, 3, 0, Math.PI*2); ctx.fill();
+          }
+          cC("HYBRID RAG", W/2, 18, P.blue.hi, 22, "IBM Plex Mono", t, 2.5, "700");
+          cC("BM25 + Vector + Reciprocal Rank Fusion", W/2, 42, P.blue.mid, 11, "VT323", t, 1.2);
+          glitch(t);
+        }
+
+        // Tool grid
+        function drawTools(t) {
+          dream(t * 0.3, P.purple);
+          ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, H);
+          drawBrain(t, "#8a6aaa");
+          asciiBg(t, P.purple, {cols:48, rows:16, speed:0.1, scale:0.2, alpha:0.15});
+          var tools = [["file",0],["web",1],["calc",2],["search",3],["vision",4],["ocr",5],["shell",6],["task",7],["memory",8],["translate",9],["summarize",10],["skills",11]];
+          var cols=4,rows=3,cw=W/cols,ch=55,sy=70;
+          for (var i = 0; i < tools.length; i++) {
+            var ti = tools[i][1], col=i%cols, row=Math.floor(i/cols);
+            var x = col*cw+cw/2, y = sy+row*ch+ch/2;
+            var pulse = 0.3+0.7*Math.abs(Math.sin(t*1.5+ti*0.7));
+            ctx.strokeStyle = ahex(P.purple.accent, pulse*0.4);
+            ctx.strokeRect(x-38, y-16, 76, 32);
+            ctx.fillStyle = ahex(P.purple.dim, pulse*0.3);
+            ctx.fillRect(x-38, y-16, 76, 32);
+            ctx.font = "10px 'IBM Plex Mono', monospace";
+            ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillStyle = ahex(P.purple.hi, pulse);
+            ctx.fillText(tools[i][0], x, y);
+          }
+          ctx.textAlign = "left"; ctx.textBaseline = "top";
+          cC("FIFTY TOOLS", W/2, 18, P.purple.hi, 22, "IBM Plex Mono", t, 2.5, "700");
+          cC("Extensible · File ops · Web · Vision · OCR", W/2, 42, P.purple.mid, 10, "VT323", t, 1);
+          glitch(t);
+        }
+
+        // Neural / personality
+        function drawNeural(t) {
+          dream(t * 0.2, P.cyan);
+          ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, H);
+          drawBrain(t, "#8addee");
+          pseed = 55;
+          var nodes = [];
+          for (var i = 0; i < 14; i++) nodes.push({x: 40+prng()*(W-80), y: 50+prng()*(H-100)});
+          ctx.lineWidth = 1;
+          for (var i = 0; i < nodes.length; i++) {
+            for (var j = i+1; j < nodes.length; j++) {
+              var d = Math.sqrt(Math.pow(nodes[i].x-nodes[j].x,2)+Math.pow(nodes[i].y-nodes[j].y,2));
+              if (d < 120) {
+                var pulse = Math.abs(Math.sin(t*1.5+i*0.5+j*0.3));
+                ctx.strokeStyle = ahex(P.cyan.accent, pulse*0.2);
+                ctx.beginPath(); ctx.moveTo(nodes[i].x, nodes[i].y); ctx.lineTo(nodes[j].x, nodes[j].y); ctx.stroke();
+                var dp = (t*0.5+i*0.2) % 1;
+                ctx.fillStyle = ahex(P.cyan.hi, pulse*0.8);
+                ctx.fillRect(nodes[i].x+(nodes[j].x-nodes[i].x)*dp-2, nodes[i].y+(nodes[j].y-nodes[i].y)*dp-2, 4, 4);
+              }
+            }
+            var pulse = 0.4+0.6*Math.abs(Math.sin(t*2+i*0.9));
+            ctx.fillStyle = ahex(P.cyan.accent, pulse*0.6);
+            ctx.beginPath(); ctx.arc(nodes[i].x, nodes[i].y, 4, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = ahex(P.cyan.hi, pulse*0.12);
+            ctx.beginPath(); ctx.arc(nodes[i].x, nodes[i].y, 10, 0, Math.PI*2); ctx.fill();
+          }
+          // SOUL.md snippet
+          var soul = ["identity: guardian","tone: calm, precise","memory: persistent","tools: 50+ loaded"];
+          ctx.textAlign = "left"; ctx.textBaseline = "top";
+          for (var i = 0; i < soul.length; i++) {
+            var p = 0.4+0.6*Math.abs(Math.sin(t*2+i*0.6));
+            ctx.font = "9px 'JetBrains Mono', monospace";
+            ctx.fillStyle = ahex(P.cyan.accent, p);
+            ctx.fillText(soul[i], 30, H-55+i*13);
+          }
+          cC("ADAPTIVE PERSONALITY", W/2, 18, P.cyan.hi, 18, "IBM Plex Mono", t, 2, "700");
+          cC("SOUL.md · Your agent · Your rules", W/2, 40, P.cyan.mid, 11, "VT323", t, 1.2);
+          glitch(t);
+        }
+
+        // One binary — hexagon
+        function drawBinary(t) {
+          bg();
+          drawBrain(t, "#ccddcc");
+          asciiBg(t, P.amber, {cols:48, rows:16, speed:0.08, scale:0.2, alpha:0.18});
+          var cx = W/2, cy = H/2;
+          // Outer hex
+          ctx.strokeStyle = ahex(P.amber.accent, 0.5+Math.abs(Math.sin(t))*0.3);
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          for (var i = 0; i < 6; i++) {
+            var a = Math.PI/3*i - Math.PI/6, r = 55+Math.sin(t*1.5)*4;
+            if (i === 0) ctx.moveTo(cx+r*Math.cos(a), cy+r*Math.sin(a));
+            else ctx.lineTo(cx+r*Math.cos(a), cy+r*Math.sin(a));
+          }
+          ctx.closePath(); ctx.stroke();
+          // Inner hex (rotating)
+          ctx.strokeStyle = ahex(P.amber.hi, 0.3);
+          ctx.beginPath();
+          for (var i = 0; i < 6; i++) {
+            var a = Math.PI/3*i - Math.PI/6 + t*0.3, r = 30+Math.sin(t*2)*2;
+            if (i === 0) ctx.moveTo(cx+r*Math.cos(a), cy+r*Math.sin(a));
+            else ctx.lineTo(cx+r*Math.cos(a), cy+r*Math.sin(a));
+          }
+          ctx.closePath(); ctx.stroke(); ctx.lineWidth = 1;
+          // Center glow
+          var gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, 35);
+          gr.addColorStop(0, "rgba(255,208,128,0.12)"); gr.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+          cC("ONE BINARY", W/2, 25, P.amber.hi, 24, "IBM Plex Mono", t, 3, "700");
+          cC("ZERO DEPENDENCIES", W/2, 55, P.amber.mid, 13, "IBM Plex Mono", t, 1.5, "600");
+          cC("LOCAL-FIRST", W/2, H-25, P.amber.accent, 12, "VT323", t, 1.5);
+          glitch(t);
+        }
+
+        // CTA / closer
+        function drawCTA(t) {
+          bg();
+          var gr = ctx.createRadialGradient(W/2, H*0.42, 0, W/2, H*0.42, 220);
+          gr.addColorStop(0, "rgba(255,200,100,0.06)");
+          gr.addColorStop(0.3, "rgba(200,150,80,0.03)");
+          gr.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+          asciiBg(t, P.green, {cols:40, rows:14, speed:0.05, scale:0.25, alpha:0.06});
+          // Noise
+          pseed = 77;
+          for (var i = 0; i < 30; i++) {
+            ctx.fillStyle = ahex(i%3===0?P.amber.accent:i%3===1?P.blue.accent:P.purple.accent, 0.06+prng()*0.1);
+            ctx.fillRect(prng()*W, prng()*H, 1+prng()*2, 1+prng()*2);
+          }
+          // Dual logo (canvas-rendered)
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          // Sₚ badge
+          ctx.fillStyle = "rgba(20,15,5,0.8)";
+          ctx.fillRect(W/2-80, H/2-40, 65, 65);
+          ctx.strokeStyle = "rgba(255,180,70,0.3)"; ctx.strokeRect(W/2-80, H/2-40, 65, 65);
+          ctx.font = "22px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "#FFD080"; ctx.fillText("Sₚ", W/2-48, H/2-8);
+          // ×
+          ctx.font = "18px 'VT323', monospace"; ctx.fillStyle = "rgba(255,255,255,0.1)";
+          ctx.fillText("×", W/2, H/2-8);
+          // RUST badge
+          ctx.fillStyle = "rgba(5,10,25,0.8)";
+          ctx.fillRect(W/2+15, H/2-40, 65, 65);
+          ctx.strokeStyle = "rgba(0,120,255,0.3)"; ctx.strokeRect(W/2+15, H/2-40, 65, 65);
+          ctx.font = "16px 'VT323', monospace";
+          ctx.fillStyle = "#88BBFF"; ctx.fillText("RUST", W/2+48, H/2-12);
+          ctx.font = "7px 'VT323', monospace";
+          ctx.fillStyle = "rgba(136,187,255,0.35)"; ctx.fillText("NATIVE", W/2+48, H/2+2);
+          // Labels
+          ctx.font = "9px 'VT323', monospace";
+          ctx.fillStyle = "rgba(255,208,128,0.5)"; ctx.fillText("SPRACHSPIEL", W/2-48, H/2+34);
+          ctx.fillStyle = "rgba(136,187,255,0.5)"; ctx.fillText("LOCAL LLM", W/2+48, H/2+34);
+          // Install command
+          var cmdProg = Math.min(1, Math.max(0, (t - 29.5) * 1.2));
+          var cmdStr = "curl -sL ask-ai.sh | bash";
+          var vis = cmdStr.substring(0, Math.floor(cmdStr.length * cmdProg));
+          if (cmdProg > 0) {
+            ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+            ctx.fillStyle = "rgba(51,255,51,0.35)"; ctx.fillText("$ ", W/2-80, H/2+55);
+            ctx.fillStyle = "rgba(0,220,170,0.75)"; ctx.fillText(vis, W/2-72, H/2+55);
+          }
+          ctx.textAlign = "left"; ctx.textBaseline = "top";
+          glitch(t);
+        }
+
+        // === FRAME DISPATCH TABLE ===
+        // Maps time ranges to draw functions
+        var TOTAL = 38.0;
+        var sections = [
+          { start: 0,    end: 3.5,  fn: drawBoot },
+          { start: 3.5,  end: 7.0,  fn: drawTitle },
+          { start: 7.0,  end: 11.5, fn: drawArch },
+          { start: 11.5, end: 16.0, fn: drawMemory },
+          { start: 16.0, end: 21.5, fn: drawRAG },
+          { start: 21.5, end: 26.5, fn: drawTools },
+          { start: 26.5, end: 30.5, fn: drawNeural },
+          { start: 30.5, end: 34.0, fn: drawBinary },
+          { start: 34.0, end: 38.0, fn: drawCTA },
+        ];
+
+        var fps = 30;
+        var frameCount = Math.ceil(TOTAL * fps);
+        for (var fi = 0; fi < frameCount; fi++) {
+          (function(idx) {
+            var mt = idx / fps;
+            tl.call(function() {
+              for (var s = 0; s < sections.length; s++) {
+                if (mt >= sections[s].start && mt < sections[s].end) {
+                  sections[s].fn(mt);
+                  return;
+                }
+              }
+              bg(); // fallback
+            }, [], mt);
+          })(fi);
+        }
+
+        // === CAPTIONS ===
+        var capData = [
+          {id:"#cg0", start:0.4, end:1.8},
+          {id:"#cg1", start:3.3, end:7.4},
+          {id:"#cg2", start:8.2, end:10.9},
+          {id:"#cg3", start:11.5, end:16.5},
+          {id:"#cg4", start:17.1, end:21.1},
+          {id:"#cg5", start:21.7, end:25.0},
+          {id:"#cg6", start:25.6, end:29.1},
+          {id:"#cg7", start:30.1, end:32.4},
+        ];
+        capData.forEach(function(g) {
+          tl.fromTo(g.id, {opacity:0,scale:0.96,y:6},{opacity:1,scale:1,y:0,duration:0.18,ease:"power3.out"}, Math.max(0,g.start-0.08));
+          tl.to(g.id, {opacity:0,scale:0.97,y:-3,duration:0.14,ease:"power2.in"}, Math.max(0,g.end-0.14));
+          tl.set(g.id, {opacity:0,visibility:"hidden"}, g.end);
+          tl.set(g.id, {visibility:"visible"}, Math.max(0,g.start-0.10));
+        });
+
+        // === FADE-OUT ===
+        tl.to({}, {duration:TOTAL,ease:"none"}, 0);
+        tl.fromTo("#fo", {opacity:0}, {opacity:1,duration:1.5,ease:"power2.in"}, 36.5);
+        tl.set("#fo", {opacity:1}, 38.0);
+
+        window.__timelines["root"] = tl;
+      })();
+      </script>
+    </div>
+  </body>
+</html>

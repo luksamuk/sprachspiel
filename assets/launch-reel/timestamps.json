@@ -1,0 +1,45 @@
+{
+  "total_duration": 34.9,
+  "captions": [
+    {
+      "text": "Sprachspiel.",
+      "start": 0.5,
+      "end": 1.823
+    },
+    {
+      "text": "Cognitive interaction harness. Open source. Rust-native.",
+      "start": 3.323,
+      "end": 7.398
+    },
+    {
+      "text": "Persistent memory. Semantic search.",
+      "start": 8.198,
+      "end": 10.929
+    },
+    {
+      "text": "Hybrid RAG. BM25. Vector. Reciprocal rank fusion.",
+      "start": 11.529,
+      "end": 16.5
+    },
+    {
+      "text": "Fifty tools. File ops. Web search. Vision. OCR.",
+      "start": 17.1,
+      "end": 21.111
+    },
+    {
+      "text": "Adaptive personality. Your agent. Your rules.",
+      "start": 21.711,
+      "end": 25.039
+    },
+    {
+      "text": "One binary. Zero dependencies. Local-first.",
+      "start": 25.639,
+      "end": 29.138
+    },
+    {
+      "text": "Your terminal. Your LLM.",
+      "start": 30.138,
+      "end": 32.399
+    }
+  ]
+}

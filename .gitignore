@@ -15,3 +15,27 @@ doc/book/
 
 # Oh My OpenCode agent artifacts
 .sisyphus/
+
+# Media and binary files (tracked individually in assets/)
+*.mp3
+*.mp4
+*.wav
+*.avi
+*.mov
+*.webm
+*.zip
+*.tar.gz
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Node modules (launch reel and other tools)
+node_modules/
+
+# HyperFrames cache
+.hyperframes/
+
+# OS files
+.DS_Store
+Thumbs.db
