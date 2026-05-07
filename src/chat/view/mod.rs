@@ -16,7 +16,7 @@
 //! NOTE: The `ChatView` trait is intentionally kept for future TUI implementation.
 //! See AGENTS.md "TUI Preparation Code Policy" for details.
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 /// Number of lines in the status bar (divisor, content, divisor)
 /// Used by ANSI clear codes in repl.rs to remove status bar before user input

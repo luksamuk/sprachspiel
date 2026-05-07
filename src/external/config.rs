@@ -296,7 +296,7 @@ fn create_default_config() -> ExternalToolsConfig {
 }
 
 /// Get the path to tools.toml (for creating new config).
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn tools_config_path() -> Option<PathBuf> {
     use crate::consts::app;
 
@@ -312,7 +312,7 @@ pub fn tools_config_path() -> Option<PathBuf> {
 }
 
 /// Generate a default tools.toml content.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn generate_default_toml() -> String {
     r#"# External tools configuration for sprachspiel
 #

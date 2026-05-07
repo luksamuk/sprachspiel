@@ -358,15 +358,15 @@ struct GeocodingResponse {
 
 #[derive(Debug, Deserialize)]
 struct GeocodingResult {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     name: String,
     latitude: f64,
     longitude: f64,
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     country: String,
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     admin1: String,
 }
 
@@ -382,7 +382,7 @@ struct WeatherResponse {
 #[derive(Debug, Deserialize, Default)]
 struct CurrentWeather {
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     time: String,
     #[serde(default, rename = "temperature_2m")]
     temperature_2m: f64,

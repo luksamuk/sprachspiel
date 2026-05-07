@@ -68,7 +68,7 @@ pub fn get_settings() -> Option<Arc<Settings>> {
  * }).await;
  * ```
  */
-#[allow(clippy::redundant_async_block)]
+#[expect(clippy::redundant_async_block)]
 pub async fn with_tool_context<F, T>(ollama: Ollama, settings: Arc<Settings>, f: F) -> T
 where
     F: Future<Output = T>,
@@ -84,7 +84,7 @@ where
 ///
 /// This allows tools like agent spawning tools to access the Ollama client
 /// and Settings while still having DB and Embedding access.
-#[allow(clippy::redundant_async_block)]
+#[expect(clippy::redundant_async_block)]
 pub async fn with_full_context<F, T>(
     db: Arc<Database>,
     embedding: Arc<EmbeddingClient>,

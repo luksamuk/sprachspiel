@@ -112,7 +112,7 @@ pub use skill_tools::*;
 #[derive(Debug, Deserialize)]
 pub struct NamedApiResource {
     pub name: String,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub url: String,
 }
 

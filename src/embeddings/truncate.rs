@@ -61,7 +61,7 @@ pub fn truncate_and_normalize(embedding: &[f32]) -> Vec<f32> {
 /// - Similarity threshold filtering (remove low-relevance results)
 ///
 /// Currently not used - kept for planned retrieval improvements.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn normalize(vec: &[f32]) -> Vec<f32> {
     let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
 

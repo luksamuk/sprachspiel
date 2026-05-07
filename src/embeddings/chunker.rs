@@ -80,7 +80,7 @@ pub fn needs_chunking(text: &str) -> bool {
 }
 
 /// Check if message needs chunking with custom config
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn needs_chunking_with_config(text: &str, config: &ChunkConfig) -> bool {
     text.len() > config.max_chars
 }

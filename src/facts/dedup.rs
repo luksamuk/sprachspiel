@@ -604,7 +604,7 @@ pub async fn deduplicate_and_insert(
 ///
 /// When a contradiction is detected, the old fact has already been deleted.
 /// This inserts the new fact and wraps the result as `DedupResult::Updated`.
-#[allow(clippy::too_many_arguments)] // Pipeline passes all parameters through
+#[expect(clippy::too_many_arguments)] // Pipeline passes all parameters through
 async fn insert_and_return(
     db: &Database,
     content: &str,

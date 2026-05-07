@@ -62,7 +62,7 @@ impl<T: Tool> ToolHolder for T {
 /// Helper struct for parsing tool call function JSON
 #[derive(Deserialize)]
 struct ToolCallFunctionParser {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     name: String,
     arguments: Value,
 }

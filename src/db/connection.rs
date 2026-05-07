@@ -687,7 +687,7 @@ impl Database {
 
     /// Load sqlite-vec extension globally (must be called before any connection)
     /// This is a one-time initialization for the process.
-    #[allow(clippy::missing_transmute_annotations)]
+    #[expect(clippy::missing_transmute_annotations)]
     pub fn init_sqlite_vec() {
         unsafe {
             rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
@@ -701,6 +701,7 @@ impl Database {
     /// Also handles migration from legacy database filenames:
     /// - `embeddings.db` → `sprachspiel.db` (v0.27 and earlier)
     /// - `ask-ai.db` → `sprachspiel.db` (v0.42 and earlier)
+    ///
     /// Migration only happens if the old file exists and the new one doesn't.
     pub fn get_storage_path() -> PathBuf {
         let path = Self::resolve_storage_path();

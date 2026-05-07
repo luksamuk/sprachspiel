@@ -46,7 +46,7 @@ struct NewsResult {
 #[derive(Debug, Deserialize)]
 struct AnswerBox {
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     title: String,
     #[serde(default)]
     answer: String,

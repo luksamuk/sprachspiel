@@ -95,7 +95,7 @@ impl TerminalView {
     /// Display the welcome banner
     ///
     /// This is a convenience method that uses WelcomeInfo internally.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn show_welcome(
         &mut self,
         model_id: &str,
