@@ -136,8 +136,8 @@
 |-----------|----------|-------------|-------|
 | **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (5 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123 |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
-| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101 |
-| **[M4]** | Future | Deferred features and research | B2–B5, B8 (no cards yet) |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict |
+| **[M4]** | Future | Deferred features and research | B2–B5, B8 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF |
 
 **M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding: #106, #107) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76)
 
@@ -4318,6 +4318,213 @@ ask-ai (binário único)
 
 ---
 
+### Privacy Filter Integration (PII Redaction Sidecar) [M3]
+
+**Status:** 📋 DRAFT
+**Depends on:** None (sidecar is standalone)
+**Estimated effort:** 2-3 days
+**Priority within M3:** After core S2.x items; defensive improvement
+
+**Goal:** Integrate the OpenAI Privacy Filter model (1.4B params, Apache 2.0) as an optional Python sidecar for PII detection and redaction in facts, logs, and tool outputs.
+
+**Architecture:** Python sidecar on localhost:8199 (ONNX rejected per D-06). ask-ai calls via HTTP. Must be optional — falls back to `truncate_for_log()`.
+
+**Integration points:**
+
+| Point | File | Description |
+|-------|------|-------------|
+| Fact redaction | `src/facts/prompt.rs` | Redact PII in facts before injecting into system prompt |
+| Log sanitization | `src/logging.rs` | Replace `truncate_for_log()` with semantic PII detection |
+| Tool output scrubbing | `src/chat/custom_coordinator.rs` | Redact PII in tool results before context injection |
+| Context overflow | `src/context_overflow.rs` | Redact PII in compacted summaries (future) |
+
+**Config:**
+
+```toml
+[privacy_filter]
+enabled = true
+sidecar_url = "http://localhost:8199"
+mode = "replace"  # replace | tag | remove
+fallback = "passthrough"  # passthrough | truncate | block
+categories = []  # empty = all 8 categories
+timeout_ms = 2000
+```
+
+**Open questions:** Sidecar lifecycle, caching strategy, PT-BR boundary issues, false positive tolerance on code.
+
+**Refinement topics (see research-icebox.md):** R-18 (Rust-native classifier as long-term goal)
+
+**Source:** ~/privacy-filter-integration-proposal.md
+
+---
+
+### ADR: Empathy Is Not Failure, Opacity Is [M3]
+
+**Status:** 📋 DRAFT
+**Depends on:** None
+**Estimated effort:** ~1 hour
+**Priority within M3:** First — must be written before #99/#100/#101 implementation
+
+**Goal:** Formalize the architectural decision that the system should not suppress empathetic responses, but make behavioral shifts visible and offer the user a choice. This reframes meta-cognition from "detect and correct failures" to "detect changes and make them visible."
+
+**Key insight:** When the system shifts tone (e.g., analytical → supportive), the empathy is not a bug. The opacity about the shift is. The correct behavior is: name the change and ask the user which mode they prefer.
+
+**Implications for existing cards:**
+- #99 (Layer 1 Skill): Include the reframed guardrail — not "never use phenomenological language" but "never claim phenomenology misleadingly; name what's happening and offer choice"
+- #100 (Layer 2 Telemetry): Detector should focus on unannounced system drift, not user-initiated topic changes
+- #101 (Layer 3 Reflection): Validation step is mandatory — system must ask user before classifying a behavioral shift as a failure
+
+**Source:** ~/meta-cognition-brainstorm.md Section 0.5
+
+---
+
+### meta_cognize() Active Behavioral Tool [M3]
+
+**Status:** 📋 DRAFT
+**Depends on:** #100 (Behavioral Telemetry Layer 2 — produces the data this tool returns)
+**Estimated effort:** 2-3 days
+**Priority within M3:** After Layer 2 (#100)
+
+**Goal:** LLM-callable tool that returns the current behavioral state: detected mode, whether shift was confirmed, suggestions. Complements passive Layer 2 telemetry by making behavioral reflection explicit and traceable. Each `meta_cognize()` call produces structured data that feeds Layer 3 (#101) reflection pipeline.
+
+**Example output:**
+
+```json
+{
+  "current_mode": "supportive",
+  "mode_confirmed": false,
+  "shift_detected": true,
+  "shift_turn": 11,
+  "suggestion": "Ask user which mode they prefer"
+}
+```
+
+**Source:** ~/meta-cognition-brainstorm.md Section 4.2
+
+**Refinement topics (see research-icebox.md):** R-14 (full research record)
+
+---
+
+### Behavioral Conflict Detection (SOUL.md vs Emergent) [M3]
+
+**Status:** 📋 DRAFT
+**Depends on:** #77 and #78 (Visualize Connections + Relations Graph — structural foundation)
+**Estimated effort:** 3-5 days
+**Priority within M3:** After S2.1/S2.2
+
+**Goal:** Detect tensions between configured personality (SOUL.md) and emergent behavioral patterns. Analogous to factual contradiction detection but for personality: "SOUL.md says 'challenge premises', but operational pattern is 'shift to supportive on vulnerability'."
+
+**Source:** ~/meta-cognition-brainstorm.md Section 4.3
+
+**Refinement topics (see research-icebox.md):** R-15 (full research record)
+
+---
+
+### Attention Priming (Chunk Reordering) [M4]
+
+**Status:** 📋 DRAFT — Quick Win
+**Depends on:** None
+**Estimated effort:** ~1 day
+**Priority within M4:** First (quick win opener)
+
+**Goal:** Reorder retrieved chunks to position top-2 at the beginning and next 2 at the end of context. Mitigates "Lost in the Middle" effect (Liu et al. 2023, Cuconasu et al. 2025) with zero architecture change — only reordering in `format_retrieved_context()`.
+
+**Implementation:** `[best, 2nd_best, ...middle..., 3rd_best, 4th_best]`
+
+**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 5
+
+---
+
+### Context-Aware Chunking (SemanticChunker) [M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** None (replaces current TokenChunker)
+**Estimated effort:** 3-5 days
+**Priority within M4:** After Attention Priming
+
+**Goal:** Replace fixed-size chunking with semantic chunking that respects paragraph/sentence boundaries. Paragraph Group Chunking reaches nDCG@5 of 0.459 vs <0.244 for fixed (Shaukat et al. 2026). Config: `[embedding] chunking = "semantic" | "fixed"`.
+
+**Algorithm:** Split by `\n\n` → sentences (regex) → fallback to token boundary with overlap. Preserve section metadata (nearest heading).
+
+**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 1
+
+**Competitive research (see research-icebox.md):** C-12 (Shaukat et al.)
+
+---
+
+### Metadata Enrichment (Chunk Authority & Recency) [M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** Schema v13 (new `chunk_metadata` table)
+**Estimated effort:** 1-2 weeks (Phase 1: static metadata), 1 week (Phase 2: version + recency)
+**Priority within M4:** After Context-Aware Chunking
+
+**Goal:** Annotate chunks at ingestion time with entity_type, source, authority (0.0-1.0), recency (exponential decay), version. RRF scoring: BM25(0.3) + cosine(0.4) + metadata_boost(0.3). Addresses ClashEval finding that LLMs overwrite correct knowledge with incorrect retrieved evidence >60% of the time when no authority signal exists.
+
+**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 2
+
+**Competitive research (see research-icebox.md):** C-13 (ClashEval)
+
+---
+
+### Semantic Deduplication Pre-Indexing [M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** None
+**Estimated effort:** 3-5 days (Option A: cosine similarity)
+**Priority within M4:** Batch job — can run alongside other M4 work
+
+**Goal:** Clustering by cosine similarity (threshold ~0.92) to eliminate near-duplicate chunks before indexing. Runs as offline batch job (`ask-ai reindex --dedup`), NOT in hot ingestion path. Option A: O(n²) vector comparison (simple, works for ≤100k chunks). Option B: MinHash+LSH (scales better, adds dependency).
+
+**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 4
+
+---
+
+### Q&A Pairing / HyDE-like Embedding [M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** #106 (Configurable Embedding Model — needs smaller model for enrichment)
+**Estimated effort:** 1-2 weeks
+**Priority within M4:** After Metadata Enrichment
+
+**Goal:** Generate question-answer pairs per chunk at ingestion time using a small LLM (e.g., qwen3:0.6b). Embed the question instead of raw text, moving embeddings closer to query distribution. HyDE (Gao et al. 2022) demonstrates this improves retrieval significantly. Stored as `enriched_question` column. Config: `[embedding] enrich = true`.
+
+**Trade-off:** Inference cost proportional to corpus size. Worth it for static documents that are queried repeatedly; not worth it for dynamic chat messages.
+
+**Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 3
+
+**Competitive research (see research-icebox.md):** C-14 (HyDE + Dense X Retrieval)
+
+---
+
+### Behavioral Embeddings (Conversation Mode Vectors) [M4]
+
+**Status:** 📋 DRAFT — Research
+**Depends on:** #100 (Layer 2 telemetry producing calibration data)
+**Estimated effort:** 1-2 weeks
+**Priority within M4:** Low — premature without Layer 2 data
+
+**Goal:** Train vector representations of conversation mode for more precise shift detection than heuristic keyword matching. Enables mode clustering, cross-session behavioral similarity, and pattern recognition. Evolution of Layer 2 telemetry.
+
+**Source:** ~/meta-cognition-brainstorm.md Section 4.1
+
+**Refinement topics (see research-icebox.md):** R-13 (full research record)
+
+---
+
+### Feedback × Meta-cog Integration (Behavioral RRF) [M4]
+
+**Status:** 📋 DRAFT
+**Depends on:** #100 (Layer 2) and #101 (Layer 3) being stable
+**Estimated effort:** 1 week
+**Priority within M4:** Final — after meta-cognition layers are proven
+
+**Goal:** Add behavioral_alignment as second signal in RRF score alongside content feedback. Responses generated in unconfirmed behavioral mode have reduced retrieval weight. Behavioral decay: patterns that user consistently redirects decay faster (analogous to Ebbinghaus but for habits, not facts).
+
+**Source:** ~/meta-cognition-brainstorm.md Section 3
+
+---
+
 ## Documentation
 
 Full documentation is available in the `doc/` directory:
@@ -4364,3 +4571,4 @@ The original detailed implementation notes have been moved to:
 2026-04-29 - Added B8 (ACP Agent Integration) as draft priority. Updated P14 to include ApplicationBackend decoupling as architectural requirement for TUI/ACP. Updated B5 to note subsumption by B8 (ACP's MCP-over-ACP). Added R-11 (ACP) and R-12 (ApplicationBackend) to research icebox. Updated R-09 (MCP Server) to reference B5/B8.
 2026-04-30 - M1 reorganized into 3 phases (Feedback+QuickWins → P6.0 Core → Low Priority). P6.5 consolidated with P1 #105 (duplicate). P5.1 verified as ~95% implemented (ADR-008/009). #103 and #17 marked for closure (obsolete). #90 (P5.1) flagged for verification and potential closure.
 2026-05-07 - M1 implementation waves formalized (W1-W5) with themes, cards, and completion criteria. Board TODO column reordered by implementation priority. #90 Scrum Status moved to Ready (decay_score fix merged).
+2026-05-07 - New board drafts from idea triage: M3 (Privacy Filter, ADR: Empathy, meta_cognize tool, Behavioral Conflict) and M4 (Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF). Added R-13 through R-18, C-11 through C-14, D-06 to research icebox. ONNX for Privacy Filter explicitly rejected (D-06).

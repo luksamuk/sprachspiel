@@ -138,6 +138,67 @@
 
 ---
 
+### R-13: Behavioral Embeddings (Conversation Mode Vectors)
+
+- **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.1)
+- **Current state:** Layer 2 telemetry (#100) uses heuristics (pronoun count, keyword detection) for shift detection
+- **Why deferred:** No calibration data from real conversations. Heuristic detection in Layer 2 needs to run first and produce the training data that embeddings would replace.
+- **Prerequisite:** Layer 2 (#100) producing shift detection data from 20-30+ real conversations
+- **Revisit when:** Heuristic shift detection proves too noisy (>30% false positives) or misses shifts that users flag
+
+---
+
+### R-14: Meta-cognition as Active Tool (meta_cognize)
+
+- **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.2)
+- **Current state:** Board draft "meta_cognize() Active Behavioral Tool [M3]" — LLM-callable tool returning behavioral state (mode, shift detection, suggestions)
+- **Why deferred to M3:** Depends on Layer 2 (#100) telemetry producing structured data. Complementary to passive telemetry — makes reflection explicit and traceable.
+- **Prerequisite:** #100 (Behavioral Telemetry) producing shift data
+- **Revisit when:** Layer 2 is in production and producing reliable shift signals
+
+---
+
+### R-15: Behavioral Conflict Detection
+
+- **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.3)
+- **Current state:** Board draft "Behavioral Conflict Detection [M3]" — detect tensions between SOUL.md (configured personality) and emergent behavior
+- **Why deferred to M3:** Depends on #77/#78 (Visualize Connections / Relations Graph) for the structural foundation to represent personality-behavior tensions as a graph problem.
+- **Prerequisite:** #77 and #78 implemented with relation extraction working
+- **Revisit when:** Relations graph is functional and can represent personality vs behavior edges
+
+---
+
+### R-16: Distributive Meta-cognition (Multi-Personality Evaluation)
+
+- **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.4)
+- **Current state:** Not on board — too speculative even for a draft
+- **Why deferred:** Requires SOUL.md multi-personality support (multiple configurable personas evaluating each other). Currently ask-ai has a single personality.
+- **Prerequisite:** Extended Personalities System (#49) implemented; Layer 3 (#101) producing reflections that can be compared across personalities
+- **Revisit when:** Multi-personality is mature enough that multiple evaluations of the same response are feasible
+
+---
+
+### R-17: RAPTOR-like Hierarchical Retrieval
+
+- **Source:** RAG improvement research (~/RAG-IMPROVEMENT-ROADMAP.md §5); Sarthi et al. 2024 (arXiv:2401.18059)
+- **Current state:** Flat retrieval (BM25 + cosine + RRF). No hierarchical summarization.
+- **Why deferred:** Requires Metadata Enrichment, HyDE-like pairing, and Semantic Dedup (board drafts) to be stabilized first. RAPTOR adds a summarization layer on top of functioning chunk-level retrieval.
+- **Prerequisite:** Context-Aware Chunking, Metadata Enrichment, Semantic Dedup all in production
+- **Revisit when:** Flat retrieval with attention priming and metadata boosting still shows quality gaps at scale (>10k chunks)
+
+---
+
+### R-18: Privacy Filter as Rust-Native Classifier
+
+- **Source:** Privacy filter proposal (~/privacy-filter-integration-proposal.md §10)
+- **Current state:** Board draft "Privacy Filter Integration [M3]" uses Python sidecar (only viable path currently)
+- **Why deferred:** ONNX runtime (`ort` + `tokenizers`) would add ~30MB binary + heavy deps, violating single-binary/Termux philosophy. A Rust-native Viterbi classifier without ONNX deps is theoretically possible but requires significant implementation effort.
+- **Prerequisite:** Python sidecar proves value in production; enough usage data to justify Rust-native investment
+- **Decision path:** (1) Python sidecar in M3 → (2) evaluate usage patterns → (3) if PII redaction is critical path, invest in Rust-native Viterbi
+- **Revisit when:** Sidecar has 3+ months of production data showing consistent usage
+
+---
+
 ## Competitive Research
 
 ### C-01: YantrikDB (Rust, Embedded Graph + Vec + Temporal)
@@ -237,6 +298,44 @@
 
 ---
 
+### C-11: OpenAI Privacy Filter Model
+
+- **Institution:** OpenAI (Apache 2.0)
+- **Key specs:** 1.4B params (50M active, Sparse MoE), bidirectional encoder, 8 PII categories, ~0.4s on CPU, 2.7GB
+- **Key finding:** Token classification (not text generation) — cannot run on llama-swap. Must run as separate pipeline (sidecar or native).
+- **Relevance to ask-ai:** Board draft "Privacy Filter Integration [M3]" — fact redaction, log sanitization, tool output scrubbing. ONNX rejected per project philosophy.
+- **PT-BR testing:** Good detection for person/address/email/phone, minor boundary issues, no dedicated CPF/RG label (falls under account_number). Fine-tuning possible.
+- **Reference:** https://huggingface.co/openai/privacy-filter, https://github.com/openai/privacy-filter
+
+---
+
+### C-12: Shaukat et al. 2026 (Document Chunking Strategies)
+
+- **Institution:** arXiv:2603.06976
+- **Key finding:** Paragraph Group Chunking reaches nDCG@5 of 0.459 vs <0.244 for fixed-size chunking. Evaluated 36 methods across 6 domains with 5 embedding models.
+- **Relevance to ask-ai:** Board draft "Context-Aware Chunking [M4]" — validates semantic chunking over fixed-size
+- **Reference:** arXiv:2603.06976
+
+---
+
+### C-13: ClashEval (Wu et al. 2024)
+
+- **Institution:** arXiv:2404.10198
+- **Key finding:** LLMs overwrite correct internal knowledge with incorrect retrieved evidence in >60% of cases. Without metadata authority distinctions, models treat all chunks equally.
+- **Relevance to ask-ai:** Board draft "Metadata Enrichment [M4]" — authority and recency metadata enables RRF boosting, preventing stale/wrong information from drowning current/correct information
+- **Reference:** arXiv:2404.10198
+
+---
+
+### C-14: HyDE (Gao et al. 2022) and Dense X Retrieval (Chen et al. 2023)
+
+- **Institutions:** arXiv:2212.10496, arXiv:2312.06648
+- **Key findings:** HyDE moves query embeddings closer to relevant documents by generating hypothetical answers. Propositions (Q&A pairs) as retrieval granularity surpass passage-level.
+- **Relevance to ask-ai:** Board draft "Q&A Pairing / HyDE-like Embedding [M4]" — embedding questions instead of raw text at ingestion time
+- **References:** arXiv:2212.10496, arXiv:2312.06648
+
+---
+
 ## Decision Records (Why NOT)
 
 ### D-01: Majestic Lisp as Rule Engine / MCP Server
@@ -284,3 +383,15 @@
 - **Decision:** Deferred — no usage data to validate pattern detection
 - **Reason:** Without collected tool usage patterns, speculative execution is guesswork. The 40% latency reduction claim requires repetitive sequential patterns we haven't measured.
 - **Revisit only if:** Telemetry shows repetitive tool sequences in >60% of multi-tool calls
+
+---
+
+### D-06: ONNX Runtime for Privacy Filter
+
+- **Decision:** Explicitly rejected (2026-05-07)
+- **Reasons:**
+  1. `ort` + `tokenizers` crate dependency chain inflates binary by ~30MB and adds heavy deps
+  2. Violates single-binary, Termux-compatible philosophy
+  3. Previously evaluated and rejected during NLI cross-encoder investigation for contradiction detection
+- **Alternative path:** Python sidecar for M3 (board draft "Privacy Filter Integration"); Rust-native Viterbi classifier as long-term goal (R-18) if usage justifies
+- **Revisit only if:** A lightweight Rust-native inference solution emerges that doesn't require ort/tokenizers deps
