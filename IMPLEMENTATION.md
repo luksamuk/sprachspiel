@@ -132,16 +132,18 @@
 
 ### Milestones
 
-| Milestone | Codename | Description | Priorities |
-|-----------|----------|-------------|------------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 | P0-P6, P8-P13, Parallel Tool Execution |
-| **[M2]** | UX & Pre-Launch | TUI design + implementation, UX research, prototyping, private feedback, benchmarks, learned patterns | P14 (TUI full stack), B1 (benchmarks), B6 (learned patterns) |
-| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions | P7 (S2.1-S2.6, **S2.2 elevated to MEDIUM**), P15 |
-| **[M4]** | Future | Deferred features and research | B2-B5, B7-B8+, context engineering, speculation, VCR |
+| Milestone | Codename | Description | Cards |
+|-----------|----------|-------------|-------|
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123 |
+| **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101 |
+| **[M4]** | Future | Deferred features and research | B2–B5, B8 (no cards yet) |
 
-**M2 rationale:** M2 is the complete TUI milestone — design, prototyping, and implementation. Benchmarks (B1) are the last thing completed before public release — they validate claims about feedback-driven memory and hybrid retrieval. Learned patterns (B6) provides behavioral intelligence infrastructure (system reminders, auto-extraction of usage patterns, decay visibility) that enriches the TUI experience.
+**Priority within milestones** is determined by card order (top = highest priority) on the GitHub Project Board. Cards are referenced by their issue number (e.g., #72, #116).
 
-**M1 note:** Parallel Tool Execution (formerly P5/P7) depends on P6.0e (coordinator refactoring) and belongs in M1. It reuses the P5 number in the roadmap but is a separate priority from the completed Feedback Infrastructure.
+**M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience.
+
+**M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123.
 
 **M3 change:** S2.2 (Content Relations Graph) elevated from LOW to MEDIUM priority. Competitive analysis shows that graph-based retrieval is a key differentiator in the memory-augmented agent space, and delay risks falling behind.
 
@@ -2204,12 +2206,10 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 ---
 
-### 🟡 PRIORITY 5: Parallel Tool Execution [M1]
+### 🟡 Parallel Tool Execution — #11 [M1]
 
 **Status:** ❌ NOT STARTED  
-**GitHub Issue:** #11  
-**Depends on:** P6.0e (coordinator refactoring to use agnostic types)  
-**Note:** Issue #11 labels this as P7, but it belongs in M1 per roadmap. Renumbered to P5 in the roadmap to reflect priority (medium, after P6.0 core).
+**Depends on:** #121 (Consumer Migration — coordinator refactoring to use agnostic types)
 
 **Goal:** Execute independent tool calls in parallel for faster response times.
 
@@ -2459,7 +2459,7 @@ Recent context (47 messages):
 
 ---
 
-## 🟡 PRIORITY 2: Configurable Embedding Model + Server-Side Matryoshka [M1]
+## 🟡 Configurable Embedding Model + Server-Side Matryoshka — #106 [M1]
 
 **Status:** 📋 READY  
 **Depends on:** None  
@@ -2545,11 +2545,11 @@ These models work with llama.cpp server's `/v1/embeddings` endpoint which also s
 
 ---
 
-## 🔵 PRIORITY 6: Core Enhancements [M1]
+## 🔵 Core Enhancements — #72 [M1]
 
 Features that enhance core functionality before Sprach 2.0 work begins.
 
-### P6.0a: Retry Threshold with Backoff — #116
+### Retry Threshold with Backoff — #116 [M1]
 
 **Status:** 📋 READY  
 **Depends on:** None  
@@ -2612,10 +2612,10 @@ fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
 
 ---
 
-### P6.0: Multi-Provider Support — Full ollama-rs Removal
+### Multi-Provider Support — #72 [M1]
 
 **Status:** 📋 PLANNED  
-**Depends on:** P6.0a (retry — do first), #106 (Configurable Embedding Model)  
+**Depends on:** #116 (retry — do first), #106 (Configurable Embedding Model)  
 **Estimated effort:** 10–12 weeks (7 sequential sub-phases, each independently mergable)  
 **Issue:** #72
 
@@ -2663,7 +2663,7 @@ fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
 **Implementation phases (each independently mergable):**
 
 ```
-P6.0a ──► P6.0b ──► P6.0c ──► P6.0d ──► P6.0d-s ──► P6.0e ──► P6.0f ──► P6.0g
+#116 ──► #118 ──► #119 ──► #120 ──► (SSE) ──► #121 ──► #122 ──► #123
 Retry    Tool     Tipos     Ollama    Streaming    Migração  OpenAI    Remove
 Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
          Macro
@@ -2671,10 +2671,10 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 ---
 
-#### P6.0b: Tool Trait + Proc Macro `#[ask_ai::tool]` — #118
+#### Tool Trait + Proc Macro `#[ask_ai::tool]` — #118 [M1]
 
 **Status:** 📋 PLANNED  
-**Depends on:** None (can start in parallel with P6.0a)  
+**Depends on:** None (can start in parallel with #116)  
 **Estimated effort:** 1–1.5 weeks  
 **Merge criterion:** All 36 tools use `#[ask_ai::tool]`, no tool uses `#[ollama_rs::function]`
 
@@ -2708,10 +2708,10 @@ pub trait Tool: Send + Sync {
 
 ---
 
-#### P6.0c: Agnostic Provider Types — #119
+#### Agnostic Provider Types — #119 [M1]
 
 **Status:** 📋 PLANNED  
-**Depends on:** #118 (P6.0b — error types should be compatible with new Tool trait)  
+**Depends on:** #118 (error types should be compatible with new Tool trait)  
 **Estimated effort:** 1 week  
 **Merge criterion:** Types compile, `From` conversions tested, no existing files changed
 
@@ -2741,10 +2741,10 @@ pub trait LlmProvider: Send + Sync {
 
 ---
 
-#### P6.0d: OllamaProvider (reqwest direct) — #120
+#### OllamaProvider (reqwest direct) — #120 [M1]
 
 **Status:** 📋 PLANNED  
-**Depends on:** #119 (P6.0c — uses agnostic types)  
+**Depends on:** #119 (uses agnostic types)  
 **Estimated effort:** 2–3 weeks  
 **Merge criterion:** OllamaProvider passes same smoke tests as ollama-rs client
 
@@ -2772,10 +2772,10 @@ pub trait LlmProvider: Send + Sync {
 
 ---
 
-#### P6.0d-s: Streaming SSE
+#### Streaming SSE
 
 **Status:** 📋 PLANNED  
-**Depends on:** P6.0d  
+**Depends on:** #120  
 **Estimated effort:** 1 week  
 **Merge criterion:** SSE parsing works, testable via `ask-ai query "text" --stream`
 
@@ -2790,10 +2790,10 @@ pub trait LlmProvider: Send + Sync {
 
 ---
 
-#### P6.0e: Consumer Migration — #121
+#### Consumer Migration — #121 [M1]
 
 **Status:** 📋 PLANNED  
-**Depends on:** #118 (P6.0b Tool trait) + #119 (P6.0c agnostic types) + #120 (P6.0d OllamaProvider)  
+**Depends on:** #118 (Tool trait) + #119 (agnostic types) + #120 (OllamaProvider)  
 **Estimated effort:** 2–3 weeks  
 **Merge criterion:** No `use ollama_rs` in business modules (only `src/provider/`)
 
@@ -2815,10 +2815,10 @@ pub trait LlmProvider: Send + Sync {
 
 ---
 
-#### P6.0f: OpenAI-Compatible Provider — #122
+#### OpenAI-Compatible Provider — #122 [M1]
 
 **Status:** 📋 PLANNED  
-**Depends on:** #121 (P6.0e — all consumers using LlmProvider)  
+**Depends on:** #121 (all consumers using LlmProvider)  
 **Estimated effort:** 2 weeks  
 **Merge criterion:** `--provider openai` works with OpenAI / llama.cpp / LM Studio
 
@@ -2859,10 +2859,10 @@ vision = true
 
 ---
 
-#### P6.0g: Remove ollama-rs — #123
+#### Remove ollama-rs — #123 [M1]
 
 **Status:** 📋 PLANNED  
-**Depends on:** #121 (P6.0e — all consumers migrated)  
+**Depends on:** #121 (all consumers migrated)  
 **Estimated effort:** 2–3 days  
 **Merge criterion:** `cargo build --all-features` without `ollama-rs` in Cargo.toml
 
@@ -2892,7 +2892,7 @@ vision = true
 
 ---
 
-### P6.1: Auto Fact Extraction (autoDream-lite)
+### Auto Fact Extraction (autoDream-lite) — #73 (CLOSED)
 
 **Status:** ✅ COMPLETED  
 **Depends on:** P0 (Factual Memory System — completed)  
@@ -2958,7 +2958,7 @@ Key files:
 
 ---
 
-### P6.2: Context Pinning
+### Context Pinning — #74 [M1]
 
 **Status:** 🟡 RESEARCH NEEDED  
 **Depends on:** None  
@@ -2980,7 +2980,7 @@ Key files:
 
 ---
 
-### P6.3: Dynamic Context Limits
+### Dynamic Context Limits — #75 [M1]
 
 **Status:** 🟡 RESEARCH NEEDED  
 **Depends on:** None  
@@ -2998,7 +2998,7 @@ Key files:
 
 ---
 
-### P6.4: Secret Scanning (Content)
+### Secret Scanning (Content) — #76 [M1]
 
 **Status:** 📋 PLANNED  
 **Depends on:** Existing `files_blocklist.rs` (path-based scanning)  
@@ -3014,7 +3014,7 @@ Key files:
 
 **Related:** Issue #76
 
-### P6.5: Config Upgrade Command — Same as P1 (#105)
+### Config Upgrade Command — #105 [M1]
 
 **Status:** 📋 PLANNED
 **Depends on:** None
@@ -3025,7 +3025,7 @@ Key files:
 
 ---
 
-### P6.7: Fact Embedding & Semantic Dedup
+### Fact Embeddings & Semantic Dedup — #108 (CLOSED)
 
 **Status:** ✅ COMPLETED [M1]
 **Depends on:** P6.1 (Auto Fact Extraction — completed)
@@ -3131,7 +3131,7 @@ ask-ai config upgrade [--dry-run] [--backup]
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality — Memory Staleness Warnings [M1]
+### Content Staleness Indicators — #96 [M1]
 
 **Status:** ✅ COMPLETED (v0.39.5)  
 **Estimated effort:** 0.5 day
@@ -3162,7 +3162,7 @@ for fact in preferences {
 
 ---
 
-### 🔵 PRIORITY 4: Code Quality — Truncation Warnings [M1]
+### Truncation Warnings in Tool Outputs — #96 related [M1]
 
 **Status:** ✅ COMPLETED (v0.39.5)  
 **Estimated effort:** 0.5 day
@@ -3251,7 +3251,7 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 8: File Session State [M1]
+### File Session State — #13 [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -3261,7 +3261,7 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 10: Extended Personalities System [M1]
+### Extended Personalities System — #49 [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -3286,7 +3286,7 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 11: Multilingual Skill Sanitization [M1]
+### Multilingual Skill Sanitization — #14 [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -3333,7 +3333,7 @@ Features planned for future releases:
 
 ---
 
-### 🔵 PRIORITY 12: Skills Management Tool [M1]
+### Skills Management Tool — #52 [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -3400,7 +3400,7 @@ Priority for deletes: user only (cannot delete project from CLI)
 
 ---
 
-### 🔵 PRIORITY 13: File Staleness Detection [M1]
+### File Staleness Detection — #50 [M1]
 
 **Status:** ❌ NOT STARTED
 
@@ -3424,7 +3424,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
-### 🔵 PRIORITY 14: TUI (Terminal User Interface) [M2]
+### TUI (Terminal User Interface) — #16 [M2]
 
 **Status:** ❌ NOT STARTED
 
@@ -3471,7 +3471,7 @@ This refactoring is a prerequisite for B8 (ACP) and should be done as part of P1
 
 **Mascote idea:** An ASCII mascote (Sprach described itself as "Nó de Ideias" — Idea Knot) could serve as a visual indicator of system state. When reflection triggers fire (see S2.3), the mascote's expression could change to signal the user. This follows patterns from other agent frameworks where visual feedback helps users understand internal state. Note for P14 implementation.
 
-#### P14.IM: TUI Interaction Modes (`/queue` and `/steer`)
+#### TUI Interaction Modes (`/queue` and `/steer`) — #117 [M2]
 
 **Status:** 📋 PLANNED (part of P14 TUI milestone, M2)  
 **Depends on:** TUI must exist first (concurrent input requires async input backend)  
@@ -3538,7 +3538,7 @@ busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
 
 ---
 
-### 🔵 PRIORITY 15: Plugin System [M3]
+### Plugin System — #15 [M3]
 
 **Status:** ❌ NOT STARTED
 
@@ -3670,7 +3670,7 @@ The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not 
 
 ---
 
-## 🟣 PRIORITY 7: Sprach 2.0 — CAS Research [M3]
+## Sprach 2.0 — CAS Research [M3]
 
 **Status:** 🟡 RESEARCH NEEDED  
 **Comprehensive Design:** See [Sprach 2.0 Research](./doc/src/development/sprach-2-0-research.md) for open questions, code analysis, and implementation details.
@@ -3679,7 +3679,7 @@ Based on the Sprach 2.0 self-analysis article, which identifies ask-ai-rs as a C
 
 **Prerequisite:** All P1-P5 current items must be completed before starting P7 work.
 
-### S2.1: Visualize Connections Tool
+### S2.1: Visualize Connections Tool — #77
 
 **Status:** 🟡 RESEARCH NEEDED  
 **Depends on:** None  
@@ -3701,10 +3701,10 @@ LLM tool that, given an item ID or query, finds top-N most similar items via emb
 
 ---
 
-### S2.2: Content Relations Graph
+### S2.2: Content Relations Graph — #78
 
 **Status:** 🟡 RESEARCH NEEDED  
-**Depends on:** S2.1  
+**Depends on:** #77
 **Estimated effort:** 5-8 days (after research)
 
 Persistent `content_relations` table with a two-layer architecture:
@@ -3753,10 +3753,10 @@ CREATE TABLE content_relations (
 
 ---
 
-### S2.3: Reflection on Triggers + Curation
+### S2.3: Reflection on Triggers + Curation — #79
 
 **Status:** 🟡 RESEARCH NEEDED  
-**Depends on:** S2.1, S2.2 (needs relation detection)  
+**Depends on:** #77, #78 (needs relation detection)  
 **Estimated effort:** 4-7 days (after research)
 
 Self-reflection triggered by specific events (not periodic). Reflection results are saved as drafts requiring human approval.
@@ -3809,10 +3809,10 @@ These details should be incorporated into P15 when research begins.
 
 ---
 
-### S2.5: SOUL.md Patching with Approval
+### S2.5: SOUL.md Patching with Approval — #80
 
 **Status:** 🟡 RESEARCH NEEDED  
-**Depends on:** S2.3 (curation pipeline feeds personality adjustment)  
+**Depends on:** #79 (curation pipeline feeds personality adjustment)  
 **Estimated effort:** 3-5 days (after research)
 
 Dynamic personality adaptation through LLM-generated patches to SOUL.md, with mandatory human approval.
@@ -3846,7 +3846,7 @@ Both are complementary: P5 improves *retrieval quality*, S2.5 improves *behavior
 ### S2.6: Skills Auto-Registration and Meta-Architecture
 
 **Status:** 🕐 AWAITING MATURATION  
-**Depends on:** S2.1-S2.5 operational  
+**Depends on:** #77–#80 operational  
 **Estimated effort:** TBD
 
 Meta-level architecture where skills can create and register other skills. Requires S2.1-S2.5 to be operational and well-tested before this becomes meaningful.
@@ -4046,7 +4046,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B1: Benchmark Infrastructure [M2] — #124
+### Benchmark Infrastructure — #124 [M2]
 
 **Status:** 📋 DRAFT
 **Depends on:** P6.0 (multi-provider, for cloud model benchmarks)
@@ -4078,7 +4078,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B6: Learned Patterns / Behavioral Intelligence [M2] — #125
+### Learned Patterns / Behavioral Intelligence — #125 [M2]
 
 **Status:** 📋 DRAFT
 **Depends on:** P5 (feedback — ✅ COMPLETED)
@@ -4099,7 +4099,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B3: Verification Layer (Study Sessions) [M4]
+### Verification Layer (Study Sessions) [M4]
 
 **Status:** 📋 DRAFT
 **Depends on:** P5 (feedback — ✅ COMPLETED)
@@ -4121,7 +4121,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B2: Belief Engine Abstraction [M4]
+### Belief Engine Abstraction [M4]
 
 **Status:** 📋 DRAFT
 **Depends on:** B3 (Verification Layer — first in M4)
@@ -4145,7 +4145,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B4: Context Engineering Evolution [M4]
+### Context Engineering Evolution [M4]
 
 **Status:** 📋 DRAFT
 **Depends on:** P6.0 (provider migration for `prompt_eval_count`)
@@ -4169,7 +4169,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B5: MCP Server (Memory as Service) [M4]
+### MCP Server (Memory as Service) [M4]
 
 **Status:** 📋 DRAFT — needs further reflection
 **Depends on:** P15 (MCP Client — Phase 1)
@@ -4192,7 +4192,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B7: Content Relations Graph — Priority Elevation [M3]
+### Content Relations Graph — Priority Elevation — #78 [M3]
 
 **Status:** Priority elevation: S2.2 from LOW → **MEDIUM**
 **No new card or issue.** This records the decision to elevate S2.2's priority when M3 work begins.
@@ -4201,7 +4201,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B8: ACP Agent Integration [M2/M3]
+### ACP Agent Integration [M2/M3]
 
 **Status:** 📋 DRAFT
 **Depends on:** P14 TUI (ApplicationBackend decoupling — B8.1, B8.2)
@@ -4341,4 +4341,4 @@ The original detailed implementation notes have been moved to:
 2026-04-28 - Draft priorities B1-B7 added. Milestones restructured: M2 now includes B1 (benchmarks) and B6 (learned patterns). M4 now has structured draft priorities (B2-B5). S2.2 (Content Relations) elevated to MEDIUM. Research icebox created at doc/src/development/research-icebox.md.
 2026-04-29 - Added B8 (ACP Agent Integration) as draft priority. Updated P14 to include ApplicationBackend decoupling as architectural requirement for TUI/ACP. Updated B5 to note subsumption by B8 (ACP's MCP-over-ACP). Added R-11 (ACP) and R-12 (ApplicationBackend) to research icebox. Updated R-09 (MCP Server) to reference B5/B8.
 2026-04-30 - M1 reorganized into 3 phases (Feedback+QuickWins → P6.0 Core → Low Priority). P6.5 consolidated with P1 #105 (duplicate). P5.1 verified as ~95% implemented (ADR-008/009). #103 and #17 marked for closure (obsolete). #90 (P5.1) flagged for verification and potential closure.
-2026-05-06 - Board cleanup: 12 missing issues added to project board (#36,#90-97,#99-101). P6.0 sub-issues created: #118 (P6.0b), #119 (P6.0c), #120 (P6.0d), #121 (P6.0e), #122 (P6.0f), #123 (P6.0g). Closed #103 (resolved in P6.0d) and #17 (obsolete). Fixed P5.1 decay_score persistence gap. Scrum Status synced for all 77 board items. Milestone corrections: M2 now includes TUI design+implementation (not split M2/M3). M3 is Sprach 2.0 only (P7, P15). Parallel Tool Execution (#11) confirmed as M1 (P5, depends on P6.0e). Updated #11 title from [P7] to [P5].
+2026-05-06 - Board cleanup: 12 missing issues added, P6.0 sub-issues #118-#123 created. Closed #103, #17. Fixed decay_score persistence gap. Milestone corrections: M2=TUI full stack, M3=Sprach 2.0 only, #11 confirmed M1. Created #124 (B1 Benchmarks), #125 (B6 Learned Patterns). **Major refactor:** removed all P-code prefixes (P1-P15, P5.1-P5.7, P6.0a-P6.0g, etc.) from open issue titles and IMPLEMENTATION.md section headers. Priorities are now referenced by card #. Milestone table uses card numbers. Dependency chain uses card numbers (#116→#118→#119→#120→#121→#122→#123).
