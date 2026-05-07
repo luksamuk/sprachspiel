@@ -15,7 +15,7 @@ I identify the next implementation demand for the ask-ai project by:
 2. Reading `doc/src/development/roadmap.md` for strategic context
 3. Checking open GitHub issues via `gh issue list` and `gh issue view`
 4. Checking the GitHub Project board status
-5. Cross-referencing priorities (P0-P15) and effort estimates
+5. Cross-referencing priorities and effort estimates
 6. Presenting candidates with effort, dependencies, and rationale
 7. After user selection, initiating the PR-PROCESS.md workflow
 
@@ -61,16 +61,15 @@ Create a priority table with these columns:
 
 Priority ordering rules:
 1. **Bug fixes** with `priority:critical` or `priority:high` come first
-2. **P0-P5** items that are `NOT STARTED` or `PLANNED` 
-3. **P6+** items that are `RESEARCH` or `PLANNED`
-4. Items with **no blockers** and **lower effort** are preferred for quick wins
-5. Items that **unblock other items** get priority boost
+2. **M1 Wave items** — follow W1→W2→W3→W4→W5 order (see IMPLEMENTATION.md "M1 Implementation Waves")
+3. Items with **no blockers** and **lower effort** are preferred for quick wins
+4. Items that **unblock other items** get priority boost (e.g., dependency chain #116→#123)
 
 Exclude from candidates:
 - Items already `COMPLETED` in IMPLEMENTATION.md
 - Items with `status:blocked` label
-- Items in `M2` (Sprach 2.0) milestone — research-only until M1 complete
-- Items in `M3` (Future) — explicitly deferred
+- Items in `M2` (TUI) — design-only until M1 complete
+- Items in `M3` (Sprach 2.0) — research-only until M1 complete
 
 ### Step 2.5: Duplicate Check (MANDATORY)
 
@@ -89,8 +88,8 @@ If a duplicate is found:
 ### Step 3: Present Options to User
 
 Present the top 3-5 candidates with:
-- **Title** and **Issue number**
-- **Priority** (P0-P15)
+- **Title** and **Issue number** (card #)
+- **M1 Wave** (W1=W2=W3=W4=W5)
 - **Estimated effort** (days/weeks)
 - **Dependencies/blockers**
 - **Why it's a good candidate** (no blockers, quick win, high value, etc.)
@@ -131,15 +130,16 @@ The pr-workflow skill covers: branch creation, documentation, draft PR, planning
 
 ## Milestone Mapping
 
-| Milestone | Codename | Description | Priorities |
-|-----------|----------|-------------|------------|
-| M1 | Core Evolution | All work before Sprach 2.0 | P0-P6, P8-P13 |
-| M2 | Sprach 2.0 | CAS research, cognitive extensions | P7, P14, P15 |
-| M3 | Future | Deferred, no current priority | Cost tracking, TUI, plugins |
+| Milestone | Codename | Description | Waves/Cards |
+|-----------|----------|-------------|-------------|
+| M1 | Core Evolution | All work before TUI and Sprach 2.0 | W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116-#123, #72) → W3 (Feedback: #90-#97) → W4 (Embedding: #106, #107) → W5 (Backlog: #13, #14, #49, #50, #52, #74-#76) |
+| M2 | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
+| M3 | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77-#80, #99-#101 |
+| M4 | Future | Deferred features and research | B2-B5, B8 (board drafts) |
 
 ## Project Info
 
 - **GitHub:** `luksamuk/ask-ollama-rs`
 - **Project Board:** Number 4 (Ask-AI Roadmap)
-
-For project board field IDs and status option IDs, load the `pr-workflow` skill.
+- **Priority within milestones:** determined by card order on the board (top = highest priority)
+- **Cards referenced by issue number** (e.g., #72, #116) — P-code prefixes retired

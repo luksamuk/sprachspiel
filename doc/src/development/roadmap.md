@@ -4,12 +4,12 @@ This document outlines planned features and the current state of Ask-AI.
 
 ## Milestones
 
-| Milestone | Codename | Description | Priorities |
-|-----------|----------|-------------|------------|
-| **[M1]** | Core Evolution | All work before Sprach 2.0 | P0-P6 (incl. P6.0a-g: provider migration), P8-P13 |
-| **[M2]** | UX & TUI Design | TUI design, UX research, prototyping, private feedback | P14 (UX design + interaction modes design) |
-| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, TUI implementation | P7 (S2.1-S2.6), P14 (TUI + `/queue` + `/steer`), P15 |
-| **[M4]** | Future | Deferred, no current priority | Cost tracking, team features, speculation |
+| Milestone | Codename | Description | Cards |
+|-----------|----------|-------------|-------|
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (5 waves) | W1:#105,#36 → W2:#116-#123,#72 → W3:#90-#97 → W4:#106,#107 → W5:#13,#14,#49,#50,#52,#74-#76 |
+| **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77-#80, #99-#101 |
+| **[M4]** | Future | Deferred features and research | B2-B5, B8 (board drafts) |
 
 ## Current State
 
@@ -58,22 +58,33 @@ This document outlines planned features and the current state of Ask-AI.
   - Automatic continuation after compaction
   - Nested continuations (up to 3 levels)
   - Context status injected into prompts
+- **Feedback-Driven Memory** (v0.40.0)
+  - Explicit feedback signals (Good/Bad/Correction) with decay-weighted RRF fusion
+  - Content decay activation (Ebbinghaus for content_items)
+  - Access tracking (retrieval reinforces retention)
+  - `/feedback` command and `/content prune` command
 
-**Tools (33 total):**
+**Tools (50 total):**
 
 | Category | Count | Feature Flag | Default |
 |----------|-------|--------------|---------|
 | Pokémon | 9 | `pokemon-tools` | ✅ Enabled |
 | Weather | 3 | `weather-tools` | ✅ Enabled |
-| File Operations | 5 | `file-tools` | ✅ Enabled |
+| File Read | 5 | `file-tools` | ✅ Enabled |
+| File Write | 3 | `file-tools` | ✅ Enabled |
 | Calculator | 1 | `calc-tools` | ✅ Enabled |
 | Web Search (Serper) | 2 | `serper-tools` | ✅ Enabled |
 | Web Search (DDG) | 3 | `search-tools` | ❌ Disabled |
 | System | 2 | `system-tools` | ✅ Enabled |
 | Factual Memory | 3 | (always on) | ✅ Enabled |
 | Memory Retrieval | 1 | (always on) | ✅ Enabled |
+| Notes | 3 | (always on) | ✅ Enabled |
+| Document Import | 1 | `document-tools` | ✅ Enabled |
 | Run Command | 1 | (always on) | ✅ Enabled |
-| Subagent | 1 | `subagent-tools` | ✅ Enabled |
+| Subagent | 4 | `subagent-tools` | ✅ Enabled |
+| Skills | 2 | `skills-tools` | ✅ Enabled |
+| Feedback | 3 | (always on) | ✅ Enabled |
+| Finance | 1 | `finance-tools` | ❌ Disabled |
 | LED Control | 5 | `led-tools` | ❌ Disabled* |
 
 *LED tools require `[led]` configuration in config.toml.
@@ -89,15 +100,13 @@ This document outlines planned features and the current state of Ask-AI.
 - FTS5 full-text search with BM25 scoring
 - Prompt injection: Facts injected into system prompt (max 2200 chars)
 
-**Planned: File Write Tools (Priority 2):**
+**File Write Tools (✅ Completed):**
 
 | Tool | Purpose | Status |
 |------|---------|--------|
-| `write_file` | Create or overwrite files | 📋 Planned |
-| `edit_file` | Edit existing files (replace/insert/delete) | 📋 Planned |
-| `append_file` | Add content to existing files | 📋 Planned |
-
-See `doc/src/development/file-write-tools.md` for implementation plan.
+| `write_file` | Create or overwrite files | ✅ Completed |
+| `edit_file` | Edit existing files (replace/insert/delete) | ✅ Completed |
+| `append_file` | Add content to existing files | ✅ Completed |
 
 **System Tools:**
 - `get_current_datetime` - Date, time, timezone, ISO 8601, Unix timestamp
@@ -124,205 +133,80 @@ See `doc/src/development/file-write-tools.md` for implementation plan.
 
 ## Upcoming Release
 
-### v0.37.0 (In Development)
+### v0.43.0 (Planned)
 
-**Context Overflow Token Calculation Fixes:**
-- Fixed three separate double-counting bugs in token calculation
-- `calculate_context_metrics()` was double-counting system + tools
-- `needs_inter_tool_compaction()` and related functions fixed
-- Pre-tool warning showed wrong remaining tokens
-- Pre-tool warning said "Auto-compacting" but only warned (now split logic)
-- Duplicate warning removed when tools are enabled
+**Features:**
+- Config Upgrade Command (#105) — `ask-ai config upgrade` merges missing default fields into existing config.toml
+- `/session forget` (#36) — Destructive session deletion with confirmations
 
-**Percentage-Based Context Thresholds:**
-- `MODERATE_USAGE_PERCENT = 0.75` - Warning at 75% usage
-- `CRITICAL_USAGE_PERCENT = 0.88` - Auto-compact at 88% usage
-- `INTER_TOOL_USAGE_PERCENT = 0.94` - Inter-tool warning at 94%
-- `EMERGENCY_USAGE_PERCENT = 0.97` - Emergency truncation at 97%
-- Absolute minimums for small contexts (2K, 1K, 512, 256 tokens)
-
-**Context Overflow During Multi-Tool Execution:**
-- Token budget verification before each tool execution
-- Inter-tool context check with proper token counting
-- Emergency truncation when approaching limit
-- Per-tool token budgets defined in `TOOL_TOKEN_BUDGETS`
+**Infrastructure:**
+- Retry Threshold with Backoff (#116) — Recoverable server errors with exponential backoff
+- Tool Trait + Proc Macro (#118) — `#[ask_ai::tool]` replacing `#[ollama_rs::function]`
 
 ---
 
 ## Recent Releases
 
-### v0.36.0 (2026-03-19)
+### v0.42.0 (2026-05-01)
 
 **Features:**
-- Welcome banner redesign with Extended Mind ASCII art
-- Prompt emojis (`🧠🔧`) replacing `[t][T]` indicators
-- `/new` command for new conversation session
-- `/session` command group for unified session management
-- Session auto-load on startup
-- Database initialization failure diagnostics
-- Schema migration v6→v7 fix for embedding duplicates
-
-**Changes:**
-- `/clear` renamed to `/new`
-- `/load` auto-saves current session before switching
-
-### v0.35.0 (TBD)
-
-**Fixes:**
-- Context display after compaction - correct token count after session reload
-
-### v0.26.7 (2026-03-09)
-
-**Dead Code Cleanup:**
-- Removed unused constants (`MIN_PRESERVE_LAST`)
-- Removed unused functions (`count_embedded_messages`, `get_message_chunks`, etc.)
-- Removed legacy functions (`set_compacted_summary`, `clear_compacted_summary`, etc.)
-- Converted test-only methods to `#[cfg(test)]`
-- Fixed `#[allow(dead_code)]` annotations
-
-### v0.26.6 (2026-03-08)
-
-**Integration Tests for Context Overflow:**
-- 22 integration tests for overflow protection
-- Tests for threshold hierarchy, Unicode truncation, recovery cycles
-
-**Bug Fix:**
-- Context builder panic after `/compact` + `/clear`
-
-### v0.26.5 (2026-03-08)
-
-**Error Recovery During Tool Execution:**
-- Detects "Context overflow during tool execution" error
-- Removes failed messages, auto-compacts, prompts retry
-
-**Pre-Tool Context Check:**
-- Checks context at 75% threshold before tool execution
-- Auto-compacts if needed to prevent overflow
+- OCR Prompt Strategy — model-aware prompt selection for vision models
+- `/ocr` command accepts optional mode parameter (text, table, figure, formula)
+- `spawn_ocr_agent` tool accepts `ocr_mode` parameter
 
 **Bug Fixes:**
-- `/undo` now deletes embeddings from database
-- Code mode (-c flag) now works in chat
-- Hybrid search supports `exclude_ids` parameter
+- Unicode panic on string truncation in chat resume
+- Context overflow during multi-tool execution
+- FTS schema mismatch fix (PR #87)
 
-### v0.26.4 (2026-03-08)
+### v0.41.0 (2026-04-28)
 
-**Token Estimation in Coordinator:**
-- Context overflow detection during tool execution (90% threshold)
+**Features:**
+- Specialized Agent Architecture — dedicated OCR/vision/translate/summarize spawning tools
+- Removed generic `spawn_subagent` and `spawn_document_agent`
+- Removed hardcoded PDF pipeline from Rust (LLM orchestrates via skills)
 
-**Unicode-Safe Tool Result Truncation:**
-- `truncate_tool_result()` with charset-safe truncation
-- `MAX_TOOL_RESULT_TOKENS = 4000` limit
+### v0.40.0 (2026-04-11)
 
-### v0.26.3 (2026-03-08)
+**Features:**
+- Document Import Tool — TXT, MD, ORG import with semantic search
+- Query module refactoring — reduced cognitive complexity
+- DB rename: `embeddings.db` → `ask-ai.db` + `--db` CLI flag
+- Logging overhaul — `MultiLogger` with file logging, data sensitivity policy
+- Agent spawning tools — 4 dedicated tools replacing generic `spawn_subagent`
 
-**Bug Fixes:**
-- `/undo` deletes embeddings from database
-- Fix crash after `/compact` + `/clear`
-- Code mode (-c flag) works in chat
-- Hybrid search `exclude_ids` parameter
+### v0.39.5 (2026-04-07)
 
-### v0.26.2 (2026-03-05)
+**Features:**
+- Enhanced TODO tools — CRUD gaps, priority, tags
+- `/forget --yes` confirmation for destructive command
+- `/skill <name>` subcommand (namespace collision prevention)
+- Content staleness indicators in facts prompt
+- Truncation warnings in tool outputs
 
-**Bug Fix:**
-- Token count mismatch between `/context` and Ollama's `prompt_eval_count`
+### v0.39.0 (2026-04-05)
 
-### v0.26.1 (2026-03-04)
+**Features:**
+- Document Import Tool with `/doc import`, `/doc list`, `/doc show`, `/doc delete`
 
-**Feature:**
-- Source attribution in memory system
-- `SourceType` enum with `[msg:N]`, `[doc:N]`, `[note:N]` prefixes
+### v0.38.0 (2026-04-03)
+
+**Features:**
+- Skills System — `skill_list`, `skill_view` tools, `/skill <name>` command
+
+### v0.37.0 (2026-03-29)
+
+**Features:**
+- Context overflow during multi-tool execution
+- Inter-tool compaction (automatic context management during tool chains)
+- Percentage-based context thresholds
+- Embedding fallback for oversized content
 
 ---
 
 ## Known Issues
 
-### GLM-OCR Returns Empty Output ✅
-
-**Status:** Fixed in Ollama v0.17.6 (2026-03-04)
-
-Users on rolling-release distros may need to wait for package updates. For immediate fix:
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-### Semantic Retrieval Context Framing ✅
-
-**Status:** Completed (v0.22.9)
-
-Fixed with framing text, MEMORY section in system prompt, and explicit instructions.
-
----
-
-## Critical Bugs (All Fixed)
-
-All critical bugs have been resolved in v0.26.2 - v0.26.7:
-
-| Bug | Status | Version |
-|-----|--------|---------|
-| Context token count mismatch | ✅ Fixed | v0.26.2 |
-| `/undo` incomplete cleanup | ✅ Fixed | v0.26.3 |
-| User prompt in hybrid search | ✅ Fixed | v0.26.3 |
-| Code mode (-c) not working | ✅ Fixed | v0.26.3 |
-| Context panic after `/compact` + `/clear` | ✅ Fixed | v0.26.6 |
-| Context exhaustion during tools | ✅ Fixed | v0.26.4-v0.26.6 |
-| Context utilization after `/compact` | ✅ Fixed | v0.26.8 |
-
-### Context Utilization After Compaction
-
-**Status:** ✅ FIXED (v0.26.8) - Needs Manual Testing
-
-**Problem:** After running `/compact`, the `/context` command showed incorrect token counts:
-- Displayed 100%+ utilization even after successful compaction
-- Counted ALL messages including compacted ones
-- Wrong message counts in breakdown
-
-**Fix Applied:**
-- `history_real_tokens()` now skips compacted messages and includes summary
-- `check_context_overflow()` respects `messages_sent_to_llm`
-- `/context` display shows active messages and summary tokens correctly
-
-**Needs Manual Testing:**
-- Test with long conversations that trigger auto-compact
-- Verify `/context` shows reduced tokens after `/compact`
-- Test with different compaction scenarios (manual vs auto)
-
----
-
-## Pending Bugs
-
-### Context Not Cleared After /compact
-
-**Status:** ✅ FIXED (v0.27.2)
-
-**Problem:** After `/compact`, context utilization remained high/overflow. User needed `/clear` to actually free space.
-
-**Cause:** `prompt_tokens` values stored in messages still reflected the old (larger) context size after compaction.
-
-**Fix:** `set_compacted_summary_with_range()` now clears `prompt_tokens` from all messages. The next LLM interaction will receive fresh token counts reflecting the reduced context.
-
-### Markdown in Compaction Summary
-
-**Status:** ✅ FIXED (v0.27.2)
-
-**Problem:** Compaction summary was plain text, not formatted as markdown.
-
-**Fix:**
-- Updated compaction prompt to request structured markdown output
-- Changed `println!` to `markdown::print_markdown()` for proper rendering
-- Summary now includes sections: Key Topics, Decisions Made, Technical Details, Action Items
-
-### Web Scraping Content Quality
-
-**Status:** ✅ FIXED (v0.27.2)
-
-**Problem:** Web fetch tool sometimes returned raw HTML/CSS instead of clean markdown.
-
-**Fix:**
-- Added `clean_html()` function to extract main content (`<main>`, `<article>`, etc.)
-- Prioritizes semantic content over navigation, sidebars, ads
-- Added `truncate_content()` with safe UTF-8 boundary handling
-- Content limited to 50,000 characters to prevent memory issues
-- Shows "(truncated)" indicator when content is limited
+No critical bugs currently open. See [GitHub Issues](https://github.com/luksamuk/ask-ai-rs/issues) for the latest status.
 
 ---
 
@@ -622,48 +506,33 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 
 ---
 
-### P6: Core Enhancements [M1]
+### Core Enhancements [M1]
 
-**Priority:** P6 (before Sprach 2.0, after current P1/P4/P5)  
 **Status:** 📋 PLANNED / 🟡 RESEARCH
 
-| ID | Feature | Status | Effort |
-|----|---------|--------|--------|
-| P6.0a | Retry Threshold with Backoff | 📋 Ready | 1.5-2 days |
-| P6.0 | Multi-Provider Support (ollama-rs removal) | 📋 Planned ([Issue #72](https://github.com/luksamuk/ask-ai-rs/issues/72)) | 10-12 weeks (7 sub-phases) |
-| P6.0b | Tool Trait + `#[ask_ai::tool]` Proc Macro | 📋 Planned | 1-1.5 weeks |
-| P6.0c | Agnostic Provider Types | 📋 Planned | 1 week |
-| P6.0d | OllamaProvider (reqwest direct) | 📋 Planned | 2-3 weeks |
-| P6.0d-s | Streaming SSE | 📋 Planned | 1 week |
-| P6.0e | Consumer Migration | 📋 Planned | 2-3 weeks |
-| P6.0f | OpenAI-Compatible Provider | 📋 Planned | 2 weeks |
-| P6.0g | Remove ollama-rs from Cargo.toml | 📋 Planned | 2-3 days |
-| P6.0-sub | Embedding Provider Abstraction | 📋 Planned ([sub-issue #107](https://github.com/luksamuk/ask-ai-rs/issues/107)) | 1-2 weeks |
-| P2 | Configurable Embedding Model + Matryoshka | 📋 Ready ([Issue #106](https://github.com/luksamuk/ask-ai-rs/issues/106)) | 1 week |
-| P6.1 | Auto Fact Extraction (autoDream-lite) | ✅ Completed | 3-5 days + 2 days (bug fixes) |
-| P6.7 | Fact Embedding & Semantic Dedup | ✅ Completed | 5-7 days |
-| P6.2 | Context Pinning | 🟡 Research | 2-4 days |
-| P6.3 | Dynamic Context Limits | 🟡 Research | 1-2 days |
-| P6.4 | Secret Scanning (Content) | 📋 Planned | 1-2 days |
-| P6.5 | Config Upgrade Command | 📋 Planned | 5 days |
+| Card # | Feature | Status | Effort |
+|--------|---------|--------|--------|
+| #116 | Retry Threshold with Backoff | 📋 Ready | 1.5-2 days |
+| #118 | Tool Trait + `#[ask_ai::tool]` Proc Macro | 📋 Ready | 1-1.5 weeks |
+| #119 | Agnostic Provider Types | 📋 Planned | 1 week |
+| #120 | OllamaProvider (reqwest direct) | 📋 Planned | 2-3 weeks |
+| #121 | Consumer Migration | 📋 Planned | 2-3 weeks |
+| #122 | OpenAI-Compatible Provider | 📋 Planned | 2 weeks |
+| #123 | Remove ollama-rs from Cargo.toml | 📋 Planned | 2-3 days |
+| #72 | Multi-Provider Support (parent issue) | 📋 Planned | 10-12 weeks |
+| #107 | Embedding Provider Abstraction | 📋 Planned | 1-2 weeks |
+| #106 | Configurable Embedding Model + Matryoshka | 📋 Ready | 1 week |
+| #74 | Context Pinning | 🟡 Research | 2-4 days |
+| #75 | Dynamic Context Limits | 🟡 Research | 1-2 days |
+| #76 | Secret Scanning (Content) | 📋 Planned | 1-2 days |
+| #105 | Config Upgrade Command | 📋 Ready | 5 days |
 
-**P6.1 Bug Notes:**
-- Bug #2 (PT noun translation) is **DEFERRED** to issue #106 (M2 milestone). Heuristic mode only translates prefixes; full noun translation requires LLM-mode.
-
-**Also in P4 (Code Quality extras) [M1]:**
-
-| Feature | Status | Effort |
-|---------|--------|--------|
-| Memory Staleness Warnings | 📋 Planned | 0.5 day |
-| Truncation Warnings | 📋 Planned | 0.5 day |
-
-**P5 merge [M1]:** Verbosity Configuration merged with `log` crate item — single implementation covering both logging levels and configurable verbosity (quiet/normal/verbose/debug).
+**Dependency chain:** #116 → #118 → #119 → #120 → #121 → #122 → #123
 
 ---
 
-### Sprach 2.0: CAS Research [M2 → M3]
+### Sprach 2.0: CAS Research [M3]
 
-**Priority:** P7 (after all P1-P5 current items are resolved)  
 **Status:** 🟡 RESEARCH NEEDED  
 **Full Design:** See [Sprach 2.0 Research](./sprach-2-0-research.md) for open questions, code analysis, and implementation details.
 
@@ -674,11 +543,11 @@ Self-analysis identifying ask-ai-rs as a Complex Adaptive System (CAS) with emer
 | S2.1 | Visualize Connections Tool | None | 🟡 Research | 2-3 days |
 | S2.2 | Content Relations Graph (2-layer) | S2.1 | 🟡 Research | 5-8 days |
 | S2.3 | Reflection on Triggers + Curation | S2.1, S2.2 | 🟡 Research | 4-7 days |
-| S2.4 | Plugin System (WASM) | — | 📋 P15 (existing) | 3-4 weeks |
+| S2.4 | Plugin System (WASM) | — | 📋 #15 (existing) | 3-4 weeks |
 | S2.5 | SOUL.md Patching + `/apply-patch` | S2.3 | 🟡 Research | 3-5 days |
 | S2.6 | Skills Auto-Registration (Meta) | S2.1-S2.5 | 🕐 Wait | TBD |
 | S2.meta1 | Meta-cognition Skill (Layer 1) | None | 🟡 Prototype (Issue #99) | 1h |
-| S2.meta2 | Behavioral Telemetry (Layer 2) | P5 merge, S2.meta1 data | 📋 Planned (Issue #100) | 2-3 days |
+| S2.meta2 | Behavioral Telemetry (Layer 2) | Feedback system, S2.meta1 data | 📋 Planned (Issue #100) | 2-3 days |
 | S2.meta3 | Behavioral Reflection + Personality (Layer 3) | S2.3, S2.5, S2.meta2 | 📋 Planned (Issue #101) | 1-2 weeks |
 
 **Meta-cognition Behavioral Proposals (S2.meta1-S2.meta3):**
@@ -714,10 +583,9 @@ User-defined tools via dynamic loading or compilation.
 
 ---
 
-### TUI (Terminal User Interface) [M2 → M3]
+### TUI (Terminal User Interface) [M2]
 
-**Priority:** P14
-**Status:** 🟡 IN PROGRESS (Architecture refactoring)
+**Status:** ❌ NOT STARTED
 
 **Goal:** Build a responsive TUI using Ratatui-rs.
 
@@ -740,11 +608,11 @@ The TUI implementation MUST create a clean `ApplicationBackend` trait that decou
 ```
 ApplicationBackend (trait)
    ├── CLI (RustylineInput + TerminalView) — current
-   ├── TUI (TuiInput + TuiView) — P14
+   ├── TUI (TuiInput + TuiView) — #16
    └── ACP (stdio JSON-RPC) — B8
 ```
 
-See IMPLEMENTATION.md (P14 and B8) for full details.
+See IMPLEMENTATION.md (#16 TUI and B8 ACP) for full details.
 
 **Future Tasks:**
 - [ ] Research: Ratatui-rs best practices
@@ -754,7 +622,7 @@ See IMPLEMENTATION.md (P14 and B8) for full details.
 - [ ] Prototype: `TuiInput` implementing `InputBackend`
 - [ ] Prototype: `TuiView` implementing `ChatView`
 
-**Interaction Modes Design (P14.IM):**
+**Interaction Modes Design (#117):**
 
 Three busy-input modes for the TUI, inspired by Hermes Agent's `/queue` and `/steer` commands:
 
@@ -772,7 +640,7 @@ Three busy-input modes for the TUI, inspired by Hermes Agent's `/queue` and `/st
 busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
 ```
 
-**Reference:** See `IMPLEMENTATION.md` - Priority 14 for detailed interaction modes architecture.
+**Reference:** See `IMPLEMENTATION.md` - #16 TUI for detailed interaction modes architecture.
 
 ---
 
@@ -789,9 +657,8 @@ busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
 
 ## Low Priority
 
-### Multi-Provider Support (OpenAI-Compatible Backends) → Moved to P6.0 [M1]
+### Multi-Provider Support (OpenAI-Compatible Backends) — #72 [M1]
 
-**Priority:** P6.0 (was LOW, upgraded)  
 **Status:** 📋 PLANNED (full ollama-rs removal)  
 **Issue:** #72
 
@@ -799,22 +666,12 @@ busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
 
 | Issue | What | Status | Note |
 |-------|------|--------|------|
-| #106 | Configurable Embedding Model (P2) | 📋 Ready | **Required** before embedding provider swap |
-| #107 | Embedding Provider Abstraction | 📋 Planned | **Sub-task** of P6.0 (not independent prereq) |
+| #116 | Retry Threshold with Backoff | 📋 Ready | First in dependency chain |
+| #118 | Tool Trait + Proc Macro | 📋 Ready | Can start in parallel with #116 |
+| #106 | Configurable Embedding Model | 📋 Ready | Required before embedding provider swap |
+| #107 | Embedding Provider Abstraction | 📋 Planned | Sub-task of provider migration |
 
-> **NOTE:** This feature has been upgraded from LOW priority to P6.0 and is now tracked in IMPLEMENTATION.md under PRIORITY 6: Core Enhancements. The detailed implementation plan (7 sequential sub-phases P6.0a–P6.0g) is in the P6.0 section of IMPLEMENTATION.md. This roadmap section is kept for architectural reference.
->
-> **Design decision (2026-04-28):** Full removal of `ollama-rs` dependency (Opção B), replaced by reqwest-based `OllamaProvider` and `OpenAICompatibleProvider`. Rationale: full control over error formatting (including recovery prompts when LLM calls wrong tool), no ollama-rs API limitations (e.g., `prompt_eval_count` bug in v0.3.4), ownership of tool macro.
->
-> **Decomposition:** P6.0 is split into 7 independently mergable sub-phases:
-> - **P6.0a** (1.5-2 days) — Retry threshold with backoff (independent, do first)
-> - **P6.0b** (1-1.5 weeks) — Own Tool trait + `#[ask_ai::tool]` proc macro
-> - **P6.0c** (1 week) — Agnostic types (`LlmMessage`, `LlmResponse`, `ProviderError`)
-> - **P6.0d** (2-3 weeks) — `OllamaProvider` via reqwest direct
-> - **P6.0d-s** (1 week) — Streaming SSE
-> - **P6.0e** (2-3 weeks) — Migrate all consumers to `LlmProvider` trait
-> - **P6.0f** (2 weeks) — `OpenAICompatibleProvider`
-> - **P6.0g** (2-3 days) — Remove `ollama-rs` from `Cargo.toml`
+> **NOTE:** This feature is tracked in IMPLEMENTATION.md under the "Core Enhancements" section. The detailed dependency chain (#116→#118→#119→#120→#121→#122→#123) is documented there. This roadmap section is kept for architectural reference.
 
 **Goal:** Abstract provider differences to support both Ollama (local) and OpenAI-compatible APIs (cloud/local) through a unified interface.
 
@@ -985,8 +842,8 @@ Features explicitly deferred with no current priority:
 | Context Collapse | Observe, don't implement |
 | VCR Testing | When CI is robust |
 | Speculation | Indefinite deferral |
-| Remote Agent | P15+ |
-| ACP Agent Integration | B8 — after TUI decoupling (P14) |
+| Remote Agent | #15+ |
+| ACP Agent Integration | B8 — after TUI decoupling (#16) |
 | Team Memory Sync | Team use only |
 | Remote Managed Settings | Enterprise |
 | Worktree-aware sessions | Niche |

@@ -134,10 +134,12 @@
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123 |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (5 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123 |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101 |
 | **[M4]** | Future | Deferred features and research | B2–B5, B8 (no cards yet) |
+
+**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding: #106, #107) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76)
 
 **Priority within milestones** is determined by card order (top = highest priority) on the GitHub Project Board. Cards are referenced by their issue number (e.g., #72, #116).
 
@@ -150,6 +152,26 @@
 **M4 change:** Structured with draft priorities (B2-B5). See `doc/src/development/research-icebox.md` for deferred topics and competitive research.
 
 > **See also:** [Research Icebox](./doc/src/development/research-icebox.md) for deferred refinement topics, competitive research, and decision records.
+
+### M1 Implementation Waves
+
+M1 contains ~35 open cards organized into 5 implementation waves. Each wave has a theme and completion criterion. Waves are sequential by default, but W1 (Quick Wins) can be done in parallel with early W2 work since W1 items have no dependencies.
+
+| Wave | Codename | Theme | Cards | Completion Criterion |
+|------|----------|-------|-------|---------------------|
+| **W1** | Quick Wins | Small independent commands, no dependencies | #105, #36 | Both commands merged and functional |
+| **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
+| **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
+| **W4** | Embedding | Configurable model + provider abstraction | #106, #107 | Config.toml `[embedding]` section works; at least one alternative model validated |
+| **W5** | M1 Backlog | Context, secrets, personalities, file tracking | #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
+
+**Wave dependencies:**
+
+- **W1** has no blockers — can start immediately
+- **W2** has internal dependency chain: `#116 → #118 → #119 → #120 → #121 → #122 → #123`; `#11` depends on `#121`; `#72` closes when chain completes
+- **W3**: `#90` is closable now (decay fix merged); `#91`-`#97` need research before implementation can be sized
+- **W4**: independent of W2 (embedding config is orthogonal to provider migration)
+- **W5**: independent — can be picked up between waves or as mental breaks from larger work
 
 ### ✅ PRIORITY 0: Factual Memory System (COMPLETED) [M1]
 
@@ -2468,7 +2490,7 @@ Recent context (47 messages):
 
 **Goal:** Make the embedding model configurable in `models.toml` and use Ollama's `dimensions` parameter for server-side Matryoshka truncation instead of client-side truncation.
 
-**Prerequisite for:** #107 (Embedding Provider Abstraction) → #72 (P6.0 Multi-Provider)
+**Prerequisite for:** #107 (Embedding Provider Abstraction) → #72 (Multi-Provider)
 
 **Background:** Currently, the embedding model (`nomic-embed-text-v2-moe:latest`), dimensions (768→256), context length (512), and prefix (`"search_document: "`) are all hardcoded in `src/embeddings/client.rs` and `src/embeddings/truncate.rs`. Additionally, `truncate_and_normalize()` does client-side Matryoshka truncation, which is redundant since Ollama v0.11.11 (Sept 2025) supports the `dimensions` parameter on `/api/embed` for server-side truncation with L2 normalization.
 
@@ -2541,7 +2563,7 @@ These models work with llama.cpp server's `/v1/embeddings` endpoint which also s
 - [ ] No regression in search quality with nomic-embed-text-v2-moe (current model)
 - [ ] At least one alternative model tested and validated
 
-**Related:** Issue #106, Issue #107 (Embedding Provider Abstraction), Issue #72 (P6.0 Multi-Provider)
+**Related:** Issue #106, Issue #107 (Embedding Provider Abstraction), Issue #72 (Multi-Provider)
 
 ---
 
@@ -2608,7 +2630,7 @@ fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
 | `src/chat/core.rs` (lines 492-545) | Use `retry_delay()` between attempts. Show "Retrying in Xs" for backoff > 0 |
 | `src/chat/custom_coordinator.rs` (lines 759-771) | Tool `Err` → `ChatMessage::tool(error_msg)` instead of `OllamaError::ToolCallError(InternalToolError)`, so model sees the error |
 
-**Related:** Issue #72 (P6.0 parent)
+**Related:** Issue #72 (Multi-Provider parent)
 
 ---
 
@@ -4341,4 +4363,4 @@ The original detailed implementation notes have been moved to:
 2026-04-28 - Draft priorities B1-B7 added. Milestones restructured: M2 now includes B1 (benchmarks) and B6 (learned patterns). M4 now has structured draft priorities (B2-B5). S2.2 (Content Relations) elevated to MEDIUM. Research icebox created at doc/src/development/research-icebox.md.
 2026-04-29 - Added B8 (ACP Agent Integration) as draft priority. Updated P14 to include ApplicationBackend decoupling as architectural requirement for TUI/ACP. Updated B5 to note subsumption by B8 (ACP's MCP-over-ACP). Added R-11 (ACP) and R-12 (ApplicationBackend) to research icebox. Updated R-09 (MCP Server) to reference B5/B8.
 2026-04-30 - M1 reorganized into 3 phases (Feedback+QuickWins → P6.0 Core → Low Priority). P6.5 consolidated with P1 #105 (duplicate). P5.1 verified as ~95% implemented (ADR-008/009). #103 and #17 marked for closure (obsolete). #90 (P5.1) flagged for verification and potential closure.
-2026-05-06 - Board cleanup: 12 missing issues added, P6.0 sub-issues #118-#123 created. Closed #103, #17. Fixed decay_score persistence gap. Milestone corrections: M2=TUI full stack, M3=Sprach 2.0 only, #11 confirmed M1. Created #124 (B1 Benchmarks), #125 (B6 Learned Patterns). **Major refactor:** removed all P-code prefixes (P1-P15, P5.1-P5.7, P6.0a-P6.0g, etc.) from open issue titles and IMPLEMENTATION.md section headers. Priorities are now referenced by card #. Milestone table uses card numbers. Dependency chain uses card numbers (#116→#118→#119→#120→#121→#122→#123).
+2026-05-07 - M1 implementation waves formalized (W1-W5) with themes, cards, and completion criteria. Board TODO column reordered by implementation priority. #90 Scrum Status moved to Ready (decay_score fix merged).
