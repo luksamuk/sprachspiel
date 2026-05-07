@@ -4046,7 +4046,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B1: Benchmark Infrastructure [M2]
+### 📋 DRAFT B1: Benchmark Infrastructure [M2] — #124
 
 **Status:** 📋 DRAFT
 **Depends on:** P6.0 (multi-provider, for cloud model benchmarks)
@@ -4078,7 +4078,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 ---
 
-### 📋 DRAFT B6: Learned Patterns / Behavioral Intelligence [M2]
+### 📋 DRAFT B6: Learned Patterns / Behavioral Intelligence [M2] — #125
 
 **Status:** 📋 DRAFT
 **Depends on:** P5 (feedback — ✅ COMPLETED)
