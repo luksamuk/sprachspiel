@@ -661,7 +661,10 @@ mod tests {
 
         // Run decay cycle
         let stats = run_content_decay_cycle(&conn).unwrap();
-        assert_eq!(stats.pruned, 0, "Old note should not be pruned (importance < 0.8 but retention > 0.05)");
+        assert_eq!(
+            stats.pruned, 0,
+            "Old note should not be pruned (importance < 0.8 but retention > 0.05)"
+        );
 
         // Verify decay_score was updated (should be < 1.0 for an old item)
         let updated_decay: f32 = conn

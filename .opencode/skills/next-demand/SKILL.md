@@ -101,6 +101,79 @@ Present the top 3-5 candidates with:
 
 Then **WAIT for user selection**. Do NOT proceed without explicit choice.
 
+### Step 3.5: Draft Pipeline Check (MANDATORY)
+
+After presenting issue candidates, check if there are board drafts that could be promoted to issues with minimal effort. This prevents drafts from becoming an "idea cemetery" and ensures quick wins get refined.
+
+**Query drafts from the project board:**
+
+```bash
+gh api graphql -f query='
+query {
+  user(login: "luksamuk") {
+    projectV2(number: 4) {
+      items(first: 100) {
+        nodes {
+          id
+          type
+          fieldValues(first: 20) {
+            nodes {
+              ... on ProjectV2ItemFieldTextValue { text }
+              ... on ProjectV2ItemFieldSingleSelectValue { name }
+            }
+          }
+        }
+      }
+    }
+  }
+}' | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+items = data['data']['user']['projectV2']['items']['nodes']
+drafts = [i for i in items if i.get('type') == 'DRAFT_ISSUE']
+for d in drafts:
+    texts = [fv.get('text','') for fv in d.get('fieldValues',{}).get('nodes',[]) if 'text' in fv]
+    names = [fv.get('name','') for fv in d.get('fieldValues',{}).get('nodes',[]) if 'name' in fv]
+    title = texts[0] if texts else 'Unknown'
+    status = names[0] if names else 'Unknown'
+    print(f'  DRAFT: {title} (Status: {status})')
+"
+```
+
+**Classify drafts by refinement level:**
+
+| Refinement Level | Description | Typical Effort | Action |
+|------------------|-------------|----------------|--------|
+| **Level 1: Ready to promote** | Draft has clear description, no open questions, no code dependencies | ~30min to write issue | Offer to create issue immediately |
+| **Level 2: Needs research** | Draft has open questions, needs architecture validation | ~4h to 1 day | Offer to start Phase 0 research (🟡 RESEARCH) |
+| **Level 3: Needs design** | Draft is a concept, needs significant design before any implementation | Days | Leave as draft, suggest scheduling a design session |
+
+**Present quick-win drafts to the user:**
+
+After the issue candidates, show:
+
+> **📋 Board Drafts Available for Refinement**
+>
+> There are N drafts on the board. Some are quick wins that could be promoted to issues in under an hour:
+>
+> | Draft | Milestone | Refinement Level | Why promote now? |
+> |-------|-----------|-----------------|-------------------|
+> | [title] | [M3/M4] | Level 1 (30min) | [reason: no blockers, clear scope, prerequisite for X] |
+> | [title] | [M3/M4] | Level 2 (4h-1d) | [reason: needs architecture validation, blocks Y] |
+> | ... | ... | ... | ... |
+>
+> Would you like to refine any of these drafts into issues? If so, specify which one(s) and the refinement level.
+
+**Draft → Issue promotion process:**
+
+When the user selects a draft to promote:
+
+1. **Level 1 (Ready):** Create a GitHub issue with the draft's title and body, add it to the project board, move to "Ready" status, update IMPLEMENTATION.md if needed
+2. **Level 2 (Needs research):** Follow Phase 0 of the pr-workflow — create issue, mark as `🟡 RESEARCH NEEDED`, investigate, produce Research Summary, then promote to `📋 PLANNED`
+3. **Level 3 (Needs design):** Schedule a design discussion — do NOT create an issue yet
+
+**Important:** Do NOT promote drafts without explicit user authorization. Present the options and WAIT.
+
 ### Step 4: Initiate PR Process (AFTER user selection)
 
 Once the user picks a demand, determine the card's status:
@@ -127,6 +200,7 @@ The card's open questions are already answered; proceed directly to branch creat
 8. **ALWAYS wait for authorization between phases** — no autonomous progression
 9. **NEVER merge without approval** — PRs must be reviewed
 10. **ALWAYS flag research cards** — mark `🟡 RESEARCH NEEDED` candidates explicitly with open questions
+11. **ALWAYS check board drafts** — after presenting issue candidates, present quick-win drafts that could be promoted to issues (Step 3.5). Drafts must not become an idea cemetery.
 
 ## Priority Labels Reference
 
@@ -146,8 +220,26 @@ The card's open questions are already answered; proceed directly to branch creat
 |-----------|----------|-------------|-------------|
 | M1 | Core Evolution | All work before TUI and Sprach 2.0 | W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116-#123, #72) → W3 (Feedback: #90-#97) → W4 (Embedding: #106, #107) → W5 (Backlog: #13, #14, #49, #50, #52, #74-#76) |
 | M2 | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
-| M3 | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77-#80, #99-#101 |
-| M4 | Future | Deferred features and research | B2-B5, B8 (board drafts) |
+| M3 | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77-#80, #99-#101 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict |
+| M4 | Future | Deferred features and research | B2-B5, B8 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF |
+
+## Draft Refinement Guide
+
+When assessing drafts for promotion, use these quick-win criteria:
+
+| Draft | Milestone | Refinement Level | Quick Win? | Why |
+|-------|-----------|-----------------|------------|-----|
+| ADR: Empathy ≠ Failure | M3 | Level 1 (30min) | ✅ Yes | Zero code, prerequisite for #99/#100/#101 |
+| Attention Priming | M4 | Level 1 (30min) | ✅ Yes | ~1 day implementation, zero dependencies, zero architecture change |
+| Privacy Filter | M3 | Level 2 (4h-1d) | ⚠️ Half-day | Has PoC, but open questions on lifecycle and caching |
+| Context-Aware Chunking | M4 | Level 2 (4h-1d) | ⚠️ Half-day | Needs migration strategy for existing chunks |
+| Semantic Dedup | M4 | Level 1 (30min) | ✅ Yes | Offline batch job, well-scoped, no hot-path interaction |
+| Metadata Enrichment | M4 | Level 2 (4h-1d) | ❌ No | Requires schema v13 migration, complex |
+| HyDE / Q&A Pairing | M4 | Level 2 (4h-1d) | ❌ No | Depends on #106 (embedding model config) |
+| Behavioral Embeddings | M4 | Level 3 (design) | ❌ No | Premature — needs Layer 2 data first |
+| Behavioral RRF | M4 | Level 3 (design) | ❌ No | Depends on #100 and #101 being stable |
+| meta_cognize() Tool | M3 | Level 2 (4h-1d) | ⚠️ Half-day | Depends on #100 for data structure |
+| Behavioral Conflict | M3 | Level 2 (4h-1d) | ❌ No | Depends on #77/#78 (relations graph) |
 
 ## Project Info
 
