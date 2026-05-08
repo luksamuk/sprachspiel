@@ -244,12 +244,12 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 
 These were identified during the `cargo clippy` audit after the rename. They are NOT part of the rename PR but are tracked here for card creation:
 
-| Card | Description | Count | Priority |
-|------|-------------|-------|----------|
-| `unwrap()`/`expect()`/`panic!` triage | Audit all 44 `unwrap`/`expect`/`panic` sites. CLI entry points (main, command handlers) are legitimate; internal library functions need `?` or `map_err`. | 42 unwrap + 2 panic | 🔴 High |
-| Function extraction | Refactor 14 functions exceeding 100 lines (command_handlers.rs has 484-line fn) | 14 functions | 🔴 High |
-| Complexity reduction | Reduce cognitive complexity in 13 functions (max: 62/15) | 13 functions | 🔴 High |
-| Remove `#![expect(print)]` | Before TUI migration, remove crate-level `#![expect(print_stdout/print_stderr)]` from `lib.rs`. Each module must then decide: CLI modules keep direct prints, logic modules delegate to `ChatView` trait | 2 attrs | 📋 TUI |
+| Card | Description | Count | Priority | Issue |
+|------|-------------|-------|----------|-------|
+| Unwrap/expect/panic triage | Audit all 44 sites. CLI entry points keep justified `#[expect]]`; library code uses `?`/`map_err` | 42 unwrap + 2 panic | 🔴 Critical | #128 |
+| Function extraction | Refactor 14 functions exceeding 100 lines | 14 functions | 🔴 Critical | #129 |
+| Complexity reduction | Reduce cognitive complexity in 13 functions (max: 62/15) | 13 functions | 🔴 Critical | #130 |
+| Remove `#![expect(print)]` | Remove crate-level print expects before TUI; add module-level expects only to CLI modules | 2 attrs | 📋 TUI-prereq | #131 |
 
 ---
 
