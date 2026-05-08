@@ -289,7 +289,7 @@ impl FileLogger {
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join(app::APP_DATA_DIR)
-            .join("sprachspiel.log")
+            .join(app::LOG_FILENAME)
     }
 }
 

@@ -1,4 +1,4 @@
-//! Sprachspiel: A CLI tool for querying Ollama LLM models
+//! Sprachspiel: A CLI tool for querying LLM models via Ollama and compatible backends
 //!
 //! Originally evolved from the Python ask-ai.py script, rewritten in Rust
 //! with enhanced features including markdown rendering, tool support,

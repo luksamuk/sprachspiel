@@ -17,6 +17,9 @@ pub const APP_NAME: &str = "sprach";
 /// Used for config dir, data dir, project dir, DB filename, etc.
 pub const APP_PROJECT_NAME: &str = "sprachspiel";
 
+/// Log filename
+pub const LOG_FILENAME: &str = "sprachspiel.log";
+
 /// Database filename
 pub const DB_FILENAME: &str = "sprachspiel.db";
 
