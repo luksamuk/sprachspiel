@@ -10,7 +10,7 @@ sprach chat [OPTIONS]
 
 ## Description
 
-Start an interactive chat session with an Ollama model. Conversations are automatically saved per project (identified by git remote URL or folder name), allowing you to resume conversations where you left off.
+Start an interactive chat session with an LLM. Conversations are automatically saved per project (identified by git remote URL or folder name), allowing you to resume conversations where you left off.
 
 ## Key Features
 
@@ -439,7 +439,7 @@ Example: A 3000-character message creates 4 overlapping chunks, ensuring phrases
 
 ### Prerequisites
 
-1. **Ollama running** with embedding model:
+1. **LLM server running** with embedding model:
    ```bash
    ollama pull nomic-embed-text-v2-moe
    ```

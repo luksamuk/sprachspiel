@@ -1,13 +1,13 @@
 # Introduction
 
-Sprachspiel is a powerful command-line interface for interacting with Large Language Models (LLMs) through Ollama. Built in Rust for performance and reliability, it brings AI capabilities directly to your terminal with an elegant, markdown-rendered output.
+Sprachspiel is a powerful command-line interface for interacting with Large Language Models (LLMs) via Ollama and compatible backends. Built in Rust for performance and reliability, it brings AI capabilities directly to your terminal with an elegant, markdown-rendered output.
 
 ## Why Sprachspiel?
 
 In a world of web-based AI interfaces, Sprachspiel stands out by:
 
 - **Keeping you in the terminal** - No context switching, no browser tabs
-- **Working offline** - Uses local Ollama models when available
+- **Working offline** - Uses local LLM models (via Ollama or compatible backends) when available
 - **Being scriptable** - Pipe content in, pipe results out
 - **Rendering beautifully** - Markdown formatting in the terminal via termimad
 - **Supporting tools** - Automatically uses Pokémon, Weather, and Web Search data
@@ -92,12 +92,12 @@ Sprachspiel follows these principles:
 
 ## How It Works
 
-Sprachspiel communicates with Ollama, a local LLM server. When you run a command:
+Sprachspiel communicates with an LLM server (such as Ollama). When you run a command:
 
 1. **Input is collected** - From arguments or stdin
 2. **Model is selected** - Based on flags or defaults
 3. **Capabilities are detected** - Tools enabled if model supports them
-4. **Request is sent** - To your Ollama instance
+4. **Request is sent** - To the LLM server
 5. **Response is rendered** - Beautiful markdown in the terminal
 
 ```mermaid
@@ -105,7 +105,7 @@ graph LR
     A[User Input] --> B[CLI Parser]
     B --> C[Model Selection]
     C --> D[Capability Detection]
-    D --> E[Send to Ollama]
+    D --> E[Send to LLM Server]
     E --> F[Receive Response]
     F --> G[Markdown Rendering]
     G --> H[Terminal Output]

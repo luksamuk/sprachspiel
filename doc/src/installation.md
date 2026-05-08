@@ -6,13 +6,13 @@ This guide covers all the ways to install Sprachspiel on your system.
 
 Before installing Sprachspiel, ensure you have:
 
-1. **Ollama** - The LLM server that Sprachspiel communicates with
+1. **LLM Server (Ollama)** - The LLM server that Sprachspiel communicates with (Ollama by default)
 2. **Rust toolchain** - Only needed if building from source
 3. **Git** - For cloning the repository
 
 ### Installing Ollama
 
-Sprachspiel requires Ollama to be running. Install it from [ollama.ai](https://ollama.ai):
+Sprachspiel requires an LLM server to be running. Ollama is the default backend. Install it from [ollama.ai](https://ollama.ai):
 
 ```bash
 # Linux
@@ -131,7 +131,7 @@ This will:
 
 ### Method 4: Termux (Android)
 
-Sprachspiel can run on Android via Termux. Since Ollama doesn't run on Android, you'll need a remote Ollama server.
+Sprachspiel can run on Android via Termux. Since local LLM servers (Ollama) don't run on Android, you'll need a remote server.
 
 #### Quick Install (One-Liner)
 
@@ -441,7 +441,7 @@ sprach translate <TAB> # Should show translate options
 You can configure Sprachspiel with environment variables:
 
 ```bash
-# Ollama server location (default: localhost:11434)
+# LLM server location (default: localhost:11434)
 export OLLAMA_HOST="localhost:11434"
 
 # Add to your shell config (.bashrc, .zshrc, etc.)

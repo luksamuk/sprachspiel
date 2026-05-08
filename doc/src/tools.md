@@ -260,7 +260,7 @@ Example: get_weather_forecast(location: "Paris", days: "7")
 
 ## Calculator Tool (1)
 
-Built-in mathematical expression evaluator from ollama-rs.
+Built-in mathematical expression evaluator.
 
 ### calculate
 
@@ -288,7 +288,7 @@ Example: calculate(expression: "(100 + 50) * 0.2")
 
 ## Web Search Tools (3)
 
-Powered by DuckDuckGo via ollama-rs built-in DDGSearcher. Works without CAPTCHA issues.
+Powered by DuckDuckGo search. Works without CAPTCHA issues.
 
 ### web_search
 

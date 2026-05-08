@@ -38,7 +38,7 @@ source $HOME/.cargo/env
 
 ## Ollama Connection Issues
 
-### "Failed to connect to Ollama"
+### "Failed to connect to LLM server"
 
 **Problem:** Ollama not running
 

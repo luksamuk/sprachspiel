@@ -53,8 +53,8 @@ default = "qwen3.5:4b"
 # Model capability takes precedence: if the model doesn't support thinking, this is ignored.
 # thinking = false
 
-# Ollama server connection settings.
-# Change these if your Ollama server is not running on the default localhost.
+# LLM server connection settings.
+# Change these if your LLM server is not running on the default localhost.
 # Default: "127.0.0.1"
 ollama_host = "127.0.0.1"
 # Default: 11434
@@ -233,7 +233,7 @@ Create `~/.config/sprachspiel/models.toml`:
 
 # Add a new model
 [models.my-coder]
-model_id = "phi3:mini-4k"    # Required: Ollama model ID
+model_id = "phi3:mini-4k"    # Required: Model ID (as recognized by the backend)
 num_ctx = 4096                # Optional: context window (default: 4096)
 temperature = 0.3             # Optional: temperature (default: 0.2)
 top_k = 40                    # Optional: top-k sampling (default: 40)
@@ -270,8 +270,8 @@ When defining a custom model without all parameters, these defaults are used:
 |-------------|---------|
 | `num_ctx`    | 32768 (32K) |
 | `temperature`| 0.8     |
-| `top_k`      | not set (uses Ollama default) |
-| `top_p`      | not set (uses Ollama default) |
+| `top_k`      | not set (uses backend default) |
+| `top_p`      | not set (uses backend default) |
 | `repeat_penalty` | 1.1 |
 
 **Note**: If `num_ctx` is not specified, the default is 32K tokens. For cloud models or models where you want Ollama to automatically manage context, you can omit `num_ctx` entirely.
@@ -303,9 +303,9 @@ sprach --list
 This shows both built-in models and user-defined models (marked with `[user]`).
 
 
-### Remote Ollama Server
+### Remote LLM Server
 
-To connect to a remote Ollama instance:
+To connect to a remote LLM server (such as Ollama):
 
 ```toml
 [model]
@@ -316,9 +316,9 @@ ollama_port = 11434
 ```
 
 This is useful for:
-- **Termux/Android** - Connect to Ollama running on your desktop
-- **Remote servers** - Connect to Ollama on a different machine
-- **Docker/containers** - Connect to Ollama in a container
+- **Termux/Android** - Connect to an Ollama server running on your desktop
+- **Remote servers** - Connect to an LLM server on a different machine
+- **Docker/containers** - Connect to an LLM server in a container
 
 Or use environment variables:
 
@@ -434,7 +434,7 @@ sprach --tools "Tell me about Pikachu"
 
 ### OLLAMA_HOST
 
-Configure the Ollama server location (overrides config file):
+Configure the LLM server location (overrides config file):
 
 ```bash
 # Default (local)

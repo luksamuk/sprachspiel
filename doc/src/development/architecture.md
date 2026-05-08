@@ -4,7 +4,7 @@ This document describes the architecture and design decisions of Sprachspiel.
 
 ## Overview
 
-Sprachspiel is a Rust CLI tool that provides an interface to Ollama LLM models. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
+Sprachspiel is a Rust CLI tool that provides an interface to LLM models via Ollama and compatible backends. It follows a modular architecture with clear separation of concerns, featuring conversation persistence, semantic retrieval, and tool integration.
 
 ## System Architecture
 
@@ -339,7 +339,7 @@ Percentage-based triggers **scale proportionally** with larger context windows, 
 
 **Key Files:**
 - `src/context_overflow.rs` - Percentage thresholds, compaction functions
-- `src/tokens.rs` - Token calculation with Ollama's `prompt_eval_count`
+- `src/tokens.rs` - Token calculation with the backend's `prompt_eval_count`
 - `src/chat/core.rs` - `auto_compact_if_needed()`, `compact_conversation()`
 - `src/chat/continuation.rs` - Pre-tool compaction check
 - `src/chat/custom_coordinator.rs` - Inter-tool overflow detection
