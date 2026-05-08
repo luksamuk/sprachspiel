@@ -112,7 +112,7 @@ pub use skill_tools::*;
 #[derive(Debug, Deserialize)]
 pub struct NamedApiResource {
     pub name: String,
-    #[expect(dead_code)]
+    #[allow(dead_code)] // Field used when pokemon-tools is active; lint only fires without the feature
     pub url: String,
 }
 

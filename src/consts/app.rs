@@ -7,15 +7,11 @@
 //!
 //! Naming convention:
 //! - `APP_NAME` = binary/cli command name (short, for typing)
-//! - `APP_PROJECT_NAME` = project identity (long, for dirs, docs, branding)
+//! - `APP_CONFIG_DIR` / `APP_DATA_DIR` / `APP_PROJECT_DIR` = directory names
 
 /// Application binary name (the command users type)
 /// Must match Cargo.toml `[[bin]] name`.
 pub const APP_NAME: &str = "sprach";
-
-/// Project identity name (for directories, branding, docs)
-/// Used for config dir, data dir, project dir, DB filename, etc.
-pub const APP_PROJECT_NAME: &str = "sprachspiel";
 
 /// Log filename
 pub const LOG_FILENAME: &str = "sprachspiel.log";
