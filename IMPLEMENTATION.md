@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.43.0** - 2026-05-07 (Sprachspiel Rename)
+**v0.43.0** - 2026-05-08 (Sprachspiel Rename + Multi-Backend Positioning)
 
 ## Current Implementation Status
 
@@ -179,7 +179,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 **Issue:** #126
 **Branch:** `feat/rename-to-sprachspiel`
 
-**Goal:** Complete project rename from ask-ai to Sprachspiel.
+**Goal:** Complete project rename from ask-ai to Sprachspiel, shorten binary to `sprach`, and remove Ollama vendor-exclusivity from documentation.
 
 **Design Decisions:**
 - **No migration code:** No fallback paths, no `APP_DIR_LEGACY`, no backward compatibility dirs. Users rename manually.
@@ -187,6 +187,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 - **DB migration only:** `migrate_legacy_db()` extended: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (simple rename-if-exists).
 - **Full rename:** Binary, crate, all paths, all docs, all scripts, man page, assets, module names.
 - **Short binary name:** CLI command is `sprach` (6 chars), project identity stays `sprachspiel`. Config/data dirs are `~/.config/sprachspiel/`, `~/.local/share/sprachspiel/`, `.sprachspiel/`, `sprachspiel.db`.
+- **Multi-backend positioning:** Documentation now says "LLM models via Ollama and compatible backends" instead of "Ollama LLM models". Config keys `[ollama]` unchanged (reflects real code). Sample config updated: "LLM server" instead of "Ollama server".
 
 **Implementation Phases:**
 
@@ -201,11 +202,9 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 | 6 | Documentation (doc/, CHANGELOG, AGENTS.md, .opencode/, IMPLEMENTATION.md) | ✅ Done |
 | 7 | Testing (cargo build, clippy, test, manual) | ✅ Done |
 | 8 | Binary rename: sprachspiel → sprach (short CLI command) | ✅ Done |
-| 9 | GitHub repo rename (post-merge) | 📋 Pending |
-| 5 | Assets & art (scripts rename, PDF rename, BANNER_LOGO update) | 📋 Pending |
-| 6 | Documentation (doc/, CHANGELOG, AGENTS.md, IMPLEMENTATION.md, .opencode/) | 📋 Pending |
-| 7 | Testing (cargo build, clippy, test, manual) | 📋 Pending |
-| 8 | GitHub repo rename (post-merge) | 📋 Pending |
+| 9 | Documentation: remove Ollama vendor-exclusivity (11 files) | ✅ Done |
+| 10 | Sample config: remove ask-ai refs in settings.rs | ✅ Done |
+| 11 | GitHub repo rename (`ask-ollama-rs` → `sprachspiel`) | 📋 Pending (post-merge) |
 
 **Files to Create:**
 - `src/consts/app.rs` — Centralized app name constants (`APP_NAME`, `DB_FILENAME`)
