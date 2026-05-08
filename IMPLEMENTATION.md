@@ -173,9 +173,9 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 - **W4**: independent of W2 (embedding config is orthogonal to provider migration)
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
 
-### 🔄 PRIORITY 0: Rename ask-ai → Sprachspiel (IN PROGRESS) [M1]
+### ✅ PRIORITY 0: Rename ask-ai → Sprachspiel (COMPLETED) [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** ✅ COMPLETED
 **Issue:** #126
 **Branch:** `feat/rename-to-sprachspiel`
 
@@ -191,8 +191,15 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 0 | Art generation (BANNER_LOGO for SPRACHSPIEL) | ✅ Done (Hermes Agent) |
-| 1 | Constants & path centralization (APP_NAME, DB_FILENAME, .join() calls) | 🔄 In Progress |
+| 0 | Art generation (BANNER_LOGO for SPRACHSPIEL) | ✅ Done |
+| 1 | Constants & path centralization (APP_NAME, DB_FILENAME, .join() calls) | ✅ Done |
+| 2 | Binary & module rename (Cargo.toml, main.rs, doc comments) | ✅ Done |
+| 3 | User-facing strings & error messages (~12 refs in 6 files) | ✅ Done |
+| 4 | Makefile, scripts & man page | ✅ Done |
+| 5 | Assets & art (BANNER_LOGO, PDF rename) | ✅ Done |
+| 6 | Documentation (doc/, CHANGELOG, AGENTS.md, .opencode/, IMPLEMENTATION.md) | ✅ Done |
+| 7 | Testing (cargo build, clippy, test, manual) | ✅ Done |
+| 8 | GitHub repo rename (post-merge) | 📋 Pending |
 | 2 | Binary & module rename (Cargo.toml, main.rs, doc comments) | 📋 Pending |
 | 3 | Data paths & DB migration (all path functions, .sprachspiel/, sprachspiel.db) | 📋 Pending |
 | 4 | Makefile, scripts & man page | 📋 Pending |
@@ -232,6 +239,17 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 - GitHub repo rename (`ask-ollama-rs` → `sprachspiel`) — last step, post-merge
 
 **Related:** Issue #126
+
+**Clippy Debt Cards (identified during rename, to be created as issues):**
+
+These were identified during the `cargo clippy` audit after the rename. They are NOT part of the rename PR but are tracked here for card creation:
+
+| Card | Description | Count | Priority |
+|------|-------------|-------|----------|
+| `unwrap()`/`expect()`/`panic!` triage | Audit all 44 `unwrap`/`expect`/`panic` sites. CLI entry points (main, command handlers) are legitimate; internal library functions need `?` or `map_err`. | 42 unwrap + 2 panic | 🔴 High |
+| Function extraction | Refactor 14 functions exceeding 100 lines (command_handlers.rs has 484-line fn) | 14 functions | 🔴 High |
+| Complexity reduction | Reduce cognitive complexity in 13 functions (max: 62/15) | 13 functions | 🔴 High |
+| Remove `#![expect(print)]` | Before TUI migration, remove crate-level `#![expect(print_stdout/print_stderr)]` from `lib.rs`. Each module must then decide: CLI modules keep direct prints, logic modules delegate to `ChatView` trait | 2 attrs | 📋 TUI |
 
 ---
 
@@ -3523,6 +3541,13 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 - Input pane with history
 - Status bar showing model, context usage, tokens
 - Sidebar for tools/messages (optional)
+
+**Pre-migration cleanup (before TUI work starts):**
+- Remove `#![expect(clippy::print_stdout)]` and `#![expect(clippy::print_stderr)]` from `lib.rs`
+- Audit each module that currently uses `println!`/`eprintln!` directly:
+  - CLI-only modules (repl, command_handlers, view/terminal): keep direct prints, these are the CLI backend
+  - Logic modules (embeddings, retrieval, facts, tools): replace with `ChatView` method calls so both CLI and TUI backends work
+  - The `ChatView` trait in `view/mod.rs` already provides `print_message()` and `print_error()` abstractions for this purpose
 
 **Estimated effort:** 3-4 weeks (plus 1-2 weeks for ApplicationBackend decoupling)
 
