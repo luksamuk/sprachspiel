@@ -581,8 +581,8 @@ default = "qwen3.5:4b"
 # If not specified, subcommand defaults are used (true for query, false for others).
 # thinking = false
 
-# Ollama server connection settings.
-# Change these if your Ollama server is not running on the default localhost.
+# LLM server connection settings.
+# Change these if your LLM server is not running on the default localhost.
 # The host can be an IP address (e.g., "192.168.1.100") or a URL (e.g., "http://192.168.1.100").
 # Default: "127.0.0.1"
 ollama_host = "127.0.0.1"
@@ -605,7 +605,7 @@ ollama_port = 11434
 
 # --- QUERY SUBCOMMAND ---
 [model.query]
-# The model to use for 'ask query' or 'ask q'.
+# The model to use for 'sprach query' or 'sprach q'.
 # If not specified, falls back to the global [model] default.
 # model = "qwen3.5:4b"
 
@@ -619,7 +619,7 @@ ollama_port = 11434
 
 # --- CHAT SUBCOMMAND ---
 [model.chat]
-# The model to use for 'ask chat'.
+# The model to use for 'sprach chat'.
 # If not specified, falls back to the global [model] default.
 # model = "qwen3.5:4b"
 
@@ -636,7 +636,7 @@ ollama_port = 11434
 
 # --- OCR SUBCOMMAND ---
 [model.ocr]
-# The model to use for 'ask ocr'.
+# The model to use for 'sprach ocr'.
 # Built-in: "glm-ocr:bf16" (optimized for OCR tasks)
 # If not specified, uses "glm-ocr:bf16" by default.
 # model = "glm-ocr:bf16"
@@ -651,7 +651,7 @@ ollama_port = 11434
 
 # --- DOCUMENT SUBCOMMAND ---
 [model.document]
-# The model to use for 'ask document'.
+# The model to use for 'sprach document'.
 # If not specified, falls back to the global [model] default.
 # model = "qwen3.5:4b"
 
