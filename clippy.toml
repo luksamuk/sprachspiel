@@ -23,6 +23,7 @@ too-many-lines-threshold = 100
 # Allow certain words in doc comments without marking them as code.
 doc-valid-idents = [
     "AskAI",
+    "Sprach",
     "Sprachspiel",
     "Ollama",
     "SQLite",

@@ -5,8 +5,8 @@ The `summarize` command creates concise summaries of text with customizable styl
 ## Synopsis
 
 ```bash
-sprachspiel [GLOBAL OPTIONS] summarize [TEXT]
-sprachspiel [GLOBAL OPTIONS] sum [TEXT]
+sprach [GLOBAL OPTIONS] summarize [TEXT]
+sprach [GLOBAL OPTIONS] sum [TEXT]
 ```
 
 ## Description
@@ -62,104 +62,104 @@ These options are specific to the summarize subcommand:
 
 ```bash
 # Summarize text directly
-sprachspiel summarize "Long text to summarize..."
+sprach summarize "Long text to summarize..."
 
 # Using alias
-sprachspiel sum "Long text to summarize..."
+sprach sum "Long text to summarize..."
 
 # From stdin
-echo "Long text..." | sprachspiel summarize
+echo "Long text..." | sprach summarize
 ```
 
 ### Length Control
 
 ```bash
 # Short summary (100 words)
-sprachspiel summarize --max-length 100 "Very long text..."
-sprachspiel summarize -l 100 "Very long text..."
+sprach summarize --max-length 100 "Very long text..."
+sprach summarize -l 100 "Very long text..."
 
 # Long summary (500 words)
-sprachspiel summarize -l 500 "Detailed document..."
+sprach summarize -l 500 "Detailed document..."
 ```
 
 ### Format Options
 
 ```bash
 # Paragraph only
-sprachspiel summarize --format paragraph "Text..."
-sprachspiel summarize -f paragraph "Text..."
+sprach summarize --format paragraph "Text..."
+sprach summarize -f paragraph "Text..."
 
 # Bullets only
-sprachspiel summarize --format bullets "Text..."
-sprachspiel summarize -f bullets "Text..."
+sprach summarize --format bullets "Text..."
+sprach summarize -f bullets "Text..."
 
 # Both (default)
-sprachspiel summarize --format both "Text..."
+sprach summarize --format both "Text..."
 ```
 
 ### Style Presets
 
 ```bash
 # Technical documentation
-sprachspiel summarize --style technical "API documentation..."
+sprach summarize --style technical "API documentation..."
 
 # Academic paper
-sprachspiel summarize --style academic "Research findings..."
+sprach summarize --style academic "Research findings..."
 
 # Business report
-sprachspiel summarize --style business "Quarterly results..."
+sprach summarize --style business "Quarterly results..."
 
 # General (default)
-sprachspiel summarize --style general "Article..."
+sprach summarize --style general "Article..."
 ```
 
 ### Combining Options
 
 ```bash
 # Technical style, bullets, 150 words
-sprachspiel summarize --style technical --format bullets --max-length 150 "Code docs..."
+sprach summarize --style technical --format bullets --max-length 150 "Code docs..."
 
 # Academic, paragraph only, 200 words
-sprachspiel summarize --style academic -f paragraph -l 200 "Research paper..."
+sprach summarize --style academic -f paragraph -l 200 "Research paper..."
 ```
 
 ### Model Selection
 
 ```bash
 # Use default (qwen3.5:4b)
-sprachspiel summarize "Text..."
+sprach summarize "Text..."
 
 # Use specific model
-sprachspiel -m qwen2.5-coder:7b summarize "Text..."
+sprach -m qwen2.5-coder:7b summarize "Text..."
 
 # Use smaller model
-sprachspiel -m nanbeige4.1:3b summarize "Text..."
+sprach -m nanbeige4.1:3b summarize "Text..."
 ```
 
 ### From Files
 
 ```bash
 # Summarize file content
-cat article.txt | sprachspiel summarize
+cat article.txt | sprach summarize
 
 # With options
-cat documentation.md | sprachspiel summarize --style technical -l 200
+cat documentation.md | sprach summarize --style technical -l 200
 
 # Summarize code
-head -100 src/main.rs | sprachspiel summarize --style technical
+head -100 src/main.rs | sprach summarize --style technical
 ```
 
 ### Pipelines
 
 ```bash
 # OCR → Summarize
-sprachspiel ocr document.png | sprachspiel summarize
+sprach ocr document.png | sprach summarize
 
 # OCR → Summarize → Translate
-sprachspiel ocr japanese.png | sprachspiel summarize | sprachspiel translate ja:pt
+sprach ocr japanese.png | sprach summarize | sprach translate ja:pt
 
 # File → Summarize → Save
-cat long-article.txt | sprachspiel summarize --style academic > summary.txt
+cat long-article.txt | sprach summarize --style academic > summary.txt
 ```
 
 ## Use Cases
@@ -168,21 +168,21 @@ cat long-article.txt | sprachspiel summarize --style academic > summary.txt
 
 ```bash
 # Quickly understand a long document
-cat contract.txt | sprachspiel summarize -l 150
+cat contract.txt | sprach summarize -l 150
 
 # Technical documentation review
-cat api-docs.md | sprachspiel summarize --style technical
+cat api-docs.md | sprach summarize --style technical
 ```
 
 ### 2. Research Papers
 
 ```bash
 # Academic paper summary
-sprachspiel ocr paper.png | sprachspiel summarize --style academic
+sprach ocr paper.png | sprach summarize --style academic
 
 # Multiple papers
 for paper in *.pdf; do
-    pdftotext "$paper" - | sprachspiel summarize --style academic
+    pdftotext "$paper" - | sprach summarize --style academic
 done
 ```
 
@@ -190,21 +190,21 @@ done
 
 ```bash
 # Summarize meeting transcript
-cat meeting-transcript.txt | sprachspiel summarize --style business -f bullets
+cat meeting-transcript.txt | sprach summarize --style business -f bullets
 ```
 
 ### 4. Email Digest
 
 ```bash
 # Summarize long email
-cat long-email.txt | sprachspiel summarize -l 100 --format paragraph
+cat long-email.txt | sprach summarize -l 100 --format paragraph
 ```
 
 ### 5. News Articles
 
 ```bash
 # News summary
-sprachspiel summarize --style general -l 200 "Article text..."
+sprach summarize --style general -l 200 "Article text..."
 ```
 
 ## Best Practices
@@ -221,16 +221,16 @@ Given the same input:
 
 ```bash
 # General - balanced
-sprachspiel summarize --style general "API documentation..."
+sprach summarize --style general "API documentation..."
 
 # Technical - focuses on implementation details
-sprachspiel summarize --style technical "API documentation..."
+sprach summarize --style technical "API documentation..."
 
 # Academic - focuses on methodology and findings
-sprachspiel summarize --style academic "Research paper..."
+sprach summarize --style academic "Research paper..."
 
 # Business - focuses on action items and implications
-sprachspiel summarize --style business "Quarterly report..."
+sprach summarize --style business "Quarterly report..."
 ```
 
 ## Output Examples
@@ -274,7 +274,7 @@ Key points:
 # Summarize all text files in directory
 for file in *.txt; do
     echo "=== $file ==="
-    sprachspiel summarize --style general -l 100 < "$file"
+    sprach summarize --style general -l 100 < "$file"
     echo
 done
 ```
@@ -285,7 +285,7 @@ done
 # Create summaries of multiple articles
 for article in articles/*.txt; do
     echo "# $(basename "$article" .txt)"
-    cat "$article" | sprachspiel summarize -l 50 -f bullets
+    cat "$article" | sprach summarize -l 50 -f bullets
     echo
 done > reading-list.md
 ```
@@ -294,7 +294,7 @@ done > reading-list.md
 
 ```bash
 # Summarize function documentation
-grep -A 20 "^///" src/*.rs | sprachspiel summarize --style technical
+grep -A 20 "^///" src/*.rs | sprach summarize --style technical
 ```
 
 ## Limitations

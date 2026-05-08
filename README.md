@@ -19,25 +19,25 @@ Key capabilities:
 
 ```bash
 # Install (one-liner)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
 
 # Basic query
-sprachspiel "What is Rust?"
+sprach "What is Rust?"
 
 # Interactive chat with semantic search
-sprachspiel chat
+sprach chat
 
 # Translate
-sprachspiel translate en:pt "Hello world"
+sprach translate en:pt "Hello world"
 
 # OCR
-sprachspiel ocr document.png
+sprach ocr document.png
 
 # Summarize
-echo "Long text..." | sprachspiel summarize
+echo "Long text..." | sprach summarize
 
 # List models
-sprachspiel --list
+sprach --list
 ```
 
 ## Installation
@@ -48,16 +48,16 @@ Install directly from GitHub releases:
 
 ```bash
 # Latest version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
 
 # Specific version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.26.0
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --version 0.26.0
 
 # With all tools
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --tools all
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --tools all
 
 # System-wide (requires sudo)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --prefix /usr
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --prefix /usr
 ```
 
 Installs to `~/.local/bin` by default. The manpage is installed to `~/.local/share/man/man1`.
@@ -142,7 +142,7 @@ source ~/.bashrc  # or ~/.zshrc
 **Complete documentation** is available at `doc/`:
 
 - **User Guide**: `cd doc && mdbook serve`
-- **Man Page**: `man sprachspiel`
+- **Man Page**: `man sprach`
 - **Online**: Build with `cd doc && mdbook build`
 
 ## Commands
@@ -150,10 +150,10 @@ source ~/.bashrc  # or ~/.zshrc
 ### Query Mode (Default)
 
 ```bash
-sprachspiel "What is Rust?"           # Basic query
-sprachspiel -m qwen3.5:4b "Explain async"  # Specific model
-sprachspiel -c "Write a Python function"  # Code mode
-sprachspiel -t "Think step by step"   # Think mode
+sprach "What is Rust?"           # Basic query
+sprach -m qwen3.5:4b "Explain async"  # Specific model
+sprach -c "Write a Python function"  # Code mode
+sprach -t "Think step by step"   # Think mode
 ```
 
 ### Chat Mode
@@ -161,10 +161,10 @@ sprachspiel -t "Think step by step"   # Think mode
 Interactive chat with persistent history and semantic search:
 
 ```bash
-sprachspiel chat                      # Start chat session
-sprachspiel chat -m glm-5:cloud       # Specific model
-sprachspiel chat -t                   # Chat with thinking
-sprachspiel chat --anonymous          # Anonymous session (no history)
+sprach chat                      # Start chat session
+sprach chat -m glm-5:cloud       # Specific model
+sprach chat -t                   # Chat with thinking
+sprach chat --anonymous          # Anonymous session (no history)
 ```
 
 **Chat Commands:**
@@ -189,59 +189,59 @@ sprachspiel chat --anonymous          # Anonymous session (no history)
 ### Translate
 
 ```bash
-sprachspiel translate en:pt "Hello world"    # English to Portuguese
-sprachspiel translate :es "Bonjour"          # Auto-detect to Spanish
-cat file.txt | sprachspiel translate :pt     # Pipe input
+sprach translate en:pt "Hello world"    # English to Portuguese
+sprach translate :es "Bonjour"          # Auto-detect to Spanish
+cat file.txt | sprach translate :pt     # Pipe input
 ```
 
 ### OCR
 
 ```bash
-sprachspiel ocr document.png                 # Extract text
-sprachspiel ocr --detailed image.jpg         # Detailed extraction
-sprachspiel ocr page1.png page2.png           # Multiple files
+sprach ocr document.png                 # Extract text
+sprach ocr --detailed image.jpg         # Detailed extraction
+sprach ocr page1.png page2.png           # Multiple files
 ```
 
 ### Summarize
 
 ```bash
-sprachspiel summarize "Long text..."         # Summarize text
-cat article.txt | sprachspiel summarize      # Pipe input
-sprachspiel summarize --style bullets file.txt  # Bullet points
+sprach summarize "Long text..."         # Summarize text
+cat article.txt | sprach summarize      # Pipe input
+sprach summarize --style bullets file.txt  # Bullet points
 ```
 
 ### Vision
 
 ```bash
-sprachspiel vision photo.jpg "What's in this image?"
-sprachspiel vision screenshot.png "Describe the UI"
+sprach vision photo.jpg "What's in this image?"
+sprach vision screenshot.png "Describe the UI"
 ```
 
 ## Examples
 
 ```bash
 # OCR → Summarize → Translate
-sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
+sprach ocr document.png | sprach summarize | sprach translate :pt
 
 # Translate a file
-cat article.txt | sprachspiel translate :es
+cat article.txt | sprach translate :es
 
 # Code with specific model
-sprachspiel -m qwen3-coder "Write a Python function"
+sprach -m qwen3-coder "Write a Python function"
 
 # Interactive chat with semantic search
-sprachspiel chat
+sprach chat
 >>> /search "What did we discuss about databases?"
 >>> /context
 >>> /model glm-5:cloud
 
 # Query with tools
-sprachspiel "What's the weather in Tokyo?"
-sprachspiel "Read the README.md and explain the project"
-sprachspiel "Calculate 15% of 847"
+sprach "What's the weather in Tokyo?"
+sprach "Read the README.md and explain the project"
+sprach "Calculate 15% of 847"
 
 # Think mode for complex reasoning
-sprachspiel -m glm-5:cloud -t "Explain quantum computing step by step"
+sprach -m glm-5:cloud -t "Explain quantum computing step by step"
 ```
 
 ## Requirements
@@ -274,10 +274,10 @@ Sprachspiel automatically loads `AGENTS.md` from the current directory to provid
 
 ```bash
 # If AGENTS.md exists, context is automatically injected
-sprachspiel "Explain the project structure"
+sprach "Explain the project structure"
 
 # Disable with --ignore-agents
-sprachspiel --ignore-agents "General question"
+sprach --ignore-agents "General question"
 ```
 
 Content is sanitized for security (injection patterns, executable code blocks removed).
@@ -354,8 +354,8 @@ make all-tarballs
 ```
 
 Tarballs include:
-- Binary (`sprachspiel`)
-- Manpage (`sprachspiel.1`)
+- Binary (`sprach`)
+- Manpage (`sprach.1`)
 - Installation scripts (`install.sh`, `uninstall.sh`)
 - Documentation (`README.md`, `LICENSE.txt`)
 - Platform-specific instructions (Termux includes `README-TERMUX.txt`)
@@ -397,4 +397,4 @@ Copyright (c) 2026 Lucas S. Vieira
 
 ---
 
-For complete documentation, see the `doc/` directory or run `man sprachspiel`.
+For complete documentation, see the `doc/` directory or run `man sprach`.

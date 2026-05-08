@@ -11,7 +11,7 @@ Sprachspiel supports a user configuration file for persistent settings. This is 
 Generate a sample configuration file:
 
 ```bash
-sprachspiel --init-config
+sprach --init-config
 ```
 
 This creates `~/.config/sprachspiel/config.toml` with all available options commented out.
@@ -43,7 +43,7 @@ Sprachspiel looks for the config file in this order:
 [model]
 
 # The default model preset to use for general queries.
-# See all available models with: sprachspiel --list-models
+# See all available models with: sprach --list-models
 # Default: "qwen3.5:4b"
 default = "qwen3.5:4b"
 
@@ -253,13 +253,13 @@ temperature = 0.15            # Only override what you want to change
 
 ```bash
 # Use a custom model
-sprachspiel -m my-coder "Write a function"
+sprach -m my-coder "Write a function"
 
 # Use in chat mode
-sprachspiel chat -m simple
+sprach chat -m simple
 
 # Override built-in model parameters
-sprachspiel -m lfm "query"  # Uses modified temperature from models.toml
+sprach -m lfm "query"  # Uses modified temperature from models.toml
 ```
 
 ### Model Parameter Defaults
@@ -297,7 +297,7 @@ When `thinking = true` is set:
 ### Listing All Models
 
 ```bash
-sprachspiel --list
+sprach --list
 ```
 
 This shows both built-in models and user-defined models (marked with `[user]`).
@@ -427,7 +427,7 @@ cargo build --release --features all-tools
 
 Then, to use them:
 ```bash
-sprachspiel --tools "Tell me about Pikachu"
+sprach --tools "Tell me about Pikachu"
 ```
 
 ## Environment Variables
@@ -520,8 +520,8 @@ Verbose logging shows:
 - Raw responses (when verbose level is enabled)
 
 Enable via:
-- CLI flag: `sprachspiel -v "query"` (verbose), `sprachspiel -vv "query"` (trace)
-- Environment: `RUST_LOG=trace sprachspiel command` or `RUST_LOG=debug sprachspiel command)`
+- CLI flag: `sprach -v "query"` (verbose), `sprach -vv "query"` (trace)
+- Environment: `RUST_LOG=trace sprach command` or `RUST_LOG=debug sprach command)`
 
 ## Performance Tuning
 
@@ -557,8 +557,8 @@ export OLLAMA_TIMEOUT=120  # seconds
 
 ### Default Paths
 
-- Binary: `/usr/local/bin/sprachspiel`
-- Man page: `/usr/local/share/man/man1/sprachspiel.1`
+- Binary: `/usr/local/bin/sprach`
+- Man page: `/usr/local/share/man/man1/sprach.1`
 - Config: `~/.config/sprachspiel/config.toml`
 
 ### Custom Prefix
@@ -566,8 +566,8 @@ export OLLAMA_TIMEOUT=120  # seconds
 ```bash
 make install PREFIX=$HOME/.local
 # Installs to:
-# - $HOME/.local/bin/sprachspiel
-# - $HOME/.local/share/man/man1/sprachspiel.1
+# - $HOME/.local/bin/sprach
+# - $HOME/.local/share/man/man1/sprach.1
 ```
 
 ## Shell Completion
@@ -576,14 +576,14 @@ Generate completions for your shell:
 
 ```bash
 # Bash
-sprachspiel completion bash >~/.bash_completion
+sprach completion bash >~/.bash_completion
 
 # Zsh
-sprachspiel completion zsh > ~/.zsh_completions/_sprachspiel
+sprach completion zsh > ~/.zsh_completions/_sprach
 # Add to ~/.zshrc: fpath+=(~/.zsh_completions)
 
 # Fish
-sprachspiel completion fish > ~/.config/fish/completions/sprachspiel.fish
+sprach completion fish > ~/.config/fish/completions/sprach.fish
 ```
 
 See [Installation Guide](./installation.md#shell-completions) for more details.
@@ -644,7 +644,7 @@ Content is sanitized to prevent prompt injection:
 Use `--ignore-agents` to skip loading:
 
 ```bash
-sprachspiel --ignore-agents "General programming question"
+sprach --ignore-agents "General programming question"
 ```
 
 ## Troubleshooting
@@ -660,8 +660,8 @@ ls -la ~/.config/sprachspiel/config.toml
 Test with debug mode to see active configuration:
 
 ```bash
-sprachspiel -d --init-config  # Shows where config was created
-sprachspiel -d "test query"   # Shows active settings
+sprach -d --init-config  # Shows where config was created
+sprach -d "test query"   # Shows active settings
 ```
 
 ### Changes not taking effect

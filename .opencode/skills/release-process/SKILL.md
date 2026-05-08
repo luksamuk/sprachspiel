@@ -26,12 +26,12 @@ Update the version `X.Y.Z` in three files:
 version = "X.Y.Z"
 ```
 
-### 1.2 `man/sprachspiel.1`
+### 1.2 `man/sprach.1`
 
 Update the `.TH` line with the new version number:
 
 ```
-.TH "SPRACHSPIEL" "1" "April 2026" "X.Y.Z" "Sprachspiel Manual"
+.TH "SPRACH" "1" "April 2026" "X.Y.Z" "Sprach Manual"
 ```
 
 ### 1.3 `doc/src/CHANGELOG.md`
@@ -69,7 +69,7 @@ Collect all changes since the last release:
 ## Step 3: Commit and Push
 
 ```bash
-git add Cargo.toml Cargo.lock man/sprachspiel.1 doc/src/CHANGELOG.md
+git add Cargo.toml Cargo.lock man/sprach.1 doc/src/CHANGELOG.md
 git commit -m "chore: bump version to X.Y.Z"
 git push origin master
 ```
@@ -91,7 +91,7 @@ This creates 4 tarballs in `dist/`:
 
 ### Tarball Contents
 
-- **Linux**: Binary, man page (`sprachspiel.1`), `README.md`, `LICENSE.txt`
+- **Linux**: Binary, man page (`sprach.1`), `README.md`, `LICENSE.txt`
 - **Termux**: Binary, `README-TERMUX.txt` with installation instructions
 
 ## Step 5: Create Tag and GitHub Release

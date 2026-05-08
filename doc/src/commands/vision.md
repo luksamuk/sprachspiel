@@ -5,8 +5,8 @@ The `vision` command analyzes and describes images using vision models. Unlike O
 ## Synopsis
 
 ```bash
-sprachspiel [GLOBAL OPTIONS] vision <FILE>... [-- <PROMPT>]
-sprachspiel [GLOBAL OPTIONS] v <FILE>... [-- <PROMPT>]
+sprach [GLOBAL OPTIONS] vision <FILE>... [-- <PROMPT>]
+sprach [GLOBAL OPTIONS] v <FILE>... [-- <PROMPT>]
 ```
 
 ## Description
@@ -55,17 +55,17 @@ These options are specific to the vision subcommand:
 
 ```bash
 # Describe an image
-sprachspiel vision photo.png
+sprach vision photo.png
 
 # Using alias
-sprachspiel v screenshot.jpg
+sprach v screenshot.jpg
 ```
 
 ### Detailed Analysis
 
 ```bash
 # Get comprehensive image analysis
-sprachspiel vision --detailed artwork.png
+sprach vision --detailed artwork.png
 
 # Output includes:
 # - Composition and layout
@@ -79,47 +79,47 @@ sprachspiel vision --detailed artwork.png
 
 ```bash
 # Plain text without markdown rendering
-sprachspiel --plain vision photo.png
+sprach --plain vision photo.png
 
 # Useful for piping to other commands
-sprachspiel --plain vision screenshot.png | grep "button"
+sprach --plain vision screenshot.png | grep "button"
 ```
 
 ### Custom Prompts
 
 ```bash
 # Ask specific questions (use -- before prompt)
-sprachspiel vision photo.png -- "What objects are visible in this image?"
-sprachspiel vision screenshot.png -- "What UI components are used?"
-sprachspiel vision chart.png -- "Describe the data visualization"
-sprachspiel vision diagram.png -- "Explain the workflow shown"
+sprach vision photo.png -- "What objects are visible in this image?"
+sprach vision screenshot.png -- "What UI components are used?"
+sprach vision chart.png -- "Describe the data visualization"
+sprach vision diagram.png -- "Explain the workflow shown"
 ```
 
 ### Multi-Image Analysis
 
 ```bash
 # Analyze multiple images together
-sprachspiel vision img1.png img2.png
+sprach vision img1.png img2.png
 
 # Compare images with custom prompt (use -- before prompt)
-sprachspiel vision before.png after.png -- "What changed between these images?"
+sprach vision before.png after.png -- "What changed between these images?"
 
 # For best multi-image results, use minicpm-v
-sprachspiel vision -m minicpm-v:8b img1.png img2.png -- "Compare these"
+sprach vision -m minicpm-v:8b img1.png img2.png -- "Compare these"
 ```
 
 ### JSON Output
 
 ```bash
 # Output as JSON for programmatic use
-sprachspiel vision --json photo.png
+sprach vision --json photo.png
 
 # Example output:
 # {"files": ["photo.png"], "prompt": "Describe this image.", "content": "A cat sitting on..."}
 
 # Batch processing
 for img in *.png; do
-    sprachspiel vision --json "$img" >> results.jsonl
+    sprach vision --json "$img" >> results.jsonl
 done
 ```
 
@@ -127,9 +127,9 @@ done
 
 ```bash
 # Use specific model
-sprachspiel vision -m llava:13b photo.png
-sprachspiel vision -m qwen3.5:4b screenshot.png
-sprachspiel vision -m ministral-3:14b img1.png img2.png -- "Compare these"
+sprach vision -m llava:13b photo.png
+sprach vision -m qwen3.5:4b screenshot.png
+sprach vision -m ministral-3:14b img1.png img2.png -- "Compare these"
 
 # Via config file (~/.config/sprachspiel/config.toml):
 # [model.vision]
@@ -152,41 +152,41 @@ sprachspiel vision -m ministral-3:14b img1.png img2.png -- "Compare these"
 ### 1. Image Description
 
 ```bash
-sprachspiel vision photo.png
+sprach vision photo.png
 ```
 
 ### 2. UI Analysis
 
 ```bash
-sprachspiel vision screenshot.png -- "What UI framework might this be using?"
-sprachspiel vision mockup.png -- "Describe the user interface"
+sprach vision screenshot.png -- "What UI framework might this be using?"
+sprach vision mockup.png -- "Describe the user interface"
 ```
 
 ### 3. Content Moderation
 
 ```bash
-sprachspiel vision image.png -- "Is this image appropriate for a general audience?"
+sprach vision image.png -- "Is this image appropriate for a general audience?"
 ```
 
 ### 4. Accessibility
 
 ```bash
-sprachspiel vision --detailed photo.png
+sprach vision --detailed photo.png
 # Generate alt text for web images
 ```
 
 ### 5. Visual Q&A
 
 ```bash
-sprachspiel vision diagram.png -- "Explain what this diagram shows"
-sprachspiel vision chart.png -- "What trends does this chart show?"
+sprach vision diagram.png -- "Explain what this diagram shows"
+sprach vision chart.png -- "What trends does this chart show?"
 ```
 
 ### 6. Comparison Tasks
 
 ```bash
 # Multi-image comparison (requires model with multi-image support)
-sprachspiel vision -m ministral-3:14b v1.png v2.png -- "What are the differences?"
+sprach vision -m ministral-3:14b v1.png v2.png -- "What are the differences?"
 ```
 
 ## Configuration
@@ -210,13 +210,13 @@ tools = false
 
 ```bash
 # Vision → Summarize
-sprachspiel vision --detailed photo.png | sprachspiel summarize
+sprach vision --detailed photo.png | sprach summarize
 
 # Vision → Translate
-sprachspiel vision photo.png "Describe in Portuguese"
+sprach vision photo.png "Describe in Portuguese"
 
 # Multiple images with JSON for processing
-sprachspiel vision --json *.png | jq '.content' > descriptions.txt
+sprach vision --json *.png | jq '.content' > descriptions.txt
 ```
 
 ## Tips for Better Results
@@ -232,13 +232,13 @@ sprachspiel vision --json *.png | jq '.content' > descriptions.txt
 
 ```bash
 # Be specific
-sprachspiel vision photo.png "List all visible objects"
+sprach vision photo.png "List all visible objects"
 
 # Ask for structure
-sprachspiel vision diagram.png "Describe this as a numbered list"
+sprach vision diagram.png "Describe this as a numbered list"
 
 # Request format
-sprachspiel vision chart.png "Extract the data as a markdown table"
+sprach vision chart.png "Extract the data as a markdown table"
 ```
 
 ### Multi-Image Tasks
@@ -263,7 +263,7 @@ Common errors and solutions:
 ollama pull qwen3.5:4b
 
 # File not found
-sprachspiel vision /path/to/existing/file.png
+sprach vision /path/to/existing/file.png
 
 # Unsupported format
 # Convert to PNG: convert image.bmp image.png

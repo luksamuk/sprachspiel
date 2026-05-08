@@ -19,9 +19,9 @@ In a world of web-based AI interfaces, Sprachspiel stands out by:
 Get answers from AI models with beautiful markdown formatting:
 
 ```bash
-sprachspiel "Explain quantum computing in simple terms"
-sprachspiel -m qwen3.5:4b "Generate a Python function for Fibonacci"
-sprachspiel -t "Solve this step by step"  # Think mode
+sprach "Explain quantum computing in simple terms"
+sprach -m qwen3.5:4b "Generate a Python function for Fibonacci"
+sprach -t "Solve this step by step"  # Think mode
 ```
 
 ### 2. Translate Text
@@ -29,9 +29,9 @@ sprachspiel -t "Solve this step by step"  # Think mode
 Translate between 50+ languages with the TranslateGemma model:
 
 ```bash
-sprachspiel translate en:pt "Hello world"
-sprachspiel translate :pt "Auto-detected source language"
-cat document.txt | sprachspiel translate :es
+sprach translate en:pt "Hello world"
+sprach translate :pt "Auto-detected source language"
+cat document.txt | sprach translate :es
 ```
 
 ### 3. Extract Text from Images (OCR)
@@ -39,9 +39,9 @@ cat document.txt | sprachspiel translate :es
 Use GLM-OCR to extract text, tables, formulas, and figures:
 
 ```bash
-sprachspiel ocr document.png
-sprachspiel ocr --mode table spreadsheet.png
-sprachspiel ocr --formula equation.png
+sprach ocr document.png
+sprach ocr --mode table spreadsheet.png
+sprach ocr --formula equation.png
 ```
 
 ### 4. Summarize Documents
@@ -49,9 +49,9 @@ sprachspiel ocr --formula equation.png
 Create concise summaries with customizable styles:
 
 ```bash
-sprachspiel summarize "Long text here..."
-sprachspiel summarize --style academic research-paper.txt
-sprachspiel summarize --format bullets --max-length 200
+sprach summarize "Long text here..."
+sprach summarize --style academic research-paper.txt
+sprach summarize --format bullets --max-length 200
 ```
 
 ### 5. Chain Commands
@@ -60,13 +60,13 @@ Build powerful pipelines by combining commands:
 
 ```bash
 # OCR → Translate
-sprachspiel ocr japanese.png | sprachspiel translate ja:pt
+sprach ocr japanese.png | sprach translate ja:pt
 
 # OCR → Summarize
-sprachspiel ocr report.png | sprachspiel summarize --style technical
+sprach ocr report.png | sprach summarize --style technical
 
 # OCR → Summarize → Translate
-sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
+sprach ocr document.png | sprach summarize | sprach translate :pt
 ```
 
 ## Target Users
@@ -113,8 +113,8 @@ graph LR
 
 ## Getting Help
 
-- Use `sprachspiel --help` for quick reference
-- Use `man sprachspiel` for detailed man page
+- Use `sprach --help` for quick reference
+- Use `man sprach` for detailed man page
 - Check this documentation for comprehensive guides
 - Enable debug mode with `-d` flag for troubleshooting
 

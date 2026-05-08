@@ -2,11 +2,20 @@
 //!
 //! Single source of truth for the application name, database filename,
 //! and directory paths. All code that references the app name or data
-//! locations MUST use these constants — never hardcode "sprachspiel"
-//! or path components directly.
+//! locations MUST use these constants — never hardcode "sprach" or
+//! "sprachspiel" or path components directly.
+//!
+//! Naming convention:
+//! - `APP_NAME` = binary/cli command name (short, for typing)
+//! - `APP_PROJECT_NAME` = project identity (long, for dirs, docs, branding)
 
-/// Application binary name (must match Cargo.toml `name`)
-pub const APP_NAME: &str = "sprachspiel";
+/// Application binary name (the command users type)
+/// Must match Cargo.toml `[[bin]] name`.
+pub const APP_NAME: &str = "sprach";
+
+/// Project identity name (for directories, branding, docs)
+/// Used for config dir, data dir, project dir, DB filename, etc.
+pub const APP_PROJECT_NAME: &str = "sprachspiel";
 
 /// Database filename
 pub const DB_FILENAME: &str = "sprachspiel.db";

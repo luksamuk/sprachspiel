@@ -5,12 +5,15 @@ PREFIX ?= /usr/local
 BINDIR = $(PREFIX)/bin
 MANDIR = $(PREFIX)/share/man/man1
 
-# Binary name
-BINARY = sprachspiel
-TARGET = sprachspiel
+# Binary name (short CLI command)
+BINARY = sprach
+TARGET = sprach
+
+# Project name (for tarballs, dist packages)
+PROJECT_NAME = sprachspiel
 
 # Man page
-MANPAGE = man/sprachspiel.1
+MANPAGE = man/sprach.1
 
 # Build configuration
 CARGO_FLAGS = --release
@@ -29,7 +32,7 @@ TERMUX_BUILD_DIR = target/$(TERMUX_TARGET)/release
 # Distribution
 VERSION ?= $(shell grep '^version =' Cargo.toml | head -1 | cut -d'"' -f2)
 DIST_DIR = dist
-TARBALL_BASE = $(BINARY)-$(VERSION)
+TARBALL_BASE = $(PROJECT_NAME)-$(VERSION)
 
 # Scripts
 SCRIPTS_DIR = scripts
@@ -72,7 +75,7 @@ install: build
 	@cp $(MANPAGE) $(MANDIR)/
 	@echo "Installation complete!"
 	@echo "Binary installed at: $(BINDIR)/$(TARGET)"
-	@echo "Man page installed at: $(MANDIR)/sprachspiel.1"
+	@echo "Man page installed at: $(MANDIR)/sprach.1"
 	@echo "Make sure $(BINDIR) is in your PATH"
 
 # Install with Pokémon tools
@@ -102,7 +105,7 @@ uninstall:
 	@echo "Removing $(TARGET) from $(BINDIR)..."
 	@rm -f $(BINDIR)/$(TARGET)
 	@echo "Removing man page from $(MANDIR)..."
-	@rm -f $(MANDIR)/sprachspiel.1
+	@rm -f $(MANDIR)/sprach.1
 	@echo "Uninstallation complete!"
 
 # =============================================================================
@@ -119,7 +122,7 @@ install-local: build
 	@cp $(MANPAGE) ~/.local/share/man/man1/
 	@echo "Local installation complete!"
 	@echo "Binary: ~/.local/bin/$(TARGET)"
-	@echo "Manpage: ~/.local/share/man/man1/sprachspiel.1"
+	@echo "Manpage: ~/.local/share/man/man1/sprach.1"
 	@echo "Make sure ~/.local/bin is in your PATH"
 
 # Install locally with Pokémon tools
@@ -204,7 +207,7 @@ termux-all-tools:
 tarball: build
 	@echo "Creating distribution tarball..."
 	@mkdir -p $(DIST_DIR)
-	@cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64.tar.gz $(BINARY) -C $(CURDIR) man/sprachspiel.1 README.md LICENSE.txt
+	@cd $(BUILD_DIR) && tar -czvf $(CURDIR)/$(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64.tar.gz $(BINARY) -C $(CURDIR) man/sprach.1 README.md LICENSE.txt
 	@echo "Created: $(DIST_DIR)/$(TARBALL_BASE)-linux-x86_64.tar.gz"
 
 # Create Linux x86_64 tarball with installation scripts
@@ -242,7 +245,7 @@ tarball-termux: termux
 	@echo "Creating Termux tarball..."
 	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)
 	@cp $(TERMUX_BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/$(BINARY)
-	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/sprachspiel.1
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/sprach.1
 	@cp README.md $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/
 	@cp LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/ 2>/dev/null || cp LICENSE $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/ || true
 	@cp README-TERMUX.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)/
@@ -258,7 +261,7 @@ tarball-termux-all-tools: termux-all-tools
 	@echo "Creating Termux tarball (all tools)..."
 	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools
 	@cp $(TERMUX_BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/$(BINARY)
-	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/sprachspiel.1
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/sprach.1
 	@cp README.md $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
 	@cp LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/ 2>/dev/null || cp LICENSE $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/ || true
 	@cp README-TERMUX.txt $(DIST_DIR)/$(TARBALL_BASE)-termux-$(TERMUX_TARGET)-all-tools/
@@ -273,7 +276,7 @@ tarball-termux-all-tools: termux-all-tools
 tarball-with-scripts: build
 	@mkdir -p $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)
 	@cp $(BUILD_DIR)/$(BINARY) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/
-	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/sprachspiel.1
+	@cp $(MANPAGE) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/sprach.1
 	@cp README.md LICENSE.txt $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/ 2>/dev/null || cp README.md LICENSE $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/ || true
 	@cp $(INSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/
 	@cp $(UNINSTALL_SCRIPT) $(DIST_DIR)/$(TARBALL_BASE)-$(shell uname -m)/
@@ -350,6 +353,6 @@ help:
 	@echo "  make all-tarballs                      # Create all distribution tarballs"
 	@echo ""
 	@echo "Remote Installation:"
-	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/sprachspiel/main/scripts/install-sprachspiel.sh | bash"
-	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.25.0"
-	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --tools all"
+	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/sprachspiel/main/scripts/install-sprach.sh | bash"
+	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --version 0.25.0"
+	@echo "  curl -sL https://raw.githubusercontent.com/anomalyco/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --tools all"

@@ -48,16 +48,16 @@ Install directly from GitHub releases:
 
 ```bash
 # Install latest version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
 
 # Install specific version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.25.0
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --version 0.25.0
 
 # Install with all tools enabled
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --tools all
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --tools all
 
 # Install system-wide (requires sudo)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash -s -- --prefix /usr
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --prefix /usr
 ```
 
 **What it does:**
@@ -98,8 +98,8 @@ cd sprachspiel-0.25.0-linux-x86_64
 ```
 
 **Tarball contents:**
-- `sprachspiel` - Binary
-- `sprachspiel.1` - Manpage
+- `sprach` - Binary
+- `sprach.1` - Manpage
 - `install.sh` - Installation script
 - `uninstall.sh` - Uninstallation script
 - `README.md` - Documentation
@@ -126,7 +126,7 @@ make install PREFIX=/usr
 
 This will:
 1. Build the release binary
-2. Install it to `/usr/local/bin/sprachspiel` (or your chosen prefix)
+2. Install it to `/usr/local/bin/sprach` (or your chosen prefix)
 3. Install the man page to `/usr/local/share/man/man1/`
 
 ### Method 4: Termux (Android)
@@ -137,7 +137,7 @@ Sprachspiel can run on Android via Termux. Since Ollama doesn't run on Android, 
 
 ```bash
 # In Termux
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
 ```
 
 The installer automatically detects Termux and configures the correct paths.
@@ -174,7 +174,7 @@ EOF
 #### Termux-Specific Notes
 
 - **Binary location**: `~/bin` (or `~/.local/bin`)
-- **Manpage**: `~/.local/share/man/man1/sprachspiel.1`
+- **Manpage**: `~/.local/share/man/man1/sprach.1`
 - **Ollama**: Must run on a separate machine (desktop/laptop/server)
 - **Configuration**: `~/.config/sprachspiel/config.toml`
 - **See**: `README-TERMUX.txt` included in the tarball
@@ -227,10 +227,10 @@ cd sprachspiel
 cargo build --release
 
 # Copy to your PATH
-sudo cp target/release/sprachspiel /usr/local/bin/sprachspiel
+sudo cp target/release/sprach /usr/local/bin/sprach
 
 # Optional: Install man page
-sudo cp man/sprachspiel.1 /usr/local/share/man/man1/
+sudo cp man/sprach.1 /usr/local/share/man/man1/
 ```
 
 ### Method 6: Development Build
@@ -245,7 +245,7 @@ cargo run -- "Your query here"
 cargo build
 
 # Run debug binary
-./target/debug/sprachspiel "Your query"
+./target/debug/sprach "Your query"
 ```
 
 ## Installing Models
@@ -328,8 +328,8 @@ After installation, ensure `~/.local/bin` is in your PATH:
 
 ```bash
 # Check if installed binary is in PATH
-which sprachspiel
-# Should show: /home/youruser/.local/bin/sprachspiel
+which sprach
+# Should show: /home/youruser/.local/bin/sprach
 
 # If not found, add to your shell config
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
@@ -346,10 +346,10 @@ echo 'export MANPATH="$HOME/.local/share/man:$MANPATH"' >> ~/.bashrc
 source ~/.bashrc
 
 # Then you can use
-man sprachspiel
+man sprach
 
 # Or use man -M without setting MANPATH
-man -M ~/.local/share/man sprachspiel
+man -M ~/.local/share/man sprach
 ```
 
 ### Shell Completion (Optional)
@@ -360,31 +360,31 @@ Generate shell completions using the built-in `completion` subcommand:
 
 ```bash
 # Bash (current session only - add to ~/.bashrc for persistence)
-eval "$(sprachspiel completion bash)"
+eval "$(sprach completion bash)"
 
 # Bash (permanent, user-local)
-sprachspiel completion bash >> ~/.bash_completion
+sprach completion bash >> ~/.bash_completion
 
 # Zsh (user-local)
-sprachspiel completion zsh > ~/.zsh_completions/_sprachspiel
+sprach completion zsh > ~/.zsh_completions/_sprach
 
 # Fish (user-local)
-sprachspiel completion fish > ~/.config/fish/completions/sprachspiel.fish
+sprach completion fish > ~/.config/fish/completions/sprach.fish
 ```
 
 #### System-wide Setup (requires root)
 
 ```bash
 # Bash - system-wide
-sudo sprachspiel completion bash > /etc/bash_completion.d/sprachspiel
+sudo sprach completion bash > /etc/bash_completion.d/sprach
 
 # Zsh - system-wide (verify your zsh site-functions location)
-sudo sprachspiel completion zsh > /usr/local/share/zsh/site-functions/_sprachspiel
+sudo sprach completion zsh > /usr/local/share/zsh/site-functions/_sprach
 # OR
-sudo sprachspiel completion zsh > /usr/share/zsh/site-functions/_sprachspiel
+sudo sprach completion zsh > /usr/share/zsh/site-functions/_sprach
 
 # Fish - system-wide
-sudo sprachspiel completion fish > /usr/share/fish/vendor_completions.d/sprachspiel.fish
+sudo sprach completion fish > /usr/share/fish/vendor_completions.d/sprach.fish
 ```
 
 #### Supported Shells
@@ -431,9 +431,9 @@ exec fish
 
 **Test completions are working**:
 ```bash
-sprachspiel <TAB>          # Should show subcommands
-sprachspiel --<TAB>        # Should show options
-sprachspiel translate <TAB> # Should show translate options
+sprach <TAB>          # Should show subcommands
+sprach --<TAB>        # Should show options
+sprach translate <TAB> # Should show translate options
 ```
 
 ### Environment Variables
@@ -450,16 +450,16 @@ echo 'export OLLAMA_HOST="localhost:11434"' >> ~/.bashrc
 
 ## Troubleshooting Installation
 
-### "command not found: sprachspiel"
+### "command not found: sprach"
 
 The binary is not in your PATH. Check:
 
 ```bash
 # Find where it was installed
-which sprachspiel
+which sprach
 
 # If not found, check installation prefix
-ls /usr/local/bin/sprachspiel
+ls /usr/local/bin/sprach
 
 # Add to PATH if needed
 export PATH="/usr/local/bin:$PATH"

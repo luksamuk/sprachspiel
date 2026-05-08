@@ -8,7 +8,7 @@ Sprachspiel commands read from stdin when no argument is provided:
 
 ```bash
 # Output of first command becomes input of second
-cat file.txt | sprachspiel summarize
+cat file.txt | sprach summarize
 ```
 
 ## OCR → Summarize
@@ -16,20 +16,20 @@ cat file.txt | sprachspiel summarize
 Extract text from an image and create a summary:
 
 ```bash
-sprachspiel ocr document.png | sprachspiel summarize
+sprach ocr document.png | sprach summarize
 ```
 
 **With options:**
 
 ```bash
 # OCR → Academic summary
-sprachspiel ocr research-paper.png | sprachspiel summarize --style academic
+sprach ocr research-paper.png | sprach summarize --style academic
 
 # OCR → Technical summary with length limit
-sprachspiel ocr manual.png | sprachspiel summarize --style technical -l 150
+sprach ocr manual.png | sprach summarize --style technical -l 150
 
 # OCR → Bullet summary
-sprachspiel ocr report.png | sprachspiel summarize -f bullets
+sprach ocr report.png | sprach summarize -f bullets
 ```
 
 ## OCR → Translate
@@ -38,13 +38,13 @@ Extract text from an image and translate it:
 
 ```bash
 # Japanese document to Portuguese
-sprachspiel ocr japanese.png | sprachspiel translate ja:pt
+sprach ocr japanese.png | sprach translate ja:pt
 
 # Chinese to English
-sprachspiel ocr chinese.png | sprachspiel translate zh-Hans:en
+sprach ocr chinese.png | sprach translate zh-Hans:en
 
 # Auto-detect to Portuguese
-sprachspiel ocr document.png | sprachspiel translate :pt
+sprach ocr document.png | sprach translate :pt
 ```
 
 ## OCR → Summarize → Translate
@@ -52,7 +52,7 @@ sprachspiel ocr document.png | sprachspiel translate :pt
 Full document processing pipeline:
 
 ```bash
-sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
+sprach ocr document.png | sprach summarize | sprach translate :pt
 ```
 
 **Breakdown:**
@@ -64,13 +64,13 @@ sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
 
 ```bash
 # Research paper pipeline
-sprachspiel ocr paper.png | sprachspiel summarize --style academic | sprachspiel translate :pt
+sprach ocr paper.png | sprach summarize --style academic | sprach translate :pt
 
 # Technical manual pipeline
-sprachspiel ocr manual.png | sprachspiel summarize --style technical | sprachspiel translate :es
+sprach ocr manual.png | sprach summarize --style technical | sprach translate :es
 
 # Business report pipeline
-sprachspiel ocr report.png | sprachspiel summarize --style business | sprachspiel translate :fr
+sprach ocr report.png | sprach summarize --style business | sprach translate :fr
 ```
 
 ## File → Summarize
@@ -79,13 +79,13 @@ Process text files:
 
 ```bash
 # Summarize text file
-cat article.txt | sprachspiel summarize
+cat article.txt | sprach summarize
 
 # With specific style
-cat documentation.md | sprachspiel summarize --style technical
+cat documentation.md | sprach summarize --style technical
 
 # Academic paper
-pdftotext paper.pdf - | sprachspiel summarize --style academic
+pdftotext paper.pdf - | sprach summarize --style academic
 ```
 
 ## File → Summarize → Translate
@@ -94,10 +94,10 @@ Process files in other languages:
 
 ```bash
 # English to Portuguese
-cat report.txt | sprachspiel summarize | sprachspiel translate :pt
+cat report.txt | sprach summarize | sprach translate :pt
 
 # Technical docs to Spanish
-cat api-docs.md | sprachspiel summarize --style technical | sprachspiel translate :es
+cat api-docs.md | sprach summarize --style technical | sprach translate :es
 ```
 
 ## PDF Processing
@@ -106,13 +106,13 @@ Process PDF documents (requires `pdftotext`):
 
 ```bash
 # PDF → Summary
-pdftotext document.pdf - | sprachspiel summarize
+pdftotext document.pdf - | sprach summarize
 
 # PDF → Summary → Translate
-pdftotext document.pdf - | sprachspiel summarize | sprachspiel translate :pt
+pdftotext document.pdf - | sprach summarize | sprach translate :pt
 
 # PDF → OCR → Summary
-pdftotext scanned.pdf - | sprachspiel summarize --style academic
+pdftotext scanned.pdf - | sprach summarize --style academic
 ```
 
 ## Batch Processing
@@ -123,14 +123,14 @@ Process multiple files:
 # OCR all images and summarize
 for img in *.png; do
     echo "=== $img ==="
-    sprachspiel ocr "$img" | sprachspiel summarize
+    sprach ocr "$img" | sprach summarize
     echo
 done
 
 # OCR → Translate all images
 for img in scans/*.png; do
     out="${img%.png}-pt.txt"
-    sprachspiel ocr "$img" | sprachspiel translate :pt > "$out"
+    sprach ocr "$img" | sprach translate :pt > "$out"
     echo "Created $out"
 done
 ```
@@ -143,9 +143,9 @@ Translate documents while preserving structure:
 
 ```bash
 # Complete workflow for scanned documents
-sprachspiel ocr scanned-ja.png | \
-    sprachspiel translate ja:pt | \
-    sprachspiel summarize -l 200 | \
+sprach ocr scanned-ja.png | \
+    sprach translate ja:pt | \
+    sprach summarize -l 200 | \
     tee translated-summary.txt
 ```
 
@@ -153,9 +153,9 @@ sprachspiel ocr scanned-ja.png | \
 
 ```bash
 # Extract and analyze research
-sprachspiel ocr paper.png | \
-    sprachspiel summarize --style academic -l 300 | \
-    sprachspiel translate :pt | \
+sprach ocr paper.png | \
+    sprach summarize --style academic -l 300 | \
+    sprach translate :pt | \
     tee analysis-pt.txt
 ```
 
@@ -164,8 +164,8 @@ sprachspiel ocr paper.png | \
 ```bash
 # Generate documentation from code
 head -50 src/main.rs | \
-    sprachspiel summarize --style technical | \
-    sprachspiel translate :pt
+    sprach summarize --style technical | \
+    sprach translate :pt
 ```
 
 ### Multi-Document Processing
@@ -173,8 +173,8 @@ head -50 src/main.rs | \
 ```bash
 # Combine multiple documents
 for doc in chapter*.txt; do
-    cat "$doc" | sprachspiel summarize -l 100
-done | sprachspiel summarize -l 300 > book-summary.txt
+    cat "$doc" | sprach summarize -l 100
+done | sprach summarize -l 300 > book-summary.txt
 ```
 
 ## Common Patterns
@@ -182,32 +182,32 @@ done | sprachspiel summarize -l 300 > book-summary.txt
 ### 1. OCR → Process → Save
 
 ```bash
-sprachspiel ocr document.png | sprachspiel summarize > output.txt
+sprach ocr document.png | sprach summarize > output.txt
 ```
 
 ### 2. File → Translate → Save
 
 ```bash
-cat document.txt | sprachspiel translate :pt > translated.txt
+cat document.txt | sprach translate :pt > translated.txt
 ```
 
 ### 3. Query → Process → Query
 
 ```bash
-sprachspiel "Find information" | sprachspiel summarize | sprachspiel "Analyze this"
+sprach "Find information" | sprach summarize | sprach "Analyze this"
 ```
 
 ### 4. Chain with Unix Tools
 
 ```bash
 # Sort results
-sprachspiel ocr doc.png | sort | sprachspiel summarize
+sprach ocr doc.png | sort | sprach summarize
 
 # Filter content
-sprachspiel ocr doc.png | grep "important" | sprachspiel translate :pt
+sprach ocr doc.png | grep "important" | sprach translate :pt
 
 # Word count
-sprachspiel summarize text.txt | wc -w
+sprach summarize text.txt | wc -w
 ```
 
 ## Error Handling
@@ -217,12 +217,12 @@ Handle errors in pipelines:
 ```bash
 # Continue on error
 for img in *.png; do
-    sprachspiel ocr "$img" 2>/dev/null | sprachspiel summarize || echo "Failed: $img"
+    sprach ocr "$img" 2>/dev/null | sprach summarize || echo "Failed: $img"
 done
 
 # Stop on first error
 set -e
-sprachspiel ocr doc.png | sprachspiel summarize
+sprach ocr doc.png | sprach summarize
 ```
 
 ## Performance Tips
@@ -234,7 +234,7 @@ sprachspiel ocr doc.png | sprachspiel summarize
 
 ```bash
 # Save intermediate results
-sprachspiel ocr doc.png | tee extracted.txt | sprachspiel summarize | tee summary.txt | sprachspiel translate :pt
+sprach ocr doc.png | tee extracted.txt | sprach summarize | tee summary.txt | sprach translate :pt
 ```
 
 ## Debugging Pipelines
@@ -243,13 +243,13 @@ Add debug output:
 
 ```bash
 # Show each step
-sprachspiel ocr doc.png | tee /dev/tty | sprachspiel summarize
+sprach ocr doc.png | tee /dev/tty | sprach summarize
 
 # Debug with timing
-time sprachspiel ocr doc.png | time sprachspiel summarize
+time sprach ocr doc.png | time sprach summarize
 
 # Full debug
-sprachspiel ocr -v doc.png 2> debug.log | sprachspiel summarize -v 2> summary.log
+sprach ocr -v doc.png 2> debug.log | sprach summarize -v 2> summary.log
 ```
 
 ## Creating Scripts
@@ -268,9 +268,9 @@ fi
 IMAGE=$1
 LANG=$2
 
-sprachspiel ocr "$IMAGE" | \
-    sprachspiel summarize | \
-    sprachspiel translate ":$LANG"
+sprach ocr "$IMAGE" | \
+    sprach summarize | \
+    sprach translate ":$LANG"
 ```
 
 Usage:

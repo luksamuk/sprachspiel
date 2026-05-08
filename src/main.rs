@@ -229,8 +229,8 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
             Ok(t) => t,
             Err(e) => {
                 eprintln!("Error: {}", e);
-                eprintln!("Usage: sprachspiel translate LANGUAGE \"text to translate\"");
-                eprintln!("   or: echo \"text\" | sprachspiel translate LANGUAGE");
+                eprintln!("Usage: sprach translate LANGUAGE \"text to translate\"");
+                eprintln!("   or: echo \"text\" | sprach translate LANGUAGE");
                 std::process::exit(1);
             }
         }
@@ -238,8 +238,8 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
 
     if text.is_empty() {
         eprintln!("Error: No text provided for translation.");
-        eprintln!("Usage: sprachspiel translate LANGUAGE \"text to translate\"");
-        eprintln!("   or: echo \"text\" | sprachspiel translate LANGUAGE");
+        eprintln!("Usage: sprach translate LANGUAGE \"text to translate\"");
+        eprintln!("   or: echo \"text\" | sprach translate LANGUAGE");
         std::process::exit(1);
     }
 
@@ -326,7 +326,7 @@ async fn handle_legacy_query(cli: Cli, settings: &Settings) -> AppResult<()> {
     let query = get_query_legacy(&cli)?;
     if query.is_empty() {
         eprintln!("Error: No query provided. Use positional argument or pipe input.");
-        eprintln!("Try 'sprachspiel --help' for usage information.");
+        eprintln!("Try 'sprach --help' for usage information.");
         std::process::exit(1);
     }
 
@@ -392,11 +392,11 @@ fn print_supported_languages(mapper: &LanguageMapper, filter: Option<&str>) {
 
     println!();
     println!("Usage examples:");
-    println!("  sprachspiel translate en:pt \"Hello\"        # English to Portuguese");
-    println!("  sprachspiel translate :pt \"Hello\"          # Auto-detect to Portuguese");
-    println!("  sprachspiel translate pt \"Hello\"           # Auto-detect to Portuguese");
-    println!("  sprachspiel translate he:en \"שלום\"        # Hebrew to English");
-    println!("  sprachspiel translate en:br \"Hello\"        # English to Brazilian Portuguese");
+    println!("  sprach translate en:pt \"Hello\"        # English to Portuguese");
+    println!("  sprach translate :pt \"Hello\"          # Auto-detect to Portuguese");
+    println!("  sprach translate pt \"Hello\"           # Auto-detect to Portuguese");
+    println!("  sprach translate he:en \"שלום\"        # Hebrew to English");
+    println!("  sprach translate en:br \"Hello\"        # English to Brazilian Portuguese");
     println!();
     println!("Tip: Use ambiguous codes like 'zh' or 'pt' for specific variants:");
     println!("  zh-Hans = Chinese Simplified, zh-Hant = Chinese Traditional");
@@ -444,11 +444,11 @@ fn print_available_options() {
     println!("  query QUERY             Query an LLM (default if no subcommand)");
     println!();
     println!("Examples:");
-    println!("  sprachspiel \"What is Rust?\"");
-    println!("  sprachspiel translate en:pt \"Hello world\"");
-    println!("  sprachspiel -m lfm \"Explain async/await\"");
-    println!("  sprachspiel translate --list");
-    println!("  sprachspiel translate --list port");
+    println!("  sprach \"What is Rust?\"");
+    println!("  sprach translate en:pt \"Hello world\"");
+    println!("  sprach -m lfm \"Explain async/await\"");
+    println!("  sprach translate --list");
+    println!("  sprach translate --list port");
 }
 
 fn get_query_legacy(cli: &Cli) -> AppResult<String> {
@@ -587,8 +587,8 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
             Ok(t) => t,
             Err(e) => {
                 eprintln!("Error: {}", e);
-                eprintln!("Usage: sprachspiel summarize [OPTIONS] <TEXT>");
-                eprintln!("   or: echo \"text\" | sprachspiel summarize");
+                eprintln!("Usage: sprach summarize [OPTIONS] <TEXT>");
+                eprintln!("   or: echo \"text\" | sprach summarize");
                 std::process::exit(1);
             }
         }

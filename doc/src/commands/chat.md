@@ -5,7 +5,7 @@ Interactive chat with conversation history.
 ## Synopsis
 
 ```bash
-ask chat [OPTIONS]
+sprach chat [OPTIONS]
 ```
 
 ## Description
@@ -620,7 +620,7 @@ Sessions are stored in a SQLite database at `~/.local/share/sprachspiel/sprachsp
 
 ### Session Resume Context
 
-When resuming a previous session, sprachspiel displays the last 3 conversation exchanges after the welcome banner:
+When resuming a previous session, sprach displays the last 3 conversation exchanges after the welcome banner:
 
 ```
 Resumed session: default (47 messages)
@@ -645,7 +645,7 @@ Recent context (47 messages):
 
 | Scenario | Context shown? |
 |----------|---------------|
-| Resume a saved session (`ask chat` or `ask chat --load name`) | ✅ Yes |
+| Resume a saved session (`sprach chat` or `sprach chat --load name`) | ✅ Yes |
 | New session with no messages | ❌ No |
 | Anonymous session (`--anonymous`) | ❌ No |
 
@@ -770,22 +770,22 @@ After compaction, only the summary + new messages are sent to the LLM.
 
 Start a new chat session:
 ```bash
-ask chat
+sprach chat
 ```
 
 Start with a specific model:
 ```bash
-ask chat -m lfm
+sprach chat -m lfm
 ```
 
 Start an anonymous session (temporary):
 ```bash
-ask chat --anonymous
+sprach chat --anonymous
 ```
 
 Load a previously saved session:
 ```bash
-ask chat --load my-session
+sprach chat --load my-session
 ```
 
 ## Inside Chat

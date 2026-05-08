@@ -490,8 +490,8 @@ Example: skill_view(name="document-processing")
 |--------|----------|
 | builtin | Embedded in binary (always available) |
 | user | `~/.config/sprachspiel/skills/<name>/SKILL.md` |
-| project | `.sprachspiel/skills/<name>/SKILL.md` |
 
+| project | `.sprachspiel/skills/<name>/SKILL.md` |
 **Priority:** project > user > builtin (project-level skills override user and builtin).
 
 **Example workflow:**
@@ -730,7 +730,7 @@ Users can also manage todos via chat commands:
 
 ## Subagent Tools (4)
 
-The subagent system provides specialized one-shot models for specific tasks that require capabilities different from the main chat model. Instead of using the general-purpose chat model for everything, sprachspiel can delegate specialized tasks to purpose-built models configured for specific purposes.
+The subagent system provides specialized one-shot models for specific tasks that require capabilities different from the main chat model. Instead of using the general-purpose chat model for everything, sprach can delegate specialized tasks to purpose-built models configured for specific purposes.
 
 ### What Are Subagents?
 
@@ -773,7 +773,7 @@ Chat commands provide direct access to subagent functionality and are **always a
 | `/summarize <text>` | Summarize text | `/summarize Long text here...` |
 
 **Chat Command Features:**
-- Commands work in interactive chat mode (`sprachspiel chat`)
+  - Commands work in interactive chat mode (`sprach chat`)
 - No feature flag requirements - always available
 - Automatically route to the appropriate subagent model
 - Support file paths, piped input, and inline text
@@ -1291,7 +1291,7 @@ Example: write_file(path: "config.json", content: json_data, overwrite: "true")
 - Returns error if file exists and `overwrite=false`
 - Creates parent directories must exist
 - Only writes valid UTF-8 text content
-- Program's own config files (sprachspiel config) are always blocked - user must edit manually
+- Program's own config files (sprach config) are always blocked - user must edit manually
 
 ### edit_file
 
@@ -1672,10 +1672,10 @@ Tools are automatically enabled for capable models:
 
 ```bash
 # Tools auto-enabled for qwen2.5-coder:7b
-sprachspiel -m qwen2.5-coder:7b "Tell me about Pikachu"
+sprach -m qwen2.5-coder:7b "Tell me about Pikachu"
 
 # Tools auto-enabled for qwen3-coder
-sprachspiel -m qwen3-coder "What's the weather in Tokyo?"
+sprach -m qwen3-coder "What's the weather in Tokyo?"
 ```
 
 ### Force Enable Tools
@@ -1683,7 +1683,7 @@ sprachspiel -m qwen3-coder "What's the weather in Tokyo?"
 Force tools on any model:
 
 ```bash
-sprachspiel --tools "Tell me about Pikachu"
+sprach --tools "Tell me about Pikachu"
 ```
 
 ### Tool User Prompt
@@ -1691,7 +1691,7 @@ sprachspiel --tools "Tell me about Pikachu"
 Use enhanced prompt for better tool selection:
 
 ```bash
-sprachspiel -p tool_user "What's the weather?"
+sprach -p tool_user "What's the weather?"
 ```
 
 ### Disable Specific Tools
@@ -1710,99 +1710,99 @@ blacklist = ["web_search", "fetch_pokemon"]
 
 ```bash
 # Comprehensive data
-sprachspiel "Tell me everything about Charizard"
+sprach "Tell me everything about Charizard"
 
 # Specific information
-sprachspiel "What are Pikachu's stats?"
-sprachspiel "Show me Eevee's evolution chain"
-sprachspiel "What type is super effective against Water?"
+sprach "What are Pikachu's stats?"
+sprach "Show me Eevee's evolution chain"
+sprach "What type is super effective against Water?"
 
 # Compare Pokémon
-sprachspiel "Compare Blastoise and Charizard stats"
+sprach "Compare Blastoise and Charizard stats"
 
 # Move information
-sprachspiel "Tell me about Thunderbolt"
-sprachspiel "What moves can Pikachu learn?"
+sprach "Tell me about Thunderbolt"
+sprach "What moves can Pikachu learn?"
 ```
 
 ### Weather Queries
 
 ```bash
 # Current weather
-sprachspiel "What's the weather in Tokyo?"
+sprach "What's the weather in Tokyo?"
 
 # Forecast
-sprachspiel "Weather forecast for Paris"
+sprach "Weather forecast for Paris"
 
 # Specific queries
-sprachspiel "Is it raining in London?"
-sprachspiel "What's the temperature in New York?"
+sprach "Is it raining in London?"
+sprach "What's the temperature in New York?"
 
 # With country
-sprachspiel "Weather in Sydney, Australia"
+sprach "Weather in Sydney, Australia"
 ```
 
 ### Web Search Queries
 
 ```bash
 # General search
-sprachspiel "Search for Rust async patterns"
+sprach "Search for Rust async patterns"
 
 # News
-sprachspiel "Latest technology news"
+sprach "Latest technology news"
 
 # Quick facts
-sprachspiel "What is quantum computing?"
+sprach "What is quantum computing?"
 
 # Follow up with scraping
-sprachspiel "Find information about the Rust programming language, then scrape the official website"
+sprach "Find information about the Rust programming language, then scrape the official website"
 ```
 
 ### Stock Quotes
 
 ```bash
 # US stocks
-sprachspiel "Get the stock quote for Apple"
-sprachspiel "What's Google's stock price?"
+sprach "Get the stock quote for Apple"
+sprach "What's Google's stock price?"
 
 # Brazilian stocks
-sprachspiel "Cotação da Petrobras"
-sprachspiel "Preço das ações da Vale"
+sprach "Cotação da Petrobras"
+sprach "Preço das ações da Vale"
 ```
 
 ### File Operations
 
 ```bash
 # Read a file
-sprachspiel "Read the README.md file"
+sprach "Read the README.md file"
 
 # List directory contents
-sprachspiel "Show me the files in the src directory"
+sprach "Show me the files in the src directory"
 
 # Search for code patterns
-sprachspiel "Find all TODO comments in the codebase"
+sprach "Find all TODO comments in the codebase"
 
 # Analyze project structure
-sprachspiel "List all Rust files recursively and tell me what each module does"
+sprach "List all Rust files recursively and tell me what each module does"
 
 # Search and analyze
-sprachspiel "Search for all functions named 'handle_' in the src directory"
+sprach "Search for all functions named 'handle_' in the src directory"
 
 # Multi-file analysis
-sprachspiel "Read Cargo.toml and tell me what dependencies this project has"
+sprach "Read Cargo.toml and tell me what dependencies this project has"
 ```
 
 **Complex file operations:**
 
 ```bash
 # Count lines of code
-sprachspiel "List all .rs files recursively, then count total lines of code"
+sprach "List all .rs files recursively, then count total lines of code"
 
 # Find largest files
-sprachspiel "List the src directory recursively and identify the 5 largest files"
+sprach "List the src directory recursively and identify the 5 largest files"
 
 # Pattern analysis
-sprachspiel "Search for all 'async fn' declarations in src and summarize the async functions"
+sprach "Search for all 'async fn' declarations in src and summarize the async functions"
 ```
 
 ## Tool Selection
@@ -1839,7 +1839,7 @@ None currently.
 See tool calls in debug mode:
 
 ```bash
-sprachspiel -d "Tell me about Pikachu"
+sprach -d "Tell me about Pikachu"
 
 # Output includes:
 # - Tool calls with arguments (detailed format)

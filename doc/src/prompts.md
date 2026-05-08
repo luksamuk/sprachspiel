@@ -31,7 +31,7 @@ See [SOUL.md](./soul.md) for details on creating custom personalities.
 The standard prompt for general purpose queries.
 
 ```bash
-sprachspiel -p default "Your question"
+sprach -p default "Your question"
 ```
 
 **Characteristics:**
@@ -50,7 +50,7 @@ sprachspiel -p default "Your question"
 Enhanced prompt for models with tool access.
 
 ```bash
-sprachspiel -p tool_user "What's the weather in Tokyo?"
+sprach -p tool_user "What's the weather in Tokyo?"
 ```
 
 **Characteristics:**
@@ -71,7 +71,7 @@ sprachspiel -p tool_user "What's the weather in Tokyo?"
 Optimized for code generation with minimal explanations.
 
 ```bash
-sprachspiel -p code "Write a Rust function to parse JSON"
+sprach -p code "Write a Rust function to parse JSON"
 ```
 
 **Characteristics:**
@@ -91,7 +91,7 @@ sprachspiel -p code "Write a Rust function to parse JSON"
 Code mode with web search tools enabled.
 
 ```bash
-sprachspiel -p code_with_tools "Latest Rust async patterns"
+sprach -p code_with_tools "Latest Rust async patterns"
 ```
 
 **Characteristics:**
@@ -110,7 +110,7 @@ sprachspiel -p code_with_tools "Latest Rust async patterns"
 Professional summarization guidelines.
 
 ```bash
-sprachspiel summarize --style academic "Text..."
+sprach summarize --style academic "Text..."
 ```
 
 **Characteristics:**
@@ -130,39 +130,39 @@ sprachspiel summarize --style academic "Text..."
 
 ```bash
 # Default mode (no -p needed)
-sprachspiel "What is Rust?"
+sprach "What is Rust?"
 
 # Explicit mode selection
-sprachspiel -p tool_user "Complex query"
+sprach -p tool_user "Complex query"
 
 # Code mode
-sprachspiel -p code "Write a function"
+sprach -p code "Write a function"
 ```
 
 ### With Models
 
 ```bash
 # Tool user with capable model
-sprachspiel -m qwen2.5-coder:7b -p tool_user "Tell me about Pikachu"
+sprach -m qwen2.5-coder:7b -p tool_user "Tell me about Pikachu"
 
 # Code mode with code model
-sprachspiel -m qwen2.5-coder:7b -p code "Implement sort"
+sprach -m qwen2.5-coder:7b -p code "Implement sort"
 
 # Default with any model
-sprachspiel -m qwen3.5:4b -p default "Question"
+sprach -m qwen3.5:4b -p default "Question"
 ```
 
 ### Combining Options
 
 ```bash
 # Code mode with think
-sprachspiel -p code -t "Complex algorithm"
+sprach -p code -t "Complex algorithm"
 
 # Tool user with debug
-sprachspiel -p tool_user -d "Debug this"
+sprach -p tool_user -d "Debug this"
 
 # Code with specific model and debug
-sprachspiel -m qwen3-coder -p code -d "Debug code generation"
+sprach -m qwen3-coder -p code -d "Debug code generation"
 ```
 
 ## Mode Selection Guide
@@ -190,7 +190,7 @@ graph TD
 See available modes:
 
 ```bash
-sprachspiel --list
+sprach --list
 ```
 
 Shows all prompt modes with descriptions.

@@ -217,7 +217,7 @@ pub async fn remember(
                        2. Database initialization failed at startup\n\
                        3. Database path is inaccessible\n\n\
                        Check the startup messages for database errors.\n\
-                        Use 'sprachspiel chat' without --anonymous, or check database permissions.";
+                        Use 'sprach chat' without --anonymous, or check database permissions.";
             err.to_string()
         }
     };

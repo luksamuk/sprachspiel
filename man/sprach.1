@@ -1,29 +1,29 @@
-.TH SPRACHSPIEL 1 "2026-05-07" "sprachspiel 0.43.0" "User Commands"
+.TH SPRACH 1 "2026-05-07" "sprachspiel 0.43.0" "User Commands"
 .SH NAME
-sprachspiel \- A powerful CLI for interacting with Ollama LLM models
+sprach \- A powerful CLI for interacting with Ollama LLM models
 .SH SYNOPSIS
-.B sprachspiel
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " [ QUERY ]
 .br
-.B sprachspiel
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " query " [ QUERY ]
 .br
-.B sprachspiel
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " chat " [ CHAT_OPTIONS ]
 .br
-.B sprachspiel
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " translate " LANGUAGE [ TEXT ]
 .br
-.B sprachspiel
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " ocr " FILE ...
 .br
-.B sprachspiel
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " vision " FILE ...
 .br
-.B sprachspiel
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " summarize " [ TEXT ]
 .SH DESCRIPTION
-.B sprachspiel
+.B sprach
 is a Rust CLI tool for interacting with local Ollama LLM models, featuring markdown rendering, tool-assisted queries, translation, OCR, vision, and text summarization.
 .PP
 When invoked without a subcommand, it defaults to query mode. The application reads from stdin if no QUERY or TEXT is provided, making it suitable for piping.
@@ -361,13 +361,13 @@ glm-ocr|glm-ocr:bf16|Auto|OCR/image extraction
 moondream|moondream:1.8b|8K|Vision/image analysis
 .TE
 .PP
-Run 'sprachspiel --list' to see all available models including user-defined ones.
+Run 'sprach --list' to see all available models including user-defined ones.
 .SH EXAMPLES
 Basic query:
 .PP
 .nf
 .RS
-sprachspiel "What is Rust?"
+sprach "What is Rust?"
 .RE
 .fi
 .PP
@@ -375,7 +375,7 @@ Use specific model:
 .PP
 .nf
 .RS
-sprachspiel -m qwen3 query "Explain quantum computing"
+sprach -m qwen3 query "Explain quantum computing"
 .RE
 .fi
 .PP
@@ -383,7 +383,7 @@ Enable think mode:
 .PP
 .nf
 .RS
-sprachspiel -t query "Solve this step by step"
+sprach -t query "Solve this step by step"
 .RE
 .fi
 .PP
@@ -391,8 +391,8 @@ Code mode (for programming):
 .PP
 .nf
 .RS
-sprachspiel -c query "Write a Rust function"
-sprachspiel -c -m qwen3-coder query "Implement a thread pool"
+sprach -c query "Write a Rust function"
+sprach -c -m qwen3-coder query "Implement a thread pool"
 .RE
 .fi
 .PP
@@ -400,8 +400,8 @@ Translate text:
 .PP
 .nf
 .RS
-sprachspiel translate en:pt "Hello world"
-sprachspiel translate :pt "Auto-detect source"
+sprach translate en:pt "Hello world"
+sprach translate :pt "Auto-detect source"
 .RE
 .fi
 .PP
@@ -409,8 +409,8 @@ Extract text from image (OCR):
 .PP
 .nf
 .RS
-sprachspiel ocr document.png
-sprachspiel ocr --mode table spreadsheet.png
+sprach ocr document.png
+sprach ocr --mode table spreadsheet.png
 .RE
 .fi
 .PP
@@ -418,9 +418,9 @@ Analyze image (Vision):
 .PP
 .nf
 .RS
-sprachspiel vision photo.jpg
-sprachspiel vision --detailed landscape.png
-sprachspiel vision -m llava image1.png image2.png
+sprach vision photo.jpg
+sprach vision --detailed landscape.png
+sprach vision -m llava image1.png image2.png
 .RE
 .fi
 .PP
@@ -428,9 +428,9 @@ Summarize text:
 .PP
 .nf
 .RS
-sprachspiel summarize "Long text here..."
-sprachspiel summarize --style technical "Long text"
-echo "Long text" | sprachspiel summarize --style technical
+sprach summarize "Long text here..."
+sprach summarize --style technical "Long text"
+echo "Long text" | sprach summarize --style technical
 .RE
 .fi
 .PP
@@ -438,9 +438,9 @@ Debug mode (verbose logging):
 .PP
 .nf
 .RS
-sprachspiel -v query "Test query"
-sprachspiel -v -m llama3.1 query "Verbose with specific model"
-sprachspiel -vv query "Trace level logging"
+sprach -v query "Test query"
+sprach -v -m llama3.1 query "Verbose with specific model"
+sprach -vv query "Trace level logging"
 .RE
 .fi
 .PP
@@ -448,8 +448,8 @@ Pipe from stdin:
 .PP
 .nf
 .RS
-cat file.txt | sprachspiel summarize
-cat article.pdf | pdftotext - - | sprachspiel summarize
+cat file.txt | sprach summarize
+cat article.pdf | pdftotext - - | sprach summarize
 .RE
 .fi
 .PP
@@ -458,11 +458,11 @@ Use project context from AGENTS.md:
 .nf
 .RS
 # With AGENTS.md in current directory
-sprachspiel "Explain the project structure"
-sprachspiel "How do I run the tests?"
+sprach "Explain the project structure"
+sprach "How do I run the tests?"
 
 # Ignore AGENTS.md for general queries
-sprachspiel --ignore-agents "What is machine learning?"
+sprach --ignore-agents "What is machine learning?"
 .RE
 .fi
 .PP
@@ -470,9 +470,9 @@ Chain commands:
 .PP
 .nf
 .RS
-sprachspiel ocr document.png | sprachspiel summarize
-sprachspiel ocr japanese.png | sprachspiel translate ja:pt
-sprachspiel vision photo.jpg | sprachspiel summarize
+sprach ocr document.png | sprach summarize
+sprach ocr japanese.png | sprach translate ja:pt
+sprach vision photo.jpg | sprach summarize
 .RE
 .fi
 .PP
@@ -480,9 +480,9 @@ Interactive chat:
 .PP
 .nf
 .RS
-sprachspiel chat
-sprachspiel chat -a  # anonymous mode
-sprachspiel chat -m qwen3.5 --tools
+sprach chat
+sprach chat -a  # anonymous mode
+sprach chat -m qwen3.5 --tools
 .RE
 .fi
 .PP
@@ -490,7 +490,7 @@ List available models:
 .PP
 .nf
 .RS
-sprachspiel --list
+sprach --list
 .RE
 .fi
 .PP
@@ -498,8 +498,8 @@ Generate shell completions:
 .PP
 .nf
 .RS
-sprachspiel completion bash > ~/.local/share/bash-completion/completions/sprachspiel
-sprachspiel completion zsh > ~/.zfunc/_sprachspiel
+sprach completion bash > ~/.local/share/bash-completion/completions/sprach
+sprach completion zsh > ~/.zfunc/_sprach
 .RE
 .fi
 .SH LANGUAGE CODES
@@ -509,7 +509,7 @@ pt, pt-BR (br, brazil), en (english), es (spanish), fr (french), de (german),
 it (italian), ja (japanese), zh-Hans (zh-cn), zh-Hant (zh-tw), he (hebrew),
 ko (korean), ru (russian), ar (arabic), hi (hindi), and 40+ more.
 .PP
-Use \fBsprachspiel translate --list\fR to see all supported languages.
+Use \fBsprach translate --list\fR to see all supported languages.
 .SH PROMPT MODES
 .TP
 .B default

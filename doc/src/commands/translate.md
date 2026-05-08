@@ -5,8 +5,8 @@ The `translate` command translates text between 50+ languages using the Translat
 ## Synopsis
 
 ```bash
-sprachspiel [GLOBAL OPTIONS] translate <LANGUAGE> [TEXT]
-sprachspiel [GLOBAL OPTIONS] t <LANGUAGE> [TEXT]
+sprach [GLOBAL OPTIONS] translate <LANGUAGE> [TEXT]
+sprach [GLOBAL OPTIONS] t <LANGUAGE> [TEXT]
 ```
 
 ## Description
@@ -59,13 +59,13 @@ These options are specific to the translate subcommand:
 
 ```bash
 # Explicit source and target
-sprachspiel translate en:pt "Hello"
+sprach translate en:pt "Hello"
 
 # Auto-detect source (colon required)
-sprachspiel translate :pt "Hello"
+sprach translate :pt "Hello"
 
 # Just target language (auto-detect implied)
-sprachspiel translate pt "Hello"
+sprach translate pt "Hello"
 ```
 
 ## Examples
@@ -74,15 +74,15 @@ sprachspiel translate pt "Hello"
 
 ```bash
 # English to Portuguese
-sprachspiel translate en:pt "Hello world"
+sprach translate en:pt "Hello world"
 # Output: Olá mundo
 
 # Spanish to English
-sprachspiel translate es:en "Hola mundo"
+sprach translate es:en "Hola mundo"
 # Output: Hello world
 
 # French to Portuguese
-sprachspiel translate fr:pt "Bonjour le monde"
+sprach translate fr:pt "Bonjour le monde"
 # Output: Olá mundo
 ```
 
@@ -90,25 +90,25 @@ sprachspiel translate fr:pt "Bonjour le monde"
 
 ```bash
 # Auto-detect to Portuguese
-sprachspiel translate :pt "Hello world"
-sprachspiel translate pt "Hello world"
+sprach translate :pt "Hello world"
+sprach translate pt "Hello world"
 
 # Works with any language
-sprachspiel translate :en "こんにちは"
-sprachspiel translate :pt "שלום"
+sprach translate :en "こんにちは"
+sprach translate :pt "שלום"
 ```
 
 ### From Stdin
 
 ```bash
 # Translate file content
-cat document.txt | sprachspiel translate :pt
+cat document.txt | sprach translate :pt
 
 # Translate command output
-echo "Hello world" | sprachspiel translate :es
+echo "Hello world" | sprach translate :es
 
 # Chain with OCR
-sprachspiel ocr japanese.png | sprachspiel translate ja:pt
+sprach ocr japanese.png | sprach translate ja:pt
 ```
 
 ### Translation Styles
@@ -117,42 +117,42 @@ Use `-p` or `--prompt` for different styles:
 
 ```bash
 # Formal style
-sprachspiel translate en:pt -p formal "Hey, what's up?"
+sprach translate en:pt -p formal "Hey, what's up?"
 
 # Casual style
-sprachspiel translate en:pt -p casual "Greetings and salutations"
+sprach translate en:pt -p casual "Greetings and salutations"
 
 # Technical style
-sprachspiel translate en:pt -p technical "API endpoint response"
+sprach translate en:pt -p technical "API endpoint response"
 
 # Literary style
-sprachspiel translate en:pt -p literary "It was the best of times"
+sprach translate en:pt -p literary "It was the best of times"
 ```
 
 ### List Languages
 
 ```bash
 # List all supported languages
-sprachspiel translate --list
+sprach translate --list
 
 # Filter by substring
-sprachspiel translate --list portuguese
-sprachspiel translate --list pt
-sprachspiel translate --list spanish
+sprach translate --list portuguese
+sprach translate --list pt
+sprach translate --list spanish
 ```
 
 ### Plain Text Output
 
 ```bash
 # No markdown formatting
-sprachspiel --plain translate :pt "Hello **world**"
+sprach --plain translate :pt "Hello **world**"
 # Output: Olá **mundo**
 ```
 ### Logging
 
 ```bash
 # See translation process
-sprachspiel -v translate en:pt "Test"
+sprach -v translate en:pt "Test"
 # Shows model configuration and processing
 ```
 
@@ -179,13 +179,13 @@ Translation works great in pipelines:
 
 ```bash
 # OCR → Translate
-sprachspiel ocr japanese.png | sprachspiel translate ja:pt
+sprach ocr japanese.png | sprach translate ja:pt
 
 # OCR → Summarize → Translate
-sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
+sprach ocr document.png | sprach summarize | sprach translate :pt
 
 # File → Translate → Save
-cat english.txt | sprachspiel translate :pt > portuguese.txt
+cat english.txt | sprach translate :pt > portuguese.txt
 ```
 
 ## Best Practices

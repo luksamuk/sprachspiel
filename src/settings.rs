@@ -569,7 +569,7 @@ impl Settings {
 [model]
 
 # The default model preset to use for general queries.
-# See all available models with: sprachspiel --list-models
+# See all available models with: sprach --list-models
 # Recommended: "qwen3.5:4b" (built-in, multimodal) or "ministral" (from models.toml)
 # Default: "qwen3.5:4b"
 default = "qwen3.5:4b"

@@ -477,7 +477,7 @@ All notable changes to Sprachspiel will be documented in this file.
   - `DEFAULT_CODE_MODEL`: `qwen2.5-coder:7b`
   - Optimized for coding with function calling
   - Automatic fallback: code mode → code default → global default
-  - Behavior: `sprachspiel "query"` → qwen3.5:4b, `sprachspiel -c "code"` → qwen2.5-coder:7b
+  - Behavior: `sprach "query"` → qwen3.5:4b, `sprach -c "code"` → qwen2.5-coder:7b
 
 - **Built-in Models Reduced** - From 4 to 3 models
   - Removed: `moondream` (now redundant - qwen3.5:4b is multimodal)
@@ -1636,7 +1636,7 @@ Users with existing JSON sessions will see a notification:
 - **Installation Scripts**
   - `scripts/install.sh` - Portable installer with --prefix, --bin, --man options
   - `scripts/uninstall.sh` - Clean uninstallation
-  - `scripts/install-sprachspiel.sh` - Remote installer for curl|bash one-liner
+  - `scripts/install-sprach.sh` - Remote installer for curl|bash one-liner
 
 - **New Makefile Targets**
   - `tarball-linux` - Linux tarball with install scripts
@@ -1653,7 +1653,7 @@ Users with existing JSON sessions will see a notification:
 ### Changed
 
 - **Tarball Structure** - Now includes install/uninstall scripts inside
-  - `sprachspiel.1` manpage renamed from `man/ask-ai.1` to top-level
+  - `sprach.1` manpage renamed from `man/ask-ai.1` to top-level
   - Added `README-TERMUX.txt` for Termux tarballs
   - Install script detects Termux and adjusts default paths
 
@@ -1681,15 +1681,15 @@ Users with existing JSON sessions will see a notification:
 **Install Script Features:**
 - Platform detection: Linux, Termux, macOS
 - Default paths: `~/.local/bin` (Linux/macOS), `~/bin` (Termux)
-- Manpage installation: `~/.local/share/man/man1/sprachspiel.1`
+- Manpage installation: `~/.local/share/man/man1/sprach.1`
 - PATH/MANPATH detection and instructions
 - Manpage access verification
 
 **Tarball Contents:**
 ```
 sprachspiel-VERSION-linux-x86_64.tar.gz
-├── sprachspiel
-├── sprachspiel.1
+├── sprach
+├── sprach.1
 ├── install.sh
 ├── uninstall.sh
 ├── README.md
@@ -1698,7 +1698,7 @@ sprachspiel-VERSION-linux-x86_64.tar.gz
 
 **One-liner Installation:**
 ```bash
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprachspiel.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
 curl -sL ... | bash -s -- --version 0.26.0
 curl -sL ... | bash -s -- --tools all
 curl -sL ... | bash -s -- --prefix /usr
@@ -1717,7 +1717,7 @@ curl -sL ... | bash -s -- --prefix /usr
 - `doc/src/development/retrieval-design.md` - NEW: Retrieval system design
 - `scripts/install.sh` - NEW: Portable installer
 - `scripts/uninstall.sh` - NEW: Uninstaller
-- `scripts/install-sprachspiel.sh` - NEW: One-liner installer
+- `scripts/install-sprach.sh` - NEW: One-liner installer
 - `README-TERMUX.txt` - NEW: Termux-specific instructions
 - `src/settings.rs` - Added translate model config
 - `src/main.rs` - Translate model fallback
@@ -2727,7 +2727,7 @@ Added 3 new LED tool examples to demonstrate:
 ### Migration Notes
 
 If upgrading from v0.13.0:
-1. Run `sprachspiel --list` to see the new model organization
+1. Run `sprach --list` to see the new model organization
 2. Default model is now `llama3.1` (update config if you used `lfm`)
 3. Check `~/.config/sprachspiel/models.toml` for all available model presets
 4. Cloud models no longer have hardcoded parameters - configure as needed

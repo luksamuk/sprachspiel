@@ -130,7 +130,7 @@ High-capability models with large context windows:
 
 ### Vision Models
 
-These models are used by the `ask vision` command for image analysis:
+These models are used by the `sprach vision` command for image analysis:
 
 | Model ID | Size | Context | Multi-Image | Best For |
 |----------|------|---------|-------------|----------|
@@ -303,39 +303,39 @@ Models tested for function calling (tool use) capability. Rankings based on benc
 
 ### For General Queries
 ```bash
-sprachspiel "Your question"           # Default model (qwen3.5:4b)
-sprachspiel -m "qwen3.5:9b" "question" # Better quality (recommended)
-sprachspiel -m ministral "question"   # Fast, capable
-sprachspiel -m qwen3 -t "reasoning"   # With thinking
+sprach "Your question"           # Default model (qwen3.5:4b)
+sprach -m "qwen3.5:9b" "question" # Better quality (recommended)
+sprach -m ministral "question"   # Fast, capable
+sprach -m qwen3 -t "reasoning"   # With thinking
 ```
 
 ### For Code
 ```bash
-sprachspiel -m "qwen3.5:9b" "Write a Rust function"  # Good for code
-sprachspiel -m "qwen3.5:27b" "Complex refactoring"   # Overkill for simple tasks
-sprachspiel -m qwen3-coder "Write a Rust function"   # Code specialist
+sprach -m "qwen3.5:9b" "Write a Rust function"  # Good for code
+sprach -m "qwen3.5:27b" "Complex refactoring"   # Overkill for simple tasks
+sprach -m qwen3-coder "Write a Rust function"   # Code specialist
 ```
 
 ### For Vision
 ```bash
-ask vision photo.png                        # Default (qwen3.5:4b)
-ask vision -m "qwen3.5:9b" photo.png        # Better quality
-ask vision -m moondream photo.png           # Lightweight alternative
-ask vision -m llava:13b photo.png --detailed  # Better quality
+sprach vision photo.png                        # Default (qwen3.5:4b)
+sprach vision -m "qwen3.5:9b" photo.png        # Better quality
+sprach vision -m moondream photo.png           # Lightweight alternative
+sprach vision -m llava:13b photo.png --detailed  # Better quality
 ```
 
 ### For Cloud Models
 ```bash
-sprachspiel -m glm-5 "Complex analysis"
-sprachspiel -m kimi-k2.5 "Multimodal task"
-sprachspiel -m minimax-m2.5 "Coding task"
+sprach -m glm-5 "Complex analysis"
+sprach -m kimi-k2.5 "Multimodal task"
+sprach -m minimax-m2.5 "Coding task"
 ```
 
 ### For Tool Calling (Function Calling)
 ```bash
-sprachspiel -m nemotron "List files in current directory"  # Most efficient FC
-sprachspiel -m gemma4-e2b "Search for TODO comments"       # Native FC (Google)
-sprachspiel -m ministral-3 "Analyze this data file"       # Fast FC (needs temp=0.3)
+sprach -m nemotron "List files in current directory"  # Most efficient FC
+sprach -m gemma4-e2b "Search for TODO comments"       # Native FC (Google)
+sprach -m ministral-3 "Analyze this data file"       # Fast FC (needs temp=0.3)
 ```
 
 ### Quick Recommendations
@@ -379,7 +379,7 @@ thinking = true             # Optional: for models that support it
 ## Listing Models
 
 ```bash
-sprachspiel --list
+sprach --list
 ```
 
 Shows built-in models and user-defined models (marked with `[user]`).

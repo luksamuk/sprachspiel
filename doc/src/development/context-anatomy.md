@@ -312,7 +312,7 @@ Retrieval activates when ALL are true:
 
 ## Query Mode
 
-For `sprachspiel query` (no persistence):
+For `sprach query` (no persistence):
 
 ```mermaid
 graph TB

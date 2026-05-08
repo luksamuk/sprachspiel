@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Sprachspiel Remote Installer
+# Sprachspiel Remote Installer (binary: sprach)
 # =============================================================================
 # This script downloads and installs sprachspiel from GitHub releases.
 #
 # Usage:
-#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash
-#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.25.0
-#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --tools all
-#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --prefix /usr
+#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
+#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --version 0.25.0
+#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --tools all
+#   curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --prefix /usr
 #
 # Platform Detection:
 #   - Linux x86_64: Downloads sprachspiel-VERSION-linux-x86_64.tar.gz
 #   - Termux/Android: Downloads sprachspiel-VERSION-termux-aarch64.tar.gz
 #   - macOS (ARM): Downloads sprachspiel-VERSION-darwin-arm64.tar.gz (future)
 #   - macOS (Intel): Downloads sprachspiel-VERSION-darwin-x86_64.tar.gz (future)
+#
+# Note: Binary name is "sprach" (what you type), project/tarball name is "sprachspiel".
 #
 # Requirements:
 #   - curl
@@ -130,11 +132,11 @@ detect_platform() {
 
 show_help() {
     cat << EOF
-Sprachspiel Remote Installer
+Sprachspiel Remote Installer (binary: sprach)
 
 Usage:
-  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash
-  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- [OPTIONS]
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- [OPTIONS]
 
 Options:
   --version VERSION   Install specific version (default: latest)
@@ -147,16 +149,16 @@ Options:
 
 Examples:
   # Install latest version
-  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
 
   # Install specific version
-  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --version 0.25.0
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --version 0.25.0
 
   # Install with all tools
-  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --tools all
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --tools all
 
   # Install system-wide (requires sudo for /usr)
-  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprachspiel.sh | bash -s -- --prefix /usr
+  curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --prefix /usr
 
 For more information: https://github.com/luksamuk/sprachspiel
 EOF
@@ -263,7 +265,7 @@ if [[ -z "$INSTALL_VERSION" ]]; then
     INSTALL_VERSION=$(get_latest_version)
 fi
 
-print_info "Installing sprachspiel version $INSTALL_VERSION"
+print_info "Installing sprach version $INSTALL_VERSION"
 
 # Detect platform
 PLATFORM=$(detect_platform)
@@ -335,4 +337,4 @@ fi
 
 # Cleanup is automatic via trap
 echo ""
-print_success "sprachspiel $INSTALL_VERSION installed successfully!"
+print_success "sprach $INSTALL_VERSION installed successfully!"

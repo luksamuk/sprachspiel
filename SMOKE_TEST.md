@@ -55,8 +55,8 @@ Some tests require the LLM to call tools (sections 4.1, 4.2, 5, 6, 6.5.5, 10, 10
 
 ## 1. Basic Binary
 
-- [ ] Binary runs: `./target/release/sprachspiel --help`
-- [ ] Version visible: `./target/release/sprachspiel --version`
+- [ ] Binary runs: `./target/release/sprach --help`
+- [ ] Version visible: `./target/release/sprach --version`
 - [ ] Subcommands listed (chat, query, translate)
 
 ---
@@ -160,8 +160,8 @@ Via chat with a model that supports tools:
 
 **Objective:** Verify that embedding failures during startup do not crash the application.
 
-- [ ] With Ollama **running**: `./target/release/sprachspiel chat` starts without panic
-- [ ] With Ollama **stopped** (pkill ollama): `./target/release/sprachspiel chat` starts without panic — graceful error messages only
+- [ ] With Ollama **running**: `./target/release/sprach chat` starts without panic
+- [ ] With Ollama **stopped** (pkill ollama): `./target/release/sprach chat` starts without panic — graceful error messages only
 - [ ] After restarting Ollama and re-entering chat, "Recovering N missing embedding(s)" message appears and completes successfully
 
 ---
@@ -284,10 +284,10 @@ Via chat with a model that supports tools:
 
 ```bash
 # Quick test (no heavy context) - global flags BEFORE subcommand
-timeout 60 ./target/release/sprachspiel --soulless --ignore-agents query "2+2"
+timeout 60 ./target/release/sprach --soulless --ignore-agents query "2+2"
 
 # Full test (with context)
-timeout 120 ./target/release/sprachspiel query "What is 2+2?"
+timeout 120 ./target/release/sprach query "What is 2+2?"
 ```
 
 - [ ] Returns answer without errors
@@ -298,7 +298,7 @@ timeout 120 ./target/release/sprachspiel query "What is 2+2?"
 ## 8. Translation (optional)
 
 ```bash
-./target/release/sprachspiel translate pt "Hello"
+./target/release/sprach translate pt "Hello"
 ```
 
 - [ ] Returns translation (if model available)
@@ -475,7 +475,7 @@ Since we use a temporary database (isolated), they will be discarded when restor
 ```bash
 # Acceptable time for simple query (no context)
 # Note: global flags BEFORE subcommand
-time (timeout 30 ./target/release/sprachspiel --soulless --ignore-agents query "2+2" > /dev/null)
+time (timeout 30 ./target/release/sprach --soulless --ignore-agents query "2+2" > /dev/null)
 # Should complete in < 15 seconds on normal hardware
 ```
 
@@ -489,7 +489,7 @@ time (timeout 30 ./target/release/sprachspiel --soulless --ignore-agents query "
 These commands are always available in chat mode (not feature-gated).
 
 ### 14.1 /ocr command
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] Type `/ocr` with no args → shows usage hint
 - [ ] Type `/ocr .env` → "BLOCKED" error (security blocklist)
 
@@ -564,7 +564,7 @@ Test the feedback command infrastructure for recording user feedback on assistan
 
 ### 15.1 Basic Feedback Commands
 
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] Type a message and receive an assistant response
 - [ ] Type `/feedback good` → `↑↑ good feedback recorded for msg:N` + excerpt (dim) + `Importance: +0.05`
 - [ ] Type `/feedback bad` → `↓↓ bad feedback recorded for msg:N` + excerpt (dim) + `Importance: -0.10`
@@ -590,7 +590,7 @@ Test the feedback command infrastructure for recording user feedback on assistan
 - [ ] Type `/feedback msg:abc good` → `Invalid message ID 'abc'. Use msg:<number> (e.g., msg:42).`
 - [ ] Type `/feedback correction:` → `Correction requires text. Usage: /feedback correction:<text>`
 - [ ] Type `/feedback msg:5 correction:` → `Correction requires text. Usage: /feedback msg:<id> correction:<text>`
-- [ ] Start anonymous chat: `sprachspiel chat --anonymous`
+- [ ] Start anonymous chat: `sprach chat --anonymous`
 - [ ] Type `/feedback good` in anonymous mode → `Error: Cannot give feedback in anonymous mode.`
 - [ ] Type `/feedback good` before any assistant message → `No assistant message to give feedback on.`
 
@@ -609,7 +609,7 @@ Test the content decay and pruning infrastructure.
 
 ### 16.1 Content Prune
 
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] Import a document first: `/doc import /tmp/test.txt`
 - [ ] Type `/content prune` → shows `⏳ Running content decay cycle...` then result
 - [ ] After prune with items removed: `✓ Pruned N content item(s), N remaining (avg retention: X.XX).`
@@ -627,7 +627,7 @@ Test the content decay and pruning infrastructure.
 
 ### 16.3 Error Tests
 
-- [ ] Start anonymous chat: `sprachspiel chat --anonymous`
+- [ ] Start anonymous chat: `sprach chat --anonymous`
 - [ ] Type `/content prune` in anonymous mode → `Error: Cannot prune content in anonymous mode.`
 - [ ] Type `/cp` in anonymous mode → `Error: Cannot prune content in anonymous mode.`
 - [ ] Start chat without database (if possible): `/content prune` without DB → `Error: Database not initialized. Run chat without --anonymous.`
@@ -702,7 +702,7 @@ Verify end-to-end feedback boost in retrieval and fractional-day decay accuracy 
 
 ### 18.1 Feedback Boost Affects Search Ranking
 
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] Have the LLM respond to two different questions (creates 2+ assistant messages)
 - [ ] Submit positive feedback on message 1: `/feedback good`
 - [ ] Submit negative feedback on message 2: `/feedback bad`
@@ -776,7 +776,7 @@ Verify that preference and identity facts are auto-extracted from user messages 
 
 ### 20.1 Auto-Extraction Happy Path (English)
 
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] Send: "I prefer dark mode" → response includes `[Auto-extracted: N fact(s)]` notification (gray text)
 - [ ] `/fact list` shows the extracted fact **"User prefers dark mode"** (NOT "I prefer dark mode" — ADR-E4 revised)
 
@@ -797,7 +797,7 @@ Verify that preference and identity facts are auto-extracted from user messages 
 
 ### 20.5 No Extraction in Anonymous Mode
 
-- [ ] Start: `sprachspiel chat --anonymous`
+- [ ] Start: `sprach chat --anonymous`
 - [ ] Send: "I prefer dark mode" → NO extraction notification appears
 - [ ] Exit: `/exit`
 
@@ -984,7 +984,7 @@ Verify that preference and identity facts are auto-extracted from user messages 
 ### 21.5 Ollama Offline: Graceful Degradation
 
 - [ ] Stop Ollama (`pkill ollama` or similar)
-- [ ] Start chat with `sprachspiel chat` → should NOT crash
+- [ ] Start chat with `sprach chat` → should NOT crash
 - [ ] Ask LLM: "Remember that my favorite color is blue" → fact stored, `has_embedding = 0` (no crash)
 - [ ] `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "SELECT id, has_embedding FROM facts WHERE content LIKE '%blue%'"` → **has_embedding = 0**
 - [ ] Restart Ollama
@@ -1066,11 +1066,11 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "INSERT INTO facts (scope, cat
 ### 21.12 Post-Recovery Verification Warning (Bug #4)
 
 - [ ] Stop Ollama (`pkill ollama`)
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] Ask: "Remember that my favorite color is purple" → stored with `has_embedding = 0`
 - [ ] `/exit`
 - [ ] Restart Ollama
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] If embedding recovery succeeds for all facts, no warning should appear
 - [ ] If some facts remain without embeddings after recovery, a `log::warn!` message should appear (visible with `-v` verbose mode)
 
@@ -1102,7 +1102,7 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "INSERT INTO facts (scope, cat
 
 **Procedure:**
 1. Clean state: `sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"`
-2. Start chat: `sprachspiel chat`
+2. Start chat: `sprach chat`
 3. `/tools` → should print **"Tools: disabled"**
 4. Send: "I prefer dark mode" → auto-extraction should store via `normalize_to_storage_format()` (embedding generated synchronously)
 5. Embedding is generated synchronously — no need to wait
@@ -1219,7 +1219,7 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "DELETE FROM facts WHERE inval
 sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "DELETE FROM facts WHERE invalidated_at IS NULL; DELETE FROM fact_embeddings;"
 ```
 
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] Send: "Meu nome é Ana" → auto-extraction stores "User's name is Ana" (NOT "My name is Ana" — ADR-E4 fix)
 - [ ] Send: "Eu moro em São Paulo" → auto-extraction stores "User lives in São Paulo" (NOT "I live in São Paulo")
 - [ ] `/fact list` → shows both facts in third person
@@ -1270,7 +1270,7 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "DELETE FROM facts WHERE inval
 rm -f ~/.local/share/sprachspiel/sprachspiel.db
 ```
 
-- [ ] Start chat: `sprachspiel chat`
+- [ ] Start chat: `sprach chat`
 - [ ] `/fact add I prefer dark mode` → ✓ Added
 - [ ] `/fact add I prefer light mode` → ↻ Updated (triple contradiction)
 - [ ] `/fact add I like dark mode` → ↻ Updated or Skipped (polarity/semantic catch)
@@ -1385,8 +1385,8 @@ cargo build --release --features all-tools || { echo "✗ Build failed"; exit 1;
 echo "✓ Build"
 
 # 3. Quick checks
-./target/release/sprachspiel --help | grep -q "chat" && echo "✓ chat command"
-./target/release/sprachspiel --version && echo "✓ version"
+./target/release/sprach --help | grep -q "chat" && echo "✓ chat command"
+./target/release/sprach --version && echo "✓ version"
 
 # 4. Unit tests
 echo "Unit tests..."

@@ -31,19 +31,19 @@ Sprachspiel provides an elegant, markdown-rendered interface that makes working 
 
 ```bash
 # Ask a question
-sprachspiel "What is the capital of France?"
+sprach "What is the capital of France?"
 
 # Translate text
-sprachspiel translate en:pt "Hello, how are you?"
+sprach translate en:pt "Hello, how are you?"
 
 # Extract text from an image
-sprachspiel ocr document.png
+sprach ocr document.png
 
 # Summarize a document
-cat long-article.txt | sprachspiel summarize --style academic
+cat long-article.txt | sprach summarize --style academic
 
 # Chain commands for powerful workflows
-sprachspiel ocr japanese-document.png | sprachspiel translate ja:pt | sprachspiel summarize
+sprach ocr japanese-document.png | sprach translate ja:pt | sprach summarize
 ```
 
 ## Getting Started
@@ -74,15 +74,15 @@ This documentation is organized into sections:
 For quick reference while working in the terminal, consult the man page:
 
 ```bash
-man sprachspiel
+man sprach
 ```
 
 Or use the built-in help:
 
 ```bash
-sprachspiel --help
-sprachspiel query --help
-sprachspiel translate --help
+sprach --help
+sprach query --help
+sprach translate --help
 ```
 
 ## Requirements

@@ -205,7 +205,7 @@ pub async fn import_document(
         Some(d) => d,
         None => {
              let err = "Error: Database not available. Documents require a database connection.\n\
-                        Start sprachspiel without --anonymous to use documents."
+                        Start sprach without --anonymous to use documents."
                 .to_string();
             log_tool_result("import_document", &err);
             return Ok(err);

@@ -14,7 +14,7 @@ Before starting, ensure:
 Let's start with a simple question:
 
 ```bash
-sprachspiel "What is the capital of France?"
+sprach "What is the capital of France?"
 ```
 
 You should see a nicely formatted markdown response. That's it - Sprachspiel is working!
@@ -27,16 +27,16 @@ The default mode when you don't specify a subcommand:
 
 ```bash
 # Basic query
-sprachspiel "Explain quantum computing"
+sprach "Explain quantum computing"
 
 # With think mode (for reasoning models)
-sprachspiel -t "Solve this step by step"
+sprach -t "Solve this step by step"
 
 # With specific model
-sprachspiel -m qwen3.5:4b "Generate a Python function"
+sprach -m qwen3.5:4b "Generate a Python function"
 
 # Plain text (no markdown)
-sprachspiel --plain "List Rust keywords"
+sprach --plain "List Rust keywords"
 ```
 
 ### 2. Translation
@@ -45,13 +45,13 @@ Translate text between languages:
 
 ```bash
 # English to Portuguese
-sprachspiel translate en:pt "Hello world"
+sprach translate en:pt "Hello world"
 
 # Auto-detect source
-sprachspiel translate :pt "Hello world"
+sprach translate :pt "Hello world"
 
 # From stdin
-echo "Hello" | sprachspiel translate :es
+echo "Hello" | sprach translate :es
 ```
 
 ### 3. OCR (Text Extraction)
@@ -60,13 +60,13 @@ Extract text from images:
 
 ```bash
 # Extract text from image
-sprachspiel ocr document.png
+sprach ocr document.png
 
 # Extract tables
-sprachspiel ocr --mode table spreadsheet.png
+sprach ocr --mode table spreadsheet.png
 
 # Extract formulas (LaTeX output)
-sprachspiel ocr --mode formula equation.png
+sprach ocr --mode formula equation.png
 ```
 
 ### 4. Summarization
@@ -75,13 +75,13 @@ Summarize long text:
 
 ```bash
 # Summarize text directly
-sprachspiel summarize "Long text here..."
+sprach summarize "Long text here..."
 
 # From file
-cat article.txt | sprachspiel summarize
+cat article.txt | sprach summarize
 
 # With style
-sprachspiel summarize --style academic "Research paper text..."
+sprach summarize --style academic "Research paper text..."
 ```
 
 ## Working with Pipes
@@ -90,13 +90,13 @@ Sprachspiel shines when combined with pipes:
 
 ```bash
 # OCR then summarize
-sprachspiel ocr document.png | sprachspiel summarize
+sprach ocr document.png | sprach summarize
 
 # OCR then translate
-sprachspiel ocr japanese.png | sprachspiel translate ja:pt
+sprach ocr japanese.png | sprach translate ja:pt
 
 # Full pipeline
-sprachspiel ocr document.png | sprachspiel summarize | sprachspiel translate :pt
+sprach ocr document.png | sprach summarize | sprach translate :pt
 ```
 
 ## Useful Flags
@@ -105,23 +105,23 @@ Here are flags you'll use often:
 
 | Flag | Description | Example |
 |------|-------------|---------|
-| `-m` | Select model | `sprachspiel -m qwen3.5:4b "query"` |
-| `-t` | Think mode | `sprachspiel -t "complex question"` |
-| `--plain` | No markdown | `sprachspiel --plain "text"` |
-| `-d` | Debug mode | `sprachspiel -d "query"` |
-| `--help` | Show help | `sprachspiel --help` |
+| `-m` | Select model | `sprach -m qwen3.5:4b "query"` |
+| `-t` | Think mode | `sprach -t "complex question"` |
+| `--plain` | No markdown | `sprach --plain "text"` |
+| `-d` | Debug mode | `sprach -d "query"` |
+| `--help` | Show help | `sprach --help` |
 
 ## List Available Resources
 
 ```bash
 # List all models
-sprachspiel --list
+sprach --list
 
 # List supported languages
-sprachspiel translate --list
+sprach translate --list
 
 # Filter languages
-sprachspiel translate --list pt
+sprach translate --list pt
 ```
 
 ## Common Workflows
@@ -132,13 +132,13 @@ Process a scanned document end-to-end:
 
 ```bash
 # 1. OCR the scanned document
-sprachspiel ocr scanned-document.png > extracted.txt
+sprach ocr scanned-document.png > extracted.txt
 
 # 2. Summarize the content
-cat extracted.txt | sprachspiel summarize --style technical > summary.txt
+cat extracted.txt | sprach summarize --style technical > summary.txt
 
 # 3. Translate if needed
-cat summary.txt | sprachspiel translate :pt > summary-pt.txt
+cat summary.txt | sprach translate :pt > summary-pt.txt
 ```
 
 ### Code Generation
@@ -147,10 +147,10 @@ Generate code with the right model:
 
 ```bash
 # Use code mode for better code output
-sprachspiel -m qwen3-coder -c "Write a Rust function to parse JSON"
+sprach -m qwen3-coder -c "Write a Rust function to parse JSON"
 
 # Or code_with_tools for web research + code
-sprachspiel -p code_with_tools "Latest Rust async patterns with examples"
+sprach -p code_with_tools "Latest Rust async patterns with examples"
 ```
 
 ### Translation Batch
@@ -167,7 +167,7 @@ Goodbye
 EOF
 
 # Translate each line
-cat to-translate.txt | sprachspiel translate :pt
+cat to-translate.txt | sprach translate :pt
 ```
 
 ## Quick Tips

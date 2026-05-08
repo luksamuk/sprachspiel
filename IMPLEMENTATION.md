@@ -186,6 +186,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 - **No transition period:** No symlink/wrapper. Clean cut.
 - **DB migration only:** `migrate_legacy_db()` extended: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (simple rename-if-exists).
 - **Full rename:** Binary, crate, all paths, all docs, all scripts, man page, assets, module names.
+- **Short binary name:** CLI command is `sprach` (6 chars), project identity stays `sprachspiel`. Config/data dirs are `~/.config/sprachspiel/`, `~/.local/share/sprachspiel/`, `.sprachspiel/`, `sprachspiel.db`.
 
 **Implementation Phases:**
 
@@ -199,10 +200,8 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 | 5 | Assets & art (BANNER_LOGO, PDF rename) | ✅ Done |
 | 6 | Documentation (doc/, CHANGELOG, AGENTS.md, .opencode/, IMPLEMENTATION.md) | ✅ Done |
 | 7 | Testing (cargo build, clippy, test, manual) | ✅ Done |
-| 8 | GitHub repo rename (post-merge) | 📋 Pending |
-| 2 | Binary & module rename (Cargo.toml, main.rs, doc comments) | 📋 Pending |
-| 3 | Data paths & DB migration (all path functions, .sprachspiel/, sprachspiel.db) | 📋 Pending |
-| 4 | Makefile, scripts & man page | 📋 Pending |
+| 8 | Binary rename: sprachspiel → sprach (short CLI command) | ✅ Done |
+| 9 | GitHub repo rename (post-merge) | 📋 Pending |
 | 5 | Assets & art (scripts rename, PDF rename, BANNER_LOGO update) | 📋 Pending |
 | 6 | Documentation (doc/, CHANGELOG, AGENTS.md, IMPLEMENTATION.md, .opencode/) | 📋 Pending |
 | 7 | Testing (cargo build, clippy, test, manual) | 📋 Pending |

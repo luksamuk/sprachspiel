@@ -19,9 +19,9 @@ When no subcommand is specified, Sprachspiel defaults to `query` mode:
 
 ```bash
 # These are equivalent:
-sprachspiel "What is Rust?"
-sprachspiel query "What is Rust?"
-sprachspiel q "What is Rust?"
+sprach "What is Rust?"
+sprach query "What is Rust?"
+sprach q "What is Rust?"
 ```
 
 ## Common Patterns
@@ -34,11 +34,11 @@ Commands accept input from arguments **or** stdin:
 
 ```bash
 # From argument
-sprachspiel summarize "Text to summarize"
+sprach summarize "Text to summarize"
 
 # From stdin
-echo "Text to summarize" | sprachspiel summarize
-cat file.txt | sprachspiel summarize
+echo "Text to summarize" | sprach summarize
+cat file.txt | sprach summarize
 ```
 
 ### Global Options
@@ -54,13 +54,13 @@ All commands output to stdout, making them pipe-friendly:
 
 ```bash
 # Save to file
-sprachspiel "Query" > output.txt
+sprach "Query" > output.txt
 
 # Pipe to another command
-sprachspiel ocr image.png | sprachspiel summarize
+sprach ocr image.png | sprach summarize
 
 # Chain multiple commands
-sprachspiel ocr doc.png | sprachspiel summarize | sprachspiel translate :pt
+sprach ocr doc.png | sprach summarize | sprach translate :pt
 ```
 
 ## Command Comparison
@@ -93,10 +93,10 @@ Extract and summarize research papers:
 
 ```bash
 # OCR a scanned paper, summarize in academic style
-sprachspiel ocr paper.png | sprachspiel summarize --style academic
+sprach ocr paper.png | sprach summarize --style academic
 
 # Then translate to another language
-sprachspiel ocr paper.png | sprachspiel summarize --style academic | sprachspiel translate :pt
+sprach ocr paper.png | sprach summarize --style academic | sprach translate :pt
 ```
 
 ### Document Processing
@@ -106,8 +106,8 @@ Process documents end-to-end:
 ```bash
 # Extract text, summarize, translate
 cat document.pdf | pdftotext - - | \
-    sprachspiel summarize --style technical | \
-    sprachspiel translate :es
+    sprach summarize --style technical | \
+    sprach translate :es
 ```
 
 ### Batch Processing
@@ -117,12 +117,12 @@ Process multiple files:
 ```bash
 # OCR multiple images
 for img in *.png; do
-    sprachspiel ocr "$img" > "${img%.png}.txt"
+    sprach ocr "$img" > "${img%.png}.txt"
 done
 
 # Translate all extracted text
 for txt in *.txt; do
-    sprachspiel translate :pt < "$txt" > "${txt%.txt}-pt.txt"
+    sprach translate :pt < "$txt" > "${txt%.txt}-pt.txt"
 done
 ```
 
@@ -132,16 +132,16 @@ Get help for any command:
 
 ```bash
 # General help
-sprachspiel --help
+sprach --help
 
 # Command-specific help
-sprachspiel query --help
-sprachspiel translate --help
-sprachspiel ocr --help
-sprachspiel summarize --help
+sprach query --help
+sprach translate --help
+sprach ocr --help
+sprach summarize --help
 
 # Man page
-man sprachspiel
+man sprach
 ```
 
 ## Next Steps

@@ -3,6 +3,12 @@ name = "sprachspiel"
 version = "0.40.0"
 edition = "2024"
 
+# Binary name is "sprach" (short CLI command).
+# Crate/lib name stays "sprachspiel" (for module paths: sprachspiel::tokens etc).
+[[bin]]
+name = "sprach"
+path = "src/main.rs"
+
 [features]
 default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools"]
 all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "sandbox"]

@@ -136,7 +136,7 @@ This document outlines planned features and the current state of Sprachspiel.
 ### v0.43.0 (Planned)
 
 **Features:**
-- Config Upgrade Command (#105) — `sprachspiel config upgrade` merges missing default fields into existing config.toml
+- Config Upgrade Command (#105) — `sprach config upgrade` merges missing default fields into existing config.toml
 - `/session forget` (#36) — Destructive session deletion with confirmations
 
 **Infrastructure:**

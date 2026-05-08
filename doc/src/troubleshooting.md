@@ -4,7 +4,7 @@ Common issues and their solutions.
 
 ## Installation Issues
 
-### "command not found: sprachspiel"
+### "command not found: sprach"
 
 **Problem:** Binary not in PATH
 
@@ -12,10 +12,10 @@ Common issues and their solutions.
 
 ```bash
 # Check installation
-which sprachspiel
+which sprach
 
 # If not found, check location
-ls /usr/local/bin/sprachspiel
+ls /usr/local/bin/sprach
 
 # Add to PATH
 export PATH="/usr/local/bin:$PATH"
@@ -78,10 +78,10 @@ ollama pull glm-ocr:bf16      # OCR
 
 ```bash
 # Use think-capable model
-sprachspiel -m lfm -t "Question"
+sprach -m lfm -t "Question"
 
 # Check capabilities
-sprachspiel -d "Test query"
+sprach -d "Test query"
 ```
 
 ### "Tools not working"
@@ -92,13 +92,13 @@ sprachspiel -d "Test query"
 
 ```bash
 # Use tool-capable model
-sprachspiel -m qwen3.5:4b "Tell me about Pikachu"
+sprach -m qwen3.5:4b "Tell me about Pikachu"
 
 # Force enable tools
-sprachspiel --tools "Tell me about Pikachu"
+sprach --tools "Tell me about Pikachu"
 
 # Check debug output
-sprachspiel -d "Query"
+sprach -d "Query"
 ```
 
 **Problem:** `invalid character '\u003c'` error
@@ -107,8 +107,8 @@ sprachspiel -d "Query"
 
 ```bash
 # Use alternative model
-sprachspiel -m qwen3.5:4b "Query"
-sprachspiel -m pepe "Query"
+sprach -m qwen3.5:4b "Query"
+sprach -m pepe "Query"
 ```
 
 ## Web Search Issues
@@ -123,10 +123,10 @@ sprachspiel -m pepe "Query"
 
 ```bash
 # Use query without web search
-sprachspiel "Question using model knowledge only"
+sprach "Question using model knowledge only"
 
 # Try code_with_tools for web research
-sprachspiel -p code_with_tools "Latest Rust patterns"
+sprach -p code_with_tools "Latest Rust patterns"
 ```
 
 ## Translation Issues
@@ -139,10 +139,10 @@ sprachspiel -p code_with_tools "Latest Rust patterns"
 
 ```bash
 # List available languages
-sprachspiel translate --list
+sprach translate --list
 
 # Check specific language
-sprachspiel translate --list pt
+sprach translate --list pt
 ```
 
 ### "Translation failed"
@@ -153,10 +153,10 @@ sprachspiel translate --list pt
 
 ```bash
 # Try with specific model
-sprachspiel translate --model nanbeige4.1:3b en:pt "Text"
+sprach translate --model nanbeige4.1:3b en:pt "Text"
 
 # Debug mode
-sprachspiel translate -d en:pt "Text"
+sprach translate -d en:pt "Text"
 ```
 
 ## OCR Issues
@@ -172,7 +172,7 @@ sprachspiel translate -d en:pt "Text"
 ls -la image.png
 
 # Check supported formats
-sprachspiel ocr --help
+sprach ocr --help
 ```
 
 ### "OCR failed"
@@ -199,10 +199,10 @@ ollama pull glm-ocr:bf16
 
 ```bash
 # Use smaller model
-sprachspiel -m smollm3 "Question"
+sprach -m smollm3 "Question"
 
 # Reduce context
-sprachspiel summarize --max-length 100 "Text"
+sprach summarize --max-length 100 "Text"
 ```
 
 ### "Out of memory"
@@ -213,8 +213,8 @@ sprachspiel summarize --max-length 100 "Text"
 
 ```bash
 # Use smaller model
-sprachspiel -m qwen3.5:4b "Question"  # 4B model (default)
-sprachspiel -m nanbeige4.1:3b "Question"   # 3B model
+sprach -m qwen3.5:4b "Question"  # 4B model (default)
+sprach -m nanbeige4.1:3b "Question"   # 3B model
 ```
 
 ## Context Issues
@@ -276,10 +276,10 @@ Use debug mode to diagnose issues:
 
 ```bash
 # Enable debug
-sprachspiel -d "Query"
-sprachspiel translate -d en:pt "Text"
-sprachspiel ocr -d image.png
-sprachspiel summarize -d "Text"
+sprach -d "Query"
+sprach translate -d en:pt "Text"
+sprach ocr -d image.png
+sprach summarize -d "Text"
 ```
 
 ## Getting Help
@@ -294,13 +294,13 @@ When reporting issues, include:
 
 ```bash
 # Version
-sprachspiel --version
+sprach --version
 
 # List command
-sprachspiel --list
+sprach --list
 
 # Debug output
-sprachspiel -v "Test query" 2> debug.log
+sprach -v "Test query" 2> debug.log
 cat debug.log
 ```
 

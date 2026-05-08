@@ -304,16 +304,16 @@ Ending instruction for the model.
 
 ```bash
 # Uses SOUL.md if present, otherwise PERSONALITY_DEFAULT
-ask chat
-ask query "What is Rust?"
+sprach chat
+sprach query "What is Rust?"
 ```
 
 ### Skip Personality
 
 ```bash
 # No personality, purely operational
-ask chat --soulless
-ask query --soulless "What is Rust?"
+sprach chat --soulless
+sprach query --soulless "What is Rust?"
 ```
 
 ## Prompt Types
@@ -430,7 +430,7 @@ Be helpful.
 To see how your SOUL.md affects the system prompt:
 
 ```bash
-sprachspiel -v "test query" 2>&1 | head -100
+sprach -v "test query" 2>&1 | head -100
 ```
 
 This shows the complete prompt being sent to the model.
