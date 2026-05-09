@@ -2,16 +2,16 @@
 
 Tests combining OCR, vision, and comprehension in a single prompt.
 
-## Ask-AI Architecture PDF (ask-ai-architecture.pdf)
+## Sprachspiel Architecture PDF (sprachspiel-architecture.pdf)
 
-A 3-page PDF with real content from the ask-ai project. Tests the two-phase document processing pipeline (LLM-orchestrated).
+A 3-page PDF with real content from the Sprachspiel project. Tests the two-phase document processing pipeline (LLM-orchestrated).
 
 ### Chat Mode: Phase 1 — Text Extraction
 
 Ask the LLM in chat mode:
 
 ```
-Use run_command("pdftotext", ["assets/mixed/ask-ai-architecture.pdf", "-"]) to extract all text from this PDF.
+Use run_command("pdftotext", ["assets/mixed/sprachspiel-architecture.pdf", "-"]) to extract all text from this PDF.
 ```
 
 Then follow up:
@@ -26,13 +26,13 @@ Expected: All text from pages 1 and 3 should extract cleanly. Page 2 text extrac
 Ask the LLM to convert the diagram page to an image and analyze it:
 
 ```
-Use run_command("pdftoppm", ["-png", "-f", "2", "-l", "2", "-r", "150", "assets/mixed/ask-ai-architecture.pdf", "/tmp/arch-page2"]) to convert page 2 to an image.
+Use run_command("pdftoppm", ["-png", "-f", "2", "-l", "2", "-r", "150", "assets/mixed/sprachspiel-architecture.pdf", "/tmp/arch-page2"]) to convert page 2 to an image.
 Then use spawn_vision_agent("Describe the sub-agent architecture diagram. What does each colored box represent?", "/tmp/arch-page2-2.png") to analyze the diagram.
 ```
 
 Or for OCR of tables:
 ```
-Use run_command("pdftoppm", ["-png", "-f", "1", "-l", "1", "-r", "150", "assets/mixed/ask-ai-architecture.pdf", "/tmp/arch-page1"]) to convert page 1 to an image.
+Use run_command("pdftoppm", ["-png", "-f", "1", "-l", "1", "-r", "150", "assets/mixed/sprachspiel-architecture.pdf", "/tmp/arch-page1"]) to convert page 1 to an image.
 Then use spawn_ocr_agent("Extract the tables from this page", "/tmp/arch-page1-1.png", "table") to extract table structure.
 ```
 
@@ -41,7 +41,7 @@ Expected: Vision gives richer spatial interpretation (hierarchy, connections, co
 ### Chat Mode: Full Pipeline Test
 
 ```
-I have a PDF at assets/mixed/ask-ai-architecture.pdf. Please process it — extract all text, and for any pages with diagrams, convert them to images and describe what you see.
+I have a PDF at assets/mixed/sprachspiel-architecture.pdf. Please process it — extract all text, and for any pages with diagrams, convert them to images and describe what you see.
 ```
 
 Expected:
@@ -54,7 +54,7 @@ Expected:
 ### Chat Mode: PDF Import Pipeline
 
 ```
-I have a PDF at assets/mixed/ask-ai-architecture.pdf. Extract the text and import it as a document.
+I have a PDF at assets/mixed/sprachspiel-architecture.pdf. Extract the text and import it as a document.
 ```
 
 Expected:
@@ -68,39 +68,39 @@ Expected:
 
 ```bash
 # Extract text to stdout
-pdftotext assets/mixed/ask-ai-architecture.pdf -
+pdftotext assets/mixed/sprachspiel-architecture.pdf -
 
 # Or extract page by page
-pdftotext -f 1 -l 1 assets/mixed/ask-ai-architecture.pdf -
+pdftotext -f 1 -l 1 assets/mixed/sprachspiel-architecture.pdf -
 ```
 
 ### CLI Mode: Phase 2 — Vision of Diagram
 
 ```bash
 # Convert page 2 to image
-pdftoppm -png -f 2 -l 2 -r 150 assets/mixed/ask-ai-architecture.pdf /tmp/arch-page2
+pdftoppm -png -f 2 -l 2 -r 150 assets/mixed/sprachspiel-architecture.pdf /tmp/arch-page2
 # Then analyze with vision CLI
-ask-ai vision /tmp/arch-page2-2.png -- "Describe the sub-agent architecture diagram"
+sprach vision /tmp/arch-page2-2.png -- "Describe the sub-agent architecture diagram"
 ```
 
 ### Table Extraction from PDF
 
 ```bash
 # CLI: Convert page 1 to image, then OCR in table mode
-pdftoppm -png -f 1 -l 1 -r 150 assets/mixed/ask-ai-architecture.pdf /tmp/arch-page1
-ask-ai ocr /tmp/arch-page1-1.png --mode table
+pdftoppm -png -f 1 -l 1 -r 150 assets/mixed/sprachspiel-architecture.pdf /tmp/arch-page1
+sprach ocr /tmp/arch-page1-1.png --mode table
 ```
 
 Chat mode:
 ```
-Use run_command("pdftoppm", ["-png", "-f", "1", "-l", "1", "-r", "150", "assets/mixed/ask-ai-architecture.pdf", "/tmp/arch-page1"]) then spawn_ocr_agent("Extract table structure", "/tmp/arch-page1-1.png", "table").
+Use run_command("pdftoppm", ["-png", "-f", "1", "-l", "1", "-r", "150", "assets/mixed/sprachspiel-architecture.pdf", "/tmp/arch-page1"]) then spawn_ocr_agent("Extract table structure", "/tmp/arch-page1-1.png", "table").
 ```
 
 Expected: The two tables (layer architecture, overflow thresholds) on page 1 should be extracted as structured data.
 
 ### Regression Notes
 
-- `ask-ai-architecture.pdf` is generated from the project's own architecture documentation
+- `sprachspiel-architecture.pdf` is generated from the project's own architecture documentation
 - Page 1: text-heavy with two structured tables → pdftotext should extract perfectly
 - Page 2: diagram with colored boxes, arrows, and phase labels → requires vision for spatial interpretation
 - Page 3: text-only RAG section → pdftotext sufficient

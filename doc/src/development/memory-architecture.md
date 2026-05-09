@@ -4,13 +4,13 @@
 **Version:** v0.42.0-dev  
 **Updated:** 2026-04-19
 
-This document provides a unified view of Ask-AI's memory systems and how they compose the LLM context.
+This document provides a unified view of Sprachspiel's memory systems and how they compose the LLM context.
 
 ---
 
 ## Overview
 
-Ask-AI has four active layers of memory plus one planned layer that work together to provide context-aware responses:
+Sprachspiel has four active layers of memory plus one planned layer that work together to provide context-aware responses:
 
 1. **Session Memory** — Volatile, in-memory messages for the current conversation
 2. **Conversation Memory** — Persistent conversation history with semantic retrieval
@@ -105,7 +105,7 @@ User sends message → Add to session → Display to user → End session → Lo
 **What it stores:** All conversation messages with embeddings for semantic search.
 
 **Characteristics:**
-- Persistent SQLite database (`~/.local/share/ask-ai/ask-ai.db`)
+- Persistent SQLite database (`~/.local/share/sprachspiel/sprachspiel.db`)
 - Full-text search via FTS5
 - Vector embeddings for semantic similarity
 - Hybrid retrieval (BM25 + Vector + RRF)
@@ -661,7 +661,7 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_signals(created_at D
 
 **Research Basis:**
 
-See [UNIFIED_VISION.md](../../../../testfiles/research/ask-ai-rlvr-docs/article/UNIFIED_VISION.md) for the research foundation behind feedback signals and feedback-weighted retrieval.
+See [UNIFIED_VISION.md](../../../../testfiles/research/sprachspiel-rlvr-docs/article/UNIFIED_VISION.md) for the research foundation behind feedback signals and feedback-weighted retrieval.
 
 ---
 
@@ -693,7 +693,7 @@ See [UNIFIED_VISION.md](../../../../testfiles/research/ask-ai-rlvr-docs/article/
 - [Ebbinghaus Forgetting Curve](https://en.wikipedia.org/wiki/Forgetting_curve) — The basis for fact decay
 - [Lost in the Middle](https://arxiv.org/abs/2307.03172) — Why context ordering matters
 - [Anthropic Prompt Engineering](https://docs.anthropic.com/claude/docs/prompt-engineering) — Context ordering best practices
-- [UNIFIED_VISION.md](../../../../testfiles/research/ask-ai-rlvr-docs/article/UNIFIED_VISION.md) — Research basis for Feedback Memory layer design
+- [UNIFIED_VISION.md](../../../../testfiles/research/sprachspiel-rlvr-docs/article/UNIFIED_VISION.md) — Research basis for Feedback Memory layer design
 
 ---
 

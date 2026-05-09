@@ -701,7 +701,7 @@ pub const STOP_WORDS: &[&str] = &[
 /// # Examples
 ///
 /// ```
-/// use ask_ai::facts::lang::normalize_for_comparison;
+/// use sprachspiel::facts::lang::normalize_for_comparison;
 ///
 /// // Verb lemmatization: 3rd person → base form
 /// assert_eq!(normalize_for_comparison("I prefer dark mode"), "prefer dark mode");
@@ -1027,7 +1027,7 @@ pub fn command_starters() -> Vec<&'static str> {
 /// # Examples
 ///
 /// ```
-/// use ask_ai::facts::lang::translate_pt_to_en;
+/// use sprachspiel::facts::lang::translate_pt_to_en;
 ///
 /// // PT→EN (third-person output)
 /// assert_eq!(translate_pt_to_en("Eu prefiro respostas curtas"), "User prefers respostas curtas");
@@ -1182,7 +1182,7 @@ pub fn translate_pt_to_en(content: &str) -> String {
 /// # Examples
 ///
 /// ```
-/// use ask_ai::facts::lang::normalize_to_storage_format;
+/// use sprachspiel::facts::lang::normalize_to_storage_format;
 ///
 /// // EN first-person → third person
 /// assert_eq!(normalize_to_storage_format("I prefer dark mode"), "User prefers dark mode");

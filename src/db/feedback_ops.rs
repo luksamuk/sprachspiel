@@ -17,7 +17,7 @@ use crate::feedback::types::{FeedbackSignal, FeedbackSignalType, FeedbackSource}
 ///
 /// Validates that the target item exists and has content_type='message' (ADR-003).
 /// Returns the inserted row ID on success.
-#[allow(clippy::too_many_arguments)] // 8 params: unavoidable for feedback insert
+#[expect(clippy::too_many_arguments)] // 8 params: unavoidable for feedback insert
 pub fn insert_feedback_signal(
     conn: &Connection,
     item_id: i64,

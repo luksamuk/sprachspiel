@@ -6,8 +6,8 @@
 //! # Location
 //!
 //! The SOUL.md file is loaded from:
-//! 1. `$XDG_CONFIG_HOME/ask-ai/SOUL.md`
-//! 2. `~/.config/ask-ai/SOUL.md`
+//! 1. `$XDG_CONFIG_HOME/sprachspiel/SOUL.md`
+//! 2. `~/.config/sprachspiel/SOUL.md`
 //!
 //! # Processing
 //!
@@ -31,20 +31,22 @@ const SOUL_FILENAME: &str = "SOUL.md";
 /// Get SOUL.md path
 ///
 /// Priority:
-/// 1. XDG_CONFIG_HOME/ask-ai/SOUL.md
-/// 2. ~/.config/ask-ai/SOUL.md
+/// 1. XDG_CONFIG_HOME/sprachspiel/SOUL.md
+/// 2. ~/.config/sprachspiel/SOUL.md
 pub fn get_soul_path() -> Option<PathBuf> {
+    use crate::consts::app;
+
     // Try XDG_CONFIG_HOME first
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        let path = PathBuf::from(xdg_config).join("ask-ai").join(SOUL_FILENAME);
+        let path = PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR).join(SOUL_FILENAME);
         if path.exists() {
             return Some(path);
         }
     }
 
-    // Fallback to ~/.config/ask-ai/SOUL.md
+    // Fallback to ~/.config/sprachspiel/SOUL.md
     if let Some(home) = dirs::home_dir() {
-        let path = home.join(".config").join("ask-ai").join(SOUL_FILENAME);
+        let path = home.join(".config").join(app::APP_CONFIG_DIR).join(SOUL_FILENAME);
         if path.exists() {
             return Some(path);
         }

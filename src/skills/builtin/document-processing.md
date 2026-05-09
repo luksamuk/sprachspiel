@@ -80,7 +80,7 @@ Pages that `pdftotext` couldn't properly extract need further processing. **Choo
   - For OCR of specific PDF pages, use `pdftoppm` to convert to images first, then pass to spawn_ocr_agent.
   - Example: `spawn_ocr_agent("Extract tables", "page-3.png", "table")`
   - Example: `spawn_vision_agent("Analyze charts in this diagram", "page-5.png")`
-- **In CLI mode (standalone)**: Use `ask-ai ocr <image.png>` or `ask-ai vision <file.pdf>`.
+- **In CLI mode (standalone)**: Use `sprach ocr <image.png>` or `sprach vision <file.pdf>`.
 
 **Quick reference:**
 | Content type | Primary tool | When to escalate |
@@ -248,7 +248,7 @@ pip install epub2txt
 
 ## 5. tools.toml Configuration
 
-After installing tools, create or edit `~/.config/ask-ai/tools.toml`:
+After installing tools, create or edit `~/.config/sprachspiel/tools.toml`:
 
 ```toml
 # =============================================================================
@@ -338,7 +338,7 @@ pdfinfo document.pdf | grep Pages
 # Convert pages to images first:
 pdftoppm -png -f 1 -l 5 -r 150 document.pdf output
 # Then analyze the resulting image(s):
-ask-ai vision output-1.png "Describe the table in this image"
+sprach vision output-1.png "Describe the table in this image"
 
 # Chat mode — the LLM orchestrates the pipeline automatically:
 # 1. Convert pages to images:
@@ -367,5 +367,5 @@ pdftotext document.pdf - | grep -n "search term"
 ```bash
 pdftoppm -png -f 3 -l 3 -r 150 document.pdf output
 # Then use the vision tool with output-3.png, or in CLI mode:
-ask-ai vision output-3.png "Describe the table in this image"
+sprach vision output-3.png "Describe the table in this image"
 ```

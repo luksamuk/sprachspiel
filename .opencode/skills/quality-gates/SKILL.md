@@ -99,7 +99,7 @@ When a bug repeats:
 
 **You must do at least one.** Both is better.
 
-### Examples from ask-ai Bugs
+### Examples from Sprachspiel Bugs
 
 - **Bug #3** (L2→cosine conversion error) — repeated because no test validated similarity calculations → add a test
 - **Bug #4** (facts extracted but never persisted) — repeated because no integration test verified the full pipeline → add a golden file
@@ -117,4 +117,4 @@ These external resources provide additional harness patterns:
 
 - **rust-magic-linter** (vicnaum/rust-magic-linter) — Strict Clippy configs for AI-assisted Rust development. Key lints: `allow_attributes = "deny"` (prevents silencing lints without justification), `unwrap_used = "warn"`, cognitive complexity thresholds. Useful as a reference for incremental adoption.
 - **rust-skills** (leonardomso/rust-skills) — 179 Rust rules organized in 14 categories with examples. Feedforward guide for AI coding agents covering ownership, error handling, API design, async, testing, etc. Can be installed as a skill for OpenCode.
-- **Harness Engineering for Coding Agent Users** (Martin Fowler, 2025) — Framework that distinguishes feedforward (guides) from feedback (sensors), and computational (deterministic) from inferential (LLM-based). The ask-ai analysis is in `~/harness-engineering-ask-ai-analysis.md`.
+- **Harness Engineering for Coding Agent Users** (Martin Fowler, 2025) — Framework that distinguishes feedforward (guides) from feedback (sensors), and computational (deterministic) from inferential (LLM-based). The sprachspiel analysis is in `~/harness-engineering-sprachspiel-analysis.md`.

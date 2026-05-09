@@ -222,7 +222,7 @@ fn validate_prompt_type(prompt_type: PromptType, cli_prompt: &str) -> Result<(),
 }
 
 /// Run a single query (handles both subcommand and legacy modes)
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn run_query(
     query: String,
     cli_model: Option<&str>,

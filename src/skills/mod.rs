@@ -1,4 +1,4 @@
-//! Skills System for ask-ai.
+//! Skills System for sprachspiel.
 //!
 //! Skills are Markdown files with YAML frontmatter that define AI behaviors.
 //! They are loaded on-demand when the LLM requests them via the skill_view() tool.
@@ -19,8 +19,8 @@
 //!
 //! # Skill Sources (priority)
 //!
-//! 1. **Project**: `.ask-ai/skills/<name>/SKILL.md` (highest priority)
-//! 2. **User**: `~/.config/ask-ai/skills/<name>/SKILL.md`
+//! 1. **Project**: `.sprachspiel/skills/<name>/SKILL.md` (highest priority)
+//! 2. **User**: `~/.config/sprachspiel/skills/<name>/SKILL.md`
 //! 3. **Builtin**: Embedded in binary via `include_str!` (lowest priority)
 //!
 //! # Example

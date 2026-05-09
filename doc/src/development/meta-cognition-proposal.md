@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-Three-layer behavioral self-monitoring system for ask-ai. The key reframing from the brainstorm:
+Three-layer behavioral self-monitoring system for sprachspiel. The key reframing from the brainstorm:
 
 > **Empathy is not a bug. Opacity is.**
 
@@ -42,7 +42,7 @@ The system inferred that the user needed accommodation and operated in that mode
 ┌─────────────────────────────────────────────┐
 │  Layer 1: Skill (S2.meta1)                   │
 │  ─────────────────────────────────────────── │
-│  File: ~/.config/ask-ai/skills/meta-cognition│
+│  File: ~/.config/sprachspiel/skills/meta-cognition│
 │  Cost: Zero Rust, ~2KB markdown              │
 │  Status: ✅ Active                           │
 │  Role: Data collection + behavioral rules    │

@@ -1,7 +1,13 @@
 [package]
-name = "ask-ai"
+name = "sprachspiel"
 version = "0.40.0"
 edition = "2024"
+
+# Binary name is "sprach" (short CLI command).
+# Crate/lib name stays "sprachspiel" (for module paths: sprachspiel::tokens etc).
+[[bin]]
+name = "sprach"
+path = "src/main.rs"
 
 [features]
 default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools"]
@@ -94,8 +100,10 @@ redundant_async_block = "warn"
 missing_transmute_annotations = "allow"
 
 # Harness engineering lints (from rust-magic-linter philosophy)
-# "No cheating" — prevents silencing lints without justification
-allow_attributes = "deny"
+# Prefer #[expect] over #[allow] — #[expect] verifies the lint actually fires.
+# #[allow] is acceptable when the lint doesn't fire in default builds
+# (e.g., dead_code for TUI abstractions, unused_imports behind feature gates).
+allow_attributes = "warn"
 # Panic prevention — forces explicit error handling
 unwrap_used = "warn"
 expect_used = "warn"

@@ -28,7 +28,7 @@ use super::types::{Category, Fact};
 /// # Examples
 ///
 /// ```ignore
-/// use ask_ai::facts::conflict::{FactTriple, extract_fact_triple};
+/// use sprachspiel::facts::conflict::{FactTriple, extract_fact_triple};
 ///
 /// let a = extract_fact_triple("User prefers dark mode").unwrap();
 /// // FactTriple { subject: "user", predicate: "prefers", object: "dark mode" }

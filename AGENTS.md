@@ -1,6 +1,6 @@
-# Agent Guidelines for ask-ai
+# Agent Guidelines for sprachspiel
 
-This is a Rust project that uses the ollama-rs library to interact with Ollama LLM models.
+This is a Rust project that uses the ollama-rs library to interact with LLM models, with Ollama as the default backend (multi-backend support planned).
 
 **IMPORTANT: See `IMPLEMENTATION.md` for the detailed feature roadmap and implementation phases.**
 

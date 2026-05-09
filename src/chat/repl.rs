@@ -71,7 +71,7 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 /// Initialize database and embedding client for chat mode.
 /// Returns (db, embedding_client, ollama, error_message).
 /// error_message is Some when database initialization fails for non-anonymous sessions.
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 fn init_chat_database(
     args: &super::ChatArgs,
     settings: &Settings,
@@ -108,7 +108,7 @@ fn init_chat_database(
              \n\
              To diagnose:\n\
              - Check if Ollama is running: ollama list\n\
-             - Check directory permissions: ls -la ~/.local/share/ask-ai/\n\
+                           - Check directory permissions: ls -la ~/.local/share/sprachspiel/\n\
              -               Run with -v for more information\n\
              \n\
              Use --anonymous for anonymous mode without database persistence.\n\
@@ -531,7 +531,7 @@ fn resolve_thinking_mode(
 }
 
 /// Run the interactive chat REPL
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn run_chat_repl(
     settings: &Settings,
     args: &super::ChatArgs,
@@ -921,7 +921,7 @@ fn build_status_bar(state: &super::repl_state::ReplState) -> String {
     info.format_status_bar()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 fn print_welcome(
     session: &ChatSession,
     model_config: &ModelConfig,

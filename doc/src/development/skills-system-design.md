@@ -21,7 +21,7 @@ The Hermes Agent (`~/.hermes/hermes-agent`) implements a mature Skills System th
 1. **Progressive Disclosure** - System prompt contains only INDEX (names + descriptions)
 2. **On-demand Loading** - `skill_view(name)` tool loads full skill content when needed
 3. **SKILL.md Format** - Directory-based skills with YAML frontmatter + Markdown body
-4. **Platform Filtering** - Skills can declare OS compatibility (not needed for ask-ai)
+4. **Platform Filtering** - Skills can declare OS compatibility (not needed for sprachspiel)
 5. **Trust Levels** - Security scanning for community skills (future consideration)
 
 **File Structure:**
@@ -39,7 +39,7 @@ The Hermes Agent (`~/.hermes/hermes-agent`) implements a mature Skills System th
 ---
 name: skill-name              # Required: max 64 chars
 description: Brief description # Required: for INDEX
-platforms: [macos, linux]     # Optional: OS compatibility (not used in ask-ai)
+platforms: [macos, linux]     # Optional: OS compatibility (not used in sprachspiel)
 prerequisites:                # Optional: env vars, commands
   commands: [curl, jq]
 ---
@@ -58,7 +58,7 @@ Instructions in Markdown...
 6. LLM calls `skill_view(name)` to load full content
 7. LLM follows skill instructions
 
-**ask-ai Adaptation:**
+**sprachspiel Adaptation:**
 - Use the same INDEX + on-demand pattern
 - Simplify frontmatter (only `name`, `description` required)
 - Omit platform filtering and conditional activation
@@ -115,13 +115,13 @@ The skill system should:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         ask-ai                                  │
+│                         sprachspiel                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────────────┐     ┌────────────────────────────────┐│
 │  │  Skills (Markdown)  │     │  Tools (Rust Code)             ││
 │  │                     │     │                                ││
-│  │  ~/.config/ask-ai/  │     │  src/tools/*.rs                ││
+│  │  ~/.config/sprachspiel/  │     │  src/tools/*.rs                ││
 │  │  skills/             │     │                                ││
 │  │    pdf-processing.md│     │  check_tool_availability()     ││
 │  │    ocr-images.md    │     │  run_command()                 ││
@@ -143,7 +143,7 @@ The skill system should:
 │  ┌─────────────────────────────────────────────────────────────┤│
 │  │                    External Tools Config                    ││
 │  │                                                             ││
-│  │  ~/.config/ask-ai/tools.toml                                ││
+│  │  ~/.config/sprachspiel/tools.toml                                ││
 │  │                                                             ││
 │  │  [pdftotext]                                                ││
 │  │  enabled = true                                             ││
@@ -157,32 +157,32 @@ The skill system should:
 ```mermaid
 sequenceDiagram
     participant User
-    participant ask-ai
+    participant sprachspiel
     participant SkillsLoader
     participant ToolsRegistry
     participant Model
     participant ExternalTool
 
-    User->>ask-ai: Start session
-    ask-ai->>SkillsLoader: Load skills from ~/.config/ask-ai/skills/
-    SkillsLoader-->>ask-ai: List<Skill>
-    ask-ai->>ToolsRegistry: Check available external tools
+    User->>sprachspiel: Start session
+    sprachspiel->>SkillsLoader: Load skills from ~/.config/sprachspiel/skills/
+    SkillsLoader-->>sprachspiel: List<Skill>
+    sprachspiel->>ToolsRegistry: Check available external tools
     ToolsRegistry->>ExternalTool: which pdftotext
     ExternalTool-->>ToolsRegistry: Available/Not found
-    ToolsRegistry-->>ask-ai: Tool availability map
-    ask-ai->>ask-ai: Build system prompt with skills + availability info
+    ToolsRegistry-->>sprachspiel: Tool availability map
+    sprachspiel->>sprachspiel: Build system prompt with skills + availability info
     
-    User->>ask-ai: "Extract text from document.pdf"
-    ask-ai->>Model: Send prompt with skills injected
+    User->>sprachspiel: "Extract text from document.pdf"
+    sprachspiel->>Model: Send prompt with skills injected
     Model->>Model: Reasoning (skill says: use check_tool_availability first)
-    Model->>ask-ai: Tool call: check_tool_availability("pdftotext")
-    ask-ai->>ToolsRegistry: Check
-    ToolsRegistry-->>ask-ai: "pdftotext is available"
-    ask-ai->>Model: Tool result
-    Model->>ask-ai: Tool call: run_command("pdftotext", ["document.pdf", "-"])
-    ask-ai->>ExternalTool: Execute pdftotext
-    ExternalTool-->>ask-ai: Text content
-    ask-ai->>Model: Tool result (PDF text)
+    Model->>sprachspiel: Tool call: check_tool_availability("pdftotext")
+    sprachspiel->>ToolsRegistry: Check
+    ToolsRegistry-->>sprachspiel: "pdftotext is available"
+    sprachspiel->>Model: Tool result
+    Model->>sprachspiel: Tool call: run_command("pdftotext", ["document.pdf", "-"])
+    sprachspiel->>ExternalTool: Execute pdftotext
+    ExternalTool-->>sprachspiel: Text content
+    sprachspiel->>Model: Tool result (PDF text)
     Model-->>User: "Here's the content..."
 ```
 
@@ -234,9 +234,9 @@ pub struct Skill {
 pub enum SkillSource {
     /// Embedded in binary (include_str!)
     Builtin,
-    /// ~/.config/ask-ai/skills/<name>/SKILL.md
+    /// ~/.config/sprachspiel/skills/<name>/SKILL.md
     User,
-    /// .ask-ai/skills/<name>/SKILL.md (project-level)
+    /// .sprachspiel/skills/<name>/SKILL.md (project-level)
     Project,
 }
 
@@ -281,8 +281,8 @@ let content = get_skill_content("pdf-processing");  // Loads full content on-dem
 ```
 project > user > builtin
 
-If both .ask-ai/skills/pdf-processing/SKILL.md and 
-~/.config/ask-ai/skills/pdf-processing/SKILL.md exist,
+If both .sprachspiel/skills/pdf-processing/SKILL.md and 
+~/.config/sprachspiel/skills/pdf-processing/SKILL.md exist,
 the project-level one takes precedence.
 ```
 
@@ -290,7 +290,7 @@ the project-level one takes precedence.
 
 **File Naming:** Follow Hermes pattern with directory-based skills.
 ```
-~/.config/ask-ai/skills/
+~/.config/sprachspiel/skills/
 ├── pdf-processing/
 │   └── SKILL.md       # Required: main skill file
 ├── ocr-images/
@@ -299,7 +299,7 @@ the project-level one takes precedence.
     └── SKILL.md
 
 # Project-level
-.ask-ai/skills/
+.sprachspiel/skills/
 └── project-specific/
     └── SKILL.md
 ```
@@ -342,7 +342,7 @@ When asked to process PDF files:
 | `description` | Yes | Brief description shown in INDEX. LLM uses this to decide relevance. |
 
 **Note:** Unlike Hermes, we do NOT use:
-- `platforms` - Not relevant for ask-ai
+- `platforms` - Not relevant for sprachspiel
 - `prerequisites` - Future consideration
 - `invocation` - No slash command support (automatic only)
 - `user_invocable` - All skills are invocable via `skill_view(name)`
@@ -496,7 +496,7 @@ pub struct CommandOutput {
 
 ### 5. Tools Configuration (`tools.toml`)
 
-**Location:** `~/.config/ask-ai/tools.toml`
+**Location:** `~/.config/sprachspiel/tools.toml`
 
 **Format:**
 ```toml
@@ -821,8 +821,8 @@ The skills system introduces new attack vectors:
 
 | Component | Risk | Mitigation Status |
 |-----------|------|-------------------|
-| User skills (`~/.config/ask-ai/skills/`) | Malicious skill files | ✅ Sanitization applied |
-| Project skills (`.ask-ai/skills/`) | Malicious project files | ✅ Sanitization applied |
+| User skills (`~/.config/sprachspiel/skills/`) | Malicious skill files | ✅ Sanitization applied |
+| Project skills (`.sprachspiel/skills/`) | Malicious project files | ✅ Sanitization applied |
 | Skill content sanitization | Prompt injection via skills | ✅ Injection pattern detection |
 | Recursive skill loading | Infinite loops, resource exhaustion | ✅ Skill name validation |
 | Skill file size | DoS via huge files | ✅ 256KB limit enforced |
@@ -861,7 +861,7 @@ Use skill_view("skill_a")
 #### 3. Privilege Escalation via Skill
 
 A skill could instruct the model to:
-- Modify `~/.config/ask-ai/tools.toml` to enable dangerous tools
+- Modify `~/.config/sprachspiel/tools.toml` to enable dangerous tools
 - Write malicious `AGENTS.md` files
 - Escalate privileges via `sudo`
 
@@ -1030,9 +1030,9 @@ For ask-ollama-rs, we simplify Hermes' model:
 pub enum SkillTrustLevel {
     /// Embedded in binary via include_str! - always trusted
     Builtin,
-    /// ~/.config/ask-ai/skills/ - user controls, validated
+    /// ~/.config/sprachspiel/skills/ - user controls, validated
     User,
-    /// .ask-ai/skills/ - potentially shared, validated + warned
+    /// .sprachspiel/skills/ - potentially shared, validated + warned
     Project,
 }
 
@@ -1286,10 +1286,10 @@ Model: The image contains:
 
 | File | Purpose |
 |------|---------|
-| `~/.config/ask-ai/skills/<name>/SKILL.md` | User-defined skills (global) |
-| `.ask-ai/skills/<name>/SKILL.md` | Project-specific skills (per-project) |
+| `~/.config/sprachspiel/skills/<name>/SKILL.md` | User-defined skills (global) |
+| `.sprachspiel/skills/<name>/SKILL.md` | Project-specific skills (per-project) |
 | `src/skills/builtin/<name>.md` | Built-in skills (embedded in binary) |
-| `~/.config/ask-ai/tools.toml` | External tools configuration |
+| `~/.config/sprachspiel/tools.toml` | External tools configuration |
 
 **Priority:** project > user > builtin
 
@@ -1361,7 +1361,7 @@ The CLI Tools Infrastructure (Phase 1 in original design) is complete:
 - ✅ `check_tool_availability` tool
 - ✅ `run_command` tool with sandbox (landlock)
 - ✅ Platform detection and install hints
-- ✅ `~/.config/ask-ai/tools.toml` configuration
+- ✅ `~/.config/sprachspiel/tools.toml` configuration
 
 ### What's New (Phase 2: Skills System)
 

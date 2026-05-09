@@ -12,7 +12,7 @@
 
 ## Overview
 
-Ask-AI uses a hybrid retrieval system (BM25 + Semantic + RRF) to find relevant messages from conversation history. This allows the LLM to reference past discussions when answering new questions.
+Sprachspiel uses a hybrid retrieval system (BM25 + Semantic + RRF) to find relevant messages from conversation history. This allows the LLM to reference past discussions when answering new questions.
 
 ## Architecture
 

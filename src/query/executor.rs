@@ -22,7 +22,7 @@ use crate::tools::context::{with_full_context, with_tool_context};
 /// Handles recoverable Ollama errors by retrying up to MAX_RETRIES times.
 /// Automatically wraps with full context if available for the remember tool
 /// and agent spawning tools.
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn execute_query_with_retry(
     coordinator: CustomCoordinator<Vec<ChatMessage>>,
     messages: Vec<ChatMessage>,
@@ -51,7 +51,7 @@ pub async fn execute_query_with_retry(
 }
 
 /// Execute with DB context (for remember tool support).
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 async fn execute_with_context(
     coordinator: CustomCoordinator<Vec<ChatMessage>>,
     messages: Vec<ChatMessage>,

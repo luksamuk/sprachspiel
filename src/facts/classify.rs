@@ -18,8 +18,8 @@ use super::types::Category;
 ///
 /// # Examples
 /// ```
-/// use ask_ai::facts::classify::classify_fact;
-/// use ask_ai::facts::types::Category;
+/// use sprachspiel::facts::classify::classify_fact;
+/// use sprachspiel::facts::types::Category;
 ///
 /// assert!(matches!(classify_fact("I prefer dark mode"), Category::Preference));
 /// assert!(matches!(classify_fact("The project uses SQLite"), Category::Fact));

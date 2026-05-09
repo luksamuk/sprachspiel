@@ -97,16 +97,18 @@ pub trait InputBackend {
 /// Returns the default history file path for the chat REPL
 ///
 /// The path is determined in this order:
-/// 1. `$XDG_DATA_HOME/ask-ai/chat_history.txt` (if XDG_DATA_HOME is set)
-/// 2. `~/.local/share/ask-ai/chat_history.txt` (fallback)
+/// 1. `$XDG_DATA_HOME/sprachspiel/chat_history.txt` (if XDG_DATA_HOME is set)
+/// 2. `~/.local/share/sprachspiel/chat_history.txt` (fallback)
 /// 3. `.chat_history.txt` (current directory, last resort)
 pub fn default_history_path() -> PathBuf {
+    use crate::consts::app;
+
     if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
-        let path = PathBuf::from(data_home).join("ask-ai");
+        let path = PathBuf::from(data_home).join(app::APP_DATA_DIR);
         let _ = std::fs::create_dir_all(&path);
         path.join("chat_history.txt")
     } else if let Some(home_dir) = dirs::home_dir() {
-        let path = home_dir.join(".local").join("share").join("ask-ai");
+        let path = home_dir.join(".local").join("share").join(app::APP_DATA_DIR);
         let _ = std::fs::create_dir_all(&path);
         path.join("chat_history.txt")
     } else {

@@ -13,7 +13,7 @@
 //!
 //! # Example
 //! ```ignore
-//! use ask_ai::security::validate_subagent_path;
+//! use sprachspiel::security::validate_subagent_path;
 //!
 //! let path = Path::new("image.jpg");
 //! match validate_subagent_path(path) {

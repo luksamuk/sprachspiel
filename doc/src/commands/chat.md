@@ -5,12 +5,12 @@ Interactive chat with conversation history.
 ## Synopsis
 
 ```bash
-ask chat [OPTIONS]
+sprach chat [OPTIONS]
 ```
 
 ## Description
 
-Start an interactive chat session with an Ollama model. Conversations are automatically saved per project (identified by git remote URL or folder name), allowing you to resume conversations where you left off.
+Start an interactive chat session with an LLM. Conversations are automatically saved per project (identified by git remote URL or folder name), allowing you to resume conversations where you left off.
 
 ## Key Features
 
@@ -238,7 +238,7 @@ Skills are Markdown files that define AI behaviors for specific tasks. When acti
 - `code-analysis` - Analyze code structure, find patterns, understand codebases
 - `web-scraping` - Search the web, scrape and analyze web content
 
-**User Skills:** Place custom skills in `~/.config/ask-ai/skills/<name>/SKILL.md`
+**User Skills:** Place custom skills in `~/.config/sprachspiel/skills/<name>/SKILL.md`
 
 **Example:**
 ```
@@ -439,7 +439,7 @@ Example: A 3000-character message creates 4 overlapping chunks, ensuring phrases
 
 ### Prerequisites
 
-1. **Ollama running** with embedding model:
+1. **LLM server running** with embedding model:
    ```bash
    ollama pull nomic-embed-text-v2-moe
    ```
@@ -611,7 +611,7 @@ Press Tab to complete:
 
 ## Session Storage
 
-Sessions are stored in a SQLite database at `~/.local/share/ask-ai/ask-ai.db`:
+Sessions are stored in a SQLite database at `~/.local/share/sprachspiel/sprachspiel.db`:
 
 - **Primary storage**: SQLite database with full-text search (FTS5) and vector embeddings
 - **Automatic persistence**: Every message is saved immediately
@@ -620,7 +620,7 @@ Sessions are stored in a SQLite database at `~/.local/share/ask-ai/ask-ai.db`:
 
 ### Session Resume Context
 
-When resuming a previous session, ask-ai displays the last 3 conversation exchanges after the welcome banner:
+When resuming a previous session, sprach displays the last 3 conversation exchanges after the welcome banner:
 
 ```
 Resumed session: default (47 messages)
@@ -645,7 +645,7 @@ Recent context (47 messages):
 
 | Scenario | Context shown? |
 |----------|---------------|
-| Resume a saved session (`ask chat` or `ask chat --load name`) | ✅ Yes |
+| Resume a saved session (`sprach chat` or `sprach chat --load name`) | ✅ Yes |
 | New session with no messages | ❌ No |
 | Anonymous session (`--anonymous`) | ❌ No |
 
@@ -658,8 +658,8 @@ Recent context (47 messages):
 ### Storage Location
 
 ```
-~/.local/share/ask-ai/
-├── ask-ai.db              # SQLite database (conversations + embeddings)
+~/.local/share/sprachspiel/
+├── sprachspiel.db              # SQLite database (conversations + embeddings)
 ├── chat_history.txt           # Readline history
 └── archived/                  # Archived JSON sessions (after migration)
     └── github.com/
@@ -709,7 +709,7 @@ Export sessions for backup or transfer:
 ```
 
 **Note**: JSON export is for backup purposes. Sessions are stored in SQLite and don't need manual export.
-~/.local/share/ask-ai/
+~/.local/share/sprachspiel/
 ├── chat_history.txt           # Readline history
 └── conversations/
     └── github.com/
@@ -770,22 +770,22 @@ After compaction, only the summary + new messages are sent to the LLM.
 
 Start a new chat session:
 ```bash
-ask chat
+sprach chat
 ```
 
 Start with a specific model:
 ```bash
-ask chat -m lfm
+sprach chat -m lfm
 ```
 
 Start an anonymous session (temporary):
 ```bash
-ask chat --anonymous
+sprach chat --anonymous
 ```
 
 Load a previously saved session:
 ```bash
-ask chat --load my-session
+sprach chat --load my-session
 ```
 
 ## Inside Chat

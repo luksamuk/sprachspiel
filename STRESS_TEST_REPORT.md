@@ -1,4 +1,4 @@
-# ask-ai Stress Test Report
+# Sprachspiel Stress Test Report
 
 **Data:** 2026-03-04  
 **Versão Testada:** v0.26.0  
@@ -44,7 +44,7 @@ Validar o novo sistema de persistência com SQLite, diferenciando `/clear` de `/
 
 | Operação | Tempo | Resultado | Observação |
 |----------|-------|-----------|------------|
-| Criação SQLite | ~60s | ✅ Sucesso | Banco criado em ~/.local/share/ask-ai/ |
+| Criação SQLite | ~60s | ✅ Sucesso | Banco criado em ~/.local/share/sprachspiel/ |
 | Inserção mensagens | <1s/msg | ✅ Sucesso | 6 mensagens com embeddings |
 | `/clear` | <1s | ✅ Sucesso | Mensagens permanecem no SQLite |
 | `/forget` | <1s | ✅ Sucesso | Tudo removido permanentemente |
@@ -300,7 +300,7 @@ src/tools/context.rs
 src/markdown.rs
 scripts/install.sh
 scripts/uninstall.sh
-scripts/install-ask-ai.sh
+scripts/install-sprachspiel.sh
 ```
 
 ### Linhas Modificadas

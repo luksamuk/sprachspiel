@@ -72,7 +72,7 @@ pub struct SendMessageResult {
 }
 
 /// Build system prompt for the session
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn build_session_system_prompt(
     session: &ChatSession,
     tools_enabled: bool,
@@ -122,7 +122,7 @@ pub fn build_session_system_prompt(
 }
 
 /// Setup coordinator with optional tools
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn setup_coordinator(
     ollama: ollama_rs::Ollama,
     model_config: &ModelConfig,
@@ -327,7 +327,7 @@ pub fn process_chat_response(
 /// - Message preparation with retrieval
 /// - Retry logic for recoverable errors
 /// - Response processing
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn send_message(
     ollama: &ollama_rs::Ollama,
     model_config: &ModelConfig,

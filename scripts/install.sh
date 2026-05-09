@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Ask AI Installer
+# Sprachspiel Installer
 # =============================================================================
-# This script installs ask-ai on Linux or Termux (Android).
+# This script installs sprach on Linux or Termux (Android).
 #
 # Usage:
 #   ./install.sh                  # Install with defaults (~/.local/bin)
 #   ./install.sh --prefix /usr    # Install to /usr/bin (requires sudo)
 #   ./install.sh --bin ~/bin      # Custom binary location
-#   ./install.sh --uninstall      # Remove ask-ai
+#   ./install.sh --uninstall      # Remove sprach
 #   ./install.sh --help           # Show help
 #
 # Platform Detection:
@@ -16,8 +16,8 @@
 #   - Termux: Installs to ~/bin by default
 #
 # Files Installed:
-#   - ask-ai binary
-#   - ask-ai.1 manpage
+#   - sprach binary
+#   - sprach.1 manpage
 #
 # Requirements:
 #   - bash
@@ -30,8 +30,8 @@ set -e
 VERSION=""
 
 # Binary and manpage names
-BINARY="ask-ai"
-MANPAGE="ask-ai.1"
+BINARY="sprach"
+MANPAGE="sprach.1"
 
 # Colors for output
 RED='\033[0;31m'
@@ -104,14 +104,14 @@ get_default_man_dir() {
 
 show_help() {
     cat << EOF
-Ask AI Installer v${VERSION:-dev}
+Sprachspiel Installer v${VERSION:-dev}
 
 Usage:
   ./install.sh                  Install with defaults
   ./install.sh --prefix DIR     Install to DIR/bin and DIR/share/man
   ./install.sh --bin DIR        Install binary to DIR
   ./install.sh --man DIR        Install manpage to DIR
-  ./install.sh --uninstall      Remove ask-ai
+  ./install.sh --uninstall      Remove sprach
   ./install.sh --help           Show this help
 
 Default Paths:
@@ -125,13 +125,13 @@ Examples:
   ./install.sh                          # Install to ~/.local/bin
   ./install.sh --prefix /usr            # Install to /usr/bin (requires sudo)
   ./install.sh --bin ~/bin --man ~/man  # Custom locations
-  ./install.sh --uninstall              # Remove ask-ai
+  ./install.sh --uninstall              # Remove sprach
 
 After Installation:
   - Add ~/.local/bin (or your chosen dir) to PATH
-  - Run 'man -M ~/.local/share/man ask-ai' or set MANPATH
+  - Run 'man sprach' or 'man -M ~/.local/share/man sprach' for documentation
 
-For more information: https://github.com/luksamuk/ask-ai-rs
+For more information: https://github.com/luksamuk/sprachspiel
 EOF
 }
 
@@ -242,9 +242,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --version|-v)
             if [[ -n "$VERSION" ]]; then
-                echo "ask-ai installer version $VERSION"
+                echo "sprach installer version $VERSION"
             else
-                echo "ask-ai installer (dev version)"
+                echo "sprach installer (dev version)"
             fi
             exit 0
             ;;
@@ -265,7 +265,7 @@ MAN_DIR="${MAN_DIR:-$DEFAULT_MAN}"
 # =============================================================================
 
 if $UNINSTALL; then
-    print_info "Uninstalling ask-ai..."
+    print_info "Uninstalling sprach..."
     
     # Find and remove binary
     local found_binary=""
@@ -286,7 +286,7 @@ if $UNINSTALL; then
     done
     
     if [[ -z "$found_binary" ]]; then
-        print_warning "ask-ai was not found. Nothing to uninstall."
+        print_warning "sprach was not found. Nothing to uninstall."
     else
         print_success "Uninstall complete."
     fi
@@ -298,11 +298,11 @@ fi
 # Install
 # =============================================================================
 
-print_info "Installing ask-ai on $PLATFORM..."
+print_info "Installing sprach on $PLATFORM..."
 
 # Check for existing installation
 if [[ -f "$BIN_DIR/$BINARY" ]]; then
-    print_warning "ask-ai is already installed at $BIN_DIR/$BINARY"
+    print_warning "sprach is already installed at $BIN_DIR/$BINARY"
     read -p "Replace it? [y/N] " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -315,8 +315,8 @@ fi
 if [[ ! -f "$BINARY" ]]; then
     print_error "Binary '$BINARY' not found in current directory"
     echo "Make sure you extracted the tarball correctly:"
-    echo "  tar -xzf ask-ai-VERSION-PLATFORM.tar.gz"
-    echo "  cd ask-ai-VERSION-PLATFORM"
+    echo "  tar -xzf sprachspiel-VERSION-PLATFORM.tar.gz"
+    echo "  cd sprachspiel-VERSION-PLATFORM"
     echo "  ./install.sh"
     exit 1
 fi
@@ -391,7 +391,7 @@ if [[ "$SKIP_MANPAGE" == "false" ]]; then
     if ! check_manpath "$MAN_DIR"; then
         print_info "To read manpages, use one of:"
         echo ""
-        echo "  man -M $MAN_ROOT_PARENT ask-ai"
+        echo "  man -M $MAN_ROOT_PARENT sprach"
         echo ""
         echo "Or add to your shell config ($SHELL_CONFIG):"
         echo ""
@@ -431,7 +431,7 @@ if [[ "$PLATFORM" == "termux" ]]; then
     echo ""
     echo "📱 Termux Notes:"
     echo "  - Ollama must run on a separate machine (desktop/server)"
-    echo "  - Configure OLLAMA_HOST in ~/.config/ask-ai/config.toml"
+    echo "  - Configure OLLAMA_HOST in ~/.config/sprachspiel/config.toml"
     echo "  - Example configuration:"
     echo ""
     echo '    host = "192.168.1.100:11434"'
@@ -447,8 +447,8 @@ echo ""
 echo "Next Steps:"
 echo "  1. Add $BIN_DIR to PATH (see above)"
 if [[ "$SKIP_MANPAGE" == "false" ]]; then
-    echo "  2. Run 'man ask-ai' or 'man -M $MAN_ROOT_PARENT ask-ai' for documentation"
-    echo "  3. Run 'ask-ai --help' for usage"
+    echo "  2. Run 'man sprach' or 'man -M $MAN_ROOT_PARENT sprach' for documentation"
+    echo "  3. Run 'sprach --help' for usage"
 else
     echo "  2. Run '$BIN_DIR/$BINARY --help' for usage"
 fi

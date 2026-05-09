@@ -2,8 +2,8 @@
 authors = ["Lucas S. Vieira"]
 language = "pt-BR"
 src = "src"
-title = "Ask-AI Documentation"
-description = "Complete user guide for the Ask-AI CLI tool"
+title = "Sprachspiel Documentation"
+description = "Complete user guide for the Sprachspiel CLI tool"
 
 [output.html]
 default-theme = "ayu"

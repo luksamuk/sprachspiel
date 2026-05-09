@@ -126,7 +126,7 @@ Related #N (use when PR is related but not closing)
 
 ## Project Information
 
-- **Project Name**: Ask-AI Roadmap
+- **Project Name**: Sprachspiel Roadmap
 - **Project URL**: https://github.com/users/luksamuk/projects/4/views/4
 - **Project Number**: 4
 - **Project ID**: `PVT_kwHOADplIc4BRnZ9`

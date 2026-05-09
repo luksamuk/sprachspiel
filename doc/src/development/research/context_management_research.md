@@ -2,7 +2,7 @@
 
 **Status:** Research Complete  
 **Date:** 2026-02-24  
-**Scope:** Comprehensive analysis of context/history management for Ask-AI
+**Scope:** Comprehensive analysis of context/history management for Sprachspiel
 
 ---
 
@@ -12,18 +12,18 @@ Effective LLM context management requires balancing **recency** (recent messages
 
 1. Industry best practices from OpenAI, Anthropic, LangChain
 2. Academic research findings
-3. Current Ask-AI implementation state
+3. Current Sprachspiel implementation state
 4. Proposed roadmap features
 5. Recommendations for implementation
 
 ---
 
-## 1. Current Ask-AI Implementation
+## 1. Current Sprachspiel Implementation
 
 ### 1.1 How Context Works Today
 
 **Chat Mode (`src/chat/`):**
-- Full conversation history stored as JSON files (`~/.local/share/ask-ai/conversations/`)
+- Full conversation history stored as JSON files (`~/.local/share/sprachspiel/conversations/`)
 - All messages loaded into coordinator on `/load`
 - No automatic pruning or compaction
 - `/compact` command available for manual summarization
@@ -160,7 +160,7 @@ Context = System + Recent(3) + Relevant(K) + Summary
 
 **Implication:** Place most critical information at **start** (system) or **end** (recent) of context, not buried in middle.
 
-**Recommendation for Ask-AI:**
+**Recommendation for Sprachspiel:**
 - Keep system prompt concise and at beginning
 - Recent user messages at end
 - Historical context summarized or vector-retrieved
@@ -200,7 +200,7 @@ Context = System + Recent(3) + Relevant(K) + Summary
 3. **ConversationSummaryMemory** - Dynamic summarization
 4. **VectorStoreRetrieverMemory** - Semantic retrieval
 
-**Best for Ask-AI:** Combination of Window + Summary + Vector
+**Best for Sprachspiel:** Combination of Window + Summary + Vector
 
 ---
 
@@ -222,7 +222,7 @@ Tier 4 (Archive - File): Old sessions
   └── Long-term storage
 ```
 
-### 5.2 Ask-AI Current vs. Proposed
+### 5.2 Sprachspiel Current vs. Proposed
 
 **Current:**
 ```
@@ -671,7 +671,7 @@ Effective context management is crucial for production LLM agents. The key insig
 5. **Automatic > Manual** - Auto-compact before issues arise
 6. **Hierarchical is best** - Multi-level context strategies
 
-Ask-AI should implement a **hierarchical context strategy** combining:
+Sprachspiel should implement a **hierarchical context strategy** combining:
 - Recent messages (full)
 - Summarized older conversation
 - Vector-retrieved relevant history

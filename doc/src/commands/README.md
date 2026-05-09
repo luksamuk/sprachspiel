@@ -1,6 +1,6 @@
 # Commands Reference
 
-Ask-AI provides six main commands for different tasks. Each command is designed to be composable with pipes for building powerful workflows.
+Sprachspiel provides six main commands for different tasks. Each command is designed to be composable with pipes for building powerful workflows.
 
 ## Command Overview
 
@@ -15,13 +15,13 @@ Ask-AI provides six main commands for different tasks. Each command is designed 
 
 ## Default Mode
 
-When no subcommand is specified, Ask-AI defaults to `query` mode:
+When no subcommand is specified, Sprachspiel defaults to `query` mode:
 
 ```bash
 # These are equivalent:
-ask-ai "What is Rust?"
-ask-ai query "What is Rust?"
-ask-ai q "What is Rust?"
+sprach "What is Rust?"
+sprach query "What is Rust?"
+sprach q "What is Rust?"
 ```
 
 ## Common Patterns
@@ -34,11 +34,11 @@ Commands accept input from arguments **or** stdin:
 
 ```bash
 # From argument
-ask-ai summarize "Text to summarize"
+sprach summarize "Text to summarize"
 
 # From stdin
-echo "Text to summarize" | ask-ai summarize
-cat file.txt | ask-ai summarize
+echo "Text to summarize" | sprach summarize
+cat file.txt | sprach summarize
 ```
 
 ### Global Options
@@ -54,13 +54,13 @@ All commands output to stdout, making them pipe-friendly:
 
 ```bash
 # Save to file
-ask-ai "Query" > output.txt
+sprach "Query" > output.txt
 
 # Pipe to another command
-ask-ai ocr image.png | ask-ai summarize
+sprach ocr image.png | sprach summarize
 
 # Chain multiple commands
-ask-ai ocr doc.png | ask-ai summarize | ask-ai translate :pt
+sprach ocr doc.png | sprach summarize | sprach translate :pt
 ```
 
 ## Command Comparison
@@ -93,10 +93,10 @@ Extract and summarize research papers:
 
 ```bash
 # OCR a scanned paper, summarize in academic style
-ask-ai ocr paper.png | ask-ai summarize --style academic
+sprach ocr paper.png | sprach summarize --style academic
 
 # Then translate to another language
-ask-ai ocr paper.png | ask-ai summarize --style academic | ask-ai translate :pt
+sprach ocr paper.png | sprach summarize --style academic | sprach translate :pt
 ```
 
 ### Document Processing
@@ -106,8 +106,8 @@ Process documents end-to-end:
 ```bash
 # Extract text, summarize, translate
 cat document.pdf | pdftotext - - | \
-    ask-ai summarize --style technical | \
-    ask-ai translate :es
+    sprach summarize --style technical | \
+    sprach translate :es
 ```
 
 ### Batch Processing
@@ -117,12 +117,12 @@ Process multiple files:
 ```bash
 # OCR multiple images
 for img in *.png; do
-    ask-ai ocr "$img" > "${img%.png}.txt"
+    sprach ocr "$img" > "${img%.png}.txt"
 done
 
 # Translate all extracted text
 for txt in *.txt; do
-    ask-ai translate :pt < "$txt" > "${txt%.txt}-pt.txt"
+    sprach translate :pt < "$txt" > "${txt%.txt}-pt.txt"
 done
 ```
 
@@ -132,16 +132,16 @@ Get help for any command:
 
 ```bash
 # General help
-ask-ai --help
+sprach --help
 
 # Command-specific help
-ask-ai query --help
-ask-ai translate --help
-ask-ai ocr --help
-ask-ai summarize --help
+sprach query --help
+sprach translate --help
+sprach ocr --help
+sprach summarize --help
 
 # Man page
-man ask-ai
+man sprach
 ```
 
 ## Next Steps

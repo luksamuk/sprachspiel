@@ -10,7 +10,7 @@ use crate::ocr::OcrArgs;
 use crate::summarize::SummarizeArgs;
 use crate::vision::VisionArgs;
 
-/// Commands for the ask-ai CLI
+/// Commands for the sprach CLI
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// Translate text between languages using TranslateGemma
@@ -38,7 +38,7 @@ pub enum Commands {
     Vision(VisionArgs),
 
     /// Generate shell completions
-    #[command(about = "Generate shell completions for ask-ai")]
+    #[command(about = "Generate shell completions for sprach")]
     Completion(CompletionArgs),
 }
 

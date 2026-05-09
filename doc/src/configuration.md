@@ -1,33 +1,33 @@
 # Configuration Guide
 
-This guide covers how to configure Ask-AI for your specific needs.
+This guide covers how to configure Sprachspiel for your specific needs.
 
 ## Configuration File
 
-Ask-AI supports a user configuration file for persistent settings. This is the recommended way to customize the tool.
+Sprachspiel supports a user configuration file for persistent settings. This is the recommended way to customize the tool.
 
 ### Creating the Config File
 
 Generate a sample configuration file:
 
 ```bash
-ask-ai --init-config
+sprach --init-config
 ```
 
-This creates `~/.config/ask-ai/config.toml` with all available options commented out.
+This creates `~/.config/sprachspiel/config.toml` with all available options commented out.
 
 ### Config File Location
 
-Ask-AI looks for the config file in this order:
+Sprachspiel looks for the config file in this order:
 
-1. `$XDG_CONFIG_HOME/ask-ai/config.toml` (if XDG_CONFIG_HOME is set)
-2. `~/.config/ask-ai/config.toml` (default)
+1. `$XDG_CONFIG_HOME/sprachspiel/config.toml` (if XDG_CONFIG_HOME is set)
+2. `~/.config/sprachspiel/config.toml` (default)
 
 ### Configuration Options
 
 ```toml
-# Ask-AI Configuration File
-# Location: ~/.config/ask-ai/config.toml
+# Sprachspiel Configuration File
+# Location: ~/.config/sprachspiel/config.toml
 # 
 # This is a complete example configuration showing all available options.
 # Lines starting with '#' are comments and are ignored.
@@ -43,7 +43,7 @@ Ask-AI looks for the config file in this order:
 [model]
 
 # The default model preset to use for general queries.
-# See all available models with: ask-ai --list-models
+# See all available models with: sprach --list-models
 # Default: "qwen3.5:4b"
 default = "qwen3.5:4b"
 
@@ -53,8 +53,8 @@ default = "qwen3.5:4b"
 # Model capability takes precedence: if the model doesn't support thinking, this is ignored.
 # thinking = false
 
-# Ollama server connection settings.
-# Change these if your Ollama server is not running on the default localhost.
+# LLM server connection settings.
+# Change these if your LLM server is not running on the default localhost.
 # Default: "127.0.0.1"
 ollama_host = "127.0.0.1"
 # Default: 11434
@@ -218,22 +218,22 @@ Note: If thinking is enabled in config but the model doesn't support it, a warni
 
 ## Custom Models
 
-Ask-AI supports user-defined models via a TOML file. This allows you to:
+Sprachspiel supports user-defined models via a TOML file. This allows you to:
 
 - Add new models not included in the built-in presets
 - Override parameters for existing models (partial override)
 
 ### Creating Custom Models
 
-Create `~/.config/ask-ai/models.toml`:
+Create `~/.config/sprachspiel/models.toml`:
 
 ```toml
 # Custom model definitions
-# Location: ~/.config/ask-ai/models.toml
+# Location: ~/.config/sprachspiel/models.toml
 
 # Add a new model
 [models.my-coder]
-model_id = "phi3:mini-4k"    # Required: Ollama model ID
+model_id = "phi3:mini-4k"    # Required: Model ID (as recognized by the backend)
 num_ctx = 4096                # Optional: context window (default: 4096)
 temperature = 0.3             # Optional: temperature (default: 0.2)
 top_k = 40                    # Optional: top-k sampling (default: 40)
@@ -253,13 +253,13 @@ temperature = 0.15            # Only override what you want to change
 
 ```bash
 # Use a custom model
-ask-ai -m my-coder "Write a function"
+sprach -m my-coder "Write a function"
 
 # Use in chat mode
-ask-ai chat -m simple
+sprach chat -m simple
 
 # Override built-in model parameters
-ask-ai -m lfm "query"  # Uses modified temperature from models.toml
+sprach -m lfm "query"  # Uses modified temperature from models.toml
 ```
 
 ### Model Parameter Defaults
@@ -270,8 +270,8 @@ When defining a custom model without all parameters, these defaults are used:
 |-------------|---------|
 | `num_ctx`    | 32768 (32K) |
 | `temperature`| 0.8     |
-| `top_k`      | not set (uses Ollama default) |
-| `top_p`      | not set (uses Ollama default) |
+| `top_k`      | not set (uses backend default) |
+| `top_p`      | not set (uses backend default) |
 | `repeat_penalty` | 1.1 |
 
 **Note**: If `num_ctx` is not specified, the default is 32K tokens. For cloud models or models where you want Ollama to automatically manage context, you can omit `num_ctx` entirely.
@@ -297,15 +297,15 @@ When `thinking = true` is set:
 ### Listing All Models
 
 ```bash
-ask-ai --list
+sprach --list
 ```
 
 This shows both built-in models and user-defined models (marked with `[user]`).
 
 
-### Remote Ollama Server
+### Remote LLM Server
 
-To connect to a remote Ollama instance:
+To connect to a remote LLM server (such as Ollama):
 
 ```toml
 [model]
@@ -316,9 +316,9 @@ ollama_port = 11434
 ```
 
 This is useful for:
-- **Termux/Android** - Connect to Ollama running on your desktop
-- **Remote servers** - Connect to Ollama on a different machine
-- **Docker/containers** - Connect to Ollama in a container
+- **Termux/Android** - Connect to an Ollama server running on your desktop
+- **Remote servers** - Connect to an LLM server on a different machine
+- **Docker/containers** - Connect to an LLM server in a container
 
 Or use environment variables:
 
@@ -385,7 +385,7 @@ Each subcommand section supports:
 
 ### How Tool Filtering Works
 
-Ask-AI uses a two-layer filtering system for tools:
+Sprachspiel uses a two-layer filtering system for tools:
 
 1. **Compile-time (Feature Flags)**: Tools are included/excluded at build time
    - See [Tools documentation](./tools.md#compilation-features) for feature flags
@@ -427,14 +427,14 @@ cargo build --release --features all-tools
 
 Then, to use them:
 ```bash
-ask-ai --tools "Tell me about Pikachu"
+sprach --tools "Tell me about Pikachu"
 ```
 
 ## Environment Variables
 
 ### OLLAMA_HOST
 
-Configure the Ollama server location (overrides config file):
+Configure the LLM server location (overrides config file):
 
 ```bash
 # Default (local)
@@ -447,12 +447,12 @@ export OLLAMA_HOST="192.168.1.100:11434"
 echo 'export OLLAMA_HOST="localhost:11434"' >> ~/.bashrc
 ```
 
-### ASK_AI_DEBUG
+### RUST_LOG
 
-Enable debug logging globally:
+Enable debug logging via the standard Rust environment variable:
 
 ```bash
-export ASK_AI_DEBUG=1
+export RUST_LOG=debug
 ```
 
 ## Model Configuration
@@ -520,8 +520,8 @@ Verbose logging shows:
 - Raw responses (when verbose level is enabled)
 
 Enable via:
-- CLI flag: `ask-ai -v "query"` (verbose), `ask-ai -vv "query"` (trace)
-- Environment: `RUST_LOG=trace ask-ai command` or `RUST_LOG=debug ask-ai command)`
+- CLI flag: `sprach -v "query"` (verbose), `sprach -vv "query"` (trace)
+- Environment: `RUST_LOG=trace sprach command` or `RUST_LOG=debug sprach command)`
 
 ## Performance Tuning
 
@@ -557,17 +557,17 @@ export OLLAMA_TIMEOUT=120  # seconds
 
 ### Default Paths
 
-- Binary: `/usr/local/bin/ask-ai`
-- Man page: `/usr/local/share/man/man1/ask-ai.1`
-- Config: `~/.config/ask-ai/config.toml`
+- Binary: `/usr/local/bin/sprach`
+- Man page: `/usr/local/share/man/man1/sprach.1`
+- Config: `~/.config/sprachspiel/config.toml`
 
 ### Custom Prefix
 
 ```bash
 make install PREFIX=$HOME/.local
 # Installs to:
-# - $HOME/.local/bin/ask-ai
-# - $HOME/.local/share/man/man1/ask-ai.1
+# - $HOME/.local/bin/sprach
+# - $HOME/.local/share/man/man1/sprach.1
 ```
 
 ## Shell Completion
@@ -576,14 +576,14 @@ Generate completions for your shell:
 
 ```bash
 # Bash
-ask-ai completion bash >~/.bash_completion
+sprach completion bash >~/.bash_completion
 
 # Zsh
-ask-ai completion zsh > ~/.zsh_completions/_ask-ai
+sprach completion zsh > ~/.zsh_completions/_sprach
 # Add to ~/.zshrc: fpath+=(~/.zsh_completions)
 
 # Fish
-ask-ai completion fish > ~/.config/fish/completions/ask-ai.fish
+sprach completion fish > ~/.config/fish/completions/sprach.fish
 ```
 
 See [Installation Guide](./installation.md#shell-completions) for more details.
@@ -600,7 +600,7 @@ See [Installation Guide](./installation.md#shell-completions) for more details.
 
 ## AGENTS.md Context
 
-Ask-AI automatically loads `AGENTS.md` from the current directory to provide project-specific context to the model.
+Sprachspiel automatically loads `AGENTS.md` from the current directory to provide project-specific context to the model.
 
 ### How It Works
 
@@ -644,7 +644,7 @@ Content is sanitized to prevent prompt injection:
 Use `--ignore-agents` to skip loading:
 
 ```bash
-ask-ai --ignore-agents "General programming question"
+sprach --ignore-agents "General programming question"
 ```
 
 ## Troubleshooting
@@ -654,14 +654,14 @@ ask-ai --ignore-agents "General programming question"
 Check that the file exists and has correct permissions:
 
 ```bash
-ls -la ~/.config/ask-ai/config.toml
+ls -la ~/.config/sprachspiel/config.toml
 ```
 
 Test with debug mode to see active configuration:
 
 ```bash
-ask-ai -d --init-config  # Shows where config was created
-ask-ai -d "test query"   # Shows active settings
+sprach -d --init-config  # Shows where config was created
+sprach -d "test query"   # Shows active settings
 ```
 
 ### Changes not taking effect

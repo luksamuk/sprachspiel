@@ -4,7 +4,7 @@ This document describes the architecture and design decisions of the feedback, c
 
 ## Overview
 
-The feedback infrastructure is a self-contained subsystem that connects explicit user signals to content relevance, enabling Ask-AI to learn from interactions over time. It has three interconnected concerns:
+The feedback infrastructure is a self-contained subsystem that connects explicit user signals to content relevance, enabling Sprachspiel to learn from interactions over time. It has three interconnected concerns:
 
 1. **Feedback signals** — User and LLM feedback on content quality (good/bad/correction)
 2. **Content decay** — Ebbinghaus-inspired forgetting for content items

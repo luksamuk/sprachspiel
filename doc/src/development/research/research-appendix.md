@@ -26,7 +26,7 @@ This appendix documents the research process that synthesized insights from mult
 
 **Key Concepts:**
 
-| Concept | Description | Relevance to Ask-AI |
+| Concept | Description | Relevance to Sprachspiel |
 |---------|-------------|---------------------|
 | MemCube | Basic unit of memory with content + metadata | Similar to messages with embeddings |
 | Three-tier memory | Plaintext → Activation → Parameter | Roadmap for future evolution |
@@ -54,9 +54,9 @@ knowledge spanning different temporal scales and sources."
 
 **Key Concepts:**
 
-| Concept | Description | Relevance to Ask-AI |
+| Concept | Description | Relevance to Sprachspiel |
 |---------|-------------|---------------------|
-| Next-state signals | User reply, tool output, GUI change | All present in Ask-AI |
+| Next-state signals | User reply, tool output, GUI change | All present in Sprachspiel |
 | Evaluative signals | Scalar rewards (how well) | `/feedback` good/bad |
 | Directive signals | Textual hints (how different) | `/feedback correction:` |
 | PRM (Process Reward Model) | Learn from evaluative signals | Future: ML-based reward model |
@@ -64,7 +64,7 @@ knowledge spanning different temporal scales and sources."
 | Asynchronous design | Serve + judge + train in parallel | Not applicable (no training) |
 
 **Critical Distinction:**
-OpenClaw-RL proposes **real model fine-tuning**. Ask-AI operates local-only without GPU infrastructure for training. We adapt to "pseudo-RL" - learning in retrieval/prompt space instead.
+OpenClaw-RL proposes **real model fine-tuning**. Sprachspiel operates local-only without GPU infrastructure for training. We adapt to "pseudo-RL" - learning in retrieval/prompt space instead.
 
 ---
 
@@ -80,7 +80,7 @@ OpenClaw-RL proposes **real model fine-tuning**. Ask-AI operates local-only with
 
 **Key Concepts:**
 
-| Concept | Description | Ask-AI Status |
+| Concept | Description | Sprachspiel Status |
 |---------|-------------|---------------|
 | Hierarchical memory | Main context ↔ Archive | ✅ Implementado (SQLite + embeddings) |
 | Self-editing memory | LLM decides what to save | ⚠️ Auto-save, not LLM-decided |
@@ -101,7 +101,7 @@ OpenClaw-RL proposes **real model fine-tuning**. Ask-AI operates local-only with
 
 **Key Concepts:**
 
-| Concept | Description | Relevance to Ask-AI |
+| Concept | Description | Relevance to Sprachspiel |
 |---------|-------------|---------------------|
 | Environment contract | State + Actions + Transition + Reward | Chat session is environment |
 | Static vs Dynamic environments | Fixed state vs changing state | Dynamic (chat) |
@@ -163,7 +163,7 @@ All papers converge on these themes:
 
 ### 2.2 Diverging Approaches
 
-| Aspect | OpenClaw-RL | MemOS | MemGPT | Ask-AI Proposal |
+| Aspect | OpenClaw-RL | MemOS | MemGPT | Sprachspiel Proposal |
 |--------|-------------|-------|--------|-----------------|
 | Learning method | Fine-tuning | Memory migration | Self-editing | Pseudo-RL (weight-based) |
 | Feedback source | Explicit + next-state | Implicit (usage) | Self-directed | Explicit + implicit |
@@ -234,11 +234,11 @@ Papers found via:
 
 ---
 
-## 5. Validation Against Existing Ask-AI Architecture
+## 5. Validation Against Existing Sprachspiel Architecture
 
-### 5.1 What Ask-AI Already Has
+### 5.1 What Sprachspiel Already Has
 
-| Feature | Ask-AI | MemOS | MemGPT | OpenClaw |
+| Feature | Sprachspiel | MemOS | MemGPT | OpenClaw |
 |---------|--------|-------|--------|----------|
 | Persistent chat history | ✅ SQLite | ✅ | ✅ | N/A |
 | Semantic search | ✅ BM25 + vector | ✅ | ✅ | N/A |
@@ -246,7 +246,7 @@ Papers found via:
 | Overflow handling | ✅ ContinuationTag | ⚠️ | ✅ | N/A |
 | Modular architecture | ✅ Separate modules | ✅ | ✅ | ✅ |
 
-### 5.2 What Ask-AI Lacks
+### 5.2 What Sprachspiel Lacks
 
 | Feature | Priority | Implementation Path |
 |---------|----------|---------------------|
@@ -274,7 +274,7 @@ Papers found via:
 
 ### Decision 3: Three-Tier Memory (Future-Proofed)
 
-**Rationale:** MemOS demonstrates that full memory systems evolve through tiers. Ask-AI starts at Tier 1 (plaintext), architecture supports future Tiers 2-3.
+**Rationale:** MemOS demonstrates that full memory systems evolve through tiers. Sprachspiel starts at Tier 1 (plaintext), architecture supports future Tiers 2-3.
 
 **Future:** LoRA adapters for Tier 3 (parameter memory) when local GPU available.
 

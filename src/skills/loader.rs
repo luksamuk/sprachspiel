@@ -1,8 +1,8 @@
 //! Skill loading and directory scanning.
 //!
 //! Loads skills from three sources with priority:
-//! 1. Project skills: .ask-ai/skills/\<name\>/SKILL.md
-//! 2. User skills: ~/.config/ask-ai/skills/\<name\>/SKILL.md
+//! 1. Project skills: .sprachspiel/skills/\<name\>/SKILL.md
+//! 2. User skills: ~/.config/sprachspiel/skills/\<name\>/SKILL.md
 //! 3. Builtin skills: embedded in binary via include_str!
 
 use std::collections::HashMap;
@@ -103,16 +103,20 @@ pub fn get_available_skill_names() -> Vec<String> {
 // Private Functions
 // ============================================================================
 
-/// Get user skills directory (~/.config/ask-ai/skills/).
+/// Get user skills directory (~/.config/sprachspiel/skills/).
 fn get_user_skills_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|p| p.join("ask-ai").join(SKILLS_DIR_NAME))
+    use crate::consts::app;
+
+    dirs::config_dir().map(|p| p.join(app::APP_CONFIG_DIR).join(SKILLS_DIR_NAME))
 }
 
-/// Get project skills directory (./.ask-ai/skills/).
+/// Get project skills directory (.sprachspiel/skills/).
 fn get_project_skills_dir() -> Option<PathBuf> {
+    use crate::consts::app;
+
     std::env::current_dir()
         .ok()
-        .map(|p| p.join(".ask-ai").join(SKILLS_DIR_NAME))
+        .map(|p| p.join(app::APP_PROJECT_DIR).join(SKILLS_DIR_NAME))
 }
 
 /// Load skill indexes from a directory.

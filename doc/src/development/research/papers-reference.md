@@ -45,37 +45,37 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 #### Li, Qin & Liu (2017) — Contradiction-Specific Word Embedding
 - Standard embeddings (Word2Vec, GloVe) map antonyms to near-identical vectors
 - Proves semantic similarity alone cannot detect contradictions
-- **Ask-ai implication:** Two-step approach needed — embeddings for retrieval, triples for disambiguation
+- **Sprachspiel implication:** Two-step approach needed — embeddings for retrieval, triples for disambiguation
 
 #### Gokul, Tenneti & Nakkiran (2025) — Contradiction Detection in RAG
 - LLMs achieve at most 71% F1 on contradiction detection in RAG
 - Three contradiction types: self, pair, conditional
-- **Ask-ai implication:** LLM-based contradiction detection is unreliable; deterministic approach preferred
+- **Sprachspiel implication:** LLM-based contradiction detection is unreliable; deterministic approach preferred
 
 #### Cattan et al. (2025) — CONFLICTS Benchmark
 - First benchmark for knowledge conflicts in search-augmented LLMs
 - Taxonomy of conflict categories with expected model behaviors
-- **Ask-ai implication:** Our exclusive/accumulative predicate classification aligns with their broader taxonomy
+- **Sprachspiel implication:** Our exclusive/accumulative predicate classification aligns with their broader taxonomy
 
 #### LongMemEval (2024)
 - Evaluates 5 core long-term memory abilities of chat assistants
 - Includes knowledge update testing (contradiction handling)
-- **Ask-ai implication:** Validates need for memory update with conflict resolution
+- **Sprachspiel implication:** Validates need for memory update with conflict resolution
 
 #### WikiContradict (NeurIPS 2024)
 - 253 human-annotated instances of contradictory Wikipedia passages
 - Benchmarks LLM performance under conflicting evidence
-- **Ask-ai implication:** Real-world contradiction benchmark; our facts are shorter/structured (easier)
+- **Sprachspiel implication:** Real-world contradiction benchmark; our facts are shorter/structured (easier)
 
 #### HaluMem (2025)
 - First operation-level hallucination benchmark for memory systems
 - Three tasks: memory extraction, updating, question answering
-- **Ask-ai implication:** Memory updating (where contradictions occur) is a known hallucination vector
+- **Sprachspiel implication:** Memory updating (where contradictions occur) is a known hallucination vector
 
 #### Tosun & Buldur (2026) — Beyond Cosine Similarity
 - Antonym intrusion is language-agnostic (observed in Turkish + English)
 - Cosine similarity cannot distinguish semantic drift from genuine synonymy
-- **Ask-ai implication:** Confirms our two-step approach (embeddings + triples) is the correct architecture
+- **Sprachspiel implication:** Confirms our two-step approach (embeddings + triples) is the correct architecture
 
 ## Related Blog Posts
 

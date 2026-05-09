@@ -27,7 +27,7 @@ impl OcrProcessor {
     }
 
     /// Process a single image file
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub async fn process_file(
         &self,
         path: &Path,

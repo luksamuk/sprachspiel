@@ -131,7 +131,7 @@ pub fn format_size(bytes: u64) -> String {
 ///
 /// # Example
 /// ```
-/// use ask_ai::utils::capitalize;
+/// use sprachspiel::utils::capitalize;
 /// assert_eq!(capitalize("hello"), "Hello");
 /// assert_eq!(capitalize("HELLO"), "Hello");
 /// assert_eq!(capitalize("pikachu"), "Pikachu");
@@ -154,7 +154,7 @@ pub fn capitalize(s: &str) -> String {
 ///
 /// # Example
 /// ```
-/// use ask_ai::utils::normalize_input;
+/// use sprachspiel::utils::normalize_input;
 /// assert_eq!(normalize_input("  HeLLo  "), "hello");
 /// assert_eq!(normalize_input("Pokémon"), "pokémon");  // Unicode preserved
 /// ```
@@ -172,7 +172,7 @@ pub fn normalize_input(s: &str) -> String {
 ///
 /// # Example
 /// ```
-/// use ask_ai::utils::expand_tilde_path;
+/// use sprachspiel::utils::expand_tilde_path;
 /// use std::path::PathBuf;
 ///
 /// // On Unix: expands to /home/user/file.txt

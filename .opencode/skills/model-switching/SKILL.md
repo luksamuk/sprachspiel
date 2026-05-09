@@ -1,6 +1,6 @@
 ---
 name: model-switching
-description: Centralized model switching in ask-ai. All model changes MUST go through switch_model() to prevent inconsistent state between think, tools, and capabilities.
+description: Centralized model switching in sprachspiel. All model changes MUST go through switch_model() to prevent inconsistent state between think, tools, and capabilities.
 license: MIT
 compatibility: opencode
 metadata:
@@ -10,7 +10,7 @@ metadata:
 
 ## What I do
 
-I enforce the SINGLE POINT OF FAILURE rule for model switching in ask-ai. All model changes MUST go through the centralized `switch_model()` function.
+I enforce the SINGLE POINT OF FAILURE rule for model switching in sprachspiel. All model changes MUST go through the centralized `switch_model()` function.
 
 ## When to use me
 

@@ -5,7 +5,7 @@
 **File:** `src/retrieval/context_builder.rs`
 **See also:** [Memory Architecture](./memory-architecture.md) — Unified overview of all memory systems
 
-This document explains how ask-ai composes the LLM context window, following research-based principles to avoid "lost in the middle" issues.
+This document explains how sprachspiel composes the LLM context window, following research-based principles to avoid "lost in the middle" issues.
 
 ---
 
@@ -312,7 +312,7 @@ Retrieval activates when ALL are true:
 
 ## Query Mode
 
-For `ask-ai query` (no persistence):
+For `sprach query` (no persistence):
 
 ```mermaid
 graph TB

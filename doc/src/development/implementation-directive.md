@@ -10,14 +10,14 @@
 
 ## Executive Summary
 
-This document defines the **definitive implementation direction** for Ask-AI to become a **continuous learning personal agent**. It synthesizes insights from:
+This document defines the **definitive implementation direction** for Sprachspiel to become a **continuous learning personal agent**. It synthesizes insights from:
 
 - **OpenClaw-RL** (arXiv:2603.10165) - Learning from next-state signals
 - **MemOS** (arXiv:2507.03724) - Memory as manageable system resource  
 - **MemGPT** (arXiv:2310.08560) - Virtual context management
 - **Unsloth/NVIDIA** - RL environments for agent training
 
-The core insight: **Every user interaction contains learning signals that are currently discarded.** By capturing, structuring, and utilizing these signals, Ask-AI can evolve from a stateless chat interface to a learning agent that improves with use.
+The core insight: **Every user interaction contains learning signals that are currently discarded.** By capturing, structuring, and utilizing these signals, Sprachspiel can evolve from a stateless chat interface to a learning agent that improves with use.
 
 ---
 
@@ -25,7 +25,7 @@ The core insight: **Every user interaction contains learning signals that are cu
 
 ### 1.1 Problem Statement
 
-Current Ask-AI:
+Current Sprachspiel:
 - ✅ Remembers conversations (SQLite + embeddings)
 - ✅ Searches context effectively (hybrid retrieval)
 - ✅ Handles context overflow gracefully (continuation tags)
@@ -57,7 +57,7 @@ Current Ask-AI:
 
 ### 1.3 What Makes This Different
 
-| Aspect | Traditional Chatbot | Ask-AI (Proposed) |
+| Aspect | Traditional Chatbot | Sprachspiel (Proposed) |
 |--------|---------------------|-------------------|
 | Memory | Store everything equally | Weighted by feedback & recency |
 | Learning | None from user | Implicit + explicit signals |
@@ -73,7 +73,7 @@ Current Ask-AI:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        ASK-AI UNIFIED ARCHITECTURE                  │
+│                     SPRACHSPIEL UNIFIED ARCHITECTURE                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌──────────────────────┐  ┌──────────────────────────────────┐   │
@@ -126,7 +126,7 @@ Current Ask-AI:
 ```sql
 -- Current: content_items + embeddings
 -- Add: feedback_signals (separate table for auditability — ADR-003: messages-only in Phase 1)
--- NOTE: ask-ai uses content_items table (NOT a separate messages table).
+-- NOTE: sprachspiel uses content_items table (NOT a separate messages table).
 --       Messages are content_items with content_type='message'.
 
 CREATE TABLE IF NOT EXISTS feedback_signals (
@@ -158,7 +158,7 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_signals(created_at D
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         ASK-AI COMPONENTS                          │
+│                       SPRACHSPIEL COMPONENTS                         │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │   ┌─────────────┐     ┌─────────────┐     ┌─────────────────┐    │
@@ -448,7 +448,7 @@ From CortexGraph (Ebbinghaus):
 
 **Implementation (ADR-002: aligned with existing Facts system):**
 
-Feedback decay uses Ebbinghaus `2^(-t/h)` — the same formula as `facts::compute_retention()` in `src/facts/decay.rs`. This ensures consistency across all memory systems in ask-ai.
+Feedback decay uses Ebbinghaus `2^(-t/h)` — the same formula as `facts::compute_retention()` in `src/facts/decay.rs`. This ensures consistency across all memory systems in sprachspiel.
 
 ```rust
 const MAX_FEEDBACK_BOOST: f32 = 2.0;
@@ -610,7 +610,7 @@ This creates a **feedback-driven forgetting loop**: bad feedback → lower impor
 ### 6.2 Opt-In Features
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 
 [feedback]
 enabled = true

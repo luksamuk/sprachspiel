@@ -10,9 +10,9 @@ use std::path::PathBuf;
 pub enum SkillSource {
     /// Embedded in binary via include_str!
     Builtin,
-    /// ~/.config/ask-ai/skills/<name>/SKILL.md - user-controlled
+    /// ~/.config/sprachspiel/skills/<name>/SKILL.md - user-controlled
     User,
-    /// .ask-ai/skills/<name>/SKILL.md - project-level, potentially shared
+    /// .sprachspiel/skills/<name>/SKILL.md - project-level, potentially shared
     Project,
 }
 

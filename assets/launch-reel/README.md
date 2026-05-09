@@ -1,6 +1,6 @@
 # Sprachspiel Launch Reel
 
-Cinematic cyberpunk launch video for [Sprachspiel](https://github.com/luksamuk/ask-ollama-rs) — an open-source, Rust-native cognitive interaction harness.
+Cinematic cyberpunk launch video for [Sprachspiel](https://github.com/luksamuk/sprachspiel) — an open-source, Rust-native cognitive interaction harness.
 
 ## Final Renders
 

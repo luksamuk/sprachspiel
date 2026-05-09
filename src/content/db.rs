@@ -926,7 +926,7 @@ impl Database {
     /// Insert a content item (message, note, or document)
     ///
     /// Returns the item ID.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn insert_content_item(
         &self,
         content_type: &str,
@@ -1257,7 +1257,7 @@ impl Database {
     // ============================================================
 
     /// Hybrid search for messages using RRF (convenience wrapper for content_type=message)
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn search_messages_hybrid(
         &self,
         query: &str,

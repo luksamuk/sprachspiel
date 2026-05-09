@@ -1,17 +1,30 @@
 #!/usr/bin/env python3
 """
-Ask-AI README Banner v3 — Everything is braille art
-Lines become braille strings, nodes become braille clusters
+Sprachspiel README Banner — v1 (adapted from sprachspiel-banner.py v3)
+
+Brain + gold connections rendered as braille art (inherited from v3).
+Title "SPRACHSPIEL" uses Pillow font with gold/cyan color split.
+Everything visual: braille art brain/connections + clean font text.
+
+Changes from sprachspiel-banner.py:
+- Title: "SPRACHSPIEL" (SPRACH in gold, SPIEL in cyan)
+- Subtitle: "Cognitive interaction harness for LLMs" → "A language game with LLMs"
+- Tags: arrows → pipes (│)
+- Hardcoded path → relative path using Path(__file__).parent
+- Output path → relative
 """
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import numpy as np
 import random
 import math
+from pathlib import Path
 
+ASSETS_DIR = Path(__file__).parent
 W, H = 1280, 400
 BG_COLOR = (8, 8, 18)
 
+# Color palette — Sprachspiel branding
 AURA_CYAN = (0, 210, 220)
 AURA_CYAN_DIM = (0, 80, 90)
 BRAIN_WHITE = (220, 230, 240)
@@ -20,6 +33,8 @@ LINE_GOLD_DIM = (100, 75, 15)
 NODE_GOLD = (255, 215, 80)
 NODE_BRIGHT = (255, 240, 150)
 TEXT_GOLD = (210, 170, 40)
+TEXT_GOLD_BRIGHT = (255, 220, 60)  # SPRACH color
+TEXT_CYAN = (0, 210, 220)           # SPIEL color
 TEXT_WHITE = (200, 210, 225)
 GRID_COLOR = (14, 18, 30)
 BRAILLE_COLOR = (14, 18, 28)
@@ -39,16 +54,17 @@ try:
     font_braille = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9)
     font_braille_md = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
     font_braille_lg = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-    font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 52)
+    font_title_gold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 48)
+    font_title_cyan = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 48)
     font_sub = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 17)
     font_tiny = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 11)
 except:
-    font_braille = font_braille_md = font_braille_lg = font_title = font_sub = font_tiny = ImageFont.load_default()
+    font_braille = font_braille_md = font_braille_lg = font_title_gold = font_title_cyan = font_sub = font_tiny = ImageFont.load_default()
 
 random.seed(42)
 
 # === Load logo and build dot map ===
-logo = Image.open("/home/alchemist/git/ask-ollama-rs/assets/extended-mind-original.png").convert("RGB")
+logo = Image.open(ASSETS_DIR / "extended-mind-original.png").convert("RGB")
 logo_arr = np.array(logo)
 lh, lw, _ = logo_arr.shape
 mask = np.sum(logo_arr, axis=2) > 30
@@ -94,7 +110,7 @@ for gy in range(GRID_ROWS):
             row.append(' ')
     dot_map.append(row)
 
-brain_cx = W // 2 - 120
+brain_cx = W // 2 - 180
 brain_cy = H // 2
 target_w = 310
 px_w = target_w / GRID_COLS
@@ -134,16 +150,14 @@ for y in range(0, H, 10):
 
 
 # ============================================================
-# LAYER 2: Aura + Brain (dot-based)
+# LAYER 2: Aura + Brain (dot-based) — identical to original
 # ============================================================
-# Aura glow
 for i in range(22, 0, -1):
     r = 35 + i * 7
     af = 0.018 / (i * 0.12 + 0.1)
     color = tuple(min(255, int(6 + c * af)) for c in AURA_CYAN)
     draw.ellipse([brain_cx - r, brain_cy - r, brain_cx + r, brain_cy + r], fill=color)
 
-# Collect cells
 brain_cells = []
 aura_cells = []
 aura_dim_cells = []
@@ -190,7 +204,6 @@ for px, py, gx, gy in brain_cells:
 # LAYER 3: Gold connections — BRAILLE ART LINES + BRAILLE CLUSTER NODES
 # ============================================================
 
-# Find arm starts and endpoints
 arm_positions = []
 arm_starts = []
 for direction in ['tl', 'tr', 'bl', 'br']:
@@ -217,7 +230,7 @@ for direction in ['tl', 'tr', 'bl', 'br']:
             inner = (gx - GRID_COLS / 2) ** 2 + (gy_ - GRID_ROWS / 2) ** 2
             candidates_end.append((outer, gx, gy_))
             candidates_start.append((inner, gx, gy_))
-    
+
     if candidates_end:
         best_end = min(candidates_end, key=lambda c: c[0])
         epx = origin_x + best_end[1] * px_w + px_w / 2
@@ -226,10 +239,10 @@ for direction in ['tl', 'tr', 'bl', 'br']:
     if candidates_start:
         best_start = min(candidates_start, key=lambda c: c[0])
         spx = origin_x + best_start[1] * px_w + px_w / 2
-        spy = origin_y + best_start[2] * px_h + px_h / 2
+        spy = origin_y + best_start[2] * px_h + px_w / 2
         arm_starts.append((spx, spy))
 
-# --- Gold cells as bright braille dots ---
+# Gold cells as bright braille dots
 random.seed(123)
 for px, py, gx, gy in gold_cells:
     ch = random.choice(LINE_BRAILLE)
@@ -237,44 +250,30 @@ for px, py, gx, gy in gold_cells:
     color = tuple(min(255, int(c * brightness)) for c in LINE_GOLD)
     draw.text((px - 4, py - 5), ch, fill=color, font=font_braille_md)
 
-# --- Draw lines as braille art strings ---
-# Each connection is a line of braille chars from start to end
-# Use multiple rows for thickness, with brightness falloff at edges
-
+# Lines as braille art strings
 for start, end in zip(arm_starts, arm_positions):
     x0, y0 = start
     x1, y1 = end
     length = math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
     if length < 1:
         continue
-    
-    # Direction vector
     dx = (x1 - x0) / length
     dy = (y1 - y0) / length
-    # Normal vector (perpendicular)
     nx = -dy
     ny = dx
-    
-    # Walk along the line, placing braille characters
-    step = 7  # ~7px per braille char
+
+    step = 7
     t = 0
     idx = 0
     while t < length:
-        # Center point on line
         cx = x0 + dx * t
         cy = y0 + dy * t
-        
-        # Progress along line (0=start, 1=end)
         progress = t / length
-        
-        # Main line: center braille char
         ch = LINE_BRAILLE[idx % len(LINE_BRAILLE)]
-        # Brighter near endpoints, full in middle
         brightness = 0.7 + 0.3 * (1.0 - abs(progress - 0.5) * 2 * 0.3)
         color = tuple(min(255, int(c * brightness)) for c in LINE_GOLD)
         draw.text((cx - 4, cy - 5), ch, fill=color, font=font_braille_lg)
-        
-        # Glow rows: dimmer braille chars perpendicular to the line
+
         for offset in [-7, 7]:
             gx_pos = cx + nx * offset
             gy_pos = cy + ny * offset
@@ -282,8 +281,7 @@ for start, end in zip(arm_starts, arm_positions):
             glow_brightness = brightness * 0.35
             glow_color = tuple(min(255, int(c * glow_brightness)) for c in LINE_GOLD)
             draw.text((gx_pos - 3, gy_pos - 4), ch_glow, fill=glow_color, font=font_braille)
-        
-        # Outer glow rows
+
         for offset in [-14, 14]:
             gx_pos = cx + nx * offset
             gy_pos = cy + ny * offset
@@ -291,14 +289,12 @@ for start, end in zip(arm_starts, arm_positions):
             glow_brightness = brightness * 0.15
             glow_color = tuple(min(255, int(c * glow_brightness)) for c in LINE_GOLD)
             draw.text((gx_pos - 3, gy_pos - 4), ch_glow, fill=glow_color, font=font_braille)
-        
+
         t += step
         idx += 1
 
-# --- Endpoint nodes as braille clusters ---
-# Each node is a filled circle of braille characters
+# Endpoint nodes as braille clusters
 for epx, epy in arm_positions:
-    # Glow: larger radius, dimmer braille
     for angle in range(0, 360, 15):
         for r in [12, 18, 24, 30]:
             rad = math.radians(angle)
@@ -308,8 +304,7 @@ for epx, epy in arm_positions:
             color = tuple(min(255, int(c * brightness)) for c in NODE_GOLD)
             ch = random.choice(CLUSTER_BRAILLE)
             draw.text((bx, by), ch, fill=color, font=font_braille_md)
-    
-    # Core: tight cluster of bright braille
+
     for angle in range(0, 360, 30):
         for r in [3, 6, 9]:
             rad = math.radians(angle)
@@ -319,13 +314,12 @@ for epx, epy in arm_positions:
             color = tuple(min(255, int(c * brightness)) for c in NODE_GOLD)
             ch = random.choice(CLUSTER_BRAILLE)
             draw.text((bx, by), ch, fill=color, font=font_braille_md)
-    
-    # Center: single bright braille char
+
     draw.text((epx - 5, epy - 6), "⣿", fill=NODE_BRIGHT, font=font_braille_lg)
 
 
 # ============================================================
-# LAYER 4: Text
+# LAYER 4: Text — SPRACHSPIEL with gold/cyan split
 # ============================================================
 def draw_text_bg(draw, pos, text, fill, font, padding=5):
     x, y = pos
@@ -335,26 +329,44 @@ def draw_text_bg(draw, pos, text, fill, font, padding=5):
     draw.text((x, y), text, fill=fill, font=font)
 
 title_x = brain_cx + int(GRID_COLS * px_w / 2) + 80
-title_y = brain_cy - 50
+title_y = brain_cy - 55
 
-title_text = "ask-ai"
+# Glow effect for title
+title_text_sprach = "SPRACH"
+title_text_spiel = "SPIEL"
+title_text_full = "SPRACHSPIEL"
+
 for g in range(6, 0, -1):
-    gc = tuple(min(255, c // (g + 1) + d) for c, d in zip(TEXT_GOLD, [15, 10, 4]))
-    draw.text((title_x, title_y), title_text, fill=gc, font=font_title)
-draw.text((title_x, title_y), title_text, fill=TEXT_GOLD, font=font_title)
+    # Gold glow for SPRACH
+    gc = tuple(min(255, c // (g + 1) + d) for c, d in zip(TEXT_GOLD_BRIGHT, [15, 10, 4]))
+    draw.text((title_x, title_y), title_text_sprach, fill=gc, font=font_title_gold)
+    # Cyan glow for SPIEL
+    sprach_bbox = draw.textbbox((title_x, title_y), title_text_sprach, font=font_title_gold)
+    spiel_x = sprach_bbox[2]
+    cc = tuple(min(255, c // (g + 2) + d) for c, d in zip(AURA_CYAN, [4, 8, 10]))
+    draw.text((spiel_x, title_y), title_text_spiel, fill=cc, font=font_title_cyan)
 
-sub_text = "Cognitive interaction harness for LLMs"
-draw_text_bg(draw, (title_x, title_y + 56), sub_text, TEXT_WHITE, font_sub)
+# Main title text
+draw.text((title_x, title_y), title_text_sprach, fill=TEXT_GOLD_BRIGHT, font=font_title_gold)
+sprach_bbox = draw.textbbox((title_x, title_y), title_text_sprach, font=font_title_gold)
+spiel_x = sprach_bbox[2]
+draw.text((spiel_x, title_y), title_text_spiel, fill=AURA_CYAN, font=font_title_cyan)
 
-tag_text = "memory | tools | personality | RAG | translation | OCR"
-draw_text_bg(draw, (title_x, title_y + 78), tag_text, (100, 110, 130), font_tiny)
+# Subtitle
+sub_text = "A language game with LLMs"
+draw_text_bg(draw, (title_x, title_y + 52), sub_text, TEXT_WHITE, font_sub)
 
-tag_v = "github.com/luksamuk/ask-ai-rs"
-draw.text((W - 310, H - 20), tag_v, fill=(45, 50, 65), font=font_tiny)
+# Tags
+tag_text = "memory │ tools │ personality │ RAG │ translation │ OCR"
+draw_text_bg(draw, (title_x, title_y + 74), tag_text, (100, 110, 130), font_tiny)
+
+# Footer — leave empty for now (GitHub URL swap comes later)
+# tag_v = "github.com/luksamuk/sprachspiel"
+# draw.text((W - 310, H - 20), tag_v, fill=(45, 50, 65), font=font_tiny)
 
 
 # === SAVE ===
-output_path = "/home/alchemist/ask-ai-banner.png"
-img.save(output_path, "PNG")
-print(f"Banner v3 saved to {output_path}")
+output_path = ASSETS_DIR / "sprachspiel-banner.png"
+img.save(str(output_path), "PNG")
+print(f"Sprachspiel banner saved to {output_path}")
 print(f"Size: {img.size}, Arms: {len(arm_positions)}, Starts: {len(arm_starts)}")

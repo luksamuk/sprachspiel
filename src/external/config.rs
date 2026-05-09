@@ -97,8 +97,8 @@ impl Default for ExternalSection {
 /// Load external tools configuration from tools.toml.
 ///
 /// Checks for the config file in:
-/// 1. $XDG_CONFIG_HOME/ask-ai/tools.toml
-/// 2. ~/.config/ask-ai/tools.toml
+/// 1. $XDG_CONFIG_HOME/sprachspiel/tools.toml
+/// 2. ~/.config/sprachspiel/tools.toml
 ///
 /// Returns default configuration if file doesn't exist.
 pub fn load_tools_config() -> ExternalToolsConfig {
@@ -113,8 +113,8 @@ pub fn load_tools_config() -> ExternalToolsConfig {
 /// Load file tools configuration from tools.toml.
 ///
 /// Checks for the config file in:
-/// 1. $XDG_CONFIG_HOME/ask-ai/tools.toml
-/// 2. ~/.config/ask-ai/tools.toml
+/// 1. $XDG_CONFIG_HOME/sprachspiel/tools.toml
+/// 2. ~/.config/sprachspiel/tools.toml
 ///
 /// Returns default configuration if file doesn't exist or section is missing.
 pub fn load_file_tools_config() -> FileToolsConfig {
@@ -148,17 +148,19 @@ pub fn load_file_tools_config() -> FileToolsConfig {
 
 /// Find the tools.toml configuration file.
 fn find_tools_config() -> Option<PathBuf> {
+    use crate::consts::app;
+
     // Check XDG_CONFIG_HOME first
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        let path = PathBuf::from(xdg_config).join("ask-ai").join("tools.toml");
+        let path = PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR).join("tools.toml");
         if path.exists() {
             return Some(path);
         }
     }
 
-    // Fall back to ~/.config/ask-ai/tools.toml
+    // Fall back to ~/.config/sprachspiel/tools.toml
     if let Some(home_dir) = dirs::home_dir() {
-        let path = home_dir.join(".config").join("ask-ai").join("tools.toml");
+        let path = home_dir.join(".config").join(app::APP_CONFIG_DIR).join("tools.toml");
         if path.exists() {
             return Some(path);
         }
@@ -294,23 +296,25 @@ fn create_default_config() -> ExternalToolsConfig {
 }
 
 /// Get the path to tools.toml (for creating new config).
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn tools_config_path() -> Option<PathBuf> {
+    use crate::consts::app;
+
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        return Some(PathBuf::from(xdg_config).join("ask-ai").join("tools.toml"));
+        return Some(PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR).join("tools.toml"));
     }
 
     if let Some(home_dir) = dirs::home_dir() {
-        return Some(home_dir.join(".config").join("ask-ai").join("tools.toml"));
+        return Some(home_dir.join(".config").join(app::APP_CONFIG_DIR).join("tools.toml"));
     }
 
     None
 }
 
 /// Generate a default tools.toml content.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn generate_default_toml() -> String {
-    r#"# External tools configuration for ask-ai
+    r#"# External tools configuration for sprachspiel
 #
 # This file controls which external CLI tools the LLM can execute via run_command.
 # Only tools explicitly enabled here can be executed.

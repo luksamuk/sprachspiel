@@ -11,7 +11,7 @@
 
 ## Executive Summary
 
-This document defines the implementation plan for a **Factual Memory System** that enables ask-ai to remember user preferences and project facts across sessions.
+This document defines the implementation plan for a **Factual Memory System** that enables sprachspiel to remember user preferences and project facts across sessions.
 
 **Problem:** Users currently need to repeat contextual information (e.g., "my docs are in ~/docs") in every session.
 
@@ -85,7 +85,7 @@ graph TB
 | Categories | **2: `preference`, `fact`** | `context` is redundant (handled by RAG) |
 | Classification | **Heuristic only** | 90%+ accuracy, no LLM tokens |
 | Search | **FTS5 + Semantic (Layer 3.5)** | FTS5 for keywords, embeddings for semantic similarity |
-| Storage | **Same DB (`ask-ai.db`)** | No separate database |
+| Storage | **Same DB (`sprachspiel.db`)** | No separate database |
 | Per-fact limit | **500 chars (hard limit)** | Rejected at DB insert |
 | Total prompt limit | **2200 chars (soft limit)** | Truncated with Unicode-safe `truncate_chars` |
 | Conflict resolution | **6-layer dedup** | Exact → Normalized → Semantic (0.70, triple + polarity) → FTS5 (0.75) → Startup verification (0.90) → Global-wins-project |
@@ -118,7 +118,7 @@ graph TB
 | `project` | Facts specific to current project | `project_id` column in facts table |
 | `global` | Facts that apply to all projects | `project_id = NULL` |
 
-**Note:** Both use the same database (`ask-ai.db`), not separate files.
+**Note:** Both use the same database (`sprachspiel.db`), not separate files.
 
 ---
 
@@ -232,7 +232,7 @@ CREATE INDEX IF NOT EXISTS idx_facts_access ON facts(last_accessed DESC);
 
 ### 3.2 Storage Location
 
-- **All facts**: Same database as embeddings (`~/.local/share/ask-ai/ask-ai.db`)
+- **All facts**: Same database as embeddings (`~/.local/share/sprachspiel/sprachspiel.db`)
 - **Project facts**: Filtered by `project_id` column
 - **Global facts**: `project_id = NULL`
 
@@ -647,7 +647,7 @@ This is why the system uses a **two-step approach**: semantic search retrieves c
 4. **Nomic Embed task_type** ([docs.nomic.ai](https://docs.nomic.ai/atlas/embeddings-and-retrieval/generate-embeddings))
    - 4 task types: `search_query`, `search_document`, `classification`, `clustering`
    - For semantic similarity (not QA retrieval): encode BOTH with `search_document`
-   - ask-ai does this correctly — `search_document: ` prefix on all embeddings
+   - sprachspiel does this correctly — `search_document: ` prefix on all embeddings
 
 5. **Tosun & Buldur (2026)** — "Beyond Cosine Similarity: Taming Semantic Drift and Antonym Intrusion in a 15-Million Node Turkish Synonym Graph" ([arXiv:2601.13251v1](https://arxiv.org/html/2601.13251v1))
    - Neural embeddings systematically place antonyms as near-neighbors due to shared context
@@ -1057,7 +1057,7 @@ if let Some(facts) = &self.facts {
 #### Letta/MemGPT
 - LLM-based `core_memory_replace` for memory updates
 - No local contradiction detection — every memory op requires LLM API call
-- Not applicable to ask-ai's offline/local-first design
+- Not applicable to sprachspiel's offline/local-first design
 
 #### synapse-ai-memory (PyPI)
 - Triple extraction: SPO + polarity + tense
@@ -1105,7 +1105,7 @@ if let Some(facts) = &self.facts {
 #### Nomic Embed task_type — Best Practice for Encoding
 - **Source:** [Nomic Atlas docs](https://docs.nomic.ai/atlas/embeddings-and-retrieval/generate-embeddings)
 - **4 task types:** `search_query`, `search_document`, `classification`, `clustering`
-- **For semantic similarity (not QA retrieval):** encode BOTH documents with `search_document` — ask-ai does this correctly via the `search_document: ` prefix on all embeddings
+- **For semantic similarity (not QA retrieval):** encode BOTH documents with `search_document` — sprachspiel does this correctly via the `search_document: ` prefix on all embeddings
 
 ### ML Models Evaluated and Rejected
 

@@ -52,7 +52,7 @@ This document contains optimized parameters for tool-calling (function calling) 
 ### 2. **~~GPT-OSS 20B~~** (REMOVED)
 **Status**: ❌ Removed in v0.14.0 due to tool calling issues
 
-GPT-OSS was removed from ask-ai because it outputs special tokens (`<|call|>`, `<|channel|>`, `<|message|>`) after JSON tool calls, breaking the parser. This is a model-level issue that cannot be fixed at the application level.
+GPT-OSS was removed from sprach because it outputs special tokens (`<|call|>`, `<|channel|>`, `<|message|>`) after JSON tool calls, breaking the parser. This is a model-level issue that cannot be fixed at the application level.
 
 **Alternatives**:
 - `qwen3-coder` - Excellent tool support
@@ -255,7 +255,7 @@ When calling tools, output valid JSON only. Example:
 ### Phase 1: Completed (v0.14.0)
 1. ~~Lower GPT-OSS temperature~~ - Model removed due to tool calling issues
 2. Lower Qwen3 Coder temp from 0.7 → 0.3 ✅
-3. Custom models support via `~/.config/ask-ai/models.toml` ✅
+3. Custom models support via `~/.config/sprachspiel/models.toml` ✅
 
 ### Phase 2: Fine-Tuning (Medium Priority)
 1. Add per-model `tool_optimized` boolean flag

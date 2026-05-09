@@ -1,30 +1,30 @@
-.TH ASK-AI 1 "2026-04-28" "ask-ai 0.40.0" "User Commands"
+.TH SPRACH 1 "2026-05-07" "sprachspiel 0.43.0" "User Commands"
 .SH NAME
-ask-ai \- A powerful CLI for interacting with Ollama LLM models
+sprach \- A powerful CLI for interacting with LLM models via Ollama and compatible backends
 .SH SYNOPSIS
-.B ask-ai
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " [ QUERY ]
 .br
-.B ask-ai
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " query " [ QUERY ]
 .br
-.B ask-ai
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " chat " [ CHAT_OPTIONS ]
 .br
-.B ask-ai
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " translate " LANGUAGE [ TEXT ]
 .br
-.B ask-ai
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " ocr " FILE ...
 .br
-.B ask-ai
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " vision " FILE ...
 .br
-.B ask-ai
+.B sprach
 .RI [ GLOBAL_OPTIONS ] " summarize " [ TEXT ]
 .SH DESCRIPTION
-.B ask-ai
-is a Rust CLI tool for interacting with local Ollama LLM models, featuring markdown rendering, tool-assisted queries, translation, OCR, vision, and text summarization.
+.B sprach
+is a Rust CLI tool for interacting with local and cloud LLM models (via Ollama and compatible backends), featuring markdown rendering, tool-assisted queries, translation, OCR, vision, and text summarization.
 .PP
 When invoked without a subcommand, it defaults to query mode. The application reads from stdin if no QUERY or TEXT is provided, making it suitable for piping.
 .PP
@@ -94,7 +94,7 @@ Skip SOUL.md personality (use neutral personality).
 Initialize/create sample configuration file.
 .TP
 .BR \-\-db " " \fIPATH\fR
-Custom database path (overrides default ~/.local/share/ask-ai/ask-ai.db).
+Custom database path (overrides default ~/.local/share/sprachspiel/sprachspiel.db).
 .TP
 .BR \-h ", " \-\-help
 Show help message and exit.
@@ -264,17 +264,17 @@ Visual indicators show tool activity in DIM gray (hidden in quiet mode):
 Skills are loaded proactively — the LLM calls skill_view() when it detects
 a task matching a skill's description (PDF processing, OCR, code analysis, etc.).
 .br
-Session storage: ~/.local/share/ask-ai/conversations/<project-id>/default.json
+Session storage: ~/.local/share/sprachspiel/conversations/<project-id>/default.json
 .br
 Project ID is derived from git remote URL or folder name.
 .SH LOGGING
 Logs are written to both stderr and a log file:
 .TP
-.I ~/.local/share/ask-ai/ask-ai.log
+.I ~/.local/share/sprachspiel/sprachspiel.log
 Default log file (always warn level and above).
 .PP
 Log rotation: when the file exceeds 5 MB, it is renamed to
-.IR ask-ai.log.1
+.IR sprachspiel.log.1
 and a new file is created.
 .PP
 PII audit: sensitive data (API keys, tokens, personal identifiers) is automatically truncated in log output.
@@ -361,13 +361,13 @@ glm-ocr|glm-ocr:bf16|Auto|OCR/image extraction
 moondream|moondream:1.8b|8K|Vision/image analysis
 .TE
 .PP
-Run 'ask-ai --list' to see all available models including user-defined ones.
+Run 'sprach --list' to see all available models including user-defined ones.
 .SH EXAMPLES
 Basic query:
 .PP
 .nf
 .RS
-ask-ai "What is Rust?"
+sprach "What is Rust?"
 .RE
 .fi
 .PP
@@ -375,7 +375,7 @@ Use specific model:
 .PP
 .nf
 .RS
-ask-ai -m qwen3 query "Explain quantum computing"
+sprach -m qwen3 query "Explain quantum computing"
 .RE
 .fi
 .PP
@@ -383,7 +383,7 @@ Enable think mode:
 .PP
 .nf
 .RS
-ask-ai -t query "Solve this step by step"
+sprach -t query "Solve this step by step"
 .RE
 .fi
 .PP
@@ -391,8 +391,8 @@ Code mode (for programming):
 .PP
 .nf
 .RS
-ask-ai -c query "Write a Rust function"
-ask-ai -c -m qwen3-coder query "Implement a thread pool"
+sprach -c query "Write a Rust function"
+sprach -c -m qwen3-coder query "Implement a thread pool"
 .RE
 .fi
 .PP
@@ -400,8 +400,8 @@ Translate text:
 .PP
 .nf
 .RS
-ask-ai translate en:pt "Hello world"
-ask-ai translate :pt "Auto-detect source"
+sprach translate en:pt "Hello world"
+sprach translate :pt "Auto-detect source"
 .RE
 .fi
 .PP
@@ -409,8 +409,8 @@ Extract text from image (OCR):
 .PP
 .nf
 .RS
-ask-ai ocr document.png
-ask-ai ocr --mode table spreadsheet.png
+sprach ocr document.png
+sprach ocr --mode table spreadsheet.png
 .RE
 .fi
 .PP
@@ -418,9 +418,9 @@ Analyze image (Vision):
 .PP
 .nf
 .RS
-ask-ai vision photo.jpg
-ask-ai vision --detailed landscape.png
-ask-ai vision -m llava image1.png image2.png
+sprach vision photo.jpg
+sprach vision --detailed landscape.png
+sprach vision -m llava image1.png image2.png
 .RE
 .fi
 .PP
@@ -428,9 +428,9 @@ Summarize text:
 .PP
 .nf
 .RS
-ask-ai summarize "Long text here..."
-ask-ai summarize --style technical "Long text"
-echo "Long text" | ask-ai summarize --style technical
+sprach summarize "Long text here..."
+sprach summarize --style technical "Long text"
+echo "Long text" | sprach summarize --style technical
 .RE
 .fi
 .PP
@@ -438,9 +438,9 @@ Debug mode (verbose logging):
 .PP
 .nf
 .RS
-ask-ai -v query "Test query"
-ask-ai -v -m llama3.1 query "Verbose with specific model"
-ask-ai -vv query "Trace level logging"
+sprach -v query "Test query"
+sprach -v -m llama3.1 query "Verbose with specific model"
+sprach -vv query "Trace level logging"
 .RE
 .fi
 .PP
@@ -448,8 +448,8 @@ Pipe from stdin:
 .PP
 .nf
 .RS
-cat file.txt | ask-ai summarize
-cat article.pdf | pdftotext - - | ask-ai summarize
+cat file.txt | sprach summarize
+cat article.pdf | pdftotext - - | sprach summarize
 .RE
 .fi
 .PP
@@ -458,11 +458,11 @@ Use project context from AGENTS.md:
 .nf
 .RS
 # With AGENTS.md in current directory
-ask-ai "Explain the project structure"
-ask-ai "How do I run the tests?"
+sprach "Explain the project structure"
+sprach "How do I run the tests?"
 
 # Ignore AGENTS.md for general queries
-ask-ai --ignore-agents "What is machine learning?"
+sprach --ignore-agents "What is machine learning?"
 .RE
 .fi
 .PP
@@ -470,9 +470,9 @@ Chain commands:
 .PP
 .nf
 .RS
-ask-ai ocr document.png | ask-ai summarize
-ask-ai ocr japanese.png | ask-ai translate ja:pt
-ask-ai vision photo.jpg | ask-ai summarize
+sprach ocr document.png | sprach summarize
+sprach ocr japanese.png | sprach translate ja:pt
+sprach vision photo.jpg | sprach summarize
 .RE
 .fi
 .PP
@@ -480,9 +480,9 @@ Interactive chat:
 .PP
 .nf
 .RS
-ask-ai chat
-ask-ai chat -a  # anonymous mode
-ask-ai chat -m qwen3.5 --tools
+sprach chat
+sprach chat -a  # anonymous mode
+sprach chat -m qwen3.5 --tools
 .RE
 .fi
 .PP
@@ -490,7 +490,7 @@ List available models:
 .PP
 .nf
 .RS
-ask-ai --list
+sprach --list
 .RE
 .fi
 .PP
@@ -498,8 +498,8 @@ Generate shell completions:
 .PP
 .nf
 .RS
-ask-ai completion bash > ~/.local/share/bash-completion/completions/ask-ai
-ask-ai completion zsh > ~/.zfunc/_ask-ai
+sprach completion bash > ~/.local/share/bash-completion/completions/sprach
+sprach completion zsh > ~/.zfunc/_sprach
 .RE
 .fi
 .SH LANGUAGE CODES
@@ -509,7 +509,7 @@ pt, pt-BR (br, brazil), en (english), es (spanish), fr (french), de (german),
 it (italian), ja (japanese), zh-Hans (zh-cn), zh-Hant (zh-tw), he (hebrew),
 ko (korean), ru (russian), ar (arabic), hi (hindi), and 40+ more.
 .PP
-Use \fBask-ai translate --list\fR to see all supported languages.
+Use \fBsprach translate --list\fR to see all supported languages.
 .SH PROMPT MODES
 .TP
 .B default
@@ -532,19 +532,19 @@ Sarcastic personality (activated for pepe model).
 .SH ENVIRONMENT
 .TP
 .B OLLAMA_HOST
-Override the default Ollama server host (default: localhost:11434).
+Override the default LLM server host (default: localhost:11434).
 .SH FILES
 .TP
-.I ~/.config/ask-ai/config.toml
+.I ~/.config/sprachspiel/config.toml
 User configuration file (model presets, tool settings, output preferences).
 Supports per-subcommand configuration: [model.query], [model.chat], [model.summarize], [model.code], [model.vision].
 Each subcommand can override model, thinking, and tools from global [model] settings.
 Thinking mode priority: CLI flags > subcommand config > global config > model default > hardcoded default.
 .TP
-.I ~/.config/ask-ai/models.toml
+.I ~/.config/sprachspiel/models.toml
 User-defined model configurations. Add custom models or override built-in parameters.
 .TP
-.I ~/.config/ask-ai/SOUL.md
+.I ~/.config/sprachspiel/SOUL.md
 User-defined agent personality. Defines identity, behavior, and limits. Falls back to PERSONALITY_DEFAULT when missing. Use --soulless to skip.
 .TP
 .I ./AGENTS.md
@@ -567,12 +567,12 @@ General error.
 Invalid arguments or usage.
 .TP
 .B 3
-Model error or Ollama connection failure.
+Model error or server connection failure.
 .SH SEE ALSO
 .BR ollama (1),
 .BR pdftotext (1)
 .PP
-Full documentation: https://github.com/luksamuk/ask-ai-rs/docs
+Full documentation: https://github.com/luksamuk/sprachspiel/docs
 .SH AUTHOR
 Lucas S. Vieira <lucasvieira@protonmail.com>
 .SH COPYRIGHT

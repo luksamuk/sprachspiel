@@ -103,7 +103,7 @@
   <rect width="900" height="2800" fill="url(#bgGrad)" rx="12"/>
 
   <!-- ===== TITLE ===== -->
-  <text x="450" y="52" text-anchor="middle" fill="#e2e8f0" font-size="28" font-weight="700" letter-spacing="1">Ask-AI Fact Dedup Pipeline</text>
+  <text x="450" y="52" text-anchor="middle" fill="#e2e8f0" font-size="28" font-weight="700" letter-spacing="1">Sprachspiel Fact Dedup Pipeline</text>
   <text x="450" y="78" text-anchor="middle" fill="#94a3b8" font-size="14" font-weight="400">6-Layer Progressive Deduplication · Reject Early · Verify Late</text>
   <line x1="150" y1="96" x2="750" y2="96" stroke="#334155" stroke-width="1"/>
 
@@ -372,6 +372,6 @@
   <text x="450" y="1275" text-anchor="middle" fill="#94a3b8" font-size="9">▼ flow</text>
 
   <!-- Subtle watermark -->
-  <text x="450" y="1870" text-anchor="middle" fill="#1e293b" font-size="11" letter-spacing="2">Ask-AI · Dedup Pipeline v1.0</text>
+  <text x="450" y="1870" text-anchor="middle" fill="#1e293b" font-size="11" letter-spacing="2">Sprachspiel · Dedup Pipeline v1.0</text>
 
 </svg>

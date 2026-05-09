@@ -98,7 +98,7 @@
 
 - **Source:** Roadmap gap analysis; competitive landscape
 - **Current state:** Draft priority B5 (MCP Server) and B8 (ACP Agent Integration) in IMPLEMENTATION.md. B8 subsumes B5's use case via MCP-over-ACP.
-- **Why deferred to M4:** B8 (ACP) exposes ask-ai as a complete agent to editors, which is a more valuable integration than exposing individual memory tools. Implementing B8 first eliminates the need for a standalone MCP server.
+- **Why deferred to M4:** B8 (ACP) exposes sprachspiel as a complete agent to editors, which is a more valuable integration than exposing individual memory tools. Implementing B8 first eliminates the need for a standalone MCP server.
 - **Prerequisite:** P14 TUI (decoupling via ApplicationBackend trait), then B8 (ACP adapter)
 - **Revisit when:** TUI is implemented with ApplicationBackend decoupling; evaluate based on user demand for standalone memory API vs full agent experience
 
@@ -120,7 +120,7 @@
 
 - **Source:** OpenCode ACP support, Zed ACP integration, ACP specification (agentclientprotocol.com)
 - **Current state:** Draft priority B8 in IMPLEMENTATION.md. ACP is the emerging standard for editor↔agent communication (like LSP for language servers).
-- **Why M3/M4:** Requires TUI decoupling (P14 ApplicationBackend trait). ACP exposes ask-ai as a complete agent — sessions, memory, tools — rather than individual MCP tools.
+- **Why M3/M4:** Requires TUI decoupling (P14 ApplicationBackend trait). ACP exposes sprachspiel as a complete agent — sessions, memory, tools — rather than individual MCP tools.
 - **Key insight:** ACP replaces MCP Server (B5) as the primary integration path. MCP-over-ACP provides tool-level access when needed. 30+ ACP agents and 20+ ACP clients (editors) already exist.
 - **Prerequisite:** P14 TUI with ApplicationBackend decoupling (B8.1, B8.2)
 - **Revisit when:** ACP v1.0 SDK (SACP) stabilizes; Zed/JetBrains ACP support matures
@@ -172,7 +172,7 @@
 
 - **Source:** Meta-cognition brainstorm (~/meta-cognition-brainstorm.md §4.4)
 - **Current state:** Not on board — too speculative even for a draft
-- **Why deferred:** Requires SOUL.md multi-personality support (multiple configurable personas evaluating each other). Currently ask-ai has a single personality.
+- **Why deferred:** Requires SOUL.md multi-personality support (multiple configurable personas evaluating each other). Currently sprachspiel has a single personality.
 - **Prerequisite:** Extended Personalities System (#49) implemented; Layer 3 (#101) producing reflections that can be compared across personalities
 - **Revisit when:** Multi-personality is mature enough that multiple evaluations of the same response are feasible
 
@@ -205,7 +205,7 @@
 
 - **Language:** Rust
 - **Approach:** Embedded graph database with vector search and temporal queries
-- **Relevance:** CRITICAL — almost identical architecture to ask-ai (SQLite + sqlite-vec + temporal queries)
+- **Relevance:** CRITICAL — almost identical architecture to sprachspiel (SQLite + sqlite-vec + temporal queries)
 - **Key difference:** AGPL-3.0 license; requires ML runtime for embeddings
 - **Key feature:** Built-in `scan_conflicts()` and `resolve_conflict()` — similar to our `conflict.rs` but graph-based
 - **Lesson:** Our approach (heuristic triples + FTS5 + semantic) avoids the AGPL problem and runs without additional ML runtime, but YantrikDB's graph traversal could inform future S2.2 (Content Relations) design
@@ -218,7 +218,7 @@
 - **Language:** Python (research paper, March 2026)
 - **Approach:** Formal AGM belief revision postulates (K*2-K*6) on property graphs
 - **Key pattern adopted:** Immutable revisions + mutable tag pointers
-- **Influence on ask-ai:** B2.4 (Belief versioning) will use `invalidated_at` timestamp instead of delete, inspired by Kumiho's immutable revision pattern
+- **Influence on sprachspiel:** B2.4 (Belief versioning) will use `invalidated_at` timestamp instead of delete, inspired by Kumiho's immutable revision pattern
 - **Reference:** arXiv:2603.10165
 
 ---
@@ -267,7 +267,7 @@
 
 - **Institution:** UC Berkeley AI Research
 - **Key finding:** LLMs have predictable attention patterns — beginning and end of context get more attention than middle
-- **Relevance to ask-ai:** Validates our "Lost in the Middle" mitigation strategy (middle compaction preserves first N + last N)
+- **Relevance to sprachspiel:** Validates our "Lost in the Middle" mitigation strategy (middle compaction preserves first N + last N)
 - **Revisit for:** R-04 (attention-based prompt optimization) — if we can measure attention distributions
 
 ---
@@ -276,7 +276,7 @@
 
 - **Institution:** Stanford NLP
 - **Key finding:** Learned compression outperforms static windowing in maintaining key facts
-- **Relevance to ask-ai:** Our structured summary template (Goal/Instructions/Progress/Discoveries/Files) is a manual version of learned compression
+- **Relevance to sprachspiel:** Our structured summary template (Goal/Instructions/Progress/Discoveries/Files) is a manual version of learned compression
 - **Revisit for:** R-01 (multi-stage pipeline) — if our compaction quality degrades
 
 ---
@@ -285,7 +285,7 @@
 
 - **Institution:** DeepMind/Stanford (ICLR 2026)
 - **Key finding:** Pre-executing likely next actions reduces latency by ~40%
-- **Relevance to ask-ai:** Pattern detection could pre-compact when approaching threshold, pre-embed after messages
+- **Relevance to sprachspiel:** Pattern detection could pre-compact when approaching threshold, pre-embed after messages
 - **Revisit for:** R-03 (speculative execution) — requires usage data
 
 ---
@@ -293,7 +293,7 @@
 ### C-10: FadeMem (arXiv:2601.18642)
 
 - **Key finding:** Dual-layer Ebbinghaus decay with different half-lives for different memory categories
-- **Relevance to ask-ai:** Confirms our design (messages 90d, notes 60d, documents 120d, facts 30d/180d). Our feedback-driven variant goes beyond FadeMem.
+- **Relevance to sprachspiel:** Confirms our design (messages 90d, notes 60d, documents 120d, facts 30d/180d). Our feedback-driven variant goes beyond FadeMem.
 - **Use in:** B1.2 (custom feedback-decay benchmark) — FadeMem comparison as baseline
 
 ---
@@ -303,7 +303,7 @@
 - **Institution:** OpenAI (Apache 2.0)
 - **Key specs:** 1.4B params (50M active, Sparse MoE), bidirectional encoder, 8 PII categories, ~0.4s on CPU, 2.7GB
 - **Key finding:** Token classification (not text generation) — cannot run on llama-swap. Must run as separate pipeline (sidecar or native).
-- **Relevance to ask-ai:** Board draft "Privacy Filter Integration [M3]" — fact redaction, log sanitization, tool output scrubbing. ONNX rejected per project philosophy.
+- **Relevance to sprachspiel:** Board draft "Privacy Filter Integration [M3]" — fact redaction, log sanitization, tool output scrubbing. ONNX rejected per project philosophy.
 - **PT-BR testing:** Good detection for person/address/email/phone, minor boundary issues, no dedicated CPF/RG label (falls under account_number). Fine-tuning possible.
 - **Reference:** https://huggingface.co/openai/privacy-filter, https://github.com/openai/privacy-filter
 
@@ -313,7 +313,7 @@
 
 - **Institution:** arXiv:2603.06976
 - **Key finding:** Paragraph Group Chunking reaches nDCG@5 of 0.459 vs <0.244 for fixed-size chunking. Evaluated 36 methods across 6 domains with 5 embedding models.
-- **Relevance to ask-ai:** Board draft "Context-Aware Chunking [M4]" — validates semantic chunking over fixed-size
+- **Relevance to sprachspiel:** Board draft "Context-Aware Chunking [M4]" — validates semantic chunking over fixed-size
 - **Reference:** arXiv:2603.06976
 
 ---
@@ -322,7 +322,7 @@
 
 - **Institution:** arXiv:2404.10198
 - **Key finding:** LLMs overwrite correct internal knowledge with incorrect retrieved evidence in >60% of cases. Without metadata authority distinctions, models treat all chunks equally.
-- **Relevance to ask-ai:** Board draft "Metadata Enrichment [M4]" — authority and recency metadata enables RRF boosting, preventing stale/wrong information from drowning current/correct information
+- **Relevance to sprachspiel:** Board draft "Metadata Enrichment [M4]" — authority and recency metadata enables RRF boosting, preventing stale/wrong information from drowning current/correct information
 - **Reference:** arXiv:2404.10198
 
 ---
@@ -331,7 +331,7 @@
 
 - **Institutions:** arXiv:2212.10496, arXiv:2312.06648
 - **Key findings:** HyDE moves query embeddings closer to relevant documents by generating hypothetical answers. Propositions (Q&A pairs) as retrieval granularity surpass passage-level.
-- **Relevance to ask-ai:** Board draft "Q&A Pairing / HyDE-like Embedding [M4]" — embedding questions instead of raw text at ingestion time
+- **Relevance to sprachspiel:** Board draft "Q&A Pairing / HyDE-like Embedding [M4]" — embedding questions instead of raw text at ingestion time
 - **References:** arXiv:2212.10496, arXiv:2312.06648
 
 ---
@@ -342,7 +342,7 @@
 
 - **Decision:** Explicitly rejected (2026-04-28)
 - **Reasons:**
-  1. Circular dependency risk (ask-ai depends on majestic-lisp which might depend on ask-ai)
+  1. Circular dependency risk (sprachspiel depends on majestic-lisp which might depend on sprachspiel)
   2. Performance overhead for what's currently <1ms pattern matching
   3. Scope creep — adding a full language runtime for 15% edge case coverage
 - **Alternative path:** R-06 (Crepe/Datalog) is the natural evolution if rules become complex

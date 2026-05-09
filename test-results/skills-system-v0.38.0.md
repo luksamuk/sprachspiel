@@ -1,7 +1,7 @@
 # Test Results - Skills System v0.38.0
 
 **Date:** 2026-03-27  
-**Build:** ask-ai 0.38.0 ✅  
+**Build:** sprach 0.38.0 ✅  
 **Personality:** GEMA.md (via SOUL.md symlink) ✅
 
 ## Summary

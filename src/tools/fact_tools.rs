@@ -209,7 +209,7 @@ pub async fn fact_add(
                 let err = "Error: Project scope requires being in a project directory.\n\n\
                             Either:\n\
                             1. Use scope='global' for user-level facts\n\
-                            2. Run ask-ai from a project directory (git repo or named folder)";
+                             2. Run sprach from a project directory (git repo or named folder)";
                 log_tool_result("fact_add", err);
                 return Ok(err.to_string());
             }

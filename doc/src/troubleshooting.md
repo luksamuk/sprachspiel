@@ -4,7 +4,7 @@ Common issues and their solutions.
 
 ## Installation Issues
 
-### "command not found: ask-ai"
+### "command not found: sprach"
 
 **Problem:** Binary not in PATH
 
@@ -12,10 +12,10 @@ Common issues and their solutions.
 
 ```bash
 # Check installation
-which ask-ai
+which sprach
 
 # If not found, check location
-ls /usr/local/bin/ask-ai
+ls /usr/local/bin/sprach
 
 # Add to PATH
 export PATH="/usr/local/bin:$PATH"
@@ -38,7 +38,7 @@ source $HOME/.cargo/env
 
 ## Ollama Connection Issues
 
-### "Failed to connect to Ollama"
+### "Failed to connect to LLM server"
 
 **Problem:** Ollama not running
 
@@ -78,10 +78,10 @@ ollama pull glm-ocr:bf16      # OCR
 
 ```bash
 # Use think-capable model
-ask-ai -m lfm -t "Question"
+sprach -m lfm -t "Question"
 
 # Check capabilities
-ask-ai -d "Test query"
+sprach -d "Test query"
 ```
 
 ### "Tools not working"
@@ -92,13 +92,13 @@ ask-ai -d "Test query"
 
 ```bash
 # Use tool-capable model
-ask-ai -m qwen3.5:4b "Tell me about Pikachu"
+sprach -m qwen3.5:4b "Tell me about Pikachu"
 
 # Force enable tools
-ask-ai --tools "Tell me about Pikachu"
+sprach --tools "Tell me about Pikachu"
 
 # Check debug output
-ask-ai -d "Query"
+sprach -d "Query"
 ```
 
 **Problem:** `invalid character '\u003c'` error
@@ -107,8 +107,8 @@ ask-ai -d "Query"
 
 ```bash
 # Use alternative model
-ask-ai -m qwen3.5:4b "Query"
-ask-ai -m pepe "Query"
+sprach -m qwen3.5:4b "Query"
+sprach -m pepe "Query"
 ```
 
 ## Web Search Issues
@@ -123,10 +123,10 @@ ask-ai -m pepe "Query"
 
 ```bash
 # Use query without web search
-ask-ai "Question using model knowledge only"
+sprach "Question using model knowledge only"
 
 # Try code_with_tools for web research
-ask-ai -p code_with_tools "Latest Rust patterns"
+sprach -p code_with_tools "Latest Rust patterns"
 ```
 
 ## Translation Issues
@@ -139,10 +139,10 @@ ask-ai -p code_with_tools "Latest Rust patterns"
 
 ```bash
 # List available languages
-ask-ai translate --list
+sprach translate --list
 
 # Check specific language
-ask-ai translate --list pt
+sprach translate --list pt
 ```
 
 ### "Translation failed"
@@ -153,10 +153,10 @@ ask-ai translate --list pt
 
 ```bash
 # Try with specific model
-ask-ai translate --model nanbeige4.1:3b en:pt "Text"
+sprach translate --model nanbeige4.1:3b en:pt "Text"
 
 # Debug mode
-ask-ai translate -d en:pt "Text"
+sprach translate -d en:pt "Text"
 ```
 
 ## OCR Issues
@@ -172,7 +172,7 @@ ask-ai translate -d en:pt "Text"
 ls -la image.png
 
 # Check supported formats
-ask-ai ocr --help
+sprach ocr --help
 ```
 
 ### "OCR failed"
@@ -199,10 +199,10 @@ ollama pull glm-ocr:bf16
 
 ```bash
 # Use smaller model
-ask-ai -m smollm3 "Question"
+sprach -m smollm3 "Question"
 
 # Reduce context
-ask-ai summarize --max-length 100 "Text"
+sprach summarize --max-length 100 "Text"
 ```
 
 ### "Out of memory"
@@ -213,8 +213,8 @@ ask-ai summarize --max-length 100 "Text"
 
 ```bash
 # Use smaller model
-ask-ai -m qwen3.5:4b "Question"  # 4B model (default)
-ask-ai -m nanbeige4.1:3b "Question"   # 3B model
+sprach -m qwen3.5:4b "Question"  # 4B model (default)
+sprach -m nanbeige4.1:3b "Question"   # 3B model
 ```
 
 ## Context Issues
@@ -276,17 +276,17 @@ Use debug mode to diagnose issues:
 
 ```bash
 # Enable debug
-ask-ai -d "Query"
-ask-ai translate -d en:pt "Text"
-ask-ai ocr -d image.png
-ask-ai summarize -d "Text"
+sprach -d "Query"
+sprach translate -d en:pt "Text"
+sprach ocr -d image.png
+sprach summarize -d "Text"
 ```
 
 ## Getting Help
 
 ### GitHub Issues
 
-Report bugs at: https://github.com/luksamuk/ask-ai-rs/issues
+Report bugs at: https://github.com/luksamuk/sprachspiel/issues
 
 ### Debug Information
 
@@ -294,13 +294,13 @@ When reporting issues, include:
 
 ```bash
 # Version
-ask-ai --version
+sprach --version
 
 # List command
-ask-ai --list
+sprach --list
 
 # Debug output
-ask-ai -v "Test query" 2> debug.log
+sprach -v "Test query" 2> debug.log
 cat debug.log
 ```
 

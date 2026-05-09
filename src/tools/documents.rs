@@ -204,8 +204,8 @@ pub async fn import_document(
     let db = match get_db() {
         Some(d) => d,
         None => {
-            let err = "Error: Database not available. Documents require a database connection.\n\
-                       Start ask-ai without --anonymous to use documents."
+             let err = "Error: Database not available. Documents require a database connection.\n\
+                        Start sprach without --anonymous to use documents."
                 .to_string();
             log_tool_result("import_document", &err);
             return Ok(err);

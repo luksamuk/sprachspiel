@@ -1,9 +1,9 @@
 # Available Models
 
-Ask-AI uses a two-tier model system:
+Sprachspiel uses a two-tier model system:
 
 1. **Built-in models** - Essential models for core functionality
-2. **Recommended models** - Additional models configured via `~/.config/ask-ai/models.toml`
+2. **Recommended models** - Additional models configured via `~/.config/sprachspiel/models.toml`
 
 ## Built-in Models
 
@@ -37,7 +37,7 @@ For users who want better quality, the same model family offers larger variants:
 - **qwen3.5:9b** — Good balance between quality and speed. Worth it if you have the RAM.
 - **qwen3.5:27b** — Overkill. Only for users who need maximum reasoning capability and have lots of RAM.
 
-To use these models, configure them in `~/.config/ask-ai/config.toml`:
+To use these models, configure them in `~/.config/sprachspiel/config.toml`:
 
 ```toml
 [model]
@@ -50,7 +50,7 @@ model = "qwen3.5:9b"
 model = "qwen3.5:9b"  # Or "qwen3.5:27b" for complex tasks
 ```
 
-And define the model in `~/.config/ask-ai/models.toml`:
+And define the model in `~/.config/sprachspiel/models.toml`:
 
 ```toml
 [models."qwen3.5:9b"]
@@ -87,7 +87,7 @@ ollama pull moondream:1.8b   # Alternative vision model
 
 ## Recommended Models
 
-These optional models can be configured in `~/.config/ask-ai/models.toml`:
+These optional models can be configured in `~/.config/sprachspiel/models.toml`:
 
 ### General Purpose
 
@@ -130,7 +130,7 @@ High-capability models with large context windows:
 
 ### Vision Models
 
-These models are used by the `ask vision` command for image analysis:
+These models are used by the `sprach vision` command for image analysis:
 
 | Model ID | Size | Context | Multi-Image | Best For |
 |----------|------|---------|-------------|----------|
@@ -150,7 +150,7 @@ ollama pull ministral-3:14b      # Optional, multi-image support
 
 ## Sample Configuration
 
-Create `~/.config/ask-ai/models.toml`:
+Create `~/.config/sprachspiel/models.toml`:
 
 ```toml
 # General purpose models
@@ -208,7 +208,7 @@ thinking = true
 
 ## Per-Command Model Configuration
 
-Configure different models for different tasks in `~/.config/ask-ai/config.toml`:
+Configure different models for different tasks in `~/.config/sprachspiel/config.toml`:
 
 ```toml
 [model]
@@ -303,39 +303,39 @@ Models tested for function calling (tool use) capability. Rankings based on benc
 
 ### For General Queries
 ```bash
-ask-ai "Your question"           # Default model (qwen3.5:4b)
-ask-ai -m "qwen3.5:9b" "question" # Better quality (recommended)
-ask-ai -m ministral "question"   # Fast, capable
-ask-ai -m qwen3 -t "reasoning"   # With thinking
+sprach "Your question"           # Default model (qwen3.5:4b)
+sprach -m "qwen3.5:9b" "question" # Better quality (recommended)
+sprach -m ministral "question"   # Fast, capable
+sprach -m qwen3 -t "reasoning"   # With thinking
 ```
 
 ### For Code
 ```bash
-ask-ai -m "qwen3.5:9b" "Write a Rust function"  # Good for code
-ask-ai -m "qwen3.5:27b" "Complex refactoring"   # Overkill for simple tasks
-ask-ai -m qwen3-coder "Write a Rust function"   # Code specialist
+sprach -m "qwen3.5:9b" "Write a Rust function"  # Good for code
+sprach -m "qwen3.5:27b" "Complex refactoring"   # Overkill for simple tasks
+sprach -m qwen3-coder "Write a Rust function"   # Code specialist
 ```
 
 ### For Vision
 ```bash
-ask vision photo.png                        # Default (qwen3.5:4b)
-ask vision -m "qwen3.5:9b" photo.png        # Better quality
-ask vision -m moondream photo.png           # Lightweight alternative
-ask vision -m llava:13b photo.png --detailed  # Better quality
+sprach vision photo.png                        # Default (qwen3.5:4b)
+sprach vision -m "qwen3.5:9b" photo.png        # Better quality
+sprach vision -m moondream photo.png           # Lightweight alternative
+sprach vision -m llava:13b photo.png --detailed  # Better quality
 ```
 
 ### For Cloud Models
 ```bash
-ask-ai -m glm-5 "Complex analysis"
-ask-ai -m kimi-k2.5 "Multimodal task"
-ask-ai -m minimax-m2.5 "Coding task"
+sprach -m glm-5 "Complex analysis"
+sprach -m kimi-k2.5 "Multimodal task"
+sprach -m minimax-m2.5 "Coding task"
 ```
 
 ### For Tool Calling (Function Calling)
 ```bash
-ask-ai -m nemotron "List files in current directory"  # Most efficient FC
-ask-ai -m gemma4-e2b "Search for TODO comments"       # Native FC (Google)
-ask-ai -m ministral-3 "Analyze this data file"       # Fast FC (needs temp=0.3)
+sprach -m nemotron "List files in current directory"  # Most efficient FC
+sprach -m gemma4-e2b "Search for TODO comments"       # Native FC (Google)
+sprach -m ministral-3 "Analyze this data file"       # Fast FC (needs temp=0.3)
 ```
 
 ### Quick Recommendations
@@ -353,7 +353,7 @@ ask-ai -m ministral-3 "Analyze this data file"       # Fast FC (needs temp=0.3)
 
 ## Custom Models
 
-Add your own models in `~/.config/ask-ai/models.toml`:
+Add your own models in `~/.config/sprachspiel/models.toml`:
 
 ```toml
 [models."my-model"]
@@ -379,7 +379,7 @@ thinking = true             # Optional: for models that support it
 ## Listing Models
 
 ```bash
-ask-ai --list
+sprach --list
 ```
 
 Shows built-in models and user-defined models (marked with `[user]`).

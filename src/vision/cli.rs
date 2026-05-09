@@ -43,7 +43,7 @@ REQUIREMENTS:
   - Vision model must be downloaded: ollama pull qwen3.5:4b
 
 CONFIGURATION:
-  Default model can be set in ~/.config/ask-ai/config.toml:
+  Default model can be set in ~/.config/sprachspiel/config.toml:
   [model.vision]
   model = "qwen3.5:4b"
 "#

@@ -85,7 +85,7 @@ Return to user (no blocking)
 **Solution:** 
 - Fields marked with `#[serde(skip)]`
 - Reconstructed when session is loaded from JSON
-- Database path is deterministic (`~/.local/share/ask-ai/ask-ai.db`)
+- Database path is deterministic (`~/.local/share/sprachspiel/sprachspiel.db`)
 
 ---
 

@@ -6,7 +6,7 @@
 
 ## Overview
 
-This document outlines a comprehensive refactoring of the system prompts used in ask-ai. The goal is to improve LLM behavior through better prompt engineering techniques.
+This document outlines a comprehensive refactoring of the system prompts used in sprachspiel. The goal is to improve LLM behavior through better prompt engineering techniques.
 
 ## Current Problems
 
@@ -443,17 +443,17 @@ cargo test --test prompt_benchmark test_platform_detection -- --nocapture
 cargo build
 
 # Test tool selection
-./target/debug/ask-ai -m <model> "Tell me about Pikachu" -vv 2>&1 | grep -i "fetch_pokemon"
+./target/debug/sprach -m <model> "Tell me about Pikachu" -vv 2>&1 | grep -i "fetch_pokemon"
 
 # Test weather
-./target/debug/ask-ai -m <model> "Weather in Paris" -vv 2>&1 | grep -i "weather"
+./target/debug/sprach -m <model> "Weather in Paris" -vv 2>&1 | grep -i "weather"
 
 # Test web search
-./target/debug/ask-ai -m <model> "Latest Rust news" -vv 2>&1 | grep -i "search"
+./target/debug/sprach -m <model> "Latest Rust news" -vv 2>&1 | grep -i "search"
 
 # Test AGENTS.md
 echo "# Test Project\nTest context." > AGENTS.md
-./target/debug/ask-ai -m <model> "What is this project?" -vv
+./target/debug/sprach -m <model> "What is this project?" -vv
 rm AGENTS.md
 ```
 

@@ -1,6 +1,6 @@
 # Available Tools
 
-Ask-AI provides tools that enhance queries with real-time data from external sources. Tools are automatically enabled for capable models.
+Sprachspiel provides tools that enhance queries with real-time data from external sources. Tools are automatically enabled for capable models.
 
 ## Tool Overview
 
@@ -119,7 +119,7 @@ cargo build --release --features all-tools
 Even when tools are compiled in, you can disable specific tools at runtime using the [blacklist configuration](./configuration.md#tool-configuration):
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 [tools]
 blacklist = ["fetch_pokemon", "web_search"]
 ```
@@ -260,7 +260,7 @@ Example: get_weather_forecast(location: "Paris", days: "7")
 
 ## Calculator Tool (1)
 
-Built-in mathematical expression evaluator from ollama-rs.
+Built-in mathematical expression evaluator.
 
 ### calculate
 
@@ -288,7 +288,7 @@ Example: calculate(expression: "(100 + 50) * 0.2")
 
 ## Web Search Tools (3)
 
-Powered by DuckDuckGo via ollama-rs built-in DDGSearcher. Works without CAPTCHA issues.
+Powered by DuckDuckGo search. Works without CAPTCHA issues.
 
 ### web_search
 
@@ -489,9 +489,9 @@ Example: skill_view(name="document-processing")
 | Source | Location |
 |--------|----------|
 | builtin | Embedded in binary (always available) |
-| user | `~/.config/ask-ai/skills/<name>/SKILL.md` |
-| project | `.ask-ai/skills/<name>/SKILL.md` |
+| user | `~/.config/sprachspiel/skills/<name>/SKILL.md` |
 
+| project | `.sprachspiel/skills/<name>/SKILL.md` |
 **Priority:** project > user > builtin (project-level skills override user and builtin).
 
 **Example workflow:**
@@ -730,7 +730,7 @@ Users can also manage todos via chat commands:
 
 ## Subagent Tools (4)
 
-The subagent system provides specialized one-shot models for specific tasks that require capabilities different from the main chat model. Instead of using the general-purpose chat model for everything, ask-ai can delegate specialized tasks to purpose-built models configured for specific purposes.
+The subagent system provides specialized one-shot models for specific tasks that require capabilities different from the main chat model. Instead of using the general-purpose chat model for everything, sprach can delegate specialized tasks to purpose-built models configured for specific purposes.
 
 ### What Are Subagents?
 
@@ -773,7 +773,7 @@ Chat commands provide direct access to subagent functionality and are **always a
 | `/summarize <text>` | Summarize text | `/summarize Long text here...` |
 
 **Chat Command Features:**
-- Commands work in interactive chat mode (`ask-ai chat`)
+  - Commands work in interactive chat mode (`sprach chat`)
 - No feature flag requirements - always available
 - Automatically route to the appropriate subagent model
 - Support file paths, piped input, and inline text
@@ -836,10 +836,10 @@ Main LLM: [Presents final result to user]
 
 ### Model Configuration
 
-Subagent models are configured in `~/.config/ask-ai/config.toml`. Each subagent type can use a different model optimized for its specific task:
+Subagent models are configured in `~/.config/sprachspiel/config.toml`. Each subagent type can use a different model optimized for its specific task:
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 
 [model.ocr]
 model = "glm-ocr:bf16"
@@ -1291,7 +1291,7 @@ Example: write_file(path: "config.json", content: json_data, overwrite: "true")
 - Returns error if file exists and `overwrite=false`
 - Creates parent directories must exist
 - Only writes valid UTF-8 text content
-- Program's own config files (ask-ai config) are always blocked - user must edit manually
+- Program's own config files (sprach config) are always blocked - user must edit manually
 
 ### edit_file
 
@@ -1314,7 +1314,7 @@ Args:
 **Security:**
 - **Blocked patterns ALWAYS enforced** - Cannot edit `.env`, secrets, SSH keys, certificates
 - **Sandbox always enforced** - File operations restricted to current working directory (plus `/tmp`)
-- Program's own config files (`~/.config/ask-ai/`) are always blocked - user must edit manually for security
+- Program's own config files (`~/.config/sprachspiel/`) are always blocked - user must edit manually for security
 
 ### append_file
 
@@ -1373,7 +1373,7 @@ Sensitive files are blocked for both reading and writing:
 Configuration:
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 [file-tools]
 max_file_size = 5242880  # 5MB default
 blocked_patterns = [".env.*", "*secret*", "*.pem"]
@@ -1401,7 +1401,7 @@ All file operations are sandboxed to the current working directory (plus `/tmp` 
 
 External CLI tools for PDF and ePub processing. These are called via `run_command` and require installation.
 
-**Note:** These are not built-in tools. They must be installed separately and configured in `~/.config/ask-ai/tools.toml`.
+**Note:** These are not built-in tools. They must be installed separately and configured in `~/.config/sprachspiel/tools.toml`.
 
 ### PDF Tools (poppler-utils)
 
@@ -1462,7 +1462,7 @@ tesseract image.png stdout -l por
 
 ### Configuration
 
-Default `~/.config/ask-ai/tools.toml` includes:
+Default `~/.config/sprachspiel/tools.toml` includes:
 
 ```toml
 [external.tools.pdftotext]
@@ -1501,7 +1501,7 @@ Control NeoPixel LED strips via a Raspberry Pi Pico W HTTP server. These tools a
 LED tools require configuration before use:
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 [led]
 ip = "192.168.1.100"  # Required: IP address of your Raspberry Pi Pico W
 port = 80             # Optional: HTTP port (default: 80)
@@ -1672,10 +1672,10 @@ Tools are automatically enabled for capable models:
 
 ```bash
 # Tools auto-enabled for qwen2.5-coder:7b
-ask-ai -m qwen2.5-coder:7b "Tell me about Pikachu"
+sprach -m qwen2.5-coder:7b "Tell me about Pikachu"
 
 # Tools auto-enabled for qwen3-coder
-ask-ai -m qwen3-coder "What's the weather in Tokyo?"
+sprach -m qwen3-coder "What's the weather in Tokyo?"
 ```
 
 ### Force Enable Tools
@@ -1683,7 +1683,7 @@ ask-ai -m qwen3-coder "What's the weather in Tokyo?"
 Force tools on any model:
 
 ```bash
-ask-ai --tools "Tell me about Pikachu"
+sprach --tools "Tell me about Pikachu"
 ```
 
 ### Tool User Prompt
@@ -1691,7 +1691,7 @@ ask-ai --tools "Tell me about Pikachu"
 Use enhanced prompt for better tool selection:
 
 ```bash
-ask-ai -p tool_user "What's the weather?"
+sprach -p tool_user "What's the weather?"
 ```
 
 ### Disable Specific Tools
@@ -1699,7 +1699,7 @@ ask-ai -p tool_user "What's the weather?"
 Blacklist tools via configuration:
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 [tools]
 blacklist = ["web_search", "fetch_pokemon"]
 ```
@@ -1710,99 +1710,99 @@ blacklist = ["web_search", "fetch_pokemon"]
 
 ```bash
 # Comprehensive data
-ask-ai "Tell me everything about Charizard"
+sprach "Tell me everything about Charizard"
 
 # Specific information
-ask-ai "What are Pikachu's stats?"
-ask-ai "Show me Eevee's evolution chain"
-ask-ai "What type is super effective against Water?"
+sprach "What are Pikachu's stats?"
+sprach "Show me Eevee's evolution chain"
+sprach "What type is super effective against Water?"
 
 # Compare Pokémon
-ask-ai "Compare Blastoise and Charizard stats"
+sprach "Compare Blastoise and Charizard stats"
 
 # Move information
-ask-ai "Tell me about Thunderbolt"
-ask-ai "What moves can Pikachu learn?"
+sprach "Tell me about Thunderbolt"
+sprach "What moves can Pikachu learn?"
 ```
 
 ### Weather Queries
 
 ```bash
 # Current weather
-ask-ai "What's the weather in Tokyo?"
+sprach "What's the weather in Tokyo?"
 
 # Forecast
-ask-ai "Weather forecast for Paris"
+sprach "Weather forecast for Paris"
 
 # Specific queries
-ask-ai "Is it raining in London?"
-ask-ai "What's the temperature in New York?"
+sprach "Is it raining in London?"
+sprach "What's the temperature in New York?"
 
 # With country
-ask-ai "Weather in Sydney, Australia"
+sprach "Weather in Sydney, Australia"
 ```
 
 ### Web Search Queries
 
 ```bash
 # General search
-ask-ai "Search for Rust async patterns"
+sprach "Search for Rust async patterns"
 
 # News
-ask-ai "Latest technology news"
+sprach "Latest technology news"
 
 # Quick facts
-ask-ai "What is quantum computing?"
+sprach "What is quantum computing?"
 
 # Follow up with scraping
-ask-ai "Find information about the Rust programming language, then scrape the official website"
+sprach "Find information about the Rust programming language, then scrape the official website"
 ```
 
 ### Stock Quotes
 
 ```bash
 # US stocks
-ask-ai "Get the stock quote for Apple"
-ask-ai "What's Google's stock price?"
+sprach "Get the stock quote for Apple"
+sprach "What's Google's stock price?"
 
 # Brazilian stocks
-ask-ai "Cotação da Petrobras"
-ask-ai "Preço das ações da Vale"
+sprach "Cotação da Petrobras"
+sprach "Preço das ações da Vale"
 ```
 
 ### File Operations
 
 ```bash
 # Read a file
-ask-ai "Read the README.md file"
+sprach "Read the README.md file"
 
 # List directory contents
-ask-ai "Show me the files in the src directory"
+sprach "Show me the files in the src directory"
 
 # Search for code patterns
-ask-ai "Find all TODO comments in the codebase"
+sprach "Find all TODO comments in the codebase"
 
 # Analyze project structure
-ask-ai "List all Rust files recursively and tell me what each module does"
+sprach "List all Rust files recursively and tell me what each module does"
 
 # Search and analyze
-ask-ai "Search for all functions named 'handle_' in the src directory"
+sprach "Search for all functions named 'handle_' in the src directory"
 
 # Multi-file analysis
-ask-ai "Read Cargo.toml and tell me what dependencies this project has"
+sprach "Read Cargo.toml and tell me what dependencies this project has"
 ```
 
 **Complex file operations:**
 
 ```bash
 # Count lines of code
-ask-ai "List all .rs files recursively, then count total lines of code"
+sprach "List all .rs files recursively, then count total lines of code"
 
 # Find largest files
-ask-ai "List the src directory recursively and identify the 5 largest files"
+sprach "List the src directory recursively and identify the 5 largest files"
 
 # Pattern analysis
-ask-ai "Search for all 'async fn' declarations in src and summarize the async functions"
+sprach "Search for all 'async fn' declarations in src and summarize the async functions"
 ```
 
 ## Tool Selection
@@ -1839,7 +1839,7 @@ None currently.
 See tool calls in debug mode:
 
 ```bash
-ask-ai -d "Tell me about Pikachu"
+sprach -d "Tell me about Pikachu"
 
 # Output includes:
 # - Tool calls with arguments (detailed format)
@@ -2045,7 +2045,7 @@ File tools are sandboxed to prevent unauthorized access:
 Disable potentially problematic tools:
 
 ```toml
-# ~/.config/ask-ai/config.toml
+# ~/.config/sprachspiel/config.toml
 [tools]
 # Disable tools you don't want
 blacklist = ["web_search"]

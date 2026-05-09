@@ -8,7 +8,7 @@
 //! # Personality System
 //!
 //! The prompt is assembled from multiple layers:
-//! 1. SOUL LAYER: User-defined personality from ~/.config/ask-ai/SOUL.md
+//! 1. SOUL LAYER: User-defined personality from ~/.config/sprachspiel/SOUL.md
 //!    (falls back to PERSONALITY_DEFAULT when no SOUL.md exists)
 //! 2. OPERATION LAYER: Role definition and operational behavior
 //! 3. CONTEXT LAYER: Platform info, system context, AGENTS.md
@@ -17,7 +17,7 @@
 /// Default personality when no SOUL.md exists
 ///
 /// This provides a basic, neutral assistant personality.
-/// Users can customize by creating ~/.config/ask-ai/SOUL.md
+/// Users can customize by creating ~/.config/sprachspiel/SOUL.md
 pub const PERSONALITY_DEFAULT: &str = r#"### IDENTITY
 
 You are a helpful CLI assistant.

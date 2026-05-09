@@ -1,11 +1,11 @@
 # Quick Start Guide
 
-Get up and running with Ask-AI in just 5 minutes. This guide covers the essential commands you'll use every day.
+Get up and running with Sprachspiel in just 5 minutes. This guide covers the essential commands you'll use every day.
 
 ## Prerequisites
 
 Before starting, ensure:
-- Ask-AI is installed (see [Installation](./installation.md))
+- Sprachspiel is installed (see [Installation](./installation.md))
 - Ollama is running (`ollama serve`)
 - Default model is pulled (`ollama pull qwen3.5:4b`)
 
@@ -14,10 +14,10 @@ Before starting, ensure:
 Let's start with a simple question:
 
 ```bash
-ask-ai "What is the capital of France?"
+sprach "What is the capital of France?"
 ```
 
-You should see a nicely formatted markdown response. That's it - Ask-AI is working!
+You should see a nicely formatted markdown response. That's it - Sprachspiel is working!
 
 ## Essential Commands
 
@@ -27,16 +27,16 @@ The default mode when you don't specify a subcommand:
 
 ```bash
 # Basic query
-ask-ai "Explain quantum computing"
+sprach "Explain quantum computing"
 
 # With think mode (for reasoning models)
-ask-ai -t "Solve this step by step"
+sprach -t "Solve this step by step"
 
 # With specific model
-ask-ai -m qwen3.5:4b "Generate a Python function"
+sprach -m qwen3.5:4b "Generate a Python function"
 
 # Plain text (no markdown)
-ask-ai --plain "List Rust keywords"
+sprach --plain "List Rust keywords"
 ```
 
 ### 2. Translation
@@ -45,13 +45,13 @@ Translate text between languages:
 
 ```bash
 # English to Portuguese
-ask-ai translate en:pt "Hello world"
+sprach translate en:pt "Hello world"
 
 # Auto-detect source
-ask-ai translate :pt "Hello world"
+sprach translate :pt "Hello world"
 
 # From stdin
-echo "Hello" | ask-ai translate :es
+echo "Hello" | sprach translate :es
 ```
 
 ### 3. OCR (Text Extraction)
@@ -60,13 +60,13 @@ Extract text from images:
 
 ```bash
 # Extract text from image
-ask-ai ocr document.png
+sprach ocr document.png
 
 # Extract tables
-ask-ai ocr --mode table spreadsheet.png
+sprach ocr --mode table spreadsheet.png
 
 # Extract formulas (LaTeX output)
-ask-ai ocr --mode formula equation.png
+sprach ocr --mode formula equation.png
 ```
 
 ### 4. Summarization
@@ -75,28 +75,28 @@ Summarize long text:
 
 ```bash
 # Summarize text directly
-ask-ai summarize "Long text here..."
+sprach summarize "Long text here..."
 
 # From file
-cat article.txt | ask-ai summarize
+cat article.txt | sprach summarize
 
 # With style
-ask-ai summarize --style academic "Research paper text..."
+sprach summarize --style academic "Research paper text..."
 ```
 
 ## Working with Pipes
 
-Ask-AI shines when combined with pipes:
+Sprachspiel shines when combined with pipes:
 
 ```bash
 # OCR then summarize
-ask-ai ocr document.png | ask-ai summarize
+sprach ocr document.png | sprach summarize
 
 # OCR then translate
-ask-ai ocr japanese.png | ask-ai translate ja:pt
+sprach ocr japanese.png | sprach translate ja:pt
 
 # Full pipeline
-ask-ai ocr document.png | ask-ai summarize | ask-ai translate :pt
+sprach ocr document.png | sprach summarize | sprach translate :pt
 ```
 
 ## Useful Flags
@@ -105,23 +105,23 @@ Here are flags you'll use often:
 
 | Flag | Description | Example |
 |------|-------------|---------|
-| `-m` | Select model | `ask-ai -m qwen3.5:4b "query"` |
-| `-t` | Think mode | `ask-ai -t "complex question"` |
-| `--plain` | No markdown | `ask-ai --plain "text"` |
-| `-d` | Debug mode | `ask-ai -d "query"` |
-| `--help` | Show help | `ask-ai --help` |
+| `-m` | Select model | `sprach -m qwen3.5:4b "query"` |
+| `-t` | Think mode | `sprach -t "complex question"` |
+| `--plain` | No markdown | `sprach --plain "text"` |
+| `-d` | Debug mode | `sprach -d "query"` |
+| `--help` | Show help | `sprach --help` |
 
 ## List Available Resources
 
 ```bash
 # List all models
-ask-ai --list
+sprach --list
 
 # List supported languages
-ask-ai translate --list
+sprach translate --list
 
 # Filter languages
-ask-ai translate --list pt
+sprach translate --list pt
 ```
 
 ## Common Workflows
@@ -132,13 +132,13 @@ Process a scanned document end-to-end:
 
 ```bash
 # 1. OCR the scanned document
-ask-ai ocr scanned-document.png > extracted.txt
+sprach ocr scanned-document.png > extracted.txt
 
 # 2. Summarize the content
-cat extracted.txt | ask-ai summarize --style technical > summary.txt
+cat extracted.txt | sprach summarize --style technical > summary.txt
 
 # 3. Translate if needed
-cat summary.txt | ask-ai translate :pt > summary-pt.txt
+cat summary.txt | sprach translate :pt > summary-pt.txt
 ```
 
 ### Code Generation
@@ -147,10 +147,10 @@ Generate code with the right model:
 
 ```bash
 # Use code mode for better code output
-ask-ai -m qwen3-coder -c "Write a Rust function to parse JSON"
+sprach -m qwen3-coder -c "Write a Rust function to parse JSON"
 
 # Or code_with_tools for web research + code
-ask-ai -p code_with_tools "Latest Rust async patterns with examples"
+sprach -p code_with_tools "Latest Rust async patterns with examples"
 ```
 
 ### Translation Batch
@@ -167,7 +167,7 @@ Goodbye
 EOF
 
 # Translate each line
-cat to-translate.txt | ask-ai translate :pt
+cat to-translate.txt | sprach translate :pt
 ```
 
 ## Quick Tips

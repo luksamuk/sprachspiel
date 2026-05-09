@@ -268,7 +268,7 @@ var brainE = [[15,21],[55,57],[96,104],[29,32],[70,82],[8,9],[40,41],[8,18],[21,
             ctx.font = "12px 'VT323', monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
             ctx.fillStyle = "rgba(51,255,51,0.5)";
             ctx.fillText("v0.26.0 • cognitive interaction harness • MIT", W/2, 235);
-            ctx.fillText("source: luksamuk/ask-ai-rs • local-first / Rust", W/2, 250);
+            ctx.fillText("source: luksamuk/sprachspiel • local-first / Rust", W/2, 250);
             ctx.textAlign = "left";
           }
           // Blink cursor
@@ -321,7 +321,7 @@ var brainE = [[15,21],[55,57],[96,104],[29,32],[70,82],[8,9],[40,41],[8,18],[21,
           // Nested layers
           var cx = W/2, cy = H/2;
           var layers = [
-            {label:"ask-ai", w:160, h:80, c:P.amber.hi},
+            {label:"sprach", w:160, h:80, c:P.amber.hi},
             {label:"Ollama", w:240, h:120, c:P.amber.accent},
             {label:"Rust", w:320, h:160, c:P.amber.mid},
             {label:"Local LLM", w:400, h:200, c:P.amber.dim},
@@ -576,7 +576,7 @@ var brainE = [[15,21],[55,57],[96,104],[29,32],[70,82],[8,9],[40,41],[8,18],[21,
           ctx.fillStyle = "rgba(136,187,255,0.5)"; ctx.fillText("LOCAL LLM", W/2+48, H/2+34);
           // Install command
           var cmdProg = Math.min(1, Math.max(0, (t - 29.5) * 1.2));
-          var cmdStr = "curl -sL ask-ai.sh | bash";
+          var cmdStr = "curl -sL sprach.sh | bash";
           var vis = cmdStr.substring(0, Math.floor(cmdStr.length * cmdProg));
           if (cmdProg > 0) {
             ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";

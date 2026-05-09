@@ -1,8 +1,13 @@
 # Changelog
 
-All notable changes to Ask-AI will be documented in this file.
+All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
+
+### Changed
+
+- **Renamed from ask-ai to Sprachspiel** (Issue #126) — Complete project rename. Binary: `ask-ai` → `sprachspiel`. Config directory: `~/.config/ask-ai/` → `~/.config/sprachspiel/`. Data directory: `~/.local/share/ask-ai/` → `~/.local/share/sprachspiel/`. Database: `ask-ai.db` → `sprachspiel.db`. Project directory: `.ask-ai/` → `.sprachspiel/`. All source references, documentation, scripts, Makefile, and man page updated. Welcome banner regenerated with "SPRACHSPIEL" in gold/cyan. Internal Rust modules renamed `ask_ai::` → `sprachspiel::`. DB migration chain: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (no fallback, no legacy constants).
+- **Documentation cleanup (Phase 12)** — Final rename pass: fixed manpage refs (`sprach.1` not `sprachspiel.1`), updated all remaining `ask-ai`/`Ask-AI`/`ask_ai::` references in docs and IMPLEMENTATION.md, replaced `#[ask_ai::tool]` with `#[sprachspiel::tool]`, renamed proc-macro crate from `ask-ai-tool-derive` to `sprachspiel-tool-derive`, updated `book.toml` title and doc site banner, fixed `ASK_AI_DEBUG` env var to `RUST_LOG`, updated all GitHub URLs from `ask-ai-rs` to `sprachspiel`, updated GitHub Pages URL, updated launch reel, updated skill files, replaced `sprachspiel-rs` with `sprachspiel` in project naming.
 
 ### Added
 
@@ -14,7 +19,7 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **`run_command` tilde expansion with blocklist** — Added `expand_args_tilde()` in `run_cmd.rs` that expands `~` in command arguments (e.g., `pdftotext ~/doc.pdf -` → `/home/user/doc.pdf`). After expansion, paths are checked against the sensitive file blocklist (`.env`, `.ssh/`, `*.pem`, etc.) to prevent access to protected files. Environment variable expansion is intentionally NOT supported (security). 8 unit tests.
 
-- **SF4: Logging Overhaul (Issue #110)** — Replaced `env_logger` with custom `MultiLogger` implementing `log::Log` for dual output: colored stderr + file (`~/.local/share/ask-ai/ask-ai.log`). Terminal default raised from `info` to `warn` — only warnings/errors shown by default. `-v` enables debug, `-vv` enables trace. File always receives `warn+` (trace mode: `info+`). Log rotation at 5 MB with 1 backup. Data sensitivity audit: added `truncate_for_log()` helper, truncated PII leakage in 3 locations (message content, fact content). Verbosity alias `"info"` removed (Normal now = warn), added `"warn"` alias.
+- **SF4: Logging Overhaul (Issue #110)** — Replaced `env_logger` with custom `MultiLogger` implementing `log::Log` for dual output: colored stderr + file (`~/.local/share/sprachspiel/sprachspiel.log`). Terminal default raised from `info` to `warn` — only warnings/errors shown by default. `-v` enables debug, `-vv` enables trace. File always receives `warn+` (trace mode: `info+`). Log rotation at 5 MB with 1 backup. Data sensitivity audit: added `truncate_for_log()` helper, truncated PII leakage in 3 locations (message content, fact content). Verbosity alias `"info"` removed (Normal now = warn), added `"warn"` alias.
 
 - **SF5: Agent Spawning Tools (Issue #111)** — Replaced generic `spawn_subagent` tool with 4 dedicated spawning tools: `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`. Each tool has only its relevant parameters (e.g., `ocr_mode` only on OCR agent), improving LLM docstring clarity and eliminating irrelevant optional parameters. Removed `spawn_document_agent` — the LLM already has `run_command` + spawning tools and follows the `document-processing` skill, making a limited document subagent redundant. Removed direct PDF/EPUB import from `import_document` — PDFs/EPUBs must be extracted to text via `run_command("pdftotext")` first, then imported as TXT/MD/ORG. Removed `--pages` flag, PDF pipeline code, checkpoint system, and `PdfConversionError`/`PdfSupport` error types from vision tool. Updated `document-processing.md` skill to reference new tool names and LLM-orchestrated two-phase pipeline (Phase 1: `pdftotext`, Phase 2: `pdftoppm` → `spawn_ocr_agent`/`spawn_vision_agent`).
 
@@ -56,7 +61,7 @@ All notable changes to Ask-AI will be documented in this file.
 
 - **SF1: Colored user prompt** — User input now displays with `BOLD_CYAN` on `>>>` and `CYAN` on the text after pressing Enter, matching the User role label style in context display. The `colors` module in `view/mod.rs` was made public for cross-module reuse.
 
-- **SF2: Clippy configuration** — Added `clippy.toml` with thresholds for `too-many-arguments` (7), `cognitive-complexity` (25), `type-complexity` (250), and project-specific `doc-valid-idents` (AskAI, Ollama, SQLite, Vec0, GGUF, etc.). Added `[lints.clippy]` section in `Cargo.toml` enforcing `too_many_arguments`, `type_complexity`, `enum_variant_names`, `redundant_async_block` as warnings. `missing_transmute_annotations` set to allow (FFI requirement). Existing `#[allow]` attributes remain valid with justification comments; new violations produce warnings in CI and local dev.
+- **SF2: Clippy configuration** — Added `clippy.toml` with thresholds for `too-many-arguments` (7), `cognitive-complexity` (25), `type-complexity` (250), and project-specific `doc-valid-idents` (Sprachspiel, Ollama, SQLite, Vec0, GGUF, etc.). Added `[lints.clippy]` section in `Cargo.toml` enforcing `too_many_arguments`, `type_complexity`, `enum_variant_names`, `redundant_async_block` as warnings. `missing_transmute_annotations` set to allow (FFI requirement). Existing `#[allow]` attributes remain valid with justification comments; new violations produce warnings in CI and local dev.
 
 - `normalize_to_storage_format()` in `src/facts/lang.rs` — Primary normalization function called before storing any fact. Applies PT→EN prefix translation and EN first-person→third-person normalization. PT noun translation (e.g., "respostas curtas" → "short responses") is deferred to LLM-mode (issue #106).
 
@@ -473,7 +478,7 @@ All notable changes to Ask-AI will be documented in this file.
   - `DEFAULT_CODE_MODEL`: `qwen2.5-coder:7b`
   - Optimized for coding with function calling
   - Automatic fallback: code mode → code default → global default
-  - Behavior: `ask-ai "query"` → qwen3.5:4b, `ask-ai -c "code"` → qwen2.5-coder:7b
+  - Behavior: `sprach "query"` → qwen3.5:4b, `sprach -c "code"` → qwen2.5-coder:7b
 
 - **Built-in Models Reduced** - From 4 to 3 models
   - Removed: `moondream` (now redundant - qwen3.5:4b is multimodal)
@@ -1072,7 +1077,7 @@ All notable changes to Ask-AI will be documented in this file.
   - Integrated into all file operations: `read_file`, `read_file_segment`, `count_lines`, `search_files`, `list_directory`
 
 - **File Tools Configuration** - Full TOML configuration integration
-  - `[file-tools]` section in `~/.config/ask-ai/tools.toml`
+  - `[file-tools]` section in `~/.config/sprachspiel/tools.toml`
   - `max_file_size` - Maximum file size (default: 5MB)
   - `blocked_patterns` - Additional glob patterns to block
   - `block_read` - Block reading sensitive files (default: true)
@@ -1183,7 +1188,7 @@ All notable changes to Ask-AI will be documented in this file.
 ### Breaking Changes
 
 - **SOUL.md Personality System** - User-configurable agent personality replaces hardcoded Pepe personality
-  - `~/.config/ask-ai/SOUL.md` defines agent identity, behavior, and limits
+  - `~/.config/sprachspiel/SOUL.md` defines agent identity, behavior, and limits
   - Falls back to `PERSONALITY_DEFAULT` when no SOUL.md exists
   - Use `--soulless` flag to skip personality entirely
   - **Removed:** Pepe personality (`PERSONALITY_PEPE`) - users should create their own SOUL.md
@@ -1191,7 +1196,7 @@ All notable changes to Ask-AI will be documented in this file.
 ### Added
 
 - **SOUL.md Module** (`src/soul.rs`)
-  - Loads personality from `~/.config/ask-ai/SOUL.md` or `XDG_CONFIG_HOME/ask-ai/SOUL.md`
+  - Loads personality from `~/.config/sprachspiel/SOUL.md` or `XDG_CONFIG_HOME/sprachspiel/SOUL.md`
   - Removes HTML comments (`<!-- ... -->`) for developer notes
   - Normalizes whitespace
   - Validates structure (requires at least one `## ` section)
@@ -1229,7 +1234,7 @@ All notable changes to Ask-AI will be documented in this file.
 
 ### Migration Guide
 
-If you used Pepe personality before, create `~/.config/ask-ai/SOUL.md` with your desired personality.
+If you used Pepe personality before, create `~/.config/sprachspiel/SOUL.md` with your desired personality.
 
 Example personalities are available in `doc/src/soul.md`:
 - **SPRACH** - Thoughtful research companion
@@ -1354,9 +1359,9 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
 ### Added
 
 - **Automatic JSON Migration** - One-time automatic migration on startup
-  - Detects all JSON sessions in `~/.local/share/ask-ai/conversations/`
+  - Detects all JSON sessions in `~/.local/share/sprachspiel/conversations/`
   - Migrates sessions not yet in SQLite (with embeddings)
-  - Archives ALL JSON files to `~/.local/share/ask-ai/archived/`
+  - Archives ALL JSON files to `~/.local/share/sprachspiel/archived/`
   - Removes empty project directories
   - Does NOT touch `OLD/` directory
 
@@ -1632,7 +1637,7 @@ Users with existing JSON sessions will see a notification:
 - **Installation Scripts**
   - `scripts/install.sh` - Portable installer with --prefix, --bin, --man options
   - `scripts/uninstall.sh` - Clean uninstallation
-  - `scripts/install-ask-ai.sh` - Remote installer for curl|bash one-liner
+  - `scripts/install-sprach.sh` - Remote installer for curl|bash one-liner
 
 - **New Makefile Targets**
   - `tarball-linux` - Linux tarball with install scripts
@@ -1649,7 +1654,7 @@ Users with existing JSON sessions will see a notification:
 ### Changed
 
 - **Tarball Structure** - Now includes install/uninstall scripts inside
-  - `ask-ai.1` manpage renamed from `man/ask-ai.1` to top-level
+  - `sprach.1` manpage renamed from `man/ask-ai.1` to top-level
   - Added `README-TERMUX.txt` for Termux tarballs
   - Install script detects Termux and adjusts default paths
 
@@ -1677,15 +1682,15 @@ Users with existing JSON sessions will see a notification:
 **Install Script Features:**
 - Platform detection: Linux, Termux, macOS
 - Default paths: `~/.local/bin` (Linux/macOS), `~/bin` (Termux)
-- Manpage installation: `~/.local/share/man/man1/ask-ai.1`
+- Manpage installation: `~/.local/share/man/man1/sprach.1`
 - PATH/MANPATH detection and instructions
 - Manpage access verification
 
 **Tarball Contents:**
 ```
-ask-ai-VERSION-linux-x86_64.tar.gz
-├── ask-ai
-├── ask-ai.1
+sprachspiel-VERSION-linux-x86_64.tar.gz
+├── sprach
+├── sprach.1
 ├── install.sh
 ├── uninstall.sh
 ├── README.md
@@ -1694,7 +1699,7 @@ ask-ai-VERSION-linux-x86_64.tar.gz
 
 **One-liner Installation:**
 ```bash
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai/main/scripts/install-ask-ai.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
 curl -sL ... | bash -s -- --version 0.26.0
 curl -sL ... | bash -s -- --tools all
 curl -sL ... | bash -s -- --prefix /usr
@@ -1713,7 +1718,7 @@ curl -sL ... | bash -s -- --prefix /usr
 - `doc/src/development/retrieval-design.md` - NEW: Retrieval system design
 - `scripts/install.sh` - NEW: Portable installer
 - `scripts/uninstall.sh` - NEW: Uninstaller
-- `scripts/install-ask-ai.sh` - NEW: One-liner installer
+- `scripts/install-sprach.sh` - NEW: One-liner installer
 - `README-TERMUX.txt` - NEW: Termux-specific instructions
 - `src/settings.rs` - Added translate model config
 - `src/main.rs` - Translate model fallback
@@ -1944,7 +1949,7 @@ After v0.22.7, semantic retrieval was working correctly (session ID stable, mess
   - `dark`: Transparent background, optimized for dark terminals
   - `light`: Transparent background, optimized for light terminals
   - `mono`: Monochrome with gray bold/italic, no colors
-  - Config: `display.skin = "mono"` in `~/.config/ask-ai/config.toml`
+  - Config: `display.skin = "mono"` in `~/.config/sprachspiel/config.toml`
 
 ### Changed
 
@@ -2284,7 +2289,7 @@ After v0.22.7, semantic retrieval was working correctly (session ID stable, mess
   - `src/db/schema.rs` - SQL schema (conversations, messages, embeddings, FTS5)
   - `src/db/connection.rs` - sqlite-vec global initialization
   - `src/db/operations.rs` - CRUD operations and hybrid search
-  - Storage location: `~/.local/share/ask-ai/embeddings.db`
+  - Storage location: `~/.local/share/sprachspiel/embeddings.db`
 
 - **Embeddings Module** - New embedding generation for semantic search
   - `src/embeddings/client.rs` - Ollama embedding client
@@ -2672,7 +2677,7 @@ Added 3 new LED tool examples to demonstrate:
 ### Added
 
 - **Custom Models** - Define your own models or override built-in presets
-  - Create `~/.config/ask-ai/models.toml` to add custom models
+  - Create `~/.config/sprachspiel/models.toml` to add custom models
   - Override parameters for built-in models (partial override)
   - Custom models shown with `[user]` marker in `--list` output
   - See [Configuration - Custom Models](./configuration.md#custom-models)
@@ -2699,7 +2704,7 @@ Added 3 new LED tool examples to demonstrate:
 
 - **Built-in Models Simplified** - Reduced to essential models only
   - Built-in: `llama3.1:8b` (default), `translategemma:4b` (translation), `glm-ocr:bf16` (OCR), `moondream:1.8b` (vision)
-  - All other models moved to `~/.config/ask-ai/models.toml`
+  - All other models moved to `~/.config/sprachspiel/models.toml`
   - Cloud models have no hardcoded parameters (let Ollama decide)
 
 - **Default Context Size** - User models now default to 32K context
@@ -2723,9 +2728,9 @@ Added 3 new LED tool examples to demonstrate:
 ### Migration Notes
 
 If upgrading from v0.13.0:
-1. Run `ask-ai --list` to see the new model organization
+1. Run `sprach --list` to see the new model organization
 2. Default model is now `llama3.1` (update config if you used `lfm`)
-3. Check `~/.config/ask-ai/models.toml` for all available model presets
+3. Check `~/.config/sprachspiel/models.toml` for all available model presets
 4. Cloud models no longer have hardcoded parameters - configure as needed
 
 ## [0.13.0] - 2026-02-19
@@ -2745,7 +2750,7 @@ If upgrading from v0.13.0:
 - **Session Format** (Breaking Change):
   - Added `compacted_summary` field for conversation summarization
   - Added `messages_sent_to_llm` field to track compacted portion
-  - Old session files may need to be deleted (`~/.local/share/ask-ai/conversations/`)
+  - Old session files may need to be deleted (`~/.local/share/sprachspiel/conversations/`)
 
 - **UI Improvements**:
   - Welcome message only shows available features (think/tools hidden if unsupported)
@@ -2767,7 +2772,7 @@ If upgrading from v0.13.0:
   - Model switching mid-conversation: `/model <name>`
   - Export conversations: `/export md` or `/export json`
   - Rich REPL with command history and line editing (rustyline)
-  - Auto-saves after each message to `~/.local/share/ask-ai/conversations/`
+  - Auto-saves after each message to `~/.local/share/sprachspiel/conversations/`
   - Commands: `/quit`, `/clear`, `/help`, `/model`, `/system`, `/save`, `/load`, `/export`, `/list`, `/info`
 
 ### Changed

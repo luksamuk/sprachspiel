@@ -11,18 +11,18 @@ Run these tests after automated tests pass, before finalizing a merge.
 ## Prerequisites
 
 ```bash
-cd /path/to/ask-ai-rs
+cd /path/to/sprachspiel
 cargo build --release --features all-tools
 ollama serve  # In another terminal
 
 # Backup and reset the database for clean state
-cp ~/.local/share/ask-ai/ask-ai.db ~/.local/share/ask-ai/ask-ai.db.backup 2>/dev/null || true
-rm -f ~/.local/share/ask-ai/ask-ai.db
+cp ~/.local/share/sprachspiel/sprachspiel.db ~/.local/share/sprachspiel/sprachspiel.db.backup 2>/dev/null || true
+rm -f ~/.local/share/sprachspiel/sprachspiel.db
 ```
 
 > **⚠️ Clean database:** Many tests require a clean database to avoid interference from previous test data. Sections requiring this are marked with 🗑️. Reset with:
 > ```bash
-> rm -f ~/.local/share/ask-ai/ask-ai.db
+> rm -f ~/.local/share/sprachspiel/sprachspiel.db
 > ```
 
 ## Test Model
@@ -39,7 +39,7 @@ echo "Test model: $MODEL"
 After starting the application, verify the database schema version:
 
 ```bash
-sqlite3 ~/.local/share/ask-ai/ask-ai.db "PRAGMA user_version;"
+sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "PRAGMA user_version;"
 # Expected: 12 or higher (v12 adds distance_metric=cosine to vec0 tables)
 ```
 
@@ -108,8 +108,8 @@ _Copy the section structure above for each test category._
 # /doc delete N for each test document
 
 # Restore original database
-rm -f ~/.local/share/ask-ai/ask-ai.db
-cp ~/.local/share/ask-ai/ask-ai.db.backup ~/.local/share/ask-ai/ask-ai.db 2>/dev/null || true
+rm -f ~/.local/share/sprachspiel/sprachspiel.db
+cp ~/.local/share/sprachspiel/sprachspiel.db.backup ~/.local/share/sprachspiel/sprachspiel.db 2>/dev/null || true
 ```
 
 ---

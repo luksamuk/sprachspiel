@@ -1,4 +1,4 @@
-# Implementation Plan for ask-ai
+# Implementation Plan for sprachspiel
 
 **Note**: This document tracks implementation status. For strategic direction, see:
 
@@ -26,7 +26,7 @@
 
 ## Current Version
 
-**v0.40.0** - 2026-03-29 (Document Import Tool)
+**v0.43.0** - 2026-05-08 (Sprachspiel Rename + Multi-Backend Positioning)
 
 ## Current Implementation Status
 
@@ -34,7 +34,7 @@
 
 - Core CLI with 5 subcommands (query, chat, translate, ocr, summarize)
 - Interactive chat mode with persistent sessions
-- Custom models support via `~/.config/ask-ai/models.toml`
+- Custom models support via `~/.config/sprachspiel/models.toml`
 - Built-in models: llama3.1, translategemma, glm-ocr (user models in config)
 - Thinking support for cloud models (configurable via `thinking = true`)
 - Dynamic model selection with capability detection
@@ -159,7 +159,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
-| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | Rename complete; both commands merged and functional |
+| **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | Rename complete; both commands merged and functional; #126 IN PROGRESS |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding | Configurable model + provider abstraction | #106, #107 | Config.toml `[embedding]` section works; at least one alternative model validated |
@@ -173,11 +173,92 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 - **W4**: independent of W2 (embedding config is orthogonal to provider migration)
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
 
+### ✅ PRIORITY 0: Rename ask-ai → Sprachspiel (COMPLETED) [M1]
+
+**Status:** ✅ COMPLETED
+**Issue:** #126
+**Branch:** `feat/rename-to-sprachspiel`
+
+**Goal:** Complete project rename from ask-ai to Sprachspiel, shorten binary to `sprach`, and remove Ollama vendor-exclusivity from documentation.
+
+**Design Decisions:**
+- **No migration code:** No fallback paths, no `APP_DIR_LEGACY`, no backward compatibility dirs. Users rename manually.
+- **No transition period:** No symlink/wrapper. Clean cut.
+- **DB migration only:** `migrate_legacy_db()` extended: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (simple rename-if-exists).
+- **Full rename:** Binary, crate, all paths, all docs, all scripts, man page, assets, module names.
+- **Short binary name:** CLI command is `sprach` (6 chars), project identity stays `sprachspiel`. Config/data dirs are `~/.config/sprachspiel/`, `~/.local/share/sprachspiel/`, `.sprachspiel/`, `sprachspiel.db`.
+- **Multi-backend positioning:** Documentation now says "LLM models via Ollama and compatible backends" instead of "Ollama LLM models". Config keys `[ollama]` unchanged (reflects real code). Sample config updated: "LLM server" instead of "Ollama server".
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 0 | Art generation (BANNER_LOGO for SPRACHSPIEL) | ✅ Done |
+| 1 | Constants & path centralization (APP_NAME, DB_FILENAME, .join() calls) | ✅ Done |
+| 2 | Binary & module rename (Cargo.toml, main.rs, doc comments) | ✅ Done |
+| 3 | User-facing strings & error messages (~12 refs in 6 files) | ✅ Done |
+| 4 | Makefile, scripts & man page | ✅ Done |
+| 5 | Assets & art (BANNER_LOGO, PDF rename) | ✅ Done |
+| 6 | Documentation (doc/, CHANGELOG, AGENTS.md, .opencode/, IMPLEMENTATION.md) | ✅ Done |
+| 7 | Testing (cargo build, clippy, test, manual) | ✅ Done |
+| 8 | Binary rename: sprachspiel → sprach (short CLI command) | ✅ Done |
+| 9 | Documentation: remove Ollama vendor-exclusivity (11 files) | ✅ Done |
+| 10 | Sample config: remove ask-ai refs in settings.rs | ✅ Done |
+| 11 | GitHub repo rename (`ask-ollama-rs` → `sprachspiel`), update local remote, configure GitHub Pages | 📋 Pending (post-merge) |
+| 12 | Post-merge documentation cleanup: remaining ask-ai/sprach refs, GitHub URLs → sprachspiel, book.toml, launch reel, proc-macro naming | ✅ Done |
+
+**Note:** GitHub automatically redirects old repo URLs (`ask-ai-rs`) to the new name (`sprachspiel`) indefinitely after rename. URLs updated pre-emptively in docs.
+
+**Files to Create:**
+- `src/consts/app.rs` — Centralized app name constants (`APP_NAME`, `DB_FILENAME`)
+
+**Files to Modify (major):**
+- `Cargo.toml` — `name`, `bin_name`
+- `src/main.rs` — `name`, `bin_name`, `about`
+- `src/chat/view/mod.rs` — `BANNER_LOGO` constant
+- `src/db/connection.rs` — DB path, migration logic
+- `src/settings.rs` — config paths
+- `src/skills/loader.rs` — skills directory paths
+- `src/chat/input/mod.rs` — history path
+- `src/external/config.rs` — tools config path
+- `src/tools/run_cmd.rs` — sandbox paths
+- `src/logging.rs` — log path, module path
+- `src/soul.rs` — SOUL.md path
+- `src/user_models.rs` — models.toml path
+- `Makefile` — `BINARY`, `TARGET`, all tarball names
+- `man/ask-ai.1` → `man/sprach.1`
+- `scripts/install-ask-ai.sh` → `scripts/install-sprach.sh`
+- `scripts/install.sh`, `scripts/uninstall.sh`
+
+**Extra scope:**
+- All `ask-ollama-rs` remnants in docs, assets, .opencode skills, SMOKE_TEST, STRESS_TEST
+- All `ask-ai` references in documentation (~1295 refs)
+- `assets/ask-ai-banner.py` → `assets/sprachspiel-banner.py`
+- `assets/ask-ai-architecture.pdf` → `assets/sprachspiel-architecture.pdf`
+- `.ask-ai/` → `.sprachspiel/` (project skills directory)
+- `ask-ai.db` → `sprachspiel.db` (with migration from old names)
+- GitHub repo rename (`ask-ollama-rs` → `sprachspiel`) — last step, post-merge
+
+**Related:** Issue #126
+
+**Clippy Debt Cards (identified during rename, to be created as issues):**
+
+These were identified during the `cargo clippy` audit after the rename. They are NOT part of the rename PR but are tracked here for card creation:
+
+| Card | Description | Count | Priority | Issue |
+|------|-------------|-------|----------|-------|
+| Unwrap/expect/panic triage | Audit all 44 sites. CLI entry points keep justified `#[expect]]`; library code uses `?`/`map_err` | 42 unwrap + 2 panic | 🔴 Critical | #128 |
+| Function extraction | Refactor 14 functions exceeding 100 lines | 14 functions | 🔴 Critical | #129 |
+| Complexity reduction | Reduce cognitive complexity in 13 functions (max: 62/15) | 13 functions | 🔴 Critical | #130 |
+| Remove `#![expect(print)]` | Remove crate-level print expects before TUI; add module-level expects only to CLI modules | 2 attrs | 📋 TUI-prereq | #131 |
+
+---
+
 ### ✅ PRIORITY 0: Factual Memory System (COMPLETED) [M1]
 
 **Status:** ✅ COMPLETED
 
-**Goal:** Enable ask-ai to remember user preferences and project facts across sessions.
+**Goal:** Enable sprachspiel to remember user preferences and project facts across sessions.
 
 **Problem Statement:**
 - Users must repeat contextual information every session (e.g., "my docs are in ~/docs")
@@ -1196,8 +1277,8 @@ On-demand Loading:
 - `skill_list()` tool - returns INDEX (names + descriptions)
 - `skill_view(name)` tool - loads full skill content
 - Builtin skills embedded in binary (`include_str!`)
-- User skills at `~/.config/ask-ai/skills/<name>/SKILL.md`
-- Project skills at `.ask-ai/skills/<name>/SKILL.md`
+- User skills at `~/.config/sprachspiel/skills/<name>/SKILL.md`
+- Project skills at `.sprachspiel/skills/<name>/SKILL.md`
 
 **Dependencies:** None (CLI Tools completed in v0.28.x)
 
@@ -1571,7 +1652,7 @@ Three separate double-counting bugs were discovered and fixed:
 **Research Sources:**
 - OpenCode compaction.ts: `COMPACTION_BUFFER = 20,000`, structured template
 - LangChain: Token-based triggers, summary best practices
-- ask-ai-rs context: Zettelkasten and learning focus (smaller buffer than code agents)
+- sprachspiel context: Zettelkasten and learning focus (smaller buffer than code agents)
 
 **Note for Future:** When implementing parallel tool execution, the nudge mechanism via `continuation_prompt` should be reviewed to handle multiple concurrent tool completions.
 
@@ -1868,7 +1949,7 @@ pub struct ContinuationTag {
 - CLI flags: `--soulless` for `chat` and `query` commands
 - Documentation: `doc/src/soul.md`
 
-**Breaking Change:** Pepe personality removed. Users should create their own `~/.config/ask-ai/SOUL.md` for custom personalities.
+**Breaking Change:** Pepe personality removed. Users should create their own `~/.config/sprachspiel/SOUL.md` for custom personalities.
 
 ---
 
@@ -2178,9 +2259,9 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 **Branch:** `refactor/run-chat-repl-decoupling`
 
-**PR:** [#19](https://github.com/luksamuk/ask-ai-rs/pull/19) (MERGED)
+**PR:** [#19](https://github.com/luksamuk/sprachspiel/pull/19) (MERGED)
 
-**Issues:** [#7](https://github.com/luksamuk/ask-ai-rs/issues/7) (CLOSED), [#22](https://github.com/luksamuk/ask-ai-rs/issues/22) (OPEN - follow-up)
+**Issues:** [#7](https://github.com/luksamuk/sprachspiel/issues/7) (CLOSED), [#22](https://github.com/luksamuk/sprachspiel/issues/22) (OPEN - follow-up)
 
 ---
 
@@ -2647,14 +2728,14 @@ fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
 - **Full control:** No limitations from ollama-rs (e.g., missing `prompt_eval_count` in v0.3.4)
 - **Multi-provider:** Support Ollama (local) and OpenAI-compatible APIs (llama.cpp, LM Studio, cloud)
 - **Extensibility:** Future providers (Anthropic, Google) fit naturally into the trait
-- **Tool macro ownership:** Our own `#[ask_ai::tool]` proc macro, not dependent on third-party
+- **Tool macro ownership:** Our own `#[sprachspiel::tool]` proc macro, not dependent on third-party
 - **Error handling control:** Full control over error formatting, including recovery messages when LLM calls wrong tool
 
 **Architecture:**
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│           ask-ai (business logic)                    │
+│           sprachspiel (business logic)                    │
 │   Uses agnostic types:                                │
 │   LlmMessage, LlmResponse, ToolInfo, ProviderError    │
 ├──────────────────────────────────────────────────────┤
@@ -2693,12 +2774,12 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 ---
 
-#### Tool Trait + Proc Macro `#[ask_ai::tool]` — #118 [M1]
+#### Tool Trait + Proc Macro `#[sprachspiel::tool]` — #118 [M1]
 
 **Status:** 📋 PLANNED  
 **Depends on:** None (can start in parallel with #116)  
 **Estimated effort:** 1–1.5 weeks  
-**Merge criterion:** All 36 tools use `#[ask_ai::tool]`, no tool uses `#[ollama_rs::function]`
+**Merge criterion:** All 36 tools use `#[sprachspiel::tool]`, no tool uses `#[ollama_rs::function]`
 
 **Goal:** Replace `ollama_rs::generation::tools::Tool` trait and `#[ollama_rs::function]` macro with our own, removing the tightest coupling surface (36 tools across 12+ files).
 
@@ -2706,8 +2787,8 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 | File | Content |
 |------|---------|
-| `ask-ai-tool-derive/Cargo.toml` | Proc-macro crate, depends on `syn`, `quote`, `proc-macro2`, `schemars` |
-| `ask-ai-tool-derive/src/lib.rs` | `#[proc_macro_attribute] fn tool` — reads docstring, params, generates `Params` struct + `Tool` impl |
+| `sprachspiel-tool-derive/Cargo.toml` | Proc-macro crate, depends on `syn`, `quote`, `proc-macro2`, `schemars` |
+| `sprachspiel-tool-derive/src/lib.rs` | `#[proc_macro_attribute] fn tool` — reads docstring, params, generates `Params` struct + `Tool` impl |
 | `src/tools/tool_trait.rs` | Trait `Tool` with `name()`, `description()`, `Params`, `call()` + `ToolHolder`/`ToolInfo` types |
 
 **Our `Tool` trait:**
@@ -2721,10 +2802,10 @@ pub trait Tool: Send + Sync {
 }
 ```
 
-**Migration strategy:** Tools are migrated one by one. During migration, both `#[ollama_rs::function]` and `#[ask_ai::tool]` coexist. Groups: weather-tools → file-tools → calc-tools → ... → pokemon-tools.
+**Migration strategy:** Tools are migrated one by one. During migration, both `#[ollama_rs::function]` and `#[sprachspiel::tool]` coexist. Groups: weather-tools → file-tools → calc-tools → ... → pokemon-tools.
 
 **Files to modify:**
-- 12+ tool files — change `#[ollama_rs::function]` → `#[ask_ai::tool]`
+- 12+ tool files — change `#[ollama_rs::function]` → `#[sprachspiel::tool]`
 - `src/tools/registry.rs` — `ToolRegistrar` uses new trait
 - `src/chat/custom_coordinator.rs` — `ToolHolder` impl uses new trait
 
@@ -2799,7 +2880,7 @@ pub trait LlmProvider: Send + Sync {
 **Status:** 📋 PLANNED  
 **Depends on:** #120  
 **Estimated effort:** 1 week  
-**Merge criterion:** SSE parsing works, testable via `ask-ai query "text" --stream`
+**Merge criterion:** SSE parsing works, testable via `sprach query "text" --stream`
 
 **Goal:** Add SSE (Server-Sent Events) streaming to `OllamaProvider`. Not currently used by the CLI, but required for the TUI (M3). Can be tested independently via query mode with `--stream` flag (plain text, no markdown rendering).
 
@@ -3116,7 +3197,7 @@ verify_and_dedup_facts()               ← Semantic dedup (NEW)
 
 **Related:** Issue #73
 
-**Goal:** Add a `ask-ai config upgrade` subcommand that merges missing default fields into the user's existing `config.toml`, adding doc comments only for new fields. Users don't have to manually track which config fields are new after each update.
+**Goal:** Add a `sprach config upgrade` subcommand that merges missing default fields into the user's existing `config.toml`, adding doc comments only for new fields. Users don't have to manually track which config fields are new after each update.
 
 **Problem:**
 - Every release adds new config fields (`[feedback]` in v0.40, `[facts]` in v0.42)
@@ -3127,7 +3208,7 @@ verify_and_dedup_facts()               ← Semantic dedup (NEW)
 **Solution:** Two-pass approach using `toml_edit` (comment preservation) + `toml` (value parsing):
 
 ```
-ask-ai config upgrade [--dry-run] [--backup]
+sprach config upgrade [--dry-run] [--backup]
 ```
 
 1. Read user's `config.toml` with `toml_edit::DocumentMut` (preserves comments and formatting)
@@ -3293,7 +3374,7 @@ Features planned for future releases:
 
 **Current State (SOUL.md):**
 - Multiple personality files supported via symlinks
-- Symlink approach: `ln -sf ~/.config/ask-ai/SPRACH.md ~/.config/ask-ai/SOUL.md`
+- Symlink approach: `ln -sf ~/.config/sprachspiel/SPRACH.md ~/.config/sprachspiel/SOUL.md`
 
 **What's MISSING:**
 - Per-personality model configuration
@@ -3407,8 +3488,8 @@ src/tools/skill_tools.rs
 **Directories:**
 
 ```
-~/.config/ask-ai/skills/          ← User skills (writable)
-PROJECT/.ask-ai/skills/           ← Project skills (writable)
+~/.config/sprachspiel/skills/          ← User skills (writable)
+PROJECT/.sprachspiel/skills/           ← Project skills (writable)
 
 Priority for writes: project > user (same as reads)
 Priority for deletes: user only (cannot delete project from CLI)
@@ -3461,6 +3542,13 @@ See `doc/src/development/roadmap.md` - TUI section for detailed implementation p
 - Input pane with history
 - Status bar showing model, context usage, tokens
 - Sidebar for tools/messages (optional)
+
+**Pre-migration cleanup (before TUI work starts):**
+- Remove `#![expect(clippy::print_stdout)]` and `#![expect(clippy::print_stderr)]` from `lib.rs`
+- Audit each module that currently uses `println!`/`eprintln!` directly:
+  - CLI-only modules (repl, command_handlers, view/terminal): keep direct prints, these are the CLI backend
+  - Logic modules (embeddings, retrieval, facts, tools): replace with `ChatView` method calls so both CLI and TUI backends work
+  - The `ChatView` trait in `view/mod.rs` already provides `print_message()` and `print_error()` abstractions for this purpose
 
 **Estimated effort:** 3-4 weeks (plus 1-2 weeks for ApplicationBackend decoupling)
 
@@ -3564,7 +3652,7 @@ busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Pluggable architecture for extending ask-ai functionality with external tools.
+**Goal:** Pluggable architecture for extending sprachspiel functionality with external tools.
 
 **Dependencies:** TBD
 
@@ -3578,8 +3666,8 @@ busy_input_mode = "steer"  # "interrupt" | "queue" | "steer"
 
 1. **MCP Client Integration:** Dynamic tool discovery via MCP protocol. Primary path for extending functionality without native code changes.
 2. **Extensible Hooks:** Lifecycle hooks (PreToolCall, PostFileWrite, PreCompact) as a lightweight plugin alternative. May or may not be implemented depending on scope.
-3. **Post-edit verification as EXTERNAL service:** NOT built into ask-ai. Code verification (syntax, typecheck, lint) should be a plugin or external service that the harness invokes. This keeps ask-ai focused on research, interaction, and cognitive evolution.
-4. **Scope clarification:** ask-ai is NOT a code-specific harness. Features specific to software development workflows should be delegated to external tools/plugins. The core should remain focused on general-purpose cognitive interaction.
+3. **Post-edit verification as EXTERNAL service:** NOT built into sprachspiel. Code verification (syntax, typecheck, lint) should be a plugin or external service that the harness invokes. This keeps sprachspiel focused on research, interaction, and cognitive evolution.
+4. **Scope clarification:** sprachspiel is NOT a code-specific harness. Features specific to software development workflows should be delegated to external tools/plugins. The core should remain focused on general-purpose cognitive interaction.
 
 #### Background: Opt-in Tools
 
@@ -3619,8 +3707,8 @@ MCP is an open standard for connecting AI applications to external systems:
 
 ⚠️ **CRITICAL SECURITY ADVISORY (2026-04-19):** The Anthropic MCP SDK has a **by-design vulnerability** in `StdioServerParameters` that allows arbitrary command execution. The STDIO transport configuration passes commands directly to the OS without validation — even failed connections execute the command. This affects 7,000+ public MCP servers and 150M+ downloads (CVE-2025-65720, CVE-2026-30623, CVE-2026-30624, CVE-2026-30618, CVE-2026-33224, CVE-2026-30625, CVE-2026-30615, CVE-2026-26015, CVE-2026-40933, CVE-2025-49596, CVE-2026-22252, CVE-2026-22688, CVE-2025-54994, CVE-2025-54136). Anthropic has declined to fix this, calling it "expected behavior."
 
-**ask-ai's MCP security requirements (ADR-007):**
-1. `ask-ai` MUST NOT use the Anthropic MCP SDK's `StdioServerParameters` directly for untrusted input
+**sprachspiel's MCP security requirements (ADR-007):**
+1. `sprachspiel` MUST NOT use the Anthropic MCP SDK's `StdioServerParameters` directly for untrusted input
 2. MCP server configurations containing `command` fields MUST be treated as arbitrary code execution — equivalent to running a shell command
 3. User confirmation MUST be required before installing or connecting to any MCP server (no zero-click auto-discovery)
 4. An allowlist of approved MCP server commands MUST be maintained in `config.toml` (`[mcp].allowed_servers`)
@@ -3652,7 +3740,7 @@ MCP is an open standard for connecting AI applications to external systems:
 | MCP | JSON Schema + server | Runtime validation | Human approval ⚠️ RCE risk via STDIO (CVE-2025-65720 et al.) |
 | AI SDK (Vercel) | Zod Schema + execute | Compile-time | Needs approval |
 | Hermes Agent | Skills (Markdown) + Tools (Rust) | Compile-time for tools | Sanitization |
-| **ask-ai (current)** | Rust code + feature flags | Compile-time | Blacklist |
+| **sprachspiel (current)** | Rust code + feature flags | Compile-time | Blacklist |
 
 #### Implementation Phases
 
@@ -3697,7 +3785,7 @@ The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not 
 **Status:** 🟡 RESEARCH NEEDED  
 **Comprehensive Design:** See [Sprach 2.0 Research](./doc/src/development/sprach-2-0-research.md) for open questions, code analysis, and implementation details.
 
-Based on the Sprach 2.0 self-analysis article, which identifies ask-ai-rs as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. The proposals below aim to increase emergent connectivity and adaptive behavior.
+Based on the Sprach 2.0 self-analysis article, which identifies sprachspiel as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. The proposals below aim to increase emergent connectivity and adaptive behavior.
 
 **Prerequisite:** All P1-P5 current items must be completed before starting P7 work.
 
@@ -3911,7 +3999,7 @@ The Anthropic MCP SDK has a by-design Remote Code Execution (RCE) vulnerability 
 
 **Scope:** 7000+ MCP servers, 150M+ downloads affected. Anthropic declined to fix ("expected behavior").
 
-**Impact on ask-ai:** Currently zero — ask-ai has no MCP code. However, P6 (Phase 1) includes MCP Client Integration (P15/Plugin System), making this a future-critical concern.
+**Impact on sprachspiel:** Currently zero — sprachspiel has no MCP code. However, P6 (Phase 1) includes MCP Client Integration (P15/Plugin System), making this a future-critical concern.
 
 #### Decision
 
@@ -3923,7 +4011,7 @@ The Anthropic MCP SDK has a by-design Remote Code Execution (RCE) vulnerability 
 
 #### Consequences
 
-- **Positive:** ask-ai users are protected from the RCE vulnerability by design. The allowlist + sandbox approach means even a malicious MCP server config cannot execute arbitrary commands.
+- **Positive:** sprachspiel users are protected from the RCE vulnerability by design. The allowlist + sandbox approach means even a malicious MCP server config cannot execute arbitrary commands.
 - **Negative:** STDIO MCP servers with complex startup commands may not work out-of-the-box. Users will need to review and approve each server's command list. This is intentional — security over convenience.
 - **Relation to DEC-004:** `denied = ["process_spawn"]` is **meaningless** when MCP STDIO transport itself *is* process spawning. DEC-007 fixes this gap by requiring an explicit allowlist and sandbox for STDIO transport, making the DEC-004 capability model effective even with MCP.
 
@@ -4031,10 +4119,10 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 **Goal:** Clean up log levels, add file-based logging, enforce data sensitivity policy.
 
 **Implementation:**
-1. **Replaced `env_logger` with custom `MultiLogger`** — Implements `log::Log` trait with dual output: colored stderr + file (`~/.local/share/ask-ai/ask-ai.log`). Removed `env_logger` dependency.
+1. **Replaced `env_logger` with custom `MultiLogger`** — Implements `log::Log` trait with dual output: colored stderr + file (`~/.local/share/sprachspiel/sprachspiel.log`). Removed `env_logger` dependency.
 2. **Audited all `log::info!` calls** — Demoted operational info (recovery stats, execution notices) → `debug!`. Promoted service events (DB migration) → `warn!`. Target: 0 `info!` in normal operation. ✅
 3. **Raised terminal default from `info` → `warn`** — Only warnings/errors visible by default. `-v` for debug, `-vv` for trace.
-4. **Added file logging** — Default to `~/.local/share/ask-ai/ask-ai.log`. File always receives `warn+`. Trace mode raises file level to `info`. Rotation: 5 MB, keeps 1 backup (`.1`).
+4. **Added file logging** — Default to `~/.local/share/sprachspiel/sprachspiel.log`. File always receives `warn+`. Trace mode raises file level to `info`. Rotation: 5 MB, keeps 1 backup (`.1`).
 5. **Data sensitivity audit** — Truncated PII leakage in 3 locations:
    - `custom_coordinator.rs:609` — message content truncated to 80 chars
    - `dedup.rs:502,676` — fact content truncated to 80 chars
@@ -4075,9 +4163,9 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 **Estimated effort:** 4-6 weeks (all tiers)
 **Priority within M2:** End of milestone — last thing before public release
 
-**Goal:** Establish benchmarks that validate ask-ai's unique memory features with published numbers. No other CLI tool has published benchmarks for feedback-driven memory decay or retrieval-reinforced retention.
+**Goal:** Establish benchmarks that validate sprachspiel's unique memory features with published numbers. No other CLI tool has published benchmarks for feedback-driven memory decay or retrieval-reinforced retention.
 
-**Rationale:** Without benchmarks, claims about memory architecture are assertions. YourMemory published 59% Recall@5 on LoCoMo and established credibility. ask-ai needs equivalent validation.
+**Rationale:** Without benchmarks, claims about memory architecture are assertions. YourMemory published 59% Recall@5 on LoCoMo and established credibility. sprachspiel needs equivalent validation.
 
 **Sub-items:**
 
@@ -4090,7 +4178,7 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 
 **Key metric targets:**
 
-| Metric | Baseline (no memory) | YourMemory | ask-ai Target |
+| Metric | Baseline (no memory) | YourMemory | sprachspiel Target |
 |--------|---------------------|------------|----------------|
 | LoCoMo Recall@5 | ~20-30% | 59% | ≥55% |
 | Feedback impact on recall | N/A | N/A | +15-25% for "good" items |
@@ -4198,19 +4286,19 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 **Estimated effort:** 2-3 weeks
 **Priority within M4:** Final — after other M4 items
 
-**Goal:** Expose ask-ai's memory system (feedback-driven decay, hybrid retrieval, fact dedup) as an MCP server that other tools (Claude Code, Cursor, Cline) can consume.
+**Goal:** Expose sprachspiel's memory system (feedback-driven decay, hybrid retrieval, fact dedup) as an MCP server that other tools (Claude Code, Cursor, Cline) can consume.
 
-**Note:** This is distinct from P15 (MCP Client). P15 is about consuming external MCP servers. B5 is about providing ask-ai's memory as an MCP server. They are complementary but independent.
+**Note:** This is distinct from P15 (MCP Client). P15 is about consuming external MCP servers. B5 is about providing sprachspiel's memory as an MCP server. They are complementary but independent.
 
 **Open questions:**
 - What to expose? Facts? Content? Search? All three?
 - Authentication model for API access
 - How decay and feedback signals translate to MCP tool interfaces
-- Whether this positions ask-ai as a CLI tool or a memory library/service
+- Whether this positions sprachspiel as a CLI tool or a memory library/service
 
 **Reference:** Research icebox R-09
 
-**Relationship to B8 (ACP Agent Integration):** B8 (ACP) subsumes B5's use case. ACP's MCP-over-ACP capability allows ACP clients (editors) to inject MCP servers into ask-ai sessions, providing the same tool-level access that B5 would offer. Additionally, ACP gives users session management, streaming, and the full agent experience — not just individual tool calls. If B8 is implemented, B5 becomes redundant unless there's demand for a standalone memory API that doesn't require ACP session setup. **Recommendation:** Implement B8 first, evaluate if B5 is still needed.
+**Relationship to B8 (ACP Agent Integration):** B8 (ACP) subsumes B5's use case. ACP's MCP-over-ACP capability allows ACP clients (editors) to inject MCP servers into sprachspiel sessions, providing the same tool-level access that B5 would offer. Additionally, ACP gives users session management, streaming, and the full agent experience — not just individual tool calls. If B8 is implemented, B5 becomes redundant unless there's demand for a standalone memory API that doesn't require ACP session setup. **Recommendation:** Implement B8 first, evaluate if B5 is still needed.
 
 ---
 
@@ -4230,13 +4318,13 @@ Added `clippy.toml` with thresholds and `[lints.clippy]` in `Cargo.toml` to enfo
 **Estimated effort:** 4-8 weeks
 **Priority within M2/M3:** After P14 (TUI) decoupling. ACP requires ApplicationBackend trait.
 
-**Goal:** Implement the Agent Client Protocol (ACP) to expose ask-ai as an agent that editors (Zed, JetBrains, Neovim, VS Code) and other ACP-compatible clients can use directly, replacing the need for a standalone MCP Server (B5).
+**Goal:** Implement the Agent Client Protocol (ACP) to expose sprachspiel as an agent that editors (Zed, JetBrains, Neovim, VS Code) and other ACP-compatible clients can use directly, replacing the need for a standalone MCP Server (B5).
 
-**Rationale:** ACP is the emerging standard (like LSP for language servers) for editor↔agent communication. Instead of exposing individual tools via MCP (B5), ACP exposes the entire agent — sessions, conversation history, tools, memory, facts, and all. This gives users the ability to use ask-ai directly inside their editor with full session persistence, facts, and tool integration, rather than having another agent call ask-ai's tools piecemeal.
+**Rationale:** ACP is the emerging standard (like LSP for language servers) for editor↔agent communication. Instead of exposing individual tools via MCP (B5), ACP exposes the entire agent — sessions, conversation history, tools, memory, facts, and all. This gives users the ability to use sprachspiel directly inside their editor with full session persistence, facts, and tool integration, rather than having another agent call sprachspiel's tools piecemeal.
 
 **Key insight — ACP vs MCP:**
-- **MCP Server (B5):** Exposes ask-ai's memory as individual tools (search_facts, add_fact, etc). Other agents call these tools.
-- **ACP Agent (B8):** Exposes ask-ai as a complete agent. The user talks to ask-ai inside their editor, with full sessions, tools, and memory.
+- **MCP Server (B5):** Exposes sprachspiel's memory as individual tools (search_facts, add_fact, etc). Other agents call these tools.
+- **ACP Agent (B8):** Exposes sprachspiel as a complete agent. The user talks to sprachspiel inside their editor, with full sessions, tools, and memory.
 - **ACP subsumes B5's use case** via MCP-over-ACP: ACP clients can inject MCP servers that provide the same individual tool access.
 - **Recommendation:** Implement B8 first. B5 becomes a subset of B8's MCP-over-ACP capability, not a separate deliverable.
 
@@ -4259,18 +4347,18 @@ ApplicationBackend (trait)
 |-----|-------------|--------|----------|
 | B8.1 | Create `ApplicationBackend` trait in `src/chat/backend.rs` with event stream architecture | 1 week | **High** (prerequisite for TUI and ACP) |
 | B8.2 | Refactor `repl.rs` to use `ApplicationBackend` instead of direct ChatCore calls | 3-5 days | **High** (prerequisite) |
-| B8.3 | Add `ask-ai acp` subcommand that starts ACP server over stdio | 1-2 weeks | High |
+| B8.3 | Add `sprach acp` subcommand that starts ACP server over stdio | 1-2 weeks | High |
 | B8.4 | Implement ACP Agent trait: initialize, session/new, session/load, session/prompt | 2-3 weeks | High |
 | B8.5 | Bridge ChatEvent → ACP session/update notifications (text, tool_call, plan) | 1-2 weeks | High |
 | B8.6 | Implement session/resume and session/close for SQLite persistence | 1 week | Medium |
 | B8.7 | Tool call reporting: map CustomToolInfo to ACP tool_call notifications with kind/status | 3-5 days | Medium |
 | B8.8 | Permission system: session/request_permission for destructive tool calls | 1 week | Medium |
-| B8.9 | MCP-over-ACP: allow ACP clients to inject MCP servers into ask-ai sessions | 2-3 weeks | Low (M4-later) |
+| B8.9 | MCP-over-ACP: allow ACP clients to inject MCP servers into sprachspiel sessions | 2-3 weeks | Low (M4-later) |
 
 **Architecture:**
 
 ```
-ask-ai (binário único)
+sprachspiel (binário único)
 ├── CLI mode (atual)
 │   └── RustylineInput + TerminalView → ApplicationBackend → ChatCore → Ollama
 ├── TUI mode (P14)
@@ -4281,7 +4369,7 @@ ask-ai (binário único)
 
 **What already maps to ACP:**
 
-| ACP Concept | ask-ai Equivalent | Status |
+| ACP Concept | sprachspiel Equivalent | Status |
 |-------------|-------------------|--------|
 | session/new | ChatSession::new() | ✅ Exists |
 | session/load | ChatSession::load_from_sqlite() | ✅ Exists |
@@ -4327,7 +4415,7 @@ ask-ai (binário único)
 
 **Goal:** Integrate the OpenAI Privacy Filter model (1.4B params, Apache 2.0) as an optional Python sidecar for PII detection and redaction in facts, logs, and tool outputs.
 
-**Architecture:** Python sidecar on localhost:8199 (ONNX rejected per D-06). ask-ai calls via HTTP. Must be optional — falls back to `truncate_for_log()`.
+**Architecture:** Python sidecar on localhost:8199 (ONNX rejected per D-06). sprachspiel calls via HTTP. Must be optional — falls back to `truncate_for_log()`.
 
 **Integration points:**
 
@@ -4474,7 +4562,7 @@ timeout_ms = 2000
 **Estimated effort:** 3-5 days (Option A: cosine similarity)
 **Priority within M4:** Batch job — can run alongside other M4 work
 
-**Goal:** Clustering by cosine similarity (threshold ~0.92) to eliminate near-duplicate chunks before indexing. Runs as offline batch job (`ask-ai reindex --dedup`), NOT in hot ingestion path. Option A: O(n²) vector comparison (simple, works for ≤100k chunks). Option B: MinHash+LSH (scales better, adds dependency).
+**Goal:** Clustering by cosine similarity (threshold ~0.92) to eliminate near-duplicate chunks before indexing. Runs as offline batch job (`sprach reindex --dedup`), NOT in hot ingestion path. Option A: O(n²) vector comparison (simple, works for ≤100k chunks). Option B: MinHash+LSH (scales better, adds dependency).
 
 **Source:** ~/RAG-IMPROVEMENT-ROADMAP.md Section 4
 
@@ -4538,7 +4626,7 @@ mdbook serve
 mdbook build
 
 # View man page
-man ask-ai
+man sprach
 ```
 
 ## For Developers
