@@ -447,12 +447,12 @@ export OLLAMA_HOST="192.168.1.100:11434"
 echo 'export OLLAMA_HOST="localhost:11434"' >> ~/.bashrc
 ```
 
-### ASK_AI_DEBUG
+### RUST_LOG
 
-Enable debug logging globally:
+Enable debug logging via the standard Rust environment variable:
 
 ```bash
-export ASK_AI_DEBUG=1
+export RUST_LOG=debug
 ```
 
 ## Model Configuration
