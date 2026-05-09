@@ -206,7 +206,7 @@ This document outlines planned features and the current state of Sprachspiel.
 
 ## Known Issues
 
-No critical bugs currently open. See [GitHub Issues](https://github.com/luksamuk/ask-ai-rs/issues) for the latest status.
+No critical bugs currently open. See [GitHub Issues](https://github.com/luksamuk/sprachspiel/issues) for the latest status.
 
 ---
 
@@ -888,7 +888,7 @@ Features explicitly deferred with no current priority:
 
 ## Contributing
 
-1. Check [GitHub Issues](https://github.com/luksamuk/ask-ai-rs/issues)
+1. Check [GitHub Issues](https://github.com/luksamuk/sprachspiel/issues)
 2. Comment on the issue
 3. Submit a pull request
 

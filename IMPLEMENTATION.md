@@ -204,7 +204,10 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 | 8 | Binary rename: sprachspiel → sprach (short CLI command) | ✅ Done |
 | 9 | Documentation: remove Ollama vendor-exclusivity (11 files) | ✅ Done |
 | 10 | Sample config: remove ask-ai refs in settings.rs | ✅ Done |
-| 11 | GitHub repo rename (`ask-ollama-rs` → `sprachspiel`) | 📋 Pending (post-merge) |
+| 11 | GitHub repo rename (`ask-ollama-rs` → `sprachspiel`), update local remote, configure GitHub Pages | 📋 Pending (post-merge) |
+| 12 | Post-merge documentation cleanup: remaining ask-ai/sprach refs, GitHub URLs → sprachspiel, book.toml, launch reel, proc-macro naming | ✅ Done |
+
+**Note:** GitHub automatically redirects old repo URLs (`ask-ai-rs`) to the new name (`sprachspiel`) indefinitely after rename. URLs updated pre-emptively in docs.
 
 **Files to Create:**
 - `src/consts/app.rs` — Centralized app name constants (`APP_NAME`, `DB_FILENAME`)
@@ -1649,7 +1652,7 @@ Three separate double-counting bugs were discovered and fixed:
 **Research Sources:**
 - OpenCode compaction.ts: `COMPACTION_BUFFER = 20,000`, structured template
 - LangChain: Token-based triggers, summary best practices
-- sprachspiel-rs context: Zettelkasten and learning focus (smaller buffer than code agents)
+- sprachspiel context: Zettelkasten and learning focus (smaller buffer than code agents)
 
 **Note for Future:** When implementing parallel tool execution, the nudge mechanism via `continuation_prompt` should be reviewed to handle multiple concurrent tool completions.
 
@@ -2256,9 +2259,9 @@ See `doc/src/development/roadmap.md` - TUI section for future work.
 
 **Branch:** `refactor/run-chat-repl-decoupling`
 
-**PR:** [#19](https://github.com/luksamuk/ask-ai-rs/pull/19) (MERGED)
+**PR:** [#19](https://github.com/luksamuk/sprachspiel/pull/19) (MERGED)
 
-**Issues:** [#7](https://github.com/luksamuk/ask-ai-rs/issues/7) (CLOSED), [#22](https://github.com/luksamuk/ask-ai-rs/issues/22) (OPEN - follow-up)
+**Issues:** [#7](https://github.com/luksamuk/sprachspiel/issues/7) (CLOSED), [#22](https://github.com/luksamuk/sprachspiel/issues/22) (OPEN - follow-up)
 
 ---
 
@@ -2725,7 +2728,7 @@ fn retry_delay(category: &RetryCategory, attempt: usize) -> Duration {
 - **Full control:** No limitations from ollama-rs (e.g., missing `prompt_eval_count` in v0.3.4)
 - **Multi-provider:** Support Ollama (local) and OpenAI-compatible APIs (llama.cpp, LM Studio, cloud)
 - **Extensibility:** Future providers (Anthropic, Google) fit naturally into the trait
-- **Tool macro ownership:** Our own `#[ask_ai::tool]` proc macro, not dependent on third-party
+- **Tool macro ownership:** Our own `#[sprachspiel::tool]` proc macro, not dependent on third-party
 - **Error handling control:** Full control over error formatting, including recovery messages when LLM calls wrong tool
 
 **Architecture:**
@@ -2771,12 +2774,12 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 ---
 
-#### Tool Trait + Proc Macro `#[ask_ai::tool]` — #118 [M1]
+#### Tool Trait + Proc Macro `#[sprachspiel::tool]` — #118 [M1]
 
 **Status:** 📋 PLANNED  
 **Depends on:** None (can start in parallel with #116)  
 **Estimated effort:** 1–1.5 weeks  
-**Merge criterion:** All 36 tools use `#[ask_ai::tool]`, no tool uses `#[ollama_rs::function]`
+**Merge criterion:** All 36 tools use `#[sprachspiel::tool]`, no tool uses `#[ollama_rs::function]`
 
 **Goal:** Replace `ollama_rs::generation::tools::Tool` trait and `#[ollama_rs::function]` macro with our own, removing the tightest coupling surface (36 tools across 12+ files).
 
@@ -2784,8 +2787,8 @@ Backoff  Trait/   Agnóst.   Provider  SSE          Consum.  Compat.  ollama-rs
 
 | File | Content |
 |------|---------|
-| `ask-ai-tool-derive/Cargo.toml` | Proc-macro crate, depends on `syn`, `quote`, `proc-macro2`, `schemars` |
-| `ask-ai-tool-derive/src/lib.rs` | `#[proc_macro_attribute] fn tool` — reads docstring, params, generates `Params` struct + `Tool` impl |
+| `sprachspiel-tool-derive/Cargo.toml` | Proc-macro crate, depends on `syn`, `quote`, `proc-macro2`, `schemars` |
+| `sprachspiel-tool-derive/src/lib.rs` | `#[proc_macro_attribute] fn tool` — reads docstring, params, generates `Params` struct + `Tool` impl |
 | `src/tools/tool_trait.rs` | Trait `Tool` with `name()`, `description()`, `Params`, `call()` + `ToolHolder`/`ToolInfo` types |
 
 **Our `Tool` trait:**
@@ -2799,10 +2802,10 @@ pub trait Tool: Send + Sync {
 }
 ```
 
-**Migration strategy:** Tools are migrated one by one. During migration, both `#[ollama_rs::function]` and `#[ask_ai::tool]` coexist. Groups: weather-tools → file-tools → calc-tools → ... → pokemon-tools.
+**Migration strategy:** Tools are migrated one by one. During migration, both `#[ollama_rs::function]` and `#[sprachspiel::tool]` coexist. Groups: weather-tools → file-tools → calc-tools → ... → pokemon-tools.
 
 **Files to modify:**
-- 12+ tool files — change `#[ollama_rs::function]` → `#[ask_ai::tool]`
+- 12+ tool files — change `#[ollama_rs::function]` → `#[sprachspiel::tool]`
 - `src/tools/registry.rs` — `ToolRegistrar` uses new trait
 - `src/chat/custom_coordinator.rs` — `ToolHolder` impl uses new trait
 
@@ -3782,7 +3785,7 @@ The industry standard (MCP, Claude Code, etc.) uses **typed tool schemas**, not 
 **Status:** 🟡 RESEARCH NEEDED  
 **Comprehensive Design:** See [Sprach 2.0 Research](./doc/src/development/sprach-2-0-research.md) for open questions, code analysis, and implementation details.
 
-Based on the Sprach 2.0 self-analysis article, which identifies sprachspiel-rs as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. The proposals below aim to increase emergent connectivity and adaptive behavior.
+Based on the Sprach 2.0 self-analysis article, which identifies sprachspiel as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. The proposals below aim to increase emergent connectivity and adaptive behavior.
 
 **Prerequisite:** All P1-P5 current items must be completed before starting P7 work.
 
@@ -4623,7 +4626,7 @@ mdbook serve
 mdbook build
 
 # View man page
-man sprachspiel
+man sprach
 ```
 
 ## For Developers

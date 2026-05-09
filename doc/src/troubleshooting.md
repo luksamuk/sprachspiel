@@ -286,7 +286,7 @@ sprach summarize -d "Text"
 
 ### GitHub Issues
 
-Report bugs at: https://github.com/luksamuk/ask-ai-rs/issues
+Report bugs at: https://github.com/luksamuk/sprachspiel/issues
 
 ### Debug Information
 

@@ -169,7 +169,7 @@ Update relevant documentation:
 - Update examples to reflect new behavior
 - Add migration notes if breaking change
 
-## Man Page (`man/sprachspiel.1`)
+## Man Page (`man/sprach.1`)
 
 Update when CLI interface changes:
 - New commands

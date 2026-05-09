@@ -93,7 +93,7 @@ sprach translate --help
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/luksamuk/ask-ai-rs/issues)
+- **Issues**: [GitHub Issues](https://github.com/luksamuk/sprachspiel/issues)
 - **Documentation**: You're reading it! 📖
 
 ## License

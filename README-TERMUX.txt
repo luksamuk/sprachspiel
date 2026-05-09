@@ -176,6 +176,6 @@ man sprach  # If manpage is installed
 
 ## Links
 
-- GitHub: https://github.com/luksamuk/ask-ai-rs
-- Documentation: https://luksamuk.github.io/ask-ai/
-- Issues: https://github.com/luksamuk/ask-ai-rs/issues
+- GitHub: https://github.com/luksamuk/sprachspiel
+- Documentation: https://luksamuk.github.io/sprachspiel/
+- Issues: https://github.com/luksamuk/sprachspiel/issues

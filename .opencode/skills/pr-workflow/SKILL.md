@@ -184,7 +184,7 @@ Move the GitHub Project card to "In Progress" (project number 4 = Sprachspiel Ro
 ITEM_ID=$(gh issue view <issue_number> --json projectItems --jq '.projectItems[] | select(.project.number == 4) | .id')
 
 # If item is NOT on the board, add it:
-gh project item-add 4 --owner luksamuk --url https://github.com/luksamuk/ask-ai-rs/issues/<issue_number>
+gh project item-add 4 --owner luksamuk --url https://github.com/luksamuk/sprachspiel/issues/<issue_number>
 
 # Update Status field to "In Progress"
 gh api graphql -f query='

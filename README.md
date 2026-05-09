@@ -19,7 +19,7 @@ Key capabilities:
 
 ```bash
 # Install (one-liner)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
 
 # Basic query
 sprach "What is Rust?"
@@ -48,23 +48,23 @@ Install directly from GitHub releases:
 
 ```bash
 # Latest version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
 
 # Specific version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --version 0.26.0
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --version 0.26.0
 
 # With all tools
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --tools all
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --tools all
 
 # System-wide (requires sudo)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --prefix /usr
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --prefix /usr
 ```
 
 Installs to `~/.local/bin` by default. The manpage is installed to `~/.local/share/man/man1`.
 
 ### Option 2: Download Tarball
 
-Download from [GitHub Releases](https://github.com/luksamuk/ask-ai-rs/releases):
+Download from [GitHub Releases](https://github.com/luksamuk/sprachspiel/releases):
 
 ```bash
 # Download and extract
@@ -87,7 +87,7 @@ cd sprachspiel-0.26.0-linux-x86_64
 
 ```bash
 # Clone
-git clone https://github.com/luksamuk/ask-ai-rs.git
+git clone https://github.com/luksamuk/sprachspiel.git
 cd sprachspiel
 
 # Install required models first
@@ -109,7 +109,7 @@ Sprachspiel works on Termux! Download the Termux tarball from releases:
 pkg install wget
 
 # Download and install
-wget https://github.com/luksamuk/ask-ai-rs/releases/download/v0.26.0/sprachspiel-0.26.0-termux-aarch64.tar.gz
+wget https://github.com/luksamuk/sprachspiel/releases/download/v0.26.0/sprachspiel-0.26.0-termux-aarch64.tar.gz
 tar -xzf sprachspiel-0.26.0-termux-aarch64.tar.gz
 cd sprachspiel-0.26.0-termux-aarch64
 ./install.sh

@@ -48,16 +48,16 @@ Install directly from GitHub releases:
 
 ```bash
 # Install latest version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
 
 # Install specific version
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --version 0.25.0
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --version 0.25.0
 
 # Install with all tools enabled
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --tools all
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --tools all
 
 # Install system-wide (requires sudo)
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash -s -- --prefix /usr
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash -s -- --prefix /usr
 ```
 
 **What it does:**
@@ -76,11 +76,11 @@ export MANPATH="$HOME/.local/share/man:$MANPATH"
 
 ### Method 2: Download Tarball
 
-Download from [GitHub Releases](https://github.com/luksamuk/ask-ai-rs/releases):
+Download from [GitHub Releases](https://github.com/luksamuk/sprachspiel/releases):
 
 ```bash
 # Download latest release
-wget https://github.com/luksamuk/ask-ai-rs/releases/latest/download/sprachspiel-0.25.0-linux-x86_64.tar.gz
+wget https://github.com/luksamuk/sprachspiel/releases/latest/download/sprachspiel-0.25.0-linux-x86_64.tar.gz
 
 # Extract
 tar -xzf sprachspiel-0.25.0-linux-x86_64.tar.gz
@@ -111,7 +111,7 @@ The traditional way using Make:
 
 ```bash
 # Clone the repository
-git clone https://github.com/luksamuk/ask-ai-rs.git
+git clone https://github.com/luksamuk/sprachspiel.git
 cd sprachspiel
 
 # Build and install (default: /usr/local)
@@ -137,7 +137,7 @@ Sprachspiel can run on Android via Termux. Since local LLM servers (Ollama) don'
 
 ```bash
 # In Termux
-curl -sL https://raw.githubusercontent.com/luksamuk/ask-ai-rs/main/scripts/install-sprach.sh | bash
+curl -sL https://raw.githubusercontent.com/luksamuk/sprachspiel/main/scripts/install-sprach.sh | bash
 ```
 
 The installer automatically detects Termux and configures the correct paths.
@@ -149,7 +149,7 @@ The installer automatically detects Termux and configures the correct paths.
 pkg install wget
 
 # Download the tarball from GitHub releases
-wget https://github.com/luksamuk/ask-ai-rs/releases/download/v0.25.0/sprachspiel-0.25.0-termux-aarch64.tar.gz
+wget https://github.com/luksamuk/sprachspiel/releases/download/v0.25.0/sprachspiel-0.25.0-termux-aarch64.tar.gz
 
 # Extract
 tar -xzf sprachspiel-0.25.0-termux-aarch64.tar.gz
@@ -192,7 +192,7 @@ If you're building from source for Termux (requires cross-compilation):
 
 ```bash
 # On your development machine
-git clone https://github.com/luksamuk/ask-ai-rs.git
+git clone https://github.com/luksamuk/sprachspiel.git
 cd sprachspiel
 
 # Build for Termux (aarch64)
@@ -220,7 +220,7 @@ Build from source manually:
 
 ```bash
 # Clone and enter repository
-git clone https://github.com/luksamuk/ask-ai-rs.git
+git clone https://github.com/luksamuk/sprachspiel.git
 cd sprachspiel
 
 # Build release binary
