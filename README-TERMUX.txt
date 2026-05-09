@@ -1,6 +1,6 @@
-# ask-ai for Termux (Android)
+# Sprachspiel for Termux (Android)
 
-This package contains ask-ai compiled for Android/Termux (aarch64).
+This package contains sprach compiled for Android/Termux (aarch64).
 
 ## Requirements
 
@@ -11,8 +11,8 @@ This package contains ask-ai compiled for Android/Termux (aarch64).
 
 ```bash
 # Extract the tarball
-tar -xzf ask-ai-VERSION-termux-aarch64.tar.gz
-cd ask-ai-VERSION-termux-aarch64
+tar -xzf sprach-VERSION-termux-aarch64.tar.gz
+cd sprach-VERSION-termux-aarch64
 
 # Run the installer
 ./install.sh
@@ -24,18 +24,18 @@ If you prefer to install manually:
 
 ```bash
 # Extract
-tar -xzf ask-ai-VERSION-termux-aarch64.tar.gz
+tar -xzf sprach-VERSION-termux-aarch64.tar.gz
 
 # Create directories
 mkdir -p ~/bin
 mkdir -p ~/.local/share/man/man1
 
 # Install binary
-cp ask-ai ~/bin/
-chmod +x ~/bin/ask-ai
+cp sprach ~/bin/
+chmod +x ~/bin/sprach
 
 # Install manpage (optional)
-cp ask-ai.1 ~/.local/share/man/man1/
+cp sprach.1 ~/.local/share/man/man1/
 
 # Add to PATH (add to ~/.bashrc or ~/.termux/boot/autoload.sh)
 export PATH="$HOME/bin:$PATH"
@@ -43,7 +43,7 @@ export PATH="$HOME/bin:$PATH"
 
 ## Configuring Ollama
 
-ask-ai requires Ollama to be running. Since Termux cannot run Ollama directly, you need to connect to a remote Ollama instance.
+sprach requires Ollama to be running. Since Termux cannot run Ollama directly, you need to connect to a remote Ollama instance.
 
 ### Step 1: Set up Ollama on your desktop/server
 
@@ -57,14 +57,14 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 export OLLAMA_HOST=0.0.0.0:11434
 ```
 
-### Step 2: Configure ask-ai on Termux
+### Step 2: Configure sprach on Termux
 
-Create or edit `~/.config/ask-ai/config.toml`:
+Create or edit `~/.config/sprachspiel/config.toml`:
 
 ```bash
-mkdir -p ~/.config/ask-ai
-cat > ~/.config/ask-ai/config.toml << 'EOF'
-# Ask AI configuration for Termux
+mkdir -p ~/.config/sprachspiel
+cat > ~/.config/sprachspiel/config.toml << 'EOF'
+# Sprachspiel configuration for Termux
 
 [ollama]
 host = "192.168.1.100:11434"  # Replace with your desktop/server IP
@@ -74,14 +74,14 @@ EOF
 ### Step 3: Test the connection
 
 ```bash
-ask-ai "What is the capital of France?"
+sprach "What is the capital of France?"
 ```
 
 ## Configuration File Location
 
 ```
-~/.config/ask-ai/config.toml     # Main configuration
-~/.local/share/ask-ai/           # Data directory (conversations, embeddings)
+~/.config/sprachspiel/config.toml     # Main configuration
+~/.local/share/sprachspiel/           # Data directory (conversations, embeddings)
 ```
 
 ## Available Features
@@ -101,8 +101,8 @@ If you need web search and Pokémon tools:
 
 ```bash
 # Download the all-tools variant
-tar -xzf ask-ai-VERSION-termux-aarch64-all-tools.tar.gz
-cd ask-ai-VERSION-termux-aarch64-all-tools
+tar -xzf sprach-VERSION-termux-aarch64-all-tools.tar.gz
+cd sprach-VERSION-termux-aarch64-all-tools
 ./install.sh
 ```
 
@@ -153,25 +153,25 @@ source ~/.bashrc
 ## Uninstalling
 
 ```bash
-cd ask-ai-VERSION-termux-aarch64
+cd sprach-VERSION-termux-aarch64
 ./uninstall.sh
 ```
 
 Or manually:
 
 ```bash
-rm ~/bin/ask-ai
-rm ~/.local/share/man/man1/ask-ai.1
+rm ~/bin/sprach
+rm ~/.local/share/man/man1/sprach.1
 # Optionally remove config if not needed
-rm -rf ~/.config/ask-ai
-rm -rf ~/.local/share/ask-ai
+rm -rf ~/.config/sprachspiel
+rm -rf ~/.local/share/sprachspiel
 ```
 
 ## Getting Help
 
 ```bash
-ask-ai --help
-man ask-ai  # If manpage is installed
+sprach --help
+man sprach  # If manpage is installed
 ```
 
 ## Links

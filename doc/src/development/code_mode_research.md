@@ -287,7 +287,7 @@ thinking = false
 | `doc/src/configuration.md` | Document per-subcommand config |
 | `doc/src/models.md` | Add deepseek-coder-v2 info |
 | `doc/src/tools.md` | Document code_with_tools mode |
-| `man/sprachspiel.1` | Update man page |
+| `man/sprach.1` | Update man page |
 
 ---
 

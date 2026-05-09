@@ -536,7 +536,7 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 **Status:** 🟡 RESEARCH NEEDED  
 **Full Design:** See [Sprach 2.0 Research](./sprach-2-0-research.md) for open questions, code analysis, and implementation details.
 
-Self-analysis identifying ask-ai-rs as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. Proposals aim to increase emergent connectivity and adaptive behavior.
+Self-analysis identifying sprachspiel as a Complex Adaptive System (CAS) with emergent properties but limited open-endedness. Proposals aim to increase emergent connectivity and adaptive behavior.
 
 | ID | Proposal | Depends On | Status | Effort |
 |----|----------|------------|--------|--------|

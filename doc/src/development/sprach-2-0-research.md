@@ -6,7 +6,7 @@
 
 ## Overview
 
-This document provides the technical design details for the Sprach 2.0 proposals, based on the self-analysis article that identifies ask-ai-rs as a Complex Adaptive System (CAS). The article identifies key CAS properties already present (feedback loops, decay, emergence) and proposes extensions to increase open-endedness and adaptive behavior.
+This document provides the technical design details for the Sprach 2.0 proposals, based on the self-analysis article that identifies sprachspiel as a Complex Adaptive System (CAS). The article identifies key CAS properties already present (feedback loops, decay, emergence) and proposes extensions to increase open-endedness and adaptive behavior.
 
 **Source article key findings:**
 
@@ -541,7 +541,7 @@ No implementation sketch at this time.
 
 ## Reference
 
-- **Sprach 2.0 Article:** Self-analysis identifying ask-ai-rs as a Complex Adaptive System (original in private notes, design details in this document)
+- **Sprach 2.0 Article:** Self-analysis identifying sprachspiel as a Complex Adaptive System (original in private notes, design details in this document)
 - **State of Art Research:** See DEC-001 to DEC-007 in this document
 - **Competitors:** Joplin GSoC 2026 (note graphs), OpenClaw (WASM sandbox)
 - **Related roadmap items:** P5 (Feedback Infrastructure), P15 (Plugin System)

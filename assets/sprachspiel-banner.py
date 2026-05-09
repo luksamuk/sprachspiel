@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Sprachspiel README Banner — v1 (adapted from ask-ai-banner.py v3)
+Sprachspiel README Banner — v1 (adapted from sprachspiel-banner.py v3)
 
 Brain + gold connections rendered as braille art (inherited from v3).
 Title "SPRACHSPIEL" uses Pillow font with gold/cyan color split.
 Everything visual: braille art brain/connections + clean font text.
 
-Changes from ask-ai-banner.py:
-- Title: "ask-ai" → "SPRACHSPIEL" (SPRACH in gold, SPIEL in cyan)
+Changes from sprachspiel-banner.py:
+- Title: "SPRACHSPIEL" (SPRACH in gold, SPIEL in cyan)
 - Subtitle: "Cognitive interaction harness for LLMs" → "A language game with LLMs"
 - Tags: arrows → pipes (│)
 - Hardcoded path → relative path using Path(__file__).parent

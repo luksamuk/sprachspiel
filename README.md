@@ -88,7 +88,7 @@ cd sprachspiel-0.26.0-linux-x86_64
 ```bash
 # Clone
 git clone https://github.com/luksamuk/ask-ai-rs.git
-cd ask-ai-rs
+cd sprachspiel
 
 # Install required models first
 cd modelfiles && make models-essential && cd ..

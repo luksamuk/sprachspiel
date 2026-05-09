@@ -11,7 +11,7 @@ Run these tests after automated tests pass, before finalizing a merge.
 ## Prerequisites
 
 ```bash
-cd /path/to/ask-ai-rs
+cd /path/to/sprachspiel
 cargo build --release --features all-tools
 ollama serve  # In another terminal
 

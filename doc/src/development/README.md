@@ -62,7 +62,7 @@ sprachspiel/
 ├── Cargo.toml              # Dependencies
 ├── Makefile                # Build automation
 ├── man/
-│   └── sprachspiel.1           # Man page
+│   └── sprach.1                  # Man page
 ├── doc/
 │   ├── book.toml          # mdBook configuration
 │   └── src/               # Documentation source
