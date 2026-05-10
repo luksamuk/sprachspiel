@@ -2,11 +2,11 @@
 //!
 //! Tests token estimation, message overhead, and context metrics.
 
+use ollama_rs::generation::chat::ChatMessage;
 use sprachspiel::tokens::{
     ContextMetrics, MESSAGE_OVERHEAD, calculate_context_metrics, count_messages_tokens,
     estimate_tokens, estimate_tokens_code,
 };
-use ollama_rs::generation::chat::ChatMessage;
 
 #[test]
 fn test_estimate_tokens_empty() {

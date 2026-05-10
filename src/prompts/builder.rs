@@ -297,7 +297,7 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
                 }
 
                 prompt.push_str(
-                    "\n**Important:** Load a skill with `skill_view(name=\"skill-name\")` as soon as you recognize a task that matches. Do NOT wait until you encounter problems — load the skill proactively.\n",
+                    "\n**Important:** Load a skill with `skill_view(name=\"skill-name\")` as soon as you recognize a matching task — proactive loading prevents problems.\n",
                 );
             }
         }

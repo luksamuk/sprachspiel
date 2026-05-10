@@ -108,7 +108,10 @@ pub fn default_history_path() -> PathBuf {
         let _ = std::fs::create_dir_all(&path);
         path.join("chat_history.txt")
     } else if let Some(home_dir) = dirs::home_dir() {
-        let path = home_dir.join(".local").join("share").join(app::APP_DATA_DIR);
+        let path = home_dir
+            .join(".local")
+            .join("share")
+            .join(app::APP_DATA_DIR);
         let _ = std::fs::create_dir_all(&path);
         path.join("chat_history.txt")
     } else {

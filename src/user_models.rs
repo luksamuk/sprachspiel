@@ -41,9 +41,14 @@ pub fn get_user_models_path() -> PathBuf {
     use crate::consts::app;
 
     if let Ok(data_home) = env::var("XDG_DATA_HOME") {
-        PathBuf::from(data_home).join(app::APP_CONFIG_DIR).join("models.toml")
+        PathBuf::from(data_home)
+            .join(app::APP_CONFIG_DIR)
+            .join("models.toml")
     } else if let Some(home_dir) = dirs::home_dir() {
-        home_dir.join(".config").join(app::APP_CONFIG_DIR).join("models.toml")
+        home_dir
+            .join(".config")
+            .join(app::APP_CONFIG_DIR)
+            .join("models.toml")
     } else {
         PathBuf::from(app::APP_PROJECT_DIR).join("models.toml")
     }

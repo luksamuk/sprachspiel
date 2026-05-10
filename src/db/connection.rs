@@ -714,7 +714,9 @@ impl Database {
         use crate::consts::app;
 
         if let Ok(data_home) = std::env::var("XDG_DATA_HOME") {
-            PathBuf::from(data_home).join(app::APP_DATA_DIR).join(app::DB_FILENAME)
+            PathBuf::from(data_home)
+                .join(app::APP_DATA_DIR)
+                .join(app::DB_FILENAME)
         } else if let Some(home_dir) = dirs::home_dir() {
             home_dir
                 .join(".local")

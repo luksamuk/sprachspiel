@@ -6,12 +6,12 @@
 //! 3. Auto-compaction after overflow error
 //! 4. User can retry after recovery
 
+use chrono::Utc;
 use sprachspiel::chat::session::{ChatSession, MessageRole, SavedMessage};
 use sprachspiel::context_overflow::{
     COMPACTION_MIN, DEFAULT_KEEP_FIRST, DEFAULT_KEEP_LAST, DEFAULT_OVERFLOW_THRESHOLD,
     PRE_TOOL_MIN, calculate_thresholds, check_context_overflow,
 };
-use chrono::Utc;
 
 fn create_session_with_token_count(message_count: usize, tokens_per_message: usize) -> ChatSession {
     let mut session = ChatSession::new("test-model".to_string(), None, false);

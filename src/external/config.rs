@@ -152,7 +152,9 @@ fn find_tools_config() -> Option<PathBuf> {
 
     // Check XDG_CONFIG_HOME first
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        let path = PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR).join("tools.toml");
+        let path = PathBuf::from(xdg_config)
+            .join(app::APP_CONFIG_DIR)
+            .join("tools.toml");
         if path.exists() {
             return Some(path);
         }
@@ -160,7 +162,10 @@ fn find_tools_config() -> Option<PathBuf> {
 
     // Fall back to ~/.config/sprachspiel/tools.toml
     if let Some(home_dir) = dirs::home_dir() {
-        let path = home_dir.join(".config").join(app::APP_CONFIG_DIR).join("tools.toml");
+        let path = home_dir
+            .join(".config")
+            .join(app::APP_CONFIG_DIR)
+            .join("tools.toml");
         if path.exists() {
             return Some(path);
         }
@@ -301,11 +306,20 @@ pub fn tools_config_path() -> Option<PathBuf> {
     use crate::consts::app;
 
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        return Some(PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR).join("tools.toml"));
+        return Some(
+            PathBuf::from(xdg_config)
+                .join(app::APP_CONFIG_DIR)
+                .join("tools.toml"),
+        );
     }
 
     if let Some(home_dir) = dirs::home_dir() {
-        return Some(home_dir.join(".config").join(app::APP_CONFIG_DIR).join("tools.toml"));
+        return Some(
+            home_dir
+                .join(".config")
+                .join(app::APP_CONFIG_DIR)
+                .join("tools.toml"),
+        );
     }
 
     None

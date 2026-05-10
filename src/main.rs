@@ -259,8 +259,8 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let model_config = match user_models::get_model_config(&translate_model) {
         Some(cfg) => cfg,
         None => {
-                eprintln!(
-                    "Error: Translate model '{}' not found. \
+            eprintln!(
+                "Error: Translate model '{}' not found. \
                      Add it to ~/.config/sprachspiel/models.toml or use a built-in model.",
                 translate_model
             );

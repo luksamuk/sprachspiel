@@ -399,7 +399,9 @@ impl Settings {
 
         // Check XDG_CONFIG_HOME first
         if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-            let path = PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR).join("config.toml");
+            let path = PathBuf::from(xdg_config)
+                .join(app::APP_CONFIG_DIR)
+                .join("config.toml");
             if path.exists() {
                 return Some(path);
             }
@@ -407,7 +409,10 @@ impl Settings {
 
         // Fall back to ~/.config/sprachspiel/config.toml
         if let Some(home_dir) = dirs::home_dir() {
-            let path = home_dir.join(".config").join(app::APP_CONFIG_DIR).join("config.toml");
+            let path = home_dir
+                .join(".config")
+                .join(app::APP_CONFIG_DIR)
+                .join("config.toml");
             if path.exists() {
                 return Some(path);
             }

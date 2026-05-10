@@ -38,7 +38,9 @@ pub fn get_soul_path() -> Option<PathBuf> {
 
     // Try XDG_CONFIG_HOME first
     if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
-        let path = PathBuf::from(xdg_config).join(app::APP_CONFIG_DIR).join(SOUL_FILENAME);
+        let path = PathBuf::from(xdg_config)
+            .join(app::APP_CONFIG_DIR)
+            .join(SOUL_FILENAME);
         if path.exists() {
             return Some(path);
         }
@@ -46,7 +48,10 @@ pub fn get_soul_path() -> Option<PathBuf> {
 
     // Fallback to ~/.config/sprachspiel/SOUL.md
     if let Some(home) = dirs::home_dir() {
-        let path = home.join(".config").join(app::APP_CONFIG_DIR).join(SOUL_FILENAME);
+        let path = home
+            .join(".config")
+            .join(app::APP_CONFIG_DIR)
+            .join(SOUL_FILENAME);
         if path.exists() {
             return Some(path);
         }
