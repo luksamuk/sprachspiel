@@ -802,7 +802,7 @@ serde_yaml = "0.9"  # YAML frontmatter parsing
 
 ### OWASP LLM Top 10 (2025) - Relevant Threats
 
-| Threat | ask-ollama-rs Status |
+| Threat | Sprachspiel Status |
 |--------|----------------------|
 | **LLM01: Prompt Injection** | ⚠️ Partial (context.rs sanitization) |
 | **LLM02: Sensitive Output Disclosure** | ✅ Addressed (output validation) |
@@ -917,7 +917,7 @@ r'ghp_[A-Za-z0-9]{36}'  # GitHub token
 r'sk-[A-Za-z0-9]{20,}'   # OpenAI key
 ```
 
-### Mitigations for ask-ollama-rs Skills System
+### Mitigations for Sprachspiel Skills System
 
 #### 1. Skill Content Sanitization
 
@@ -1024,7 +1024,7 @@ fn validate_skill(path: &Path) -> Result<(), SkillValidationError> {
 
 #### 4. Trust Levels (Future Consideration)
 
-For ask-ollama-rs, we simplify Hermes' model:
+For Sprachspiel, we simplify Hermes' model:
 
 ```rust
 pub enum SkillTrustLevel {

@@ -490,10 +490,10 @@ No critical bugs currently open. See [GitHub Issues](https://github.com/luksamuk
 
 **Goal:** Apply lessons learned from academic research on terminal-native AI agents.
 
-Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OPENDEV, arXiv:2603.05344v2) comparing best practices with ask-ollama-rs architecture.
+Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OPENDEV, arXiv:2603.05344v2) comparing best practices with Sprachspiel architecture.
 
 **Key Findings:**
-- ask-ollama-rs implements ~60-70% of recommended patterns
+- Sprachspiel implements ~60-70% of recommended patterns
 - Strong alignment: Context Engineering (hybrid retrieval), Session Management, Tool System
 - Gaps: Memory System (structured facts), System Reminders, Adaptive Compaction
 

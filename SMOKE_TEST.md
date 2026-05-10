@@ -19,7 +19,7 @@ This smoke test is designed to be run by an AI agent using the **terminal-use** 
 ## Prerequisites
 
 ```bash
-cd /home/alchemist/git/ask-ollama-rs
+cd /home/alchemist/git/sprachspiel
 cargo build --release --features all-tools
 ollama serve  # In another terminal
 

@@ -8,9 +8,9 @@
 
 ## Sumário Executivo
 
-Este documento analisa o projeto **ask-ollama-rs** à luz do artigo acadêmico "Building Effective AI Coding Agents for the Terminal", que apresenta o OPENDEV, um agente de codificação terminal-native de código aberto. A análise compara a arquitetura atual do ask-ollama-rs com as melhores práticas e padrões identificados no artigo, identificando pontos fortes, lacunas e recomendações de implementação.
+Este documento analisa o projeto **Sprachspiel** à luz do artigo acadêmico "Building Effective AI Coding Agents for the Terminal", que apresenta o OPENDEV, um agente de codificação terminal-native de código aberto. A análise compara a arquitetura atual do Sprachspiel com as melhores práticas e padrões identificados no artigo, identificando pontos fortes, lacunas e recomendações de implementação.
 
-**Conclusão Principal:** O ask-ollama-rs já implementa aproximadamente 60-70% dos padrões recomendados pelo artigo, com destaque para o sistema de contexto híbrido (BM25 + semântico) e gestão de sessões. As principais lacunas estão em: (1) arquitetura multi-agente, (2) sistema de memória entre sessões, (3) compactação adaptativa de contexto, e (4) sistema de lembretes injetados.
+**Conclusão Principal:** O Sprachspiel já implementa aproximadamente 60-70% dos padrões recomendados pelo artigo, com destaque para o sistema de contexto híbrido (BM25 + semântico) e gestão de sessões. As principais lacunas estão em: (1) arquitetura multi-agente, (2) sistema de memória entre sessões, (3) compactação adaptativa de contexto, e (4) sistema de lembretes injetados.
 
 ---
 
@@ -99,7 +99,7 @@ Arquitetura de segurança com 5 camadas independentes:
 
 ---
 
-## 2. Análise do ask-ollama-rs
+## 2. Análise do Sprachspiel
 
 ### 2.1 Pontos Fortes (Alinhamento com o Artigo)
 
@@ -156,7 +156,7 @@ where C: ToolRegistrar {
 
 #### 2.2.1 Arquitetura Single-Agent ⚠️
 
-**Gap atual:** O ask-ollama-rs usa um único agente para todas as tarefas.
+**Gap atual:** O Sprachspiel usa um único agente para todas as tarefas.
 
 **Recomendação do artigo:** Separar planejamento de execução com arquitetura dual-agent:
 
@@ -181,7 +181,7 @@ where C: ToolRegistrar {
 
 **Implementação sugerida (baixa prioridade):**
 
-Para o caso de uso do ask-ollama-rs (escala pequena, local), um sistema simpler pode ser suficiente:
+Para o caso de uso do Sprachspiel (escala pequena, local), um sistema simpler pode ser suficiente:
 
 ```rust
 // Alternativa: Workflow modes em vez de agentes separados
@@ -331,7 +331,7 @@ O sistema atual já tem middle compaction. Melhorias:
 
 **Implementação sugerida (baixa prioridade para uso local):**
 
-Para o caso de uso do ask-ollama-rs (single-user local), um sistema simpler:
+Para o caso de uso do Sprachspiel (single-user local), um sistema simpler:
 
 ```toml
 # ~/.config/sprachspiel/config.toml
@@ -396,8 +396,8 @@ translation = "translategemma:4b"
 
 ### 3.1 Arquitetura
 
-| Aspecto | OPENDEV | ask-ollama-rs | Gap |
-|---------|---------|---------------|-----|
+| Aspecto | OPENDEV | Sprachspiel | Gap |
+|---------|---------|-------------|-----|
 | Multi-agent | ✅ Dual-agent (planner + executor) | ⚠️ Single agent | Médio |
 | Per-workflow model | ✅ Sim | ❌ Não | Baixo* |
 | Session hierarchy | ✅ Session → Agent → Workflow → LLM | ⚠️ Session → LLM | Baixo |
@@ -407,8 +407,8 @@ translation = "translategemma:4b"
 
 ### 3.2 Context Engineering
 
-| Aspecto | OPENDEV | ask-ollama-rs | Gap |
-|---------|---------|---------------|-----|
+| Aspecto | OPENDEV | Sprachspiel | Gap |
+|---------|---------|-------------|-----|
 | Hybrid retrieval | ✅ | ✅ BM25 + Semantic + RRF | OK |
 | Lost in middle mitigation | ✅ | ✅ Documentado | OK |
 | Context composition | ✅ | ✅ 6 seções ordenadas | OK |
@@ -418,8 +418,8 @@ translation = "translategemma:4b"
 
 ### 3.3 Tools & Safety
 
-| Aspecto | OPENDEV | ask-ollama-rs | Gap |
-|---------|---------|---------------|-----|
+| Aspecto | OPENDEV | Sprachspiel | Gap |
+|---------|---------|-------------|-----|
 | Tool registry | ✅ | ✅ Feature flags + blacklist | OK |
 | Lazy discovery | ✅ MCP | ⚠️ Static registration | Baixo |
 | Approval system | ✅ 3 níveis | ❌ | Baixo* |
@@ -430,8 +430,8 @@ translation = "translategemma:4b"
 
 ### 3.4 Persistence
 
-| Aspecto | OPENDEV | ask-ollama-rs | Gap |
-|---------|---------|---------------|-----|
+| Aspecto | OPENDEV | Sprachspiel | Gap |
+|---------|---------|-------------|-----|
 | Session storage | ✅ JSON + JSONL | ✅ SQLite completo | OK |
 | Operation log | ✅ Undo system | ⚠️ Undo parcial | Médio |
 | Memory persistence | ✅ Cross-session | ❌ Session-only | Alto |
@@ -567,9 +567,9 @@ translation = "translategemma:4b"
 
 ## 6. Considerações Específicas para Uso Local
 
-O ask-ollama-rs tem objetivo diferente do OPENDEV:
+O Sprachspiel tem objetivo diferente do OPENDEV:
 
-| OpenDEV | ask-ollama-rs |
+| OpenDEV | Sprachspiel |
 |---------|---------------|
 | Terminal coding agent autônomo | CLI assistant interativo |
 | Cloud models (Claude, etc.) | Local models (Ollama) |
@@ -588,7 +588,7 @@ O ask-ollama-rs tem objetivo diferente do OPENDEV:
 
 ## 7. Conclusão
 
-O ask-ollama-rs está **bem posicionado** em relação às melhores práticas do artigo, com implementações sólidas de:
+O Sprachspiel está **bem posicionado** em relação às melhores práticas do artigo, com implementações sólidas de:
 
 - Context engineering (híbrido + posicionamento)
 - Session management (SQLite completo)

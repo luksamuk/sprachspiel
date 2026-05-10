@@ -338,4 +338,4 @@ scripts/install-sprachspiel.sh
 ---
 
 *Relatório gerado automaticamente pelo Hermes Agent*  
-*Repositório: ~/git/ask-ollama-rs*
+*Repositório: ~/git/sprachspiel*

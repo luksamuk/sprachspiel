@@ -134,12 +134,12 @@
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (5 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123 |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (5 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138 |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
-| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict |
-| **[M4]** | Future | Deferred features and research | B2–B5, B8 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF |
+| **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101, #139, #140 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict |
+| **[M4]** | Future | Deferred features and research | B2–B5, B8–B10 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF, GAC (#141) |
 
-**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding: #106, #107) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76)
+**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility: #133→#138, #106, #107) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132)
 
 **Priority within milestones** is determined by card order (top = highest priority) on the GitHub Project Board. Cards are referenced by their issue number (e.g., #72, #116).
 
@@ -150,6 +150,10 @@
 **M3 change:** S2.2 (Content Relations Graph) elevated from LOW to MEDIUM priority. Competitive analysis shows that graph-based retrieval is a key differentiator in the memory-augmented agent space, and delay risks falling behind.
 
 **M4 change:** Structured with draft priorities (B2-B5). See `doc/src/development/research-icebox.md` for deferred topics and competitive research.
+
+**M3 additions:** #139 (PCA Projection Search) enables efficient approximate retrieval for S2.1/S2.2 graph features. #140 (Geometry Documentation) provides the complete model selection guide and reference documentation.
+
+**M4 additions:** #141 (Geometry-Aware Consolidation) depends on #142 (Memory Consolidation Design), which in turn depends on S2.1 (#77) and S2.2 (#78) graph features. Both deferred to M4 because the graph substrate must exist first.
 
 > **See also:** [Research Icebox](./doc/src/development/research-icebox.md) for deferred refinement topics, competitive research, and decision records.
 
@@ -162,15 +166,23 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 | **W1** | Quick Wins | Small independent items, no dependencies | #126, #105, #36 | Rename complete; both commands merged and functional; #126 IN PROGRESS |
 | **W2** | Provider Chain | Multi-provider migration (10-12 week dependency chain) | #116, #118, #119, #120, #121, #11, #122, #123, #72 | `ollama-rs` removed from Cargo.toml; #72 closed |
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
-| **W4** | Embedding | Configurable model + provider abstraction | #106, #107 | Config.toml `[embedding]` section works; at least one alternative model validated |
-| **W5** | M1 Backlog | Context, secrets, personalities, file tracking | #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
+| **W4** | Embedding Geometry & Flexibility | Embedding diagnostics, geometry-aware config, model validation, provider abstraction | #133, #134, #106, #135, #107, #136, #137, #138 | Diagnostics subcommand works; fact threshold validated; at least one alternative model benchmarked; RRF weights adapt to d_eff; docs rewritten |
+| **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
 
 **Wave dependencies:**
 
 - **W1** has no blockers — can start immediately. #126 (rename) touches many files but is independent; do it first since it's `priority:critical`
 - **W2** has internal dependency chain: `#116 → #118 → #119 → #120 → #121 → #122 → #123`; `#11` depends on `#121`; `#72` closes when chain completes
 - **W3**: `#90` is closable now (decay fix merged); `#91`-`#97` need research before implementation can be sized
-- **W4**: independent of W2 (embedding config is orthogonal to provider migration)
+- **W4**: independent of W2 (embedding config is orthogonal to provider migration). Expanded from original scope (config + provider) to include geometry-aware changes from embedding audit. Sub-phases:
+  - **W4.0** (#133): Diagnostics subcommand (`sprach diag embeddings`) — measure d_eff, average magnitude, threshold pass rate
+  - **W4.1** (#134): Validate fact semantic threshold (0.70 vs 0.80) before changing — data-driven decision
+  - **W4.2** (#106): Configurable embedding model + server-side Matryoshka — the original W4 scope
+  - **W4.3** (#135): Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff metric
+  - **W4.4** (#107): Embedding provider abstraction — multi-provider embedding support
+  - **W4.5** (#136): Geometry-aware default dimensions formula (d_eff × 4, floor 64)
+  - **W4.6** (#137): Geometry-aware RRF weight adjustment based on d_eff
+  - **W4.7** (#138): Documentation rewrite — model selection guide, hybrid search explanation, provider docs
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
 
 ### ✅ PRIORITY 0: Rename ask-ai → Sprachspiel (COMPLETED) [M1]
@@ -2644,7 +2656,88 @@ These models work with llama.cpp server's `/v1/embeddings` endpoint which also s
 - [ ] No regression in search quality with nomic-embed-text-v2-moe (current model)
 - [ ] At least one alternative model tested and validated
 
-**Related:** Issue #106, Issue #107 (Embedding Provider Abstraction), Issue #72 (Multi-Provider)
+### Geometry-Aware Validation Criteria (from Embedding Geometry Audit)
+
+These criteria extend the original validation with geometry metrics discovered in the embedding audit (d_eff=7, d̄=0.353, SPREAD system):
+
+- [ ] `sprach diag embeddings` reports d_eff, average magnitude, threshold pass rate (#133)
+- [ ] Fact semantic threshold decision is data-driven: measure recall@k at 0.70 and 0.80 before changing (#134)
+- [ ] Alternative models are benchmarked by d_eff, retrieval quality, and multilingual support (#135)
+- [ ] Default dimensions formula: `max(d_eff × 4, 64)` replaces hardcoded `FLOAT[256]` (#136)
+- [ ] RRF weights adapt to d_eff: d_eff≤10 → BM25=0.7/cosine=0.3; d_eff 11-25 → 0.5/0.5; d_eff>25 → 0.4/0.6 (#137)
+- [ ] Documentation explains model selection criteria (d_eff, SPREAD system, multilingual support) alongside provider config (#138)
+
+**Related:** Issue #106, Issue #107 (Embedding Provider Abstraction), Issue #72 (Multi-Provider), #133–#138 (Geometry sub-phases)
+
+---
+
+## 🟢 Embedding Geometry Audit Actions — #133–#138 [M1/W4]
+
+**Status:** 📋 READY (sub-phases of W4)
+**Issues:** #133–#138
+
+**Background:** An embedding geometry audit revealed that the current nomic-embed-text-v2-moe model produces embeddings with **d_eff=7** (effective dimensionality out of 256 truncated dimensions) and **d̄=0.353** (mean cosine similarity across all directions). The audit identified that the SPREAD system (θ∈{0°, 30°, 60°, 90°}) operates at near-random similarity levels for θ≥60°, and BM25 silently compensates for poor vector discrimination via the hardcoded 0.4/0.6 RRF weights.
+
+**Audit Reference:** `~/embedding-geometry-audit/EMBEDDING-GEOMETRY-AUDIT.md`
+
+**Key Findings:**
+
+| Metric | Value | Impact |
+|--------|-------|--------|
+| `SEMANTIC_SEARCH_THRESHOLD` | 0.70 (hardcoded in `conflict.rs:230`) | May be too permissive for d_eff=7; facts accepted at near-random similarity |
+| d_eff (effective dimensionality) | 7 out of 256 | Only 7 dimensions carry discriminative signal; 249 are noise |
+| d̄ (mean cosine similarity) | 0.353 | Random pair similarity is 35%, high baseline noise |
+| BM25 RRF weight | 0.4 (hardcoded in `search.rs`, `content/db.rs`) | BM25 silently compensates for poor vector discrimination |
+| Cosine RRF weight | 0.6 (hardcoded) | Overweights vector similarity despite low d_eff |
+| FLOAT[256] dimensions | Hardcoded in 9 schema locations | Should be `max(d_eff × 4, 64)` = 64, not 256 |
+
+**Sub-Phases:**
+
+| Phase | Issue | Description | Priority | Milestone |
+|-------|-------|-------------|----------|-----------|
+| W4.0 | #133 | `sprach diag embeddings` — diagnose d_eff, magnitude, threshold pass rate | High | M1 |
+| W4.1 | #134 | Validate fact semantic threshold 0.70 vs 0.80 before changing | High | M1 |
+| W4.2 | #106 | Configurable embedding model + server-side Matryoshka | High | M1 |
+| W4.3 | #135 | Benchmark alternative models (Nomic v2, Snowflake, mxbai, qwen3) with d_eff | High | M1 |
+| W4.4 | #107 | Embedding provider abstraction — multi-provider support | High | M1 |
+| W4.5 | #136 | Geometry-aware default dimensions formula (d_eff × 4, floor 64) | Medium | M1 |
+| W4.6 | #137 | Geometry-aware RRF weight adjustment based on d_eff | Medium | M1 |
+| W4.7 | #138 | Documentation rewrite — model selection, hybrid search, provider docs | Medium | M1 |
+
+**Deferred to Later Milestones:**
+
+| Phase | Issue | Description | Priority | Milestone |
+|-------|-------|-------------|----------|-----------|
+| S2.6 | #139 | PCA Projection Search for vector retrieval | Medium | M3 |
+| S2.7 | #140 | Embedding geometry documentation & model selection guide | Medium | M3 |
+| B9 | #141 | Geometry-Aware Consolidation (GAC) | Low | M4 |
+| B10 | #142 | Memory Consolidation Design (prerequisite for GAC) | Low | M4 |
+
+**Affected Code:**
+
+| File | Constant/Logic | Change |
+|------|----------------|--------|
+| `src/facts/conflict.rs:230` | `SEMANTIC_SEARCH_THRESHOLD = 0.70` | Validate with data before potentially changing to 0.80 (#134) |
+| `src/retrieval/search.rs` | RRF weight `0.4/0.6` hardcoded | Adapt to d_eff: ≤10→0.7/0.3, 11-25→0.5/0.5, >25→0.4/0.6 (#137) |
+| `src/content/db.rs` | RRF weight `0.4/0.6` hardcoded | Same as above (#137) |
+| `src/embeddings/truncate.rs` | `FULL_DIMENSIONS=768, TRUNCATED_DIMENSIONS=256` | Make configurable, formula: `max(d_eff × 4, 64)` (#136) |
+| `src/embeddings/client.rs` | `DEFAULT_EMBEDDING_MODEL` | Make configurable from config.toml (#106) |
+| `src/db/schema.rs` | `FLOAT[256]` in 9 locations | Dynamic dimensions from config (#136) |
+| `src/db/connection.rs` | `FLOAT[256]` in migration code | Migration to resize vec0 tables (#136) |
+
+**RRF Weight Decision Table (from audit):**
+
+| d_eff range | BM25 weight | Cosine weight | Rationale |
+|-------------|-------------|---------------|-----------|
+| d_eff ≤ 10 | 0.7 | 0.3 | Vector signal too weak; BM25 must dominate |
+| d_eff 11-25 | 0.5 | 0.5 | Balanced signal from both sources |
+| d_eff > 25 | 0.6 | 0.4 | Vector signal reliable; cosine can carry weight |
+
+**Paper References (not stored in repo):**
+
+- Matryoshka Representation Learning: arXiv:2205.13147 (Kusupati et al., 2022)
+- In-Context Learning with Vector Retrieval: arXiv:2310.05342 (Borgeaud & Rekha)
+- The Platonic Representation Hypothesis: arXiv:2405.07987 (Huh et al., 2024)
 
 ---
 
@@ -3058,6 +3151,78 @@ Key files:
 - ADR-E4 (revised): Third-person normalization applied at storage time (not just render time). All facts stored as "User prefers X". `normalize_to_third_person()` in prompt rendering remains as defense-in-depth.
 
 **Phase 2 (P6.7, planned):** Embedding-based semantic dedup — ✅ COMPLETED (see P6.7 below)
+
+---
+
+### Batch Document Processing — Improve PDF Ingestion UX — #132 [M1]
+
+**Status:** ❌ NOT STARTED
+**Priority:** high
+**Depends on:** None
+**Estimated effort:** 3-4 days
+
+**Goal:** Reduce PDF/document processing overhead from ~170 tool calls to ~8 by enabling batch OCR in subagent tools and updating the document-processing skill to orchestrate efficiently.
+
+**Problem Statement:**
+
+When processing a PDF with 82 pages via the embedded document-processing skill, the LLM makes ~170 tool calls (82 pdftoppm calls + 82 spawn_ocr_agent calls + metadata checks). This wastes ~160K tokens of orchestration context and provides terrible UX (20-40 minutes of sequential processing). The LLM also attempts to create shell scripts to automate the process, which fails because `run_command` blocks pipes and shell features for security reasons.
+
+**Architecture Decision (ADR-BATCH-1): LLM Stays in Control**
+
+No native PDF pipeline in Rust. The LLM remains in control of what content to import, using `run_command` (whitelist/sandbox/Landlock) for external tool execution. Documents remain "mini articles curated by the LLM" — curated synthesis, not raw text dumps. `FileType::Pdf/Epub` stays removed from `import_document` — PDFs are extracted via `run_command`, then imported as curated text.
+
+**Why not a native Rust pipeline?** Calling `pdftotext`/`pdftoppm` directly from Rust bypasses the security layer (whitelist, sandbox, Landlock) that `run_command` enforces. A malicious binary in the PATH named `pdftoppm` would execute without any validation. Keeping execution through `run_command` preserves the defense-in-depth security model. The trade-off is ~8 tool calls instead of 0, which is acceptable given the security benefit.
+
+**Solution (single delivery, two parts):**
+
+**Part 1 — Batch OCR in subagent tools:**
+
+`spawn_ocr_agent` accepts comma-separated paths (like `spawn_vision_agent` already does). Internally, `SubagentRunner::run_ocr_batch()` iterates over paths sequentially (Ollama `/api/generate` doesn't support multi-image OCR) and concatenates results with `--- Page N ---` separators. This reduces tool calls from 82 to 1-2 and orchestration tokens from ~160K to ~6K.
+
+**Part 2 — Improved document-processing skill:**
+
+Updated instructions that guide the LLM to use batch patterns: convert all visual pages with a single `pdftoppm` call, then pass all paths to a single `spawn_ocr_agent` invocation. Clear heuristics for when to use batch vs. single-page processing. Clarify that `import_document` stores curated knowledge, not raw text.
+
+**Important limitation:** Each page still requires one `/api/generate` call to the OCR model (Ollama API limitation). Batch reduces tool call overhead and orchestration tokens, but does not reduce the number of LLM inference calls. Time improvement comes from UX (single progress indicator) rather than parallelism.
+
+**Cost Analysis:**
+
+| Approach | Tool Calls | Orchestration Tokens | Content Tokens |
+|----------|-------------|----------------------|----------------|
+| Status quo (1 per page) | ~170 | ~160K | Unchanged |
+| Batch subagents (this task) | ~8 | ~6K | Unchanged |
+
+**Implementation Phases:**
+
+| Phase | Description | Files | Status |
+|-------|-------------|-------|--------|
+| 1.1 | `spawn_ocr_agent` accepts comma-separated paths | `src/tools/subagent_tools.rs` | ❌ |
+| 1.2 | `SubagentRunner::run_ocr_batch()` iterates, concatenates results | `src/chat/subagent.rs` | ❌ |
+| 1.3 | Progress indicator during batch OCR | `src/chat/subagent.rs` | ❌ |
+| 1.4 | Update `spawn_ocr_agent` docstring with batch examples | `src/prompts/tools.rs` | ❌ |
+| 1.5 | Update document-processing skill for batch patterns | `src/skills/builtin/document-processing.md` | ❌ |
+| 2.1 | Rewrite "Page Selection Strategy" — batch pdftoppm usage | `src/skills/builtin/document-processing.md` | ❌ |
+| 2.2 | Heuristics for batch vs single-page processing | `src/skills/builtin/document-processing.md` | ❌ |
+| 2.3 | Clarify `import_document` docstring — curated knowledge | `src/tools/documents.rs` | ❌ |
+| 3 | Tests (SMOKE_TEST section 14) | `SMOKE_TEST.md` | ❌ |
+| 4 | Documentation (CHANGELOG, IMPLEMENTATION.md) | Both | ❌ |
+
+**Existing code leverage:**
+- `OcrProcessor::process_batch()` already exists (`src/ocr/processor.rs:93`) — reused by `run_ocr_batch()`
+- `spawn_vision_agent` already supports comma-separated paths (`src/tools/subagent_tools.rs:192-197`) — same pattern
+- `validate_subagent_paths()` handles multi-path validation (`src/security.rs`) — reused
+- Sandbox allows `/tmp` — pdftoppm output in /tmp is within subagent sandbox ✅
+
+**What is NOT in this task:**
+- ❌ Native PDF pipeline calling pdftotext/pdftoppm directly from Rust
+- ❌ Restoring `FileType::Pdf/Epub` in `import_document`
+- ❌ Bypassing `run_command` security layer
+- ❌ `TempDir` auto-cleanup (LLM instructed to use /tmp, already sandboxed)
+- ❌ Change to document concept (remains "curated mini article")
+
+**Reference:** Hermes research doc (`~/sprachspiel-batch-document-processing.md`), Issue #9 (Document Import Tool, COMPLETED), SF5 (Agent Spawning Tools, COMPLETED)
+
+**Related:** Issue #132
 
 ---
 
@@ -4610,6 +4775,86 @@ timeout_ms = 2000
 **Goal:** Add behavioral_alignment as second signal in RRF score alongside content feedback. Responses generated in unconfirmed behavioral mode have reduced retrieval weight. Behavioral decay: patterns that user consistently redirects decay faster (analogous to Ebbinghaus but for habits, not facts).
 
 **Source:** ~/meta-cognition-brainstorm.md Section 3
+
+---
+
+### S2.6 — PCA Projection Search for Vector Retrieval [M3] — #139
+
+**Status:** 📋 DRAFT
+**Depends on:** W4 geometry work (#133, #136)
+**Estimated effort:** 2-3 weeks
+**Priority:** Medium (enables S2.1 #77 and S2.2 #78 graph features)
+
+**Goal:** Implement PCA projection for embedding dimensional reduction at query time, improving retrieval speed and reducing noise from low-information dimensions. The audit found d_eff=7 for the current model, meaning PCA can dramatically reduce vector size while preserving discriminative signal.
+
+**Algorithm:** Compute PCA on a sample of stored embeddings → project queries and stored vectors to d_eff dimensions → cosine similarity on projected vectors. Projection matrix computed once per reindex, stored alongside embeddings.
+
+**Why M3, not M1:** PCA requires the graph substrate from S2.1/S2.2 to be useful. The d_eff diagnostic (W4.0) and geometry-aware dimensions (W4.5) are prerequisites that define the PCA target dimensionality.
+
+**Source:** Embedding Geometry Audit — PCA as alternative to Matryoshka truncation for d_eff ≤ 10 models.
+
+**Issue:** #139
+
+---
+
+### S2.7 — Embedding Geometry Documentation & Model Selection Guide [M3] — #140
+
+**Status:** 📋 DRAFT
+**Depends on:** W4.7 (#138) — extends the M1 documentation rewrite with full academic references
+**Estimated effort:** 1 week
+**Priority:** Medium
+
+**Goal:** Complete reference documentation covering:
+1. **Model Selection Guide** — Criteria for choosing embedding models (d_eff, multilingual, context length, cost, Matryoshka support)
+2. **Hybrid Search Explanation** — How BM25 + cosine + RRF work, why weights adapt by d_eff
+3. **SPREAD System Reference** — θ∈{0°, 30°, 60°, 90°} and what similarity values mean at each angle
+4. **Provider Configuration** — How to configure OpenAI-compatible providers (llama.cpp, LM Studio, vLLM, cloud APIs) in `config.toml`
+5. **Benchmark Results** — d_eff, retrieval quality, and performance comparisons across models
+
+**Why M3, not M1:** M1 documentation (#138) covers operational guidance (how to configure, how to switch models). M3 documentation (#140) adds academic depth (why SPREAD matters, how d_eff relates to information theory, model comparison table with citations).
+
+**Source:** Embedding Geometry Audit — documentation deliverables.
+
+**Issue:** #140
+
+---
+
+### B9 — Geometry-Aware Consolidation (GAC) [M4] — #141
+
+**Status:** 📋 DRAFT
+**Depends on:** B10 (#142 — Memory Consolidation Design), S2.1 (#77 — Content Relations Graph), S2.2 (#78 — Graph Query Engine)
+**Estimated effort:** 3-4 weeks
+**Priority:** Low
+
+**Goal:** Use embedding geometry (d_eff, SPREAD angles) to optimize memory consolidation. Instead of uniform decay, facts and content items with high geometric utility (wide angular spread, high d_eff position) decay more slowly. Items that cluster near existing knowledge (low angular distance) decay faster — they're redundant.
+
+**Why M4:** GAC requires the graph substrate from S2.1/S2.2 to compute angular distances between knowledge items. It also requires B10 (consolidation design) to define what "consolidation" means operationally. Both prerequisites are M3/M4 scope.
+
+**Source:** Embedding Geometry Audit — consolidation recommendation.
+
+**Issue:** #141
+
+---
+
+### B10 — Memory Consolidation Design [M4] — #142
+
+**Status:** 📋 DRAFT
+**Depends on:** S2.1 (#77 — Content Relations Graph), S2.2 (#78 — Graph Query Engine)
+**Estimated effort:** 1-2 weeks (design only, no implementation)
+**Priority:** Low
+
+**Goal:** Design document for how memory consolidation works in Sprachspiel:
+1. What triggers consolidation? (time-based, access-based, geometry-based)
+2. What happens to consolidated items? (merge, archive, compress)
+3. How does consolidation interact with existing decay (Ebbinghaus) and importance (feedback)?
+4. How does consolidation differ from deletion? (information preservation vs. removal)
+5. What is the user experience? (visibility, undo, confirmation)
+
+**Why M4:** Design document only. S2.1/S2.2 graph features are prerequisite because consolidation requires understanding item relationships.
+
+**Source:** Embedding Geometry Audit — consolidation design prerequisite for GAC (B9).
+
+**Issue:** #142
 
 ---
 
