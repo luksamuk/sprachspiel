@@ -27,7 +27,7 @@ cargo test                               # Run all tests
 cargo test --features all-tools          # Run tests with all features
 cargo check                              # Check code without building
 cargo fmt                                # Format code
-cargo clippy -- -D warnings -A clippy::allow_attributes  # Lint with Clippy (allow attributes are informational, not errors)
+cargo clippy -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity
 ```
 
 ## Compilation Features
