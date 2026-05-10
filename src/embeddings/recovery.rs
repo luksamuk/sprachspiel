@@ -318,11 +318,11 @@ pub async fn recover_missing_embeddings_with_progress(
     println!("Completing {} pending embedding(s)...", total);
 
     let progress = ProgressBar::new(total as u64);
-    progress.set_style(
-        ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%)")
-            .expect("Invalid progress template")
-            .progress_chars("█▓░"),
-    );
+    #[expect(clippy::expect_used)] // hardcoded template string is always valid
+    let style = ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%)")
+        .expect("Invalid progress template")
+        .progress_chars("█▓░");
+    progress.set_style(style);
 
     // Call the main recovery function but with progress tracking
     let result = recover_missing_embeddings(db, embedding_client).await;

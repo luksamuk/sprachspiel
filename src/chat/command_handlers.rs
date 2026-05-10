@@ -1569,6 +1569,7 @@ pub fn handle_todo_add(
 
     let id = {
         let state = todo::get_todo_state();
+        #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
         let mut guard = state.lock().expect("lock poisoned: todo state");
         guard.add_with_options(description.clone(), priority_val, tags_val.clone())
     };
@@ -1634,6 +1635,7 @@ pub fn handle_todo_list(filter: Option<String>) {
     };
 
     let state = todo::get_todo_state();
+    #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
     let guard = state.lock().expect("lock poisoned: todo state");
     println!("{}", guard.format_list_filtered(&task_filter));
 }
@@ -1645,6 +1647,7 @@ pub fn handle_todo_get(id: usize) {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
+    #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
     let guard = state.lock().expect("lock poisoned: todo state");
 
     match guard.get(id) {
@@ -1701,10 +1704,12 @@ pub fn handle_todo_edit(
     });
 
     let state = todo::get_todo_state();
-    let mut guard = state.lock().unwrap();
+    #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
+    let mut guard = state.lock().expect("lock poisoned: todo state");
 
     match guard.edit(id, description, priority_val, tags_val) {
         Ok(()) => {
+            #[expect(clippy::expect_used)] // task just edited successfully, guaranteed to exist
             let task = guard.get(id).expect("task just edited successfully");
             let mut msg = format!("Task {} updated:", id);
             msg.push_str(&format!("\n  Description: {}", task.description));
@@ -1743,7 +1748,8 @@ pub fn handle_todo_delete(id: usize, session: &mut super::session::ChatSession) 
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
-    let mut guard = state.lock().unwrap();
+    #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
+    let mut guard = state.lock().expect("lock poisoned: todo state");
 
     let task_desc = guard.get(id).map(|t| t.description.clone());
 
@@ -1785,7 +1791,8 @@ pub fn handle_todo_update(id: usize, status: String, session: &mut super::sessio
     };
 
     let state = todo::get_todo_state();
-    let mut guard = state.lock().unwrap();
+    #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
+    let mut guard = state.lock().expect("lock poisoned: todo state");
 
     match guard.update_status(id, new_status) {
         Ok(()) => {
@@ -1812,7 +1819,8 @@ pub fn handle_todo_clear_done(session: &mut super::session::ChatSession) {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
-    let mut guard = state.lock().unwrap();
+    #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
+    let mut guard = state.lock().expect("lock poisoned: todo state");
     let removed = guard.clear_done();
 
     if removed == 0 {
@@ -1840,7 +1848,8 @@ pub fn handle_todo_clear_all(session: &mut super::session::ChatSession) {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
-    let mut guard = state.lock().unwrap();
+    #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
+    let mut guard = state.lock().expect("lock poisoned: todo state");
     let count = guard.clear_all();
 
     if count == 0 {

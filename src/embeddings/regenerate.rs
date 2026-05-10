@@ -142,11 +142,12 @@ pub async fn regenerate_all_embeddings(
 
     // Setup progress bar with ETA
     let progress = ProgressBar::new(total as u64);
-    progress.set_style(
+    #[expect(clippy::expect_used)] // hardcoded template string is always valid
+    let style =
         ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%) ETA: {eta_precise}")
             .expect("Invalid progress template")
-            .progress_chars("█▓░"),
-    );
+            .progress_chars("█▓░");
+    progress.set_style(style);
 
     let mut stats = RegenerationStats {
         items_processed: 0,

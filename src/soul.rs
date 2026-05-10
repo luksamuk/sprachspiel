@@ -27,7 +27,7 @@ use regex::Regex;
 
 /// Compile a static regex pattern. Panics on invalid patterns (should never happen
 /// with hardcoded patterns validated at compile time).
-#[expect(clippy::unwrap_used)] // static regex patterns are validated at compile time
+#[expect(clippy::expect_used)] // static regex patterns are validated at compile time
 fn static_regex(pattern: &str) -> Regex {
     Regex::new(pattern).expect("invalid static regex pattern")
 }

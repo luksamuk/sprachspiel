@@ -93,6 +93,7 @@ impl ModelConfig {
     }
 
     #[allow(dead_code)]
+    #[expect(clippy::unwrap_used)] // DEFAULT_MODEL key always exists in CONFIGS
     pub fn get_default() -> ModelConfig {
         CONFIGS.get(DEFAULT_MODEL).cloned().unwrap()
     }

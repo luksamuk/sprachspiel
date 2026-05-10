@@ -213,6 +213,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         return Ok(());
     }
 
+    #[expect(clippy::expect_used)] // language validated by args.validate()
     let language_str = args
         .language
         .as_ref()

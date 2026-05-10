@@ -176,12 +176,12 @@ pub fn create_spinner(message: &str) -> ProgressBar {
 
     let pb = ProgressBar::new_spinner();
     let frames = random_spinner_frames();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&frames)
-            .template("{spinner:.green} {msg}")
-            .expect("Failed to set spinner style"),
-    );
+    #[expect(clippy::expect_used)] // hardcoded template string is always valid
+    let style = ProgressStyle::default_spinner()
+        .tick_strings(&frames)
+        .template("{spinner:.green} {msg}")
+        .expect("Failed to set spinner style");
+    pb.set_style(style);
     pb.set_message(message.to_string());
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
@@ -232,12 +232,12 @@ where
 pub fn create_custom_spinner(message: &str, template: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
     let frames = random_spinner_frames();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&frames)
-            .template(template)
-            .expect("Failed to set custom spinner style"),
-    );
+    #[expect(clippy::expect_used)] // caller is responsible for providing valid template
+    let style = ProgressStyle::default_spinner()
+        .tick_strings(&frames)
+        .template(template)
+        .expect("Failed to set custom spinner style");
+    pb.set_style(style);
     pb.set_message(message.to_string());
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 

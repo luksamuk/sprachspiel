@@ -613,7 +613,11 @@ fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
             let has_content = rest.contains("--content");
 
             let (title, content) = if has_title && has_content {
+                #[expect(clippy::unwrap_used)]
+                // has_title/has_content verified by .contains() above
                 let title_idx = rest.find("--title").unwrap();
+                #[expect(clippy::unwrap_used)]
+                // has_title/has_content verified by .contains() above
                 let content_idx = rest.find("--content").unwrap();
                 let (first, second) = if title_idx < content_idx {
                     (("--title", title_idx), ("--content", content_idx))
@@ -633,10 +637,12 @@ fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, Str
                     (Some(second_val), Some(first_val))
                 }
             } else if has_title {
+                #[expect(clippy::unwrap_used)] // has_title verified by .contains() above
                 let title_idx = rest.find("--title").unwrap();
                 let title = rest[title_idx + 7..].trim().to_string();
                 (Some(title), None)
             } else if has_content {
+                #[expect(clippy::unwrap_used)] // has_content verified by .contains() above
                 let content_idx = rest.find("--content").unwrap();
                 let content = rest[content_idx + 9..].trim().to_string();
                 (None, Some(content))

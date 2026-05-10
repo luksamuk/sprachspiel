@@ -250,6 +250,7 @@ impl FileLogger {
             .unwrap_or_else(|e| {
                 eprintln!("Failed to open log file {}: {}", path.display(), e);
                 // Fallback to /dev/null equivalent — we just silently skip
+                #[expect(clippy::unwrap_used)] // /dev/null always exists on Unix
                 OpenOptions::new()
                     .write(true)
                     .open("/dev/null")

@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 /// Compile a static regex pattern. Panics on invalid patterns (should never happen
 /// with hardcoded patterns validated at compile time).
-#[expect(clippy::unwrap_used)] // static regex patterns are validated at compile time
+#[expect(clippy::expect_used)] // static regex patterns are validated at compile time
 fn static_regex(pattern: &str) -> Regex {
     Regex::new(pattern).expect("invalid static regex pattern")
 }
@@ -39,14 +39,8 @@ static SKILL_INJECTION_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock
         // Skill loading manipulation
         (static_regex(r"(?i)load\s+skill\s+"), "skill loading"),
         (static_regex(r"(?i)use\s+skill\s+"), "skill usage"),
-        (
-            static_regex(r"(?i)invoke\s+skill\s+"),
-            "skill invocation",
-        ),
-        (
-            static_regex(r"(?i)skill_view\s*\("),
-            "skill_view call",
-        ),
+        (static_regex(r"(?i)invoke\s+skill\s+"), "skill invocation"),
+        (static_regex(r"(?i)skill_view\s*\("), "skill_view call"),
         // Privilege escalation via skills
         (
             static_regex(r"(?i)modify\s+tools\.toml"),
@@ -58,14 +52,8 @@ static SKILL_INJECTION_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock
         ),
         (static_regex(r"(?i)enable\s+.*tool"), "tool enabling"),
         // Skill content manipulation
-        (
-            static_regex(r"(?i)<available_skills>"),
-            "fake skill tag",
-        ),
-        (
-            static_regex(r"(?i)</available_skills>"),
-            "fake skill tag",
-        ),
+        (static_regex(r"(?i)<available_skills>"), "fake skill tag"),
+        (static_regex(r"(?i)</available_skills>"), "fake skill tag"),
     ]
 });
 
@@ -89,7 +77,11 @@ pub fn is_valid_skill_name(name: &str) -> bool {
     }
 
     // First character must be alphanumeric (name.is_empty() checked above)
-    let first_char = name.chars().next().expect("name is non-empty (checked above)");
+    #[expect(clippy::expect_used)] // name.is_empty() checked above guarantees .next() returns Some
+    let first_char = name
+        .chars()
+        .next()
+        .expect("name is non-empty (checked above)");
     if !first_char.is_alphanumeric() {
         return false;
     }
