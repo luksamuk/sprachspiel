@@ -21,6 +21,7 @@ pub const TRUNCATED_DIMENSIONS: usize = 256;
 ///
 /// # Panics
 /// * If embedding has fewer than 256 dimensions
+#[expect(clippy::panic)] // invariant: embedding must have >= TRUNCATED_DIMENSIONS, documented in # Panics
 pub fn truncate_and_normalize(embedding: &[f32]) -> Vec<f32> {
     if embedding.len() < TRUNCATED_DIMENSIONS {
         panic!(
@@ -82,7 +83,8 @@ pub fn normalize(vec: &[f32]) -> Vec<f32> {
 /// - Similarity threshold filtering
 ///
 /// Currently not used - kept for planned retrieval improvements.
-#[allow(dead_code)]
+#[allow(dead_code)] // Reserved for Phase 2: diversity filtering, reranking, threshold filtering
+#[expect(clippy::panic)] // invariant: vectors must have equal length, programming error otherwise
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
         panic!("Vector length mismatch: {} vs {}", a.len(), b.len());
