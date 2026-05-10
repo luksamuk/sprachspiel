@@ -1569,7 +1569,7 @@ pub fn handle_todo_add(
 
     let id = {
         let state = todo::get_todo_state();
-        let mut guard = state.lock().unwrap();
+        let mut guard = state.lock().expect("lock poisoned: todo state");
         guard.add_with_options(description.clone(), priority_val, tags_val.clone())
     };
 
@@ -1634,7 +1634,7 @@ pub fn handle_todo_list(filter: Option<String>) {
     };
 
     let state = todo::get_todo_state();
-    let guard = state.lock().unwrap();
+    let guard = state.lock().expect("lock poisoned: todo state");
     println!("{}", guard.format_list_filtered(&task_filter));
 }
 
@@ -1645,7 +1645,7 @@ pub fn handle_todo_get(id: usize) {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
-    let guard = state.lock().unwrap();
+    let guard = state.lock().expect("lock poisoned: todo state");
 
     match guard.get(id) {
         Some(task) => {

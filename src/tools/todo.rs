@@ -28,7 +28,7 @@ pub fn get_todo_state() -> Arc<Mutex<TodoState>> {
 /// Call this at the start of the REPL to restore the session's todo list.
 pub fn load_from_session(session_todos: &TodoState) {
     let state = get_todo_state();
-    let mut guard = state.lock().unwrap();
+    let mut guard = state.lock().expect("lock poisoned: todo state");
     *guard = session_todos.clone();
 }
 
@@ -37,7 +37,7 @@ pub fn load_from_session(session_todos: &TodoState) {
 /// Call this before persisting the session to save any changes made by tools.
 pub fn save_to_session() -> TodoState {
     let state = get_todo_state();
-    let guard = state.lock().unwrap();
+    let guard = state.lock().expect("lock poisoned: todo state");
     guard.clone()
 }
 
@@ -46,7 +46,7 @@ pub fn save_to_session() -> TodoState {
 /// Returns None if the list is empty, otherwise returns the formatted string.
 pub fn format_todos_for_prompt() -> Option<String> {
     let state = get_todo_state();
-    let guard = state.lock().unwrap();
+    let guard = state.lock().expect("lock poisoned: todo state");
 
     if guard.tasks.is_empty() {
         return None;
@@ -160,7 +160,7 @@ pub async fn todo_add(
     );
 
     let state = get_todo_state();
-    let mut guard = state.lock().unwrap();
+    let mut guard = state.lock().expect("lock poisoned: todo state");
     let id = guard.add_with_options(description.clone(), priority_val, tags_val.clone());
 
     let mut result = format!(
@@ -233,7 +233,7 @@ pub async fn todo_update(
     };
 
     let state = get_todo_state();
-    let mut guard = state.lock().unwrap();
+    let mut guard = state.lock().expect("lock poisoned: todo state");
 
     let result = match guard.update_status(id, new_status) {
         Ok(()) => format!("Task {} marked as {}", id, new_status),
@@ -274,7 +274,7 @@ pub async fn todo_get(task_id: String) -> Result<String, Box<dyn std::error::Err
     };
 
     let state = get_todo_state();
-    let guard = state.lock().unwrap();
+    let guard = state.lock().expect("lock poisoned: todo state");
 
     let result = match guard.get(id) {
         Some(task) => {
@@ -374,7 +374,7 @@ pub async fn todo_edit(
     });
 
     let state = get_todo_state();
-    let mut guard = state.lock().unwrap();
+    let mut guard = state.lock().expect("lock poisoned: todo state");
 
     let result = match guard.edit(id, description, priority_val, tags_val) {
         Ok(()) => {
@@ -434,7 +434,7 @@ pub async fn todo_delete(
     };
 
     let state = get_todo_state();
-    let mut guard = state.lock().unwrap();
+    let mut guard = state.lock().expect("lock poisoned: todo state");
 
     // Get task description before deleting for a better message
     let task_desc = guard.get(id).map(|t| t.description.clone());
@@ -491,7 +491,7 @@ pub async fn todo_list(
     );
 
     let state = get_todo_state();
-    let guard = state.lock().unwrap();
+    let guard = state.lock().expect("lock poisoned: todo state");
 
     let task_filter = if let Some(ref f) = filter_val {
         // Check for tag filter (starts with #)
@@ -549,7 +549,7 @@ pub async fn todo_clear_done() -> Result<String, Box<dyn std::error::Error + Sen
     log_tool_call("todo_clear_done", &[]);
 
     let state = get_todo_state();
-    let mut guard = state.lock().unwrap();
+    let mut guard = state.lock().expect("lock poisoned: todo state");
     let removed = guard.clear_done();
 
     let result = if removed == 0 {
@@ -582,7 +582,7 @@ pub async fn todo_clear_all() -> Result<String, Box<dyn std::error::Error + Send
     log_tool_call("todo_clear_all", &[]);
 
     let state = get_todo_state();
-    let mut guard = state.lock().unwrap();
+    let mut guard = state.lock().expect("lock poisoned: todo state");
     let count = guard.clear_all();
 
     let result = if count == 0 {
