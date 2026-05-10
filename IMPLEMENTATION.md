@@ -259,10 +259,52 @@ These were identified during the `cargo clippy` audit after the rename. They are
 
 | Card | Description | Count | Priority | Issue |
 |------|-------------|-------|----------|-------|
-| Unwrap/expect/panic triage | Audit all 44 sites. CLI entry points keep justified `#[expect]]`; library code uses `?`/`map_err` | 42 unwrap + 2 panic | 🔴 Critical | #128 |
+| Unwrap/expect/panic triage | Audit all 54 sites. CLI entry points keep justified `#[expect]]`; library code uses `?`/`map_err` | ~54 production sites | 🔴 Critical | #128 (🔄 IN PROGRESS) |
 | Function extraction | Refactor 14 functions exceeding 100 lines | 14 functions | 🔴 Critical | #129 |
 | Complexity reduction | Reduce cognitive complexity in 13 functions (max: 62/15) | 13 functions | 🔴 Critical | #130 |
 | Remove `#![expect(print)]` | Remove crate-level print expects before TUI; add module-level expects only to CLI modules | 2 attrs | 📋 TUI-prereq | #131 |
+
+---
+
+### 🔴 PRIORITY: Unwrap/Expect/Panic Triage — #128 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #128
+**Branch:** `refactor/unwrap-expect-panic-triage`
+
+**Goal:** Audit all `unwrap()`, `expect()`, and `panic!` sites in production code and replace with explicit error handling (`?`, `map_err`, appropriate error types).
+
+**Principle:** CLI entry points (main, command handlers) can keep `unwrap`/`expect` because the program should crash with a clear message. Internal library functions should propagate errors with `?`.
+
+**Scope (Updated v0.43.0):**
+
+| Category | Count | Approach |
+|----------|-------|----------|
+| `unwrap()` on Result | ~30 production + 385 test | Replace production with `?` or `map_err` |
+| `unwrap()` on Option | ~12 production | Replace with `ok_or`/`ok_or_else` or pattern match |
+| `expect()` on Result | ~10 production | Replace with `?` + context, or keep with justification |
+| `expect()` on Option | ~2 production | Replace with `ok_or` + context |
+| `panic!` in library code | 2 sites | Replace with `return Err(...)` |
+
+**Note:** Most `unwrap()`/`expect()` calls are in `#[cfg(test)]` blocks — those are acceptable and will not be changed. Only production code paths are in scope.
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Audit: categorize all sites (CLI-justified vs library-error) | 🔄 In Progress |
+| 2 | Replace `panic!` in library code with `return Err(...)` | 📋 Pending |
+| 3 | Replace `unwrap()` on Result in library code with `?` / `map_err` | 📋 Pending |
+| 4 | Replace `unwrap()` on Option in library code with `ok_or_else` | 📋 Pending |
+| 5 | Replace unjustified `expect()` in library code | 📋 Pending |
+| 6 | Add `#[expect]` with justification comments to CLI entry point sites | 📋 Pending |
+| 7 | Remove `#![expect(unused_crate_dependencies)]` if no longer needed | 📋 Pending |
+| 8 | Run `cargo clippy --all-features -- -D warnings -A clippy::allow_attributes -A clippy::too_many_lines -A clippy::cognitive_complexity` | 📋 Pending |
+| 9 | Run `cargo test --all-features` | 📋 Pending |
+
+**Estimated effort:** 3-4 days
+
+**Related:** Issue #128
 
 ---
 
