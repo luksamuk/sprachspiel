@@ -25,6 +25,13 @@ use std::path::PathBuf;
 
 use regex::Regex;
 
+/// Compile a static regex pattern. Panics on invalid patterns (should never happen
+/// with hardcoded patterns validated at compile time).
+#[expect(clippy::unwrap_used)] // static regex patterns are validated at compile time
+fn static_regex(pattern: &str) -> Regex {
+    Regex::new(pattern).expect("invalid static regex pattern")
+}
+
 /// Default SOUL.md filename
 const SOUL_FILENAME: &str = "SOUL.md";
 
@@ -102,7 +109,7 @@ fn process_soul_content(content: &str) -> Option<String> {
 
 /// Remove HTML comments <!-- ... -->
 fn remove_html_comments(content: &str) -> String {
-    let re = Regex::new(r"<!--[\s\S]*?-->").unwrap();
+    let re = static_regex(r"<!--[\s\S]*?-->");
     re.replace_all(content, "").to_string()
 }
 
