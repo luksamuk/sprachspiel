@@ -378,7 +378,7 @@ pub async fn todo_edit(
 
     let result = match guard.edit(id, description, priority_val, tags_val) {
         Ok(()) => {
-            let task = guard.get(id).unwrap();
+            let task = guard.get(id).expect("task just edited successfully");
             let mut msg = format!("Task {} updated:", id);
             msg.push_str(&format!("\n  Description: {}", task.description));
             msg.push_str(&format!("\n  Status: {}", task.status));
