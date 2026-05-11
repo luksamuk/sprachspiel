@@ -80,88 +80,44 @@ pub enum HandleResult {
 /// This function replaces the former two-step flow:
 /// `execute_command(ChatCommand) → CommandResult → handle_command_result(CommandResult)`
 /// All execution logic is now directly in this single function.
+#[allow(clippy::too_many_lines)] // Dispatch table: each arm is a trivial handler call.
 pub async fn handle_command(
     cmd: ChatCommand,
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
 ) -> HandleResult {
     match cmd {
-        ChatCommand::Quit => {
-            println!("Goodbye!");
-            let _ = input.save_history();
-            if !state.session.anonymous {
-                let _ = state.session.save_sqlite();
-
-                // Flush pending embeddings before exit
-                if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
-                    flush_pending_embeddings(Arc::clone(db), Arc::clone(client)).await;
-                    // Flush pending fact embeddings
-                    crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
-                }
-            }
-            HandleResult::Exit
-        }
-
+        ChatCommand::Quit => handle_quit(state, input).await,
+        ChatCommand::Forget { confirmed } => handle_forget_cmd(state, confirmed),
         ChatCommand::New => {
             handle_new(state);
             HandleResult::Continue
         }
-
-        ChatCommand::Forget { confirmed } => {
-            if !confirmed {
-                println!("\x1B[33m⚠️ /forget will permanently delete this conversation.\x1B[0m");
-                println!("\x1B[33m   Use /forget --yes to confirm.\x1B[0m");
-                return HandleResult::Continue;
-            }
-            handle_forget(state);
-            HandleResult::Continue
-        }
-
         ChatCommand::Help => {
             super::commands::print_help();
             HandleResult::Continue
         }
-
         // Note: Model switching is handled directly in repl.rs via model_switch module
         ChatCommand::Model { name: _ } => HandleResult::Continue,
-
         ChatCommand::System { prompt } => {
             state.session.set_system_prompt(prompt);
             println!("System prompt updated.");
             HandleResult::Continue
         }
-
-        ChatCommand::Save { name } => match handle_save(state, name) {
-            Ok(()) => HandleResult::Continue,
-            Err(e) => {
-                eprintln!("\x1B[31mError: {}\x1B[0m", e);
-                HandleResult::Continue
-            }
-        },
-
-        ChatCommand::Load { name } => match handle_load(state, name) {
-            Ok(()) => HandleResult::Continue,
-            Err(e) => {
-                eprintln!("\x1B[31mError: {}\x1B[0m", e);
-                HandleResult::Continue
-            }
-        },
-
+        ChatCommand::Save { name } => handle_save_cmd(state, name),
+        ChatCommand::Load { name } => handle_load_cmd(state, name),
         ChatCommand::Export { format, file } => {
             handle_export(&state.session, format, file);
             HandleResult::Continue
         }
-
         ChatCommand::List => {
             handle_list(state);
             HandleResult::Continue
         }
-
         ChatCommand::Info => {
             super::commands::print_session_info(&state.session, None);
             HandleResult::Continue
         }
-
         ChatCommand::Context => {
             print_context_info(
                 &state.session,
@@ -174,90 +130,63 @@ pub async fn handle_command(
             );
             HandleResult::Continue
         }
-
         ChatCommand::Think => {
             state.session.think = !state.session.think;
             handle_think_toggled(state, state.session.think);
             HandleResult::Continue
         }
-
         ChatCommand::Tools => {
             state.session.tools = !state.session.tools;
             handle_tools_toggled(state, state.session.tools);
             HandleResult::Continue
         }
-
         ChatCommand::Compact => {
             handle_compact(state).await;
             HandleResult::Continue
         }
-
         ChatCommand::ToolsOutput { level } => {
             state.session.tool_output_level = level;
             handle_tool_output_changed(level);
             HandleResult::Continue
         }
-
-        ChatCommand::Debug => {
-            let verbosity = crate::debug_tools::toggle_debug();
-            match verbosity {
-                crate::logging::Verbosity::Normal => println!("Debug mode: OFF (log level: info)"),
-                crate::logging::Verbosity::Trace => println!("Debug mode: ON (log level: trace)"),
-                _ => println!(
-                    "Debug mode: {} (log level: {:?})",
-                    verbosity,
-                    verbosity.to_level_filter()
-                ),
-            }
-            HandleResult::Continue
-        }
-
+        ChatCommand::Debug => handle_debug_toggle(),
         ChatCommand::Retry => {
             handle_retry(state).await;
             HandleResult::Continue
         }
-
         ChatCommand::Undo => {
             handle_undo(state);
             HandleResult::Continue
         }
-
         ChatCommand::Search { query, limit } => {
             handle_search(state, query, limit).await;
             HandleResult::Continue
         }
-
         ChatCommand::Reindex => {
             handle_reindex(state).await;
             HandleResult::Continue
         }
-
         ChatCommand::Retrieval => {
             state.session.retrieval_enabled = !state.session.retrieval_enabled;
             handle_retrieval_toggled(state, state.session.retrieval_enabled);
             HandleResult::Continue
         }
-
         ChatCommand::FactPrune => {
             handle_fact_prune(state);
             HandleResult::Continue
         }
-
         ChatCommand::FactAdd { content, global } => {
             handle_fact_add(state, content, global).await;
             HandleResult::Continue
         }
-
         ChatCommand::FactList { scope } => {
             handle_fact_list(state, scope);
             HandleResult::Continue
         }
-
         ChatCommand::FactRemove { id } => {
             handle_fact_remove(state, id);
             HandleResult::Continue
         }
-
         ChatCommand::FactSearch {
             query,
             global,
@@ -266,7 +195,6 @@ pub async fn handle_command(
             handle_fact_search(state, query, global, limit);
             HandleResult::Continue
         }
-
         ChatCommand::TodoAdd {
             description,
             priority,
@@ -275,22 +203,18 @@ pub async fn handle_command(
             handle_todo_add(description, priority, tags, &mut state.session);
             HandleResult::Continue
         }
-
         ChatCommand::TodoList { filter } => {
             handle_todo_list(filter);
             HandleResult::Continue
         }
-
         ChatCommand::TodoUpdate { id, status } => {
             handle_todo_update(id, status, &mut state.session);
             HandleResult::Continue
         }
-
         ChatCommand::TodoGet { id } => {
             handle_todo_get(id);
             HandleResult::Continue
         }
-
         ChatCommand::TodoEdit {
             id,
             description,
@@ -300,22 +224,18 @@ pub async fn handle_command(
             handle_todo_edit(id, description, priority, tags, &mut state.session);
             HandleResult::Continue
         }
-
         ChatCommand::TodoDelete { id } => {
             handle_todo_delete(id, &mut state.session);
             HandleResult::Continue
         }
-
         ChatCommand::TodoClearDone => {
             handle_todo_clear_done(&mut state.session);
             HandleResult::Continue
         }
-
         ChatCommand::TodoClearAll => {
             handle_todo_clear_all(&mut state.session);
             HandleResult::Continue
         }
-
         ChatCommand::NoteAdd {
             content,
             title,
@@ -324,27 +244,22 @@ pub async fn handle_command(
             handle_note_add(state, content, title, global);
             HandleResult::Continue
         }
-
         ChatCommand::NoteList { global, page } => {
             handle_note_list(state, global, page);
             HandleResult::Continue
         }
-
         ChatCommand::NoteShow { id } => {
             handle_note_show(state, id);
             HandleResult::Continue
         }
-
         ChatCommand::NoteEdit { id, title, content } => {
             handle_note_edit(state, id, title, content);
             HandleResult::Continue
         }
-
         ChatCommand::NoteDelete { id } => {
             handle_note_delete(state, id);
             HandleResult::Continue
         }
-
         ChatCommand::NoteSearch {
             query,
             global,
@@ -353,7 +268,6 @@ pub async fn handle_command(
             handle_note_search(state, query, global, limit);
             HandleResult::Continue
         }
-
         ChatCommand::DocumentImport {
             path,
             global,
@@ -362,53 +276,20 @@ pub async fn handle_command(
             handle_document_import(state, path, global, nowait);
             HandleResult::Continue
         }
-
         ChatCommand::DocumentList { global } => {
             handle_document_list(state, global);
             HandleResult::Continue
         }
-
         ChatCommand::DocumentShow { id } => {
             handle_document_show(state, id);
             HandleResult::Continue
         }
-
         ChatCommand::DocumentDelete { id } => {
             handle_document_delete(state, id);
             HandleResult::Continue
         }
-
-        ChatCommand::Skill { name } => {
-            // Load skill content and activate it
-            let skill = crate::skills::get_skill_content(&name);
-            match skill {
-                Some(skill) => {
-                    handle_skill_activated(state, skill.name, skill.content);
-                }
-                None => {
-                    eprintln!(
-                        "\x1B[31mError: Skill '{}' not found. Use one of: {}\x1B[0m",
-                        name,
-                        crate::skills::get_available_skill_names().join(", ")
-                    );
-                }
-            }
-            HandleResult::Continue
-        }
-
-        ChatCommand::SkillList => {
-            let skills = crate::skills::load_skill_indexes();
-            if skills.is_empty() {
-                println!("No skills available.");
-            } else {
-                println!("Available skills:");
-                for skill in &skills {
-                    println!("  {} - {}", skill.name, skill.description);
-                }
-                println!("\nUse /skill <name> to activate a skill.");
-            }
-            HandleResult::Continue
-        }
+        ChatCommand::Skill { name } => handle_skill_cmd(state, name),
+        ChatCommand::SkillList => handle_skill_list_cmd(),
         ChatCommand::Ocr { path, mode } => {
             handle_subagent_ocr(state, path, mode).await;
             HandleResult::Continue
@@ -438,6 +319,107 @@ pub async fn handle_command(
             HandleResult::Continue
         }
     }
+}
+
+/// Handle /quit command — save session, flush embeddings, and exit.
+async fn handle_quit(
+    state: &mut ReplState,
+    input: &mut (dyn super::input::InputBackend + Send),
+) -> HandleResult {
+    println!("Goodbye!");
+    let _ = input.save_history();
+    if !state.session.anonymous {
+        let _ = state.session.save_sqlite();
+
+        // Flush pending embeddings before exit
+        if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
+            flush_pending_embeddings(Arc::clone(db), Arc::clone(client)).await;
+            // Flush pending fact embeddings
+            crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
+        }
+    }
+    HandleResult::Exit
+}
+
+/// Handle /forget command — requires confirmation flag.
+fn handle_forget_cmd(state: &mut ReplState, confirmed: bool) -> HandleResult {
+    if !confirmed {
+        println!("\x1B[33m⚠️ /forget will permanently delete this conversation.\x1B[0m");
+        println!("\x1B[33m   Use /forget --yes to confirm.\x1B[0m");
+        return HandleResult::Continue;
+    }
+    handle_forget(state);
+    HandleResult::Continue
+}
+
+/// Handle /save command — with error display wrapper.
+fn handle_save_cmd(state: &mut ReplState, name: Option<String>) -> HandleResult {
+    match handle_save(state, name) {
+        Ok(()) => HandleResult::Continue,
+        Err(e) => {
+            eprintln!("\x1B[31mError: {}\x1B[0m", e);
+            HandleResult::Continue
+        }
+    }
+}
+
+/// Handle /load command — with error display wrapper.
+fn handle_load_cmd(state: &mut ReplState, name: String) -> HandleResult {
+    match handle_load(state, name) {
+        Ok(()) => HandleResult::Continue,
+        Err(e) => {
+            eprintln!("\x1B[31mError: {}\x1B[0m", e);
+            HandleResult::Continue
+        }
+    }
+}
+
+/// Handle /debug command — toggle debug mode and print status.
+fn handle_debug_toggle() -> HandleResult {
+    let verbosity = crate::debug_tools::toggle_debug();
+    match verbosity {
+        crate::logging::Verbosity::Normal => println!("Debug mode: OFF (log level: info)"),
+        crate::logging::Verbosity::Trace => println!("Debug mode: ON (log level: trace)"),
+        _ => println!(
+            "Debug mode: {} (log level: {:?})",
+            verbosity,
+            verbosity.to_level_filter()
+        ),
+    }
+    HandleResult::Continue
+}
+
+/// Handle /skill command — activate a skill by name.
+fn handle_skill_cmd(state: &mut ReplState, name: String) -> HandleResult {
+    let skill = crate::skills::get_skill_content(&name);
+    match skill {
+        Some(skill) => {
+            handle_skill_activated(state, skill.name, skill.content);
+        }
+        None => {
+            eprintln!(
+                "\x1B[31mError: Skill '{}' not found. Use one of: {}\x1B[0m",
+                name,
+                crate::skills::get_available_skill_names().join(", ")
+            );
+        }
+    }
+    HandleResult::Continue
+}
+
+/// Handle /skilllist command — list available skills.
+fn handle_skill_list_cmd() -> HandleResult {
+    let skills = crate::skills::load_skill_indexes();
+    if skills.is_empty() {
+        println!("No skills available.");
+    } else {
+        println!("Available skills:");
+        for skill in &skills {
+            println!("  {} - {}", skill.name, skill.description);
+        }
+        println!("\nUse /skill <name> to activate a skill.");
+    }
+    HandleResult::Continue
 }
 
 /// Handle /new command — start a new conversation session.

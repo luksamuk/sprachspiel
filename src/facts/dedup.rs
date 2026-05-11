@@ -300,7 +300,10 @@ async fn check_semantic_match(ctx: &DedupContext<'_>) -> Option<DedupResult> {
             }
         }
         Err(e) => {
-            log::debug!("dedup: Failed to generate embedding for semantic dedup: {}", e);
+            log::debug!(
+                "dedup: Failed to generate embedding for semantic dedup: {}",
+                e
+            );
             None
         }
     }
@@ -334,12 +337,10 @@ async fn resolve_semantic_results(
                     log::debug!("dedup: Failed to delete contradicted fact: {}", e);
                     continue;
                 }
-                return Some(insert_and_return(
-                    ctx,
-                    UpdateReason::PreferenceOverride,
-                    &result.fact.content,
-                )
-                .await);
+                return Some(
+                    insert_and_return(ctx, UpdateReason::PreferenceOverride, &result.fact.content)
+                        .await,
+                );
             }
             if candidate_triple.predicate == existing_triple.predicate
                 && candidate_triple.object == existing_triple.object
@@ -372,12 +373,14 @@ async fn resolve_semantic_results(
                 log::debug!("dedup: Failed to delete contradicted fact: {}", e);
                 continue;
             }
-            return Some(insert_and_return(
-                ctx,
-                UpdateReason::PolarityContradiction,
-                &result.fact.content,
-            )
-            .await);
+            return Some(
+                insert_and_return(
+                    ctx,
+                    UpdateReason::PolarityContradiction,
+                    &result.fact.content,
+                )
+                .await,
+            );
         }
 
         // Neither contradiction nor duplicate — related but not conflicting. Continue.
@@ -396,7 +399,10 @@ async fn check_fts5_conflicts(ctx: &DedupContext<'_>) -> DedupResult {
         Some(Scope::Project)
     };
 
-    let search_results = match ctx.db.search_facts(&ctx.normalized_query, scope_for_search, 5) {
+    let search_results = match ctx
+        .db
+        .search_facts(&ctx.normalized_query, scope_for_search, 5)
+    {
         Ok(results) => results,
         Err(e) => {
             log::debug!("dedup: FTS5 search failed: {}", e);
@@ -464,10 +470,7 @@ async fn resolve_global_fts5_conflicts(
             DedupResult::Fts5Conflict {
                 existing_id: conflict.existing_fact.id,
                 existing_content: conflict.existing_fact.content.clone(),
-                is_contradiction: matches!(
-                    conflict.conflict_type,
-                    ConflictType::Contradiction
-                ),
+                is_contradiction: matches!(conflict.conflict_type, ConflictType::Contradiction),
             }
         }
         ResolutionAction::Update => {

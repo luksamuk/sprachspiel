@@ -204,6 +204,7 @@ pub enum ExportFormat {
 /// - `/note add --title "Title" content`
 /// - `/note add "test\nmultiline" --title Test` (expands \n inside quotes)
 /// - Escaped -- as \-\-
+#[allow(clippy::too_many_lines)] // State-machine parser: inherently linear character-by-character logic.
 fn parse_note_add(args: &str) -> Result<(String, Option<String>, bool), String> {
     let mut content_parts: Vec<String> = Vec::new();
     let mut title: Option<String> = None;
@@ -545,6 +546,7 @@ fn parse_content_subcommand(subcmd: &str, _subargs: &str) -> Result<ChatCommand,
 ///
 /// Extracted from the main parse_command to reduce complexity.
 /// Handles: add, list, show, edit, delete, search.
+#[allow(clippy::too_many_lines)] // Command dispatch table: each arm is linear input parsing.
 fn parse_note_subcommand(subcmd: &str, subargs: &str) -> Result<ChatCommand, String> {
     match subcmd {
         "add" | "a" => {
@@ -933,6 +935,12 @@ fn map_todo_shortcut<'a>(cmd: &str, args: &'a str) -> (&'static str, &'a str) {
 }
 
 /// Parse a command string
+/// Parse a command from user input.
+///
+/// Returns `None` if the input doesn't start with `/`.
+/// Returns `Some(Ok(ChatCommand))` for valid commands.
+/// Returns `Some(Err(msg))` for invalid input with a usage hint.
+#[allow(clippy::too_many_lines)] // Command dispatch table: each arm is linear input parsing.
 pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
     let input = input.trim();
 
