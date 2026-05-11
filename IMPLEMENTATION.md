@@ -185,7 +185,7 @@ M1 contains ~35 open cards organized into 6 implementation waves. Each wave has 
   - **W4.6** (#137): Geometry-aware RRF weight adjustment based on d_eff
   - **W4.7** (#138): Documentation rewrite — model selection guide, hybrid search explanation, provider docs
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
-- **W6**: starts after critical bugs are resolved. 4 sequential PRs (CommandResult → Rendering → Input+Event Loop → Final Transition). Depends on W5 completion being far enough along that the REPL is stable. Prerequisite for M2 TUI (#16).
+- **W6**: starts after critical bugs are resolved. 4 sequential PRs (CommandOutput → Rendering → Input+Event Loop → Final Transition). Depends on W5 completion being far enough along that the REPL is stable. Prerequisite for M2 TUI (#16).
 
 ### ✅ PRIORITY 0: Rename ask-ai → Sprachspiel (COMPLETED) [M1]
 
@@ -3848,7 +3848,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** 🔄 IN PROGRESS (W6-PR1: CommandResult)
+**Status:** ✅ COMPLETED (W6-PR1: CommandOutput enum + ChatView migration)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -3878,14 +3878,22 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1.1 | Create `src/chat/command_result.rs` with `CommandResult` enum | 🔄 IN PROGRESS |
-| 1.2 | Migrate `command_handlers.rs` from `println!` to `→ CommandResult` | 📋 |
-| 1.3 | Migrate REPL loop to consume `CommandResult` via `ChatView` | 📋 |
-| 1.4 | Migrate `repl.rs` status bar and prompt output to `ChatView` | 📋 |
-| 1.5 | Migrate `core.rs` tool call/result display to `ChatView` | 📋 |
-| 1.6 | Migrate `thinking.rs` to `ChatView` | 📋 |
-| 1.7 | Remove `#![expect(clippy::print_stdout)]` from crate-level, add module-level expects only to CLI modules | 📋 |
-| 1.8 | Tests: all command output still correct, no behavioral changes | 📋 |
+| 1.1 | Create `src/chat/command_output.rs` with `CommandOutput` enum, data structs, and `ChatView::show_command_output()` | ✅ COMPLETED |
+| 1.2 | Migrate all command handlers from `println!`/`eprintln!` to `Vec<CommandOutput>` | ✅ COMPLETED |
+| 1.3 | Migrate REPL loop to consume `CommandOutput` via `ChatView::show_command_outputs()` | ✅ COMPLETED |
+| 1.4 | Migrate `repl.rs` startup/error/status messages to `ChatView` methods | ✅ COMPLETED |
+| 1.5 | Migrate `core.rs` response rendering to `ChatView` (thinking, markdown, tokens, compaction) | ✅ COMPLETED |
+| 1.6 | Migrate `thinking.rs` to `ChatView::show_thinking()` + `extract_thinking()`; add `show_warning()`, `show_progress()` convenience methods | ✅ COMPLETED |
+| 1.7 | Add module-level `#![expect(print)]` to CLI modules (terminal.rs, repl.rs, thinking.rs, core.rs) | ✅ COMPLETED |
+| 1.8 | Remove crate-level `#![expect(print)]` from `lib.rs` (deferred — 40+ modules still have print calls) | 📋 DEFERRED |
+
+**Remaining print calls (justified, not in scope for PR1):**
+- `view/terminal.rs` (75): Rendering layer — intentional
+- `repl.rs` (11): Terminal control codes (ANSI positioning, ^C/^D, status bar)
+- `core.rs` (2): Coordinator callback (closure can't hold `&mut dyn ChatView`)
+- `thinking.rs` (4): Legacy `display_thinking()` for coordinator callback
+- `session.rs` (6): Database warning messages (→ `log::debug!` in future PR)
+- `model_switch.rs` (1): Capability detection warning (→ `ChatView` in future PR)
 
 **CommandResult Enum:**
 
