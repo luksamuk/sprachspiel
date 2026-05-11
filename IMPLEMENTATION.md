@@ -3887,13 +3887,18 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 | 1.7 | Add module-level `#![expect(print)]` to CLI modules (terminal.rs, repl.rs, thinking.rs, core.rs) | ✅ COMPLETED |
 | 1.8 | Remove crate-level `#![expect(print)]` from `lib.rs` (deferred — 40+ modules still have print calls) | 📋 DEFERRED |
 
-**Remaining print calls (justified, not in scope for PR1):**
-- `view/terminal.rs` (75): Rendering layer — intentional
-- `repl.rs` (11): Terminal control codes (ANSI positioning, ^C/^D, status bar)
-- `core.rs` (2): Coordinator callback (closure can't hold `&mut dyn ChatView`)
-- `thinking.rs` (4): Legacy `display_thinking()` for coordinator callback
-- `session.rs` (6): Database warning messages (→ `log::debug!` in future PR)
-- `model_switch.rs` (1): Capability detection warning (→ `ChatView` in future PR)
+**Deferred Items (future PRs):**
+
+| Item | Reason | Priority |
+|------|--------|----------|
+| Phase 1.8: Remove crate-level `#![expect(print)]` from `lib.rs` | 40+ modules still have print; needs incremental migration | Low |
+| `setup_coordinator` callback → `ChatView` | Closure can't hold `&mut dyn ChatView`; needs `Rc<RefCell>` or channel refactor | Low |
+| `retrieval/search.rs` search results | `run_search()` prints directly; needs `CommandOutput` or `ChatView` | Medium |
+| `session.rs` database warnings | 6x `eprintln!("Warning:...")` → `log::debug!()` | Low |
+| `model_switch.rs` capability warning | 1x `eprintln!` → `ChatView::show_warning()` | Low |
+
+**Bugs found during PR:**
+- ✅ **Commands being sent as messages** — `repl.rs` handled command output but forgot `continue;` after command processing, causing commands to fall through to `handle_user_message()`. Fixed by adding `continue;` after rendering command outputs.
 
 **CommandResult Enum:**
 

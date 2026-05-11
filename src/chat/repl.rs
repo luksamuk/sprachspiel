@@ -860,6 +860,9 @@ pub async fn run_chat_repl(
                             if outputs.iter().any(|o| matches!(o, CommandOutput::Quit)) {
                                 return Ok(());
                             }
+
+                            // Skip handle_user_message for all valid commands
+                            continue;
                         }
                         Some(Err(e)) => {
                             view.show_error(&e.to_string());
