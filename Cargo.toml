@@ -1,6 +1,6 @@
 [package]
 name = "sprachspiel"
-version = "0.40.0"
+version = "0.43.0"
 edition = "2024"
 
 # Binary name is "sprach" (short CLI command).

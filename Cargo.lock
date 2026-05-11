@@ -2786,7 +2786,7 @@ dependencies = [
 
 [[package]]
 name = "sprachspiel"
-version = "0.40.0"
+version = "0.43.0"
 dependencies = [
  "base64",
  "calc",

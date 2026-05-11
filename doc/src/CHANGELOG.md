@@ -4,6 +4,8 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-05-11
+
 ### Changed
 
 - **Function extraction — reduce long functions (Issue #129)** — Refactor the worst `too_many_lines` violations. Three functions were genuinely extracted into smaller pieces: `run_migrations`/`apply_migrations` (484→~35 lines), `generate_all_tool_prompts`/`build_tool_context` (409→~40 lines), `dedup_new_fact`/`deduplicate_and_insert` (339→~20 lines dispatcher + extracted layer functions). Two dispatch tables (`handle_command` 304 lines, `parse_command` 278 lines) were annotated with `#[allow(clippy::too_many_lines)]` with justification: each arm is trivial routing/parsing, and reducing below 100 would require ~30 wrapper functions that add ceremony without reducing complexity. Inline handler logic was still extracted (7 new `handle_*` functions: `handle_quit`, `handle_forget_cmd`, `handle_save_cmd`, `handle_load_cmd`, `handle_debug_toggle`, `handle_skill_cmd`, `handle_skill_list_cmd`). Two parser functions (`parse_note_add`, `parse_note_subcommand`) also received `#[allow]` as state-machine and dispatch-table patterns respectively.
