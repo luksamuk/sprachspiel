@@ -3848,7 +3848,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** 📋 PLANNED (after critical bugs are resolved)
+**Status:** 🔄 IN PROGRESS (W6-PR1: CommandResult)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -3872,11 +3872,13 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 **Solution:** Create `CommandResult` enum and route all output through `ChatView`.
 
+**Branch:** `refactor/command-result-decouple`
+
 **Implementation Phases:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1.1 | Create `src/chat/command_result.rs` with `CommandResult` enum | 📋 |
+| 1.1 | Create `src/chat/command_result.rs` with `CommandResult` enum | 🔄 IN PROGRESS |
 | 1.2 | Migrate `command_handlers.rs` from `println!` to `→ CommandResult` | 📋 |
 | 1.3 | Migrate REPL loop to consume `CommandResult` via `ChatView` | 📋 |
 | 1.4 | Migrate `repl.rs` status bar and prompt output to `ChatView` | 📋 |
