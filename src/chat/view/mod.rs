@@ -110,6 +110,20 @@ pub trait ChatView {
     /// Errors are typically shown in red/bold to catch user attention.
     fn show_error(&mut self, error: &str);
 
+    /// Display a warning message
+    ///
+    /// Shown in yellow with ⚠ icon. Used for cautions and non-fatal issues.
+    fn show_warning(&mut self, message: &str) {
+        self.show_command_output(&crate::chat::CommandOutput::Warning(message.to_string()));
+    }
+
+    /// Display a progress indicator
+    ///
+    /// Shown in yellow with ⏳ icon. Used for in-progress operations.
+    fn show_progress(&mut self, message: &str) {
+        self.show_command_output(&crate::chat::CommandOutput::Progress(message.to_string()));
+    }
+
     /// Display an assistant response with optional thinking content
     ///
     /// For models with thinking support (e.g., DeepSeek R1), the thinking
@@ -158,6 +172,16 @@ pub trait ChatView {
     /// - Note/document content display
     /// - Any command output that contains markdown
     fn show_markdown(&mut self, content: &str);
+
+    /// Display thinking content (dimmed, with [Thinking] header)
+    ///
+    /// Renders the model's internal reasoning before the main response.
+    /// TerminalView renders this in dim/light gray with optional markdown.
+    ///
+    /// # Arguments
+    ///
+    /// * `thinking` - The thinking content to display
+    fn show_thinking(&mut self, thinking: &str);
 
     /// Display a command output result
     ///

@@ -77,13 +77,39 @@ impl ChatView for TerminalView {
     fn show_assistant_response(&mut self, content: &str, thinking: Option<&str>) {
         // Display thinking content first if present (dimmed)
         if let Some(thinking_content) = thinking {
-            // Thinking is already formatted by the thinking module
-            // We just display it before the main content
-            let _ = thinking_content; // Thinking is handled separately by display_thinking
+            self.show_thinking(thinking_content);
         }
 
         // Display the main response content as markdown
         markdown::print_markdown_chat(content);
+    }
+
+    fn show_thinking(&mut self, thinking: &str) {
+        use termimad::MadSkin;
+
+        const THINKING_INDENT: usize = 2;
+        let wrap_width = crate::markdown::CHAT_TERMINAL_WIDTH.saturating_sub(THINKING_INDENT);
+
+        eprintln!(
+            "{}{}[Thinking]{}",
+            term_colors::DIM,
+            term_colors::CYAN,
+            term_colors::RESET
+        );
+
+        // Use MadSkin with proper wrapping for markdown rendering
+        let skin = MadSkin::default();
+        let wrapped = skin.text(thinking, Some(wrap_width));
+        for line in wrapped.to_string().lines() {
+            eprintln!(
+                "{}{}  {}{}",
+                term_colors::DIM,
+                term_colors::CYAN,
+                line,
+                term_colors::RESET
+            );
+        }
+        eprintln!();
     }
 
     fn show_token_metrics(&mut self, metrics: &TokenMetrics) {

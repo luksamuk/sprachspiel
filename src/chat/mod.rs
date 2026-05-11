@@ -47,4 +47,6 @@ pub use repl::run_chat_repl;
 // Re-exported for external crate usage; not consumed within this crate
 #[allow(unused_imports)]
 pub use subagent::{SubagentConfig, SubagentRunner, SubagentType};
-pub use thinking::{display_thinking, strip_thinking_tags};
+// Re-exported for external crate usage; not all are consumed within this crate
+#[allow(unused_imports)]
+pub use thinking::{display_thinking, extract_thinking, strip_thinking_tags};

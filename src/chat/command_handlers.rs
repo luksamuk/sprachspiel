@@ -86,6 +86,7 @@ pub async fn handle_command(
     cmd: ChatCommand,
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
+    view: &mut dyn super::view::ChatView,
 ) -> Vec<CommandOutput> {
     match cmd {
         ChatCommand::Quit => handle_quit(state, input).await,
@@ -135,7 +136,7 @@ pub async fn handle_command(
             vec![handle_tool_output_changed(level)]
         }
         ChatCommand::Debug => handle_debug_toggle(),
-        ChatCommand::Retry => handle_retry(state).await,
+        ChatCommand::Retry => handle_retry(state, view).await,
         ChatCommand::Undo => handle_undo(state),
         ChatCommand::Search { query, limit } => handle_search(state, query, limit).await,
         ChatCommand::Reindex => handle_reindex(state).await,
@@ -800,7 +801,10 @@ pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
 /// Handle retry command (async)
 ///
 /// Removes last assistant messages and regenerates the response.
-pub async fn handle_retry(state: &mut ReplState) -> Vec<CommandOutput> {
+pub async fn handle_retry(
+    state: &mut ReplState,
+    view: &mut dyn super::view::ChatView,
+) -> Vec<CommandOutput> {
     use crate::tool_robustness::format_tool_error;
 
     let mut outputs = Vec::new();
@@ -837,6 +841,7 @@ pub async fn handle_retry(state: &mut ReplState) -> Vec<CommandOutput> {
             state.embedding_client.as_ref(),
             state.cli_soulless,
             None,
+            view,
         )
         .await
         {
@@ -861,6 +866,7 @@ pub async fn handle_retry(state: &mut ReplState) -> Vec<CommandOutput> {
                     &state.settings,
                     state.agents_md.as_deref(),
                     result.context_window,
+                    view,
                 )
                 .await;
 

@@ -15,6 +15,7 @@
 
 use super::core::{SendMessageResult, TokenMetrics, auto_compact_if_needed, send_message};
 use super::repl_state::ReplState;
+use super::view::ChatView;
 use crate::context_overflow::{
     check_context_overflow, needs_buffered_compaction, needs_pre_tool_compaction,
 };
@@ -58,6 +59,7 @@ pub async fn process_send_result(
     state: &mut ReplState,
     result: SendMessageResult,
     user_message_id: Option<i64>,
+    view: &mut dyn ChatView,
 ) -> ProcessResult {
     // Save pre-tool content before final response
     if let Some(pre_content) = &result.pre_tool_content {
@@ -72,7 +74,7 @@ pub async fn process_send_result(
     // Handle continuation if LLM paused for compaction
     let (final_response, final_metrics, context_window, _system_prompt) =
         if result.continuation_needed.is_some() {
-            match handle_continuation(state, result).await {
+            match handle_continuation(state, result, view).await {
                 Ok(cont_result) => (
                     cont_result.response,
                     cont_result.metrics,
@@ -98,10 +100,11 @@ pub async fn process_send_result(
         .add_assistant_message(final_response.clone(), Some(final_metrics.prompt_tokens));
 
     if final_metrics.total_tokens > 0 {
-        eprintln!(
-            "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-            final_metrics.prompt_tokens, final_metrics.response_tokens, final_metrics.total_tokens
-        );
+        view.show_token_metrics(&TokenMetrics {
+            prompt_tokens: final_metrics.prompt_tokens,
+            response_tokens: final_metrics.response_tokens,
+            total_tokens: final_metrics.total_tokens,
+        });
     }
 
     // Auto-compact if needed (after response, before next input)
@@ -112,6 +115,7 @@ pub async fn process_send_result(
         &state.settings,
         state.agents_md.as_deref(),
         context_window,
+        view,
     )
     .await;
 
@@ -140,6 +144,7 @@ pub async fn check_and_compact_before_tool(
     state: &mut ReplState,
     system_prompt: &str,
     context_window: usize,
+    view: &mut dyn ChatView,
 ) {
     // First check if we need actual compaction (88% threshold)
     if needs_buffered_compaction(&state.session, context_window) {
@@ -149,10 +154,12 @@ pub async fn check_and_compact_before_tool(
         let total_tokens = ctx_status.total_tokens();
         let remaining = context_window.saturating_sub(total_tokens);
 
-        eprintln!(
-            "\x1B[33m⏳ Context {}% full ({}K remaining). Auto-compacting before tool execution...\x1B[0m",
+        view.show_context_warning(
             usage_pct,
-            remaining / 1000
+            &format!(
+                "{}K remaining. Auto-compacting before tool execution...",
+                remaining / 1000
+            ),
         );
 
         auto_compact_if_needed(
@@ -162,6 +169,7 @@ pub async fn check_and_compact_before_tool(
             &state.settings,
             state.agents_md.as_deref(),
             context_window,
+            view,
         )
         .await;
     } else if needs_pre_tool_compaction(&state.session, context_window) {
@@ -172,10 +180,12 @@ pub async fn check_and_compact_before_tool(
         let total_tokens = ctx_status.total_tokens();
         let remaining = context_window.saturating_sub(total_tokens);
 
-        eprintln!(
-            "\x1B[33m⚠ Context {}% full ({}K remaining). Consider using /compact to summarize old messages.\x1B[0m",
+        view.show_context_warning(
             usage_pct,
-            remaining / 1000
+            &format!(
+                "{}K remaining. Consider using /compact to summarize old messages.",
+                remaining / 1000
+            ),
         );
     }
 }
@@ -211,6 +221,7 @@ pub struct ContinuationResult {
 ///
 /// * `state` - Mutable reference to REPL state (contains session, ollama client, etc.)
 /// * `initial_result` - The result from the initial `send_message` call that requested continuation
+/// * `view` - View for rendering output
 ///
 /// # Returns
 ///
@@ -219,6 +230,7 @@ pub struct ContinuationResult {
 pub async fn handle_continuation(
     state: &mut ReplState,
     initial_result: SendMessageResult,
+    view: &mut dyn ChatView,
 ) -> AppResult<ContinuationResult> {
     let mut final_response = initial_result.response.clone();
     let mut final_metrics = initial_result.metrics.clone();
@@ -234,7 +246,7 @@ pub async fn handle_continuation(
         continuation_tag.paused_at,
         continuation_tag.next_step
     );
-    eprintln!("\n\x1B[33m⏳ Paused for context compaction, continuing...\x1B[0m");
+    view.show_progress("Paused for context compaction, continuing...");
 
     // Compact context before first continuation
     let continuation_context_window = initial_result.context_window;
@@ -245,6 +257,7 @@ pub async fn handle_continuation(
         &state.settings,
         state.agents_md.as_deref(),
         continuation_context_window,
+        view,
     )
     .await;
 
@@ -264,6 +277,7 @@ pub async fn handle_continuation(
         state.embedding_client.as_ref(),
         state.cli_soulless,
         Some(continuation_tag),
+        view,
     )
     .await;
 
@@ -275,22 +289,20 @@ pub async fn handle_continuation(
             final_metrics.response_tokens += cont_result.metrics.response_tokens;
             final_metrics.total_tokens += cont_result.metrics.total_tokens;
 
-            eprintln!("\n\x1B[90m[Continuation complete]\x1B[0m");
+            view.show_system("[Continuation complete]");
 
             // Handle nested continuations (max 3)
             while let Some(ref next_tag) = cont_result.continuation_needed {
                 if continuation_count >= 3 {
-                    eprintln!(
-                        "\x1B[33mWarning: Maximum continuations reached. Please continue manually.\x1B[0m"
-                    );
+                    view.show_warning("Maximum continuations reached. Please continue manually.");
                     break;
                 }
 
                 continuation_count += 1;
-                eprintln!(
-                    "\n\x1B[33m⏳ Paused again, continuing ({})...\x1B[0m",
+                view.show_progress(&format!(
+                    "Paused again, continuing ({})...",
                     continuation_count
-                );
+                ));
 
                 // Compact again before next continuation
                 auto_compact_if_needed(
@@ -300,6 +312,7 @@ pub async fn handle_continuation(
                     &state.settings,
                     state.agents_md.as_deref(),
                     cont_result.context_window,
+                    view,
                 )
                 .await;
 
@@ -317,6 +330,7 @@ pub async fn handle_continuation(
                     state.embedding_client.as_ref(),
                     state.cli_soulless,
                     Some(next_tag),
+                    view,
                 )
                 .await;
 
@@ -327,13 +341,13 @@ pub async fn handle_continuation(
                         final_metrics.response_tokens += n_result.metrics.response_tokens;
                         final_metrics.total_tokens += n_result.metrics.total_tokens;
 
-                        eprintln!("\n\x1B[90m[Continuation complete]\x1B[0m");
+                        view.show_system("[Continuation complete]");
 
                         // Update for next iteration
                         cont_result = n_result;
                     }
                     Err(e) => {
-                        eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+                        view.show_error(&format!("Continuation failed: {}", e));
                         break;
                     }
                 }
@@ -347,7 +361,7 @@ pub async fn handle_continuation(
             })
         }
         Err(e) => {
-            eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+            view.show_error(&format!("Continuation failed: {}", e));
             Err(e)
         }
     }
@@ -378,27 +392,32 @@ pub enum OverflowHandleResult {
 ///
 /// * `state` - Mutable reference to REPL state
 /// * `error_str` - The error string from send_message
+/// * `view` - View for rendering output
 ///
 /// # Returns
 ///
 /// * `NotOverflow` - Not an overflow error, caller should handle differently
 /// * `HandledContinue` - Overflow handled, caller should continue the loop
 /// * `InterToolCompaction` - Inter-tool compaction, caller should send continuation
-pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> OverflowHandleResult {
+pub async fn handle_overflow_error(
+    state: &mut ReplState,
+    error_str: &str,
+    view: &mut dyn ChatView,
+) -> OverflowHandleResult {
     if is_inter_tool_compaction_error(error_str) {
-        return handle_inter_tool_compaction_error(state, error_str).await;
+        return handle_inter_tool_compaction_error(state, error_str, view).await;
     }
 
     if !error_str.contains("Context overflow during tool execution") {
         return OverflowHandleResult::NotOverflow;
     }
 
-    eprintln!("\x1B[31mContext overflow during tool execution. Attempting recovery...\x1B[0m");
+    view.show_error("Context overflow during tool execution. Attempting recovery...");
 
     let (removed, _) = state.session.remove_last_assistant_messages_with_content();
     log::debug!("Removed {} messages after overflow error", removed);
 
-    eprintln!("\x1B[33m⏳ Auto-compacting after overflow error...\x1B[0m");
+    view.show_progress("Auto-compacting after overflow error...");
     auto_compact_if_needed(
         &state.ollama,
         &state.model_config,
@@ -406,6 +425,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
         &state.settings,
         state.agents_md.as_deref(),
         state.model_config.num_ctx as usize,
+        view,
     )
     .await;
 
@@ -418,7 +438,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
         );
     }
 
-    eprintln!("\x1B[33mPlease retry your message. Context has been compacted.\x1B[0m");
+    view.show_warning("Please retry your message. Context has been compacted.");
 
     OverflowHandleResult::HandledContinue
 }
@@ -429,6 +449,7 @@ pub async fn handle_overflow_error(state: &mut ReplState, error_str: &str) -> Ov
 async fn handle_inter_tool_compaction_error(
     state: &mut ReplState,
     error_str: &str,
+    view: &mut dyn ChatView,
 ) -> OverflowHandleResult {
     let Some((tokens_used, context_window, tools_executed)) =
         parse_inter_tool_compaction_error(error_str)
@@ -440,10 +461,10 @@ async fn handle_inter_tool_compaction_error(
     let tokens_before = state.session.history_real_tokens();
     let messages_before = state.session.messages.len();
 
-    eprintln!(
-        "\x1B[33m⏳ Context limit reached during tool execution ({} tools executed). Compacting...\x1B[0m",
+    view.show_progress(&format!(
+        "Context limit reached during tool execution ({} tools executed). Compacting...",
         tools_executed.len()
-    );
+    ));
 
     log::debug!(
         "[Inter-tool Compaction] Starting: {}K/{}K tokens ({}%), {} messages in history",
@@ -464,6 +485,7 @@ async fn handle_inter_tool_compaction_error(
         &state.settings,
         state.agents_md.as_deref(),
         context_window,
+        view,
     )
     .await;
 
