@@ -614,12 +614,12 @@ User-defined tools via dynamic loading or compilation.
 
 **Delivery:** 4 sequential PRs, each leaving the codebase functional and testable.
 
-| PR | Scope | Effort | Key Deliverable |
-|----|-------|--------|-----------------|
-| PR 1 | CommandResult — decouple logic from presentation | 5-6 days | All output goes through `CommandResult` enum + `ChatView` |
-| PR 2 | Ratatui infrastructure + responsive rendering | 5-6 days | `RatatuiView` with `--tui` flag for visual testing |
-| PR 3 | Crossterm input + event loop + streaming | 5-6 days | `--tui` mode fully functional: chat, commands, streaming |
-| PR 4 | Final transition — remove rustyline, make ratatui default | 3-4 days | Single rendering mode, responsive at any width |
+| PR | Scope | Effort | Key Deliverable | Issue |
+|----|-------|--------|-----------------|-------|
+| PR 1 | CommandResult — decouple logic from presentation | 5-6 days | All output goes through `CommandResult` enum + `ChatView` | #145 |
+| PR 2 | Ratatui infrastructure + responsive rendering | 5-6 days | `RatatuiView` with `--tui` flag for visual testing | #146 |
+| PR 3 | Crossterm input + event loop + streaming | 5-6 days | `--tui` mode fully functional: chat, commands, streaming | #147 |
+| PR 4 | Final transition — remove rustyline, make ratatui default | 3-4 days | Single rendering mode, responsive at any width | #148 |
 
 **Dependencies Added:**
 - `ratatui = "0.29"` — TUI rendering framework

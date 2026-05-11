@@ -134,12 +134,12 @@
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (6 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, **Responsive Chat Rebuild** |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (6 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, #145–#148 |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101, #139, #140 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict |
 | **[M4]** | Future | Deferred features and research | B2–B5, B8–B10 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF, GAC (#141) |
 
-**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility: #133→#138, #106, #107) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132) → **W6 (Responsive Chat Rebuild: Ratatui migration, 4 PRs)**
+**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility: #133→#138, #106, #107) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132) → W6 (Responsive Chat Rebuild: #145→#148)
 
 **Priority within milestones** is determined by card order (top = highest priority) on the GitHub Project Board. Cards are referenced by their issue number (e.g., #72, #116).
 
@@ -168,7 +168,7 @@ M1 contains ~35 open cards organized into 6 implementation waves. Each wave has 
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility | Embedding diagnostics, geometry-aware config, model validation, provider abstraction | #133, #134, #106, #135, #107, #136, #137, #138 | Diagnostics subcommand works; fact threshold validated; at least one alternative model benchmarked; RRF weights adapt to d_eff; docs rewritten |
 | **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
-| **W6** | Responsive Chat Rebuild | Replace println+ANSI with Ratatui for responsive chat rendering | 4 sequential PRs | All chat rendering via ChatView/RatatuiView; rustyline removed; responsive at any terminal width |
+| **W6** | Responsive Chat Rebuild | Replace println+ANSI with Ratatui for responsive chat rendering | #145, #146, #147, #148 | All chat rendering via ChatView/RatatuiView; rustyline removed; responsive at any terminal width |
 
 **Wave dependencies:**
 
@@ -3864,7 +3864,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
-#### PR 1: CommandResult — Decouple Logic from Presentation (~5-6 days)
+#### PR 1: CommandResult — Decouple Logic from Presentation (~5-6 days) — #145
 
 **Goal:** Migrate all command handlers from direct `println!`/`eprintln!` to typed `CommandResult` enum, with rendering via `ChatView`.
 
@@ -3922,7 +3922,7 @@ pub enum CommandResult {
 
 ---
 
-#### PR 2: Infrastructure + Responsive Rendering (~5-6 days)
+#### PR 2: Infrastructure + Responsive Rendering (~5-6 days) — #146
 
 **Goal:** Add Ratatui infrastructure and implement responsive rendering. Chat displays correctly at any terminal width. Feature flag `--tui` for testing.
 
@@ -3971,7 +3971,7 @@ rustyline = "14"         # input (kept for PR 2-3, removed in PR 4)
 
 ---
 
-#### PR 3: Crossterm Input + Event Loop (~5-6 days)
+#### PR 3: Crossterm Input + Event Loop (~5-6 days) — #147
 
 **Goal:** Replace rustyline with crossterm input handling. Implement the async event loop for LLM communication. Feature flag `--tui` becomes fully functional.
 
@@ -4055,7 +4055,7 @@ pub enum AppEvent {
 
 ---
 
-#### PR 4: Final Transition + Cleanup (~3-4 days)
+#### PR 4: Final Transition + Cleanup (~3-4 days) — #148
 
 **Goal:** Make ratatui the default and only rendering mode. Remove rustyline and all println-based chat rendering.
 
@@ -4149,7 +4149,7 @@ PR 4: Transition
 
 **Relationship to TUI #16:** This rebuild replaces the println-based chat rendering with ratatui, making the chat responsive at any terminal width. The full TUI (#16) will build ON TOP of this infrastructure, adding sidebars, /queue, /steer, multi-pane layout, and the full UX design. Think of this as "laying the foundation" — the rendering engine, event loop, and input handling — while #16 is "building the house" on top of it.
 
-**Related:** Issue #16 (TUI — full design, builds on top of this), Issue #131 (Remove print expects — prerequisite handled in PR 1)
+**Related:** Issue #16 (TUI — full design, builds on top of this), Issue #131 (Remove print expects — prerequisite handled in PR 1), Issues #145, #146, #147, #148 (W6 PRs)
 
 ---
 
