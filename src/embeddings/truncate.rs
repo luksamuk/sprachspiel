@@ -54,36 +54,14 @@ pub fn truncate_and_normalize(embedding: &[f32]) -> Vec<f32> {
     truncated.iter().map(|x| x / norm).collect()
 }
 
-/// Normalize a vector to unit length.
+/// Calculate cosine similarity between two normalized vectors.
 ///
-/// Useful for future features:
-/// - Diversity filtering (MMR) - filter similar messages from retrieval
-/// - Manual reranking after sqlite-vec KNN
-/// - Similarity threshold filtering (remove low-relevance results)
+/// Used by fact verification (`facts::verify`) for deduplication
+/// and semantic similarity comparison.
 ///
-/// Currently not used - kept for planned retrieval improvements.
-#[expect(dead_code)]
-pub fn normalize(vec: &[f32]) -> Vec<f32> {
-    let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-    if norm < f32::EPSILON {
-        return vec![0.0; vec.len()];
-    }
-
-    vec.iter().map(|x| x / norm).collect()
-}
-
-/// Calculate cosine similarity between two vectors.
+/// # Panics
 ///
-/// Assumes both vectors are normalized.
-///
-/// Useful for future features:
-/// - Diversity filtering (MMR) - detect similar messages
-/// - Manual reranking after sqlite-vec KNN
-/// - Similarity threshold filtering
-///
-/// Currently not used - kept for planned retrieval improvements.
-#[allow(dead_code)] // Reserved for Phase 2: diversity filtering, reranking, threshold filtering
+/// Panics if vectors have different lengths.
 #[expect(clippy::panic)] // invariant: vectors must have equal length, programming error otherwise
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
@@ -113,23 +91,6 @@ mod tests {
             "Norm should be ~1.0, got {}",
             norm
         );
-    }
-
-    #[test]
-    fn test_normalize() {
-        let vec = vec![3.0, 4.0]; // Norm = 5
-        let normalized = normalize(&vec);
-
-        assert!((normalized[0] - 0.6).abs() < 0.0001); // 3/5
-        assert!((normalized[1] - 0.8).abs() < 0.0001); // 4/5
-    }
-
-    #[test]
-    fn test_normalize_zero_vector() {
-        let vec = vec![0.0, 0.0, 0.0];
-        let normalized = normalize(&vec);
-
-        assert_eq!(normalized, vec![0.0, 0.0, 0.0]);
     }
 
     #[test]

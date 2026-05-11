@@ -60,15 +60,31 @@ Every `#[allow(dead_code)]` **MUST** have a justification comment on the same li
 
 ## Acceptable Justifications
 
-- `// Reserved for Phase 2: TUI commands` — planned feature with clear scope
 - `// JSON deserialization field — required by serde but unused in app code` — framework requirement
 - `// Error enum variant — used by From implementation` — public API completeness
-- `// Test-only code, guarded by #[cfg(test)]` — test infrastructure
+- `// Public API method, cannot gate behind #[cfg(test)]` — rare, for methods that need to exist for trait impls
+
+## Prefer `#[cfg(test)]` Over `#[allow(dead_code)]`
+
+**If a function is only called from tests, gate it with `#[cfg(test)]` instead of `#[allow(dead_code)]`.**
+
+This makes the scope explicit and prevents accidental reliance in production code. The `#[allow(dead_code)]` approach hides the problem; `#[cfg(test)]` solves it.
+
+```rust
+// BAD: Silences the warning but keeps dead code in production builds
+#[allow(dead_code)] // Test-only helper
+fn format_for_test() -> String { ... }
+
+// GOOD: Removes the function entirely from production builds
+#[cfg(test)]
+fn format_for_test() -> String { ... }
+```
 
 ## NOT Acceptable
 
 - "Might be useful later" — remove it
 - "Preparation for future features" — add when the feature is implemented
+- "Reserved for Phase 2" — add when Phase 2 starts
 - No comment at all — add justification or remove the dead code
 
 ## Enforcement Script

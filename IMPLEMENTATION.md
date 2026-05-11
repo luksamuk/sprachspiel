@@ -971,7 +971,8 @@ todo_clear_all()             // Clear all tasks
 | `src/context_overflow.rs` | 69 | `truncate_tool_result()` | No longer used |
 
 **Retained with Justification (~76 items):**
-- Future use: `normalize()`, `cosine_similarity()`, `estimate_tokens_code()`
+- Active use: `cosine_similarity()` (used by `facts::verify` for deduplication)
+- Future use: `estimate_tokens_code()`
 - Enum completeness: `ContextStatus` variants, `ResolutionAction::Add`
 - Serde/API fields: Weather, Serper, Vision, OCR response structs
 - Test-only: `Database::in_memory()`, test helper methods
