@@ -332,64 +332,62 @@ These were identified during the `cargo clippy` audit after the rename. They are
 
 ### 🔴 PRIORITY: Function Extraction — Reduce Long Functions — #129 [M1]
 
-**Status:** 🔄 IN PROGRESS
+**Status:** 🔄 IN PROGRESS (Phase 1.1 & 1.2 completed, 1.3-1.5 deferred to follow-up PRs)
 **Issue:** #129
 **Branch:** `refactor/function-extraction`
+**PR:** #144
 
-**Goal:** Reduce the 26 functions exceeding the 100-line threshold (clippy `too_many_lines` lint, configured in `clippy.toml`). This PR targets the **top 5 worst offenders** — the remaining 21 functions will be addressed in follow-up PRs.
+**Goal:** Reduce the 26 functions exceeding the 100-line threshold (clippy `too_many_lines` lint, configured in `clippy.toml`). This PR addresses the **top 2 worst offenders** (484 + 409 = 893 lines reduced to 35 + 40 = 75 lines). The remaining 24 functions will be addressed in follow-up PRs.
 
-**Current Top 5 Targets (sorted by line count):**
+**Top 2 Targets Completed:**
 
-| Lines | File:Line | Function | Description |
-|-------|-----------|----------|-------------|
-| 484 | `src/db/connection.rs:83` | `run_migrations` | Schema migration chain (v1→v12) |
-| 409 | `src/prompts/tools.rs:27` | `generate_all_tool_prompts` | Tool prompt generation for all tools |
-| 339 | `src/facts/dedup.rs:198` | `dedup_new_fact` | Fact deduplication pipeline (6-layer) |
-| 304 | `src/chat/command_handlers.rs:83` | `handle_command` | Command dispatch handler |
-| 278 | `src/chat/commands.rs:936` | `parse_command` | Command parsing (remaining after PR #84) |
+| Lines Before | Lines After | File | Function | Reduction |
+|-------------|-------------|------|----------|-----------|
+| 484 | 35 | `src/db/connection.rs` | `apply_migrations` → 10 extracted functions | -93% |
+| 409 | 40 | `src/prompts/tools.rs` | `build_tool_context` → 14 section functions | -90% |
 
-**All 26 Violations (for reference):**
+**Phase 1.1: `apply_migrations` (484→35 lines)**
+
+Extracted 4 helper functions and 10 migration functions:
+- `column_exists(conn, table, column) -> Result<bool>` — eliminates 15x repeated PRAGMA pattern
+- `table_exists(conn, table) -> Result<bool>` — idempotent table check
+- `add_column_if_missing(conn, table, column, col_type) -> Result<bool>` — conditional column add
+- `add_columns_if_missing(conn, table, columns) -> Result<()>` — batch column add
+- `migrate_v2_to_v3` through `migrate_v11_to_v12` — 10 independent, idempotent migration functions
+- `apply_migrations` — thin dispatcher: `if from_version < N { Self::migrate_vN_to_VN+1(conn)?; }`
+
+**Phase 1.2: `build_tool_context` (409→40 lines)**
+
+Extracted 1 helper and 14 section functions:
+- `filter_available(tools, blacklist) -> Vec<&str>` — deduplicates blacklist filtering
+- `weather_section`, `pokemon_section`, `serper_search_section`, `ddg_search_section`, `calc_section`, `file_section`, `system_section`, `led_section`, `todo_section`, `notes_section`, `feedback_section`, `document_section`, `agent_section`, `external_section` — each returns `Option<String>`
+- `build_tool_context` — thin dispatcher calling `if let Some(s) = section_fn(blacklist) { sections.push(s); }`
+
+**Remaining targets (deferred to follow-up PRs):**
 
 | Lines | File:Line | Function |
 |-------|-----------|----------|
-| 484 | `db/connection.rs:83` | `run_migrations` |
-| 409 | `prompts/tools.rs:27` | `generate_all_tool_prompts` |
 | 339 | `facts/dedup.rs:198` | `dedup_new_fact` |
 | 304 | `command_handlers.rs:83` | `handle_command` |
 | 278 | `commands.rs:936` | `parse_command` |
-| 268 | `embeddings/regenerate.rs:75` | `regenerate_all_embeddings` |
-| 260 | `settings.rs:551` | `resolve_settings` |
-| 233 | `chat/repl.rs:535` | `run_chat_repl` |
-| 207 | `tools/remember.rs:653` | `remember` |
-| 195 | `embeddings/recovery.rs:43` | `recover_missing_embeddings` |
-| 183 | `command_handlers.rs:1232` | `handle_session_*` |
-| 182 | `chat/core.rs:331` | `handle_user_message` |
-| 173 | `prompts/builder.rs:184` | `build_system_prompt` |
-| 163 | `command_handlers.rs:1912` | `handle_note_*` |
-| 162 | `command_handlers.rs:1053` | `handle_fact_*` |
-| 158 | `command_handlers.rs:2566` | `handle_doc_*` |
-| 158 | `content/db.rs:641` | `search_content_hybrid` |
-| 142 | `chat/custom_coordinator.rs:322` | `generate_with_tools` |
-| 139 | `external/config.rs:330` | `load_tools_config` |
-| 134 | `commands.rs:548` | `parse_*_subcommand` |
-| 121 | `translate/language.rs:141` | `detect_language` |
-| 113 | `chat/continuation.rs:219` | `handle_continuation` |
-| 112 | `chat/session.rs:447` | `load_session_from_db` |
-| 111 | `chat/session.rs:313` | `save_session_to_db` |
-| 108 | `commands.rs:207` | `parse_command` match arm |
-| 105 | `command_handlers.rs:3218` | `handle_search_and_remember` |
+| + 21 more | various | various |
 
 **Implementation Phases:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1.1 | Extract `run_migrations` sub-functions (484→<100) | ❌ |
-| 1.2 | Extract `generate_all_tool_prompts` sub-functions (409→<100) | ❌ |
-| 1.3 | Extract `dedup_new_fact` layers into separate functions (339→<100) | ❌ |
-| 1.4 | Extract `handle_command` dispatch handlers (304→<100) | ❌ |
-| 1.5 | Extract `parse_command` remaining subcommands (278→<100) | ❌ |
+| 1.1 | Extract `apply_migrations` sub-functions (484→35) | ✅ Completed |
+| 1.2 | Extract `build_tool_context` section functions (409→40) | ✅ Completed |
+| 1.3 | Extract `dedup_new_fact` layers into separate functions (339→<100) | ❌ Deferred |
+| 1.4 | Extract `handle_command` dispatch handlers (304→<100) | ❌ Deferred |
+| 1.5 | Extract `parse_command` remaining subcommands (278→<100) | ❌ Deferred |
 
-**Related:** Issue #129
+**Commits:**
+- `d401875` refactor: extract migration functions from run_migrations (484→35 lines)
+- `ba3873b` refactor: extract tool sections from build_tool_context (409→40 lines)
+- `5d0a607` style: cargo fmt after function extraction
+
+**Related:** Issue #129, PR #144
 
 ---
 
