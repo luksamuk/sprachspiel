@@ -6,6 +6,8 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Changed
 
+- **Function extraction — reduce long functions (Issue #129)** — Refactor top 5 worst `too_many_lines` violations to bring them under the 100-line threshold. Targets: `run_migrations` (484→<100), `generate_all_tool_prompts` (409→<100), `dedup_new_fact` (339→<100), `handle_command` (304→<100), `parse_command` (278→<100).
+
 - **Unwrap/expect/panic triage (Issue #128)** — Systematic audit of all `unwrap()`, `expect()`, and `panic!` sites in production code. Library code now propagates errors with `?` and `map_err()` instead of panicking. CLI entry points retain justified `#[expect]` annotations with reasoning comments. `panic!` in library code replaced with `return Err(...)`. Removes ~54 crash-risk sites from non-CLI code paths.
 
 ### Changed

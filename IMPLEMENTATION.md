@@ -260,7 +260,7 @@ These were identified during the `cargo clippy` audit after the rename. They are
 | Card | Description | Count | Priority | Issue |
 |------|-------------|-------|----------|-------|
 | Unwrap/expect/panic triage | All 44 clippy violations annotated with `#[expect]`; mutex `.unwrap()` → `.expect()` | 44 sites fixed | 🔴 Critical | #128 (✅ COMPLETED) |
-| Function extraction | Refactor 14 functions exceeding 100 lines | 14 functions | 🔴 Critical | #129 |
+| Function extraction | Refactor 26 functions exceeding 100 lines (top 5 first) | 26 functions | 🔴 Critical | #129 (🔄 IN PROGRESS) |
 | Complexity reduction | Reduce cognitive complexity in 13 functions (max: 62/15) | 13 functions | 🔴 Critical | #130 |
 | Remove `#![expect(print)]` | Remove crate-level print expects before TUI; add module-level expects only to CLI modules | 2 attrs | 📋 TUI-prereq | #131 |
 
@@ -327,6 +327,69 @@ These were identified during the `cargo clippy` audit after the rename. They are
 - `src/main.rs`: 1 `#[expect(clippy::expect_used)]` on args.language after validate()
 
 **Related:** Issue #128
+
+---
+
+### 🔴 PRIORITY: Function Extraction — Reduce Long Functions — #129 [M1]
+
+**Status:** 🔄 IN PROGRESS
+**Issue:** #129
+**Branch:** `refactor/function-extraction`
+
+**Goal:** Reduce the 26 functions exceeding the 100-line threshold (clippy `too_many_lines` lint, configured in `clippy.toml`). This PR targets the **top 5 worst offenders** — the remaining 21 functions will be addressed in follow-up PRs.
+
+**Current Top 5 Targets (sorted by line count):**
+
+| Lines | File:Line | Function | Description |
+|-------|-----------|----------|-------------|
+| 484 | `src/db/connection.rs:83` | `run_migrations` | Schema migration chain (v1→v12) |
+| 409 | `src/prompts/tools.rs:27` | `generate_all_tool_prompts` | Tool prompt generation for all tools |
+| 339 | `src/facts/dedup.rs:198` | `dedup_new_fact` | Fact deduplication pipeline (6-layer) |
+| 304 | `src/chat/command_handlers.rs:83` | `handle_command` | Command dispatch handler |
+| 278 | `src/chat/commands.rs:936` | `parse_command` | Command parsing (remaining after PR #84) |
+
+**All 26 Violations (for reference):**
+
+| Lines | File:Line | Function |
+|-------|-----------|----------|
+| 484 | `db/connection.rs:83` | `run_migrations` |
+| 409 | `prompts/tools.rs:27` | `generate_all_tool_prompts` |
+| 339 | `facts/dedup.rs:198` | `dedup_new_fact` |
+| 304 | `command_handlers.rs:83` | `handle_command` |
+| 278 | `commands.rs:936` | `parse_command` |
+| 268 | `embeddings/regenerate.rs:75` | `regenerate_all_embeddings` |
+| 260 | `settings.rs:551` | `resolve_settings` |
+| 233 | `chat/repl.rs:535` | `run_chat_repl` |
+| 207 | `tools/remember.rs:653` | `remember` |
+| 195 | `embeddings/recovery.rs:43` | `recover_missing_embeddings` |
+| 183 | `command_handlers.rs:1232` | `handle_session_*` |
+| 182 | `chat/core.rs:331` | `handle_user_message` |
+| 173 | `prompts/builder.rs:184` | `build_system_prompt` |
+| 163 | `command_handlers.rs:1912` | `handle_note_*` |
+| 162 | `command_handlers.rs:1053` | `handle_fact_*` |
+| 158 | `command_handlers.rs:2566` | `handle_doc_*` |
+| 158 | `content/db.rs:641` | `search_content_hybrid` |
+| 142 | `chat/custom_coordinator.rs:322` | `generate_with_tools` |
+| 139 | `external/config.rs:330` | `load_tools_config` |
+| 134 | `commands.rs:548` | `parse_*_subcommand` |
+| 121 | `translate/language.rs:141` | `detect_language` |
+| 113 | `chat/continuation.rs:219` | `handle_continuation` |
+| 112 | `chat/session.rs:447` | `load_session_from_db` |
+| 111 | `chat/session.rs:313` | `save_session_to_db` |
+| 108 | `commands.rs:207` | `parse_command` match arm |
+| 105 | `command_handlers.rs:3218` | `handle_search_and_remember` |
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1.1 | Extract `run_migrations` sub-functions (484→<100) | ❌ |
+| 1.2 | Extract `generate_all_tool_prompts` sub-functions (409→<100) | ❌ |
+| 1.3 | Extract `dedup_new_fact` layers into separate functions (339→<100) | ❌ |
+| 1.4 | Extract `handle_command` dispatch handlers (304→<100) | ❌ |
+| 1.5 | Extract `parse_command` remaining subcommands (278→<100) | ❌ |
+
+**Related:** Issue #129
 
 ---
 
