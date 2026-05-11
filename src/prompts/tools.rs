@@ -3,189 +3,175 @@
 //! Builds the tool section of system prompts. Instead of embedding detailed
 //! tool descriptions in the prompt, we list available tools and rely on
 //! the tool definitions (function metadata) for specifics.
+//!
+//! # Arguments
+//! * `blacklist` - Set of tool names to exclude
+//!
+//! # Feature Flags
+//! Tools are included based on compile-time feature flags:
+//! - `weather-tools`: Weather tools
+//! - `pokemon-tools`: Pokémon API tools
+//! - `serper-tools`: Serper API web search
+//! - `search-tools`: DuckDuckGo web search (fallback)
+//! - `file-tools`: File operation tools
+//! - `calc-tools`: Calculator
+//! - `system-tools`: System information tools
 
 use std::collections::HashSet;
 
-/// Build minimal tool context section
-///
-/// Lists available tools by category with brief usage guidance.
-/// Detailed descriptions are provided by the tool definitions themselves,
-/// which are more efficient for the model to process.
-///
-/// # Arguments
-/// * `blacklist` - Set of tool names to exclude
-///
-/// # Feature Flags
-/// Tools are included based on compile-time feature flags:
-/// - `weather-tools`: Weather tools
-/// - `pokemon-tools`: Pokémon API tools
-/// - `serper-tools`: Serper API web search
-/// - `search-tools`: DuckDuckGo web search (fallback)
-/// - `file-tools`: File operation tools
-/// - `calc-tools`: Calculator
-/// - `system-tools`: System information tools
-pub fn build_tool_context(blacklist: &HashSet<&str>) -> String {
-    let mut sections = Vec::new();
+/// Filter a tool list against a blacklist, returning the available tools.
+fn filter_available<'a>(tools: &[&'a str], blacklist: &HashSet<&str>) -> Vec<&'a str> {
+    tools
+        .iter()
+        .filter(|t| !blacklist.contains(**t))
+        .copied()
+        .collect()
+}
 
-    // Weather tools
-    #[cfg(feature = "weather-tools")]
-    {
-        let weather_tools = ["get_weather", "get_current_weather", "get_weather_forecast"];
-        let available: Vec<_> = weather_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
-
-        if !available.is_empty() {
-            sections.push(
-                r#"### WEATHER TOOLS
+/// Weather tools section
+#[cfg(feature = "weather-tools")]
+fn weather_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = ["get_weather", "get_current_weather", "get_weather_forecast"];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
+    }
+    Some(
+        r#"### WEATHER TOOLS
 Use for weather and climate queries.
 Available: get_weather, get_current_weather, get_weather_forecast"#
-                    .to_string(),
-            );
-        }
+            .to_string(),
+    )
+}
+
+/// Pokémon tools section
+#[cfg(feature = "pokemon-tools")]
+fn pokemon_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = [
+        "fetch_pokemon",
+        "fetch_pokemon_basic",
+        "fetch_pokemon_stats",
+        "fetch_pokemon_moves",
+        "fetch_pokemon_evolution",
+        "fetch_ability_details",
+        "fetch_type_effectiveness",
+        "fetch_pokemon_by_type",
+        "fetch_move_details",
+    ];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
     }
-
-    // Pokémon tools
-    #[cfg(feature = "pokemon-tools")]
-    {
-        let pokemon_tools = [
-            "fetch_pokemon",
-            "fetch_pokemon_basic",
-            "fetch_pokemon_stats",
-            "fetch_pokemon_moves",
-            "fetch_pokemon_evolution",
-            "fetch_ability_details",
-            "fetch_type_effectiveness",
-            "fetch_pokemon_by_type",
-            "fetch_move_details",
-        ];
-        let available: Vec<_> = pokemon_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
-
-        if !available.is_empty() {
-            sections.push(
-                r#"### POKÉMON TOOLS
+    Some(
+        r#"### POKÉMON TOOLS
 Use ONLY for Pokémon-related queries (names, abilities, moves, types, evolution).
 Available: fetch_pokemon, fetch_pokemon_stats, fetch_pokemon_moves, etc."#
-                    .to_string(),
-            );
-        }
-    }
+            .to_string(),
+    )
+}
 
-    // Web search tools - Serper (preferred)
-    #[cfg(feature = "serper-tools")]
-    {
-        if !blacklist.contains("web_search") {
-            sections.push(
-                r#"### WEB SEARCH TOOLS
+/// Serper web search section (preferred)
+#[cfg(feature = "serper-tools")]
+fn serper_search_section(blacklist: &HashSet<&str>) -> Option<String> {
+    if blacklist.contains("web_search") {
+        return None;
+    }
+    Some(
+        r#"### WEB SEARCH TOOLS
 Use for general knowledge, current events, or anything NOT about Pokémon or weather.
 Available: web_search, web_search_news"#
-                    .to_string(),
-            );
-        }
+            .to_string(),
+    )
+}
+
+/// DuckDuckGo web search section (fallback)
+#[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
+fn ddg_search_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = ["web_search", "web_search_news", "web_scrape"];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
     }
-
-    // Web search tools - DuckDuckGo (fallback)
-    #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
-    {
-        let search_tools = ["web_search", "web_search_news", "web_scrape"];
-        let available: Vec<_> = search_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
-
-        if !available.is_empty() {
-            sections.push(
-                r#"### WEB SEARCH TOOLS
+    Some(
+        r#"### WEB SEARCH TOOLS
 Use for general knowledge, current events, or anything NOT about Pokémon or weather.
 Available: web_search, web_search_news, web_scrape"#
-                    .to_string(),
-            );
-        }
-    }
+            .to_string(),
+    )
+}
 
-    // Calculator tool
-    #[cfg(feature = "calc-tools")]
-    {
-        if !blacklist.contains("calculate") {
-            sections.push(
-                r#"### CALCULATOR TOOL
+/// Calculator section
+#[cfg(feature = "calc-tools")]
+fn calc_section(blacklist: &HashSet<&str>) -> Option<String> {
+    if blacklist.contains("calculate") {
+        return None;
+    }
+    Some(
+        r#"### CALCULATOR TOOL
 Use for mathematical calculations.
 Available: calculate"#
-                    .to_string(),
-            );
-        }
+            .to_string(),
+    )
+}
+
+/// File tools section
+#[cfg(feature = "file-tools")]
+fn file_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = [
+        "read_file",
+        "read_file_segment",
+        "count_lines",
+        "list_directory",
+        "search_files",
+    ];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
     }
-
-    // File tools
-    #[cfg(feature = "file-tools")]
-    {
-        let file_tools = [
-            "read_file",
-            "read_file_segment",
-            "count_lines",
-            "list_directory",
-            "search_files",
-        ];
-        let available: Vec<_> = file_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
-
-        if !available.is_empty() {
-            sections.push(
-                r#"### FILE TOOLS
+    Some(
+        r#"### FILE TOOLS
 Use for reading, listing, and searching files.
 Available: read_file, read_file_segment, count_lines, list_directory, search_files
 
 Note: For large files, use count_lines first, then read_file_segment with start_line and num_lines.
 
 **PDFs:** read_file cannot read PDFs (binary format). **Load the document-processing skill FIRST** with skill_view(name="document-processing") for the complete two-phase pipeline (text extraction + vision analysis)."#
-                    .to_string(),
-            );
-        }
+            .to_string(),
+    )
+}
+
+/// System tools section
+#[cfg(feature = "system-tools")]
+fn system_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = ["get_current_datetime", "get_project_context"];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
     }
-
-    // System tools
-    #[cfg(feature = "system-tools")]
-    {
-        let system_tools = ["get_current_datetime", "get_project_context"];
-        let available: Vec<_> = system_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
-
-        if !available.is_empty() {
-            sections.push(
-                r#"### SYSTEM TOOLS
+    Some(
+        r#"### SYSTEM TOOLS
 Use for current date/time or project context.
 Available: get_current_datetime, get_project_context"#
-                    .to_string(),
-            );
-        }
+            .to_string(),
+    )
+}
+
+/// LED tools section
+#[cfg(feature = "led-tools")]
+fn led_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = [
+        "led_get_status",
+        "led_set_power",
+        "led_set_program",
+        "led_set_brightness",
+        "led_set_color",
+    ];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
     }
-
-    // LED tools (requires configuration)
-    #[cfg(feature = "led-tools")]
-    {
-        let led_tools = [
-            "led_get_status",
-            "led_set_power",
-            "led_set_program",
-            "led_set_brightness",
-            "led_set_color",
-        ];
-        let available: Vec<_> = led_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
-
-        if !available.is_empty() {
-            sections.push(
-                r#"### LED TOOLS
+    Some(
+        r#"### LED TOOLS
 Use for controlling NeoPixel LED strips via Raspberry Pi Pico W.
 Available: led_get_status, led_set_power, led_set_program, led_set_brightness, led_set_color
 
@@ -196,31 +182,28 @@ For color adjustments:
 4. Set new color with led_set_color using r/g/b parameters
 
 Color tips: To make "more red", increase R or decrease G/B. For "warmer", increase R slightly. For "cooler", increase B slightly."#
-                    .to_string(),
-            );
-        }
+            .to_string(),
+    )
+}
+
+/// Todo tools section (always available)
+fn todo_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = [
+        "todo_add",
+        "todo_update",
+        "todo_get",
+        "todo_edit",
+        "todo_delete",
+        "todo_list",
+        "todo_clear_done",
+        "todo_clear_all",
+    ];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
     }
-
-    // Todo tools (always available)
-    {
-        let todo_tools = [
-            "todo_add",
-            "todo_update",
-            "todo_get",
-            "todo_edit",
-            "todo_delete",
-            "todo_list",
-            "todo_clear_done",
-            "todo_clear_all",
-        ];
-        let available: Vec<_> = todo_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
-
-        if !available.is_empty() {
-            sections.push(
-                r##"### TODO TOOLS
+    Some(
+        r##"### TODO TOOLS
 Use for tracking tasks during multi-step work. Reduces need to search conversation history.
 Available: todo_add, todo_update, todo_get, todo_edit, todo_delete, todo_list, todo_clear_done, todo_clear_all
 
@@ -238,17 +221,19 @@ Workflow:
 Priority values: low, medium (default), high, critical
 Status values: pending, in_progress, done
 Tags: lowercase, comma-separated (e.g., "bug,frontend")"##.to_string(),
-            );
-        }
-    }
+    )
+}
 
-    // Notes tools (always available)
+/// Notes tools section (always available)
+fn notes_section(blacklist: &HashSet<&str>) -> Option<String> {
+    if blacklist.contains("note_add")
+        && blacklist.contains("note_edit")
+        && blacklist.contains("note_delete")
     {
-        if !blacklist.contains("note_add")
-            || !blacklist.contains("note_edit")
-            || !blacklist.contains("note_delete")
-        {
-            let section = r#"### NOTES TOOLS
+        return None;
+    }
+    Some(
+        r#"### NOTES TOOLS
 Use for storing longer documents that should persist across sessions.
 Available: note_add, note_edit, note_delete
 
@@ -278,37 +263,40 @@ Use **fact_add** for:
 **Example:**
 note_add("Decision: We chose PostgreSQL because:\n1. Better JSON support\n2. Native full-text search", "Architecture: Database Choice")
 note_edit(id="42", title="Revised: Database Decision")
-note_delete(id="42")"#.to_string();
+note_delete(id="42")"#
+            .to_string(),
+    )
+}
 
-            sections.push(section);
-        }
-    }
-
-    // Feedback tools (gated by config — check at runtime)
+/// Feedback tools section (gated by config)
+fn feedback_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let settings = crate::tools::context::get_settings();
+    if let Some(s) = &settings
+        && s.feedback.enabled
+        && !blacklist.contains("feedback_submit")
     {
-        let settings = crate::tools::context::get_settings();
-        if let Some(s) = &settings
-            && s.feedback.enabled
-            && !blacklist.contains("feedback_submit")
-        {
-            sections.push(
-                r#"### FEEDBACK TOOLS
+        Some(
+            r#"### FEEDBACK TOOLS
 Use for providing feedback on messages during conversation.
 Available: feedback_submit
 
 feedback_submit allows you to rate messages as good, bad, or provide corrections.
 Feedback helps improve future retrieval quality."#
-                    .to_string(),
-            );
-        }
+                .to_string(),
+        )
+    } else {
+        None
     }
+}
 
-    // Document tools (requires document-tools feature)
-    #[cfg(feature = "document-tools")]
-    {
-        if !blacklist.contains("import_document") {
-            sections.push(
-                r#"### DOCUMENT TOOLS
+/// Document tools section
+#[cfg(feature = "document-tools")]
+fn document_section(blacklist: &HashSet<&str>) -> Option<String> {
+    if blacklist.contains("import_document") {
+        return None;
+    }
+    Some(
+        r#"### DOCUMENT TOOLS
 Use for importing files into searchable memory.
 Available: import_document
 
@@ -347,160 +335,156 @@ import_document("~/docs/glossary.md", Some("global"), None)
 // 1. run_command("pdftotext", ["report.pdf", "-"])  → get text output
 // 2. Save output to a .txt file using write_file
 // 3. import_document("report.txt", None, Some("Q3 Report"))"#
-                    .to_string(),
-            );
-        }
-    }
-    // Agent spawning tools (requires subagent-tools feature)
-    #[cfg(feature = "subagent-tools")]
-    {
-        let agent_tools = [
-            "spawn_ocr_agent",
-            "spawn_vision_agent",
-            "spawn_translate_agent",
-            "spawn_summarize_agent",
-        ];
-        let available: Vec<&&str> = agent_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
+            .to_string(),
+    )
+}
 
-        if !available.is_empty() {
-            let has_tool = |name: &&str| available.contains(&name);
+/// Agent spawning tools section
+#[cfg(feature = "subagent-tools")]
+fn agent_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let agent_tools = [
+        "spawn_ocr_agent",
+        "spawn_vision_agent",
+        "spawn_translate_agent",
+        "spawn_summarize_agent",
+    ];
+    let available: Vec<&&str> = agent_tools
+        .iter()
+        .filter(|t| !blacklist.contains(*t))
+        .collect();
 
-            let mut section = String::from(
-                "### AGENT SPAWNING TOOLS\n\
-                Use for offloading specialized tasks to dedicated subagents.\n\n\
-                Each tool is purpose-built for its task type with only the relevant parameters:\n",
-            );
-
-            if has_tool(&"spawn_ocr_agent") {
-                section.push_str(
-                    "\n- **spawn_ocr_agent** — Extract text from images via OCR\n\
-                      Best for: tables, formulas, scanned documents, structured text\n\
-                      Requires: `prompt` (what to extract), `file_path` (image path)\n\
-                      Optional: `ocr_mode` (\"text\", \"table\", \"figure\", \"formula\")\n",
-                );
-            }
-
-            if has_tool(&"spawn_vision_agent") {
-                section.push_str(
-                    "\n- **spawn_vision_agent** — Analyze or describe images via vision model\n\
-                      Best for: charts, graphs, diagrams, visual content, comparisons\n\
-                      Requires: `prompt` (what to analyze), `file_path` (image path(s))\n\
-                      Supports comma-separated paths for multi-image analysis\n",
-                );
-            }
-
-            if has_tool(&"spawn_translate_agent") {
-                section.push_str(
-                    "\n- **spawn_translate_agent** — Translate text between languages\n\
-                      Requires: `prompt` (text + translation direction)\n\
-                      No file needed — provide text directly in the prompt\n",
-                );
-            }
-
-            if has_tool(&"spawn_summarize_agent") {
-                section.push_str(
-                    "\n- **spawn_summarize_agent** — Summarize long text into key points\n\
-                      Requires: `prompt` (text + summarization instructions)\n\
-                      No file needed — provide text directly in the prompt\n",
-                );
-            }
-
-            // "When to use each" — built dynamically
-            let mut when_to_use = String::from("\n**When to use each:**\n");
-            let mut has_when = false;
-
-            if has_tool(&"spawn_ocr_agent") {
-                when_to_use
-                    .push_str("- OCR → extracting text from images (screenshots, scanned docs)\n");
-                has_when = true;
-            }
-            if has_tool(&"spawn_vision_agent") {
-                when_to_use.push_str(
-                    "- Vision → understanding visual content (charts, diagrams, photos)\n",
-                );
-                has_when = true;
-            }
-            if has_tool(&"spawn_translate_agent") {
-                when_to_use.push_str("- Translate → converting text between languages\n");
-                has_when = true;
-            }
-            if has_tool(&"spawn_summarize_agent") {
-                when_to_use.push_str("- Summarize → condensing long text\n");
-                has_when = true;
-            }
-
-            if has_when {
-                section.push_str(&when_to_use);
-            }
-
-            // PDF section — only if OCR or vision tools are available
-            if has_tool(&"spawn_ocr_agent") || has_tool(&"spawn_vision_agent") {
-                section.push_str(
-                    "\n**For PDF documents:** Load the document-processing skill FIRST with \
-                    skill_view(name=\"document-processing\") — it provides the complete \
-                    two-phase pipeline (text extraction → OCR/vision for visual content) \
-                    with detection heuristics for tables, charts, formulas, and scanned pages.\n\
-                    Quick reference: For pages with visual content:\n\
-                    1. run_command(\"pdftoppm\") to convert pages to images\n\
-                    2. spawn_ocr_agent for tables/formulas/scanned text\n\
-                    3. spawn_vision_agent for charts/diagrams/visual analysis\n",
-                );
-            }
-
-            // Examples — built dynamically per available tool
-            let mut examples = String::from("\n**Examples:**\n");
-            let mut has_examples = false;
-
-            if has_tool(&"spawn_ocr_agent") {
-                examples.push_str(
-                    "spawn_ocr_agent(\"Extract all text from this image\", \
-                    \"/tmp/document.png\", None)\n\
-                    spawn_ocr_agent(\"Extract table structure\", \"/tmp/table.png\", \
-                    Some(\"table\"))\n",
-                );
-                has_examples = true;
-            }
-            if has_tool(&"spawn_vision_agent") {
-                examples.push_str(
-                    "spawn_vision_agent(\"Describe this chart\", \"/tmp/chart.png\")\n\
-                    spawn_vision_agent(\"Compare these images\", \"/tmp/a.png,/tmp/b.png\")\n",
-                );
-                has_examples = true;
-            }
-            if has_tool(&"spawn_translate_agent") {
-                examples
-                    .push_str("spawn_translate_agent(\"Translate to Portuguese: Hello world\")\n");
-                has_examples = true;
-            }
-            if has_tool(&"spawn_summarize_agent") {
-                examples.push_str(
-                    "spawn_summarize_agent(\"Summarize this text in 3 bullet points: ...\")\n",
-                );
-                has_examples = true;
-            }
-
-            if has_examples {
-                section.push_str(&examples);
-            }
-
-            sections.push(section);
-        }
+    if available.is_empty() {
+        return None;
     }
 
-    // External CLI tools (always available, no feature flag)
-    {
-        let external_tools = ["check_tool_availability", "run_command"];
-        let available: Vec<_> = external_tools
-            .iter()
-            .filter(|t| !blacklist.contains(*t))
-            .collect();
+    let has_tool = |name: &&str| available.contains(&name);
 
-        if !available.is_empty() {
-            sections.push(
-                r#"### EXTERNAL TOOLS
+    let mut section = String::from(
+        "### AGENT SPAWNING TOOLS\n\
+         Use for offloading specialized tasks to dedicated subagents.\n\n\
+         Each tool is purpose-built for its task type with only the relevant parameters:\n",
+    );
+
+    if has_tool(&"spawn_ocr_agent") {
+        section.push_str(
+            "\n- **spawn_ocr_agent** — Extract text from images via OCR\n\
+              Best for: tables, formulas, scanned documents, structured text\n\
+              Requires: `prompt` (what to extract), `file_path` (image path)\n\
+              Optional: `ocr_mode` (\"text\", \"table\", \"figure\", \"formula\")\n",
+        );
+    }
+
+    if has_tool(&"spawn_vision_agent") {
+        section.push_str(
+            "\n- **spawn_vision_agent** — Analyze or describe images via vision model\n\
+              Best for: charts, graphs, diagrams, visual content, comparisons\n\
+              Requires: `prompt` (what to analyze), `file_path` (image path(s))\n\
+              Supports comma-separated paths for multi-image analysis\n",
+        );
+    }
+
+    if has_tool(&"spawn_translate_agent") {
+        section.push_str(
+            "\n- **spawn_translate_agent** — Translate text between languages\n\
+              Requires: `prompt` (text + translation direction)\n\
+              No file needed — provide text directly in the prompt\n",
+        );
+    }
+
+    if has_tool(&"spawn_summarize_agent") {
+        section.push_str(
+            "\n- **spawn_summarize_agent** — Summarize long text into key points\n\
+              Requires: `prompt` (text + summarization instructions)\n\
+              No file needed — provide text directly in the prompt\n",
+        );
+    }
+
+    // "When to use each" — built dynamically
+    let mut when_to_use = String::from("\n**When to use each:**\n");
+    let mut has_when = false;
+
+    if has_tool(&"spawn_ocr_agent") {
+        when_to_use.push_str("- OCR → extracting text from images (screenshots, scanned docs)\n");
+        has_when = true;
+    }
+    if has_tool(&"spawn_vision_agent") {
+        when_to_use
+            .push_str("- Vision → understanding visual content (charts, diagrams, photos)\n");
+        has_when = true;
+    }
+    if has_tool(&"spawn_translate_agent") {
+        when_to_use.push_str("- Translate → converting text between languages\n");
+        has_when = true;
+    }
+    if has_tool(&"spawn_summarize_agent") {
+        when_to_use.push_str("- Summarize → condensing long text\n");
+        has_when = true;
+    }
+
+    if has_when {
+        section.push_str(&when_to_use);
+    }
+
+    // PDF section — only if OCR or vision tools are available
+    if has_tool(&"spawn_ocr_agent") || has_tool(&"spawn_vision_agent") {
+        section.push_str(
+            "\n**For PDF documents:** Load the document-processing skill FIRST with \
+            skill_view(name=\"document-processing\") — it provides the complete \
+            two-phase pipeline (text extraction → OCR/vision for visual content) \
+            with detection heuristics for tables, charts, formulas, and scanned pages.\n\
+            Quick reference: For pages with visual content:\n\
+            1. run_command(\"pdftoppm\") to convert pages to images\n\
+            2. spawn_ocr_agent for tables/formulas/scanned text\n\
+            3. spawn_vision_agent for charts/diagrams/visual analysis\n",
+        );
+    }
+
+    // Examples — built dynamically per available tool
+    let mut examples = String::from("\n**Examples:**\n");
+    let mut has_examples = false;
+
+    if has_tool(&"spawn_ocr_agent") {
+        examples.push_str(
+            "spawn_ocr_agent(\"Extract all text from this image\", \
+            \"/tmp/document.png\", None)\n\
+            spawn_ocr_agent(\"Extract table structure\", \"/tmp/table.png\", \
+            Some(\"table\"))\n",
+        );
+        has_examples = true;
+    }
+    if has_tool(&"spawn_vision_agent") {
+        examples.push_str(
+            "spawn_vision_agent(\"Describe this chart\", \"/tmp/chart.png\")\n\
+            spawn_vision_agent(\"Compare these images\", \"/tmp/a.png,/tmp/b.png\")\n",
+        );
+        has_examples = true;
+    }
+    if has_tool(&"spawn_translate_agent") {
+        examples.push_str("spawn_translate_agent(\"Translate to Portuguese: Hello world\")\n");
+        has_examples = true;
+    }
+    if has_tool(&"spawn_summarize_agent") {
+        examples
+            .push_str("spawn_summarize_agent(\"Summarize this text in 3 bullet points: ...\")\n");
+        has_examples = true;
+    }
+
+    if has_examples {
+        section.push_str(&examples);
+    }
+
+    Some(section)
+}
+
+/// External CLI tools section (always available, no feature flag)
+fn external_section(blacklist: &HashSet<&str>) -> Option<String> {
+    let tools = ["check_tool_availability", "run_command"];
+    let available = filter_available(&tools, blacklist);
+    if available.is_empty() {
+        return None;
+    }
+    Some(
+        r#"### EXTERNAL TOOLS
 Use for operations requiring external CLI tools (PDF, OCR, image metadata).
 Available: check_tool_availability, run_command
 
@@ -512,9 +496,80 @@ Available: check_tool_availability, run_command
 **Before using:** Check tool availability with check_tool_availability("tool-name").
 
 **Security:** No shell features (pipes, redirects). Use tool-specific flags instead."#
-                    .to_string(),
-            );
-        }
+            .to_string(),
+    )
+}
+
+/// Build minimal tool context section
+///
+/// Lists available tools by category with brief usage guidance.
+/// Detailed descriptions are provided by the tool definitions themselves,
+/// which are more efficient for the model to process.
+pub fn build_tool_context(blacklist: &HashSet<&str>) -> String {
+    let mut sections = Vec::new();
+
+    #[cfg(feature = "weather-tools")]
+    if let Some(s) = weather_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(feature = "pokemon-tools")]
+    if let Some(s) = pokemon_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(feature = "serper-tools")]
+    if let Some(s) = serper_search_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
+    if let Some(s) = ddg_search_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(feature = "calc-tools")]
+    if let Some(s) = calc_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(feature = "file-tools")]
+    if let Some(s) = file_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(feature = "system-tools")]
+    if let Some(s) = system_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(feature = "led-tools")]
+    if let Some(s) = led_section(blacklist) {
+        sections.push(s);
+    }
+
+    if let Some(s) = todo_section(blacklist) {
+        sections.push(s);
+    }
+    if let Some(s) = notes_section(blacklist) {
+        sections.push(s);
+    }
+    if let Some(s) = feedback_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(feature = "document-tools")]
+    if let Some(s) = document_section(blacklist) {
+        sections.push(s);
+    }
+
+    #[cfg(feature = "subagent-tools")]
+    if let Some(s) = agent_section(blacklist) {
+        sections.push(s);
+    }
+
+    if let Some(s) = external_section(blacklist) {
+        sections.push(s);
     }
 
     sections.join("\n\n")
