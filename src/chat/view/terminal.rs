@@ -11,8 +11,8 @@
 use crate::chat::command_output::{
     CommandOutput, CompactData, ContentPruneData, DocumentListData, ExportData, FactAddOutcome,
     FactAddResult, FactListData, FactListScopeData, FactRemoveResult, FactSearchData,
-    NoteAddResult, NoteListData, NoteRemoveResult, ReindexData, SearchData, SessionListData,
-    SkillListData, TodoListData,
+    NoteAddResult, NoteListData, NoteRemoveResult, ReindexData, SessionListData, SkillListData,
+    TodoListData,
 };
 use crate::chat::strip_thinking_tags;
 use crate::consts::roles::format_role_label;

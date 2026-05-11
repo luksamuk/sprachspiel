@@ -28,7 +28,6 @@
 //! - **Simple messages use string variants.** Info/Success/Warning/Error carry
 //!   plain text messages. The view adds icons (✓, ✗, ⚠️, ⏳) and colors.
 
-use crate::content::types::ContentItem;
 use crate::facts::types::{Category, Fact};
 
 /// Output produced by a chat command.
@@ -271,7 +270,7 @@ pub struct FactSearchResult {
 #[derive(Debug, Clone)]
 pub struct NoteListData {
     /// Notes in this scope
-    pub notes: Vec<ContentItem>,
+    pub notes: Vec<crate::content::Note>,
     /// Current page (0-indexed)
     pub page: usize,
     /// Total number of pages

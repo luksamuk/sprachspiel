@@ -1,25 +1,35 @@
 //! Command handlers for the chat REPL
 //!
 //! This module provides command handlers that operate on `ReplState`.
-//! Each handler is responsible for processing a specific command result.
+//! Each handler returns `Vec<CommandOutput>` instead of printing directly.
+//! The REPL loop renders outputs via `ChatView::show_command_outputs()`.
 //!
-//! # Architecture
+//! # Architecture (W6-PR1, Issue #145)
 //!
 //! ```text
-//! Layer 4 (Core): command_handlers.rs
-//!     ↓ uses
-//! Layer 3 (State): repl_state.rs
-//! Layer 1 (Session): session.rs
+//! command_handlers.rs
+//!     ↓ returns
+//! Vec<CommandOutput>  (semantic data, no ANSI codes)
+//!     ↓ consumed by
+//! ChatView::show_command_outputs()
+//!     ↓ implemented by
+//! TerminalView (current) ─── RatatuiView (future, #146)
 //! ```
 //!
 //! # Handler Pattern
 //!
-//! Handlers return `()` and modify `ReplState` directly. They handle
-//! all side effects (printing) internally. After a handler completes,
-//! the REPL loop continues.
+//! Handlers return `Vec<CommandOutput>` and modify `ReplState` directly.
+//! The `CommandOutput::Quit` variant signals REPL exit (replaces HandleResult::Exit).
+//! All output styling is applied by the view layer, not by handlers.
 
 use std::sync::Arc;
 
+use super::command_output::{
+    CommandOutput, CompactData, ContentPruneData, ContextData, DocumentEntry, DocumentListData,
+    ExportData, ExportFormat, FactListData, FactListScopeData, FactRemoveResult, FactSearchData,
+    FactSearchResult, NoteAddResult, NoteListData, ReindexData, SessionEntry, SessionListData,
+    SkillEntry, SkillListData, TodoListData,
+};
 use super::commands::{ChatCommand, FactListScope};
 use super::repl_state::ReplState;
 use super::session::ToolOutputLevel;
@@ -64,62 +74,43 @@ async fn flush_pending_embeddings(
     let _ = recover_missing_embeddings_with_progress(&db, &client).await;
 }
 
-/// Result of handling a command in the REPL loop.
-pub enum HandleResult {
-    /// Continue the REPL loop
-    Continue,
-    /// Exit the REPL
-    Exit,
-}
-
 /// Handle a chat command in the REPL loop.
 ///
 /// Dispatches to the appropriate handler based on the command type.
-/// Returns `HandleResult::Exit` for exit commands, `HandleResult::Continue` otherwise.
+/// Returns `Vec<CommandOutput>` for rendering via `ChatView`.
 ///
-/// This function replaces the former two-step flow:
-/// `execute_command(ChatCommand) → CommandResult → handle_command_result(CommandResult)`
-/// All execution logic is now directly in this single function.
+/// `CommandOutput::Quit` signals REPL exit (replaces former `HandleResult::Exit`).
+/// An empty vec means no output (replaces `HandleResult::Continue` with no message).
 #[allow(clippy::too_many_lines)] // Dispatch table: each arm is a trivial handler call.
 pub async fn handle_command(
     cmd: ChatCommand,
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
-) -> HandleResult {
+) -> Vec<CommandOutput> {
     match cmd {
         ChatCommand::Quit => handle_quit(state, input).await,
         ChatCommand::Forget { confirmed } => handle_forget_cmd(state, confirmed),
-        ChatCommand::New => {
-            handle_new(state);
-            HandleResult::Continue
-        }
+        ChatCommand::New => handle_new(state),
         ChatCommand::Help => {
-            super::commands::print_help();
-            HandleResult::Continue
+            let help_text = super::commands::format_help();
+            vec![CommandOutput::HelpText(help_text)]
         }
         // Note: Model switching is handled directly in repl.rs via model_switch module
-        ChatCommand::Model { name: _ } => HandleResult::Continue,
+        ChatCommand::Model { name: _ } => vec![],
         ChatCommand::System { prompt } => {
             state.session.set_system_prompt(prompt);
-            println!("System prompt updated.");
-            HandleResult::Continue
+            vec![CommandOutput::info("System prompt updated.")]
         }
         ChatCommand::Save { name } => handle_save_cmd(state, name),
         ChatCommand::Load { name } => handle_load_cmd(state, name),
-        ChatCommand::Export { format, file } => {
-            handle_export(&state.session, format, file);
-            HandleResult::Continue
-        }
-        ChatCommand::List => {
-            handle_list(state);
-            HandleResult::Continue
-        }
+        ChatCommand::Export { format, file } => handle_export(&state.session, format, file),
+        ChatCommand::List => handle_list(state),
         ChatCommand::Info => {
-            super::commands::print_session_info(&state.session, None);
-            HandleResult::Continue
+            let info = super::commands::format_session_info(&state.session, None);
+            vec![CommandOutput::Info(info)]
         }
         ChatCommand::Context => {
-            print_context_info(
+            let info = format_context_info(
                 &state.session,
                 &state.model_config,
                 state.tools_active,
@@ -128,196 +119,94 @@ pub async fn handle_command(
                 state.cli_soulless,
                 state.db.as_ref(),
             );
-            HandleResult::Continue
+            vec![CommandOutput::ContextInfo(ContextData { formatted: info })]
         }
         ChatCommand::Think => {
             state.session.think = !state.session.think;
-            handle_think_toggled(state, state.session.think);
-            HandleResult::Continue
+            vec![handle_think_toggled(state, state.session.think)]
         }
         ChatCommand::Tools => {
             state.session.tools = !state.session.tools;
-            handle_tools_toggled(state, state.session.tools);
-            HandleResult::Continue
+            vec![handle_tools_toggled(state, state.session.tools)]
         }
-        ChatCommand::Compact => {
-            handle_compact(state).await;
-            HandleResult::Continue
-        }
+        ChatCommand::Compact => handle_compact(state).await,
         ChatCommand::ToolsOutput { level } => {
             state.session.tool_output_level = level;
-            handle_tool_output_changed(level);
-            HandleResult::Continue
+            vec![handle_tool_output_changed(level)]
         }
         ChatCommand::Debug => handle_debug_toggle(),
-        ChatCommand::Retry => {
-            handle_retry(state).await;
-            HandleResult::Continue
-        }
-        ChatCommand::Undo => {
-            handle_undo(state);
-            HandleResult::Continue
-        }
-        ChatCommand::Search { query, limit } => {
-            handle_search(state, query, limit).await;
-            HandleResult::Continue
-        }
-        ChatCommand::Reindex => {
-            handle_reindex(state).await;
-            HandleResult::Continue
-        }
+        ChatCommand::Retry => handle_retry(state).await,
+        ChatCommand::Undo => handle_undo(state),
+        ChatCommand::Search { query, limit } => handle_search(state, query, limit).await,
+        ChatCommand::Reindex => handle_reindex(state).await,
         ChatCommand::Retrieval => {
             state.session.retrieval_enabled = !state.session.retrieval_enabled;
-            handle_retrieval_toggled(state, state.session.retrieval_enabled);
-            HandleResult::Continue
+            handle_retrieval_toggled(state, state.session.retrieval_enabled)
         }
-        ChatCommand::FactPrune => {
-            handle_fact_prune(state);
-            HandleResult::Continue
-        }
-        ChatCommand::FactAdd { content, global } => {
-            handle_fact_add(state, content, global).await;
-            HandleResult::Continue
-        }
-        ChatCommand::FactList { scope } => {
-            handle_fact_list(state, scope);
-            HandleResult::Continue
-        }
-        ChatCommand::FactRemove { id } => {
-            handle_fact_remove(state, id);
-            HandleResult::Continue
-        }
+        ChatCommand::FactPrune => handle_fact_prune(state),
+        ChatCommand::FactAdd { content, global } => handle_fact_add(state, content, global).await,
+        ChatCommand::FactList { scope } => handle_fact_list(state, scope),
+        ChatCommand::FactRemove { id } => handle_fact_remove(state, id),
         ChatCommand::FactSearch {
             query,
             global,
             limit,
-        } => {
-            handle_fact_search(state, query, global, limit);
-            HandleResult::Continue
-        }
+        } => handle_fact_search(state, query, global, limit),
         ChatCommand::TodoAdd {
             description,
             priority,
             tags,
-        } => {
-            handle_todo_add(description, priority, tags, &mut state.session);
-            HandleResult::Continue
-        }
-        ChatCommand::TodoList { filter } => {
-            handle_todo_list(filter);
-            HandleResult::Continue
-        }
+        } => handle_todo_add(description, priority, tags, &mut state.session),
+        ChatCommand::TodoList { filter } => handle_todo_list(filter),
         ChatCommand::TodoUpdate { id, status } => {
-            handle_todo_update(id, status, &mut state.session);
-            HandleResult::Continue
+            handle_todo_update(id, status, &mut state.session)
         }
-        ChatCommand::TodoGet { id } => {
-            handle_todo_get(id);
-            HandleResult::Continue
-        }
+        ChatCommand::TodoGet { id } => handle_todo_get(id),
         ChatCommand::TodoEdit {
             id,
             description,
             priority,
             tags,
-        } => {
-            handle_todo_edit(id, description, priority, tags, &mut state.session);
-            HandleResult::Continue
-        }
-        ChatCommand::TodoDelete { id } => {
-            handle_todo_delete(id, &mut state.session);
-            HandleResult::Continue
-        }
-        ChatCommand::TodoClearDone => {
-            handle_todo_clear_done(&mut state.session);
-            HandleResult::Continue
-        }
-        ChatCommand::TodoClearAll => {
-            handle_todo_clear_all(&mut state.session);
-            HandleResult::Continue
-        }
+        } => handle_todo_edit(id, description, priority, tags, &mut state.session),
+        ChatCommand::TodoDelete { id } => handle_todo_delete(id, &mut state.session),
+        ChatCommand::TodoClearDone => handle_todo_clear_done(&mut state.session),
+        ChatCommand::TodoClearAll => handle_todo_clear_all(&mut state.session),
         ChatCommand::NoteAdd {
             content,
             title,
             global,
-        } => {
-            handle_note_add(state, content, title, global);
-            HandleResult::Continue
-        }
-        ChatCommand::NoteList { global, page } => {
-            handle_note_list(state, global, page);
-            HandleResult::Continue
-        }
-        ChatCommand::NoteShow { id } => {
-            handle_note_show(state, id);
-            HandleResult::Continue
-        }
-        ChatCommand::NoteEdit { id, title, content } => {
-            handle_note_edit(state, id, title, content);
-            HandleResult::Continue
-        }
-        ChatCommand::NoteDelete { id } => {
-            handle_note_delete(state, id);
-            HandleResult::Continue
-        }
+        } => handle_note_add(state, content, title, global),
+        ChatCommand::NoteList { global, page } => handle_note_list(state, global, page),
+        ChatCommand::NoteShow { id } => handle_note_show(state, id),
+        ChatCommand::NoteEdit { id, title, content } => handle_note_edit(state, id, title, content),
+        ChatCommand::NoteDelete { id } => handle_note_delete(state, id),
         ChatCommand::NoteSearch {
             query,
             global,
             limit,
-        } => {
-            handle_note_search(state, query, global, limit);
-            HandleResult::Continue
-        }
+        } => handle_note_search(state, query, global, limit),
         ChatCommand::DocumentImport {
             path,
             global,
             nowait,
-        } => {
-            handle_document_import(state, path, global, nowait);
-            HandleResult::Continue
-        }
-        ChatCommand::DocumentList { global } => {
-            handle_document_list(state, global);
-            HandleResult::Continue
-        }
-        ChatCommand::DocumentShow { id } => {
-            handle_document_show(state, id);
-            HandleResult::Continue
-        }
-        ChatCommand::DocumentDelete { id } => {
-            handle_document_delete(state, id);
-            HandleResult::Continue
-        }
+        } => handle_document_import(state, path, global, nowait),
+        ChatCommand::DocumentList { global } => handle_document_list(state, global),
+        ChatCommand::DocumentShow { id } => handle_document_show(state, id),
+        ChatCommand::DocumentDelete { id } => handle_document_delete(state, id),
         ChatCommand::Skill { name } => handle_skill_cmd(state, name),
         ChatCommand::SkillList => handle_skill_list_cmd(),
-        ChatCommand::Ocr { path, mode } => {
-            handle_subagent_ocr(state, path, mode).await;
-            HandleResult::Continue
-        }
-        ChatCommand::Vision { paths, prompt } => {
-            handle_subagent_vision(state, paths, prompt).await;
-            HandleResult::Continue
-        }
+        ChatCommand::Ocr { path, mode } => handle_subagent_ocr(state, path, mode).await,
+        ChatCommand::Vision { paths, prompt } => handle_subagent_vision(state, paths, prompt).await,
         ChatCommand::Translate { lang_pair, text } => {
-            handle_subagent_translate(state, lang_pair, text).await;
-            HandleResult::Continue
+            handle_subagent_translate(state, lang_pair, text).await
         }
-        ChatCommand::Summarize { text } => {
-            handle_subagent_summarize(state, text).await;
-            HandleResult::Continue
-        }
+        ChatCommand::Summarize { text } => handle_subagent_summarize(state, text).await,
         ChatCommand::Feedback {
             signal_type,
             item_id,
             correction_text,
-        } => {
-            handle_feedback(state, signal_type, item_id, correction_text);
-            HandleResult::Continue
-        }
-        ChatCommand::ContentPrune => {
-            handle_content_prune(state);
-            HandleResult::Continue
-        }
+        } => handle_feedback(state, signal_type, item_id, correction_text),
+        ChatCommand::ContentPrune => handle_content_prune(state),
     }
 }
 
@@ -325,8 +214,7 @@ pub async fn handle_command(
 async fn handle_quit(
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
-) -> HandleResult {
-    println!("Goodbye!");
+) -> Vec<CommandOutput> {
     let _ = input.save_history();
     if !state.session.anonymous {
         let _ = state.session.save_sqlite();
@@ -338,92 +226,87 @@ async fn handle_quit(
             crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
         }
     }
-    HandleResult::Exit
+    vec![CommandOutput::info("Goodbye!"), CommandOutput::quit()]
 }
 
 /// Handle /forget command — requires confirmation flag.
-fn handle_forget_cmd(state: &mut ReplState, confirmed: bool) -> HandleResult {
+fn handle_forget_cmd(state: &mut ReplState, confirmed: bool) -> Vec<CommandOutput> {
     if !confirmed {
-        println!("\x1B[33m⚠️ /forget will permanently delete this conversation.\x1B[0m");
-        println!("\x1B[33m   Use /forget --yes to confirm.\x1B[0m");
-        return HandleResult::Continue;
+        return vec![
+            CommandOutput::warning("/forget will permanently delete this conversation."),
+            CommandOutput::warning("   Use /forget --yes to confirm."),
+        ];
     }
-    handle_forget(state);
-    HandleResult::Continue
+    handle_forget(state)
 }
 
 /// Handle /save command — with error display wrapper.
-fn handle_save_cmd(state: &mut ReplState, name: Option<String>) -> HandleResult {
+fn handle_save_cmd(state: &mut ReplState, name: Option<String>) -> Vec<CommandOutput> {
     match handle_save(state, name) {
-        Ok(()) => HandleResult::Continue,
-        Err(e) => {
-            eprintln!("\x1B[31mError: {}\x1B[0m", e);
-            HandleResult::Continue
-        }
+        Ok(outputs) => outputs,
+        Err(e) => vec![CommandOutput::error(e)],
     }
 }
 
 /// Handle /load command — with error display wrapper.
-fn handle_load_cmd(state: &mut ReplState, name: String) -> HandleResult {
+fn handle_load_cmd(state: &mut ReplState, name: String) -> Vec<CommandOutput> {
     match handle_load(state, name) {
-        Ok(()) => HandleResult::Continue,
-        Err(e) => {
-            eprintln!("\x1B[31mError: {}\x1B[0m", e);
-            HandleResult::Continue
-        }
+        Ok(outputs) => outputs,
+        Err(e) => vec![CommandOutput::error(e)],
     }
 }
 
 /// Handle /debug command — toggle debug mode and print status.
-fn handle_debug_toggle() -> HandleResult {
+fn handle_debug_toggle() -> Vec<CommandOutput> {
     let verbosity = crate::debug_tools::toggle_debug();
-    match verbosity {
-        crate::logging::Verbosity::Normal => println!("Debug mode: OFF (log level: info)"),
-        crate::logging::Verbosity::Trace => println!("Debug mode: ON (log level: trace)"),
-        _ => println!(
+    let msg = match verbosity {
+        crate::logging::Verbosity::Normal => "Debug mode: OFF (log level: info)".to_string(),
+        crate::logging::Verbosity::Trace => "Debug mode: ON (log level: trace)".to_string(),
+        _ => format!(
             "Debug mode: {} (log level: {:?})",
             verbosity,
             verbosity.to_level_filter()
         ),
-    }
-    HandleResult::Continue
+    };
+    vec![CommandOutput::info(msg)]
 }
 
 /// Handle /skill command — activate a skill by name.
-fn handle_skill_cmd(state: &mut ReplState, name: String) -> HandleResult {
+fn handle_skill_cmd(state: &mut ReplState, name: String) -> Vec<CommandOutput> {
     let skill = crate::skills::get_skill_content(&name);
     match skill {
         Some(skill) => {
             handle_skill_activated(state, skill.name, skill.content);
+            vec![]
         }
         None => {
-            eprintln!(
-                "\x1B[31mError: Skill '{}' not found. Use one of: {}\x1B[0m",
+            vec![CommandOutput::error(format!(
+                "Skill '{}' not found. Use one of: {}",
                 name,
                 crate::skills::get_available_skill_names().join(", ")
-            );
+            ))]
         }
     }
-    HandleResult::Continue
 }
 
 /// Handle /skilllist command — list available skills.
-fn handle_skill_list_cmd() -> HandleResult {
+fn handle_skill_list_cmd() -> Vec<CommandOutput> {
     let skills = crate::skills::load_skill_indexes();
     if skills.is_empty() {
-        println!("No skills available.");
-    } else {
-        println!("Available skills:");
-        for skill in &skills {
-            println!("  {} - {}", skill.name, skill.description);
-        }
-        println!("\nUse /skill <name> to activate a skill.");
+        return vec![CommandOutput::Info("No skills available.".into())];
     }
-    HandleResult::Continue
+    let entries: Vec<SkillEntry> = skills
+        .into_iter()
+        .map(|s| SkillEntry {
+            name: s.name,
+            description: s.description,
+        })
+        .collect();
+    vec![CommandOutput::SkillList(SkillListData { skills: entries })]
 }
 
 /// Handle /new command — start a new conversation session.
-fn handle_new(state: &mut ReplState) {
+fn handle_new(state: &mut ReplState) -> Vec<CommandOutput> {
     // Check if there are searchable messages in database (any conversation)
     let has_searchable_messages = if let Some(ref db) = state.session.db {
         db.count_all_content_items()
@@ -453,27 +336,33 @@ fn handle_new(state: &mut ReplState) {
     state.session.created_at = now;
     state.session.updated_at = now;
 
-    println!("New session started.");
+    let mut outputs = vec![CommandOutput::info("New session started.")];
     if has_searchable_messages {
-        println!(
-            "\x1B[90m[i] Previous conversations remain searchable via /search or remember().\x1B[0m"
-        );
+        outputs.push(CommandOutput::info(
+            "[i] Previous conversations remain searchable via /search or remember().",
+        ));
     }
+    outputs
 }
 
 /// Handle /forget command — delete conversation completely and start fresh.
-fn handle_forget(state: &mut ReplState) {
+fn handle_forget(state: &mut ReplState) -> Vec<CommandOutput> {
     state.session.forget_session();
+
+    let mut outputs = Vec::new();
 
     if let Some(ref db) = state.session.db
         && !state.session.anonymous
         && !state.session.id.is_empty()
     {
-        print!("Removing conversation from database... ");
-        std::io::Write::flush(&mut std::io::stdout()).ok();
         match db.delete_conversation(&state.session.id) {
-            Ok(_) => println!("Done."),
-            Err(e) => eprintln!("\nWarning: Could not delete conversation: {}", e),
+            Ok(_) => outputs.push(CommandOutput::progress(
+                "Removing conversation from database...",
+            )),
+            Err(e) => outputs.push(CommandOutput::warning(format!(
+                "Could not delete conversation: {}",
+                e
+            ))),
         }
     }
 
@@ -486,15 +375,21 @@ fn handle_forget(state: &mut ReplState) {
             .unwrap_or(0);
         state.session.id = format!("session-{}", timestamp);
         if let Err(e) = state.session.save_sqlite() {
-            eprintln!("Warning: Could not save new session: {}", e);
+            outputs.push(CommandOutput::warning(format!(
+                "Could not save new session: {}",
+                e
+            )));
         }
     }
 
-    println!("Session forgotten. Starting fresh conversation.");
+    outputs.push(CommandOutput::info(
+        "Session forgotten. Starting fresh conversation.",
+    ));
+    outputs
 }
 
 /// Handle /save command — save current session.
-fn handle_save(state: &mut ReplState, name: Option<String>) -> Result<(), String> {
+fn handle_save(state: &mut ReplState, name: Option<String>) -> Result<Vec<CommandOutput>, String> {
     if state.session.anonymous {
         return Err(
             "Cannot save anonymous session. Use /save without --anonymous flag.".to_string(),
@@ -508,15 +403,17 @@ fn handle_save(state: &mut ReplState, name: Option<String>) -> Result<(), String
     match state.session.save_sqlite() {
         Ok(()) => {
             let session_name = state.session.name.as_deref().unwrap_or(&state.session.id);
-            println!("Session saved: {}", session_name);
-            Ok(())
+            Ok(vec![CommandOutput::info(format!(
+                "Session saved: {}",
+                session_name
+            ))])
         }
         Err(e) => Err(format!("Failed to save session: {}", e)),
     }
 }
 
 /// Handle /load command — load a saved session.
-fn handle_load(state: &mut ReplState, name: String) -> Result<(), String> {
+fn handle_load(state: &mut ReplState, name: String) -> Result<Vec<CommandOutput>, String> {
     let db = match &state.session.db {
         Some(d) => Arc::clone(d),
         None => {
@@ -529,19 +426,18 @@ fn handle_load(state: &mut ReplState, name: String) -> Result<(), String> {
         && !state.session.messages.is_empty()
         && let Err(e) = state.session.save_sqlite()
     {
-        eprintln!("Warning: Could not save current session: {}", e);
+        log::warn!("Could not save current session: {}", e);
     }
 
     match ChatSession::load_sqlite(&db, &name) {
         Ok(loaded) => {
             state.session = loaded;
             let display_name = state.session.name.as_deref().unwrap_or(&state.session.id);
-            println!(
+            Ok(vec![CommandOutput::info(format!(
                 "Loaded session: {} ({} messages)",
                 display_name,
                 state.session.messages.len()
-            );
-            Ok(())
+            ))])
         }
         Err(e) => Err(format!("Failed to load session: {}", e)),
     }
@@ -552,57 +448,76 @@ fn handle_export(
     session: &ChatSession,
     format: super::commands::ExportFormat,
     file: Option<String>,
-) {
-    let output = match format {
+) -> Vec<CommandOutput> {
+    let content = match format {
         super::commands::ExportFormat::Markdown => export_markdown(session),
         super::commands::ExportFormat::Json => export_json(session),
+    };
+
+    let export_format = match format {
+        super::commands::ExportFormat::Markdown => ExportFormat::Markdown,
+        super::commands::ExportFormat::Json => ExportFormat::Json,
     };
 
     match file {
         Some(path) => {
             let expanded_path = crate::utils::expand_tilde_path(&path);
-            match std::fs::write(&expanded_path, &output) {
-                Ok(()) => println!("Conversation exported to: {}", path),
-                Err(e) => eprintln!("\x1B[31mError: Failed to write file: {}\x1B[0m", e),
+            match std::fs::write(&expanded_path, &content) {
+                Ok(()) => vec![CommandOutput::ExportResult(ExportData {
+                    content,
+                    format: export_format,
+                    file_path: Some(path),
+                })],
+                Err(e) => vec![CommandOutput::error(format!("Failed to write file: {}", e))],
             }
         }
-        None => println!("{}", output),
+        None => vec![CommandOutput::ExportResult(ExportData {
+            content,
+            format: export_format,
+            file_path: None,
+        })],
     }
 }
 
 /// Handle /list command — list saved sessions.
-fn handle_list(state: &ReplState) {
+fn handle_list(state: &ReplState) -> Vec<CommandOutput> {
     let db = match &state.session.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("\x1B[31mError: Cannot list sessions: database not initialized.\x1B[0m");
-            return;
+            return vec![CommandOutput::error(
+                "Cannot list sessions: database not initialized.",
+            )];
         }
     };
 
     match db.list_sessions(state.session.project_id.as_deref()) {
         Ok(sessions) => {
             if sessions.is_empty() {
-                println!("No saved sessions for this project.");
+                vec![CommandOutput::Info(
+                    "No saved sessions for this project.".into(),
+                )]
             } else {
-                println!("Sessions for this project:");
-                for info in sessions {
-                    let time = info.updated_at.format("%Y-%m-%d %H:%M");
-                    let name = info.name.as_deref().unwrap_or(&info.id);
-                    // Mark current session with arrow
-                    let marker = if info.id == state.session.id {
-                        "→"
-                    } else {
-                        " "
-                    };
-                    println!(
-                        "{} {} - {} ({} messages) {}",
-                        marker, name, info.model, info.message_count, time
-                    );
-                }
+                let entries: Vec<SessionEntry> = sessions
+                    .into_iter()
+                    .map(|info| {
+                        let is_current = info.id == state.session.id;
+                        SessionEntry {
+                            name: info.name.unwrap_or_else(|| info.id.clone()),
+                            message_count: info.message_count,
+                            is_current,
+                        }
+                    })
+                    .collect();
+                vec![CommandOutput::SessionList(SessionListData {
+                    sessions: entries,
+                    is_empty: false,
+                })]
             }
         }
-        Err(e) => eprintln!("Warning: Could not list sessions: {}", e),
+        Err(e) => vec![CommandOutput::warning(format!(
+            "Could not list sessions: {}",
+            e
+        ))],
     }
 }
 
@@ -651,19 +566,19 @@ fn export_json(session: &ChatSession) -> String {
 ///
 /// Updates state based on the new toggle value. Prints warnings if
 /// the model doesn't support thinking.
-pub fn handle_think_toggled(state: &mut ReplState, new_state: bool) {
+pub fn handle_think_toggled(state: &mut ReplState, new_state: bool) -> CommandOutput {
     if new_state && !state.capabilities.thinking {
-        eprintln!(
-            "Warning: Model '{}' does not support think mode.",
-            state.model_config.model_id
-        );
         state.session.think = false;
+        CommandOutput::warning(format!(
+            "Model '{}' does not support think mode.",
+            state.model_config.model_id
+        ))
     } else {
-        println!(
+        state.tools_active = state.session.tools && state.capabilities.tools;
+        CommandOutput::info(format!(
             "Think mode: {}",
             if new_state { "enabled" } else { "disabled" }
-        );
-        state.tools_active = state.session.tools && state.capabilities.tools;
+        ))
     }
 }
 
@@ -671,83 +586,104 @@ pub fn handle_think_toggled(state: &mut ReplState, new_state: bool) {
 ///
 /// Updates state based on the new toggle value. Prints warnings if
 /// the model doesn't support tools.
-pub fn handle_tools_toggled(state: &mut ReplState, new_state: bool) {
+pub fn handle_tools_toggled(state: &mut ReplState, new_state: bool) -> CommandOutput {
     if new_state && !state.capabilities.tools {
-        eprintln!(
-            "Warning: Model '{}' does not support tools.",
-            state.model_config.model_id
-        );
         state.session.tools = false;
         state.tools_active = false;
+        CommandOutput::warning(format!(
+            "Model '{}' does not support tools.",
+            state.model_config.model_id
+        ))
     } else {
-        println!("Tools: {}", if new_state { "enabled" } else { "disabled" });
         state.tools_active = new_state && state.capabilities.tools;
+        CommandOutput::info(format!(
+            "Tools: {}",
+            if new_state { "enabled" } else { "disabled" }
+        ))
     }
 }
 
 /// Handle retrieval mode toggle
 ///
 /// Prints status message about the new retrieval state.
-pub fn handle_retrieval_toggled(state: &ReplState, new_state: bool) {
+pub fn handle_retrieval_toggled(state: &ReplState, new_state: bool) -> Vec<CommandOutput> {
     if new_state {
-        println!(
-            "Semantic retrieval enabled. Messages will be retrieved from history for context."
-        );
+        let mut outputs = vec![CommandOutput::info(
+            "Semantic retrieval enabled. Messages will be retrieved from history for context.",
+        )];
         if state.session.messages.len() < 20 {
-            println!(
+            outputs.push(CommandOutput::info(format!(
                 "Note: Retrieval activates after 20 messages (current: {})",
                 state.session.messages.len()
-            );
+            )));
         }
+        outputs
     } else {
-        println!("Semantic retrieval disabled.");
+        vec![CommandOutput::info("Semantic retrieval disabled.")]
     }
 }
 
 /// Handle tool output level change
 ///
 /// Prints the new tool output level.
-pub fn handle_tool_output_changed(level: ToolOutputLevel) {
-    println!("Tool output level: {}", level);
+pub fn handle_tool_output_changed(level: ToolOutputLevel) -> CommandOutput {
+    CommandOutput::info(format!("Tool output level: {}", level))
 }
 
 /// Handle undo command
 ///
 /// Removes the last assistant messages (including preceding user message)
 /// and displays the remaining last user message.
-pub fn handle_undo(state: &mut ReplState) {
+pub fn handle_undo(state: &mut ReplState) -> Vec<CommandOutput> {
     let (removed, _) = state.session.remove_last_assistant_messages_with_content();
     state.last_assistant_message_id = None;
+    let mut outputs = Vec::new();
+
     if removed > 0 {
         if !state.session.anonymous
             && !state.session.id.is_empty()
             && let Ok(db) = crate::db::Database::new()
             && let Err(e) = db.delete_last_content_items(&state.session.id, removed)
         {
-            eprintln!("Warning: Failed to delete from database: {}", e);
+            outputs.push(CommandOutput::warning(format!(
+                "Failed to delete from database: {}",
+                e
+            )));
         }
-        println!("Removed {} message(s) from session.", removed);
+        outputs.push(CommandOutput::info(format!(
+            "Removed {} message(s) from session.",
+            removed
+        )));
     } else {
-        println!("No messages to remove.");
+        outputs.push(CommandOutput::info("No messages to remove."));
     }
 
     if let Some(user_msg) = state.session.get_last_user_message() {
-        println!("Last message: \"{}\"", user_msg.content);
-        println!("(Press \u{2191} to retrieve and edit, or type a new message)");
+        outputs.push(CommandOutput::info(format!(
+            "Last message: \"{}\"",
+            user_msg.content
+        )));
+        outputs.push(CommandOutput::info(
+            "(Press \u{2191} to retrieve and edit, or type a new message)",
+        ));
     } else {
-        println!("No user message to show.");
+        outputs.push(CommandOutput::info("No user message to show."));
     }
+
+    outputs
 }
 
 /// Handle search command (async)
 ///
 /// Searches conversation history for matching messages.
-pub async fn handle_search(state: &ReplState, query: String, limit: usize) {
+pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Vec<CommandOutput> {
     let db = match crate::db::Database::new() {
         Ok(db) => db,
         Err(e) => {
-            eprintln!("Error: Failed to open database: {}", e);
-            return;
+            return vec![CommandOutput::error(format!(
+                "Failed to open database: {}",
+                e
+            ))];
         }
     };
 
@@ -756,45 +692,53 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) {
     log::debug!("Searching in conversation: {}", conversation_id);
 
     crate::retrieval::run_search(&db, &state.ollama, &query, Some(&conversation_id), limit).await;
+
+    // run_search prints its own output — future migration point
+    vec![]
 }
 
 /// Handle reindex command (async)
 ///
 /// Regenerates embeddings for ALL content in the database.
-pub async fn handle_reindex(state: &mut ReplState) {
+pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
     let embedding_client = Arc::new(embedding_client);
 
-    println!("Regenerating embeddings for all content...");
     let stats = crate::embeddings::regenerate_all_embeddings(&db, &embedding_client).await;
 
-    println!(
-        "Reindex complete: {} items processed ({} failed), {} chunks processed ({} failed)",
-        stats.items_processed, stats.items_failed, stats.chunks_processed, stats.chunks_failed
-    );
+    vec![CommandOutput::ReindexResult(ReindexData {
+        regenerated: stats.total_processed(),
+        total: stats.items_processed,
+        success: true,
+        error: None,
+    })]
 }
 
 /// Handle compact command (async)
 ///
 /// Compacts conversation history by summarizing old messages.
-pub async fn handle_compact(state: &mut ReplState) {
+pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
     use crate::markdown;
 
     if state.session.messages.is_empty() {
-        println!("No messages to compact.");
-        return;
+        return vec![CommandOutput::info("No messages to compact.")];
     }
 
     let msg_count = state.session.messages.len();
-    println!("\x1B[33m⏳ Compacting {} messages...\x1B[0m", msg_count);
+
+    let mut outputs = vec![CommandOutput::progress(format!(
+        "Compacting {} messages...",
+        msg_count
+    ))];
 
     match super::core::compact_conversation(
         &state.ollama,
@@ -816,24 +760,27 @@ pub async fn handle_compact(state: &mut ReplState) {
 
             if first_preserved > 0 || last_preserved_start < state.session.messages.len() {
                 // Middle compaction
-                println!(
-                    "\x1B[32m✓ Compacted {} messages\x1B[0m (preserved {} first, {} last).",
-                    compacted_count,
-                    first_preserved,
-                    state.session.messages.len() - last_preserved_start
-                );
+                outputs.push(CommandOutput::CompactResult(CompactData {
+                    count: compacted_count,
+                    preserved_first: first_preserved,
+                    preserved_last: state.session.messages.len() - last_preserved_start,
+                }));
             } else {
                 // Full compaction (backward compatible)
-                println!(
-                    "\x1B[32m✓ Compacted all {} messages.\x1B[0m",
-                    compacted_count
-                );
+                outputs.push(CommandOutput::CompactResult(CompactData {
+                    count: compacted_count,
+                    preserved_first: 0,
+                    preserved_last: 0,
+                }));
             }
 
-            println!();
-            println!("\x1B[90m--- Summary ---\x1B[0m");
-            markdown::print_markdown_chat(&summary);
-            println!("\x1B[90m---------------\x1B[0m");
+            // Render summary via markdown
+            // TODO: Phase 3.5 — migrate markdown rendering to ChatView
+            // For now, print directly (print_markdown_chat has no format version yet)
+            markdown::print_markdown_chat(&format!(
+                "--- Summary ---\n{}\n---------------",
+                summary
+            ));
 
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();
@@ -845,29 +792,36 @@ pub async fn handle_compact(state: &mut ReplState) {
             }
         }
         Err(e) => {
-            eprintln!("\x1B[31m✗ Compaction failed: {}\x1B[0m", e);
+            outputs.push(CommandOutput::error(format!("Compaction failed: {}", e)));
         }
     }
+
+    outputs
 }
 
 /// Handle retry command (async)
 ///
 /// Removes last assistant messages and regenerates the response.
-pub async fn handle_retry(state: &mut ReplState) {
+pub async fn handle_retry(state: &mut ReplState) -> Vec<CommandOutput> {
     use crate::tool_robustness::format_tool_error;
+
+    let mut outputs = Vec::new();
 
     // Remove last assistant messages
     let removed = state.session.remove_last_assistant_messages();
     if removed > 0 {
-        println!("Removed {} assistant message(s). Ready to retry.", removed);
+        outputs.push(CommandOutput::info(format!(
+            "Removed {} assistant message(s). Ready to retry.",
+            removed
+        )));
     } else {
-        println!("No assistant messages to remove.");
+        outputs.push(CommandOutput::info("No assistant messages to remove."));
     }
 
     // Get the last user message
     if let Some(user_msg) = state.session.get_last_user_message() {
         let user_content = user_msg.content.clone();
-        println!("Retrying: {}", user_content);
+        outputs.push(CommandOutput::info(format!("Retrying: {}", user_content)));
 
         // Send the message again
         let think_enabled = state.session.think;
@@ -894,6 +848,7 @@ pub async fn handle_retry(state: &mut ReplState) {
                     .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
 
                 if result.metrics.total_tokens > 0 {
+                    // TODO: Phase 3.5 — migrate token display to ChatView
                     eprintln!(
                         "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
                         result.metrics.prompt_tokens,
@@ -921,52 +876,50 @@ pub async fn handle_retry(state: &mut ReplState) {
             }
             Err(e) => {
                 let error_str = e.to_string();
-                eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
+                outputs.push(CommandOutput::error(format_tool_error(&error_str)));
             }
         }
     } else {
-        println!("No user message to retry.");
+        outputs.push(CommandOutput::info("No user message to retry."));
     }
+
+    outputs
 }
 
 /// Handle fact prune command
 ///
 /// Runs the decay cycle and prunes old facts.
-pub fn handle_fact_prune(state: &ReplState) {
+pub fn handle_fact_prune(state: &ReplState) -> Vec<CommandOutput> {
     use crate::facts::db::DecayStats;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot prune facts in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot prune facts in anonymous mode.",
+        )];
     }
-
-    println!("\x1B[33m⏳ Running facts decay cycle...\x1B[0m");
 
     match db.run_decay_cycle() {
         Ok(DecayStats { pruned, remaining }) => {
-            if pruned > 0 {
-                println!(
-                    "\x1B[32m✓ Pruned {} old fact(s), {} remaining.\x1B[0m",
-                    pruned, remaining
-                );
+            let msg = if pruned > 0 {
+                format!("Pruned {} old fact(s), {} remaining.", pruned, remaining)
             } else {
-                println!(
-                    "\x1B[32m✓ No facts to prune. {} fact(s) remaining.\x1B[0m",
-                    remaining
-                );
-            }
+                format!("No facts to prune. {} fact(s) remaining.", remaining)
+            };
+            vec![CommandOutput::success(msg)]
         }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to prune facts: {}\x1B[0m", e);
-        }
+        Err(e) => vec![CommandOutput::error(format!(
+            "Failed to prune facts: {}",
+            e
+        ))],
     }
 }
 
@@ -974,25 +927,25 @@ pub fn handle_fact_prune(state: &ReplState) {
 ///
 /// Runs the content decay cycle and prunes low-retention content items.
 /// Items with importance >= 0.8 are never pruned.
-pub fn handle_content_prune(state: &ReplState) {
+pub fn handle_content_prune(state: &ReplState) -> Vec<CommandOutput> {
     use crate::db::content_decay_ops::run_content_decay_cycle;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
             log::warn!("Cannot prune content: database not initialized (anonymous mode)");
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
         log::warn!("Cannot prune content in anonymous mode");
-        eprintln!("Error: Cannot prune content in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot prune content in anonymous mode.",
+        )];
     }
-
-    println!("\x1B[33m⏳ Running content decay cycle...\x1B[0m");
 
     match db.with_connection(|conn| {
         run_content_decay_cycle(conn).map_err(|e| {
@@ -1006,21 +959,21 @@ pub fn handle_content_prune(state: &ReplState) {
                 stats.remaining,
                 stats.avg_retention
             );
-            if stats.pruned > 0 {
-                println!(
-                    "\x1B[32m✓ Pruned {} content item(s), {} remaining (avg retention: {:.2}).\x1B[0m",
-                    stats.pruned, stats.remaining, stats.avg_retention
-                );
-            } else {
-                println!(
-                    "\x1B[32m✓ No content to prune. {} item(s) remaining (avg retention: {:.2}).\x1B[0m",
-                    stats.remaining, stats.avg_retention
-                );
-            }
+            vec![CommandOutput::ContentPruneResult(ContentPruneData {
+                pruned_count: stats.pruned,
+                total_count: stats.remaining + stats.pruned,
+                success: true,
+                error: None,
+            })]
         }
         Err(e) => {
             log::warn!("Failed to prune content: {}", e);
-            eprintln!("\x1B[31m✗ Failed to prune content: {}\x1B[0m", e);
+            vec![CommandOutput::ContentPruneResult(ContentPruneData {
+                pruned_count: 0,
+                total_count: 0,
+                success: false,
+                error: Some(e.to_string()),
+            })]
         }
     }
 }
@@ -1032,7 +985,11 @@ pub fn handle_content_prune(state: &ReplState) {
 /// Layer 3.5 (semantic embedding + triple disambiguation, ≥0.70),
 /// Layer 3 (FTS5 BM25, ≥0.75), plus Global-wins-project rule
 /// and synchronous embedding generation.
-pub async fn handle_fact_add(state: &mut ReplState, content: String, global: bool) {
+pub async fn handle_fact_add(
+    state: &mut ReplState,
+    content: String,
+    global: bool,
+) -> Vec<CommandOutput> {
     use crate::facts::classify::classify_fact;
     use crate::facts::dedup::{DedupConfig, DedupResult, deduplicate_and_insert};
     use crate::facts::lang;
@@ -1041,25 +998,26 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot add facts in anonymous mode.");
-        return;
+        return vec![CommandOutput::error("Cannot add facts in anonymous mode.")];
     }
 
     // Validate content length
     if content.len() > MAX_FACT_CONTENT_SIZE {
-        eprintln!(
-            "\x1B[31m✗ Fact content exceeds {} character limit.\x1B[0m",
-            MAX_FACT_CONTENT_SIZE
-        );
-        println!("  Current length: {} characters", content.len());
-        println!("  Use shorter content or split into multiple facts.");
-        return;
+        return vec![
+            CommandOutput::error(format!(
+                "Fact content exceeds {} character limit.",
+                MAX_FACT_CONTENT_SIZE
+            )),
+            CommandOutput::info(format!("  Current length: {} characters", content.len())),
+            CommandOutput::info("  Use shorter content or split into multiple facts."),
+        ];
     }
 
     // Normalize to storage format (ADR-E4: third-person storage).
@@ -1109,58 +1067,66 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
                 Category::Preference => "preference",
                 Category::Fact => "fact",
             };
-            println!(
-                "\x1B[32m✓ Added {} fact #{} (scope: {}, category: {})\x1B[0m",
-                category_str, id, scope_str, category_str
-            );
-            println!("  {}", content);
+            vec![
+                CommandOutput::success(format!(
+                    "Added {} fact #{} (scope: {}, category: {})",
+                    category_str, id, scope_str, category_str
+                )),
+                CommandOutput::info(format!("  {}", content)),
+            ]
         }
         DedupResult::ExactDuplicate {
             existing_id,
             existing_content,
         } => {
-            println!(
-                "\x1B[33m⏭ Skipped: Exact duplicate already exists (#{})\x1B[0m",
-                existing_id
-            );
-            println!("  Existing: {}", existing_content);
-            println!("  New: {}", content);
-            println!(
-                "\n  Use /fact remove {} first if you want to replace it.",
-                existing_id
-            );
+            vec![
+                CommandOutput::warning(format!(
+                    "Skipped: Exact duplicate already exists (#{})",
+                    existing_id
+                )),
+                CommandOutput::info(format!("  Existing: {}", existing_content)),
+                CommandOutput::info(format!("  New: {}", content)),
+                CommandOutput::info(format!(
+                    "\n  Use /fact remove {} first if you want to replace it.",
+                    existing_id
+                )),
+            ]
         }
         DedupResult::NormalizedDuplicate {
             existing_id,
             existing_content,
         } => {
-            println!(
-                "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
-                existing_id
-            );
-            println!("  Existing: {}", existing_content);
-            println!("  New: {}", content);
-            println!(
-                "\n  Use /fact remove {} first if you want to replace it.",
-                existing_id
-            );
+            vec![
+                CommandOutput::warning(format!(
+                    "Skipped: Similar fact already exists (#{})",
+                    existing_id
+                )),
+                CommandOutput::info(format!("  Existing: {}", existing_content)),
+                CommandOutput::info(format!("  New: {}", content)),
+                CommandOutput::info(format!(
+                    "\n  Use /fact remove {} first if you want to replace it.",
+                    existing_id
+                )),
+            ]
         }
         DedupResult::SemanticDuplicate {
             existing_id,
             existing_content,
             score,
         } => {
-            println!(
-                "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
-                existing_id
-            );
-            println!("  Existing: {}", existing_content);
-            println!("  New: {}", content);
-            println!(
-                "\n  Use /fact remove {} first if you want to replace it.",
-                existing_id
-            );
             log::debug!("/fact add: Semantic duplicate (cosine={:.3})", score);
+            vec![
+                CommandOutput::warning(format!(
+                    "Skipped: Similar fact already exists (#{})",
+                    existing_id
+                )),
+                CommandOutput::info(format!("  Existing: {}", existing_content)),
+                CommandOutput::info(format!("  New: {}", content)),
+                CommandOutput::info(format!(
+                    "\n  Use /fact remove {} first if you want to replace it.",
+                    existing_id
+                )),
+            ]
         }
         DedupResult::Updated {
             id,
@@ -1178,306 +1144,154 @@ pub async fn handle_fact_add(state: &mut ReplState, content: String, global: boo
                 Category::Preference => "preference",
                 Category::Fact => "fact",
             };
-            println!(
-                "\x1B[36m↻ Updated: '{}' replaces '{}' ({})\x1B[0m",
-                content, old_content, reason
-            );
-            println!(
-                "  → New fact #{} (scope: {}, category: {})",
-                id, scope_str, category_str
-            );
+            vec![
+                CommandOutput::info(format!(
+                    "Updated: '{}' replaces '{}' ({})",
+                    content, old_content, reason
+                )),
+                CommandOutput::info(format!(
+                    "→ New fact #{} (scope: {}, category: {})",
+                    id, scope_str, category_str
+                )),
+            ]
         }
         DedupResult::Fts5Conflict {
             existing_id,
             existing_content,
             is_contradiction: _,
         } => {
-            println!(
-                "\x1B[33m⏭ Skipped: Similar fact already exists (#{})\x1B[0m",
-                existing_id
-            );
-            println!("  Existing: {}", existing_content);
-            println!("  New: {}", content);
-            println!(
-                "\n  Use /fact remove {} first if you want to replace it.",
-                existing_id
-            );
+            vec![
+                CommandOutput::warning(format!(
+                    "Skipped: Similar fact already exists (#{})",
+                    existing_id
+                )),
+                CommandOutput::info(format!("  Existing: {}", existing_content)),
+                CommandOutput::info(format!("  New: {}", content)),
+                CommandOutput::info(format!(
+                    "\n  Use /fact remove {} first if you want to replace it.",
+                    existing_id
+                )),
+            ]
         }
         DedupResult::Error(e) => {
-            eprintln!("\x1B[31m✗ Error: {}\x1B[0m", e);
+            vec![CommandOutput::error(e)]
         }
     }
 }
 /// Handle fact list command
 ///
 /// Lists all facts for the current scope.
-pub fn handle_fact_list(state: &ReplState, scope: FactListScope) {
-    use crate::facts::types::{Category, Scope};
+pub fn handle_fact_list(state: &ReplState, scope: FactListScope) -> Vec<CommandOutput> {
+    use crate::facts::types::Scope;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot list facts in anonymous mode.");
-        return;
+        return vec![CommandOutput::error("Cannot list facts in anonymous mode.")];
     }
 
     let project_id = state.session.project_id.clone();
 
-    match scope {
-        FactListScope::All => {
-            // Show both Global and Project facts separated by sections
-            let global_facts = db.list_facts(Some(Scope::Global), None, None);
-            let project_facts = db.list_facts(Some(Scope::Project), None, project_id.as_deref());
+    let scope_data = match scope {
+        FactListScope::All => FactListScopeData::All,
+        FactListScope::Global => FactListScopeData::Global,
+        FactListScope::Project => FactListScopeData::Project,
+    };
 
-            println!("\x1B[36mFacts:\x1B[0m");
+    let global_facts = db
+        .list_facts(Some(Scope::Global), None, None)
+        .unwrap_or_default();
+    let project_facts = db
+        .list_facts(Some(Scope::Project), None, project_id.as_deref())
+        .unwrap_or_default();
 
-            let mut total = 0;
-
-            // Global section
-            match &global_facts {
-                Ok(facts) => {
-                    println!("\n  \x1B[1m\x1B[36m--- Global ---\x1B[0m");
-                    if facts.is_empty() {
-                        println!("    No global facts stored.");
-                    } else {
-                        let preferences: Vec<_> = facts
-                            .iter()
-                            .filter(|f| f.category == Category::Preference)
-                            .collect();
-                        let regular_facts: Vec<_> = facts
-                            .iter()
-                            .filter(|f| f.category == Category::Fact)
-                            .collect();
-
-                        if !preferences.is_empty() {
-                            println!("\n    \x1B[33mPreferences:\x1B[0m");
-                            for f in preferences {
-                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                                println!(
-                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
-                                    f.id, f.content, age_days
-                                );
-                            }
-                        }
-
-                        if !regular_facts.is_empty() {
-                            println!("\n    \x1B[33mFacts:\x1B[0m");
-                            for f in regular_facts {
-                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                                println!(
-                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
-                                    f.id, f.content, age_days
-                                );
-                            }
-                        }
-                        total += facts.len();
-                    }
-                }
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Failed to list global facts: {}\x1B[0m", e);
-                }
-            }
-
-            // Project section
-            match &project_facts {
-                Ok(facts) => {
-                    let project_label = project_id.as_deref().unwrap_or("unknown");
-                    println!(
-                        "\n  \x1B[1m\x1B[36m--- Project: {} ---\x1B[0m",
-                        project_label
-                    );
-                    if facts.is_empty() {
-                        println!("    No project facts stored.");
-                    } else {
-                        let preferences: Vec<_> = facts
-                            .iter()
-                            .filter(|f| f.category == Category::Preference)
-                            .collect();
-                        let regular_facts: Vec<_> = facts
-                            .iter()
-                            .filter(|f| f.category == Category::Fact)
-                            .collect();
-
-                        if !preferences.is_empty() {
-                            println!("\n    \x1B[33mPreferences:\x1B[0m");
-                            for f in preferences {
-                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                                println!(
-                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
-                                    f.id, f.content, age_days
-                                );
-                            }
-                        }
-
-                        if !regular_facts.is_empty() {
-                            println!("\n    \x1B[33mFacts:\x1B[0m");
-                            for f in regular_facts {
-                                let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                                println!(
-                                    "      #{} {} \x1B[90m({}d)\x1B[0m",
-                                    f.id, f.content, age_days
-                                );
-                            }
-                        }
-                        total += facts.len();
-                    }
-                }
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Failed to list project facts: {}\x1B[0m", e);
-                }
-            }
-
-            println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", total);
-        }
-        FactListScope::Global => {
-            // Show only global facts
-            match db.list_facts(Some(Scope::Global), None, None) {
-                Ok(facts) => {
-                    println!("\x1B[36mFacts (global):\x1B[0m");
-
-                    if facts.is_empty() {
-                        println!("  No global facts stored.");
-                        return;
-                    }
-
-                    let preferences: Vec<_> = facts
-                        .iter()
-                        .filter(|f| f.category == Category::Preference)
-                        .collect();
-                    let regular_facts: Vec<_> = facts
-                        .iter()
-                        .filter(|f| f.category == Category::Fact)
-                        .collect();
-
-                    if !preferences.is_empty() {
-                        println!("\n  \x1B[33mPreferences:\x1B[0m");
-                        for f in preferences {
-                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
-                        }
-                    }
-
-                    if !regular_facts.is_empty() {
-                        println!("\n  \x1B[33mFacts:\x1B[0m");
-                        for f in regular_facts {
-                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
-                        }
-                    }
-
-                    println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
-                }
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
-                }
-            }
-        }
-        FactListScope::Project => {
-            // Show only project facts
-            match db.list_facts(Some(Scope::Project), None, project_id.as_deref()) {
-                Ok(facts) => {
-                    let project_label = project_id.as_deref().unwrap_or("unknown");
-                    println!("\x1B[36mFacts (project: {}):\x1B[0m", project_label);
-
-                    if facts.is_empty() {
-                        println!("  No project facts stored.");
-                        return;
-                    }
-
-                    let preferences: Vec<_> = facts
-                        .iter()
-                        .filter(|f| f.category == Category::Preference)
-                        .collect();
-                    let regular_facts: Vec<_> = facts
-                        .iter()
-                        .filter(|f| f.category == Category::Fact)
-                        .collect();
-
-                    if !preferences.is_empty() {
-                        println!("\n  \x1B[33mPreferences:\x1B[0m");
-                        for f in preferences {
-                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
-                        }
-                    }
-
-                    if !regular_facts.is_empty() {
-                        println!("\n  \x1B[33mFacts:\x1B[0m");
-                        for f in regular_facts {
-                            let age_days = (chrono::Utc::now() - f.created_at).num_days();
-                            println!("    #{} {} \x1B[90m({}d)\x1B[0m", f.id, f.content, age_days);
-                        }
-                    }
-
-                    println!("\n  \x1B[90mTotal: {} fact(s)\x1B[0m", facts.len());
-                }
-                Err(e) => {
-                    eprintln!("\x1B[31m✗ Failed to list facts: {}\x1B[0m", e);
-                }
-            }
-        }
-    }
+    vec![CommandOutput::FactList(FactListData {
+        global_facts,
+        project_facts,
+        scope: scope_data,
+    })]
 }
 
 /// Handle fact remove command
 ///
 /// Removes a fact by ID.
-pub fn handle_fact_remove(state: &ReplState, id: i64) {
+pub fn handle_fact_remove(state: &ReplState, id: i64) -> Vec<CommandOutput> {
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot remove facts in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot remove facts in anonymous mode.",
+        )];
     }
 
-    // Get fact first to show content
     match db.get_fact(id) {
         Ok(Some(fact)) => match db.delete_fact(id) {
-            Ok(()) => {
-                println!("\x1B[32m✓ Removed fact #{}: {}\x1B[0m", id, fact.content);
-            }
-            Err(e) => {
-                eprintln!("\x1B[31m✗ Failed to remove fact: {}\x1B[0m", e);
-            }
+            Ok(()) => vec![CommandOutput::FactRemoved(FactRemoveResult {
+                id,
+                content: Some(fact.content),
+                success: true,
+                error: None,
+            })],
+            Err(e) => vec![CommandOutput::FactRemoved(FactRemoveResult {
+                id,
+                content: None,
+                success: false,
+                error: Some(e.to_string()),
+            })],
         },
-        Ok(None) => {
-            eprintln!("\x1B[31m✗ Fact #{} not found.\x1B[0m", id);
-        }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Error retrieving fact: {}\x1B[0m", e);
-        }
+        Ok(None) => vec![CommandOutput::FactRemoved(FactRemoveResult {
+            id,
+            content: None,
+            success: false,
+            error: Some(format!("Fact #{} not found.", id)),
+        })],
+        Err(e) => vec![CommandOutput::FactRemoved(FactRemoveResult {
+            id,
+            content: None,
+            success: false,
+            error: Some(format!("Error retrieving fact: {}", e)),
+        })],
     }
 }
 
 /// Handle fact search command
 ///
 /// Searches facts using FTS5.
-pub fn handle_fact_search(state: &ReplState, query: String, global: bool, limit: usize) {
+pub fn handle_fact_search(
+    state: &ReplState,
+    query: String,
+    global: bool,
+    limit: usize,
+) -> Vec<CommandOutput> {
     use crate::facts::types::Scope;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot search facts in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot search facts in anonymous mode.",
+        )];
     }
 
     let scope = if global {
@@ -1488,35 +1302,23 @@ pub fn handle_fact_search(state: &ReplState, query: String, global: bool, limit:
 
     match db.search_facts(&query, scope, limit) {
         Ok(results) => {
-            let scope_str = if global { "global" } else { "project" };
-            println!(
-                "\x1B[36mSearch results for '{}' (scope: {}):\x1B[0m",
-                query, scope_str
-            );
-
-            if results.is_empty() {
-                println!("  No matching facts found.");
-                return;
-            }
-
-            for result in &results {
-                let f = &result.fact;
-                let category_str = match f.category {
-                    crate::facts::types::Category::Preference => "pref",
-                    crate::facts::types::Category::Fact => "fact",
-                };
-                let score = result.score;
-                println!(
-                    "  #{} [{}] {} \x1B[90m(score: {:.2})\x1B[0m",
-                    f.id, category_str, f.content, score
-                );
-            }
-
-            println!("\n  \x1B[90mFound {} result(s)\x1B[0m", results.len());
+            let search_results: Vec<FactSearchResult> = results
+                .iter()
+                .map(|r| FactSearchResult {
+                    id: r.fact.id,
+                    content: r.fact.content.clone(),
+                    category: r.fact.category,
+                    score: r.score as f64,
+                })
+                .collect();
+            let total = search_results.len();
+            vec![CommandOutput::FactSearchResults(FactSearchData {
+                query,
+                results: search_results,
+                total,
+            })]
         }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Search failed: {}\x1B[0m", e);
-        }
+        Err(e) => vec![CommandOutput::error(format!("Search failed: {}", e))],
     }
 }
 
@@ -1528,7 +1330,7 @@ pub fn handle_todo_add(
     priority: Option<String>,
     tags: Option<String>,
     session: &mut super::session::ChatSession,
-) {
+) -> Vec<CommandOutput> {
     use crate::chat::todo_state::Priority;
     use crate::tools::todo;
 
@@ -1572,19 +1374,25 @@ pub fn handle_todo_add(
                 .join(" ")
         ));
     }
-    println!("{}", msg);
+
+    let mut outputs = vec![CommandOutput::success(msg)];
 
     if !session.anonymous
         && let Err(e) = session.save_sqlite()
     {
-        eprintln!("Warning: Could not save session: {}", e);
+        outputs.push(CommandOutput::warning(format!(
+            "Could not save session: {}",
+            e
+        )));
     }
+
+    outputs
 }
 
 /// Handle todo list command
 ///
 /// Lists all tasks in the todo list, optionally filtered.
-pub fn handle_todo_list(filter: Option<String>) {
+pub fn handle_todo_list(filter: Option<String>) -> Vec<CommandOutput> {
     use crate::chat::todo_state::{Priority, TaskFilter, TaskStatus};
     use crate::tools::todo;
 
@@ -1619,13 +1427,19 @@ pub fn handle_todo_list(filter: Option<String>) {
     let state = todo::get_todo_state();
     #[expect(clippy::expect_used)] // mutex poisoning indicates a programming bug
     let guard = state.lock().expect("lock poisoned: todo state");
-    println!("{}", guard.format_list_filtered(&task_filter));
+    let formatted = guard.format_list_filtered(&task_filter);
+    let count = guard.count();
+
+    vec![CommandOutput::TodoList(TodoListData {
+        formatted_list: formatted,
+        count,
+    })]
 }
 
 /// Handle todo get command
 ///
 /// Gets a single task by ID.
-pub fn handle_todo_get(id: usize) {
+pub fn handle_todo_get(id: usize) -> Vec<CommandOutput> {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
@@ -1648,9 +1462,9 @@ pub fn handle_todo_get(id: usize) {
                         .join(" ")
                 ));
             }
-            println!("{}", output);
+            vec![CommandOutput::info(output)]
         }
-        None => eprintln!("Error: Task {} not found", id),
+        None => vec![CommandOutput::error(format!("Task {} not found", id))],
     }
 }
 
@@ -1663,7 +1477,7 @@ pub fn handle_todo_edit(
     priority: Option<String>,
     tags: Option<String>,
     session: &mut super::session::ChatSession,
-) {
+) -> Vec<CommandOutput> {
     use crate::chat::todo_state::Priority;
     use crate::tools::todo;
 
@@ -1673,8 +1487,9 @@ pub fn handle_todo_edit(
     let tags = tags.filter(|s| !s.is_empty());
 
     if description.is_none() && priority.is_none() && tags.is_none() {
-        eprintln!("Error: Provide at least one field to update (description, priority, or tags).");
-        return;
+        return vec![CommandOutput::error(
+            "Provide at least one field to update (description, priority, or tags).",
+        )];
     }
 
     let priority_val: Option<Priority> = priority.and_then(|s| s.parse().ok());
@@ -1707,26 +1522,31 @@ pub fn handle_todo_edit(
                         .join(" ")
                 ));
             }
-            println!("{}", msg);
             drop(guard);
             session.todos = todo::save_to_session();
 
+            let mut outputs = vec![CommandOutput::success(msg)];
             if !session.anonymous
                 && let Err(e) = session.save_sqlite()
             {
-                eprintln!("Warning: Could not save session: {}", e);
+                outputs.push(CommandOutput::warning(format!(
+                    "Could not save session: {}",
+                    e
+                )));
             }
+            outputs
         }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-        }
+        Err(e) => vec![CommandOutput::error(e.to_string())],
     }
 }
 
 /// Handle todo delete command
 ///
 /// Deletes a specific task by ID.
-pub fn handle_todo_delete(id: usize, session: &mut super::session::ChatSession) {
+pub fn handle_todo_delete(
+    id: usize,
+    session: &mut super::session::ChatSession,
+) -> Vec<CommandOutput> {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
@@ -1737,38 +1557,44 @@ pub fn handle_todo_delete(id: usize, session: &mut super::session::ChatSession) 
 
     match guard.delete(id) {
         Ok(()) => {
-            if let Some(desc) = task_desc {
-                println!("Deleted task {}: {}", id, desc);
+            let msg = if let Some(desc) = task_desc {
+                format!("Deleted task {}: {}", id, desc)
             } else {
-                println!("Deleted task {}", id);
-            }
+                format!("Deleted task {}", id)
+            };
             drop(guard);
             session.todos = todo::save_to_session();
 
+            let mut outputs = vec![CommandOutput::success(msg)];
             if !session.anonymous
                 && let Err(e) = session.save_sqlite()
             {
-                eprintln!("Warning: Could not save session: {}", e);
+                outputs.push(CommandOutput::warning(format!(
+                    "Could not save session: {}",
+                    e
+                )));
             }
+            outputs
         }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-        }
+        Err(e) => vec![CommandOutput::error(e.to_string())],
     }
 }
 
 /// Handle todo update command
 ///
 /// Updates the status of a task.
-pub fn handle_todo_update(id: usize, status: String, session: &mut super::session::ChatSession) {
+pub fn handle_todo_update(
+    id: usize,
+    status: String,
+    session: &mut super::session::ChatSession,
+) -> Vec<CommandOutput> {
     use crate::chat::todo_state::TaskStatus;
     use crate::tools::todo;
 
     let new_status: TaskStatus = match status.parse() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("{}", e);
-            return;
+            return vec![CommandOutput::error(e.to_string())];
         }
     };
 
@@ -1778,26 +1604,29 @@ pub fn handle_todo_update(id: usize, status: String, session: &mut super::sessio
 
     match guard.update_status(id, new_status) {
         Ok(()) => {
-            println!("Task {} marked as {}", id, new_status);
+            let msg = format!("Task {} marked as {}", id, new_status);
             drop(guard);
             session.todos = todo::save_to_session();
 
+            let mut outputs = vec![CommandOutput::success(msg)];
             if !session.anonymous
                 && let Err(e) = session.save_sqlite()
             {
-                eprintln!("Warning: Could not save session: {}", e);
+                outputs.push(CommandOutput::warning(format!(
+                    "Could not save session: {}",
+                    e
+                )));
             }
+            outputs
         }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-        }
+        Err(e) => vec![CommandOutput::error(e.to_string())],
     }
 }
 
 /// Handle todo clear-done command
 ///
 /// Clears all completed tasks from the list.
-pub fn handle_todo_clear_done(session: &mut super::session::ChatSession) {
+pub fn handle_todo_clear_done(session: &mut super::session::ChatSession) -> Vec<CommandOutput> {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
@@ -1805,28 +1634,33 @@ pub fn handle_todo_clear_done(session: &mut super::session::ChatSession) {
     let mut guard = state.lock().expect("lock poisoned: todo state");
     let removed = guard.clear_done();
 
-    if removed == 0 {
-        println!("No completed tasks to remove.");
+    let msg = if removed == 0 {
+        "No completed tasks to remove.".to_string()
     } else if removed == 1 {
-        println!("Removed 1 completed task.");
+        "Removed 1 completed task.".to_string()
     } else {
-        println!("Removed {} completed tasks.", removed);
-    }
+        format!("Removed {} completed tasks.", removed)
+    };
 
     drop(guard);
     session.todos = todo::save_to_session();
 
+    let mut outputs = vec![CommandOutput::info(msg)];
     if !session.anonymous
         && let Err(e) = session.save_sqlite()
     {
-        eprintln!("Warning: Could not save session: {}", e);
+        outputs.push(CommandOutput::warning(format!(
+            "Could not save session: {}",
+            e
+        )));
     }
+    outputs
 }
 
 /// Handle todo clear-all command
 ///
 /// Clears all tasks from the list.
-pub fn handle_todo_clear_all(session: &mut super::session::ChatSession) {
+pub fn handle_todo_clear_all(session: &mut super::session::ChatSession) -> Vec<CommandOutput> {
     use crate::tools::todo;
 
     let state = todo::get_todo_state();
@@ -1834,22 +1668,27 @@ pub fn handle_todo_clear_all(session: &mut super::session::ChatSession) {
     let mut guard = state.lock().expect("lock poisoned: todo state");
     let count = guard.clear_all();
 
-    if count == 0 {
-        println!("The task list was already empty.");
+    let msg = if count == 0 {
+        "The task list was already empty.".to_string()
     } else if count == 1 {
-        println!("Cleared 1 task from the list.");
+        "Cleared 1 task from the list.".to_string()
     } else {
-        println!("Cleared {} tasks from the list.", count);
-    }
+        format!("Cleared {} tasks from the list.", count)
+    };
 
     drop(guard);
     session.todos = todo::save_to_session();
 
+    let mut outputs = vec![CommandOutput::info(msg)];
     if !session.anonymous
         && let Err(e) = session.save_sqlite()
     {
-        eprintln!("Warning: Could not save session: {}", e);
+        outputs.push(CommandOutput::warning(format!(
+            "Could not save session: {}",
+            e
+        )));
     }
+    outputs
 }
 
 /// Handle model switch command.
@@ -1860,17 +1699,23 @@ pub async fn handle_model_switch(
     state: &mut ReplState,
     model_name: &str,
     current_capabilities: &ModelCapabilities,
-) -> Result<(), String> {
+) -> Vec<CommandOutput> {
     use super::model_switch::switch_model;
 
-    let result = switch_model(
+    let result = match switch_model(
         model_name,
         &state.ollama,
         current_capabilities,
         state.session.think,
         state.tools_active,
     )
-    .await?;
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return vec![CommandOutput::error(e)];
+        }
+    };
 
     state.current_model_name = result.model_name.clone();
     state.session.set_model(result.model_name.clone());
@@ -1879,13 +1724,15 @@ pub async fn handle_model_switch(
     state.session.think = result.think_active;
     state.tools_active = result.tools_active;
 
+    let mut outputs = Vec::new();
     for warning in result.warnings {
-        eprintln!("{}", warning);
+        outputs.push(CommandOutput::warning(warning));
     }
-
-    println!("Switched to model: {}", state.model_config.model_id);
-
-    Ok(())
+    outputs.push(CommandOutput::info(format!(
+        "Switched to model: {}",
+        state.model_config.model_id
+    )));
+    outputs
 }
 
 /// Print context information about the current session.
@@ -1900,6 +1747,30 @@ pub fn print_context_info(
     soulless: bool,
     db: Option<&Arc<crate::db::Database>>,
 ) {
+    let formatted = format_context_info(
+        session,
+        model_config,
+        tools_enabled,
+        agents_md,
+        settings,
+        soulless,
+        db,
+    );
+    println!("{}", formatted);
+}
+
+/// Format context information as a string (for CommandOutput::ContextInfo).
+///
+/// This is the non-printing version of `print_context_info()`.
+pub fn format_context_info(
+    session: &ChatSession,
+    model_config: &ModelConfig,
+    tools_enabled: bool,
+    agents_md: Option<&str>,
+    settings: &Settings,
+    soulless: bool,
+    db: Option<&Arc<crate::db::Database>>,
+) -> String {
     use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
     use crate::tools::get_available_tool_names;
 
@@ -1959,52 +1830,51 @@ pub fn print_context_info(
     let empty = bar_width - filled;
 
     // Calculate thresholds based on percentage of context window
-    // OK: remaining > 25% of context (usage < 75%)
-    // MODERATE: remaining > 12% of context (usage < 88%)
-    // CRITICAL: remaining <= 12% of context (usage >= 88%)
     let remaining = context_window.saturating_sub(metrics.total_tokens);
     let (pre_tool, compaction, _, _) =
         crate::context_overflow::calculate_thresholds(context_window);
 
-    let (color_code, reset_code, status_text) = if remaining > pre_tool {
-        ("\x1B[32m", "\x1B[0m", "OK")
+    let status_text = if remaining > pre_tool {
+        "OK"
     } else if remaining > compaction {
-        ("\x1B[33m", "\x1B[0m", "MODERATE")
+        "MODERATE"
     } else {
-        ("\x1B[31m", "\x1B[0m", "CRITICAL")
+        "CRITICAL"
     };
 
-    println!();
-    println!("Context Information:");
-    println!(
-        "  Model:          {} ({}K context)",
+    let mut output = String::new();
+    output.push('\n');
+    output.push_str("Context Information:\n");
+    output.push_str(&format!(
+        "  Model:          {} ({}K context)\n",
         model_config.model_id, context_window_k
-    );
-    println!();
-    println!("  Context Utilization:");
-    println!(
-        "    {}{}{}{} {:.1}%{}",
-        color_code,
+    ));
+    output.push('\n');
+    output.push_str("  Context Utilization:\n");
+    output.push_str(&format!(
+        "    {}{}{} {:.1}%\n",
         "█".repeat(filled),
         "░".repeat(empty),
-        color_code,
-        usage_percent,
-        reset_code
-    );
-    println!(
-        "    {}{} / {} tokens{}\x1B[0m",
-        color_code, metrics.total_tokens, context_window, reset_code
-    );
-    println!();
-    println!("  Status: {}", status_text);
-    println!();
-    println!("  Token Breakdown:");
-    println!("    System prompt:    ~{} tokens", metrics.system_tokens);
+        status_text,
+        usage_percent
+    ));
+    output.push_str(&format!(
+        "    {} / {} tokens\n",
+        metrics.total_tokens, context_window
+    ));
+    output.push('\n');
+    output.push_str(&format!("  Status: {}\n", status_text));
+    output.push('\n');
+    output.push_str("  Token Breakdown:\n");
+    output.push_str(&format!(
+        "    System prompt:    ~{} tokens\n",
+        metrics.system_tokens
+    ));
     if tools_enabled && tool_count > 0 {
-        println!(
-            "    Tool definitions: ~{} tokens ({} tools)",
+        output.push_str(&format!(
+            "    Tool definitions: ~{} tokens ({} tools)\n",
             metrics.tools_tokens, tool_count
-        );
+        ));
     }
 
     let active_messages = if session.has_compacted_messages() {
@@ -2014,50 +1884,70 @@ pub fn print_context_info(
     };
 
     if metrics.total_tokens > 0 {
-        println!("    History:          ~{} tokens", metrics.history_tokens);
+        output.push_str(&format!(
+            "    History:          ~{} tokens\n",
+            metrics.history_tokens
+        ));
         if session.has_compacted_messages() {
-            println!(
-                "                      ({} active messages + summary)",
+            output.push_str(&format!(
+                "                      ({} active messages + summary)\n",
                 active_messages
-            );
+            ));
         } else {
-            println!("                      ({} messages)", active_messages);
+            output.push_str(&format!(
+                "                      ({} messages)\n",
+                active_messages
+            ));
         }
+    } else if session.has_compacted_messages() {
+        output.push_str(&format!(
+            "    Summary:          ~{} tokens\n",
+            estimate_tokens(session.compacted_summary.as_deref().unwrap_or("")) + 4
+        ));
+        output.push_str(&format!(
+            "    Conversation:     ~{} tokens ({} active messages)\n",
+            metrics.history_tokens, active_messages
+        ));
     } else {
-        if session.has_compacted_messages() {
-            println!(
-                "    Summary:          ~{} tokens",
-                estimate_tokens(session.compacted_summary.as_deref().unwrap_or("")) + 4
-            );
-            println!(
-                "    Conversation:     ~{} tokens ({} active messages)",
-                metrics.history_tokens, active_messages
-            );
-        } else {
-            println!(
-                "    Conversation:     ~{} tokens ({} messages)",
-                metrics.history_tokens, active_messages
-            );
-        }
+        output.push_str(&format!(
+            "    Conversation:     ~{} tokens ({} messages)\n",
+            metrics.history_tokens, active_messages
+        ));
     }
 
-    println!("    {}", "─".repeat(40));
-    println!("    Total used:       ~{} tokens", metrics.total_tokens);
-    println!("    Available:        ~{} tokens", metrics.available());
-    println!();
+    output.push_str(&format!("    {}\n", "─".repeat(40)));
+    output.push_str(&format!(
+        "    Total used:       ~{} tokens\n",
+        metrics.total_tokens
+    ));
+    output.push_str(&format!(
+        "    Available:        ~{} tokens\n",
+        metrics.available()
+    ));
+    output.push('\n');
 
     if session.has_compacted_messages() {
-        println!("  Session:");
-        println!(
-            "    Compacted:        {} messages summarized",
+        output.push_str("  Session:\n");
+        output.push_str(&format!(
+            "    Compacted:        {} messages summarized\n",
             session.compacted_message_count()
-        );
-        println!("    Active:           {} messages", active_messages);
-        println!("    Total:            {} messages", session.messages.len());
+        ));
+        output.push_str(&format!(
+            "    Active:           {} messages\n",
+            active_messages
+        ));
+        output.push_str(&format!(
+            "    Total:            {} messages\n",
+            session.messages.len()
+        ));
     } else {
-        println!("  Session:");
-        println!("    Total:            {} messages", session.messages.len());
+        output.push_str("  Session:\n");
+        output.push_str(&format!(
+            "    Total:            {} messages\n",
+            session.messages.len()
+        ));
     }
+
     // Content Memory section (if database is available)
     if let Some(db_ref) = db {
         use crate::db::content_decay_ops::get_content_decay_stats;
@@ -2068,56 +1958,69 @@ pub fn print_context_info(
             })
         }) {
             Ok(stats) => {
-                println!("  Content Memory:");
-                println!("    Total items:      {}", stats.total_items);
-                println!("    Avg importance:    {:.2}", stats.avg_importance);
+                output.push_str("  Content Memory:\n");
+                output.push_str(&format!("    Total items:      {}\n", stats.total_items));
+                output.push_str(&format!(
+                    "    Avg importance:    {:.2}\n",
+                    stats.avg_importance
+                ));
                 if stats.items_at_risk > 0 {
-                    println!(
-                        "    \u{26a0} Items at risk:   {} (low decay score)",
+                    output.push_str(&format!(
+                        "    ⚠ Items at risk:   {} (low decay score)\n",
                         stats.items_at_risk
-                    );
+                    ));
                 }
-                println!("    Feedback signals:  {}", stats.total_feedback_signals);
+                output.push_str(&format!(
+                    "    Feedback signals:  {}\n",
+                    stats.total_feedback_signals
+                ));
             }
             Err(_) => {
                 // Silently skip — don't error out /context if stats fail
             }
         }
-        println!();
+        output.push('\n');
     }
 
-    println!("  \x1B[90mTip: Use /content prune to prune low-retention content.\x1B[0m");
-    println!();
+    output.push_str("  Tip: Use /content prune to prune low-retention content.\n");
+    output.push('\n');
+    output
 }
 
 /// Handle note add command
 ///
 /// Adds a new note with the given content.
 /// Generates embedding asynchronously for semantic search.
-pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>, global: bool) {
+pub fn handle_note_add(
+    state: &ReplState,
+    content: String,
+    title: Option<String>,
+    global: bool,
+) -> Vec<CommandOutput> {
     use crate::content::{ContentScope, ContentSource, MAX_NOTE_CONTENT_SIZE, Note};
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot add notes in anonymous mode.");
-        return;
+        return vec![CommandOutput::error("Cannot add notes in anonymous mode.")];
     }
 
     if content.len() > MAX_NOTE_CONTENT_SIZE {
-        eprintln!(
-            "\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m",
-            MAX_NOTE_CONTENT_SIZE
-        );
-        println!("  Current length: {} characters", content.len());
-        println!("  Use shorter content or split into multiple notes.");
-        return;
+        return vec![
+            CommandOutput::error(format!(
+                "Note content exceeds {} character limit.",
+                MAX_NOTE_CONTENT_SIZE
+            )),
+            CommandOutput::info(format!("  Current length: {} characters", content.len())),
+            CommandOutput::info("  Use shorter content or split into multiple notes."),
+        ];
     }
 
     let scope = if global {
@@ -2141,37 +2044,23 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
     ) {
         Ok(n) => n,
         Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to create note: {}\x1B[0m", e);
-            return;
+            return vec![CommandOutput::error(format!(
+                "Failed to create note: {}",
+                e
+            ))];
         }
     };
 
     match db.insert_note(&note) {
         Ok(id) => {
             let scope_str = if global { "global" } else { "project" };
-            if let Some(t) = &title {
-                println!(
-                    "\x1B[32m✓ Added note #{} (scope: {}): {}\x1B[0m",
-                    id, scope_str, t
-                );
+            let msg = if let Some(t) = &title {
+                format!("Added note #{} (scope: {}): {}", id, scope_str, t)
             } else {
-                println!("\x1B[32m✓ Added note #{} (scope: {})\x1B[0m", id, scope_str);
-            }
+                format!("Added note #{} (scope: {})", id, scope_str)
+            };
 
-            // Print content preview with │ prefix on every line
-            let lines: Vec<&str> = content.lines().collect();
-            let max_lines = 5;
-            for line in lines.iter().take(max_lines) {
-                let truncated = crate::chat::view::truncate_str(line, 76);
-                println!("  │ {}", truncated);
-            }
-
-            // Show indication if content was truncated
-            if lines.len() > max_lines {
-                println!("  │ ... ({} more lines)", lines.len() - max_lines);
-            }
-
-            // Generate embedding asynchronously (like messages in session.rs)
+            // Generate embedding asynchronously
             if let Some(ref embedding_client) = state.embedding_client {
                 let client = Arc::clone(embedding_client);
                 let db_clone = Arc::clone(&db);
@@ -2179,25 +2068,27 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
                 let note_content = note.content.clone();
 
                 tokio::spawn(async move {
-                    // Use fallback for oversized content
-                    let ctx = EmbedItemContext::new(
-                        &note_content,
-                        id,
-                        "note",
-                        None, // notes don't have conversation_id
-                        pid.as_deref(),
-                    );
+                    let ctx =
+                        EmbedItemContext::new(&note_content, id, "note", None, pid.as_deref());
                     if let Err(e) =
                         embed_item_with_fallback(ctx, &db_clone, &client, DEFAULT_CONTEXT_LENGTH)
                             .await
                     {
-                        eprintln!("Warning: Failed to generate embedding for note: {}", e);
+                        log::warn!("Failed to generate embedding for note: {}", e);
                     }
                 });
             }
+
+            vec![CommandOutput::NoteAdded(NoteAddResult {
+                success: true,
+                message: msg,
+            })]
         }
         Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to store note: {}\x1B[0m", e);
+            vec![CommandOutput::NoteAdded(NoteAddResult {
+                success: false,
+                message: format!("Failed to store note: {}", e),
+            })]
         }
     }
 }
@@ -2205,23 +2096,26 @@ pub fn handle_note_add(state: &ReplState, content: String, title: Option<String>
 /// Handle note list command
 ///
 /// Lists notes for the current scope with pagination (8 per page).
-pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
+pub fn handle_note_list(
+    state: &ReplState,
+    global: bool,
+    page: Option<usize>,
+) -> Vec<CommandOutput> {
     use crate::content::ContentScope;
-    use chrono::Utc;
 
     const NOTES_PER_PAGE: usize = 8;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot list notes in anonymous mode.");
-        return;
+        return vec![CommandOutput::error("Cannot list notes in anonymous mode.")];
     }
 
     let scope = if global {
@@ -2238,96 +2132,56 @@ pub fn handle_note_list(state: &ReplState, global: bool, page: Option<usize>) {
 
     match db.list_notes(scope, project_id.as_deref()) {
         Ok(notes) => {
-            let scope_str = if global { "global" } else { "project" };
-
-            if notes.is_empty() {
-                println!("\x1B[36mNotes ({scope_str}):\x1B[0m");
-                println!("  No notes stored.");
-                return;
-            }
-
             let total_notes = notes.len();
-            let total_pages = total_notes.div_ceil(NOTES_PER_PAGE);
+            let total_pages = if total_notes == 0 {
+                1
+            } else {
+                total_notes.div_ceil(NOTES_PER_PAGE)
+            };
 
             // Validate page number
             let requested_page = page.unwrap_or(1);
             if requested_page < 1 {
-                eprintln!("\x1B[31mPage must be >= 1. Use /note list 1 for first page.\x1B[0m");
-                return;
+                return vec![CommandOutput::error(
+                    "Page must be >= 1. Use /note list 1 for first page.",
+                )];
             }
             if requested_page > total_pages {
-                eprintln!(
-                    "\x1B[31mPage {} does not exist. Total pages: {}. Use /note list {}.\x1B[0m",
+                return vec![CommandOutput::error(format!(
+                    "Page {} does not exist. Total pages: {}. Use /note list {}.",
                     requested_page, total_pages, total_pages
-                );
-                return;
+                ))];
             }
 
-            let current_page = requested_page;
-            let start_idx = (current_page - 1) * NOTES_PER_PAGE;
-            let end_idx = start_idx + NOTES_PER_PAGE.min(total_notes - start_idx);
-
-            println!(
-                "\x1B[36mNotes ({scope_str}) - Page {} of {}:\x1B[0m",
-                current_page, total_pages
-            );
-
-            for note in &notes[start_idx..end_idx] {
-                let age_days = (Utc::now() - note.created_at).num_days();
-                if let Some(t) = &note.title {
-                    println!(
-                        "  \x1B[33m#{} {} \x1B[90m({}d)\x1B[0m",
-                        note.id, t, age_days
-                    );
-                } else {
-                    println!(
-                        "  \x1B[33m#{}\x1B[0m \x1B[90m({}d)\x1B[0m",
-                        note.id, age_days
-                    );
-                }
-                // Get first line only for preview, truncated if too long
-                let first_line = note.content.lines().next().unwrap_or(&note.content);
-                let preview = crate::chat::view::truncate_str(first_line, 76);
-                println!("  │ {}", preview);
-            }
-
-            println!(
-                "\n  \x1B[90mTotal: {} note(s), Page {}/{}\x1B[0m",
-                total_notes, current_page, total_pages
-            );
-            if total_pages > 1 {
-                println!(
-                    "  \x1B[90mUse /note list {} to see page {}, or /note list --global {} for global\x1B[0m",
-                    current_page + 1,
-                    current_page + 1,
-                    current_page + 1
-                );
-            }
+            vec![CommandOutput::NoteList(NoteListData {
+                notes,
+                page: requested_page,
+                total_pages,
+                total_notes,
+            })]
         }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to list notes: {}\x1B[0m", e);
-        }
+        Err(e) => vec![CommandOutput::error(format!("Failed to list notes: {}", e))],
     }
 }
 
 /// Handle note show command
 ///
 /// Shows a single note by ID.
-pub fn handle_note_show(state: &ReplState, id: i64) {
+pub fn handle_note_show(state: &ReplState, id: i64) -> Vec<CommandOutput> {
     use crate::content::{ContentScope, ContentSource};
     use chrono::Utc;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot show notes in anonymous mode.");
-        return;
+        return vec![CommandOutput::error("Cannot show notes in anonymous mode.")];
     }
 
     match db.get_note(id) {
@@ -2342,7 +2196,7 @@ pub fn handle_note_show(state: &ReplState, id: i64) {
             };
             let age_days = (Utc::now() - note.created_at).num_days();
 
-            // Build header (rendered as markdown)
+            // Build header as plain text (view layer applies styling)
             let mut header = format!("## Note #{}\n\n", note.id);
             if let Some(t) = &note.title {
                 header.push_str(&format!("**Title:** {}\n\n", t));
@@ -2356,18 +2210,18 @@ pub fn handle_note_show(state: &ReplState, id: i64) {
             }
             header.push_str("---\n");
 
-            // Print header with markdown
+            // TODO: Phase 3.5 — migrate markdown rendering to ChatView
+            // For now, print header and content directly
             crate::markdown::print_markdown_chat(&header);
-
-            // Print content as markdown (no prefix, let termimad handle it)
             crate::markdown::print_markdown_chat(&note.content);
+
+            vec![]
         }
-        Ok(None) => {
-            eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
-        }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to retrieve note: {}\x1B[0m", e);
-        }
+        Ok(None) => vec![CommandOutput::error(format!("Note #{} not found.", id))],
+        Err(e) => vec![CommandOutput::error(format!(
+            "Failed to retrieve note: {}",
+            e
+        ))],
     }
 }
 
@@ -2379,114 +2233,128 @@ pub fn handle_note_edit(
     id: i64,
     title: Option<String>,
     content: Option<String>,
-) {
+) -> Vec<CommandOutput> {
     use crate::content::MAX_NOTE_CONTENT_SIZE;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot edit notes in anonymous mode.");
-        return;
+        return vec![CommandOutput::error("Cannot edit notes in anonymous mode.")];
     }
 
     if let Some(ref c) = content
         && c.len() > MAX_NOTE_CONTENT_SIZE
     {
-        eprintln!(
-            "\x1B[31m✗ Note content exceeds {} character limit.\x1B[0m",
-            MAX_NOTE_CONTENT_SIZE
-        );
-        println!("  Current length: {} characters", c.len());
-        return;
+        return vec![
+            CommandOutput::error(format!(
+                "Note content exceeds {} character limit.",
+                MAX_NOTE_CONTENT_SIZE
+            )),
+            CommandOutput::info(format!("  Current length: {} characters", c.len())),
+        ];
     }
 
     match db.get_note(id) {
         Ok(Some(_)) => match db.update_note(id, title.as_deref(), content.as_deref()) {
             Ok(()) => {
-                println!("\x1B[32m✓ Updated note #{}\x1B[0m", id);
+                let mut msg = format!("Updated note #{}", id);
                 if let Some(t) = &title {
-                    println!("  Title: {}", t);
+                    msg.push_str(&format!("\n  Title: {}", t));
                 }
                 if let Some(c) = &content {
-                    println!("  Content: {}", crate::chat::view::truncate_str(c, 80));
+                    msg.push_str(&format!(
+                        "\n  Content: {}",
+                        crate::chat::view::truncate_str(c, 80)
+                    ));
                 }
+                vec![CommandOutput::success(msg)]
             }
-            Err(e) => {
-                eprintln!("\x1B[31m✗ Failed to update note: {}\x1B[0m", e);
-            }
+            Err(e) => vec![CommandOutput::error(format!(
+                "Failed to update note: {}",
+                e
+            ))],
         },
-        Ok(None) => {
-            eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
-        }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to retrieve note: {}\x1B[0m", e);
-        }
+        Ok(None) => vec![CommandOutput::error(format!("Note #{} not found.", id))],
+        Err(e) => vec![CommandOutput::error(format!(
+            "Failed to retrieve note: {}",
+            e
+        ))],
     }
 }
 
 /// Handle note delete command
 ///
 /// Deletes a note by ID.
-pub fn handle_note_delete(state: &ReplState, id: i64) {
+pub fn handle_note_delete(state: &ReplState, id: i64) -> Vec<CommandOutput> {
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot delete notes in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot delete notes in anonymous mode.",
+        )];
     }
 
     match db.get_note(id) {
         Ok(Some(note)) => match db.delete_note(id) {
             Ok(()) => {
-                if let Some(t) = &note.title {
-                    println!("\x1B[32m✓ Deleted note #{}: {}\x1B[0m", id, t);
+                let msg = if let Some(t) = &note.title {
+                    format!("Deleted note #{}: {}", id, t)
                 } else {
-                    println!("\x1B[32m✓ Deleted note #{}\x1B[0m", id);
-                }
+                    format!("Deleted note #{}", id)
+                };
+                vec![CommandOutput::success(msg)]
             }
-            Err(e) => {
-                eprintln!("\x1B[31m✗ Failed to delete note: {}\x1B[0m", e);
-            }
+            Err(e) => vec![CommandOutput::error(format!(
+                "Failed to delete note: {}",
+                e
+            ))],
         },
-        Ok(None) => {
-            eprintln!("\x1B[31m✗ Note #{} not found.\x1B[0m", id);
-        }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to retrieve note: {}\x1B[0m", e);
-        }
+        Ok(None) => vec![CommandOutput::error(format!("Note #{} not found.", id))],
+        Err(e) => vec![CommandOutput::error(format!(
+            "Failed to retrieve note: {}",
+            e
+        ))],
     }
 }
 
 /// Handle note search command
 ///
 /// Searches notes by keyword.
-pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit: usize) {
+pub fn handle_note_search(
+    state: &ReplState,
+    query: String,
+    global: bool,
+    limit: usize,
+) -> Vec<CommandOutput> {
     use crate::content::ContentScope;
-    use chrono::Utc;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot search notes in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot search notes in anonymous mode.",
+        )];
     }
 
     let scope = if global {
@@ -2504,38 +2372,35 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
     match db.search_notes_keyword(&query, scope, project_id.as_deref(), limit) {
         Ok(results) => {
             let scope_str = if global { "global" } else { "project" };
-            println!(
-                "\x1B[36mSearch results for \"{}\" ({scope_str}):\x1B[0m",
-                query
-            );
-
             if results.is_empty() {
-                println!("  No notes found.");
-                return;
+                return vec![CommandOutput::info(format!(
+                    "No notes found for '{}' ({}).",
+                    query, scope_str
+                ))];
             }
 
+            // TODO: Phase 3.5 — migrate to structured NoteSearchData
+            // For now, format as text output
+            let mut output = format!("Search results for \"{}\" ({}):\n", query, scope_str);
             for result in &results {
-                let age_days = (Utc::now() - result.item.created_at).num_days();
                 if let Some(t) = &result.item.title {
-                    println!(
-                        "  \x1B[33m#{} {} \x1B[90m(score: {:.2}, {}d)\x1B[0m",
-                        result.item.id, t, result.score, age_days
-                    );
+                    output.push_str(&format!(
+                        "  #{} {} (score: {:.2})\n",
+                        result.item.id, t, result.score
+                    ));
                 } else {
-                    println!(
-                        "  \x1B[33m#{}\x1B[0m \x1B[90m(score: {:.2}, {}d)\x1B[0m",
-                        result.item.id, result.score, age_days
-                    );
+                    output.push_str(&format!(
+                        "  #{} (score: {:.2})\n",
+                        result.item.id, result.score
+                    ));
                 }
                 let preview = crate::chat::view::truncate_str(&result.item.content, 80);
-                println!("    {}", preview);
+                output.push_str(&format!("    {}\n", preview));
             }
-
-            println!("\n  \x1B[90mFound: {} note(s)\x1B[0m", results.len());
+            output.push_str(&format!("\n  Found: {} note(s)", results.len()));
+            vec![CommandOutput::info(output)]
         }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Search failed: {}\x1B[0m", e);
-        }
+        Err(e) => vec![CommandOutput::error(format!("Search failed: {}", e))],
     }
 }
 
@@ -2545,7 +2410,12 @@ pub fn handle_note_search(state: &ReplState, query: String, global: bool, limit:
 
 /// Handle document import command
 #[cfg(feature = "document-tools")]
-pub fn handle_document_import(state: &ReplState, path: String, global: bool, nowait: bool) {
+pub fn handle_document_import(
+    state: &ReplState,
+    path: String,
+    global: bool,
+    nowait: bool,
+) -> Vec<CommandOutput> {
     use crate::content::{ContentScope, Document, MAX_DOCUMENT_SIZE, detect_file_type};
     use crate::utils::expand_tilde_path;
     use std::fs;
@@ -2553,45 +2423,48 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot import documents in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot import documents in anonymous mode.",
+        )];
     }
 
     let file_path = expand_tilde_path(&path);
     if !file_path.exists() {
-        eprintln!("\x1B[31m✗ File not found: {}\x1B[0m", path);
-        return;
+        return vec![CommandOutput::error(format!("File not found: {}", path))];
     }
 
     let metadata = match fs::metadata(&file_path) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("\x1B[31m✗ Cannot read file metadata: {}\x1B[0m", e);
-            return;
+            return vec![CommandOutput::error(format!(
+                "Cannot read file metadata: {}",
+                e
+            ))];
         }
     };
 
     if metadata.len() > MAX_DOCUMENT_SIZE as u64 {
-        eprintln!(
-            "\x1B[31m✗ File exceeds maximum size of {} bytes (got {} bytes).\x1B[0m",
-            MAX_DOCUMENT_SIZE,
-            metadata.len()
-        );
-        println!("  Consider splitting the document into smaller files.");
-        return;
+        return vec![
+            CommandOutput::error(format!(
+                "File exceeds maximum size of {} bytes (got {} bytes).",
+                MAX_DOCUMENT_SIZE,
+                metadata.len()
+            )),
+            CommandOutput::info("  Consider splitting the document into smaller files."),
+        ];
     }
 
     let file_type = match detect_file_type(&file_path) {
         Ok(ft) => ft,
         Err(e) => {
-            eprintln!("\x1B[31m✗ {}\x1B[0m", e);
-            return;
+            return vec![CommandOutput::error(e.to_string())];
         }
     };
 
@@ -2600,8 +2473,7 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
     let content = match fs::read_to_string(&file_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("\x1B[31m✗ Cannot read file: {}\x1B[0m", e);
-            return;
+            return vec![CommandOutput::error(format!("Cannot read file: {}", e))];
         }
     };
 
@@ -2635,26 +2507,36 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
     ) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to create document: {}\x1B[0m", e);
-            return;
+            return vec![CommandOutput::error(format!(
+                "Failed to create document: {}",
+                e
+            ))];
         }
     };
 
     match db.insert_document(&document) {
         Ok(id) => {
             let scope_str = if global { "global" } else { "project" };
-            println!(
-                "\x1B[32m✓ Imported document #{} (scope: {}): {}\x1B[0m",
+            let mut outputs = vec![CommandOutput::success(format!(
+                "Imported document #{} (scope: {}): {}",
                 id, scope_str, title
-            );
-            println!("  File: {}", filename);
-            println!("  Words: {}", document.word_count);
-            println!("  Type: {}", file_type.extension());
+            ))];
+            outputs.push(CommandOutput::info(format!("  File: {}", filename)));
+            outputs.push(CommandOutput::info(format!(
+                "  Words: {}",
+                document.word_count
+            )));
+            outputs.push(CommandOutput::info(format!(
+                "  Type: {}",
+                file_type.extension()
+            )));
 
             if let Some(ref embedding_client) = state.embedding_client {
                 if nowait {
                     // Async embedding in background
-                    println!("  Indexing in background...");
+                    outputs.push(CommandOutput::info(
+                        "  Indexing in background...".to_string(),
+                    ));
                     let client = Arc::clone(embedding_client);
                     let db_clone = Arc::clone(&db);
                     let pid = project_id.clone();
@@ -2676,12 +2558,12 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
                         )
                         .await
                         {
-                            eprintln!("Warning: Failed to generate embedding for document: {}", e);
+                            log::warn!("Failed to generate embedding for document: {}", e);
                         }
                     });
                 } else {
                     // Synchronous embedding with progress
-                    println!("  Indexing document...");
+                    outputs.push(CommandOutput::info("  Indexing document...".to_string()));
 
                     let ctx = EmbedItemContext::new(
                         &document.content,
@@ -2704,52 +2586,66 @@ pub fn handle_document_import(state: &ReplState, path: String, global: bool, now
                     }) {
                         Ok(result) => {
                             let chunks = result.chunks_created.max(1);
-                            println!(
-                                "  ✓ Document indexed ({} chunk{})",
+                            outputs.push(CommandOutput::success(format!(
+                                "  Document indexed ({} chunk{})",
                                 chunks,
                                 if chunks > 1 { "s" } else { "" }
-                            );
+                            )));
                         }
                         Err(e) => {
-                            eprintln!(
-                                "  \x1B[33m⚠ Warning: Failed to index document: {}\x1B[0m",
+                            outputs.push(CommandOutput::warning(format!(
+                                "  Failed to index document: {}",
                                 e
-                            );
-                            println!("  Run '/reindex' to regenerate embeddings.");
+                            )));
+                            outputs.push(CommandOutput::info(
+                                "  Run '/reindex' to regenerate embeddings.".to_string(),
+                            ));
                         }
                     }
                 }
             }
+            outputs
         }
         Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to store document: {}\x1B[0m", e);
+            vec![CommandOutput::error(format!(
+                "Failed to store document: {}",
+                e
+            ))]
         }
     }
 }
 
 #[cfg(not(feature = "document-tools"))]
-pub fn handle_document_import(_state: &ReplState, _path: String, _global: bool, _nowait: bool) {
-    eprintln!("Error: Document import requires 'document-tools' feature.");
-    println!("  Recompile with: cargo build --features document-tools");
+pub fn handle_document_import(
+    _state: &ReplState,
+    _path: String,
+    _global: bool,
+    _nowait: bool,
+) -> Vec<CommandOutput> {
+    vec![
+        CommandOutput::error("Document import requires 'document-tools' feature."),
+        CommandOutput::info("  Recompile with: cargo build --features document-tools"),
+    ]
 }
 
 /// Handle document list command
 #[cfg(feature = "document-tools")]
-pub fn handle_document_list(state: &ReplState, global: bool) {
+pub fn handle_document_list(state: &ReplState, global: bool) -> Vec<CommandOutput> {
     use crate::content::ContentScope;
-    use chrono::Utc;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot list documents in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot list documents in anonymous mode.",
+        )];
     }
 
     let scope = if global {
@@ -2766,56 +2662,54 @@ pub fn handle_document_list(state: &ReplState, global: bool) {
 
     match db.list_documents(scope, project_id.as_deref()) {
         Ok(documents) => {
-            let scope_str = if global { "global" } else { "project" };
-            println!("\x1B[36mDocuments (scope: {}):\x1B[0m", scope_str);
-
-            if documents.is_empty() {
-                println!("  No documents found.");
-                return;
-            }
-
-            for doc in &documents {
-                let age_days = (Utc::now() - doc.created_at).num_days();
-                println!(
-                    "  \x1B[33m#{} {} \x1B[90m({}, {} words, {}d)\x1B[0m",
-                    doc.id,
-                    doc.title,
-                    doc.file_type.extension(),
-                    doc.word_count,
-                    age_days
-                );
-            }
-
-            println!("\n  \x1B[90mFound: {} document(s)\x1B[0m", documents.len());
+            let entries: Vec<DocumentEntry> = documents
+                .iter()
+                .map(|doc| DocumentEntry {
+                    title: doc.title.clone(),
+                    id: doc.id,
+                    source_type: doc.file_type.extension().to_string(),
+                    chunk_count: 0, // chunk_count not available from list
+                })
+                .collect();
+            let is_empty = entries.is_empty();
+            vec![CommandOutput::DocumentList(DocumentListData {
+                documents: entries,
+                is_empty,
+            })]
         }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to list documents: {}\x1B[0m", e);
-        }
+        Err(e) => vec![CommandOutput::error(format!(
+            "Failed to list documents: {}",
+            e
+        ))],
     }
 }
 
 #[cfg(not(feature = "document-tools"))]
-pub fn handle_document_list(_state: &ReplState, _global: bool) {
-    eprintln!("Error: Document listing requires 'document-tools' feature.");
-    println!("  Recompile with: cargo build --features document-tools");
+pub fn handle_document_list(_state: &ReplState, _global: bool) -> Vec<CommandOutput> {
+    vec![
+        CommandOutput::error("Document listing requires 'document-tools' feature."),
+        CommandOutput::info("  Recompile with: cargo build --features document-tools"),
+    ]
 }
 
 /// Handle document show command
 #[cfg(feature = "document-tools")]
-pub fn handle_document_show(state: &ReplState, id: i64) {
+pub fn handle_document_show(state: &ReplState, id: i64) -> Vec<CommandOutput> {
     use chrono::Utc;
 
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot show document in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot show document in anonymous mode.",
+        )];
     }
 
     match db.get_document(id) {
@@ -2828,7 +2722,7 @@ pub fn handle_document_show(state: &ReplState, id: i64) {
                 }
             };
 
-            // Build header (rendered as markdown)
+            // Build header as plain text (view layer applies styling)
             let mut header = format!("## Document #{}\n\n", doc.id);
             header.push_str(&format!("**Title:** {}\n\n", doc.title));
             header.push_str(&format!(
@@ -2841,85 +2735,94 @@ pub fn handle_document_show(state: &ReplState, id: i64) {
             ));
             header.push_str("---\n");
 
-            // Print header with markdown
+            // TODO: Phase 3.5 — migrate markdown rendering to ChatView
             crate::markdown::print_markdown_chat(&header);
-
-            // Print content as markdown
             crate::markdown::print_markdown_chat(&doc.content);
+
+            vec![]
         }
-        Ok(None) => {
-            eprintln!("\x1B[31m✗ Document #{} not found.\x1B[0m", id);
-        }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to retrieve document: {}\x1B[0m", e);
-        }
+        Ok(None) => vec![CommandOutput::error(format!("Document #{} not found.", id))],
+        Err(e) => vec![CommandOutput::error(format!(
+            "Failed to retrieve document: {}",
+            e
+        ))],
     }
 }
 
 #[cfg(not(feature = "document-tools"))]
-pub fn handle_document_show(_state: &ReplState, _id: i64) {
-    eprintln!("Error: Document viewing requires 'document-tools' feature.");
-    println!("  Recompile with: cargo build --features document-tools");
+pub fn handle_document_show(_state: &ReplState, _id: i64) -> Vec<CommandOutput> {
+    vec![
+        CommandOutput::error("Document viewing requires 'document-tools' feature."),
+        CommandOutput::info("  Recompile with: cargo build --features document-tools"),
+    ]
 }
 
 /// Handle document delete command
 #[cfg(feature = "document-tools")]
-pub fn handle_document_delete(state: &ReplState, id: i64) {
+pub fn handle_document_delete(state: &ReplState, id: i64) -> Vec<CommandOutput> {
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     if state.session.anonymous {
-        eprintln!("Error: Cannot delete document in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot delete document in anonymous mode.",
+        )];
     }
 
     match db.get_document(id) {
         Ok(Some(doc)) => match db.delete_document(id) {
-            Ok(()) => {
-                println!("\x1B[32m✓ Deleted document #{}: {}\x1B[0m", id, doc.title);
-            }
-            Err(e) => {
-                eprintln!("\x1B[31m✗ Failed to delete document: {}\x1B[0m", e);
-            }
+            Ok(()) => vec![CommandOutput::success(format!(
+                "Deleted document #{}: {}",
+                id, doc.title
+            ))],
+            Err(e) => vec![CommandOutput::error(format!(
+                "Failed to delete document: {}",
+                e
+            ))],
         },
-        Ok(None) => {
-            eprintln!("\x1B[31m✗ Document #{} not found.\x1B[0m", id);
-        }
-        Err(e) => {
-            eprintln!("\x1B[31m✗ Failed to retrieve document: {}\x1B[0m", e);
-        }
+        Ok(None) => vec![CommandOutput::error(format!("Document #{} not found.", id))],
+        Err(e) => vec![CommandOutput::error(format!(
+            "Failed to retrieve document: {}",
+            e
+        ))],
     }
 }
 
 #[cfg(not(feature = "document-tools"))]
-pub fn handle_document_delete(_state: &ReplState, _id: i64) {
-    eprintln!("Error: Document deletion requires 'document-tools' feature.");
-    println!("  Recompile with: cargo build --features document-tools");
+pub fn handle_document_delete(_state: &ReplState, _id: i64) -> Vec<CommandOutput> {
+    vec![
+        CommandOutput::error("Document deletion requires 'document-tools' feature."),
+        CommandOutput::info("  Recompile with: cargo build --features document-tools"),
+    ]
 }
 
 /// Handle skill activation command
 ///
 /// Activates a skill for the current session by setting it in the session state.
 /// The skill content will be injected into the system prompt.
-pub fn handle_skill_activated(state: &mut ReplState, name: String, content: String) {
+pub fn handle_skill_activated(
+    state: &mut ReplState,
+    name: String,
+    content: String,
+) -> Vec<CommandOutput> {
     // Store the active skill in session
     state.session.active_skill = Some(super::session::ActiveSkill {
         name: name.clone(),
         content,
     });
 
-    println!(
-        "\x1B[32m✓ Skill '{}' activated for this session.\x1B[0m",
-        name
-    );
-    println!(
-        "\x1B[90mSkill instructions will be followed when relevant to the conversation.\x1B[0m"
-    );
+    vec![
+        CommandOutput::success(format!("Skill '{}' activated for this session.", name)),
+        CommandOutput::info(
+            "Skill instructions will be followed when relevant to the conversation.",
+        ),
+    ]
 }
 
 #[cfg(test)]
@@ -3047,7 +2950,11 @@ mod tests {
 }
 
 /// Handle /ocr command - extract text from an image
-pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Option<String>) {
+pub async fn handle_subagent_ocr(
+    state: &mut ReplState,
+    path: String,
+    mode: Option<String>,
+) -> Vec<CommandOutput> {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
     use crate::ocr::mode::{OcrMode, parse_ocr_mode};
     use crate::utils::expand_tilde_path;
@@ -3056,8 +2963,7 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
     let mode = match parse_ocr_mode(mode) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("\x1B[31m{}\x1B[0m", e);
-            return;
+            return vec![CommandOutput::error(e.to_string())];
         }
     };
 
@@ -3066,8 +2972,7 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
 
     // Validate path for security (sandbox + blocklist)
     if let Err(e) = crate::security::validate_subagent_path(&file_path) {
-        eprintln!("\x1B[31mError: {}\x1B[0m", e);
-        return;
+        return vec![CommandOutput::error(format!("Error: {}", e))];
     }
 
     // Save user command to conversation context
@@ -3083,11 +2988,10 @@ pub async fn handle_subagent_ocr(state: &mut ReplState, path: String, mode: Opti
 
     match runner.run_ocr(&file_path, mode).await {
         Ok(result) => {
-            println!("{}", result);
-            // Save result to conversation context so AI can reference it
-            let _ = state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result.clone(), None);
+            vec![CommandOutput::info(result)]
         }
-        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+        Err(e) => vec![CommandOutput::error(format!("Error: {}", e))],
     }
 }
 
@@ -3096,7 +3000,7 @@ pub async fn handle_subagent_vision(
     state: &mut ReplState,
     paths: Vec<String>,
     prompt: Option<String>,
-) {
+) -> Vec<CommandOutput> {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
     use crate::utils::expand_tilde_path;
     use std::path::PathBuf;
@@ -3107,8 +3011,7 @@ pub async fn handle_subagent_vision(
     // Validate all paths for security (sandbox + blocklist)
     for path in &path_bufs {
         if let Err(e) = crate::security::validate_subagent_path(path) {
-            eprintln!("\x1B[31mError: {}\x1B[0m", e);
-            return;
+            return vec![CommandOutput::error(format!("Error: {}", e))];
         }
     }
 
@@ -3129,15 +3032,19 @@ pub async fn handle_subagent_vision(
 
     match runner.run_vision(&path_bufs, prompt_str).await {
         Ok(result) => {
-            println!("{}", result);
-            let _ = state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result.clone(), None);
+            vec![CommandOutput::info(result)]
         }
-        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+        Err(e) => vec![CommandOutput::error(format!("Error: {}", e))],
     }
 }
 
 /// Handle /translate command - translate text between languages
-pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String, text: String) {
+pub async fn handle_subagent_translate(
+    state: &mut ReplState,
+    lang_pair: String,
+    text: String,
+) -> Vec<CommandOutput> {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
 
     // Save user command to conversation context
@@ -3151,15 +3058,15 @@ pub async fn handle_subagent_translate(state: &mut ReplState, lang_pair: String,
 
     match runner.run_translate(&lang_pair, &text).await {
         Ok(result) => {
-            println!("{}", result);
-            let _ = state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result.clone(), None);
+            vec![CommandOutput::info(result)]
         }
-        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+        Err(e) => vec![CommandOutput::error(format!("Error: {}", e))],
     }
 }
 
 /// Handle /summarize command - summarize text
-pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
+pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) -> Vec<CommandOutput> {
     use crate::chat::subagent::{SubagentConfig, SubagentRunner};
 
     // Save user command to conversation context
@@ -3173,10 +3080,10 @@ pub async fn handle_subagent_summarize(state: &mut ReplState, text: String) {
 
     match runner.run_summarize(&text).await {
         Ok(result) => {
-            println!("{}", result);
-            let _ = state.session.add_assistant_message(result, None);
+            let _ = state.session.add_assistant_message(result.clone(), None);
+            vec![CommandOutput::info(result)]
         }
-        Err(e) => eprintln!("\x1B[31mError: {}\x1B[0m", e),
+        Err(e) => vec![CommandOutput::error(format!("Error: {}", e))],
     }
 }
 
@@ -3202,7 +3109,7 @@ pub fn handle_feedback(
     signal_type: crate::feedback::types::FeedbackSignalType,
     item_id: Option<i64>,
     correction_text: Option<String>,
-) {
+) -> Vec<CommandOutput> {
     use crate::db::feedback_ops::insert_feedback_signal;
     use crate::feedback::types::{FeedbackSignal, FeedbackSignalType, FeedbackSource};
 
@@ -3211,16 +3118,18 @@ pub fn handle_feedback(
         Some(d) => Arc::clone(d),
         None => {
             log::warn!("Cannot give feedback: database not initialized (anonymous mode)");
-            eprintln!("Error: Database not initialized. Run chat without --anonymous.");
-            return;
+            return vec![CommandOutput::error(
+                "Database not initialized. Run chat without --anonymous.",
+            )];
         }
     };
 
     // Second guard: session.anonymous
     if state.session.anonymous {
         log::warn!("Cannot give feedback in anonymous mode");
-        eprintln!("Error: Cannot give feedback in anonymous mode.");
-        return;
+        return vec![CommandOutput::error(
+            "Cannot give feedback in anonymous mode.",
+        )];
     }
 
     // Resolve target item_id
@@ -3229,8 +3138,9 @@ pub fn handle_feedback(
         None => match state.last_assistant_message_id {
             Some(id) => id,
             None => {
-                println!("No assistant message to give feedback on.");
-                return;
+                return vec![CommandOutput::info(
+                    "No assistant message to give feedback on.",
+                )];
             }
         },
     };
@@ -3280,7 +3190,6 @@ pub fn handle_feedback(
                 && let Err(e) = db.adjust_importance(target_id, importance_delta)
             {
                 log::warn!("Could not adjust importance for item {}: {}", target_id, e);
-                eprintln!("\x1B[33mWarning: Could not adjust importance: {}\x1B[0m", e);
             }
 
             log::debug!(
@@ -3300,32 +3209,38 @@ pub fn handle_feedback(
                     )
                 })
                 .unwrap_or_else(|_| "(no content)".to_string());
-            let signal_label = signal.signal_type.to_string();
-            let arrow = match signal.signal_type {
-                FeedbackSignalType::Good => "\x1B[32m↑↑\x1B[0m",
-                FeedbackSignalType::Bad => "\x1B[31m↓↓\x1B[0m",
-                FeedbackSignalType::Correction => "\x1B[33m✎\x1B[0m",
-            };
 
-            println!(
-                "{} {} feedback recorded for msg:{}",
-                arrow, signal_label, target_id
-            );
-            println!("  \x1B[90m{}\x1B[0m", excerpt);
+            let signal_label = signal.signal_type.to_string();
+            let mut outputs = vec![CommandOutput::success(format!(
+                "{} feedback recorded for msg:{}",
+                signal_label, target_id
+            ))];
+            outputs.push(CommandOutput::info(format!("  {}", excerpt)));
 
             if let Some(ref text) = signal.correction_text {
-                println!("  Correction: {}", text);
+                outputs.push(CommandOutput::info(format!("  Correction: {}", text)));
             }
 
             if importance_delta > 0.0 {
-                println!("  Importance: +{:.2}", importance_delta);
+                outputs.push(CommandOutput::info(format!(
+                    "  Importance: +{:.2}",
+                    importance_delta
+                )));
             } else if importance_delta < 0.0 {
-                println!("  Importance: {:.2}", importance_delta);
+                outputs.push(CommandOutput::info(format!(
+                    "  Importance: {:.2}",
+                    importance_delta
+                )));
             }
+
+            outputs
         }
         Err(e) => {
             log::warn!("Failed to record feedback for item {}: {}", target_id, e);
-            eprintln!("\x1B[31m✗ Failed to record feedback: {}\x1B[0m", e);
+            vec![CommandOutput::error(format!(
+                "Failed to record feedback: {}",
+                e
+            ))]
         }
     }
 }

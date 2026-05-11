@@ -15,7 +15,8 @@ use crate::tokens::calculate_context_metrics;
 use crate::tool_robustness::format_tool_error;
 use crate::tools::get_available_tool_names;
 
-use super::command_handlers::{HandleResult, handle_model_switch};
+use super::command_handlers::handle_model_switch;
+use super::command_output::CommandOutput;
 use super::commands::{ChatCommand, parse_command};
 use super::continuation::{
     OverflowHandleResult, ProcessResult, build_inter_tool_compaction_prompt, build_pre_tool_prompt,
@@ -24,6 +25,7 @@ use super::continuation::{
 use super::core::send_message;
 use super::input::{InputBackend, InputResult, RustylineInput};
 use super::session::{ChatSession, MessageRole};
+use super::view::ChatView;
 use super::view::TerminalView;
 use super::view::colors;
 
@@ -760,6 +762,9 @@ pub async fn run_chat_repl(
     let model_names: Vec<String> = crate::user_models::list_all_model_names();
     let mut input = RustylineInput::new(model_names);
 
+    // Create view for rendering command outputs
+    let mut view = TerminalView::new();
+
     loop {
         // Build status bar info
         let status_bar = build_status_bar(&state);
@@ -805,17 +810,23 @@ pub async fn run_chat_repl(
                     match parse_command(line) {
                         Some(Ok(cmd)) => {
                             if let ChatCommand::Model { name } = &cmd {
-                                let _ = handle_model_switch(&mut state, name, &capabilities).await;
+                                let outputs =
+                                    handle_model_switch(&mut state, name, &capabilities).await;
+                                view.show_command_outputs(&outputs);
                                 continue;
                             }
 
-                            match super::command_handlers::handle_command(
+                            let outputs = super::command_handlers::handle_command(
                                 cmd, &mut state, &mut input,
                             )
-                            .await
-                            {
-                                HandleResult::Continue => continue,
-                                HandleResult::Exit => return Ok(()),
+                            .await;
+
+                            // Render all command outputs via ChatView
+                            view.show_command_outputs(&outputs);
+
+                            // Check if any output signals quit
+                            if outputs.iter().any(|o| matches!(o, CommandOutput::Quit)) {
+                                return Ok(());
                             }
                         }
                         Some(Err(e)) => {
