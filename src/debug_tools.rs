@@ -26,6 +26,7 @@
 //! whether the compact format is shown. Default: `true`.
 //! In Quiet mode (`-q`), tool calls are always hidden regardless of this setting.
 
+#![expect(clippy::print_stderr)] // Debug diagnostics output
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::spinner::suspend_for_print;

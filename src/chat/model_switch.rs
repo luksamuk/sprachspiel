@@ -55,20 +55,20 @@ pub async fn switch_model(
     // 2. Resolve model configuration
     let model_config = user_models::resolve_model_config(model_name);
 
-    // 3. Detect capabilities (with fallback)
+    // 3. Initialize warnings and detect capabilities (with fallback)
+    let mut warnings = Vec::new();
     let capabilities = match ModelCapabilities::detect(ollama, &model_config.model_id).await {
         Ok(c) => c,
         Err(e) => {
-            eprintln!(
-                "Warning: Could not detect capabilities for '{}': {}. Using defaults.",
+            warnings.push(format!(
+                "Could not detect capabilities for '{}': {}. Using defaults.",
                 model_config.model_id, e
-            );
+            ));
             current_capabilities.clone()
         }
     };
 
     // 4. Calculate new states
-    let mut warnings = Vec::new();
 
     let think_active = if current_think && !capabilities.thinking {
         warnings.push(format!(

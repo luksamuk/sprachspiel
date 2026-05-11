@@ -7,24 +7,16 @@
 //! - `extract_thinking()` — Pure data extraction (no I/O). Returns the extracted
 //!   thinking content without rendering. Use this when a `ChatView` is available.
 //! - `display_thinking()` — Legacy function that extracts AND renders to stderr.
-//!   Use only when no `ChatView` is available (e.g., coordinator callbacks).
+//!   Use only in contexts without `ChatView` (e.g., query mode).
 //!
 //! # Migration Note (W6-PR1)
 //!
-//! `display_thinking()` is being phased out in favor of:
-//! 1. `extract_thinking()` to get the content
-//! 2. `ChatView::show_thinking()` to render it
-//!
-//! The callback in `setup_coordinator` still uses `display_thinking()` because
-//! the coordinator event handler doesn't have access to a `ChatView`. Future
-//! refactoring should pass a view through.
+//! `display_thinking()` is retained only for `query/mod.rs` (non-REPL query mode).
+//! The coordinator callback in `setup_coordinator` now uses `ViewEventSender`
+//! to send events through a channel, which are drained into `ChatView` after
+//! the coordinator call completes. No direct print calls remain in the chat path.
 
-#![expect(clippy::print_stderr)] // Legacy display_thinking() for coordinator callback
-//! 2. `ChatView::show_thinking()` to render it
-//!
-//! The callback in `setup_coordinator` still uses `display_thinking()` because
-//! the coordinator event handler doesn't have access to a `ChatView`. Future
-//! refactoring should pass a view through.
+#![expect(clippy::print_stderr)] // Legacy display_thinking() for query mode (non-REPL)
 
 use regex::Regex;
 use unicode_width::UnicodeWidthChar;

@@ -1236,8 +1236,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 /// Print help message
 /// Format help text as a string (for CommandOutput::HelpText).
 pub fn format_help() -> String {
-    format!(
-        r#"Available commands:
+    r#"Available commands:
   /quit, /exit     Exit the chat session
   /new, /n         Start a new conversation (previous messages remain searchable)
   /forget [--yes]  Delete conversation completely and start fresh (requires --yes)
@@ -1343,9 +1342,8 @@ Shortcuts:
   /sk = /skill
   /fb = /feedback, /fg = /feedback good, /fp = /fact prune, /fa = /fact add
   /fl = /fact list, /fr = /fact remove, /fs = /fact search
-  /cp = /content prune
-"#
-    )
+   /cp = /content prune
+"#.to_string()
 }
 
 /// Format session information as a string (for CommandOutput).

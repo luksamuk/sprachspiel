@@ -76,11 +76,6 @@ pub enum CommandOutput {
     /// Contains facts grouped by scope (global/project) for the `/fact list` command.
     FactList(FactListData),
 
-    /// Fact add result.
-    ///
-    /// Contains the outcome of adding a fact (stored, updated, duplicate, etc.).
-    FactAdded(FactAddResult),
-
     /// Fact remove result.
     ///
     /// Contains the removed fact info or error.
@@ -100,11 +95,6 @@ pub enum CommandOutput {
     ///
     /// Contains the outcome of adding a note.
     NoteAdded(NoteAddResult),
-
-    /// Note remove result.
-    ///
-    /// Contains the removed note info or error.
-    NoteRemoved(NoteRemoveResult),
 
     /// Todo list display.
     ///
@@ -212,43 +202,6 @@ pub enum FactListScopeData {
     Project,
 }
 
-/// Result of adding a fact (`/fact add`).
-#[derive(Debug, Clone)]
-pub struct FactAddResult {
-    /// The fact that was stored/updated
-    pub fact: Fact,
-    /// What happened
-    pub outcome: FactAddOutcome,
-}
-
-/// Outcome of a fact add operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FactAddOutcome {
-    /// New fact stored successfully
-    Stored,
-    /// Existing fact updated with new value
-    Updated(UpdateReason),
-    /// Exact duplicate — skipped
-    ExactDuplicate,
-    /// Normalized duplicate — skipped
-    NormalizedDuplicate,
-    /// Semantic duplicate — skipped
-    SemanticDuplicate,
-    /// FTS5 conflict — skipped
-    Fts5Conflict,
-    /// Content exceeded length limit
-    ContentTooLong(usize),
-}
-
-/// Reason a fact was updated.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdateReason {
-    /// Preference override (same key, different value)
-    PreferenceOverride,
-    /// Polarity contradiction (like → hate or vice versa)
-    PolarityContradiction,
-}
-
 /// Result of removing a fact (`/fact remove`).
 #[derive(Debug, Clone)]
 pub struct FactRemoveResult {
@@ -281,6 +234,7 @@ pub struct FactSearchResult {
     /// Fact content
     pub content: String,
     /// Fact category
+    #[allow(dead_code)] // Available for TUI structured fact category display
     pub category: Category,
     /// Relevance score (0.0 - 1.0)
     pub score: f64,
@@ -305,15 +259,6 @@ pub struct NoteAddResult {
     /// Whether the add succeeded
     pub success: bool,
     /// Success message
-    pub message: String,
-}
-
-/// Result of removing a note (`/note remove`).
-#[derive(Debug, Clone)]
-pub struct NoteRemoveResult {
-    /// Whether removal succeeded
-    pub success: bool,
-    /// Message (success or error)
     pub message: String,
 }
 
@@ -370,6 +315,7 @@ pub struct ExportData {
     /// The exported content
     pub content: String,
     /// Export format
+    #[allow(dead_code)] // Available for TUI format selection display
     pub format: ExportFormat,
     /// File path (if saved to file)
     pub file_path: Option<String>,
@@ -441,6 +387,7 @@ pub struct SearchData {
     /// Search results formatted string
     pub formatted: String,
     /// Number of results
+    #[allow(dead_code)] // Available for TUI result count display
     pub count: usize,
 }
 

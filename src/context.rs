@@ -1,3 +1,5 @@
+#![expect(clippy::print_stderr)] // CLI context diagnostics
+
 //! Context loading and sanitization
 //!
 //! Handles loading AGENTS.md files from the current directory and sanitizing

@@ -27,8 +27,8 @@ use std::sync::Arc;
 use super::command_output::{
     CommandOutput, CompactData, ContentPruneData, ContextData, DocumentEntry, DocumentListData,
     ExportData, ExportFormat, FactListData, FactListScopeData, FactRemoveResult, FactSearchData,
-    FactSearchResult, NoteAddResult, NoteListData, ReindexData, SessionEntry, SessionListData,
-    SkillEntry, SkillListData, TodoListData,
+    FactSearchResult, NoteAddResult, NoteListData, ReindexData, SearchData, SessionEntry,
+    SessionListData, SkillEntry, SkillListData, TodoListData,
 };
 use super::commands::{ChatCommand, FactListScope};
 use super::repl_state::ReplState;
@@ -677,8 +677,7 @@ pub fn handle_undo(state: &mut ReplState) -> Vec<CommandOutput> {
 /// Handle search command (async)
 ///
 /// Searches conversation history for matching messages.
-/// Currently delegates to `run_search()` which prints directly.
-/// TODO: Migrate run_search() to return data, then use CommandOutput::SearchResults.
+/// Returns `SearchOutcome` data, which is converted to `CommandOutput` here.
 pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Vec<CommandOutput> {
     let db = match crate::db::Database::new() {
         Ok(db) => db,
@@ -694,10 +693,49 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 
     log::debug!("Searching in conversation: {}", conversation_id);
 
-    crate::retrieval::run_search(&db, &state.ollama, &query, Some(&conversation_id), limit).await;
+    use crate::retrieval::{SearchOutcome, format_results};
 
-    // run_search prints its own output — future migration point
-    vec![]
+    match crate::retrieval::run_search(&db, &state.ollama, &query, Some(&conversation_id), limit)
+        .await
+    {
+        SearchOutcome::Results(results) => {
+            if results.is_empty() {
+                vec![CommandOutput::info("No results found.")]
+            } else {
+                let count = results.len();
+                match format_results(&results) {
+                    Some(formatted) => {
+                        vec![CommandOutput::SearchResults(SearchData {
+                            formatted,
+                            count,
+                        })]
+                    }
+                    None => vec![CommandOutput::info("No results found.")],
+                }
+            }
+        }
+        SearchOutcome::EmbeddingError(msg) => vec![CommandOutput::error(msg)],
+        SearchOutcome::SearchError(msg) => vec![CommandOutput::error(msg)],
+        SearchOutcome::EnrichmentWarning {
+            partial_results,
+            error,
+        } => {
+            let mut outputs = vec![CommandOutput::warning(format!(
+                "Enrichment warning: {}",
+                error
+            ))];
+            if !partial_results.is_empty() {
+                let count = partial_results.len();
+                if let Some(formatted) = format_results(&partial_results) {
+                    outputs.push(CommandOutput::SearchResults(SearchData {
+                        formatted,
+                        count,
+                    }));
+                }
+            }
+            outputs
+        }
+    }
 }
 
 /// Handle reindex command (async)

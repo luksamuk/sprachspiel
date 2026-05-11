@@ -3,6 +3,7 @@
 //! Handles image analysis using vision models via Ollama.
 //! Uses /api/generate endpoint with images array for multi-image support.
 
+#![expect(clippy::print_stdout)] // CLI subcommand output
 use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::generation::images::Image;

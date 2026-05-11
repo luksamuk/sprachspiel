@@ -2,6 +2,8 @@
 //!
 //! Consolidates common logic for query, legacy query, and chat message handling.
 
+#![expect(clippy::print_stdout)] // Query mode output
+#![expect(clippy::print_stderr)] // Query mode output
 mod context;
 mod coordinator;
 mod executor;

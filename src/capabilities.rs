@@ -3,6 +3,7 @@
 //! This module provides runtime detection of model capabilities (tools, vision, thinking)
 //! by querying the Ollama API's show_model_info endpoint.
 
+#![expect(clippy::print_stderr)] // Model capability detection output
 use ollama_rs::Ollama;
 use ollama_rs::models::ModelInfo;
 

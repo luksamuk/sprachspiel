@@ -14,7 +14,6 @@
 //! would handle these via widget state rather than direct output.
 
 #![expect(clippy::print_stdout)] // Terminal control: status bar, prompt echo, signals
-#![expect(clippy::print_stderr)] // Startup error messages (before view available)
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -754,7 +753,10 @@ pub async fn run_chat_repl(
     };
 
     // Print help line AFTER all startup messages
-    print!("{}", super::view::WelcomeInfo::help_line());
+    {
+        let mut temp_view = TerminalView::new();
+        temp_view.show_help_line();
+    }
 
     let tools_active = session.tools && capabilities.tools;
 

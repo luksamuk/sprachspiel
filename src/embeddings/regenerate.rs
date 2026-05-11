@@ -7,6 +7,8 @@
 //!
 //! Embeddings are derived data and can be regenerated from source content.
 
+#![expect(clippy::print_stdout)] // CLI subcommand output
+#![expect(clippy::print_stderr)] // CLI subcommand output
 use chrono::Utc;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;

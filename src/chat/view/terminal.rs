@@ -20,10 +20,9 @@
 #![expect(clippy::print_stderr)] // Status messages, errors rendered to stderr
 
 use crate::chat::command_output::{
-    CommandOutput, CompactData, ContentPruneData, DocumentListData, ExportData, FactAddOutcome,
-    FactAddResult, FactListData, FactListScopeData, FactRemoveResult, FactSearchData,
-    NoteAddResult, NoteListData, NoteRemoveResult, ReindexData, SessionListData, SkillListData,
-    TodoListData,
+    CommandOutput, CompactData, ContentPruneData, DocumentListData, ExportData, FactListData,
+    FactListScopeData, FactRemoveResult, FactSearchData, NoteAddResult, NoteListData, ReindexData,
+    SessionListData, SkillListData, TodoListData,
 };
 use crate::chat::strip_thinking_tags;
 use crate::consts::roles::format_role_label;
@@ -123,6 +122,14 @@ impl ChatView for TerminalView {
         eprintln!();
     }
 
+    fn show_help_line(&mut self) {
+        print!("{}", super::WelcomeInfo::help_line());
+    }
+
+    fn clear_continuation_line(&mut self) {
+        eprint!("\x1B[2K\r");
+    }
+
     fn show_token_metrics(&mut self, metrics: &TokenMetrics) {
         if metrics.total_tokens > 0 {
             eprintln!(
@@ -207,12 +214,11 @@ impl ChatView for TerminalView {
 
             // ── Structured displays ──────────────────────────────────
             CommandOutput::FactList(data) => self.render_fact_list(data),
-            CommandOutput::FactAdded(data) => self.render_fact_added(data),
             CommandOutput::FactRemoved(data) => self.render_fact_removed(data),
             CommandOutput::FactSearchResults(data) => self.render_fact_search(data),
             CommandOutput::NoteList(data) => self.render_note_list(data),
             CommandOutput::NoteAdded(data) => self.render_note_added(data),
-            CommandOutput::NoteRemoved(data) => self.render_note_removed(data),
+
             CommandOutput::TodoList(data) => self.render_todo_list(data),
             CommandOutput::ContextInfo(data) => {
                 println!("{}", data.formatted);
@@ -224,7 +230,7 @@ impl ChatView for TerminalView {
             CommandOutput::DocumentList(data) => self.render_document_list(data),
             CommandOutput::ContentPruneResult(data) => self.render_content_prune(data),
             CommandOutput::SearchResults(data) => {
-                println!("{}", data.formatted);
+                crate::markdown::print_markdown_chat(&data.formatted);
             }
             CommandOutput::ReindexResult(data) => self.render_reindex_result(data),
             CommandOutput::HelpText(text) => {
@@ -438,65 +444,6 @@ impl TerminalView {
         }
     }
 
-    fn render_fact_added(&mut self, data: &FactAddResult) {
-        match data.outcome {
-            FactAddOutcome::Stored => {
-                eprintln!(
-                    "{}✓ Fact stored: #{}{} {}",
-                    term_colors::GREEN,
-                    data.fact.id,
-                    term_colors::RESET,
-                    data.fact.content
-                );
-            }
-            FactAddOutcome::Updated(_) => {
-                eprintln!(
-                    "{}✓ Fact updated: #{}{} {}",
-                    term_colors::CYAN,
-                    data.fact.id,
-                    term_colors::RESET,
-                    data.fact.content
-                );
-            }
-            FactAddOutcome::ExactDuplicate => {
-                eprintln!(
-                    "{}⚠️ Exact duplicate — skipped{}",
-                    term_colors::YELLOW,
-                    term_colors::RESET
-                );
-            }
-            FactAddOutcome::NormalizedDuplicate => {
-                eprintln!(
-                    "{}⚠️ Normalized duplicate — skipped{}",
-                    term_colors::YELLOW,
-                    term_colors::RESET
-                );
-            }
-            FactAddOutcome::SemanticDuplicate => {
-                eprintln!(
-                    "{}⚠️ Semantic duplicate — skipped{}",
-                    term_colors::YELLOW,
-                    term_colors::RESET
-                );
-            }
-            FactAddOutcome::Fts5Conflict => {
-                eprintln!(
-                    "{}⚠️ FTS5 conflict — skipped{}",
-                    term_colors::YELLOW,
-                    term_colors::RESET
-                );
-            }
-            FactAddOutcome::ContentTooLong(max) => {
-                eprintln!(
-                    "{}✗ Fact content exceeds {} character limit{}",
-                    term_colors::RED,
-                    max,
-                    term_colors::RESET
-                );
-            }
-        }
-    }
-
     fn render_fact_removed(&mut self, data: &FactRemoveResult) {
         if data.success {
             if let Some(content) = &data.content {
@@ -571,24 +518,6 @@ impl TerminalView {
     }
 
     fn render_note_added(&mut self, data: &NoteAddResult) {
-        if data.success {
-            eprintln!(
-                "{}✓ {}{}",
-                term_colors::GREEN,
-                data.message,
-                term_colors::RESET
-            );
-        } else {
-            eprintln!(
-                "{}✗ {}{}",
-                term_colors::RED,
-                data.message,
-                term_colors::RESET
-            );
-        }
-    }
-
-    fn render_note_removed(&mut self, data: &NoteRemoveResult) {
         if data.success {
             eprintln!(
                 "{}✓ {}{}",

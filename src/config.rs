@@ -11,8 +11,6 @@ use std::sync::LazyLock;
 
 use ollama_rs::models::ModelOptions;
 
-pub const DEFAULT_MODEL: &str = "qwen3.5:4b";
-
 static CONFIGS: LazyLock<HashMap<&'static str, ModelConfig>> = LazyLock::new(|| {
     let mut configs = HashMap::new();
 
@@ -92,9 +90,13 @@ impl ModelConfig {
         CONFIGS.values().find(|mc| mc.model_id == model_id)
     }
 
-    #[expect(clippy::unwrap_used)] // DEFAULT_MODEL key always exists in CONFIGS
+    #[cfg(test)]
     pub fn get_default() -> ModelConfig {
-        CONFIGS.get(DEFAULT_MODEL).cloned().unwrap()
+        CONFIGS
+            .values()
+            .find(|mc| mc.model_id == "qwen3.5:4b")
+            .cloned()
+            .unwrap()
     }
 
     #[cfg(test)]

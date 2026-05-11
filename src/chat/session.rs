@@ -380,7 +380,7 @@ impl ChatSession {
                                         data.push((chunk_id, chunk.content.clone()));
                                     }
                                     Err(e) => {
-                                        eprintln!("Warning: Failed to insert chunk: {}", e);
+                                        log::warn!("Failed to insert chunk: {}", e);
                                     }
                                 }
                             }
@@ -433,7 +433,7 @@ impl ChatSession {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Warning: Could not save message to database: {}", e);
+                    log::warn!("Could not save message to database: {}", e);
                 }
             }
         }
@@ -519,7 +519,7 @@ impl ChatSession {
                                         data.push((chunk_id, chunk.content.clone()));
                                     }
                                     Err(e) => {
-                                        eprintln!("Warning: Failed to insert chunk: {}", e);
+                                        log::warn!("Failed to insert chunk: {}", e);
                                     }
                                 }
                             }
@@ -572,7 +572,7 @@ impl ChatSession {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Warning: Could not save message to database: {}", e);
+                    log::warn!("Could not save message to database: {}", e);
                 }
             }
         }
@@ -693,7 +693,7 @@ impl ChatSession {
                 Some(item_id)
             }
             Err(e) => {
-                eprintln!("Warning: Could not save pre-tool message: {}", e);
+                log::warn!("Could not save pre-tool message: {}", e);
                 None
             }
         }
@@ -720,7 +720,7 @@ impl ChatSession {
                 self.created_at,
                 self.updated_at,
             ) {
-                eprintln!("Warning: Could not ensure conversation exists: {}", e);
+                log::warn!("Could not ensure conversation exists: {}", e);
             }
         }
     }

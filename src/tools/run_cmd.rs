@@ -1,5 +1,6 @@
 //! Tool to execute external CLI commands.
 
+#![expect(clippy::print_stderr)] // Tool error/status output
 use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::external::{CommandOutput, ExternalToolsConfig, Platform, load_tools_config};
 use crate::spinner::suspend_for_print;

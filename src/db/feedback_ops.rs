@@ -6,6 +6,7 @@
 //! Decay computation delegates to `feedback::decay::decayed_weight_raw()` (single point of
 //! calculation, ADR-002).
 
+#![expect(clippy::print_stderr)] // Database diagnostics output
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::str::FromStr;

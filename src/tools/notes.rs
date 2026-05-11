@@ -15,6 +15,7 @@
 //! - Quick facts (project uses PostgreSQL, API key location)
 //! - Settings and configuration snippets
 
+#![expect(clippy::print_stderr)] // Tool error/status output
 use crate::content::types::{ContentScope, ContentSource, MAX_NOTE_CONTENT_SIZE, Note};
 use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::project::get_project_id;

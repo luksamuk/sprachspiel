@@ -2,6 +2,7 @@
 //!
 //! Provides CRUD operations and search for content_items table.
 
+#![expect(clippy::print_stderr)] // Database content output
 use chrono::{DateTime, Utc};
 use rusqlite::{Result, params};
 use std::collections::HashMap;

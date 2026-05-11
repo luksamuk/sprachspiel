@@ -4,6 +4,7 @@
 //! as good, bad, or provide corrections. Feedback is weighted at 30% of user
 //! feedback (configurable via `llm_feedback_weight`) and adjusts message importance.
 
+#![expect(clippy::print_stderr)] // Tool feedback output
 use std::str::FromStr;
 
 use crate::db::feedback_ops::insert_feedback_signal;

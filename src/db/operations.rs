@@ -136,10 +136,12 @@ pub struct TodoRow {
 pub struct SessionSummary {
     pub id: String,
     pub name: Option<String>,
+    #[allow(dead_code)] // Available for TUI session list display
     pub model: String,
     pub message_count: usize,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Available for TUI session list display
     pub created_at: DateTime<Utc>,
+    #[allow(dead_code)] // Available for TUI session list display
     pub updated_at: DateTime<Utc>,
 }
 

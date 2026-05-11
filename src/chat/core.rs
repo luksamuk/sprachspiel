@@ -17,14 +17,12 @@
 //! Layer 0 (Base): capabilities, config
 //! ```
 //!
-//! # Print usage justification
+//! # View Event Channel
 //!
-//! The remaining `eprintln!` and `eprint!` calls in this module are in the
-//! coordinator event callback (`setup_coordinator`), which cannot hold a
-//! mutable reference to `ChatView`. Continuation prompt clearing (`eprint!`)
-//! is terminal-specific ANSI manipulation.
-
-#![expect(clippy::print_stderr)] // Coordinator callback context warning + continuation clear
+//! The coordinator event callback (`setup_coordinator`) sends events through
+//! an `mpsc` channel (`ViewEventSender`) instead of printing directly.
+//! The `ViewEventReceiver` is drained into `ChatView` after the coordinator
+//! call completes, ensuring all output goes through the view layer.
 
 use std::sync::Arc;
 
@@ -52,7 +50,7 @@ use super::coordinator::{
 };
 use super::custom_coordinator::CustomCoordinator;
 use super::session::ChatSession;
-use super::thinking::{display_thinking, extract_thinking, strip_thinking_tags};
+use super::thinking::{extract_thinking, strip_thinking_tags};
 use super::view::ChatView;
 use super::{ContinuationTag, parse_continuation_tag};
 
@@ -132,6 +130,10 @@ pub fn build_session_system_prompt(
 }
 
 /// Setup coordinator with optional tools
+///
+/// Events from tool execution (pre-tool content, context warnings) are sent
+/// via `view_event_sender` to a channel, and drained into the `ChatView`
+/// after the coordinator call completes.
 #[expect(clippy::too_many_arguments)]
 pub fn setup_coordinator(
     ollama: ollama_rs::Ollama,
@@ -142,8 +144,8 @@ pub fn setup_coordinator(
     settings: &Settings,
     system_prompt: String,
     real_history_tokens: Option<usize>,
+    view_event_sender: super::view::ViewEventSender,
 ) -> CustomCoordinator<Vec<ChatMessage>> {
-    let think_enabled_for_callback = think_enabled;
     let coordinator = crate::query::ChatContext {
         ollama,
         model_id: model_config.model_id.clone(),
@@ -154,25 +156,19 @@ pub fn setup_coordinator(
     }
     .build_coordinator()
     .on_event(move |event| {
-        // Display pre-tool thinking and content during tool execution
-        // This mirrors what handle_chat_event does in query mode, but
-        // uses print_markdown_chat() for 80-column rendering.
+        // Send view events through the channel for later rendering.
+        // This avoids requiring the callback closure to hold a mutable
+        // reference to ChatView, which is not possible with 'static closures.
         match event {
-            crate::chat::custom_coordinator::ChatEvent::PreToolContent {
-                content,
-                thinking,
-            } => {
-                crate::spinner::suspend_for_print(|| {
-                    if think_enabled_for_callback {
-                        display_thinking(&content, thinking.as_ref(), true);
-                    }
-                    if !content.trim().is_empty() {
-                        let cleaned = strip_thinking_tags(&content);
-                        if !cleaned.trim().is_empty() {
-                            crate::markdown::print_markdown_chat(&cleaned);
-                        }
-                    }
-                });
+            crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
+                let cleaned = strip_thinking_tags(&content);
+                // Only send if there's something to display
+                if thinking.is_some() || !cleaned.trim().is_empty() {
+                    view_event_sender.send(super::view::ViewEvent::PreToolContent {
+                        content: cleaned,
+                        thinking,
+                    });
+                }
             }
             crate::chat::custom_coordinator::ChatEvent::ContextNeedsCompaction {
                 tokens_used,
@@ -180,24 +176,13 @@ pub fn setup_coordinator(
                 ..
             } => {
                 let percent = (tokens_used * 100).checked_div(context_window).unwrap_or(0);
-                eprintln!(
-                    "\x1B[33m⚠ Context {}% full. Compaction may be needed.\x1B[0m",
-                    percent
-                );
+                view_event_sender.send(super::view::ViewEvent::ContextNeedsCompaction {
+                    percent: percent as u64,
+                });
             }
-            crate::chat::custom_coordinator::ChatEvent::ContextTruncated {
-                tool_name,
-                original_tokens,
-                new_tokens,
-                context_window,
-            } => {
-                log::warn!(
-                    "[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)",
-                    tool_name,
-                    original_tokens,
-                    new_tokens,
-                    context_window
-                );
+            crate::chat::custom_coordinator::ChatEvent::ContextTruncated { .. } => {
+                // Already logged via log::warn! — no view event needed
+                // (this is informational, not user-facing)
             }
             _ => {
                 // Other events (ToolCall, ToolResult, ContextNearLimit)
@@ -320,7 +305,7 @@ pub fn process_chat_response(
     let (cleaned_response, continuation_needed) = parse_continuation_tag(&display_content);
 
     if continuation_needed.is_some() {
-        eprint!("\x1B[2K\r");
+        view.clear_continuation_line();
         view.show_assistant_response(&cleaned_response, None);
     }
 
@@ -468,6 +453,9 @@ pub async fn send_message(
         }
     }
 
+    // Create view event channel for coordinator callback
+    let (view_event_sender, view_event_receiver) = super::view::create_view_event_channel();
+
     let mut coordinator = setup_coordinator(
         ollama.clone(),
         model_config,
@@ -477,6 +465,7 @@ pub async fn send_message(
         settings,
         system_prompt.clone(),
         Some(real_history_tokens),
+        view_event_sender,
     );
 
     // Prepare messages with retrieval and continuation
@@ -565,6 +554,10 @@ pub async fn send_message(
     };
 
     finish_spinner(spinner);
+
+    // Drain view events accumulated during coordinator chat (pre-tool content,
+    // context warnings) into the ChatView for rendering
+    view_event_receiver.drain_into(view);
 
     // Process response and display it
     let processed_result = match result {

@@ -18,6 +18,7 @@
 //! - [`FeedbackSettings`] — RRF boost, LLM feedback weight, decay, reinforcement
 //! - [`FactSettings`] — auto-extraction toggle, max facts per response, notification
 
+#![expect(clippy::print_stderr)] // Settings output
 use ollama_rs::Ollama;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

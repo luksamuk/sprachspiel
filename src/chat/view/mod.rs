@@ -76,6 +76,105 @@ pub use terminal::TerminalView;
 // Re-export TokenMetrics from core for consumers of this module
 pub use crate::chat::core::TokenMetrics;
 
+// ── View Event Channel (coordinator callback → view) ───────────────────
+//
+// The coordinator event callback (`setup_coordinator`) cannot hold a mutable
+// reference to `ChatView` because it's a `'static` closure. Instead, events
+// are sent through an `mpsc` channel and drained into the view after the
+// coordinator call completes.
+//
+// TUI Migration: `RatatuiView` will consume the same `ViewEvent` stream
+// and update widgets incrementally via `drain_into_tui()`.
+
+/// Visual events emitted by the coordinator callback during tool execution.
+///
+/// These events are sent via channel and processed by the chat loop,
+/// which has access to `ChatView`. This avoids requiring the callback
+/// closure to hold a mutable reference to the view.
+///
+/// Design for TUI: The future `RatatuiView` will consume these same events
+/// via channel, updating widgets incrementally.
+#[derive(Debug)]
+pub enum ViewEvent {
+    /// Pre-tool content (text + thinking generated before tool calls)
+    PreToolContent {
+        content: String,
+        thinking: Option<String>,
+    },
+    /// Context window is filling up (compaction may be needed)
+    ContextNeedsCompaction { percent: u64 },
+}
+
+/// Sender side of the view event channel.
+///
+/// Wraps `mpsc::Sender` and implements `Send + Sync + 'static`,
+/// allowing it to be captured by the coordinator's `.on_event()` closure.
+pub struct ViewEventSender {
+    sender: std::sync::mpsc::Sender<ViewEvent>,
+}
+
+impl ViewEventSender {
+    pub fn new(sender: std::sync::mpsc::Sender<ViewEvent>) -> Self {
+        Self { sender }
+    }
+
+    /// Send a view event. Errors are silently ignored (receiver dropped = session ended).
+    pub fn send(&self, event: ViewEvent) {
+        let _ = self.sender.send(event);
+    }
+}
+
+/// Receiver side of the view event channel.
+///
+/// Drains pending events from the coordinator callback into a `ChatView`.
+pub struct ViewEventReceiver {
+    receiver: std::sync::mpsc::Receiver<ViewEvent>,
+}
+
+impl ViewEventReceiver {
+    pub fn new(receiver: std::sync::mpsc::Receiver<ViewEvent>) -> Self {
+        Self { receiver }
+    }
+
+    /// Process all pending events, rendering them via ChatView.
+    ///
+    /// Called after `coordinator.chat()` completes. Events are produced
+    /// synchronously during the coordinator call, so all events are
+    /// already queued by the time we drain.
+    pub fn drain_into(&self, view: &mut dyn ChatView) {
+        while let Ok(event) = self.receiver.try_recv() {
+            match event {
+                ViewEvent::PreToolContent { content, thinking } => {
+                    if let Some(thinking_text) = thinking {
+                        view.show_thinking(&thinking_text);
+                    }
+                    if !content.trim().is_empty() {
+                        view.show_markdown(&content);
+                    }
+                }
+                ViewEvent::ContextNeedsCompaction { percent } => {
+                    view.show_context_warning(
+                        percent as u8,
+                        "Context window filling up. Compaction may be needed.",
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Create a view event channel for coordinator callbacks.
+///
+/// Returns (sender, receiver) pair. The sender goes into `setup_coordinator()`,
+/// the receiver is drained after `coordinator.chat()` completes.
+pub fn create_view_event_channel() -> (ViewEventSender, ViewEventReceiver) {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    (
+        ViewEventSender::new(sender),
+        ViewEventReceiver::new(receiver),
+    )
+}
+
 /// Abstraction for output rendering in the chat REPL
 ///
 /// This trait enables the REPL to work with different output backends:
@@ -182,6 +281,21 @@ pub trait ChatView {
     ///
     /// * `thinking` - The thinking content to display
     fn show_thinking(&mut self, thinking: &str);
+
+    /// Display the help line hint after startup messages
+    ///
+    /// Shows "Type /help for commands, /quit to exit" centered.
+    /// TerminalView renders with DIM formatting; RatatuiView will
+    /// render as a centered text paragraph in the chat area.
+    fn show_help_line(&mut self);
+
+    /// Clear the continuation prompt line
+    ///
+    /// Clears the current line (used when continuation tag is detected
+    /// to remove the old response before showing the new one).
+    /// TerminalView uses ANSI escape `\x1B[2K\r`; RatatuiView will
+    /// simply trigger a full widget redraw.
+    fn clear_continuation_line(&mut self);
 
     /// Display a command output result
     ///
