@@ -1,6 +1,20 @@
 //! Chat REPL - Interactive read-eval-print loop
 //!
 //! Handles the main chat loop, user input, and model interaction.
+//!
+//! # Print usage justification
+//!
+//! This module uses `print!`/`println!` for terminal control:
+//! - Status bar rendering (ANSI positioning)
+//! - Prompt echo (user input confirmation)
+//! - Signal display (^C, ^D)
+//! - Help line output
+//!
+//! These are inherently terminal-specific operations. A TUI framework
+//! would handle these via widget state rather than direct output.
+
+#![expect(clippy::print_stdout)] // Terminal control: status bar, prompt echo, signals
+#![expect(clippy::print_stderr)] // Startup error messages (before view available)
 
 use std::path::PathBuf;
 use std::sync::Arc;

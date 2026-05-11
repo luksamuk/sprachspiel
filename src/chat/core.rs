@@ -16,6 +16,15 @@
 //! Layer 1 (Session): session.rs
 //! Layer 0 (Base): capabilities, config
 //! ```
+//!
+//! # Print usage justification
+//!
+//! The remaining `eprintln!` and `eprint!` calls in this module are in the
+//! coordinator event callback (`setup_coordinator`), which cannot hold a
+//! mutable reference to `ChatView`. Continuation prompt clearing (`eprint!`)
+//! is terminal-specific ANSI manipulation.
+
+#![expect(clippy::print_stderr)] // Coordinator callback context warning + continuation clear
 
 use std::sync::Arc;
 

@@ -7,6 +7,17 @@
 //! `CommandOutput` data carries semantics only — no ANSI codes.
 //! This enables future migration to `RatatuiView` (W6-PR2, #146) which
 //! renders the same data with ratatui widgets.
+//!
+//! # Print usage justification
+//!
+//! This module uses `println!`/`eprintln!` because it IS the rendering layer.
+//! The entire purpose of `TerminalView` is to produce terminal output.
+//! The `ChatView` trait abstracts the output backend, and `TerminalView`
+//! implements it using direct terminal writes. A future `RatatuiView`
+//! would implement the same trait without any direct printing.
+
+#![expect(clippy::print_stdout)] // TerminalView renders to stdout — this IS the output layer
+#![expect(clippy::print_stderr)] // Status messages, errors rendered to stderr
 
 use crate::chat::command_output::{
     CommandOutput, CompactData, ContentPruneData, DocumentListData, ExportData, FactAddOutcome,

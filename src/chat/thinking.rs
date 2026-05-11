@@ -19,6 +19,13 @@
 //! the coordinator event handler doesn't have access to a `ChatView`. Future
 //! refactoring should pass a view through.
 
+#![expect(clippy::print_stderr)] // Legacy display_thinking() for coordinator callback
+//! 2. `ChatView::show_thinking()` to render it
+//!
+//! The callback in `setup_coordinator` still uses `display_thinking()` because
+//! the coordinator event handler doesn't have access to a `ChatView`. Future
+//! refactoring should pass a view through.
+
 use regex::Regex;
 use unicode_width::UnicodeWidthChar;
 
