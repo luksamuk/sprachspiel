@@ -173,6 +173,367 @@ impl Default for DedupConfig {
     }
 }
 
+// === Context struct to reduce parameter sprawl ===
+
+/// Context passed through the dedup pipeline layers.
+struct DedupContext<'a> {
+    db: &'a Database,
+    content: &'a str,
+    content_trimmed: &'a str,
+    normalized_query: String,
+    category: Category,
+    scope: Scope,
+    project_id: Option<&'a str>,
+    config: &'a DedupConfig,
+    embedding_client: Option<&'a Arc<EmbeddingClient>>,
+}
+
+// === Layer functions ===
+
+/// Layer 1: Exact content match (case-insensitive, trimmed).
+///
+/// Returns `Some(DedupResult)` if an exact duplicate is found, `None` to continue.
+fn check_exact_match(ctx: &DedupContext<'_>) -> Option<DedupResult> {
+    match ctx.db.find_exact_fact(ctx.content_trimmed) {
+        Ok(Some(existing)) => {
+            log::debug!(
+                "dedup: Exact duplicate found (id={}): '{}'",
+                existing.id,
+                existing.content
+            );
+            Some(DedupResult::ExactDuplicate {
+                existing_id: existing.id,
+                existing_content: existing.content.clone(),
+            })
+        }
+        Ok(None) => None,
+        Err(e) => {
+            log::debug!("dedup: Exact match query failed: {}", e);
+            None
+        }
+    }
+}
+
+/// Layer 2: Normalized content match (strips pronouns/subjects).
+///
+/// Returns `Some(DedupResult)` if a normalized duplicate is found, `None` to continue.
+fn check_normalized_match(ctx: &DedupContext<'_>) -> Option<DedupResult> {
+    match ctx.db.find_normalized_fact(&ctx.normalized_query) {
+        Ok(matches) if !matches.is_empty() => {
+            if ctx.scope == Scope::Global {
+                resolve_global_normalized(ctx, &matches)
+            } else {
+                let existing = &matches[0];
+                log::debug!(
+                    "dedup: Skipping duplicate fact (normalized match): '{}'",
+                    ctx.content
+                );
+                Some(DedupResult::NormalizedDuplicate {
+                    existing_id: existing.id,
+                    existing_content: existing.content.clone(),
+                })
+            }
+        }
+        Ok(_) => None,
+        Err(e) => {
+            log::debug!("dedup: Normalized match query failed: {}", e);
+            None
+        }
+    }
+}
+
+/// Resolve normalized matches for Global-scope facts (global-wins-project rule).
+fn resolve_global_normalized(ctx: &DedupContext<'_>, matches: &[Fact]) -> Option<DedupResult> {
+    let mut global_match: Option<Fact> = None;
+    for fact in matches {
+        if fact.scope == Scope::Project {
+            log::debug!(
+                "dedup: Global fact overrides Project fact (id={}): '{}'",
+                fact.id,
+                fact.content
+            );
+            if let Err(e) = ctx.db.delete_fact(fact.id) {
+                log::debug!("dedup: Failed to delete Project fact: {}", e);
+            }
+        } else {
+            global_match = Some(fact.clone());
+        }
+    }
+    if let Some(existing) = global_match {
+        log::debug!(
+            "dedup: Skipping duplicate Global fact (id={}): '{}'",
+            existing.id,
+            existing.content
+        );
+        Some(DedupResult::NormalizedDuplicate {
+            existing_id: existing.id,
+            existing_content: existing.content.clone(),
+        })
+    } else {
+        // All duplicates were Project-scope and removed — fall through to insert
+        None
+    }
+}
+
+/// Layer 3.5: Semantic embedding similarity (contradiction + duplicate).
+///
+/// Runs BEFORE Layer 3 (FTS5 BM25) because:
+/// - Contradictions like "prefer dark mode" vs "prefer light mode" have
+///   different normalized strings → Layer 2 skips them → FTS5 BM25 also
+///   misses them (low keyword overlap) → only semantic catches them.
+/// - Embedding cosine ~0.77 for antonym pairs, above the 0.70 threshold.
+/// - Triple-based disambiguation separates contradictions from duplicates.
+///
+/// Returns `Some(DedupResult)` if a semantic match is found, `None` to continue.
+async fn check_semantic_match(ctx: &DedupContext<'_>) -> Option<DedupResult> {
+    let client = ctx.embedding_client?;
+    let _triple = extract_fact_triple(ctx.content)?;
+
+    match super::embedding::generate_fact_embedding(ctx.content, client).await {
+        Ok(candidate_embedding) => {
+            match ctx.db.search_facts_semantic(&candidate_embedding, None, 5) {
+                Ok(semantic_results) => resolve_semantic_results(ctx, &semantic_results).await,
+                Err(e) => {
+                    log::debug!("dedup: Semantic search failed: {}", e);
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            log::debug!("dedup: Failed to generate embedding for semantic dedup: {}", e);
+            None
+        }
+    }
+}
+
+/// Resolve semantic search results: check each result for triple-based
+/// contradictions, duplicates, or polarity opposition.
+async fn resolve_semantic_results(
+    ctx: &DedupContext<'_>,
+    results: &[crate::facts::db::FactSearchResult],
+) -> Option<DedupResult> {
+    for result in results {
+        if result.score < SEMANTIC_SEARCH_THRESHOLD {
+            continue;
+        }
+
+        // Step 1: Triple-based disambiguation
+        if let Some(candidate_triple) = extract_fact_triple(ctx.content)
+            && let Some(existing_triple) = extract_fact_triple(&result.fact.content)
+        {
+            if candidate_triple.contradicts(&existing_triple) {
+                // Same predicate, different object → contradiction
+                log::debug!(
+                    "dedup: Semantic contradiction (cosine={:.3}, predicate='{}'): '{}' vs '{}'",
+                    result.score,
+                    candidate_triple.predicate,
+                    ctx.content,
+                    result.fact.content
+                );
+                if let Err(e) = ctx.db.delete_fact(result.fact.id) {
+                    log::debug!("dedup: Failed to delete contradicted fact: {}", e);
+                    continue;
+                }
+                return Some(insert_and_return(
+                    ctx,
+                    UpdateReason::PreferenceOverride,
+                    &result.fact.content,
+                )
+                .await);
+            }
+            if candidate_triple.predicate == existing_triple.predicate
+                && candidate_triple.object == existing_triple.object
+            {
+                // Same triple → semantic duplicate
+                log::debug!(
+                    "dedup: Semantic duplicate (cosine={:.3}): '{}' vs '{}'",
+                    result.score,
+                    ctx.content,
+                    result.fact.content
+                );
+                return Some(DedupResult::SemanticDuplicate {
+                    existing_id: result.fact.id,
+                    existing_content: result.fact.content.clone(),
+                    score: result.score,
+                });
+            }
+            // Different predicate, different/same object → fall through to is_contradiction()
+        }
+
+        // Step 2: Polarity opposition fallback
+        if is_contradiction(ctx.content, &result.fact.content) {
+            log::debug!(
+                "dedup: Polarity contradiction (cosine={:.3}): '{}' vs '{}'",
+                result.score,
+                ctx.content,
+                result.fact.content
+            );
+            if let Err(e) = ctx.db.delete_fact(result.fact.id) {
+                log::debug!("dedup: Failed to delete contradicted fact: {}", e);
+                continue;
+            }
+            return Some(insert_and_return(
+                ctx,
+                UpdateReason::PolarityContradiction,
+                &result.fact.content,
+            )
+            .await);
+        }
+
+        // Neither contradiction nor duplicate — related but not conflicting. Continue.
+    }
+    None
+}
+
+/// Layer 3: FTS5 keyword search with BM25 scoring (≥ `CONFLICT_THRESHOLD`).
+///
+/// Returns `Some(DedupResult)` if FTS5 search finds conflicts, `None` on search failure
+/// (falls through to insert).
+async fn check_fts5_conflicts(ctx: &DedupContext<'_>) -> DedupResult {
+    let scope_for_search = if ctx.scope == Scope::Global {
+        Some(Scope::Global)
+    } else {
+        Some(Scope::Project)
+    };
+
+    let search_results = match ctx.db.search_facts(&ctx.normalized_query, scope_for_search, 5) {
+        Ok(results) => results,
+        Err(e) => {
+            log::debug!("dedup: FTS5 search failed: {}", e);
+            return do_insert(ctx).await;
+        }
+    };
+
+    let conflicts = detect_conflicts(ctx.content, &search_results, CONFLICT_THRESHOLD);
+
+    if conflicts.is_empty() {
+        return do_insert(ctx).await;
+    }
+
+    // Resolve conflicts based on scope
+    if ctx.scope == Scope::Global {
+        resolve_global_fts5_conflicts(ctx, conflicts).await
+    } else {
+        resolve_project_fts5_conflicts(ctx, conflicts).await
+    }
+}
+
+/// Resolve FTS5 conflicts for Global-scope facts (global-wins-project rule).
+#[allow(clippy::expect_used)] // remaining_conflicts guaranteed non-empty by is_empty guard in caller
+async fn resolve_global_fts5_conflicts(
+    ctx: &DedupContext<'_>,
+    conflicts: Vec<Conflict>,
+) -> DedupResult {
+    // Remove all conflicting Project-scope facts first
+    let mut remaining_conflicts: Vec<Conflict> = Vec::new();
+    for conflict in &conflicts {
+        if conflict.existing_fact.scope == Scope::Project {
+            log::debug!(
+                "dedup: Global fact overrides Project fact (id={}): '{}'",
+                conflict.existing_fact.id,
+                conflict.existing_fact.content
+            );
+            if let Err(e) = ctx.db.delete_fact(conflict.existing_fact.id) {
+                log::debug!(
+                    "dedup: Failed to delete Project fact (id={}): {}",
+                    conflict.existing_fact.id,
+                    e
+                );
+            }
+        } else {
+            remaining_conflicts.push(conflict.clone());
+        }
+    }
+
+    if remaining_conflicts.is_empty() {
+        // All conflicts were Project-scope and removed — proceed to insert
+        return do_insert(ctx).await;
+    }
+
+    // Resolve remaining Global conflicts
+    let conflict = remaining_conflicts
+        .into_iter()
+        .next()
+        .expect("remaining_conflicts is non-empty");
+    match resolve_conflict(conflict.clone()) {
+        ResolutionAction::Skip => {
+            log::debug!(
+                "dedup: Skipping duplicate Global fact: {}",
+                crate::logging::truncate_for_log(ctx.content, 80)
+            );
+            DedupResult::Fts5Conflict {
+                existing_id: conflict.existing_fact.id,
+                existing_content: conflict.existing_fact.content.clone(),
+                is_contradiction: matches!(
+                    conflict.conflict_type,
+                    ConflictType::Contradiction
+                ),
+            }
+        }
+        ResolutionAction::Update => {
+            if let Err(e) = ctx.db.delete_fact(conflict.existing_fact.id) {
+                log::debug!("dedup: Failed to invalidate old fact: {}", e);
+                return DedupResult::Error(format!("Failed to delete old fact: {}", e));
+            }
+            log::debug!(
+                "dedup: Updating contradictory Global fact (old: '{}', new: '{}')",
+                conflict.existing_fact.content,
+                ctx.content
+            );
+            insert_and_return(
+                ctx,
+                UpdateReason::Fts5Contradiction,
+                &conflict.existing_fact.content,
+            )
+            .await
+        }
+        ResolutionAction::Add => do_insert(ctx).await,
+    }
+}
+
+/// Resolve FTS5 conflicts for Project-scope facts.
+async fn resolve_project_fts5_conflicts(
+    ctx: &DedupContext<'_>,
+    conflicts: Vec<Conflict>,
+) -> DedupResult {
+    #[allow(clippy::expect_used)] // conflicts non-empty guaranteed by is_empty guard above
+    let conflict = conflicts
+        .into_iter()
+        .next()
+        .expect("conflicts is non-empty (is_empty guard above ensures at least one element)");
+    match resolve_conflict(conflict.clone()) {
+        ResolutionAction::Skip => {
+            log::debug!(
+                "dedup: Skipping duplicate fact (similarity >= threshold): {}",
+                ctx.content
+            );
+            DedupResult::Fts5Conflict {
+                existing_id: conflict.existing_fact.id,
+                existing_content: conflict.existing_fact.content.clone(),
+                is_contradiction: matches!(conflict.conflict_type, ConflictType::Contradiction),
+            }
+        }
+        ResolutionAction::Update => {
+            if let Err(e) = ctx.db.delete_fact(conflict.existing_fact.id) {
+                log::debug!("dedup: Failed to invalidate old fact: {}", e);
+                return DedupResult::Error(format!("Failed to delete old fact: {}", e));
+            }
+            log::debug!(
+                "dedup: Updating contradictory fact (old: '{}', new: '{}')",
+                conflict.existing_fact.content,
+                ctx.content
+            );
+            insert_and_return(
+                ctx,
+                UpdateReason::Fts5Contradiction,
+                &conflict.existing_fact.content,
+            )
+            .await
+        }
+        ResolutionAction::Add => do_insert(ctx).await,
+    }
+}
+
 // === Centralized Pipeline ===
 
 /// Deduplicate a fact against existing facts and insert if no conflict.
@@ -205,432 +566,49 @@ pub async fn deduplicate_and_insert(
     embedding_client: Option<&Arc<EmbeddingClient>>,
 ) -> DedupResult {
     let content_trimmed = content.trim().to_lowercase();
-
-    // ====================================================================
-    // Layer 1: Exact content match (case-insensitive, trimmed)
-    // ====================================================================
-    match db.find_exact_fact(&content_trimmed) {
-        Ok(Some(existing)) => {
-            log::debug!(
-                "dedup: Exact duplicate found (id={}): '{}'",
-                existing.id,
-                existing.content
-            );
-            return DedupResult::ExactDuplicate {
-                existing_id: existing.id,
-                existing_content: existing.content.clone(),
-            };
-        }
-        Ok(None) => { /* No exact match, continue */ }
-        Err(e) => {
-            log::debug!("dedup: Exact match query failed: {}", e);
-        }
-    }
-
-    // ====================================================================
-    // Layer 2: Normalized content match (strips pronouns/subjects)
-    // ====================================================================
     let normalized_query = lang::normalize_for_comparison(content);
-    match db.find_normalized_fact(&normalized_query) {
-        Ok(matches) if !matches.is_empty() => {
-            if scope == Scope::Global {
-                // Global-wins-project: remove Project-scope duplicates, keep Global
-                let mut global_match: Option<Fact> = None;
-                for fact in &matches {
-                    if fact.scope == Scope::Project {
-                        log::debug!(
-                            "dedup: Global fact overrides Project fact (id={}): '{}'",
-                            fact.id,
-                            fact.content
-                        );
-                        if let Err(e) = db.delete_fact(fact.id) {
-                            log::debug!("dedup: Failed to delete Project fact: {}", e);
-                        }
-                    } else {
-                        global_match = Some(fact.clone());
-                    }
-                }
-                if let Some(existing) = global_match {
-                    log::debug!(
-                        "dedup: Skipping duplicate Global fact (id={}): '{}'",
-                        existing.id,
-                        existing.content
-                    );
-                    return DedupResult::NormalizedDuplicate {
-                        existing_id: existing.id,
-                        existing_content: existing.content.clone(),
-                    };
-                }
-                // All duplicates were Project-scope and removed — fall through to insert
-            } else {
-                // Project-scope: any existing match (Global or Project) = skip
-                let existing = &matches[0];
-                log::debug!(
-                    "dedup: Skipping duplicate fact (normalized match): '{}'",
-                    content
-                );
-                return DedupResult::NormalizedDuplicate {
-                    existing_id: existing.id,
-                    existing_content: existing.content.clone(),
-                };
-            }
-        }
-        Ok(_) => { /* No normalized match, continue */ }
-        Err(e) => {
-            log::debug!("dedup: Normalized match query failed: {}", e);
-        }
+
+    let ctx = DedupContext {
+        db,
+        content,
+        content_trimmed: &content_trimmed,
+        normalized_query,
+        category,
+        scope,
+        project_id,
+        config,
+        embedding_client,
+    };
+
+    // Layer 1: Exact content match (case-insensitive, trimmed)
+    if let Some(result) = check_exact_match(&ctx) {
+        return result;
     }
 
-    // ====================================================================
+    // Layer 2: Normalized content match (strips pronouns/subjects)
+    if let Some(result) = check_normalized_match(&ctx) {
+        return result;
+    }
+
     // Layer 3.5: Semantic embedding similarity (contradiction + duplicate)
-    //
-    // Runs BEFORE Layer 3 (FTS5 BM25) because:
-    // - Contradictions like "prefer dark mode" vs "prefer light mode" have
-    //   different normalized strings → Layer 2 skips them → FTS5 BM25 also
-    //   misses them (low keyword overlap) → only semantic catches them.
-    // - Embedding cosine ~0.77 for antonym pairs, above the 0.70 threshold.
-    // - Triple-based disambiguation separates contradictions from duplicates.
-    //
-    // Applies when:
-    // 1. An embedding client is available
-    // 2. The candidate has an extractable triple (preference or identity)
-    //    — extract_fact_triple() handles both via TRIPLE_PREFERENCE_PREFIXES
-    //      and TRIPLE_IDENTITY_PREFIXES, so no category guard needed
-    // ====================================================================
-    if let Some(client) = embedding_client
-        && let Some(_triple) = extract_fact_triple(content)
-    {
-        match super::embedding::generate_fact_embedding(content, client).await {
-            Ok(candidate_embedding) => {
-                match db.search_facts_semantic(&candidate_embedding, None, 5) {
-                    Ok(semantic_results) => {
-                        for result in &semantic_results {
-                            if result.score < SEMANTIC_SEARCH_THRESHOLD {
-                                continue; // Below semantic search threshold
-                            }
-
-                            // ── Step 1: Triple-based disambiguation ────────────
-                            if let Some(candidate_triple) = extract_fact_triple(content)
-                                && let Some(existing_triple) =
-                                    extract_fact_triple(&result.fact.content)
-                            {
-                                if candidate_triple.contradicts(&existing_triple) {
-                                    // Same predicate, different object → contradiction
-                                    log::debug!(
-                                        "dedup: Semantic contradiction \
-                                             (cosine={:.3}, predicate='{}'): '{}' vs '{}'",
-                                        result.score,
-                                        candidate_triple.predicate,
-                                        content,
-                                        result.fact.content
-                                    );
-                                    if let Err(e) = db.delete_fact(result.fact.id) {
-                                        log::debug!(
-                                            "dedup: Failed to delete contradicted fact: {}",
-                                            e
-                                        );
-                                        continue;
-                                    }
-                                    // Delete old + insert new, return Updated
-                                    return insert_and_return(
-                                        db,
-                                        content,
-                                        category,
-                                        scope,
-                                        project_id,
-                                        config,
-                                        embedding_client,
-                                        UpdateReason::PreferenceOverride,
-                                        &result.fact.content,
-                                    )
-                                    .await;
-                                }
-                                if candidate_triple.predicate == existing_triple.predicate
-                                    && candidate_triple.object == existing_triple.object
-                                {
-                                    // Same triple → semantic duplicate
-                                    log::debug!(
-                                        "dedup: Semantic duplicate \
-                                             (cosine={:.3}): '{}' vs '{}'",
-                                        result.score,
-                                        content,
-                                        result.fact.content
-                                    );
-                                    return DedupResult::SemanticDuplicate {
-                                        existing_id: result.fact.id,
-                                        existing_content: result.fact.content.clone(),
-                                        score: result.score,
-                                    };
-                                }
-                                // Different predicate, different/same object →
-                                // fall through to is_contradiction() fallback
-                            }
-
-                            // ── Step 2: Polarity opposition fallback ───────────
-                            if is_contradiction(content, &result.fact.content) {
-                                log::debug!(
-                                    "dedup: Polarity contradiction \
-                                         (cosine={:.3}): '{}' vs '{}'",
-                                    result.score,
-                                    content,
-                                    result.fact.content
-                                );
-                                if let Err(e) = db.delete_fact(result.fact.id) {
-                                    log::debug!("dedup: Failed to delete contradicted fact: {}", e);
-                                    continue;
-                                }
-                                return insert_and_return(
-                                    db,
-                                    content,
-                                    category,
-                                    scope,
-                                    project_id,
-                                    config,
-                                    embedding_client,
-                                    UpdateReason::PolarityContradiction,
-                                    &result.fact.content,
-                                )
-                                .await;
-                            }
-
-                            // Neither contradiction nor duplicate —
-                            // related but not conflicting. Continue to next result.
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!("dedup: Semantic search failed: {}", e);
-                        // Fall through to FTS5
-                    }
-                }
-            }
-            Err(e) => {
-                log::debug!(
-                    "dedup: Failed to generate embedding for semantic dedup: {}",
-                    e
-                );
-                // Fall through to FTS5 without semantic check
-            }
-        }
+    if let Some(result) = check_semantic_match(&ctx).await {
+        return result;
     }
 
-    // ====================================================================
     // Layer 3: FTS5 keyword search with BM25 scoring
-    // ====================================================================
-    let scope_for_search = if scope == Scope::Global {
-        Some(Scope::Global)
-    } else {
-        Some(Scope::Project)
-    };
-
-    let search_results = match db.search_facts(&normalized_query, scope_for_search, 5) {
-        Ok(results) => results,
-        Err(e) => {
-            log::debug!("dedup: FTS5 search failed: {}", e);
-            // If search fails, try to insert anyway
-            return do_insert(
-                db,
-                content,
-                category,
-                scope,
-                project_id,
-                config,
-                embedding_client,
-            )
-            .await;
-        }
-    };
-
-    let conflicts = detect_conflicts(content, &search_results, CONFLICT_THRESHOLD);
-
-    if conflicts.is_empty() {
-        // No conflict — insert new fact
-        return do_insert(
-            db,
-            content,
-            category,
-            scope,
-            project_id,
-            config,
-            embedding_client,
-        )
-        .await;
-    }
-
-    // ====================================================================
-    // FTS5 conflict resolution (global-wins-project rule)
-    // ====================================================================
-    if scope == Scope::Global {
-        // Remove all conflicting Project-scope facts first
-        let mut remaining_conflicts: Vec<Conflict> = Vec::new();
-        for conflict in &conflicts {
-            if conflict.existing_fact.scope == Scope::Project {
-                log::debug!(
-                    "dedup: Global fact overrides Project fact (id={}): '{}'",
-                    conflict.existing_fact.id,
-                    conflict.existing_fact.content
-                );
-                if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                    log::debug!(
-                        "dedup: Failed to delete Project fact (id={}): {}",
-                        conflict.existing_fact.id,
-                        e
-                    );
-                }
-            } else {
-                remaining_conflicts.push(conflict.clone());
-            }
-        }
-
-        if remaining_conflicts.is_empty() {
-            // All conflicts were Project-scope and removed — proceed to insert
-            return do_insert(
-                db,
-                content,
-                category,
-                scope,
-                project_id,
-                config,
-                embedding_client,
-            )
-            .await;
-        }
-
-        // Resolve remaining Global conflicts
-        let conflict = remaining_conflicts[0].clone();
-        match resolve_conflict(conflict.clone()) {
-            ResolutionAction::Skip => {
-                log::debug!(
-                    "dedup: Skipping duplicate Global fact: {}",
-                    crate::logging::truncate_for_log(content, 80)
-                );
-                DedupResult::Fts5Conflict {
-                    existing_id: conflict.existing_fact.id,
-                    existing_content: conflict.existing_fact.content.clone(),
-                    is_contradiction: matches!(conflict.conflict_type, ConflictType::Contradiction),
-                }
-            }
-            ResolutionAction::Update => {
-                if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                    log::debug!("dedup: Failed to invalidate old fact: {}", e);
-                    return DedupResult::Error(format!("Failed to delete old fact: {}", e));
-                }
-                log::debug!(
-                    "dedup: Updating contradictory Global fact (old: '{}', new: '{}')",
-                    conflict.existing_fact.content,
-                    content
-                );
-                insert_and_return(
-                    db,
-                    content,
-                    category,
-                    scope,
-                    project_id,
-                    config,
-                    embedding_client,
-                    UpdateReason::Fts5Contradiction,
-                    &conflict.existing_fact.content,
-                )
-                .await
-            }
-            ResolutionAction::Add => {
-                do_insert(
-                    db,
-                    content,
-                    category,
-                    scope,
-                    project_id,
-                    config,
-                    embedding_client,
-                )
-                .await
-            }
-        }
-    } else {
-        // Project-scope fact: normal conflict resolution
-        #[expect(clippy::expect_used)] // conflicts non-empty guaranteed by is_empty guard above
-        let conflict = conflicts
-            .into_iter()
-            .next()
-            .expect("conflicts is non-empty (is_empty guard above ensures at least one element)");
-        let action = resolve_conflict(conflict.clone());
-        match action {
-            ResolutionAction::Skip => {
-                log::debug!(
-                    "dedup: Skipping duplicate fact (similarity >= threshold): {}",
-                    content
-                );
-                DedupResult::Fts5Conflict {
-                    existing_id: conflict.existing_fact.id,
-                    existing_content: conflict.existing_fact.content.clone(),
-                    is_contradiction: matches!(conflict.conflict_type, ConflictType::Contradiction),
-                }
-            }
-            ResolutionAction::Update => {
-                if let Err(e) = db.delete_fact(conflict.existing_fact.id) {
-                    log::debug!("dedup: Failed to invalidate old fact: {}", e);
-                    return DedupResult::Error(format!("Failed to delete old fact: {}", e));
-                }
-                log::debug!(
-                    "dedup: Updating contradictory fact (old: '{}', new: '{}')",
-                    conflict.existing_fact.content,
-                    content
-                );
-                insert_and_return(
-                    db,
-                    content,
-                    category,
-                    scope,
-                    project_id,
-                    config,
-                    embedding_client,
-                    UpdateReason::Fts5Contradiction,
-                    &conflict.existing_fact.content,
-                )
-                .await
-            }
-            ResolutionAction::Add => {
-                do_insert(
-                    db,
-                    content,
-                    category,
-                    scope,
-                    project_id,
-                    config,
-                    embedding_client,
-                )
-                .await
-            }
-        }
-    }
+    check_fts5_conflicts(&ctx).await
 }
 
 /// Insert a fact and return `DedupResult::Updated` (for contradiction replacements).
 ///
 /// When a contradiction is detected, the old fact has already been deleted.
 /// This inserts the new fact and wraps the result as `DedupResult::Updated`.
-#[expect(clippy::too_many_arguments)] // Pipeline passes all parameters through
 async fn insert_and_return(
-    db: &Database,
-    content: &str,
-    category: Category,
-    scope: Scope,
-    project_id: Option<&str>,
-    config: &DedupConfig,
-    embedding_client: Option<&Arc<EmbeddingClient>>,
+    ctx: &DedupContext<'_>,
     reason: UpdateReason,
     old_content: &str,
 ) -> DedupResult {
-    match do_insert(
-        db,
-        content,
-        category,
-        scope,
-        project_id,
-        config,
-        embedding_client,
-    )
-    .await
-    {
+    match do_insert(ctx).await {
         DedupResult::Inserted {
             id,
             category,
@@ -649,21 +627,13 @@ async fn insert_and_return(
 /// Core insertion: create the `Fact`, insert into DB, and eagerly generate embedding.
 ///
 /// This is the final step of the pipeline, called when no dedup conflicts remain.
-async fn do_insert(
-    db: &Database,
-    content: &str,
-    category: Category,
-    scope: Scope,
-    project_id: Option<&str>,
-    config: &DedupConfig,
-    embedding_client: Option<&Arc<EmbeddingClient>>,
-) -> DedupResult {
+async fn do_insert(ctx: &DedupContext<'_>) -> DedupResult {
     let fact = match Fact::new(
-        content.to_string(),
-        category,
-        scope,
-        project_id.map(|s| s.to_string()),
-        config.source,
+        ctx.content.to_string(),
+        ctx.category,
+        ctx.scope,
+        ctx.project_id.map(|s| s.to_string()),
+        ctx.config.source,
     ) {
         Ok(f) => f,
         Err(e) => {
@@ -672,7 +642,7 @@ async fn do_insert(
         }
     };
 
-    let id = match db.insert_fact(&fact) {
+    let id = match ctx.db.insert_fact(&fact) {
         Ok(id) => id,
         Err(e) => {
             log::debug!("dedup: Failed to insert fact: {}", e);
@@ -683,24 +653,24 @@ async fn do_insert(
     log::debug!(
         "dedup: Inserted fact #{}: {}",
         id,
-        crate::logging::truncate_for_log(content, 80)
+        crate::logging::truncate_for_log(ctx.content, 80)
     );
 
     // Eagerly generate embedding for the newly inserted fact.
     // This MUST be synchronous (await, not fire-and-forget) so that
     // when the next fact's Layer 3.5 search runs, this fact's
     // embedding is already stored in fact_embeddings.
-    if config.generate_embedding
-        && let Some(client) = embedding_client
+    if ctx.config.generate_embedding
+        && let Some(client) = ctx.embedding_client
     {
-        match super::embedding::generate_fact_embedding(content, client).await {
+        match super::embedding::generate_fact_embedding(ctx.content, client).await {
             Ok(emb) => {
-                if let Err(e) = db.update_fact_embedding(
+                if let Err(e) = ctx.db.update_fact_embedding(
                     id,
                     &emb,
-                    &scope.to_string(),
-                    &category.to_string(),
-                    project_id,
+                    &ctx.scope.to_string(),
+                    &ctx.category.to_string(),
+                    ctx.project_id,
                 ) {
                     log::debug!("dedup: Failed to store embedding: {}", e);
                 }
@@ -718,8 +688,8 @@ async fn do_insert(
 
     DedupResult::Inserted {
         id,
-        category,
-        scope,
+        category: ctx.category,
+        scope: ctx.scope,
     }
 }
 
