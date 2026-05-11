@@ -213,7 +213,11 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
         return Ok(());
     }
 
-    let language_str = args.language.as_ref().unwrap();
+    #[expect(clippy::expect_used)] // language validated by args.validate()
+    let language_str = args
+        .language
+        .as_ref()
+        .expect("language validated by args.validate()");
     let (source, target) = match parse_language_pair(language_str, &mapper) {
         Ok((src, tgt)) => (src, tgt),
         Err(e) => {

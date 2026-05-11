@@ -68,6 +68,7 @@ fn create_mono_skin() -> MadSkin {
 /// Uses the real terminal width for line wrapping.
 /// Falls back to default skin if not initialized.
 pub fn print_markdown(text: &str) {
+    #[expect(clippy::expect_used)] // init_markdown_skin() called at startup guarantees skin is set
     let skin = MARKDOWN_SKIN
         .get()
         .or_else(|| DEFAULT_SKIN.get())
@@ -81,6 +82,7 @@ pub fn print_markdown(text: &str) {
 /// to ensure consistent output regardless of terminal size.
 /// Uses `CHAT_TERMINAL_WIDTH` (80) for line wrapping.
 pub fn print_markdown_chat(text: &str) {
+    #[expect(clippy::expect_used)] // init_markdown_skin() called at startup guarantees skin is set
     let skin = MARKDOWN_SKIN
         .get()
         .or_else(|| DEFAULT_SKIN.get())

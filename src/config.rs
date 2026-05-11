@@ -73,7 +73,7 @@ pub struct ModelConfig {
 }
 
 impl ModelConfig {
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get(name: &str) -> Option<ModelConfig> {
         CONFIGS.get(name).cloned()
     }
@@ -92,23 +92,18 @@ impl ModelConfig {
         CONFIGS.values().find(|mc| mc.model_id == model_id)
     }
 
-    #[allow(dead_code)]
+    #[expect(clippy::unwrap_used)] // DEFAULT_MODEL key always exists in CONFIGS
     pub fn get_default() -> ModelConfig {
         CONFIGS.get(DEFAULT_MODEL).cloned().unwrap()
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn list_names() -> Vec<&'static str> {
         Self::list_builtin_names()
     }
 
     pub fn list_builtin_names() -> Vec<&'static str> {
         vec!["qwen3.5:4b", "translategemma", "glm-ocr"]
-    }
-
-    #[allow(dead_code)]
-    pub fn is_valid(name: &str) -> bool {
-        CONFIGS.contains_key(name)
     }
 
     pub fn is_builtin_valid(name: &str) -> bool {
@@ -154,7 +149,11 @@ mod tests {
         assert_eq!(names.len(), 3);
 
         for name in names {
-            assert!(ModelConfig::is_valid(name), "Model {} should exist", name);
+            assert!(
+                ModelConfig::is_builtin_valid(name),
+                "Model {} should exist",
+                name
+            );
             assert!(
                 ModelConfig::get(name).is_some(),
                 "Model {} should be retrievable",
@@ -165,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_invalid_model() {
-        assert!(!ModelConfig::is_valid("nonexistent"));
+        assert!(!ModelConfig::is_builtin_valid("nonexistent"));
         assert!(ModelConfig::get("nonexistent").is_none());
     }
 

@@ -80,6 +80,7 @@ static DEFAULT_BLOCKED_REGEX: Lazy<RegexSet> = Lazy::new(|| {
         .map(|p| pattern_to_regex(p))
         .collect();
 
+    #[expect(clippy::expect_used)] // hardcoded default patterns are always valid regex
     RegexSet::new(patterns).expect("Invalid default blocked patterns regex")
 });
 

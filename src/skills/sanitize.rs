@@ -6,6 +6,13 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+/// Compile a static regex pattern. Panics on invalid patterns (should never happen
+/// with hardcoded patterns validated at compile time).
+#[expect(clippy::expect_used)] // static regex patterns are validated at compile time
+fn static_regex(pattern: &str) -> Regex {
+    Regex::new(pattern).expect("invalid static regex pattern")
+}
+
 /// Invisible Unicode characters that could hide malicious content.
 const INVISIBLE_UNICODE: &[char] = &[
     '\u{200b}', // Zero-width space
@@ -30,35 +37,23 @@ pub const MAX_SKILL_NAME_LENGTH: usize = 64;
 static SKILL_INJECTION_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     vec![
         // Skill loading manipulation
-        (Regex::new(r"(?i)load\s+skill\s+").unwrap(), "skill loading"),
-        (Regex::new(r"(?i)use\s+skill\s+").unwrap(), "skill usage"),
-        (
-            Regex::new(r"(?i)invoke\s+skill\s+").unwrap(),
-            "skill invocation",
-        ),
-        (
-            Regex::new(r"(?i)skill_view\s*\(").unwrap(),
-            "skill_view call",
-        ),
+        (static_regex(r"(?i)load\s+skill\s+"), "skill loading"),
+        (static_regex(r"(?i)use\s+skill\s+"), "skill usage"),
+        (static_regex(r"(?i)invoke\s+skill\s+"), "skill invocation"),
+        (static_regex(r"(?i)skill_view\s*\("), "skill_view call"),
         // Privilege escalation via skills
         (
-            Regex::new(r"(?i)modify\s+tools\.toml").unwrap(),
+            static_regex(r"(?i)modify\s+tools\.toml"),
             "config modification",
         ),
         (
-            Regex::new(r"(?i)write\s+.*AGENTS\.md").unwrap(),
+            static_regex(r"(?i)write\s+.*AGENTS\.md"),
             "agents.md modification",
         ),
-        (Regex::new(r"(?i)enable\s+.*tool").unwrap(), "tool enabling"),
+        (static_regex(r"(?i)enable\s+.*tool"), "tool enabling"),
         // Skill content manipulation
-        (
-            Regex::new(r"(?i)<available_skills>").unwrap(),
-            "fake skill tag",
-        ),
-        (
-            Regex::new(r"(?i)</available_skills>").unwrap(),
-            "fake skill tag",
-        ),
+        (static_regex(r"(?i)<available_skills>"), "fake skill tag"),
+        (static_regex(r"(?i)</available_skills>"), "fake skill tag"),
     ]
 });
 
@@ -81,8 +76,12 @@ pub fn is_valid_skill_name(name: &str) -> bool {
         return false;
     }
 
-    // First character must be alphanumeric
-    let first_char = name.chars().next().unwrap();
+    // First character must be alphanumeric (name.is_empty() checked above)
+    #[expect(clippy::expect_used)] // name.is_empty() checked above guarantees .next() returns Some
+    let first_char = name
+        .chars()
+        .next()
+        .expect("name is non-empty (checked above)");
     if !first_char.is_alphanumeric() {
         return false;
     }

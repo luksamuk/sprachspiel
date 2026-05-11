@@ -29,6 +29,7 @@ impl RustylineInput {
         let config = Config::default();
         let completer = ChatCompleter::new(model_names);
 
+        #[expect(clippy::expect_used)] // rustyline config is always valid at startup
         let mut editor: Editor<ChatCompleter, DefaultHistory> =
             Editor::with_config(config).expect("Failed to create editor");
 

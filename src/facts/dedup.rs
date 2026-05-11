@@ -547,7 +547,11 @@ pub async fn deduplicate_and_insert(
         }
     } else {
         // Project-scope fact: normal conflict resolution
-        let conflict = conflicts.into_iter().next().unwrap(); // safe: conflicts.is_empty() checked above
+        #[expect(clippy::expect_used)] // conflicts non-empty guaranteed by is_empty guard above
+        let conflict = conflicts
+            .into_iter()
+            .next()
+            .expect("conflicts is non-empty (is_empty guard above ensures at least one element)");
         let action = resolve_conflict(conflict.clone());
         match action {
             ResolutionAction::Skip => {

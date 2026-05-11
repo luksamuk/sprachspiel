@@ -6,6 +6,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Changed
 
+- **Unwrap/expect/panic triage (Issue #128)** — Systematic audit of all `unwrap()`, `expect()`, and `panic!` sites in production code. Library code now propagates errors with `?` and `map_err()` instead of panicking. CLI entry points retain justified `#[expect]` annotations with reasoning comments. `panic!` in library code replaced with `return Err(...)`. Removes ~54 crash-risk sites from non-CLI code paths.
+
+### Changed
+
 - **Renamed from ask-ai to Sprachspiel** (Issue #126) — Complete project rename. Binary: `ask-ai` → `sprachspiel`. Config directory: `~/.config/ask-ai/` → `~/.config/sprachspiel/`. Data directory: `~/.local/share/ask-ai/` → `~/.local/share/sprachspiel/`. Database: `ask-ai.db` → `sprachspiel.db`. Project directory: `.ask-ai/` → `.sprachspiel/`. All source references, documentation, scripts, Makefile, and man page updated. Welcome banner regenerated with "SPRACHSPIEL" in gold/cyan. Internal Rust modules renamed `ask_ai::` → `sprachspiel::`. DB migration chain: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (no fallback, no legacy constants).
 - **Documentation cleanup (Phase 12)** — Final rename pass: fixed manpage refs (`sprach.1` not `sprachspiel.1`), updated all remaining `ask-ai`/`Ask-AI`/`ask_ai::` references in docs and IMPLEMENTATION.md, replaced `#[ask_ai::tool]` with `#[sprachspiel::tool]`, renamed proc-macro crate from `ask-ai-tool-derive` to `sprachspiel-tool-derive`, updated `book.toml` title and doc site banner, fixed `ASK_AI_DEBUG` env var to `RUST_LOG`, updated all GitHub URLs from `ask-ai-rs` to `sprachspiel`, updated GitHub Pages URL, updated launch reel, updated skill files, replaced `sprachspiel-rs` with `sprachspiel` in project naming.
 

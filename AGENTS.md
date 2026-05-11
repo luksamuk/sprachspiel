@@ -78,18 +78,31 @@ These patterns have centralized implementations that MUST NOT be duplicated:
 
 Only use `#[allow(dead_code)]` with justification:
 
-**Acceptable:** JSON deserialization fields, error enum variants, public API methods, test-only code with `#[cfg(test)]`
+**Acceptable:** JSON deserialization fields, error enum variants, public API methods (rare — prefer `#[cfg(test)]`)
 
 **Not acceptable:** "Might be useful later", dead code that should be removed, "Preparation for future features"
+
+**Prefer `#[cfg(test)]` for test-only code.** If a function is only called from tests, gate it with `#[cfg(test)]` instead of `#[allow(dead_code)]`. This makes the scope explicit and prevents accidental reliance in production code.
 
 **Every `#[allow(dead_code)]` MUST have a justification comment on the same line:**
 
 ```rust
-#[allow(dead_code)] // Reserved for Phase 2: TUI commands
+// GOOD: Public API contract, cannot gate behind #[cfg(test)]
+#[allow(dead_code)] // Error enum variant — used by From implementation
+fn from_error() -> Self { ... }
+
+// GOOD: Test-only helper function
+#[cfg(test)]
+fn test_helper() { ... }
+
+// BAD: Vague future promise
+#[allow(dead_code)] // Might need this later
 fn upcoming_feature() {}
 ```
 
 Before adding `#[allow(dead_code)]`, verify: `cargo clippy 2>&1 | grep "never used\|never constructed"`
+
+If clippy reports the item as unused and it's only called from tests, convert to `#[cfg(test)]`. If it's truly unused, remove it (YAGNI).
 
 Load the `quality-gates` skill for the complete enforcement script.
 
@@ -171,6 +184,7 @@ Critical rules (expanded in the skill): Tools must NEVER crash (always return `O
 Critical rules for reviews:
 - Always use `last: 50` (not `first: 30`) to get ALL review threads
 - Respond to EACH thread individually (never a single summary comment)
+- **NEVER create a single large comment addressing all review points.** Reply to each review thread inline. If inline replies are not possible, create ONE comment per review point with a blockquote of the original.
 - Use response prefixes: ✅ Resolvido, ✅ Verificado, 📋, ❌, ❓
 
 ## Never Leave Things for Later

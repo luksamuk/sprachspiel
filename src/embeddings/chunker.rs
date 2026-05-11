@@ -187,7 +187,10 @@ pub fn chunk_text_with_config(text: &str, config: &ChunkConfig) -> Vec<Chunk> {
     // Merge last chunk if it's too small
     // But only if the merged result doesn't exceed max_chars
     if chunks.len() >= 2 {
-        let last_chunk = chunks.last().unwrap();
+        #[expect(clippy::expect_used)] // chunks.len() >= 2 guarantees .last() returns Some
+        let last_chunk = chunks
+            .last()
+            .expect("chunks len >= 2 guarantees at least one chunk");
         if last_chunk.content.len() < config.min_chunk_size {
             let prev_chunk = chunks[chunks.len() - 2].clone();
             let merged_len = prev_chunk.content.len() + last_chunk.content.len();
@@ -234,7 +237,11 @@ fn find_sentence_boundary(text: &str, target_pos: usize) -> usize {
         }
 
         // Get the character at this position
-        let ch = text[pos..].chars().next().unwrap();
+        #[expect(clippy::expect_used)] // pos is a valid char boundary (checked above)
+        let ch = text[pos..]
+            .chars()
+            .next()
+            .expect("pos is a valid char boundary (checked above)");
 
         // Check for sentence-ending punctuation
         if ch == '.' || ch == '!' || ch == '?' || ch == '\n' {
@@ -245,8 +252,13 @@ fn find_sentence_boundary(text: &str, target_pos: usize) -> usize {
                 return next_pos;
             }
 
-            // Get next character
-            let next_ch = text[next_pos..].chars().next().unwrap();
+            // Get next character — next_pos is pos + ch.len_utf8(), which is always a valid char boundary
+            #[expect(clippy::expect_used)]
+            // next_pos = pos + ch.len_utf8() is always a valid boundary
+            let next_ch = text[next_pos..]
+                .chars()
+                .next()
+                .expect("next_pos = pos + ch.len_utf8() is always a valid boundary");
 
             // Good boundary if followed by:
             // - Whitespace and capital letter
