@@ -466,6 +466,26 @@ mutation {
 
 **NEVER reply in a single summary comment** — each thread needs its own reply.
 
+**NEVER create a single large comment that summarizes all review responses.** Instead, reply to each review thread inline. If inline replies are not technically possible (e.g., no thread ID available), create ONE comment per review point with a blockquote of the original comment. Never merge multiple review responses into a single wall-of-text comment.
+
+### Good vs Bad Review Responses
+
+```markdown
+# BAD — Single large comment addressing everything
+## ✅ Review Responses
+### Point 1 — cosine_similarity
+Fixed in abc123.
+### Point 2 — config.rs
+Not YAGNI, removed #[allow(dead_code)].
+### Point 3 — Some other thing
+...
+
+# GOOD — Individual replies per thread
+Thread 1 reply: "✅ Resolvido. Fixed in abc123."
+Thread 2 reply: "✅ Verificado. Not YAGNI — used in command_handlers.rs:2954."
+Thread 3 reply: "📋 Deferred. Good suggestion, will address in follow-up PR."
+```
+
 ### If Implementation Changes Needed
 
 1. Create todo list of required changes

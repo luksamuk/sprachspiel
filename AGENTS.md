@@ -184,6 +184,7 @@ Critical rules (expanded in the skill): Tools must NEVER crash (always return `O
 Critical rules for reviews:
 - Always use `last: 50` (not `first: 30`) to get ALL review threads
 - Respond to EACH thread individually (never a single summary comment)
+- **NEVER create a single large comment addressing all review points.** Reply to each review thread inline. If inline replies are not possible, create ONE comment per review point with a blockquote of the original.
 - Use response prefixes: ✅ Resolvido, ✅ Verificado, 📋, ❌, ❓
 
 ## Never Leave Things for Later
