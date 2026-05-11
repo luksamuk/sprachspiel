@@ -6,7 +6,7 @@ This document outlines planned features and the current state of Sprachspiel.
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (5 waves) | W1:#105,#36 → W2:#116-#123,#72 → W3:#90-#97 → W4:#106,#107 → W5:#13,#14,#49,#50,#52,#74-#76 |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (6 waves) | W1:#105,#36 → W2:#116-#123,#72 → W3:#90-#97 → W4:#106,#107 → W5:#13,#14,#49,#50,#52,#74-#76 → **W6: Responsive Chat Rebuild** |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77-#80, #99-#101 |
 | **[M4]** | Future | Deferred features and research | B2-B5, B8 (board drafts) |
@@ -583,44 +583,121 @@ User-defined tools via dynamic loading or compilation.
 
 ---
 
+### Responsive Chat Rebuild with Ratatui [M1, W6]
+
+**Status:** 📋 PLANNED (after critical bugs are resolved)
+
+**Goal:** Rebuild the chat REPL using Ratatui as the rendering framework. Same chat UX, but responsive layout that adapts to terminal width. Replaces `println!` + hardcoded ANSI with declarative rendering.
+
+**This is NOT the full TUI (#16).** This is the foundation — rendering engine, event loop, and crossterm input. The full TUI (sidebars, /queue, /steer, multi-pane) builds ON TOP of this in M2.
+
+**Problem:** Chat only renders correctly at 80 columns. Any resize produces broken output. Root cause: 600+ `println!` calls with hardcoded widths across 222 ANSI escape sequences.
+
+**Architecture:** The `ChatView` and `InputBackend` traits already exist for this migration. We implement `RatatuiView` and `CrosstermInput` as the new backends.
+
+```
+┌─ Responsive Chat Architecture ─────────────────────────┐
+│                                                         │
+│  App (event loop)                                       │
+│  ├── CrosstermInput ── implements InputBackend           │
+│  │   └── tab completion, history, crossterm key events  │
+│  ├── RatatuiView ──── implements ChatView                │
+│  │   └── responsive layout (chat area + status + input) │
+│  ├── mpsc channel ──── LLM streaming tokens             │
+│  └── ratatui terminal.draw() ── declarative rendering    │
+│                                                         │
+│  Existing traits (no changes):                          │
+│  ├── ChatView trait (view/mod.rs)                       │
+│  └── InputBackend trait (input/mod.rs)                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Delivery:** 4 sequential PRs, each leaving the codebase functional and testable.
+
+| PR | Scope | Effort | Key Deliverable |
+|----|-------|--------|-----------------|
+| PR 1 | CommandResult — decouple logic from presentation | 5-6 days | All output goes through `CommandResult` enum + `ChatView` |
+| PR 2 | Ratatui infrastructure + responsive rendering | 5-6 days | `RatatuiView` with `--tui` flag for visual testing |
+| PR 3 | Crossterm input + event loop + streaming | 5-6 days | `--tui` mode fully functional: chat, commands, streaming |
+| PR 4 | Final transition — remove rustyline, make ratatui default | 3-4 days | Single rendering mode, responsive at any width |
+
+**Dependencies Added:**
+- `ratatui = "0.29"` — TUI rendering framework
+- `crossterm = { version = "0.28", features = ["event-stream"] }` — terminal backend + input
+- `tui-markdown = "0.2"` — markdown rendering in ratatui widgets
+- `unicode-segmentation = "1.11"` — cursor movement in input editing
+
+**Dependencies Kept:**
+- `termimad` — query/translate/summarize/ocr (non-chat subcommands)
+- `indicatif` — subcommand spinners (non-chat)
+- `rattles` — animation frames (ratatui widget + non-chat, more natural integration)
+
+**Dependencies Removed (PR 4):**
+- `rustyline` — input now via crossterm
+
+**Prerequisite for:** Full TUI (#16, M2) — `/queue`, `/steer`, sidebars, multi-pane layout all build on top of this infrastructure.
+
+---
+
 ### TUI (Terminal User Interface) [M2]
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Build a responsive TUI using Ratatui-rs.
+**Goal:** Build the full TUI experience on top of the Responsive Chat Rebuild (W6): sidebars, /queue, /steer, multi-pane layout, UX design, and formal ApplicationBackend abstraction.
 
-**Milestone split (2025-04-25):**
-- **M2 (UX & TUI Design):** UX research, design mockups, prototyping, private feedback rounds. This phase focuses on user experience design before writing production code. Includes **Interaction Modes Design** (`/queue`, `/steer`) as a core UX feature.
-- **M3 (TUI Implementation):** Coding the TUI based on M2's design decisions. Happens alongside Sprach 2.0 research. Includes **Interaction Modes Implementation** (`/queue`, `/steer` concurrent input channels).
+**Depends on:** Responsive Chat Rebuild (M1, W6) — the Ratatui rendering engine, event loop, CrosstermInput, and CommandResult enum are prerequisites delivered by W6.
 
-**Architecture Preparation (Current Phase):**
-- ✅ `InputBackend` trait - abstracts input handling (Phase 1-5 complete)
-- ✅ `ChatView` trait - abstracts output rendering
-- ✅ `ReplState` struct - separates state from I/O
-- ✅ `core.rs` - business logic isolated from I/O
-- 📋 Phase 7-9: Command handlers extraction, refactoring, tests
-- 📋 `ApplicationBackend` trait - decouples core logic from I/O for CLI/TUI/ACP backends (see B8.1)
+**What W6 already delivers (no need to re-implement):**
+
+| Item | W6 Deliverable | PR |
+|------|---------------|-----|
+| Chat pane with markdown rendering | `RatatuiView` + `tui-markdown` | PR 2 |
+| Input pane with history | `CrosstermInput` + tab completion | PR 3 |
+| Status bar (model, context, tokens) | Ratatui widget, responsive | PR 2 |
+| Ratatui research | Architecture defined | PR 1-4 |
+| Terminal resize handling | `AppEvent::Resize` | PR 3 |
+| `InputBackend` → crossterm impl | `CrosstermInput` | PR 3 |
+| `ChatView` → ratatui impl | `RatatuiView` | PR 2 |
+| CommandResult enum | Decoupled logic from presentation | PR 1 |
+| Concurrent input channel (mpsc) | Event loop with tokio | PR 3 |
+| Responsive layout at any width | Declarative ratatui layout | PR 2 |
+
+**What #16 still needs to build:**
+
+| Item | Description | Effort |
+|------|-------------|--------|
+| Sidebar for tools/messages | Multi-pane layout with tool call details | 1-2 weeks |
+| `/queue` and `/steer` busy-input modes | Concurrent input during LLM execution (#117) | 2-3 weeks |
+| `ApplicationBackend` trait | Formal decoupling for CLI/TUI/ACP backends | 1-2 weeks |
+| UX design mockups | Full TUI wireframes with sidebars, scrollback | 1 week |
+| PageUp/PageDown scrollback | History navigation in chat area | 2-3 days |
+| Mascote ASCII indicator | Visual state indicator | 1-2 days |
+
+**Milestone split:**
+- **M2 (UX & TUI Design):** UX research, design mockups, prototyping, feedback rounds. Includes Interaction Modes Design (`/queue`, `/steer`) as a core UX feature.
+- **M3 (TUI Implementation):** Coding sidebars, /queue, /steer, multi-pane layout on top of W6 infrastructure. Happens alongside Sprach 2.0 research.
+
+**Architecture Preparation (delivered by W6):**
+- ✅ `InputBackend` trait — abstracts input handling
+- ✅ `ChatView` trait — abstracts output rendering
+- ✅ `ReplState` struct — separates state from I/O
+- ✅ `CommandResult` enum — decouples logic from presentation
+- ✅ `RatatuiView` — ratatui rendering backend
+- ✅ `CrosstermInput` — crossterm input backend
+- ✅ `App` event loop — tokio + mpsc for async communication
+- 📋 `ApplicationBackend` trait — formal decoupling for ACP
 
 **Architectural Requirement (ACP Prerequisite):**
 
-The TUI implementation MUST create a clean `ApplicationBackend` trait that decouples core logic (ChatCore, ChatSession, CustomCoordinator) from the I/O layer. This decoupling is required for B8 (ACP Agent Integration) — the ACP adapter will be a third I/O backend alongside CLI and TUI, consuming the same ChatCore via JSON-RPC over stdio instead of rustyline or ratatui.
+The TUI implementation MUST create a clean `ApplicationBackend` trait that decouples core logic from the I/O layer. This decoupling is required for B8 (ACP Agent Integration).
 
 ```
-ApplicationBackend (trait)
-   ├── CLI (RustylineInput + TerminalView) — current
-   ├── TUI (TuiInput + TuiView) — #16
+ApplicationBackend (trait) — #16 creates this
+   ├── TUI (RatatuiView + CrosstermInput) — already delivered by W6
    └── ACP (stdio JSON-RPC) — B8
 ```
 
-See IMPLEMENTATION.md (#16 TUI and B8 ACP) for full details.
-
-**Future Tasks:**
-- [ ] Research: Ratatui-rs best practices
-- [ ] Research: Terminal resize handling patterns
-- [ ] Design: UX wireframes for main views
-- [ ] Design: Interaction modes (`/queue`, `/steer`, `interrupt`) — busy-input UX for running agent
-- [ ] Prototype: `TuiInput` implementing `InputBackend`
-- [ ] Prototype: `TuiView` implementing `ChatView`
+Note: The CLI backend (RustylineInput + TerminalView) is removed in W6 PR 4, so ACP becomes the second backend, not the third.
 
 **Interaction Modes Design (#117):**
 

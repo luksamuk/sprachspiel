@@ -134,16 +134,16 @@
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (5 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138 |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (6 waves) | #11, #13, #14, #36, #49, #50, #52, #72, #74–#76, #90–#97, #105–#107, #116, #118–#123, #132–#138, **Responsive Chat Rebuild** |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77–#80, #99–#101, #139, #140 + Privacy Filter, ADR: Empathy, meta_cognize, Behavioral Conflict |
 | **[M4]** | Future | Deferred features and research | B2–B5, B8–B10 + Attention Priming, Semantic Chunking, Metadata Enrichment, Semantic Dedup, HyDE, Behavioral Embeddings, Behavioral RRF, GAC (#141) |
 
-**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility: #133→#138, #106, #107) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132)
+**M1 Waves:** W1 (Quick Wins: #105, #36) → W2 (Provider Chain: #116→#123, #72) → W3 (Feedback Completion: #90–#97) → W4 (Embedding Geometry & Flexibility: #133→#138, #106, #107) → W5 (M1 Backlog: #13, #14, #49, #50, #52, #74–#76, #132) → **W6 (Responsive Chat Rebuild: Ratatui migration, 4 PRs)**
 
 **Priority within milestones** is determined by card order (top = highest priority) on the GitHub Project Board. Cards are referenced by their issue number (e.g., #72, #116).
 
-**M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience.
+**M2 note:** M2 is the complete TUI milestone — design, prototyping, and implementation. Builds on top of the Responsive Chat Rebuild (M1, W6) which provides the Ratatui rendering engine, event loop, and CrosstermInput. Benchmarks (#124) are the last thing completed before public release. Learned Patterns (#125) enriches the TUI experience.
 
 **M1 note:** #11 (Parallel Tool Execution) depends on #121 (Consumer Migration). The multi-provider chain is #116 → #118 → #119 → #120 → #121 → #122 → #123.
 
@@ -159,7 +159,7 @@
 
 ### M1 Implementation Waves
 
-M1 contains ~35 open cards organized into 5 implementation waves. Each wave has a theme and completion criterion. Waves are sequential by default, but W1 (Quick Wins) can be done in parallel with early W2 work since W1 items have no dependencies.
+M1 contains ~35 open cards organized into 6 implementation waves. Each wave has a theme and completion criterion. Waves are sequential by default, but W1 (Quick Wins) can be done in parallel with early W2 work since W1 items have no dependencies.
 
 | Wave | Codename | Theme | Cards | Completion Criterion |
 |------|----------|-------|-------|---------------------|
@@ -168,6 +168,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
 | **W3** | Feedback Completion | Close decay activation, research & implement feedback expansion | #90, #91, #92, #93, #94, #95, #96, #97 | All feedback items researched and implemented or deferred |
 | **W4** | Embedding Geometry & Flexibility | Embedding diagnostics, geometry-aware config, model validation, provider abstraction | #133, #134, #106, #135, #107, #136, #137, #138 | Diagnostics subcommand works; fact threshold validated; at least one alternative model benchmarked; RRF weights adapt to d_eff; docs rewritten |
 | **W5** | M1 Backlog | Batch doc processing, context, secrets, personalities, file tracking | #132, #74, #75, #76, #13, #14, #49, #50, #52 | All items completed or deferred to M2 |
+| **W6** | Responsive Chat Rebuild | Replace println+ANSI with Ratatui for responsive chat rendering | 4 sequential PRs | All chat rendering via ChatView/RatatuiView; rustyline removed; responsive at any terminal width |
 
 **Wave dependencies:**
 
@@ -184,6 +185,7 @@ M1 contains ~35 open cards organized into 5 implementation waves. Each wave has 
   - **W4.6** (#137): Geometry-aware RRF weight adjustment based on d_eff
   - **W4.7** (#138): Documentation rewrite — model selection guide, hybrid search explanation, provider docs
 - **W5**: independent — can be picked up between waves or as mental breaks from larger work
+- **W6**: starts after critical bugs are resolved. 4 sequential PRs (CommandResult → Rendering → Input+Event Loop → Final Transition). Depends on W5 completion being far enough along that the REPL is stable. Prerequisite for M2 TUI (#16).
 
 ### ✅ PRIORITY 0: Rename ask-ai → Sprachspiel (COMPLETED) [M1]
 
@@ -3844,46 +3846,373 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ---
 
+### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
+
+**Status:** 📋 PLANNED (after critical bugs are resolved)
+
+**Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
+
+**Motivation:** The current chat interface only renders correctly at 80 columns. Any terminal resize produces broken output — truncated banners, overflow status bars, misaligned markdown. The root cause is raw `println!` + ANSI escapes scattered across 600+ call sites with hardcoded widths. Ratatui solves this by treating the terminal as a draw surface with responsive layout constraints.
+
+**IMPORTANT:** This is NOT the full TUI (#16). This is a responsive chat mode rebuild — same UX as current chat, but rendered via Ratatui. The full TUI (sidebars, /queue, /steer, multi-pane) remains M2 issue #16 and is NOT in scope.
+
+**Why Now (M1):** The chat is the primary user interface. Responsive rendering is a prerequisite for any future TUI work (#16, #117), and the architecture already has `ChatView` and `InputBackend` traits designed for this migration. Delaying means building more println-based features that will need rewriting later.
+
+**Milestone:** M1 (Core Evolution) — high priority, after critical bugs.
+
+**Delivery Model:** 4 sequential PRs, each leaving the codebase functional and testable.
+
+---
+
+#### PR 1: CommandResult — Decouple Logic from Presentation (~5-6 days)
+
+**Goal:** Migrate all command handlers from direct `println!`/`eprintln!` to typed `CommandResult` enum, with rendering via `ChatView`.
+
+**Current Problem:** `command_handlers.rs` has 336 direct print calls with embedded ANSI codes. This makes TUI migration impossible because the output format is baked into the logic.
+
+**Solution:** Create `CommandResult` enum and route all output through `ChatView`.
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1.1 | Create `src/chat/command_result.rs` with `CommandResult` enum | 📋 |
+| 1.2 | Migrate `command_handlers.rs` from `println!` to `→ CommandResult` | 📋 |
+| 1.3 | Migrate REPL loop to consume `CommandResult` via `ChatView` | 📋 |
+| 1.4 | Migrate `repl.rs` status bar and prompt output to `ChatView` | 📋 |
+| 1.5 | Migrate `core.rs` tool call/result display to `ChatView` | 📋 |
+| 1.6 | Migrate `thinking.rs` to `ChatView` | 📋 |
+| 1.7 | Remove `#![expect(clippy::print_stdout)]` from crate-level, add module-level expects only to CLI modules | 📋 |
+| 1.8 | Tests: all command output still correct, no behavioral changes | 📋 |
+
+**CommandResult Enum:**
+
+```rust
+pub enum CommandResult {
+    System(String),              // Info message → chat area
+    Error(String),                // Error message → styled red
+    FactList(FactListData),      // Structured fact listing
+    NoteList(NoteListData),      // Structured note listing
+    TodoList(TodoListData),       // Structured todo listing
+    SessionInfo(SessionData),    // Session info display
+    ContextInfo(ContextData),     // Context metrics display
+    DocumentList(DocListData),    // Document listing
+    SkillList(Vec<SkillInfo>),   // Skill listing
+    FeedbackConfirm(FeedbackData),// Feedback confirmation
+    CompactResult(CompactData),  // Compaction result
+    ExportResult(String),         // Exported content
+    Quit,                        // Exit REPL
+    Continue,                    // No output (continue loop)
+}
+```
+
+**Files to Create:**
+- `src/chat/command_result.rs` — `CommandResult` enum + data structs
+
+**Files to Modify:**
+- `src/chat/command_handlers.rs` — All 336 print calls → `CommandResult`
+- `src/chat/repl.rs` — Consume `CommandResult` via `ChatView`
+- `src/chat/core.rs` — Tool display via `ChatView`
+- `src/chat/thinking.rs` — Thinking display via `ChatView`
+- `src/chat/view/mod.rs` — Add new methods to `ChatView` trait
+- `src/chat/view/terminal.rs` — Implement new methods for `TerminalView`
+- `src/lib.rs` — Remove crate-level print expects, add module-level to CLI modules
+
+**Checkpoint:** Codebase functions identically to current version, but all output goes through `ChatView` / `CommandResult`.
+
+---
+
+#### PR 2: Infrastructure + Responsive Rendering (~5-6 days)
+
+**Goal:** Add Ratatui infrastructure and implement responsive rendering. Chat displays correctly at any terminal width. Feature flag `--tui` for testing.
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 2.1 | Add `ratatui`, `crossterm`, `tui-markdown`, `unicode-segmentation` to `Cargo.toml` | 📋 |
+| 2.2 | Create `src/chat/tui/mod.rs` — Terminal setup (`enter()`, `exit()`, `resize()`, `restore()`) | 📋 |
+| 2.3 | Create `src/chat/tui/components/chat_area.rs` — Message scrollback widget | 📋 |
+| 2.4 | Create `src/chat/tui/components/status_bar.rs` — Responsive status bar widget | 📋 |
+| 2.5 | Create `src/chat/tui/components/input_line.rs` — Input line widget (display only, no editing) | 📋 |
+| 2.6 | Create `src/chat/view/ratatui_view.rs` — `RatatuiView` implementing `ChatView` | 📋 |
+| 2.7 | Create `src/chat/tui/markdown.rs` — Markdown rendering via `tui-markdown` with dynamic width | 📋 |
+| 2.8 | Migrate `WelcomeInfo` to responsive rendering (no hardcoded 80 cols) | 📋 |
+| 2.9 | Migrate `StatusBarInfo` to responsive rendering (no hardcoded 80 cols) | 📋 |
+| 2.10 | Map `colors::*` ANSI constants to ratatui `Style` | 📋 |
+| 2.11 | Feature flag `--tui` for visual testing (default mode unchanged) | 📋 |
+
+**New Dependencies:**
+```toml
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+tui-markdown = "0.2"
+unicode-segmentation = "1.11"
+```
+
+**Kept Dependencies (unchanged):**
+```toml
+termimad = "0.34"       # query/translate/summarize/ocr (non-chat)
+indicatif = "0.17"       # subcommand spinners (non-chat)
+rattles = "0.2"          # spinner animation frames (chat TUI + non-chat)
+rustyline = "14"         # input (kept for PR 2-3, removed in PR 4)
+```
+
+**Files to Create:**
+- `src/chat/tui/mod.rs`
+- `src/chat/tui/components/mod.rs`
+- `src/chat/tui/components/chat_area.rs`
+- `src/chat/tui/components/status_bar.rs`
+- `src/chat/tui/components/input_line.rs`
+- `src/chat/view/ratatui_view.rs`
+- `src/chat/tui/markdown.rs`
+
+**Checkpoint:** Mode padrão funciona idêntico ao atual. Modo `--tui` renderiza chat, status bar, banner de forma responsiva, mas input ainda via rustyline (não funcional para uso real, só para validação visual).
+
+---
+
+#### PR 3: Crossterm Input + Event Loop (~5-6 days)
+
+**Goal:** Replace rustyline with crossterm input handling. Implement the async event loop for LLM communication. Feature flag `--tui` becomes fully functional.
+
+**Architecture:**
+
+```
+┌─ Event Loop (tokio) ─────────────────────────────────────┐
+│                                                           │
+│  crossterm events ─→ AppEvent::Input(key)                │
+│  LLM streaming   ─→ AppEvent::LlmToken(text)            │
+│  LLM complete    ─→ AppEvent::LlmComplete(response)      │
+│  LLM error       ─→ AppEvent::LlmError(error)            │
+│  Commands         ─→ AppEvent::CommandResult(result)      │
+│  Terminal resize  ─→ AppEvent::Resize(w, h)               │
+│                                                           │
+│  App::handle_event() ─→ update state ─→ terminal.draw()  │
+│                                                           │
+└───────────────────────────────────────────────────────────┘
+```
+
+**Layout (responsive to terminal width):**
+
+```
+┌─────────────────────────────────────────────────┐
+│  Chat Area (Paragraph/List, auto-scroll)         │
+│  - Markdown rendered via tui-markdown             │
+│  - Tool calls, responses, thinking blocks          │
+│  - Width = terminal.width                         │
+├─────────────────────────────────────────────────┤
+│  Status Bar (1 line, adapts to width)             │
+│  model │ tokens │ progress bar │ indicators       │
+├─────────────────────────────────────────────────┤
+│  >>> input line with tab completion               │
+└─────────────────────────────────────────────────┘
+```
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 3.1 | Create `src/chat/app.rs` — `App` state, `AppEvent` enum, `run()` event loop | 📋 |
+| 3.2 | Create `src/chat/input/crossterm_input.rs` — `CrosstermInput` implementing `InputBackend` | 📋 |
+| 3.3 | Implement tab completion with `ChatCompleter` reuse | 📋 |
+| 3.4 | Implement history navigation (up/down arrows) | 📋 |
+| 3.5 | Implement mpsc channel for LLM streaming (background task → event loop) | 📋 |
+| 3.6 | Implement streaming token display (incremental append to chat area) | 📋 |
+| 3.7 | Migrate spinner to ratatui status area (replace `indicatif` for chat mode) | 📋 |
+| 3.8 | Migrate tool call/result display to chat area | 📋 |
+| 3.9 | Implement error display and recovery in TUI | 📋 |
+| 3.10 | Integrate with `handle_user_message()` and command dispatch | 📋 |
+
+**`AppEvent` Enum:**
+
+```rust
+pub enum AppEvent {
+    Input(KeyEvent),           // Key pressed
+    LlmToken(String),          // Streaming token
+    LlmComplete(Response),     // Full response received
+    LlmError(String),          // LLM error
+    CommandResult(CommandResult), // /command result
+    Resize(u16, u16),          // Terminal resized
+    Quit,                      // Ctrl+D or /quit
+}
+```
+
+**Spinner Migration:**
+
+| Context | Before | After |
+|----------|--------|-------|
+| Chat mode | `indicatif::ProgressBar` + `rattles` frames | Ratatui status area with `rattles` frames |
+| Query mode | `indicatif::ProgressBar` | `indicatif` stays (no TUI) |
+| OCR/summarize/vision | `indicatif::ProgressBar` | `indicatif` stays (no TUI) |
+
+`rattles` stays as dependency — its animation frames are used directly by the ratatui status widget instead of via `indicatif::ProgressBar.tick_strings()`. The "gambiarra" in `spinner.rs` that extracts frames for indicatif is replaced by native ratatui animation.
+
+**Files to Create:**
+- `src/chat/app.rs`
+- `src/chat/input/crossterm_input.rs`
+
+**Checkpoint:** Modo `--tui` totalmente funcional. Chat, comandos, streaming, tab completion, history — tudo funciona via ratatui. Modo padrão (rustyline) continua funcionando.
+
+---
+
+#### PR 4: Final Transition + Cleanup (~3-4 days)
+
+**Goal:** Make ratatui the default and only rendering mode. Remove rustyline and all println-based chat rendering.
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 4.1 | Remove `--tui` feature flag — ratatui is now the only chat mode | 📋 |
+| 4.2 | Remove `RustylineInput` and `rustyline` dependency | 📋 |
+| 4.3 | Remove `TerminalView` (println-based implementation) | 📋 |
+| 4.4 | Remove hardcoded `\x1B[` ANSI escape codes from chat modules | 📋 |
+| 4.5 | Remove `CHAT_TERMINAL_WIDTH = 80` constant — width is now dynamic | 📋 |
+| 4.6 | Remove `build_status_bar()` and `build_clear_code()` from `repl.rs` (now in ratatui status bar widget) | 📋 |
+| 4.7 | Update `run_chat_repl()` to call `App::run()` directly | 📋 |
+| 4.8 | Update `src/spinner.rs` — chat mode uses ratatui, other modes keep `indicatif` | 📋 |
+| 4.9 | Update documentation: CHANGELOG, architecture, roadmap | 📋 |
+| 4.10 | Test on Linux, macOS, Termux | 📋 |
+
+**Dependencies Removed:**
+- `rustyline = "14"` — input now via crossterm
+
+**Dependencies Kept (unchanged):**
+- `termimad = "0.34"` — query/translate/summarize/ocr (non-chat subcommands)
+- `indicatif = "0.17"` — subcommand spinners (non-chat)
+- `rattles = "0.2"` — animation frames (chat TUI widget + non-chat spinners)
+
+**Dependencies Added:**
+- `ratatui = "0.29"` — TUI rendering framework
+- `crossterm = { version = "0.28", features = ["event-stream"] }` — terminal backend + input
+- `tui-markdown = "0.2"` — markdown rendering in ratatui widgets
+- `unicode-segmentation = "1.11"` — cursor movement in input editing
+
+**Files to Remove:**
+- `src/chat/input/rustyline.rs` — replaced by `crossterm_input.rs`
+- `src/chat/view/terminal.rs` — replaced by `ratatui_view.rs`
+- `src/chat/completion.rs` — tab completion logic moves to `crossterm_input.rs`
+
+**Files to Modify:**
+- `Cargo.toml` — Remove `rustyline`, add new deps (already done in PR 2)
+- `src/chat/mod.rs` — Update module exports
+- `src/chat/input/mod.rs` — Remove `rustyline` re-export
+- `src/chat/view/mod.rs` — Remove `TerminalView` re-export, export `RatatuiView`
+- `src/chat/repl.rs` — Simplify to call `App::run()`
+- `src/spinner.rs` — Conditional: ratatui widget for chat, indicatif for subcommands
+- `src/markdown.rs` — Keep `print_markdown()` for non-chat, add tui-markdown path for chat
+- `src/lib.rs` — Module-level print expects only for non-chat modules
+- `CHANGELOG.md` — Document change
+
+**Checkpoint:** Only ratatui rendering mode exists. Chat mode uses crossterm input + ratatui rendering. Subcommands (query, translate, OCR, summarize) continue using `termimad` and `indicatif`.
+
+---
+
+#### Overall Migration Map
+
+```
+PR 1: CommandResult
+  ├── 336 println calls → CommandResult enum
+  ├── ChatView gains new methods
+  ├── All output goes through typed channels
+  └── Codebase functional, identical behavior
+
+PR 2: Rendering
+  ├── Ratatui + crossterm dependencies added
+  ├── RatatuiView implements ChatView
+  ├── Responsive: banner, status bar, markdown
+  ├── Feature flag --tui for visual testing
+  └── Default mode unchanged
+
+PR 3: Input + Event Loop
+  ├── CrosstermInput implements InputBackend
+  ├── Tab completion + history
+  ├── mpsc channel for LLM streaming
+  ├── Spinner → ratatui status area (chat only)
+  ├── --tui mode fully functional
+  └── Default mode unchanged
+
+PR 4: Transition
+  ├── Remove rustyline, remove TerminalView
+  ├── Remove hardcoded ANSI from chat
+  ├── Remove CHAT_TERMINAL_WIDTH = 80
+  ├── Ratatui is now the only chat mode
+  └── Subcommands still use termimad/indicatif
+```
+
+**Estimated Total Effort:** 18-26 days (~4-5 weeks)
+
+**Dependencies:**
+- Blocks: None (can start after critical bugs)
+- Blocked by: Critical bugs currently on the board
+- Enables: TUI (#16) — this rebuild is a prerequisite for the full TUI
+
+**Relationship to TUI #16:** This rebuild replaces the println-based chat rendering with ratatui, making the chat responsive at any terminal width. The full TUI (#16) will build ON TOP of this infrastructure, adding sidebars, /queue, /steer, multi-pane layout, and the full UX design. Think of this as "laying the foundation" — the rendering engine, event loop, and input handling — while #16 is "building the house" on top of it.
+
+**Related:** Issue #16 (TUI — full design, builds on top of this), Issue #131 (Remove print expects — prerequisite handled in PR 1)
+
+---
+
 ### TUI (Terminal User Interface) — #16 [M2]
 
 **Status:** ❌ NOT STARTED
 
-**Goal:** Build a responsive TUI using Ratatui-rs.
+**Goal:** Build the full TUI experience: sidebars, /queue, /steer, multi-pane layout, and complete UX design on top of the Responsive Chat Rebuild infrastructure.
+
+**Depends on:** Responsive Chat Rebuild (M1, W6) — the Ratatui rendering engine, event loop, and CrosstermInput from the Rebuild are prerequisites for this milestone.
 
 See `doc/src/development/roadmap.md` - TUI section for detailed implementation plan.
 
 **Milestone:** M2 — full design + implementation. TUI is the pre-launch product experience.
 
-**Components:**
-- Chat pane with markdown rendering
-- Input pane with history
-- Status bar showing model, context usage, tokens
-- Sidebar for tools/messages (optional)
+**What W6 (Responsive Chat Rebuild) Already Delivers:**
 
-**Pre-migration cleanup (before TUI work starts):**
-- Remove `#![expect(clippy::print_stdout)]` and `#![expect(clippy::print_stderr)]` from `lib.rs`
-- Audit each module that currently uses `println!`/`eprintln!` directly:
-  - CLI-only modules (repl, command_handlers, view/terminal): keep direct prints, these are the CLI backend
-  - Logic modules (embeddings, retrieval, facts, tools): replace with `ChatView` method calls so both CLI and TUI backends work
-  - The `ChatView` trait in `view/mod.rs` already provides `print_message()` and `print_error()` abstractions for this purpose
+These items from the original #16 scope are completed by the Responsive Chat Rebuild (M1, W6) and should NOT be re-implemented:
 
-**Estimated effort:** 3-4 weeks (plus 1-2 weeks for ApplicationBackend decoupling)
+| Item | W6 Deliverable | PR |
+|------|---------------|-----|
+| Chat pane with markdown rendering | `RatatuiView` + `tui-markdown` | PR 2 |
+| Input pane with history | `CrosstermInput` + history + tab completion | PR 3 |
+| Status bar (model, context, tokens) | Ratatui `StatusBar` widget, responsive | PR 2 |
+| Ratatui research | Architecture defined in W6 plan | PR 1-4 |
+| Terminal resize handling | `AppEvent::Resize` in event loop | PR 3 |
+| `TuiInput` implementing `InputBackend` | `CrosstermInput` | PR 3 |
+| `TuiView` implementing `ChatView` | `RatatuiView` | PR 2 |
+| Remove print expects | CommandResult enum replaces all println | PR 1 |
+| Concurrent input channel (mpsc) | Event loop with tokio channels | PR 3 |
+| Responsive layout at any terminal width | Declarative ratatui layout | PR 2 |
+
+**What #16 Still Needs to Build (on top of W6):**
+
+| Item | Description | Effort |
+|------|-------------|--------|
+| Sidebar for tools/messages | Multi-pane layout with tool call details | 1-2 weeks |
+| `/queue` and `/steer` busy-input modes | Concurrent input during LLM execution | 2-3 weeks (design + impl) |
+| `ApplicationBackend` trait | Formal decoupling for CLI/TUI/ACP backends | 1-2 weeks |
+| UX design mockups | Full TUI wireframes with sidebar, scrollback, panes | 1 week |
+| Mascote ASCII indicator | Visual state indicator ("Nó de Ideias") | 1-2 days |
+| ACP/B8 adapter | Third backend consuming same application via JSON-RPC | 2-3 weeks |
+| PageUp/PageDown scrollback | History navigation in chat area | 2-3 days |
+| Configurable layout | User preferences for pane sizes, visibility | 1-2 days |
+
+**Pre-migration cleanup (DONE by W6):**
+
+These items were in #16's scope but are now completed by the Responsive Chat Rebuild:
+
+- ~~Remove `#![expect(clippy::print_stdout)]` and `#![expect(clippy::print_stderr)]` from `lib.rs`~~ → Done in PR 1 of W6
+- ~~Audit each module that currently uses `println!`/`eprintln!` directly~~ → Done in PR 1 of W6 (CommandResult enum)
+- ~~Replace logic module prints with `ChatView` method calls~~ → Done in PR 1 of W6
 
 **Architectural Requirement (ACP/B8 Prerequisite):**
 
-The TUI implementation MUST create a clean application layer decoupling core logic from I/O. This decoupling is required for ACP (B8) — the ACP adapter will be a third I/O backend consuming the same application layer via JSON-RPC.
+The TUI implementation MUST create a clean application layer decoupling core logic from I/O. This decoupling is required for ACP (B8) — the ACP adapter will be a third I/O backend consuming the same application layer via JSON-RPC over stdio instead of rustyline or ratatui.
 
-Current architecture (tight coupling):
-```
-repl.rs → ChatCore::send_message() → CustomCoordinator → Ollama
-   ↑ direct calls, inline rendering, blocking I/O
-```
+W6 delivers the rendering layer (`RatatuiView` + `CrosstermInput` + `App` event loop). #16 adds the formal `ApplicationBackend` trait on top:
 
-Target architecture (decoupled):
 ```
-ApplicationBackend (trait)
-   ├── CLI (RustylineInput + TerminalView) — current
-   ├── TUI (TuiInput + TuiView) — P14
+ApplicationBackend (trait) — #16 creates this
+   ├── CLI (historical, removed in W6 PR 4)
+   ├── TUI (RatatuiView + CrosstermInput) — W6 delivers this
    └── ACP (stdio JSON-RPC) — B8
 ```
 
@@ -3894,9 +4223,24 @@ The `ApplicationBackend` trait should expose:
 - `list_sessions(&mut self) -> Vec<SessionInfo>` — lists available sessions
 - `cancel(&mut self) -> Result<()>` — cancels ongoing operation
 
-This refactoring is a prerequisite for B8 (ACP) and should be done as part of P14 (TUI) to avoid double refactoring. See B8 for ACP-specific requirements.
+**Estimated effort:** 5-7 weeks (reduced from 8-10 weeks because W6 delivers the foundation)
 
-**Mascote idea:** An ASCII mascote (Sprach described itself as "Nó de Ideias" — Idea Knot) could serve as a visual indicator of system state. When reflection triggers fire (see S2.3), the mascote's expression could change to signal the user. This follows patterns from other agent frameworks where visual feedback helps users understand internal state. Note for P14 implementation.
+**Components still needed for #16:**
+
+| Component | Status | Inherited from W6? |
+|-----------|--------|---------------------|
+| Chat pane with markdown rendering | ✅ Delivered | ✅ PR 2 |
+| Input pane with history | ✅ Delivered | ✅ PR 3 |
+| Status bar | ✅ Delivered | ✅ PR 2 |
+| Sidebar for tools/messages | 📋 Needed | ❌ New for #16 |
+| `/queue` busy-input mode | 📋 Needed | ❌ #117 |
+| `/steer` busy-input mode | 📋 Needed | ❌ #117 |
+| `ApplicationBackend` trait | 📋 Needed | ❌ Formal abstraction layer |
+| `BusyInputMode` enum | 📋 Needed | ❌ #117 |
+| UX design + mockups | 📋 Needed | ❌ New for #16 |
+| PageUp/PageDown scrollback | 📋 Needed | ❌ New for #16 |
+
+**Mascote idea:** An ASCII mascote (Sprach described itself as "Nó de Ideias" — Idea Knot) could serve as a visual indicator of system state. When reflection triggers fire (see S2.3), the mascote's expression could change to signal the user. This follows patterns from other agent frameworks where visual feedback helps users understand internal state. Note for #16 implementation.
 
 #### TUI Interaction Modes (`/queue` and `/steer`) — #117 [M2]
 

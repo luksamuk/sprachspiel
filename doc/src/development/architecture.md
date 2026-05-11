@@ -271,8 +271,15 @@ Layer 0: input/mod.rs, view/mod.rs - Traits (abstractions)
 
 This separation enables:
 - **Testing**: Each layer can be tested in isolation
-- **TUI Migration**: Swap rustyline for ratatui input/output
+- **TUI Migration**: Swap rustyline for ratatui input/output (Responsive Chat Rebuild, M1 W6)
 - **Maintainability**: 200-400 line modules vs 1100+ line function
+
+**Planned Layer 2 migration (W6):**
+```
+Current:  input/rustyline.rs,   view/terminal.rs    - println + ANSI
+Rebuild:  input/crossterm_input.rs, view/ratatui_view.rs  - ratatui + crossterm
+Layer 2 also gains: app.rs (event loop), tui/ (components)
+```
 
 #### Session Management (`src/chat/session.rs`)
 
