@@ -92,13 +92,11 @@ impl Database {
 
     /// Check if a table exists in the database.
     fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
-        Ok(conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
-                [table],
-                |row| row.get::<_, i32>(0),
-            )?
-            > 0)
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+            [table],
+            |row| row.get::<_, i32>(0),
+        )? > 0)
     }
 
     /// Add a column to a table if it doesn't already exist.
@@ -134,7 +132,12 @@ impl Database {
     /// Migration v2 -> v3: Add has_embedding to message_chunks
     fn migrate_v2_to_v3(conn: &Connection) -> Result<()> {
         if Self::table_exists(conn, "message_chunks")? {
-            Self::add_column_if_missing(conn, "message_chunks", "has_embedding", "INTEGER DEFAULT 0")?;
+            Self::add_column_if_missing(
+                conn,
+                "message_chunks",
+                "has_embedding",
+                "INTEGER DEFAULT 0",
+            )?;
 
             // Create index for missing embeddings
             conn.execute(
@@ -415,7 +418,10 @@ impl Database {
     fn migrate_v7_to_v8(conn: &Connection) -> Result<()> {
         let document_columns: [(&str, &str); 3] = [
             ("filename", "TEXT"),
-            ("file_type", "TEXT CHECK(file_type IN ('txt', 'md', 'org', 'pdf', 'epub'))"),
+            (
+                "file_type",
+                "TEXT CHECK(file_type IN ('txt', 'md', 'org', 'pdf', 'epub'))",
+            ),
             ("word_count", "INTEGER"),
         ];
         Self::add_columns_if_missing(conn, "content_items", &document_columns)?;

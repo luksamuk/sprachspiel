@@ -21,7 +21,11 @@ use std::collections::HashSet;
 
 /// Filter a tool list against a blacklist, returning the available tools.
 fn filter_available<'a>(tools: &[&'a str], blacklist: &HashSet<&str>) -> Vec<&'a str> {
-    tools.iter().filter(|t| !blacklist.contains(**t)).copied().collect()
+    tools
+        .iter()
+        .filter(|t| !blacklist.contains(**t))
+        .copied()
+        .collect()
 }
 
 /// Weather tools section
@@ -460,9 +464,8 @@ fn agent_section(blacklist: &HashSet<&str>) -> Option<String> {
         has_examples = true;
     }
     if has_tool(&"spawn_summarize_agent") {
-        examples.push_str(
-            "spawn_summarize_agent(\"Summarize this text in 3 bullet points: ...\")\n",
-        );
+        examples
+            .push_str("spawn_summarize_agent(\"Summarize this text in 3 bullet points: ...\")\n");
         has_examples = true;
     }
 
@@ -506,40 +509,68 @@ pub fn build_tool_context(blacklist: &HashSet<&str>) -> String {
     let mut sections = Vec::new();
 
     #[cfg(feature = "weather-tools")]
-    if let Some(s) = weather_section(blacklist) { sections.push(s); }
+    if let Some(s) = weather_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(feature = "pokemon-tools")]
-    if let Some(s) = pokemon_section(blacklist) { sections.push(s); }
+    if let Some(s) = pokemon_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(feature = "serper-tools")]
-    if let Some(s) = serper_search_section(blacklist) { sections.push(s); }
+    if let Some(s) = serper_search_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(all(feature = "search-tools", not(feature = "serper-tools")))]
-    if let Some(s) = ddg_search_section(blacklist) { sections.push(s); }
+    if let Some(s) = ddg_search_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(feature = "calc-tools")]
-    if let Some(s) = calc_section(blacklist) { sections.push(s); }
+    if let Some(s) = calc_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(feature = "file-tools")]
-    if let Some(s) = file_section(blacklist) { sections.push(s); }
+    if let Some(s) = file_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(feature = "system-tools")]
-    if let Some(s) = system_section(blacklist) { sections.push(s); }
+    if let Some(s) = system_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(feature = "led-tools")]
-    if let Some(s) = led_section(blacklist) { sections.push(s); }
+    if let Some(s) = led_section(blacklist) {
+        sections.push(s);
+    }
 
-    if let Some(s) = todo_section(blacklist) { sections.push(s); }
-    if let Some(s) = notes_section(blacklist) { sections.push(s); }
-    if let Some(s) = feedback_section(blacklist) { sections.push(s); }
+    if let Some(s) = todo_section(blacklist) {
+        sections.push(s);
+    }
+    if let Some(s) = notes_section(blacklist) {
+        sections.push(s);
+    }
+    if let Some(s) = feedback_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(feature = "document-tools")]
-    if let Some(s) = document_section(blacklist) { sections.push(s); }
+    if let Some(s) = document_section(blacklist) {
+        sections.push(s);
+    }
 
     #[cfg(feature = "subagent-tools")]
-    if let Some(s) = agent_section(blacklist) { sections.push(s); }
+    if let Some(s) = agent_section(blacklist) {
+        sections.push(s);
+    }
 
-    if let Some(s) = external_section(blacklist) { sections.push(s); }
+    if let Some(s) = external_section(blacklist) {
+        sections.push(s);
+    }
 
     sections.join("\n\n")
 }
