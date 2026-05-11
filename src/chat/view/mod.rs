@@ -147,6 +147,32 @@ pub trait ChatView {
         preserved_first: usize,
         preserved_last: usize,
     );
+
+    /// Display a command output result
+    ///
+    /// Dispatches rendering based on the `CommandOutput` variant.
+    /// Each variant is rendered with appropriate styling:
+    /// - `Info` → dim/cyan system message
+    /// - `Success` → green with ✓ icon
+    /// - `Warning` → yellow with ⚠ icon
+    /// - `Error` → red with ✗ icon
+    /// - `Progress` → yellow with ⏳ icon
+    /// - Structured variants → formatted displays
+    ///
+    /// This method is the primary entry point for command output rendering,
+    /// enabling clean decoupling of command logic from presentation.
+    fn show_command_output(&mut self, output: &crate::chat::CommandOutput);
+
+    /// Display multiple command outputs in sequence
+    ///
+    /// Convenience method that calls `show_command_output` for each item.
+    /// Commands return `Vec<CommandOutput>` to support multi-part results
+    /// (e.g., a warning followed by a success message).
+    fn show_command_outputs(&mut self, outputs: &[crate::chat::CommandOutput]) {
+        for output in outputs {
+            self.show_command_output(output);
+        }
+    }
 }
 
 /// Welcome information for display

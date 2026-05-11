@@ -2,13 +2,41 @@
 //!
 //! This module provides the `TerminalView` struct, which implements
 //! the `ChatView` trait using standard terminal output (println!/eprintln!).
+//!
+//! All output styling (colors, icons, formatting) is concentrated here.
+//! `CommandOutput` data carries semantics only — no ANSI codes.
+//! This enables future migration to `RatatuiView` (W6-PR2, #146) which
+//! renders the same data with ratatui widgets.
 
+use crate::chat::command_output::{
+    CommandOutput, CompactData, ContentPruneData, DocumentListData, ExportData, FactAddOutcome,
+    FactAddResult, FactListData, FactListScopeData, FactRemoveResult, FactSearchData,
+    NoteAddResult, NoteListData, NoteRemoveResult, ReindexData, SearchData, SessionListData,
+    SkillListData, TodoListData,
+};
 use crate::chat::strip_thinking_tags;
 use crate::consts::roles::format_role_label;
 use crate::markdown;
 
 use super::super::session::ChatSession;
 use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
+
+// ── ANSI color constants for TerminalView rendering ──────────────────
+
+/// Terminal ANSI color codes for `TerminalView` output styling.
+///
+/// These are used ONLY in the terminal view implementation.
+/// `CommandOutput` data carries no ANSI codes — the view applies them.
+mod term_colors {
+    pub const RED: &str = "\x1B[31m";
+    pub const GREEN: &str = "\x1B[32m";
+    pub const YELLOW: &str = "\x1B[33m";
+    pub const CYAN: &str = "\x1B[36m";
+    pub const BOLD_CYAN: &str = "\x1B[1;36m";
+    pub const DIM: &str = "\x1B[2m";
+    pub const BOLD: &str = "\x1B[1m";
+    pub const RESET: &str = "\x1B[0m";
+}
 
 /// Terminal output backend using println!/eprintln!
 ///
@@ -19,6 +47,7 @@ use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInf
 /// - Token metrics display
 /// - Context warnings (yellow colored)
 /// - Compaction progress/complete messages
+/// - Command output rendering via `CommandOutput` enum
 pub struct TerminalView;
 
 impl TerminalView {
@@ -34,13 +63,15 @@ impl Default for TerminalView {
     }
 }
 
+// ── ChatView trait implementation ────────────────────────────────────
+
 impl ChatView for TerminalView {
     fn show_system(&mut self, message: &str) {
         println!("{}", message);
     }
 
     fn show_error(&mut self, error: &str) {
-        eprintln!("\x1B[31m{}\x1B[0m", error);
+        eprintln!("{}✗ {}{}", term_colors::RED, error, term_colors::RESET);
     }
 
     fn show_assistant_response(&mut self, content: &str, thinking: Option<&str>) {
@@ -58,18 +89,33 @@ impl ChatView for TerminalView {
     fn show_token_metrics(&mut self, metrics: &TokenMetrics) {
         if metrics.total_tokens > 0 {
             eprintln!(
-                "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-                metrics.prompt_tokens, metrics.response_tokens, metrics.total_tokens
+                "\n{}[Tokens: {} prompt + {} response = {} total]{}",
+                term_colors::DIM,
+                metrics.prompt_tokens,
+                metrics.response_tokens,
+                metrics.total_tokens,
+                term_colors::RESET
             );
         }
     }
 
     fn show_context_warning(&mut self, percent: u8, message: &str) {
-        eprintln!("\x1B[33m⚠ Context {}% full. {}\x1B[0m", percent, message);
+        eprintln!(
+            "{}⚠ Context {}% full. {}{}",
+            term_colors::YELLOW,
+            percent,
+            message,
+            term_colors::RESET
+        );
     }
 
     fn show_compact_progress(&mut self, message: &str) {
-        eprintln!("\x1B[33m⏳ {}\x1B[0m", message);
+        eprintln!(
+            "{}⏳ {}{}",
+            term_colors::YELLOW,
+            message,
+            term_colors::RESET
+        );
     }
 
     fn show_compact_complete(
@@ -81,15 +127,84 @@ impl ChatView for TerminalView {
         if preserved_first > 0 || preserved_last > 0 {
             // Middle compaction
             eprintln!(
-                "\x1B[32m✓ Compacted {} messages\x1B[0m (preserved {} first, {} last).",
-                count, preserved_first, preserved_last
+                "{}✓ Compacted {} messages{} (preserved {} first, {} last).{}",
+                term_colors::GREEN,
+                count,
+                term_colors::RESET,
+                preserved_first,
+                preserved_last,
+                term_colors::RESET
             );
         } else {
             // Full compaction (backward compatible)
-            eprintln!("\x1B[32m✓ Compacted all {} messages.\x1B[0m", count);
+            eprintln!(
+                "{}✓ Compacted all {} messages.{}",
+                term_colors::GREEN,
+                count,
+                term_colors::RESET
+            );
+        }
+    }
+
+    fn show_command_output(&mut self, output: &crate::chat::CommandOutput) {
+        match output {
+            CommandOutput::Info(msg) => {
+                println!("{}", msg);
+            }
+            CommandOutput::Success(msg) => {
+                eprintln!("{}✓ {}{}", term_colors::GREEN, msg, term_colors::RESET);
+            }
+            CommandOutput::Warning(msg) => {
+                eprintln!("{}⚠️ {}{}", term_colors::YELLOW, msg, term_colors::RESET);
+            }
+            CommandOutput::Error(msg) => {
+                eprintln!("{}✗ {}{}", term_colors::RED, msg, term_colors::RESET);
+            }
+            CommandOutput::Progress(msg) => {
+                eprintln!("{}⏳ {}{}", term_colors::YELLOW, msg, term_colors::RESET);
+            }
+
+            // ── Structured displays ──────────────────────────────────
+            CommandOutput::FactList(data) => self.render_fact_list(data),
+            CommandOutput::FactAdded(data) => self.render_fact_added(data),
+            CommandOutput::FactRemoved(data) => self.render_fact_removed(data),
+            CommandOutput::FactSearchResults(data) => self.render_fact_search(data),
+            CommandOutput::NoteList(data) => self.render_note_list(data),
+            CommandOutput::NoteAdded(data) => self.render_note_added(data),
+            CommandOutput::NoteRemoved(data) => self.render_note_removed(data),
+            CommandOutput::TodoList(data) => self.render_todo_list(data),
+            CommandOutput::ContextInfo(data) => {
+                println!("{}", data.formatted);
+            }
+            CommandOutput::SessionList(data) => self.render_session_list(data),
+            CommandOutput::CompactResult(data) => self.render_compact_result(data),
+            CommandOutput::ExportResult(data) => self.render_export_result(data),
+            CommandOutput::SkillList(data) => self.render_skill_list(data),
+            CommandOutput::DocumentList(data) => self.render_document_list(data),
+            CommandOutput::ContentPruneResult(data) => self.render_content_prune(data),
+            CommandOutput::SearchResults(data) => {
+                println!("{}", data.formatted);
+            }
+            CommandOutput::ReindexResult(data) => self.render_reindex_result(data),
+            CommandOutput::HelpText(text) => {
+                print!("{}", text);
+            }
+
+            // ── Flow control ──────────────────────────────────────────
+            CommandOutput::Quit => {
+                // No output — REPL loop handles the exit
+            }
+        }
+    }
+
+    fn show_command_outputs(&mut self, outputs: &[crate::chat::CommandOutput]) {
+        for output in outputs {
+            self.show_command_output(output);
         }
     }
 }
+
+// ── Convenience methods for TerminalView ─────────────────────────────
 
 impl TerminalView {
     /// Display the welcome banner
@@ -180,6 +295,388 @@ impl TerminalView {
     }
 }
 
+// ── Render methods for structured CommandOutput variants ──────────────
+
+impl TerminalView {
+    fn render_fact_list(&mut self, data: &FactListData) {
+        match data.scope {
+            FactListScopeData::All => {
+                if !data.global_facts.is_empty() {
+                    println!("\n{}Global facts:{}", term_colors::BOLD, term_colors::RESET);
+                    for fact in &data.global_facts {
+                        println!(
+                            "  {}#{} {}[{}]{} {}",
+                            term_colors::CYAN,
+                            fact.id,
+                            term_colors::DIM,
+                            fact.category,
+                            term_colors::RESET,
+                            fact.content
+                        );
+                    }
+                }
+                if !data.project_facts.is_empty() {
+                    println!(
+                        "\n{}Project facts:{}",
+                        term_colors::BOLD,
+                        term_colors::RESET
+                    );
+                    for fact in &data.project_facts {
+                        println!(
+                            "  {}#{} {}[{}]{} {}",
+                            term_colors::CYAN,
+                            fact.id,
+                            term_colors::DIM,
+                            fact.category,
+                            term_colors::RESET,
+                            fact.content
+                        );
+                    }
+                }
+                if data.global_facts.is_empty() && data.project_facts.is_empty() {
+                    println!("No facts stored.");
+                }
+            }
+            FactListScopeData::Global => {
+                if data.global_facts.is_empty() {
+                    println!("No global facts stored.");
+                } else {
+                    println!("\n{}Global facts:{}", term_colors::BOLD, term_colors::RESET);
+                    for fact in &data.global_facts {
+                        println!(
+                            "  {}#{} {}[{}]{} {}",
+                            term_colors::CYAN,
+                            fact.id,
+                            term_colors::DIM,
+                            fact.category,
+                            term_colors::RESET,
+                            fact.content
+                        );
+                    }
+                }
+            }
+            FactListScopeData::Project => {
+                if data.project_facts.is_empty() {
+                    println!("No project facts stored.");
+                } else {
+                    println!(
+                        "\n{}Project facts:{}",
+                        term_colors::BOLD,
+                        term_colors::RESET
+                    );
+                    for fact in &data.project_facts {
+                        println!(
+                            "  {}#{} {}[{}]{} {}",
+                            term_colors::CYAN,
+                            fact.id,
+                            term_colors::DIM,
+                            fact.category,
+                            term_colors::RESET,
+                            fact.content
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn render_fact_added(&mut self, data: &FactAddResult) {
+        match data.outcome {
+            FactAddOutcome::Stored => {
+                eprintln!(
+                    "{}✓ Fact stored: #{}{} {}",
+                    term_colors::GREEN,
+                    data.fact.id,
+                    term_colors::RESET,
+                    data.fact.content
+                );
+            }
+            FactAddOutcome::Updated(_) => {
+                eprintln!(
+                    "{}✓ Fact updated: #{}{} {}",
+                    term_colors::CYAN,
+                    data.fact.id,
+                    term_colors::RESET,
+                    data.fact.content
+                );
+            }
+            FactAddOutcome::ExactDuplicate => {
+                eprintln!(
+                    "{}⚠️ Exact duplicate — skipped{}",
+                    term_colors::YELLOW,
+                    term_colors::RESET
+                );
+            }
+            FactAddOutcome::NormalizedDuplicate => {
+                eprintln!(
+                    "{}⚠️ Normalized duplicate — skipped{}",
+                    term_colors::YELLOW,
+                    term_colors::RESET
+                );
+            }
+            FactAddOutcome::SemanticDuplicate => {
+                eprintln!(
+                    "{}⚠️ Semantic duplicate — skipped{}",
+                    term_colors::YELLOW,
+                    term_colors::RESET
+                );
+            }
+            FactAddOutcome::Fts5Conflict => {
+                eprintln!(
+                    "{}⚠️ FTS5 conflict — skipped{}",
+                    term_colors::YELLOW,
+                    term_colors::RESET
+                );
+            }
+            FactAddOutcome::ContentTooLong(max) => {
+                eprintln!(
+                    "{}✗ Fact content exceeds {} character limit{}",
+                    term_colors::RED,
+                    max,
+                    term_colors::RESET
+                );
+            }
+        }
+    }
+
+    fn render_fact_removed(&mut self, data: &FactRemoveResult) {
+        if data.success {
+            if let Some(content) = &data.content {
+                eprintln!(
+                    "{}✓ Removed fact #{}: {}{}",
+                    term_colors::GREEN,
+                    data.id,
+                    content,
+                    term_colors::RESET
+                );
+            }
+        } else if let Some(error) = &data.error {
+            eprintln!("{}✗ {}{}", term_colors::RED, error, term_colors::RESET);
+        }
+    }
+
+    fn render_fact_search(&mut self, data: &FactSearchData) {
+        if data.results.is_empty() {
+            println!("No facts found matching '{}'.", data.query);
+            return;
+        }
+        println!(
+            "\n{}Facts matching '{}' ({} results):{}",
+            term_colors::BOLD,
+            data.query,
+            data.total,
+            term_colors::RESET
+        );
+        for result in &data.results {
+            println!(
+                "  {}#{} {}[{:.2}]{} {}",
+                term_colors::CYAN,
+                result.id,
+                term_colors::DIM,
+                result.score,
+                term_colors::RESET,
+                result.content
+            );
+        }
+    }
+
+    fn render_note_list(&mut self, data: &NoteListData) {
+        if data.notes.is_empty() {
+            println!("No notes stored.");
+            return;
+        }
+        println!(
+            "{}Notes (page {}/{}, {} total):{}",
+            term_colors::BOLD,
+            data.page + 1,
+            data.total_pages,
+            data.total_notes,
+            term_colors::RESET
+        );
+        for note in &data.notes {
+            let title = note.title.as_deref().unwrap_or("(untitled)");
+            println!(
+                "  {}#{} {}{}",
+                term_colors::CYAN,
+                note.id,
+                title,
+                term_colors::RESET
+            );
+        }
+        if data.total_pages > 1 {
+            println!(
+                "  {}Use /note list --page N to see more{}",
+                term_colors::DIM,
+                term_colors::RESET
+            );
+        }
+    }
+
+    fn render_note_added(&mut self, data: &NoteAddResult) {
+        if data.success {
+            eprintln!(
+                "{}✓ {}{}",
+                term_colors::GREEN,
+                data.message,
+                term_colors::RESET
+            );
+        } else {
+            eprintln!(
+                "{}✗ {}{}",
+                term_colors::RED,
+                data.message,
+                term_colors::RESET
+            );
+        }
+    }
+
+    fn render_note_removed(&mut self, data: &NoteRemoveResult) {
+        if data.success {
+            eprintln!(
+                "{}✓ {}{}",
+                term_colors::GREEN,
+                data.message,
+                term_colors::RESET
+            );
+        } else {
+            eprintln!(
+                "{}✗ {}{}",
+                term_colors::RED,
+                data.message,
+                term_colors::RESET
+            );
+        }
+    }
+
+    fn render_todo_list(&mut self, data: &TodoListData) {
+        if data.count == 0 {
+            println!("No tasks.");
+        } else {
+            println!("{}", data.formatted_list);
+        }
+    }
+
+    fn render_session_list(&mut self, data: &SessionListData) {
+        if data.is_empty {
+            println!("No saved sessions for this project.");
+            return;
+        }
+        println!("Sessions for this project:");
+        for entry in &data.sessions {
+            let marker = if entry.is_current { " (current)" } else { "" };
+            println!(
+                "  {}• {}{} {}[{} messages]{}",
+                term_colors::CYAN,
+                entry.name,
+                marker,
+                term_colors::DIM,
+                entry.message_count,
+                term_colors::RESET
+            );
+        }
+    }
+
+    fn render_compact_result(&mut self, data: &CompactData) {
+        if data.preserved_first > 0 || data.preserved_last > 0 {
+            eprintln!(
+                "{}✓ Compacted {} messages{} (preserved {} first, {} last).{}",
+                term_colors::GREEN,
+                data.count,
+                term_colors::RESET,
+                data.preserved_first,
+                data.preserved_last,
+                term_colors::RESET
+            );
+        } else {
+            eprintln!(
+                "{}✓ Compacted all {} messages.{}",
+                term_colors::GREEN,
+                data.count,
+                term_colors::RESET
+            );
+        }
+    }
+
+    fn render_export_result(&mut self, data: &ExportData) {
+        if let Some(path) = &data.file_path {
+            println!("Conversation exported to: {}", path);
+        }
+        println!("{}", data.content);
+    }
+
+    fn render_skill_list(&mut self, data: &SkillListData) {
+        if data.skills.is_empty() {
+            println!("No skills available.");
+            return;
+        }
+        println!("Available skills:");
+        for skill in &data.skills {
+            println!("  {} - {}", skill.name, skill.description);
+        }
+        println!("\nUse /skill <name> to activate a skill.");
+    }
+
+    fn render_document_list(&mut self, data: &DocumentListData) {
+        if data.is_empty {
+            println!("No documents imported.");
+            return;
+        }
+        println!("Imported documents:");
+        for doc in &data.documents {
+            println!(
+                "  {}#{} {} {}[{}]{} {}[{} chunks]{}",
+                term_colors::CYAN,
+                doc.id,
+                doc.title,
+                term_colors::DIM,
+                doc.source_type,
+                term_colors::RESET,
+                term_colors::DIM,
+                doc.chunk_count,
+                term_colors::RESET
+            );
+        }
+    }
+
+    fn render_content_prune(&mut self, data: &ContentPruneData) {
+        if data.success {
+            eprintln!(
+                "{}✓ Pruned {}/{} content items.{}",
+                term_colors::GREEN,
+                data.pruned_count,
+                data.total_count,
+                term_colors::RESET
+            );
+        } else if let Some(error) = &data.error {
+            eprintln!(
+                "{}✗ Failed to prune content: {}{}",
+                term_colors::RED,
+                error,
+                term_colors::RESET
+            );
+        }
+    }
+
+    fn render_reindex_result(&mut self, data: &ReindexData) {
+        if data.success {
+            eprintln!(
+                "{}✓ Regenerated {} of {} embeddings.{}",
+                term_colors::GREEN,
+                data.regenerated,
+                data.total,
+                term_colors::RESET
+            );
+        } else if let Some(error) = &data.error {
+            eprintln!(
+                "{}✗ Reindex failed: {}{}",
+                term_colors::RED,
+                error,
+                term_colors::RESET
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,5 +721,54 @@ mod tests {
         let mut view = TerminalView::new();
         view.show_compact_complete(10, 3, 3);
         view.show_compact_complete(5, 0, 0);
+    }
+
+    #[test]
+    fn test_command_output_variants_compile() {
+        // Verify all CommandOutput variants can be created
+        let _info = CommandOutput::Info("test".to_string());
+        let _success = CommandOutput::Success("test".to_string());
+        let _warning = CommandOutput::Warning("test".to_string());
+        let _error = CommandOutput::Error("test".to_string());
+        let _progress = CommandOutput::Progress("test".to_string());
+        let _quit = CommandOutput::Quit;
+    }
+
+    #[test]
+    fn test_command_output_helper_constructors() {
+        let info = CommandOutput::info("test info");
+        let success = CommandOutput::success("test success");
+        let warning = CommandOutput::warning("test warning");
+        let error = CommandOutput::error("test error");
+        let progress = CommandOutput::progress("test progress");
+        let quit = CommandOutput::quit();
+
+        assert!(matches!(info, CommandOutput::Info(_)));
+        assert!(matches!(success, CommandOutput::Success(_)));
+        assert!(matches!(warning, CommandOutput::Warning(_)));
+        assert!(matches!(error, CommandOutput::Error(_)));
+        assert!(matches!(progress, CommandOutput::Progress(_)));
+        assert!(matches!(quit, CommandOutput::Quit));
+    }
+
+    #[test]
+    fn test_terminal_view_show_command_output() {
+        let mut view = TerminalView::new();
+        view.show_command_output(&CommandOutput::Info("Info message".to_string()));
+        view.show_command_output(&CommandOutput::Success("Success message".to_string()));
+        view.show_command_output(&CommandOutput::Warning("Warning message".to_string()));
+        view.show_command_output(&CommandOutput::Error("Error message".to_string()));
+        view.show_command_output(&CommandOutput::Progress("Progress message".to_string()));
+        view.show_command_output(&CommandOutput::Quit);
+    }
+
+    #[test]
+    fn test_terminal_view_show_command_outputs() {
+        let mut view = TerminalView::new();
+        let outputs = vec![
+            CommandOutput::Info("First message".to_string()),
+            CommandOutput::Success("Second message".to_string()),
+        ];
+        view.show_command_outputs(&outputs);
     }
 }
