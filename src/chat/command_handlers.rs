@@ -676,6 +676,8 @@ pub fn handle_undo(state: &mut ReplState) -> Vec<CommandOutput> {
 /// Handle search command (async)
 ///
 /// Searches conversation history for matching messages.
+/// Currently delegates to `run_search()` which prints directly.
+/// TODO: Migrate run_search() to return data, then use CommandOutput::SearchResults.
 pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Vec<CommandOutput> {
     let db = match crate::db::Database::new() {
         Ok(db) => db,
@@ -727,8 +729,6 @@ pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
 ///
 /// Compacts conversation history by summarizing old messages.
 pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
-    use crate::markdown;
-
     if state.session.messages.is_empty() {
         return vec![CommandOutput::info("No messages to compact.")];
     }
@@ -775,12 +775,10 @@ pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
             }
 
             // Render summary via markdown
-            // TODO: Phase 3.5 — migrate markdown rendering to ChatView
-            // For now, print directly (print_markdown_chat has no format version yet)
-            markdown::print_markdown_chat(&format!(
+            outputs.push(CommandOutput::MarkdownContent(format!(
                 "--- Summary ---\n{}\n---------------",
                 summary
-            ));
+            )));
 
             if !state.session.anonymous {
                 let _ = state.session.save_sqlite();
@@ -848,13 +846,11 @@ pub async fn handle_retry(state: &mut ReplState) -> Vec<CommandOutput> {
                     .add_assistant_message(result.response, Some(result.metrics.prompt_tokens));
 
                 if result.metrics.total_tokens > 0 {
-                    // TODO: Phase 3.5 — migrate token display to ChatView
-                    eprintln!(
-                        "\n\x1B[90m[Tokens: {} prompt + {} response = {} total]\x1B[0m",
-                        result.metrics.prompt_tokens,
-                        result.metrics.response_tokens,
-                        result.metrics.total_tokens
-                    );
+                    outputs.push(CommandOutput::TokenDisplay {
+                        prompt_tokens: result.metrics.prompt_tokens,
+                        response_tokens: result.metrics.response_tokens,
+                        total_tokens: result.metrics.total_tokens,
+                    });
                 }
 
                 // Auto-compact if needed (after response, before next input)
@@ -1738,27 +1734,6 @@ pub async fn handle_model_switch(
 /// Print context information about the current session.
 ///
 /// Shows token usage, message count, and context window utilization.
-pub fn print_context_info(
-    session: &ChatSession,
-    model_config: &ModelConfig,
-    tools_enabled: bool,
-    agents_md: Option<&str>,
-    settings: &Settings,
-    soulless: bool,
-    db: Option<&Arc<crate::db::Database>>,
-) {
-    let formatted = format_context_info(
-        session,
-        model_config,
-        tools_enabled,
-        agents_md,
-        settings,
-        soulless,
-        db,
-    );
-    println!("{}", formatted);
-}
-
 /// Format context information as a string (for CommandOutput::ContextInfo).
 ///
 /// This is the non-printing version of `print_context_info()`.
@@ -2210,12 +2185,10 @@ pub fn handle_note_show(state: &ReplState, id: i64) -> Vec<CommandOutput> {
             }
             header.push_str("---\n");
 
-            // TODO: Phase 3.5 — migrate markdown rendering to ChatView
-            // For now, print header and content directly
-            crate::markdown::print_markdown_chat(&header);
-            crate::markdown::print_markdown_chat(&note.content);
-
-            vec![]
+            // Return header and content as markdown for view layer to render
+            let mut full_content = header;
+            full_content.push_str(&note.content);
+            vec![CommandOutput::MarkdownContent(full_content)]
         }
         Ok(None) => vec![CommandOutput::error(format!("Note #{} not found.", id))],
         Err(e) => vec![CommandOutput::error(format!(
@@ -2735,11 +2708,10 @@ pub fn handle_document_show(state: &ReplState, id: i64) -> Vec<CommandOutput> {
             ));
             header.push_str("---\n");
 
-            // TODO: Phase 3.5 — migrate markdown rendering to ChatView
-            crate::markdown::print_markdown_chat(&header);
-            crate::markdown::print_markdown_chat(&doc.content);
-
-            vec![]
+            // Return header and content as markdown for view layer to render
+            let mut full_content = header;
+            full_content.push_str(&doc.content);
+            vec![CommandOutput::MarkdownContent(full_content)]
         }
         Ok(None) => vec![CommandOutput::error(format!("Document #{} not found.", id))],
         Err(e) => vec![CommandOutput::error(format!(

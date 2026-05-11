@@ -161,6 +161,26 @@ pub enum CommandOutput {
     /// Contains the formatted help text for the `/help` command.
     HelpText(String),
 
+    /// Markdown content display.
+    ///
+    /// Contains markdown text to be rendered by the view layer.
+    /// Used for compact summaries, note/document content, and other
+    /// markdown-formatted output.
+    MarkdownContent(String),
+
+    /// Token usage metrics display.
+    ///
+    /// Shows prompt tokens, response tokens, and total after a response.
+    /// Rendered dimmed (gray) by the view layer.
+    TokenDisplay {
+        /// Prompt tokens
+        prompt_tokens: u64,
+        /// Response tokens
+        response_tokens: u64,
+        /// Total tokens
+        total_tokens: u64,
+    },
+
     // ── Flow control ──────────────────────────────────────────────────
     /// Exit the REPL.
     ///

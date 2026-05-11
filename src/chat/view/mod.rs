@@ -148,6 +148,17 @@ pub trait ChatView {
         preserved_last: usize,
     );
 
+    /// Display markdown content
+    ///
+    /// Renders markdown text using the appropriate renderer for the view.
+    /// TerminalView uses termimad; RatatuiView will use tui-markdown.
+    ///
+    /// Used for:
+    /// - Compact summary display
+    /// - Note/document content display
+    /// - Any command output that contains markdown
+    fn show_markdown(&mut self, content: &str);
+
     /// Display a command output result
     ///
     /// Dispatches rendering based on the `CommandOutput` variant.

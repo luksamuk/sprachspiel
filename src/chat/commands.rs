@@ -1234,13 +1234,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 }
 
 /// Print help message
-pub fn print_help() {
-    print!("{}", format_help());
-}
-
 /// Format help text as a string (for CommandOutput::HelpText).
-///
-/// This is the non-printing version of `print_help()`.
 pub fn format_help() -> String {
     format!(
         r#"Available commands:
@@ -1354,14 +1348,7 @@ Shortcuts:
     )
 }
 
-/// Print session information
-pub fn print_session_info(session: &ChatSession, metrics: Option<&ContextMetrics>) {
-    println!("{}", format_session_info(session, metrics));
-}
-
 /// Format session information as a string (for CommandOutput).
-///
-/// This is the non-printing version of `print_session_info()`.
 pub fn format_session_info(session: &ChatSession, metrics: Option<&ContextMetrics>) -> String {
     let name = session.name.as_deref().unwrap_or("unnamed");
     let project = session.project_id.as_deref().unwrap_or("none");

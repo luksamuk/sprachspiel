@@ -146,6 +146,10 @@ impl ChatView for TerminalView {
         }
     }
 
+    fn show_markdown(&mut self, content: &str) {
+        crate::markdown::print_markdown_chat(content);
+    }
+
     fn show_command_output(&mut self, output: &crate::chat::CommandOutput) {
         match output {
             CommandOutput::Info(msg) => {
@@ -188,6 +192,23 @@ impl ChatView for TerminalView {
             CommandOutput::ReindexResult(data) => self.render_reindex_result(data),
             CommandOutput::HelpText(text) => {
                 print!("{}", text);
+            }
+            CommandOutput::MarkdownContent(content) => {
+                crate::markdown::print_markdown_chat(content);
+            }
+            CommandOutput::TokenDisplay {
+                prompt_tokens,
+                response_tokens,
+                total_tokens,
+            } => {
+                eprintln!(
+                    "\n{}[Tokens: {} prompt + {} response = {} total]{}",
+                    term_colors::DIM,
+                    prompt_tokens,
+                    response_tokens,
+                    total_tokens,
+                    term_colors::RESET
+                );
             }
 
             // ── Flow control ──────────────────────────────────────────
