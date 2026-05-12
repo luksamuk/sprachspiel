@@ -493,7 +493,7 @@ impl TerminalView {
         println!(
             "{}Notes (page {}/{}, {} total):{}",
             term_colors::BOLD,
-            data.page + 1,
+            data.page,
             data.total_pages,
             data.total_notes,
             term_colors::RESET
@@ -551,13 +551,20 @@ impl TerminalView {
         println!("Sessions for this project:");
         for entry in &data.sessions {
             let marker = if entry.is_current { " (current)" } else { "" };
+            let age = entry.updated_at.as_deref().unwrap_or("");
+            let age_display = if age.is_empty() {
+                String::new()
+            } else {
+                format!(", {}", age)
+            };
             println!(
-                "  {}• {}{} {}[{} messages]{}",
+                "  {}• {}{} {}[{} messages{}]{}",
                 term_colors::CYAN,
                 entry.name,
                 marker,
                 term_colors::DIM,
                 entry.message_count,
+                age_display,
                 term_colors::RESET
             );
         }
@@ -610,16 +617,16 @@ impl TerminalView {
         }
         println!("Imported documents:");
         for doc in &data.documents {
+            let age_days = (chrono::Utc::now() - doc.created_at).num_days();
             println!(
-                "  {}#{} {} {}[{}]{} {}[{} chunks]{}",
+                "  {}#{} {} {}({}, {} words, {}d){}",
                 term_colors::CYAN,
                 doc.id,
                 doc.title,
                 term_colors::DIM,
                 doc.source_type,
-                term_colors::RESET,
-                term_colors::DIM,
-                doc.chunk_count,
+                doc.word_count,
+                age_days,
                 term_colors::RESET
             );
         }

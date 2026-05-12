@@ -136,12 +136,12 @@ pub struct TodoRow {
 pub struct SessionSummary {
     pub id: String,
     pub name: Option<String>,
-    #[allow(dead_code)] // Available for TUI session list display
+    #[allow(dead_code)] // Not surfaced in terminal output yet — TUI will display model per session
     pub model: String,
     pub message_count: usize,
-    #[allow(dead_code)] // Available for TUI session list display
+    #[allow(dead_code)] // Not surfaced in terminal output yet — TUI will display creation date
     pub created_at: DateTime<Utc>,
-    #[allow(dead_code)] // Available for TUI session list display
+    /// Last update timestamp — used via SessionEntry.updated_at age display
     pub updated_at: DateTime<Utc>,
 }
 

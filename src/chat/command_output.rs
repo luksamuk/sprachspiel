@@ -233,8 +233,9 @@ pub struct FactSearchResult {
     pub id: i64,
     /// Fact content
     pub content: String,
-    /// Fact category
-    #[allow(dead_code)] // Available for TUI structured fact category display
+    /// Fact category (preference, identity, fact)
+    #[allow(dead_code)]
+    // Category enum for structured fact grouping — TUI will use for icons/color
     pub category: Category,
     /// Relevance score (0.0 - 1.0)
     pub score: f64,
@@ -245,7 +246,7 @@ pub struct FactSearchResult {
 pub struct NoteListData {
     /// Notes in this scope
     pub notes: Vec<crate::content::Note>,
-    /// Current page (0-indexed)
+    /// Current page (1-indexed)
     pub page: usize,
     /// Total number of pages
     pub total_pages: usize,
@@ -296,6 +297,8 @@ pub struct SessionEntry {
     pub message_count: usize,
     /// Whether this is the current session
     pub is_current: bool,
+    /// Last updated time (age display)
+    pub updated_at: Option<String>,
 }
 
 /// Data for compact result display (`/compact`).
@@ -314,8 +317,9 @@ pub struct CompactData {
 pub struct ExportData {
     /// The exported content
     pub content: String,
-    /// Export format
-    #[allow(dead_code)] // Available for TUI format selection display
+    /// Export format (Markdown or JSON) — used to determine output style
+    #[allow(dead_code)]
+    // Format discriminates display mode — TUI will show format label differently
     pub format: ExportFormat,
     /// File path (if saved to file)
     pub file_path: Option<String>,
@@ -362,10 +366,12 @@ pub struct DocumentEntry {
     pub title: String,
     /// Document ID
     pub id: i64,
-    /// Source type
+    /// Source type (file extension)
     pub source_type: String,
-    /// Number of chunks
-    pub chunk_count: usize,
+    /// Word count
+    pub word_count: usize,
+    /// Creation timestamp (for age calculation)
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Data for content prune result (`/content prune`).
@@ -386,9 +392,6 @@ pub struct ContentPruneData {
 pub struct SearchData {
     /// Search results formatted string
     pub formatted: String,
-    /// Number of results
-    #[allow(dead_code)] // Available for TUI result count display
-    pub count: usize,
 }
 
 /// Data for reindex result (`/reindex`).

@@ -1357,7 +1357,7 @@ The key risk is **visual regression** — missing icons, wrong colors, or multi-
 
 ### 22.3 Note Commands
 
-- [ ] `/note list` → renders NoteList with formatted entries
+- [ ] `/note list` → renders NoteList with formatted entries — **must show `page 1/N` (NOT `page 2/N` — off-by-one bug regression)**
 - [ ] `/note add "Render test note"` → shows ✓ success with NoteAdded variant
 - [ ] `/note show 1` → renders note content via MarkdownContent
 - [ ] `/note delete 999` → renders ✗ error (not found)
@@ -1378,7 +1378,7 @@ The key risk is **visual regression** — missing icons, wrong colors, or multi-
 
 ### 22.4 Document Commands
 
-- [ ] `/doc list` → renders DocumentList with entries
+- [ ] `/doc list` → renders DocumentList with entries — **must show `#N title (txt, N words, Nd)` format (NOT `[txt] [0 chunks]` — bug regression)**
 - [ ] `/doc import /tmp/test.txt` → renders Success/Info with chunk count
 - [ ] `/doc show 999` → renders ✗ error (not found)
 - [ ] `/doc delete 999` → renders ✗ error (not found)

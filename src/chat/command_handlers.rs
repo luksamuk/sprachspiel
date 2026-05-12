@@ -502,10 +502,19 @@ fn handle_list(state: &ReplState) -> Vec<CommandOutput> {
                     .into_iter()
                     .map(|info| {
                         let is_current = info.id == state.session.id;
+                        let age_days = (chrono::Utc::now() - info.updated_at).num_days();
+                        let updated_at = if age_days == 0 {
+                            "today".to_string()
+                        } else if age_days == 1 {
+                            "yesterday".to_string()
+                        } else {
+                            format!("{}d ago", age_days)
+                        };
                         SessionEntry {
                             name: info.name.unwrap_or_else(|| info.id.clone()),
                             message_count: info.message_count,
                             is_current,
+                            updated_at: Some(updated_at),
                         }
                     })
                     .collect();
@@ -702,13 +711,9 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
             if results.is_empty() {
                 vec![CommandOutput::info("No results found.")]
             } else {
-                let count = results.len();
                 match format_results(&results) {
                     Some(formatted) => {
-                        vec![CommandOutput::SearchResults(SearchData {
-                            formatted,
-                            count,
-                        })]
+                        vec![CommandOutput::SearchResults(SearchData { formatted })]
                     }
                     None => vec![CommandOutput::info("No results found.")],
                 }
@@ -724,14 +729,10 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
                 "Enrichment warning: {}",
                 error
             ))];
-            if !partial_results.is_empty() {
-                let count = partial_results.len();
-                if let Some(formatted) = format_results(&partial_results) {
-                    outputs.push(CommandOutput::SearchResults(SearchData {
-                        formatted,
-                        count,
-                    }));
-                }
+            if !partial_results.is_empty()
+                && let Some(formatted) = format_results(&partial_results)
+            {
+                outputs.push(CommandOutput::SearchResults(SearchData { formatted }));
             }
             outputs
         }
@@ -1775,12 +1776,9 @@ pub async fn handle_model_switch(
     outputs
 }
 
-/// Print context information about the current session.
+/// Format context information as a string for `CommandOutput::ContextInfo`.
 ///
 /// Shows token usage, message count, and context window utilization.
-/// Format context information as a string (for CommandOutput::ContextInfo).
-///
-/// This is the non-printing version of `print_context_info()`.
 pub fn format_context_info(
     session: &ChatSession,
     model_config: &ModelConfig,
@@ -2685,7 +2683,8 @@ pub fn handle_document_list(state: &ReplState, global: bool) -> Vec<CommandOutpu
                     title: doc.title.clone(),
                     id: doc.id,
                     source_type: doc.file_type.extension().to_string(),
-                    chunk_count: 0, // chunk_count not available from list
+                    word_count: doc.word_count,
+                    created_at: doc.created_at,
                 })
                 .collect();
             let is_empty = entries.is_empty();
