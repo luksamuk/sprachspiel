@@ -3848,7 +3848,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** 🔄 IN PROGRESS (W6-PR2: Ratatui Infrastructure + Responsive Rendering)
+**Status:** ✅ COMPLETED (W6-PR2: Ratatui Infrastructure + Responsive Rendering)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -4038,25 +4038,25 @@ Input is disabled during Thinking/Streaming/Tool call states. Only Ctrl+C cancel
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 2.1 | Add dependencies to `Cargo.toml`: `ratatui 0.29`, `crossterm 0.28+event-stream`, `tui-markdown 0.2`, `unicode-segmentation 1.11`; remove `rustyline` | 📋 |
-| 2.2 | Create `src/chat/tui/mod.rs` — Terminal setup (`enter()`, `exit()`, `resize()`, `restore()`) using crossterm | 📋 |
-| 2.3 | Create `src/chat/app.rs` — `App` state, `AppEvent` enum, render loop | 📋 |
-| 2.4 | Create `src/chat/input/crossterm_input.rs` — `CrosstermInput` implementing `InputBackend` (Enter, Backspace, Ctrl+C/D, arrows, history). Tab completion deferred to PR3. | 📋 |
-| 2.5 | Create `src/chat/view/ratatui_view.rs` — `RatatuiView` implementing `ChatView` (15+ trait methods) | 📋 |
-| 2.6 | Create TUI components: `chat_area.rs` (scrollable messages), `status_bar.rs` (responsive + spinner), `input_line.rs` (display-only prompt) | 📋 |
-| 2.7 | Create `src/chat/tui/markdown.rs` — `tui-markdown` with dark/light/mono `StyleSheet` themes, streaming fallback to plain text | 📋 |
-| 2.8 | Responsive `WelcomeInfo` and `StatusBarInfo` rendered as chat area messages (no hardcoded 80 cols) | 📋 |
-| 2.9 | Spinner: rattles animation frames in ratatui status bar widget (replaces indicatif for chat mode) | 📋 |
-| 2.10 | Refactor `run_chat_repl()` → `App::run()` for chat mode; non-chat subcommands keep termimad+indicatif | 📋 |
-| 2.11 | Streaming: plain text during LLM response, full markdown render on completion | 📋 |
-| 2.12 | Color mapping: `colors::*` ANSI constants → ratatui `Style` in `src/chat/tui/styles.rs` | 📋 |
-| 2.13 | Tests: `cargo test`, `cargo clippy`, manual testing at different terminal widths | 📋 |
+| 2.1 | Add dependencies to `Cargo.toml`: `ratatui 0.30`, `crossterm 0.29`, `tui-markdown 0.3` (highlight-code), `unicode-segmentation 1.11`; remove `rustyline` | ✅ COMPLETED |
+| 2.2 | Create `src/chat/tui/mod.rs` — Terminal setup (`enter_tui()`, `exit_tui()`, `restore_terminal_on_panic()`) using crossterm raw mode + alternate screen | ✅ COMPLETED |
+| 2.3 | Create `src/chat/app.rs` — `App` state, `LlmState` enum, `handle_key()`, `render()`, `tick_spinner()` | ✅ COMPLETED |
+| 2.4 | Create `src/chat/input/crossterm_input.rs` — `CrosstermInput` implementing `InputBackend` (Enter, Backspace, Ctrl+C/D, arrows, history). Tab completion deferred to PR3. | ✅ COMPLETED |
+| 2.5 | Create `src/chat/view/ratatui_view.rs` — `RatatuiView` implementing `ChatView` (18 trait methods + all CommandOutput variants) | ✅ COMPLETED |
+| 2.6 | Create TUI components: `chat_area.rs` (ChatMessage enum), `status_bar.rs` (responsive + spinner), `input_line.rs` (InputState) | ✅ COMPLETED |
+| 2.7 | Create `src/chat/tui/markdown.rs` — `tui-markdown` with `MarkdownTheme` enum (Dark/Light/Mono) and `StyleSheet` implementations | ✅ COMPLETED |
+| 2.8 | Responsive `WelcomeInfo` and `StatusBarInfo` rendered as chat area messages via `RatatuiView::show_welcome()` and `RatatuiView::show_recent_context()` | ✅ COMPLETED |
+| 2.9 | Spinner: braille animation frames in ratatui status bar widget (replaces indicatif for chat mode) | ✅ COMPLETED |
+| 2.10 | Wire `run_chat_repl()` → `run_chat_repl_tui()` TUI event loop; CrosstermInput replaces rustyline; handle_user_message delegates to existing handler | ✅ COMPLETED |
+| 2.11 | Streaming: plain text during LLM response (ChatMessage::assistant_streaming), full markdown render on completion (ChatMessage::assistant_markdown). Spinner animation deferred to PR3 (await blocks render loop). | ✅ COMPLETED (deferred animation to PR3) |
+| 2.12 | Color mapping: `colors::*` ANSI constants → ratatui `Style` in `src/chat/tui/styles.rs` | ✅ COMPLETED |
+| 2.13 | Tests: `cargo test` (990+), `cargo clippy` clean, `cargo fmt`, dead_code annotations for PR3 scaffolding | ✅ COMPLETED |
 
 **New Dependencies:**
 ```toml
-ratatui = "0.29"
-crossterm = { version = "0.28", features = ["event-stream"] }
-tui-markdown = "0.2"
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+tui-markdown = { version = "0.3", features = ["highlight-code"] }
 unicode-segmentation = "1.11"
 ```
 
@@ -4069,7 +4069,7 @@ rustyline = "14"         # Removed — replaced by CrosstermInput
 ```toml
 termimad = "0.34"       # query/translate/summarize/ocr (non-chat)
 indicatif = "0.17"       # subcommand spinners (non-chat only)
-rattles = "0.2"          # spinner frames (ratatui widget in chat, indicatif in non-chat)
+rattles = "0.2"          # spinner frames (unused in chat, kept for future)
 ```
 
 **tui-markdown Notes:**
