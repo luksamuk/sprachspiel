@@ -59,6 +59,8 @@ impl RatatuiView {
     /// Initializes the terminal for TUI mode (raw mode, alternate screen).
     /// Call `restore()` when done to clean up the terminal.
     pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
+        // Cannot proceed without terminal — fatal error is appropriate here
+        #[allow(clippy::expect_used)] // TUI init failure is unrecoverable
         let terminal = enter_tui().expect("Failed to initialize TUI terminal");
 
         // Install a panic hook that restores the terminal

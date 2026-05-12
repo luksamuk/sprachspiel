@@ -33,8 +33,10 @@ const MAX_HISTORY: usize = 1000;
 /// responsibility of the TUI module.
 pub struct CrosstermInput {
     /// Current input buffer
+    #[allow(dead_code)] // PR3: Will be used for TUI input buffer access
     pub(crate) buffer: String,
     /// Cursor position within the buffer (byte offset)
+    #[allow(dead_code)] // PR3: Will be used for TUI cursor positioning
     pub(crate) cursor_pos: usize,
     /// Command history (most recent last)
     pub(crate) history: Vec<String>,
@@ -46,6 +48,7 @@ pub struct CrosstermInput {
     pub(crate) history_path: PathBuf,
 }
 
+#[allow(dead_code)] // PR3: Will be used for TUI key event handling
 impl CrosstermInput {
     /// Create a new CrosstermInput
     ///
@@ -310,7 +313,7 @@ impl CrosstermInput {
     /// Navigate to next history entry
     fn history_next(&mut self) {
         match self.history_pos {
-            None => return, // Not in history navigation
+            None => {} // Not in history navigation
             Some(pos) => {
                 if pos + 1 >= self.history.len() {
                     // Past the newest entry: restore saved buffer

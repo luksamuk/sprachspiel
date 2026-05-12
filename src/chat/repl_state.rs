@@ -191,6 +191,7 @@ impl ReplStateBuilder {
 
 impl ReplState {
     /// Get status bar info from context metrics
+    #[allow(dead_code)] // PR3: Will be used for TUI status bar
     pub fn get_status_bar_info(&self, metrics: ContextMetrics) -> StatusBarInfo {
         let percent = if metrics.context_window > 0 {
             ((metrics.total_tokens as f64 / metrics.context_window as f64) * 100.0).min(100.0) as u8

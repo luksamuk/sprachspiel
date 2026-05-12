@@ -38,6 +38,7 @@ pub enum InputResult {
     /// User pressed Ctrl+D (EOF)
     Eof,
     /// An error occurred
+    #[allow(dead_code)] // InputBackend trait contract
     Error(String),
 }
 
@@ -68,6 +69,7 @@ pub trait InputBackend {
     /// # Returns
     ///
     /// Returns `InputResult` indicating what happened.
+    #[allow(dead_code)] // InputBackend trait contract
     fn read_line(&mut self, prompt: &str) -> InputResult;
 
     /// Add a line to the input history

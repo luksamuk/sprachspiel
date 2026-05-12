@@ -90,6 +90,7 @@ impl InputState {
     }
 
     /// Get the current line content for submission
+    #[allow(dead_code)] // PR3: Will be used for TUI input submission
     pub fn line(&self) -> &str {
         &self.buffer
     }

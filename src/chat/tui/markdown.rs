@@ -199,6 +199,7 @@ pub fn render_markdown<'a>(content: &'a str, theme: MarkdownTheme) -> Text<'a> {
 /// Used during LLM streaming when we want fast display
 /// without markdown parsing overhead. Once the response completes,
 /// the message is re-rendered with `render_markdown`.
+#[allow(dead_code)] // PR3: Will be used for streaming text rendering in TUI
 pub fn render_plain_text(content: &str) -> Text<'static> {
     Text::from(content.to_string())
 }

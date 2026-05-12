@@ -107,7 +107,7 @@ pub async fn run_chat_repl_tui(
             session.tools && capabilities.tools,
             session.think && capabilities.thinking,
             capabilities.vision,
-            &sandbox_status,
+            sandbox_status,
             project,
             session_name,
             session.anonymous,

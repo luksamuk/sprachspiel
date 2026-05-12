@@ -35,6 +35,7 @@ impl ChatMessage {
     }
 
     /// Create an assistant message (plain text for streaming)
+    #[allow(dead_code)] // PR3: Will be used for streaming assistant messages in TUI
     pub fn assistant_streaming(content: String) -> Self {
         Self {
             role: "Assistant".to_string(),

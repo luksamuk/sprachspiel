@@ -35,6 +35,7 @@ pub enum LlmState {
     /// Streaming — response coming in, input disabled
     Streaming,
     /// Running a tool call
+    #[allow(dead_code)] // PR3: Will be used when tool call UI shows spinner
     ToolCall,
 }
 
@@ -58,6 +59,7 @@ pub struct App {
     /// Scroll offset for the chat area (0 = scrolled to bottom)
     scroll_offset: u16,
     /// Whether the app should quit
+    #[allow(dead_code)] // PR3: Will be used for graceful quit handling
     should_quit: bool,
     /// Current spinner frame index
     spinner_frame: usize,
@@ -86,21 +88,25 @@ impl App {
     }
 
     /// Get the messages in the chat area
+    #[allow(dead_code)] // PR3: Will be used for scroll/pagination features
     pub fn messages(&self) -> &[ChatMessage] {
         &self.messages
     }
 
     /// Get the current input state
+    #[allow(dead_code)] // PR3: Will be used for tab completion
     pub fn input_state(&self) -> &InputState {
         &self.input_state
     }
 
     /// Get a mutable reference to the input state
+    #[allow(dead_code)] // PR3: Will be used for tab completion
     pub fn input_state_mut(&mut self) -> &mut InputState {
         &mut self.input_state
     }
 
     /// Get the current LLM state
+    #[allow(dead_code)] // PR3: Will be used for state-dependent UI rendering
     pub fn llm_state(&self) -> LlmState {
         self.llm_state
     }
@@ -164,6 +170,7 @@ impl App {
     }
 
     /// Check if the app should quit
+    #[allow(dead_code)] // PR3: Will be used for graceful quit handling
     pub fn should_quit(&self) -> bool {
         self.should_quit
     }
@@ -318,7 +325,7 @@ impl App {
     /// Navigate to next history entry
     fn history_next(&mut self) {
         match self.history_input.history_pos {
-            None => return,
+            None => {}
             Some(pos) => {
                 if pos + 1 >= self.history_input.history.len() {
                     // Past the newest entry: restore saved buffer

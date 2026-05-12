@@ -16,6 +16,7 @@ pub const CYAN: Color = Color::Cyan;
 pub const YELLOW: Color = Color::Yellow;
 
 /// Green text color
+#[allow(dead_code)] // PR3: Will be used for TUI success indicators
 pub const GREEN: Color = Color::Green;
 
 /// Red text color
@@ -48,6 +49,7 @@ pub fn dim_cyan() -> Style {
 }
 
 /// Default style (reset)
+#[allow(dead_code)] // PR3: Will be used for TUI style reset
 pub fn reset() -> Style {
     Style::default()
 }
@@ -63,11 +65,13 @@ pub fn error_style() -> Style {
 }
 
 /// Warning style (yellow)
+#[allow(dead_code)] // PR3: Will be used for TUI warning messages
 pub fn warning_style() -> Style {
     Style::default().fg(YELLOW)
 }
 
 /// Success style (green)
+#[allow(dead_code)] // PR3: Will be used for TUI success messages
 pub fn success_style() -> Style {
     Style::default().fg(GREEN)
 }
@@ -104,6 +108,7 @@ pub fn progress_color(percent: u8) -> Color {
 }
 
 /// Style for the progress bar based on percentage
+#[allow(dead_code)] // PR3: Will be used for TUI progress bar styling
 pub fn progress_style(percent: u8) -> Style {
     Style::default().fg(progress_color(percent))
 }

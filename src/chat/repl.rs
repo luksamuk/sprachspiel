@@ -1,19 +1,12 @@
 //! Chat REPL - Interactive read-eval-print loop
 //!
-//! Handles the main chat loop, user input, and model interaction.
+//! Handles session initialization, model detection, and delegates to
+//! the TUI event loop (`repl_tui`) for interactive chat.
 //!
-//! # Print usage justification
-//!
-//! This module uses `print!`/`println!` for terminal control:
-//! - Status bar rendering (ANSI positioning)
-//! - Prompt echo (user input confirmation)
-//! - Signal display (^C, ^D)
-//! - Help line output
-//!
-//! These are inherently terminal-specific operations. A TUI framework
-//! would handle these via widget state rather than direct output.
-
-#![expect(clippy::print_stdout)] // Terminal control: pre-TUI startup errors
+//! The terminal REPL loop (rustyline + termimad) has been replaced by
+//! the ratatui-based TUI in PR2. This module now handles pre-TUI setup
+//! only (database, session, model detection) and then calls
+//! `run_chat_repl_tui()` for the interactive loop.
 
 use std::path::PathBuf;
 use std::sync::Arc;
