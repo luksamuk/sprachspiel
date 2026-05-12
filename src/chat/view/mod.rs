@@ -69,8 +69,10 @@ const EXTENDED_MIND_ART: [&str; 14] = [
 // - Update `repl.rs` to use the new implementation
 // IMPORTANT: Review and remove any dead code after TUI is implemented.
 
+mod ratatui_view;
 mod terminal;
 
+pub use ratatui_view::RatatuiView;
 pub use terminal::TerminalView;
 
 // Re-export TokenMetrics from core for consumers of this module
