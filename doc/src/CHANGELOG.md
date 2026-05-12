@@ -6,7 +6,7 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Added
 
-- **W6-PR2: Ratatui Infrastructure + Responsive Rendering (Issue #146)** — Add Ratatui TUI framework and implement responsive chat rendering. Introduces `RatatuiView` implementing `ChatView`, TUI components (chat area, status bar, input line), responsive `WelcomeInfo` and `StatusBarInfo`, and `--tui` feature flag for visual testing. Default mode unchanged — all rendering changes gated behind the flag. Depends on W6-PR1 (CommandOutput enum) which is complete.
+- **W6-PR2: Responsive Chat Rebuild — Ratatui + CrosstermInput (Issue #146)** — Replace println+ANSI rendering with Ratatui for responsive chat at any terminal width. Replace rustyline with CrosstermInput (incompatible with ratatui raw mode). App event loop with crossterm key events. Spinner in status bar via rattles frames (no indicatif in chat mode). Streaming markdown: plain text during LLM response, full markdown render on completion. tui-markdown with dark/light/mono themes from config.toml. Disabled input during LLM processing. No feature flag — ratatui is the only chat mode. Non-chat subcommands (query, translate, OCR, summarize) continue using termimad+indicatif.
 
 ### Changed
 

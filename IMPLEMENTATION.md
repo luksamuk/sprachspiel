@@ -3970,27 +3970,87 @@ pub enum CommandResult {
 
 ---
 
-#### PR 2: Infrastructure + Responsive Rendering (~5-6 days) — #146
+#### PR 2: Responsive Chat Render + CrosstermInput (~8-10 days) — #146
 
-**Goal:** Add Ratatui infrastructure and implement responsive rendering. Chat displays correctly at any terminal width. Feature flag `--tui` for testing.
+**Goal:** Replace println+ANSI rendering with Ratatui for responsive chat. Replace rustyline with CrosstermInput for basic input. Chat is functional at any terminal width. No feature flag — ratatui is the only chat mode. Non-chat subcommands (query, translate, OCR, summarize) continue using termimad+indicatif.
+
+**Why combined (originally PR2+PR3):** Rustyline and Ratatui are technically incompatible — both require raw mode and terminal control. A "visual-only" PR with rustyline input would not work. Combining rendering+input in PR2 ensures the chat is functionally usable from the start.
 
 **Branch:** `feat/ratatui-infrastructure`
+
+**Architecture:**
+
+```
+┌─ App (event loop via tokio + crossterm) ─────────────────┐
+│                                                           │
+│  crossterm events ─→ AppEvent::Input(key)                │
+│  LLM streaming   ─→ AppEvent::LlmToken(text)            │
+│  LLM complete    ─→ AppEvent::LlmComplete(response)      │
+│  LLM error       ─→ AppEvent::LlmError(error)            │
+│  Commands         ─→ AppEvent::CommandOutput(result)       │
+│  Terminal resize  ─→ AppEvent::Resize(w, h)               │
+│                                                           │
+│  App::handle_event() ─→ update state ─→ terminal.draw()  │
+│                                                           │
+│  Input disabled during LLM processing                     │
+│  Spinner in status bar (rattles frames, no indicatif)    │
+└───────────────────────────────────────────────────────────┘
+```
+
+**Layout (responsive to terminal width):**
+
+```
+┌──────────────────────────────────────────────────┐
+│  Chat Area (scrollable Paragraph/List)            │
+│  - WelcomeInfo, messages, tool calls, thinking     │
+│  - Streaming: plain text during, markdown after    │
+│  - Width = terminal.width (no hardcoded 80)        │
+├──────────────────────────────────────────────────┤
+│  ⠋ Thinking... │ llama3.1 │ 47K/128K 37% │ 🧠🔧 │  ← Status bar with spinner
+├──────────────────────────────────────────────────┤
+│  >>> _                                            │  ← CrosstermInput
+└──────────────────────────────────────────────────┘
+```
+
+**Spinner in Status Bar:**
+
+When the LLM is processing, the status bar replaces the model name with an animated spinner using `rattles` frames. `indicatif::ProgressBar` is NOT used in chat mode — the spinner is a native ratatui widget.
+
+| State | Status Bar Content |
+|-------|-------------------|
+| **Idle** | `llama3.1 │ 47K/128K 37% │ 🧠🔧` |
+| **Thinking** | `⠋ Thinking... │ 47K/128K │ 🧠🔧` |
+| **Streaming** | `llama3.1 │ 49K/128K 38% │ 🧠🔧` |
+| **Tool call** | `⠋ Running tool... │ 47K/128K │ 🔧` |
+
+Input is disabled during Thinking/Streaming/Tool call states. Only Ctrl+C cancels.
+
+**Markdown Rendering Strategy:**
+
+| State | Behavior |
+|-------|----------|
+| **Streaming tokens** | Plain text append to chat area (fast, no parsing overhead) |
+| **Complete response** | Re-render full message with `tui-markdown` (syntax highlighting, headers, bold, code blocks) |
+
+`tui-markdown` uses `pulldown-cmark` internally. Custom `StyleSheet` implementations for dark/light/mono themes map to the existing `DisplaySettings.skin` from `config.toml`.
 
 **Implementation Phases:**
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 2.1 | Add `ratatui`, `crossterm`, `tui-markdown`, `unicode-segmentation` to `Cargo.toml` | 📋 |
-| 2.2 | Create `src/chat/tui/mod.rs` — Terminal setup (`enter()`, `exit()`, `resize()`, `restore()`) | 📋 |
-| 2.3 | Create `src/chat/tui/components/chat_area.rs` — Message scrollback widget | 📋 |
-| 2.4 | Create `src/chat/tui/components/status_bar.rs` — Responsive status bar widget | 📋 |
-| 2.5 | Create `src/chat/tui/components/input_line.rs` — Input line widget (display only, no editing) | 📋 |
-| 2.6 | Create `src/chat/view/ratatui_view.rs` — `RatatuiView` implementing `ChatView` | 📋 |
-| 2.7 | Create `src/chat/tui/markdown.rs` — Markdown rendering via `tui-markdown` with dynamic width | 📋 |
-| 2.8 | Migrate `WelcomeInfo` to responsive rendering (no hardcoded 80 cols) | 📋 |
-| 2.9 | Migrate `StatusBarInfo` to responsive rendering (no hardcoded 80 cols) | 📋 |
-| 2.10 | Map `colors::*` ANSI constants to ratatui `Style` | 📋 |
-| 2.11 | Feature flag `--tui` for visual testing (default mode unchanged) | 📋 |
+| 2.1 | Add dependencies to `Cargo.toml`: `ratatui 0.29`, `crossterm 0.28+event-stream`, `tui-markdown 0.2`, `unicode-segmentation 1.11`; remove `rustyline` | 📋 |
+| 2.2 | Create `src/chat/tui/mod.rs` — Terminal setup (`enter()`, `exit()`, `resize()`, `restore()`) using crossterm | 📋 |
+| 2.3 | Create `src/chat/app.rs` — `App` state, `AppEvent` enum, render loop | 📋 |
+| 2.4 | Create `src/chat/input/crossterm_input.rs` — `CrosstermInput` implementing `InputBackend` (Enter, Backspace, Ctrl+C/D, arrows, history). Tab completion deferred to PR3. | 📋 |
+| 2.5 | Create `src/chat/view/ratatui_view.rs` — `RatatuiView` implementing `ChatView` (15+ trait methods) | 📋 |
+| 2.6 | Create TUI components: `chat_area.rs` (scrollable messages), `status_bar.rs` (responsive + spinner), `input_line.rs` (display-only prompt) | 📋 |
+| 2.7 | Create `src/chat/tui/markdown.rs` — `tui-markdown` with dark/light/mono `StyleSheet` themes, streaming fallback to plain text | 📋 |
+| 2.8 | Responsive `WelcomeInfo` and `StatusBarInfo` rendered as chat area messages (no hardcoded 80 cols) | 📋 |
+| 2.9 | Spinner: rattles animation frames in ratatui status bar widget (replaces indicatif for chat mode) | 📋 |
+| 2.10 | Refactor `run_chat_repl()` → `App::run()` for chat mode; non-chat subcommands keep termimad+indicatif | 📋 |
+| 2.11 | Streaming: plain text during LLM response, full markdown render on completion | 📋 |
+| 2.12 | Color mapping: `colors::*` ANSI constants → ratatui `Style` in `src/chat/tui/styles.rs` | 📋 |
+| 2.13 | Tests: `cargo test`, `cargo clippy`, manual testing at different terminal widths | 📋 |
 
 **New Dependencies:**
 ```toml
@@ -4000,197 +4060,164 @@ tui-markdown = "0.2"
 unicode-segmentation = "1.11"
 ```
 
+**Removed Dependencies:**
+```toml
+rustyline = "14"         # Removed — replaced by CrosstermInput
+```
+
 **Kept Dependencies (unchanged):**
 ```toml
 termimad = "0.34"       # query/translate/summarize/ocr (non-chat)
-indicatif = "0.17"       # subcommand spinners (non-chat)
-rattles = "0.2"          # spinner animation frames (chat TUI + non-chat)
-rustyline = "14"         # input (kept for PR 2-3, removed in PR 4)
+indicatif = "0.17"       # subcommand spinners (non-chat only)
+rattles = "0.2"          # spinner frames (ratatui widget in chat, indicatif in non-chat)
 ```
+
+**tui-markdown Notes:**
+- Feature `highlight-code` enabled for syntax highlighting in code blocks
+- Custom `StyleSheet` implementations: `DarkStyleSheet`, `LightStyleSheet`, `MonoStyleSheet`
+- Maps from existing `DisplaySettings.skin` config ("dark", "light", "mono")
+- Limitation: same style for inline code and code blocks (acceptable for chat)
+- No code block borders/background (plain styled text with syntax highlighting)
 
 **Files to Create:**
-- `src/chat/tui/mod.rs`
-- `src/chat/tui/components/mod.rs`
-- `src/chat/tui/components/chat_area.rs`
-- `src/chat/tui/components/status_bar.rs`
-- `src/chat/tui/components/input_line.rs`
-- `src/chat/view/ratatui_view.rs`
-- `src/chat/tui/markdown.rs`
-
-**Checkpoint:** Mode padrão funciona idêntico ao atual. Modo `--tui` renderiza chat, status bar, banner de forma responsiva, mas input ainda via rustyline (não funcional para uso real, só para validação visual).
-
----
-
-#### PR 3: Crossterm Input + Event Loop (~5-6 days) — #147
-
-**Goal:** Replace rustyline with crossterm input handling. Implement the async event loop for LLM communication. Feature flag `--tui` becomes fully functional.
-
-**Architecture:**
-
-```
-┌─ Event Loop (tokio) ─────────────────────────────────────┐
-│                                                           │
-│  crossterm events ─→ AppEvent::Input(key)                │
-│  LLM streaming   ─→ AppEvent::LlmToken(text)            │
-│  LLM complete    ─→ AppEvent::LlmComplete(response)      │
-│  LLM error       ─→ AppEvent::LlmError(error)            │
-│  Commands         ─→ AppEvent::CommandResult(result)      │
-│  Terminal resize  ─→ AppEvent::Resize(w, h)               │
-│                                                           │
-│  App::handle_event() ─→ update state ─→ terminal.draw()  │
-│                                                           │
-└───────────────────────────────────────────────────────────┘
-```
-
-**Layout (responsive to terminal width):**
-
-```
-┌─────────────────────────────────────────────────┐
-│  Chat Area (Paragraph/List, auto-scroll)         │
-│  - Markdown rendered via tui-markdown             │
-│  - Tool calls, responses, thinking blocks          │
-│  - Width = terminal.width                         │
-├─────────────────────────────────────────────────┤
-│  Status Bar (1 line, adapts to width)             │
-│  model │ tokens │ progress bar │ indicators       │
-├─────────────────────────────────────────────────┤
-│  >>> input line with tab completion               │
-└─────────────────────────────────────────────────┘
-```
-
-**Implementation Phases:**
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 3.1 | Create `src/chat/app.rs` — `App` state, `AppEvent` enum, `run()` event loop | 📋 |
-| 3.2 | Create `src/chat/input/crossterm_input.rs` — `CrosstermInput` implementing `InputBackend` | 📋 |
-| 3.3 | Implement tab completion with `ChatCompleter` reuse | 📋 |
-| 3.4 | Implement history navigation (up/down arrows) | 📋 |
-| 3.5 | Implement mpsc channel for LLM streaming (background task → event loop) | 📋 |
-| 3.6 | Implement streaming token display (incremental append to chat area) | 📋 |
-| 3.7 | Migrate spinner to ratatui status area (replace `indicatif` for chat mode) | 📋 |
-| 3.8 | Migrate tool call/result display to chat area | 📋 |
-| 3.9 | Implement error display and recovery in TUI | 📋 |
-| 3.10 | Integrate with `handle_user_message()` and command dispatch | 📋 |
-
-**`AppEvent` Enum:**
-
-```rust
-pub enum AppEvent {
-    Input(KeyEvent),           // Key pressed
-    LlmToken(String),          // Streaming token
-    LlmComplete(Response),     // Full response received
-    LlmError(String),          // LLM error
-    CommandResult(CommandResult), // /command result
-    Resize(u16, u16),          // Terminal resized
-    Quit,                      // Ctrl+D or /quit
-}
-```
-
-**Spinner Migration:**
-
-| Context | Before | After |
-|----------|--------|-------|
-| Chat mode | `indicatif::ProgressBar` + `rattles` frames | Ratatui status area with `rattles` frames |
-| Query mode | `indicatif::ProgressBar` | `indicatif` stays (no TUI) |
-| OCR/summarize/vision | `indicatif::ProgressBar` | `indicatif` stays (no TUI) |
-
-`rattles` stays as dependency — its animation frames are used directly by the ratatui status widget instead of via `indicatif::ProgressBar.tick_strings()`. The "gambiarra" in `spinner.rs` that extracts frames for indicatif is replaced by native ratatui animation.
-
-**Files to Create:**
-- `src/chat/app.rs`
-- `src/chat/input/crossterm_input.rs`
-
-**Checkpoint:** Modo `--tui` totalmente funcional. Chat, comandos, streaming, tab completion, history — tudo funciona via ratatui. Modo padrão (rustyline) continua funcionando.
-
----
-
-#### PR 4: Final Transition + Cleanup (~3-4 days) — #148
-
-**Goal:** Make ratatui the default and only rendering mode. Remove rustyline and all println-based chat rendering.
-
-**Implementation Phases:**
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 4.1 | Remove `--tui` feature flag — ratatui is now the only chat mode | 📋 |
-| 4.2 | Remove `RustylineInput` and `rustyline` dependency | 📋 |
-| 4.3 | Remove `TerminalView` (println-based implementation) | 📋 |
-| 4.4 | Remove hardcoded `\x1B[` ANSI escape codes from chat modules | 📋 |
-| 4.5 | Remove `CHAT_TERMINAL_WIDTH = 80` constant — width is now dynamic | 📋 |
-| 4.6 | Remove `build_status_bar()` and `build_clear_code()` from `repl.rs` (now in ratatui status bar widget) | 📋 |
-| 4.7 | Update `run_chat_repl()` to call `App::run()` directly | 📋 |
-| 4.8 | Update `src/spinner.rs` — chat mode uses ratatui, other modes keep `indicatif` | 📋 |
-| 4.9 | Update documentation: CHANGELOG, architecture, roadmap | 📋 |
-| 4.10 | Test on Linux, macOS, Termux | 📋 |
-
-**Dependencies Removed:**
-- `rustyline = "14"` — input now via crossterm
-
-**Dependencies Kept (unchanged):**
-- `termimad = "0.34"` — query/translate/summarize/ocr (non-chat subcommands)
-- `indicatif = "0.17"` — subcommand spinners (non-chat)
-- `rattles = "0.2"` — animation frames (chat TUI widget + non-chat spinners)
-
-**Dependencies Added:**
-- `ratatui = "0.29"` — TUI rendering framework
-- `crossterm = { version = "0.28", features = ["event-stream"] }` — terminal backend + input
-- `tui-markdown = "0.2"` — markdown rendering in ratatui widgets
-- `unicode-segmentation = "1.11"` — cursor movement in input editing
-
-**Files to Remove:**
-- `src/chat/input/rustyline.rs` — replaced by `crossterm_input.rs`
-- `src/chat/view/terminal.rs` — replaced by `ratatui_view.rs`
-- `src/chat/completion.rs` — tab completion logic moves to `crossterm_input.rs`
+- `src/chat/tui/mod.rs` — Terminal setup
+- `src/chat/tui/components/mod.rs` — Component module
+- `src/chat/tui/components/chat_area.rs` — Scrollable message area widget
+- `src/chat/tui/components/status_bar.rs` — Responsive status bar with spinner
+- `src/chat/tui/components/input_line.rs` — Input line display widget
+- `src/chat/view/ratatui_view.rs` — RatatuiView implementing ChatView
+- `src/chat/tui/markdown.rs` — Markdown rendering with theme support
+- `src/chat/tui/styles.rs` — ANSI-to-ratatui color mapping
+- `src/chat/app.rs` — App state, AppEvent, render loop
+- `src/chat/input/crossterm_input.rs` — CrosstermInput implementing InputBackend
 
 **Files to Modify:**
-- `Cargo.toml` — Remove `rustyline`, add new deps (already done in PR 2)
-- `src/chat/mod.rs` — Update module exports
-- `src/chat/input/mod.rs` — Remove `rustyline` re-export
-- `src/chat/view/mod.rs` — Remove `TerminalView` re-export, export `RatatuiView`
-- `src/chat/repl.rs` — Simplify to call `App::run()`
-- `src/spinner.rs` — Conditional: ratatui widget for chat, indicatif for subcommands
-- `src/markdown.rs` — Keep `print_markdown()` for non-chat, add tui-markdown path for chat
-- `src/lib.rs` — Module-level print expects only for non-chat modules
-- `CHANGELOG.md` — Document change
+- `Cargo.toml` — Add ratatui/crossterm/tui-markdown/unicode-segmentation deps, remove rustyline
+- `src/chat/mod.rs` — Add tui, app modules
+- `src/chat/input/mod.rs` — Add CrosstermInput, remove RustylineInput
+- `src/chat/view/mod.rs` — Add RatatuiView re-export, responsive helpers
+- `src/chat/repl.rs` — Refactor to call App::run() for chat mode
 
-**Checkpoint:** Only ratatui rendering mode exists. Chat mode uses crossterm input + ratatui rendering. Subcommands (query, translate, OCR, summarize) continue using `termimad` and `indicatif`.
+**Files to Remove:**
+- `src/chat/input/rustyline.rs` — Replaced by CrosstermInput
+
+**Checkpoint:** Chat mode fully functional via ratatui + crossterm. Responsive at any terminal width. Non-chat subcommands (query, translate, OCR, summarize) unchanged, still use termimad+indicatif. Basic input works (Enter, Backspace, Ctrl+C/D, arrows, history). Tab completion deferred to PR3.
 
 ---
 
-#### Overall Migration Map
+#### PR 3: Streaming Refinement + Tab Completion (~4-5 days) — #147
+
+**Goal:** Add tab completion, refine streaming token display, migrate tool call/result and error display to chat area, and integrate fully with `handle_user_message()`.
+
+**Why smaller (originally ~5-6 days):** CrosstermInput and the event loop moved to PR2. PR3 focuses on polish and completion features.
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 3.1 | Tab completion in CrosstermInput (reuse `ChatCompleter`) | 📋 |
+| 3.2 | mpsc channel for LLM streaming (background task → event loop) | 📋 |
+| 3.3 | Streaming token display refinement (incremental append, markdown re-render on completion) | 📋 |
+| 3.4 | Tool call/result display in chat area (CommandOutput variants rendered as ratatui widgets) | 📋 |
+| 3.5 | Error display and recovery in TUI | 📋 |
+| 3.6 | Full integration with `handle_user_message()` and command dispatch | 📋 |
+| 3.7 | Multi-line input support (Shift+Enter or \ continuation) | 📋 |
+
+**Files to Create:**
+- (None new — modifications to existing PR2 files)
+
+**Files to Modify:**
+- `src/chat/app.rs` — Add streaming channel, tab completion, tool display
+- `src/chat/input/crossterm_input.rs` — Add tab completion, multi-line
+- `src/chat/view/ratatui_view.rs` — Add tool call/result rendering
+- `src/chat/repl.rs` — Wire App::run() fully
+
+**Checkpoint:** Chat mode fully functional with tab completion, streaming markdown, tool display, error recovery. Non-chat subcommands unchanged.
+
+---
+
+#### PR 4: Final Cleanup — Remove TerminalView + ANSI Artifacts (~4-5 days) — #148
+
+**Goal:** Remove TerminalView, hardcoded ANSI escapes, CHAT_TERMINAL_WIDTH = 80, and rustyline-related code. Ratatui is the only chat rendering mode.
+
+**Implementation Phases:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 4.1 | Remove `TerminalView` (println-based implementation) | 📋 |
+| 4.2 | Remove all hardcoded `\x1B[` ANSI escape codes from chat modules | 📋 |
+| 4.3 | Remove `CHAT_TERMINAL_WIDTH = 80` constant — width is now dynamic | 📋 |
+| 4.4 | Remove `build_status_bar()` and `build_clear_code()` from `repl.rs` | 📋 |
+| 4.5 | Simplify `run_chat_repl()` → direct `App::run()` call | 📋 |
+| 4.6 | Update `src/spinner.rs` — chat mode uses rattatui widget exclusively | 📋 |
+| 4.7 | Clean up `src/chat/view/mod.rs` — remove ANSI-only helpers, update `ChatView` trait | 📋 |
+| 4.8 | Update `src/markdown.rs` — ratatui path for chat, termimad path for non-chat | 📋 |
+| 4.9 | Documentation: CHANGELOG, architecture, roadmap | 📋 |
+| 4.10 | Test on Linux, macOS, Termux at various terminal widths | 📋 |
+
+**Dependencies Removed:**
+- `rustyline = "14"` — already removed in PR2
+
+**Dependencies Kept:**
+- `termimad = "0.34"` — query/translate/summarize/ocr (non-chat)
+- `indicatif = "0.17"` — subcommand spinners (non-chat)
+- `rattles = "0.2"` — animation frames (chat status bar widget + non-chat spinners)
+
+**Files to Remove:**
+- `src/chat/view/terminal.rs` — Replaced by RatatuiView (already in PR2)
+
+**Files to Modify:**
+- `Cargo.toml` — Verify rustyline removed, deps correct
+- `src/chat/mod.rs` — Remove terminal view module
+- `src/chat/input/mod.rs` — Remove rustyline module
+- `src/chat/view/mod.rs` — Remove TerminalView, remove ANSI-only helpers
+- `src/chat/repl.rs` — Simplify to App::run() directly
+- `src/spinner.rs` — Chat = rattatui widget, non-chat = indicatif (conditional)
+- `src/markdown.rs` — Dual path: ratatui for chat, termimad for non-chat
+- `CHANGELOG.md` — Document change
+
+**Checkpoint:** Only ratatui rendering mode exists for chat. Non-chat subcommands (query, translate, OCR, summarize) still use termimad and indicatif. Clean codebase with no hardcoded widths or ANSI escapes in chat modules.
+
+---
+
+#### Revised Overall Migration Map
 
 ```
-PR 1: CommandResult
-  ├── 336 println calls → CommandResult enum
+PR 1: CommandOutput (✅ COMPLETED)
+  ├── 336 println calls → CommandOutput enum
   ├── ChatView gains new methods
   ├── All output goes through typed channels
   └── Codebase functional, identical behavior
 
-PR 2: Rendering
-  ├── Ratatui + crossterm dependencies added
+PR 2: Ratatui Render + CrosstermInput (THIS PR)
+  ├── Ratatui + crossterm + tui-markdown deps added
+  ├── Rustyline REMOVED (incompatible with ratatui)
   ├── RatatuiView implements ChatView
-  ├── Responsive: banner, status bar, markdown
-  ├── Feature flag --tui for visual testing
-  └── Default mode unchanged
-
-PR 3: Input + Event Loop
   ├── CrosstermInput implements InputBackend
-  ├── Tab completion + history
-  ├── mpsc channel for LLM streaming
-  ├── Spinner → ratatui status area (chat only)
-  ├── --tui mode fully functional
-  └── Default mode unchanged
+  ├── App event loop with render cycle
+  ├── Responsive: chat area, status bar, welcome
+  ├── Spinner in status bar (rattles directly, no indicatif)
+  ├── Streaming: plain text → markdown on completion
+  ├── Input disabled during LLM processing
+  └── Non-chat subcommands keep termimad + indicatif
 
-PR 4: Transition
-  ├── Remove rustyline, remove TerminalView
+PR 3: Refinement + Tab Completion
+  ├── Tab completion via ChatCompleter reuse
+  ├── Streaming token display refinement
+  ├── Tool call/result display in chat area
+  ├── Error recovery in TUI
+  ├── Full handle_user_message() integration
+  └── Multi-line input support
+
+PR 4: Cleanup
+  ├── Remove TerminalView (println-based)
   ├── Remove hardcoded ANSI from chat
   ├── Remove CHAT_TERMINAL_WIDTH = 80
-  ├── Ratatui is now the only chat mode
-  └── Subcommands still use termimad/indicatif
+  ├── Simplify run_chat_repl() → App::run()
+  └── Subcommands keep termimad/indicatif
 ```
 
-**Estimated Total Effort:** 18-26 days (~4-5 weeks)
+**Estimated Total Effort:** 16-23 days (~3-4 weeks), reduced from original 18-26 days because PR2+PR3 merge eliminates duplicate setup and the --tui flag infrastructure.
 
 **Dependencies:**
 - Blocks: None (can start after critical bugs)
