@@ -47,6 +47,12 @@ pub type TuiResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 ///
 /// Returns an error if terminal setup fails (e.g., not a TTY).
 pub fn enter_tui() -> TuiResult<TuiTerminal> {
+    crossterm::terminal::enable_raw_mode()?;
+    crossterm::execute!(
+        io::stdout(),
+        crossterm::terminal::EnterAlternateScreen,
+        crossterm::event::EnableMouseCapture,
+    )?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -62,8 +68,13 @@ pub fn enter_tui() -> TuiResult<TuiTerminal> {
 ///
 /// Returns an error if terminal restoration fails.
 pub fn exit_tui(terminal: &mut TuiTerminal) -> TuiResult<()> {
-    // Restore cursor before exiting
     terminal.show_cursor()?;
+    crossterm::execute!(
+        terminal.backend_mut(),
+        crossterm::terminal::LeaveAlternateScreen,
+        crossterm::event::DisableMouseCapture,
+    )?;
+    crossterm::terminal::disable_raw_mode()?;
     Ok(())
 }
 

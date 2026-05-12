@@ -15,17 +15,16 @@
 //!     └─ LlmState (idle, thinking, streaming, tool_call)
 //! ```
 
-use crossterm::event::{self, Event as CrosstermEvent, KeyCode, KeyModifiers};
-use ratatui::layout::{Constraint, Layout};
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::Terminal;
+use ratatui::layout::{Constraint, Layout};
 
-use super::input::CrosstermInput;
-use super::input::InputResult;
+use super::input::{CrosstermInput, InputBackend, InputResult};
+use super::tui::TuiTerminal;
 use super::tui::components::chat_area::ChatMessage;
 use super::tui::components::input_line::InputState;
 use super::tui::components::status_bar::StatusBarState;
 use super::tui::markdown::MarkdownTheme;
-use super::tui::TuiTerminal;
 
 /// Processing state of the LLM
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,8 +40,7 @@ pub enum LlmState {
 }
 
 /// Spinner frames for animation (braille dots pattern)
-const SPINNER_FRAMES: &[&str] =
-    &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /// The main application state for the TUI chat REPL
 pub struct App {
@@ -73,14 +71,7 @@ impl App {
             messages: Vec::new(),
             input_state: InputState::new(),
             history_input: CrosstermInput::new(model_names),
-            status_bar: StatusBarState::new(
-                String::new(),
-                0,
-                0,
-                0,
-                false,
-                false,
-            ),
+            status_bar: StatusBarState::new(String::new(), 0, 0, 0, false, false),
             llm_state: LlmState::Idle,
             theme,
             scroll_offset: 0,
@@ -147,7 +138,12 @@ impl App {
     }
 
     /// Update the status bar model name and token info
-    pub fn update_status_model(&mut self, model_name: &str, think_enabled: bool, tools_enabled: bool) {
+    pub fn update_status_model(
+        &mut self,
+        model_name: &str,
+        think_enabled: bool,
+        tools_enabled: bool,
+    ) {
         self.status_bar.model_name = model_name.to_string();
         self.status_bar.think_enabled = think_enabled;
         self.status_bar.tools_enabled = tools_enabled;
@@ -164,8 +160,7 @@ impl App {
     pub fn tick_spinner(&mut self) {
         self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
         if self.llm_state != LlmState::Idle && self.llm_state != LlmState::Streaming {
-            self.status_bar.spinner =
-                Some(SPINNER_FRAMES[self.spinner_frame].to_string());
+            self.status_bar.spinner = Some(SPINNER_FRAMES[self.spinner_frame].to_string());
         }
     }
 
@@ -180,7 +175,27 @@ impl App {
     /// `Some(InputResult::Interrupted)` for Ctrl+C,
     /// `Some(InputResult::Eof)` for Ctrl+D on empty line,
     /// and `None` for other key events (buffer updated internally).
+    ///
+    /// When input is disabled (during LLM processing), only Ctrl+C
+    /// is processed — all other keys are ignored.
     pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Option<InputResult> {
+        // Ctrl+C always works, even when input is disabled
+        if matches!(
+            key,
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }
+        ) {
+            return Some(InputResult::Interrupted);
+        }
+
+        // When input is disabled, ignore all other keys
+        if self.input_state.disabled {
+            return None;
+        }
+
         match key {
             // Enter — submit the line
             crossterm::event::KeyEvent {
@@ -194,13 +209,6 @@ impl App {
                 }
                 Some(InputResult::Line(line))
             }
-
-            // Ctrl+C — interrupt
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => Some(InputResult::Interrupted),
 
             // Ctrl+D — EOF on empty line, delete on non-empty
             crossterm::event::KeyEvent {
@@ -292,7 +300,8 @@ impl App {
         // If not navigating, save current buffer
         if self.history_input.history_pos.is_none() {
             self.history_input.saved_buffer = self.input_state.buffer.clone();
-            self.history_input.history_pos = Some(self.history_input.history.len().saturating_sub(1));
+            self.history_input.history_pos =
+                Some(self.history_input.history.len().saturating_sub(1));
         } else if let Some(pos) = self.history_input.history_pos {
             if pos > 0 {
                 self.history_input.history_pos = Some(pos - 1);
@@ -341,7 +350,7 @@ impl App {
 
             // Layout: chat area (flexible) | status bar (2 lines) | input line (1 line)
             let chunks = Layout::vertical([
-                Constraint::Min(3),   // Chat area gets all remaining space
+                Constraint::Min(3),    // Chat area gets all remaining space
                 Constraint::Length(2), // Status bar (separator + content)
                 Constraint::Length(1), // Input line
             ])

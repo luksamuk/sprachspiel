@@ -95,9 +95,10 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
                 .add_modifier(Modifier::BOLD),
         ));
     } else {
-        // Truncate model name to 20 chars
-        let model_display = if state.model_name.len() > 20 {
-            format!("{}…", &state.model_name[..19])
+        // Truncate model name to 20 wide characters
+        let model_display = if state.model_name.chars().count() > 20 {
+            let truncated: String = state.model_name.chars().take(19).collect();
+            format!("{}…", truncated)
         } else {
             state.model_name.clone()
         };

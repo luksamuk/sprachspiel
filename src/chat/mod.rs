@@ -24,6 +24,7 @@
 //! Non-chat subcommands (query, translate, OCR, summarize) continue using
 //! termimad + indicatif and are unaffected by the TUI migration.
 
+pub mod app;
 pub mod cli;
 pub mod command_handlers;
 pub mod command_output;

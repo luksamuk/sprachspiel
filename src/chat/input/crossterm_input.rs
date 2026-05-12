@@ -33,17 +33,17 @@ const MAX_HISTORY: usize = 1000;
 /// responsibility of the TUI module.
 pub struct CrosstermInput {
     /// Current input buffer
-    buffer: String,
+    pub(crate) buffer: String,
     /// Cursor position within the buffer (byte offset)
-    cursor_pos: usize,
+    pub(crate) cursor_pos: usize,
     /// Command history (most recent last)
-    history: Vec<String>,
+    pub(crate) history: Vec<String>,
     /// Current position in history navigation (None = not navigating)
-    history_pos: Option<usize>,
+    pub(crate) history_pos: Option<usize>,
     /// Saved buffer before history navigation began
-    saved_buffer: String,
+    pub(crate) saved_buffer: String,
     /// History file path for persistence
-    history_path: PathBuf,
+    pub(crate) history_path: PathBuf,
 }
 
 impl CrosstermInput {
@@ -52,19 +52,39 @@ impl CrosstermInput {
     /// The `model_names` parameter is accepted for API compatibility
     /// with `InputBackend` but tab completion is not yet implemented.
     /// It will be used in PR3 for tab completion.
+    ///
+    /// History is automatically loaded from the default history file.
     pub fn new(_model_names: Vec<String>) -> Self {
-        Self {
+        let mut input = Self {
             buffer: String::new(),
             cursor_pos: 0,
             history: Vec::new(),
             history_pos: None,
             saved_buffer: String::new(),
             history_path: default_history_path(),
+        };
+        input.load_history();
+        input
+    }
+
+    /// Create a CrosstermInput with a custom history path (for testing)
+    ///
+    /// Does NOT load history from the file, allowing tests to start
+    /// with a clean state.
+    #[cfg(test)]
+    fn new_with_path(history_path: PathBuf) -> Self {
+        Self {
+            buffer: String::new(),
+            cursor_pos: 0,
+            history: Vec::new(),
+            history_pos: None,
+            saved_buffer: String::new(),
+            history_path,
         }
     }
 
     /// Load history from the history file
-    fn load_history(&mut self) {
+    pub(crate) fn load_history(&mut self) {
         if let Ok(contents) = std::fs::read_to_string(&self.history_path) {
             self.history = contents.lines().map(|l| l.to_string()).collect();
             // Keep only MAX_HISTORY entries
@@ -376,7 +396,8 @@ mod tests {
 
     #[test]
     fn test_insert_char() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input =
+            CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_insert.txt"));
         input.insert_char('a');
         input.insert_char('b');
         input.insert_char('c');
@@ -386,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_backspace() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input = CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_bs.txt"));
         input.insert_char('a');
         input.insert_char('b');
         input.backspace();
@@ -396,7 +417,8 @@ mod tests {
 
     #[test]
     fn test_cursor_movement() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input =
+            CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_cursor.txt"));
         input.insert_char('a');
         input.insert_char('b');
         input.insert_char('c');
@@ -411,7 +433,8 @@ mod tests {
 
     #[test]
     fn test_unicode_handling() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input =
+            CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_unicode.txt"));
         input.insert_char('你');
         input.insert_char('好');
         assert_eq!(input.buffer(), "你好");
@@ -426,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_history_navigation() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input = CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_nav.txt"));
         input.add_history("hello");
         input.add_history("world");
         assert_eq!(input.history.len(), 2);
@@ -456,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_add_history_dedup() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input = CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_dedup.txt"));
         input.add_history("hello");
         input.add_history("hello"); // Should not add duplicate
         assert_eq!(input.history.len(), 1);
@@ -468,14 +491,14 @@ mod tests {
 
     #[test]
     fn test_add_history_empty() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input = CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_empty.txt"));
         input.add_history("");
         assert!(input.history.is_empty());
     }
 
     #[test]
     fn test_handle_key_event_enter() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input = CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_enter.txt"));
         input.insert_char('h');
         input.insert_char('i');
 
@@ -486,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_handle_key_event_ctrl_c() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input = CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_ctrlc.txt"));
         let result =
             input.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert!(matches!(result, Some(InputResult::Interrupted)));
@@ -494,7 +517,7 @@ mod tests {
 
     #[test]
     fn test_handle_key_event_ctrl_d_empty() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input = CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_ctrld.txt"));
         let result =
             input.handle_key_event(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
         assert!(matches!(result, Some(InputResult::Eof)));
@@ -502,7 +525,8 @@ mod tests {
 
     #[test]
     fn test_handle_key_event_ctrl_d_with_content() {
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input =
+            CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_ctrld_content.txt"));
         input.insert_char('a');
         input.cursor_pos = 0; // Move cursor to start
         let result =
@@ -513,7 +537,8 @@ mod tests {
     #[test]
     fn test_read_line_returns_error() {
         // read_line should not be called in TUI mode
-        let mut input = CrosstermInput::new(Vec::new());
+        let mut input =
+            CrosstermInput::new_with_path(PathBuf::from("/tmp/test_history_readline.txt"));
         let result = input.read_line(">>> ");
         assert!(matches!(result, InputResult::Error(_)));
     }
@@ -521,10 +546,9 @@ mod tests {
     #[test]
     fn test_save_and_load_history() {
         let temp_dir = std::env::temp_dir();
-        let history_path = temp_dir.join("sprachspiel_test_history.txt");
+        let history_path = temp_dir.join("sprachspiel_test_history_unit.txt");
 
-        let mut input = CrosstermInput::new(Vec::new());
-        input.history_path = history_path.clone();
+        let mut input = CrosstermInput::new_with_path(history_path.clone());
         input.add_history("test line 1");
         input.add_history("test line 2");
 
@@ -532,8 +556,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Load history
-        let mut input2 = CrosstermInput::new(Vec::new());
-        input2.history_path = history_path.clone();
+        let mut input2 = CrosstermInput::new_with_path(history_path.clone());
         input2.load_history();
         assert_eq!(input2.history.len(), 2);
         assert_eq!(input2.history[0], "test line 1");

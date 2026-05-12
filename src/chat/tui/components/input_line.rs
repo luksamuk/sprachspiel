@@ -10,6 +10,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::super::styles;
+use unicode_width::UnicodeWidthStr;
 
 /// Input line state for rendering
 #[derive(Debug, Clone)]
@@ -130,8 +131,9 @@ pub fn render(f: &mut Frame, area: Rect, state: &InputState) {
         f.render_widget(paragraph, area);
 
         // Set cursor position in the input area
-        // prompt ">>> " = 4 characters
-        let cursor_x = area.x + 4 + state.buffer[..state.cursor_pos].chars().count() as u16;
+        // prompt ">>> " = 4 characters (ASCII, width = 4)
+        let text_before_cursor = &state.buffer[..state.cursor_pos];
+        let cursor_x = area.x + 4 + text_before_cursor.width() as u16;
         let cursor_y = area.y;
         f.set_cursor_position((cursor_x, cursor_y));
     }
