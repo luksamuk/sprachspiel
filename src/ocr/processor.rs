@@ -3,6 +3,8 @@
 //! Handles the actual OCR processing using the GLM-OCR model via Ollama.
 //! Uses /api/generate endpoint as recommended by GLM-OCR documentation.
 
+#![expect(clippy::print_stdout)] // CLI subcommand output
+#![expect(clippy::print_stderr)] // CLI subcommand output
 use base64::Engine;
 use ollama_rs::Ollama;
 use ollama_rs::generation::completion::request::GenerationRequest;

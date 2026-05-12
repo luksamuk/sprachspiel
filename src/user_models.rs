@@ -3,6 +3,7 @@
 //! Allows users to define custom models or override built-in model parameters
 //! via a TOML file at ~/.config/sprachspiel/models.toml
 
+#![expect(clippy::print_stderr)] // CLI model management output
 use std::collections::HashMap;
 use std::env;
 use std::fs;

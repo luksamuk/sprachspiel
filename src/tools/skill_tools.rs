@@ -3,6 +3,7 @@
 //! Skills are Markdown files with YAML frontmatter that define AI behaviors.
 //! They are loaded on-demand when the LLM requests them.
 
+#![expect(clippy::print_stderr)] // Skill tool output
 use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::skills::{get_available_skill_names, get_skill_content, load_skill_indexes};
 use crate::spinner::suspend_for_print;

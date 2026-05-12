@@ -45,6 +45,7 @@
 //! Rustyline's internal debug output is always suppressed (filtered to `warn`)
 //! regardless of the application's verbosity level.
 
+#![expect(clippy::print_stderr)] // Logging setup output
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;

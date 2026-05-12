@@ -4,6 +4,8 @@
 //! with enhanced features including markdown rendering, tool support,
 //! model capability detection, and translation support.
 
+#![expect(clippy::print_stdout)] // CLI entry point — user-facing output
+#![expect(clippy::print_stderr)] // CLI entry point — user-facing output
 mod capabilities;
 mod chat;
 mod config;
@@ -411,7 +413,7 @@ fn print_available_options() {
     println!("Available models:");
     for name in user_models::list_all_model_names() {
         if let Some(config) = user_models::get_model_config(&name) {
-            let default_marker = if name == "qwen3.5:4b" {
+            let default_marker = if name == crate::settings::DEFAULT_MODEL {
                 " (default)"
             } else {
                 ""

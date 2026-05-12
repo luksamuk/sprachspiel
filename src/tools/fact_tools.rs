@@ -3,6 +3,7 @@
 //! Provides tools for the LLM to autonomously store facts about the user
 //! and project, enabling personalization across sessions.
 
+#![expect(clippy::print_stderr)] // Tool error/status output
 use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
 use crate::facts::classify::classify_fact;
 use crate::facts::dedup::{DedupConfig, DedupResult, deduplicate_and_insert};

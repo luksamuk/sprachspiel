@@ -5,6 +5,7 @@
 //! 2. User skills: ~/.config/sprachspiel/skills/\<name\>/SKILL.md
 //! 3. Builtin skills: embedded in binary via include_str!
 
+#![expect(clippy::print_stderr)] // Skill loading output
 use std::collections::HashMap;
 use std::path::PathBuf;
 

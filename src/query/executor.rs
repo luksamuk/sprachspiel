@@ -2,6 +2,7 @@
 //!
 //! Provides execute_query_with_retry to handle Ollama errors with retry logic.
 
+#![expect(clippy::print_stderr)] // Query executor output
 use std::sync::Arc;
 
 use indicatif::ProgressBar;

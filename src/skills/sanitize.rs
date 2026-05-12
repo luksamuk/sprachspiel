@@ -3,6 +3,7 @@
 //! Extends the AGENTS.md sanitization from context.rs with skill-specific patterns.
 //! Protects against prompt injection via malicious skill content.
 
+#![expect(clippy::print_stderr)] // Skill sanitization output
 use regex::Regex;
 use std::sync::LazyLock;
 

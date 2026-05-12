@@ -18,6 +18,8 @@
 //! On app restart, recovery manager finds any saved content_items/chunks without
 //! embeddings and generates them in the background.
 
+#![expect(clippy::print_stdout)] // CLI subcommand output
+#![expect(clippy::print_stderr)] // CLI subcommand output
 use chrono::Utc;
 use std::sync::Arc;
 

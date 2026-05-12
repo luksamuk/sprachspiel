@@ -16,6 +16,13 @@
 //! Layer 1 (Session): session.rs
 //! Layer 0 (Base): capabilities, config
 //! ```
+//!
+//! # View Event Channel
+//!
+//! The coordinator event callback (`setup_coordinator`) sends events through
+//! an `mpsc` channel (`ViewEventSender`) instead of printing directly.
+//! The `ViewEventReceiver` is drained into `ChatView` after the coordinator
+//! call completes, ensuring all output goes through the view layer.
 
 use std::sync::Arc;
 
@@ -43,7 +50,8 @@ use super::coordinator::{
 };
 use super::custom_coordinator::CustomCoordinator;
 use super::session::ChatSession;
-use super::thinking::{display_thinking, strip_thinking_tags};
+use super::thinking::{extract_thinking, strip_thinking_tags};
+use super::view::ChatView;
 use super::{ContinuationTag, parse_continuation_tag};
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -122,6 +130,10 @@ pub fn build_session_system_prompt(
 }
 
 /// Setup coordinator with optional tools
+///
+/// Events from tool execution (pre-tool content, context warnings) are sent
+/// via `view_event_sender` to a channel, and drained into the `ChatView`
+/// after the coordinator call completes.
 #[expect(clippy::too_many_arguments)]
 pub fn setup_coordinator(
     ollama: ollama_rs::Ollama,
@@ -132,8 +144,8 @@ pub fn setup_coordinator(
     settings: &Settings,
     system_prompt: String,
     real_history_tokens: Option<usize>,
+    view_event_sender: super::view::ViewEventSender,
 ) -> CustomCoordinator<Vec<ChatMessage>> {
-    let think_enabled_for_callback = think_enabled;
     let coordinator = crate::query::ChatContext {
         ollama,
         model_id: model_config.model_id.clone(),
@@ -144,25 +156,19 @@ pub fn setup_coordinator(
     }
     .build_coordinator()
     .on_event(move |event| {
-        // Display pre-tool thinking and content during tool execution
-        // This mirrors what handle_chat_event does in query mode, but
-        // uses print_markdown_chat() for 80-column rendering.
+        // Send view events through the channel for later rendering.
+        // This avoids requiring the callback closure to hold a mutable
+        // reference to ChatView, which is not possible with 'static closures.
         match event {
-            crate::chat::custom_coordinator::ChatEvent::PreToolContent {
-                content,
-                thinking,
-            } => {
-                crate::spinner::suspend_for_print(|| {
-                    if think_enabled_for_callback {
-                        display_thinking(&content, thinking.as_ref(), true);
-                    }
-                    if !content.trim().is_empty() {
-                        let cleaned = strip_thinking_tags(&content);
-                        if !cleaned.trim().is_empty() {
-                            crate::markdown::print_markdown_chat(&cleaned);
-                        }
-                    }
-                });
+            crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
+                let cleaned = strip_thinking_tags(&content);
+                // Only send if there's something to display
+                if thinking.is_some() || !cleaned.trim().is_empty() {
+                    view_event_sender.send(super::view::ViewEvent::PreToolContent {
+                        content: cleaned,
+                        thinking,
+                    });
+                }
             }
             crate::chat::custom_coordinator::ChatEvent::ContextNeedsCompaction {
                 tokens_used,
@@ -170,24 +176,13 @@ pub fn setup_coordinator(
                 ..
             } => {
                 let percent = (tokens_used * 100).checked_div(context_window).unwrap_or(0);
-                eprintln!(
-                    "\x1B[33m⚠ Context {}% full. Compaction may be needed.\x1B[0m",
-                    percent
-                );
+                view_event_sender.send(super::view::ViewEvent::ContextNeedsCompaction {
+                    percent: percent as u64,
+                });
             }
-            crate::chat::custom_coordinator::ChatEvent::ContextTruncated {
-                tool_name,
-                original_tokens,
-                new_tokens,
-                context_window,
-            } => {
-                log::warn!(
-                    "[WARN] Tool '{}' result truncated ({} → {} tokens) to fit context ({} tokens max)",
-                    tool_name,
-                    original_tokens,
-                    new_tokens,
-                    context_window
-                );
+            crate::chat::custom_coordinator::ChatEvent::ContextTruncated { .. } => {
+                // Already logged via log::warn! — no view event needed
+                // (this is informational, not user-facing)
             }
             _ => {
                 // Other events (ToolCall, ToolResult, ContextNearLimit)
@@ -268,12 +263,15 @@ pub async fn prepare_messages(
 }
 
 /// Process chat response into SendMessageResult
+///
+/// Renders thinking content and the main response via the provided view.
 pub fn process_chat_response(
     response: ollama_rs::generation::chat::ChatMessageResponse,
     think_enabled: bool,
     coordinator: &mut CustomCoordinator<Vec<ChatMessage>>,
     context_window: usize,
     system_prompt: String,
+    view: &mut dyn ChatView,
 ) -> SendMessageResult {
     let content = response.message.content.clone();
 
@@ -287,12 +285,16 @@ pub fn process_chat_response(
         TokenMetrics::default()
     };
 
+    // Extract and render thinking content via view
     if think_enabled {
-        display_thinking(&content, response.message.thinking.as_ref(), true);
+        let thinking = extract_thinking(&content, response.message.thinking.as_ref());
+        if let Some(ref thinking_content) = thinking {
+            view.show_thinking(thinking_content);
+        }
     }
 
     let display_content = strip_thinking_tags(&content);
-    crate::markdown::print_markdown_chat(&display_content);
+    view.show_assistant_response(&display_content, None);
 
     let pre_tool = coordinator.take_pre_tool_content();
     let (pre_tool_content, pre_tool_thinking) = match pre_tool {
@@ -303,8 +305,8 @@ pub fn process_chat_response(
     let (cleaned_response, continuation_needed) = parse_continuation_tag(&display_content);
 
     if continuation_needed.is_some() {
-        eprint!("\x1B[2K\r");
-        crate::markdown::print_markdown_chat(&cleaned_response);
+        view.clear_continuation_line();
+        view.show_assistant_response(&cleaned_response, None);
     }
 
     SendMessageResult {
@@ -327,6 +329,8 @@ pub fn process_chat_response(
 /// - Message preparation with retrieval
 /// - Retry logic for recoverable errors
 /// - Response processing
+///
+/// All output rendering is delegated to the provided `ChatView`.
 #[expect(clippy::too_many_arguments)]
 pub async fn send_message(
     ollama: &ollama_rs::Ollama,
@@ -342,6 +346,7 @@ pub async fn send_message(
     embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
     cli_soulless: bool,
     continuation_tag: Option<&ContinuationTag>,
+    view: &mut dyn ChatView,
 ) -> AppResult<SendMessageResult> {
     let model_options = model_config.build_model_options();
     let blacklist_set = settings.blacklist_set();
@@ -392,9 +397,9 @@ pub async fn send_message(
     // When tools are enabled, check_and_compact_before_tool in continuation.rs
     // will show a more informative warning with remaining tokens.
     if overflow_status.needs_compaction() && !tools_enabled {
-        eprintln!(
-            "\x1B[33m⚠ Context {}% full. Consider using /compact to summarize old messages.\x1B[0m",
-            overflow_status.usage_percent()
+        view.show_context_warning(
+            overflow_status.usage_percent(),
+            "Consider using /compact to summarize old messages.",
         );
     } else if log::log_enabled!(log::Level::Debug) {
         log::debug!(
@@ -448,6 +453,9 @@ pub async fn send_message(
         }
     }
 
+    // Create view event channel for coordinator callback
+    let (view_event_sender, view_event_receiver) = super::view::create_view_event_channel();
+
     let mut coordinator = setup_coordinator(
         ollama.clone(),
         model_config,
@@ -457,6 +465,7 @@ pub async fn send_message(
         settings,
         system_prompt.clone(),
         Some(real_history_tokens),
+        view_event_sender,
     );
 
     // Prepare messages with retrieval and continuation
@@ -532,7 +541,7 @@ pub async fn send_message(
 
                     if attempts == 1 {
                         finish_spinner(spinner.clone());
-                        eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                        view.show_system("  Retrying after error...");
                     }
 
                     continue;
@@ -546,6 +555,10 @@ pub async fn send_message(
 
     finish_spinner(spinner);
 
+    // Drain view events accumulated during coordinator chat (pre-tool content,
+    // context warnings) into the ChatView for rendering
+    view_event_receiver.drain_into(view);
+
     // Process response and display it
     let processed_result = match result {
         Ok(response) => process_chat_response(
@@ -554,6 +567,7 @@ pub async fn send_message(
             &mut coordinator,
             context_window,
             system_prompt,
+            view,
         ),
         Err(e) => return Err(e.into()),
     };
@@ -563,6 +577,8 @@ pub async fn send_message(
 
 /// Auto-compact conversation if context reaches buffer threshold
 /// Uses buffer-based approach (15K tokens remaining) for predictable overflow prevention.
+///
+/// All output rendering is delegated to the provided `ChatView`.
 pub async fn auto_compact_if_needed(
     ollama: &ollama_rs::Ollama,
     model_config: &ModelConfig,
@@ -570,6 +586,7 @@ pub async fn auto_compact_if_needed(
     settings: &Settings,
     agents_md: Option<&str>,
     context_window: usize,
+    view: &mut dyn ChatView,
 ) {
     // Use buffer-based compaction trigger (more predictable than percentages)
     // Compacts when there are only COMPACTION_BUFFER tokens remaining
@@ -582,16 +599,11 @@ pub async fn auto_compact_if_needed(
     let usage_percent = ((real_tokens as f32 / context_window as f32) * 100.0).min(100.0) as u8;
 
     // Show indicator before starting compaction
-    let urgency = if usage_percent >= 95 {
-        "urgent"
-    } else {
-        "auto"
-    };
-    eprintln!(
-        "\x1B[33m⏳ Compacting context ({}% full, {}K remaining)...\x1B[0m",
+    view.show_compact_progress(&format!(
+        "Compacting context ({}% full, {}K remaining)...",
         usage_percent,
         (context_window.saturating_sub(real_tokens)) / 1000
-    );
+    ));
 
     // Attempt auto-compaction
     match compact_conversation(ollama, model_config, session, settings, agents_md).await {
@@ -602,11 +614,9 @@ pub async fn auto_compact_if_needed(
             let (first_preserved, last_preserved_start) =
                 range.unwrap_or((0, session.messages.len()));
             let compacted_count = last_preserved_start - first_preserved;
+            let preserved_last = session.messages.len() - last_preserved_start;
 
-            eprintln!(
-                "\x1B[90m[{}-compacted: {} messages summarized]\x1B[0m",
-                urgency, compacted_count
-            );
+            view.show_compact_complete(compacted_count, first_preserved, preserved_last);
 
             if !session.anonymous {
                 let _ = session.save_sqlite();
@@ -618,7 +628,7 @@ pub async fn auto_compact_if_needed(
             }
         }
         Err(e) => {
-            eprintln!("\x1B[31mAuto-compaction failed: {}\x1B[0m", e);
+            view.show_error(&format!("Auto-compaction failed: {}", e));
         }
     }
 }
@@ -701,8 +711,8 @@ pub async fn compact_conversation(
             // Truncate summary if it exceeds MAX_SUMMARY_TOKENS
             // This prevents infinite compaction loops caused by oversized summaries
             let summary = if estimate_tokens(&summary) > MAX_SUMMARY_TOKENS {
-                eprintln!(
-                    "\x1B[33m⚠ Summary exceeds {} tokens, truncating...\x1B[0m",
+                log::warn!(
+                    "Summary exceeds {} tokens, truncating...",
                     MAX_SUMMARY_TOKENS
                 );
                 truncate_to_budget(&summary, MAX_SUMMARY_TOKENS)

@@ -14,6 +14,7 @@
 //! For PDF/EPUB files, extract the text first using run_command
 //! (pdftotext, epub2txt), then import the resulting text file.
 
+#![expect(clippy::print_stderr)] // Tool error/status output
 use crate::content::document::{Document, MAX_DOCUMENT_SIZE, detect_file_type};
 use crate::content::types::ContentScope;
 use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};

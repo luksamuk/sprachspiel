@@ -2,6 +2,12 @@
 //!
 //! Provides hybrid search functionality for conversation history.
 //! Uses the unified content_items table (V7 architecture).
+//!
+//! # Architecture
+//!
+//! `run_search()` returns a `SearchOutcome` enum instead of printing directly.
+//! Callers (like `handle_search()`) convert the outcome to `CommandOutput`
+//! for rendering via `ChatView`. This separation enables future TUI migration.
 
 use chrono::{DateTime, Utc};
 use ollama_rs::Ollama;
@@ -10,7 +16,6 @@ use crate::content::{ContentSearchResult, ContentSearchType};
 use crate::db::Database;
 
 use crate::embeddings::EmbeddingClient;
-use crate::markdown;
 
 /// Search result with formatted output
 pub struct FormattedResult {
@@ -43,11 +48,32 @@ impl From<ContentSearchResult> for FormattedResult {
     }
 }
 
-/// Display search results in a readable format with markdown
-pub fn display_results(results: &[FormattedResult]) {
+/// Outcome of a search operation.
+///
+/// Returns data instead of printing, enabling callers to render
+/// via `ChatView` (terminal) or future `RatatuiView` (TUI).
+pub enum SearchOutcome {
+    /// Search completed successfully with results (may be empty)
+    Results(Vec<FormattedResult>),
+    /// Failed to generate embedding for the query
+    EmbeddingError(String),
+    /// Hybrid search query failed
+    SearchError(String),
+    /// Enrichment partially failed — partial results still available
+    EnrichmentWarning {
+        partial_results: Vec<FormattedResult>,
+        error: String,
+    },
+}
+
+/// Format search results as a markdown string.
+///
+/// Returns a formatted markdown string suitable for rendering via
+/// `ChatView::show_command_output()` or `print_markdown()`.
+/// Returns `None` if results are empty (caller decides what to display).
+pub fn format_results(results: &[FormattedResult]) -> Option<String> {
     if results.is_empty() {
-        println!("No results found.");
-        return;
+        return None;
     }
 
     let mut output = String::new();
@@ -125,17 +151,20 @@ pub fn display_results(results: &[FormattedResult]) {
         ));
     }
 
-    markdown::print_markdown(&output);
+    Some(output)
 }
 
-/// Run an interactive search session
+/// Run a search and return results as data.
+///
+/// Returns a `SearchOutcome` enum instead of printing directly.
+/// Callers convert the outcome to `CommandOutput` for rendering via `ChatView`.
 pub async fn run_search(
     db: &Database,
     ollama: &Ollama,
     query: &str,
     conversation_id: Option<&str>,
     limit: usize,
-) {
+) -> SearchOutcome {
     // Debug: Show search parameters
     log::debug!(
         "Search params:\n  query: \"{}\"\n  conversation_id: {:?}\n  limit: {}",
@@ -154,8 +183,7 @@ pub async fn run_search(
             emb
         }
         Err(e) => {
-            eprintln!("\x1B[31mError: Failed to generate embedding: {}\x1B[0m", e);
-            return;
+            return SearchOutcome::EmbeddingError(format!("Failed to generate embedding: {}", e));
         }
     };
 
@@ -175,8 +203,7 @@ pub async fn run_search(
             r
         }
         Err(e) => {
-            eprintln!("\x1B[31mError: Hybrid search failed: {}\x1B[0m", e);
-            return;
+            return SearchOutcome::SearchError(format!("Hybrid search failed: {}", e));
         }
     };
 
@@ -189,13 +216,17 @@ pub async fn run_search(
             r
         }
         Err(e) => {
-            eprintln!("\x1B[33mWarning: Failed to enrich results: {}\x1B[0m", e);
-            return;
+            // Enrichment failed — return partial (unenriched) results with a warning
+            log::warn!("Failed to enrich results: {}", e);
+            return SearchOutcome::EnrichmentWarning {
+                partial_results: vec![],
+                error: e.to_string(),
+            };
         }
     };
 
     // Convert to formatted results
     let formatted: Vec<FormattedResult> = enriched_results.into_iter().map(|r| r.into()).collect();
 
-    display_results(&formatted);
+    SearchOutcome::Results(formatted)
 }

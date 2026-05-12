@@ -2,12 +2,14 @@
 //!
 //! Exposes internal modules for testing and external use.
 //!
-//! TODO(TUI): Remove crate-level expect(print_stdout/print_stderr) when
-//! migrating to TUI. Each module should then decide whether to print directly
-//! or delegate to the view layer.
-
-#![expect(clippy::print_stdout)]
-#![expect(clippy::print_stderr)]
+//! # Print usage
+//!
+//! Each module declares its own `#![expect(clippy::print_stdout)]` and/or
+//! `#![expect(clippy::print_stderr)]` with a justification comment. Modules
+//! that have been migrated to the `ChatView` pattern (e.g., `chat/`) have
+//! their expects only on the rendering layer (`view/terminal.rs`) and
+//! terminal control modules (`repl.rs`). Other modules use direct print
+//! calls for CLI output and declare expects locally.
 
 pub mod capabilities;
 pub mod chat;

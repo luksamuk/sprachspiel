@@ -1234,9 +1234,9 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
 }
 
 /// Print help message
-pub fn print_help() {
-    println!(
-        r#"Available commands:
+/// Format help text as a string (for CommandOutput::HelpText).
+pub fn format_help() -> String {
+    r#"Available commands:
   /quit, /exit     Exit the chat session
   /new, /n         Start a new conversation (previous messages remain searchable)
   /forget [--yes]  Delete conversation completely and start fresh (requires --yes)
@@ -1342,55 +1342,61 @@ Shortcuts:
   /sk = /skill
   /fb = /feedback, /fg = /feedback good, /fp = /fact prune, /fa = /fact add
   /fl = /fact list, /fr = /fact remove, /fs = /fact search
-  /cp = /content prune"#
-    );
+   /cp = /content prune
+"#.to_string()
 }
 
-/// Print session information
-pub fn print_session_info(session: &ChatSession, metrics: Option<&ContextMetrics>) {
+/// Format session information as a string (for CommandOutput).
+pub fn format_session_info(session: &ChatSession, metrics: Option<&ContextMetrics>) -> String {
     let name = session.name.as_deref().unwrap_or("unnamed");
     let project = session.project_id.as_deref().unwrap_or("none");
     let created = session.created_at.format("%Y-%m-%d %H:%M:%S");
     let updated = session.updated_at.format("%Y-%m-%d %H:%M:%S");
 
-    println!("Session Information:");
-    println!("  ID:        {}", session.id);
-    println!("  Name:      {}", name);
-    println!("  Project:   {}", project);
-    println!("  Model:     {}", session.model);
-    println!("  Messages:  {} (total)", session.messages.len());
+    let mut output = String::new();
+    output.push_str("Session Information:\n");
+    output.push_str(&format!("  ID:        {}\n", session.id));
+    output.push_str(&format!("  Name:      {}\n", name));
+    output.push_str(&format!("  Project:   {}\n", project));
+    output.push_str(&format!("  Model:     {}\n", session.model));
+    output.push_str(&format!(
+        "  Messages:  {} (total)\n",
+        session.messages.len()
+    ));
 
     if session.has_compacted_messages() {
-        println!(
-            "  Compacted: {} messages summarized",
+        output.push_str(&format!(
+            "  Compacted: {} messages summarized\n",
             session.compacted_message_count()
-        );
+        ));
     }
 
     if let Some(m) = metrics {
-        println!(
-            "  Context:   {} / {} tokens ({:.1}%)",
+        output.push_str(&format!(
+            "  Context:   {} / {} tokens ({:.1}%)\n",
             m.total_tokens,
             m.context_window,
             m.utilization * 100.0
-        );
+        ));
     }
 
-    println!("  Think:     {}", session.think);
-    println!("  Tools:     {}", session.tools);
+    output.push_str(&format!("  Think:     {}\n", session.think));
+    output.push_str(&format!("  Tools:     {}\n", session.tools));
 
     // Show sandbox status
     let sandbox_status = crate::external::get_sandbox_status();
-    println!("  Sandbox:   {}", sandbox_status);
+    output.push_str(&format!("  Sandbox:   {}\n", sandbox_status));
 
-    println!("  Anonymous: {}", session.anonymous);
-    println!("  Created:   {}", created);
-    println!("  Updated:   {}", updated);
+    output.push_str(&format!("  Anonymous: {}\n", session.anonymous));
+    output.push_str(&format!("  Created:   {}\n", created));
+    output.push_str(&format!("  Updated:   {}\n", updated));
 
     if let Some(ref prompt) = session.system_prompt {
         let preview = crate::utils::truncate_chars(prompt, 100);
-        println!("  System:    {}", preview);
+        output.push_str(&format!("  System:    {}\n", preview));
     }
+
+    output
 }
 
 #[cfg(test)]

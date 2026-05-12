@@ -1,5 +1,6 @@
 //! Configuration loading for external tools.
 
+#![expect(clippy::print_stderr)] // CLI configuration output
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;

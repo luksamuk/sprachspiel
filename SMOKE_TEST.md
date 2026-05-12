@@ -1329,7 +1329,113 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db "DELETE FROM facts WHERE inval
 
 ---
 
-## 22. Bare #[allow(dead_code)] Check
+## 22. CommandOutput Rendering Regression (W6-PR1 #145)
+
+Verify that all chat command outputs render correctly after the `CommandOutput` enum migration.
+Every command now returns `Vec<CommandOutput>` and rendering is handled by `ChatView::show_command_output()`.
+The key risk is **visual regression** — missing icons, wrong colors, or multi-output commands rendering incorrectly.
+
+### 22.1 Simple Output Variants (Info/Success/Warning/Error/Progress)
+
+- [ ] `/help` → renders help text (no truncation, all commands visible)
+- [ ] `/think on` → shows ✓ icon with dim message (Success variant)
+- [ ] `/think off` → shows ✓ icon with dim message (Success variant)
+- [ ] `/tools` → shows "Tools: disabled" as Info (toggle) or "Tools: enabled" as Success
+- [ ] `/retrieval` → shows toggle status as Info message
+- [ ] `/undo` with empty history → shows Error message with ✗ icon
+- [ ] `/forget` (without --yes) → shows **two** outputs: Warning (⚠ icon) + Warning (⚠ icon)
+
+### 22.2 Fact Commands
+
+- [ ] `/fact list` → renders FactList with scope headers (Global/Project)
+- [ ] `/fact list --global` → renders only Global facts
+- [ ] `/fact list --project` → renders only Project facts
+- [ ] `/fact add Test rendering fact` → shows ✓ success message
+- [ ] `/fact search test` → renders FactSearchResults with formatted output
+- [ ] `/fact remove 999` → renders FactRemoveResult with ✗ error icon (not found)
+- [ ] `/fact prune` → renders Progress then Success/Info result
+
+### 22.3 Note Commands
+
+- [ ] `/note list` → renders NoteList with formatted entries — **must show `page 1/N` (NOT `page 2/N` — off-by-one bug regression)**
+- [ ] `/note add "Render test note"` → shows ✓ success with NoteAdded variant
+- [ ] `/note show 1` → renders note content via MarkdownContent
+- [ ] `/note delete 999` → renders ✗ error (not found)
+
+### 22.3b Todo Commands (CommandOutput::TodoList)
+
+> **Note:** Section 6.5 tests todo CRUD. This section verifies the CommandOutput rendering specifically.
+
+- [ ] `/todo add "Smoke test task"` → renders ✓ success message
+- [ ] `/todo list` → renders TodoList variant (formatted task list with counts)
+- [ ] `/todo list pending` → renders filtered TodoList
+- [ ] `/todo list #<tag>` → renders filtered TodoList
+- [ ] `/todo get 1` → renders task details (via MarkdownContent)
+- [ ] `/todo update 1 done` → renders ✓ success
+- [ ] `/todo delete 1` → renders ✓ or ✗ result
+- [ ] `/ta "Shortcut test"` → shortcut renders same as `/todo add`
+- [ ] `/tl` → shortcut renders same as `/todo list`
+
+### 22.4 Document Commands
+
+- [ ] `/doc list` → renders DocumentList with entries — **must show `#N title (txt, N words, Nd)` format (NOT `[txt] [0 chunks]` — bug regression)**
+- [ ] `/doc import /tmp/test.txt` → renders Success/Info with chunk count
+- [ ] `/doc show 999` → renders ✗ error (not found)
+- [ ] `/doc delete 999` → renders ✗ error (not found)
+
+### 22.5 Session & Context Commands
+
+- [ ] `/list` → renders SessionList with entries
+- [ ] `/context` → renders ContextInfo with token counts and model info
+- [ ] `/compact` → renders Progress (⏳ "Compacting...") then CompactResult with counts
+- [ ] `/export` → renders ExportResult with format info
+
+### 22.6 Skill Command
+
+- [ ] `/skill` → renders SkillList with available skills
+- [ ] `/skill <name>` → renders Success activation message
+
+### 22.7 Search Command
+
+- [ ] `/search <query>` → renders SearchResults with formatted markdown output
+
+### 22.8 Reindex Command
+
+- [ ] `/reindex` → renders Progress then ReindexResult with counts
+
+### 22.9 Multi-Output Commands
+
+> **Critical:** Commands that return `Vec<CommandOutput>` with multiple items must render ALL items in sequence.
+
+- [ ] `/forget` (without --yes) → renders 2 warnings (both visible, not just one)
+- [ ] `/save mysession` → renders Success message
+- [ ] `/load mysession` → renders Success message + Info about loaded session
+- [ ] `/undo` (with messages in history) → renders Info "Removed N message(s)" + Info "Last message: ..." + Info "(Press ↑ to retrieve...)"
+- [ ] `/undo` (with empty history) → renders Info "No messages to remove" + Info "No user message to show"
+- [ ] `/model <name>` → renders optional Warning(s) (e.g., think/tools unavailable) then Info "Switched to model: ..."
+- [ ] `/exit` → renders Info "Goodbye!" then Quit (cleanly exits)
+
+### 22.10 Token Display
+
+- [ ] Send a message to the LLM → after response, token metrics appear (dimmed, showing prompt/response/total tokens)
+- [ ] Token display line format: `Tokens: N prompt + N response = N total`
+
+### 22.11 Content Prune
+
+- [ ] `/content prune` → renders Progress (⏳) then ContentPruneResult
+- [ ] `/cp` → same behavior as `/content prune` (shortcut)
+
+### 22.12 Dead Code Verification (W6-PR1 Cleanup)
+
+The following were removed as dead code in W6-PR1. Verify they don't appear as variant names in any error messages:
+
+- [ ] `NoteRemoved` variant removed — `/note delete` uses Success/Error directly
+- [ ] `FactAdded` variant removed — fact addition uses Success/Warning/Info directly
+- [ ] `FactAddOutcome` / `FactAddResult` enums removed — no regression
+
+---
+
+## 22b. Bare #[allow(dead_code)] Check
 
 Run this before release to ensure no dead code is silenced without justification:
 
@@ -1425,5 +1531,6 @@ The script above runs automated tests. The following tests must be run manually:
 16. **Section 19**: Fact & Content Prune Shortcuts (routing verification)
 17. **Section 20**: Auto Fact Extraction (extraction, dedup, config, normalization, PT→EN translation, ADR-E4, Bug #2 DEFERRED)
 18. **Section 21**: Fact Embedding & Semantic Dedup (schema v12, synchronous embedding, recovery, Layer 3.5, Bug #3/#4/#5, schema v12 distance_metric=cosine, ascending sort fix, replacement insertion fix, accumulative predicates fix, end-to-end verification)
-19. **Section 22**: Bare #[allow(dead_code)] Check (automated, no justification = fail)
+19. **Section 22**: CommandOutput Rendering Regression (W6-PR1 — all command output variants, multi-output, token display, dead code removal)
+20. **Section 22b**: Bare #[allow(dead_code)] Check (automated, no justification = fail)
 These tests require chat interaction and visual verification of results.

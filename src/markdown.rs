@@ -15,6 +15,7 @@
 //! size. This ensures consistent output for users who run the chat in a
 //! floating 80x50 terminal window.
 
+#![expect(clippy::print_stdout)] // Markdown rendering output
 use std::sync::OnceLock;
 use termimad::MadSkin;
 

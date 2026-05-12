@@ -13,9 +13,17 @@
 //! Layer 4: core.rs, command_handlers.rs
 //! Layer 5: repl.rs (coordinator)
 //! ```
+//!
+//! # Command Output Decoupling (W6-PR1, Issue #145)
+//!
+//! Commands return `Vec<CommandOutput>` instead of calling `println!` directly.
+//! The `ChatView` trait renders each `CommandOutput` variant with appropriate
+//! styling. This decoupling enables future TUI migration (W6-PR2) where
+//! `RatatuiView` renders the same data with ratatui widgets.
 
 pub mod cli;
 pub mod command_handlers;
+pub mod command_output;
 pub mod commands;
 pub mod completion;
 pub mod continuation;
@@ -33,9 +41,12 @@ pub mod todo_state;
 pub mod view;
 
 pub use cli::ChatArgs;
+pub use command_output::CommandOutput;
 pub use custom_coordinator::{ContinuationTag, CustomCoordinator, parse_continuation_tag};
 pub use repl::run_chat_repl;
 // Re-exported for external crate usage; not consumed within this crate
 #[allow(unused_imports)]
 pub use subagent::{SubagentConfig, SubagentRunner, SubagentType};
-pub use thinking::{display_thinking, strip_thinking_tags};
+// Re-exported for external crate usage; not all are consumed within this crate
+#[allow(unused_imports)]
+pub use thinking::{display_thinking, extract_thinking, strip_thinking_tags};

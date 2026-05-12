@@ -3,6 +3,7 @@
 //! Skills are Markdown files with YAML frontmatter that define AI behaviors.
 //! They are loaded on-demand when the LLM requests them via skill_view().
 
+#![expect(clippy::print_stderr)] // Skill type output
 use std::path::PathBuf;
 
 /// Source of a skill file.

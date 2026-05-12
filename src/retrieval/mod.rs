@@ -12,4 +12,4 @@ pub use context_builder::{
 // ContextResult is public for external consumers but not used internally
 #[allow(unused_imports)]
 pub use context_builder::ContextResult;
-pub use search::run_search;
+pub use search::{SearchOutcome, format_results, run_search};

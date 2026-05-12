@@ -2,6 +2,7 @@
 //!
 //! Provides helper to build a coordinator for query execution.
 
+#![expect(clippy::print_stderr)] // Query coordinator output
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::chat::custom_coordinator::CustomCoordinator;

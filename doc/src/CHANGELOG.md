@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **W6-PR1: CommandResult — Decouple Logic from Presentation (Issue #145)** — Migrate all command handlers from direct `println!`/`eprintln!` to typed `CommandResult` enum, with rendering via `ChatView`. Creates the abstraction layer needed for the Ratatui migration (W6-PR2). No behavioral changes — all output remains identical, just routed through the new enum and trait methods instead of raw print calls.
+
 ## [0.43.0] - 2026-05-11
 
 ### Changed

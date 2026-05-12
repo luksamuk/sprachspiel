@@ -1,6 +1,19 @@
 //! Chat REPL - Interactive read-eval-print loop
 //!
 //! Handles the main chat loop, user input, and model interaction.
+//!
+//! # Print usage justification
+//!
+//! This module uses `print!`/`println!` for terminal control:
+//! - Status bar rendering (ANSI positioning)
+//! - Prompt echo (user input confirmation)
+//! - Signal display (^C, ^D)
+//! - Help line output
+//!
+//! These are inherently terminal-specific operations. A TUI framework
+//! would handle these via widget state rather than direct output.
+
+#![expect(clippy::print_stdout)] // Terminal control: status bar, prompt echo, signals
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,7 +28,8 @@ use crate::tokens::calculate_context_metrics;
 use crate::tool_robustness::format_tool_error;
 use crate::tools::get_available_tool_names;
 
-use super::command_handlers::{HandleResult, handle_model_switch};
+use super::command_handlers::handle_model_switch;
+use super::command_output::CommandOutput;
 use super::commands::{ChatCommand, parse_command};
 use super::continuation::{
     OverflowHandleResult, ProcessResult, build_inter_tool_compaction_prompt, build_pre_tool_prompt,
@@ -24,6 +38,7 @@ use super::continuation::{
 use super::core::send_message;
 use super::input::{InputBackend, InputResult, RustylineInput};
 use super::session::{ChatSession, MessageRole};
+use super::view::ChatView;
 use super::view::TerminalView;
 use super::view::colors;
 
@@ -93,10 +108,7 @@ fn init_chat_database(
     let error_detail = if db.is_none() {
         let storage_path = crate::db::Database::get_storage_path();
         let error_msg = format!(
-            "\n\
-             ══════════════════════════════════════════════════════════════\n\
-             DATABASE INITIALIZATION FAILED\n\
-             ══════════════════════════════════════════════════════════════\n\
+            "DATABASE INITIALIZATION FAILED\n\
              \n\
              Storage path: {}\n\
              \n\
@@ -108,14 +120,14 @@ fn init_chat_database(
              \n\
              To diagnose:\n\
              - Check if Ollama is running: ollama list\n\
-                           - Check directory permissions: ls -la ~/.local/share/sprachspiel/\n\
-             -               Run with -v for more information\n\
+             - Check directory permissions: ls -la ~/.local/share/sprachspiel/\n\
+             - Run with -v for more information\n\
              \n\
-             Use --anonymous for anonymous mode without database persistence.\n\
-             ══════════════════════════════════════════════════════════════",
+             Use --anonymous for anonymous mode without database persistence.",
             storage_path.display()
         );
-        eprintln!("{}", error_msg);
+        let mut view = TerminalView::new();
+        view.show_error(&error_msg);
         Some(error_msg)
     } else {
         None
@@ -179,7 +191,11 @@ async fn run_startup_tasks(
 }
 
 /// Handle user input that's not a command.
-async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplState) {
+async fn handle_user_message(
+    line: &str,
+    state: &mut super::repl_state::ReplState,
+    view: &mut dyn ChatView,
+) {
     let user_message_id = state.session.add_user_message(line.to_string());
     if !state.session.anonymous
         && let Err(e) = state.session.save_sqlite()
@@ -189,7 +205,7 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
 
     let context_window = state.model_config.num_ctx as usize;
     let system_prompt_for_check = build_pre_tool_prompt(state);
-    check_and_compact_before_tool(state, &system_prompt_for_check, context_window).await;
+    check_and_compact_before_tool(state, &system_prompt_for_check, context_window, view).await;
 
     let think_enabled = state.session.think;
     let mut compaction_cycles = 0;
@@ -210,40 +226,41 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
             state.embedding_client.as_ref(),
             state.cli_soulless,
             None,
+            view,
         )
         .await
         {
             Ok(result) => {
-                match process_send_result(state, result, user_message_id).await {
+                match process_send_result(state, result, user_message_id, view).await {
                     ProcessResult::Success => {
                         // Auto-extract facts from recent user messages (autoDream-lite)
-                        try_auto_extract_facts(state).await;
+                        try_auto_extract_facts(state, view).await;
                     }
                     ProcessResult::ContinuationError(e) => {
-                        eprintln!("\x1B[31mContinuation failed: {}\x1B[0m", e);
+                        view.show_error(&format!("Continuation failed: {}", e));
                     }
                 }
                 break;
             }
             Err(e) => {
                 let error_str = e.to_string();
-                match handle_overflow_error(state, &error_str).await {
+                match handle_overflow_error(state, &error_str, view).await {
                     OverflowHandleResult::NotOverflow => {
-                        eprintln!("\x1B[31m{}\x1B[0m", format_tool_error(&error_str));
+                        view.show_error(&format_tool_error(&error_str));
                         break;
                     }
                     OverflowHandleResult::HandledContinue => {
-                        eprintln!("\x1B[33mPlease retry your message.\x1B[0m");
+                        view.show_warning("Please retry your message.");
                         break;
                     }
                     OverflowHandleResult::InterToolCompaction { tools_executed } => {
                         compaction_cycles += 1;
 
                         if compaction_cycles > MAX_COMPACTION_CYCLES {
-                            eprintln!(
-                                "\x1B[33mMaximum compaction cycles reached ({}). Please continue manually.\x1B[0m",
+                            view.show_warning(&format!(
+                                "Maximum compaction cycles reached ({}). Please continue manually.",
                                 MAX_COMPACTION_CYCLES
-                            );
+                            ));
                             break;
                         }
 
@@ -261,7 +278,7 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
                             );
                         }
 
-                        eprintln!("\x1B[33m\x1B[33mContinuing...\x1B[0m");
+                        view.show_progress("Continuing...");
 
                         current_input = build_inter_tool_compaction_prompt(&tools_executed);
                         continue;
@@ -281,7 +298,7 @@ async fn handle_user_message(line: &str, state: &mut super::repl_state::ReplStat
 /// - Notification gated by `settings.facts.auto_extract_notify`
 ///
 /// See ADR-E1 (heuristic-only), ADR-E2 (always Global), ADR-E5 (synchronous).
-async fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
+async fn try_auto_extract_facts(state: &mut super::repl_state::ReplState, view: &mut dyn ChatView) {
     // Guard: auto_extract must be enabled
     if !state.settings.facts.auto_extract {
         return;
@@ -346,7 +363,7 @@ async fn try_auto_extract_facts(state: &mut super::repl_state::ReplState) {
     if state.settings.facts.auto_extract_notify {
         let total = result.inserted + result.updated;
         if total > 0 {
-            eprintln!("\x1B[90m[Auto-extracted: {} fact(s)]\x1B[0m", total);
+            view.show_system(&format!("[Auto-extracted: {} fact(s)]", total));
         }
     }
 
@@ -390,6 +407,8 @@ fn create_session(
         };
     }
 
+    let mut view = TerminalView::new();
+
     if let Some(session_name) = &args.load {
         if let Some(db_ref) = db {
             match ChatSession::load_sqlite(db_ref, session_name) {
@@ -404,8 +423,8 @@ fn create_session(
                     };
                 }
                 Err(e) => {
-                    eprintln!("Warning: Could not load session '{}': {}", session_name, e);
-                    println!("Starting new session...");
+                    view.show_warning(&format!("Could not load session '{}': {}", session_name, e));
+                    view.show_system("Starting new session...");
                     let mut new_session = ChatSession::new(
                         model_override.unwrap_or(default_model).to_string(),
                         project_id.clone(),
@@ -445,16 +464,16 @@ fn create_session(
                     };
                 }
                 Err(e) => {
-                    eprintln!("Warning: Could not load session '{}': {}", last_id, e);
-                    println!("Starting new session...");
+                    view.show_warning(&format!("Could not load session '{}': {}", last_id, e));
+                    view.show_system("Starting new session...");
                 }
             },
             Ok(None) => {
                 // No sessions exist - create new session (not persisted yet)
             }
             Err(e) => {
-                eprintln!("Warning: Could not query sessions: {}", e);
-                println!("Starting new session...");
+                view.show_warning(&format!("Could not query sessions: {}", e));
+                view.show_system("Starting new session...");
             }
         }
     }
@@ -475,24 +494,25 @@ fn resolve_session_model(
     session: &mut ChatSession,
     model_override: Option<&str>,
     default_model: &str,
+    view: &mut dyn ChatView,
 ) -> bool {
     if let Some(model) = model_override {
         if crate::user_models::is_model_valid(model) {
             session.set_model(model.to_string());
             return true;
         }
-        eprintln!(
-            "Error: Unknown model '{}'. Use --list to see available models.",
+        view.show_error(&format!(
+            "Unknown model '{}'. Use --list to see available models.",
             model
-        );
+        ));
         return false;
     }
 
     if !crate::user_models::is_model_valid(&session.model) {
-        eprintln!(
-            "Warning: Saved model '{}' no longer exists. Using default '{}'.",
+        view.show_warning(&format!(
+            "Saved model '{}' no longer exists. Using default '{}'.",
             session.model, default_model
-        );
+        ));
         session.set_model(default_model.to_string());
     }
     true
@@ -504,16 +524,17 @@ fn resolve_thinking_mode(
     config_thinking: bool,
     model_config: &ModelConfig,
     capabilities: &ModelCapabilities,
+    view: &mut dyn ChatView,
 ) -> bool {
     let cli_think_flag = cli_think;
     let model_default_thinking = model_config.thinking;
 
     if cli_think_flag {
         if !capabilities.thinking {
-            eprintln!(
-                "Warning: Model '{}' does not support think mode. Ignoring -t/--think flag.",
+            view.show_warning(&format!(
+                "Model '{}' does not support think mode. Ignoring -t/--think flag.",
                 model_config.model_id
-            );
+            ));
             return false;
         }
         return true;
@@ -521,10 +542,10 @@ fn resolve_thinking_mode(
 
     let requested_thinking = config_thinking || model_default_thinking;
     if requested_thinking && !capabilities.thinking {
-        eprintln!(
-            "Warning: Model '{}' does not support think mode. Disabled for this session.",
+        view.show_warning(&format!(
+            "Model '{}' does not support think mode. Disabled for this session.",
             model_config.model_id
-        );
+        ));
         return false;
     }
     requested_thinking
@@ -572,8 +593,9 @@ pub async fn run_chat_repl(
     if !args.anonymous && db.is_none() {
         if db_error.is_some() {
             // Error already printed in init_database
-            eprintln!("\nFATAL: Cannot start chat session without database.");
-            eprintln!("Either fix the database issue or use --anonymous mode.\n");
+            let mut view = TerminalView::new();
+            view.show_error("Cannot start chat session without database.");
+            view.show_system("Either fix the database issue or use --anonymous mode.");
         }
         return Ok(());
     }
@@ -589,8 +611,11 @@ pub async fn run_chat_repl(
     let ignore_agents = cli_ignore_agents || args.ignore_agents;
 
     // Validate and set model
-    if !resolve_session_model(&mut session, model_override, default_model) {
-        return Ok(());
+    {
+        let mut temp_view = TerminalView::new();
+        if !resolve_session_model(&mut session, model_override, default_model, &mut temp_view) {
+            return Ok(());
+        }
     }
 
     let current_model_name = session.model.clone();
@@ -630,39 +655,41 @@ pub async fn run_chat_repl(
 
     // Print session info (if any)
     if let Some(msg) = resume_message {
-        println!("{}", msg);
+        let mut temp_view = TerminalView::new();
+        temp_view.show_system(&msg);
 
         // Show recent context when resuming a session
-        let mut view = TerminalView::new();
-        view.show_recent_context(&session);
+        temp_view.show_recent_context(&session);
     }
 
     // Attach database to session
     if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
         session.attach_db(Arc::clone(db_ref), Arc::clone(client));
 
+        let mut temp_view = TerminalView::new();
+
         // Regenerate embeddings if needed (after schema migration)
         // This runs once after v6→v7 migration to rebuild embeddings from content
         let stats = crate::embeddings::regenerate_all_embeddings(db_ref, client).await;
         if stats.total_processed() > 0 {
-            println!(
+            temp_view.show_system(&format!(
                 "Regenerated {} embedding(s) ({} items, {} chunks)",
                 stats.total_processed(),
                 stats.items_processed,
                 stats.chunks_processed
-            );
+            ));
             if stats.has_errors() {
-                println!(
-                    "Warning: {} embedding(s) failed to generate. They will be retried on next startup.",
+                temp_view.show_warning(&format!(
+                    "{} embedding(s) failed to generate. They will be retried on next startup.",
                     stats.total_failed()
-                );
+                ));
             }
         }
 
         // Recover any missing embeddings from previous session
         let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client).await;
         if recovered > 0 {
-            println!("Recovered {} missing embedding(s)", recovered);
+            temp_view.show_system(&format!("Recovered {} missing embedding(s)", recovered));
         }
 
         // Recover missing fact embeddings and verify semantic dedup
@@ -695,12 +722,16 @@ pub async fn run_chat_repl(
     // 4. Global config (model.thinking)
     // 5. Model default (from models.toml or built-in config)
     let cli_think_flag = cli_think || args.think;
-    let think_enabled = resolve_thinking_mode(
-        cli_think_flag,
-        config_thinking,
-        &model_config,
-        &capabilities,
-    );
+    let think_enabled = {
+        let mut temp_view = TerminalView::new();
+        resolve_thinking_mode(
+            cli_think_flag,
+            config_thinking,
+            &model_config,
+            &capabilities,
+            &mut temp_view,
+        )
+    };
 
     // Tools mode priority: CLI -> config -> default
     let cli_tools_flag = cli_tools || args.tools;
@@ -713,7 +744,8 @@ pub async fn run_chat_repl(
     let agents_md = if !ignore_agents {
         let md = crate::context::load_agents_md();
         if md.is_some() {
-            println!("Loaded AGENTS.md context from current directory.");
+            let mut temp_view = TerminalView::new();
+            temp_view.show_system("Loaded AGENTS.md context from current directory.");
         }
         md
     } else {
@@ -721,16 +753,20 @@ pub async fn run_chat_repl(
     };
 
     // Print help line AFTER all startup messages
-    print!("{}", super::view::WelcomeInfo::help_line());
+    {
+        let mut temp_view = TerminalView::new();
+        temp_view.show_help_line();
+    }
 
     let tools_active = session.tools && capabilities.tools;
 
     if session.tools && !capabilities.tools {
-        eprintln!(
-            "Warning: Tools are enabled but model '{}' does not support tool calling.",
+        let mut temp_view = TerminalView::new();
+        temp_view.show_warning(&format!(
+            "Tools are enabled but model '{}' does not support tool calling.",
             model_config.model_id
-        );
-        eprintln!("         Tools have been disabled for this session. Use /tools to toggle.");
+        ));
+        temp_view.show_system("Tools have been disabled for this session. Use /tools to toggle.");
     }
 
     // Phase 8: Create ReplState to consolidate mutable state
@@ -759,6 +795,9 @@ pub async fn run_chat_repl(
     // Initialize input backend using RustylineInput abstraction
     let model_names: Vec<String> = crate::user_models::list_all_model_names();
     let mut input = RustylineInput::new(model_names);
+
+    // Create view for rendering command outputs
+    let mut view = TerminalView::new();
 
     loop {
         // Build status bar info
@@ -805,28 +844,37 @@ pub async fn run_chat_repl(
                     match parse_command(line) {
                         Some(Ok(cmd)) => {
                             if let ChatCommand::Model { name } = &cmd {
-                                let _ = handle_model_switch(&mut state, name, &capabilities).await;
+                                let outputs =
+                                    handle_model_switch(&mut state, name, &capabilities).await;
+                                view.show_command_outputs(&outputs);
                                 continue;
                             }
 
-                            match super::command_handlers::handle_command(
-                                cmd, &mut state, &mut input,
+                            let outputs = super::command_handlers::handle_command(
+                                cmd, &mut state, &mut input, &mut view,
                             )
-                            .await
-                            {
-                                HandleResult::Continue => continue,
-                                HandleResult::Exit => return Ok(()),
+                            .await;
+
+                            // Render all command outputs via ChatView
+                            view.show_command_outputs(&outputs);
+
+                            // Check if any output signals quit
+                            if outputs.iter().any(|o| matches!(o, CommandOutput::Quit)) {
+                                return Ok(());
                             }
+
+                            // Skip handle_user_message for all valid commands
+                            continue;
                         }
                         Some(Err(e)) => {
-                            eprintln!("{}", e);
+                            view.show_error(&e.to_string());
                             continue;
                         }
                         None => {}
                     }
                 }
 
-                handle_user_message(line, &mut state).await;
+                handle_user_message(line, &mut state, &mut view).await;
             }
             InputResult::Interrupted => {
                 // Clear status bar only
@@ -847,7 +895,7 @@ pub async fn run_chat_repl(
             InputResult::Error(err) => {
                 // Clear status bar only
                 print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
-                eprintln!("Error: {}", err);
+                view.show_error(&format!("Input error: {}", err));
                 break;
             }
         }

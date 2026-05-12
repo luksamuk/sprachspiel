@@ -1,18 +1,33 @@
 //! Thinking tag processing
 //!
 //! Handles extraction and display of thinking content from LLM responses.
+//!
+//! # Architecture
+//!
+//! - `extract_thinking()` — Pure data extraction (no I/O). Returns the extracted
+//!   thinking content without rendering. Use this when a `ChatView` is available.
+//! - `display_thinking()` — Legacy function that extracts AND renders to stderr.
+//!   Use only in contexts without `ChatView` (e.g., query mode).
+//!
+//! # Migration Note (W6-PR1)
+//!
+//! `display_thinking()` is retained only for `query/mod.rs` (non-REPL query mode).
+//! The coordinator callback in `setup_coordinator` now uses `ViewEventSender`
+//! to send events through a channel, which are drained into `ChatView` after
+//! the coordinator call completes. No direct print calls remain in the chat path.
+
+#![expect(clippy::print_stderr)] // Legacy display_thinking() for query mode (non-REPL)
 
 use regex::Regex;
-use termimad::MadSkin;
 use unicode_width::UnicodeWidthChar;
 
-/// ANSI color for thinking text (light gray)
+/// ANSI color for thinking text (light gray) — used by display_thinking() only
 const THINKING_COLOR: &str = "\x1B[37m";
-/// ANSI dim/faint style
+/// ANSI dim/faint style — used by display_thinking() only
 const DIM_STYLE: &str = "\x1B[2m";
-/// ANSI reset
+/// ANSI reset — used by display_thinking() only
 const RESET: &str = "\x1B[0m";
-/// Indentation for thinking content (in characters)
+/// Indentation for thinking content (in characters) — used by display_thinking() only
 const THINKING_INDENT: usize = 2;
 
 /// Processed thinking content
@@ -109,10 +124,33 @@ pub fn strip_thinking_tags(content: &str) -> String {
     process_thinking(content).content
 }
 
-/// Display thinking content to stderr with light gray color and optional markdown
+/// Extract thinking content without rendering.
 ///
 /// Checks the API-provided thinking field first, then falls back to
-/// extracting from content.
+/// extracting thinking tags from content.
+///
+/// Use this when a `ChatView` is available — call `view.show_thinking(content)`
+/// with the returned thinking string.
+///
+/// # Arguments
+/// * `content` - The full response content
+/// * `thinking_field` - Optional thinking field from API response
+///
+/// # Returns
+/// The extracted thinking content (if any)
+pub fn extract_thinking(content: &str, thinking_field: Option<&String>) -> Option<String> {
+    thinking_field.cloned().or_else(|| {
+        let processed = process_thinking(content);
+        processed.thinking
+    })
+}
+
+/// Display thinking content to stderr with light gray color and optional markdown.
+///
+/// **Legacy function** — prefer `extract_thinking()` + `ChatView::show_thinking()`.
+///
+/// This function is retained for contexts where no `ChatView` is available,
+/// such as the coordinator event callback in `setup_coordinator()`.
 ///
 /// # Arguments
 /// * `content` - The full response content
@@ -130,17 +168,10 @@ pub fn display_thinking(
     if !log::log_enabled!(log::Level::Info) {
         // Still extract the thinking content so it can be processed,
         // but don't display it
-        let thinking_content = thinking_field.cloned().or_else(|| {
-            let processed = process_thinking(content);
-            processed.thinking
-        });
-        return thinking_content;
+        return extract_thinking(content, thinking_field);
     }
 
-    let thinking_content = thinking_field.cloned().or_else(|| {
-        let processed = process_thinking(content);
-        processed.thinking
-    });
+    let thinking_content = extract_thinking(content, thinking_field);
 
     if let Some(ref thinking) = thinking_content {
         eprintln!("{DIM_STYLE}{THINKING_COLOR}[Thinking]{RESET}");
@@ -151,7 +182,7 @@ pub fn display_thinking(
 
         if render_markdown {
             // Use MadSkin with proper wrapping
-            let skin = MadSkin::default();
+            let skin = termimad::MadSkin::default();
             let wrapped = skin.text(thinking, Some(wrap_width));
             for line in wrapped.to_string().lines() {
                 eprintln!("{DIM_STYLE}{THINKING_COLOR}  {}{RESET}", line);
