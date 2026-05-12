@@ -191,7 +191,7 @@ async fn run_startup_tasks(
 }
 
 /// Handle user input that's not a command.
-async fn handle_user_message(
+pub async fn handle_user_message(
     line: &str,
     state: &mut super::repl_state::ReplState,
     view: &mut dyn ChatView,

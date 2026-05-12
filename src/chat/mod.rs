@@ -37,6 +37,7 @@ pub mod input;
 pub mod model_switch;
 pub mod repl;
 pub mod repl_state;
+pub mod repl_tui;
 pub mod session;
 pub mod subagent;
 pub mod thinking;

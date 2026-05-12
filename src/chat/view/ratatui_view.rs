@@ -106,7 +106,7 @@ impl RatatuiView {
     }
 
     /// Render the current state to the terminal.
-    fn render(&mut self) {
+    pub fn render(&mut self) {
         let _ = self.app.render(&mut self.terminal);
     }
 }
