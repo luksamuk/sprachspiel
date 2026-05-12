@@ -3848,7 +3848,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** ✅ COMPLETED (W6-PR1: CommandOutput enum + ChatView migration)
+**Status:** 🔄 IN PROGRESS (W6-PR2: Ratatui Infrastructure + Responsive Rendering)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -3973,6 +3973,8 @@ pub enum CommandResult {
 #### PR 2: Infrastructure + Responsive Rendering (~5-6 days) — #146
 
 **Goal:** Add Ratatui infrastructure and implement responsive rendering. Chat displays correctly at any terminal width. Feature flag `--tui` for testing.
+
+**Branch:** `feat/ratatui-infrastructure`
 
 **Implementation Phases:**
 

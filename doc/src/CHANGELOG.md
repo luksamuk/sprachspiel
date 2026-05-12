@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **W6-PR2: Ratatui Infrastructure + Responsive Rendering (Issue #146)** — Add Ratatui TUI framework and implement responsive chat rendering. Introduces `RatatuiView` implementing `ChatView`, TUI components (chat area, status bar, input line), responsive `WelcomeInfo` and `StatusBarInfo`, and `--tui` feature flag for visual testing. Default mode unchanged — all rendering changes gated behind the flag. Depends on W6-PR1 (CommandOutput enum) which is complete.
+
 ### Changed
 
 - **W6-PR1: CommandResult — Decouple Logic from Presentation (Issue #145)** — Migrate all command handlers from direct `println!`/`eprintln!` to typed `CommandResult` enum, with rendering via `ChatView`. Creates the abstraction layer needed for the Ratatui migration (W6-PR2). No behavioral changes — all output remains identical, just routed through the new enum and trait methods instead of raw print calls.
