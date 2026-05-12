@@ -36,7 +36,7 @@ use super::continuation::{
     check_and_compact_before_tool, handle_overflow_error, process_send_result,
 };
 use super::core::send_message;
-use super::input::{InputBackend, InputResult, RustylineInput};
+use super::input::{CrosstermInput, InputBackend, InputResult};
 use super::session::{ChatSession, MessageRole};
 use super::view::ChatView;
 use super::view::TerminalView;
@@ -792,9 +792,9 @@ pub async fn run_chat_repl(
     // Initialize global todo state from session
     crate::tools::todo::load_from_session(&state.session.todos);
 
-    // Initialize input backend using RustylineInput abstraction
+    // Initialize input backend using CrosstermInput abstraction
     let model_names: Vec<String> = crate::user_models::list_all_model_names();
-    let mut input = RustylineInput::new(model_names);
+    let mut input = CrosstermInput::new(model_names);
 
     // Create view for rendering command outputs
     let mut view = TerminalView::new();
