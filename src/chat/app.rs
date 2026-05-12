@@ -16,7 +16,6 @@
 //! ```
 
 use crossterm::event::{KeyCode, KeyModifiers};
-use ratatui::Terminal;
 use ratatui::layout::{Constraint, Layout};
 
 use super::input::{CrosstermInput, InputBackend, InputResult};

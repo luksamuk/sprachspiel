@@ -1,15 +1,18 @@
-//! TUI-based REPL loop for the chat (Phase 2.10 — WIP)
+//! TUI-based REPL loop for the chat
 //!
 //! This module provides `run_chat_repl_tui()`, which replaces the
 //! blocking rustyline loop with a crossterm-based event loop that
 //! renders via ratatui.
 //!
-//! # Status
+//! # Architecture
 //!
-//! This is a work-in-progress skeleton. The full wiring of the REPL
-//! loop (command handling, LLM calls, session management) will be
-//! integrated incrementally. The event loop and rendering infrastructure
-//! are functional.
+//! The event loop:
+//! 1. Polls for crossterm events with a 100ms timeout (for spinner animation)
+//! 2. Processes key events via `App::handle_key()`
+//! 3. Re-renders after each event or tick
+//! 4. On Enter: delegates to command handlers or LLM message sending
+//! 5. On Ctrl+C: cancels current operation or shows interrupt
+//! 6. On Ctrl+D: quits the session (saves history and session)
 
 use crossterm::event::{self, Event as CrosstermEvent};
 
@@ -29,6 +32,11 @@ use super::view::RatatuiView;
 /// that renders via ratatui. All view operations go through `RatatuiView`,
 /// which implements `ChatView` and delegates to `App::add_message()`.
 ///
+/// # Arguments
+///
+/// * `state` - The REPL state (session, model config, capabilities, etc.)
+/// * `resume_message` - Optional message to display when resuming a session
+///
 /// # Architecture
 ///
 /// The event loop:
@@ -37,16 +45,16 @@ use super::view::RatatuiView;
 /// 3. Re-renders after each event or tick
 /// 4. On Enter: delegates to command handlers or LLM message sending
 /// 5. On Ctrl+C: cancels current operation or shows interrupt
-/// 6. On Ctrl+D: quits the session
+/// 6. On Ctrl+D: quits the session (saves history and session)
 ///
 /// # Errors
 ///
 /// Returns an error if terminal setup fails or an irrecoverable error occurs.
 pub async fn run_chat_repl_tui(
     state: &mut ReplState,
-    capabilities: &crate::capabilities::ModelCapabilities,
+    resume_message: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Create the TUI view (initializes terminal, installs panic hook)
+    let capabilities = state.capabilities.clone();
     let model_names = crate::user_models::list_all_model_names();
     let model_name = state.model_config.model_id.clone();
     let think_enabled = state.session.think;
@@ -56,7 +64,12 @@ pub async fn run_chat_repl_tui(
 
     let theme = super::tui::markdown::MarkdownTheme::from_config(&state.settings.display.skin);
 
+    // Create the TUI view (initializes terminal in raw mode, installs panic hook)
     let mut view = RatatuiView::new(theme, model_names);
+
+    // ── Startup Messages ─────────────────────────────────────────────
+    // All startup messages are rendered through the TUI view so they
+    // appear in the chat area (not as terminal prints).
 
     // Show welcome banner
     {
@@ -107,10 +120,78 @@ pub async fn run_chat_repl_tui(
         );
     }
 
+    // Show resume message and recent context (when resuming a session)
+    if let Some(msg) = resume_message {
+        view.show_system(&msg);
+        view.show_recent_context(&state.session);
+    }
+
+    // Show database recovery messages
+    if let (Some(db_ref), Some(client)) = (&state.db, &state.embedding_client) {
+        // Regenerate embeddings if needed (after schema migration)
+        let stats = crate::embeddings::regenerate_all_embeddings(db_ref, client).await;
+        if stats.total_processed() > 0 {
+            view.show_system(&format!(
+                "Regenerated {} embedding(s) ({} items, {} chunks)",
+                stats.total_processed(),
+                stats.items_processed,
+                stats.chunks_processed
+            ));
+            if stats.has_errors() {
+                view.show_warning(&format!(
+                    "{} embedding(s) failed to generate. They will be retried on next startup.",
+                    stats.total_failed()
+                ));
+            }
+        }
+
+        // Recover any missing embeddings from previous session
+        let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client).await;
+        if recovered > 0 {
+            view.show_system(&format!("Recovered {} missing embedding(s)", recovered));
+        }
+
+        // Recover missing fact embeddings and verify semantic dedup
+        let fact_recovered =
+            crate::facts::recovery::recover_missing_fact_embeddings(db_ref, client).await;
+        if fact_recovered > 0 {
+            log::debug!("Recovered {} fact embedding(s)", fact_recovered);
+        }
+
+        let stats = crate::facts::verify::verify_and_dedup_facts(db_ref, client).await;
+        if stats.facts_checked > 0
+            && (stats.duplicates_removed > 0
+                || stats.contradictions_resolved > 0
+                || stats.global_wins > 0)
+        {
+            log::debug!(
+                "Fact verification: checked {}, removed {} duplicates, {} contradictions, {} global-wins",
+                stats.facts_checked,
+                stats.duplicates_removed,
+                stats.contradictions_resolved,
+                stats.global_wins
+            );
+        }
+    }
+
+    // AGENTS.md loaded message
+    if state.agents_md.is_some() {
+        view.show_system("Loaded AGENTS.md context from current directory.");
+    }
+
     // Show help line
     view.show_help_line();
 
-    // Initial status bar update
+    // Tools warning
+    if state.session.tools && !capabilities.tools {
+        view.show_warning(&format!(
+            "Tools are enabled but model '{}' does not support tool calling.",
+            state.model_config.model_id
+        ));
+        view.show_system("Tools have been disabled for this session. Use /tools to toggle.");
+    }
+
+    // ── Initial Status Bar ────────────────────────────────────────────
     let percent = if max_tokens > 0 {
         ((used_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
     } else {
@@ -119,7 +200,7 @@ pub async fn run_chat_repl_tui(
     view.update_status_model(&model_name, think_enabled, tools_enabled);
     view.update_status_tokens(used_tokens, max_tokens, percent);
 
-    // Main event loop
+    // ── Main Event Loop ───────────────────────────────────────────────
     loop {
         // Poll for events with a 100ms timeout (allows spinner animation)
         if event::poll(std::time::Duration::from_millis(100))? {
@@ -146,14 +227,19 @@ pub async fn run_chat_repl_tui(
                                             let outputs = command_handlers::handle_model_switch(
                                                 state,
                                                 name,
-                                                capabilities,
+                                                &capabilities,
                                             )
                                             .await;
                                             view.show_command_outputs(&outputs);
+
                                             if outputs
                                                 .iter()
                                                 .any(|o| matches!(o, CommandOutput::Quit))
                                             {
+                                                let _ = view.app_mut().save_history();
+                                                if !state.session.anonymous {
+                                                    let _ = state.session.save_sqlite();
+                                                }
                                                 view.restore();
                                                 return Ok(());
                                             }
@@ -175,6 +261,10 @@ pub async fn run_chat_repl_tui(
 
                                         if outputs.iter().any(|o| matches!(o, CommandOutput::Quit))
                                         {
+                                            let _ = view.app_mut().save_history();
+                                            if !state.session.anonymous {
+                                                let _ = state.session.save_sqlite();
+                                            }
                                             view.restore();
                                             return Ok(());
                                         }
@@ -196,7 +286,11 @@ pub async fn run_chat_repl_tui(
                             continue;
                         }
                         Some(InputResult::Eof) => {
-                            // Ctrl+D — quit
+                            // Ctrl+D — quit: save session and history
+                            let _ = view.app_mut().save_history();
+                            if !state.session.anonymous {
+                                let _ = state.session.save_sqlite();
+                            }
                             view.restore();
                             return Ok(());
                         }
@@ -229,8 +323,7 @@ pub async fn run_chat_repl_tui(
 /// Handle a user message in TUI mode.
 ///
 /// Sends the message to the LLM and displays the response via the TUI view.
-/// This is a simplified version that delegates to the existing `handle_user_message()`
-/// from `repl.rs`.
+/// Delegates to the existing `handle_user_message()` from `repl.rs`.
 async fn handle_user_message_tui(line: &str, state: &mut ReplState, view: &mut RatatuiView) {
     // Set LLM state to thinking
     view.set_llm_state(LlmState::Thinking);

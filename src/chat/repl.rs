@@ -13,73 +13,31 @@
 //! These are inherently terminal-specific operations. A TUI framework
 //! would handle these via widget state rather than direct output.
 
-#![expect(clippy::print_stdout)] // Terminal control: status bar, prompt echo, signals
+#![expect(clippy::print_stdout)] // Terminal control: pre-TUI startup errors
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use termimad::terminal_size;
-use unicode_width::UnicodeWidthStr;
-
 use crate::capabilities::ModelCapabilities;
 use crate::config::ModelConfig;
 use crate::settings::Settings;
-use crate::tokens::calculate_context_metrics;
-use crate::tool_robustness::format_tool_error;
-use crate::tools::get_available_tool_names;
 
-use super::command_handlers::handle_model_switch;
-use super::command_output::CommandOutput;
-use super::commands::{ChatCommand, parse_command};
 use super::continuation::{
     OverflowHandleResult, ProcessResult, build_inter_tool_compaction_prompt, build_pre_tool_prompt,
     check_and_compact_before_tool, handle_overflow_error, process_send_result,
 };
 use super::core::send_message;
-use super::input::{CrosstermInput, InputBackend, InputResult};
 use super::session::{ChatSession, MessageRole};
 use super::view::ChatView;
 use super::view::TerminalView;
-use super::view::colors;
 
 use crate::facts::db::DecayStats;
 use crate::facts::extract::extract_and_insert_facts;
 use crate::project::get_project_id;
-
-/// Token overhead for each tool definition (approximate)
-const TOKENS_PER_TOOL: usize = 50;
-
-/// Number of lines in the status bar (separator, content, separator)
-const STATUS_BAR_LINES: usize = 3;
-
-/// Prompt prefix displayed before user input
-const PROMPT_PREFIX: &str = ">>> ";
+use crate::tool_robustness::format_tool_error;
 
 /// Maximum compaction cycles per message to prevent infinite loops
 const MAX_COMPACTION_CYCLES: usize = 3;
-
-/// Calculate the number of visual lines a string will occupy in the terminal
-///
-/// Uses Unicode-aware width calculation to handle CJK and other wide characters.
-/// Returns at least 1 line.
-fn calculate_visual_lines(input: &str, prompt_len: usize, terminal_width: usize) -> usize {
-    if terminal_width == 0 {
-        return 1; // Fallback: assume single line (visual artifacts acceptable)
-    }
-
-    // Unicode-aware width calculation
-    let input_width = input.width();
-    let total_width = prompt_len + input_width;
-
-    // Ceiling division: how many lines does the input occupy?
-    total_width.div_ceil(terminal_width).max(1)
-}
-
-/// Build ANSI escape code to clear status bar and input lines
-fn build_clear_code(visual_lines: usize) -> String {
-    let lines_to_clear = STATUS_BAR_LINES + visual_lines;
-    format!("\x1B[{}A\x1B[J", lines_to_clear)
-}
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -623,104 +581,16 @@ pub async fn run_chat_repl(
 
     let capabilities = ModelCapabilities::detect_or_default(&ollama, &model_config.model_id).await;
 
-    // PRINT BANNER FIRST (before any other output)
-    let (fact_count, note_count, doc_count) = if let Some(db_ref) = &db {
-        (
-            db_ref.count_facts().unwrap_or(0),
-            db_ref.count_notes().unwrap_or(0),
-            db_ref.count_documents().unwrap_or(0),
-        )
-    } else {
-        (0, 0, 0)
-    };
-
-    // Count available skills (only relevant when tools enabled)
-    let tools_active = session.tools && capabilities.tools;
-    let skill_count = if tools_active {
-        crate::skills::load_skill_indexes().len()
-    } else {
-        0
-    };
-
-    print_welcome(
-        &session,
-        &model_config,
-        &capabilities,
-        settings,
-        fact_count,
-        note_count,
-        doc_count,
-        skill_count,
-    );
-
-    // Print session info (if any)
-    if let Some(msg) = resume_message {
-        let mut temp_view = TerminalView::new();
-        temp_view.show_system(&msg);
-
-        // Show recent context when resuming a session
-        temp_view.show_recent_context(&session);
-    }
-
-    // Attach database to session
-    if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
-        session.attach_db(Arc::clone(db_ref), Arc::clone(client));
-
-        let mut temp_view = TerminalView::new();
-
-        // Regenerate embeddings if needed (after schema migration)
-        // This runs once after v6→v7 migration to rebuild embeddings from content
-        let stats = crate::embeddings::regenerate_all_embeddings(db_ref, client).await;
-        if stats.total_processed() > 0 {
-            temp_view.show_system(&format!(
-                "Regenerated {} embedding(s) ({} items, {} chunks)",
-                stats.total_processed(),
-                stats.items_processed,
-                stats.chunks_processed
-            ));
-            if stats.has_errors() {
-                temp_view.show_warning(&format!(
-                    "{} embedding(s) failed to generate. They will be retried on next startup.",
-                    stats.total_failed()
-                ));
-            }
-        }
-
-        // Recover any missing embeddings from previous session
-        let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client).await;
-        if recovered > 0 {
-            temp_view.show_system(&format!("Recovered {} missing embedding(s)", recovered));
-        }
-
-        // Recover missing fact embeddings and verify semantic dedup
-        let fact_recovered =
-            crate::facts::recovery::recover_missing_fact_embeddings(db_ref, client).await;
-        if fact_recovered > 0 {
-            log::debug!("Recovered {} fact embedding(s)", fact_recovered);
-        }
-
-        let stats = crate::facts::verify::verify_and_dedup_facts(db_ref, client).await;
-        if stats.facts_checked > 0
-            && (stats.duplicates_removed > 0
-                || stats.contradictions_resolved > 0
-                || stats.global_wins > 0)
-        {
-            log::debug!(
-                "Fact verification: checked {}, removed {} duplicates, {} contradictions, {} global-wins",
-                stats.facts_checked,
-                stats.duplicates_removed,
-                stats.contradictions_resolved,
-                stats.global_wins
-            );
-        }
-    }
-
     // Thinking mode priority:
     // 1. Model capability check (can't enable if not supported)
     // 2. CLI flags (-t/--think) - user override
     // 3. Chat-specific config (model.chat.thinking)
     // 4. Global config (model.thinking)
     // 5. Model default (from models.toml or built-in config)
+    //
+    // Note: Warnings from resolve_thinking_mode are shown via TerminalView
+    // before entering TUI mode. They appear briefly on stdout before the
+    // TUI takes over the terminal.
     let cli_think_flag = cli_think || args.think;
     let think_enabled = {
         let mut temp_view = TerminalView::new();
@@ -741,269 +611,40 @@ pub async fn run_chat_repl(
     session.tools = tools_enabled;
     session.tool_output_level = args.tools_output;
 
+    // Attach database to session (needed before TUI for embedding recovery)
+    if let (Some(db_ref), Some(client)) = (&db, &embedding_client) {
+        session.attach_db(Arc::clone(db_ref), Arc::clone(client));
+    }
+
     let agents_md = if !ignore_agents {
-        let md = crate::context::load_agents_md();
-        if md.is_some() {
-            let mut temp_view = TerminalView::new();
-            temp_view.show_system("Loaded AGENTS.md context from current directory.");
-        }
-        md
+        crate::context::load_agents_md()
     } else {
         None
     };
 
-    // Print help line AFTER all startup messages
-    {
-        let mut temp_view = TerminalView::new();
-        temp_view.show_help_line();
-    }
-
     let tools_active = session.tools && capabilities.tools;
 
-    if session.tools && !capabilities.tools {
-        let mut temp_view = TerminalView::new();
-        temp_view.show_warning(&format!(
-            "Tools are enabled but model '{}' does not support tool calling.",
-            model_config.model_id
-        ));
-        temp_view.show_system("Tools have been disabled for this session. Use /tools to toggle.");
-    }
-
-    // Phase 8: Create ReplState to consolidate mutable state
-    // Created AFTER initialization, right before the loop
-    // We pass cloned/copied values for incremental migration.
-    // Immutable values (cli_code, cli_soulless, agents_md) are accessed via state.
-    // Mutable values (session, model_config, capabilities, tools_active) currently have
-    // BOTH local variables AND state fields - migration is in progress.
+    // Build ReplState — all display (welcome, resume, DB messages, etc.)
+    // is handled by run_chat_repl_tui() inside the TUI.
     let mut state = super::repl_state::ReplStateBuilder::new()
-        .session(session.clone()) // Clone for state; session var still primary
-        .model_config(model_config.clone()) // Clone for state
-        .capabilities(capabilities.clone()) // Clone for state
-        .tools_active(tools_active) // Copy (bool) - now accessible as state.tools_active
-        .agents_md(agents_md.clone()) // Clone for state
-        .cli_code(cli_code) // Copy (bool) - now accessible as state.cli_code
-        .cli_soulless(cli_soulless) // Copy (bool) - now accessible as state.cli_soulless
-        .ollama(ollama.clone()) // Clone for state
-        .db(db.clone()) // Arc clone (cheap)
-        .embedding_client(embedding_client.clone()) // Arc clone (cheap)
-        .settings(settings.clone()) // Clone for state
+        .session(session.clone())
+        .model_config(model_config.clone())
+        .capabilities(capabilities.clone())
+        .tools_active(tools_active)
+        .agents_md(agents_md.clone())
+        .cli_code(cli_code)
+        .cli_soulless(cli_soulless)
+        .ollama(ollama.clone())
+        .db(db.clone())
+        .embedding_client(embedding_client.clone())
+        .settings(settings.clone())
         .build()?;
 
     // Initialize global todo state from session
     crate::tools::todo::load_from_session(&state.session.todos);
 
-    // Initialize input backend using CrosstermInput abstraction
-    let model_names: Vec<String> = crate::user_models::list_all_model_names();
-    let mut input = CrosstermInput::new(model_names);
-
-    // Create view for rendering command outputs
-    let mut view = TerminalView::new();
-
-    loop {
-        // Build status bar info
-        let status_bar = build_status_bar(&state);
-
-        // Print status bar (3 lines total)
-        print!("{}", status_bar);
-
-        // Simple prompt with just ">>> "
-        let readline = input.read_line(">>> ");
-
-        match readline {
-            InputResult::Line(ref line) => {
-                let line = line.trim();
-                if line.is_empty() {
-                    // Clear status bar only (no input to clear)
-                    print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
-                    continue;
-                }
-
-                input.add_history(line);
-
-                // Calculate visual lines for proper ANSI clearing
-                let prompt_len = PROMPT_PREFIX.len();
-                let (cols, _) = terminal_size();
-                let visual_lines = if cols > 0 {
-                    calculate_visual_lines(line, prompt_len, cols as usize)
-                } else {
-                    1 // Fallback: assume 1 line
-                };
-
-                // Clear status bar and input lines
-                print!("{}", build_clear_code(visual_lines));
-                println!(
-                    "{}>>>{} {}{}{}",
-                    colors::BOLD_CYAN,
-                    colors::RESET,
-                    colors::CYAN,
-                    line,
-                    colors::RESET
-                );
-
-                if line.starts_with('/') {
-                    match parse_command(line) {
-                        Some(Ok(cmd)) => {
-                            if let ChatCommand::Model { name } = &cmd {
-                                let outputs =
-                                    handle_model_switch(&mut state, name, &capabilities).await;
-                                view.show_command_outputs(&outputs);
-                                continue;
-                            }
-
-                            let outputs = super::command_handlers::handle_command(
-                                cmd, &mut state, &mut input, &mut view,
-                            )
-                            .await;
-
-                            // Render all command outputs via ChatView
-                            view.show_command_outputs(&outputs);
-
-                            // Check if any output signals quit
-                            if outputs.iter().any(|o| matches!(o, CommandOutput::Quit)) {
-                                return Ok(());
-                            }
-
-                            // Skip handle_user_message for all valid commands
-                            continue;
-                        }
-                        Some(Err(e)) => {
-                            view.show_error(&e.to_string());
-                            continue;
-                        }
-                        None => {}
-                    }
-                }
-
-                handle_user_message(line, &mut state, &mut view).await;
-            }
-            InputResult::Interrupted => {
-                // Clear status bar only
-                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
-                println!("^C");
-                continue;
-            }
-            InputResult::Eof => {
-                // Clear status bar only
-                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
-                println!("^D");
-                let _ = input.save_history();
-                if !state.session.anonymous {
-                    let _ = state.session.save_sqlite();
-                }
-                return Ok(());
-            }
-            InputResult::Error(err) => {
-                // Clear status bar only
-                print!("\x1B[{}A\x1B[J", STATUS_BAR_LINES);
-                view.show_error(&format!("Input error: {}", err));
-                break;
-            }
-        }
-    }
-
-    let _ = input.save_history();
-    Ok(())
+    // Enter TUI mode — all display is handled by RatatuiView from here on
+    super::repl_tui::run_chat_repl_tui(&mut state, resume_message).await
 }
 
 // Helper functions (REPL-specific, not moved to core.rs)
-
-/// Build the status bar string for display above prompt
-///
-/// Includes model name, context usage, progress bar, and indicators.
-fn build_status_bar(state: &super::repl_state::ReplState) -> String {
-    use crate::prompts::builder::{PromptConfig, PromptType, build_system_prompt};
-
-    let blacklist_set = state.settings.blacklist_set();
-
-    let prompt_type = if state.tools_active {
-        PromptType::ToolUser
-    } else {
-        PromptType::Default
-    };
-
-    let system_prompt = build_system_prompt(
-        PromptConfig::new(prompt_type)
-            .with_model_id(Some(&state.model_config.model_id))
-            .with_blacklist(Some(&blacklist_set))
-            .with_agents_md(state.agents_md.as_deref())
-            .with_tools(state.tools_active)
-            .with_retrieval(state.session.retrieval_enabled)
-            .with_soulless(state.cli_soulless),
-    );
-
-    let context_window = state.model_config.num_ctx as usize;
-
-    // Get tool count
-    let tool_count = if state.tools_active {
-        get_available_tool_names(&state.settings).len()
-    } else {
-        0
-    };
-
-    let tools_tokens = if state.tools_active && tool_count > 0 {
-        tool_count * TOKENS_PER_TOOL
-    } else {
-        0
-    };
-
-    // Get real tokens if available, or use estimate
-    let real_history_tokens = state.session.history_real_tokens();
-    let real_tokens_opt = if real_history_tokens > 0 {
-        Some(real_history_tokens)
-    } else {
-        None
-    };
-
-    let history_messages = state.session.get_messages_for_llm(&system_prompt);
-
-    let metrics = calculate_context_metrics(
-        &history_messages,
-        context_window,
-        &system_prompt,
-        tools_tokens,
-        real_tokens_opt,
-    );
-
-    // Update cache
-    let info = state.get_status_bar_info(metrics);
-    info.format_status_bar()
-}
-
-#[expect(clippy::too_many_arguments)]
-fn print_welcome(
-    session: &ChatSession,
-    model_config: &ModelConfig,
-    capabilities: &ModelCapabilities,
-    settings: &crate::settings::Settings,
-    fact_count: i64,
-    note_count: i64,
-    doc_count: i64,
-    skill_count: usize,
-) {
-    let project = session.project_id.as_deref().unwrap_or("anonymous");
-    let session_name = session.name.as_deref().unwrap_or(&session.id);
-    let sandbox_status = crate::external::get_sandbox_status();
-    let version = env!("CARGO_PKG_VERSION");
-    let server_url = format!(
-        "{}:{}",
-        settings.model.ollama_host, settings.model.ollama_port
-    );
-
-    let mut view = TerminalView::new();
-    view.show_welcome(
-        &model_config.model_id,
-        session.tools && capabilities.tools,
-        session.think && capabilities.thinking,
-        capabilities.vision,
-        sandbox_status,
-        project,
-        session_name,
-        session.anonymous,
-        version,
-        &server_url,
-        fact_count,
-        note_count,
-        doc_count,
-        skill_count,
-    );
-}
