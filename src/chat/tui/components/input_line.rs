@@ -136,11 +136,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &InputState) {
         let text_before_cursor = &state.buffer[..state.cursor_pos];
         let cursor_visual = PROMPT_WIDTH + text_before_cursor.width() as u16;
         let right_edge = area.width;
-        let scroll_x = if cursor_visual + 1 > right_edge {
-            cursor_visual + 1 - right_edge
-        } else {
-            0
-        };
+        let scroll_x = (cursor_visual + 1).saturating_sub(right_edge);
 
         let paragraph = Paragraph::new(line).scroll((0, scroll_x));
         f.render_widget(paragraph, area);
