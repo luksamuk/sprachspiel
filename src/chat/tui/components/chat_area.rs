@@ -17,11 +17,10 @@
 //! # Scrolling
 //!
 //! The chat area supports both auto-scroll (default) and manual scroll:
-//! - **Auto-scroll**: When `ScrollState::auto_scroll` is true, the viewport
-//!   truncates the lines vector to show only the last N lines (where N is
-//!   the visible area height). This guarantees the newest content is always
-//!   visible and avoids the ratatui bug where scroll offsets exceeding the
-//!   actual line count cause a blank screen.
+//! - **Auto-scroll**: `ScrollState::auto_scroll` is true, the viewport shows
+//!   the bottom of content (newest messages). The scroll offset is computed
+//!   from `count_wrapped_lines()` which accounts for word-wrapping, so the
+//!   newest content is always visible regardless of terminal width.
 //! - **Manual scroll**: When the user presses PageUp/PageDown/Home/End,
 //!   `auto_scroll` is disabled and `manual_offset` controls how far above
 //!   the bottom the viewport is positioned, using Paragraph::scroll().
@@ -238,6 +237,24 @@ fn content_has_table(content: &str) -> bool {
     })
 }
 
+/// Count total visual lines after applying word-wrap to a slice of Lines.
+///
+/// Each Line is flattened to text and run through `wrap_line()` to determine
+/// how many screen rows it will occupy at the given width. This accounts for
+/// both space-based wrapping and hard-breaks on long words.
+fn count_wrapped_lines(lines: &[Line], width: usize) -> usize {
+    if width == 0 {
+        return lines.len();
+    }
+    let mut total = 0usize;
+    for line in lines {
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let wrapped = wrap_line(&text, width);
+        total += wrapped.len().max(1);
+    }
+    total
+}
+
 /// Hard-break a word that exceeds `width` visual columns.
 ///
 /// Breaks at Unicode character boundaries, splitting the word into chunks
@@ -274,15 +291,15 @@ fn hard_break_word(word: &str, width: usize) -> Vec<String> {
 /// # Scrolling
 ///
 /// The `ScrollState` determines the viewport position:
-/// - Auto-scroll: truncates lines to show only the last N that fit in the
-///   viewport (avoids ratatui bug where excessive scroll hides all content)
+/// - Auto-scroll: shows the newest messages at the bottom. The scroll
+///   offset is computed from the wrapped line count (via `count_wrapped_lines()`)
+///   which accounts for word-wrapping at the terminal width.
 /// - Manual scroll: uses `Paragraph::scroll()` with offset from top
 ///
-/// **Why not `u16::MAX` scroll?** ratatui's `Paragraph::scroll()` skips N
-/// composed lines before rendering. If the offset exceeds the total line
-/// count, Paragraph renders nothing at all — it does NOT clamp to bottom.
-/// Using `u16::MAX` therefore causes a blank chat area. Truncating lines
-/// for auto-scroll avoids this entirely.
+/// **Why compute wrapped lines manually?** `Paragraph::wrap()` expands each
+/// source line into potentially multiple screen rows. We replicate the same
+/// wrap logic in `count_wrapped_lines()` so the scroll offset matches the
+/// actual rendered layout.
 pub fn render(
     f: &mut Frame,
     area: Rect,
@@ -376,46 +393,16 @@ pub fn render(
 
     // Calculate scroll offset from the top of content.
     //
-    // ratatui's Paragraph::scroll() skips N composed lines before rendering.
-    // If the scroll offset exceeds the number of composed lines, Paragraph
-    // renders nothing at all — it does NOT clamp to the bottom. This means
-    // u16::MAX causes the chat area to be blank (all content is skipped).
-    //
-    // To always show the bottom (auto-scroll), we instead truncate the lines
-    // vector to the last N lines that fit in the viewport. This avoids both
-    // the u16::MAX blank-screen bug and the under-estimation problem where
-    // `lines.len()` < actual wrapped line count.
-    //
-    // For manual scroll, we use `effective_scroll_from_top` with the
-    // pre-wrap line count as an approximation. Wrapped lines may cause the
-    // scroll to be slightly less than true bottom, but this is acceptable
-    // for user-controlled scrolling.
-    let total_lines = lines.len();
+    // We compute the total rendered line count AFTER wrap using
+    // `count_wrapped_lines()`, then use `effective_scroll_from_top()`
+    // to get the precise offset that shows the bottom (newest) content.
+    // This is accurate because it mirrors the same wrap logic that
+    // ratatui's Paragraph::wrap() would apply at render time.
+    let wrapped_total = count_wrapped_lines(&lines, area.width as usize);
     let visible_height = area.height as usize;
+    let scroll_from_top = scroll_state.effective_scroll_from_top(wrapped_total, visible_height);
 
-    let display_lines = if scroll_state.auto_scroll {
-        // Auto-scroll: show only the last `visible_height` lines.
-        // This guarantees the bottom content is always visible, regardless
-        // of how wrapping increases the line count.
-        if total_lines <= visible_height {
-            lines
-        } else {
-            lines
-                .into_iter()
-                .skip(total_lines - visible_height)
-                .collect()
-        }
-    } else {
-        lines
-    };
-
-    let scroll_from_top = if scroll_state.auto_scroll {
-        0 // Lines already truncated — no scroll needed
-    } else {
-        scroll_state.effective_scroll_from_top(total_lines, visible_height)
-    };
-
-    let paragraph = Paragraph::new(display_lines)
+    let paragraph = Paragraph::new(lines)
         .block(Block::default().borders(Borders::NONE))
         .wrap(Wrap { trim: false })
         .scroll((scroll_from_top, 0));

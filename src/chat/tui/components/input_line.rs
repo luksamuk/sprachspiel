@@ -23,10 +23,6 @@ pub struct InputState {
     pub disabled: bool,
     /// Disabled reason (shown when input is disabled)
     pub disabled_reason: Option<String>,
-    /// Horizontal scroll offset (visual columns). When the input text is
-    /// wider than the viewport, this tracks how many columns are hidden
-    /// to the left so the cursor stays visible.
-    pub scroll_offset: u16,
 }
 
 impl InputState {
@@ -37,7 +33,6 @@ impl InputState {
             cursor_pos: 0,
             disabled: false,
             disabled_reason: None,
-            scroll_offset: 0,
         }
     }
 
@@ -45,7 +40,6 @@ impl InputState {
     pub fn insert_char(&mut self, c: char) {
         self.buffer.insert(self.cursor_pos, c);
         self.cursor_pos += c.len_utf8();
-        self.update_scroll_offset();
     }
 
     /// Delete the character before the cursor (backspace)
@@ -59,7 +53,6 @@ impl InputState {
                 .unwrap_or(0);
             self.buffer.drain(prev_pos..self.cursor_pos);
             self.cursor_pos = prev_pos;
-            self.update_scroll_offset();
             true
         } else {
             false
@@ -75,7 +68,6 @@ impl InputState {
                 .map(|(i, _)| i)
                 .unwrap_or(0);
             self.cursor_pos = prev_pos;
-            self.update_scroll_offset();
         }
     }
 
@@ -88,34 +80,7 @@ impl InputState {
                 .map(|(i, _)| self.cursor_pos + i)
                 .unwrap_or(self.buffer.len());
             self.cursor_pos = next_pos;
-            self.update_scroll_offset();
         }
-    }
-
-    /// Update horizontal scroll offset so the cursor stays visible.
-    ///
-    /// The visible text window starts at `scroll_offset` columns.
-    /// If the cursor is before the window, scroll left. If the cursor
-    /// is beyond the right edge, scroll right.
-    fn update_scroll_offset(&mut self) {
-        const PROMPT_WIDTH: u16 = 4; // ">>> "
-        let text_before_cursor = &self.buffer[..self.cursor_pos];
-        let cursor_visual = PROMPT_WIDTH + text_before_cursor.width() as u16;
-        // Keep cursor within the last visible column (heuristic: 1 column margin)
-        if cursor_visual > self.scroll_offset + self.visible_width().saturating_sub(1) {
-            self.scroll_offset =
-                cursor_visual.saturating_sub(self.visible_width().saturating_sub(1));
-        } else if cursor_visual < PROMPT_WIDTH + self.scroll_offset {
-            self.scroll_offset = cursor_visual.saturating_sub(PROMPT_WIDTH);
-        }
-    }
-
-    /// Visible text width in columns (placeholder — set at render time).
-    ///
-    /// Since we don't know the terminal width here, we use a conservative
-    /// default. The render function handles clamping via the area Rect.
-    fn visible_width(&self) -> u16 {
-        80 // Conservative default; actual clipping done by Paragraph
     }
 
     /// Clear the buffer and reset cursor
@@ -147,8 +112,8 @@ impl Default for InputState {
 ///
 /// Shows ">>> " prompt when enabled, or a disabled indicator when
 /// the LLM is processing. Long input lines scroll horizontally so the
-/// cursor stays visible. The horizontal scroll is tracked via
-/// `state.scroll_offset` (visual columns from the left).
+/// cursor stays visible. Scroll is computed at render time from the
+/// actual `area.width` — no state tracking needed.
 pub fn render(f: &mut Frame, area: Rect, state: &InputState) {
     let prompt_style = styles::prompt_style();
     let dim_style = Style::default().add_modifier(Modifier::DIM);
@@ -166,14 +131,22 @@ pub fn render(f: &mut Frame, area: Rect, state: &InputState) {
     } else {
         let spans = vec![Span::styled(">>> ", prompt_style), Span::raw(&state.buffer)];
         let line = Line::from(spans);
-        let paragraph = Paragraph::new(line).scroll((0, state.scroll_offset));
+
+        // Compute horizontal scroll so cursor stays within the visible area.
+        let text_before_cursor = &state.buffer[..state.cursor_pos];
+        let cursor_visual = PROMPT_WIDTH + text_before_cursor.width() as u16;
+        let right_edge = area.width;
+        let scroll_x = if cursor_visual + 1 > right_edge {
+            cursor_visual + 1 - right_edge
+        } else {
+            0
+        };
+
+        let paragraph = Paragraph::new(line).scroll((0, scroll_x));
         f.render_widget(paragraph, area);
 
         // Set cursor position in the input area
-        // prompt ">>> " = 4 characters (ASCII, width = 4)
-        let text_before_cursor = &state.buffer[..state.cursor_pos];
-        let cursor_visual = PROMPT_WIDTH + text_before_cursor.width() as u16;
-        let cursor_x = area.x + cursor_visual.saturating_sub(state.scroll_offset);
+        let cursor_x = area.x + cursor_visual.saturating_sub(scroll_x);
         // Clamp cursor to visible area
         let cursor_x = cursor_x.min(area.x + area.width.saturating_sub(1));
         let cursor_y = area.y;
