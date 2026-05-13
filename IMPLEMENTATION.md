@@ -4051,6 +4051,20 @@ Input is disabled during Thinking/Streaming/Tool call states. Only Ctrl+C cancel
 | 2.11 | Streaming: plain text during LLM response (ChatMessage::assistant_streaming), full markdown render on completion (ChatMessage::assistant_markdown). Spinner animation deferred to PR3 (await blocks render loop). | ✅ COMPLETED (deferred animation to PR3) |
 | 2.12 | Color mapping: `colors::*` ANSI constants → ratatui `Style` in `src/chat/tui/styles.rs` | ✅ COMPLETED |
 | 2.13 | Tests: `cargo test` (990+), `cargo clippy` clean, `cargo fmt`, dead_code annotations for PR3 scaffolding | ✅ COMPLETED |
+| 2.14 | Bug 1 fix: strip ANSI codes from RatatuiView content paths | ✅ COMPLETED |
+| 2.15 | Bug 2 fix: TUI callback for tool calls (routes through ChatView instead of `eprintln!`) | ✅ COMPLETED |
+| 2.16 | Bug 3 fix: `ScrollState` with auto-scroll-to-bottom + PageUp/PageDown/Home/End | ✅ COMPLETED |
+| 2.17 | Native ratatui banner: braille art with ANSI→Line parsing, +30 brightness, responsive 3-tier layout | ✅ COMPLETED |
+| 2.18 | `ChatView::suppress_progress_spinner()` + `debug_tools::set_tui_callback()` | ✅ COMPLETED |
+| 2.19 | `MessageType` enum replaces `role`/`is_thinking`/`is_markdown`/`is_banner` bool fields in `ChatMessage` | ✅ COMPLETED |
+| 2.20 | Message rendering reform: continuous flow, `>>> ` for user (bold cyan), no prefix for assistant, `[Thinking]` dim cyan, dim for tool/system, `✗` for error, no blank lines | ✅ COMPLETED |
+| 2.21 | Tool call drain uses `ChatMessage::tool()` (dim, no `[System]` prefix) instead of `ChatMessage::system()` | ✅ COMPLETED |
+| 2.22 | Cleanup: removed unused `user_label_style`, `assistant_label_style`, `thinking_label_style` from `styles.rs` | ✅ COMPLETED |
+| 2.23 | Bug fix: resize event resets scroll to bottom (`app.scroll_to_bottom()`) | ✅ COMPLETED |
+| 2.24 | Bug fix: multi-line System/Tool/Tool messages split into separate `Line`s (emojis and newlines render correctly) | ✅ COMPLETED |
+| 2.25 | Blank line before Assistant/AssistantStreaming/Thinking for visual separation | ✅ COMPLETED |
+| 2.26 | Thinking: 4-space indent + Unicode-aware responsive word-wrap (`wrap_line()` + `hard_break_word()`) | ✅ COMPLETED |
+| 2.27 | Bug fix: auto-scroll uses `u16::MAX` (Paragraph clamps to bottom) instead of `lines.len()` approximation that breaks when wrap creates extra lines | ✅ COMPLETED |
 
 **New Dependencies:**
 ```toml
@@ -4078,6 +4092,103 @@ rattles = "0.2"          # spinner frames (unused in chat, kept for future)
 - Maps from existing `DisplaySettings.skin` config ("dark", "light", "mono")
 - Limitation: same style for inline code and code blocks (acceptable for chat)
 - No code block borders/background (plain styled text with syntax highlighting)
+
+#### PR 2 Bugs and Banner Details
+
+**Bug 1: ANSI Escape Codes Render as Literal Text in RatatuiView**
+
+All content paths in `RatatuiView` that pass through `ChatMessage::system()` are rendered via `Line::raw()` in `chat_area.rs:139`. ANSI escape codes (`\x1B[36m`, `\x1B[1;36m`, `\x1B[2m`, etc.) from `colors::*` in `view/mod.rs` appear as literal text instead of being interpreted.
+
+**Affected paths:**
+- `RatatuiView::show_welcome()` — `WelcomeInfo::to_boxed_string()` (BANNER_LOGO 256-color, EXTENDED_MIND_ART 24-bit true-color, session lines BOLD_CYAN/DIM/BOLD_YELLOW)
+- `RatatuiView::show_recent_context()` — `RecentContextInfo::format_context_summary()` (BOLD_CYAN, BOLD_YELLOW, DIM, RESET)
+- All `render_*()` methods in RatatuiView (lines 405-640) using `colors::*`
+
+**Fix:** Add `strip_ansi_codes()` to `src/utils.rs` (hand-parse ESC sequences, no regex). Add `add_system_message()` helper to RatatuiView that strips ANSI before adding to chat. Replace all `self.app.add_message(ChatMessage::system(...))` calls in RatatuiView with `self.add_system_message(...)`.
+
+**Bug 2: Tool Call Output Corrupts TUI Alternate Screen**
+
+`display_tool_call()` and `log_tool_result()` in `debug_tools.rs` write to `eprintln!()`. In TUI mode, the terminal uses ratatui's alternate screen buffer, so raw stderr output corrupts the display — tool call text appears as garbage over the TUI.
+
+**Fix:** Global `TUI_CALLBACK` pattern in `debug_tools.rs`. When the TUI starts, `RatatuiView::new()` creates an `mpsc::channel` and registers a callback (`Arc<dyn Fn(&str) + Sync + Send>`). `display_tool_call()` and `log_tool_result()` check `TUI_CALLBACK` and route through it when set, sending formatted lines as `ChatMessage::system()` via the channel. `RatatuiView::render()` drains the channel each frame. On exit, `RatatuiView::restore()` clears the callback.
+
+**Native Ratatui Banner: Braille Art with ANSI Parsing**
+
+The TUI welcome screen uses the existing `EXTENDED_MIND_ART` braille art (14 lines × 39 cols) with `parse_ansi_to_line()` converting ANSI 24-bit true-color sequences to ratatui `Line<Span>` objects. Colors are boosted +30 RGB ( originals preserved as comments for revert). Three responsive tiers:
+
+| Terminal Width | Layout |
+|---------------|--------|
+| ≥ 60 cols | Side-by-side: braille art left (39 cols) + session info right ("penduradas" if info is shorter) |
+| 35-59 cols | Stacked: braille art + session info below |
+| < 35 cols | Info-only: just session info lines, no banner |
+
+**Braille art details:**
+- Source: `EXTENDED_MIND_ART` constant in `src/chat/view/mod.rs` (14 lines × 39 cols, `\x1B[38;2;R;G;Bm` true-color ANSI)
+- `parse_ansi_to_line()` in `src/chat/tui/banner.rs` converts ANSI sequences to `Line<Span>` with boosted colors
+- `build_styled_banner()` stacks art lines; `build_session_info()` creates info lines
+- Layout logic: side-by-side when width ≥ 60, stacked when ≥ 35, info-only below
+- Colors boosted +30 RGB to compensate for terminal dimming; originals kept as inline comments
+
+**Key architecture decisions:**
+- `ScrollState` struct with `auto_scroll: bool` + `manual_offset: u16` in `App`
+- `ScrollState::effective_scroll_from_top()` computes `Paragraph::scroll((y, 0))` offset
+- `auto_scroll=true` → show bottom (newest messages); PageUp disables auto_scroll; typing/Home/End re-enable
+- Tool calls routed through TUI callback (`debug_tools::TUI_CALLBACK`) → `mpsc::channel` → `ChatMessage::system()`
+- `RatatuiView::render()` drains `tool_call_rx` channel each frame
+- `tick_spinner()` called inside `render()` — every `show_*` method triggers render which ticks spinner
+
+**Removed Dependencies (PR 2 bug fixes):**
+```toml
+ratatui-image = "11.0.2"   # Removed — braille art replaces embedded image
+image = "0.25"              # Removed — only needed for ratatui-image
+```
+
+#### PR 2 Message Visual Reform (Phases 2.19–2.22)
+
+**Goal:** Replace the bracketed `[Label]` format with a continuous chat flow that matches the TerminalView style. Messages are differentiated by style (color, weight, prefix) rather than `[You]`, `[Assistant]`, `[System]`, `[Error]` labels.
+
+**Message rendering rules:**
+
+| Type | Rendering | Style |
+|------|-----------|-------|
+| User | `>>> ` prefix + content | Bold cyan |
+| Assistant (complete) | No prefix | Markdown via tui-markdown |
+| Assistant (streaming) | No prefix | Plain text |
+| Thinking | `[Thinking]` label, then indented content | Dim cyan label, dim indented content |
+| Tool call/result | No prefix, content contains 🔧 | Dim |
+| System info | No prefix | Dim |
+| Error | `✗` prefix + content | Bold red |
+| Banner | Responsive braille art layout | As before |
+
+**Architecture change:** `MessageType` enum replaces the previous `role: String` + `is_thinking/is_markdown/is_banner` bool fields. Each variant maps to a distinct rendering style. Blank lines before Assistant and Thinking messages provide visual separation.
+
+**Removed dead code:** `user_label_style()`, `assistant_label_style()`, `thinking_label_style()` — no longer needed since messages no longer use `[Label]` prefixes.
+
+**Tool call routing:** `RatatuiView::render()` drain now creates `ChatMessage::tool()` instead of `ChatMessage::system()`, ensuring tool calls render as dim text without a `[System]` prefix.
+
+**Multi-line rendering:** `MessageType::System`, `MessageType::Tool`, and `MessageType::Error` now iterate over `content.lines()` to create separate `Line` entries per line, fixing the bug where `\n` characters inside a single `Span` were not rendered as line breaks by ratatui. This fixes "recent context" display where emojis like 👤 and 🤖 appeared on the same line.
+
+**Unicode-aware word-wrap:** Thinking block content uses `wrap_line()` and `hard_break_word()` functions that are Unicode-aware — they count visual width (CJK = 2 columns, combining chars = 0) instead of byte length. This prevents panic or corruption when wrapping Portuguese text with accents (olá, não, etc.) or CJK characters.
+
+**Resize handling:** Terminal resize events (`CrosstermEvent::Resize`) now call `app.scroll_to_bottom()` to reset auto-scroll, ensuring the newest content stays visible after window resizing.
+
+**Spinner limitation:** The status bar spinner only animates during `show_*` method calls (when `render()` ticks the spinner). During LLM "thinking" periods with no output, the main event loop is blocked on `handle_user_message_tui().await`, so the spinner freezes. This is a known limitation that will be resolved by the async event loop in PR3 (#147).
+
+**New Files:**
+- `src/chat/tui/banner.rs` — Banner rendering: `load_banner_protocol()`, `build_styled_banner()`, `build_session_info()`, responsive tier logic
+
+**Files Modified:**
+- `Cargo.toml` — Removed ratatui-image and image deps
+- `src/utils.rs` — Added `strip_ansi_codes()` + tests
+- `src/debug_tools.rs` — Added `TUI_CALLBACK` global, `set_tui_callback()`, routing in `display_tool_call()` and `log_tool_result()`
+- `src/chat/view/mod.rs` — Made `EXTENDED_MIND_ART` `pub(crate)`, added `suppress_progress_spinner()` default method
+- `src/chat/view/ratatui_view.rs` — Added `tool_call_rx` channel, TUI callback setup in `new()`, drain in `render()`, clear in `restore()`, `add_system_message()` helper
+- `src/chat/tui/banner.rs` — Rewritten: `parse_ansi_to_line()`, brightness boost, responsive 3-tier layout with braille art
+- `src/chat/tui/components/chat_area.rs` — `MessageType` enum, `ChatMessage` simplified, continuous flow rendering, blank lines before Assistant/Thinking, 4-space indent for thinking, `wrap_line()` + `hard_break_word()` for Unicode-aware word-wrap, multi-line System/Tool/Error rendering, resize auto-scroll
+- `src/chat/tui/styles.rs` — Removed `user_label_style`, `assistant_label_style`, `thinking_label_style` (dead code after reform); kept `bold_yellow` with allow(dead_code)
+- `src/chat/view/ratatui_view.rs` — Tool call drain uses `ChatMessage::tool()` instead of `ChatMessage::system()`
+- `src/chat/app.rs` — `ScrollState` struct, `scroll_to_bottom()` proxy method for resize handling, `handle_key()` with PageUp/PageDown/Home/End, `tick_spinner()` in render chain
+- `src/chat/repl_tui.rs` — `CrosstermEvent::Resize` handler calls `view.app_mut().scroll_to_bottom()`
 
 **Files to Create:**
 - `src/chat/tui/mod.rs` — Terminal setup

@@ -12,6 +12,7 @@
 //!     ├─ InputState (buffer, cursor, disabled state)
 //!     ├─ ChatMessage[] (chat area content)
 //!     ├─ StatusBarState (model, tokens, spinner)
+//!     ├─ ScrollState (auto-scroll and manual offset)
 //!     └─ LlmState (idle, thinking, streaming, tool_call)
 //! ```
 
@@ -42,6 +43,98 @@ pub enum LlmState {
 /// Spinner frames for animation (braille dots pattern)
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/// Scroll state for the chat area.
+///
+/// Tracks whether the chat should auto-scroll to the bottom (default)
+/// or whether the user has manually scrolled up to review older messages.
+///
+/// - `auto_scroll = true`: chat scrolls to show the newest message (bottom)
+/// - `auto_scroll = false`: user has scrolled up; `manual_offset` tracks
+///   how many lines above the bottom the viewport is positioned
+#[derive(Debug, Clone, Copy)]
+pub struct ScrollState {
+    /// Whether to auto-scroll to the bottom on new content
+    pub auto_scroll: bool,
+    /// Manual scroll offset in lines from the bottom (0 = at bottom)
+    pub manual_offset: u16,
+}
+
+impl Default for ScrollState {
+    fn default() -> Self {
+        Self {
+            auto_scroll: true,
+            manual_offset: 0,
+        }
+    }
+}
+
+impl ScrollState {
+    /// Create a new scroll state that auto-scrolls to bottom
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Scroll up by `lines` lines (towards older messages).
+    /// Disables auto-scroll and increments the manual offset.
+    pub fn scroll_up(&mut self, lines: u16) {
+        self.auto_scroll = false;
+        self.manual_offset = self.manual_offset.saturating_add(lines);
+    }
+
+    /// Scroll down by `lines` lines (towards newer messages).
+    /// If offset reaches 0, re-enables auto-scroll.
+    pub fn scroll_down(&mut self, lines: u16) {
+        self.manual_offset = self.manual_offset.saturating_sub(lines);
+        if self.manual_offset == 0 {
+            self.auto_scroll = true;
+        }
+    }
+
+    /// Scroll to the top (oldest messages)
+    pub fn scroll_to_top(&mut self) {
+        self.auto_scroll = false;
+        // Use a large value; the render function will clamp it
+        self.manual_offset = 30000;
+    }
+
+    /// Scroll to the bottom (newest messages)
+    pub fn scroll_to_bottom(&mut self) {
+        self.auto_scroll = true;
+        self.manual_offset = 0;
+    }
+
+    /// Reset to auto-scroll (used when submitting a message)
+    pub fn reset_to_bottom(&mut self) {
+        self.auto_scroll = true;
+        self.manual_offset = 0;
+    }
+
+    /// Calculate the effective scroll offset from the top of the content.
+    ///
+    /// Given the total number of content lines and the visible area height,
+    /// returns the number of lines to skip from the top.
+    ///
+    /// - If auto-scrolling: show the bottom of content (newest messages)
+    /// - If manual scrolling: show content `manual_offset` lines above the bottom
+    pub fn effective_scroll_from_top(&self, total_lines: usize, visible_height: usize) -> u16 {
+        if total_lines <= visible_height {
+            // Content fits in the viewport — no scroll needed
+            return 0;
+        }
+
+        let max_scroll = total_lines.saturating_sub(visible_height);
+
+        if self.auto_scroll {
+            // Auto-scroll: show the bottom of content
+            max_scroll as u16
+        } else {
+            // Manual scroll: offset from the bottom
+            let from_top = max_scroll.saturating_sub(self.manual_offset as usize);
+            from_top as u16
+        }
+    }
+}
+
 /// The main application state for the TUI chat REPL
 pub struct App {
     /// Chat messages displayed in the chat area
@@ -56,8 +149,8 @@ pub struct App {
     llm_state: LlmState,
     /// Markdown rendering theme
     theme: MarkdownTheme,
-    /// Scroll offset for the chat area (0 = scrolled to bottom)
-    scroll_offset: u16,
+    /// Scroll state for the chat area
+    scroll: ScrollState,
     /// Whether the app should quit
     #[allow(dead_code)] // PR3: Will be used for graceful quit handling
     should_quit: bool,
@@ -75,7 +168,7 @@ impl App {
             status_bar: StatusBarState::new(String::new(), 0, 0, 0, false, false),
             llm_state: LlmState::Idle,
             theme,
-            scroll_offset: 0,
+            scroll: ScrollState::new(),
             should_quit: false,
             spinner_frame: 0,
         }
@@ -84,7 +177,7 @@ impl App {
     /// Add a message to the chat area and auto-scroll to bottom
     pub fn add_message(&mut self, message: ChatMessage) {
         self.messages.push(message);
-        self.scroll_offset = 0;
+        self.scroll.reset_to_bottom();
     }
 
     /// Get the messages in the chat area
@@ -109,6 +202,19 @@ impl App {
     #[allow(dead_code)] // PR3: Will be used for state-dependent UI rendering
     pub fn llm_state(&self) -> LlmState {
         self.llm_state
+    }
+
+    /// Get the current scroll state
+    #[allow(dead_code)] // Public API for external scroll queries
+    pub fn scroll_state(&self) -> &ScrollState {
+        &self.scroll
+    }
+
+    /// Scroll to the bottom of the chat (newest messages).
+    ///
+    /// Called on terminal resize to ensure newest content stays visible.
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll.scroll_to_bottom();
     }
 
     /// Set the LLM state and update input/status accordingly
@@ -197,9 +303,31 @@ impl App {
             return Some(InputResult::Interrupted);
         }
 
-        // When input is disabled, ignore all other keys
+        // When input is disabled (LLM processing), still allow scroll keys
         if self.input_state.disabled {
-            return None;
+            // Allow scroll keys even when input is disabled
+            match key.code {
+                KeyCode::PageUp => {
+                    self.scroll.scroll_up(10);
+                    return None;
+                }
+                KeyCode::PageDown => {
+                    self.scroll.scroll_down(10);
+                    return None;
+                }
+                KeyCode::Home => {
+                    self.scroll.scroll_to_top();
+                    return None;
+                }
+                KeyCode::End => {
+                    self.scroll.scroll_to_bottom();
+                    return None;
+                }
+                _ => {
+                    // Ignore all other keys when input is disabled
+                    return None;
+                }
+            }
         }
 
         match key {
@@ -213,6 +341,8 @@ impl App {
                 if !line.is_empty() {
                     self.history_input.add_history(&line);
                 }
+                // Auto-scroll to bottom when submitting
+                self.scroll.reset_to_bottom();
                 Some(InputResult::Line(line))
             }
 
@@ -226,8 +356,6 @@ impl App {
                     Some(InputResult::Eof)
                 } else {
                     // Delete character at cursor (like forward delete)
-                    // InputState doesn't have delete_char_right yet,
-                    // but backspace works as a fallback
                     None
                 }
             }
@@ -278,6 +406,41 @@ impl App {
                 ..
             } => {
                 self.history_next();
+                None
+            }
+
+            // PageUp — scroll chat up (older messages)
+            crossterm::event::KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } => {
+                self.scroll.scroll_up(10);
+                None
+            }
+
+            // PageDown — scroll chat down (newer messages)
+            crossterm::event::KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            } => {
+                self.scroll.scroll_down(10);
+                None
+            }
+
+            // Home — scroll to top (oldest messages)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Home,
+                ..
+            } => {
+                self.scroll.scroll_to_top();
+                None
+            }
+
+            // End — scroll to bottom (newest messages)
+            crossterm::event::KeyEvent {
+                code: KeyCode::End, ..
+            } => {
+                self.scroll.scroll_to_bottom();
                 None
             }
 
@@ -367,7 +530,7 @@ impl App {
                 f,
                 chunks[0],
                 &self.messages,
-                self.scroll_offset,
+                &self.scroll,
                 self.theme,
             );
 

@@ -32,6 +32,8 @@ use crate::chat::session::ChatSession;
 use crate::chat::strip_thinking_tags;
 use crate::chat::view::colors;
 use crate::consts::roles::format_role_label;
+use crate::debug_tools;
+use crate::utils::strip_ansi_codes;
 
 use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
 use crate::chat::app::{App, LlmState};
@@ -44,6 +46,10 @@ use crate::chat::tui::{TuiTerminal, enter_tui, exit_tui, restore_terminal_on_pan
 /// Owns the `App` state and the terminal. All `ChatView` method calls
 /// add messages to the App's message list and trigger a re-render.
 /// The `App` handles all state (messages, input, status bar, theme).
+///
+/// Tool call display is routed through a global callback so that
+/// `debug_tools::log_tool_call` output appears in the chat area
+/// instead of corrupting the alternate screen with raw stderr.
 pub struct RatatuiView {
     /// Application state (messages, input, status bar, theme)
     app: App,
@@ -51,12 +57,17 @@ pub struct RatatuiView {
     terminal: TuiTerminal,
     /// Whether we've shown the welcome banner yet
     welcome_shown: bool,
+    /// Receiver for tool call messages from the global TUI callback
+    tool_call_rx: std::sync::mpsc::Receiver<String>,
 }
 
 impl RatatuiView {
     /// Create a new RatatuiView with the given theme and model names.
     ///
-    /// Initializes the terminal for TUI mode (raw mode, alternate screen).
+    /// Initializes the terminal for TUI mode (raw mode, alternate screen),
+    /// then creates the App state. Also sets up a global callback so that
+    /// tool call output (`debug_tools::log_tool_call`) is routed through the
+    /// chat area instead of corrupting the alternate screen with raw stderr.
     /// Call `restore()` when done to clean up the terminal.
     pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
         // Cannot proceed without terminal — fatal error is appropriate here
@@ -72,10 +83,19 @@ impl RatatuiView {
 
         let app = App::new(theme, model_names);
 
+        // Set up tool call callback: route debug_tools output to the chat area
+        // instead of raw stderr (which would corrupt the TUI alternate screen).
+        let (tool_call_tx, tool_call_rx) = std::sync::mpsc::channel::<String>();
+        let callback = std::sync::Arc::new(move |line: &str| {
+            let _ = tool_call_tx.send(line.to_string());
+        }) as std::sync::Arc<dyn Fn(&str) + Sync + Send>;
+        debug_tools::set_tui_callback(Some(callback));
+
         Self {
             app,
             terminal,
             welcome_shown: false,
+            tool_call_rx,
         }
     }
 
@@ -102,21 +122,43 @@ impl RatatuiView {
     ///
     /// Must be called before exiting to prevent broken terminal state.
     /// Called automatically on panic via the installed hook.
+    /// Also clears the global TUI callback so tool calls go back to stderr.
     pub fn restore(mut self) {
+        // Clear the TUI callback so tool calls go back to stderr
+        debug_tools::set_tui_callback(None);
         let _ = exit_tui(&mut self.terminal);
         let _ = self.app.save_history();
     }
 
     /// Render the current state to the terminal.
+    ///
+    /// Also ticks the spinner animation so it advances one frame per render.
+    /// This is crucial for spinner visibility during LLM processing: even
+    /// though the main event loop is blocked on `handle_user_message_tui`,
+    /// each `show_*` method calls `render()`, which ticks the spinner.
+    ///
+    /// Drains tool call messages from the global callback channel into the
+    /// chat area as tool messages (rendered dim, no `[System]` prefix).
     pub fn render(&mut self) {
+        // Drain tool call messages from the global callback into the chat area
+        while let Ok(line) = self.tool_call_rx.try_recv() {
+            self.app.add_message(ChatMessage::tool(line));
+        }
+
+        self.app.tick_spinner();
         let _ = self.app.render(&mut self.terminal);
     }
 }
 
 impl ChatView for RatatuiView {
+    /// TUI uses a built-in spinner in the status bar — indicatif spinners
+    /// would corrupt the alternate screen buffer with ANSI escape codes.
+    fn suppress_progress_spinner(&self) -> bool {
+        true
+    }
+
     fn show_system(&mut self, message: &str) {
-        self.app
-            .add_message(ChatMessage::system(message.to_string()));
+        self.add_system_message(message);
         self.render();
     }
 
@@ -145,20 +187,20 @@ impl ChatView for RatatuiView {
                 "[Tokens: {} prompt + {} response = {} total]",
                 metrics.prompt_tokens, metrics.response_tokens, metrics.total_tokens
             );
-            self.app.add_message(ChatMessage::system(msg));
+            self.add_system_message(&msg);
             self.render();
         }
     }
 
     fn show_context_warning(&mut self, percent: u8, message: &str) {
         let msg = format!("⚠ Context {}% full. {}", percent, message);
-        self.app.add_message(ChatMessage::system(msg));
+        self.add_system_message(&msg);
         self.render();
     }
 
     fn show_compact_progress(&mut self, message: &str) {
         let msg = format!("⏳ {}", message);
-        self.app.add_message(ChatMessage::system(msg));
+        self.add_system_message(&msg);
         self.render();
     }
 
@@ -176,7 +218,7 @@ impl ChatView for RatatuiView {
         } else {
             format!("✓ Compacted all {} messages.", count)
         };
-        self.app.add_message(ChatMessage::system(msg));
+        self.add_system_message(&msg);
         self.render();
     }
 
@@ -193,9 +235,7 @@ impl ChatView for RatatuiView {
     }
 
     fn show_help_line(&mut self) {
-        self.app.add_message(ChatMessage::system(
-            "Type /help for commands, /quit to exit".to_string(),
-        ));
+        self.add_system_message("Type /help for commands, /quit to exit");
         self.render();
     }
 
@@ -208,22 +248,19 @@ impl ChatView for RatatuiView {
     fn show_command_output(&mut self, output: &CommandOutput) {
         match output {
             CommandOutput::Info(msg) => {
-                self.app.add_message(ChatMessage::system(msg.clone()));
+                self.add_system_message(msg);
             }
             CommandOutput::Success(msg) => {
-                self.app
-                    .add_message(ChatMessage::system(format!("✓ {}", msg)));
+                self.add_system_message(&format!("✓ {}", msg));
             }
             CommandOutput::Warning(msg) => {
-                self.app
-                    .add_message(ChatMessage::system(format!("⚠️ {}", msg)));
+                self.add_system_message(&format!("⚠️ {}", msg));
             }
             CommandOutput::Error(msg) => {
                 self.app.add_message(ChatMessage::error(msg.clone()));
             }
             CommandOutput::Progress(msg) => {
-                self.app
-                    .add_message(ChatMessage::system(format!("⏳ {}", msg)));
+                self.add_system_message(&format!("⏳ {}", msg));
             }
 
             // ── Structured displays ──────────────────────────────────
@@ -234,8 +271,7 @@ impl ChatView for RatatuiView {
             CommandOutput::NoteAdded(data) => self.render_note_added(data),
             CommandOutput::TodoList(data) => self.render_todo_list(data),
             CommandOutput::ContextInfo(data) => {
-                self.app
-                    .add_message(ChatMessage::system(data.formatted.clone()));
+                self.add_system_message(&data.formatted);
             }
             CommandOutput::SessionList(data) => self.render_session_list(data),
             CommandOutput::CompactResult(data) => self.render_compact_result(data),
@@ -249,7 +285,7 @@ impl ChatView for RatatuiView {
             }
             CommandOutput::ReindexResult(data) => self.render_reindex_result(data),
             CommandOutput::HelpText(text) => {
-                self.app.add_message(ChatMessage::system(text.clone()));
+                self.add_system_message(text);
             }
             CommandOutput::MarkdownContent(content) => {
                 self.app
@@ -264,7 +300,7 @@ impl ChatView for RatatuiView {
                     "[Tokens: {} prompt + {} response = {} total]",
                     prompt_tokens, response_tokens, total_tokens
                 );
-                self.app.add_message(ChatMessage::system(msg));
+                self.add_system_message(&msg);
             }
 
             // ── Flow control ──────────────────────────────────────────
@@ -279,12 +315,24 @@ impl ChatView for RatatuiView {
 // ── Convenience methods for RatatuiView ─────────────────────────────────
 
 impl RatatuiView {
+    /// Add a system message with ANSI codes stripped.
+    ///
+    /// In the TUI, system messages are rendered as plain text via `Line::raw()`.
+    /// Any ANSI escape codes would appear as garbled text. This method strips
+    /// ANSI codes before creating the `ChatMessage::system()`, ensuring clean
+    /// rendering in the TUI while allowing the same code paths that produce
+    /// ANSI-colored output for `TerminalView`.
+    fn add_system_message(&mut self, text: &str) {
+        let clean = strip_ansi_codes(text);
+        self.app.add_message(ChatMessage::system(clean));
+    }
+
     /// Display the welcome banner in the TUI.
     ///
-    /// Renders the welcome info as a system message in the chat area.
-    /// The ASCII art banner is rendered as plain text since tui-markdown
-    /// doesn't handle it well. The session info lines are rendered as
-    /// individual system messages.
+    /// Uses the native ratatui banner with responsive layout:
+    /// - Wide terminals: image + session info side-by-side
+    /// - Medium terminals: styled "SPRACH SPIEL" text + session info
+    /// - Narrow terminals: session info only
     #[expect(clippy::too_many_arguments)]
     pub fn show_welcome(
         &mut self,
@@ -324,9 +372,11 @@ impl RatatuiView {
             skill_count,
         };
 
-        // Render the banner as a system message (plain text, ASCII art preserved)
-        let banner = info.to_boxed_string();
-        self.app.add_message(ChatMessage::system(banner));
+        // Use plain session lines (no ANSI) for TUI rendering
+        let session_lines = info.format_session_lines_plain();
+        let banner_content = session_lines.join("\n");
+
+        self.app.add_message(ChatMessage::banner(banner_content));
         self.welcome_shown = true;
         self.render();
     }
@@ -366,7 +416,7 @@ impl RatatuiView {
 
         let summary = info.format_context_summary();
         if !summary.is_empty() {
-            self.app.add_message(ChatMessage::system(summary));
+            self.add_system_message(&summary);
             self.render();
         }
     }
@@ -458,14 +508,14 @@ impl RatatuiView {
             }
         }
 
-        self.app.add_message(ChatMessage::system(lines));
+        self.add_system_message(&lines);
     }
 
     fn render_fact_removed(&mut self, data: &FactRemoveResult) {
         if data.success {
             if let Some(content) = &data.content {
                 let msg = format!("✓ Removed fact #{}: {}", data.id, content);
-                self.app.add_message(ChatMessage::system(msg));
+                self.add_system_message(&msg);
             }
         } else if let Some(error) = &data.error {
             self.app.add_message(ChatMessage::error(error.clone()));
@@ -474,10 +524,7 @@ impl RatatuiView {
 
     fn render_fact_search(&mut self, data: &FactSearchData) {
         if data.results.is_empty() {
-            self.app.add_message(ChatMessage::system(format!(
-                "No facts found matching '{}'.",
-                data.query
-            )));
+            self.add_system_message(&format!("No facts found matching '{}'.", data.query));
             return;
         }
         let mut lines = format!(
@@ -490,13 +537,12 @@ impl RatatuiView {
                 result.id, result.score, result.content
             ));
         }
-        self.app.add_message(ChatMessage::system(lines));
+        self.add_system_message(&lines);
     }
 
     fn render_note_list(&mut self, data: &NoteListData) {
         if data.notes.is_empty() {
-            self.app
-                .add_message(ChatMessage::system("No notes stored.".to_string()));
+            self.add_system_message("No notes stored.");
             return;
         }
         let mut lines = format!(
@@ -510,13 +556,12 @@ impl RatatuiView {
         if data.total_pages > 1 {
             lines.push_str("  Use /note list --page N to see more");
         }
-        self.app.add_message(ChatMessage::system(lines));
+        self.add_system_message(&lines);
     }
 
     fn render_note_added(&mut self, data: &NoteAddResult) {
         if data.success {
-            self.app
-                .add_message(ChatMessage::system(format!("✓ {}", data.message)));
+            self.add_system_message(&format!("✓ {}", data.message));
         } else {
             self.app
                 .add_message(ChatMessage::error(data.message.clone()));
@@ -525,19 +570,15 @@ impl RatatuiView {
 
     fn render_todo_list(&mut self, data: &TodoListData) {
         if data.count == 0 {
-            self.app
-                .add_message(ChatMessage::system("No tasks.".to_string()));
+            self.add_system_message("No tasks.");
         } else {
-            self.app
-                .add_message(ChatMessage::system(data.formatted_list.clone()));
+            self.add_system_message(&data.formatted_list);
         }
     }
 
     fn render_session_list(&mut self, data: &SessionListData) {
         if data.is_empty {
-            self.app.add_message(ChatMessage::system(
-                "No saved sessions for this project.".to_string(),
-            ));
+            self.add_system_message("No saved sessions for this project.");
             return;
         }
         let mut lines = String::from("Sessions for this project:\n");
@@ -554,7 +595,7 @@ impl RatatuiView {
                 entry.name, marker, entry.message_count, age_display
             ));
         }
-        self.app.add_message(ChatMessage::system(lines));
+        self.add_system_message(&lines);
     }
 
     fn render_compact_result(&mut self, data: &CompactData) {
@@ -563,10 +604,10 @@ impl RatatuiView {
                 "✓ Compacted {} messages (preserved {} first, {} last).",
                 data.count, data.preserved_first, data.preserved_last
             );
-            self.app.add_message(ChatMessage::system(msg));
+            self.add_system_message(&msg);
         } else {
             let msg = format!("✓ Compacted all {} messages.", data.count);
-            self.app.add_message(ChatMessage::system(msg));
+            self.add_system_message(&msg);
         }
     }
 
@@ -576,13 +617,12 @@ impl RatatuiView {
             lines.push_str(&format!("Conversation exported to: {}\n", path));
         }
         lines.push_str(&data.content);
-        self.app.add_message(ChatMessage::system(lines));
+        self.add_system_message(&lines);
     }
 
     fn render_skill_list(&mut self, data: &SkillListData) {
         if data.skills.is_empty() {
-            self.app
-                .add_message(ChatMessage::system("No skills available.".to_string()));
+            self.add_system_message("No skills available.");
             return;
         }
         let mut lines = String::from("Available skills:\n");
@@ -590,13 +630,12 @@ impl RatatuiView {
             lines.push_str(&format!("  {} - {}\n", skill.name, skill.description));
         }
         lines.push_str("Use /skill <name> to activate a skill.");
-        self.app.add_message(ChatMessage::system(lines));
+        self.add_system_message(&lines);
     }
 
     fn render_document_list(&mut self, data: &DocumentListData) {
         if data.is_empty {
-            self.app
-                .add_message(ChatMessage::system("No documents imported.".to_string()));
+            self.add_system_message("No documents imported.");
             return;
         }
         let mut lines = String::from("Imported documents:\n");
@@ -607,7 +646,7 @@ impl RatatuiView {
                 doc.id, doc.title, doc.source_type, doc.word_count, age_days
             ));
         }
-        self.app.add_message(ChatMessage::system(lines));
+        self.add_system_message(&lines);
     }
 
     fn render_content_prune(&mut self, data: &ContentPruneData) {
@@ -616,7 +655,7 @@ impl RatatuiView {
                 "✓ Pruned {}/{} content items.",
                 data.pruned_count, data.total_count
             );
-            self.app.add_message(ChatMessage::system(msg));
+            self.add_system_message(&msg);
         } else if let Some(error) = &data.error {
             self.app.add_message(ChatMessage::error(format!(
                 "Failed to prune content: {}",
@@ -631,7 +670,7 @@ impl RatatuiView {
                 "✓ Regenerated {} of {} embeddings.",
                 data.regenerated, data.total
             );
-            self.app.add_message(ChatMessage::system(msg));
+            self.add_system_message(&msg);
         } else if let Some(error) = &data.error {
             self.app
                 .add_message(ChatMessage::error(format!("Reindex failed: {}", error)));

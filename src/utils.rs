@@ -124,6 +124,72 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
+/// Strip ANSI escape codes from a string.
+///
+/// Removes all ANSI escape sequences (CSI sequences like colors, cursor
+/// movement, etc.) and returns the plain text. This is used by the TUI
+/// rendering path (RatatuiView) where ANSI codes would appear as literal
+/// text since ratatui renders via styled `Span`s, not terminal escapes.
+///
+/// The parser handles:
+/// - Simple codes: `\x1B[0m` (reset), `\x1B[1m` (bold), etc.
+/// - 256-color: `\x1B[38;5;220m`, `\x1B[48;5;45m`
+/// - 24-bit true color: `\x1B[38;2;245;213;122m`, `\x1B[48;2;0;0;0m`
+/// - OSC and other sequences: `\x1B]...\\x1B\\` (bel-terminated)
+///
+/// No regex dependency — hand-parsed for zero-cost performance.
+pub fn strip_ansi_codes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        if chars[i] == '\x1B' {
+            // Start of escape sequence
+            if i + 1 < len && chars[i + 1] == '[' {
+                // CSI sequence: \x1B[ ... <final byte>
+                i += 2; // Skip ESC and '['
+                while i < len {
+                    let c = chars[i];
+                    i += 1;
+                    // Final byte: 0x40-0x7E (@A-Z[\]^_`a-z{|}~)
+                    if ('\x40'..='\x7E').contains(&c) {
+                        break;
+                    }
+                }
+            } else if i + 1 < len && chars[i + 1] == ']' {
+                // OSC sequence: \x1B] ... \x07 (BEL) or \x1B\\ (ST)
+                i += 2; // Skip ESC and ']'
+                while i < len {
+                    if chars[i] == '\x07' {
+                        // BEL terminates OSC
+                        i += 1;
+                        break;
+                    }
+                    if chars[i] == '\x1B' && i + 1 < len && chars[i + 1] == '\\' {
+                        // ST (\x1B\\) terminates OSC
+                        i += 2;
+                        break;
+                    }
+                    i += 1;
+                }
+            } else {
+                // Other escape: \x1B followed by single char
+                i += 1;
+                if i < len {
+                    i += 1; // Skip the character after ESC
+                }
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    result
+}
+
 /// Capitalize the first letter of a string.
 ///
 /// Converts the first character to uppercase and the rest to lowercase.
@@ -576,5 +642,117 @@ mod tests {
         if let Some(home_path) = home {
             assert_eq!(with_spaces, home_path.join("path with spaces/file.txt"));
         }
+    }
+
+    // ── strip_ansi_codes tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_strip_ansi_plain_text() {
+        assert_eq!(strip_ansi_codes("hello world"), "hello world");
+        assert_eq!(strip_ansi_codes(""), "");
+        assert_eq!(
+            strip_ansi_codes("simple text without codes"),
+            "simple text without codes"
+        );
+    }
+
+    #[test]
+    fn test_strip_ansi_simple_codes() {
+        // Reset
+        assert_eq!(strip_ansi_codes("\x1B[0m"), "");
+        // Bold
+        assert_eq!(strip_ansi_codes("\x1B[1m"), "");
+        // Dim
+        assert_eq!(strip_ansi_codes("\x1B[2m"), "");
+        // Red foreground
+        assert_eq!(strip_ansi_codes("\x1B[31m"), "");
+        // Cyan foreground
+        assert_eq!(strip_ansi_codes("\x1B[36m"), "");
+    }
+
+    #[test]
+    fn test_strip_ansi_256_color() {
+        // Foreground 256-color (gold ~220)
+        assert_eq!(strip_ansi_codes("\x1B[38;5;220m"), "");
+        // Background 256-color
+        assert_eq!(strip_ansi_codes("\x1B[48;5;45m"), "");
+        // Text with 256-color codes
+        assert_eq!(strip_ansi_codes("\x1B[38;5;220mSPRACH\x1B[0m"), "SPRACH");
+    }
+
+    #[test]
+    fn test_strip_ansi_true_color() {
+        // 24-bit foreground color
+        assert_eq!(strip_ansi_codes("\x1B[38;2;245;213;122m"), "");
+        // 24-bit background color
+        assert_eq!(strip_ansi_codes("\x1B[48;2;0;0;0m"), "");
+        // Full true-color sequence (from EXTENDED_MIND_ART)
+        assert_eq!(strip_ansi_codes("\x1B[38;2;245;213;122m⢀\x1B[0m"), "⢀");
+    }
+
+    #[test]
+    fn test_strip_ansi_mixed() {
+        // BANNER_LOGO style: gold + cyan + reset
+        let input = "\x1B[38;5;220m┏━┓\x1B[0m\x1B[38;5;45m┏━┓\x1B[0m";
+        assert_eq!(strip_ansi_codes(input), "┏━┓┏━┓");
+
+        // WelcomeInfo style: BOLD_CYAN + DIM + RESET
+        let input = "\x1B[1;36mModel:\x1B[0m\x1B[2mglm-5:cloud\x1B[0m";
+        assert_eq!(strip_ansi_codes(input), "Model:glm-5:cloud");
+
+        // RecentContextInfo style: BOLD_CYAN + BOLD_YELLOW + DIM
+        let input = "\x1B[1;36m👤 User\x1B[0m:\x1B[2mHello\x1B[0m";
+        assert_eq!(strip_ansi_codes(input), "👤 User:Hello");
+    }
+
+    #[test]
+    fn test_strip_ansi_banners() {
+        // Simpler banner line with multiple ANSI sequences
+        let input = "\x1B[38;5;220m┏━┓┏━┓┏━┓┏━┓┏━╸╻ ╻\x1B[0m\x1B[38;5;45m┏━┓┏━┓╻┏━╸╻  \x1B[0m";
+        let clean = strip_ansi_codes(input);
+        assert!(!clean.contains('\x1B'), "Should have no escape characters");
+        assert!(clean.contains("┏━┓"), "Should preserve box drawing chars");
+    }
+
+    #[test]
+    fn test_strip_ansi_multiple_codes_inline() {
+        // From render_fact_list: CYAN + DIM + RESET
+        let input = "  \x1B[36m#42\x1B[0m \x1B[2m[category]\x1B[0m fact content";
+        assert_eq!(strip_ansi_codes(input), "  #42 [category] fact content");
+    }
+
+    #[test]
+    fn test_strip_ansi_no_escapes_at_all() {
+        assert_eq!(
+            strip_ansi_codes("Line 1\nLine 2\nLine 3"),
+            "Line 1\nLine 2\nLine 3"
+        );
+    }
+
+    #[test]
+    fn test_strip_ansi_osc_sequences() {
+        // OSC title sequence: \x1B]0;title\x07
+        assert_eq!(strip_ansi_codes("\x1B]0;My Title\x07Hello"), "Hello");
+        // OSC sequence with ST terminator: \x1B]0;title\x1B\\
+        assert_eq!(strip_ansi_codes("\x1B]0;Title\x1B\\World"), "World");
+    }
+
+    #[test]
+    fn test_strip_ansi_preserves_unicode() {
+        // Braille and CJK characters should be preserved
+        let input = "⢀⣤⡀🧠🔧你好世界";
+        assert_eq!(strip_ansi_codes(input), input);
+    }
+
+    #[test]
+    fn test_strip_ansi_complex_real_world() {
+        // Real-world welcome banner line from EXTENDED_MIND_ART
+        let line = "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\x1B[38;2;245;213;122m⢀\x1B[38;2;237;216;142m⣤\x1B[38;2;255;248;123m⡀⠀⠀⠀\x1B[0m";
+        let clean = strip_ansi_codes(line);
+        assert!(!clean.contains('\x1B'));
+        assert!(clean.contains('⢀'));
+        assert!(clean.contains('⣤'));
+        assert!(clean.contains('⡀'));
+        assert!(clean.contains('⠀'));
     }
 }

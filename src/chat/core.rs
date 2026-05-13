@@ -39,7 +39,7 @@ use crate::prompts::builder::{
 };
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
-use crate::spinner::{create_spinner, finish_spinner};
+use crate::spinner::finish_spinner;
 use crate::tokens::estimate_tokens;
 use crate::tools::context::{with_full_context, with_tool_context};
 use crate::tools::{get_available_tool_names, register_tools};
@@ -490,7 +490,8 @@ pub async fn send_message(
         }
     }
 
-    let spinner = create_spinner("Thinking...");
+    let spinner =
+        crate::spinner::create_spinner_suppressed("Thinking...", view.suppress_progress_spinner());
 
     let tool_names: Vec<String> = if tools_enabled {
         get_available_tool_names(settings)
@@ -606,7 +607,17 @@ pub async fn auto_compact_if_needed(
     ));
 
     // Attempt auto-compaction
-    match compact_conversation(ollama, model_config, session, settings, agents_md).await {
+    let suppress_spinner = view.suppress_progress_spinner();
+    match compact_conversation(
+        ollama,
+        model_config,
+        session,
+        settings,
+        agents_md,
+        suppress_spinner,
+    )
+    .await
+    {
         Ok((summary, range)) => {
             session.set_compacted_summary_with_range(summary, range);
 
@@ -634,6 +645,10 @@ pub async fn auto_compact_if_needed(
 }
 
 /// Compact conversation by summarizing old messages
+///
+/// When `suppress_spinner` is `true`, no indicatif progress spinner is created.
+/// This is the case for TUI mode where the view has its own progress indication
+/// and indicatif would corrupt the alternate screen buffer with ANSI escapes.
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
     ollama: &ollama_rs::Ollama,
@@ -641,6 +656,7 @@ pub async fn compact_conversation(
     session: &ChatSession,
     _settings: &Settings,
     _agents_md: Option<&str>,
+    suppress_spinner: bool,
 ) -> AppResult<(String, Option<(usize, usize)>)> {
     use crate::context_overflow::get_compaction_range_default;
 
@@ -700,7 +716,7 @@ pub async fn compact_conversation(
         ChatMessage::user(compact_prompt),
     ];
 
-    let spinner = create_spinner("Compacting...");
+    let spinner = crate::spinner::create_spinner_suppressed("Compacting...", suppress_spinner);
     let result = coordinator.chat(messages).await;
     finish_spinner(spinner);
 

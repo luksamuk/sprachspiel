@@ -193,6 +193,23 @@ pub fn create_spinner(message: &str) -> ProgressBar {
     pb
 }
 
+/// Create a spinner, or a hidden no-op spinner if suppressed.
+///
+/// When `suppress` is `true` (e.g., TUI view with built-in progress indication),
+/// returns `ProgressBar::hidden()` to avoid corrupting the alternate screen buffer
+/// with ANSI escape sequences from indicatif.
+///
+/// This is the preferred API when the caller has access to a `ChatView` —
+/// pass `view.suppress_progress_spinner()` as the `suppress` argument.
+pub fn create_spinner_suppressed(message: &str, suppress: bool) -> ProgressBar {
+    if suppress {
+        let pb = ProgressBar::hidden();
+        pb.set_message(message.to_string());
+        return pb;
+    }
+    create_spinner(message)
+}
+
 /// Finish and clear the active spinner
 pub fn finish_spinner(spinner: ProgressBar) {
     spinner.finish_and_clear();

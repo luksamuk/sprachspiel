@@ -304,7 +304,10 @@ pub async fn run_chat_repl_tui(
                     }
                 }
                 CrosstermEvent::Resize(_, _) => {
-                    // Terminal resize — just re-render
+                    // On resize, scroll to bottom so newest content stays visible.
+                    // Without this, shrinking the terminal can hide the bottom of
+                    // the conversation because the scroll offset becomes stale.
+                    view.app_mut().scroll_to_bottom();
                 }
                 _ => {
                     // Ignore other events (mouse, etc.)
@@ -312,10 +315,7 @@ pub async fn run_chat_repl_tui(
             }
         }
 
-        // Tick spinner if LLM is processing
-        view.app_mut().tick_spinner();
-
-        // Re-render after each event or tick
+        // Re-render after each event or tick (render() also ticks the spinner)
         view.render();
     }
 }

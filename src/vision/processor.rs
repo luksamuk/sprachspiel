@@ -157,7 +157,6 @@ pub fn print_results(result: &VisionOutput, json_output: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::Path;
 
     #[test]

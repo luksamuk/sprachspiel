@@ -34,6 +34,7 @@ pub fn bold_cyan() -> Style {
 }
 
 /// Bold yellow style
+#[allow(dead_code)] // Will be used for assistant streaming indicators
 pub fn bold_yellow() -> Style {
     Style::default().fg(YELLOW).add_modifier(BOLD)
 }
@@ -74,21 +75,6 @@ pub fn warning_style() -> Style {
 #[allow(dead_code)] // PR3: Will be used for TUI success messages
 pub fn success_style() -> Style {
     Style::default().fg(GREEN)
-}
-
-/// User message label style (bold cyan)
-pub fn user_label_style() -> Style {
-    bold_cyan()
-}
-
-/// Assistant message label style (bold yellow)
-pub fn assistant_label_style() -> Style {
-    bold_yellow()
-}
-
-/// Thinking label style (dim cyan)
-pub fn thinking_label_style() -> Style {
-    dim_cyan()
 }
 
 /// Thinking content style (dim)

@@ -21,6 +21,7 @@
 //! We use `DefaultTerminal` (an alias for `Terminal<CrosstermBackend<Stdout>>`)
 //! for the simplest possible setup.
 
+pub mod banner;
 pub mod components;
 pub mod markdown;
 pub mod styles;
