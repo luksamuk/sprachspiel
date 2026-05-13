@@ -206,6 +206,37 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
     result
 }
 
+/// Detect markdown table syntax in content.
+///
+/// A markdown table has:
+/// - At least one data line starting and ending with `|`
+/// - At least one separator line (`|---|---|` or `|:---|:---|`)
+fn content_has_table(content: &str) -> bool {
+    let table_lines: Vec<&str> = content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with('|') && trimmed.ends_with('|')
+        })
+        .collect();
+
+    if table_lines.len() < 2 {
+        return false;
+    }
+
+    // Check for separator line: cells contain only `-`, `:`, or whitespace
+    table_lines.iter().any(|line| {
+        let inner = line.trim().trim_start_matches('|').trim_end_matches('|');
+        !inner.is_empty()
+            && inner.split('|').all(|cell| {
+                let trimmed = cell.trim();
+                trimmed
+                    .chars()
+                    .all(|c| c == '-' || c == ':' || c.is_whitespace())
+            })
+    })
+}
+
 /// Hard-break a word that exceeds `width` visual columns.
 ///
 /// Breaks at Unicode character boundaries, splitting the word into chunks
@@ -260,6 +291,7 @@ pub fn render(
 ) {
     let mut lines: Vec<Line> = Vec::new();
     let available_width = area.width as usize;
+    let mut has_tables = false;
 
     for msg in messages {
         match msg.msg_type {
@@ -275,9 +307,18 @@ pub fn render(
                 if !lines.is_empty() {
                     lines.push(Line::raw(String::new()));
                 }
-                // No prefix — markdown rendered
-                let rendered = render_markdown(&msg.content, theme);
-                lines.extend(rendered.lines);
+                if content_has_table(&msg.content) {
+                    // tui-markdown silently drops table content; render plain
+                    // text with wrap disabled so pipes stay aligned.
+                    has_tables = true;
+                    for line in msg.content.lines() {
+                        lines.push(Line::raw(line.to_string()));
+                    }
+                } else {
+                    // No prefix — markdown rendered
+                    let rendered = render_markdown(&msg.content, theme);
+                    lines.extend(rendered.lines);
+                }
             }
             MessageType::AssistantStreaming => {
                 // Blank line before response for visual separation
@@ -383,10 +424,14 @@ pub fn render(
         scroll_state.effective_scroll_from_top(total_lines, visible_height)
     };
 
-    let paragraph = Paragraph::new(display_lines)
+    let mut paragraph = Paragraph::new(display_lines)
         .block(Block::default().borders(Borders::NONE))
-        .wrap(Wrap { trim: false })
         .scroll((scroll_from_top, 0));
+
+    // Only wrap if no tables present — wrapping destroys table formatting.
+    if !has_tables {
+        paragraph = paragraph.wrap(Wrap { trim: false });
+    }
 
     f.render_widget(paragraph, area);
 }
@@ -480,6 +525,45 @@ mod tests {
         // "日本語" (6) fits in 8, then "test" (4) fits in 8
         let result = wrap_line("日本語 test", 8);
         assert_eq!(result, sv!["日本語", "test"]);
+    }
+
+    #[test]
+    fn test_content_has_table_valid() {
+        let table = "| A | B |\n|---|---|\n| 1 | 2 |";
+        assert!(content_has_table(table));
+    }
+
+    #[test]
+    fn test_content_has_table_aligned() {
+        let table = "| A | B |\n|:---:|:---|\n| 1 | 2 |";
+        assert!(content_has_table(table));
+    }
+
+    #[test]
+    fn test_content_has_table_with_content() {
+        // Table embedded in prose
+        let mixed = "Here is some data:\n\n| Name | Value |\n|------|-------|\n| Foo  | 42    |\n\nMore text after.";
+        assert!(content_has_table(mixed));
+    }
+
+    #[test]
+    fn test_content_has_table_false_no_separator() {
+        // Missing separator line
+        let text = "| A | B |\n| 1 | 2 |";
+        assert!(!content_has_table(text));
+    }
+
+    #[test]
+    fn test_content_has_table_false_single_line() {
+        // Only one table-like line
+        let text = "| A | B |";
+        assert!(!content_has_table(text));
+    }
+
+    #[test]
+    fn test_content_has_table_false_plain_text() {
+        assert!(!content_has_table("hello world"));
+        assert!(!content_has_table("use | grep | sort"));
     }
 
     #[test]
