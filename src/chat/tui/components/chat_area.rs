@@ -211,6 +211,7 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
 /// A markdown table has:
 /// - At least one data line starting and ending with `|`
 /// - At least one separator line (`|---|---|` or `|:---|:---|`)
+#[cfg(test)]
 fn content_has_table(content: &str) -> bool {
     let table_lines: Vec<&str> = content
         .lines()
@@ -291,7 +292,6 @@ pub fn render(
 ) {
     let mut lines: Vec<Line> = Vec::new();
     let available_width = area.width as usize;
-    let mut has_tables = false;
 
     for msg in messages {
         match msg.msg_type {
@@ -307,18 +307,9 @@ pub fn render(
                 if !lines.is_empty() {
                     lines.push(Line::raw(String::new()));
                 }
-                if content_has_table(&msg.content) {
-                    // tui-markdown silently drops table content; render plain
-                    // text with wrap disabled so pipes stay aligned.
-                    has_tables = true;
-                    for line in msg.content.lines() {
-                        lines.push(Line::raw(line.to_string()));
-                    }
-                } else {
-                    // No prefix — markdown rendered
-                    let rendered = render_markdown(&msg.content, theme);
-                    lines.extend(rendered.lines);
-                }
+                // No prefix — markdown rendered
+                let rendered = render_markdown(&msg.content, theme);
+                lines.extend(rendered.lines);
             }
             MessageType::AssistantStreaming => {
                 // Blank line before response for visual separation
@@ -424,14 +415,10 @@ pub fn render(
         scroll_state.effective_scroll_from_top(total_lines, visible_height)
     };
 
-    let mut paragraph = Paragraph::new(display_lines)
+    let paragraph = Paragraph::new(display_lines)
         .block(Block::default().borders(Borders::NONE))
+        .wrap(Wrap { trim: false })
         .scroll((scroll_from_top, 0));
-
-    // Only wrap if no tables present — wrapping destroys table formatting.
-    if !has_tables {
-        paragraph = paragraph.wrap(Wrap { trim: false });
-    }
 
     f.render_widget(paragraph, area);
 }
