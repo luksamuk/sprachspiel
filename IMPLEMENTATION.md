@@ -4222,6 +4222,16 @@ image = "0.25"              # Removed — only needed for ratatui-image
 
 **Why smaller (originally ~5-6 days):** CrosstermInput and the event loop moved to PR2. PR3 focuses on polish and completion features.
 
+**Deferred from PR2 (known limitations to be resolved in PR3):**
+
+| Limitation | Impact | PR3 Phase |
+|-----------|--------|-----------|
+| Spinner freezes during LLM thinking | Status bar spinner only animates during `show_*` calls; main loop blocked on `handle_user_message_tui().await` | 3.2 (mpsc async channel) |
+| Status bar not updated during streaming | Progress bar only updates after response completes (`update_status_tokens` in `handle_user_message_tui`) and in `show_token_metrics`/`show_context_warning`; no mid-response updates | 3.2 (mpsc async channel) |
+| InputState/CrosstermInput dual state | Both `InputState` (TUI rendering) and `CrosstermInput` (history management) maintain buffer/cursor with manual synchronisation in `App::history_prev/next` | 3.6 (input unification) |
+| `LlmState::ToolCall` unused | Tool call UI shows spinner label but `App::set_llm_state(ToolCall)` not wired to actual tool calls | 3.4 (tool display) |
+| `assistant_streaming` rendering | `ChatMessage::assistant_streaming` exists but plain text rendering only; no incremental markdown | 3.3 (streaming refinement) |
+
 **Implementation Phases:**
 
 | Phase | Description | Status |

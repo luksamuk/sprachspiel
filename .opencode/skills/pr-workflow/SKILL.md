@@ -415,6 +415,12 @@ gh issue comment <issue_number> --body "PR #<pr_number> ready for review"
 
 This phase repeats until all review comments are resolved.
 
+**Load the `code-review` skill for detailed instructions on:**
+- Creating reviews with inline comments (single review, multiple comments)
+- Responding to review threads (use `addPullRequestReviewThreadReply`, NOT separate reviews)
+- Resolving review threads via GraphQL
+- Project-specific review patterns (ANSI migration, dual state, YAGNI, etc.)
+
 ### Fetch ALL Review Threads
 
 **CRITICAL: Always use `last: 50` (NOT `first: 30`) to get ALL threads.**
@@ -467,6 +473,49 @@ mutation {
 **NEVER reply in a single summary comment** — each thread needs its own reply.
 
 **NEVER create a single large comment that summarizes all review responses.** Instead, reply to each review thread inline. If inline replies are not technically possible (e.g., no thread ID available), create ONE comment per review point with a blockquote of the original comment. Never merge multiple review responses into a single wall-of-text comment.
+
+### ⛔ ANTI-PATTERN: Creating Multiple Reviews for Responses
+
+**NEVER create separate GitHub Review submissions for each comment or response.** This produces empty review bodies and scatters the conversation across N reviews.
+
+```bash
+# ❌ BAD — 7 separate reviews with empty bodies = noisy and confusing
+for comment in $comments; do
+    curl -X POST .../reviews -d '{"event": "COMMENT", "body": "", "comments": [$comment]}'
+done
+
+# ✅ GOOD — One review with all inline comments
+curl -X POST .../reviews -d '{
+    "event": "COMMENT",
+    "body": "## Review Summary\n\nFound 3 issues. See inline comments.",
+    "comments": [comment1, comment2, comment3]
+}'
+```
+
+**When RESPONDING to existing review comments, use `addPullRequestReviewThreadReply` or `in_reply_to` to reply within the existing thread.** See the `code-review` skill for the exact API patterns.
+
+### Creating a Code Review (When Reviewing Others' PRs)
+
+**Always submit all inline comments in a single review submission.** The `comments` array in the GitHub Reviews API accepts multiple comments:
+
+```bash
+curl -s -X POST \
+  -H "Authorization: token $TOKEN" \
+  -H "Content-Type: application/json" \
+  "https://api.github.com/repos/luksamuk/sprachspiel/pulls/PR_NUMBER/reviews" \
+  -d '{
+    "commit_id": "'$HEAD_SHA'",
+    "event": "COMMENT",
+    "body": "## Code Review Summary\n\n3 issues found. See inline comments.",
+    "comments": [
+      {"path": "src/file.rs", "line": 42, "body": "🔴 **Critical:** Description"},
+      {"path": "src/other.rs", "line": 15, "body": "⚠️ **Warning:** Description"},
+      {"path": "src/utils.rs", "line": 8, "body": "💡 **Suggestion:** Description"}
+    ]
+  }'
+```
+
+For project-specific review patterns (ANSI migration, dual state, dead_code policy, etc.), **load the `code-review` skill.**
 
 ### Good vs Bad Review Responses
 

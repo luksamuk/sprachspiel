@@ -179,7 +179,7 @@ Critical rules (expanded in the skill): Tools must NEVER crash (always return `O
 
 ## Pull Request Review
 
-**For the complete review workflow including review response format, load the `pr-workflow` skill.**
+**For the complete review workflow including review response format and project-specific review patterns, load the `pr-workflow` and `code-review` skills.**
 
 Critical rules for reviews:
 - Always use `last: 50` (not `first: 30`) to get ALL review threads
