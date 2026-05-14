@@ -4231,6 +4231,7 @@ image = "0.25"              # Removed — only needed for ratatui-image
 | InputState/CrosstermInput dual state | Both `InputState` (TUI rendering) and `CrosstermInput` (history management) maintain buffer/cursor with manual synchronisation in `App::history_prev/next` | 3.6 (input unification) |
 | `LlmState::ToolCall` unused | Tool call UI shows spinner label but `App::set_llm_state(ToolCall)` not wired to actual tool calls | 3.4 (tool display) |
 | `assistant_streaming` rendering | `ChatMessage::assistant_streaming` exists but plain text rendering only; no incremental markdown | 3.3 (streaming refinement) |
+| `/compact` indicatif spinner artifact | `handle_compact()` at `command_handlers.rs:789` passes `false` hardcoded to `suppress_spinner`, ignoring `RatatuiView::suppress_progress_spinner()` (which returns `true`). Indicatif `ProgressBar` writes ANSI to stderr, corrupting ratatui alternate screen. Fix requires threading `view.suppress_progress_spinner()` through `handle_command()` → `handle_compact()` → `compact_conversation()` | 3.6 (command dispatch refactor) |
 
 **Implementation Phases:**
 
