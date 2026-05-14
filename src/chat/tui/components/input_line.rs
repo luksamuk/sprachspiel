@@ -59,6 +59,31 @@ impl InputState {
         }
     }
 
+    /// Delete the character at the cursor position (forward delete).
+    ///
+    /// This is the symmetrical counterpart to `backspace()`: while backspace
+    /// deletes the character **before** the cursor (moving it left), this
+    /// deletes the character **at** the cursor (keeping cursor position).
+    ///
+    /// Returns `true` if a character was deleted, `false` if the cursor is
+    /// at the end of the buffer.
+    pub fn delete_char_right(&mut self) -> bool {
+        if self.cursor_pos < self.buffer.len() {
+            // Find the next character boundary
+            let next_pos = self.buffer[self.cursor_pos..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.cursor_pos + i)
+                .unwrap_or(self.buffer.len());
+            self.buffer.drain(self.cursor_pos..next_pos);
+            // Cursor position stays the same (character at cursor is removed,
+            // next character shifts left into its place)
+            true
+        } else {
+            false
+        }
+    }
+
     /// Move cursor left by one character
     pub fn cursor_left(&mut self) {
         if self.cursor_pos > 0 {
@@ -226,5 +251,60 @@ mod tests {
         state.clear();
         assert!(state.buffer.is_empty());
         assert_eq!(state.cursor_pos, 0);
+    }
+
+    #[test]
+    fn test_delete_char_right() {
+        // Delete at start: removes first character
+        let mut state = InputState::new();
+        state.insert_char('a');
+        state.insert_char('b');
+        state.insert_char('c');
+        // cursor at end: "abc|"
+        assert!(!state.delete_char_right()); // nothing to delete at end
+        assert_eq!(state.buffer, "abc");
+
+        // Move cursor to position 1: "a|bc"
+        state.cursor_left();
+        state.cursor_left();
+        assert_eq!(state.cursor_pos, 1);
+        assert!(state.delete_char_right()); // deletes 'b'
+        assert_eq!(state.buffer, "ac");
+        assert_eq!(state.cursor_pos, 1); // cursor stays at 1
+
+        // Delete at cursor: "a|c" → "a"
+        assert!(state.delete_char_right()); // deletes 'c'
+        assert_eq!(state.buffer, "a");
+        assert_eq!(state.cursor_pos, 1);
+
+        // Empty buffer
+        state.clear();
+        assert!(!state.delete_char_right());
+    }
+
+    #[test]
+    fn test_delete_char_right_unicode() {
+        let mut state = InputState::new();
+        state.insert_char('你');
+        state.insert_char('好');
+        state.insert_char('世');
+        state.insert_char('界');
+        // "你好世界", cursor at end (position 12 = 4 * 3 bytes)
+        state.cursor_left(); // move back one CJK char: cursor at 9 (after 你好世)
+        assert_eq!(state.cursor_pos, 9);
+        assert!(state.delete_char_right()); // deletes 界
+        assert_eq!(state.buffer, "你好世");
+        assert_eq!(state.cursor_pos, 9); // cursor stays at same position
+    }
+
+    #[test]
+    fn test_delete_char_right_at_middle() {
+        // "abcde", cursor at position 2 (between b and c)
+        let mut state = InputState::new();
+        state.buffer = "abcde".to_string();
+        state.cursor_pos = 2;
+        assert!(state.delete_char_right()); // deletes 'c'
+        assert_eq!(state.buffer, "abde");
+        assert_eq!(state.cursor_pos, 2);
     }
 }

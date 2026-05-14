@@ -30,7 +30,6 @@ use crate::chat::command_output::{
 };
 use crate::chat::session::ChatSession;
 use crate::chat::strip_thinking_tags;
-use crate::chat::view::colors;
 use crate::consts::roles::format_role_label;
 use crate::debug_tools;
 use crate::utils::strip_ansi_codes;
@@ -59,6 +58,8 @@ pub struct RatatuiView {
     welcome_shown: bool,
     /// Receiver for tool call messages from the global TUI callback
     tool_call_rx: std::sync::mpsc::Receiver<String>,
+    /// Whether `restore()` has been called (prevents double-restore in Drop)
+    restored: bool,
 }
 
 impl RatatuiView {
@@ -96,6 +97,7 @@ impl RatatuiView {
             terminal,
             welcome_shown: false,
             tool_call_rx,
+            restored: false,
         }
     }
 
@@ -121,9 +123,10 @@ impl RatatuiView {
     /// Restore the terminal to its original state.
     ///
     /// Must be called before exiting to prevent broken terminal state.
-    /// Called automatically on panic via the installed hook.
+    /// Sets the `restored` flag so that `Drop` does not double-restore.
     /// Also clears the global TUI callback so tool calls go back to stderr.
     pub fn restore(mut self) {
+        self.restored = true;
         // Clear the TUI callback so tool calls go back to stderr
         debug_tools::set_tui_callback(None);
         let _ = exit_tui(&mut self.terminal);
@@ -188,6 +191,19 @@ impl ChatView for RatatuiView {
                 metrics.prompt_tokens, metrics.response_tokens, metrics.total_tokens
             );
             self.add_system_message(&msg);
+
+            // Update the status bar progress with the latest tokens.
+            // This ensures the bar stays current after each LLM response,
+            // continuation, and tool call — not just after the final response.
+            let max_tokens = self.app.status_bar().max_tokens;
+            let percent = if max_tokens > 0 {
+                ((metrics.total_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
+            } else {
+                0
+            };
+            self.app
+                .update_status_tokens(metrics.total_tokens as usize, max_tokens, percent);
+
             self.render();
         }
     }
@@ -195,6 +211,14 @@ impl ChatView for RatatuiView {
     fn show_context_warning(&mut self, percent: u8, message: &str) {
         let msg = format!("⚠ Context {}% full. {}", percent, message);
         self.add_system_message(&msg);
+
+        // Update the status bar progress to reflect the current context fill.
+        self.app.update_status_tokens(
+            self.app.status_bar().used_tokens,
+            self.app.status_bar().max_tokens,
+            percent,
+        );
+
         self.render();
     }
 
@@ -453,26 +477,25 @@ impl RatatuiView {
 
 impl RatatuiView {
     fn render_fact_list(&mut self, data: &FactListData) {
-        use colors::*;
         let mut lines = String::new();
 
         match data.scope {
             FactListScopeData::All => {
                 if !data.global_facts.is_empty() {
-                    lines.push_str(&format!("{}Global facts:{}\n", BOLD, RESET));
+                    lines.push_str("Global facts:\n");
                     for fact in &data.global_facts {
                         lines.push_str(&format!(
-                            "  {}#{} {}[{}]{} {}\n",
-                            CYAN, fact.id, DIM, fact.category, RESET, fact.content
+                            "  #{} [{}] {}\n",
+                            fact.id, fact.category, fact.content
                         ));
                     }
                 }
                 if !data.project_facts.is_empty() {
-                    lines.push_str(&format!("{}Project facts:{}\n", BOLD, RESET));
+                    lines.push_str("Project facts:\n");
                     for fact in &data.project_facts {
                         lines.push_str(&format!(
-                            "  {}#{} {}[{}]{} {}\n",
-                            CYAN, fact.id, DIM, fact.category, RESET, fact.content
+                            "  #{} [{}] {}\n",
+                            fact.id, fact.category, fact.content
                         ));
                     }
                 }
@@ -484,11 +507,11 @@ impl RatatuiView {
                 if data.global_facts.is_empty() {
                     lines.push_str("No global facts stored.\n");
                 } else {
-                    lines.push_str(&format!("{}Global facts:{}\n", BOLD, RESET));
+                    lines.push_str("Global facts:\n");
                     for fact in &data.global_facts {
                         lines.push_str(&format!(
-                            "  {}#{} {}[{}]{} {}\n",
-                            CYAN, fact.id, DIM, fact.category, RESET, fact.content
+                            "  #{} [{}] {}\n",
+                            fact.id, fact.category, fact.content
                         ));
                     }
                 }
@@ -497,11 +520,11 @@ impl RatatuiView {
                 if data.project_facts.is_empty() {
                     lines.push_str("No project facts stored.\n");
                 } else {
-                    lines.push_str(&format!("{}Project facts:{}\n", BOLD, RESET));
+                    lines.push_str("Project facts:\n");
                     for fact in &data.project_facts {
                         lines.push_str(&format!(
-                            "  {}#{} {}[{}]{} {}\n",
-                            CYAN, fact.id, DIM, fact.category, RESET, fact.content
+                            "  #{} [{}] {}\n",
+                            fact.id, fact.category, fact.content
                         ));
                     }
                 }
@@ -680,9 +703,13 @@ impl RatatuiView {
 
 impl Drop for RatatuiView {
     fn drop(&mut self) {
-        // Ensure terminal is restored even if restore() wasn't called
-        // This is a safety net — restore() should be called explicitly
-        let _ = exit_tui(&mut self.terminal);
-        let _ = self.app.save_history();
+        // Safety net: restore terminal if restore() wasn't called explicitly.
+        // The restored flag prevents double-restore when both restore() and
+        // Drop run (restore() is consuming, so Drop only runs if restore()
+        // was never called, e.g., on early return or panic).
+        if !self.restored {
+            let _ = exit_tui(&mut self.terminal);
+            let _ = self.app.save_history();
+        }
     }
 }

@@ -93,8 +93,11 @@ impl ScrollState {
     /// Scroll to the top (oldest messages)
     pub fn scroll_to_top(&mut self) {
         self.auto_scroll = false;
-        // Use a large value; the render function will clamp it
-        self.manual_offset = 30000;
+        // u16::MAX is safe here: effective_scroll_from_top() uses saturating_sub,
+        // so manual_offset > max_scroll always results in from_top = 0 (showing top).
+        // This is NOT the same as the previous u16::MAX scroll bug, which passed
+        // the value directly to Paragraph::scroll() without clamping.
+        self.manual_offset = u16::MAX;
     }
 
     /// Scroll to the bottom (newest messages)
@@ -151,9 +154,6 @@ pub struct App {
     theme: MarkdownTheme,
     /// Scroll state for the chat area
     scroll: ScrollState,
-    /// Whether the app should quit
-    #[allow(dead_code)] // PR3: Will be used for graceful quit handling
-    should_quit: bool,
     /// Current spinner frame index
     spinner_frame: usize,
 }
@@ -169,7 +169,6 @@ impl App {
             llm_state: LlmState::Idle,
             theme,
             scroll: ScrollState::new(),
-            should_quit: false,
             spinner_frame: 0,
         }
     }
@@ -208,6 +207,15 @@ impl App {
     #[allow(dead_code)] // Public API for external scroll queries
     pub fn scroll_state(&self) -> &ScrollState {
         &self.scroll
+    }
+
+    /// Get a reference to the status bar state.
+    ///
+    /// Used by `RatatuiView` to read current token counts for
+    /// progress bar updates in `show_token_metrics()` and
+    /// `show_context_warning()`.
+    pub fn status_bar(&self) -> &StatusBarState {
+        &self.status_bar
     }
 
     /// Scroll to the bottom of the chat (newest messages).
@@ -275,12 +283,6 @@ impl App {
         }
     }
 
-    /// Check if the app should quit
-    #[allow(dead_code)] // PR3: Will be used for graceful quit handling
-    pub fn should_quit(&self) -> bool {
-        self.should_quit
-    }
-
     /// Process a crossterm key event
     ///
     /// Returns `Some(InputResult::Line(line))` when Enter is pressed,
@@ -346,7 +348,7 @@ impl App {
                 Some(InputResult::Line(line))
             }
 
-            // Ctrl+D — EOF on empty line, delete on non-empty
+            // Ctrl+D — EOF on empty line, forward delete on non-empty
             crossterm::event::KeyEvent {
                 code: KeyCode::Char('d'),
                 modifiers: KeyModifiers::CONTROL,
@@ -355,7 +357,8 @@ impl App {
                 if self.input_state.buffer.is_empty() {
                     Some(InputResult::Eof)
                 } else {
-                    // Delete character at cursor (like forward delete)
+                    // Forward delete: remove character at cursor
+                    self.input_state.delete_char_right();
                     None
                 }
             }
@@ -460,6 +463,11 @@ impl App {
     }
 
     /// Navigate to previous history entry
+    ///
+    /// This duplicates the logic in `CrosstermInput::history_prev()` because
+    /// `CrosstermInput` maintains its own buffer/cursor state (used by the
+    /// `InputBackend` trait) while `App` uses `InputState` for TUI rendering.
+    /// PR3 should unify these into a single input state owner.
     fn history_prev(&mut self) {
         // Save current buffer before starting navigation
         if self.history_input.history.is_empty() {
@@ -486,6 +494,8 @@ impl App {
     }
 
     /// Navigate to next history entry
+    ///
+    /// See `history_prev()` for the dual-state documentation.
     fn history_next(&mut self) {
         match self.history_input.history_pos {
             None => {}
