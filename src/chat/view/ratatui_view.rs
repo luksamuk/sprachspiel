@@ -35,6 +35,7 @@ use crate::debug_tools;
 use crate::utils::strip_ansi_codes;
 
 use super::{ChatView, TokenMetrics, WelcomeInfo};
+use super::super::tui::markdown::collapse_tables;
 use crate::chat::app::{App, LlmState};
 use crate::chat::tui::components::chat_area::ChatMessage;
 use crate::chat::tui::markdown::MarkdownTheme;
@@ -452,7 +453,8 @@ impl RatatuiView {
             lines.push(format!("  {}: {}", user_label, truncated_user));
 
             if let Some(asst) = asst_msg {
-                let asst_content = strip_thinking_tags(&asst.content).replace('\n', " ");
+                let asst_content =
+                    collapse_tables(&strip_thinking_tags(&asst.content)).replace('\n', " ");
                 let truncated_asst =
                     crate::utils::truncate_visual_width(&asst_content, assistant_content_width);
                 lines.push(format!("  {}: {}", assistant_label, truncated_asst));

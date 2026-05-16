@@ -29,6 +29,7 @@ use crate::consts::roles::format_role_label;
 use crate::markdown;
 
 use super::super::session::ChatSession;
+use super::super::tui::markdown::collapse_tables;
 use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
 
 // ── ANSI color constants for TerminalView rendering ──────────────────
@@ -335,7 +336,7 @@ impl TerminalView {
                 };
                 let assistant = asst_msg.map(|a| RecentMessage {
                     role_label: format_role_label("assistant"),
-                    content: strip_thinking_tags(&a.content).replace('\n', " "),
+                    content: collapse_tables(&strip_thinking_tags(&a.content)).replace('\n', " "),
                 });
                 (user, assistant)
             })

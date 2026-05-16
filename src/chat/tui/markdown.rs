@@ -1008,6 +1008,39 @@ fn content_contains_table(content: &str) -> bool {
     false
 }
 
+/// Replace markdown table blocks in content with a placeholder string.
+///
+/// Used by `show_recent_context` to avoid rendering pipe characters and
+/// separator lines from tables in the single-line recent context display.
+/// Each table block is replaced with `(...)` to indicate omitted tabular
+/// content. Tables inside fenced code blocks are left intact.
+pub fn collapse_tables(content: &str) -> String {
+    // Fast path: no table structure at all
+    if !content_contains_table(content) {
+        return content.to_string();
+    }
+
+    let segments = extract_table_segments(content);
+    let mut result = String::new();
+
+    for segment in segments {
+        match segment {
+            ContentSegment::Markdown(md) => {
+                result.push_str(&md);
+            }
+            ContentSegment::Table(_) => {
+                // Replace the entire table block with a placeholder
+                if !result.is_empty() && !result.ends_with('\n') {
+                    result.push(' ');
+                }
+                result.push_str("(...)");
+            }
+        }
+    }
+
+    result
+}
+
 /// Internal markdown rendering via `tui-markdown` (no table handling).
 fn render_markdown_inner<'a>(content: &'a str, theme: MarkdownTheme) -> Text<'a> {
     match theme {
@@ -1699,5 +1732,67 @@ mod tests {
         assert!(hline.starts_with('┌'));
         assert!(hline.contains('┬'));
         assert!(hline.ends_with('┐'));
+    }
+
+    // ── Table collapsing tests ──────────────────────────────────────
+
+    #[test]
+    fn test_collapse_tables_no_table() {
+        let content = "Hello world\n\nThis is a paragraph.";
+        assert_eq!(collapse_tables(content), content);
+    }
+
+    #[test]
+    fn test_collapse_tables_simple() {
+        let content = "Results:\n\n| Name | Value |\n|------|-------|\n| Foo  | 42    |";
+        let collapsed = collapse_tables(content);
+        assert!(
+            collapsed.contains("(...)"),
+            "Table should be replaced with (...)"
+        );
+        assert!(
+            collapsed.contains("Results:"),
+            "Text before table should be preserved"
+        );
+        assert!(
+            !collapsed.contains("| Name |"),
+            "Table content should be removed"
+        );
+        assert!(
+            !collapsed.contains("|------|"),
+            "Table separator should be removed"
+        );
+    }
+
+    #[test]
+    fn test_collapse_tables_between_text() {
+        let content = "Before\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nAfter";
+        let collapsed = collapse_tables(content);
+        assert!(collapsed.contains("Before"), "Text before table preserved");
+        assert!(collapsed.contains("(...)"), "Table replaced with (...)");
+        assert!(collapsed.contains("After"), "Text after table preserved");
+    }
+
+    #[test]
+    fn test_collapse_tables_in_code_block_preserved() {
+        let content = "```\n| A | B |\n|---|---|\n| 1 | 2 |\n```";
+        let collapsed = collapse_tables(content);
+        // Table inside code block should NOT be collapsed
+        assert!(
+            collapsed.contains("| A | B |"),
+            "Table inside code block should be preserved"
+        );
+        assert!(
+            !collapsed.contains("(...)"),
+            "Code block table should not be replaced"
+        );
+    }
+
+    #[test]
+    fn test_collapse_tables_multiple() {
+        let content = "| X | Y |\n|---|---|\n| 1 | 2 |\n\nSome text\n\n| A | B |\n|---|---|\n| 3 | 4 |";
+        let collapsed = collapse_tables(content);
+        let count = collapsed.matches("(...)").count();
+        assert_eq!(count, 2, "Two tables should produce two (...) placeholders");
     }
 }
