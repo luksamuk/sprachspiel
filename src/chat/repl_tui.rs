@@ -214,7 +214,11 @@ pub async fn run_chat_repl_tui(
     let mut llm_rx: Option<tokio::sync::mpsc::Receiver<LlmEvent>> = None;
 
     // ── Spinner tick interval ─────────────────────────────────────────
-    let spinner_interval = tokio::time::interval(std::time::Duration::from_millis(100));
+    // The spinner advances at a fixed cadence independent of streaming
+    // tokens or key events. This ensures smooth, consistent animation.
+    let spinner_interval = tokio::time::interval(std::time::Duration::from_millis(
+        super::app::SPINNER_TICK_MS,
+    ));
     // We need to pin the interval for use in tokio::select!
     tokio::pin!(spinner_interval);
 
@@ -415,14 +419,16 @@ pub async fn run_chat_repl_tui(
 
             // ── Spinner tick ─────────────────────────────────────
             _ = spinner_interval.tick() => {
-                // The spinner advances on every render() call.
-                // This branch ensures the event loop wakes up every 100ms
-                // even when there are no key events or LLM events, so the
-                // spinner keeps animating during LLM processing.
+                // Advance the spinner at a fixed cadence (~180ms).
+                // This is the ONLY place tick_spinner() is called, ensuring
+                // the animation speed is independent of streaming tokens or
+                // key events. The event loop wakes up here even when there
+                // are no other events, keeping the spinner alive.
+                view.app_mut().tick_spinner();
             }
         }
 
-        // Re-render after each event or tick (render() also ticks the spinner)
+        // Re-render after each event or tick
         view.render();
     }
 }

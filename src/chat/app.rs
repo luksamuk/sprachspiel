@@ -34,17 +34,20 @@ pub enum LlmState {
     /// Idle — waiting for user input
     Idle,
     /// Thinking — spinner active, input disabled
-    #[allow(dead_code)] // PR3: Will be used for non-blocking spinner animation
     Thinking,
     /// Streaming — response coming in, input disabled
     Streaming,
     /// Running a tool call
-    #[allow(dead_code)] // PR3: Will be used when tool call UI shows spinner
+    #[allow(dead_code)] // Will be used when tool call UI shows spinner in status bar
     ToolCall,
 }
 
-/// Spinner frames for animation (braille dots pattern)
-const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+/// How often the spinner frame advances (milliseconds).
+///
+/// 180ms gives a comfortable pace for braille dot animations — fast enough
+/// to look alive, slow enough to see each frame. This is independent of
+/// streaming token arrival rate.
+pub const SPINNER_TICK_MS: u64 = 180;
 
 /// Scroll state for the chat area.
 ///
@@ -159,8 +162,65 @@ pub struct App {
     theme: MarkdownTheme,
     /// Scroll state for the chat area
     scroll: ScrollState,
+    /// Spinner animation frames (random rattles preset)
+    spinner_frames: Vec<&'static str>,
     /// Current spinner frame index
     spinner_frame: usize,
+}
+
+/// Pick a random spinner preset from rattles (same logic as `spinner.rs`).
+fn random_tui_spinner_frames() -> Vec<&'static str> {
+    use rattles::Rattle;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn extract_frames<T: Rattle>(rattler: rattles::Rattler<T>) -> Vec<&'static str> {
+        let len = rattler.len();
+        let mut ticked = rattler.into_ticked();
+        let mut frames = Vec::with_capacity(len);
+        for _ in 0..len {
+            frames.push(ticked.tick()[0]);
+        }
+        frames
+    }
+
+    let presets: Vec<fn() -> Vec<&'static str>> = vec![
+        || extract_frames(rattles::presets::braille::dots()),
+        || extract_frames(rattles::presets::braille::dots2()),
+        || extract_frames(rattles::presets::braille::dots3()),
+        || extract_frames(rattles::presets::braille::dots4()),
+        || extract_frames(rattles::presets::braille::dots5()),
+        || extract_frames(rattles::presets::braille::dots6()),
+        || extract_frames(rattles::presets::braille::dots7()),
+        || extract_frames(rattles::presets::braille::dots8()),
+        || extract_frames(rattles::presets::braille::dots9()),
+        || extract_frames(rattles::presets::braille::dots10()),
+        || extract_frames(rattles::presets::braille::dots11()),
+        || extract_frames(rattles::presets::braille::dots12()),
+        || extract_frames(rattles::presets::braille::bounce()),
+        || extract_frames(rattles::presets::braille::breathe()),
+        || extract_frames(rattles::presets::braille::snake()),
+        || extract_frames(rattles::presets::braille::wave()),
+        || extract_frames(rattles::presets::braille::orbit()),
+        || extract_frames(rattles::presets::braille::pulse()),
+        || extract_frames(rattles::presets::braille::sparkle()),
+        || extract_frames(rattles::presets::braille::scan()),
+        || extract_frames(rattles::presets::braille::helix()),
+        || extract_frames(rattles::presets::ascii::arc()),
+        || extract_frames(rattles::presets::ascii::balloon()),
+        || extract_frames(rattles::presets::ascii::circle_halves()),
+        || extract_frames(rattles::presets::ascii::circle_quarters()),
+        || extract_frames(rattles::presets::ascii::triangle()),
+        || extract_frames(rattles::presets::ascii::grow_horizontal()),
+        || extract_frames(rattles::presets::arrows::arrow()),
+    ];
+
+    let idx = (SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        % (presets.len() as u128)) as usize;
+
+    presets[idx]()
 }
 
 impl App {
@@ -176,6 +236,7 @@ impl App {
             llm_state: LlmState::Idle,
             theme,
             scroll: ScrollState::new(),
+            spinner_frames: random_tui_spinner_frames(),
             spinner_frame: 0,
         }
     }
@@ -340,14 +401,16 @@ impl App {
     /// Advance the spinner frame.
     ///
     /// The spinner animates independently of streaming token arrival —
-    /// it ticks every 100ms via the spinner interval in the event loop,
+    /// it ticks via the spinner interval in the event loop,
     /// regardless of whether tokens are arriving or not.
+    /// Each App instance picks a random rattles preset on creation,
+    /// so the animation pattern varies between sessions.
     pub fn tick_spinner(&mut self) {
-        if self.llm_state == LlmState::Idle {
+        if self.llm_state == LlmState::Idle || self.spinner_frames.is_empty() {
             return;
         }
-        self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
-        self.status_bar.spinner = Some(SPINNER_FRAMES[self.spinner_frame].to_string());
+        self.spinner_frame = (self.spinner_frame + 1) % self.spinner_frames.len();
+        self.status_bar.spinner = Some(self.spinner_frames[self.spinner_frame].to_string());
     }
 
     /// Process a crossterm key event

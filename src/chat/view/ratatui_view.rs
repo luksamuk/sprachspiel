@@ -148,7 +148,10 @@ impl RatatuiView {
             self.app.add_message(ChatMessage::tool(line));
         }
 
-        self.app.tick_spinner();
+        // Note: tick_spinner() is NOT called here.
+        // The spinner advances only from the spinner_interval branch in the
+        // event loop, ensuring a consistent animation cadence (~180ms)
+        // independent of render frequency or streaming token arrival.
         let _ = self.app.render(&mut self.terminal);
     }
 }
