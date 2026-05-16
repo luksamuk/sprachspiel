@@ -7,6 +7,7 @@ use ollama_rs::generation::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::mpsc;
 
 use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
@@ -121,6 +122,10 @@ pub struct ChatSession {
     /// Currently active skill (activated via /skill \<name\> command)
     #[serde(default)]
     pub active_skill: Option<ActiveSkill>,
+    /// Channel sender for embedding progress updates.
+    /// Background embedding tasks send (current, total) tuples to update the status bar.
+    #[serde(skip)]
+    pub embedding_tx: Option<mpsc::UnboundedSender<(usize, usize)>>,
 }
 
 /// An active skill loaded via /skill \<name\> command
@@ -203,6 +208,7 @@ impl ChatSession {
             retrieval_enabled: true,
             last_retrieval_time: None,
             active_skill: None,
+            embedding_tx: None,
         }
     }
 
@@ -263,6 +269,7 @@ impl ChatSession {
             retrieval_enabled: true,
             last_retrieval_time: None,
             active_skill: None,
+            embedding_tx: None,
         })
     }
 

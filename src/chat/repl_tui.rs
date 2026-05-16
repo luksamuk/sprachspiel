@@ -76,6 +76,9 @@ pub async fn run_chat_repl_tui(
     // Create the TUI view (initializes terminal in raw mode, installs panic hook)
     let mut view = RatatuiView::new(theme, model_names);
 
+    // Wire embedding progress channel to session for per-message progress reporting
+    state.session.embedding_tx = Some(view.embedding_tx());
+
     // ── Startup Messages ─────────────────────────────────────────────
     // All startup messages are rendered through the TUI view so they
     // appear in the chat area (not as terminal prints).

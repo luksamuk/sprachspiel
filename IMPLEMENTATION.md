@@ -4344,7 +4344,24 @@ image = "0.25"              # Removed — only needed for ratatui-image
 | 3.13 | Chat text selection: ChatSelection component (click/drag in chat area, visual highlight white-on-blue), mouse_to_visual_pos() for coordinate mapping, visual_lines_cache for text extraction, 10 unit tests | 1.5d | ✅ COMPLETED |
 | 3.14 | Copy from chat selection: Ctrl+Shift+C copies selected text to system clipboard via cli-clipboard (best-effort on Termux) | 0.25d | ✅ COMPLETED |
 | 3.15 | Input vs chat selection mutual exclusion: typing in textarea clears chat selection, Enter also clears, click outside chat clears selection, scroll/Tab don't conflict | 0.25d | ✅ COMPLETED |
-| **Total** | | **~22d** | |
+| 3.16 | Explicit key bindings: switch textarea.input() to input_without_shortcuts(), rebind all needed keys (movement, selection, editing, clipboard). Ctrl+Y → system clipboard paste, Ctrl+C → copy selection before clearing. Visual text selection rendering in input_line via textarea.selection_range(). | 1d | ✅ COMPLETED |
+| 3.17 | Completion menu fixes: Enter confirms and submits line (not stuck), Ctrl+C/Ctrl+Shift+C/V dismiss menu, auto-complete never replaces text (only shows/hides). | 0.25d | ✅ COMPLETED |
+| 3.18 | Embedding progress indicator: StatusBarState.embedding_progress field shows ⚙ current/total in status bar. mpsc::UnboundedChannel wired through App::with_embedding_channel() and RatatuiView::embedding_tx(). Startup indexing shows indicator during regeneration/recovery. | 0.5d | ✅ COMPLETED |
+| 3.19 | StaticSubcommands ArgCompletion: `/think on\|off` and `/tools-output compact\|full\|hidden` show subcommand completions. `ArgCompletion::StaticSubcommands` variant, `try_static_subcommand_fragment()`, `get_static_subcommands()`, `complete_static_subcommand()` in ChatCompleter. Embedding progress channel wired from RatatuiView through session. | 0.25d | ✅ COMPLETED |
+| **Total** | | **~24.25d** | |
+
+**Deferred items (usability feature creep):**
+
+These items emerged during usability fine-tuning — direct response to human feedback.
+TUI usability requires iterative adjustment based on real usage patterns, so this scope
+extension is expected and purposeful. Items are deferred for dedicated design discussion,
+not abandoned.
+
+| Item | Description | Rationale |
+|------|-------------|-----------|
+| Shift+Enter multiline rendering | Shift+Enter inserts newline (works), but terminal compatibility varies. Some terminals don't distinguish Shift+Enter from Enter. May need Ctrl+Enter for newline or Enter=submit/Ctrl+Enter=newline. Needs careful UX planning. | Terminal compatibility concern; may need alternative keybinding |
+| Background embedding progress per-message | Channel infrastructure exists (`mpsc::UnboundedSender` via `App::with_embedding_channel()`), but `session.rs` `tokio::spawn` doesn't report progress per chunk yet. Individual message embedding is fast, so low priority. | Infrastructure wired; per-message reporting can be added incrementally |
+
 
 **Key architectural change: async event loop**
 
@@ -4412,25 +4429,27 @@ loop {
 - `src/chat/tui/components/chat_selection.rs` — `ChatSelection` + `mouse_to_visual_pos()` + `selection_style()`
 
 **Files to Modify:**
-- `src/chat/app.rs` — Add `mpsc::Receiver<LlmEvent>`, streaming message update, Tab key handling, Ctrl+C cancellation, `Shift+Enter` handling, spinner presets, `TextArea<'static>` replacing InputState, `CompletionMenuState`, `ChatSelection`, visual_lines/scroll/rect caches, `&mut self` render, Ctrl+Shift+C copy
-- `src/chat/completer.rs` (NEW) — ChatCompleter with completion candidates + ArgCompletion enum
+- `src/chat/app.rs` — Add `mpsc::Receiver<LlmEvent>`, streaming message update, Tab key handling, Ctrl+C cancellation, `Shift+Enter` handling, spinner presets, `TextArea<'static>` replacing InputState, `CompletionMenuState`, `ChatSelection`, visual_lines/scroll/rect caches, `&mut self` render, Ctrl+Shift+C copy, explicit key bindings with `input_without_shortcuts()`, `CursorMove` for movement/selection, Ctrl+Y system clipboard paste, Ctrl+C copy selection, Ctrl+W/K/X edit operations, embedding progress channel (`mpsc::UnboundedReceiver<(usize, usize)>`), `with_embedding_channel()`, `poll_embedding_progress()`, `set/clear_embedding_progress()`
+- `src/chat/completer.rs` (NEW) — ChatCompleter with completion candidates + ArgCompletion enum, `StaticSubcommands` variant, `try_static_subcommand_fragment()`, `get_static_subcommands()`, `complete_static_subcommand()`
 - `src/chat/input/crossterm_input.rs` — Simplified to history-only (removed buffer/cursor/editing)
 - `src/chat/input/mod.rs` — Export ChatCompleter
 - `src/chat/view/ratatui_view.rs` — Streaming message update, tool call during streaming, error display, `collapse_tables` in recent context
 - `src/chat/view/terminal.rs` — `collapse_tables` in recent context
-- `src/chat/repl_tui.rs` — Async event loop with `tokio::select!`, LLM task spawning, cancellation, mouse click/drag/scroll handling
+- `src/chat/repl_tui.rs` — Async event loop with `tokio::select!`, LLM task spawning, cancellation, mouse click/drag/scroll handling, embedding progress indicator during startup recovery, wires `embedding_tx` to session
 - `src/chat/core.rs` — Accept `CancellationToken`, return streaming sender, fix `suppress_spinner` in `compact_conversation`, `on_tool_call` callback
 - `src/chat/llm_event.rs` — `LlmEvent::ToolCallStarted` variant
 - `src/chat/command_handlers.rs` — Thread `suppress_progress_spinner()` through `handle_compact()`
 - `src/chat/tui/mod.rs` — Add `pub mod wrap;`
 - `src/chat/tui/markdown.rs` — `ColumnAlign` enum, `parse_separator_line`, rigid/elastic `calculate_col_widths`, cell wrapping (`wrap_cell_content`, `align_cell_text`, `build_row_expanded`), row separators, `collapse_tables`
-- `src/chat/tui/components/input_line.rs` — Rewritten for TextArea rendering (669→165 lines)
+- `src/chat/tui/components/input_line.rs` — Rewritten for TextArea rendering with selection highlight (669→316 lines), `build_display_lines()` + `apply_selection_to_line()`
 - `src/chat/tui/components/chat_area.rs` — Streaming token incremental append, selection highlight (`apply_selection_highlight`), `build_lines()` extraction, `RenderMetadata` return, `Line<'_>` lifetime
 - `src/chat/tui/components/mod.rs` — Add `pub mod completion_menu;`, `pub mod chat_selection;`
-- `src/chat/tui/components/status_bar.rs` — Green spinner, leading space, remove dead `with_spinner()`
+- `src/chat/tui/components/status_bar.rs` — Green spinner, leading space, remove dead `with_spinner()`, `embedding_progress` field with `⚙ current/total` indicator
+- `src/chat/view/ratatui_view.rs` — `embedding_tx` field, `embedding_tx()` getter for background tasks
+- `src/chat/session.rs` — `embedding_tx: Option<mpsc::UnboundedSender<(usize, usize)>>` field for progress reporting
 - `Cargo.toml` — Add `ratatui-textarea = "0.9.1"`, `cli-clipboard = "0.4.0"`
 
-**Checkpoint:** Chat mode fully functional with tab completion, floating completion menu, streaming markdown, tool display, error recovery, Ctrl+C cancellation, multi-line input (textarea), chat text selection (mouse), copy to clipboard (Ctrl+Shift+C), intelligent table reflow, table collapsing in recent context. Non-chat subcommands unchanged.
+**Checkpoint:** Chat mode fully functional with tab completion, floating completion menu, streaming markdown, tool display, error recovery, Ctrl+C cancellation, multi-line input (textarea), chat text selection (mouse), copy to clipboard (Ctrl+Shift+C), intelligent table reflow, table collapsing in recent context, explicit key bindings (input_without_shortcuts), visual text selection, embedding progress indicator, completion menu fixes, static subcommand completion. Non-chat subcommands unchanged.
 
 ---
 

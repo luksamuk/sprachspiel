@@ -12,8 +12,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use ratatui_textarea::TextArea;
 
-use super::chat_selection::selection_style;
 use super::super::styles;
+use super::chat_selection::selection_style;
 
 /// Build display lines with prompt prefixes and selection highlighting.
 ///
@@ -40,7 +40,9 @@ fn build_display_lines(textarea: &TextArea<'static>) -> Vec<Line<'static>> {
         let text_spans = if let Some(((start_row, start_col), (end_row, end_col))) = selection {
             // This line intersects the selection
             if i >= start_row && i <= end_row {
-                apply_selection_to_line(text_line, i, start_row, start_col, end_row, end_col, sel_style)
+                apply_selection_to_line(
+                    text_line, i, start_row, start_col, end_row, end_col, sel_style,
+                )
             } else {
                 vec![Span::raw(text_line.to_string())]
             }

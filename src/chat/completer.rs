@@ -47,7 +47,6 @@ enum ArgCompletion {
     /// Model name(s) as arguments (e.g., /model llama3.1)
     ModelName,
     /// Static subcommands only (e.g., /think on|off)
-    #[allow(dead_code)] // Extensible: will be used for /tools-output compact|full|hidden etc.
     StaticSubcommands,
 }
 
@@ -95,7 +94,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         trigger: "/think",
         description: "Toggle think mode",
-        arg_type: ArgCompletion::None,
+        arg_type: ArgCompletion::StaticSubcommands,
     },
     SlashCommand {
         trigger: "/tools",
@@ -105,7 +104,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         trigger: "/tools-output",
         description: "Set tool output level (compact|full|hidden)",
-        arg_type: ArgCompletion::None,
+        arg_type: ArgCompletion::StaticSubcommands,
     },
     SlashCommand {
         trigger: "/compact",
@@ -386,7 +385,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         trigger: "/t",
         description: "Shortcut: /think",
-        arg_type: ArgCompletion::None,
+        arg_type: ArgCompletion::StaticSubcommands,
     },
     SlashCommand {
         trigger: "/e",
@@ -421,7 +420,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         trigger: "/to",
         description: "Shortcut: /tools-output",
-        arg_type: ArgCompletion::None,
+        arg_type: ArgCompletion::StaticSubcommands,
     },
     SlashCommand {
         trigger: "/f",
@@ -655,6 +654,12 @@ impl ChatCompleter {
             if let Some((cmd_trigger, arg_fragment)) = self.try_model_arg_fragment(&fragment) {
                 return self.complete_model(cmd_trigger, arg_fragment.trim());
             }
+            // Check for argument completion on commands with static subcommands
+            if let Some((cmd_trigger, arg_fragment)) =
+                self.try_static_subcommand_fragment(&fragment)
+            {
+                return self.complete_static_subcommand(cmd_trigger, arg_fragment.trim());
+            }
             return self.complete_slash_command(&fragment);
         }
 
@@ -676,6 +681,72 @@ impl ChatCompleter {
             }
         }
         None
+    }
+
+    /// Check if the fragment matches a command that takes static subcommands.
+    ///
+    /// Returns `Some((command_trigger, arg_fragment))` if the fragment starts
+    /// with a command trigger (plus space) that has `arg_type: StaticSubcommands`.
+    /// The `arg_fragment` is the text after the command trigger + space.
+    fn try_static_subcommand_fragment(&self, fragment: &str) -> Option<(&'static str, String)> {
+        for cmd in SLASH_COMMANDS.iter() {
+            if cmd.arg_type == ArgCompletion::StaticSubcommands {
+                let prefix = format!("{} ", cmd.trigger);
+                if fragment.starts_with(&prefix) {
+                    return Some((cmd.trigger, fragment[prefix.len()..].to_string()));
+                }
+            }
+        }
+        None
+    }
+
+    /// Static subcommand definitions for slash commands.
+    ///
+    /// Maps command triggers to their static subcommand lists.
+    fn get_static_subcommands(trigger: &str) -> Vec<&'static str> {
+        match trigger {
+            "/think" | "/t" => vec!["on", "off"],
+            "/tools-output" | "/to" => vec!["compact", "full", "hidden"],
+            _ => vec![],
+        }
+    }
+
+    /// Complete a static subcommand from a partial input.
+    ///
+    /// Filters the command's subcommand list by the fragment and returns
+    /// matching completions with the command trigger prefix.
+    fn complete_static_subcommand(
+        &mut self,
+        cmd_trigger: &str,
+        fragment: &str,
+    ) -> CompletionResult {
+        let subcommands = Self::get_static_subcommands(cmd_trigger);
+        let matches: Vec<&str> = subcommands
+            .iter()
+            .filter(|&s| s.starts_with(fragment))
+            .copied()
+            .collect();
+
+        match matches.len() {
+            0 => CompletionResult::None,
+            1 => CompletionResult::Single {
+                replacement: format!("{} {} ", cmd_trigger, matches[0]),
+                cursor_pos: format!("{} {} ", cmd_trigger, matches[0]).len(),
+            },
+            _ => {
+                let match_strings: Vec<String> = matches
+                    .iter()
+                    .map(|&s| format!("{} {}", cmd_trigger, s))
+                    .collect();
+                let descriptions = vec![String::new(); match_strings.len()];
+
+                CompletionResult::Multiple {
+                    matches: match_strings,
+                    descriptions,
+                    cycle_index: 0,
+                }
+            }
+        }
     }
 
     /// Complete a slash command from a partial input.
