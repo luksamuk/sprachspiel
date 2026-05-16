@@ -3922,7 +3922,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** ✅ COMPLETED (W6-PR2: Ratatui Infrastructure + Responsive Rendering)
+**Status:** 🔄 IN PROGRESS (W6-PR3: Streaming Refinement + Tab Completion)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -4311,7 +4311,7 @@ image = "0.25"              # Removed — only needed for ratatui-image
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 3.1 | Tab completion in CrosstermInput (reuse `ChatCompleter`) | 📋 |
+| 3.1 | Tab completion in CrosstermInput (reuse `ChatCompleter`) | 🔄 IN PROGRESS |
 | 3.2 | mpsc channel for LLM streaming (background task → event loop) | 📋 |
 | 3.3 | Streaming token display refinement (incremental append, markdown re-render on completion) | 📋 |
 | 3.4 | Tool call/result display in chat area (CommandOutput variants rendered as ratatui widgets) | 📋 |

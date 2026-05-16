@@ -6,6 +6,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Added
 
+- **W6-PR3: Streaming Refinement + Tab Completion (Issue #147)** — Async event loop with tokio mpsc channels for LLM streaming, tab completion with ChatCompleter reuse, history navigation (up/down arrows), animated spinner during LLM processing (resolves PR2 freezing spinner limitation), tool call/result display in chat area, error recovery in TUI mode, scrollback with PageUp/PageDown/Home/End, Ctrl+C/Ctrl+D handling, /compact command support in TUI mode.
+
+### Added
+
 - **W6-PR2: Responsive Chat Rebuild — Ratatui + CrosstermInput (Issue #146)** — Replace println+ANSI rendering with Ratatui for responsive chat at any terminal width. Replace rustyline with CrosstermInput (incompatible with ratatui raw mode). App event loop with crossterm key events (100ms poll for spinner). RatatuiView implements all 18 ChatView methods + all CommandOutput variants. TUI components: ChatMessage enum, StatusBarState with braille spinner, InputState with unicode cursor. MarkdownTheme (Dark/Light/Mono) from DisplaySettings.skin. WelcomeInfo and RecentContextInfo rendered as chat messages. Status bar with model name, token progress bar, and emoji indicators. Session save/restore on Ctrl+D and /quit. run_chat_repl() delegates all interactive display to run_chat_repl_tui() via RatatuiView. Non-chat subcommands continue using TerminalView (termimad+indicatif). Streaming: plain text during LLM response (ChatMessage::assistant_streaming), full markdown render on completion (ChatMessage::assistant_markdown). Spinner animation deferred to PR3 (await blocks render loop).
 
 ### Changed
