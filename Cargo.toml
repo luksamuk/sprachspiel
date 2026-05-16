@@ -102,6 +102,8 @@ landlock = { version = "0.4", optional = true }
 # Development dependencies
 [dev-dependencies]
 tempfile = "3"
+serial_test = "3.2"
+
 
 # Lint configuration — enforces code quality standards across CI and local dev.
 # Individual #[allow(clippy::...)] must include a justification comment.

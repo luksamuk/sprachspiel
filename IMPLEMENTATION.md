@@ -4349,7 +4349,8 @@ image = "0.25"              # Removed — only needed for ratatui-image
 | 3.18 | Embedding progress indicator: StatusBarState.embedding_progress field shows ⚙ current/total in status bar. mpsc::UnboundedChannel wired through App::with_embedding_channel() and RatatuiView::embedding_tx(). Startup indexing shows indicator during regeneration/recovery. | 0.5d | ✅ COMPLETED |
 | 3.19 | StaticSubcommands ArgCompletion: `/think on|off` and `/tools-output compact|full|hidden` show subcommand completions. `ArgCompletion::StaticSubcommands` variant, `try_static_subcommand_fragment()`, `get_static_subcommands()`, `complete_static_subcommand()` in ChatCompleter. Embedding progress channel wired from RatatuiView through session. | 0.25d | ✅ COMPLETED |
 | 3.20 | Busy-wait fix in TUI event loop: `poll(0ms)` → `poll(SPINNER_TICK_MS)` reduces idle CPU from ~4300 iters/sec (5% CPU) to ~8 iters/sec (near-zero). Revisado para exceção condicional: `poll(0ms)` durante streaming (evita delay em tokens), `poll(120ms)` durante idle (economiza CPU). | 0.1d | ✅ COMPLETED |
-| **Total** | | **~24.25d** | |
+| 3.21 | Flaky spinner tests fix: `serial_test` + `#[serial]` nos 4 testes de `spinner.rs`; retry assertion com `yield_now` (1000x) tolera scheduling delays. Resolve condição de corrida em `ACTIVE_SPINNER` global (`RwLock`) quando testes correm em paralelo. Zero falhas em 20/20 runs stress. | 0.1d | ✅ COMPLETED |
+| **Total** | | **~24.45d** | |
 
 **Deferred items (usability feature creep):**
 
