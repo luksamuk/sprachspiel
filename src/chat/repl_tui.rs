@@ -136,7 +136,7 @@ pub async fn run_chat_repl_tui(
     // Show database recovery messages
     if let (Some(db_ref), Some(client)) = (&state.db, &state.embedding_client) {
         // Regenerate embeddings if needed (after schema migration)
-        let stats = crate::embeddings::regenerate_all_embeddings(db_ref, client).await;
+        let stats = crate::embeddings::regenerate_all_embeddings(db_ref, client, true).await;
         if stats.total_processed() > 0 {
             view.show_system(&format!(
                 "Regenerated {} embedding(s) ({} items, {} chunks)",
@@ -153,7 +153,7 @@ pub async fn run_chat_repl_tui(
         }
 
         // Recover any missing embeddings from previous session
-        let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client).await;
+        let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client, true).await;
         if recovered > 0 {
             view.show_system(&format!("Recovered {} missing embedding(s)", recovered));
         }

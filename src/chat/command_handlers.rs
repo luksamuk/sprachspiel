@@ -54,6 +54,7 @@ pub use super::session::ChatSession;
 async fn flush_pending_embeddings(
     db: Arc<crate::db::Database>,
     client: Arc<crate::embeddings::EmbeddingClient>,
+    quiet: bool,
 ) {
     // Check for pending items
     let pending_items = match db.get_content_items_for_reindex() {
@@ -70,8 +71,8 @@ async fn flush_pending_embeddings(
         return;
     }
 
-    // Complete pending embeddings with progress bar
-    let _ = recover_missing_embeddings_with_progress(&db, &client).await;
+    // Complete pending embeddings
+    let _ = recover_missing_embeddings_with_progress(&db, &client, quiet).await;
 }
 
 /// Handle a chat command in the REPL loop.
@@ -89,7 +90,7 @@ pub async fn handle_command(
     view: &mut dyn super::view::ChatView,
 ) -> Vec<CommandOutput> {
     match cmd {
-        ChatCommand::Quit => handle_quit(state, input).await,
+        ChatCommand::Quit => handle_quit(state, input, view.suppress_progress_spinner()).await,
         ChatCommand::Forget { confirmed } => handle_forget_cmd(state, confirmed),
         ChatCommand::New => handle_new(state),
         ChatCommand::Help => {
@@ -215,14 +216,16 @@ pub async fn handle_command(
 async fn handle_quit(
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
+    suppress_spinner: bool,
 ) -> Vec<CommandOutput> {
     let _ = input.save_history();
     if !state.session.anonymous {
         let _ = state.session.save_sqlite();
 
-        // Flush pending embeddings before exit
+        // Flush pending embeddings before exit.
+        // In TUI mode, suppress output to avoid corrupting the alternate screen buffer.
         if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
-            flush_pending_embeddings(Arc::clone(db), Arc::clone(client)).await;
+            flush_pending_embeddings(Arc::clone(db), Arc::clone(client), suppress_spinner).await;
             // Flush pending fact embeddings
             crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
         }
@@ -755,7 +758,7 @@ pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
     let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
     let embedding_client = Arc::new(embedding_client);
 
-    let stats = crate::embeddings::regenerate_all_embeddings(&db, &embedding_client).await;
+    let stats = crate::embeddings::regenerate_all_embeddings(&db, &embedding_client, true).await;
 
     vec![CommandOutput::ReindexResult(ReindexData {
         regenerated: stats.total_processed(),

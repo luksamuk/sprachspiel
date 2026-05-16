@@ -6,9 +6,17 @@
 //! constraint conflicts when multiple messages have the same content.
 //!
 //! Embeddings are derived data and can be regenerated from source content.
+//!
+//! # Output modes
+//!
+//! - `quiet = false` (terminal mode): prints progress and errors to stdout/stderr,
+//!   shows an indicatif progress bar with ETA
+//! - `quiet = true` (TUI mode): suppresses all direct terminal output, logs
+//!   warnings via `log::warn!`, uses a hidden progress bar. The caller (TUI)
+//!   shows status messages through the `ChatView` instead.
 
-#![expect(clippy::print_stdout)] // CLI subcommand output
-#![expect(clippy::print_stderr)] // CLI subcommand output
+#![expect(clippy::print_stdout)] // Terminal-mode output (guarded by `quiet` flag)
+#![expect(clippy::print_stderr)] // Terminal-mode output (guarded by `quiet` flag)
 use chrono::Utc;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
@@ -61,11 +69,12 @@ impl RegenerationStats {
 /// For models with smaller contexts (e.g., nomic-embed-text-v2-moe with 512 tokens),
 /// long content is automatically chunked before embedding.
 ///
-/// Shows a progress bar with ETA during regeneration.
-///
 /// # Arguments
 /// * `db` - Database connection
 /// * `embedding_client` - Embedding client for generating embeddings
+/// * `quiet` - When `true`, suppresses terminal output and progress bars (TUI mode).
+///   Warnings are logged via `log::warn!` instead of `eprintln!`.
+///   When `false`, shows a progress bar with ETA and prints status to stdout/stderr.
 ///
 /// # Returns
 /// Statistics about regeneration (items/chunks processed and failed)
@@ -77,6 +86,7 @@ impl RegenerationStats {
 pub async fn regenerate_all_embeddings(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
+    quiet: bool,
 ) -> RegenerationStats {
     // Note: V2 orphan chunks are cleaned by recover_missing_embeddings(), not here.
     // We don't clean ALL chunks because items with successful embeddings have has_embedding=1.
@@ -85,11 +95,15 @@ pub async fn regenerate_all_embeddings(
     let context_length = match embedding_client.get_context_length().await {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!(
-                "Warning: Could not get embedding model context length: {}",
-                e
-            );
-            eprintln!("Using conservative default of 512 tokens.");
+            if quiet {
+                log::warn!("Could not get embedding model context length: {}", e);
+            } else {
+                eprintln!(
+                    "Warning: Could not get embedding model context length: {}",
+                    e
+                );
+                eprintln!("Using conservative default of 512 tokens.");
+            }
             512
         }
     };
@@ -101,7 +115,11 @@ pub async fn regenerate_all_embeddings(
     let items = match db.get_content_items_for_reindex() {
         Ok(i) => i,
         Err(e) => {
-            eprintln!("Error checking for items without embeddings: {}", e);
+            if quiet {
+                log::warn!("Error checking for items without embeddings: {}", e);
+            } else {
+                eprintln!("Error checking for items without embeddings: {}", e);
+            }
             return RegenerationStats {
                 items_processed: 0,
                 chunks_processed: 0,
@@ -114,7 +132,11 @@ pub async fn regenerate_all_embeddings(
     let chunks = match db.get_content_chunks_for_reindex() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error checking for chunks without embeddings: {}", e);
+            if quiet {
+                log::warn!("Error checking for chunks without embeddings: {}", e);
+            } else {
+                eprintln!("Error checking for chunks without embeddings: {}", e);
+            }
             return RegenerationStats {
                 items_processed: 0,
                 chunks_processed: 0,
@@ -136,20 +158,27 @@ pub async fn regenerate_all_embeddings(
         };
     }
 
-    println!(
-        "Regenerating embeddings for {} items (context: {} tokens)...",
-        items.len(),
-        context_length
-    );
+    if !quiet {
+        println!(
+            "Regenerating embeddings for {} items (context: {} tokens)...",
+            items.len(),
+            context_length
+        );
+    }
 
-    // Setup progress bar with ETA
-    let progress = ProgressBar::new(total as u64);
-    #[expect(clippy::expect_used)] // hardcoded template string is always valid
-    let style =
-        ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%) ETA: {eta_precise}")
-            .expect("Invalid progress template")
-            .progress_chars("█▓░");
-    progress.set_style(style);
+    // Setup progress bar (hidden in quiet mode to avoid corrupting TUI alternate screen)
+    let progress = if quiet {
+        ProgressBar::hidden()
+    } else {
+        let pb = ProgressBar::new(total as u64);
+        #[expect(clippy::expect_used)] // hardcoded template string is always valid
+        let style =
+            ProgressStyle::with_template("  {bar:20} {pos}/{len} ({percent}%) ETA: {eta_precise}")
+                .expect("Invalid progress template")
+                .progress_chars("█▓░");
+        pb.set_style(style);
+        pb
+    };
 
     let mut stats = RegenerationStats {
         items_processed: 0,
@@ -191,7 +220,11 @@ pub async fn regenerate_all_embeddings(
                 ) {
                     Ok(id) => id,
                     Err(e) => {
-                        eprintln!("Warning: Failed to insert chunk {}: {}", chunk.index, e);
+                        if quiet {
+                            log::warn!("Failed to insert chunk {}: {}", chunk.index, e);
+                        } else {
+                            eprintln!("Warning: Failed to insert chunk {}: {}", chunk.index, e);
+                        }
                         stats.chunks_failed += 1;
                         continue;
                     }
@@ -221,7 +254,11 @@ pub async fn regenerate_all_embeddings(
                         stats.chunks_processed += result.chunks_created;
                     }
                     Err(e) => {
-                        eprintln!("Warning: Failed to embed chunk {}: {}", chunk_id, e);
+                        if quiet {
+                            log::warn!("Failed to embed chunk {}: {}", chunk_id, e);
+                        } else {
+                            eprintln!("Warning: Failed to embed chunk {}: {}", chunk_id, e);
+                        }
                         stats.chunks_failed += 1;
                     }
                 }
@@ -250,7 +287,11 @@ pub async fn regenerate_all_embeddings(
                     stats.items_processed += 1;
                 }
                 Err(e) => {
-                    eprintln!("Failed to generate embedding for item {}: {}", item_id, e);
+                    if quiet {
+                        log::warn!("Failed to generate embedding for item {}: {}", item_id, e);
+                    } else {
+                        eprintln!("Failed to generate embedding for item {}: {}", item_id, e);
+                    }
                     stats.items_failed += 1;
 
                     // If Ollama is down or unreachable, stop processing gracefully
@@ -261,13 +302,19 @@ pub async fn regenerate_all_embeddings(
                         || err_str.contains("timeout")
                     {
                         progress.finish_and_clear();
-                        eprintln!("\nError: Cannot connect to Ollama for embedding generation.");
-                        eprintln!("Please ensure Ollama is running and try again.");
-                        eprintln!(
-                            "Progress saved: {}/{} items processed.",
-                            stats.items_processed,
-                            items.len()
-                        );
+                        if quiet {
+                            log::warn!("Cannot connect to Ollama for embedding generation.");
+                        } else {
+                            eprintln!(
+                                "\nError: Cannot connect to Ollama for embedding generation."
+                            );
+                            eprintln!("Please ensure Ollama is running and try again.");
+                            eprintln!(
+                                "Progress saved: {}/{} items processed.",
+                                stats.items_processed,
+                                items.len()
+                            );
+                        }
                         // Count remaining items as failed
                         let remaining = items.len() - stats.items_processed - stats.items_failed;
                         stats.items_failed += remaining;
@@ -360,10 +407,14 @@ pub async fn regenerate_all_embeddings(
                 stats.chunks_processed += result.chunks_created;
             }
             Err(e) => {
-                eprintln!(
-                    "Warning: Failed to generate embedding for chunk {}: {}",
-                    chunk_id, e
-                );
+                if quiet {
+                    log::warn!("Failed to generate embedding for chunk {}: {}", chunk_id, e);
+                } else {
+                    eprintln!(
+                        "Warning: Failed to generate embedding for chunk {}: {}",
+                        chunk_id, e
+                    );
+                }
                 stats.chunks_failed += 1;
 
                 // If Ollama is down or unreachable, stop processing gracefully
@@ -374,13 +425,17 @@ pub async fn regenerate_all_embeddings(
                     || err_str.contains("timeout")
                 {
                     progress.finish_and_clear();
-                    eprintln!("\nError: Cannot connect to Ollama for embedding generation.");
-                    eprintln!("Please ensure Ollama is running and try again.");
-                    eprintln!(
-                        "Progress saved: {}/{} chunks processed.",
-                        stats.chunks_processed,
-                        chunks.len()
-                    );
+                    if quiet {
+                        log::warn!("Cannot connect to Ollama for embedding generation.");
+                    } else {
+                        eprintln!("\nError: Cannot connect to Ollama for embedding generation.");
+                        eprintln!("Please ensure Ollama is running and try again.");
+                        eprintln!(
+                            "Progress saved: {}/{} chunks processed.",
+                            stats.chunks_processed,
+                            chunks.len()
+                        );
+                    }
                     // Count remaining chunks as failed
                     let remaining = chunks.len() - stats.chunks_processed - stats.chunks_failed;
                     stats.chunks_failed += remaining;
@@ -396,11 +451,19 @@ pub async fn regenerate_all_embeddings(
 
     // Report any failures
     if stats.total_failed() > 0 {
-        println!(
-            "Warning: {} item(s) and {} chunk(s) failed to generate embeddings.",
-            stats.items_failed, stats.chunks_failed
-        );
-        println!("These will be regenerated on next startup via recovery.");
+        if quiet {
+            log::warn!(
+                "{} item(s) and {} chunk(s) failed to generate embeddings.",
+                stats.items_failed,
+                stats.chunks_failed
+            );
+        } else {
+            println!(
+                "Warning: {} item(s) and {} chunk(s) failed to generate embeddings.",
+                stats.items_failed, stats.chunks_failed
+            );
+            println!("These will be regenerated on next startup via recovery.");
+        }
     }
 
     stats
