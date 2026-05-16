@@ -19,7 +19,8 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
-use ratatui_textarea::TextArea;
+use ratatui_textarea::{CursorMove, TextArea};
+use tokio::sync::mpsc;
 
 use super::completer::ChatCompleter;
 use super::input::{CrosstermInput, InputBackend, InputResult};
@@ -186,6 +187,9 @@ pub struct App {
     spinner_frames: Vec<&'static str>,
     /// Current spinner frame index
     spinner_frame: usize,
+    /// Channel receiver for embedding progress updates from background tasks.
+    /// Each message is (current, total) — current embeddings generated out of total.
+    embedding_progress_rx: mpsc::UnboundedReceiver<(usize, usize)>,
 }
 
 /// Pick a random spinner preset from rattles (same logic as `spinner.rs`).
@@ -244,8 +248,14 @@ fn random_tui_spinner_frames() -> Vec<&'static str> {
 }
 
 impl App {
-    /// Create a new App with default state
-    pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
+    /// Create a new App with an embedding progress sender for background tasks.
+    ///
+    /// Returns the App and an `UnboundedSender` that background embedding tasks
+    /// can use to report progress as `(current, total)` tuples.
+    pub fn with_embedding_channel(
+        theme: MarkdownTheme,
+        model_names: Vec<String>,
+    ) -> (Self, mpsc::UnboundedSender<(usize, usize)>) {
         let completer = ChatCompleter::new(model_names.clone());
 
         // Create textarea with custom styling: no line numbers, no cursor line highlight
@@ -254,7 +264,10 @@ impl App {
         textarea.set_cursor_line_style(ratatui::style::Style::default());
         textarea.set_tab_length(4);
 
-        Self {
+        // Channel for embedding progress updates
+        let (embedding_tx, embedding_progress_rx) = mpsc::unbounded_channel();
+
+        let app = Self {
             messages: Vec::new(),
             textarea,
             input_disabled: false,
@@ -272,7 +285,10 @@ impl App {
             scroll: ScrollState::new(),
             spinner_frames: random_tui_spinner_frames(),
             spinner_frame: 0,
-        }
+            embedding_progress_rx,
+        };
+
+        (app, embedding_tx)
     }
 
     /// Add a message to the chat area and auto-scroll to bottom
@@ -501,6 +517,43 @@ impl App {
         self.status_bar.percent = percent;
     }
 
+    /// Poll the embedding progress channel and update the status bar.
+    ///
+    /// Drains all messages from the channel, keeping only the latest
+    /// progress update. Sets `embedding_progress` to `Some((current, total))`
+    /// while embeddings are being generated, and `None` when complete.
+    pub fn poll_embedding_progress(&mut self) {
+        // Drain the channel, keeping only the latest progress
+        let mut latest: Option<(usize, usize)> = None;
+        while let Ok(progress) = self.embedding_progress_rx.try_recv() {
+            latest = Some(progress);
+        }
+
+        if let Some((current, total)) = latest {
+            self.status_bar.embedding_progress = if current >= total {
+                // Embedding complete — clear the indicator
+                None
+            } else {
+                Some((current, total))
+            };
+        }
+        // If no messages received, keep the existing state (embedding might still be in progress)
+    }
+
+    /// Set the embedding progress indicator directly (for synchronous embedding operations).
+    pub fn set_embedding_progress(&mut self, current: usize, total: usize) {
+        self.status_bar.embedding_progress = if current >= total {
+            None
+        } else {
+            Some((current, total))
+        };
+    }
+
+    /// Clear the embedding progress indicator.
+    pub fn clear_embedding_progress(&mut self) {
+        self.status_bar.embedding_progress = None;
+    }
+
     /// Advance the spinner frame.
     ///
     /// The spinner animates independently of streaming token arrival —
@@ -526,23 +579,38 @@ impl App {
     ///
     /// # Design
     ///
-    /// Most keys are passed to `textarea.input()` which handles them natively:
-    /// - Shift+arrows/Home/End for text selection
-    /// - Ctrl+arrows for word movement
-    /// - Insert char replaces selected text
-    /// - Backspace/Delete with selection deletes it
-    /// - Ctrl+A/E, Home/End for line navigation
-    /// - Ctrl+W for cut, Ctrl+Y for paste, Ctrl+U/R for undo/redo
+    /// We use `textarea.input_without_shortcuts()` for the default handler,
+    /// which only handles char input, Tab, Backspace, Delete, and Enter (newline).
+    /// All other shortcuts are bound explicitly here:
     ///
-    /// We only intercept keys that need custom behavior:
-    /// - Enter: submit (textarea default is newline)
-    /// - Shift+Enter: newline (our convention; textarea default is also newline)
-    /// - Ctrl+C: clear input or cancel LLM
+    /// **Submission & control:**
+    /// - Enter: submit line (textarea default is newline)
+    /// - Shift+Enter: newline
+    /// - Ctrl+C: clear input (copy to clipboard) or cancel LLM
     /// - Ctrl+D: EOF on empty, forward delete otherwise
-    /// - Ctrl+Shift+C/V: clipboard copy/paste
-    /// - Up/Down without shift: history navigation (single-line) or cursor (multi-line)
-    /// - PageUp/PageDown/Home/End without Ctrl/Alt: chat scroll
+    /// - Ctrl+Shift+C/V: system clipboard copy/paste
+    /// - Ctrl+Y: paste from system clipboard (not kill-ring yank)
     /// - Tab: completion
+    ///
+    /// **Cursor movement (no selection):**
+    /// - Ctrl+A/Home: move to start of line
+    /// - Ctrl+E/End: move to end of line
+    /// - Left/Right: character movement
+    /// - Ctrl+Left/Ctrl+Right: word movement
+    /// - Up/Down (single-line): history navigation
+    /// - Up/Down (multi-line): textarea cursor movement
+    ///
+    /// **Selection (Shift modifier starts selection):**
+    /// - Shift+Left/Right: select characters
+    /// - Shift+Home/End: select to line start/end
+    /// - Ctrl+Shift+Left/Right: select word
+    ///
+    /// **Editing:**
+    /// - Ctrl+W: delete word backward (cut to system clipboard)
+    /// - Ctrl+K: delete to end of line
+    /// - Ctrl+U: undo
+    /// - Ctrl+R: redo
+    /// - Ctrl+X: cut selection to system clipboard
     ///
     /// When input is disabled (during LLM processing), only Ctrl+C
     /// and scroll keys are processed — all other keys are ignored.
@@ -608,16 +676,26 @@ impl App {
             self.completion_menu.hide();
             let has_text = !self.textarea_is_empty();
             if has_text {
-                // Clear input: select all, cut (copies to kill-ring), clear
-                self.textarea.select_all();
-                self.textarea.cut();
-                // Try system clipboard (best-effort)
-                if let Some(text) = self.yank_text()
-                    && !text.is_empty()
-                {
-                    let _ = cli_clipboard::set_contents(text);
+                // If there's an active selection, copy it to clipboard first
+                if self.textarea.is_selecting() {
+                    self.textarea.copy();
+                    if let Some(text) = self.yank_text()
+                        && !text.is_empty()
+                    {
+                        let _ = cli_clipboard::set_contents(text);
+                    }
+                    self.textarea.cancel_selection();
+                } else {
+                    // No selection: select all, copy to clipboard, then clear
+                    self.textarea.select_all();
+                    self.textarea.copy();
+                    if let Some(text) = self.yank_text()
+                        && !text.is_empty()
+                    {
+                        let _ = cli_clipboard::set_contents(text);
+                    }
                 }
-                self.textarea.delete_char(); // ensure textarea is empty
+                self.textarea_clear();
                 return None;
             }
             // No text: cancel LLM or no-op
@@ -731,7 +809,11 @@ impl App {
         // ── Key-specific handling ────────────────────────────────────
 
         match key {
-            // Enter — submit the line (textarea default is newline, we override)
+            // ============================================================
+            // Submission & control
+            // ============================================================
+
+            // Enter — submit the line
             crossterm::event::KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::NONE,
@@ -747,13 +829,89 @@ impl App {
                 Some(InputResult::Line(line))
             }
 
-            // Shift+Enter — newline (explicit, same as textarea default)
+            // Shift+Enter — newline
             crossterm::event::KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::SHIFT,
                 ..
             } => {
                 self.textarea.insert_newline();
+                None
+            }
+
+            // Ctrl+Y — paste from system clipboard (not kill-ring yank)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                if let Ok(text) = cli_clipboard::get_contents()
+                    && !text.is_empty()
+                {
+                    self.textarea.insert_str(&text);
+                }
+                None
+            }
+
+            // Ctrl+W — delete word backward (cut to system clipboard)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('w'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.delete_word();
+                if let Some(text) = self.yank_text()
+                    && !text.is_empty()
+                {
+                    let _ = cli_clipboard::set_contents(text);
+                }
+                None
+            }
+
+            // Ctrl+K — delete from cursor to end of line
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.delete_line_by_end();
+                None
+            }
+
+            // Ctrl+X — cut selection to system clipboard
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('x'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                if self.textarea.is_selecting() {
+                    self.textarea.cut();
+                    if let Some(text) = self.yank_text()
+                        && !text.is_empty()
+                    {
+                        let _ = cli_clipboard::set_contents(text);
+                    }
+                }
+                None
+            }
+
+            // Ctrl+U — undo
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('u'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.undo();
+                None
+            }
+
+            // Ctrl+R — redo
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('r'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.redo();
                 None
             }
 
@@ -767,9 +925,118 @@ impl App {
                 if self.textarea_is_empty() {
                     Some(InputResult::Eof)
                 } else {
-                    self.textarea.input(key);
+                    self.textarea.delete_next_char();
                     None
                 }
+            }
+
+            // Ctrl+A — move to start of line (no selection)
+            // (with Shift: select to start of line — handled in shift+home below)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::Head);
+                None
+            }
+
+            // Ctrl+E — move to end of line (no selection)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('e'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::End);
+                None
+            }
+
+            // ============================================================
+            // Cursor movement (no Shift = move, Shift = select)
+            // ============================================================
+
+            // Left — character back (or select if Shift)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::Back);
+                None
+            }
+            crossterm::event::KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if !self.textarea.is_selecting() {
+                    self.textarea.start_selection();
+                }
+                self.textarea.move_cursor(CursorMove::Back);
+                None
+            }
+
+            // Right — character forward (or select if Shift)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::Forward);
+                None
+            }
+            crossterm::event::KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if !self.textarea.is_selecting() {
+                    self.textarea.start_selection();
+                }
+                self.textarea.move_cursor(CursorMove::Forward);
+                None
+            }
+
+            // Ctrl+Left / Ctrl+Shift+Left — word back (select if Shift held)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Left,
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL)
+                && !modifiers.contains(KeyModifiers::ALT) =>
+            {
+                if modifiers.contains(KeyModifiers::SHIFT) {
+                    if !self.textarea.is_selecting() {
+                        self.textarea.start_selection();
+                    }
+                } else {
+                    self.textarea.cancel_selection();
+                }
+                self.textarea.move_cursor(CursorMove::WordBack);
+                None
+            }
+
+            // Ctrl+Right / Ctrl+Shift+Right — word forward (select if Shift held)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Right,
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL)
+                && !modifiers.contains(KeyModifiers::ALT) =>
+            {
+                if modifiers.contains(KeyModifiers::SHIFT) {
+                    if !self.textarea.is_selecting() {
+                        self.textarea.start_selection();
+                    }
+                } else {
+                    self.textarea.cancel_selection();
+                }
+                self.textarea.move_cursor(CursorMove::WordForward);
+                None
             }
 
             // Up (no shift) — history nav or textarea cursor up
@@ -779,7 +1046,24 @@ impl App {
                 ..
             } => {
                 if self.textarea_is_multiline() {
-                    self.textarea.input(key);
+                    self.textarea.cancel_selection();
+                    self.textarea.move_cursor(CursorMove::Up);
+                } else {
+                    self.history_prev();
+                }
+                None
+            }
+            // Shift+Up — select up (multiline only) or history prev (single-line)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Up,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if self.textarea_is_multiline() {
+                    if !self.textarea.is_selecting() {
+                        self.textarea.start_selection();
+                    }
+                    self.textarea.move_cursor(CursorMove::Up);
                 } else {
                     self.history_prev();
                 }
@@ -793,12 +1077,77 @@ impl App {
                 ..
             } => {
                 if self.textarea_is_multiline() {
-                    self.textarea.input(key);
+                    self.textarea.cancel_selection();
+                    self.textarea.move_cursor(CursorMove::Down);
                 } else {
                     self.history_next();
                 }
                 None
             }
+            // Shift+Down — select down (multiline only) or history next (single-line)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Down,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if self.textarea_is_multiline() {
+                    if !self.textarea.is_selecting() {
+                        self.textarea.start_selection();
+                    }
+                    self.textarea.move_cursor(CursorMove::Down);
+                } else {
+                    self.history_next();
+                }
+                None
+            }
+
+            // Home — move to start of line (or select if Shift)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Home,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::Head);
+                None
+            }
+            crossterm::event::KeyEvent {
+                code: KeyCode::Home,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if !self.textarea.is_selecting() {
+                    self.textarea.start_selection();
+                }
+                self.textarea.move_cursor(CursorMove::Head);
+                None
+            }
+
+            // End — move to end of line (or select if Shift)
+            crossterm::event::KeyEvent {
+                code: KeyCode::End,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea.cancel_selection();
+                self.textarea.move_cursor(CursorMove::End);
+                None
+            }
+            crossterm::event::KeyEvent {
+                code: KeyCode::End,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                if !self.textarea.is_selecting() {
+                    self.textarea.start_selection();
+                }
+                self.textarea.move_cursor(CursorMove::End);
+                None
+            }
+
+            // ============================================================
+            // Scroll & navigation
+            // ============================================================
 
             // PageUp — scroll chat up
             crossterm::event::KeyEvent {
@@ -830,14 +1179,14 @@ impl App {
                 None
             }
 
-            // ── All other keys: pass to textarea.input() ─────────────
-            // This handles: Shift+arrows (selection), Ctrl+arrows (word movement),
-            // Home/End (with shift for selection), Backspace/Delete (with selection),
-            // Ctrl+A/E, Ctrl+W (cut), Ctrl+Y (paste), Ctrl+U/R (undo/redo),
-            // Alt+Backspace (delete word), regular chars (replace selection),
-            // and any other key the textarea knows about.
+            // ============================================================
+            // All other keys: pass to textarea (basic editing only)
+            // ============================================================
+            // input_without_shortcuts() handles: char input, Backspace,
+            // Delete, and Enter (which inserts newline in textarea).
+            // We intercept Enter above, so only basic editing falls through.
             _ => {
-                self.textarea.input(key);
+                self.textarea.input_without_shortcuts(key);
                 // Auto-trigger completion when typing slash commands
                 self.auto_complete_on_type();
                 None

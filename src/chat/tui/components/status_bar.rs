@@ -32,6 +32,8 @@ pub struct StatusBarState {
     pub spinner: Option<String>,
     /// Status label (e.g., "Thinking...", "Running tool...")
     pub status_label: Option<String>,
+    /// Embedding progress: (current, total) when embeddings are being generated
+    pub embedding_progress: Option<(usize, usize)>,
 }
 
 impl StatusBarState {
@@ -53,6 +55,7 @@ impl StatusBarState {
             tools_enabled,
             spinner: None,
             status_label: None,
+            embedding_progress: None,
         }
     }
 
@@ -148,6 +151,21 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
     }
     if state.tools_enabled {
         spans.push(Span::raw("🔧"));
+    }
+
+    // Embedding progress — shown after indicators with separator
+    if let Some((current, total)) = state.embedding_progress {
+        spans.push(Span::raw(" │ "));
+        spans.push(Span::styled(
+            "⚙ ",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!("{}/{}", current, total),
+            Style::default()
+                .fg(styles::CYAN)
+                .add_modifier(Modifier::BOLD),
+        ));
     }
 
     // Build the line

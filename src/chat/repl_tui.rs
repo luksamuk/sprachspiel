@@ -137,6 +137,10 @@ pub async fn run_chat_repl_tui(
 
     // Show database recovery messages
     if let (Some(db_ref), Some(client)) = (&state.db, &state.embedding_client) {
+        // Show indexing indicator while regenerating embeddings
+        view.app_mut().set_embedding_progress(0, 1);
+        view.render();
+
         // Regenerate embeddings if needed (after schema migration)
         let stats = crate::embeddings::regenerate_all_embeddings(db_ref, client, true).await;
         if stats.total_processed() > 0 {
@@ -181,6 +185,10 @@ pub async fn run_chat_repl_tui(
                 stats.global_wins
             );
         }
+
+        // Clear embedding indicator
+        view.app_mut().clear_embedding_progress();
+        view.render();
     }
 
     // AGENTS.md loaded message
@@ -438,6 +446,7 @@ pub async fn run_chat_repl_tui(
         }
 
         // Re-render after each event or tick
+        view.app_mut().poll_embedding_progress();
         view.render();
     }
 }

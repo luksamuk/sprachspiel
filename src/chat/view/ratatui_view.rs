@@ -51,16 +51,13 @@ use crate::chat::tui::{TuiTerminal, enter_tui, exit_tui, restore_terminal_on_pan
 /// `debug_tools::log_tool_call` output appears in the chat area
 /// instead of corrupting the alternate screen with raw stderr.
 pub struct RatatuiView {
-    /// Application state (messages, input, status bar, theme)
     app: App,
-    /// Ratatui terminal for rendering
     terminal: TuiTerminal,
-    /// Whether we've shown the welcome banner yet
     welcome_shown: bool,
-    /// Receiver for tool call messages from the global TUI callback
     tool_call_rx: std::sync::mpsc::Receiver<String>,
-    /// Whether `restore()` has been called (prevents double-restore in Drop)
     restored: bool,
+    /// Sender for embedding progress updates (cloned by background tasks)
+    embedding_tx: tokio::sync::mpsc::UnboundedSender<(usize, usize)>,
 }
 
 impl RatatuiView {
@@ -83,7 +80,7 @@ impl RatatuiView {
             default_panic_hook(info);
         }));
 
-        let app = App::new(theme, model_names);
+        let (app, embedding_tx) = App::with_embedding_channel(theme, model_names);
 
         // Set up tool call callback: route debug_tools output to the chat area
         // instead of raw stderr (which would corrupt the TUI alternate screen).
@@ -99,6 +96,7 @@ impl RatatuiView {
             welcome_shown: false,
             tool_call_rx,
             restored: false,
+            embedding_tx,
         }
     }
 
@@ -112,6 +110,14 @@ impl RatatuiView {
     /// Get a reference to the App state.
     pub fn app(&self) -> &App {
         &self.app
+    }
+
+    /// Get a clone of the embedding progress sender.
+    ///
+    /// Background embedding tasks can use this to report progress
+    /// as `(current, total)` tuples.
+    pub fn embedding_tx(&self) -> tokio::sync::mpsc::UnboundedSender<(usize, usize)> {
+        self.embedding_tx.clone()
     }
 
     /// Get a mutable reference to the terminal.

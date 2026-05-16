@@ -1,8 +1,9 @@
 //! Input line component — user input display using ratatui-textarea
 //!
 //! Renders the TextArea widget at the bottom of the TUI, showing
-//! the prompt prefix and the current input content. The TextArea
-//! handles all text editing internally (cursor, selection, kill-ring).
+//! the prompt prefix and the current input content. Selection highlighting
+//! is applied by querying `textarea.selection_range()` and styling the
+//! selected characters with a blue background.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -11,17 +12,118 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use ratatui_textarea::TextArea;
 
+use super::chat_selection::selection_style;
 use super::super::styles;
+
+/// Build display lines with prompt prefixes and selection highlighting.
+///
+/// Each line gets a ">>> " (first line) or "... " (continuation) prefix.
+/// If the textarea has an active selection, characters within the selection
+/// range are rendered with a blue background highlight.
+fn build_display_lines(textarea: &TextArea<'static>) -> Vec<Line<'static>> {
+    let lines = textarea.lines();
+    let prompt_style = styles::prompt_style();
+    let sel_style = selection_style();
+
+    // Get selection range: Option<((start_row, start_col), (end_row, end_col))>
+    let selection = textarea.selection_range();
+
+    let mut display_lines: Vec<Line<'static>> = Vec::new();
+
+    for (i, text_line) in lines.iter().enumerate() {
+        let prompt = if i == 0 {
+            Span::styled(">>> ", prompt_style)
+        } else {
+            Span::styled("... ", prompt_style)
+        };
+
+        let text_spans = if let Some(((start_row, start_col), (end_row, end_col))) = selection {
+            // This line intersects the selection
+            if i >= start_row && i <= end_row {
+                apply_selection_to_line(text_line, i, start_row, start_col, end_row, end_col, sel_style)
+            } else {
+                vec![Span::raw(text_line.to_string())]
+            }
+        } else {
+            vec![Span::raw(text_line.to_string())]
+        };
+
+        let mut spans = vec![prompt];
+        spans.extend(text_spans);
+        display_lines.push(Line::from(spans));
+    }
+
+    // If textarea is completely empty, show the prompt line
+    if display_lines.is_empty() {
+        display_lines.push(Line::from(vec![
+            Span::styled(">>> ", prompt_style),
+            Span::raw(String::new()),
+        ]));
+    }
+
+    display_lines
+}
+
+/// Apply selection highlighting to a single line of text.
+///
+/// Returns a vector of `Span`s where characters within the selection
+/// range are styled with the selection highlight, and characters outside
+/// are plain.
+fn apply_selection_to_line(
+    line: &str,
+    row: usize,
+    start_row: usize,
+    start_col: usize,
+    end_row: usize,
+    end_col: usize,
+    sel_style: Style,
+) -> Vec<Span<'static>> {
+    let chars: Vec<char> = line.chars().collect();
+    let char_count = chars.len();
+
+    // Determine the effective start and end columns for this line
+    let eff_start = if row == start_row { start_col } else { 0 };
+    let eff_end = if row == end_row {
+        end_col.min(char_count)
+    } else {
+        char_count
+    };
+
+    if eff_start >= char_count || eff_end <= eff_start {
+        // Selection doesn't intersect this line
+        return vec![Span::raw(line.to_string())];
+    }
+
+    let mut spans = Vec::new();
+
+    // Before selection
+    if eff_start > 0 {
+        let before: String = chars[..eff_start].iter().collect();
+        spans.push(Span::raw(before));
+    }
+
+    // Selection
+    let selected: String = chars[eff_start..eff_end.min(char_count)].iter().collect();
+    spans.push(Span::styled(selected, sel_style));
+
+    // After selection
+    if eff_end < char_count {
+        let after: String = chars[eff_end..].iter().collect();
+        spans.push(Span::raw(after));
+    }
+
+    spans
+}
 
 /// Render the input line using the TextArea widget
 ///
 /// When input is disabled (during LLM processing), shows a dim prompt
-/// with the reason. When enabled, renders the TextArea widget with
-/// a ">>> " prompt prefix and "... " continuation prefixes.
+/// with the reason. When enabled, renders the TextArea content with
+/// prompt prefixes and selection highlighting.
 ///
 /// The `TextArea` widget handles all cursor positioning and scrolling
 /// internally. We add prompt prefixes by prepending styled spans
-/// to each line.
+/// to each line, and apply selection highlighting to active selections.
 pub fn render(
     f: &mut Frame,
     area: Rect,
@@ -29,7 +131,6 @@ pub fn render(
     disabled: bool,
     disabled_reason: Option<&str>,
 ) {
-    let prompt_style = styles::prompt_style();
     let dim_style = Style::default().add_modifier(Modifier::DIM);
 
     if disabled {
@@ -48,27 +149,8 @@ pub fn render(
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        // Build lines with prompt prefixes prepended
-        let lines = textarea.lines();
-        let mut display_lines: Vec<Line> = Vec::new();
-
-        for (i, text_line) in lines.iter().enumerate() {
-            let prompt = if i == 0 {
-                Span::styled(">>> ", prompt_style)
-            } else {
-                Span::styled("... ", prompt_style)
-            };
-            display_lines.push(Line::from(vec![prompt, Span::raw(text_line.to_string())]));
-        }
-
-        // If textarea is completely empty, show the prompt line
-        if display_lines.is_empty() {
-            display_lines.push(Line::from(vec![
-                Span::styled(">>> ", prompt_style),
-                Span::raw(String::new()),
-            ]));
-        }
-
+        // Build lines with prompt prefixes and selection highlighting
+        let display_lines = build_display_lines(textarea);
         let text = ratatui::text::Text::from(display_lines);
         let paragraph = Paragraph::new(text);
         f.render_widget(paragraph, inner);
@@ -126,7 +208,6 @@ mod tests {
                 render(f, f.area(), &textarea, false, None);
             })
             .unwrap();
-        // If we get here without panic, the render succeeded
     }
 
     #[test]
@@ -161,5 +242,75 @@ mod tests {
                 render(f, f.area(), &textarea, false, None);
             })
             .unwrap();
+    }
+
+    #[test]
+    fn test_render_with_selection() {
+        let mut terminal = test_terminal(80, 5);
+        let mut textarea = TextArea::default();
+        textarea.insert_str("hello world");
+        // Select "llo" (cols 2-5)
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        textarea.start_selection();
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        textarea.move_cursor(ratatui_textarea::CursorMove::Forward);
+        assert!(textarea.is_selecting());
+        terminal
+            .draw(|f| {
+                render(f, f.area(), &textarea, false, None);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_apply_selection_to_line_full_line() {
+        let style = selection_style();
+        // Select entire line (row 0, start_row 0, start_col 0, end_row 0, end_col 5)
+        let spans = apply_selection_to_line("hello", 0, 0, 0, 0, 5, style);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "hello");
+    }
+
+    #[test]
+    fn test_apply_selection_to_line_partial() {
+        let style = selection_style();
+        // Select "llo" from "hello" (cols 2-5) on row 0 — selection goes to end of line
+        let spans = apply_selection_to_line("hello", 0, 0, 2, 0, 5, style);
+        // "he" (unselected) + "llo" (selected) — no trailing unselected span
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content, "he");
+        assert_eq!(spans[1].content, "llo");
+    }
+
+    #[test]
+    fn test_apply_selection_to_line_middle() {
+        let style = selection_style();
+        // Select "ll" from "hello" (cols 2-4) on row 0
+        let spans = apply_selection_to_line("hello", 0, 0, 2, 0, 4, style);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].content, "he");
+        assert_eq!(spans[1].content, "ll");
+        assert_eq!(spans[2].content, "o");
+    }
+
+    #[test]
+    fn test_apply_selection_no_intersection() {
+        let style = selection_style();
+        // Line 0 not in selection on lines 2-3
+        let spans = apply_selection_to_line("hello", 0, 2, 0, 3, 5, style);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "hello");
+    }
+
+    #[test]
+    fn test_apply_selection_multiline_start() {
+        let style = selection_style();
+        // Line 0 is start of selection (from col 3 to end of line 0, continuing to line 2)
+        let spans = apply_selection_to_line("hello", 0, 0, 3, 2, 5, style);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content, "hel");
+        assert_eq!(spans[1].content, "lo");
     }
 }
