@@ -21,7 +21,7 @@
 //! Ctrl+C during LLM processing cancels the background task via
 //! `CancellationToken`. The LLM result is discarded (not applied to state).
 
-use crossterm::event::{self, Event as CrosstermEvent};
+use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
 use tokio_util::sync::CancellationToken;
 
 use super::app::LlmState;
@@ -359,8 +359,11 @@ pub async fn run_chat_repl_tui(
                         CrosstermEvent::Resize(_, _) => {
                             view.app_mut().scroll_to_bottom();
                         }
+                        CrosstermEvent::Mouse(mouse) => {
+                            handle_mouse_event(mouse, &mut view);
+                        }
                         _ => {
-                            // Ignore other events (mouse, etc.)
+                            // Ignore other events (focus, paste, etc.)
                         }
                     }
                 }
@@ -574,5 +577,33 @@ fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
         ViewAction::ShowCommandOutput(output) => {
             view.show_command_output(&output);
         }
+    }
+}
+
+/// Number of lines to scroll per mouse wheel tick.
+const MOUSE_SCROLL_LINES: u16 = 3;
+
+/// Handle mouse events for the TUI chat REPL.
+///
+/// Currently supports:
+/// - Mouse wheel scroll up/down in the chat area (3 lines per tick)
+///
+/// Mouse events in the input area are ignored (TextArea doesn't need
+/// mouse support in the current design).
+fn handle_mouse_event(mouse: MouseEvent, view: &mut RatatuiView) {
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            view.app_mut()
+                .scroll_state_mut()
+                .scroll_up(MOUSE_SCROLL_LINES);
+        }
+        MouseEventKind::ScrollDown => {
+            view.app_mut()
+                .scroll_state_mut()
+                .scroll_down(MOUSE_SCROLL_LINES);
+        }
+        // Other mouse events (click, drag, release) are not yet handled.
+        // Future: chat text selection, input area click-to-position
+        _ => {}
     }
 }

@@ -9,7 +9,8 @@
 //! ```text
 //! App (event loop via tokio + crossterm)
 //!     ├─ CrosstermInput (history, InputBackend trait)
-//!     ├─ InputState (buffer, cursor, disabled state)
+//!     ├─ TextArea (input buffer, cursor, selection, kill-ring)
+//!     ├─ CompletionMenuState (floating completion overlay)
 //!     ├─ ChatMessage[] (chat area content)
 //!     ├─ StatusBarState (model, tokens, spinner)
 //!     ├─ ScrollState (auto-scroll and manual offset)
@@ -18,13 +19,14 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
+use ratatui_textarea::TextArea;
 
 use super::completer::ChatCompleter;
 use super::input::{CrosstermInput, InputBackend, InputResult};
 use super::tui::TuiTerminal;
 use super::tui::components::chat_area::ChatMessage;
 use super::tui::components::chat_area::MessageType;
-use super::tui::components::input_line::InputState;
+use super::tui::components::completion_menu::CompletionMenuState;
 use super::tui::components::status_bar::StatusBarState;
 use super::tui::markdown::MarkdownTheme;
 
@@ -147,12 +149,18 @@ impl ScrollState {
 pub struct App {
     /// Chat messages displayed in the chat area
     messages: Vec<ChatMessage>,
-    /// Current input buffer and cursor state
-    input_state: InputState,
+    /// Text editor widget for input (replaces InputState)
+    textarea: TextArea<'static>,
+    /// Whether input is disabled (e.g., during LLM processing)
+    input_disabled: bool,
+    /// Disabled reason (shown when input is disabled)
+    disabled_reason: Option<String>,
     /// CrosstermInput for history management
     history_input: CrosstermInput,
     /// Tab completion engine (slash commands + model names)
     completer: ChatCompleter,
+    /// Floating completion menu state
+    completion_menu: CompletionMenuState,
     /// Status bar state
     status_bar: StatusBarState,
     /// LLM processing state
@@ -226,11 +234,21 @@ impl App {
     /// Create a new App with default state
     pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
         let completer = ChatCompleter::new(model_names.clone());
+
+        // Create textarea with custom styling: no line numbers, no cursor line highlight
+        let mut textarea = TextArea::default();
+        textarea.set_line_number_style(ratatui::style::Style::default());
+        textarea.set_cursor_line_style(ratatui::style::Style::default());
+        textarea.set_tab_length(4);
+
         Self {
             messages: Vec::new(),
-            input_state: InputState::new(),
+            textarea,
+            input_disabled: false,
+            disabled_reason: None,
             history_input: CrosstermInput::new(model_names),
             completer,
+            completion_menu: CompletionMenuState::new(),
             status_bar: StatusBarState::new(String::new(), 0, 0, 0, false, false),
             llm_state: LlmState::Idle,
             theme,
@@ -307,16 +325,40 @@ impl App {
         &self.messages
     }
 
-    /// Get the current input state
-    #[allow(dead_code)] // Public API — will be used by streaming display in Phase 3.2
-    pub fn input_state(&self) -> &InputState {
-        &self.input_state
+    /// Get a reference to the textarea
+    #[allow(dead_code)] // Public API for external state queries
+    pub fn textarea(&self) -> &TextArea<'static> {
+        &self.textarea
     }
 
-    /// Get a mutable reference to the input state
-    #[allow(dead_code)] // Public API — will be used by streaming display in Phase 3.2
-    pub fn input_state_mut(&mut self) -> &mut InputState {
-        &mut self.input_state
+    /// Get a mutable reference to the textarea
+    #[allow(dead_code)] // Public API for external state mutation
+    pub fn textarea_mut(&mut self) -> &mut TextArea<'static> {
+        &mut self.textarea
+    }
+
+    /// Whether input is disabled (during LLM processing)
+    #[allow(dead_code)] // Public API for external state queries
+    pub fn input_disabled(&self) -> bool {
+        self.input_disabled
+    }
+
+    /// Get the disabled reason text
+    #[allow(dead_code)] // Public API for external state queries
+    pub fn disabled_reason(&self) -> Option<&str> {
+        self.disabled_reason.as_deref()
+    }
+
+    /// Get a reference to the completion menu state
+    #[allow(dead_code)] // Public API for external state queries
+    pub fn completion_menu(&self) -> &CompletionMenuState {
+        &self.completion_menu
+    }
+
+    /// Get a mutable reference to the completion menu state
+    #[allow(dead_code)] // Public API for external state mutation
+    pub fn completion_menu_mut(&mut self) -> &mut CompletionMenuState {
+        &mut self.completion_menu
     }
 
     /// Get the current LLM state
@@ -329,6 +371,11 @@ impl App {
     #[allow(dead_code)] // Public API for external scroll queries
     pub fn scroll_state(&self) -> &ScrollState {
         &self.scroll
+    }
+
+    /// Get a mutable reference to the scroll state
+    pub fn scroll_state_mut(&mut self) -> &mut ScrollState {
+        &mut self.scroll
     }
 
     /// Get a reference to the status bar state.
@@ -352,14 +399,15 @@ impl App {
         self.llm_state = state;
         match state {
             LlmState::Idle => {
-                self.input_state.set_disabled(false, None);
+                self.input_disabled = false;
+                self.disabled_reason = None;
                 self.status_bar.spinner = None;
                 self.status_bar.status_label = None;
                 self.spinner_frame = 0;
             }
             LlmState::Thinking => {
-                self.input_state
-                    .set_disabled(true, Some("Thinking...".to_string()));
+                self.input_disabled = true;
+                self.disabled_reason = Some("Thinking...".to_string());
                 // Pick a new random spinner preset for this LLM cycle
                 self.spinner_frames = random_tui_spinner_frames();
                 self.spinner_frame = 0;
@@ -368,8 +416,8 @@ impl App {
                 self.status_bar.status_label = Some("Thinking...".to_string());
             }
             LlmState::Streaming => {
-                self.input_state
-                    .set_disabled(true, Some("Streaming...".to_string()));
+                self.input_disabled = true;
+                self.disabled_reason = Some("Streaming...".to_string());
                 // Pick a new random spinner preset for the streaming phase
                 // (distinct from the one used during thinking)
                 self.spinner_frames = random_tui_spinner_frames();
@@ -379,8 +427,8 @@ impl App {
                 self.status_bar.status_label = Some("Streaming...".to_string());
             }
             LlmState::ToolCall => {
-                self.input_state
-                    .set_disabled(true, Some("Running tool...".to_string()));
+                self.input_disabled = true;
+                self.disabled_reason = Some("Running tool...".to_string());
                 // Pick a new random spinner preset for this tool call cycle
                 self.spinner_frames = random_tui_spinner_frames();
                 self.spinner_frame = 0;
@@ -433,8 +481,23 @@ impl App {
     /// `Some(InputResult::Eof)` for Ctrl+D on empty line,
     /// and `None` for other key events (buffer updated internally).
     ///
+    /// Key mapping:
+    /// - Enter: submit input
+    /// - Shift+Enter: insert newline
+    /// - Ctrl+C with text: clear input (cut to clipboard)
+    /// - Ctrl+C empty + LLM running: cancel LLM
+    /// - Ctrl+C empty + idle: no-op
+    /// - Ctrl+W with selection: cut selection
+    /// - Ctrl+W without selection: delete word backward
+    /// - Ctrl+Y: paste (yank from kill-ring)
+    /// - Ctrl+D empty: EOF (exit)
+    /// - Ctrl+D with text: forward delete char
+    /// - Up/Down single-line: history navigation
+    /// - Up/Down multi-line: cursor movement in textarea
+    /// - Tab: completion (slash commands, model names)
+    ///
     /// When input is disabled (during LLM processing), only Ctrl+C
-    /// is processed — all other keys are ignored.
+    /// and scroll keys are processed — all other keys are ignored.
     pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Option<InputResult> {
         // Ctrl+C always works, even when input is disabled
         if matches!(
@@ -445,11 +508,24 @@ impl App {
                 ..
             }
         ) {
+            let has_text = !self.textarea_is_empty();
+            if has_text {
+                // Clear input: select all, cut (copies to kill-ring & clipboard), clear
+                self.textarea.select_all();
+                self.textarea.cut();
+                // Try system clipboard (best-effort)
+                if let Some(text) = self.yank_text() {
+                    let _ = cli_clipboard::set_contents(text);
+                }
+                self.textarea.delete_char(); // ensure textarea is empty
+                return None;
+            }
+            // No text: cancel LLM or no-op
             return Some(InputResult::Interrupted);
         }
 
         // When input is disabled (LLM processing), still allow scroll keys
-        if self.input_state.disabled {
+        if self.input_disabled {
             // Allow scroll keys even when input is disabled
             match key.code {
                 KeyCode::PageUp => {
@@ -475,6 +551,62 @@ impl App {
             }
         }
 
+        // When the completion menu is visible, intercept certain keys
+        if self.completion_menu.is_visible() {
+            match key {
+                // Tab or Enter — confirm selection
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Tab,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                }
+                | crossterm::event::KeyEvent {
+                    code: KeyCode::Enter,
+                    ..
+                } => {
+                    if let Some(item) = self.completion_menu.confirm() {
+                        let replacement = format!("{} ", item);
+                        self.set_textarea_content(&replacement);
+                    }
+                    return None;
+                }
+
+                // Escape — dismiss menu
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Esc, ..
+                } => {
+                    self.completion_menu.hide();
+                    return None;
+                }
+
+                // Up — navigate menu
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Up,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    self.completion_menu.select_up();
+                    return None;
+                }
+
+                // Down — navigate menu
+                crossterm::event::KeyEvent {
+                    code: KeyCode::Down,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                } => {
+                    self.completion_menu.select_down();
+                    return None;
+                }
+
+                // Any other key — dismiss menu and fall through to normal handling
+                _ => {
+                    self.completion_menu.hide();
+                    // Don't return — fall through to the normal key handling below
+                }
+            }
+        }
+
         match key {
             // Shift+Enter — insert newline (multi-line input)
             crossterm::event::KeyEvent {
@@ -482,7 +614,7 @@ impl App {
                 modifiers: KeyModifiers::SHIFT,
                 ..
             } => {
-                self.input_state.insert_newline();
+                self.textarea.insert_newline();
                 None
             }
 
@@ -491,8 +623,8 @@ impl App {
                 code: KeyCode::Enter,
                 ..
             } => {
-                let line = self.input_state.buffer.clone();
-                self.input_state.clear();
+                let line = self.textarea_lines();
+                self.textarea_clear();
                 if !line.is_empty() {
                     self.history_input.add_history(&line);
                 }
@@ -501,17 +633,41 @@ impl App {
                 Some(InputResult::Line(line))
             }
 
+            // Ctrl+W — cut selection or delete word backward
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('w'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                if self.textarea.is_selecting() {
+                    self.textarea.cut();
+                } else {
+                    self.textarea.delete_word();
+                }
+                None
+            }
+
+            // Ctrl+Y — paste (yank from kill-ring)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('y'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea.paste();
+                None
+            }
+
             // Ctrl+D — EOF on empty line, forward delete on non-empty
             crossterm::event::KeyEvent {
                 code: KeyCode::Char('d'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if self.input_state.buffer.is_empty() {
+                if self.textarea_is_empty() {
                     Some(InputResult::Eof)
                 } else {
                     // Forward delete: remove character at cursor
-                    self.input_state.delete_char_right();
+                    self.textarea.delete_next_char();
                     None
                 }
             }
@@ -522,7 +678,8 @@ impl App {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.input_state.cursor_home();
+                self.textarea
+                    .move_cursor(ratatui_textarea::CursorMove::Head);
                 None
             }
 
@@ -532,36 +689,7 @@ impl App {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                self.input_state.cursor_end();
-                None
-            }
-
-            // Backspace — delete char before cursor
-            crossterm::event::KeyEvent {
-                code: KeyCode::Backspace,
-                ..
-            } => {
-                self.input_state.backspace();
-                None
-            }
-
-            // Left arrow — move cursor left
-            crossterm::event::KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.input_state.cursor_left();
-                None
-            }
-
-            // Right arrow — move cursor right
-            crossterm::event::KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.input_state.cursor_right();
+                self.textarea.move_cursor(ratatui_textarea::CursorMove::End);
                 None
             }
 
@@ -571,8 +699,8 @@ impl App {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                if self.input_state.is_multiline() && self.input_state.cursor_up() {
-                    // Moved cursor up within multi-line input
+                if self.textarea_is_multiline() {
+                    self.textarea.move_cursor(ratatui_textarea::CursorMove::Up);
                 } else {
                     self.history_prev();
                 }
@@ -585,8 +713,9 @@ impl App {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                if self.input_state.is_multiline() && self.input_state.cursor_down() {
-                    // Moved cursor down within multi-line input
+                if self.textarea_is_multiline() {
+                    self.textarea
+                        .move_cursor(ratatui_textarea::CursorMove::Down);
                 } else {
                     self.history_next();
                 }
@@ -638,13 +767,87 @@ impl App {
                 None
             }
 
+            // Backspace — use textarea (handles single-line & multi-line)
+            // Note: Alt+Backspace (M-DEL) is handled by textarea.input() as
+            // delete_word when we fall through to the _ => branch at the end.
+            crossterm::event::KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea.delete_char();
+                None
+            }
+
+            // Alt+Backspace — delete word backward (emacs M-DEL)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Backspace,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.textarea.delete_word();
+                None
+            }
+
+            // Delete key — forward delete
+            crossterm::event::KeyEvent {
+                code: KeyCode::Delete,
+                ..
+            } => {
+                self.textarea.delete_next_char();
+                None
+            }
+
+            // Left/Right with no modifiers — let textarea handle it
+            crossterm::event::KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea
+                    .move_cursor(ratatui_textarea::CursorMove::Back);
+                None
+            }
+
+            crossterm::event::KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.textarea
+                    .move_cursor(ratatui_textarea::CursorMove::Forward);
+                None
+            }
+
+            // Ctrl+Left — word back
+            crossterm::event::KeyEvent {
+                code: KeyCode::Left,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea
+                    .move_cursor(ratatui_textarea::CursorMove::WordBack);
+                None
+            }
+
+            // Ctrl+Right — word forward
+            crossterm::event::KeyEvent {
+                code: KeyCode::Right,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.textarea
+                    .move_cursor(ratatui_textarea::CursorMove::WordForward);
+                None
+            }
+
             // Regular character — insert at cursor
             crossterm::event::KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
             } => {
-                self.input_state.insert_char(c);
+                self.textarea.insert_char(c);
                 None
             }
 
@@ -653,21 +856,49 @@ impl App {
         }
     }
 
+    /// Check if textarea is empty (no user content)
+    fn textarea_is_empty(&self) -> bool {
+        self.textarea.lines().iter().all(|line| line.is_empty())
+    }
+
+    /// Check if textarea has multiple lines of content
+    fn textarea_is_multiline(&self) -> bool {
+        self.textarea.lines().len() > 1
+    }
+
+    /// Get the textarea content as a single String (lines joined by \n)
+    fn textarea_lines(&self) -> String {
+        self.textarea.lines().join("\n")
+    }
+
+    /// Clear the textarea content
+    fn textarea_clear(&mut self) {
+        // TextArea::clear() returns bool but we don't need it here
+        let _ = self.textarea.clear();
+    }
+
+    /// Get the last yanked/cut text (for clipboard copy)
+    fn yank_text(&self) -> Option<String> {
+        let text = self.textarea.yank_text();
+        if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
+        }
+    }
+
     /// Navigate to previous history entry
     ///
-    /// This duplicates the logic in `CrosstermInput::history_prev()` because
-    /// `CrosstermInput` maintains its own buffer/cursor state (used by the
-    /// `InputBackend` trait) while `App` uses `InputState` for TUI rendering.
-    /// PR3 should unify these into a single input state owner.
+    /// Loads the previous command from history into the textarea.
+    /// On transition into history mode, saves the current textarea content.
     fn history_prev(&mut self) {
-        // Save current buffer before starting navigation
         if self.history_input.history.is_empty() {
             return;
         }
 
         // If not navigating, save current buffer
         if self.history_input.history_pos.is_none() {
-            self.history_input.saved_buffer = self.input_state.buffer.clone();
+            self.history_input.saved_buffer = self.textarea_lines();
             self.history_input.history_pos =
                 Some(self.history_input.history.len().saturating_sub(1));
         } else if let Some(pos) = self.history_input.history_pos {
@@ -679,14 +910,13 @@ impl App {
         }
 
         if let Some(pos) = self.history_input.history_pos {
-            self.input_state.buffer = self.history_input.history[pos].clone();
-            self.input_state.cursor_pos = self.input_state.buffer.len();
+            self.set_textarea_content(&self.history_input.history[pos].clone());
         }
     }
 
     /// Navigate to next history entry
     ///
-    /// See `history_prev()` for the dual-state documentation.
+    /// When navigating past the newest entry, restores the saved buffer.
     fn history_next(&mut self) {
         match self.history_input.history_pos {
             None => {}
@@ -694,54 +924,120 @@ impl App {
                 if pos + 1 >= self.history_input.history.len() {
                     // Past the newest entry: restore saved buffer
                     self.history_input.history_pos = None;
-                    self.input_state.buffer = self.history_input.saved_buffer.clone();
-                    self.input_state.cursor_pos = self.input_state.buffer.len();
+                    self.set_textarea_content(&self.history_input.saved_buffer.clone());
                 } else {
                     self.history_input.history_pos = Some(pos + 1);
-                    self.input_state.buffer = self.history_input.history[pos + 1].clone();
-                    self.input_state.cursor_pos = self.input_state.buffer.len();
+                    self.set_textarea_content(&self.history_input.history[pos + 1].clone());
                 }
             }
         }
     }
 
-    /// Attempt tab completion based on current input buffer.
+    /// Set textarea content from a string (replaces all lines).
+    ///
+    /// Splits on newlines, clears the textarea, and inserts the new content
+    /// with cursor at end.
+    fn set_textarea_content(&mut self, text: &str) {
+        let _ = self.textarea.clear();
+        if !text.is_empty() {
+            // Insert string handles both \n and \r\n
+            self.textarea.insert_str(text);
+        }
+    }
+
+    /// Attempt tab completion based on current textarea content.
     ///
     /// Uses `ChatCompleter` to find slash command or model name completions.
-    /// On single match: replaces the buffer with the completed text.
-    /// On multiple matches: cycles through them on repeated Tab presses.
+    /// On single match: replaces the content with the completed text.
+    /// On multiple matches: shows the completion menu overlay.
     /// When no matches: does nothing (bell could be added later).
     fn try_tab_complete(&mut self) {
         use super::completer::CompletionResult;
 
-        let buffer = self.input_state.buffer.clone();
-        let cursor_pos = self.input_state.cursor_pos;
+        let buffer = self.textarea_lines();
+        let cursor_pos = self.cursor_byte_offset();
 
         let result = self.completer.complete(&buffer, cursor_pos);
 
         match result {
             CompletionResult::None => {
-                // No completion available — could ring terminal bell here
+                // No completion — hide menu if visible
+                self.completion_menu.hide();
             }
             CompletionResult::Single {
                 replacement,
                 cursor_pos,
             } => {
-                self.input_state.buffer = replacement;
-                self.input_state.cursor_pos = cursor_pos;
+                self.completion_menu.hide();
+                self.set_textarea_content(&replacement);
+                // Move cursor to the specified position
+                self.set_cursor_to_byte_offset(cursor_pos);
             }
             CompletionResult::Multiple {
                 matches,
-                cycle_index,
+                cycle_index: _,
             } => {
-                // Use the current cycle match as the completion
-                if let Some(selected) = matches.get(cycle_index) {
-                    let replacement = format!("{} ", selected);
-                    self.input_state.buffer = replacement.clone();
-                    self.input_state.cursor_pos = replacement.len();
-                }
+                // Compute common prefix for highlighting
+                let common = common_prefix_str(&matches);
+                self.completion_menu.show(matches, common);
             }
         }
+    }
+
+    /// Get the byte offset of the cursor in the textarea.
+    ///
+    /// Calculates the byte position by summing line lengths + newlines
+    /// for all lines before the cursor's line, plus the cursor column.
+    fn cursor_byte_offset(&self) -> usize {
+        let cursor = self.textarea.cursor();
+        let row = cursor.0;
+        let col = cursor.1;
+        let lines = self.textarea.lines();
+        let mut offset = 0;
+        for (i, line) in lines.iter().enumerate() {
+            if i == row {
+                // Count characters (not bytes) in the line up to col,
+                // then get byte offset of that character boundary
+                let char_offset = col.min(line.chars().count());
+                return offset + line.chars().take(char_offset).collect::<String>().len();
+            }
+            offset += line.len() + 1; // +1 for newline
+        }
+        offset
+    }
+
+    /// Set the cursor to a specific byte offset in the textarea.
+    ///
+    /// Navigates through lines to find the row and column that
+    /// corresponds to the given byte offset.
+    fn set_cursor_to_byte_offset(&mut self, byte_offset: usize) {
+        let lines = self.textarea.lines();
+        let mut remaining = byte_offset;
+        for (row, line) in lines.iter().enumerate() {
+            if remaining <= line.len() {
+                // Find the character column that corresponds to this byte offset
+                let mut byte_pos = 0;
+                let mut col: u16 = 0;
+                for ch in line.chars() {
+                    byte_pos += ch.len_utf8();
+                    if byte_pos > remaining {
+                        break;
+                    }
+                    col += 1;
+                }
+                // If remaining is past all chars, cursor goes to end of line
+                if remaining > line.len() {
+                    col = line.chars().count() as u16;
+                }
+                self.textarea
+                    .move_cursor(ratatui_textarea::CursorMove::Jump(row as u16, col));
+                return;
+            }
+            remaining = remaining.saturating_sub(line.len() + 1);
+        }
+        // If byte_offset is past the end, move to bottom
+        self.textarea
+            .move_cursor(ratatui_textarea::CursorMove::Bottom);
     }
 
     /// Update model names in the completer (e.g., after a model switch).
@@ -767,7 +1063,7 @@ impl App {
 
             // Input line height adapts to multi-line content.
             // Cap at 10 lines to prevent the input from consuming the entire screen.
-            let input_height = self.input_state.line_count().min(10);
+            let input_height = self.textarea.lines().len().min(10) as u16;
 
             // Layout: chat area (flexible) | status bar (2 lines) | input line (dynamic)
             let chunks = Layout::vertical([
@@ -790,9 +1086,51 @@ impl App {
             super::tui::components::status_bar::render(f, chunks[1], &self.status_bar);
 
             // Render input line
-            super::tui::components::input_line::render(f, chunks[2], &self.input_state);
+            super::tui::components::input_line::render(
+                f,
+                chunks[2],
+                &self.textarea,
+                self.input_disabled,
+                self.disabled_reason.as_deref(),
+            );
+
+            // Render completion menu overlay (above the status bar)
+            // This is drawn LAST so it floats on top of other widgets
+            if self.completion_menu.is_visible() {
+                super::tui::components::completion_menu::render_overlay(
+                    f,
+                    chunks[1],
+                    &self.completion_menu,
+                );
+            }
         })?;
 
         Ok(())
     }
+}
+
+/// Find the common prefix among a list of strings.
+///
+/// Used to highlight the shared portion of completion items in the menu.
+fn common_prefix_str(strings: &[String]) -> String {
+    if strings.is_empty() {
+        return String::new();
+    }
+
+    let first = strings[0].as_bytes();
+    let mut prefix_len = first.len();
+
+    for s in &strings[1..] {
+        let bytes = s.as_bytes();
+        let mut j = 0;
+        while j < prefix_len && j < bytes.len() && first[j] == bytes[j] {
+            j += 1;
+        }
+        prefix_len = j;
+        if prefix_len == 0 {
+            return String::new();
+        }
+    }
+
+    String::from_utf8_lossy(&first[..prefix_len]).to_string()
 }

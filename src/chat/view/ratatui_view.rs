@@ -34,8 +34,8 @@ use crate::consts::roles::format_role_label;
 use crate::debug_tools;
 use crate::utils::strip_ansi_codes;
 
-use super::{ChatView, TokenMetrics, WelcomeInfo};
 use super::super::tui::markdown::collapse_tables;
+use super::{ChatView, TokenMetrics, WelcomeInfo};
 use crate::chat::app::{App, LlmState};
 use crate::chat::tui::components::chat_area::ChatMessage;
 use crate::chat::tui::markdown::MarkdownTheme;

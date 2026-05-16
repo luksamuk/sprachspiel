@@ -14,7 +14,7 @@
 //!     → App::try_tab_complete()
 //!         → ChatCompleter::complete(buffer, cursor_pos)
 //!             → returns CompletionResult
-//!         → updates InputState with replacement
+//!         → updates TextArea with replacement
 //! ```
 
 /// Slash commands available for tab completion.
@@ -467,11 +467,13 @@ pub enum CompletionResult {
         /// New cursor position (byte offset) in the replacement
         cursor_pos: usize,
     },
-    /// Multiple completions found — cycle to the next one
+    /// Multiple completions found — show in completion menu
     Multiple {
-        /// All matching completion strings (for cycling)
+        /// All matching completion strings (for menu display)
         matches: Vec<String>,
         /// Current index in the matches cycle (0-based)
+        #[allow(dead_code)]
+        // Kept for API compatibility; menu uses its own selection state
         cycle_index: usize,
     },
 }

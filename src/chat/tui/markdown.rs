@@ -1790,7 +1790,8 @@ mod tests {
 
     #[test]
     fn test_collapse_tables_multiple() {
-        let content = "| X | Y |\n|---|---|\n| 1 | 2 |\n\nSome text\n\n| A | B |\n|---|---|\n| 3 | 4 |";
+        let content =
+            "| X | Y |\n|---|---|\n| 1 | 2 |\n\nSome text\n\n| A | B |\n|---|---|\n| 3 | 4 |";
         let collapsed = collapse_tables(content);
         let count = collapsed.matches("(...)").count();
         assert_eq!(count, 2, "Two tables should produce two (...) placeholders");
