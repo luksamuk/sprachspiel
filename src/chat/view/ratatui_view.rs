@@ -447,12 +447,14 @@ impl RatatuiView {
 
         for (user_msg, asst_msg) in exchanges {
             let user_content = strip_thinking_tags(&user_msg.content).replace('\n', " ");
-            let truncated_user = crate::utils::truncate_visual_width(&user_content, user_content_width);
+            let truncated_user =
+                crate::utils::truncate_visual_width(&user_content, user_content_width);
             lines.push(format!("  {}: {}", user_label, truncated_user));
 
             if let Some(asst) = asst_msg {
                 let asst_content = strip_thinking_tags(&asst.content).replace('\n', " ");
-                let truncated_asst = crate::utils::truncate_visual_width(&asst_content, assistant_content_width);
+                let truncated_asst =
+                    crate::utils::truncate_visual_width(&asst_content, assistant_content_width);
                 lines.push(format!("  {}: {}", assistant_label, truncated_asst));
             }
         }
@@ -495,8 +497,7 @@ impl RatatuiView {
     /// Called for each token chunk from the LLM during streaming.
     pub fn stream_token(&mut self, token: &str) {
         // If we're in Thinking or ToolCall state, transition to Streaming
-        if self.app.llm_state() == LlmState::Thinking
-            || self.app.llm_state() == LlmState::ToolCall
+        if self.app.llm_state() == LlmState::Thinking || self.app.llm_state() == LlmState::ToolCall
         {
             self.app.set_llm_state(LlmState::Streaming);
         }
@@ -510,9 +511,7 @@ impl RatatuiView {
     /// Called for each thinking chunk from the LLM during streaming.
     pub fn stream_thinking(&mut self, token: &str) {
         // If we're in Idle or ToolCall state, transition to Thinking
-        if self.app.llm_state() == LlmState::Idle
-            || self.app.llm_state() == LlmState::ToolCall
-        {
+        if self.app.llm_state() == LlmState::Idle || self.app.llm_state() == LlmState::ToolCall {
             self.app.set_llm_state(LlmState::Thinking);
         }
         self.app.append_stream_thinking(token);

@@ -30,10 +30,10 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
-use unicode_width::UnicodeWidthChar;
 
 use super::super::markdown::{MarkdownTheme, render_markdown};
 use super::super::styles;
+use super::super::wrap::wrap_line;
 use crate::chat::app::ScrollState;
 
 /// Message type determines how a chat message is rendered.
@@ -143,68 +143,6 @@ impl ChatMessage {
 /// Indent prefix for thinking block content (4 spaces).
 const THINKING_INDENT: &str = "    ";
 
-/// Word-wrap a line of text to fit within `width` visual columns,
-/// breaking at spaces when possible. Unicode-aware: CJK characters
-/// count as 2 columns, combining characters as 0, etc.
-///
-/// If a single word exceeds `width`, it is hard-broken at the column limit.
-/// Returns owned Strings because Unicode-aware slicing cannot return &str.
-fn wrap_line(line: &str, width: usize) -> Vec<String> {
-    if width == 0 {
-        return vec![line.to_string()];
-    }
-
-    let visual_len: usize = line.chars().map(|c| c.width().unwrap_or(0)).sum();
-    if visual_len <= width {
-        return vec![line.to_string()];
-    }
-
-    let mut result = Vec::new();
-    let mut current_line = String::new();
-    let mut current_width = 0usize;
-
-    for word in line.split_whitespace() {
-        let word_width: usize = word.chars().map(|c| c.width().unwrap_or(0)).sum();
-
-        if current_width == 0 {
-            // First word on the line
-            if word_width <= width {
-                current_line.push_str(word);
-                current_width = word_width;
-            } else {
-                // Word is wider than available width — hard-break it
-                let chunks = hard_break_word(word, width);
-                result.extend(chunks);
-            }
-        } else if current_width + 1 + word_width <= width {
-            // Word fits on current line with a space
-            current_line.push(' ');
-            current_line.push_str(word);
-            current_width += 1 + word_width;
-        } else {
-            // Word doesn't fit — push current line and start new one
-            result.push(current_line);
-
-            if word_width <= width {
-                current_line = word.to_string();
-                current_width = word_width;
-            } else {
-                // Word is wider than available width — hard-break it
-                let chunks = hard_break_word(word, width);
-                result.extend(chunks);
-                current_line = String::new();
-                current_width = 0;
-            }
-        }
-    }
-
-    if !current_line.is_empty() {
-        result.push(current_line);
-    }
-
-    result
-}
-
 /// Detect markdown table syntax in content.
 ///
 /// A markdown table has:
@@ -253,33 +191,6 @@ fn count_wrapped_lines(lines: &[Line], width: usize) -> usize {
         total += wrapped.len().max(1);
     }
     total
-}
-
-/// Hard-break a word that exceeds `width` visual columns.
-///
-/// Breaks at Unicode character boundaries, splitting the word into chunks
-/// that each fit within `width` columns (accounting for CJK double-width).
-fn hard_break_word(word: &str, width: usize) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut chunk = String::new();
-    let mut chunk_width = 0usize;
-
-    for ch in word.chars() {
-        let ch_width = ch.width().unwrap_or(0);
-        if chunk_width + ch_width > width && !chunk.is_empty() {
-            result.push(chunk);
-            chunk = String::new();
-            chunk_width = 0;
-        }
-        chunk.push(ch);
-        chunk_width += ch_width;
-    }
-
-    if !chunk.is_empty() {
-        result.push(chunk);
-    }
-
-    result
 }
 
 /// Render the chat area component.
@@ -413,93 +324,6 @@ pub fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Helper to create Vec<String> for comparison with wrap_line output
-    macro_rules! sv {
-        ($($s:expr),* $(,)?) => { vec![$($s.to_string()),*] };
-    }
-
-    #[test]
-    fn test_wrap_line_short() {
-        // Line fits within width — returned as-is
-        let result = wrap_line("hello", 80);
-        assert_eq!(result, sv!["hello"]);
-    }
-
-    #[test]
-    fn test_wrap_line_break_at_space() {
-        // "hello world foo" with width=11:
-        // "hello" (5) + " " (1) + "world" (5) = 11 → "hello world" fits
-        // But our algorithm puts "hello" on line 1, then "world foo" on line 2
-        // Wait — let's trace it: first word "hello" (5), fits. Then " world" (6) → 5+1+5=11 ≤ 11.
-        // So "hello world" fits in 11 cols. Then " foo" → need new line: "foo" (3).
-        // Result: ["hello world", "foo"]
-        let result = wrap_line("hello world foo", 11);
-        assert_eq!(result, sv!["hello world", "foo"]);
-    }
-
-    #[test]
-    fn test_wrap_line_space_at_boundary() {
-        // "one two three" with width=7:
-        // "one" (3) → fits. " two" (4) → 3+1+3=7 ≤ 7 → "one two" fits.
-        // " three" (6) → need new line: "three" (5).
-        // Result: ["one two", "three"]
-        let result = wrap_line("one two three", 7);
-        assert_eq!(result, sv!["one two", "three"]);
-    }
-
-    #[test]
-    fn test_wrap_line_no_space() {
-        // No space — hard break using Unicode char boundaries
-        let result = wrap_line("abcdefghij", 5);
-        assert_eq!(result, sv!["abcde", "fghij"]);
-    }
-
-    #[test]
-    fn test_wrap_line_multiple_breaks() {
-        // "one two three four five" with width=8:
-        // "one" (3) → fits. " two" (4) → 3+1+3=7 ≤ 8 → "one two" fits.
-        // " three" (6) → need new line: "three" (5).
-        // " four" (5) → 5+1+4=10 > 8 → new line: "four" (4).
-        // " five" (5) → 4+1+4=9 > 8 → new line: "five" (4).
-        let result = wrap_line("one two three four five", 8);
-        assert_eq!(result, sv!["one two", "three", "four", "five"]);
-    }
-
-    #[test]
-    fn test_wrap_line_empty() {
-        let result = wrap_line("", 80);
-        assert_eq!(result, sv![""]);
-    }
-
-    #[test]
-    fn test_wrap_line_zero_width() {
-        // Zero width should return as-is (cannot wrap)
-        let result = wrap_line("hello", 0);
-        assert_eq!(result, sv!["hello"]);
-    }
-
-    #[test]
-    fn test_wrap_line_unicode() {
-        // Unicode-aware: "olá mundo" — "olá" is 3 chars (4 bytes), "mundo" is 5 chars
-        // Width 10: "olá" (3 cols) + " " + "mundo" (5 cols) = 9 cols → fits
-        let result = wrap_line("olá mundo", 10);
-        assert_eq!(result, sv!["olá mundo"]);
-
-        // Width 5: "olá" (3 cols) + " " + "mundo" (5 cols) → "olá" then "mundo"
-        let result = wrap_line("olá mundo", 5);
-        assert_eq!(result, sv!["olá", "mundo"]);
-    }
-
-    #[test]
-    fn test_wrap_line_cjk() {
-        // CJK characters are 2 columns wide
-        // "日本語" = 3 chars × 2 cols = 6 visual cols, "test" = 4 cols
-        // Width 8: "日本語" (6) + " " (1) + "t" (1) = 8 → "日本語 test" doesn't fit
-        // "日本語" (6) fits in 8, then "test" (4) fits in 8
-        let result = wrap_line("日本語 test", 8);
-        assert_eq!(result, sv!["日本語", "test"]);
-    }
 
     #[test]
     fn test_content_has_table_valid() {

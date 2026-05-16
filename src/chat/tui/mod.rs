@@ -25,6 +25,7 @@ pub mod banner;
 pub mod components;
 pub mod markdown;
 pub mod styles;
+pub mod wrap;
 
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;

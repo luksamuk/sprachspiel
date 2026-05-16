@@ -363,10 +363,7 @@ impl App {
                 // Pick a new random spinner preset for this LLM cycle
                 self.spinner_frames = random_tui_spinner_frames();
                 self.spinner_frame = 0;
-                let frame = self
-                    .spinner_frames
-                    .first()
-                    .unwrap_or(&"⠋");
+                let frame = self.spinner_frames.first().unwrap_or(&"⠋");
                 self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Thinking...".to_string());
             }
@@ -377,10 +374,7 @@ impl App {
                 // (distinct from the one used during thinking)
                 self.spinner_frames = random_tui_spinner_frames();
                 self.spinner_frame = 0;
-                let frame = self
-                    .spinner_frames
-                    .first()
-                    .unwrap_or(&"⠋");
+                let frame = self.spinner_frames.first().unwrap_or(&"⠋");
                 self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Streaming...".to_string());
             }
@@ -390,10 +384,7 @@ impl App {
                 // Pick a new random spinner preset for this tool call cycle
                 self.spinner_frames = random_tui_spinner_frames();
                 self.spinner_frame = 0;
-                let frame = self
-                    .spinner_frames
-                    .first()
-                    .unwrap_or(&"⠋");
+                let frame = self.spinner_frames.first().unwrap_or(&"⠋");
                 self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Running tool...".to_string());
             }
