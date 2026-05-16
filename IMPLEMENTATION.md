@@ -3922,7 +3922,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** 🔄 IN PROGRESS (W6-PR3: Streaming Refinement + Tab Completion)
+**Status:** ✅ COMPLETED (W6-PR3: Streaming Refinement + Tab Completion)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -4328,13 +4328,13 @@ image = "0.25"              # Removed — only needed for ratatui-image
 
 | Phase | Description | Effort | Status |
 |-------|-------------|-------|--------|
-| 3.0 | Quick wins: fix `/compact` suppress_spinner bug, audit all indicatif call sites | 0.75d | 🔄 IN PROGRESS |
-| 3.1 | Tab completion: `ChatCompleter` struct with `/commands` + `model_names`; unify `InputState`/`CrosstermInput` dual state | 2.5d | 📋 |
-| 3.2 | MPSC streaming channel: async event loop with `tokio::sync::mpsc`, `AppEvent::LlmToken`/`LlmComplete`/`LlmError`, background LLM task | 2d | 📋 |
-| 3.3 | Streaming token display + Ctrl+C cancellation: incremental `ChatMessage::assistant_streaming` updates, markdown re-render on completion, `tokio::select!` for cancellation | 2.5d | 📋 |
-| 3.4 | Tool call/result display + error recovery: activate `LlmState::ToolCall`, wire `TUI_CALLBACK` during streaming, error display in TUI | 1d | 📋 |
-| 3.5 | Multi-line input: Shift+Enter for newline, dynamic input line height, `\` continuation | 1d | 📋 |
-| 3.6 | Integration, testing, polish | 1d | 📋 |
+| 3.0 | Quick wins: fix `/compact` suppress_spinner bug, audit all indicatif call sites | 0.75d | ✅ COMPLETED |
+| 3.1 | Tab completion: `ChatCompleter` struct with `/commands` + `model_names`; unify `InputState`/`CrosstermInput` dual state | 2.5d | ✅ COMPLETED |
+| 3.2 | MPSC streaming channel: async event loop with `tokio::sync::mpsc`, `AppEvent::LlmToken`/`LlmComplete`/`LlmError`, background LLM task | 2d | ✅ COMPLETED |
+| 3.3 | Streaming token display + Ctrl+C cancellation: incremental `ChatMessage::assistant_streaming` updates, markdown re-render on completion, `tokio::select!` for cancellation | 2.5d | ✅ COMPLETED |
+| 3.4 | Tool call/result display + error recovery: activate `LlmState::ToolCall`, wire `TUI_CALLBACK` during streaming, error display in TUI | 1d | ✅ COMPLETED (3.4a: table detection, 3.4b: embedding output suppression) |
+| 3.5 | Multi-line input: Shift+Enter for newline, dynamic input line height, cursor navigation across lines | 1d | ✅ COMPLETED |
+| 3.6 | Integration, testing, polish | 1d | ✅ COMPLETED |
 | **Total** | | **~10.75d** | |
 
 **Key architectural change: async event loop**
