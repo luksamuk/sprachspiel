@@ -835,6 +835,8 @@ impl App {
             // and any other key the textarea knows about.
             _ => {
                 self.textarea.input(key);
+                // Auto-trigger completion when typing slash commands
+                self.auto_complete_on_type();
                 None
             }
         }
@@ -1001,6 +1003,53 @@ impl App {
                     let common = common_prefix_str(&matches);
                     self.completion_menu.show(matches, descriptions, common);
                 }
+            }
+        }
+    }
+
+    /// Auto-trigger completion menu when typing slash commands.
+    ///
+    /// After each character is typed, checks if the current input starts
+    /// with `/` and has multiple completions available. If so, shows the
+    /// completion menu automatically (no need to press Tab first).
+    /// If only one completion matches, extends the common prefix silently.
+    /// If no slash command matches, hides the menu.
+    fn auto_complete_on_type(&mut self) {
+        let buffer = self.textarea_lines();
+        let cursor_pos = self.cursor_byte_offset();
+
+        // Only auto-complete at end of buffer for slash commands
+        if cursor_pos != buffer.len() || !buffer.starts_with('/') {
+            // Hide menu if we're no longer in slash command context
+            if self.completion_menu.is_visible() && !buffer.starts_with('/') {
+                self.completion_menu.hide();
+            }
+            return;
+        }
+
+        let result = self.completer.complete(&buffer, cursor_pos);
+        match result {
+            super::completer::CompletionResult::None => {
+                self.completion_menu.hide();
+            }
+            super::completer::CompletionResult::Single {
+                replacement,
+                cursor_pos,
+            } => {
+                self.completion_menu.hide();
+                // Auto-extend to common prefix silently
+                if replacement != buffer {
+                    self.set_textarea_content(&replacement);
+                    self.set_cursor_to_byte_offset(cursor_pos);
+                }
+            }
+            super::completer::CompletionResult::Multiple {
+                matches,
+                descriptions,
+                ..
+            } => {
+                let common = common_prefix_str(&matches);
+                self.completion_menu.show(matches, descriptions, common);
             }
         }
     }
