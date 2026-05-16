@@ -4290,45 +4290,128 @@ image = "0.25"              # Removed — only needed for ratatui-image
 
 ---
 
-#### PR 3: Streaming Refinement + Tab Completion (~4-5 days) — #147
+#### PR 3: Streaming Refinement + Tab Completion (~10-11 days) — #147
 
-**Goal:** Add tab completion, refine streaming token display, migrate tool call/result and error display to chat area, and integrate fully with `handle_user_message()`.
+**Goal:** Make the TUI chat fully functional with async streaming, tab completion, Ctrl+C cancellation, multi-line input, and full command/tool integration. Resolve all PR2 deferred limitations.
 
-**Why smaller (originally ~5-6 days):** CrosstermInput and the event loop moved to PR2. PR3 focuses on polish and completion features.
+**Why longer than originally estimated (4-5 → 10-11 days):** The original estimate assumed the async event loop was partially in place. In reality, `handle_user_message_tui().await` blocks the entire event loop, requiring a full architectural migration from synchronous polling to async mpsc channels. Additionally, Ctrl+C cancellation requires `tokio::select!` integration with the LLM call, and multi-line input requires input state refactoring.
 
 **Deferred from PR2 (known limitations to be resolved in PR3):**
 
 | Limitation | Impact | PR3 Phase |
 |-----------|--------|-----------|
 | Spinner freezes during LLM thinking | Status bar spinner only animates during `show_*` calls; main loop blocked on `handle_user_message_tui().await` | 3.2 (mpsc async channel) |
-| Status bar not updated during streaming | Progress bar only updates after response completes (`update_status_tokens` in `handle_user_message_tui`) and in `show_token_metrics`/`show_context_warning`; no mid-response updates | 3.2 (mpsc async channel) |
-| InputState/CrosstermInput dual state | Both `InputState` (TUI rendering) and `CrosstermInput` (history management) maintain buffer/cursor with manual synchronisation in `App::history_prev/next` | 3.6 (input unification) |
+| Status bar not updated during streaming | Progress bar only updates after response completes (`update_status_tokens` in `handle_user_message_tui`); no mid-response updates | 3.2 (mpsc async channel) |
+| InputState/CrosstermInput dual state | Both `InputState` (TUI rendering) and `CrosstermInput` (history management) maintain buffer/cursor with manual synchronisation in `App::history_prev/next` | 3.1 (tab completion + input unification) |
 | `LlmState::ToolCall` unused | Tool call UI shows spinner label but `App::set_llm_state(ToolCall)` not wired to actual tool calls | 3.4 (tool display) |
 | `assistant_streaming` rendering | `ChatMessage::assistant_streaming` exists but plain text rendering only; no incremental markdown | 3.3 (streaming refinement) |
-| `/compact` indicatif spinner artifact | `handle_compact()` at `command_handlers.rs:789` passes `false` hardcoded to `suppress_spinner`, ignoring `RatatuiView::suppress_progress_spinner()` (which returns `true`). Indicatif `ProgressBar` writes ANSI to stderr, corrupting ratatui alternate screen. Fix requires threading `view.suppress_progress_spinner()` through `handle_command()` → `handle_compact()` → `compact_conversation()` | 3.6 (command dispatch refactor) |
+| `/compact` indicatif spinner artifact | `handle_compact()` at `command_handlers.rs:789` passes `false` hardcoded to `suppress_spinner`, ignoring `RatatuiView::suppress_progress_spinner()` (which returns `true`). Indicatif `ProgressBar` writes ANSI to stderr, corrupting ratatui alternate screen. | 3.0 (quick win) |
+| No Ctrl+C cancellation during LLM processing | `InputResult::Interrupted` is returned by `handle_key()` but ignored during `handle_user_message_tui().await` — user cannot cancel long LLM responses | 3.3 (Ctrl+C cancellation) |
+| No multi-line input | Enter always submits; no Shift+Enter for newlines in input | 3.5 (multi-line) |
+
+**Indicatif Spinner Audit (all call sites in chat path):**
+
+| File | Line | Call | Suppress? | Risk |
+|------|------|------|-----------|------|
+| `core.rs:494` | `create_spinner_suppressed("Thinking...", suppress)` | Suppress from `ChatView` | ✅ Safe — `suppress=true` in TUI → `ProgressBar::hidden()` |
+| `core.rs:544` | `finish_spinner(spinner.clone())` | Retry success | ✅ Safe — hidden spinner finish is no-op |
+| `core.rs:557` | `finish_spinner(spinner)` | Normal finish | ✅ Safe — hidden spinner finish is no-op |
+| `core.rs:719` | `create_spinner_suppressed("Compacting...", suppress)` | `/compact` | ❌ **BUG** — `suppress` comes from `compact_conversation()` which uses `view.suppress_progress_spinner()` from `handle_compact()` at `command_handlers.rs:789` which passes `false` hardcoded instead of `view.suppress_progress_spinner()` |
+| `continuation.rs:249` | `view.show_progress("Paused...")` | Post-compaction | ✅ Safe — uses ChatView, not indicatif |
+| `continuation.rs:302` | `view.show_progress(format!(...))` | Pre-continuation | ✅ Safe — uses ChatView |
+| `continuation.rs:420` | `view.show_progress("Auto-compacting...")` | Overflow compaction | ✅ Safe — uses ChatView |
+| `continuation.rs:464` | `view.show_progress(format!(...))` | Inter-tool compaction | ✅ Safe — uses ChatView |
+
+**Only 1 bug found:** `handle_compact()` passes `false` instead of `view.suppress_progress_spinner()`. Fix: thread the `suppress` flag through `handle_compact()` → `compact_conversation()` → `create_spinner_suppressed()`.
 
 **Implementation Phases:**
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 3.1 | Tab completion in CrosstermInput (reuse `ChatCompleter`) | 🔄 IN PROGRESS |
-| 3.2 | mpsc channel for LLM streaming (background task → event loop) | 📋 |
-| 3.3 | Streaming token display refinement (incremental append, markdown re-render on completion) | 📋 |
-| 3.4 | Tool call/result display in chat area (CommandOutput variants rendered as ratatui widgets) | 📋 |
-| 3.5 | Error display and recovery in TUI | 📋 |
-| 3.6 | Full integration with `handle_user_message()` and command dispatch | 📋 |
-| 3.7 | Multi-line input support (Shift+Enter or \ continuation) | 📋 |
+| Phase | Description | Effort | Status |
+|-------|-------------|-------|--------|
+| 3.0 | Quick wins: fix `/compact` suppress_spinner bug, audit all indicatif call sites | 0.75d | 🔄 IN PROGRESS |
+| 3.1 | Tab completion: `ChatCompleter` struct with `/commands` + `model_names`; unify `InputState`/`CrosstermInput` dual state | 2.5d | 📋 |
+| 3.2 | MPSC streaming channel: async event loop with `tokio::sync::mpsc`, `AppEvent::LlmToken`/`LlmComplete`/`LlmError`, background LLM task | 2d | 📋 |
+| 3.3 | Streaming token display + Ctrl+C cancellation: incremental `ChatMessage::assistant_streaming` updates, markdown re-render on completion, `tokio::select!` for cancellation | 2.5d | 📋 |
+| 3.4 | Tool call/result display + error recovery: activate `LlmState::ToolCall`, wire `TUI_CALLBACK` during streaming, error display in TUI | 1d | 📋 |
+| 3.5 | Multi-line input: Shift+Enter for newline, dynamic input line height, `\` continuation | 1d | 📋 |
+| 3.6 | Integration, testing, polish | 1d | 📋 |
+| **Total** | | **~10.75d** | |
+
+**Key architectural change: async event loop**
+
+The event loop migrates from synchronous polling to async dual-source:
+
+```
+BEFORE (PR2):
+  loop { poll(100ms) → key? → handle_key() → render() }
+  On Enter: handle_user_message_tui().await (BLOCKS event loop)
+
+AFTER (PR3):
+  loop { tokio::select! {
+    crossterm_event? → handle_key() → render()
+    llm_event?       → update_streaming() → render()
+    llm_done?        → re_render_markdown() → set_idle() → render()
+    llm_error?       → show_error() → set_idle() → render()
+    ctrl_c?          → cancel_llm() → set_idle() → render()
+  }}
+  On Enter: tokio::spawn(handle_user_message()) → sends tokens via mpsc
+  Ctrl+C: send cancellation signal → drop LLM result → set idle
+```
+
+**Tab completion architecture:**
+
+```rust
+pub struct ChatCompleter {
+    slash_commands: Vec<&'static str>,  // ["/help", "/model", "/new", ...]
+    model_names: Vec<String>,           // from user_models::list_all_model_names()
+}
+
+impl ChatCompleter {
+    pub fn complete(&self, input: &str) -> Option<String> {
+        // If input starts with '/', complete against slash_commands
+        // If input starts with '/model ', complete against model_names
+        // Otherwise, no completion
+    }
+}
+```
+
+**Ctrl+C cancellation architecture:**
+
+```rust
+// In repl_tui.rs:
+let cancel_token = tokio_util::sync::CancellationToken::new();
+let cancel_clone = cancel_token.clone();
+
+tokio::spawn(async move {
+    let result = handle_user_message(..., cancel_clone).await;
+    llm_sender.send(LlmEvent::Complete(result)).ok();
+});
+
+loop {
+    tokio::select! {
+        key = crossterm_event() => { ... }
+        event = llm_receiver.recv() => { ... }
+        _ = cancel_token.cancelled() => { ... }
+    }
+}
+```
 
 **Files to Create:**
-- (None new — modifications to existing PR2 files)
+- `src/chat/completer.rs` — `ChatCompleter` struct with slash commands + model names
 
 **Files to Modify:**
-- `src/chat/app.rs` — Add streaming channel, tab completion, tool display
-- `src/chat/input/crossterm_input.rs` — Add tab completion, multi-line
-- `src/chat/view/ratatui_view.rs` — Add tool call/result rendering
-- `src/chat/repl.rs` — Wire App::run() fully
+- `src/chat/app.rs` — Add `mpsc::Receiver<LlmEvent>`, streaming message update, Tab key handling, Ctrl+C cancellation, `Shift+Enter` handling
+- `src/chat/completer.rs` (NEW) — ChatCompleter with completion candidates
+- `src/chat/input/crossterm_input.rs` — Unify with InputState, add tab completion dispatch
+- `src/chat/input/mod.rs` — Export ChatCompleter
+- `src/chat/view/ratatui_view.rs` — Streaming message update, tool call during streaming, error display
+- `src/chat/repl_tui.rs` — Async event loop with `tokio::select!`, LLM task spawning, cancellation
+- `src/chat/core.rs` — Accept `CancellationToken`, return streaming sender, fix `suppress_spinner` in `compact_conversation`
+- `src/chat/command_handlers.rs` — Thread `suppress_progress_spinner()` through `handle_compact()`
+- `src/chat/tui/components/input_line.rs` — Multi-line input rendering (dynamic height)
+- `src/chat/tui/components/chat_area.rs` — Streaming token incremental append
 
-**Checkpoint:** Chat mode fully functional with tab completion, streaming markdown, tool display, error recovery. Non-chat subcommands unchanged.
+**Checkpoint:** Chat mode fully functional with tab completion, streaming markdown, tool display, error recovery, Ctrl+C cancellation, multi-line input. Non-chat subcommands unchanged.
 
 ---
 
