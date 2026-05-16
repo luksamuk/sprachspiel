@@ -471,6 +471,70 @@ impl RatatuiView {
         self.app.set_llm_state(state);
         self.render();
     }
+
+    /// Append a streaming token to the chat area.
+    ///
+    /// Creates or appends to an `AssistantStreaming` message.
+    /// Called for each token chunk from the LLM during streaming.
+    pub fn stream_token(&mut self, token: &str) {
+        // If we're in Thinking state, transition to Streaming
+        if self.app.llm_state() == LlmState::Thinking {
+            self.app.set_llm_state(LlmState::Streaming);
+        }
+        self.app.append_stream_token(token);
+        self.render();
+    }
+
+    /// Append a streaming thinking token to the chat area.
+    ///
+    /// Creates or appends to a `Thinking` message.
+    /// Called for each thinking chunk from the LLM during streaming.
+    pub fn stream_thinking(&mut self, token: &str) {
+        // Ensure we're in Thinking state
+        if self.app.llm_state() == LlmState::Idle {
+            self.app.set_llm_state(LlmState::Thinking);
+        }
+        self.app.append_stream_thinking(token);
+        self.render();
+    }
+
+    /// Finalize the streaming response.
+    ///
+    /// Replaces the `AssistantStreaming` message with the final
+    /// markdown-rendered `Assistant` message. Shows token metrics
+    /// if available. Transitions LLM state to Idle.
+    pub fn stream_done(
+        &mut self,
+        content: &str,
+        thinking: Option<&str>,
+        metrics: Option<&TokenMetrics>,
+    ) {
+        self.app.finalize_stream(content, thinking);
+
+        // Show token metrics if available
+        if let Some(m) = metrics
+            && m.total_tokens > 0
+        {
+            let msg = format!(
+                "[Tokens: {} prompt + {} response = {} total]",
+                m.prompt_tokens, m.response_tokens, m.total_tokens
+            );
+            self.add_system_message(&msg);
+
+            // Update status bar progress
+            let max_tokens = self.app.status_bar().max_tokens;
+            let percent = if max_tokens > 0 {
+                ((m.total_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
+            } else {
+                0
+            };
+            self.app
+                .update_status_tokens(m.total_tokens as usize, max_tokens, percent);
+        }
+
+        self.app.set_llm_state(LlmState::Idle);
+        self.render();
+    }
 }
 
 // ── Render methods for structured CommandOutput variants ─────────────

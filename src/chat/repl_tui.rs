@@ -320,6 +320,7 @@ pub async fn run_chat_repl_tui(
                                     }
 
                                     // Send as user message to LLM (non-blocking)
+                                    view.set_llm_state(LlmState::Thinking);
                                     spawn_llm_task(&line, state, &mut llm_rx, &mut cancel_token);
                                 }
                                 Some(InputResult::Interrupted) => {
@@ -373,6 +374,22 @@ pub async fn run_chat_repl_tui(
                     LlmEvent::ViewAction(action) => {
                         apply_view_action(&mut view, action);
                     }
+                    LlmEvent::StreamToken(token) => {
+                        // Append token to the current streaming message (or create one)
+                        view.stream_token(&token);
+                    }
+                    LlmEvent::StreamThinking(thinking_token) => {
+                        // Append thinking token to the current streaming thinking block
+                        view.stream_thinking(&thinking_token);
+                    }
+                    LlmEvent::StreamDone {
+                        content,
+                        thinking,
+                        metrics,
+                    } => {
+                        // Replace the streaming message with the final markdown version
+                        view.stream_done(&content, thinking.as_deref(), metrics.as_ref());
+                    }
                     LlmEvent::Complete { session, used_tokens, max_tokens, percent } => {
                         // Update the session with the one from the LLM task
                         state.session = *session;
@@ -409,12 +426,13 @@ pub async fn run_chat_repl_tui(
     }
 }
 
-/// Spawn the LLM task in the background.
+/// Spawn the LLM task in the background with streaming token display.
 ///
 /// Creates a `ChannelView` that the LLM task uses to send view updates
 /// through an mpsc channel. The event loop drains these as `LlmEvent::ViewAction`.
-/// On completion, sends `LlmEvent::Complete` with the updated session
-/// and final token counts.
+/// Streaming tokens are sent directly as `LlmEvent::StreamToken/StreamThinking`.
+/// On completion, sends `LlmEvent::StreamDone` then `LlmEvent::Complete` with
+/// the updated session and final token counts.
 /// On error, sends `LlmEvent::Error`.
 ///
 /// The `cancel_token` allows the event loop to cancel the task on Ctrl+C.
@@ -457,7 +475,7 @@ fn spawn_llm_task(
     // Clone the state for the LLM task
     let mut task_state = state.clone();
 
-    // Spawn the LLM task
+    // Spawn the LLM task with streaming
     let line_owned = line.to_string();
     tokio::spawn(async move {
         // Check for cancellation before starting
@@ -466,11 +484,13 @@ fn spawn_llm_task(
             return;
         }
 
-        // Delegate to the existing handler which uses the ChannelView for output
-        super::repl::handle_user_message(
+        // Use the streaming handler which sends tokens through the LlmEvent channel
+        super::repl::handle_user_message_stream(
             &line_owned,
             &mut task_state,
             &mut channel_view as &mut dyn ChatView,
+            llm_tx.clone(),
+            token.clone(),
         )
         .await;
 

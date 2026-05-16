@@ -8,6 +8,9 @@
 //! ```text
 //! Event loop (main task)          LLM task (spawned)
 //!     ←── LlmEvent::ViewAction ── ChannelView (ChatView proxy)
+//!     ←── LlmEvent::StreamToken ── Streaming token chunk
+//!     ←── LlmEvent::StreamThinking ── Streaming thinking chunk
+//!     ←── LlmEvent::StreamDone ── Streaming complete (final_data)
 //!     ←── LlmEvent::Complete  ── Result of handle_user_message()
 //!     ←── LlmEvent::Error     ── LLM error
 //!     ──→ CancellationToken    ── Ctrl+C cancellation
@@ -25,7 +28,33 @@ pub enum LlmEvent {
     /// (via `ChannelView`), forwarded to the event loop for rendering.
     ViewAction(ViewAction),
 
-    /// The LLM call completed successfully.
+    /// A streaming token chunk arrived from the LLM.
+    ///
+    /// The event loop should append this text to the current
+    /// `AssistantStreaming` message in the chat area.
+    StreamToken(String),
+
+    /// A streaming thinking chunk arrived from the LLM.
+    ///
+    /// The event loop should append this text to the current
+    /// thinking block being streamed.
+    StreamThinking(String),
+
+    /// Streaming is complete — replace the streaming message with
+    /// the final markdown-rendered assistant response.
+    ///
+    /// Contains the full accumulated response content and, if available,
+    /// the token metrics from `final_data`.
+    StreamDone {
+        /// Full accumulated response content (for markdown rendering)
+        content: String,
+        /// Thinking content (if any, already accumulated)
+        thinking: Option<String>,
+        /// Token metrics from the final streaming chunk
+        metrics: Option<TokenMetrics>,
+    },
+
+    /// The LLM call completed successfully (non-streaming path).
     ///
     /// Contains the updated session (with new messages, tokens, etc.)
     /// and final token counts for the status bar update.
@@ -52,6 +81,31 @@ impl std::fmt::Debug for LlmEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ViewAction(action) => f.debug_tuple("ViewAction").field(action).finish(),
+            Self::StreamToken(token) => {
+                // Truncate token display to avoid flooding debug logs
+                let display = if token.len() > 20 {
+                    format!("{}...", &token[..20])
+                } else {
+                    token.clone()
+                };
+                f.debug_tuple("StreamToken").field(&display).finish()
+            }
+            Self::StreamThinking(token) => {
+                let display = if token.len() > 20 {
+                    format!("{}...", &token[..20])
+                } else {
+                    token.clone()
+                };
+                f.debug_tuple("StreamThinking").field(&display).finish()
+            }
+            Self::StreamDone {
+                content: _,
+                thinking: _,
+                metrics,
+            } => f
+                .debug_struct("StreamDone")
+                .field("metrics", metrics)
+                .finish_non_exhaustive(),
             Self::Complete {
                 session: _,
                 used_tokens,

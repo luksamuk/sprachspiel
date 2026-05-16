@@ -49,6 +49,7 @@ use super::coordinator::{
     MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,
 };
 use super::custom_coordinator::CustomCoordinator;
+use super::llm_event::LlmEvent;
 use super::session::ChatSession;
 use super::thinking::{extract_thinking, strip_thinking_tags};
 use super::view::ChatView;
@@ -576,7 +577,269 @@ pub async fn send_message(
     Ok(processed_result)
 }
 
-/// Auto-compact conversation if context reaches buffer threshold
+/// Send a message to the LLM with streaming token display.
+///
+/// This is the streaming equivalent of `send_message()`. Instead of waiting
+/// for the full response, it streams token chunks through the provided
+/// `LlmEvent` sender. When the stream completes:
+/// - Sends `LlmEvent::StreamDone` with the full content and metrics
+/// - Tool calls are handled by the non-streaming coordinator path after streaming
+///
+/// The `llm_tx` sender is used for:
+/// - `LlmEvent::StreamToken(token)` — each content token chunk
+/// - `LlmEvent::StreamThinking(token)` — each thinking token chunk
+/// - `LlmEvent::ViewAction(action)` — view events from tool calls
+///
+/// All non-streaming view output (context warnings, tool results, etc.) is
+/// delegated to the provided `ChatView`.
+#[expect(clippy::too_many_arguments)]
+pub async fn send_message_stream(
+    ollama: &ollama_rs::Ollama,
+    model_config: &ModelConfig,
+    session: &mut ChatSession,
+    user_input: &str,
+    tools_enabled: bool,
+    think_enabled: bool,
+    cli_code: bool,
+    settings: &Settings,
+    agents_md: Option<&str>,
+    db: Option<&Arc<crate::db::Database>>,
+    embedding_client: Option<&Arc<crate::embeddings::EmbeddingClient>>,
+    cli_soulless: bool,
+    continuation_tag: Option<&ContinuationTag>,
+    view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+    cancel_token: Option<tokio_util::sync::CancellationToken>,
+) -> AppResult<SendMessageResult> {
+    let model_options = model_config.build_model_options();
+    let blacklist_set = settings.blacklist_set();
+
+    // Load facts from Factual Memory System
+    let facts_section = if let Some(db_ref) = db {
+        match db_ref.get_facts_for_prompt(session.project_id.as_deref()) {
+            Ok(facts) if !facts.is_empty() => {
+                let section = build_facts_section(&facts);
+                if log::log_enabled!(log::Level::Debug) && !section.is_empty() {
+                    log::debug!("Loaded {} facts for prompt", facts.len());
+                }
+                Some(section)
+            }
+            Ok(_) => None,
+            Err(e) => {
+                if log::log_enabled!(log::Level::Debug) {
+                    log::debug!("Warning: Failed to load facts: {}", e);
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Build system prompt
+    let todos_section = crate::tools::todo::format_todos_for_prompt();
+
+    let system_prompt = build_session_system_prompt(
+        session,
+        tools_enabled,
+        cli_code,
+        cli_soulless,
+        model_config,
+        &blacklist_set,
+        agents_md,
+        facts_section.as_deref(),
+        todos_section.as_deref(),
+    );
+
+    // Check context overflow
+    let context_window = model_config.num_ctx as usize;
+    let overflow_status = check_context_overflow(session, &system_prompt, context_window);
+
+    if overflow_status.needs_compaction() && !tools_enabled {
+        view.show_context_warning(
+            overflow_status.usage_percent(),
+            "Consider using /compact to summarize old messages.",
+        );
+    }
+
+    // Setup coordinator with optional tools
+    let real_history_tokens = session.history_real_tokens();
+
+    // Create view event channel for coordinator callback
+    let (view_event_sender, view_event_receiver) = super::view::create_view_event_channel();
+
+    let mut coordinator = setup_coordinator(
+        ollama.clone(),
+        model_config,
+        model_options,
+        think_enabled,
+        tools_enabled,
+        settings,
+        system_prompt.clone(),
+        Some(real_history_tokens),
+        view_event_sender,
+    );
+
+    // Prepare messages with retrieval and continuation
+    let mut messages = prepare_messages(
+        session,
+        db,
+        embedding_client,
+        user_input,
+        &system_prompt,
+        &mut coordinator,
+        continuation_tag,
+    )
+    .await;
+
+    if log::log_enabled!(log::Level::Debug) {
+        log::debug!("Sending {} messages to model (streaming)", messages.len());
+    }
+
+    // No indicatif spinner in TUI mode
+    let tool_names: Vec<String> = if tools_enabled {
+        get_available_tool_names(settings)
+    } else {
+        vec![]
+    };
+
+    // Create streaming callbacks that send tokens through the LlmEvent channel
+    let llm_tx_token = llm_tx.clone();
+    let on_token = move |token: String| {
+        let _ = llm_tx_token.try_send(LlmEvent::StreamToken(token));
+    };
+
+    let llm_tx_thinking = llm_tx.clone();
+    let on_thinking = move |token: String| {
+        let _ = llm_tx_thinking.try_send(LlmEvent::StreamThinking(token));
+    };
+
+    // Execute with retry logic using streaming
+    let mut attempts = 0;
+    let result = loop {
+        let current_result = if let (Some(db), Some(embedding)) = (db, embedding_client) {
+            with_full_context(
+                db.clone(),
+                embedding.clone(),
+                ollama.clone(),
+                Arc::new(settings.clone()),
+                coordinator.chat_stream(
+                    messages.clone(),
+                    &on_token,
+                    &on_thinking,
+                    cancel_token.clone(),
+                ),
+            )
+            .await
+        } else {
+            with_tool_context(
+                ollama.clone(),
+                Arc::new(settings.clone()),
+                coordinator.chat_stream(
+                    messages.clone(),
+                    &on_token,
+                    &on_thinking,
+                    cancel_token.clone(),
+                ),
+            )
+            .await
+        };
+
+        match current_result {
+            Ok(response) => break Ok(response),
+            Err(e) => {
+                if is_ollama_error_recoverable(&e) && attempts < MAX_RETRIES {
+                    attempts += 1;
+
+                    let recovery_err = classify_ollama_error(&e, &tool_names);
+                    let error_msg = format_recovery_message(&recovery_err);
+
+                    if log::log_enabled!(log::Level::Debug) {
+                        log::debug!(
+                            "🔧 [Recovery] Attempt {}/{} - {}",
+                            attempts,
+                            MAX_RETRIES,
+                            recovery_err.description()
+                        );
+                    }
+
+                    messages.push(ChatMessage::tool(error_msg));
+
+                    if attempts == 1 {
+                        view.show_system("  Retrying after error...");
+                    }
+
+                    continue;
+                } else {
+                    let error_str = e.to_string();
+                    break Err(error_str);
+                }
+            }
+        }
+    };
+
+    // Drain view events accumulated during coordinator chat (pre-tool content,
+    // context warnings) into the ChatView for rendering
+    view_event_receiver.drain_into(view);
+
+    // Process response
+    let processed_result = match result {
+        Ok(response) => {
+            let content = response.message.content.clone();
+
+            let metrics = if let Some(ref final_data) = response.final_data {
+                TokenMetrics {
+                    prompt_tokens: final_data.prompt_eval_count,
+                    response_tokens: final_data.eval_count,
+                    total_tokens: final_data.prompt_eval_count + final_data.eval_count,
+                }
+            } else {
+                TokenMetrics::default()
+            };
+
+            // In streaming mode, thinking was already displayed via StreamThinking events.
+            // Extract thinking for the result struct (but don't display again via view).
+            let thinking = if think_enabled {
+                extract_thinking(&content, response.message.thinking.as_ref())
+            } else {
+                None
+            };
+
+            // Content is already displayed via StreamToken events.
+            // Don't call view.show_assistant_response() — that would duplicate.
+
+            let display_content = strip_thinking_tags(&content);
+            let pre_tool = coordinator.take_pre_tool_content();
+            let (pre_tool_content, pre_tool_thinking) = match pre_tool {
+                Some(ptc) => (Some(ptc.content), ptc.thinking),
+                None => (None, None),
+            };
+
+            let (cleaned_response, continuation_needed) = parse_continuation_tag(&display_content);
+
+            // Send StreamDone with the final content (metrics are shown via
+            // process_send_result → view.show_token_metrics, avoiding duplicates)
+            let _ = llm_tx.try_send(LlmEvent::StreamDone {
+                content: cleaned_response.clone(),
+                thinking: thinking.clone(),
+                metrics: None,
+            });
+
+            SendMessageResult {
+                response: cleaned_response,
+                pre_tool_content,
+                pre_tool_thinking,
+                metrics,
+                context_window,
+                system_prompt,
+                continuation_needed,
+            }
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    Ok(processed_result)
+}
 /// Uses buffer-based approach (15K tokens remaining) for predictable overflow prevention.
 ///
 /// All output rendering is delegated to the provided `ChatView`.

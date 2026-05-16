@@ -634,6 +634,171 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         self.process_response(resp).await
     }
 
+    /// Send a chat message with streaming and process tool calls.
+    ///
+    /// This is the streaming equivalent of `chat()`. Instead of waiting for
+    /// the full response, it streams token chunks through the provided
+    /// `on_token` callback. When the stream completes:
+    /// - If no tool calls: returns the accumulated response
+    /// - If tool calls: enters the non-streaming tool loop (since tool
+    ///   execution must complete before the next request)
+    ///
+    /// The `on_token` callback is called with each content token chunk.
+    /// The `on_thinking` callback is called with each thinking chunk.
+    /// Both callbacks must be `Send + Sync` for use in async tasks.
+    ///
+    /// If `cancel_token` is provided and becomes cancelled during streaming,
+    /// the stream is aborted and the accumulated partial content is returned
+    /// as the response.
+    pub async fn chat_stream(
+        &mut self,
+        messages: Vec<ChatMessage>,
+        on_token: impl Fn(String) + Send + Sync,
+        on_thinking: impl Fn(String) + Send + Sync,
+        cancel_token: Option<tokio_util::sync::CancellationToken>,
+    ) -> ollama_rs::error::Result<ChatMessageResponse> {
+        for m in &messages {
+            log::debug!("Hit {} with (stream):", self.model);
+            log::debug!(
+                "\t{:?}: '{}'",
+                m.role,
+                crate::logging::truncate_for_log(&m.content, 80)
+            );
+        }
+
+        let request =
+            ChatMessageRequest::new(self.model.clone(), messages).options(self.options.clone());
+
+        // Apply optional settings
+        let request = self.apply_optional_settings(request);
+
+        // Push initial messages to history
+        for m in request.messages.clone() {
+            self.history.push(m);
+        }
+
+        // Store how many messages we started with
+        self.initial_message_count = self.history.messages().len();
+
+        // Start the streaming request
+        let mut stream = self
+            .ollama
+            .send_chat_messages_stream(self.build_request())
+            .await?;
+
+        // Accumulate the full response while streaming
+        let mut full_content = String::new();
+        let mut full_thinking: Option<String> = None;
+        let mut final_data = None;
+        let mut tool_calls: Vec<ollama_rs::generation::tools::ToolCall> = Vec::new();
+        let mut model = String::new();
+        let mut created_at = String::new();
+
+        use futures::StreamExt;
+
+        while let Some(chunk_result) = stream.next().await {
+            // Check for cancellation during streaming
+            if let Some(ref ct) = cancel_token
+                && ct.is_cancelled()
+            {
+                log::debug!("Stream cancelled by user");
+                break;
+            }
+
+            match chunk_result {
+                Ok(chunk) => {
+                    // Stream content tokens
+                    if !chunk.message.content.is_empty() {
+                        on_token(chunk.message.content.clone());
+                        full_content.push_str(&chunk.message.content);
+                    }
+
+                    // Stream thinking tokens
+                    if let Some(ref thinking) = chunk.message.thinking {
+                        on_thinking(thinking.clone());
+                        if let Some(ref mut accumulated) = full_thinking {
+                            accumulated.push_str(thinking);
+                        } else {
+                            full_thinking = Some(thinking.clone());
+                        }
+                    }
+
+                    // Collect tool calls from the response
+                    if !chunk.message.tool_calls.is_empty() {
+                        tool_calls = chunk.message.tool_calls.clone();
+                    }
+
+                    // Capture metadata from any chunk
+                    if !chunk.model.is_empty() {
+                        model = chunk.model.clone();
+                    }
+                    if !chunk.created_at.is_empty() {
+                        created_at = chunk.created_at.clone();
+                    }
+
+                    // On final chunk, capture final_data
+                    if chunk.done {
+                        final_data = chunk.final_data.clone();
+                    }
+                }
+                Err(()) => {
+                    // Stream error — break and let the coordinator handle it
+                    break;
+                }
+            }
+        }
+
+        // Build a ChatMessageResponse from the accumulated content
+        if !tool_calls.is_empty() {
+            // Build response with tool calls for process_response
+            let msg_with_tools = ollama_rs::generation::chat::ChatMessage {
+                role: ollama_rs::generation::chat::MessageRole::Assistant,
+                content: full_content,
+                tool_calls: tool_calls.clone(),
+                images: None,
+                thinking: full_thinking,
+            };
+
+            let response = ChatMessageResponse {
+                model,
+                created_at,
+                message: msg_with_tools,
+                logprobs: None,
+                done: true,
+                final_data,
+            };
+
+            self.process_response(response).await
+        } else {
+            // No tool calls — this is the final response
+            // Push to history
+            self.history.push(ollama_rs::generation::chat::ChatMessage {
+                role: ollama_rs::generation::chat::MessageRole::Assistant,
+                content: full_content.clone(),
+                tool_calls: Vec::new(),
+                images: None,
+                thinking: full_thinking.clone(),
+            });
+
+            let msg = ollama_rs::generation::chat::ChatMessage {
+                role: ollama_rs::generation::chat::MessageRole::Assistant,
+                content: full_content,
+                tool_calls: Vec::new(),
+                images: None,
+                thinking: full_thinking,
+            };
+
+            Ok(ChatMessageResponse {
+                model,
+                created_at,
+                message: msg,
+                logprobs: None,
+                done: true,
+                final_data,
+            })
+        }
+    }
+
     /// Apply optional settings to request
     fn apply_optional_settings(&self, mut request: ChatMessageRequest) -> ChatMessageRequest {
         if let Some(ref keep_alive) = self.keep_alive {

@@ -19,7 +19,8 @@ use super::continuation::{
     OverflowHandleResult, ProcessResult, build_inter_tool_compaction_prompt, build_pre_tool_prompt,
     check_and_compact_before_tool, handle_overflow_error, process_send_result,
 };
-use super::core::send_message;
+use super::core::{send_message, send_message_stream};
+use super::llm_event::LlmEvent;
 use super::session::{ChatSession, MessageRole};
 use super::view::ChatView;
 use super::view::TerminalView;
@@ -142,6 +143,10 @@ async fn run_startup_tasks(
 }
 
 /// Handle user input that's not a command.
+///
+/// Non-streaming version — used as fallback when streaming is unavailable.
+/// The TUI REPL uses `handle_user_message_stream()` instead.
+#[allow(dead_code)] // Kept as non-streaming fallback; TUI uses streaming variant
 pub async fn handle_user_message(
     line: &str,
     state: &mut super::repl_state::ReplState,
@@ -178,6 +183,121 @@ pub async fn handle_user_message(
             state.cli_soulless,
             None,
             view,
+        )
+        .await
+        {
+            Ok(result) => {
+                match process_send_result(state, result, user_message_id, view).await {
+                    ProcessResult::Success => {
+                        // Auto-extract facts from recent user messages (autoDream-lite)
+                        try_auto_extract_facts(state, view).await;
+                    }
+                    ProcessResult::ContinuationError(e) => {
+                        view.show_error(&format!("Continuation failed: {}", e));
+                    }
+                }
+                break;
+            }
+            Err(e) => {
+                let error_str = e.to_string();
+                match handle_overflow_error(state, &error_str, view).await {
+                    OverflowHandleResult::NotOverflow => {
+                        view.show_error(&format_tool_error(&error_str));
+                        break;
+                    }
+                    OverflowHandleResult::HandledContinue => {
+                        view.show_warning("Please retry your message.");
+                        break;
+                    }
+                    OverflowHandleResult::InterToolCompaction { tools_executed } => {
+                        compaction_cycles += 1;
+
+                        if compaction_cycles > MAX_COMPACTION_CYCLES {
+                            view.show_warning(&format!(
+                                "Maximum compaction cycles reached ({}). Please continue manually.",
+                                MAX_COMPACTION_CYCLES
+                            ));
+                            break;
+                        }
+
+                        let remaining_cycles = MAX_COMPACTION_CYCLES - compaction_cycles;
+                        log::debug!(
+                            "[Inter-tool Compaction] Cycle {}/{} ({} tools executed before pause)",
+                            compaction_cycles,
+                            MAX_COMPACTION_CYCLES,
+                            tools_executed.len()
+                        );
+                        if remaining_cycles > 0 {
+                            log::debug!(
+                                "[Inter-tool Compaction] {} compaction(s) remaining before manual intervention",
+                                remaining_cycles
+                            );
+                        }
+
+                        view.show_progress("Continuing...");
+
+                        current_input = build_inter_tool_compaction_prompt(&tools_executed);
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Handle user input with streaming token display.
+///
+/// This is the streaming equivalent of `handle_user_message()`. Instead of
+/// waiting for the full LLM response before displaying it, tokens are streamed
+/// through the `LlmEvent` channel for incremental display in the TUI.
+///
+/// The `llm_tx` sender is used for:
+/// - `LlmEvent::StreamToken(token)` — each content token chunk
+/// - `LlmEvent::StreamThinking(token)` — each thinking token chunk
+/// - `LlmEvent::StreamDone` — final content and metrics after stream completes
+/// - `LlmEvent::ViewAction(action)` — view events from coordinator callbacks
+///
+/// The `cancel_token` allows aborting the stream on Ctrl+C.
+pub async fn handle_user_message_stream(
+    line: &str,
+    state: &mut super::repl_state::ReplState,
+    view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
+    cancel_token: tokio_util::sync::CancellationToken,
+) {
+    let user_message_id = state.session.add_user_message(line.to_string());
+    if !state.session.anonymous
+        && let Err(e) = state.session.save_sqlite()
+    {
+        log::debug!("Warning: Could not save session: {}", e);
+    }
+
+    let context_window = state.model_config.num_ctx as usize;
+    let system_prompt_for_check = build_pre_tool_prompt(state);
+    check_and_compact_before_tool(state, &system_prompt_for_check, context_window, view).await;
+
+    let think_enabled = state.session.think;
+    let mut compaction_cycles = 0;
+    let mut current_input = line.to_string();
+
+    loop {
+        match send_message_stream(
+            &state.ollama,
+            &state.model_config,
+            &mut state.session,
+            &current_input,
+            state.tools_active,
+            think_enabled,
+            state.cli_code,
+            &state.settings,
+            state.agents_md.as_deref(),
+            state.db.as_ref(),
+            state.embedding_client.as_ref(),
+            state.cli_soulless,
+            None,
+            view,
+            llm_tx.clone(),
+            Some(cancel_token.clone()),
         )
         .await
         {

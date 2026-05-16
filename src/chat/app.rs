@@ -23,6 +23,7 @@ use super::completer::ChatCompleter;
 use super::input::{CrosstermInput, InputBackend, InputResult};
 use super::tui::TuiTerminal;
 use super::tui::components::chat_area::ChatMessage;
+use super::tui::components::chat_area::MessageType;
 use super::tui::components::input_line::InputState;
 use super::tui::components::status_bar::StatusBarState;
 use super::tui::markdown::MarkdownTheme;
@@ -182,6 +183,61 @@ impl App {
     /// Add a message to the chat area and auto-scroll to bottom
     pub fn add_message(&mut self, message: ChatMessage) {
         self.messages.push(message);
+        self.scroll.reset_to_bottom();
+    }
+
+    /// Append a streaming token to the last `AssistantStreaming` message.
+    ///
+    /// If the last message is not `AssistantStreaming`, creates a new one.
+    /// This enables incremental display of LLM responses token by token.
+    pub fn append_stream_token(&mut self, token: &str) {
+        if let Some(last) = self.messages.last_mut()
+            && last.msg_type == MessageType::AssistantStreaming
+        {
+            last.content.push_str(token);
+            return;
+        }
+        // No streaming message yet — create one
+        self.messages
+            .push(ChatMessage::assistant_streaming(token.to_string()));
+        self.scroll.reset_to_bottom();
+    }
+
+    /// Append a streaming thinking token to the last `Thinking` message.
+    ///
+    /// If the last message is not `Thinking`, creates a new one.
+    /// This enables incremental display of thinking content during streaming.
+    pub fn append_stream_thinking(&mut self, token: &str) {
+        if let Some(last) = self.messages.last_mut()
+            && last.msg_type == MessageType::Thinking
+        {
+            last.content.push_str(token);
+            return;
+        }
+        // No thinking message yet — create one
+        self.messages.push(ChatMessage::thinking(token.to_string()));
+        self.scroll.reset_to_bottom();
+    }
+
+    /// Replace the last `AssistantStreaming` message with the final
+    /// markdown-rendered `Assistant` message.
+    ///
+    /// Also replaces the last `Thinking` message if the thinking content
+    /// differs from what was streamed (e.g., additional formatting).
+    /// Sets LLM state back to Idle.
+    pub fn finalize_stream(&mut self, content: &str, _thinking: Option<&str>) {
+        // Find and replace the last AssistantStreaming message
+        if let Some(pos) = self
+            .messages
+            .iter()
+            .rposition(|m| m.msg_type == MessageType::AssistantStreaming)
+        {
+            self.messages[pos] = ChatMessage::assistant_markdown(content.to_string());
+        } else {
+            // No streaming message found — just add the final one
+            self.messages
+                .push(ChatMessage::assistant_markdown(content.to_string()));
+        }
         self.scroll.reset_to_bottom();
     }
 
