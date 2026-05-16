@@ -239,16 +239,20 @@ pub async fn run_chat_repl_tui(
     loop {
         tokio::select! {
             // ── Crossterm key events ──────────────────────────────
-            result = async {
-                if event::poll(std::time::Duration::from_millis(0)).unwrap_or(false) {
-                    Some(event::read())
+            // Block for up to SPINNER_TICK_MS waiting for a crossterm event.
+            // Using poll(0) causes busy-wait at ~4000 iterations/second idle.
+            // poll(120) lets the CPU sleep between events while still waking
+            // up often enough for smooth spinner animation (~8 fps).
+            crossterm_event = async {
+                if event::poll(std::time::Duration::from_millis(
+                    super::app::SPINNER_TICK_MS,
+                )).unwrap_or(false) {
+                    event::read().ok()
                 } else {
-                    // Brief yield to avoid busy-waiting when no event is ready
-                    tokio::task::yield_now().await;
                     None
                 }
             } => {
-                if let Some(Ok(crossterm_event)) = result {
+                if let Some(crossterm_event) = crossterm_event {
                     match crossterm_event {
                         CrosstermEvent::Key(key) => {
                             let result = view.app_mut().handle_key(key);
