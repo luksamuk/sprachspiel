@@ -356,6 +356,38 @@ sqlite3 ~/.local/share/sprachspiel/sprachspiel.db \
 | `--db <PATH>` | Use custom DB path (isolated testing, won't touch real data) |
 | `--model <MODEL>` | Override default model for this session |
 
+## Workflow 7: Diagnose Busy-Wait in Event Loop (High Idle CPU)
+
+High CPU usage in idle TUI mode often means the event loop is busy-waiting.
+Zero-duration polls (`poll(0)`) or unconditional yields (`yield_now()`) are
+typical culprits. This workflow measures the idle loop rate to confirm.
+
+```bash
+# 1. Instrument: add loop counter instrumentation to the event loop
+#    (add before the event loop in src/chat/repl_tui.rs)
+#    let mut _loop_count = 0u64;
+#    let mut _loop_start = Instant::now();
+#
+# 2. Build and spawn session
+tu run --name busywait-debug --size 80x50 --cwd ~/git/sprachspiel -- \
+  target/release/sprach --soulless --ignore-agents chat
+
+sleep 3
+
+# 3. Let it idle for 10 seconds, then inspect scrollback
+tu screenshot --name busywait-debug
+# Check scrollback for [PERF] output if you added eprintln instrumentation
+
+# 4. Confirm rate: if you see >1000 iters/sec, it's a busy-wait.
+#    Normal rate for a 120ms poll should be ~8 iters/sec.
+
+# 5. Fix: change poll timeout from 0ms to SPINNER_TICK_MS (e.g. 120ms)
+#    Also remove/replace any yield_now() that follows a poll(0).
+
+# 6. Rebuild and re-measure to confirm the fix
+tu kill --name busywait-debug
+```
+
 ### Isolated Debug Session (no data pollution)
 
 ```bash

@@ -237,16 +237,28 @@ pub async fn run_chat_repl_tui(
 
     // ── Main Event Loop ──────────────────────────────────────────────
     loop {
+        // Snapshot of LLM activity *at the start of this select iteration*.
+        // Used to pick the right poll timeout without borrowing llm_rx in
+        // the async block while the LLM branch holds &mut llm_rx.
+        let has_llm_task = llm_rx.is_some();
+
         tokio::select! {
             // ── Crossterm key events ──────────────────────────────
-            // Block for up to SPINNER_TICK_MS waiting for a crossterm event.
-            // Using poll(0) causes busy-wait at ~4000 iterations/second idle.
-            // poll(120) lets the CPU sleep between events while still waking
-            // up often enough for smooth spinner animation (~8 fps).
+            // Use a short (0ms) poll when the LLM is streaming so tokens
+            // arrive without delay. Use a longer block when idle to
+            // let the CPU sleep and avoid busy-waiting.
             crossterm_event = async {
-                if event::poll(std::time::Duration::from_millis(
-                    super::app::SPINNER_TICK_MS,
-                )).unwrap_or(false) {
+                let poll_timeout = if has_llm_task {
+                    // Streaming: non-blocking so the LLM events branch
+                    // in tokio::select! is never starved.
+                    std::time::Duration::from_millis(0)
+                } else {
+                    // Idle: block for up to the spinner tick interval.
+                    // poll(120ms) lets the CPU sleep between events while
+                    // still waking up often enough for spinner animation.
+                    std::time::Duration::from_millis(super::app::SPINNER_TICK_MS)
+                };
+                if event::poll(poll_timeout).unwrap_or(false) {
                     event::read().ok()
                 } else {
                     None
