@@ -3922,7 +3922,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** ✅ COMPLETED (W6-PR3: Streaming Refinement + Tab Completion)
+**Status:** ✅ COMPLETED (W6-PR3: Streaming Refinement + Tab Completion + Intelligent Table Reflow)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -4290,11 +4290,11 @@ image = "0.25"              # Removed — only needed for ratatui-image
 
 ---
 
-#### PR 3: Streaming Refinement + Tab Completion (~10-11 days) — #147
+#### PR 3: Streaming Refinement + Tab Completion + Intelligent Table Reflow (~12.5 days) — #147
 
-**Goal:** Make the TUI chat fully functional with async streaming, tab completion, Ctrl+C cancellation, multi-line input, and full command/tool integration. Resolve all PR2 deferred limitations.
+**Goal:** Make the TUI chat fully functional with async streaming, tab completion, Ctrl+C cancellation, multi-line input, intelligent table rendering with rigid/elastic columns, cell word-wrapping, and row separators. Resolve all PR2 deferred limitations.
 
-**Why longer than originally estimated (4-5 → 10-11 days):** The original estimate assumed the async event loop was partially in place. In reality, `handle_user_message_tui().await` blocks the entire event loop, requiring a full architectural migration from synchronous polling to async mpsc channels. Additionally, Ctrl+C cancellation requires `tokio::select!` integration with the LLM call, and multi-line input requires input state refactoring.
+**Why longer than originally estimated (4-5 → 12.5 days):** The original estimate assumed the async event loop was partially in place. In reality, `handle_user_message_tui().await` blocks the entire event loop, requiring a full architectural migration from synchronous polling to async mpsc channels. Additionally, Ctrl+C cancellation requires `tokio::select!` integration with the LLM call, multi-line input requires input state refactoring, and intelligent table reflow with rigid/elastic column sizing and cell word-wrapping added 1.75 days.
 
 **Deferred from PR2 (known limitations to be resolved in PR3):**
 
@@ -4335,7 +4335,9 @@ image = "0.25"              # Removed — only needed for ratatui-image
 | 3.4 | Tool call/result display + error recovery: activate `LlmState::ToolCall`, wire `TUI_CALLBACK` during streaming, error display in TUI | 1d | ✅ COMPLETED (3.4a: table detection, 3.4b: embedding output suppression) |
 | 3.5 | Multi-line input: Shift+Enter for newline, dynamic input line height, cursor navigation across lines | 1d | ✅ COMPLETED |
 | 3.6 | Integration, testing, polish | 1d | ✅ COMPLETED |
-| **Total** | | **~10.75d** | |
+| 3.7 | Intelligent table reflow: rigid/elastic column classification, cell word-wrapping, markdown alignment (`:---`/`---:`/`:---:`), row separators (`├─┼─┤`), shared `wrap_line` extraction to `src/chat/tui/wrap.rs` | 1.5d | ✅ COMPLETED |
+| 3.8 | Table collapsing in recent context: collapse table blocks to `(...)` before flattening, preventing pipe chars in single-line summary | 0.25d | ✅ COMPLETED |
+| **Total** | | **~12.5d** | |
 
 **Key architectural change: async event loop**
 
@@ -4398,20 +4400,26 @@ loop {
 
 **Files to Create:**
 - `src/chat/completer.rs` — `ChatCompleter` struct with slash commands + model names
+- `src/chat/tui/wrap.rs` — Shared `wrap_line` + `hard_break_word` (extracted from chat_area)
 
 **Files to Modify:**
-- `src/chat/app.rs` — Add `mpsc::Receiver<LlmEvent>`, streaming message update, Tab key handling, Ctrl+C cancellation, `Shift+Enter` handling
+- `src/chat/app.rs` — Add `mpsc::Receiver<LlmEvent>`, streaming message update, Tab key handling, Ctrl+C cancellation, `Shift+Enter` handling, spinner presets
 - `src/chat/completer.rs` (NEW) — ChatCompleter with completion candidates
 - `src/chat/input/crossterm_input.rs` — Unify with InputState, add tab completion dispatch
 - `src/chat/input/mod.rs` — Export ChatCompleter
-- `src/chat/view/ratatui_view.rs` — Streaming message update, tool call during streaming, error display
+- `src/chat/view/ratatui_view.rs` — Streaming message update, tool call during streaming, error display, `collapse_tables` in recent context
+- `src/chat/view/terminal.rs` — `collapse_tables` in recent context
 - `src/chat/repl_tui.rs` — Async event loop with `tokio::select!`, LLM task spawning, cancellation
-- `src/chat/core.rs` — Accept `CancellationToken`, return streaming sender, fix `suppress_spinner` in `compact_conversation`
+- `src/chat/core.rs` — Accept `CancellationToken`, return streaming sender, fix `suppress_spinner` in `compact_conversation`, `on_tool_call` callback
+- `src/chat/llm_event.rs` — `LlmEvent::ToolCallStarted` variant
 - `src/chat/command_handlers.rs` — Thread `suppress_progress_spinner()` through `handle_compact()`
+- `src/chat/tui/mod.rs` — Add `pub mod wrap;`
+- `src/chat/tui/markdown.rs` — `ColumnAlign` enum, `parse_separator_line`, rigid/elastic `calculate_col_widths`, cell wrapping (`wrap_cell_content`, `align_cell_text`, `build_row_expanded`), row separators, `collapse_tables`
 - `src/chat/tui/components/input_line.rs` — Multi-line input rendering (dynamic height)
-- `src/chat/tui/components/chat_area.rs` — Streaming token incremental append
+- `src/chat/tui/components/chat_area.rs` — Streaming token incremental append, remove `wrap_line`/`hard_break_word` (moved to wrap.rs)
+- `src/chat/tui/components/status_bar.rs` — Green spinner, leading space, remove dead `with_spinner()`
 
-**Checkpoint:** Chat mode fully functional with tab completion, streaming markdown, tool display, error recovery, Ctrl+C cancellation, multi-line input. Non-chat subcommands unchanged.
+**Checkpoint:** Chat mode fully functional with tab completion, streaming markdown, tool display, error recovery, Ctrl+C cancellation, multi-line input, intelligent table reflow, table collapsing in recent context. Non-chat subcommands unchanged.
 
 ---
 

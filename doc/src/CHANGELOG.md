@@ -7,6 +7,8 @@ All notable changes to Sprachspiel will be documented in this file.
 ### Added
 
 - **W6-PR3: Streaming Refinement + Tab Completion (Issue #147)** — Async event loop with tokio mpsc channels for LLM streaming, tab completion with ChatCompleter reuse, history navigation (up/down arrows), animated spinner during LLM processing (resolves PR2 freezing spinner limitation), tool call/result display in chat area, error recovery in TUI mode, scrollback with PageUp/PageDown/Home/End, Ctrl+C/Ctrl+D handling, /compact command support in TUI mode.
+- **Intelligent table reflow** — Tables in the TUI now adapt intelligently to terminal width. Rigid columns (short content like IDs, ≤6 chars) keep their natural width; elastic columns (long descriptions) get remaining space and word-wrap cell content across multiple sub-lines. Markdown alignment hints (`:---`, `---:`, `:---:`) parsed and applied as Left/Right/Center text alignment within cells. Box lines (`├─┼─┤`) between every data row for legibility. Responsive: re-rendered per frame with current terminal width. Shared `wrap_line`/`hard_break_word` extracted to `src/chat/tui/wrap.rs` for reuse by both chat_area (thinking blocks) and markdown (table cell wrapping).
+- **Table collapsing in recent context** — Markdown table blocks in the "Recent context" status display are replaced with `(...)` before flattening, preventing ugly pipe characters and separator lines from leaking into the single-line summary. Tables inside fenced code blocks are left intact.
 
 ### Added
 
