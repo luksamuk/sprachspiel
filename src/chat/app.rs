@@ -522,27 +522,34 @@ impl App {
     /// Returns `Some(InputResult::Line(line))` when Enter is pressed,
     /// `Some(InputResult::Interrupted)` for Ctrl+C,
     /// `Some(InputResult::Eof)` for Ctrl+D on empty line,
-    /// and `None` for other key events (buffer updated internally).
+    /// and `None` for other key events.
     ///
-    /// Key mapping:
-    /// - Enter: submit input
-    /// - Shift+Enter: insert newline
-    /// - Ctrl+C with text: clear input (cut to clipboard)
-    /// - Ctrl+C empty + LLM running: cancel LLM
-    /// - Ctrl+C empty + idle: no-op
-    /// - Ctrl+W with selection: cut selection
-    /// - Ctrl+W without selection: delete word backward
-    /// - Ctrl+Y: paste (yank from kill-ring)
-    /// - Ctrl+D empty: EOF (exit)
-    /// - Ctrl+D with text: forward delete char
-    /// - Up/Down single-line: history navigation
-    /// - Up/Down multi-line: cursor movement in textarea
-    /// - Tab: completion (slash commands, model names)
+    /// # Design
+    ///
+    /// Most keys are passed to `textarea.input()` which handles them natively:
+    /// - Shift+arrows/Home/End for text selection
+    /// - Ctrl+arrows for word movement
+    /// - Insert char replaces selected text
+    /// - Backspace/Delete with selection deletes it
+    /// - Ctrl+A/E, Home/End for line navigation
+    /// - Ctrl+W for cut, Ctrl+Y for paste, Ctrl+U/R for undo/redo
+    ///
+    /// We only intercept keys that need custom behavior:
+    /// - Enter: submit (textarea default is newline)
+    /// - Shift+Enter: newline (our convention; textarea default is also newline)
+    /// - Ctrl+C: clear input or cancel LLM
+    /// - Ctrl+D: EOF on empty, forward delete otherwise
+    /// - Ctrl+Shift+C/V: clipboard copy/paste
+    /// - Up/Down without shift: history navigation (single-line) or cursor (multi-line)
+    /// - PageUp/PageDown/Home/End without Ctrl/Alt: chat scroll
+    /// - Tab: completion
     ///
     /// When input is disabled (during LLM processing), only Ctrl+C
     /// and scroll keys are processed — all other keys are ignored.
     pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Option<InputResult> {
-        // Ctrl+Shift+C — copy chat selection to clipboard
+        // ── Clipboard shortcuts (always work) ────────────────────────
+
+        // Ctrl+Shift+C — copy chat selection or textarea selection to clipboard
         if matches!(
             key,
             crossterm::event::KeyEvent {
@@ -557,11 +564,37 @@ impl App {
                     let _ = cli_clipboard::set_contents(text);
                 }
                 self.chat_selection.clear();
+            } else if self.textarea.is_selecting() {
+                self.textarea.copy();
+                if let Some(text) = self.yank_text()
+                    && !text.is_empty()
+                {
+                    let _ = cli_clipboard::set_contents(text);
+                }
             }
             return None;
         }
 
-        // Ctrl+C always works, even when input is disabled
+        // Ctrl+Shift+V — paste from system clipboard
+        if matches!(
+            key,
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('V'),
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                ..
+            }
+        ) {
+            if let Ok(text) = cli_clipboard::get_contents()
+                && !text.is_empty()
+            {
+                self.textarea.insert_str(&text);
+                self.chat_selection.clear();
+            }
+            return None;
+        }
+
+        // ── Ctrl+C handling (always works) ───────────────────────────
+
         if matches!(
             key,
             crossterm::event::KeyEvent {
@@ -572,11 +605,13 @@ impl App {
         ) {
             let has_text = !self.textarea_is_empty();
             if has_text {
-                // Clear input: select all, cut (copies to kill-ring & clipboard), clear
+                // Clear input: select all, cut (copies to kill-ring), clear
                 self.textarea.select_all();
                 self.textarea.cut();
                 // Try system clipboard (best-effort)
-                if let Some(text) = self.yank_text() {
+                if let Some(text) = self.yank_text()
+                    && !text.is_empty()
+                {
                     let _ = cli_clipboard::set_contents(text);
                 }
                 self.textarea.delete_char(); // ensure textarea is empty
@@ -586,67 +621,70 @@ impl App {
             return Some(InputResult::Interrupted);
         }
 
-        // When input is disabled (LLM processing), still allow scroll keys
+        // ── Input disabled (LLM processing) ─────────────────────────
+
         if self.input_disabled {
-            // Allow scroll keys even when input is disabled
             match key.code {
                 KeyCode::PageUp => {
                     self.scroll.scroll_up(10);
-                    return None;
                 }
                 KeyCode::PageDown => {
                     self.scroll.scroll_down(10);
-                    return None;
                 }
                 KeyCode::Home => {
                     self.scroll.scroll_to_top();
-                    return None;
                 }
                 KeyCode::End => {
                     self.scroll.scroll_to_bottom();
-                    return None;
                 }
-                _ => {
-                    // Ignore all other keys when input is disabled
-                    return None;
-                }
+                _ => {}
             }
+            return None;
         }
 
-        // Mutual exclusion: typing in the textarea clears chat selection
-        // (except for keys that don't produce input: scroll, Tab, etc.)
+        // ── Mutual exclusion: typing clears chat selection ───────────
+
         if self.chat_selection.is_active() {
+            // Scroll and navigation keys don't clear chat selection
             match key.code {
-                // These keys don't conflict with selection
-                KeyCode::PageUp
-                | KeyCode::PageDown
-                | KeyCode::Home
-                | KeyCode::End
-                | KeyCode::Tab => {}
-                // Ctrl+Shift+C already handled above (copies selection)
-                // All other keys clear the chat selection
+                KeyCode::PageUp | KeyCode::PageDown | KeyCode::Tab => {}
                 _ => {
                     self.chat_selection.clear();
                 }
             }
         }
 
-        // When the completion menu is visible, intercept certain keys
+        // ── Completion menu (when visible) ───────────────────────────
+
         if self.completion_menu.is_visible() {
             match key {
-                // Tab or Enter — confirm selection
+                // Tab — confirm selection
                 crossterm::event::KeyEvent {
                     code: KeyCode::Tab,
                     modifiers: KeyModifiers::NONE,
                     ..
+                } => {
+                    if let Some(item) = self.completion_menu.confirm() {
+                        // For slash commands, the replacement is the full trigger + space
+                        let replacement = format!("{} ", item);
+                        self.set_textarea_content(&replacement);
+                        // After completing a command with args, try sub-completion
+                        self.try_completion_after_confirm();
+                    }
+                    return None;
                 }
-                | crossterm::event::KeyEvent {
+
+                // Enter — confirm selection and submit (if no sub-completions)
+                crossterm::event::KeyEvent {
                     code: KeyCode::Enter,
+                    modifiers: KeyModifiers::NONE,
                     ..
                 } => {
                     if let Some(item) = self.completion_menu.confirm() {
                         let replacement = format!("{} ", item);
                         self.set_textarea_content(&replacement);
+                        // Try sub-completion; if none available, no-op
+                        self.try_completion_after_confirm();
                     }
                     return None;
                 }
@@ -679,16 +717,34 @@ impl App {
                     return None;
                 }
 
-                // Any other key — dismiss menu and fall through to normal handling
+                // Any other key — dismiss menu and fall through
                 _ => {
                     self.completion_menu.hide();
-                    // Don't return — fall through to the normal key handling below
+                    // Don't return — fall through to normal handling below
                 }
             }
         }
 
+        // ── Key-specific handling ────────────────────────────────────
+
         match key {
-            // Shift+Enter — insert newline (multi-line input)
+            // Enter — submit the line (textarea default is newline, we override)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                let line = self.textarea_lines();
+                self.textarea_clear();
+                self.chat_selection.clear();
+                if !line.is_empty() {
+                    self.history_input.add_history(&line);
+                }
+                self.scroll.reset_to_bottom();
+                Some(InputResult::Line(line))
+            }
+
+            // Shift+Enter — newline (explicit, same as textarea default)
             crossterm::event::KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::SHIFT,
@@ -698,47 +754,8 @@ impl App {
                 None
             }
 
-            // Enter — submit the line
-            crossterm::event::KeyEvent {
-                code: KeyCode::Enter,
-                ..
-            } => {
-                let line = self.textarea_lines();
-                self.textarea_clear();
-                self.chat_selection.clear();
-                if !line.is_empty() {
-                    self.history_input.add_history(&line);
-                }
-                // Auto-scroll to bottom when submitting
-                self.scroll.reset_to_bottom();
-                Some(InputResult::Line(line))
-            }
-
-            // Ctrl+W — cut selection or delete word backward
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char('w'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                if self.textarea.is_selecting() {
-                    self.textarea.cut();
-                } else {
-                    self.textarea.delete_word();
-                }
-                None
-            }
-
-            // Ctrl+Y — paste (yank from kill-ring)
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char('y'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.textarea.paste();
-                None
-            }
-
-            // Ctrl+D — EOF on empty line, forward delete on non-empty
+            // Ctrl+D — EOF on empty line, forward delete otherwise
+            #[allow(clippy::collapsible_match)]
             crossterm::event::KeyEvent {
                 code: KeyCode::Char('d'),
                 modifiers: KeyModifiers::CONTROL,
@@ -747,98 +764,60 @@ impl App {
                 if self.textarea_is_empty() {
                     Some(InputResult::Eof)
                 } else {
-                    // Forward delete: remove character at cursor
-                    self.textarea.delete_next_char();
+                    self.textarea.input(key);
                     None
                 }
             }
 
-            // Ctrl+A — move cursor to start of current line
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char('a'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.textarea
-                    .move_cursor(ratatui_textarea::CursorMove::Head);
-                None
-            }
-
-            // Ctrl+E — move cursor to end of current line
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char('e'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.textarea.move_cursor(ratatui_textarea::CursorMove::End);
-                None
-            }
-
-            // Up arrow — multi-line cursor up or history previous
+            // Up (no shift) — history nav or textarea cursor up
             crossterm::event::KeyEvent {
                 code: KeyCode::Up,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
                 if self.textarea_is_multiline() {
-                    self.textarea.move_cursor(ratatui_textarea::CursorMove::Up);
+                    self.textarea.input(key);
                 } else {
                     self.history_prev();
                 }
                 None
             }
 
-            // Down arrow — multi-line cursor down or history next
+            // Down (no shift) — history nav or textarea cursor down
             crossterm::event::KeyEvent {
                 code: KeyCode::Down,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
                 if self.textarea_is_multiline() {
-                    self.textarea
-                        .move_cursor(ratatui_textarea::CursorMove::Down);
+                    self.textarea.input(key);
                 } else {
                     self.history_next();
                 }
                 None
             }
 
-            // PageUp — scroll chat up (older messages)
+            // PageUp — scroll chat up
             crossterm::event::KeyEvent {
                 code: KeyCode::PageUp,
+                modifiers: KeyModifiers::NONE,
                 ..
             } => {
                 self.scroll.scroll_up(10);
                 None
             }
 
-            // PageDown — scroll chat down (newer messages)
+            // PageDown — scroll chat down
             crossterm::event::KeyEvent {
                 code: KeyCode::PageDown,
+                modifiers: KeyModifiers::NONE,
                 ..
             } => {
                 self.scroll.scroll_down(10);
                 None
             }
 
-            // Home — scroll to top (oldest messages)
-            crossterm::event::KeyEvent {
-                code: KeyCode::Home,
-                ..
-            } => {
-                self.scroll.scroll_to_top();
-                None
-            }
-
-            // End — scroll to bottom (newest messages)
-            crossterm::event::KeyEvent {
-                code: KeyCode::End, ..
-            } => {
-                self.scroll.scroll_to_bottom();
-                None
-            }
-
-            // Tab — attempt tab completion (slash commands, model names)
+            // Tab — attempt completion
             crossterm::event::KeyEvent {
                 code: KeyCode::Tab,
                 modifiers: KeyModifiers::NONE,
@@ -848,92 +827,16 @@ impl App {
                 None
             }
 
-            // Backspace — use textarea (handles single-line & multi-line)
-            // Note: Alt+Backspace (M-DEL) is handled by textarea.input() as
-            // delete_word when we fall through to the _ => branch at the end.
-            crossterm::event::KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.textarea.delete_char();
+            // ── All other keys: pass to textarea.input() ─────────────
+            // This handles: Shift+arrows (selection), Ctrl+arrows (word movement),
+            // Home/End (with shift for selection), Backspace/Delete (with selection),
+            // Ctrl+A/E, Ctrl+W (cut), Ctrl+Y (paste), Ctrl+U/R (undo/redo),
+            // Alt+Backspace (delete word), regular chars (replace selection),
+            // and any other key the textarea knows about.
+            _ => {
+                self.textarea.input(key);
                 None
             }
-
-            // Alt+Backspace — delete word backward (emacs M-DEL)
-            crossterm::event::KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::ALT,
-                ..
-            } => {
-                self.textarea.delete_word();
-                None
-            }
-
-            // Delete key — forward delete
-            crossterm::event::KeyEvent {
-                code: KeyCode::Delete,
-                ..
-            } => {
-                self.textarea.delete_next_char();
-                None
-            }
-
-            // Left/Right with no modifiers — let textarea handle it
-            crossterm::event::KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.textarea
-                    .move_cursor(ratatui_textarea::CursorMove::Back);
-                None
-            }
-
-            crossterm::event::KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::NONE,
-                ..
-            } => {
-                self.textarea
-                    .move_cursor(ratatui_textarea::CursorMove::Forward);
-                None
-            }
-
-            // Ctrl+Left — word back
-            crossterm::event::KeyEvent {
-                code: KeyCode::Left,
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.textarea
-                    .move_cursor(ratatui_textarea::CursorMove::WordBack);
-                None
-            }
-
-            // Ctrl+Right — word forward
-            crossterm::event::KeyEvent {
-                code: KeyCode::Right,
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
-                self.textarea
-                    .move_cursor(ratatui_textarea::CursorMove::WordForward);
-                None
-            }
-
-            // Regular character — insert at cursor
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char(c),
-                modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
-                ..
-            } => {
-                self.textarea.insert_char(c);
-                None
-            }
-
-            // Ignore other key events
-            _ => None,
         }
     }
 
@@ -1056,11 +959,48 @@ impl App {
             }
             CompletionResult::Multiple {
                 matches,
-                cycle_index: _,
+                descriptions,
+                ..
             } => {
                 // Compute common prefix for highlighting
                 let common = common_prefix_str(&matches);
-                self.completion_menu.show(matches, common);
+                self.completion_menu.show(matches, descriptions, common);
+            }
+        }
+    }
+
+    /// Try sub-completion after confirming a completion menu selection.
+    ///
+    /// After confirming a slash command (e.g., `/model`), checks if the
+    /// command takes arguments and if so, automatically triggers completion
+    /// for those arguments. This enables recursive completion:
+    /// `/mo` → Tab → `/model ` → model name list appears.
+    fn try_completion_after_confirm(&mut self) {
+        let buffer = self.textarea_lines();
+        let cursor_pos = self.cursor_byte_offset();
+
+        if cursor_pos == buffer.len() && buffer.starts_with('/') {
+            let result = self.completer.complete(&buffer, cursor_pos);
+            match result {
+                super::completer::CompletionResult::None => {
+                    self.completion_menu.hide();
+                }
+                super::completer::CompletionResult::Single {
+                    replacement,
+                    cursor_pos,
+                } => {
+                    self.completion_menu.hide();
+                    self.set_textarea_content(&replacement);
+                    self.set_cursor_to_byte_offset(cursor_pos);
+                }
+                super::completer::CompletionResult::Multiple {
+                    matches,
+                    descriptions,
+                    ..
+                } => {
+                    let common = common_prefix_str(&matches);
+                    self.completion_menu.show(matches, descriptions, common);
+                }
             }
         }
     }

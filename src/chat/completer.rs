@@ -29,8 +29,7 @@
 struct SlashCommand {
     /// The full command string including `/` prefix
     trigger: &'static str,
-    /// Short description shown in completion hints
-    #[allow(dead_code)] // Will be used for completion menu display
+    /// Short description shown in completion menu
     description: &'static str,
     /// Type of argument completion for this command (if any)
     arg_type: ArgCompletion,
@@ -592,6 +591,8 @@ pub enum CompletionResult {
     Multiple {
         /// All matching completion strings (for menu display)
         matches: Vec<String>,
+        /// Descriptions for each match (same length as matches; empty strings if none)
+        descriptions: Vec<String>,
         /// Current index in the matches cycle (0-based)
         #[allow(dead_code)]
         // Kept for API compatibility; menu uses its own selection state
@@ -728,12 +729,18 @@ impl ChatCompleter {
                     };
                 }
 
-                // Already at the common prefix, cycle through matches
+                // Already at the common prefix, show completion menu
                 let idx = self.cycle_index % match_strings.len();
                 self.cycle_index += 1;
 
+                let descriptions: Vec<String> = matches
+                    .iter()
+                    .map(|cmd| cmd.description.to_string())
+                    .collect();
+
                 CompletionResult::Multiple {
                     matches: match_strings,
+                    descriptions,
                     cycle_index: idx,
                 }
             }
@@ -776,9 +783,11 @@ impl ChatCompleter {
 
                 // Return multiple matches for completion menu
                 let match_strings: Vec<String> = matches.iter().map(|&s| s.to_string()).collect();
+                let descriptions = vec![String::new(); match_strings.len()];
 
                 CompletionResult::Multiple {
                     matches: match_strings,
+                    descriptions,
                     cycle_index: 0,
                 }
             }

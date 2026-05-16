@@ -34,6 +34,8 @@ const MAX_VISIBLE_ITEMS: u16 = 8;
 pub struct CompletionMenuState {
     /// Available completion items
     items: Vec<String>,
+    /// Optional descriptions for each item (same length as items)
+    descriptions: Vec<String>,
     /// Currently selected index (0-based)
     selected: usize,
     /// Scroll offset for long lists
@@ -49,6 +51,7 @@ impl CompletionMenuState {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
+            descriptions: Vec::new(),
             selected: 0,
             scroll_offset: 0,
             common_prefix: String::new(),
@@ -56,13 +59,14 @@ impl CompletionMenuState {
         }
     }
 
-    /// Show the menu with the given items and common prefix
-    pub fn show(&mut self, items: Vec<String>, common_prefix: String) {
+    /// Show the menu with the given items, descriptions, and common prefix
+    pub fn show(&mut self, items: Vec<String>, descriptions: Vec<String>, common_prefix: String) {
         if items.is_empty() {
             self.visible = false;
             return;
         }
         self.items = items;
+        self.descriptions = descriptions;
         self.common_prefix = common_prefix;
         self.selected = 0;
         self.scroll_offset = 0;
@@ -227,10 +231,31 @@ pub fn render_overlay(f: &mut Frame, status_bar_area: Rect, state: &CompletionMe
             prefix_style
         };
 
-        lines.push(Line::from(vec![
+        // Build the line with optional description
+        let desc = state
+            .descriptions
+            .get(actual_index)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let desc_style = if is_selected {
+            selected_style
+        } else {
+            Style::default().add_modifier(Modifier::DIM)
+        };
+
+        let mut spans = vec![
             Span::styled(prefix_part.to_string(), prefix_display_style),
             Span::styled(rest_part.to_string(), item_style),
-        ]));
+        ];
+
+        // Add description if there's room and the description exists
+        let item_width: usize = item.len();
+        if !desc.is_empty() && item_width + 3 + desc.len() < menu_width as usize {
+            spans.push(Span::styled(" — ".to_string(), desc_style));
+            spans.push(Span::styled(desc.to_string(), desc_style));
+        }
+
+        lines.push(Line::from(spans));
     }
 
     // Render with a block border
@@ -258,6 +283,7 @@ mod tests {
         let mut state = CompletionMenuState::new();
         state.show(
             vec!["help".to_string(), "history".to_string()],
+            vec!["Show help".to_string(), "Show history".to_string()],
             "h".to_string(),
         );
         assert!(state.is_visible());
@@ -273,6 +299,7 @@ mod tests {
         let mut state = CompletionMenuState::new();
         state.show(
             vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
+            vec![String::new(); 3],
             String::new(),
         );
 
@@ -294,7 +321,11 @@ mod tests {
     #[test]
     fn test_completion_menu_confirm() {
         let mut state = CompletionMenuState::new();
-        state.show(vec!["hello".to_string()], "h".to_string());
+        state.show(
+            vec!["hello".to_string()],
+            vec!["Greeting".to_string()],
+            "h".to_string(),
+        );
         let result = state.confirm();
         assert_eq!(result, Some("hello".to_string()));
         assert!(!state.is_visible());
@@ -303,7 +334,7 @@ mod tests {
     #[test]
     fn test_completion_menu_show_empty() {
         let mut state = CompletionMenuState::new();
-        state.show(Vec::new(), String::new());
+        state.show(Vec::new(), Vec::new(), String::new());
         assert!(!state.is_visible());
     }
 
@@ -311,7 +342,8 @@ mod tests {
     fn test_completion_menu_scroll_adjustment() {
         let mut state = CompletionMenuState::new();
         let items: Vec<String> = (0..20).map(|i| format!("item_{}", i)).collect();
-        state.show(items, String::new());
+        let descriptions: Vec<String> = (0..20).map(|i| format!("desc_{}", i)).collect();
+        state.show(items, descriptions, String::new());
 
         // Select item 15 — should adjust scroll
         state.selected = 15;
