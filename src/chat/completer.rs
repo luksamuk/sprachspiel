@@ -782,7 +782,12 @@ impl ChatCompleter {
                 }
 
                 // Return multiple matches for completion menu
-                let match_strings: Vec<String> = matches.iter().map(|&s| s.to_string()).collect();
+                // Items include the command trigger prefix so the replacement
+                // is correct when the user confirms a selection (e.g., "/model glm-5.1:cloud")
+                let match_strings: Vec<String> = matches
+                    .iter()
+                    .map(|&s| format!("{} {}", cmd_trigger, s))
+                    .collect();
                 let descriptions = vec![String::new(); match_strings.len()];
 
                 CompletionResult::Multiple {

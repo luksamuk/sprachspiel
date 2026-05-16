@@ -974,9 +974,12 @@ impl App {
     /// Try sub-completion after confirming a completion menu selection.
     ///
     /// After confirming a slash command (e.g., `/model`), checks if the
-    /// command takes arguments and if so, automatically triggers completion
-    /// for those arguments. This enables recursive completion:
+    /// command takes arguments and if so, shows the completion menu for
+    /// those arguments. This enables recursive completion:
     /// `/mo` → Tab → `/model ` → model name list appears.
+    ///
+    /// Note: We always SHOW the menu, never auto-replace text. The user
+    /// explicitly selects with Tab/Enter or dismisses with Esc.
     fn try_completion_after_confirm(&mut self) {
         let buffer = self.textarea_lines();
         let cursor_pos = self.cursor_byte_offset();
@@ -987,13 +990,15 @@ impl App {
                 super::completer::CompletionResult::None => {
                     self.completion_menu.hide();
                 }
-                super::completer::CompletionResult::Single {
-                    replacement,
-                    cursor_pos,
-                } => {
-                    self.completion_menu.hide();
-                    self.set_textarea_content(&replacement);
-                    self.set_cursor_to_byte_offset(cursor_pos);
+                super::completer::CompletionResult::Single { replacement, .. } => {
+                    // Single sub-completion match: show as a one-item menu
+                    // so the user can Tab/Enter to confirm, or Esc to dismiss.
+                    // Don't auto-replace — the user decides.
+                    self.completion_menu.show(
+                        vec![replacement.clone()],
+                        vec![String::new()],
+                        replacement.clone(),
+                    );
                 }
                 super::completer::CompletionResult::Multiple {
                     matches,
@@ -1010,10 +1015,12 @@ impl App {
     /// Auto-trigger completion menu when typing slash commands.
     ///
     /// After each character is typed, checks if the current input starts
-    /// with `/` and has multiple completions available. If so, shows the
-    /// completion menu automatically (no need to press Tab first).
-    /// If only one completion matches, extends the common prefix silently.
-    /// If no slash command matches, hides the menu.
+    /// with `/` and has completions available. Shows the menu to display
+    /// options, but NEVER replaces the text — the user must explicitly
+    /// press Tab or Enter to confirm a selection.
+    ///
+    /// This avoids the "stuck input" problem where auto-completion would
+    /// replace the text while the user is still typing.
     fn auto_complete_on_type(&mut self) {
         let buffer = self.textarea_lines();
         let cursor_pos = self.cursor_byte_offset();
@@ -1032,16 +1039,16 @@ impl App {
             super::completer::CompletionResult::None => {
                 self.completion_menu.hide();
             }
-            super::completer::CompletionResult::Single {
-                replacement,
-                cursor_pos,
-            } => {
-                self.completion_menu.hide();
-                // Auto-extend to common prefix silently
-                if replacement != buffer {
-                    self.set_textarea_content(&replacement);
-                    self.set_cursor_to_byte_offset(cursor_pos);
-                }
+            super::completer::CompletionResult::Single { replacement, .. } => {
+                // Single match: don't auto-replace, just hide the menu.
+                // The user typed enough to be unique — they can press Tab
+                // if they want to complete, or keep typing.
+                // Show as one-item menu so they know what's available.
+                self.completion_menu.show(
+                    vec![replacement.clone()],
+                    vec![String::new()],
+                    replacement.clone(),
+                );
             }
             super::completer::CompletionResult::Multiple {
                 matches,
