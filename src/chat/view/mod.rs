@@ -429,15 +429,7 @@ impl WelcomeInfo {
         let d = colors::DIM;
         let r = colors::RESET;
 
-        // Core identity
-        lines.push(format!(
-            "{}Model:{} {}{}{}",
-            bc,
-            r,
-            d,
-            truncate_str(&self.model_id, 30),
-            r
-        ));
+        // Model is shown in the status bar/modeline — no need to duplicate in banner
 
         lines.push(format!(
             "{}Server:{} {}{}{}",
@@ -529,8 +521,7 @@ impl WelcomeInfo {
     pub fn format_session_lines_plain(&self) -> Vec<String> {
         let mut lines = Vec::new();
 
-        // Core identity
-        lines.push(format!("Model: {}", truncate_str(&self.model_id, 30)));
+        // Model is shown in the status bar/modeline — no need to duplicate in banner
         lines.push(format!("Server: {}", truncate_str(&self.server_url, 30)));
 
         // Capabilities
@@ -913,7 +904,6 @@ mod tests {
         };
 
         let output = info.to_boxed_string();
-        assert!(output.contains("qwen3.5:4b"));
         assert!(output.contains("Project:"));
         assert!(output.contains("Session:"));
     }

@@ -232,6 +232,20 @@ pub async fn run_chat_repl_tui(
                                             .await;
                                             view.show_command_outputs(&outputs);
 
+                                            // Update the modeline with the new model name
+                                            // (handle_model_switch updates state but not the view)
+                                            let new_model_name =
+                                                state.model_config.model_id.clone();
+                                            let think_enabled =
+                                                state.session.think && state.capabilities.thinking;
+                                            let tools_enabled =
+                                                state.tools_active && state.capabilities.tools;
+                                            view.update_status_model(
+                                                &new_model_name,
+                                                think_enabled,
+                                                tools_enabled,
+                                            );
+
                                             if outputs
                                                 .iter()
                                                 .any(|o| matches!(o, CommandOutput::Quit))
