@@ -325,7 +325,7 @@ pub fn render(
                     lines.push(Line::raw(String::new()));
                 }
                 // No prefix — markdown rendered
-                let rendered = render_markdown(&msg.content, theme);
+                let rendered = render_markdown(&msg.content, theme, available_width);
                 lines.extend(rendered.lines);
             }
             MessageType::AssistantStreaming => {

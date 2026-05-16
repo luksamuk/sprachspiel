@@ -374,6 +374,10 @@ The system uses:
 - **Context Enrichment**: User questions are paired with assistant responses
 - **Smart Positioning**: Retrieved context placed optimally (not "lost in middle")
 
+## Acknowledgments
+
+Table rendering in the TUI was inspired by the [ratatui-markdown](https://github.com/celestia-island/ratatui-markdown) crate by langyo (MIT OR Apache-2.0).
+
 ## AI-Assisted Development
 
 Developed with assistance from:
