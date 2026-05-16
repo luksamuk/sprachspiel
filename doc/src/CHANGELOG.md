@@ -4,6 +4,10 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **W6-PR2: Responsive Chat Rebuild — Ratatui + CrosstermInput (Issue #146)** — Replace println+ANSI rendering with Ratatui for responsive chat at any terminal width. Replace rustyline with CrosstermInput (incompatible with ratatui raw mode). App event loop with crossterm key events (100ms poll for spinner). RatatuiView implements all 18 ChatView methods + all CommandOutput variants. TUI components: ChatMessage enum, StatusBarState with braille spinner, InputState with unicode cursor. MarkdownTheme (Dark/Light/Mono) from DisplaySettings.skin. WelcomeInfo and RecentContextInfo rendered as chat messages. Status bar with model name, token progress bar, and emoji indicators. Session save/restore on Ctrl+D and /quit. run_chat_repl() delegates all interactive display to run_chat_repl_tui() via RatatuiView. Non-chat subcommands continue using TerminalView (termimad+indicatif). Streaming: plain text during LLM response (ChatMessage::assistant_streaming), full markdown render on completion (ChatMessage::assistant_markdown). Spinner animation deferred to PR3 (await blocks render loop).
+
 ### Changed
 
 - **W6-PR1: CommandResult — Decouple Logic from Presentation (Issue #145)** — Migrate all command handlers from direct `println!`/`eprintln!` to typed `CommandResult` enum, with rendering via `ChatView`. Creates the abstraction layer needed for the Ratatui migration (W6-PR2). No behavioral changes — all output remains identical, just routed through the new enum and trait methods instead of raw print calls.

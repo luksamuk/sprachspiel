@@ -327,8 +327,8 @@ pub fn tools_config_path() -> Option<PathBuf> {
 }
 
 /// Generate a default tools.toml content.
-#[expect(dead_code)]
-pub fn generate_default_toml() -> String {
+#[cfg(test)]
+fn generate_default_toml() -> String {
     r#"# External tools configuration for sprachspiel
 #
 # This file controls which external CLI tools the LLM can execute via run_command.

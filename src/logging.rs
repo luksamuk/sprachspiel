@@ -207,8 +207,11 @@ impl log::Log for StderrLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        // Suppress rustyline internals
-        if record.target().starts_with("rustyline") {
+        // Suppress TUI internals (crossterm, ratatui, rustyline-derivative)
+        if record.target().starts_with("crossterm")
+            || record.target().starts_with("ratatui")
+            || record.target().starts_with("rustyline")
+        {
             return;
         }
         let level = Self::colored_level(record.level());
@@ -304,8 +307,11 @@ impl log::Log for FileLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        // Suppress rustyline internals
-        if record.target().starts_with("rustyline") {
+        // Suppress TUI internals (crossterm, ratatui, rustyline-derivative)
+        if record.target().starts_with("crossterm")
+            || record.target().starts_with("ratatui")
+            || record.target().starts_with("rustyline")
+        {
             return;
         }
 

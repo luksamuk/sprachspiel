@@ -45,7 +45,7 @@ const BANNER_LOGO: &str = "\
 /// Extended mind braille art - generated from extended-mind.png via braille_art.py
 /// Connected mind representing tools/memory/Zettelkasten
 /// Generated: python3 braille_art.py extended-mind.png -w 39 --color
-const EXTENDED_MIND_ART: [&str; 14] = [
+pub(crate) const EXTENDED_MIND_ART: [&str; 14] = [
     "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\x1B[38;2;245;213;122m⢀\x1B[38;2;237;216;142m⣤\x1B[38;2;255;248;123m⡀⠀⠀⠀\x1B[0m",
     "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\x1B[38;2;244;232;147m⢀\x1B[38;2;228;195;100m⣾\x1B[38;2;252;249;180m⣿\x1B[38;2;235;210;90m⡿⠀⠀⠀\x1B[0m",
     "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\x1B[38;2;182;134;51m⢀\x1B[38;2;248;235;159m⣠\x1B[38;2;217;191;113m⠾\x1B[38;2;238;219;134m⠋⠀⠀⠀⠀⠀⠀\x1B[0m",
@@ -69,8 +69,10 @@ const EXTENDED_MIND_ART: [&str; 14] = [
 // - Update `repl.rs` to use the new implementation
 // IMPORTANT: Review and remove any dead code after TUI is implemented.
 
+mod ratatui_view;
 mod terminal;
 
+pub use ratatui_view::RatatuiView;
 pub use terminal::TerminalView;
 
 // Re-export TokenMetrics from core for consumers of this module
@@ -322,6 +324,19 @@ pub trait ChatView {
             self.show_command_output(output);
         }
     }
+
+    /// Whether progress spinners should be suppressed.
+    ///
+    /// Returns `true` for TUI views that manage their own progress indication
+    /// (e.g., a built-in spinner in the status bar). TerminalView returns
+    /// `false` because it relies on indicatif spinners for visual feedback.
+    ///
+    /// When `true`, `create_spinner()` returns a hidden (no-op) spinner and
+    /// `finish_spinner` is a no-op, preventing ANSI escape sequence corruption
+    /// in the TUI's alternate screen buffer.
+    fn suppress_progress_spinner(&self) -> bool {
+        false
+    }
 }
 
 /// Welcome information for display
@@ -502,6 +517,73 @@ impl WelcomeInfo {
         // Skills (only when tools enabled and skills available)
         if self.tools_enabled && self.skill_count > 0 {
             lines.push(format!("{}Skills:{} {}{}{}", bc, r, d, self.skill_count, r));
+        }
+
+        lines
+    }
+
+    /// Format session info lines as plain text (no ANSI escape codes).
+    ///
+    /// Used by `RatatuiView` which renders text via `Line::raw()`.
+    /// ANSI codes would appear as garbled text in the TUI.
+    pub fn format_session_lines_plain(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+
+        // Core identity
+        lines.push(format!("Model: {}", truncate_str(&self.model_id, 30)));
+        lines.push(format!("Server: {}", truncate_str(&self.server_url, 30)));
+
+        // Capabilities
+        let tools_status = if self.tools_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        lines.push(format!("Tools: {}", tools_status));
+
+        if self.think_enabled {
+            lines.push("Think: enabled".to_string());
+        }
+
+        if self.vision_enabled {
+            lines.push("Vision: enabled".to_string());
+        }
+
+        // Security
+        lines.push(format!(
+            "Sandbox: {}",
+            truncate_str(&self.sandbox_status, 28)
+        ));
+
+        // Context
+        lines.push(format!("Project: {}", truncate_str(&self.project, 30)));
+
+        let session_display = if self.is_anonymous {
+            "anonymous".to_string()
+        } else {
+            self.session_name.clone()
+        };
+        lines.push(format!("Session: {}", truncate_str(&session_display, 30)));
+
+        // Static metadata
+        lines.push(format!("Version: {}", self.version));
+
+        // Content counts (only shown when > 0)
+        if self.fact_count > 0 {
+            lines.push(format!("Facts: {}", self.fact_count));
+        }
+
+        if self.note_count > 0 {
+            lines.push(format!("Notes: {}", self.note_count));
+        }
+
+        if self.doc_count > 0 {
+            lines.push(format!("Docs: {}", self.doc_count));
+        }
+
+        // Skills (only when tools enabled and skills available)
+        if self.tools_enabled && self.skill_count > 0 {
+            lines.push(format!("Skills: {}", self.skill_count));
         }
 
         lines

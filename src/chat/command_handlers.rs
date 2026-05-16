@@ -786,6 +786,7 @@ pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
         &state.session,
         &state.settings,
         state.agents_md.as_deref(),
+        false, // TerminalView always shows indicatif spinners
     )
     .await
     {

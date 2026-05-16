@@ -1,8 +1,7 @@
 //! Tool execution display and logging.
 //!
-//! Tool calls are displayed as UI output (eprintln) controlled by a dedicated
+//! Tool calls are displayed as UI output controlled by a dedicated
 //! `show_tool_calls` flag, independent of the `log` crate's verbosity levels.
-//! This ensures tool calls are always visible in Normal mode (the default).
 //!
 //! # Display Logic
 //!
@@ -20,6 +19,13 @@
 //! `log::LevelFilter`. In Verbose/Trace mode, additional detail lines are shown
 //! (key: value, one per line). Tool results are hidden in Normal mode.
 //!
+//! # TUI Mode
+//!
+//! When running in TUI mode (ratatui alternate screen), tool call output must
+//! go through the ChatView layer rather than `eprintln!`, which would corrupt
+//! the alternate screen. A global callback can be set via [`set_tui_callback`]
+//! to route tool call display through the TUI view layer.
+//!
 //! # Configuration
 //!
 //! The `show_tool_calls` setting in `[display]` section of `config.toml` controls
@@ -27,9 +33,15 @@
 //! In Quiet mode (`-q`), tool calls are always hidden regardless of this setting.
 
 #![expect(clippy::print_stderr)] // Debug diagnostics output
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::spinner::suspend_for_print;
+
+/// Type alias for the TUI callback that routes tool call output into the chat view.
+///
+/// Avoids clippy `type_complexity` on the raw `Arc<dyn Fn(&str) + Sync + Send>` type.
+type TuiCallback = std::sync::Arc<dyn Fn(&str) + Sync + Send>;
 
 /// ANSI style: DIM (faint) + light gray text — same as `[Thinking]` blocks.
 ///
@@ -48,6 +60,29 @@ const MAX_LINE_WIDTH: usize = 74;
 /// `Settings::display.show_tool_calls` at startup and via `/debug` toggle.
 /// In Quiet mode, this flag is overridden — tool calls are never shown.
 static SHOW_TOOL_CALLS: AtomicBool = AtomicBool::new(true);
+
+/// Global callback for TUI mode tool call display.
+///
+/// When set, `display_tool_call` invokes this callback with the formatted
+/// line instead of printing to stderr. This prevents ANSI escape sequences
+/// from corrupting the ratatui alternate screen.
+///
+/// The callback is set when the TUI starts and cleared on exit.
+/// In terminal (non-TUI) mode, this remains `None` and `eprintln!` is used.
+static TUI_CALLBACK: Mutex<Option<TuiCallback>> = Mutex::new(None);
+
+/// Set the TUI callback for tool call display.
+///
+/// When set, tool call lines are sent through this callback instead of
+/// `eprintln!`. This is used by the ratatui TUI to route tool calls into
+/// the chat area as system messages.
+///
+/// Call with `None` to clear the callback (e.g., when exiting TUI mode).
+pub fn set_tui_callback(callback: Option<TuiCallback>) {
+    if let Ok(mut guard) = TUI_CALLBACK.lock() {
+        *guard = callback;
+    }
+}
 
 /// Set the `show_tool_calls` flag from configuration.
 ///
@@ -80,6 +115,9 @@ pub fn toggle_debug() -> crate::logging::Verbosity {
 /// This is **always** called — the decision to show/hide is made by
 /// [`should_show_tool_calls()`] which checks both Quiet mode and the
 /// `show_tool_calls` configuration flag.
+///
+/// In TUI mode, the formatted line is sent through the TUI callback
+/// instead of `eprintln!`, preventing alternate screen corruption.
 fn display_tool_call(tool_name: &str, args: &[(String, String)]) {
     if !should_show_tool_calls() {
         return;
@@ -104,8 +142,19 @@ fn display_tool_call(tool_name: &str, args: &[(String, String)]) {
     let content_budget = MAX_LINE_WIDTH.saturating_sub(prefix_len + suffix_len);
     let display_args = crate::utils::truncate_chars(&args_line, content_budget);
 
+    let line = format!("{prefix}{display_args}{suffix}");
+
+    // Route through TUI callback if set, otherwise print to stderr
+    if let Ok(guard) = TUI_CALLBACK.lock()
+        && let Some(callback) = guard.as_ref()
+    {
+        callback(&line);
+        return;
+    }
+
+    // Terminal mode: print to stderr with ANSI styling
     suspend_for_print(|| {
-        eprintln!("{TOOL_DIM}{prefix}{display_args}{suffix}{RESET}");
+        eprintln!("{TOOL_DIM}{line}{RESET}");
     });
 }
 
@@ -124,12 +173,25 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
 
     // In Verbose/Trace mode, show additional detail lines
     if log::log_enabled!(log::Level::Debug) {
-        suspend_for_print(|| {
-            for (key, value) in args {
-                let display_value = crate::utils::truncate_chars(value, 77);
-                eprintln!("{TOOL_DIM}  {key}: {display_value}{RESET}");
+        // Check if TUI callback is set — if so, route detail lines through it too
+        let has_tui_callback = TUI_CALLBACK.lock().ok().is_some_and(|g| g.is_some());
+
+        for (key, value) in args {
+            let display_value = crate::utils::truncate_chars(value, 77);
+            let detail_line = format!("  {key}: {display_value}");
+
+            if has_tui_callback {
+                if let Ok(guard) = TUI_CALLBACK.lock()
+                    && let Some(callback) = guard.as_ref()
+                {
+                    callback(&detail_line);
+                }
+            } else {
+                suspend_for_print(|| {
+                    eprintln!("{TOOL_DIM}{detail_line}{RESET}");
+                });
             }
-        });
+        }
     }
 }
 
@@ -139,19 +201,43 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
 /// - **Verbose mode (-v)**: truncated preview (~100 chars) in DIM gray
 /// - **Trace mode (-vv)**: full result (up to 500 chars) in DIM gray
 /// - **Quiet mode**: hidden
+///
+/// In TUI mode, results are routed through the TUI callback.
 pub fn log_tool_result(tool_name: &str, result: &str) {
+    let has_tui_callback = TUI_CALLBACK.lock().ok().is_some_and(|g| g.is_some());
+
     // Trace mode: full result (up to 500 chars)
     if log::max_level() == log::LevelFilter::Trace {
         let display_result = format_result(result, 500);
-        suspend_for_print(|| {
-            eprintln!("{TOOL_DIM}📤 {tool_name} result: {display_result}{RESET}");
-        });
+        let line = format!("📤 {tool_name} result: {display_result}");
+
+        if has_tui_callback {
+            if let Ok(guard) = TUI_CALLBACK.lock()
+                && let Some(callback) = guard.as_ref()
+            {
+                callback(&line);
+            }
+        } else {
+            suspend_for_print(|| {
+                eprintln!("{TOOL_DIM}{line}{RESET}");
+            });
+        }
     } else if log::log_enabled!(log::Level::Debug) {
         // Verbose mode: truncated preview (~100 chars)
         let preview = crate::utils::truncate_chars(result, 100);
-        suspend_for_print(|| {
-            eprintln!("{TOOL_DIM}✓ Result: {}{RESET}", preview.replace('\n', " "));
-        });
+        let line = format!("✓ Result: {}", preview.replace('\n', " "));
+
+        if has_tui_callback {
+            if let Ok(guard) = TUI_CALLBACK.lock()
+                && let Some(callback) = guard.as_ref()
+            {
+                callback(&line);
+            }
+        } else {
+            suspend_for_print(|| {
+                eprintln!("{TOOL_DIM}{line}{RESET}");
+            });
+        }
     }
     // Normal + Quiet mode: tool results are hidden
 }

@@ -10,23 +10,23 @@
 //!     ↓ uses
 //! InputBackend (trait)
 //!     ↓ implemented by
-//! RustylineInput (current) ─── TuiInput (future)
+//! CrosstermInput (current TUI) ─── RustylineInput (removed)
 //! ```
 //!
 //! # TUI Migration
 //!
-//! When implementing ratatui.rs TUI:
-//! - Add methods to trait as needed (history, completion, etc.)
-//! - Implement `TuiInput` struct in `src/chat/input/tui.rs`
-//! - Update `repl.rs` to use the new implementation
+//! The `RustylineInput` has been removed in PR2 (#146) because
+//! rustyline and ratatui are technically incompatible (both require
+//! raw mode and terminal control). `CrosstermInput` handles key events
+//! via the crossterm event loop, which integrates naturally with ratatui.
 //!
 //! IMPORTANT: Review and remove any dead code after TUI is implemented.
 
 use std::path::PathBuf;
 
-mod rustyline;
+mod crossterm_input;
 
-pub use rustyline::RustylineInput;
+pub use crossterm_input::CrosstermInput;
 
 /// Result of reading a line from input
 #[derive(Debug, Clone)]
@@ -38,37 +38,29 @@ pub enum InputResult {
     /// User pressed Ctrl+D (EOF)
     Eof,
     /// An error occurred
+    #[allow(dead_code)] // InputBackend trait contract
     Error(String),
 }
 
 /// Abstraction for input handling in the chat REPL
 ///
 /// This trait enables the REPL to work with different input backends:
-/// - `RustylineInput`: Current implementation using rustyline
-/// - `TuiInput`: Future implementation for ratatui.rs TUI
+/// - `CrosstermInput`: TUI implementation using crossterm key events
 ///
 /// # Example
 ///
 /// ```ignore
 /// use chat::input::{InputBackend, InputResult};
 ///
-/// let mut input = RustylineInput::new(model_names);
-/// match input.read_line("model🧠🔧> ") {
-///     InputResult::Line(line) => { /* handle input */ }
-///     InputResult::Interrupted => { /* handle Ctrl+C */ }
-///     InputResult::Eof => { /* handle Ctrl+D, exit */ }
-///     InputResult::Error(e) => { /* handle error */ }
-/// }
+/// let mut input = CrosstermInput::new(model_names);
+/// // In TUI mode, input is handled via key events, not read_line()
 /// ```
 pub trait InputBackend {
     /// Read a line from input with the given prompt
     ///
-    /// This is the primary method for getting user input.
-    /// Implementations should handle:
-    /// - Line editing (cursor movement, backspace, etc.)
-    /// - History navigation (up/down arrows)
-    /// - Tab completion (if supported)
-    /// - Ctrl+C (interrupt) and Ctrl+D (EOF) signals
+    /// This method is kept for trait compatibility but should not be
+    /// called in TUI mode. In the TUI, input is handled via crossterm
+    /// key events processed by `CrosstermInput::handle_key_event()`.
     ///
     /// # Arguments
     ///
@@ -77,6 +69,7 @@ pub trait InputBackend {
     /// # Returns
     ///
     /// Returns `InputResult` indicating what happened.
+    #[allow(dead_code)] // InputBackend trait contract
     fn read_line(&mut self, prompt: &str) -> InputResult;
 
     /// Add a line to the input history

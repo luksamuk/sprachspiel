@@ -8,24 +8,27 @@
 //! ```text
 //! Layer 0: input.rs (trait), view.rs (trait) - NO dependencies
 //! Layer 1: session.rs, cli.rs
-//! Layer 2: input/rustyline.rs, view/terminal.rs
+//! Layer 2: input/crossterm_input.rs, view/terminal.rs, view/ratatui_view.rs
 //! Layer 3: repl_state.rs
 //! Layer 4: core.rs, command_handlers.rs
 //! Layer 5: repl.rs (coordinator)
 //! ```
 //!
-//! # Command Output Decoupling (W6-PR1, Issue #145)
+//! # TUI Migration (W6-PR2, Issue #146)
 //!
-//! Commands return `Vec<CommandOutput>` instead of calling `println!` directly.
-//! The `ChatView` trait renders each `CommandOutput` variant with appropriate
-//! styling. This decoupling enables future TUI migration (W6-PR2) where
-//! `RatatuiView` renders the same data with ratatui widgets.
+//! The chat REPL now runs via ratatui + crossterm for responsive rendering
+//! at any terminal width. `RustylineInput` has been removed because rustyline
+//! and ratatui are technically incompatible (both require raw mode and terminal
+//! control). `CrosstermInput` handles key events via the crossterm event loop.
+//!
+//! Non-chat subcommands (query, translate, OCR, summarize) continue using
+//! termimad + indicatif and are unaffected by the TUI migration.
 
+pub mod app;
 pub mod cli;
 pub mod command_handlers;
 pub mod command_output;
 pub mod commands;
-pub mod completion;
 pub mod continuation;
 pub mod coordinator;
 pub mod core;
@@ -34,10 +37,12 @@ pub mod input;
 pub mod model_switch;
 pub mod repl;
 pub mod repl_state;
+pub mod repl_tui;
 pub mod session;
 pub mod subagent;
 pub mod thinking;
 pub mod todo_state;
+pub mod tui;
 pub mod view;
 
 pub use cli::ChatArgs;

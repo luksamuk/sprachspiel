@@ -71,7 +71,9 @@ Minimum checks:
 
 ## Review Comment Response Prefixes
 
-When responding to review comments, use these prefixes:
+**CRITICAL:** Respond to EACH thread individually, not in a single summary comment. Each comment needs its own reply for the reviewer to mark as resolved.
+
+**For detailed review patterns and API commands (creating reviews, responding to threads, resolving threads, project-specific checks), load the `code-review` skill.**
 
 | Prefix | Meaning | When to Use |
 |--------|---------|-------------|
@@ -80,10 +82,6 @@ When responding to review comments, use these prefixes:
 | 📋 | Acknowledged, deferred | Good suggestion, will address in future PR |
 | ❌ | Declined | Not applicable, with explanation |
 | ❓ | Clarification needed | Question about the comment |
-
-**CRITICAL:** Respond to EACH thread individually, not in a single summary comment. Each comment needs its own reply for the reviewer to mark as resolved.
-
-**For detailed review response formats and exact GraphQL commands, load the `pr-workflow` skill.**
 
 ## Conventional Commits
 
