@@ -19,6 +19,7 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 | **On the Theoretical Limitations of Embedding-Based Retrieval** | Boratko et al. | [arXiv:2508.21038](https://arxiv.org/abs/2508.21038) | 2025 |
 | **How Small Transformations Expose Weakness of Similarity Measures** | — | [arXiv:2509.09714](https://arxiv.org/abs/2509.09714) | 2025 |
 | **Sparse Contrastive Learning for Contradiction Retrieval (SparseCL)** | — | [arXiv:2406.10746](https://arxiv.org/abs/2406.10746) | 2025 |
+| **RAG over Thinking Traces Can Improve Reasoning Tasks (T3)** | Arabzadeh, Ma, Min, Zaharia | [arXiv:2605.03344](https://arxiv.org/abs/2605.03344) | 2026 |
 
 ## Key Contributions
 
@@ -76,6 +77,25 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
 - Antonym intrusion is language-agnostic (observed in Turkish + English)
 - Cosine similarity cannot distinguish semantic drift from genuine synonymy
 - **Sprachspiel implication:** Confirms our two-step approach (embeddings + triples) is the correct architecture
+
+#### T3 — RAG over Thinking Traces (Arabzadeh et al. 2026)
+
+- **Paper:** arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks"
+- **Key findings:**
+  - Thinking traces are a superior RAG corpus for reasoning tasks vs. conventional documents
+  - General-purpose corpora frequently HURT performance on reasoning tasks
+  - T3 method: Struct (7-step cheatsheet), Semantic (3-level distillation), Reflect (failure patterns)
+  - Gemini-2.5-Flash on AIME: 53.3% → 83.3% (+56.3%) with T3-Semantic
+  - 5-15x compression of raw traces; optimal k=3 retrieval; quality > quantity
+- **Sprachspiel implication (P0-CRITICAL):**
+  - `strip_thinking_tags()` permanently deletes thinking content before storage (~80% of traces lost)
+  - Pre-tool messages store thinking inline (accidental); normal messages delete it entirely
+  - **T3 Phase 0:** Preserve thinking in `thinking_content` column (bug fix)
+  - **T3 Phase 1:** Struct transform + ThinkingTrace pipeline
+  - **T3 Phase 2:** Thinking-aware retrieval with RRF fusion
+  - **T3 Phase 3:** Semantic/Reflect transforms, facts from Reflect
+- **Hardware:** CPU-only fallback (LFM 2.5 1.2B) for transforms; same-model cascade when loaded
+- **Full report:** `~/thinking-traces-study/RELATORIO-TECNICO.md`
 
 ## Related Blog Posts
 
@@ -163,5 +183,12 @@ Papers that informed the Implementation Directive. **PDFs are not stored in the 
   title={Sparse Contrastive Learning for Contradiction Retrieval},
   journal={arXiv preprint arXiv:2406.10746},
   year={2025}
+}
+
+@article{t3_2026,
+  title={RAG over Thinking Traces Can Improve Reasoning Tasks},
+  author={Arabzadeh, Negar and Ma, Wentai and Min, Sewon and Zaharia, Matei},
+  journal={arXiv preprint arXiv:2605.03344},
+  year={2026}
 }
 ```

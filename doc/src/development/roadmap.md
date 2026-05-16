@@ -6,7 +6,7 @@ This document outlines planned features and the current state of Sprachspiel.
 
 | Milestone | Codename | Description | Cards |
 |-----------|----------|-------------|-------|
-| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (6 waves) | W1:#105,#36 → W2:#116-#123,#72 → W3:#90-#97 → W4:#106,#107 → W5:#13,#14,#49,#50,#52,#74-#76 → **W6: Responsive Chat Rebuild** |
+| **[M1]** | Core Evolution | All work before TUI and Sprach 2.0 (7 waves) | W1:#105,#36 → W2:#116-#123,#72 → W3:#90-#97 → W4:#133-#138,#106,#107,#149 → W5:#13,#14,#49,#50,#52,#74-#76,#132 → W6:#145-#148 → **W7: Thinking Trace Pipeline & Retrieval** |
 | **[M2]** | UX & Pre-Launch | TUI design + implementation, benchmarks, learned patterns | #16, #117, #124, #125 |
 | **[M3]** | Sprach 2.0 | CAS research, cognitive extensions, plugin system | #15, #77-#80, #99-#101 |
 | **[M4]** | Future | Deferred features and research | B2-B5, B8 (board drafts) |
@@ -527,7 +527,22 @@ Analysis of the paper "Building Effective AI Coding Agents for the Terminal" (OP
 | #76 | Secret Scanning (Content) | 📋 Planned | 1-2 days |
 | #105 | Config Upgrade Command | 📋 Ready | 5 days |
 
-**Dependency chain:** #116 → #118 → #119 → #120 → #121 → #122 → #123
+**T3 — Thinking Trace Pipeline & Retrieval:**
+
+| Card # | Feature | Status | Priority | Milestone |
+|--------|---------|--------|----------|-----------|
+| #151 | T3-Phase0: Preserve Thinking Content + Schema Foundation | 📋 Not Started | 🔴 P0-CRITICAL | M1/W4.5 |
+| #152 | T3-Phase1: ThinkingTrace Pipeline + Struct Transform | 📋 Not Started | P0-HIGH | M1/W7.0 |
+| #153 | T3-Phase2: Thinking-Aware Retrieval + RRF Fusion | 📋 Not Started | P0-HIGH | M1/W7.1 |
+
+**T3 Phases (deferred to M3/M4):**
+
+| Phase | Feature | Priority | Milestone |
+|-------|---------|----------|-----------|
+| Phase 3 | T3-Phase3: Semantic/Reflect + Facts Integration | P1 | M3 |
+| Phase 4 | T3-Phase4: Optimization (Quality > Quantity, Compression, Caching) | P2 | M4 |
+
+**Reference:** Arabzadeh et al. 2026, arXiv:2605.03344 — "RAG over Thinking Traces Can Improve Reasoning Tasks". Full technical report: `~/thinking-traces-study/RELATORIO-TECNICO.md`
 
 ---
 

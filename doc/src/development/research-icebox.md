@@ -336,7 +336,37 @@
 
 ---
 
-## Decision Records (Why NOT)
+### R-19: Thinking Trace Retrieval (T3 Pipeline)
+
+- **Source:** Arabzadeh et al. 2026 — arXiv:2605.03344 (RAG over Thinking Traces)
+- **Current state:** `strip_thinking_tags()` permanently deletes thinking content before storage. Pre-tool messages store thinking inline accidentally. No dedicated thinking trace storage, transformation, or retrieval.
+- **Why significant (P0-CRITICAL):** ~80% of thinking traces are permanently lost. The paper demonstrates thinking traces are the most valuable RAG corpus for reasoning tasks, outperforming conventional documents. General-purpose corpora frequently HURT reasoning performance.
+- **Implementation phases:**
+  - **Phase 0 (P0-CRITICAL):** Preserve thinking content in `thinking_content` column. Fix asymmetric storage bug. Joint PR with #136 (geometry-aware dimensions). `[t3] enabled = false` feature flag.
+  - **Phase 1 (P0-HIGH):** ThinkingTrace pipeline + Struct transform. Background job, same-model/CPU-fallback cascade. New `thinking_traces` table.
+  - **Phase 2 (P0-HIGH):** Thinking-aware retrieval. RRF fusion of content + traces. k=3 retrieval.
+  - **Phase 3 (P1):** Semantic/Reflect transforms. Facts from Reflect. Feedback-weighted RRF for traces.
+  - **Phase 4 (P2):** Quality > quantity scoring. Compression (delete raw after T3). Caching.
+- **Prerequisite:** #106 (Configurable Embedding) before Phase 1; #107 (EmbeddingProvider) before Phase 3
+- **Revisit when:** Phase 0 is next in W4.5 (after W4.0-4.4)
+
+---
+
+### R-20: Thinking-Aware Benchmark Suite
+
+- **Source:** T3 paper benchmarks (AIME, GPQA-Diamond, LiveCodeBench); competitive analysis (YourMemory)
+- **Current state:** No benchmarks for memory-augmented reasoning. Zero published metrics.
+- **Why deferred to M2/M3:** Requires T3 Phase 2 (thinking-aware retrieval) and Benchmark Infrastructure (#124) to be in place first.
+- **Planned benchmarks:**
+  - **LoCoMo Adaptation:** Long-context memory benchmark (adapt YourMemory template). Requires W7.1 complete.
+  - **RAGAS Evaluation Pipeline:** Framework for evaluating RAG quality. Requires #124.
+  - **Feedback-Driven Decay Metrics:** First-mover — no standard benchmark exists. Requires W3 data.
+- **Prerequisite:** #124 (Benchmark Infrastructure), W7.1 (Thinking-Aware Retrieval)
+- **Revisit when:** W7.1 complete + #124 ready
+
+---
+
+### Decision Records (Why NOT)
 
 ### D-01: Majestic Lisp as Rule Engine / MCP Server
 
@@ -395,3 +425,15 @@
   3. Previously evaluated and rejected during NLI cross-encoder investigation for contradiction detection
 - **Alternative path:** Python sidecar for M3 (board draft "Privacy Filter Integration"); Rust-native Viterbi classifier as long-term goal (R-18) if usage justifies
 - **Revisit only if:** A lightweight Rust-native inference solution emerges that doesn't require ort/tokenizers deps
+
+---
+
+### D-07: ContentType::ThinkingTrace as Rust Enum Variant
+
+- **Decision:** Rejected (2026-05-15)
+- **Reasons:**
+  1. Thinking traces transformed by T3 are stored in a separate `thinking_traces` table with `transform_type` as a string discriminator — not in `content_items`. String discriminators are more flexible for extensibility (adding `struct`, `semantic_l1`, etc. without Rust enum changes).
+  2. In `content_items`, thinking content is an attribute of a message (the thinking that preceded the assistant's response), not a separate content type. The `thinking_content` column and `t3_status` column handle this in the existing `ContentType::Message` path.
+  3. Adding a content type for something that is never independently searched/retrieved by users (it's an attribute, not standalone content) would create confusion in the type system.
+- **Alternative path:** `thinking_content TEXT` column in `content_items` (Phase 0); `thinking_traces` table with `transform_type TEXT` (Phase 1)
+- **Revisit only if:** T3 traces need to be independently searchable by users via commands like `/search traces`, at which point `ContentType::ThinkingTrace` could be reconsidered

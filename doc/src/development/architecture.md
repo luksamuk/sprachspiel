@@ -140,6 +140,7 @@ SQLite database for conversation history, content, facts, and embeddings:
 - **Feedback Signals**: Per-message quality tracking
 - **Conversations**: Session metadata with project tracking
 - **Embeddings**: Vector embeddings (cosine distance, v12)
+- **Thinking Content** *(planned, v13)*: Preserved thinking traces with T3 transform status
 
 ```mermaid
 erDiagram
@@ -163,6 +164,8 @@ erDiagram
         string content_type
         string role
         string content
+        string thinking_content NULL
+        string t3_status DEFAULT none
         datetime timestamp
         float importance
         float decay_score
@@ -253,6 +256,50 @@ pub struct SearchResult {
     pub next_message: Option<EnrichedResponse>,
 }
 ```
+
+### 5.5. Thinking Content Preservation (Planned — T3 Phase 0, #149)
+
+**Background:** Research shows that thinking traces (intermediate reasoning from LLMs) are the most valuable RAG corpus for reasoning tasks, superior to conventional documents (+56.3% accuracy on AIME, Arabzadeh et al. 2026, arXiv:2605.03344). Currently, `strip_thinking_tags()` permanently deletes thinking content before storage, losing ~80% of traces.
+
+**Architecture Bug (Current):**
+
+```
+Current Storage Path:
+┌─────────────────────┐    strip_thinking     ┌─────────────┐
+│ Normal Assistant      │ ─────────────────→    │ LOST        │
+│ <thinking>content    │     (removed)         │ FOREVER     │
+│ </thinking>response  │                        └─────────────┘
+└─────────────────────┘
+
+┌─────────────────────┐   concat inline   ┌──────────────┐   search by     ┌─────────┐
+│ Pre-Tool             │ ───────────────→  │ content field │ ──────────────→  │ Found   │
+│ <thinking>content   │   (incidental)    │ (mixed XML)  │   accident       │ (luck)  │
+│ </thinking>response │                   └──────────────┘                  └─────────┘
+└─────────────────────┘
+```
+
+**Fixed Architecture (Planned — v13):**
+
+```
+Planned Storage Path:
+┌─────────────────────┐   process_thinking   ┌──────────────┐
+│ Any Assistant msg    │ ─────────────────→   │ content field │ ← clean response text
+│ with <thinking>      │                      └──────────────┘
+└─────────────────────┘                      ┌──────────────────┐
+                                              │ thinking_content │ ← preserved reasoning
+                                              │ t3_status        │ ← 'none'|'pending'|'done'
+                                              └──────────────────┘
+```
+
+**Key Design Decisions:**
+
+1. **`thinking_content` column in `content_items`** — Thinking is an attribute of a message, not a separate content type. No `ContentType::ThinkingTrace` variant needed.
+2. **`t3_status` field** — Tracks T3 transform state: `none` (no thinking), `pending` (has thinking, awaiting transform), `done` (transformed).
+3. **`process_thinking()` replaces `strip_thinking_tags()` for storage** — `strip_thinking_tags()` remains for display (views, query output).
+4. **`[t3] enabled = false` feature flag** — Default off; controls whether T3 pipeline processes traces. Thinking content is always preserved regardless of this flag.
+5. **Joint migration v12→v13 with #136** — Single schema migration for both thinking columns and geometry-aware dimensions.
+
+**Reference:** Full technical report in `~/thinking-traces-study/RELATORIO-TECNICO.md`
 
 ### 6. Chat Mode
 
@@ -673,6 +720,8 @@ sprachspiel/
 │   │   ├── history.rs       # Legacy JSON storage (for /restore)
 │   │   ├── model_switch.rs  # Centralized switching
 │   │   ├── custom_coordinator.rs  # Pre-tool content + ephemeral messages
+│   │   ├── thinking.rs           # Thinking tag processing + display
+│   │   ├── thinking_preserve.rs  # (planned) Thinking preservation for storage
 │   │   └── compaction.rs    # Context management
 │   ├── project.rs           # Project identification
 │   ├── db/                  # Database operations
