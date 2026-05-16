@@ -356,11 +356,17 @@ impl App {
                 self.input_state.set_disabled(false, None);
                 self.status_bar.spinner = None;
                 self.status_bar.status_label = None;
+                self.spinner_frame = 0;
             }
             LlmState::Thinking => {
                 self.input_state
                     .set_disabled(true, Some("Thinking...".to_string()));
-                self.status_bar.spinner = Some("⠋".to_string());
+                // Use current frame from the rattles preset (not hardcoded "⠋")
+                let frame = self
+                    .spinner_frames
+                    .get(self.spinner_frame)
+                    .unwrap_or(&"⠋");
+                self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Thinking...".to_string());
             }
             LlmState::Streaming => {
@@ -373,7 +379,11 @@ impl App {
             LlmState::ToolCall => {
                 self.input_state
                     .set_disabled(true, Some("Running tool...".to_string()));
-                self.status_bar.spinner = Some("⠋".to_string());
+                let frame = self
+                    .spinner_frames
+                    .get(self.spinner_frame)
+                    .unwrap_or(&"⠋");
+                self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Running tool...".to_string());
             }
         }
