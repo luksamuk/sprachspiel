@@ -16,7 +16,6 @@ pub const CYAN: Color = Color::Cyan;
 pub const YELLOW: Color = Color::Yellow;
 
 /// Green text color
-#[allow(dead_code)] // PR3: Will be used for TUI success indicators
 pub const GREEN: Color = Color::Green;
 
 /// Red text color

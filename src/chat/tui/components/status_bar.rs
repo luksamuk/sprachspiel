@@ -89,8 +89,15 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
 
     // Left section: model name or spinner+label
     if let (Some(spinner), Some(label)) = (&state.spinner, &state.status_label) {
+        // Spinner character is green and bold; label text is yellow and bold
         spans.push(Span::styled(
-            format!("{} {}", spinner, label),
+            spinner.clone(),
+            Style::default()
+                .fg(styles::GREEN)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!(" {}", label),
             Style::default()
                 .fg(styles::YELLOW)
                 .add_modifier(Modifier::BOLD),

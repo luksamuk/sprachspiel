@@ -305,9 +305,9 @@ impl App {
             LlmState::Streaming => {
                 self.input_state
                     .set_disabled(true, Some("Streaming...".to_string()));
-                // During streaming, show model name (no spinner)
-                self.status_bar.spinner = None;
-                self.status_bar.status_label = None;
+                // During streaming, keep the spinner animating (independent speed)
+                self.status_bar.status_label = Some("Streaming...".to_string());
+                // spinner frame is left as-is; tick_spinner() will advance it
             }
             LlmState::ToolCall => {
                 self.input_state
@@ -337,12 +337,17 @@ impl App {
         self.status_bar.percent = percent;
     }
 
-    /// Advance the spinner frame
+    /// Advance the spinner frame.
+    ///
+    /// The spinner animates independently of streaming token arrival —
+    /// it ticks every 100ms via the spinner interval in the event loop,
+    /// regardless of whether tokens are arriving or not.
     pub fn tick_spinner(&mut self) {
-        self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
-        if self.llm_state != LlmState::Idle && self.llm_state != LlmState::Streaming {
-            self.status_bar.spinner = Some(SPINNER_FRAMES[self.spinner_frame].to_string());
+        if self.llm_state == LlmState::Idle {
+            return;
         }
+        self.spinner_frame = (self.spinner_frame + 1) % SPINNER_FRAMES.len();
+        self.status_bar.spinner = Some(SPINNER_FRAMES[self.spinner_frame].to_string());
     }
 
     /// Process a crossterm key event
