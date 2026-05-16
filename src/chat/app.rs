@@ -38,7 +38,6 @@ pub enum LlmState {
     /// Streaming — response coming in, input disabled
     Streaming,
     /// Running a tool call
-    #[allow(dead_code)] // Will be used when tool call UI shows spinner in status bar
     ToolCall,
 }
 
@@ -361,10 +360,12 @@ impl App {
             LlmState::Thinking => {
                 self.input_state
                     .set_disabled(true, Some("Thinking...".to_string()));
-                // Use current frame from the rattles preset (not hardcoded "⠋")
+                // Pick a new random spinner preset for this LLM cycle
+                self.spinner_frames = random_tui_spinner_frames();
+                self.spinner_frame = 0;
                 let frame = self
                     .spinner_frames
-                    .get(self.spinner_frame)
+                    .first()
                     .unwrap_or(&"⠋");
                 self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Thinking...".to_string());
@@ -372,16 +373,26 @@ impl App {
             LlmState::Streaming => {
                 self.input_state
                     .set_disabled(true, Some("Streaming...".to_string()));
-                // During streaming, keep the spinner animating (independent speed)
+                // Pick a new random spinner preset for the streaming phase
+                // (distinct from the one used during thinking)
+                self.spinner_frames = random_tui_spinner_frames();
+                self.spinner_frame = 0;
+                let frame = self
+                    .spinner_frames
+                    .first()
+                    .unwrap_or(&"⠋");
+                self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Streaming...".to_string());
-                // spinner frame is left as-is; tick_spinner() will advance it
             }
             LlmState::ToolCall => {
                 self.input_state
                     .set_disabled(true, Some("Running tool...".to_string()));
+                // Pick a new random spinner preset for this tool call cycle
+                self.spinner_frames = random_tui_spinner_frames();
+                self.spinner_frame = 0;
                 let frame = self
                     .spinner_frames
-                    .get(self.spinner_frame)
+                    .first()
                     .unwrap_or(&"⠋");
                 self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Running tool...".to_string());
@@ -413,8 +424,9 @@ impl App {
     /// The spinner animates independently of streaming token arrival —
     /// it ticks via the spinner interval in the event loop,
     /// regardless of whether tokens are arriving or not.
-    /// Each App instance picks a random rattles preset on creation,
-    /// so the animation pattern varies between sessions.
+    /// A fresh random rattles preset is picked each time the LLM enters
+    /// a new phase (Thinking, Streaming, ToolCall), so the animation
+    /// varies not just between sessions but between cycles.
     pub fn tick_spinner(&mut self) {
         if self.llm_state == LlmState::Idle || self.spinner_frames.is_empty() {
             return;

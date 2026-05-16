@@ -414,6 +414,10 @@ pub async fn run_chat_repl_tui(
                         cancel_token = None;
                         llm_rx = None;
                     }
+                    LlmEvent::ToolCallStarted => {
+                        // Tool calls detected — transition to ToolCall state
+                        view.set_llm_state(LlmState::ToolCall);
+                    }
                 }
             }
 

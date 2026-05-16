@@ -56,14 +56,6 @@ impl StatusBarState {
         }
     }
 
-    /// Set the spinner for animation during LLM processing
-    #[allow(dead_code)] // PR3: Will be used for TUI spinner animation
-    pub fn with_spinner(mut self, frame: &str, label: &str) -> Self {
-        self.spinner = Some(frame.to_string());
-        self.status_label = Some(label.to_string());
-        self
-    }
-
     /// Format token count as human-readable (e.g., "47.2K")
     pub fn format_tokens(tokens: usize) -> String {
         if tokens >= 1_000_000 {

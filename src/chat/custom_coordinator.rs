@@ -655,6 +655,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         messages: Vec<ChatMessage>,
         on_token: impl Fn(String) + Send + Sync,
         on_thinking: impl Fn(String) + Send + Sync,
+        on_tool_call: impl Fn() + Send + Sync,
         cancel_token: Option<tokio_util::sync::CancellationToken>,
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
         for m in &messages {
@@ -750,6 +751,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
         // Build a ChatMessageResponse from the accumulated content
         if !tool_calls.is_empty() {
+            // Notify the event loop that tool calls were detected
+            // (so it can transition LlmState to ToolCall)
+            on_tool_call();
+
             // Build response with tool calls for process_response
             let msg_with_tools = ollama_rs::generation::chat::ChatMessage {
                 role: ollama_rs::generation::chat::MessageRole::Assistant,

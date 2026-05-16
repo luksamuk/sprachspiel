@@ -714,6 +714,11 @@ pub async fn send_message_stream(
         let _ = llm_tx_thinking.try_send(LlmEvent::StreamThinking(token));
     };
 
+    let llm_tx_tool = llm_tx.clone();
+    let on_tool_call = move || {
+        let _ = llm_tx_tool.try_send(LlmEvent::ToolCallStarted);
+    };
+
     // Execute with retry logic using streaming
     let mut attempts = 0;
     let result = loop {
@@ -727,6 +732,7 @@ pub async fn send_message_stream(
                     messages.clone(),
                     &on_token,
                     &on_thinking,
+                    &on_tool_call,
                     cancel_token.clone(),
                 ),
             )
@@ -739,6 +745,7 @@ pub async fn send_message_stream(
                     messages.clone(),
                     &on_token,
                     &on_thinking,
+                    &on_tool_call,
                     cancel_token.clone(),
                 ),
             )

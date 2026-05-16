@@ -480,8 +480,10 @@ impl RatatuiView {
     /// Creates or appends to an `AssistantStreaming` message.
     /// Called for each token chunk from the LLM during streaming.
     pub fn stream_token(&mut self, token: &str) {
-        // If we're in Thinking state, transition to Streaming
-        if self.app.llm_state() == LlmState::Thinking {
+        // If we're in Thinking or ToolCall state, transition to Streaming
+        if self.app.llm_state() == LlmState::Thinking
+            || self.app.llm_state() == LlmState::ToolCall
+        {
             self.app.set_llm_state(LlmState::Streaming);
         }
         self.app.append_stream_token(token);
@@ -493,8 +495,10 @@ impl RatatuiView {
     /// Creates or appends to a `Thinking` message.
     /// Called for each thinking chunk from the LLM during streaming.
     pub fn stream_thinking(&mut self, token: &str) {
-        // Ensure we're in Thinking state
-        if self.app.llm_state() == LlmState::Idle {
+        // If we're in Idle or ToolCall state, transition to Thinking
+        if self.app.llm_state() == LlmState::Idle
+            || self.app.llm_state() == LlmState::ToolCall
+        {
             self.app.set_llm_state(LlmState::Thinking);
         }
         self.app.append_stream_thinking(token);

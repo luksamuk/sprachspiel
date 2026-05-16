@@ -11,6 +11,7 @@
 //!     ←── LlmEvent::StreamToken ── Streaming token chunk
 //!     ←── LlmEvent::StreamThinking ── Streaming thinking chunk
 //!     ←── LlmEvent::StreamDone ── Streaming complete (final_data)
+//!     ←── LlmEvent::ToolCallStarted ── Tool calls detected in stream
 //!     ←── LlmEvent::Complete  ── Result of handle_user_message()
 //!     ←── LlmEvent::Error     ── LLM error
 //!     ──→ CancellationToken    ── Ctrl+C cancellation
@@ -75,6 +76,12 @@ pub enum LlmEvent {
 
     /// The LLM call was cancelled by the user (Ctrl+C).
     Cancelled,
+
+    /// Tool calls were detected in the streaming response.
+    ///
+    /// The event loop should transition the LLM state to `ToolCall`
+    /// so the status bar shows "Running tool..." with a fresh spinner.
+    ToolCallStarted,
 }
 
 impl std::fmt::Debug for LlmEvent {
@@ -119,6 +126,7 @@ impl std::fmt::Debug for LlmEvent {
                 .finish_non_exhaustive(),
             Self::Error(msg) => f.debug_tuple("Error").field(msg).finish(),
             Self::Cancelled => write!(f, "Cancelled"),
+            Self::ToolCallStarted => write!(f, "ToolCallStarted"),
         }
     }
 }
