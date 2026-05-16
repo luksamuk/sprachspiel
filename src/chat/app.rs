@@ -43,10 +43,10 @@ pub enum LlmState {
 
 /// How often the spinner frame advances (milliseconds).
 ///
-/// 180ms gives a comfortable pace for braille dot animations — fast enough
-/// to look alive, slow enough to see each frame. This is independent of
-/// streaming token arrival rate.
-pub const SPINNER_TICK_MS: u64 = 180;
+/// 120ms gives a brisk, lively pace for braille dot animations —
+/// fast enough to feel responsive, not so fast it becomes a blur.
+/// This is independent of streaming token arrival rate.
+pub const SPINNER_TICK_MS: u64 = 120;
 
 /// Scroll state for the chat area.
 ///

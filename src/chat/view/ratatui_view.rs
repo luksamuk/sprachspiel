@@ -34,7 +34,7 @@ use crate::consts::roles::format_role_label;
 use crate::debug_tools;
 use crate::utils::strip_ansi_codes;
 
-use super::{ChatView, RecentContextInfo, RecentMessage, TokenMetrics, WelcomeInfo};
+use super::{ChatView, TokenMetrics, WelcomeInfo};
 use crate::chat::app::{App, LlmState};
 use crate::chat::tui::components::chat_area::ChatMessage;
 use crate::chat::tui::markdown::MarkdownTheme;
@@ -411,6 +411,8 @@ impl RatatuiView {
     /// Display recent context summary for a resumed session.
     ///
     /// Shows the last few exchanges (user+assistant pairs) from the session.
+    /// Each exchange occupies exactly one visual line, truncated to the
+    /// current terminal width using Unicode-aware visual column measurement.
     pub fn show_recent_context(&mut self, session: &ChatSession) {
         const MAX_EXCHANGES: usize = 3;
         let exchanges = session.get_recent_exchanges(MAX_EXCHANGES);
@@ -421,31 +423,43 @@ impl RatatuiView {
 
         let total_messages = session.messages.len();
 
-        let recent_exchanges: Vec<(RecentMessage, Option<RecentMessage>)> = exchanges
-            .into_iter()
-            .map(|(user_msg, asst_msg)| {
-                let user = RecentMessage {
-                    role_label: format_role_label("user"),
-                    content: strip_thinking_tags(&user_msg.content).replace('\n', " "),
-                };
-                let assistant = asst_msg.map(|a| RecentMessage {
-                    role_label: format_role_label("assistant"),
-                    content: strip_thinking_tags(&a.content).replace('\n', " "),
-                });
-                (user, assistant)
-            })
-            .collect();
+        // Get terminal width from crossterm for responsive truncation
+        let terminal_width = crossterm::terminal::size()
+            .map(|(cols, _)| cols as usize)
+            .unwrap_or(80);
 
-        let info = RecentContextInfo {
-            total_messages,
-            exchanges: recent_exchanges,
-        };
+        // Header line: "  Recent context (N messages):"
+        let header = format!("  Recent context ({} messages):", total_messages);
 
-        let summary = info.format_context_summary();
-        if !summary.is_empty() {
-            self.add_system_message(&summary);
-            self.render();
+        let user_label = format_role_label("user");
+        let assistant_label = format_role_label("assistant");
+
+        // Measure visual widths of role labels
+        let user_label_width = unicode_width::UnicodeWidthStr::width(user_label.as_str());
+        let assistant_label_width = unicode_width::UnicodeWidthStr::width(assistant_label.as_str());
+
+        // Each line: "  {label}: {content}"
+        // Available content width = terminal_width - 2 (indent) - label_width - 2 (": ")
+        let user_content_width = terminal_width.saturating_sub(2 + user_label_width + 2);
+        let assistant_content_width = terminal_width.saturating_sub(2 + assistant_label_width + 2);
+
+        let mut lines = vec![header];
+
+        for (user_msg, asst_msg) in exchanges {
+            let user_content = strip_thinking_tags(&user_msg.content).replace('\n', " ");
+            let truncated_user = crate::utils::truncate_visual_width(&user_content, user_content_width);
+            lines.push(format!("  {}: {}", user_label, truncated_user));
+
+            if let Some(asst) = asst_msg {
+                let asst_content = strip_thinking_tags(&asst.content).replace('\n', " ");
+                let truncated_asst = crate::utils::truncate_visual_width(&asst_content, assistant_content_width);
+                lines.push(format!("  {}: {}", assistant_label, truncated_asst));
+            }
         }
+
+        let summary = lines.join("\n");
+        self.add_system_message(&summary);
+        self.render();
     }
 
     /// Update the status bar with model information.
