@@ -30,8 +30,26 @@ struct SlashCommand {
     /// The full command string including `/` prefix
     trigger: &'static str,
     /// Short description shown in completion hints
-    #[allow(dead_code)] // Will be used for completion menu display in Phase 3.6
+    #[allow(dead_code)] // Will be used for completion menu display
     description: &'static str,
+    /// Type of argument completion for this command (if any)
+    arg_type: ArgCompletion,
+}
+
+/// Types of argument completion for slash commands.
+///
+/// When a command accepts arguments, this specifies what kind of
+/// completions are offered after the command trigger + space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ArgCompletion {
+    /// No arguments (e.g., /quit, /help)
+    #[default]
+    None,
+    /// Model name(s) as arguments (e.g., /model llama3.1)
+    ModelName,
+    /// Static subcommands only (e.g., /think on|off)
+    #[allow(dead_code)] // Extensible: will be used for /tools-output compact|full|hidden etc.
+    StaticSubcommands,
 }
 
 /// Slash commands for tab completion.
@@ -43,415 +61,518 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         trigger: "/quit",
         description: "Exit the chat session",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/exit",
         description: "Exit the chat session",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/new",
         description: "Start a new conversation",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/forget",
         description: "Delete conversation completely (requires --yes)",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/help",
         description: "Show available commands",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/model",
         description: "Switch to a different model",
+        arg_type: ArgCompletion::ModelName,
     },
     SlashCommand {
         trigger: "/system",
         description: "Change the system prompt",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/think",
         description: "Toggle think mode",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/tools",
         description: "Toggle tools",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/tools-output",
         description: "Set tool output level (compact|full|hidden)",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/compact",
         description: "Compact conversation history",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/retry",
         description: "Retry last message",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/undo",
         description: "Undo last message",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/save",
         description: "Save current session",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/load",
         description: "Load a saved session",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/session",
         description: "Session management commands",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/export",
         description: "Export conversation (md, json)",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/list",
         description: "List saved sessions",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/info",
         description: "Show session information",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/context",
         description: "Show context metrics and token usage",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/search",
         description: "Search conversation history",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/reindex",
         description: "Regenerate all embeddings",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/retrieval",
         description: "Toggle semantic retrieval",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fact",
         description: "Manage factual memory",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fact add",
         description: "Add a fact",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fact list",
         description: "List facts",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fact remove",
         description: "Remove a fact by ID",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fact search",
         description: "Search facts",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fact prune",
         description: "Prune old facts",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/note",
         description: "Manage notes",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/note add",
         description: "Add a note",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/note list",
         description: "List notes",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/note show",
         description: "Show a note",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/note edit",
         description: "Edit a note",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/note delete",
         description: "Delete a note",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/note search",
         description: "Search notes",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/doc",
         description: "Manage documents",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/doc import",
         description: "Import a document",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/doc list",
         description: "List documents",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/doc show",
         description: "Show a document",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/doc delete",
         description: "Delete a document",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo",
         description: "Manage todo tasks",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo add",
         description: "Add a task",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo list",
         description: "List tasks",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo get",
         description: "Get task details",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo update",
         description: "Update task status",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo edit",
         description: "Edit a task",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo delete",
         description: "Delete a task",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo clear-done",
         description: "Clear completed tasks",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/todo clear-all",
         description: "Clear all tasks",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/skill",
         description: "Activate or list skills",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/feedback",
         description: "Give feedback on responses",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/content",
         description: "Content management",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/content prune",
         description: "Prune low-retention content",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/ocr",
         description: "Extract text from an image",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/vision",
         description: "Analyze image with vision model",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/translate",
         description: "Translate text",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/summarize",
         description: "Summarize text",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/debug",
         description: "Toggle debug mode",
+        arg_type: ArgCompletion::None,
     },
     // Shortcuts
     SlashCommand {
         trigger: "/q",
         description: "Shortcut: /quit",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/n",
         description: "Shortcut: /new",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/h",
         description: "Shortcut: /help",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/m",
         description: "Shortcut: /model",
+        arg_type: ArgCompletion::ModelName,
     },
     SlashCommand {
         trigger: "/s",
         description: "Shortcut: /system",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/l",
         description: "Shortcut: /load",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/t",
         description: "Shortcut: /think",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/e",
         description: "Shortcut: /export",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/ls",
         description: "Shortcut: /list",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/i",
         description: "Shortcut: /info",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/r",
         description: "Shortcut: /retry",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/u",
         description: "Shortcut: /undo",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/ctx",
         description: "Shortcut: /context",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/to",
         description: "Shortcut: /tools-output",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/f",
         description: "Shortcut: /search",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/sk",
         description: "Shortcut: /skill",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fb",
         description: "Shortcut: /feedback",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fg",
         description: "Shortcut: /feedback good",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fp",
         description: "Shortcut: /fact prune",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fa",
         description: "Shortcut: /fact add",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fl",
         description: "Shortcut: /fact list",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fr",
         description: "Shortcut: /fact remove",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/fs",
         description: "Shortcut: /fact search",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/no",
         description: "Shortcut: /note",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/na",
         description: "Shortcut: /note add",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/nl",
         description: "Shortcut: /note list",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/ns",
         description: "Shortcut: /note show",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/nd",
         description: "Shortcut: /note delete",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/di",
         description: "Shortcut: /doc import",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/dl",
         description: "Shortcut: /doc list",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/ds",
         description: "Shortcut: /doc show",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/dd",
         description: "Shortcut: /doc delete",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/ta",
         description: "Shortcut: /todo add",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/tl",
         description: "Shortcut: /todo list",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/tu",
         description: "Shortcut: /todo update",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/tg",
         description: "Shortcut: /todo get",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/te",
         description: "Shortcut: /todo edit",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/td",
         description: "Shortcut: /todo delete",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/tcd",
         description: "Shortcut: /todo clear-done",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/tca",
         description: "Shortcut: /todo clear-all",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/tr",
         description: "Shortcut: /translate",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/sum",
         description: "Shortcut: /summarize",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/cp",
         description: "Shortcut: /content prune",
+        arg_type: ArgCompletion::None,
     },
     SlashCommand {
         trigger: "/sys",
         description: "Shortcut: /system",
+        arg_type: ArgCompletion::None,
     },
 ];
 
@@ -510,7 +631,8 @@ impl ChatCompleter {
     ///
     /// Completion logic:
     /// 1. If the buffer starts with `/`, try slash command completion
-    /// 2. If the buffer starts with `/model `, try model name completion
+    /// 2. If the fragment matches a command with `arg_type: ModelName`,
+    ///    try model name completion for the argument part
     /// 3. Otherwise, no completion
     pub fn complete(&mut self, buffer: &str, cursor_pos: usize) -> CompletionResult {
         let fragment = buffer[..cursor_pos].to_string();
@@ -528,15 +650,31 @@ impl ChatCompleter {
 
         // Slash command completion
         if fragment.starts_with('/') {
-            // Check if we're completing a model name argument
-            if let Some(model_fragment) = fragment.strip_prefix("/model ") {
-                let model_fragment = model_fragment.trim();
-                return self.complete_model(model_fragment);
+            // Check for argument completion on commands that take model names
+            if let Some((cmd_trigger, arg_fragment)) = self.try_model_arg_fragment(&fragment) {
+                return self.complete_model(cmd_trigger, arg_fragment.trim());
             }
             return self.complete_slash_command(&fragment);
         }
 
         CompletionResult::None
+    }
+
+    /// Check if the fragment matches a command that takes a model name argument.
+    ///
+    /// Returns `Some((command_trigger, arg_fragment))` if the fragment starts
+    /// with a command trigger (plus space) that has `arg_type: ModelName`.
+    /// The `arg_fragment` is the text after the command trigger + space.
+    fn try_model_arg_fragment(&self, fragment: &str) -> Option<(&'static str, String)> {
+        for cmd in SLASH_COMMANDS.iter() {
+            if cmd.arg_type == ArgCompletion::ModelName {
+                let prefix = format!("{} ", cmd.trigger);
+                if fragment.starts_with(&prefix) {
+                    return Some((cmd.trigger, fragment[prefix.len()..].to_string()));
+                }
+            }
+        }
+        None
     }
 
     /// Complete a slash command from a partial input.
@@ -606,7 +744,9 @@ impl ChatCompleter {
     ///
     /// Finds all model names that start with the given fragment.
     /// Single matches and common prefix matches get a trailing space.
-    fn complete_model(&mut self, fragment: &str) -> CompletionResult {
+    /// The `cmd_trigger` prefix is used to build the replacement text,
+    /// supporting both `/model` and shortcuts like `/m`.
+    fn complete_model(&mut self, cmd_trigger: &str, fragment: &str) -> CompletionResult {
         let matches: Vec<&str> = self
             .model_names
             .iter()
@@ -617,8 +757,8 @@ impl ChatCompleter {
         match matches.len() {
             0 => CompletionResult::None,
             1 => CompletionResult::Single {
-                replacement: format!("/model {} ", matches[0]),
-                cursor_pos: format!("/model {} ", matches[0]).len(),
+                replacement: format!("{} {} ", cmd_trigger, matches[0]),
+                cursor_pos: format!("{} {} ", cmd_trigger, matches[0]).len(),
             },
             _ => {
                 // Find the common prefix among matching model names
@@ -627,22 +767,19 @@ impl ChatCompleter {
 
                 if !common.is_empty() && common != fragment {
                     // Extend to common prefix with trailing space
-                    let replacement = format!("/model {} ", common);
+                    let replacement = format!("{} {} ", cmd_trigger, common);
                     return CompletionResult::Single {
                         cursor_pos: replacement.len(),
                         replacement,
                     };
                 }
 
-                // Cycle through matches
-                let idx = self.cycle_index % matches.len();
-                self.cycle_index += 1;
+                // Return multiple matches for completion menu
+                let match_strings: Vec<String> = matches.iter().map(|&s| s.to_string()).collect();
 
-                let replacement = format!("/model {} ", matches[idx]);
-                let cursor_pos = replacement.len();
-                CompletionResult::Single {
-                    replacement,
-                    cursor_pos,
+                CompletionResult::Multiple {
+                    matches: match_strings,
+                    cycle_index: 0,
                 }
             }
         }
