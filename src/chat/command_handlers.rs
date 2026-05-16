@@ -130,7 +130,7 @@ pub async fn handle_command(
             state.session.tools = !state.session.tools;
             vec![handle_tools_toggled(state, state.session.tools)]
         }
-        ChatCommand::Compact => handle_compact(state).await,
+        ChatCommand::Compact => handle_compact(state, view).await,
         ChatCommand::ToolsOutput { level } => {
             state.session.tool_output_level = level;
             vec![handle_tool_output_changed(level)]
@@ -768,7 +768,13 @@ pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
 /// Handle compact command (async)
 ///
 /// Compacts conversation history by summarizing old messages.
-pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
+///
+/// Uses `view.suppress_progress_spinner()` to determine whether indicatif
+/// spinners should be suppressed (TUI mode) or shown (terminal mode).
+pub async fn handle_compact(
+    state: &mut ReplState,
+    view: &mut dyn super::view::ChatView,
+) -> Vec<CommandOutput> {
     if state.session.messages.is_empty() {
         return vec![CommandOutput::info("No messages to compact.")];
     }
@@ -780,13 +786,17 @@ pub async fn handle_compact(state: &mut ReplState) -> Vec<CommandOutput> {
         msg_count
     ))];
 
+    // In TUI mode, suppress indicatif spinners to avoid corrupting the
+    // alternate screen buffer. In terminal mode, show them normally.
+    let suppress_spinner = view.suppress_progress_spinner();
+
     match super::core::compact_conversation(
         &state.ollama,
         &state.model_config,
         &state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        false, // TerminalView always shows indicatif spinners
+        suppress_spinner,
     )
     .await
     {
