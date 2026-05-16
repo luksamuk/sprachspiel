@@ -246,8 +246,9 @@ pub async fn run_chat_repl_tui(
                                     // Add user message to chat area
                                     view.app_mut().add_message(ChatMessage::user(line.clone()));
 
-                                    // Check for slash commands
-                                    if line.starts_with('/') {
+                                    // Check for slash commands (only if first line starts with /)
+                                    let first_line = line.lines().next().unwrap_or("");
+                                    if first_line.starts_with('/') {
                                         match parse_command(&line) {
                                             Some(Ok(cmd)) => {
                                                 // Handle model switch specially

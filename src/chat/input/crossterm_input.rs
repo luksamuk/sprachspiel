@@ -8,6 +8,7 @@
 //! # Supported keys
 //!
 //! - Enter (submit line)
+//! - Shift+Enter (insert newline for multi-line input)
 //! - Backspace (delete character before cursor)
 //! - Ctrl+C (interrupt)
 //! - Ctrl+D (EOF/exit)
@@ -107,6 +108,17 @@ impl CrosstermInput {
     /// - `None` for other keys (buffer updated internally)
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<InputResult> {
         match key {
+            // Shift+Enter — insert newline (multi-line input)
+            KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                self.buffer.insert(self.cursor_pos, '\n');
+                self.cursor_pos += 1;
+                None
+            }
+
             // Enter — submit the line
             KeyEvent {
                 code: KeyCode::Enter,

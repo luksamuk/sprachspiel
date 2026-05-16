@@ -395,6 +395,16 @@ impl App {
         }
 
         match key {
+            // Shift+Enter — insert newline (multi-line input)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } => {
+                self.input_state.insert_newline();
+                None
+            }
+
             // Enter — submit the line
             crossterm::event::KeyEvent {
                 code: KeyCode::Enter,
@@ -423,6 +433,26 @@ impl App {
                     self.input_state.delete_char_right();
                     None
                 }
+            }
+
+            // Ctrl+A — move cursor to start of current line
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('a'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.input_state.cursor_home();
+                None
+            }
+
+            // Ctrl+E — move cursor to end of current line
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('e'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            } => {
+                self.input_state.cursor_end();
+                None
             }
 
             // Backspace — delete char before cursor
@@ -454,23 +484,31 @@ impl App {
                 None
             }
 
-            // Up arrow — history previous
+            // Up arrow — multi-line cursor up or history previous
             crossterm::event::KeyEvent {
                 code: KeyCode::Up,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.history_prev();
+                if self.input_state.is_multiline() && self.input_state.cursor_up() {
+                    // Moved cursor up within multi-line input
+                } else {
+                    self.history_prev();
+                }
                 None
             }
 
-            // Down arrow — history next
+            // Down arrow — multi-line cursor down or history next
             crossterm::event::KeyEvent {
                 code: KeyCode::Down,
                 modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                self.history_next();
+                if self.input_state.is_multiline() && self.input_state.cursor_down() {
+                    // Moved cursor down within multi-line input
+                } else {
+                    self.history_next();
+                }
                 None
             }
 
@@ -646,11 +684,15 @@ impl App {
         terminal.draw(|f| {
             let size = f.area();
 
-            // Layout: chat area (flexible) | status bar (2 lines) | input line (1 line)
+            // Input line height adapts to multi-line content.
+            // Cap at 10 lines to prevent the input from consuming the entire screen.
+            let input_height = self.input_state.line_count().min(10);
+
+            // Layout: chat area (flexible) | status bar (2 lines) | input line (dynamic)
             let chunks = Layout::vertical([
-                Constraint::Min(3),    // Chat area gets all remaining space
-                Constraint::Length(2), // Status bar (separator + content)
-                Constraint::Length(1), // Input line
+                Constraint::Min(3),               // Chat area gets all remaining space
+                Constraint::Length(2),            // Status bar (separator + content)
+                Constraint::Length(input_height), // Input line (grows with multi-line)
             ])
             .split(size);
 
