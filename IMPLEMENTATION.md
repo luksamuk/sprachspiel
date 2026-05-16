@@ -3922,7 +3922,7 @@ When the LLM edits a file using `edit_file` or `write_file`, it may operate on o
 
 ### 🔴 PRIORITY: Responsive Chat Rebuild with Ratatui [M1]
 
-**Status:** ✅ COMPLETED (W6-PR3: Streaming Refinement + Tab Completion + Intelligent Table Reflow)
+**Status:** ✅ COMPLETED (W6-PR3: Streaming Refinement + Tab Completion + Intelligent Table Reflow + Textarea Integration + Chat Selection)
 
 **Goal:** Rebuild the chat REPL using Ratatui as the rendering framework to achieve responsive layout that adapts to terminal width. Replace the current `println!` + hardcoded ANSI approach with a declarative rendering model.
 
@@ -4337,7 +4337,14 @@ image = "0.25"              # Removed — only needed for ratatui-image
 | 3.6 | Integration, testing, polish | 1d | ✅ COMPLETED |
 | 3.7 | Intelligent table reflow: rigid/elastic column classification, cell word-wrapping, markdown alignment (`:---`/`---:`/`:---:`), row separators (`├─┼─┤`), shared `wrap_line` extraction to `src/chat/tui/wrap.rs` | 1.5d | ✅ COMPLETED |
 | 3.8 | Table collapsing in recent context: collapse table blocks to `(...)` before flattening, preventing pipe chars in single-line summary | 0.25d | ✅ COMPLETED |
-| **Total** | | **~12.5d** | |
+| 3.9 | ratatui-textarea integration: replace InputState with TextArea<'static>, custom key mappings (Enter/Shift+Enter, Ctrl+C clear/cancel, Ctrl+W cut-word, Ctrl+Y yank, Ctrl+A/E navigation), history nav (↑/↓ single-line vs multi-line) | 2d | ✅ COMPLETED |
+| 3.10 | Rewritten input_line.rs (669→165 lines) + simplified CrosstermInput (583→115 lines, history-only), removed InputState | 1d | ✅ COMPLETED |
+| 3.11 | Floating completion menu: CompletionMenuState + render_overlay(), common prefix highlighting, navigation (arrows/Tab/Enter/Esc), 80% width overlay above status bar | 1.5d | ✅ COMPLETED |
+| 3.12 | ArgCompletion enum for extensible sub-completions: `/model` and `/m` both trigger model name completion via try_model_arg_fragment(), complete_model() takes cmd_trigger for correct prefix | 0.5d | ✅ COMPLETED |
+| 3.13 | Chat text selection: ChatSelection component (click/drag in chat area, visual highlight white-on-blue), mouse_to_visual_pos() for coordinate mapping, visual_lines_cache for text extraction, 10 unit tests | 1.5d | ✅ COMPLETED |
+| 3.14 | Copy from chat selection: Ctrl+Shift+C copies selected text to system clipboard via cli-clipboard (best-effort on Termux) | 0.25d | ✅ COMPLETED |
+| 3.15 | Input vs chat selection mutual exclusion: typing in textarea clears chat selection, Enter also clears, click outside chat clears selection, scroll/Tab don't conflict | 0.25d | ✅ COMPLETED |
+| **Total** | | **~22d** | |
 
 **Key architectural change: async event loop**
 
@@ -4399,27 +4406,31 @@ loop {
 ```
 
 **Files to Create:**
-- `src/chat/completer.rs` — `ChatCompleter` struct with slash commands + model names
+- `src/chat/completer.rs` — `ChatCompleter` struct with slash commands + model names + `ArgCompletion` enum
 - `src/chat/tui/wrap.rs` — Shared `wrap_line` + `hard_break_word` (extracted from chat_area)
+- `src/chat/tui/components/completion_menu.rs` — `CompletionMenuState` + `render_overlay()` floating menu
+- `src/chat/tui/components/chat_selection.rs` — `ChatSelection` + `mouse_to_visual_pos()` + `selection_style()`
 
 **Files to Modify:**
-- `src/chat/app.rs` — Add `mpsc::Receiver<LlmEvent>`, streaming message update, Tab key handling, Ctrl+C cancellation, `Shift+Enter` handling, spinner presets
-- `src/chat/completer.rs` (NEW) — ChatCompleter with completion candidates
-- `src/chat/input/crossterm_input.rs` — Unify with InputState, add tab completion dispatch
+- `src/chat/app.rs` — Add `mpsc::Receiver<LlmEvent>`, streaming message update, Tab key handling, Ctrl+C cancellation, `Shift+Enter` handling, spinner presets, `TextArea<'static>` replacing InputState, `CompletionMenuState`, `ChatSelection`, visual_lines/scroll/rect caches, `&mut self` render, Ctrl+Shift+C copy
+- `src/chat/completer.rs` (NEW) — ChatCompleter with completion candidates + ArgCompletion enum
+- `src/chat/input/crossterm_input.rs` — Simplified to history-only (removed buffer/cursor/editing)
 - `src/chat/input/mod.rs` — Export ChatCompleter
 - `src/chat/view/ratatui_view.rs` — Streaming message update, tool call during streaming, error display, `collapse_tables` in recent context
 - `src/chat/view/terminal.rs` — `collapse_tables` in recent context
-- `src/chat/repl_tui.rs` — Async event loop with `tokio::select!`, LLM task spawning, cancellation
+- `src/chat/repl_tui.rs` — Async event loop with `tokio::select!`, LLM task spawning, cancellation, mouse click/drag/scroll handling
 - `src/chat/core.rs` — Accept `CancellationToken`, return streaming sender, fix `suppress_spinner` in `compact_conversation`, `on_tool_call` callback
 - `src/chat/llm_event.rs` — `LlmEvent::ToolCallStarted` variant
 - `src/chat/command_handlers.rs` — Thread `suppress_progress_spinner()` through `handle_compact()`
 - `src/chat/tui/mod.rs` — Add `pub mod wrap;`
 - `src/chat/tui/markdown.rs` — `ColumnAlign` enum, `parse_separator_line`, rigid/elastic `calculate_col_widths`, cell wrapping (`wrap_cell_content`, `align_cell_text`, `build_row_expanded`), row separators, `collapse_tables`
-- `src/chat/tui/components/input_line.rs` — Multi-line input rendering (dynamic height)
-- `src/chat/tui/components/chat_area.rs` — Streaming token incremental append, remove `wrap_line`/`hard_break_word` (moved to wrap.rs)
+- `src/chat/tui/components/input_line.rs` — Rewritten for TextArea rendering (669→165 lines)
+- `src/chat/tui/components/chat_area.rs` — Streaming token incremental append, selection highlight (`apply_selection_highlight`), `build_lines()` extraction, `RenderMetadata` return, `Line<'_>` lifetime
+- `src/chat/tui/components/mod.rs` — Add `pub mod completion_menu;`, `pub mod chat_selection;`
 - `src/chat/tui/components/status_bar.rs` — Green spinner, leading space, remove dead `with_spinner()`
+- `Cargo.toml` — Add `ratatui-textarea = "0.9.1"`, `cli-clipboard = "0.4.0"`
 
-**Checkpoint:** Chat mode fully functional with tab completion, streaming markdown, tool display, error recovery, Ctrl+C cancellation, multi-line input, intelligent table reflow, table collapsing in recent context. Non-chat subcommands unchanged.
+**Checkpoint:** Chat mode fully functional with tab completion, floating completion menu, streaming markdown, tool display, error recovery, Ctrl+C cancellation, multi-line input (textarea), chat text selection (mouse), copy to clipboard (Ctrl+Shift+C), intelligent table reflow, table collapsing in recent context. Non-chat subcommands unchanged.
 
 ---
 
