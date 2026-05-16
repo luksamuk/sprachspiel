@@ -558,6 +558,7 @@ impl App {
                 ..
             }
         ) {
+            self.completion_menu.hide();
             if self.chat_selection.is_active() {
                 let text = self.chat_selection.extract_text(&self.visual_lines_cache);
                 if !text.is_empty() {
@@ -584,6 +585,7 @@ impl App {
                 ..
             }
         ) {
+            self.completion_menu.hide();
             if let Ok(text) = cli_clipboard::get_contents()
                 && !text.is_empty()
             {
@@ -603,6 +605,7 @@ impl App {
                 ..
             }
         ) {
+            self.completion_menu.hide();
             let has_text = !self.textarea_is_empty();
             if has_text {
                 // Clear input: select all, cut (copies to kill-ring), clear
@@ -658,35 +661,35 @@ impl App {
 
         if self.completion_menu.is_visible() {
             match key {
-                // Tab — confirm selection
+                // Tab — confirm selection, hide menu, try sub-completion
                 crossterm::event::KeyEvent {
                     code: KeyCode::Tab,
                     modifiers: KeyModifiers::NONE,
                     ..
                 } => {
                     if let Some(item) = self.completion_menu.confirm() {
-                        // For slash commands, the replacement is the full trigger + space
                         let replacement = format!("{} ", item);
                         self.set_textarea_content(&replacement);
-                        // After completing a command with args, try sub-completion
+                        // Try sub-completion (e.g., /model → model names)
                         self.try_completion_after_confirm();
                     }
                     return None;
                 }
 
-                // Enter — confirm selection and submit (if no sub-completions)
+                // Enter — confirm selection, hide menu, submit input
                 crossterm::event::KeyEvent {
                     code: KeyCode::Enter,
                     modifiers: KeyModifiers::NONE,
                     ..
                 } => {
+                    // Confirm the menu selection (if any) into the textarea
                     if let Some(item) = self.completion_menu.confirm() {
                         let replacement = format!("{} ", item);
                         self.set_textarea_content(&replacement);
-                        // Try sub-completion; if none available, no-op
-                        self.try_completion_after_confirm();
                     }
-                    return None;
+                    // Menu is now hidden (confirm() hides it).
+                    // Fall through to the Enter handler below to submit the line.
+                    // We do NOT return None here — we want Enter to submit.
                 }
 
                 // Escape — dismiss menu
