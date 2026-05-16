@@ -300,9 +300,9 @@ impl App {
     /// Append a streaming token to the last `AssistantStreaming` message.
     ///
     /// If the last message is not `AssistantStreaming`, searches backward
-    /// for an existing `AssistantStreaming` block (which may be separated
-    /// by `Thinking` blocks due to interleaved streaming tokens). If found,
-    /// appends to it. Otherwise creates a new one.
+    /// within the streaming zone (contiguous tail of Thinking/AssistantStreaming
+    /// messages) for an existing `AssistantStreaming` block. If found, appends
+    /// to it. Otherwise creates a new one.
     ///
     /// This handles the case where content and thinking tokens arrive
     /// interleaved from the LLM: content tokens should append to the
@@ -317,12 +317,17 @@ impl App {
             return;
         }
 
-        // Interleaved tokens: last message is Thinking, but an
-        // AssistantStreaming block exists earlier. Append to it.
+        // Find the streaming zone boundary and search within it
+        let streaming_start = self.streaming_zone_start();
+        let zone_len = self.messages.len().saturating_sub(streaming_start);
+
+        // Interleaved tokens: search backward within the streaming zone
+        // for an existing AssistantStreaming block to append to.
         if let Some(prev_streaming) = self
             .messages
             .iter_mut()
             .rev()
+            .take(zone_len)
             .find(|m| m.msg_type == MessageType::AssistantStreaming)
         {
             prev_streaming.content.push_str(token);
@@ -337,10 +342,10 @@ impl App {
 
     /// Append a streaming thinking token to the last `Thinking` message.
     ///
-    /// If the last message is not `Thinking`, searches backward for an
-    /// existing `Thinking` block (which may be separated from the current
-    /// position by `AssistantStreaming` blocks due to interleaved tokens).
-    /// If found, appends to it. Otherwise creates a new one.
+    /// If the last message is not `Thinking`, searches backward within the
+    /// streaming zone (contiguous tail of Thinking/AssistantStreaming messages)
+    /// for an existing `Thinking` block. If found, appends to it. Otherwise
+    /// creates a new one.
     ///
     /// This handles the case where content and thinking tokens arrive
     /// interleaved from the LLM: thinking tokens should append to the
@@ -355,12 +360,17 @@ impl App {
             return;
         }
 
-        // Interleaved tokens: last message is AssistantStreaming, but a
-        // Thinking block exists earlier. Append to it.
+        // Find the streaming zone boundary and search within it
+        let streaming_start = self.streaming_zone_start();
+        let zone_len = self.messages.len().saturating_sub(streaming_start);
+
+        // Interleaved tokens: search backward within the streaming zone
+        // for an existing Thinking block to append to.
         if let Some(prev_thinking) = self
             .messages
             .iter_mut()
             .rev()
+            .take(zone_len)
             .find(|m| m.msg_type == MessageType::Thinking)
         {
             prev_thinking.content.push_str(token);
@@ -372,6 +382,27 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
+    /// Returns the start index of the streaming zone.
+    ///
+    /// The streaming zone is the contiguous tail of `Thinking` and
+    /// `AssistantStreaming` messages. Everything before this index is
+    /// stable (User, Assistant, Tool, System, Error, Banner) and must
+    /// not be modified by streaming operations.
+    fn streaming_zone_start(&self) -> usize {
+        self.messages
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, m)| {
+                !matches!(
+                    m.msg_type,
+                    MessageType::Thinking | MessageType::AssistantStreaming
+                )
+            })
+            .map(|(i, _)| i + 1)
+            .unwrap_or(0)
+    }
+
     /// Replace the last `AssistantStreaming` message with the final
     /// markdown-rendered `Assistant` message, and consolidate any
     /// fragmented `Thinking` blocks from the streaming session.
@@ -381,39 +412,40 @@ impl App {
     /// This method consolidates them into a single `Thinking` block using the
     /// final thinking content from the complete LLM response, then replaces
     /// `AssistantStreaming` with the final markdown-rendered `Assistant`.
+    ///
+    /// Only `Thinking` blocks in the **streaming zone** (the contiguous tail
+    /// of `Thinking`/`AssistantStreaming` messages) are consolidated or removed.
+    /// `Thinking` blocks from earlier tool-call rounds (preceded by `Tool`,
+    /// `Assistant`, `User`, etc.) are preserved intact.
     pub fn finalize_stream(&mut self, content: &str, thinking: Option<&str>) {
-        // Consolidate fragmented Thinking blocks from streaming.
-        //
-        // When thinking and content tokens arrive interleaved, multiple
-        // Thinking blocks can be created in the message list. We consolidate
-        // ALL Thinking blocks into one (using the final thinking content from
-        // the complete response, which is authoritative).
-        //
-        // This is safe because:
-        // - Tool-call Thinking blocks are created via ViewAction::ShowThinking
-        //   and arrive *before* StreamDone, so they're already rendered and
-        //   won't be adjacent to the streaming Thinking blocks.
-        // - The `thinking` parameter contains the complete, authoritative
-        //   thinking content from the final LLM response.
-        let thinking_positions: Vec<usize> = self
-            .messages
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| m.msg_type == MessageType::Thinking)
-            .map(|(i, _)| i)
+        // Determine the streaming zone boundary using shared helper
+        let streaming_start = self.streaming_zone_start();
+
+        // Collect Thinking positions within the streaming zone only
+        let thinking_positions: Vec<usize> = (streaming_start..self.messages.len())
+            .filter(|&i| self.messages[i].msg_type == MessageType::Thinking)
             .collect();
 
         if !thinking_positions.is_empty() {
             if let Some(thinking_content) = thinking {
-                // Replace first Thinking block with consolidated content
-                self.messages[thinking_positions[0]] =
-                    ChatMessage::thinking(thinking_content.to_string());
-                // Remove remaining fragmented Thinking blocks (reverse to preserve indices)
-                for &pos in thinking_positions.iter().rev().skip(1) {
-                    self.messages.remove(pos);
+                if thinking_positions.len() > 1 {
+                    // Consolidate fragmented Thinking blocks: replace first
+                    // with authoritative content, remove the rest.
+                    self.messages[thinking_positions[0]] =
+                        ChatMessage::thinking(thinking_content.to_string());
+                    // Remove in reverse order to preserve indices
+                    for &pos in thinking_positions.iter().rev().skip(1) {
+                        self.messages.remove(pos);
+                    }
+                } else {
+                    // Single Thinking block — update with authoritative content
+                    self.messages[thinking_positions[0]] =
+                        ChatMessage::thinking(thinking_content.to_string());
                 }
             } else {
-                // No thinking content in final response — remove all Thinking blocks
+                // No thinking in final response — remove Thinking blocks
+                // in the streaming zone only. Tool-call Thinking blocks
+                // before the streaming zone are preserved.
                 for &pos in thinking_positions.iter().rev() {
                     self.messages.remove(pos);
                 }
@@ -1818,41 +1850,101 @@ mod tests {
     }
 
     #[test]
-    fn test_finalize_stream_with_tool_thinking_preserves_tool_blocks() {
-        // Tool-call Thinking blocks from ViewAction::ShowThinking should
-        // NOT be removed when they are not part of the streaming session.
-        // However, since finalize_stream consolidates ALL Thinking blocks,
-        // tool Thinking blocks created before the stream will also be
-        // consolidated. This is acceptable because in practice, tool
-        // Thinking blocks are always followed by Tool messages which
-        // create clear boundaries — and the streaming session's Thinking
-        // blocks come after them.
+    fn test_finalize_stream_preserves_tool_thinking_blocks() {
+        // Tool-call Thinking blocks created BEFORE the streaming zone
+        // (preceded by Tool, Assistant, User messages) must NOT be
+        // removed or consolidated by finalize_stream.
         let mut app = test_app();
 
-        // Simulate tool call round: thinking → tool result
+        // Simulate a prior tool call round:
+        // Tool thinking → Tool result → (tool output already displayed)
         app.add_message(ChatMessage::thinking("Tool thinking".to_string()));
-        app.add_message(ChatMessage::tool("Tool result".to_string()));
+        app.add_message(ChatMessage::tool("🔧 weather: Sunny, 22°C".to_string()));
 
-        // Streaming session
+        // Now the streaming session begins:
         app.append_stream_thinking("Response thinking");
         app.append_stream_token("Response content");
 
+        // Finalize — only the streaming-zone Thinking block should be touched
         app.finalize_stream("Response content", Some("Response thinking"));
 
-        // Tool thinking block is preserved (not consolidated) because
-        // it's followed by a Tool message, not adjacent to the stream.
-        // Only the streaming Thinking block remains.
-        // Actually, finalize_stream consolidates ALL Thinking blocks.
-        // Let's check what actually happens:
-        let thinking_count = app
-            .messages
-            .iter()
-            .filter(|m| m.msg_type == MessageType::Thinking)
-            .count();
+        // Tool thinking block is preserved (before the streaming zone)
+        // Streaming thinking is consolidated
+        // AssistantStreaming → Assistant
         assert_eq!(
-            thinking_count, 1,
-            "Should have exactly one Thinking block after consolidation"
+            app.messages.len(),
+            4,
+            "Should have 4 messages: ToolThinking, Tool, Thinking, Assistant"
         );
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Tool thinking");
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[2].content, "Response thinking");
+        assert_eq!(app.messages[3].msg_type, MessageType::Assistant);
+    }
+
+    #[test]
+    fn test_finalize_stream_removes_streaming_thinking_when_none() {
+        // When thinking is None, only Thinking blocks in the streaming zone
+        // should be removed. Tool-call Thinking blocks before the zone
+        // must be preserved.
+        let mut app = test_app();
+
+        // Prior tool-call thinking (before streaming zone)
+        app.add_message(ChatMessage::thinking("Tool thinking".to_string()));
+        app.add_message(ChatMessage::tool("Tool result".to_string()));
+
+        // Streaming zone: Thinking + AssistantStreaming
+        app.append_stream_thinking("Stream thinking");
+        app.append_stream_token("Stream content");
+
+        // Finalize with thinking: None — streaming Thinking should be removed
+        app.finalize_stream("Stream content", None);
+
+        // Tool thinking preserved, streaming thinking removed
+        assert_eq!(app.messages.len(), 3);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Tool thinking");
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[2].content, "Stream content");
+    }
+
+    #[test]
+    fn test_finalize_stream_multiple_tool_thinking_preserved() {
+        // Multiple rounds of tool calls with thinking, followed by streaming.
+        // Tool-call Thinking blocks are outside the streaming zone (separated
+        // by Tool messages) and must be preserved intact.
+        let mut app = test_app();
+
+        // First tool call round
+        app.add_message(ChatMessage::thinking("Tool call 1 thinking".to_string()));
+        app.add_message(ChatMessage::tool("🔧 weather".to_string()));
+
+        // Second tool call round
+        app.add_message(ChatMessage::thinking("Tool call 2 thinking".to_string()));
+        app.add_message(ChatMessage::tool("🔧 calc: 42".to_string()));
+
+        // Final streaming response
+        app.append_stream_thinking("Final thinking");
+        app.append_stream_token("Final answer");
+
+        app.finalize_stream("Final answer", Some("Final thinking"));
+
+        // All tool thinking blocks preserved, streaming thinking consolidated,
+        // AssistantStreaming replaced by Assistant
+        // Messages: [ToolThink, Tool, ToolThink, Tool, Think, Assistant]
+        assert_eq!(app.messages.len(), 6);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Tool call 1 thinking");
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[2].content, "Tool call 2 thinking");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[4].content, "Final thinking");
+        assert_eq!(app.messages[5].msg_type, MessageType::Assistant);
     }
 
     #[test]
