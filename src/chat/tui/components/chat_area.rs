@@ -34,6 +34,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use super::super::markdown::{MarkdownTheme, render_markdown};
 use super::super::styles;
 use super::super::wrap::wrap_line;
+use super::chat_selection::{ChatSelection, selection_style};
 use crate::chat::app::ScrollState;
 
 /// Message type determines how a chat message is rendered.
@@ -175,51 +176,45 @@ fn content_has_table(content: &str) -> bool {
     })
 }
 
-/// Count total visual lines after applying word-wrap to a slice of Lines.
+/// Count total visual lines after applying word-wrap to a slice of line texts.
 ///
-/// Each Line is flattened to text and run through `wrap_line()` to determine
-/// how many screen rows it will occupy at the given width. This accounts for
-/// both space-based wrapping and hard-breaks on long words.
-fn count_wrapped_lines(lines: &[Line], width: usize) -> usize {
+/// Each string is run through `wrap_line()` to determine how many screen
+/// rows it will occupy at the given width. This accounts for both
+/// space-based wrapping and hard-breaks on long words.
+fn count_wrapped_lines(texts: &[&str], width: usize) -> usize {
     if width == 0 {
-        return lines.len();
+        return texts.len();
     }
     let mut total = 0usize;
-    for line in lines {
-        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        let wrapped = wrap_line(&text, width);
+    for text in texts {
+        let wrapped = wrap_line(text, width);
         total += wrapped.len().max(1);
     }
     total
 }
 
-/// Render the chat area component.
+/// Metadata returned by `render()` for mouse/selection integration.
 ///
-/// Displays all messages in a continuous flow with type-based styling.
-/// Blank lines are inserted before Assistant and Thinking messages to
-/// visually separate the user's prompt from the response.
+/// Contains the visual line strings (after word-wrap) and the scroll
+/// offset, which are needed for mapping mouse positions to content
+/// and extracting selected text.
+pub struct RenderMetadata {
+    /// Flat list of visual line strings (after word-wrap), in render order
+    pub visual_lines: Vec<String>,
+    /// Scroll offset from the top of content (in visual lines)
+    pub scroll_from_top: u16,
+}
+
+/// Build the styled `Line` vector from messages (shared between render and tests).
 ///
-/// # Scrolling
-///
-/// The `ScrollState` determines the viewport position:
-/// - Auto-scroll: shows the newest messages at the bottom. The scroll
-///   offset is computed from the wrapped line count (via `count_wrapped_lines()`)
-///   which accounts for word-wrapping at the terminal width.
-/// - Manual scroll: uses `Paragraph::scroll()` with offset from top
-///
-/// **Why compute wrapped lines manually?** `Paragraph::wrap()` expands each
-/// source line into potentially multiple screen rows. We replicate the same
-/// wrap logic in `count_wrapped_lines()` so the scroll offset matches the
-/// actual rendered layout.
-pub fn render(
-    f: &mut Frame,
-    area: Rect,
+/// This is the core content pipeline: each message type adds its styled
+/// lines to the vector, which is then wrapped, scrolled, and rendered.
+fn build_lines(
     messages: &[ChatMessage],
-    scroll_state: &ScrollState,
     theme: MarkdownTheme,
-) {
+    available_width: usize,
+) -> Vec<Line<'_>> {
     let mut lines: Vec<Line> = Vec::new();
-    let available_width = area.width as usize;
 
     for msg in messages {
         match msg.msg_type {
@@ -227,7 +222,7 @@ pub fn render(
                 // ">>> " prefix in bold cyan, content in bold cyan
                 lines.push(Line::from(vec![
                     Span::styled(">>> ", styles::bold_cyan()),
-                    Span::styled(&msg.content, styles::bold_cyan()),
+                    Span::styled(msg.content.clone(), styles::bold_cyan()),
                 ]));
             }
             MessageType::Assistant => {
@@ -293,8 +288,13 @@ pub fn render(
             }
             MessageType::Banner => {
                 // Banner: responsive layout (braille art)
+                // Note: banners don't support selection (art layout is complex)
+                // We need a Rect for banner but we only have width here.
+                // Use a minimal Rect with the right width.
+                let dummy_area = Rect::new(0, 0, available_width as u16, 20);
                 let session_lines: Vec<String> = msg.content.lines().map(String::from).collect();
-                let banner_lines = super::super::banner::build_banner_lines(area, &session_lines);
+                let banner_lines =
+                    super::super::banner::build_banner_lines(dummy_area, &session_lines);
                 lines.extend(banner_lines);
             }
         }
@@ -302,14 +302,139 @@ pub fn render(
         // is handled per type above (blank before Assistant/Thinking only)
     }
 
+    lines
+}
+
+/// Apply selection highlight to a vector of `Line`s.
+///
+/// Modifies the style of spans that fall within the selection range.
+/// The selection is in visual-line coordinates: (line_index, char_offset).
+/// Each Line's text is flattened to compute character ranges.
+fn apply_selection_highlight(lines: &mut Vec<Line>, selection: &ChatSelection) {
+    if !selection.is_active() {
+        return;
+    }
+
+    let (start_line, start_col) = selection.selection_start();
+    let (end_line, end_col) = selection.selection_end();
+
+    for (line_idx, line) in lines.iter_mut().enumerate() {
+        if line_idx < start_line || line_idx > end_line {
+            continue;
+        }
+
+        // Calculate the character range to highlight on this line
+        let line_start_col = if line_idx == start_line { start_col } else { 0 };
+        let line_end_col = if line_idx == end_line {
+            end_col
+        } else {
+            // Highlight to end of line
+            line.spans
+                .iter()
+                .map(|s| s.content.chars().count())
+                .sum::<usize>()
+        };
+
+        if line_start_col >= line_end_col {
+            continue;
+        }
+
+        // Rebuild the line with selection highlight applied
+        let mut new_spans: Vec<Span> = Vec::new();
+        let mut char_pos = 0;
+
+        for span in line.spans.iter() {
+            let span_len = span.content.chars().count();
+            let span_start = char_pos;
+            let span_end = char_pos + span_len;
+
+            if span_end <= line_start_col || span_start >= line_end_col {
+                // Outside selection — keep as-is
+                new_spans.push(span.clone());
+            } else {
+                // This span overlaps with the selection
+                let rel_start = line_start_col.saturating_sub(span_start);
+                let rel_end = line_end_col.saturating_sub(span_start).min(span_len);
+
+                // Part before selection
+                if rel_start > 0 {
+                    let before: String = span.content.chars().take(rel_start).collect();
+                    new_spans.push(Span::styled(before, span.style));
+                }
+
+                // Selected part
+                let selected: String = span
+                    .content
+                    .chars()
+                    .skip(rel_start)
+                    .take(rel_end - rel_start)
+                    .collect();
+                new_spans.push(Span::styled(selected, selection_style()));
+
+                // Part after selection
+                if rel_end < span_len {
+                    let after: String = span.content.chars().skip(rel_end).collect();
+                    new_spans.push(Span::styled(after, span.style));
+                }
+            }
+
+            char_pos += span_len;
+        }
+
+        *line = Line::from(new_spans);
+    }
+}
+
+/// Render the chat area component.
+///
+/// Displays all messages in a continuous flow with type-based styling.
+/// Blank lines are inserted before Assistant and Thinking messages to
+/// visually separate the user's prompt from the response.
+///
+/// # Scrolling
+///
+/// The `ScrollState` determines the viewport position:
+/// - Auto-scroll: shows the newest messages at the bottom. The scroll
+///   offset is computed from the wrapped line count (via `count_wrapped_lines()`)
+///   which accounts for word-wrapping at the terminal width.
+/// - Manual scroll: uses `Paragraph::scroll()` with offset from top
+///
+/// # Selection
+///
+/// When `ChatSelection` is active, selected ranges are highlighted with
+/// a distinct background color. The `visual_lines` in the returned
+/// `RenderMetadata` are the plain-text strings for each visual line,
+/// used for mouse mapping and text extraction.
+///
+/// **Why compute wrapped lines manually?** `Paragraph::wrap()` expands each
+/// source line into potentially multiple screen rows. We replicate the same
+/// wrap logic in `count_wrapped_lines()` so the scroll offset matches the
+/// actual rendered layout.
+pub fn render(
+    f: &mut Frame,
+    area: Rect,
+    messages: &[ChatMessage],
+    scroll_state: &ScrollState,
+    theme: MarkdownTheme,
+    selection: &ChatSelection,
+) -> RenderMetadata {
+    let available_width = area.width as usize;
+    let mut lines = build_lines(messages, theme, available_width);
+
+    // Build visual_lines BEFORE applying selection highlight (plain text for extraction)
+    let visual_lines: Vec<String> = lines
+        .iter()
+        .map(|line| line.spans.iter().map(|s| s.content.as_ref()).collect())
+        .collect();
+
+    // Apply selection highlight (modifies span styles)
+    apply_selection_highlight(&mut lines, selection);
+
     // Calculate scroll offset from the top of content.
-    //
-    // We compute the total rendered line count AFTER wrap using
-    // `count_wrapped_lines()`, then use `effective_scroll_from_top()`
-    // to get the precise offset that shows the bottom (newest) content.
-    // This is accurate because it mirrors the same wrap logic that
-    // ratatui's Paragraph::wrap() would apply at render time.
-    let wrapped_total = count_wrapped_lines(&lines, area.width as usize);
+    let wrapped_total = count_wrapped_lines(
+        &visual_lines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+        area.width as usize,
+    );
     let visible_height = area.height as usize;
     let scroll_from_top = scroll_state.effective_scroll_from_top(wrapped_total, visible_height);
 
@@ -319,6 +444,11 @@ pub fn render(
         .scroll((scroll_from_top, 0));
 
     f.render_widget(paragraph, area);
+
+    RenderMetadata {
+        visual_lines,
+        scroll_from_top,
+    }
 }
 
 #[cfg(test)]

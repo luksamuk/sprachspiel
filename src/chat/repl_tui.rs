@@ -21,6 +21,7 @@
 //! Ctrl+C during LLM processing cancels the background task via
 //! `CancellationToken`. The LLM result is discarded (not applied to state).
 
+use crossterm::event::MouseButton;
 use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
 use tokio_util::sync::CancellationToken;
 
@@ -33,6 +34,7 @@ use super::input::InputResult;
 use super::llm_event::{LlmEvent, ViewAction};
 use super::repl_state::ReplState;
 use super::tui::components::chat_area::ChatMessage;
+use super::tui::components::chat_selection::mouse_to_visual_pos;
 use super::view::ChatView;
 use super::view::RatatuiView;
 
@@ -587,23 +589,53 @@ const MOUSE_SCROLL_LINES: u16 = 3;
 ///
 /// Currently supports:
 /// - Mouse wheel scroll up/down in the chat area (3 lines per tick)
-///
-/// Mouse events in the input area are ignored (TextArea doesn't need
-/// mouse support in the current design).
+/// - Left-click + drag to select text in the chat area
+/// - Left-click in input area clears chat selection (mutual exclusion)
 fn handle_mouse_event(mouse: MouseEvent, view: &mut RatatuiView) {
+    let app = view.app_mut();
+    let chat_area = app.chat_area_rect_cache();
+    let scroll_from_top = app.scroll_from_top_cache();
+
     match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            // Check if click is within the chat area
+            if let Some((visual_line, char_offset)) =
+                mouse_to_visual_pos(mouse.column, mouse.row, chat_area, scroll_from_top)
+            {
+                // Start text selection in chat area
+                app.chat_selection_mut().begin(visual_line, char_offset);
+            } else {
+                // Click outside chat area — clear chat selection (mutual exclusion)
+                app.chat_selection_mut().clear();
+            }
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            // Extend selection if we're in selection mode
+            if app.chat_selection().is_dragging()
+                && let Some((visual_line, char_offset)) =
+                    mouse_to_visual_pos(mouse.column, mouse.row, chat_area, scroll_from_top)
+            {
+                app.chat_selection_mut().extend(visual_line, char_offset);
+            }
+        }
+        MouseEventKind::Up(MouseButton::Left) => {
+            // Finish selection if we're in selection mode
+            if app.chat_selection().is_dragging()
+                && let Some((visual_line, char_offset)) =
+                    mouse_to_visual_pos(mouse.column, mouse.row, chat_area, scroll_from_top)
+            {
+                app.chat_selection_mut().finish(visual_line, char_offset);
+            } else if app.chat_selection().is_dragging() {
+                // Released outside chat area — clear selection
+                app.chat_selection_mut().clear();
+            }
+        }
         MouseEventKind::ScrollUp => {
-            view.app_mut()
-                .scroll_state_mut()
-                .scroll_up(MOUSE_SCROLL_LINES);
+            app.scroll_state_mut().scroll_up(MOUSE_SCROLL_LINES);
         }
         MouseEventKind::ScrollDown => {
-            view.app_mut()
-                .scroll_state_mut()
-                .scroll_down(MOUSE_SCROLL_LINES);
+            app.scroll_state_mut().scroll_down(MOUSE_SCROLL_LINES);
         }
-        // Other mouse events (click, drag, release) are not yet handled.
-        // Future: chat text selection, input area click-to-position
         _ => {}
     }
 }

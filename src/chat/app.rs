@@ -26,6 +26,7 @@ use super::input::{CrosstermInput, InputBackend, InputResult};
 use super::tui::TuiTerminal;
 use super::tui::components::chat_area::ChatMessage;
 use super::tui::components::chat_area::MessageType;
+use super::tui::components::chat_selection::ChatSelection;
 use super::tui::components::completion_menu::CompletionMenuState;
 use super::tui::components::status_bar::StatusBarState;
 use super::tui::markdown::MarkdownTheme;
@@ -161,6 +162,18 @@ pub struct App {
     completer: ChatCompleter,
     /// Floating completion menu state
     completion_menu: CompletionMenuState,
+    /// Chat text selection state (mouse-based)
+    chat_selection: ChatSelection,
+    /// Cache of visual lines (after word-wrap) for chat text selection.
+    /// Updated during each render cycle by `chat_area::render()`.
+    /// Used for selection text extraction and mouse position mapping.
+    visual_lines_cache: Vec<String>,
+    /// Cache of scroll offset from top (updated during each render cycle).
+    /// Used for mapping mouse positions to visual line coordinates.
+    scroll_from_top_cache: u16,
+    /// Cache of the chat area Rect (updated during each render cycle).
+    /// Used for mouse position mapping in click/drag selection.
+    chat_area_rect_cache: ratatui::layout::Rect,
     /// Status bar state
     status_bar: StatusBarState,
     /// LLM processing state
@@ -249,6 +262,10 @@ impl App {
             history_input: CrosstermInput::new(model_names),
             completer,
             completion_menu: CompletionMenuState::new(),
+            chat_selection: ChatSelection::new(),
+            visual_lines_cache: Vec::new(),
+            scroll_from_top_cache: 0,
+            chat_area_rect_cache: ratatui::layout::Rect::default(),
             status_bar: StatusBarState::new(String::new(), 0, 0, 0, false, false),
             llm_state: LlmState::Idle,
             theme,
@@ -378,6 +395,32 @@ impl App {
         &mut self.scroll
     }
 
+    /// Get a reference to the chat selection state
+    pub fn chat_selection(&self) -> &ChatSelection {
+        &self.chat_selection
+    }
+
+    /// Get a mutable reference to the chat selection state
+    pub fn chat_selection_mut(&mut self) -> &mut ChatSelection {
+        &mut self.chat_selection
+    }
+
+    /// Get the cached visual lines (for selection text extraction)
+    #[allow(dead_code)] // Used internally by Ctrl+Shift+C copy handler
+    pub fn visual_lines_cache(&self) -> &[String] {
+        &self.visual_lines_cache
+    }
+
+    /// Get the cached scroll offset from top (for mouse mapping)
+    pub fn scroll_from_top_cache(&self) -> u16 {
+        self.scroll_from_top_cache
+    }
+
+    /// Get the cached chat area rect (for mouse mapping)
+    pub fn chat_area_rect_cache(&self) -> ratatui::layout::Rect {
+        self.chat_area_rect_cache
+    }
+
     /// Get a reference to the status bar state.
     ///
     /// Used by `RatatuiView` to read current token counts for
@@ -499,6 +542,25 @@ impl App {
     /// When input is disabled (during LLM processing), only Ctrl+C
     /// and scroll keys are processed — all other keys are ignored.
     pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Option<InputResult> {
+        // Ctrl+Shift+C — copy chat selection to clipboard
+        if matches!(
+            key,
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char('C'),
+                modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                ..
+            }
+        ) {
+            if self.chat_selection.is_active() {
+                let text = self.chat_selection.extract_text(&self.visual_lines_cache);
+                if !text.is_empty() {
+                    let _ = cli_clipboard::set_contents(text);
+                }
+                self.chat_selection.clear();
+            }
+            return None;
+        }
+
         // Ctrl+C always works, even when input is disabled
         if matches!(
             key,
@@ -547,6 +609,24 @@ impl App {
                 _ => {
                     // Ignore all other keys when input is disabled
                     return None;
+                }
+            }
+        }
+
+        // Mutual exclusion: typing in the textarea clears chat selection
+        // (except for keys that don't produce input: scroll, Tab, etc.)
+        if self.chat_selection.is_active() {
+            match key.code {
+                // These keys don't conflict with selection
+                KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End
+                | KeyCode::Tab => {}
+                // Ctrl+Shift+C already handled above (copies selection)
+                // All other keys clear the chat selection
+                _ => {
+                    self.chat_selection.clear();
                 }
             }
         }
@@ -625,6 +705,7 @@ impl App {
             } => {
                 let line = self.textarea_lines();
                 self.textarea_clear();
+                self.chat_selection.clear();
                 if !line.is_empty() {
                     self.history_input.add_history(&line);
                 }
@@ -1055,7 +1136,7 @@ impl App {
 
     /// Render the TUI
     pub fn render(
-        &self,
+        &mut self,
         terminal: &mut TuiTerminal,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         terminal.draw(|f| {
@@ -1074,13 +1155,20 @@ impl App {
             .split(size);
 
             // Render chat area
-            super::tui::components::chat_area::render(
+            let meta = super::tui::components::chat_area::render(
                 f,
                 chunks[0],
                 &self.messages,
                 &self.scroll,
                 self.theme,
+                &self.chat_selection,
             );
+
+            // Cache visual lines, scroll offset, and chat area rect for
+            // mouse/selection integration (updated every render cycle)
+            self.visual_lines_cache = meta.visual_lines;
+            self.scroll_from_top_cache = meta.scroll_from_top;
+            self.chat_area_rect_cache = chunks[0];
 
             // Render status bar
             super::tui::components::status_bar::render(f, chunks[1], &self.status_bar);
