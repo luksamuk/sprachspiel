@@ -1030,10 +1030,10 @@ pub fn collapse_tables(content: &str) -> String {
             }
             ContentSegment::Table(_) => {
                 // Replace the entire table block with a placeholder
-                if !result.is_empty() && !result.ends_with('\n') {
+                if !result.is_empty() && !result.ends_with(' ') && !result.ends_with('\n') {
                     result.push(' ');
                 }
-                result.push_str("(...)");
+                result.push_str("(...) ");
             }
         }
     }
