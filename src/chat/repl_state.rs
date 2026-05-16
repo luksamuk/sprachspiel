@@ -39,6 +39,7 @@ use super::session::ChatSession;
 /// - **Model**: current model, capabilities, config
 /// - **Tools**: tools active, think mode
 /// - **Context**: debug mode, agents.md, etc.
+#[derive(Clone)]
 pub struct ReplState {
     // Session state
     pub session: ChatSession,

@@ -6,29 +6,46 @@
 //!
 //! # Architecture
 //!
-//! The event loop:
-//! 1. Polls for crossterm events with a 100ms timeout (for spinner animation)
-//! 2. Processes key events via `App::handle_key()`
-//! 3. Re-renders after each event or tick
-//! 4. On Enter: delegates to command handlers or LLM message sending
-//! 5. On Ctrl+C: cancels current operation or shows interrupt
-//! 6. On Ctrl+D: quits the session (saves history and session)
+//! The event loop uses `tokio::select!` to handle three sources concurrently:
+//!
+//! 1. **Crossterm key events** — user input, tab completion, scroll
+//! 2. **LLM events** — view actions and completion/cancellation from the
+//!    background LLM task
+//! 3. **Spinner tick** — periodic 100ms interval for spinner animation
+//!
+//! When the user submits a message, the LLM call is spawned on a
+//! background tokio task. The LLM task uses `ChannelView` (a `ChatView`
+//! proxy) to send view updates through an mpsc channel. The event loop
+//! drains these and applies them to the real `RatatuiView`.
+//!
+//! Ctrl+C during LLM processing cancels the background task via
+//! `CancellationToken`. The LLM result is discarded (not applied to state).
 
 use crossterm::event::{self, Event as CrosstermEvent};
+use tokio_util::sync::CancellationToken;
 
 use super::app::LlmState;
+use super::channel_view::ChannelView;
 use super::command_handlers;
 use super::command_output::CommandOutput;
 use super::commands::{ChatCommand, parse_command};
 use super::input::InputResult;
+use super::llm_event::{LlmEvent, ViewAction};
 use super::repl_state::ReplState;
 use super::tui::components::chat_area::ChatMessage;
 use super::view::ChatView;
 use super::view::RatatuiView;
 
+/// Channel capacity for LLM view actions.
+///
+/// Each `show_*` call during LLM processing sends one `ViewAction`.
+/// A typical response may produce 5-10 view actions (content, thinking,
+/// tokens, etc.). Tool calls may produce more. 128 is generous.
+const LLM_VIEW_CHANNEL_CAPACITY: usize = 128;
+
 /// Run the chat REPL using the TUI (ratatui + crossterm).
 ///
-/// This replaces the blocking rustyline loop with a crossterm event loop
+/// This replaces the blocking rustyline loop with an async event loop
 /// that renders via ratatui. All view operations go through `RatatuiView`,
 /// which implements `ChatView` and delegates to `App::add_message()`.
 ///
@@ -36,16 +53,6 @@ use super::view::RatatuiView;
 ///
 /// * `state` - The REPL state (session, model config, capabilities, etc.)
 /// * `resume_message` - Optional message to display when resuming a session
-///
-/// # Architecture
-///
-/// The event loop:
-/// 1. Polls for crossterm events with a 100ms timeout (for spinner animation)
-/// 2. Processes key events via `App::handle_key()`
-/// 3. Re-renders after each event or tick
-/// 4. On Enter: delegates to command handlers or LLM message sending
-/// 5. On Ctrl+C: cancels current operation or shows interrupt
-/// 6. On Ctrl+D: quits the session (saves history and session)
 ///
 /// # Errors
 ///
@@ -200,132 +207,200 @@ pub async fn run_chat_repl_tui(
     view.update_status_model(&model_name, think_enabled, tools_enabled);
     view.update_status_tokens(used_tokens, max_tokens, percent);
 
-    // ── Main Event Loop ───────────────────────────────────────────────
+    // ── LLM task state ────────────────────────────────────────────────
+    // Cancellation token for the running LLM task (if any)
+    let mut cancel_token: Option<CancellationToken> = None;
+    // Receiver for LLM events (view actions + completion/error)
+    let mut llm_rx: Option<tokio::sync::mpsc::Receiver<LlmEvent>> = None;
+
+    // ── Spinner tick interval ─────────────────────────────────────────
+    let spinner_interval = tokio::time::interval(std::time::Duration::from_millis(100));
+    // We need to pin the interval for use in tokio::select!
+    tokio::pin!(spinner_interval);
+
+    // ── Main Event Loop ──────────────────────────────────────────────
     loop {
-        // Poll for events with a 100ms timeout (allows spinner animation)
-        if event::poll(std::time::Duration::from_millis(100))? {
-            match event::read()? {
-                CrosstermEvent::Key(key) => {
-                    let result = view.app_mut().handle_key(key);
+        tokio::select! {
+            // ── Crossterm key events ──────────────────────────────
+            result = async {
+                if event::poll(std::time::Duration::from_millis(0)).unwrap_or(false) {
+                    Some(event::read())
+                } else {
+                    // Brief yield to avoid busy-waiting when no event is ready
+                    tokio::task::yield_now().await;
+                    None
+                }
+            } => {
+                if let Some(Ok(crossterm_event)) = result {
+                    match crossterm_event {
+                        CrosstermEvent::Key(key) => {
+                            let result = view.app_mut().handle_key(key);
 
-                    match result {
-                        Some(InputResult::Line(line)) => {
-                            let line = line.trim().to_string();
-                            if line.is_empty() {
-                                continue;
-                            }
+                            match result {
+                                Some(InputResult::Line(line)) => {
+                                    let line = line.trim().to_string();
+                                    if line.is_empty() {
+                                        continue;
+                                    }
 
-                            // Add user message to chat area
-                            view.app_mut().add_message(ChatMessage::user(line.clone()));
+                                    // Add user message to chat area
+                                    view.app_mut().add_message(ChatMessage::user(line.clone()));
 
-                            // Check for slash commands
-                            if line.starts_with('/') {
-                                match parse_command(&line) {
-                                    Some(Ok(cmd)) => {
-                                        // Handle model switch specially
-                                        if let ChatCommand::Model { name } = &cmd {
-                                            let outputs = command_handlers::handle_model_switch(
-                                                state,
-                                                name,
-                                                &capabilities,
-                                            )
-                                            .await;
-                                            view.show_command_outputs(&outputs);
+                                    // Check for slash commands
+                                    if line.starts_with('/') {
+                                        match parse_command(&line) {
+                                            Some(Ok(cmd)) => {
+                                                // Handle model switch specially
+                                                if let ChatCommand::Model { name } = &cmd {
+                                                    let outputs = command_handlers::handle_model_switch(
+                                                        state,
+                                                        name,
+                                                        &capabilities,
+                                                    )
+                                                    .await;
+                                                    view.show_command_outputs(&outputs);
 
-                                            // Update the modeline with the new model name
-                                            // (handle_model_switch updates state but not the view)
-                                            let new_model_name =
-                                                state.model_config.model_id.clone();
-                                            let think_enabled =
-                                                state.session.think && state.capabilities.thinking;
-                                            let tools_enabled =
-                                                state.tools_active && state.capabilities.tools;
-                                            view.update_status_model(
-                                                &new_model_name,
-                                                think_enabled,
-                                                tools_enabled,
-                                            );
+                                                    // Update the modeline with the new model name
+                                                    let new_model_name =
+                                                        state.model_config.model_id.clone();
+                                                    let think_enabled =
+                                                        state.session.think && state.capabilities.thinking;
+                                                    let tools_enabled =
+                                                        state.tools_active && state.capabilities.tools;
+                                                    view.update_status_model(
+                                                        &new_model_name,
+                                                        think_enabled,
+                                                        tools_enabled,
+                                                    );
 
-                                            if outputs
-                                                .iter()
-                                                .any(|o| matches!(o, CommandOutput::Quit))
-                                            {
-                                                let _ = view.app_mut().save_history();
-                                                if !state.session.anonymous {
-                                                    let _ = state.session.save_sqlite();
+                                                    if outputs
+                                                        .iter()
+                                                        .any(|o| matches!(o, CommandOutput::Quit))
+                                                    {
+                                                        let _ = view.app_mut().save_history();
+                                                        if !state.session.anonymous {
+                                                            let _ = state.session.save_sqlite();
+                                                        }
+                                                        view.restore();
+                                                        return Ok(());
+                                                    }
+                                                    continue;
                                                 }
-                                                view.restore();
-                                                return Ok(());
+
+                                                // Handle other commands
+                                                let mut dummy_input =
+                                                    super::input::CrosstermInput::default();
+                                                let outputs = command_handlers::handle_command(
+                                                    cmd,
+                                                    state,
+                                                    &mut dummy_input,
+                                                    &mut view as &mut dyn ChatView,
+                                                )
+                                                .await;
+
+                                                view.show_command_outputs(&outputs);
+
+                                                if outputs.iter().any(|o| matches!(o, CommandOutput::Quit))
+                                                {
+                                                    let _ = view.app_mut().save_history();
+                                                    if !state.session.anonymous {
+                                                        let _ = state.session.save_sqlite();
+                                                    }
+                                                    view.restore();
+                                                    return Ok(());
+                                                }
+                                                continue;
                                             }
-                                            continue;
-                                        }
-
-                                        // Handle other commands
-                                        let mut dummy_input =
-                                            super::input::CrosstermInput::default();
-                                        let outputs = command_handlers::handle_command(
-                                            cmd,
-                                            state,
-                                            &mut dummy_input,
-                                            &mut view as &mut dyn ChatView,
-                                        )
-                                        .await;
-
-                                        view.show_command_outputs(&outputs);
-
-                                        if outputs.iter().any(|o| matches!(o, CommandOutput::Quit))
-                                        {
-                                            let _ = view.app_mut().save_history();
-                                            if !state.session.anonymous {
-                                                let _ = state.session.save_sqlite();
+                                            Some(Err(e)) => {
+                                                view.show_error(&e.to_string());
+                                                continue;
                                             }
-                                            view.restore();
-                                            return Ok(());
+                                            None => {}
                                         }
-                                        continue;
                                     }
-                                    Some(Err(e)) => {
-                                        view.show_error(&e.to_string());
-                                        continue;
+
+                                    // Send as user message to LLM (non-blocking)
+                                    spawn_llm_task(&line, state, &mut llm_rx, &mut cancel_token);
+                                }
+                                Some(InputResult::Interrupted) => {
+                                    // Ctrl+C — cancel running LLM or ignore
+                                    if let Some(token) = cancel_token.take() {
+                                        token.cancel();
+                                        view.app_mut().add_message(
+                                            ChatMessage::system("Cancelled.".to_string()),
+                                        );
+                                        view.set_llm_state(LlmState::Idle);
+                                        llm_rx = None;
                                     }
-                                    None => {}
+                                }
+                                Some(InputResult::Eof) => {
+                                    // Ctrl+D — quit: save session and history
+                                    let _ = view.app_mut().save_history();
+                                    if !state.session.anonymous {
+                                        let _ = state.session.save_sqlite();
+                                    }
+                                    view.restore();
+                                    return Ok(());
+                                }
+                                Some(InputResult::Error(_)) => {
+                                    // Should not happen in TUI mode
+                                }
+                                None => {
+                                    // Other key event (buffer updated, cursor moved)
                                 }
                             }
-
-                            // Send as user message to LLM
-                            handle_user_message_tui(&line, state, &mut view).await;
                         }
-                        Some(InputResult::Interrupted) => {
-                            // Ctrl+C — cancel current operation or ignore
-                            continue;
+                        CrosstermEvent::Resize(_, _) => {
+                            view.app_mut().scroll_to_bottom();
                         }
-                        Some(InputResult::Eof) => {
-                            // Ctrl+D — quit: save session and history
-                            let _ = view.app_mut().save_history();
-                            if !state.session.anonymous {
-                                let _ = state.session.save_sqlite();
-                            }
-                            view.restore();
-                            return Ok(());
-                        }
-                        Some(InputResult::Error(_)) => {
-                            // Should not happen in TUI mode
-                            continue;
-                        }
-                        None => {
-                            // Other key event (buffer updated, cursor moved)
+                        _ => {
+                            // Ignore other events (mouse, etc.)
                         }
                     }
                 }
-                CrosstermEvent::Resize(_, _) => {
-                    // On resize, scroll to bottom so newest content stays visible.
-                    // Without this, shrinking the terminal can hide the bottom of
-                    // the conversation because the scroll offset becomes stale.
-                    view.app_mut().scroll_to_bottom();
+            }
+
+            // ── LLM events (when LLM is running) ──────────────────
+            Some(llm_event) = async {
+                if let Some(rx) = &mut llm_rx {
+                    rx.recv().await
+                } else {
+                    // No LLM running — never complete this branch
+                    std::future::pending().await
                 }
-                _ => {
-                    // Ignore other events (mouse, etc.)
+            } => {
+                match llm_event {
+                    LlmEvent::ViewAction(action) => {
+                        apply_view_action(&mut view, action);
+                    }
+                    LlmEvent::Complete { session, used_tokens, max_tokens, percent } => {
+                        // Update the session with the one from the LLM task
+                        state.session = *session;
+                        view.update_status_tokens(used_tokens, max_tokens, percent);
+                        view.set_llm_state(LlmState::Idle);
+                        cancel_token = None;
+                        llm_rx = None;
+                    }
+                    LlmEvent::Error(error) => {
+                        view.app_mut().add_message(ChatMessage::error(error));
+                        view.set_llm_state(LlmState::Idle);
+                        cancel_token = None;
+                        llm_rx = None;
+                    }
+                    LlmEvent::Cancelled => {
+                        // LLM was cancelled — already handled by Ctrl+C branch
+                        cancel_token = None;
+                        llm_rx = None;
+                    }
                 }
+            }
+
+            // ── Spinner tick ─────────────────────────────────────
+            _ = spinner_interval.tick() => {
+                // The spinner advances on every render() call.
+                // This branch ensures the event loop wakes up every 100ms
+                // even when there are no key events or LLM events, so the
+                // spinner keeps animating during LLM processing.
             }
         }
 
@@ -334,27 +409,139 @@ pub async fn run_chat_repl_tui(
     }
 }
 
-/// Handle a user message in TUI mode.
+/// Spawn the LLM task in the background.
 ///
-/// Sends the message to the LLM and displays the response via the TUI view.
-/// Delegates to the existing `handle_user_message()` from `repl.rs`.
-async fn handle_user_message_tui(line: &str, state: &mut ReplState, view: &mut RatatuiView) {
-    // Set LLM state to thinking
-    view.set_llm_state(LlmState::Thinking);
+/// Creates a `ChannelView` that the LLM task uses to send view updates
+/// through an mpsc channel. The event loop drains these as `LlmEvent::ViewAction`.
+/// On completion, sends `LlmEvent::Complete` with the updated session
+/// and final token counts.
+/// On error, sends `LlmEvent::Error`.
+///
+/// The `cancel_token` allows the event loop to cancel the task on Ctrl+C.
+fn spawn_llm_task(
+    line: &str,
+    state: &mut ReplState,
+    llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
+    cancel_token: &mut Option<CancellationToken>,
+) {
+    // Create channels for LLM events
+    let (llm_tx, new_llm_rx) = tokio::sync::mpsc::channel(LLM_VIEW_CHANNEL_CAPACITY);
+    *llm_rx = Some(new_llm_rx);
 
-    // Delegate to the existing handler which uses the view for output
-    super::repl::handle_user_message(line, state, view as &mut dyn ChatView).await;
+    // Create cancellation token
+    let token = CancellationToken::new();
+    *cancel_token = Some(token.clone());
 
-    // Update token usage after response
-    let used_tokens = state.session.history_real_tokens();
-    let max_tokens = state.model_config.num_ctx as usize;
-    let percent = if max_tokens > 0 {
-        ((used_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
-    } else {
-        0
-    };
-    view.update_status_tokens(used_tokens, max_tokens, percent);
+    // Create the channel view proxy
+    let (view_tx, view_rx) = tokio::sync::mpsc::channel(LLM_VIEW_CHANNEL_CAPACITY);
 
-    // Return to idle
-    view.set_llm_state(LlmState::Idle);
+    // Forward view actions from the ChannelView sender to the LLM event sender.
+    // This runs in a small forwarding task.
+    let llm_tx_clone = llm_tx.clone();
+    tokio::spawn(async move {
+        let mut rx = view_rx;
+        while let Some(action) = rx.recv().await {
+            if llm_tx_clone
+                .send(LlmEvent::ViewAction(action))
+                .await
+                .is_err()
+            {
+                break; // Event loop dropped
+            }
+        }
+    });
+
+    // Create the ChannelView for the LLM task
+    let mut channel_view = ChannelView::new(view_tx);
+
+    // Clone the state for the LLM task
+    let mut task_state = state.clone();
+
+    // Spawn the LLM task
+    let line_owned = line.to_string();
+    tokio::spawn(async move {
+        // Check for cancellation before starting
+        if token.is_cancelled() {
+            let _ = llm_tx.send(LlmEvent::Cancelled).await;
+            return;
+        }
+
+        // Delegate to the existing handler which uses the ChannelView for output
+        super::repl::handle_user_message(
+            &line_owned,
+            &mut task_state,
+            &mut channel_view as &mut dyn ChatView,
+        )
+        .await;
+
+        // Check if cancelled after the call
+        if token.is_cancelled() {
+            let _ = llm_tx.send(LlmEvent::Cancelled).await;
+            return;
+        }
+
+        // Send the updated session and token counts back
+        let used_tokens = task_state.session.history_real_tokens();
+        let max_tokens = task_state.model_config.num_ctx as usize;
+        let percent = if max_tokens > 0 {
+            ((used_tokens as f64 / max_tokens as f64) * 100.0).min(100.0) as u8
+        } else {
+            0
+        };
+
+        let _ = llm_tx
+            .send(LlmEvent::Complete {
+                session: Box::new(task_state.session),
+                used_tokens,
+                max_tokens,
+                percent,
+            })
+            .await;
+    });
+}
+
+/// Apply a `ViewAction` to the real `RatatuiView`.
+///
+/// This translates the channel-based view proxy calls into actual
+/// rendering on the TUI view.
+fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
+    match action {
+        ViewAction::ShowSystem(msg) => {
+            view.show_system(&msg);
+        }
+        ViewAction::ShowError(msg) => {
+            view.show_error(&msg);
+        }
+        ViewAction::ShowAssistantResponse { content, thinking } => {
+            view.show_assistant_response(&content, thinking.as_deref());
+        }
+        ViewAction::ShowTokenMetrics(metrics) => {
+            view.show_token_metrics(&metrics);
+        }
+        ViewAction::ShowContextWarning { percent, message } => {
+            view.show_context_warning(percent, &message);
+        }
+        ViewAction::ShowCompactProgress(msg) => {
+            view.show_compact_progress(&msg);
+        }
+        ViewAction::ShowCompactComplete {
+            count,
+            preserved_first,
+            preserved_last,
+        } => {
+            view.show_compact_complete(count, preserved_first, preserved_last);
+        }
+        ViewAction::ShowMarkdown(content) => {
+            view.show_markdown(&content);
+        }
+        ViewAction::ShowThinking(thinking) => {
+            view.show_thinking(&thinking);
+        }
+        ViewAction::ClearContinuationLine => {
+            view.clear_continuation_line();
+        }
+        ViewAction::ShowCommandOutput(output) => {
+            view.show_command_output(&output);
+        }
+    }
 }

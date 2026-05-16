@@ -3514,6 +3514,7 @@ dependencies = [
  "tempfile",
  "termimad",
  "tokio",
+ "tokio-util",
  "toml",
  "tui-markdown",
  "unicode-segmentation",
@@ -4035,6 +4036,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

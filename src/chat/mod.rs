@@ -25,6 +25,7 @@
 //! termimad + indicatif and are unaffected by the TUI migration.
 
 pub mod app;
+pub mod channel_view;
 pub mod cli;
 pub mod command_handlers;
 pub mod command_output;
@@ -35,6 +36,7 @@ pub mod coordinator;
 pub mod core;
 pub mod custom_coordinator;
 pub mod input;
+pub mod llm_event;
 pub mod model_switch;
 pub mod repl;
 pub mod repl_state;

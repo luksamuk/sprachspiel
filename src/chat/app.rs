@@ -33,6 +33,7 @@ pub enum LlmState {
     /// Idle — waiting for user input
     Idle,
     /// Thinking — spinner active, input disabled
+    #[allow(dead_code)] // PR3: Will be used for non-blocking spinner animation
     Thinking,
     /// Streaming — response coming in, input disabled
     Streaming,

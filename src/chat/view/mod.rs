@@ -197,7 +197,7 @@ pub fn create_view_event_channel() -> (ViewEventSender, ViewEventReceiver) {
 /// view.show_assistant_response(&content, thinking, &metrics);
 /// view.show_error("Something went wrong");
 /// ```
-pub trait ChatView {
+pub trait ChatView: Send {
     /// Display a system message (info, status, welcome)
     ///
     /// Used for:
