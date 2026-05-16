@@ -19,6 +19,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 
+use super::completer::ChatCompleter;
 use super::input::{CrosstermInput, InputBackend, InputResult};
 use super::tui::TuiTerminal;
 use super::tui::components::chat_area::ChatMessage;
@@ -146,6 +147,8 @@ pub struct App {
     input_state: InputState,
     /// CrosstermInput for history management
     history_input: CrosstermInput,
+    /// Tab completion engine (slash commands + model names)
+    completer: ChatCompleter,
     /// Status bar state
     status_bar: StatusBarState,
     /// LLM processing state
@@ -161,10 +164,12 @@ pub struct App {
 impl App {
     /// Create a new App with default state
     pub fn new(theme: MarkdownTheme, model_names: Vec<String>) -> Self {
+        let completer = ChatCompleter::new(model_names.clone());
         Self {
             messages: Vec::new(),
             input_state: InputState::new(),
             history_input: CrosstermInput::new(model_names),
+            completer,
             status_bar: StatusBarState::new(String::new(), 0, 0, 0, false, false),
             llm_state: LlmState::Idle,
             theme,
@@ -186,13 +191,13 @@ impl App {
     }
 
     /// Get the current input state
-    #[allow(dead_code)] // PR3: Will be used for tab completion
+    #[allow(dead_code)] // Public API — will be used by streaming display in Phase 3.2
     pub fn input_state(&self) -> &InputState {
         &self.input_state
     }
 
     /// Get a mutable reference to the input state
-    #[allow(dead_code)] // PR3: Will be used for tab completion
+    #[allow(dead_code)] // Public API — will be used by streaming display in Phase 3.2
     pub fn input_state_mut(&mut self) -> &mut InputState {
         &mut self.input_state
     }
@@ -447,6 +452,16 @@ impl App {
                 None
             }
 
+            // Tab — attempt tab completion (slash commands, model names)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Tab,
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => {
+                self.try_tab_complete();
+                None
+            }
+
             // Regular character — insert at cursor
             crossterm::event::KeyEvent {
                 code: KeyCode::Char(c),
@@ -512,6 +527,53 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Attempt tab completion based on current input buffer.
+    ///
+    /// Uses `ChatCompleter` to find slash command or model name completions.
+    /// On single match: replaces the buffer with the completed text.
+    /// On multiple matches: cycles through them on repeated Tab presses.
+    /// When no matches: does nothing (bell could be added later).
+    fn try_tab_complete(&mut self) {
+        use super::completer::CompletionResult;
+
+        let buffer = self.input_state.buffer.clone();
+        let cursor_pos = self.input_state.cursor_pos;
+
+        let result = self.completer.complete(&buffer, cursor_pos);
+
+        match result {
+            CompletionResult::None => {
+                // No completion available — could ring terminal bell here
+            }
+            CompletionResult::Single {
+                replacement,
+                cursor_pos,
+            } => {
+                self.input_state.buffer = replacement;
+                self.input_state.cursor_pos = cursor_pos;
+            }
+            CompletionResult::Multiple {
+                matches,
+                cycle_index,
+            } => {
+                // Use the current cycle match as the completion
+                if let Some(selected) = matches.get(cycle_index) {
+                    let replacement = format!("{} ", selected);
+                    self.input_state.buffer = replacement.clone();
+                    self.input_state.cursor_pos = replacement.len();
+                }
+            }
+        }
+    }
+
+    /// Update model names in the completer (e.g., after a model switch).
+    ///
+    /// Called when the model list changes to keep tab completion current.
+    #[allow(dead_code)] // Will be used after model switch in event loop
+    pub fn update_model_names(&mut self, model_names: Vec<String>) {
+        self.completer.set_model_names(model_names);
     }
 
     /// Save history to file
