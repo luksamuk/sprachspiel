@@ -63,7 +63,8 @@ regex = "1.10"
 # Fails gracefully on Termux and headless environments
 cli-clipboard = "0.4.0"
 # crossterm provides terminal raw mode, events, and input for ratatui TUI
-crossterm = { version = "0.29", features = ["event-stream"] }
+# bracketed-paste enables Event::Paste for terminal paste support
+crossterm = { version = "0.29", features = ["event-stream", "bracketed-paste"] }
 # ratatui provides the TUI framework for responsive chat rendering
 ratatui = "0.30"
 # ratatui-textarea provides a multi-line text editor widget for the TUI input

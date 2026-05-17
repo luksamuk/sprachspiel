@@ -90,6 +90,10 @@ impl RatatuiView {
         }) as std::sync::Arc<dyn Fn(&str) + Sync + Send>;
         debug_tools::set_tui_callback(Some(callback));
 
+        // Suppress stderr logging in TUI mode — all log output goes to the file.
+        // This prevents ANSI escape codes from corrupting the alternate screen.
+        crate::logging::set_tui_mode(true);
+
         Self {
             app,
             terminal,
@@ -131,9 +135,11 @@ impl RatatuiView {
     ///
     /// Must be called before exiting to prevent broken terminal state.
     /// Sets the `restored` flag so that `Drop` does not double-restore.
-    /// Also clears the global TUI callback so tool calls go back to stderr.
+    /// Also clears the global TUI callback and restores stderr logging.
     pub fn restore(mut self) {
         self.restored = true;
+        // Restore stderr logging — TUI mode is ending
+        crate::logging::set_tui_mode(false);
         // Clear the TUI callback so tool calls go back to stderr
         debug_tools::set_tui_callback(None);
         let _ = exit_tui(&mut self.terminal);
@@ -806,6 +812,7 @@ impl Drop for RatatuiView {
         // Drop run (restore() is consuming, so Drop only runs if restore()
         // was never called, e.g., on early return or panic).
         if !self.restored {
+            crate::logging::set_tui_mode(false);
             let _ = exit_tui(&mut self.terminal);
             let _ = self.app.save_history();
         }

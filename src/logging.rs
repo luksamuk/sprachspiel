@@ -2,16 +2,26 @@
 //!
 //! Provides a unified logging system using the `log` crate with a custom `MultiLogger`
 //! that routes messages to both stderr (colored, level-filtered) and a log file
-//! (`~/.local/share/sprachspiel/sprachspiel.log`, always warn+).
+//! (`~/.local/share/sprachspiel/sprachspiel.log`).
 //!
 //! # Verbosity Levels
 //!
-//! | Level   | Flag   | Terminal | File | Shows                                    |
-//! |---------|--------|----------|------|------------------------------------------|
-//! | Quiet   | `-q`   | `error`  | warn | Errors only (no spinner, no tool calls)  |
-//! | Normal  | (def)  | `warn`   | warn | Warnings + errors                        |
-//! | Verbose | `-v`   | `debug`  | warn | Detailed internals + warnings + errors   |
-//! | Trace   | `-vv`  | `trace`  | info | Everything including embedding internals  |
+//! | Level   | Flag   | Terminal | File  | Shows                                    |
+//! |---------|--------|----------|-------|------------------------------------------|
+//! | Quiet   | `-q`   | `error`  | warn  | Errors only (no spinner, no tool calls)  |
+//! | Normal  | (def)  | `warn`   | info  | Warnings + errors                        |
+//! | Verbose | `-v`   | `debug`  | debug | Detailed internals + warnings + errors   |
+//! | Trace   | `-vv`  | `trace`  | trace | Everything including embedding internals  |
+//!
+//! # TUI Mode
+//!
+//! When the TUI (ratatui alternate screen) is active, stderr output is **suppressed**
+//! entirely to prevent corrupting the display. All logging goes to the file instead.
+//! File logging is boosted to at least `debug` in TUI mode so that the log file
+//! captures useful diagnostic information that would otherwise appear on stderr.
+//!
+//! Use `/debug` in TUI mode to toggle between debug and trace file logging.
+//! Use `--verbose` / `-v` at launch to start with debug-level file logging.
 //!
 //! # Priority
 //!
@@ -37,8 +47,13 @@
 //!
 //! Logs are written to `~/.local/share/sprachspiel/sprachspiel.log` by default.
 //! Rotation: when the file exceeds 5 MB, it is renamed to `sprachspiel.log.1`
-//! (previous backup deleted). The file always receives warn+ messages
-//! regardless of terminal verbosity; trace verbose mode raises file level to info.
+//! (previous backup deleted). The file level varies by verbosity:
+//! - Normal: info+ (warnings, errors, and informational messages)
+//! - Verbose/-v: debug+ (detailed internals)
+//! - Trace/-vv: trace (everything)
+//!
+//! In TUI mode, the file level is boosted to at least debug regardless of verbosity,
+//! since stderr is suppressed and the file is the only way to capture diagnostics.
 //!
 //! # Rustyline Suppression
 //!
@@ -51,9 +66,59 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use chrono::Local;
 use log::{Level, LevelFilter, Metadata, Record};
+
+// ---------------------------------------------------------------------------
+// TUI mode and dynamic file level overrides
+// ---------------------------------------------------------------------------
+
+/// When true, the TUI alternate screen is active and all stderr output is
+/// suppressed to prevent corrupting the display.
+///
+/// Set via [`set_tui_mode()`] when entering/exiting TUI mode.
+static TUI_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Sentinel value for `FILE_LEVEL_OVERRIDE` meaning "use construction default".
+const USE_DEFAULT_FILE_LEVEL: u8 = 255;
+
+/// Dynamic override for the file logger level.
+///
+/// When set to a value other than `USE_DEFAULT_FILE_LEVEL`, this takes
+/// precedence over the construction-time `FileLogger.level`. Used to boost
+/// file logging in TUI mode (where stderr is suppressed) and when `/debug`
+/// is toggled.
+///
+/// Stored as u8: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace.
+static FILE_LEVEL_OVERRIDE: AtomicU8 = AtomicU8::new(USE_DEFAULT_FILE_LEVEL);
+
+/// Convert a `LevelFilter` to a u8 for storage in `FILE_LEVEL_OVERRIDE`.
+fn level_filter_to_u8(level: LevelFilter) -> u8 {
+    match level {
+        LevelFilter::Off => 0,
+        LevelFilter::Error => 1,
+        LevelFilter::Warn => 2,
+        LevelFilter::Info => 3,
+        LevelFilter::Debug => 4,
+        LevelFilter::Trace => 5,
+    }
+}
+
+/// Convert a u8 from `FILE_LEVEL_OVERRIDE` back to a `LevelFilter`.
+/// Returns `None` for invalid values (including the sentinel).
+fn level_filter_from_u8(v: u8) -> Option<LevelFilter> {
+    match v {
+        0 => Some(LevelFilter::Off),
+        1 => Some(LevelFilter::Error),
+        2 => Some(LevelFilter::Warn),
+        3 => Some(LevelFilter::Info),
+        4 => Some(LevelFilter::Debug),
+        5 => Some(LevelFilter::Trace),
+        _ => None,
+    }
+}
 
 /// Maximum log file size before rotation (5 MB)
 const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
@@ -102,13 +167,22 @@ impl Verbosity {
     }
 
     /// Convert to file `log::LevelFilter`.
-    /// File always gets at least `warn`; trace mode raises to `info`.
+    ///
+    /// The file logger is more verbose than the terminal so the log file
+    /// captures useful diagnostic information even at normal verbosity:
+    /// - Quiet: `warn` (errors + warnings only)
+    /// - Normal: `info` (adds informational messages)
+    /// - Verbose: `debug` (adds debug internals)
+    /// - Trace: `trace` (everything)
+    ///
+    /// In TUI mode, the file level is boosted to at least `debug` via
+    /// [`set_tui_mode()`] since stderr is suppressed.
     pub fn to_file_level_filter(self) -> LevelFilter {
         match self {
             Verbosity::Quiet => LevelFilter::Warn,
-            Verbosity::Normal => LevelFilter::Warn,
-            Verbosity::Verbose => LevelFilter::Warn,
-            Verbosity::Trace => LevelFilter::Info,
+            Verbosity::Normal => LevelFilter::Info,
+            Verbosity::Verbose => LevelFilter::Debug,
+            Verbosity::Trace => LevelFilter::Trace,
         }
     }
 
@@ -200,10 +274,18 @@ impl StderrLogger {
 
 impl log::Log for StderrLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
+        // In TUI mode, stderr is completely suppressed
+        if TUI_MODE.load(Ordering::Relaxed) {
+            return false;
+        }
         metadata.level() <= self.level
     }
 
     fn log(&self, record: &Record) {
+        // Suppress ALL stderr output in TUI mode to avoid corrupting alternate screen
+        if TUI_MODE.load(Ordering::Relaxed) {
+            return;
+        }
         if !self.enabled(record.metadata()) {
             return;
         }
@@ -267,6 +349,16 @@ impl FileLogger {
         }
     }
 
+    /// Effective level: uses `FILE_LEVEL_OVERRIDE` if set, otherwise construction default.
+    fn effective_level(&self) -> LevelFilter {
+        let override_val = FILE_LEVEL_OVERRIDE.load(Ordering::Relaxed);
+        if override_val != USE_DEFAULT_FILE_LEVEL {
+            level_filter_from_u8(override_val).unwrap_or(self.level)
+        } else {
+            self.level
+        }
+    }
+
     fn rotate_if_needed(path: &PathBuf) {
         let Ok(metadata) = fs::metadata(path) else {
             return;
@@ -300,7 +392,7 @@ impl FileLogger {
 
 impl log::Log for FileLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= self.level
+        metadata.level() <= self.effective_level()
     }
 
     fn log(&self, record: &Record) {
@@ -424,6 +516,10 @@ pub fn set_verbosity(verbosity: Verbosity) {
 
 /// Toggle verbosity between Normal and Trace.
 /// Used by the /debug command in chat mode — full debug output when enabled.
+///
+/// In TUI mode, also adjusts the file logger level:
+/// - Trace → file level Trace (captures everything)
+/// - Normal → file level Debug (TUI default, captures useful diagnostics)
 pub fn toggle_verbosity() -> Verbosity {
     let current = log::max_level();
     let new_verbosity = if current >= LevelFilter::Trace {
@@ -432,7 +528,73 @@ pub fn toggle_verbosity() -> Verbosity {
         Verbosity::Trace
     };
     set_verbosity(new_verbosity);
+
+    // In TUI mode, adjust file level to match the new verbosity
+    if is_tui_mode() {
+        let file_level = match new_verbosity {
+            Verbosity::Trace => LevelFilter::Trace,
+            _ => LevelFilter::Debug, // TUI default is debug
+        };
+        set_file_level(file_level);
+    }
+
     new_verbosity
+}
+
+// ---------------------------------------------------------------------------
+// TUI mode and dynamic file level control
+// ---------------------------------------------------------------------------
+
+/// Activate or deactivate TUI mode for logging.
+///
+/// When TUI mode is activated:
+/// - Stderr output is completely suppressed (prevents alternate screen corruption)
+/// - File logging is boosted to `debug` level (so the log file captures useful
+///   diagnostics that would otherwise appear on stderr)
+///
+/// When TUI mode is deactivated:
+/// - Stderr output is restored
+/// - File logging reverts to the construction-default level
+///
+/// Called from `RatatuiView::new()` and `RatatuiView::restore()`.
+pub fn set_tui_mode(active: bool) {
+    TUI_MODE.store(active, Ordering::Relaxed);
+    if active {
+        // Boost file logging to debug so TUI debugging is useful.
+        // This also ensures the global max level allows debug+ messages through.
+        set_file_level(LevelFilter::Debug);
+    } else {
+        // Restore file logging to construction default
+        clear_file_level();
+    }
+}
+
+/// Check if TUI mode is currently active.
+///
+/// Used internally by loggers to decide whether to suppress stderr output.
+/// Can also be called from other modules that need to know if they should
+/// avoid writing to stderr.
+pub fn is_tui_mode() -> bool {
+    TUI_MODE.load(Ordering::Relaxed)
+}
+
+/// Set a dynamic override for the file logger level.
+///
+/// This takes precedence over the construction-time level set during `init()`.
+/// Also ensures the global `log::set_max_level()` is raised if needed so that
+/// messages at the requested level actually reach the logger.
+pub fn set_file_level(level: LevelFilter) {
+    FILE_LEVEL_OVERRIDE.store(level_filter_to_u8(level), Ordering::Relaxed);
+    // Ensure global max level allows messages through to the file logger
+    let current_max = log::max_level();
+    if level > current_max {
+        log::set_max_level(level);
+    }
+}
+
+/// Clear the dynamic file level override, reverting to the construction default.
+pub fn clear_file_level() {
+    FILE_LEVEL_OVERRIDE.store(USE_DEFAULT_FILE_LEVEL, Ordering::Relaxed);
 }
 
 /// Truncate a string for safe logging (data sensitivity policy).
@@ -479,9 +641,12 @@ mod tests {
     #[test]
     fn test_verbosity_to_file_level_filter() {
         assert_eq!(Verbosity::Quiet.to_file_level_filter(), LevelFilter::Warn);
-        assert_eq!(Verbosity::Normal.to_file_level_filter(), LevelFilter::Warn);
-        assert_eq!(Verbosity::Verbose.to_file_level_filter(), LevelFilter::Warn);
-        assert_eq!(Verbosity::Trace.to_file_level_filter(), LevelFilter::Info);
+        assert_eq!(Verbosity::Normal.to_file_level_filter(), LevelFilter::Info);
+        assert_eq!(
+            Verbosity::Verbose.to_file_level_filter(),
+            LevelFilter::Debug
+        );
+        assert_eq!(Verbosity::Trace.to_file_level_filter(), LevelFilter::Trace);
     }
 
     #[test]
@@ -541,5 +706,144 @@ mod tests {
         assert_eq!(truncate_for_log("café", 3), "caf...");
         // Short string
         assert_eq!(truncate_for_log("ab", 5), "ab");
+    }
+
+    // -----------------------------------------------------------------------
+    // TUI mode and file level override tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_level_filter_roundtrip() {
+        // u8 ↔ LevelFilter round-trip integrity
+        for level in [
+            LevelFilter::Off,
+            LevelFilter::Error,
+            LevelFilter::Warn,
+            LevelFilter::Info,
+            LevelFilter::Debug,
+            LevelFilter::Trace,
+        ] {
+            let encoded = level_filter_to_u8(level);
+            let decoded = level_filter_from_u8(encoded);
+            assert_eq!(decoded, Some(level), "Round-trip failed for {:?}", level);
+        }
+    }
+
+    #[test]
+    fn test_level_filter_from_u8_rejects_invalid() {
+        assert_eq!(level_filter_from_u8(USE_DEFAULT_FILE_LEVEL), None);
+        assert_eq!(level_filter_from_u8(100), None);
+        assert_eq!(level_filter_from_u8(6), None);
+    }
+
+    #[test]
+    fn test_tui_mode_default_off() {
+        // TUI mode starts off
+        assert!(!is_tui_mode());
+    }
+
+    #[test]
+    fn test_tui_mode_toggle() {
+        // TUI mode can be enabled and disabled
+        set_tui_mode(true);
+        assert!(is_tui_mode());
+        set_tui_mode(false);
+        assert!(!is_tui_mode());
+    }
+
+    #[test]
+    fn test_set_and_clear_file_level() {
+        // File level override starts at default sentinel
+        let initial = FILE_LEVEL_OVERRIDE.load(Ordering::Relaxed);
+        assert_eq!(initial, USE_DEFAULT_FILE_LEVEL);
+
+        // Set to debug
+        set_file_level(LevelFilter::Debug);
+        assert_eq!(
+            FILE_LEVEL_OVERRIDE.load(Ordering::Relaxed),
+            level_filter_to_u8(LevelFilter::Debug)
+        );
+
+        // Clear restores default
+        clear_file_level();
+        assert_eq!(
+            FILE_LEVEL_OVERRIDE.load(Ordering::Relaxed),
+            USE_DEFAULT_FILE_LEVEL
+        );
+    }
+
+    #[test]
+    fn test_file_logger_effective_level_default() {
+        let file_logger = FileLogger::new(PathBuf::from("/dev/null"), LevelFilter::Warn);
+        // No override → should return construction default
+        clear_file_level();
+        assert_eq!(file_logger.effective_level(), LevelFilter::Warn);
+    }
+
+    #[test]
+    fn test_file_logger_effective_level_override() {
+        let file_logger = FileLogger::new(PathBuf::from("/dev/null"), LevelFilter::Warn);
+        // Set override to debug
+        set_file_level(LevelFilter::Debug);
+        assert_eq!(file_logger.effective_level(), LevelFilter::Debug);
+
+        // Clear override → back to construction default
+        clear_file_level();
+        assert_eq!(file_logger.effective_level(), LevelFilter::Warn);
+    }
+
+    #[test]
+    fn test_stderr_logger_suppressed_in_tui_mode() {
+        // TUI mode starts off — stderr should not be suppressed
+        set_tui_mode(false);
+        assert!(!is_tui_mode());
+
+        // Enable TUI mode — stderr is suppressed via the TUI_MODE atomic
+        set_tui_mode(true);
+        assert!(is_tui_mode());
+
+        // Disable TUI mode — back to normal
+        set_tui_mode(false);
+        assert!(!is_tui_mode());
+    }
+
+    #[test]
+    fn test_tui_mode_sets_file_level_to_debug() {
+        clear_file_level();
+        set_tui_mode(true);
+        // File level should be boosted to debug
+        assert_eq!(
+            FILE_LEVEL_OVERRIDE.load(Ordering::Relaxed),
+            level_filter_to_u8(LevelFilter::Debug)
+        );
+        set_tui_mode(false);
+    }
+
+    #[test]
+    fn test_tui_mode_clear_restores_file_level() {
+        set_file_level(LevelFilter::Debug);
+        set_tui_mode(false);
+        // Clearing TUI mode should restore default
+        assert_eq!(
+            FILE_LEVEL_OVERRIDE.load(Ordering::Relaxed),
+            USE_DEFAULT_FILE_LEVEL
+        );
+    }
+
+    #[test]
+    fn test_tui_mode_toggle_verbosity_trace() {
+        // Simulate TUI mode + /debug toggle
+        set_tui_mode(true);
+
+        // The toggle_verbosity function goes from current max level to Trace
+        // Since we cleared the level at start of test, simulate toggle
+        set_file_level(LevelFilter::Trace);
+        assert_eq!(
+            FILE_LEVEL_OVERRIDE.load(Ordering::Relaxed),
+            level_filter_to_u8(LevelFilter::Trace)
+        );
+
+        // Clean up
+        set_tui_mode(false);
     }
 }

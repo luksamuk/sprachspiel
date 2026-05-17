@@ -17,7 +17,7 @@
 //!     └─ LlmState (idle, thinking, streaming, tool_call)
 //! ```
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout};
 use ratatui_textarea::{CursorMove, TextArea};
 use tokio::sync::mpsc;
@@ -763,10 +763,14 @@ impl App {
     /// **Submission & control:**
     /// - Enter: submit line (textarea default is newline)
     /// - Shift+Enter: newline
-    /// - Ctrl+C: clear input (copy to clipboard) or cancel LLM
+    /// - Ctrl+C: context-dependent copy/cancel:
+    ///   - Chat selection active → copy selected chat text to clipboard
+    ///   - Textarea selection active → copy selection, deselect (text preserved)
+    ///   - Textarea has text (no selection) → select all, copy, clear input (cancel)
+    ///   - Empty textarea → cancel LLM or exit
+    /// - Ctrl+V: paste from system clipboard
     /// - Ctrl+D: EOF on empty, forward delete otherwise
-    /// - Ctrl+Shift+C/V: system clipboard copy/paste
-    /// - Ctrl+Y: paste from system clipboard (not kill-ring yank)
+    /// - Ctrl+Y: yank (paste from textarea kill-ring)
     /// - Tab: completion
     ///
     /// **Cursor movement (no selection):**
@@ -792,46 +796,88 @@ impl App {
     /// When input is disabled (during LLM processing), only Ctrl+C
     /// and scroll keys are processed — all other keys are ignored.
     pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Option<InputResult> {
-        // ── Clipboard shortcuts (always work) ────────────────────────
+        // Filter Release events — crossterm 0.29 sends both Press and Release
+        // for each key event. We only handle Press to avoid double-processing.
+        if key.kind != KeyEventKind::Press {
+            return None;
+        }
 
-        // Ctrl+Shift+C — copy chat selection or textarea selection to clipboard
+        // Diagnose key events in the log file (safe because TUI mode routes
+        // all log output to the file, not stderr, so this won't corrupt the display).
+        log::debug!(
+            "handle_key: code={:?} modifiers={:?} kind={:?}",
+            key.code,
+            key.modifiers,
+            key.kind
+        );
+
+        // ── Ctrl+C handling (always works) ───────────────────────────
+        // Context-dependent: copy selection or cancel, with 4 priority levels:
+        // 1. Chat selection active → copy chat text to clipboard
+        // 2. Textarea selection active → copy selection, deselect (text preserved)
+        // 3. Textarea has text (no selection) → select all, copy, clear (cancel input)
+        // 4. Empty textarea → cancel LLM or exit
+
         if matches!(
             key,
             crossterm::event::KeyEvent {
-                code: KeyCode::Char('C'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             }
         ) {
             self.completion_menu.hide();
+
+            // Priority 1: Chat selection active → copy selected chat text to clipboard
             if self.chat_selection.is_active() {
                 let text = self.chat_selection.extract_text(&self.visual_lines_cache);
                 if !text.is_empty() {
                     let _ = cli_clipboard::set_contents(text);
-                } else {
-                    log::debug!(
-                        "Ctrl+Shift+C: chat selection active but extract_text returned empty (cache has {} lines)",
-                        self.visual_lines_cache.len()
-                    );
                 }
                 self.chat_selection.clear();
-            } else if self.textarea.is_selecting() {
-                self.textarea.copy();
-                if let Some(text) = self.yank_text()
-                    && !text.is_empty()
-                {
-                    let _ = cli_clipboard::set_contents(text);
-                }
+                return None;
             }
-            return None;
+
+            // Priority 2 & 3: Textarea has content
+            if !self.textarea_is_empty() {
+                if self.textarea.is_selecting() {
+                    // Priority 2: Selection in textarea → copy selection, deselect
+                    // Text is preserved — only the selection is canceled
+                    self.textarea.copy();
+                    if let Some(text) = self.yank_text()
+                        && !text.is_empty()
+                    {
+                        let _ = cli_clipboard::set_contents(text);
+                    }
+                    self.textarea.cancel_selection();
+                } else {
+                    // Priority 3: No selection → select all, copy, then clear (cancel input)
+                    self.textarea.select_all();
+                    self.textarea.copy();
+                    if let Some(text) = self.yank_text()
+                        && !text.is_empty()
+                    {
+                        let _ = cli_clipboard::set_contents(text);
+                    }
+                    self.textarea_clear();
+                }
+                return None;
+            }
+
+            // Priority 4: Empty textarea → cancel LLM or no-op
+            return Some(InputResult::Interrupted);
         }
 
-        // Ctrl+Shift+V — paste from system clipboard
+        // ── Ctrl+V — paste from system clipboard (always works) ──────
+        // Terminal emulators like kitty intercept Ctrl+Shift+C/V, so we
+        // use Ctrl+V for paste instead. This works reliably across all
+        // terminals because it's a standard key event that crossterm receives.
+
         if matches!(
             key,
             crossterm::event::KeyEvent {
-                code: KeyCode::Char('V'),
-                modifiers: KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                code: KeyCode::Char('v'),
+                modifiers: KeyModifiers::CONTROL,
                 ..
             }
         ) {
@@ -843,45 +889,6 @@ impl App {
                 self.chat_selection.clear();
             }
             return None;
-        }
-
-        // ── Ctrl+C handling (always works) ───────────────────────────
-
-        if matches!(
-            key,
-            crossterm::event::KeyEvent {
-                code: KeyCode::Char('c'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }
-        ) {
-            self.completion_menu.hide();
-            let has_text = !self.textarea_is_empty();
-            if has_text {
-                // If there's an active selection, copy it to clipboard first
-                if self.textarea.is_selecting() {
-                    self.textarea.copy();
-                    if let Some(text) = self.yank_text()
-                        && !text.is_empty()
-                    {
-                        let _ = cli_clipboard::set_contents(text);
-                    }
-                    self.textarea.cancel_selection();
-                } else {
-                    // No selection: select all, copy to clipboard, then clear
-                    self.textarea.select_all();
-                    self.textarea.copy();
-                    if let Some(text) = self.yank_text()
-                        && !text.is_empty()
-                    {
-                        let _ = cli_clipboard::set_contents(text);
-                    }
-                }
-                self.textarea_clear();
-                return None;
-            }
-            // No text: cancel LLM or no-op
-            return Some(InputResult::Interrupted);
         }
 
         // ── Input disabled (LLM processing) ─────────────────────────
@@ -1021,23 +1028,16 @@ impl App {
                 None
             }
 
-            // Ctrl+Y — paste from system clipboard (not kill-ring yank)
+            // Ctrl+Y — yank (paste from textarea kill-ring)
+            // Kill-ring is populated by Ctrl+W (delete word), Ctrl+K (delete
+            // to EOL), and Ctrl+X (cut selection). This is standard Emacs
+            // behavior and the default in ratatui-textarea.
             crossterm::event::KeyEvent {
                 code: KeyCode::Char('y'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                match cli_clipboard::get_contents() {
-                    Ok(text) if !text.is_empty() => {
-                        self.textarea.insert_str(&text);
-                    }
-                    Ok(_) => {
-                        log::debug!("Ctrl+Y: clipboard is empty");
-                    }
-                    Err(e) => {
-                        log::debug!("Ctrl+Y: clipboard read error: {e}");
-                    }
-                }
+                self.textarea.paste();
                 None
             }
 

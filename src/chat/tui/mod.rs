@@ -85,7 +85,11 @@ pub fn exit_tui(terminal: &mut TuiTerminal) -> TuiResult<()> {
 /// Call this from a panic hook to ensure the terminal is usable
 /// after a crash. Without this, a panic during TUI mode leaves the
 /// terminal in raw mode with alternate screen active.
+///
+/// Also restores stderr logging so panic messages are visible.
 pub fn restore_terminal_on_panic() {
     let _ = crossterm::terminal::disable_raw_mode();
     let _ = crossterm::execute!(io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+    // Restore stderr logging so panic messages are visible after TUI crash
+    crate::logging::set_tui_mode(false);
 }

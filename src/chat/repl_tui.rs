@@ -391,8 +391,12 @@ pub async fn run_chat_repl_tui(
                         CrosstermEvent::Mouse(mouse) => {
                             handle_mouse_event(mouse, &mut view);
                         }
+                        CrosstermEvent::Paste(text) => {
+                            // Bracketed paste from terminal (Shift+Insert, middle-click, etc.)
+                            view.app_mut().textarea_mut().insert_str(&text);
+                        }
                         _ => {
-                            // Ignore other events (focus, paste, etc.)
+                            // Ignore other events (focus gained/lost, etc.)
                         }
                     }
                 }
@@ -719,7 +723,8 @@ const MOUSE_SCROLL_LINES: u16 = 3;
 /// Currently supports:
 /// - Mouse wheel scroll up/down in the chat area (3 lines per tick)
 /// - Left-click + drag to select text in the chat area
-/// - Left-click in input area clears chat selection (mutual exclusion)
+/// - Clicking in chat area clears textarea selection (bidirectional mutual exclusion)
+/// - Clicking outside chat area clears chat selection
 fn handle_mouse_event(mouse: MouseEvent, view: &mut RatatuiView) {
     let app = view.app_mut();
     let chat_area = app.chat_area_rect_cache();
@@ -731,7 +736,8 @@ fn handle_mouse_event(mouse: MouseEvent, view: &mut RatatuiView) {
             if let Some((visual_line, char_offset)) =
                 mouse_to_visual_pos(mouse.column, mouse.row, chat_area, scroll_from_top)
             {
-                // Start text selection in chat area
+                // Start text selection in chat area — clear textarea selection (mutual exclusion)
+                app.textarea_mut().cancel_selection();
                 app.chat_selection_mut().begin(visual_line, char_offset);
             } else {
                 // Click outside chat area — clear chat selection (mutual exclusion)
