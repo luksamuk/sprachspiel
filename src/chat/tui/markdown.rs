@@ -15,9 +15,9 @@
 //! # Themes
 //!
 //! Three themes map from the existing `DisplaySettings.skin` config:
-//! - `dark`: Dark background optimized (default ratatui colors)
-//! - `light`: Light background optimized (bright colors for light BG)
-//! - `mono`: Monochrome (bold/italic preserved, no colors)
+//! - `dark`: Catppuccin Mocha (dark terminal backgrounds)
+//! - `light`: Catppuccin Latte (light terminal backgrounds)
+//! - `mono`: Monochrome with subtle Catppuccin tints (bold/italic preserved)
 //!
 //! # API
 //!
@@ -33,6 +33,26 @@ use tui_markdown::{Options, StyleSheet, from_str_with_options};
 use unicode_width::UnicodeWidthStr;
 
 use super::wrap::wrap_line;
+
+// ── Catppuccin color palette (MIT License, https://catppuccin.com) ────
+//
+// Only the colors used by the TUI markdown renderer are included here.
+// Catppuccin provides 26 named colors per flavor; we define the subset
+// needed for code blocks and general markdown styling.
+//
+// Color names and hex values are taken directly from the Catppuccin
+// palette specification. See https://catppuccin.com/palette/ for the
+// full palette.
+
+// Mocha (dark flavor) — used by DarkStyleSheet
+const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244); // #cdd6f4
+const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68); // #313244
+const MOCHA_SURFACE1: Color = Color::Rgb(69, 71, 90); // #45475a
+const MOCHA_SUBTEXT1: Color = Color::Rgb(186, 194, 222); // #bac2de
+
+// Latte (light flavor) — used by LightStyleSheet
+const LATTE_TEXT: Color = Color::Rgb(76, 79, 105); // #4c4f69
+const LATTE_SURFACE0: Color = Color::Rgb(204, 208, 218); // #ccd0da
 
 /// Markdown theme matching the user's `display.skin` configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,8 +100,9 @@ impl StyleSheet for DarkStyleSheet {
         }
     }
 
+    // Catppuccin Mocha: text on Surface0 for code blocks
     fn code(&self) -> Style {
-        Style::default().fg(Color::Cyan)
+        Style::default().fg(MOCHA_TEXT).bg(MOCHA_SURFACE0)
     }
 
     fn link(&self) -> Style {
@@ -105,7 +126,7 @@ impl StyleSheet for DarkStyleSheet {
     }
 }
 
-/// Light theme stylesheet (optimized for light terminal backgrounds)
+/// Light theme stylesheet (Catppuccin Latte, optimized for light terminal backgrounds)
 #[derive(Clone, Copy)]
 struct LightStyleSheet;
 
@@ -127,8 +148,9 @@ impl StyleSheet for LightStyleSheet {
         }
     }
 
+    // Catppuccin Latte: text on Surface0 for code blocks
     fn code(&self) -> Style {
-        Style::default().fg(Color::Blue)
+        Style::default().fg(LATTE_TEXT).bg(LATTE_SURFACE0)
     }
 
     fn link(&self) -> Style {
@@ -152,7 +174,7 @@ impl StyleSheet for LightStyleSheet {
     }
 }
 
-/// Monochrome theme stylesheet (no colors, just bold/italic)
+/// Monochrome theme stylesheet (subtle Catppuccin tints, primarily bold/italic)
 #[derive(Clone, Copy)]
 struct MonoStyleSheet;
 
@@ -164,8 +186,13 @@ impl StyleSheet for MonoStyleSheet {
         }
     }
 
+    // Catppuccin Mocha: Subtext1 on Surface1 with bold — works on
+    // color terminals with subtle tints; falls back to bold on mono
     fn code(&self) -> Style {
-        Style::default().add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(MOCHA_SUBTEXT1)
+            .bg(MOCHA_SURFACE1)
+            .add_modifier(Modifier::BOLD)
     }
 
     fn link(&self) -> Style {
@@ -955,10 +982,57 @@ fn render_table_box(content: &str, max_width: usize, theme: MarkdownTheme) -> Ve
 /// Used for both streaming and completed content. Markdown rendering
 /// is called on every render frame during streaming (like Thinking blocks)
 /// and once for completed messages.
+/// Post-process rendered markdown to apply code block background colors.
+///
+/// `tui-markdown` with the `highlight-code` feature uses syntect for syntax
+/// highlighting (theme: `base16-ocean.dark`), which sets foreground colors
+/// per token but never sets background colors. This function applies the
+/// Catppuccin background color to all lines inside fenced code blocks,
+/// including the opening and closing fence lines (``` ``` ``` ``).
+///
+/// The background is applied via `Line.style.bg`, which acts as a fallback
+/// for `Span`s that don't set their own background — this means syntect's
+/// token colors are preserved while our Catppuccin background fills any
+/// gaps. Spans that already have a background set (from syntect themes)
+/// will override the line background.
+fn apply_code_block_background(lines: &mut [Line<'static>], theme: MarkdownTheme) {
+    let bg_color = match theme {
+        MarkdownTheme::Dark => MOCHA_SURFACE0,
+        MarkdownTheme::Light => LATTE_SURFACE0,
+        MarkdownTheme::Mono => MOCHA_SURFACE1,
+    };
+
+    let mut in_code_block = false;
+    for line in lines.iter_mut() {
+        // Detect code block fence lines: lines that start with ```
+        // (tui-markdown renders "```rust" as the opening fence)
+        let is_fence = line
+            .spans
+            .first()
+            .map(|span| span.content.starts_with("```"))
+            .unwrap_or(false);
+
+        if is_fence && !in_code_block {
+            // Opening fence — start of code block
+            in_code_block = true;
+            line.style = line.style.patch(Style::default().bg(bg_color));
+        } else if is_fence && in_code_block {
+            // Closing fence — end of code block
+            line.style = line.style.patch(Style::default().bg(bg_color));
+            in_code_block = false;
+        } else if in_code_block {
+            // Content line inside code block
+            line.style = line.style.patch(Style::default().bg(bg_color));
+        }
+    }
+}
+
 pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) -> Text<'static> {
     // Fast path: if no table structure detected, use tui-markdown directly
     if !content_contains_table(content) {
-        return render_markdown_inner_owned(content, theme);
+        let mut text = render_markdown_inner_owned(content, theme);
+        apply_code_block_background(&mut text.lines, theme);
+        return text;
     }
 
     // Slow path: extract table segments and render hybrid
@@ -969,7 +1043,9 @@ pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) ->
         match segment {
             ContentSegment::Markdown(md) => {
                 let rendered = render_markdown_inner_owned(&md, theme);
-                all_lines.extend(rendered.lines);
+                let mut rendered_lines = rendered.lines;
+                apply_code_block_background(&mut rendered_lines, theme);
+                all_lines.extend(rendered_lines);
             }
             ContentSegment::Table(table) => {
                 let table_lines = render_table_box(&table, max_width, theme);
@@ -1198,6 +1274,144 @@ mod tests {
     fn test_render_markdown_mono() {
         let text = render_markdown("# Hello", MarkdownTheme::Mono, 80);
         assert!(!text.lines.is_empty());
+    }
+
+    // ── Code block styling tests (Catppuccin palette) ────────────────
+
+    #[test]
+    fn test_dark_code_style_has_catppuccin_bg() {
+        let style = DarkStyleSheet.code();
+        assert_eq!(
+            style.fg,
+            Some(MOCHA_TEXT),
+            "Dark code fg should be Catppuccin Mocha Text"
+        );
+        assert_eq!(
+            style.bg,
+            Some(MOCHA_SURFACE0),
+            "Dark code bg should be Catppuccin Mocha Surface0"
+        );
+    }
+
+    #[test]
+    fn test_light_code_style_has_catppuccin_bg() {
+        let style = LightStyleSheet.code();
+        assert_eq!(
+            style.fg,
+            Some(LATTE_TEXT),
+            "Light code fg should be Catppuccin Latte Text"
+        );
+        assert_eq!(
+            style.bg,
+            Some(LATTE_SURFACE0),
+            "Light code bg should be Catppuccin Latte Surface0"
+        );
+    }
+
+    #[test]
+    fn test_mono_code_style_has_catppuccin_tint_and_bold() {
+        let style = MonoStyleSheet.code();
+        assert_eq!(
+            style.fg,
+            Some(MOCHA_SUBTEXT1),
+            "Mono code fg should be Catppuccin Mocha Subtext1"
+        );
+        assert_eq!(
+            style.bg,
+            Some(MOCHA_SURFACE1),
+            "Mono code bg should be Catppuccin Mocha Surface1"
+        );
+        assert!(
+            style.add_modifier.contains(Modifier::BOLD),
+            "Mono code should have BOLD modifier"
+        );
+    }
+
+    #[test]
+    fn test_render_code_block_has_background() {
+        // Verify that rendered code blocks have non-default background
+        // in all themes (Catppuccin palette colors are RGB, not default).
+        // tui-markdown with highlight-code produces syntax-highlighted spans
+        // but never sets bg; our post-processing applies Catppuccin bg.
+        let code_md = "```rust\nfn main() {}\n```";
+        for theme in [
+            MarkdownTheme::Dark,
+            MarkdownTheme::Light,
+            MarkdownTheme::Mono,
+        ] {
+            let text = render_markdown(code_md, theme, 80);
+            let has_bg = text.lines.iter().any(|line| {
+                if line.style.bg.is_some() {
+                    return true;
+                }
+                line.spans.iter().any(|span| span.style.bg.is_some())
+            });
+            assert!(
+                has_bg,
+                "Expected code block lines with background color for theme {:?}, but none found",
+                theme
+            );
+        }
+    }
+
+    #[test]
+    fn test_code_block_background_matches_theme() {
+        // Verify the specific Catppuccin background color is applied per theme.
+        // The opening fence line ("```rust") should have Line.style.bg set to
+        // the theme's code block background.
+        let code_md = "```rust\nfn main() {}\n```";
+        let expected_bg = [
+            (MarkdownTheme::Dark, MOCHA_SURFACE0),
+            (MarkdownTheme::Light, LATTE_SURFACE0),
+            (MarkdownTheme::Mono, MOCHA_SURFACE1),
+        ];
+        for (theme, bg) in expected_bg {
+            let text = render_markdown(code_md, theme, 80);
+            let first_fence = text
+                .lines
+                .iter()
+                .find(|line| {
+                    line.spans
+                        .first()
+                        .map(|span| span.content.starts_with("```"))
+                        .unwrap_or(false)
+                })
+                .expect("should find opening fence line");
+            assert_eq!(
+                first_fence.style.bg,
+                Some(bg),
+                "Opening fence for {:?} should have bg={:?}, got {:?}",
+                theme,
+                bg,
+                first_fence.style.bg
+            );
+        }
+    }
+
+    #[test]
+    fn test_inline_code_has_catppuccin_style() {
+        // Inline code uses StyleSheet::code() directly (not highlight-code).
+        // Verify that inline code has both fg and bg set.
+        let inline_md = "Use `println!` to print";
+        for theme in [
+            MarkdownTheme::Dark,
+            MarkdownTheme::Light,
+            MarkdownTheme::Mono,
+        ] {
+            let text = render_markdown(inline_md, theme, 80);
+            let has_code_style = text.lines.iter().any(|line| {
+                line.spans.iter().any(|span| {
+                    span.content.contains("println!")
+                        && span.style.bg.is_some()
+                        && span.style.fg.is_some()
+                })
+            });
+            assert!(
+                has_code_style,
+                "Inline code should have both fg and bg for theme {:?}",
+                theme
+            );
+        }
     }
 
     // ── Table detection tests ──────────────────────────────────────

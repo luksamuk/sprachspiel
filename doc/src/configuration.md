@@ -182,7 +182,7 @@ plain_default = false
 [display]
 
 # The color theme for markdown rendering.
-# Options: "dark", "light", or "mono" (for terminals without color)
+# Options: "dark" (Catppuccin Mocha), "light" (Catppuccin Latte), or "mono" (monochrome)
 # Default: "dark"
 skin = "dark"
 ```
