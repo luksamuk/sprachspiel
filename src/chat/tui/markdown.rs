@@ -1068,7 +1068,8 @@ fn render_markdown_inner<'a>(content: &'a str, theme: MarkdownTheme) -> Text<'a>
 /// single `Text` — each segment is owned independently.
 fn render_markdown_inner_owned(content: &str, theme: MarkdownTheme) -> Text<'static> {
     let text = render_markdown_inner(content, theme);
-    // Convert borrowed Text<'a> to owned Text<'static>
+    // Convert borrowed Text<'a> to owned Text<'static>,
+    // preserving Line.style (which carries heading formatting from tui-markdown).
     let owned_lines: Vec<Line<'static>> = text
         .lines
         .into_iter()
@@ -1078,7 +1079,9 @@ fn render_markdown_inner_owned(content: &str, theme: MarkdownTheme) -> Text<'sta
                 .into_iter()
                 .map(|span| Span::styled(span.content.into_owned(), span.style))
                 .collect();
-            Line::from(owned_spans)
+            let mut owned_line = Line::from(owned_spans);
+            owned_line.style = line.style;
+            owned_line
         })
         .collect();
     Text::from(owned_lines)
@@ -1105,6 +1108,84 @@ mod tests {
     fn test_render_markdown_dark() {
         let text = render_markdown("# Hello", MarkdownTheme::Dark, 80);
         assert!(!text.lines.is_empty());
+    }
+
+    #[test]
+    fn test_heading_style_propagation() {
+        // tui-markdown produces headings with style in Line.style
+        // (fallback for Spans with Style::default). Verify that
+        // DarkStyleSheet heading styles are applied correctly.
+        let dark_h1 = DarkStyleSheet.heading(1);
+        assert!(
+            dark_h1.add_modifier == Modifier::BOLD | Modifier::UNDERLINED,
+            "Dark H1 should have BOLD | UNDERLINED, got {:?}",
+            dark_h1.add_modifier
+        );
+        assert_eq!(dark_h1.fg, Some(Color::Yellow));
+
+        let dark_h2 = DarkStyleSheet.heading(2);
+        assert!(
+            dark_h2.add_modifier == Modifier::BOLD | Modifier::UNDERLINED,
+            "Dark H2 should have BOLD | UNDERLINED, got {:?}",
+            dark_h2.add_modifier
+        );
+        assert_eq!(dark_h2.fg, Some(Color::Cyan));
+
+        let dark_h3 = DarkStyleSheet.heading(3);
+        assert!(
+            dark_h3.add_modifier == Modifier::BOLD,
+            "Dark H3 should have BOLD only, got {:?}",
+            dark_h3.add_modifier
+        );
+        assert_eq!(dark_h3.fg, Some(Color::Green));
+
+        let light_h1 = LightStyleSheet.heading(1);
+        assert!(
+            light_h1.add_modifier == Modifier::BOLD | Modifier::UNDERLINED,
+            "Light H1 should have BOLD | UNDERLINED, got {:?}",
+            light_h1.add_modifier
+        );
+
+        let mono_h1 = MonoStyleSheet.heading(1);
+        assert!(
+            mono_h1.add_modifier == Modifier::BOLD | Modifier::UNDERLINED,
+            "Mono H1 should have BOLD | UNDERLINED, got {:?}",
+            mono_h1.add_modifier
+        );
+
+        let mono_h3 = MonoStyleSheet.heading(3);
+        assert!(
+            mono_h3.add_modifier == Modifier::BOLD,
+            "Mono H3 should have BOLD only, got {:?}",
+            mono_h3.add_modifier
+        );
+    }
+
+    #[test]
+    fn test_heading_line_style_in_render_output() {
+        // Verify that render_markdown produces lines with Line.style
+        // set for headings (tui-markdown puts heading style in Line.style)
+        let text = render_markdown(
+            "# Heading 1\n\n## Heading 2\n\n### Heading 3",
+            MarkdownTheme::Dark,
+            80,
+        );
+
+        // Should have heading lines
+        assert!(
+            text.lines.len() >= 3,
+            "Expected at least 3 lines for headings, got {}",
+            text.lines.len()
+        );
+
+        // Check that the first heading line has non-default Line.style
+        // (tui-markdown sets Line.style for heading lines)
+        let has_non_default_line_style =
+            text.lines.iter().any(|line| line.style != Style::default());
+        assert!(
+            has_non_default_line_style,
+            "Expected at least one line with non-default Line.style (heading), but all lines have Style::default()"
+        );
     }
 
     #[test]
