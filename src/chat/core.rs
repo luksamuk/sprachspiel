@@ -828,8 +828,22 @@ pub async fn send_message_stream(
 
             let (cleaned_response, continuation_needed) = parse_continuation_tag(&display_content);
 
-            // Send StreamDone with the final content (metrics are shown via
-            // process_send_result → view.show_token_metrics, avoiding duplicates)
+            // When tools interrupted streaming, pre-tool content is already
+            // displayed via StreamToken events. Send StreamBlockDone to
+            // finalize it as a STABLE Assistant+Thinking message, preventing
+            // StreamDone from wiping it. StreamDone then adds the post-tool
+            // content as a NEW message.
+            if pre_tool_content.is_some() {
+                let pre_tool_display =
+                    strip_thinking_tags(pre_tool_content.as_deref().unwrap_or(""));
+                let _ = llm_tx.try_send(LlmEvent::StreamBlockDone {
+                    content: pre_tool_display,
+                    thinking: pre_tool_thinking.clone(),
+                    metrics: None,
+                });
+            }
+
+            // StreamDone: post-tool content (or the only content if no tools)
             let _ = llm_tx.try_send(LlmEvent::StreamDone {
                 content: cleaned_response.clone(),
                 thinking: thinking.clone(),

@@ -419,6 +419,20 @@ pub async fn run_chat_repl_tui(
                         // Append thinking token to the current streaming thinking block
                         view.stream_thinking(&thinking_token);
                     }
+                    LlmEvent::StreamBlockDone {
+                        content,
+                        thinking,
+                        metrics,
+                    } => {
+                        // Pre-tool streaming complete — finalize the block
+                        // and transition to ToolCall state.
+                        view.stream_done(&content,
+                            thinking.as_deref(),
+                            metrics.as_ref(),
+                        );
+                        view.app_mut().block_finalized = true;
+                        view.set_llm_state(LlmState::ToolCall);
+                    }
                     LlmEvent::StreamDone {
                         content,
                         thinking,
@@ -589,13 +603,15 @@ fn spawn_llm_task(
 ///
 /// # Deduplication
 ///
-/// When content was already displayed via StreamToken/StreamThinking
-/// events (indicated by the streaming zone being non-empty), content
-/// ViewActions for ShowAssistantResponse and ShowMarkdown are NOT
-/// duplicated. The streaming zone already shows the content, and
-/// StreamDone will finalize it. ShowThinking during tool calls IS
-/// shown (inserted before the streaming zone) because thinking
-/// content from a previous round should be preserved.
+/// After `StreamBlockDone` finalizes the pre-tool block and before
+/// `StreamDone` adds the post-tool content, ViewActions that carry the
+/// ALREADY-SHOWN pre-tool text (via `PreToolContent` in the coordinator)
+/// will be drained by `drain_into_llm_channel()` and arrive as
+/// `ShowThinking` + `ShowMarkdown` on the event loop. Because the
+/// pre-tool content was already displayed by the `StreamToken`/
+/// `StreamThinking` sequence that preceded `StreamBlockDone`,
+/// `apply_view_action` skips those content messages to prevent
+/// duplicating text on the screen.
 fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
     let llm_state = view.app().llm_state();
     let has_streaming_zone = view.app().has_streaming_zone();

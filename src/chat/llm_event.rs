@@ -39,21 +39,43 @@ pub enum LlmEvent {
 
     /// A streaming token chunk arrived from the LLM.
     ///
-    /// The event loop should append this text to the current
+    /// The event loop should append this text to the CURRENT
     /// `AssistantStreaming` message in the chat area.
     StreamToken(String),
 
     /// A streaming thinking chunk arrived from the LLM.
     ///
-    /// The event loop should append this text to the current
+    /// The event loop should append this text to the CURRENT
     /// thinking block being streamed.
     StreamThinking(String),
 
-    /// Streaming is complete — replace the streaming message with
+    /// The current streaming CONTENT BLOCK is complete.
+    ///
+    /// This event is emitted when tool calls interrupt streaming.
+    /// The pre-tool content that was already streamed is finalized
+    /// (converted from `AssistantStreaming` to `Assistant`) and
+    /// becomes a STABLE message that will not be overwritten by
+    /// subsequent post-tool content.
+    ///
+    /// After this event, the LLM state transitions to `ToolCall`.
+    /// When the tool loop finishes, `StreamDone` will carry the
+    /// POST-tool content as a fresh message.
+    StreamBlockDone {
+        /// Full accumulated pre-tool content (for markdown rendering)
+        content: String,
+        /// Pre-tool thinking content (if any)
+        thinking: Option<String>,
+        /// Token metrics (if available from final streaming chunk before tools)
+        metrics: Option<TokenMetrics>,
+    },
+
+    /// Streaming is complete — replace the FINAL streaming message with
     /// the final markdown-rendered assistant response.
     ///
-    /// Contains the full accumulated response content and, if available,
-    /// the token metrics from `final_data`.
+    /// This is the last event of a streaming turn. It finalizes the
+    /// LAST content block (post-tool, or the only block if no tools).
+    /// For turns with tool calls, this event is preceded by
+    /// `StreamBlockDone` which finalized the pre-tool block.
     StreamDone {
         /// Full accumulated response content (for markdown rendering)
         content: String,
@@ -113,6 +135,14 @@ impl std::fmt::Debug for LlmEvent {
                 };
                 f.debug_tuple("StreamThinking").field(&display).finish()
             }
+            Self::StreamBlockDone {
+                content: _,
+                thinking: _,
+                metrics,
+            } => f
+                .debug_struct("StreamBlockDone")
+                .field("metrics", metrics)
+                .finish_non_exhaustive(),
             Self::StreamDone {
                 content: _,
                 thinking: _,

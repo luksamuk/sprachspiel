@@ -187,6 +187,12 @@ pub struct App {
     spinner_frames: Vec<&'static str>,
     /// Current spinner frame index
     spinner_frame: usize,
+    /// Whether the first streamed block of a multi-block turn was finalized.
+    ///
+    /// Set to `true` when `StreamBlockDone` is received (tool call interrupt).
+    /// Cleared back to `false` on `Complete`. Used by the event loop to
+    /// decide whether content is "already shown" or needs adding.
+    pub block_finalized: bool,
     /// Channel receiver for embedding progress updates from background tasks.
     /// Each message is (current, total) — current embeddings generated out of total.
     embedding_progress_rx: mpsc::UnboundedReceiver<(usize, usize)>,
@@ -285,6 +291,7 @@ impl App {
             scroll: ScrollState::new(),
             spinner_frames: random_tui_spinner_frames(),
             spinner_frame: 0,
+            block_finalized: false,
             embedding_progress_rx,
         };
 
@@ -601,9 +608,13 @@ impl App {
         self.scroll.scroll_to_bottom();
     }
 
-    /// Set the LLM state and update input/status accordingly
+    /// Set the LLM state and update input/status accordingly.
+    /// Clears `block_finalized` when transitioning to Idle.
     pub fn set_llm_state(&mut self, state: LlmState) {
         self.llm_state = state;
+        if state == LlmState::Idle {
+            self.block_finalized = false;
+        }
         match state {
             LlmState::Idle => {
                 self.input_disabled = false;
@@ -2156,9 +2167,96 @@ mod tests {
     }
 
     #[test]
-    fn test_has_streaming_zone_false_empty() {
-        let app = test_app();
-        assert!(!app.has_streaming_zone());
+    fn test_content_block_lifecycle_pre_and_post_tool() {
+        // Realistic simulation of the StreamBlockDone -> ToolCall -> StreamDone
+        // flow that preserves pre-tool content across tool execution.
+        let mut app = test_app();
+
+        // Pre-tool streaming
+        app.append_stream_thinking("I should calculate");
+        app.append_stream_token("Let me compute ");
+
+        // StreamBlockDone arrives: finalize_stream converts the zone into
+        // stable messages. After this call, there is NO streaming zone.
+        app.finalize_stream("Let me compute ", Some("I should calculate"));
+        app.block_finalized = true;
+        app.set_llm_state(LlmState::ToolCall);
+
+        // With no streaming zone, tool messages append normally
+        app.add_message(ChatMessage::tool("🔧 calc".to_string()));
+        app.add_message(ChatMessage::tool("42".to_string()));
+
+        // Post-tool streaming: new tokens create a fresh AssistantStreaming
+        // at the tail (a new content block).
+        app.append_stream_token("22 + 20 = 42");
+
+        // StreamDone arrives: finalize only the new zone (post-tool block).
+        app.finalize_stream("22 + 20 = 42", None);
+
+        // Result: pre-tool preserved, tools inserted between, post-tool finalized
+        assert_eq!(app.messages.len(), 5);
+        // Thinking was appended first, then AssistantStreaming:
+        // after finalize_stream, Thinking remains first
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "I should calculate");
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Let me compute ");
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[4].content, "22 + 20 = 42");
+    }
+
+    #[test]
+    fn test_content_block_lifecycle_multiple_tool_calls() {
+        // Full flow with two tool calls where StreamBlockDone creates
+        // a boundary after each tool group, preserving all blocks.
+        let mut app = test_app();
+
+        // -- Block 0: pre-tool streaming --
+        app.append_stream_thinking("Vou buscar info");
+        app.append_stream_token("Vou buscar ");
+
+        // StreamBlockDone: finalize pre-tool block
+        app.finalize_stream("Vou buscar ", Some("Vou buscar info"));
+        app.block_finalized = true;
+        app.set_llm_state(LlmState::ToolCall);
+
+        // Tool 1 messages appended normally (no streaming zone)
+        app.add_message(ChatMessage::tool("🔧 weather()".to_string()));
+        app.add_message(ChatMessage::tool("Sunny, 22°C".to_string()));
+
+        // -- Block 1: between-tools streaming --
+        // After tool 1, model streams again before tool 2
+        app.append_stream_token("Agora calcular: ");
+
+        // StreamBlockDone for tool 2
+        app.finalize_stream("Agora calcular: ", None);
+        app.set_llm_state(LlmState::ToolCall);
+
+        // Tool 2 messages
+        app.add_message(ChatMessage::tool("🔧 calc".to_string()));
+        app.add_message(ChatMessage::tool("42".to_string()));
+
+        // -- Block 2: post-tool final streaming --
+        app.append_stream_token("Pronto!");
+        app.finalize_stream("Pronto!", None);
+
+        // Result: three preserved blocks separated by tools
+        assert_eq!(app.messages.len(), 8);
+        // After finalizing: Thinking first (was appended first), then Assistant
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Vou buscar info");
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Vou buscar ");
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[4].content, "Agora calcular: ");
+        assert_eq!(app.messages[5].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[6].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[7].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[7].content, "Pronto!");
     }
 
     #[test]
@@ -2167,5 +2265,38 @@ mod tests {
         let mut app = test_app();
         app.add_message(ChatMessage::tool("Tool result".to_string()));
         assert!(!app.has_streaming_zone());
+    }
+
+    // ── Content Block Stateful Streaming lifecycle tests ────────────
+
+    #[test]
+    fn test_content_block_lifecycle_single_block() {
+        // A simple turn with no tool calls — standard streaming path
+        let mut app = test_app();
+        assert!(!app.block_finalized);
+
+        app.append_stream_token("Hello");
+        app.append_stream_token(" world");
+
+        app.finalize_stream("Hello world", None);
+
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[0].content, "Hello world");
+        // block_finalized not touched by finalize_stream
+        assert!(!app.block_finalized);
+    }
+
+    #[test]
+    fn test_content_block_set_llm_state_clears_block_finalized() {
+        let mut app = test_app();
+
+        app.set_llm_state(LlmState::ToolCall);
+        assert!(!app.block_finalized);
+
+        app.block_finalized = true;
+
+        app.set_llm_state(LlmState::Idle);
+        assert!(!app.block_finalized);
     }
 }
