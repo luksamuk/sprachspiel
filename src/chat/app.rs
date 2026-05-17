@@ -432,6 +432,24 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
+    /// Finalize the current streaming zone by converting all
+    /// `AssistantStreaming` messages to stable `Assistant`.
+    ///
+    /// Called when streaming is interrupted by tool calls before
+    /// `StreamBlockDone`/`StreamDone` arrive (e.g., on `ToolCallStarted`).
+    /// Preserves the streamed content as-is without authoritative final data.
+    /// Thinking blocks remain unchanged (already stream-accumulated).
+    pub fn finalize_streaming_zone_as_is(&mut self) {
+        let streaming_start = self.streaming_zone_start();
+        for i in streaming_start..self.messages.len() {
+            if self.messages[i].msg_type == MessageType::AssistantStreaming {
+                let content = self.messages[i].content.clone();
+                self.messages[i] = ChatMessage::assistant_markdown(content);
+            }
+        }
+        self.scroll.reset_to_bottom();
+    }
+
     /// Check whether the streaming zone is non-empty.
     ///
     /// Returns `true` if there are Thinking or AssistantStreaming
@@ -2298,5 +2316,58 @@ mod tests {
 
         app.set_llm_state(LlmState::Idle);
         assert!(!app.block_finalized);
+    }
+
+    #[test]
+    fn test_finalize_zone_as_is_preserves_streamed_content() {
+        // When ToolCallStarted arrives before StreamBlockDone/StreamDone,
+        // finalize_streaming_zone_as_is() should convert AssistantStreaming
+        // to stable Assistant WITHOUT replacing content.
+        let mut app = test_app();
+
+        app.append_stream_thinking("Analyzing");
+        app.append_stream_token("Result: 42");
+
+        // Tool calls interrupt: finalize as-is before tool messages
+        app.finalize_streaming_zone_as_is();
+
+        // Content is preserved as-is, no authoritative replacement
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[0].content, "Analyzing");
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Result: 42");
+        // No streaming zone after finalization
+        assert!(!app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_tool_messages_after_finalize_zone_inserted_correctly() {
+        // The real fix: tool messages must appear AFTER pre-tool content,
+        // never before. finalize_streaming_zone_as_is() ensures this.
+        let mut app = test_app();
+
+        // User message + pre-tool streaming
+        app.add_message(ChatMessage::user("Ola".to_string()));
+        app.append_stream_thinking("Hmm");
+        app.append_stream_token("Boa noite");
+
+        // Tool calls interrupt — MUST finalize before inserting tools
+        app.finalize_streaming_zone_as_is();
+        app.set_llm_state(LlmState::ToolCall);
+
+        // Tool messages now append normally (no zone = append at end)
+        app.add_message(ChatMessage::tool("file_read".to_string()));
+        app.add_message(ChatMessage::tool("content".to_string()));
+
+        // Visual order: User → Thinking → Assistant → Tool
+        assert_eq!(app.messages.len(), 5);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[1].content, "Hmm");
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[2].content, "Boa noite");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Tool);
     }
 }

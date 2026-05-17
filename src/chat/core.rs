@@ -146,6 +146,7 @@ pub fn setup_coordinator(
     system_prompt: String,
     real_history_tokens: Option<usize>,
     view_event_sender: super::view::ViewEventSender,
+    llm_tx: Option<tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>>,
 ) -> CustomCoordinator<Vec<ChatMessage>> {
     let coordinator = crate::query::ChatContext {
         ollama,
@@ -160,15 +161,33 @@ pub fn setup_coordinator(
         // Send view events through the channel for later rendering.
         // This avoids requiring the callback closure to hold a mutable
         // reference to ChatView, which is not possible with 'static closures.
+        //
+        // For streaming TUI mode: PreToolContent from inter-tool rounds
+        // is sent DIRECTLY to the LLM event channel via LlmEvent::InterToolText
+        // so the event loop can process it in real-time. Without this, the
+        // content would be batched via ViewEvents and either (a) dropped due
+        // to streaming deduplication, or (b) appear in the wrong order.
+        let has_llm_tx = llm_tx.is_some();
         match event {
             crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
-                let cleaned = strip_thinking_tags(&content);
-                // Only send if there's something to display
-                if thinking.is_some() || !cleaned.trim().is_empty() {
-                    view_event_sender.send(super::view::ViewEvent::PreToolContent {
-                        content: cleaned,
-                        thinking,
-                    });
+                if has_llm_tx {
+                    // Streaming mode: emit directly to LLM channel for real-time
+                    // event loop processing. This avoids batching and deduplication.
+                    let _ = llm_tx.as_ref().unwrap().try_send(
+                        super::llm_event::LlmEvent::InterToolText {
+                            content,
+                            metrics: None,
+                        },
+                    );
+                } else {
+                    // Terminal mode: emit as ViewEvent for batch processing
+                    let cleaned = strip_thinking_tags(&content);
+                    if thinking.is_some() || !cleaned.trim().is_empty() {
+                        view_event_sender.send(super::view::ViewEvent::PreToolContent {
+                            content: cleaned,
+                            thinking,
+                        });
+                    }
                 }
             }
             crate::chat::custom_coordinator::ChatEvent::ContextNeedsCompaction {
@@ -467,6 +486,7 @@ pub async fn send_message(
         system_prompt.clone(),
         Some(real_history_tokens),
         view_event_sender,
+        None,
     );
 
     // Prepare messages with retrieval and continuation
@@ -678,6 +698,7 @@ pub async fn send_message_stream(
         system_prompt.clone(),
         Some(real_history_tokens),
         view_event_sender,
+        Some(llm_tx.clone()),
     );
 
     // Prepare messages with retrieval and continuation
