@@ -67,10 +67,10 @@ impl StyleSheet for DarkStyleSheet {
         match level {
             1 => Style::default()
                 .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             2 => Style::default()
                 .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             3 => Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
@@ -114,10 +114,10 @@ impl StyleSheet for LightStyleSheet {
         match level {
             1 => Style::default()
                 .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             2 => Style::default()
                 .fg(Color::Magenta)
-                .add_modifier(Modifier::BOLD),
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             3 => Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
@@ -157,8 +157,11 @@ impl StyleSheet for LightStyleSheet {
 struct MonoStyleSheet;
 
 impl StyleSheet for MonoStyleSheet {
-    fn heading(&self, _level: u8) -> Style {
-        Style::default().add_modifier(Modifier::BOLD)
+    fn heading(&self, level: u8) -> Style {
+        match level {
+            1 | 2 => Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            _ => Style::default().add_modifier(Modifier::BOLD),
+        }
     }
 
     fn code(&self) -> Style {
