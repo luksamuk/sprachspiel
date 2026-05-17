@@ -403,6 +403,38 @@ impl App {
             .unwrap_or(0)
     }
 
+    /// Insert a message before the streaming zone.
+    ///
+    /// When the LLM is in `ToolCall` or `Streaming` state, tool messages
+    /// and view actions should appear BEFORE any streaming content
+    /// (Thinking/AssistantStreaming messages). This method finds the
+    /// streaming zone start and inserts the message there, pushing
+    /// streaming content down.
+    ///
+    /// If there is no streaming zone (all messages are stable), this
+    /// falls back to appending at the end via `add_message()`.
+    pub fn insert_before_streaming_zone(&mut self, message: ChatMessage) {
+        let zone_start = self.streaming_zone_start();
+        if zone_start < self.messages.len() {
+            // There's a streaming zone — insert before it
+            self.messages.insert(zone_start, message);
+        } else {
+            // No streaming zone — just append
+            self.messages.push(message);
+        }
+        self.scroll.reset_to_bottom();
+    }
+
+    /// Check whether the streaming zone is non-empty.
+    ///
+    /// Returns `true` if there are Thinking or AssistantStreaming
+    /// messages at the tail of the message list, indicating that
+    /// content is currently being displayed via streaming events.
+    /// Used to avoid duplicating content that's already being shown.
+    pub fn has_streaming_zone(&self) -> bool {
+        self.streaming_zone_start() < self.messages.len()
+    }
+
     /// Replace the last `AssistantStreaming` message with the final
     /// markdown-rendered `Assistant` message, and consolidate any
     /// fragmented `Thinking` blocks from the streaming session.
@@ -2004,5 +2036,136 @@ mod tests {
             app.messages[1].content,
             "Bora! Mais uma:\n\n| A | B |\n|---|---|\n| 1 | 2 |"
         );
+    }
+
+    // ── insert_before_streaming_zone tests ──────────────────────────
+
+    #[test]
+    fn test_insert_before_streaming_zone_with_zone() {
+        // Tool message should be inserted before the streaming zone
+        let mut app = test_app();
+
+        // Simulate: User, then streaming zone (Thinking + AssistantStreaming)
+        app.add_message(ChatMessage::user("Search for weather".to_string()));
+        app.append_stream_thinking("Let me search");
+        app.append_stream_token("The weather is");
+
+        // Insert a Tool message before the streaming zone
+        app.insert_before_streaming_zone(ChatMessage::tool("🔧 weather: Sunny".to_string()));
+
+        // Tool message should appear between User and Thinking
+        assert_eq!(app.messages.len(), 4);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[1].content, "🔧 weather: Sunny");
+        assert_eq!(app.messages[2].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[3].msg_type, MessageType::AssistantStreaming);
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_no_zone() {
+        // When there's no streaming zone, insert_before should append
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("Hello".to_string()));
+
+        // No streaming zone — insert_before_streaming_zone should append
+        app.insert_before_streaming_zone(ChatMessage::tool("Tool msg".to_string()));
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[1].content, "Tool msg");
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_mid_conversation() {
+        // Multiple tool call rounds, then streaming response
+        let mut app = test_app();
+
+        // First tool round
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(ChatMessage::thinking("Thinking 1".to_string()));
+        app.add_message(ChatMessage::tool("Tool result 1".to_string()));
+
+        // Second streaming zone starts
+        app.append_stream_thinking("More thinking");
+        app.append_stream_token("Response");
+
+        // Insert tool message before the second streaming zone
+        app.insert_before_streaming_zone(ChatMessage::tool("Tool result 2".to_string()));
+
+        // Tool result 2 should be between Tool result 1 and Thinking
+        assert_eq!(app.messages.len(), 6);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[2].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[2].content, "Tool result 1");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[3].content, "Tool result 2");
+        assert_eq!(app.messages[4].msg_type, MessageType::Thinking);
+        assert_eq!(app.messages[5].msg_type, MessageType::AssistantStreaming);
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_only_streaming() {
+        // Only streaming messages, no stable messages before
+        let mut app = test_app();
+
+        app.append_stream_token("Streaming response");
+
+        // Insert before the single streaming message
+        app.insert_before_streaming_zone(ChatMessage::tool("Tool msg".to_string()));
+
+        assert_eq!(app.messages.len(), 2);
+        assert_eq!(app.messages[0].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[1].msg_type, MessageType::AssistantStreaming);
+    }
+
+    // ── has_streaming_zone tests ────────────────────────────────────
+
+    #[test]
+    fn test_has_streaming_zone_true_thinking() {
+        let mut app = test_app();
+        app.append_stream_thinking("Thinking");
+        assert!(app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_true_streaming() {
+        let mut app = test_app();
+        app.append_stream_token("Content");
+        assert!(app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_true_interleaved() {
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Q".to_string()));
+        app.append_stream_thinking("Thinking");
+        app.append_stream_token("Content");
+        assert!(app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_false() {
+        let mut app = test_app();
+        app.add_message(ChatMessage::user("Q".to_string()));
+        app.add_message(ChatMessage::assistant_markdown("A".to_string()));
+        assert!(!app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_false_empty() {
+        let app = test_app();
+        assert!(!app.has_streaming_zone());
+    }
+
+    #[test]
+    fn test_has_streaming_zone_false_tool_calls() {
+        // Tool messages are not part of the streaming zone
+        let mut app = test_app();
+        app.add_message(ChatMessage::tool("Tool result".to_string()));
+        assert!(!app.has_streaming_zone());
     }
 }

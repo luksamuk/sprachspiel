@@ -16,6 +16,14 @@
 //!     ←── LlmEvent::Error     ── LLM error
 //!     ──→ CancellationToken    ── Ctrl+C cancellation
 //! ```
+//!
+//! # Tool Message Ordering
+//!
+//! Tool messages from `debug_tools::TUI_CALLBACK` flow through a
+//! separate `tool_call_rx` channel. They are drained in the event
+//! loop (not in `render()`) and inserted before the streaming zone
+//! when the LLM is in `ToolCall` or `Streaming` state, ensuring
+//! correct visual ordering relative to streaming content.
 
 use super::command_output::CommandOutput;
 use super::session::ChatSession;

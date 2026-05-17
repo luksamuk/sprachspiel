@@ -147,19 +147,25 @@ impl RatatuiView {
     /// though the main event loop is blocked on `handle_user_message_tui`,
     /// each `show_*` method calls `render()`, which ticks the spinner.
     ///
-    /// Drains tool call messages from the global callback channel into the
-    /// chat area as tool messages (rendered dim, no `[System]` prefix).
+    /// Note: tool call messages from `tool_call_rx` are NOT drained here.
+    /// They are drained in the event loop via `drain_tool_messages()` so
+    /// that ordering relative to LLM events can be controlled.
     pub fn render(&mut self) {
-        // Drain tool call messages from the global callback into the chat area
-        while let Ok(line) = self.tool_call_rx.try_recv() {
-            self.app.add_message(ChatMessage::tool(line));
-        }
-
-        // Note: tick_spinner() is NOT called here.
-        // The spinner advances only from the spinner_interval branch in the
-        // event loop, ensuring a consistent animation cadence (~180ms)
-        // independent of render frequency or streaming token arrival.
         let _ = self.app.render(&mut self.terminal);
+    }
+
+    /// Drain pending tool call messages from the global callback channel.
+    ///
+    /// Returns a Vec of tool call log lines that should be inserted into
+    /// the chat area. Called from the event loop (not from render) so that
+    /// tool messages can be inserted in the correct position relative to
+    /// LLM events (before the streaming zone when LLM is active).
+    pub fn drain_tool_messages(&mut self) -> Vec<String> {
+        let mut messages = Vec::new();
+        while let Ok(line) = self.tool_call_rx.try_recv() {
+            messages.push(line);
+        }
+        messages
     }
 }
 

@@ -785,9 +785,13 @@ pub async fn send_message_stream(
         }
     };
 
-    // Drain view events accumulated during coordinator chat (pre-tool content,
-    // context warnings) into the ChatView for rendering
-    view_event_receiver.drain_into(view);
+    // Drain view events accumulated during coordinator chat directly into
+    // the LLM event channel. This guarantees that ViewActions (pre-tool
+    // content, context warnings) arrive as LlmEvent::ViewAction BEFORE
+    // StreamDone, ensuring correct message ordering in the TUI event loop.
+    // The previous approach (draining into ChannelView → async forwarding)
+    // could reorder ViewActions relative to StreamDone.
+    view_event_receiver.drain_into_llm_channel(&llm_tx);
 
     // Process response
     let processed_result = match result {

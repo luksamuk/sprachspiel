@@ -464,6 +464,18 @@ pub async fn run_chat_repl_tui(
             }
         }
 
+        // Drain tool messages from the global callback and insert them
+        // in the correct position (before streaming zone when LLM is active).
+        // This must happen before render() so messages appear in order.
+        for msg in view.drain_tool_messages() {
+            if view.app().llm_state() != LlmState::Idle {
+                view.app_mut()
+                    .insert_before_streaming_zone(ChatMessage::tool(msg));
+            } else {
+                view.app_mut().add_message(ChatMessage::tool(msg));
+            }
+        }
+
         // Re-render after each event or tick
         view.app_mut().poll_embedding_progress();
         view.render();
@@ -568,7 +580,26 @@ fn spawn_llm_task(
 ///
 /// This translates the channel-based view proxy calls into actual
 /// rendering on the TUI view.
+///
+/// When the LLM is in `ToolCall` or `Streaming` state, content
+/// ViewActions (ShowAssistantResponse, ShowThinking, ShowMarkdown)
+/// are inserted before the streaming zone so they appear before
+/// any in-progress streaming content. Other ViewActions (system
+/// messages, errors, token metrics) always append at the end.
+///
+/// # Deduplication
+///
+/// When content was already displayed via StreamToken/StreamThinking
+/// events (indicated by the streaming zone being non-empty), content
+/// ViewActions for ShowAssistantResponse and ShowMarkdown are NOT
+/// duplicated. The streaming zone already shows the content, and
+/// StreamDone will finalize it. ShowThinking during tool calls IS
+/// shown (inserted before the streaming zone) because thinking
+/// content from a previous round should be preserved.
 fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
+    let llm_state = view.app().llm_state();
+    let has_streaming_zone = view.app().has_streaming_zone();
+
     match action {
         ViewAction::ShowSystem(msg) => {
             view.show_system(&msg);
@@ -577,7 +608,37 @@ fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
             view.show_error(&msg);
         }
         ViewAction::ShowAssistantResponse { content, thinking } => {
-            view.show_assistant_response(&content, thinking.as_deref());
+            // When LLM is active and content was already displayed via
+            // StreamToken events (streaming zone exists), don't duplicate.
+            // The streaming zone will be finalized by StreamDone.
+            if has_streaming_zone {
+                // Only show thinking if it's present — it may be from a
+                // pre-tool round and should be preserved before the zone.
+                if let Some(thinking_content) = thinking {
+                    if llm_state != LlmState::Idle {
+                        view.app_mut()
+                            .insert_before_streaming_zone(ChatMessage::thinking(thinking_content));
+                    } else {
+                        view.app_mut()
+                            .add_message(ChatMessage::thinking(thinking_content));
+                    }
+                    view.render();
+                }
+                // Skip adding the assistant message — it's already streaming.
+            } else if llm_state != LlmState::Idle {
+                // No streaming zone but LLM is active (tool call before
+                // streaming starts) — insert before future streaming zone.
+                if let Some(thinking_content) = thinking {
+                    view.app_mut()
+                        .insert_before_streaming_zone(ChatMessage::thinking(thinking_content));
+                }
+                view.app_mut()
+                    .insert_before_streaming_zone(ChatMessage::assistant_markdown(content));
+                view.render();
+            } else {
+                // LLM is idle — no streaming, safe to add normally.
+                view.show_assistant_response(&content, thinking.as_deref());
+            }
         }
         ViewAction::ShowTokenMetrics(metrics) => {
             view.show_token_metrics(&metrics);
@@ -596,10 +657,31 @@ fn apply_view_action(view: &mut RatatuiView, action: ViewAction) {
             view.show_compact_complete(count, preserved_first, preserved_last);
         }
         ViewAction::ShowMarkdown(content) => {
-            view.show_markdown(&content);
+            // Pre-tool content shown as markdown during tool calls.
+            // When streaming zone exists, the content is already being
+            // displayed via StreamToken events — don't duplicate.
+            if has_streaming_zone {
+                // Already streaming — skip duplicate markdown content.
+            } else if llm_state != LlmState::Idle {
+                // No streaming yet but LLM is active — insert before zone.
+                view.app_mut()
+                    .insert_before_streaming_zone(ChatMessage::assistant_markdown(content));
+                view.render();
+            } else {
+                view.show_markdown(&content);
+            }
         }
         ViewAction::ShowThinking(thinking) => {
-            view.show_thinking(&thinking);
+            // Thinking content during tool calls should be inserted
+            // before the streaming zone so it appears above streaming.
+            // This is NOT a duplicate — it's from a previous round.
+            if llm_state != LlmState::Idle {
+                view.app_mut()
+                    .insert_before_streaming_zone(ChatMessage::thinking(thinking));
+                view.render();
+            } else {
+                view.show_thinking(&thinking);
+            }
         }
         ViewAction::ClearContinuationLine => {
             view.clear_continuation_line();

@@ -163,6 +163,51 @@ impl ViewEventReceiver {
             }
         }
     }
+
+    /// Drain pending events into an LLM event channel as `ViewAction`s.
+    ///
+    /// This is used in the streaming TUI path to guarantee that ViewEvents
+    /// (PreToolContent, ContextNeedsCompaction) arrive as `LlmEvent::ViewAction`
+    /// BEFORE `StreamDone`, ensuring correct message ordering. By draining
+    /// directly to `llm_tx` instead of through the async ChannelView forwarding
+    /// task, we eliminate the ordering race.
+    ///
+    /// Note: PreToolContent is emitted as separate ShowThinking + ShowMarkdown
+    /// (not ShowAssistantResponse) to avoid transitioning LlmState to Idle.
+    pub fn drain_into_llm_channel(
+        &self,
+        llm_tx: &tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>,
+    ) {
+        use super::llm_event::ViewAction;
+
+        while let Ok(event) = self.receiver.try_recv() {
+            match event {
+                ViewEvent::PreToolContent { content, thinking } => {
+                    // Emit thinking and content as separate ViewActions,
+                    // matching the behavior of drain_into().
+                    if let Some(thinking_text) = thinking {
+                        let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                            ViewAction::ShowThinking(thinking_text),
+                        ));
+                    }
+                    if !content.trim().is_empty() {
+                        let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                            ViewAction::ShowMarkdown(content),
+                        ));
+                    }
+                }
+                ViewEvent::ContextNeedsCompaction { percent } => {
+                    let _ = llm_tx.try_send(super::llm_event::LlmEvent::ViewAction(
+                        ViewAction::ShowContextWarning {
+                            percent: percent as u8,
+                            message: "Context window filling up. Compaction may be needed."
+                                .to_string(),
+                        },
+                    ));
+                }
+            }
+        }
+    }
 }
 
 /// Create a view event channel for coordinator callbacks.
@@ -1107,5 +1152,155 @@ mod tests {
                 assert!(!line.contains("\n"));
             }
         }
+    }
+
+    // ── ViewEventReceiver::drain_into_llm_channel tests ────────────
+
+    #[test]
+    fn test_drain_into_llm_channel_pre_tool_content() {
+        use super::super::llm_event::{LlmEvent, ViewAction};
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Send PreToolContent
+        view_event_sender.send(ViewEvent::PreToolContent {
+            content: "Let me search for that.".to_string(),
+            thinking: Some("I should use the weather tool.".to_string()),
+        });
+
+        // Create LLM channel
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+
+        // Drain into LLM channel
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        // Should receive two ViewActions: ShowThinking + ShowMarkdown
+        let event1 = llm_rx.try_recv().unwrap();
+        match event1 {
+            LlmEvent::ViewAction(ViewAction::ShowThinking(thinking)) => {
+                assert_eq!(thinking, "I should use the weather tool.");
+            }
+            _ => panic!("Expected ShowThinking ViewAction, got {:?}", event1),
+        }
+
+        let event2 = llm_rx.try_recv().unwrap();
+        match event2 {
+            LlmEvent::ViewAction(ViewAction::ShowMarkdown(content)) => {
+                assert_eq!(content, "Let me search for that.");
+            }
+            _ => panic!("Expected ShowMarkdown ViewAction, got {:?}", event2),
+        }
+
+        // No more events
+        assert!(llm_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_drain_into_llm_channel_context_needs_compaction() {
+        use super::super::llm_event::{LlmEvent, ViewAction};
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Send ContextNeedsCompaction
+        view_event_sender.send(ViewEvent::ContextNeedsCompaction { percent: 85 });
+
+        // Create LLM channel
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+
+        // Drain into LLM channel
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        let event = llm_rx.try_recv().unwrap();
+        match event {
+            LlmEvent::ViewAction(ViewAction::ShowContextWarning { percent, message }) => {
+                assert_eq!(percent, 85);
+                assert!(message.contains("filling up"));
+            }
+            _ => panic!("Expected ShowContextWarning ViewAction, got {:?}", event),
+        }
+
+        assert!(llm_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_drain_into_llm_channel_multiple_events() {
+        use super::super::llm_event::{LlmEvent, ViewAction};
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Send multiple events
+        view_event_sender.send(ViewEvent::PreToolContent {
+            content: "Content".to_string(),
+            thinking: None,
+        });
+        view_event_sender.send(ViewEvent::ContextNeedsCompaction { percent: 90 });
+
+        // Create LLM channel
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+
+        // Drain into LLM channel
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        // Should receive two events (no thinking = only ShowMarkdown)
+        let event1 = llm_rx.try_recv().unwrap();
+        match event1 {
+            LlmEvent::ViewAction(ViewAction::ShowMarkdown(content)) => {
+                assert_eq!(content, "Content");
+            }
+            _ => panic!("Expected ShowMarkdown, got {:?}", event1),
+        }
+
+        let event2 = llm_rx.try_recv().unwrap();
+        match event2 {
+            LlmEvent::ViewAction(ViewAction::ShowContextWarning { percent, .. }) => {
+                assert_eq!(percent, 90);
+            }
+            _ => panic!("Expected ShowContextWarning, got {:?}", event2),
+        }
+
+        assert!(llm_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_drain_into_llm_channel_empty_content_skipped() {
+        use super::super::llm_event::{LlmEvent, ViewAction};
+        use tokio::sync::mpsc;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let view_event_sender = ViewEventSender::new(sender);
+        let view_event_receiver = ViewEventReceiver::new(receiver);
+
+        // Send PreToolContent with empty content (should be skipped)
+        view_event_sender.send(ViewEvent::PreToolContent {
+            content: "   ".to_string(),
+            thinking: Some("Thinking here".to_string()),
+        });
+
+        // Create LLM channel
+        let (llm_tx, mut llm_rx) = mpsc::channel::<LlmEvent>(128);
+
+        // Drain into LLM channel
+        view_event_receiver.drain_into_llm_channel(&llm_tx);
+
+        // Should only receive ShowThinking (empty content is skipped)
+        let event = llm_rx.try_recv().unwrap();
+        match event {
+            LlmEvent::ViewAction(ViewAction::ShowThinking(thinking)) => {
+                assert_eq!(thinking, "Thinking here");
+            }
+            _ => panic!("Expected ShowThinking, got {:?}", event),
+        }
+
+        // Empty content should NOT generate a ShowMarkdown event
+        assert!(llm_rx.try_recv().is_err());
     }
 }

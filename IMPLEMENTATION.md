@@ -4455,6 +4455,161 @@ loop {
 
 ---
 
+#### PR 3 Post-Merge: Streaming Display Bug Fixes — `feat/tui-streaming-refinement`
+
+**Goal:** Fix two streaming display bugs (thinking block fragmentation, tool call ordering) AND resolve the fundamental architectural limitation where streaming content is **lost during tool calls**.
+
+**Historical Bugs Fixed (Phases 1-7):**
+
+- Phase 1 (`41b0708`): Thinking block fragmentation fix — `append_stream_thinking/token()` now find existing blocks via reverse search within the streaming zone, and `finalize_stream()` only consolidates Thinking blocks within the zone (not globally)
+- Phase 2 (`eaeb5d2`): Streaming zone awareness — same methods restrict reverse search to the streaming zone; tool-call Thinking blocks from earlier rounds are preserved
+- Phase 3: `insert_before_streaming_zone()` — tool messages and ViewActions now inserted before the streaming zone when LLM is active, not appended after
+- Phase 4: ViewAction ordering — `apply_view_action()` uses `insert_before_streaming_zone()` for content ViewActions during tool calls
+- Phase 5: Deduplication — `has_streaming_zone()` prevents `ShowAssistantResponse`/`ShowMarkdown` from duplicating content already shown via streaming tokens
+- Phase 6: Synchronous ViewEvent drain — `ViewEventReceiver::drain_into_llm_channel()` sends ViewEvents directly to `llm_tx` before `StreamDone`
+- Phase 7: Tests — 10 new tests (23 app tests, 4 view tests), 1122 total pass, clippy clean
+
+**Root Cause of Content Loss During Tool Calls (NEW — Architectural):**
+
+The content loss during tool calls is **not fixable by local adjustments** — it is a fundamental architectural limitation. The streaming system was designed for a SINGLE monolithic streaming response per turn. When tool calls interrupt the stream, the pre-tool streamed content cannot be preserved because:
+
+1. `chat_stream()` accumulates streaming content via `StreamToken` events → displayed as `AssistantStreaming` in the TUI
+2. When tool calls are detected, `chat_stream()` stops streaming and enters `process_response()` (synchronous mode)
+3. `process_response()` saves pre-tool content to `pre_tool_content` (for session history), then executes tools
+4. `process_next()` (called by `process_response()`) makes a **new** non-streaming LLM call and returns the **post-tool** response
+5. `send_message_stream()` sends the **post-tool** content in `StreamDone`
+6. `finalize_stream()` replaces the `AssistantStreaming` message (which held pre-tool text) with the post-tool `Assistant` message
+
+**Result: the pre-tool streamed text disappears from the display.**
+
+The thinking blocks also disappear because `finalize_stream()` receives the post-tool `thinking` from `process_next()`, not the pre-tool thinking that was streamed. It therefore removes the pre-tool `Thinking` block and replaces it with nothing (or the wrong thinking).
+
+For the complete architectural analysis, state-of-the-art research, and the proposed solution, see **`doc/CONTENT_BLOCK_ARCHITECTURE.md`**.
+
+**Proposed Fix: Content Block Stateful Streaming**
+
+The state-of-the-art solution (used by assistant-ui, TUUI, Claude SDK) is **content block index tracking**: each assistant response consists of multiple numbered content blocks (Block 0 = pre-tool text, Block 1 = tool call, Block 2 = tool result, Block 3 = post-tool text, etc.). Each block is finalized independently and **can never be overwritten**. When `StreamBlockDone` arrives for Block 0, Block 0 is finalized and remains in the message list permanently. A new `StreamBlockStart` begins Block 3, which is the new active block.
+
+**Architecture Changes Required:**
+
+| Change | File | Description |
+|--------|------|-------------|
+| Add `block_id: Option<usize>` to `ChatMessage` | `chat_area.rs` | Identify which block a message belongs to |
+| Add `StreamingState` to `App` | `app.rs` | Track active block, block sequence counter |
+| Replace `finalize_stream()` with `finalize_stream_block()` | `app.rs` | Finalize a specific block by index, not just the last one |
+| Add `start_new_stream_block()` | `app.rs` | Create a new active block after tool calls |
+| Update `LlmEvent` with `block_index` | `llm_event.rs` | Track which block each event targets |
+| Add `StreamBlockStart`/`StreamBlockDone` variants | `llm_event.rs` | Lifecycle events for blocks |
+| Update `chat_stream()` | `custom_coordinator.rs` | Emit `StreamBlockDone` before tools, `StreamBlockStart` after |
+| Update event loop | `repl_tui.rs` | Route `StreamBlockDone`/`StreamBlockStart` to App |
+| Update `send_message_stream()` | `core.rs` | Use `StreamBlockDone` with correct block index |
+| Tests | `app.rs`, `view/mod.rs` | Test multi-block lifecycle, preservation, tool interruption |
+
+**Estimativa**: ~10 horas (~2 dias de trabalho efetivo).
+
+For the full implementation plan, test cases, ADRs, and checklist, see **`doc/CONTENT_BLOCK_ARCHITECTURE.md`**.
+
+---
+
+Problems:
+- `tool_call_rx` is drained in `render()`, which runs AFTER `finalize_stream()` processes `StreamDone` — tool messages appear after the final response
+- `ViewAction`s (PreToolContent) race with `StreamDone` through the async forwarding task — no ordering guarantee
+- Pre-tool content is duplicated: shown via `StreamToken` during streaming, then again via `ViewAction::ShowAssistantResponse` after tool execution
+- `show_assistant_response()` always adds a new `Assistant` message, even during streaming when one is already being displayed
+
+**Phase 1 — Completed: Streaming thinking block fragmentation fix** (`41b0708`)
+
+- `append_stream_thinking()` and `append_stream_token()` now find existing blocks via reverse search within the streaming zone instead of creating fragmented duplicates
+- New `streaming_zone_start()` helper method on `App` returns the start index of the contiguous tail of `Thinking`/`AssistantStreaming` messages
+- Streaming zone definition: contiguous tail of `Thinking`/`AssistantStreaming` messages at the end of the message list. Everything before this zone (`User`, `Assistant`, `Tool`, `System`, `Error`, `Banner`) is stable and must not be modified by streaming operations
+- 11 unit tests added
+
+**Phase 2 — Completed: Streaming zone awareness for Thinking blocks** (`eaeb5d2`)
+
+- `append_stream_thinking()` and `append_stream_token()` restrict reverse search to the streaming zone (contiguous tail of Thinking/AssistantStreaming messages)
+- `finalize_stream()` only consolidates/removes Thinking blocks within the streaming zone, preserving tool-call Thinking blocks from earlier rounds
+- 13 unit tests pass (2 new: streaming zone preservation tests)
+
+**Phase 3 — Implemented: Move tool message drain from `render()` to event loop with `insert_before_streaming_zone()`**
+
+Instead of adding a new `LlmEvent::ToolMessage` variant (which would require routing `TUI_CALLBACK` through the per-task `llm_tx` channel), this phase keeps the existing `tool_call_rx` channel but moves the drain from `RatatuiView::render()` to the event loop. Tool messages are now inserted before the streaming zone when the LLM is active, ensuring correct visual ordering.
+
+Changes:
+- `App::insert_before_streaming_zone(message)` — new method that finds the streaming zone start and inserts before it, pushing streaming content down
+- `App::has_streaming_zone()` — new method that returns `true` when there are Thinking/AssistantStreaming messages in the streaming zone (used for deduplication)
+- `RatatuiView::render()` — removed the `tool_call_rx` drain loop (tool messages no longer drained during render)
+- `RatatuiView::drain_tool_messages()` — new method that returns `Vec<String>` of pending tool messages (drained from `tool_call_rx`)
+- Event loop in `repl_tui.rs` — after each `tokio::select!` iteration, drains tool messages via `view.drain_tool_messages()` and inserts them before the streaming zone (or appends when LLM is idle)
+
+**Phase 4 — Implemented: ViewAction ordering with `insert_before_streaming_zone()`**
+
+When the LLM is in `ToolCall` or `Streaming` state, ViewActions (PreToolContent, ShowMarkdown, ShowAssistantResponse) are now inserted before the streaming zone. `apply_view_action()` checks `llm_state` and `has_streaming_zone()` to determine the correct placement strategy.
+
+Changes:
+- `apply_view_action()` in `repl_tui.rs` — checks `llm_state` and `has_streaming_zone()` before routing ViewActions
+- `ShowAssistantResponse` — when streaming zone exists, skips the assistant message (deduplication: content is already streaming via StreamToken); thinking is still inserted before the zone when LLM is active
+- `ShowMarkdown` — when streaming zone exists, skips content (deduplication); otherwise inserts before zone when LLM is active
+- `ShowThinking` — always inserted before streaming zone when LLM is active (not a duplicate)
+- `ShowSystem`, `ShowError`, etc. — continue to append normally
+
+**Phase 5 — Implemented: Deduplication — avoid double-display of content during streaming**
+
+Pre-tool content is no longer shown twice (once via StreamToken and again via ViewAction). When `has_streaming_zone()` returns true, `ShowAssistantResponse` and `ShowMarkdown` skip adding the content message since it's already being displayed via streaming tokens. `ShowThinking` content from pre-tool rounds is still inserted before the zone since it's not a duplicate.
+
+Changes:
+- `apply_view_action()` — `ShowAssistantResponse` checks `has_streaming_zone()` and skips the assistant message when content is already streaming; only thinking (from pre-tool rounds) is inserted
+- `ShowMarkdown` — checks `has_streaming_zone()` and skips when streaming zone exists
+
+**Phase 6 — Implemented: Synchronous ViewEvent drain in `send_message_stream()`**
+
+The async forwarding task (`tokio::spawn` in `spawn_llm_task`) that forwarded `ViewAction`s from `view_rx` to `llm_tx` introduced ordering uncertainty. ViewActions could arrive before or after `StreamDone` because the forwarding task is async. Fixed by draining `ViewEventReceiver` directly into `llm_tx` as `LlmEvent::ViewAction` in `send_message_stream()`, AFTER the coordinator call completes but BEFORE sending `StreamDone`. This guarantees: tool calls execute → ViewEvents are queued → drain sends them to `llm_tx` → THEN `StreamDone`.
+
+Changes:
+- `ViewEventReceiver::drain_into_llm_channel()` — new method that drains `ViewEvent`s directly into `llm_tx` as `LlmEvent::ViewAction` (separate ShowThinking + ShowMarkdown for PreToolContent, ShowContextWarning for compaction)
+- `send_message_stream()` in `core.rs` — uses `drain_into_llm_channel(&llm_tx)` instead of `drain_into(view)` for the streaming path
+- The non-streaming `send_message()` continues to use `drain_into(view)` (correct for TerminalView)
+- The async forwarding task in `spawn_llm_task()` is still needed for ViewActions from `ChannelView` direct calls (like `show_system("Retrying...")`)
+
+**Phase 7 — Implemented: Tests**
+
+- Unit tests for `App::insert_before_streaming_zone()`:
+  - Insert tool message before streaming zone (user → tool → thinking → streaming)
+  - Insert when no streaming zone (falls back to append)
+  - Insert in mid-conversation with existing tool rounds
+  - Insert when only streaming messages exist (no stable messages before)
+- Unit tests for `App::has_streaming_zone()`:
+  - Returns true for Thinking-only zone
+  - Returns true for AssistantStreaming-only zone
+  - Returns true for interleaved zone
+  - Returns false for empty messages
+  - Returns false for stable-only messages (User, Assistant, Tool)
+- Unit tests for `ViewEventReceiver::drain_into_llm_channel()`:
+  - PreToolContent (with thinking) → ShowThinking + ShowMarkdown
+  - ContextNeedsCompaction → ShowContextWarning
+  - Multiple events drained in order
+  - Empty content skipped (only thinking emitted)
+- All 1122 existing tests pass + 10 new tests
+
+**Completed Work:**
+
+| Commit | Description | Status |
+|--------|-------------|--------|
+| `5b27134` | Merge duplicate `### Added` section in CHANGELOG | ✅ COMPLETED |
+| `41b0708` | Fix streaming thinking block fragmentation (11 tests) | ✅ COMPLETED |
+| `eaeb5d2` | Fix streaming zone awareness for Thinking blocks (13 tests) | ✅ COMPLETED |
+
+**Remaining Work:**
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 3 | Move tool messages from `render()` to event loop with `insert_before_streaming_zone()` | ✅ COMPLETED |
+| 4 | ViewAction ordering with `insert_before_streaming_zone()` | ✅ COMPLETED |
+| 5 | Deduplication — streaming-zone-aware `show_assistant_response()`/`show_thinking()` | ✅ COMPLETED |
+| 6 | Synchronous ViewEvent drain in `send_message_stream()` | ✅ COMPLETED |
+| 7 | Tests (23 app tests + 4 view tests, clippy, fmt) | ✅ COMPLETED |
+
+---
+
 #### PR 4: Final Cleanup — Remove TerminalView + ANSI Artifacts (~4-5 days) — #148
 
 **Goal:** Remove TerminalView, hardcoded ANSI escapes, CHAT_TERMINAL_WIDTH = 80, and rustyline-related code. Ratatui is the only chat rendering mode.
