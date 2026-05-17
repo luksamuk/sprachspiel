@@ -2186,17 +2186,20 @@ mod tests {
 
     #[test]
     fn test_content_block_lifecycle_pre_and_post_tool() {
-        // Realistic simulation of the StreamBlockDone -> ToolCall -> StreamDone
+        // Realistic simulation of the ToolCallStarted -> StreamDone
         // flow that preserves pre-tool content across tool execution.
+        // ToolCallStarted calls finalize_streaming_zone_as_is() which
+        // converts AssistantStreaming to stable Assistant_markdown.
+        // StreamDone then finalizes the post-tool block only.
         let mut app = test_app();
 
         // Pre-tool streaming
         app.append_stream_thinking("I should calculate");
         app.append_stream_token("Let me compute ");
 
-        // StreamBlockDone arrives: finalize_stream converts the zone into
-        // stable messages. After this call, there is NO streaming zone.
-        app.finalize_stream("Let me compute ", Some("I should calculate"));
+        // ToolCallStarted arrives: finalize_streaming_zone_as_is
+        // converts the zone into stable messages.
+        app.finalize_streaming_zone_as_is();
         app.block_finalized = true;
         app.set_llm_state(LlmState::ToolCall);
 
@@ -2214,7 +2217,7 @@ mod tests {
         // Result: pre-tool preserved, tools inserted between, post-tool finalized
         assert_eq!(app.messages.len(), 5);
         // Thinking was appended first, then AssistantStreaming:
-        // after finalize_stream, Thinking remains first
+        // after finalize_streaming_zone_as_is, Thinking remains first
         assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
         assert_eq!(app.messages[0].content, "I should calculate");
         assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
@@ -2227,16 +2230,18 @@ mod tests {
 
     #[test]
     fn test_content_block_lifecycle_multiple_tool_calls() {
-        // Full flow with two tool calls where StreamBlockDone creates
-        // a boundary after each tool group, preserving all blocks.
+        // Full flow with two tool calls.
+        // ToolCallStarted finalizes pre-tool block (finalize_streaming_zone_as_is).
+        // Inter-tool text arrives via InterToolText (no streaming zone).
+        // StreamDone finalizes the final (post-tool) block.
         let mut app = test_app();
 
         // -- Block 0: pre-tool streaming --
         app.append_stream_thinking("Vou buscar info");
         app.append_stream_token("Vou buscar ");
 
-        // StreamBlockDone: finalize pre-tool block
-        app.finalize_stream("Vou buscar ", Some("Vou buscar info"));
+        // ToolCallStarted: finalize pre-tool block (converts AssistantStreaming)
+        app.finalize_streaming_zone_as_is();
         app.block_finalized = true;
         app.set_llm_state(LlmState::ToolCall);
 
@@ -2244,25 +2249,25 @@ mod tests {
         app.add_message(ChatMessage::tool("🔧 weather()".to_string()));
         app.add_message(ChatMessage::tool("Sunny, 22°C".to_string()));
 
-        // -- Block 1: between-tools streaming --
-        // After tool 1, model streams again before tool 2
-        app.append_stream_token("Agora calcular: ");
-
-        // StreamBlockDone for tool 2
-        app.finalize_stream("Agora calcular: ", None);
+        // -- Block 1: between-tools text arrives via InterToolText --
+        // InterToolText adds assistant_markdown directly (no streaming)
+        app.add_message(ChatMessage::assistant_markdown(
+            "Agora calcular: ".to_string(),
+        ));
         app.set_llm_state(LlmState::ToolCall);
 
         // Tool 2 messages
         app.add_message(ChatMessage::tool("🔧 calc".to_string()));
         app.add_message(ChatMessage::tool("42".to_string()));
 
-        // -- Block 2: post-tool final streaming --
-        app.append_stream_token("Pronto!");
+        // -- Block 2: post-tool final content (StreamDone) --
+        // StreamDone calls finalize_stream which, finding no AssistantStreaming,
+        // adds a new Assistant message.
         app.finalize_stream("Pronto!", None);
 
         // Result: three preserved blocks separated by tools
         assert_eq!(app.messages.len(), 8);
-        // After finalizing: Thinking first (was appended first), then Assistant
+        // Thinking first (was appended first during streaming), then Assistant
         assert_eq!(app.messages[0].msg_type, MessageType::Thinking);
         assert_eq!(app.messages[0].content, "Vou buscar info");
         assert_eq!(app.messages[1].msg_type, MessageType::Assistant);

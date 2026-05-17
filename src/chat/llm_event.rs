@@ -52,22 +52,15 @@ pub enum LlmEvent {
     /// The current streaming CONTENT BLOCK is complete.
     ///
     /// This event is emitted when tool calls interrupt streaming.
-    /// The pre-tool content that was already streamed is finalized
-    /// (converted from `AssistantStreaming` to `Assistant`) and
-    /// becomes a STABLE message that will not be overwritten by
-    /// subsequent post-tool content.
+    /// By the time this event arrives, the TUI event loop has
+    /// already processed `ToolCallStarted` (which called
+    /// `finalize_streaming_zone_as_is()`) — so the pre-tool
+    /// content is already a stable `Assistant` message.
     ///
-    /// After this event, the LLM state transitions to `ToolCall`.
-    /// When the tool loop finishes, `StreamDone` will carry the
-    /// POST-tool content as a fresh message.
-    StreamBlockDone {
-        /// Full accumulated pre-tool content (for markdown rendering)
-        content: String,
-        /// Pre-tool thinking content (if any)
-        thinking: Option<String>,
-        /// Token metrics (if available from final streaming chunk before tools)
-        metrics: Option<TokenMetrics>,
-    },
+    /// This event exists solely to set `block_finalized = true`
+    /// on the `App` and transition `LlmState` to `ToolCall`.
+    /// It does NOT carry content for rendering.
+    StreamBlockDone,
 
     /// Streaming is complete — replace the FINAL streaming message with
     /// the final markdown-rendered assistant response.
@@ -153,14 +146,7 @@ impl std::fmt::Debug for LlmEvent {
                 };
                 f.debug_tuple("StreamThinking").field(&display).finish()
             }
-            Self::StreamBlockDone {
-                content: _,
-                thinking: _,
-                metrics,
-            } => f
-                .debug_struct("StreamBlockDone")
-                .field("metrics", metrics)
-                .finish_non_exhaustive(),
+            Self::StreamBlockDone => f.debug_struct("StreamBlockDone").finish_non_exhaustive(),
             Self::StreamDone {
                 content: _,
                 thinking: _,

@@ -419,17 +419,13 @@ pub async fn run_chat_repl_tui(
                         // Append thinking token to the current streaming thinking block
                         view.stream_thinking(&thinking_token);
                     }
-                    LlmEvent::StreamBlockDone {
-                        content,
-                        thinking,
-                        metrics,
-                    } => {
-                        // Pre-tool streaming complete — finalize the block
-                        // and transition to ToolCall state.
-                        view.stream_done(&content,
-                            thinking.as_deref(),
-                            metrics.as_ref(),
-                        );
+                    LlmEvent::StreamBlockDone => {
+                        // Pre-tool block complete — the streaming zone was
+                        // already finalized by ToolCallStarted (which calls
+                        // finalize_streaming_zone_as_is()). Do NOT call
+                        // stream_done() here: that calls finalize_stream(),
+                        // which would add a DUPLICATE Assistant message when
+                        // no AssistantStreaming exists (already converted).
                         view.app_mut().block_finalized = true;
                         view.set_llm_state(LlmState::ToolCall);
                     }

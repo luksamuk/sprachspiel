@@ -4468,6 +4468,8 @@ loop {
 - Phase 5: Deduplication — `has_streaming_zone()` prevents `ShowAssistantResponse`/`ShowMarkdown` from duplicating content already shown via streaming tokens
 - Phase 6: Synchronous ViewEvent drain — `ViewEventReceiver::drain_into_llm_channel()` sends ViewEvents directly to `llm_tx` before `StreamDone`
 - Phase 7: Tests — 10 new tests (23 app tests, 4 view tests), 1122 total pass, clippy clean
+- Phase 8: End-of-conversation inter-tool text duplication fix — `pre_tool_content` accumulator now gates on `already_streamed`; only first-round (streamed) content accumulates, preventing `StreamBlockDone` from re-displaying inter-tool text from `process_next()` rounds that was already shown via `LlmEvent::InterToolText`
+- Phase 9: First-round pre-tool duplication fix — `StreamBlockDone` handler no longer calls `stream_done()`/`finalize_stream()`; the streaming zone is already finalized by `ToolCallStarted` (which calls `finalize_streaming_zone_as_is()`). Calling `finalize_stream()` on an already-converted zone caused a DUPLICATE `Assistant_markdown` to be appended (the "no AssistantStreaming found → push new message" fallback). `StreamBlockDone` is now a unit variant (no content/thinking/metrics fields) since the handler only sets `block_finalized = true` and transitions to `ToolCall` state. Tests updated to use `finalize_streaming_zone_as_is()` matching real-world flow.
 
 **Root Cause of Content Loss During Tool Calls (NEW — Architectural):**
 
@@ -4616,6 +4618,8 @@ Changes:
 | 5 | Deduplication — streaming-zone-aware `show_assistant_response()`/`show_thinking()` | ✅ COMPLETED |
 | 6 | Synchronous ViewEvent drain in `send_message_stream()` | ✅ COMPLETED |
 | 7 | Tests (23 app tests + 4 view tests, clippy, fmt) | ✅ COMPLETED |
+| 8 | End-of-conversation inter-tool text duplication — `pre_tool_content` accumulation gate on `already_streamed` | ✅ COMPLETED |
+| 9 | First-round pre-tool duplication — `StreamBlockDone` handler no-op (zone finalized by `ToolCallStarted`) | ✅ COMPLETED |
 
 ---
 

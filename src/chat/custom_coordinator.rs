@@ -891,16 +891,29 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             let has_thinking = resp.message.thinking.is_some();
 
             if has_content || has_thinking {
-                // Accumulate content
-                if !resp.message.content.trim().is_empty() {
-                    if !self.pre_tool_content.is_empty() {
-                        self.pre_tool_content.push_str("\n\n");
+                // Only accumulate content into pre_tool_content when it was
+                // already streamed (first round via chat_stream). In that case,
+                // take_pre_tool_content() is used by send_message_stream()
+                // to compute post_tool_content (final response minus pre-tool
+                // prefix) and to emit StreamBlockDone.
+                //
+                // When already_streamed=false (subsequent rounds via
+                // process_next), the content is displayed in real-time via
+                // LlmEvent::InterToolText — accumulating it here would cause
+                // the content to be included in pre_tool_display, which
+                // send_message_stream() would then subtract from the final
+                // response (or worse, StreamBlockDone would re-display it).
+                if already_streamed {
+                    if !resp.message.content.trim().is_empty() {
+                        if !self.pre_tool_content.is_empty() {
+                            self.pre_tool_content.push_str("\n\n");
+                        }
+                        self.pre_tool_content.push_str(&resp.message.content);
                     }
-                    self.pre_tool_content.push_str(&resp.message.content);
-                }
-                // Accumulate thinking (use the first one)
-                if self.pre_tool_thinking.is_none() {
-                    self.pre_tool_thinking = resp.message.thinking.clone();
+                    // Accumulate thinking (use the first one)
+                    if self.pre_tool_thinking.is_none() {
+                        self.pre_tool_thinking = resp.message.thinking.clone();
+                    }
                 }
 
                 // Emit event — mark already_streamed so the TUI event loop
