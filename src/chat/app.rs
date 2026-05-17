@@ -808,6 +808,11 @@ impl App {
                 let text = self.chat_selection.extract_text(&self.visual_lines_cache);
                 if !text.is_empty() {
                     let _ = cli_clipboard::set_contents(text);
+                } else {
+                    log::debug!(
+                        "Ctrl+Shift+C: chat selection active but extract_text returned empty (cache has {} lines)",
+                        self.visual_lines_cache.len()
+                    );
                 }
                 self.chat_selection.clear();
             } else if self.textarea.is_selecting() {
@@ -1022,10 +1027,16 @@ impl App {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             } => {
-                if let Ok(text) = cli_clipboard::get_contents()
-                    && !text.is_empty()
-                {
-                    self.textarea.insert_str(&text);
+                match cli_clipboard::get_contents() {
+                    Ok(text) if !text.is_empty() => {
+                        self.textarea.insert_str(&text);
+                    }
+                    Ok(_) => {
+                        log::debug!("Ctrl+Y: clipboard is empty");
+                    }
+                    Err(e) => {
+                        log::debug!("Ctrl+Y: clipboard read error: {e}");
+                    }
                 }
                 None
             }
@@ -1353,6 +1364,29 @@ impl App {
                 ..
             } => {
                 self.try_tab_complete();
+                None
+            }
+
+            // ============================================================
+            // Shift+Char — insert uppercase character
+            // ============================================================
+            // Crossterm terminals may send Char('v') with SHIFT or
+            // Char('V') with SHIFT depending on the platform. The
+            // textarea's input_without_shortcuts() matches Char(c) with
+            // ctrl:false + alt:false (ignoring shift), which inserts the
+            // character as-is. When the terminal sends lowercase 'v' with
+            // SHIFT, the textarea inserts 'v' — losing the Shift. This
+            // handler normalizes Shift+letter to always produce the
+            // uppercase character, regardless of what the terminal sends.
+            crossterm::event::KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::SHIFT,
+                ..
+            } if !key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::ALT) =>
+            {
+                self.textarea.insert_char(c.to_ascii_uppercase());
+                self.auto_complete_on_type();
                 None
             }
 
