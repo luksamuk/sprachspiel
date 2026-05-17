@@ -25,6 +25,8 @@ use crossterm::event::MouseButton;
 use crossterm::event::{self, Event as CrosstermEvent, MouseEvent, MouseEventKind};
 use tokio_util::sync::CancellationToken;
 
+use std::sync::Arc;
+
 use super::app::LlmState;
 use super::channel_view::ChannelView;
 use super::command_handlers;
@@ -369,10 +371,26 @@ pub async fn run_chat_repl_tui(
                                     }
                                 }
                                 Some(InputResult::Eof) => {
-                                    // Ctrl+D — quit: save session and history
+                                    // Ctrl+D — quit: save session, history, and flush embeddings
                                     let _ = view.app_mut().save_history();
                                     if !state.session.anonymous {
                                         let _ = state.session.save_sqlite();
+
+                                        // Flush pending embeddings before exit (same as /quit)
+                                        if let (Some(db), Some(client)) =
+                                            (&state.db, &state.embedding_client)
+                                        {
+                                            command_handlers::flush_pending_embeddings(
+                                                Arc::clone(db),
+                                                Arc::clone(client),
+                                                true, // suppress_spinner — avoid corrupting alternate screen
+                                            )
+                                            .await;
+                                            crate::facts::recovery::flush_pending_fact_embeddings(
+                                                db, client,
+                                            )
+                                            .await;
+                                        }
                                     }
                                     view.restore();
                                     return Ok(());

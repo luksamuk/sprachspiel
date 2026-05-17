@@ -1010,6 +1010,7 @@ impl App {
             } => {
                 let line = self.textarea_lines();
                 self.textarea_clear();
+                self.history_input.history_pos = None; // Reset history navigation on submit
                 self.chat_selection.clear();
                 if !line.is_empty() {
                     self.history_input.add_history(&line);

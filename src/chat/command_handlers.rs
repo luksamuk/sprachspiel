@@ -51,7 +51,7 @@ pub use super::session::ChatSession;
 ///
 /// This ensures that any embeddings that were being generated
 /// asynchronously are completed before the application exits.
-async fn flush_pending_embeddings(
+pub(crate) async fn flush_pending_embeddings(
     db: Arc<crate::db::Database>,
     client: Arc<crate::embeddings::EmbeddingClient>,
     quiet: bool,
