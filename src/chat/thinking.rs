@@ -27,8 +27,10 @@ const THINKING_COLOR: &str = "\x1B[37m";
 const DIM_STYLE: &str = "\x1B[2m";
 /// ANSI reset — used by display_thinking() only
 const RESET: &str = "\x1B[0m";
-/// Indentation for thinking content (in characters) — used by display_thinking() only
-const THINKING_INDENT: usize = 2;
+/// Left border for thinking block content — used by display_thinking() only
+const THINKING_BORDER: &str = "│ ";
+/// Visual width of the thinking border prefix — used by display_thinking() only
+const THINKING_BORDER_WIDTH: usize = 2;
 
 /// Processed thinking content
 #[derive(Debug, Clone)]
@@ -174,24 +176,24 @@ pub fn display_thinking(
     let thinking_content = extract_thinking(content, thinking_field);
 
     if let Some(ref thinking) = thinking_content {
-        eprintln!("{DIM_STYLE}{THINKING_COLOR}[Thinking]{RESET}");
+        eprintln!("{DIM_STYLE}{THINKING_COLOR}🧠 Thinking{RESET}");
 
         // Use fixed chat width (80 columns) for consistent rendering
         let terminal_width = crate::markdown::CHAT_TERMINAL_WIDTH;
-        let wrap_width = terminal_width.saturating_sub(THINKING_INDENT);
+        let wrap_width = terminal_width.saturating_sub(THINKING_BORDER_WIDTH);
 
         if render_markdown {
             // Use MadSkin with proper wrapping
             let skin = termimad::MadSkin::default();
             let wrapped = skin.text(thinking, Some(wrap_width));
             for line in wrapped.to_string().lines() {
-                eprintln!("{DIM_STYLE}{THINKING_COLOR}  {}{RESET}", line);
+                eprintln!("{DIM_STYLE}{THINKING_COLOR}{THINKING_BORDER}{RESET}{line}");
             }
         } else {
             // Manual word wrap for plain text
             let wrapped = wrap_text(thinking, wrap_width);
             for line in wrapped.lines() {
-                eprintln!("{DIM_STYLE}{THINKING_COLOR}  {}{RESET}", line);
+                eprintln!("{DIM_STYLE}{THINKING_COLOR}{THINKING_BORDER}{RESET}{line}");
             }
         }
         eprintln!();

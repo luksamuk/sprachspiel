@@ -319,7 +319,7 @@ pub trait ChatView: Send {
     /// - Any command output that contains markdown
     fn show_markdown(&mut self, content: &str);
 
-    /// Display thinking content (dimmed, with [Thinking] header)
+    /// Display thinking content (dimmed, with 🧠 Thinking header and │ border)
     ///
     /// Renders the model's internal reasoning before the main response.
     /// TerminalView renders this in dim/light gray with optional markdown.

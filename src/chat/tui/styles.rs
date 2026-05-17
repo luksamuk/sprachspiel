@@ -76,9 +76,20 @@ pub fn success_style() -> Style {
     Style::default().fg(GREEN)
 }
 
-/// Thinking content style (dim)
-pub fn thinking_content_style() -> Style {
-    dim()
+/// Style for the thinking block left border (│)
+///
+/// Same as `dim_cyan()` — the border and header share the same
+/// accent color for visual coherence.
+pub fn thinking_border_style() -> Style {
+    dim_cyan()
+}
+
+/// Style for the thinking block header (🧠 Thinking)
+///
+/// Same as `dim_cyan()` — the header introduces the block and
+/// should match the border accent.
+pub fn thinking_header_style() -> Style {
+    dim_cyan()
 }
 
 /// Progress bar color based on percentage

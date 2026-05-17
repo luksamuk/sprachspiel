@@ -5,7 +5,8 @@
 //!
 //! - **User**: `>>> ` prefix in bold cyan
 //! - **Assistant**: no prefix, markdown rendered (blank line before)
-//! - **Thinking**: `[Thinking]` label in dim cyan, content indented 4 spaces dim
+//! - **Thinking**: `🧠 Thinking` header in dim cyan, markdown content with
+//!   `│` left border in dim cyan, word-wrapped with style preservation
 //! - **Tool**: dim text (already has 🔧 from debug_tools), multi-line aware
 //! - **System**: dim text, no prefix, multi-line aware
 //! - **Error**: `✗` prefix in bold red
@@ -33,7 +34,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
 use super::super::markdown::{MarkdownTheme, render_markdown};
 use super::super::styles;
-use super::super::wrap::wrap_line;
+use super::super::wrap::{wrap_line, wrap_styled_line};
 use super::chat_selection::{ChatSelection, selection_style};
 use crate::chat::app::ScrollState;
 
@@ -50,7 +51,7 @@ pub enum MessageType {
     Assistant,
     /// Assistant response (streaming) — no prefix, plain text.
     AssistantStreaming,
-    /// Thinking block — `[Thinking]` label in dim cyan, content indented dim.
+    /// Thinking block — `🧠 Thinking` header in dim cyan, content with `│` left border.
     Thinking,
     /// Tool call/result — dim text, no prefix (content already has 🔧 emoji).
     Tool,
@@ -97,7 +98,7 @@ impl ChatMessage {
         }
     }
 
-    /// Create a thinking block (`[Thinking]` label, content indented dim).
+    /// Create a thinking block (`🧠 Thinking` header, content with `│` left border).
     pub fn thinking(content: String) -> Self {
         Self {
             msg_type: MessageType::Thinking,
@@ -141,8 +142,15 @@ impl ChatMessage {
     }
 }
 
-/// Indent prefix for thinking block content (4 spaces).
-const THINKING_INDENT: &str = "    ";
+/// Left border prefix for thinking block content.
+///
+/// Each line of thinking content is prefixed with `│ ` (vertical bar
+/// + space), creating a visual block enclosure. The `│` character
+///   matches the box-drawing `BD_VLINE` used in table rendering.
+const THINKING_BORDER_PREFIX: &str = "│ ";
+
+/// Visual width of the thinking border prefix (2 columns: `│` + space).
+const THINKING_BORDER_WIDTH: usize = 2;
 
 /// Detect markdown table syntax in content.
 ///
@@ -249,19 +257,29 @@ fn build_lines(
                 if !lines.is_empty() {
                     lines.push(Line::raw(String::new()));
                 }
-                // "[Thinking]" label in dim cyan
-                lines.push(Line::from(Span::styled("[Thinking]", styles::dim_cyan())));
-                // Content indented with responsive word-wrap
-                let content_style = styles::thinking_content_style();
-                let content_width = available_width.saturating_sub(THINKING_INDENT.len());
-                for source_line in msg.content.lines() {
-                    for wrapped_line in wrap_line(source_line, content_width) {
-                        lines.push(Line::from(Span::styled(
-                            format!("{THINKING_INDENT}{wrapped_line}"),
-                            content_style,
-                        )));
+                // Header: 🧠 Thinking
+                lines.push(Line::from(Span::styled(
+                    "🧠 Thinking",
+                    styles::thinking_header_style(),
+                )));
+                // Render thinking content as markdown, with │ left border.
+                // Content width is reduced by the border prefix width.
+                let content_width = available_width.saturating_sub(THINKING_BORDER_WIDTH);
+                let rendered = render_markdown(&msg.content, theme, content_width);
+                let border_span =
+                    Span::styled(THINKING_BORDER_PREFIX, styles::thinking_border_style());
+                for render_line in rendered.lines {
+                    // Wrap each styled line to content_width (preserving styles),
+                    // then prepend the border span to each sub-line.
+                    let wrapped = wrap_styled_line(render_line, content_width);
+                    for sub_line in wrapped {
+                        let mut spans = vec![border_span.clone()];
+                        spans.append(&mut sub_line.spans.into_iter().collect());
+                        lines.push(Line::from(spans));
                     }
                 }
+                // Blank line after thinking block for visual separation
+                lines.push(Line::raw(String::new()));
             }
             MessageType::Tool => {
                 // Dim text, no prefix — content already has 🔧 from debug_tools

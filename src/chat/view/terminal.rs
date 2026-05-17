@@ -98,11 +98,12 @@ impl ChatView for TerminalView {
     fn show_thinking(&mut self, thinking: &str) {
         use termimad::MadSkin;
 
-        const THINKING_INDENT: usize = 2;
-        let wrap_width = crate::markdown::CHAT_TERMINAL_WIDTH.saturating_sub(THINKING_INDENT);
+        const THINKING_BORDER: &str = "│ ";
+        const THINKING_BORDER_WIDTH: usize = 2;
+        let wrap_width = crate::markdown::CHAT_TERMINAL_WIDTH.saturating_sub(THINKING_BORDER_WIDTH);
 
         eprintln!(
-            "{}{}[Thinking]{}",
+            "{}{}🧠 Thinking{}",
             term_colors::DIM,
             term_colors::CYAN,
             term_colors::RESET
@@ -113,11 +114,11 @@ impl ChatView for TerminalView {
         let wrapped = skin.text(thinking, Some(wrap_width));
         for line in wrapped.to_string().lines() {
             eprintln!(
-                "{}{}  {}{}",
+                "{}{}{THINKING_BORDER}{}{}",
                 term_colors::DIM,
                 term_colors::CYAN,
+                term_colors::RESET,
                 line,
-                term_colors::RESET
             );
         }
         eprintln!();

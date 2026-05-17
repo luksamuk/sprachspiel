@@ -4470,6 +4470,7 @@ loop {
 - Phase 7: Tests — 10 new tests (23 app tests, 4 view tests), 1122 total pass, clippy clean
 - Phase 8: End-of-conversation inter-tool text duplication fix — `pre_tool_content` accumulator now gates on `already_streamed`; only first-round (streamed) content accumulates, preventing `StreamBlockDone` from re-displaying inter-tool text from `process_next()` rounds that was already shown via `LlmEvent::InterToolText`
 - Phase 9: First-round pre-tool duplication fix — `StreamBlockDone` handler no longer calls `stream_done()`/`finalize_stream()`; the streaming zone is already finalized by `ToolCallStarted` (which calls `finalize_streaming_zone_as_is()`). Calling `finalize_stream()` on an already-converted zone caused a DUPLICATE `Assistant_markdown` to be appended (the "no AssistantStreaming found → push new message" fallback). `StreamBlockDone` is now a unit variant (no content/thinking/metrics fields) since the handler only sets `block_finalized = true` and transitions to `ToolCall` state. Tests updated to use `finalize_streaming_zone_as_is()` matching real-world flow.
+- Phase 10: Thinking block visual refinement — `[Thinking]` label replaced with `🧠 Thinking` header (dim cyan) + `│` left border (dim cyan, same as table `BD_VLINE`). Content is rendered as full Markdown via `render_markdown()` (supports headers, bold, code blocks, tables). Each content line (including wrapped sub-lines) is prefixed with `│ `. New `wrap_styled_line()` in `wrap.rs` provides width-aware word-wrap of `Line<Span>` with style preservation, ensuring resize responsiveness. Terminal (non-TUI) `show_thinking()` and `display_thinking()` synchronized to `🧠 Thinking` + `│ ` border. Removed `thinking_content_style()` (unused — styles come from `render_markdown()`). 10 new `wrap_styled_line` tests.
 
 **Root Cause of Content Loss During Tool Calls (NEW — Architectural):**
 
@@ -4620,6 +4621,7 @@ Changes:
 | 7 | Tests (23 app tests + 4 view tests, clippy, fmt) | ✅ COMPLETED |
 | 8 | End-of-conversation inter-tool text duplication — `pre_tool_content` accumulation gate on `already_streamed` | ✅ COMPLETED |
 | 9 | First-round pre-tool duplication — `StreamBlockDone` handler no-op (zone finalized by `ToolCallStarted`) | ✅ COMPLETED |
+| 10 | Thinking block visual refinement — `🧠 Thinking` header + `│` left border + Markdown rendering + `wrap_styled_line()` | ✅ COMPLETED |
 
 ---
 

@@ -43,7 +43,7 @@ use crate::spinner::suspend_for_print;
 /// Avoids clippy `type_complexity` on the raw `Arc<dyn Fn(&str) + Sync + Send>` type.
 type TuiCallback = std::sync::Arc<dyn Fn(&str) + Sync + Send>;
 
-/// ANSI style: DIM (faint) + light gray text — same as `[Thinking]` blocks.
+/// ANSI style: DIM (faint) + light gray text — same as thinking blocks.
 ///
 /// Shared across all tool indicator displays (tool calls, skill loading,
 /// document import, notes, facts, feedback, command execution).
