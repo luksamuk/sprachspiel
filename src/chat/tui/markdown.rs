@@ -1,10 +1,8 @@
 //! Markdown rendering for the TUI
 //!
 //! This module provides markdown rendering using `tui-markdown` with
-//! theme-aware styling. During LLM streaming, plain text is displayed
-//! (fast, no parsing overhead). After completion, the full message is
-//! re-rendered with `tui-markdown` for syntax highlighting, headers,
-//! bold, code blocks, etc.
+//! theme-aware styling. Markdown is rendered incrementally during LLM
+//! streaming (like Thinking blocks) and once for completed messages.
 //!
 //! # Table Support
 //!
@@ -24,7 +22,6 @@
 //! # API
 //!
 //! - `render_markdown(content, theme, max_width)` → `Text<'static>` — Full markdown rendering
-//! - `render_plain_text(content)` → `Text<'static>` — Fast plain text for streaming
 //! - `MarkdownTheme` — Theme enum with `from_config()` and stylesheet selection
 
 // Table rendering inspired by ratatui-markdown (MIT OR Apache-2.0)
@@ -951,7 +948,10 @@ fn render_table_box(content: &str, max_width: usize, theme: MarkdownTheme) -> Ve
 /// within `max_width`. This ensures `Paragraph::wrap()` does not
 /// break table lines.
 ///
-/// For streaming content, use `render_plain_text` instead.
+///
+/// Used for both streaming and completed content. Markdown rendering
+/// is called on every render frame during streaming (like Thinking blocks)
+/// and once for completed messages.
 pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) -> Text<'static> {
     // Fast path: if no table structure detected, use tui-markdown directly
     if !content_contains_table(content) {
@@ -1081,16 +1081,6 @@ fn render_markdown_inner_owned(content: &str, theme: MarkdownTheme) -> Text<'sta
     Text::from(owned_lines)
 }
 
-/// Render plain text for streaming content
-///
-/// Used during LLM streaming when we want fast display
-/// without markdown parsing overhead. Once the response completes,
-/// the message is re-rendered with `render_markdown`.
-#[allow(dead_code)] // PR3: Will be used for streaming text rendering in TUI
-pub fn render_plain_text(content: &str) -> Text<'static> {
-    Text::from(content.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1106,12 +1096,6 @@ mod tests {
         );
         assert_eq!(MarkdownTheme::from_config("nocolor"), MarkdownTheme::Mono);
         assert_eq!(MarkdownTheme::from_config("unknown"), MarkdownTheme::Dark);
-    }
-
-    #[test]
-    fn test_render_plain_text() {
-        let text = render_plain_text("Hello, world!");
-        assert_eq!(text.to_string(), "Hello, world!");
     }
 
     #[test]

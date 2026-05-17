@@ -7,7 +7,7 @@
 //! - **Assistant**: no prefix, markdown rendered (blank line before)
 //! - **Thinking**: `🧠 Thinking` header in dim cyan, markdown content with
 //!   `│` left border in dim cyan, word-wrapped with style preservation
-//! - **Tool**: dim text (already has 🔧 from debug_tools), multi-line aware
+//! - **Tool**: dim markdown (already has 🔧 from debug_tools), responsive width
 //! - **System**: dim text, no prefix, multi-line aware
 //! - **Error**: `✗` prefix in bold red
 //! - **Banner**: responsive braille art layout
@@ -49,11 +49,11 @@ pub enum MessageType {
     User,
     /// Assistant response (complete) — no prefix, rendered as markdown.
     Assistant,
-    /// Assistant response (streaming) — no prefix, plain text.
+    /// Assistant response (streaming) — no prefix, markdown rendered incrementally.
     AssistantStreaming,
     /// Thinking block — `🧠 Thinking` header in dim cyan, content with `│` left border.
     Thinking,
-    /// Tool call/result — dim text, no prefix (content already has 🔧 emoji).
+    /// Tool call/result — dim markdown, no prefix (content already has 🔧 emoji).
     Tool,
     /// System info — dim text, no prefix (tokens, compact, etc.).
     System,
@@ -81,8 +81,7 @@ impl ChatMessage {
         }
     }
 
-    /// Create an assistant streaming message (plain text, no prefix).
-    #[allow(dead_code)] // PR3: Will be used for streaming assistant messages in TUI
+    /// Create an assistant streaming message (markdown rendered incrementally, no prefix).
     pub fn assistant_streaming(content: String) -> Self {
         Self {
             msg_type: MessageType::AssistantStreaming,
@@ -247,10 +246,9 @@ fn build_lines(
                 if !lines.is_empty() {
                     lines.push(Line::raw(String::new()));
                 }
-                // No prefix — plain text during streaming
-                for line in msg.content.lines() {
-                    lines.push(Line::raw(line.to_string()));
-                }
+                // Render markdown incrementally during streaming (same as Thinking blocks)
+                let rendered = render_markdown(&msg.content, theme, available_width);
+                lines.extend(rendered.lines);
             }
             MessageType::Thinking => {
                 // Blank line before thinking block for visual separation
@@ -282,10 +280,22 @@ fn build_lines(
                 lines.push(Line::raw(String::new()));
             }
             MessageType::Tool => {
-                // Dim text, no prefix — content already has 🔧 from debug_tools
-                // Multi-line aware: split on \n so emojis and text render correctly
-                for line in msg.content.lines() {
-                    lines.push(Line::from(Span::styled(line.to_string(), styles::dim())));
+                // Render tool output as markdown with dim style overlay.
+                // Tool output may contain code blocks, lists, tables — render
+                // them properly while keeping visual distinction from assistant
+                // content by applying dim modifier over all styles.
+                let rendered = render_markdown(&msg.content, theme, available_width);
+                let dim_style = styles::dim();
+                for render_line in rendered.lines {
+                    let dimmed_spans: Vec<Span<'_>> = render_line
+                        .spans
+                        .into_iter()
+                        .map(|span| {
+                            // Merge dim modifier with any existing markdown style
+                            Span::styled(span.content, span.style.patch(dim_style))
+                        })
+                        .collect();
+                    lines.push(Line::from(dimmed_spans));
                 }
             }
             MessageType::System => {
