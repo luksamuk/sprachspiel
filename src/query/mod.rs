@@ -82,7 +82,9 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
     use crate::chat::{display_thinking, strip_thinking_tags};
 
     match event {
-        ChatEvent::PreToolContent { content, thinking } => {
+        ChatEvent::PreToolContent {
+            content, thinking, ..
+        } => {
             suspend_for_print(|| {
                 if use_think {
                     display_thinking(&content, thinking.as_ref(), !use_plain);

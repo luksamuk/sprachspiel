@@ -207,10 +207,14 @@ pub fn parse_continuation_tag(content: &str) -> (String, Option<ContinuationTag>
 /// Event emitted during chat processing
 #[derive(Debug, Clone)]
 pub enum ChatEvent {
-    /// Content generated before tool calls (often thinking/intro text)
+    /// Content generated before tool calls (often thinking/intro text).
+    /// `already_streamed` is `true` when the content was already emitted
+    /// via streaming tokens (e.g. first tool-call round); `false` when it
+    /// comes from a non-streaming path such as `process_next()`.
     PreToolContent {
         content: String,
         thinking: Option<String>,
+        already_streamed: bool,
     },
     /// Tool call is about to be executed (fields kept for future use)
     #[allow(dead_code)]
@@ -630,8 +634,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         // Make the request
         let resp = self.ollama.send_chat_messages(self.build_request()).await?;
 
-        // Process the response
-        self.process_response(resp).await
+        // Process the response (non-streaming path — content was not streamed)
+        self.process_response(resp, /*already_streamed=*/ false)
+            .await
     }
 
     /// Send a chat message with streaming and process tool calls.
@@ -773,7 +778,10 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                 final_data,
             };
 
-            self.process_response(response).await
+            // Content was already streamed via on_token callback —
+            // mark as already_streamed to prevent InterToolText duplication.
+            self.process_response(response, /*already_streamed=*/ true)
+                .await
         } else {
             // No tool calls — this is the final response
             // Push to history
@@ -866,10 +874,15 @@ impl<C: ChatHistory> CustomCoordinator<C> {
         request
     }
 
-    /// Process response, handling tool calls with event emission
+    /// Process response, handling tool calls with event emission.
+    ///
+    /// `already_streamed` should be `true` when the content was already
+    /// streamed via `chat_stream()` — this prevents emitting an extra
+    /// `PreToolContent` event that would duplicate the text.
     async fn process_response(
         &mut self,
         resp: ChatMessageResponse,
+        already_streamed: bool,
     ) -> ollama_rs::error::Result<ChatMessageResponse> {
         // Check if there are tool calls
         if !resp.message.tool_calls.is_empty() {
@@ -890,10 +903,12 @@ impl<C: ChatHistory> CustomCoordinator<C> {
                     self.pre_tool_thinking = resp.message.thinking.clone();
                 }
 
-                // Emit event
+                // Emit event — mark already_streamed so the TUI event loop
+                // knows whether to skip InterToolText injection.
                 self.emit_event(ChatEvent::PreToolContent {
                     content: resp.message.content.clone(),
                     thinking: resp.message.thinking.clone(),
+                    already_streamed,
                 });
             }
 
@@ -1031,7 +1046,9 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
         let resp = self.ollama.send_chat_messages(self.build_request()).await?;
 
-        self.process_response(resp).await
+        // Non-streaming path — content was not streamed.
+        self.process_response(resp, /*already_streamed=*/ false)
+            .await
     }
 
     /// Get the number of registered tools (for future use)

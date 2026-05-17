@@ -167,18 +167,26 @@ pub fn setup_coordinator(
         // so the event loop can process it in real-time. Without this, the
         // content would be batched via ViewEvents and either (a) dropped due
         // to streaming deduplication, or (b) appear in the wrong order.
-        let has_llm_tx = llm_tx.is_some();
         match event {
-            crate::chat::custom_coordinator::ChatEvent::PreToolContent { content, thinking } => {
-                if has_llm_tx {
-                    // Streaming mode: emit directly to LLM channel for real-time
-                    // event loop processing. This avoids batching and deduplication.
-                    let _ = llm_tx.as_ref().unwrap().try_send(
-                        super::llm_event::LlmEvent::InterToolText {
+            crate::chat::custom_coordinator::ChatEvent::PreToolContent {
+                content,
+                thinking,
+                already_streamed,
+            } => {
+                if let Some(ref tx) = llm_tx {
+                    // Streaming mode: only emit InterToolText when the content
+                    // was NOT already streamed. In the streaming path (chat_stream
+                    // → process_response with already_streamed=true), tokens
+                    // are displayed in real time via StreamToken.
+                    // In the non-streaming path (process_next via send_chat_messages),
+                    // tokens are not shown until here — emit InterToolText
+                    // so the user sees inter-tool text before tool calls.
+                    if !already_streamed {
+                        let _ = tx.try_send(super::llm_event::LlmEvent::InterToolText {
                             content,
                             metrics: None,
-                        },
-                    );
+                        });
+                    }
                 } else {
                     // Terminal mode: emit as ViewEvent for batch processing
                     let cleaned = strip_thinking_tags(&content);
