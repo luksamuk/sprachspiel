@@ -461,10 +461,17 @@ pub fn render(
     let available_width = area.width as usize;
     let mut lines = build_lines(messages, theme, available_width);
 
-    // Build visual_lines BEFORE applying selection highlight (plain text for extraction)
+    // Build visual_lines BEFORE applying selection highlight (plain text for extraction).
+    // Trim trailing whitespace from each line so that code block padding (styled
+    // spaces that extend the background to the right edge) does not pollute
+    // clipboard copies. Code content whitespace is preserved since only the
+    // right edge is stripped.
     let visual_lines: Vec<String> = lines
         .iter()
-        .map(|line| line.spans.iter().map(|s| s.content.as_ref()).collect())
+        .map(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            text.trim_end().to_string()
+        })
         .collect();
 
     // Apply selection highlight (modifies span styles)

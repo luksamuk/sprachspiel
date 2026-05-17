@@ -982,20 +982,29 @@ fn render_table_box(content: &str, max_width: usize, theme: MarkdownTheme) -> Ve
 /// Used for both streaming and completed content. Markdown rendering
 /// is called on every render frame during streaming (like Thinking blocks)
 /// and once for completed messages.
-/// Post-process rendered markdown to apply code block background colors.
+/// Post-process rendered markdown to apply code block background colors
+/// and extend them to the right edge of the chat area.
 ///
 /// `tui-markdown` with the `highlight-code` feature uses syntect for syntax
 /// highlighting (theme: `base16-ocean.dark`), which sets foreground colors
-/// per token but never sets background colors. This function applies the
-/// Catppuccin background color to all lines inside fenced code blocks,
-/// including the opening and closing fence lines (``` ``` ``` ``).
+/// per token but never sets background colors. This function:
+///
+/// 1. Applies the Catppuccin background color (`Line.style.bg`) to all lines
+///    inside fenced code blocks, including the opening and closing fence lines.
+/// 2. Adds trailing padding (styled spaces) to extend the background to the
+///    right edge of the chat area, so code blocks appear as solid colored
+///    rectangles rather than text with background only behind characters.
 ///
 /// The background is applied via `Line.style.bg`, which acts as a fallback
-/// for `Span`s that don't set their own background — this means syntect's
-/// token colors are preserved while our Catppuccin background fills any
-/// gaps. Spans that already have a background set (from syntect themes)
-/// will override the line background.
-fn apply_code_block_background(lines: &mut [Line<'static>], theme: MarkdownTheme) {
+/// for `Span`s that don't set their own background — syntect's token colors
+/// are preserved while our Catppuccin background fills any gaps. Trailing
+/// padding is stripped via `trim_end()` when building `visual_lines` for
+/// clipboard copy, so the pasted text stays clean.
+fn apply_code_block_background(
+    lines: &mut [Line<'static>],
+    theme: MarkdownTheme,
+    max_width: usize,
+) {
     let bg_color = match theme {
         MarkdownTheme::Dark => MOCHA_SURFACE0,
         MarkdownTheme::Light => LATTE_SURFACE0,
@@ -1024,6 +1033,24 @@ fn apply_code_block_background(lines: &mut [Line<'static>], theme: MarkdownTheme
             // Content line inside code block
             line.style = line.style.patch(Style::default().bg(bg_color));
         }
+
+        // Extend background to the right edge with trailing padding.
+        // This makes code blocks appear as solid colored rectangles rather
+        // than text with background only behind characters.
+        if in_code_block || is_fence {
+            let current_width: usize = line
+                .spans
+                .iter()
+                .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+                .sum();
+
+            if current_width < max_width {
+                let padding_width = max_width - current_width;
+                let padding = " ".repeat(padding_width);
+                line.spans
+                    .push(Span::styled(padding, Style::default().bg(bg_color)));
+            }
+        }
     }
 }
 
@@ -1031,7 +1058,7 @@ pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) ->
     // Fast path: if no table structure detected, use tui-markdown directly
     if !content_contains_table(content) {
         let mut text = render_markdown_inner_owned(content, theme);
-        apply_code_block_background(&mut text.lines, theme);
+        apply_code_block_background(&mut text.lines, theme, max_width);
         return text;
     }
 
@@ -1044,7 +1071,7 @@ pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) ->
             ContentSegment::Markdown(md) => {
                 let rendered = render_markdown_inner_owned(&md, theme);
                 let mut rendered_lines = rendered.lines;
-                apply_code_block_background(&mut rendered_lines, theme);
+                apply_code_block_background(&mut rendered_lines, theme, max_width);
                 all_lines.extend(rendered_lines);
             }
             ContentSegment::Table(table) => {
@@ -1410,6 +1437,121 @@ mod tests {
                 has_code_style,
                 "Inline code should have both fg and bg for theme {:?}",
                 theme
+            );
+        }
+    }
+
+    #[test]
+    fn test_code_block_right_edge_padding() {
+        // Verify that code block lines have trailing padding extending
+        // the background to the right edge of the chat area.
+        let code_md = "```rust\nfn main() {}\n```";
+        let max_width = 80;
+        for theme in [
+            MarkdownTheme::Dark,
+            MarkdownTheme::Light,
+            MarkdownTheme::Mono,
+        ] {
+            let text = render_markdown(code_md, theme, max_width);
+            // All lines inside the code block should have total width == max_width
+            // (content width + padding width)
+            let mut found_code_line = false;
+            for line in &text.lines {
+                let is_fence = line
+                    .spans
+                    .first()
+                    .map(|span| span.content.starts_with("```"))
+                    .unwrap_or(false);
+                let has_bg = line.style.bg.is_some()
+                    || line.spans.iter().any(|span| span.style.bg.is_some());
+
+                if is_fence || has_bg {
+                    found_code_line = true;
+                    let total_width: usize = line
+                        .spans
+                        .iter()
+                        .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+                        .sum();
+                    assert_eq!(
+                        total_width, max_width,
+                        "Code block line should extend to max_width={} for theme {:?}, got width={}",
+                        max_width, theme, total_width
+                    );
+                }
+            }
+            assert!(
+                found_code_line,
+                "Should find at least one code block line for theme {:?}",
+                theme
+            );
+        }
+    }
+
+    #[test]
+    fn test_code_block_empty_line_padding() {
+        // Verify that empty lines inside code blocks are padded to max_width
+        // (so the background covers the full line, not just empty space).
+        let code_md = "```rust\nfn main() {\n    \n}\n```";
+        let max_width = 60;
+        let text = render_markdown(code_md, MarkdownTheme::Dark, max_width);
+        // Find the empty line (original content "    " — 4 spaces)
+        // It should be padded to max_width total
+        let empty_line = text.lines.iter().find(|line| {
+            line.style.bg.is_some()
+                && line
+                    .spans
+                    .iter()
+                    .map(|s| s.content.trim().len())
+                    .sum::<usize>()
+                    == 0
+        });
+        assert!(
+            empty_line.is_some(),
+            "Should find a code block line with only whitespace content"
+        );
+        if let Some(line) = empty_line {
+            let total_width: usize = line
+                .spans
+                .iter()
+                .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+                .sum();
+            assert_eq!(
+                total_width, max_width,
+                "Empty code block line should be padded to max_width={}, got {}",
+                max_width, total_width
+            );
+        }
+    }
+
+    #[test]
+    fn test_code_block_no_padding_beyond_max_width() {
+        // Verify that lines wider than max_width do NOT get padding
+        // (they already fill the available width).
+        let long_line = "x".repeat(100);
+        let code_md = format!("```rust\n{}\n```", long_line);
+        let max_width = 80;
+        let text = render_markdown(&code_md, MarkdownTheme::Dark, max_width);
+        // The long line should NOT have trailing padding (it's already > max_width)
+        let long_line_entry = text.lines.iter().find(|line| {
+            line.spans
+                .iter()
+                .any(|span| span.content.starts_with('x') && span.content.len() > 90)
+        });
+        assert!(
+            long_line_entry.is_some(),
+            "Should find the long line in the code block"
+        );
+        if let Some(line) = long_line_entry {
+            let total_width: usize = line
+                .spans
+                .iter()
+                .map(|span| UnicodeWidthStr::width(span.content.as_ref()))
+                .sum();
+            // Should be > max_width (no padding was added)
+            assert!(
+                total_width > max_width,
+                "Long code line should exceed max_width without padding, got {}",
+                total_width
             );
         }
     }
