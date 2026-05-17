@@ -852,21 +852,33 @@ pub async fn send_message_stream(
             // When tools interrupted streaming, pre-tool content is already
             // displayed via StreamToken events. Send StreamBlockDone to
             // finalize it as a STABLE Assistant+Thinking message, preventing
-            // StreamDone from wiping it. StreamDone then adds the post-tool
-            // content as a NEW message.
-            if pre_tool_content.is_some() {
-                let pre_tool_display =
-                    strip_thinking_tags(pre_tool_content.as_deref().unwrap_or(""));
+            // StreamDone from wiping it. StreamDone then adds ONLY the
+            // post-tool content as a NEW message.
+            let post_tool_content = if let Some(ref pre_tool) = pre_tool_content {
+                let pre_tool_display = strip_thinking_tags(pre_tool);
                 let _ = llm_tx.try_send(LlmEvent::StreamBlockDone {
-                    content: pre_tool_display,
+                    content: pre_tool_display.clone(),
                     thinking: pre_tool_thinking.clone(),
                     metrics: None,
                 });
-            }
+                // Compute post-tool content: full response minus pre-tool.
+                // The LLM may or may not include the pre-tool text in its
+                // final response. If it does, remove the prefix to avoid
+                // duplication. If it doesn't, the whole response is post-tool.
+                if cleaned_response.starts_with(&pre_tool_display) {
+                    cleaned_response[pre_tool_display.len()..]
+                        .trim()
+                        .to_string()
+                } else {
+                    cleaned_response.clone()
+                }
+            } else {
+                cleaned_response.clone()
+            };
 
             // StreamDone: post-tool content (or the only content if no tools)
             let _ = llm_tx.try_send(LlmEvent::StreamDone {
-                content: cleaned_response.clone(),
+                content: post_tool_content,
                 thinking: thinking.clone(),
                 metrics: None,
             });
