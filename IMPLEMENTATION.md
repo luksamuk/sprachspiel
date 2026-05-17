@@ -4488,22 +4488,31 @@ For the complete architectural analysis, state-of-the-art research, and the prop
 
 **Proposed Fix: Content Block Stateful Streaming**
 
-The state-of-the-art solution (used by assistant-ui, TUUI, Claude SDK) is **content block index tracking**: each assistant response consists of multiple numbered content blocks (Block 0 = pre-tool text, Block 1 = tool call, Block 2 = tool result, Block 3 = post-tool text, etc.). Each block is finalized independently and **can never be overwritten**. When `StreamBlockDone` arrives for Block 0, Block 0 is finalized and remains in the message list permanently. A new `StreamBlockStart` begins Block 3, which is the new active block.
+The state-of-the-art solution (used by assistant-ui, TUUI, Claude SDK) is **content block index tracking**: each assistant response consists of multiple numbered content blocks (Block 0 = pre-tool text, Block 1 = tool call, Block 2 = tool result, Block 3 = post-tool text, etc.). Each block is finalized independently and **can never be overwritten**. When `StreamBlockDone` arrives for Block 0, `finalize_stream()` converts its `AssistantStreaming` to a stable `Assistant` message. Block 0 is now permanent. When post-tool streaming begins, new `StreamToken` events create a fresh `AssistantStreaming` (the new active block). When `StreamDone` arrives, only the LAST block (post-tool) is finalized — Block 0 is untouched because it's outside the streaming zone.
 
-**Architecture Changes Required:**
+**Architecture Insight:** No `StreamBlockStart` event is needed because `finalize_stream()` already creates the boundary implicitly. After `finalize_stream` removes `AssistantStreaming` from the zone, any new streaming naturally starts a new block. The "fronteira" is the absence of streaming messages, not an explicit state flag.
 
-| Change | File | Description |
-|--------|------|-------------|
-| Add `block_id: Option<usize>` to `ChatMessage` | `chat_area.rs` | Identify which block a message belongs to |
-| Add `StreamingState` to `App` | `app.rs` | Track active block, block sequence counter |
-| Replace `finalize_stream()` with `finalize_stream_block()` | `app.rs` | Finalize a specific block by index, not just the last one |
-| Add `start_new_stream_block()` | `app.rs` | Create a new active block after tool calls |
-| Update `LlmEvent` with `block_index` | `llm_event.rs` | Track which block each event targets |
-| Add `StreamBlockStart`/`StreamBlockDone` variants | `llm_event.rs` | Lifecycle events for blocks |
-| Update `chat_stream()` | `custom_coordinator.rs` | Emit `StreamBlockDone` before tools, `StreamBlockStart` after |
-| Update event loop | `repl_tui.rs` | Route `StreamBlockDone`/`StreamBlockStart` to App |
-| Update `send_message_stream()` | `core.rs` | Use `StreamBlockDone` with correct block index |
-| Tests | `app.rs`, `view/mod.rs` | Test multi-block lifecycle, preservation, tool interruption |
+**Implemented Changes:**
+
+| Change | File | Status |
+|--------|------|--------|
+| Add `StreamBlockDone` variant to `LlmEvent` | `llm_event.rs` | ✅ DONE |
+| Emit `StreamBlockDone` from `send_message_stream()` | `core.rs` | ✅ DONE |
+| Update event loop: handle `StreamBlockDone` | `repl_tui.rs` | ✅ DONE |
+| Add `block_finalized` flag to `App` | `app.rs` | ✅ DONE |
+| `finalize_stream()` preserves stable blocks automatically | `app.rs` | ✅ VERIFIED |
+| Tests: single block, pre/post tool, multiple tools, state clearing | `app.rs` | ✅ 4 tests |
+
+**What Was NOT Needed:**
+
+| Change | Reason |
+|--------|--------|
+| `StreamBlockStart` event | `finalize_stream()` removes `AssistantStreaming`, so new streaming naturally creates a new block |
+| `block_id` in `ChatMessage` | Blocks are distinguished by position (stable vs streaming zone). Not needed. |
+| `start_new_stream_block()` | Not needed — `append_stream_token()` creates new `AssistantStreaming` when none exists in zone |
+| Replace `finalize_stream()` with multi-block variant | Existing logic already works: only touches LAST `AssistantStreaming` in zone |
+
+**Architecture Principle:** The streaming zone (contiguous tail of `Thinking`/`AssistantStreaming`) IS the active block. Finalizing converts it to stable messages (outside the zone). New streaming creates a new zone = new block. No explicit block tracking needed.
 
 **Estimativa**: ~10 horas (~2 dias de trabalho efetivo).
 
