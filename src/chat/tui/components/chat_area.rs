@@ -287,12 +287,24 @@ fn build_lines(
                 let rendered = render_markdown(&msg.content, theme, available_width);
                 let dim_style = styles::dim();
                 for render_line in rendered.lines {
+                    // Propagate Line.style to each Span before applying dim overlay.
+                    // tui-markdown renders headings as Line { spans: [Span::raw(...)],
+                    // style: heading_style } where heading_style carries color, bold,
+                    // and underline. Line.style acts as fallback for Spans with
+                    // Style::default(). We must merge it into each Span explicitly
+                    // before discarding the Line (since Line::from() loses Line.style).
+                    let base_style = render_line.style;
                     let dimmed_spans: Vec<Span<'_>> = render_line
                         .spans
                         .into_iter()
                         .map(|span| {
-                            // Merge dim modifier with any existing markdown style
-                            Span::styled(span.content, span.style.patch(dim_style))
+                            // Merge: Line.style (heading/formatting fallback)
+                            //   → span.style (inline style override)
+                            //   → dim_style (dim overlay)
+                            Span::styled(
+                                span.content,
+                                base_style.patch(span.style).patch(dim_style),
+                            )
                         })
                         .collect();
                     lines.push(Line::from(dimmed_spans));

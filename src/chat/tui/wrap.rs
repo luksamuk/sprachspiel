@@ -119,9 +119,20 @@ pub fn wrap_styled_line(line: Line<'_>, width: usize) -> Vec<Line<'static>> {
         return vec![line_to_owned(line)];
     }
 
-    // Flatten spans into (char, style) pairs for width-aware iteration
-    let chars: Vec<(char, Style)> = line
+    // Propagate Line.style to each Span before processing.
+    // tui-markdown renders headings as Line { spans: [Span::raw(...)], style: heading_style }
+    // where heading_style carries color, bold, underline. The Line.style acts as a
+    // fallback for Spans with Style::default(). If we don't propagate it, heading
+    // styles (including underline) are silently lost during wrapping.
+    let base_style = line.style;
+    let normalized_spans: Vec<Span<'_>> = line
         .spans
+        .into_iter()
+        .map(|span| Span::styled(span.content, base_style.patch(span.style)))
+        .collect();
+
+    // Flatten spans into (char, style) pairs for width-aware iteration
+    let chars: Vec<(char, Style)> = normalized_spans
         .iter()
         .flat_map(|span| span.content.chars().map(|c| (c, span.style)))
         .collect();
@@ -129,8 +140,12 @@ pub fn wrap_styled_line(line: Line<'_>, width: usize) -> Vec<Line<'static>> {
     let total_width: usize = chars.iter().map(|(c, _)| c.width().unwrap_or(0)).sum();
 
     if total_width <= width {
-        // Line fits — return as-is (converted to owned)
-        return vec![line_to_owned(line)];
+        // Line fits — return the normalized line (with Line.style propagated to Spans)
+        let owned_spans: Vec<Span<'static>> = normalized_spans
+            .into_iter()
+            .map(|span| Span::styled(span.content.into_owned(), span.style))
+            .collect();
+        return vec![Line::from(owned_spans)];
     }
 
     // Strategy: word-wrap the flat character stream.
@@ -318,7 +333,10 @@ fn line_to_owned(line: Line<'_>) -> Line<'static> {
         .into_iter()
         .map(|span| Span::styled(span.content.into_owned(), span.style))
         .collect();
-    Line::from(owned_spans)
+    let mut owned_line = Line::from(owned_spans);
+    // Preserve Line.style (e.g., heading underline/bold from tui-markdown)
+    owned_line.style = line.style;
+    owned_line
 }
 
 #[cfg(test)]
