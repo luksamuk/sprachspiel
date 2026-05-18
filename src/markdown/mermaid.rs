@@ -9,6 +9,55 @@
 //! - **Plain** (`--plain` flag): Raw ` ```mermaid ` block, deferring rendering
 //!   to the consumer (preparation for ACP integration)
 
+/// Call a mermaid-text function safely, suppressing the Rust panic hook.
+///
+/// The `mermaid-text` crate can panic on non-ASCII labels (byte-slicing bug
+/// in gantt/task parsers). `catch_unwind` catches the panic value, but Rust's
+/// panic hook runs FIRST — in TUI mode, the default hook calls
+/// `restore_terminal_on_panic()`, which disables raw mode and leaves the
+/// alternate screen, destroying the TUI before we can fall back gracefully.
+///
+/// This function:
+/// 1. Saves the current panic hook via `take_hook()`
+/// 2. Installs a silent no-op hook
+/// 3. Calls the closure inside `catch_unwind`
+/// 4. Restores the original panic hook immediately
+///
+/// This ensures the TUI remains intact when mermaid-text panics, because
+/// the default hook (which restores the terminal) is not called.
+///
+/// # Safety
+///
+/// `take_hook()` / `set_hook()` use an internal mutex, so this is thread-safe.
+/// The hook is restored before any other code runs, so real panics outside this
+/// function still trigger the original hook (which restores the TUI).
+pub(crate) fn call_mermaid_safely<F, R>(f: F) -> Result<R, String>
+where
+    F: FnOnce() -> R + std::panic::UnwindSafe,
+{
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {
+        // Silent — catch_unwind will handle the panic.
+        // The default hook would restore the TUI terminal, destroying
+        // the alternate screen for what is actually a recoverable error.
+    }));
+
+    let result = std::panic::catch_unwind(f);
+
+    // Restore the original panic hook immediately — critical for real panics.
+    std::panic::set_hook(original_hook);
+
+    result.map_err(|panic_info| {
+        if let Some(s) = panic_info.downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic".to_string()
+        }
+    })
+}
+
 /// Render a Mermaid diagram as Unicode box-drawing text.
 ///
 /// Uses `mermaid_text::render_with_width()` for responsive output that
@@ -24,10 +73,11 @@ pub fn render_mermaid_rich(source: &str, width: usize) -> String {
     let trimmed = source.trim();
 
     // mermaid-text can panic on non-ASCII characters in labels (byte-slicing
-    // bug in gantt/task parsers). Wrap in catch_unwind to protect the process.
-    let result = std::panic::catch_unwind(|| {
-        mermaid_text::render_with_width(trimmed, Some(effective_width))
-    });
+    // bug in gantt/task parsers). call_mermaid_safely suppresses the panic
+    // hook (which would destroy the TUI alternate screen) and catches the
+    // panic, falling back to a code block.
+    let result =
+        call_mermaid_safely(|| mermaid_text::render_with_width(trimmed, Some(effective_width)));
 
     match result {
         Ok(Ok(rendered)) => format!("{rendered}\n"),
@@ -35,16 +85,7 @@ pub fn render_mermaid_rich(source: &str, width: usize) -> String {
             log::warn!("Mermaid parse error, falling back to code block: {e}");
             format!("```mermaid\n{source}```\n")
         }
-        Err(panic_info) => {
-            // The crate panicked (likely UTF-8 boundary bug). Extract message
-            // if possible, log it, and fall back gracefully.
-            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "unknown panic".to_string()
-            };
+        Err(msg) => {
             log::warn!("Mermaid crate panicked, falling back to code block: {msg}");
             format!("```mermaid\n{source}```\n")
         }

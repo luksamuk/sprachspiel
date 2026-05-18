@@ -17,3 +17,6 @@ pub mod standalone;
 pub mod table;
 
 pub use standalone::{print_markdown, print_markdown_plain};
+
+#[cfg(feature = "mermaid")]
+pub(crate) use mermaid::call_mermaid_safely;

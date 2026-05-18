@@ -32,6 +32,9 @@ use ratatui::text::{Line, Span, Text};
 use tui_markdown::{Options, StyleSheet, from_str_with_options};
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(feature = "mermaid")]
+use crate::markdown::call_mermaid_safely;
+
 use super::wrap::wrap_line;
 
 // ── Catppuccin color palette (MIT License, https://catppuccin.com) ────
@@ -1305,6 +1308,10 @@ fn content_contains_table(content: &str) -> bool {
 /// Falls back to rendering the Mermaid source as a code block on parse
 /// errors or panics (the crate has known UTF-8 boundary bugs with
 /// non-ASCII labels in gantt/task diagrams).
+///
+/// Uses [`call_mermaid_safely`] to suppress the Rust panic hook before
+/// calling `mermaid_text::render_with_width()`, which prevents the TUI's
+/// panic hook from destroying the alternate screen on recoverable errors.
 #[cfg(feature = "mermaid")]
 fn render_mermaid_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> Vec<Line<'static>> {
     let effective_width = max_width.clamp(40, 200);
@@ -1312,11 +1319,11 @@ fn render_mermaid_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> V
     let text_style = table_style_cell(theme);
     let trimmed = source.trim();
 
-    // mermaid-text can panic on non-ASCII characters in labels (byte-slicing
-    // bug in gantt/task parsers). Wrap in catch_unwind to protect the process.
-    let result = std::panic::catch_unwind(|| {
-        mermaid_text::render_with_width(trimmed, Some(effective_width))
-    });
+    // mermaid-text can panic on non-ASCII characters in labels. call_mermaid_safely
+    // suppresses the panic hook (preserving the TUI alternate screen) and catches
+    // the panic, falling back to a code block.
+    let result =
+        call_mermaid_safely(|| mermaid_text::render_with_width(trimmed, Some(effective_width)));
 
     let rendered = match result {
         Ok(Ok(r)) => r,
@@ -1324,14 +1331,7 @@ fn render_mermaid_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> V
             log::warn!("Mermaid parse error in TUI, falling back to code block: {e}");
             return fallback_mermaid_code_block(source, theme);
         }
-        Err(panic_info) => {
-            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "unknown panic".to_string()
-            };
+        Err(msg) => {
             log::warn!("Mermaid crate panicked in TUI, falling back to code block: {msg}");
             return fallback_mermaid_code_block(source, theme);
         }
