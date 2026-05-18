@@ -7,15 +7,19 @@
 //! # Unicode awareness
 //!
 //! CJK characters count as 2 visual columns; combining characters as 0.
-//! Uses `unicode_width::UnicodeWidthChar` for character width lookup.
+//! Uses `unicode_width::UnicodeWidthStr` for string-level width (handles
+//! emoji ZWJ sequences like 🇧🇷 and 👨‍💻 correctly) and `UnicodeWidthChar`
+//! for per-character iteration in `hard_break_word`.
 
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthChar;
+use unicode_width::UnicodeWidthStr;
 
 /// Word-wrap a line of text to fit within `width` visual columns,
 /// breaking at spaces when possible. Unicode-aware: CJK characters
-/// count as 2 columns, combining characters as 0, etc.
+/// count as 2 columns, combining characters as 0, emoji ZWJ sequences
+/// (🇧🇷, 👨‍💻) count as 2 columns.
 ///
 /// If a single word exceeds `width`, it is hard-broken at the column limit.
 /// Returns owned Strings because Unicode-aware slicing cannot return &str.
@@ -24,7 +28,7 @@ pub fn wrap_line(line: &str, width: usize) -> Vec<String> {
         return vec![line.to_string()];
     }
 
-    let visual_len: usize = line.chars().map(|c| c.width().unwrap_or(0)).sum();
+    let visual_len = line.width();
     if visual_len <= width {
         return vec![line.to_string()];
     }
@@ -34,7 +38,7 @@ pub fn wrap_line(line: &str, width: usize) -> Vec<String> {
     let mut current_width = 0usize;
 
     for word in line.split_whitespace() {
-        let word_width: usize = word.chars().map(|c| c.width().unwrap_or(0)).sum();
+        let word_width = word.width();
 
         if current_width == 0 {
             // First word on the line
@@ -137,7 +141,10 @@ pub fn wrap_styled_line(line: Line<'_>, width: usize) -> Vec<Line<'static>> {
         .flat_map(|span| span.content.chars().map(|c| (c, span.style)))
         .collect();
 
-    let total_width: usize = chars.iter().map(|(c, _)| c.width().unwrap_or(0)).sum();
+    // Use span-level width for quick check (handles emoji ZWJ correctly).
+    // The char-level approach would undercount flag emojis (🇧🇷 = 0 per char,
+    // 2 per string). Falls through to word-wrap only when needed.
+    let total_width: usize = normalized_spans.iter().map(|s| s.content.width()).sum();
 
     if total_width <= width {
         // Line fits — return the normalized line (with Line.style propagated to Spans)
@@ -183,7 +190,11 @@ pub fn wrap_styled_line(line: Line<'_>, width: usize) -> Vec<Line<'static>> {
     let mut current_line_width: usize = 0;
 
     for word in &words {
-        let word_width: usize = word.iter().map(|(c, _)| c.width().unwrap_or(0)).sum();
+        // Reconstruct string from chars for span-level width measurement.
+        // This correctly handles emoji ZWJ sequences (🇧🇷 width 2 per string,
+        // 0 per individual regional indicator chars).
+        let word_string: String = word.iter().map(|(c, _)| c).collect();
+        let word_width = word_string.width();
 
         if current_line_width == 0 {
             // First word on the line
@@ -250,12 +261,12 @@ pub fn wrap_styled_line(line: Line<'_>, width: usize) -> Vec<Line<'static>> {
 }
 
 /// Measure the visual width of a slice of `Span` values.
+///
+/// Uses `UnicodeWidthStr::width()` per span to correctly handle emoji
+/// ZWJ sequences and flag emojis (which have different widths when
+/// measured as multi-char strings vs. individual codepoints).
 fn measure_spans_width(spans: &[Span<'_>]) -> usize {
-    spans
-        .iter()
-        .flat_map(|s| s.content.chars())
-        .map(|c| c.width().unwrap_or(0))
-        .sum()
+    spans.iter().map(|s| s.content.width()).sum()
 }
 
 /// Append a word's characters to a spans vector, merging consecutive
@@ -438,6 +449,47 @@ mod wrap_line_tests {
         let result = hard_break_word("hi", 10);
         assert_eq!(result, sv!["hi"]);
     }
+
+    #[test]
+    fn test_wrap_line_emoji() {
+        // ✅ is a single codepoint emoji with width 2.
+        // "✅ done" = 2 + 1 + 4 = 7 visual cols
+        let result = wrap_line("✅ done", 10);
+        assert_eq!(result, sv!["✅ done"]);
+
+        // Force wrap: "✅ done" at width=5 → "✅" (2) + " done" (5) = 7 > 5 → wrap
+        let result = wrap_line("✅ done", 5);
+        assert_eq!(result, sv!["✅", "done"]);
+    }
+
+    #[test]
+    fn test_wrap_line_flag_emoji() {
+        // 🇧🇷 is a flag emoji (2 regional indicators: 🇧 + 🇷).
+        // UnicodeWidthChar::width() for each regional indicator = None (0 with unwrap_or).
+        // UnicodeWidthStr::width() for "🇧🇷" = 2.
+        // With str-level width, this works correctly.
+        // "🇧🇷 flag" = 2 + 1 + 4 = 7 visual cols
+        let result = wrap_line("🇧🇷 flag", 10);
+        assert_eq!(result, sv!["🇧🇷 flag"]);
+
+        // Force wrap at width=4: "🇧🇷" (2) + " flag" (5) = 7 > 4 → wrap
+        // "🇧🇷" (2) fits in 4, "flag" (4) fits in 4
+        let result = wrap_line("🇧🇷 flag", 4);
+        assert_eq!(result, sv!["🇧🇷", "flag"]);
+    }
+
+    #[test]
+    fn test_wrap_line_zwj_emoji() {
+        // 👨‍💻 is a ZWJ sequence (man + ZWJ + laptop).
+        // UnicodeWidthStr::width() = 2 (emoji presentation).
+        // "👨‍💻 code" = 2 + 1 + 4 = 7 visual cols
+        let result = wrap_line("👨‍💻 code", 10);
+        assert_eq!(result, sv!["👨‍💻 code"]);
+
+        // Force wrap: "👨‍💻" (2) + " code" (5) = 7 > 5 → wrap
+        let result = wrap_line("👨‍💻 code", 5);
+        assert_eq!(result, sv!["👨‍💻", "code"]);
+    }
 }
 
 #[cfg(test)]
@@ -598,5 +650,43 @@ mod wrap_styled_line_tests {
         assert_eq!(line_text(&result[0]), "日本語");
         assert_eq!(line_text(&result[1]), "test");
         assert_eq!(line_text(&result[2]), "value");
+    }
+
+    #[test]
+    fn test_wrap_styled_line_emoji() {
+        // ✅ is width 2 (single codepoint emoji)
+        let line = Line::from(vec![Span::styled("✅ done".to_string(), Style::default())]);
+        // "✅" (2) + " done" (5) = 7 cols
+        // width=5: "✅" (2) fits, " done" (5) → 2+5=7 > 5 → wrap
+        let result = wrap_styled_line(line, 5);
+        assert_eq!(result.len(), 2);
+        assert_eq!(line_text(&result[0]), "✅");
+        assert_eq!(line_text(&result[1]), "done");
+    }
+
+    #[test]
+    fn test_wrap_styled_line_flag_emoji() {
+        // 🇧🇷 is width 2 (flag emoji = 2 regional indicators).
+        // With UnicodeWidthStr::width() on each span, this is correct.
+        let line = Line::from(vec![Span::styled("🇧🇷 flag".to_string(), Style::default())]);
+        // "🇧🇷" (2) + " flag" (5) = 7 cols
+        // width=5: "🇧🇷" (2) fits, " flag" (5) → 2+5=7 > 5 → wrap
+        // But "flag" (4) fits in 5
+        let result = wrap_styled_line(line, 5);
+        assert_eq!(result.len(), 2);
+        assert_eq!(line_text(&result[0]), "🇧🇷");
+        assert_eq!(line_text(&result[1]), "flag");
+    }
+
+    #[test]
+    fn test_wrap_styled_line_zwj_emoji() {
+        // 👨‍💻 is width 2 (ZWJ sequence: man + ZWJ + laptop).
+        let line = Line::from(vec![Span::styled("👨‍💻 code".to_string(), Style::default())]);
+        // "👨‍💻" (2) + " code" (5) = 7 cols
+        // width=5: "👨‍💻" (2) fits, " code" (5) → 2+5=7 > 5 → wrap
+        let result = wrap_styled_line(line, 5);
+        assert_eq!(result.len(), 2);
+        assert_eq!(line_text(&result[0]), "👨‍💻");
+        assert_eq!(line_text(&result[1]), "code");
     }
 }

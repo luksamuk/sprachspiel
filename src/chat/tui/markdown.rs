@@ -800,6 +800,16 @@ fn table_style_border(theme: MarkdownTheme) -> Style {
     }
 }
 
+/// Style for Mermaid diagram rendering (both text labels and border lines).
+///
+/// Uses the default terminal foreground color (no explicit fg) so
+/// the entire diagram — labels and box-drawing structure — blends
+/// with normal chat content. No "bluish" tint from table cell colors
+/// (Cyan/Blue) and no dim/DarkGray for borders.
+fn mermaid_style(_theme: MarkdownTheme) -> Style {
+    Style::default()
+}
+
 // ── Table border construction ────────────────────────────────────────
 
 /// Build a horizontal border line for a table.
@@ -1315,8 +1325,7 @@ fn content_contains_table(content: &str) -> bool {
 #[cfg(feature = "mermaid")]
 fn render_mermaid_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> Vec<Line<'static>> {
     let effective_width = max_width.clamp(40, 200);
-    let border_style = table_style_border(theme);
-    let text_style = table_style_cell(theme);
+    let style = mermaid_style(theme);
     let trimmed = source.trim();
 
     // mermaid-text can panic on non-ASCII characters in labels. call_mermaid_safely
@@ -1339,40 +1348,21 @@ fn render_mermaid_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> V
 
     rendered
         .lines()
-        .map(|line| {
-            if looks_like_diagram_line(line) {
-                Line::from(Span::styled(line.to_string(), border_style))
-            } else {
-                Line::from(Span::styled(line.to_string(), text_style))
-            }
-        })
+        .map(|line| Line::from(Span::styled(line.to_string(), style)))
         .collect()
 }
 
 /// Fallback for Mermaid rendering failures: emit as a styled code block.
 #[cfg(feature = "mermaid")]
 fn fallback_mermaid_code_block(source: &str, theme: MarkdownTheme) -> Vec<Line<'static>> {
-    let code_style = table_style_cell(theme);
+    let style = mermaid_style(theme);
     let mut lines = Vec::new();
-    lines.push(Line::from(Span::styled(
-        "```mermaid".to_string(),
-        code_style,
-    )));
+    lines.push(Line::from(Span::styled("```mermaid".to_string(), style)));
     for line in source.lines() {
-        lines.push(Line::from(Span::styled(line.to_string(), code_style)));
+        lines.push(Line::from(Span::styled(line.to_string(), style)));
     }
-    lines.push(Line::from(Span::styled("```".to_string(), code_style)));
+    lines.push(Line::from(Span::styled("```".to_string(), style)));
     lines
-}
-
-/// Check if a line contains box-drawing characters (diagram line vs text label).
-#[cfg(feature = "mermaid")]
-fn looks_like_diagram_line(line: &str) -> bool {
-    const BOX_CHARS: &[char] = &[
-        '─', '│', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼', '╭', '╮', '╰', '╯', '►', '◂', '▾',
-        '▴', '▸', '◀', '▶', '▲', '▼', '━', '┃', '┏', '┓', '┗', '┛', '┣', '┫', '┳', '┻', '╋',
-    ];
-    line.chars().any(|c| BOX_CHARS.contains(&c))
 }
 
 /// Replace markdown table blocks in content with a placeholder string.

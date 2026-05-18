@@ -20,8 +20,10 @@
 //! The chat area supports both auto-scroll (default) and manual scroll:
 //! - **Auto-scroll**: `ScrollState::auto_scroll` is true, the viewport shows
 //!   the bottom of content (newest messages). The scroll offset is computed
-//!   from `count_wrapped_lines()` which accounts for word-wrapping, so the
-//!   newest content is always visible regardless of terminal width.
+//!   from `count_ratatui_wrapped_lines()` which uses grapheme-level width
+//!   (matching ratatui's `WordWrapper`), so the newest content is always
+//!   visible regardless of terminal width — even with emoji ZWJ sequences,
+//!   flag emojis, and CJK characters.
 //! - **Manual scroll**: When the user presses PageUp/PageDown/Home/End,
 //!   `auto_scroll` is disabled and `manual_offset` controls how far above
 //!   the bottom the viewport is positioned, using Paragraph::scroll().
@@ -31,10 +33,12 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::super::markdown::{MarkdownTheme, render_markdown, render_markdown_streaming};
 use super::super::styles;
-use super::super::wrap::{wrap_line, wrap_styled_line};
+use super::super::wrap::wrap_styled_line;
 use super::chat_selection::{ChatSelection, selection_style};
 use crate::chat::app::ScrollState;
 
@@ -183,21 +187,121 @@ fn content_has_table(content: &str) -> bool {
     })
 }
 
-/// Count total visual lines after applying word-wrap to a slice of line texts.
+/// Count total visual lines after word-wrap, matching ratatui's `WordWrapper`.
 ///
-/// Each string is run through `wrap_line()` to determine how many screen
-/// rows it will occupy at the given width. This accounts for both
-/// space-based wrapping and hard-breaks on long words.
-fn count_wrapped_lines(texts: &[&str], width: usize) -> usize {
-    if width == 0 {
-        return texts.len();
+/// This replicates the exact wrapping algorithm used by `Paragraph::wrap()`
+/// internally (ratatui 0.29 `WordWrapper` with `trim: false`), so the scroll
+/// offset always matches the actual rendered layout.
+///
+/// Key difference from the old `count_wrapped_lines()`: this function uses
+/// grapheme-level width via `UnicodeWidthStr::width()` (same as ratatui),
+/// not char-level width via `UnicodeWidthChar::width()`. This correctly
+/// handles emoji ZWJ sequences (🇧🇷 width 2, not 0), flag emojis, and
+/// combining characters.
+///
+/// Returns at least `lines.len()` (every input Line produces at least one
+/// visual line, even if empty).
+fn count_ratatui_wrapped_lines(lines: &[Line<'_>], max_width: u16) -> usize {
+    if max_width < 1 {
+        return lines.len();
     }
+    let max_width = max_width as usize;
     let mut total = 0usize;
-    for text in texts {
-        let wrapped = wrap_line(text, width);
-        total += wrapped.len().max(1);
+
+    for line in lines {
+        let graphemes: Vec<&str> = line
+            .spans
+            .iter()
+            .flat_map(|span| span.content.as_ref().graphemes(true))
+            .collect();
+        total += count_word_wrapped_graphemes(&graphemes, max_width, false);
     }
+
     total
+}
+
+/// Word-wrap a sequence of grapheme strings and return the number of visual
+/// lines produced. Mirrors ratatui 0.29 `WordWrapper::process_input()`.
+///
+/// With `trim = false`, leading/trailing whitespace is preserved on each
+/// wrapped line (matching `Wrap { trim: false }`).
+fn count_word_wrapped_graphemes(graphemes: &[&str], max_width: usize, trim: bool) -> usize {
+    if max_width == 0 {
+        return 1;
+    }
+
+    let mut line_width: usize = 0;
+    let mut word_width: usize = 0;
+    let mut whitespace_width: usize = 0;
+    let mut non_whitespace_previous = false;
+    let mut count = 0;
+
+    for grapheme in graphemes {
+        let is_whitespace = grapheme.chars().all(|c| c.is_whitespace());
+        let symbol_width = grapheme.width();
+
+        // Ignore graphemes wider than the line limit (ratatui drops them)
+        if symbol_width > max_width {
+            continue;
+        }
+
+        let word_found = non_whitespace_previous && is_whitespace;
+        let trimmed_overflow = line_width == 0 && trim && word_width + symbol_width > max_width;
+        let whitespace_overflow =
+            line_width == 0 && trim && whitespace_width + symbol_width > max_width;
+        let untrimmed_overflow =
+            line_width == 0 && !trim && word_width + whitespace_width + symbol_width > max_width;
+
+        if word_found || trimmed_overflow || whitespace_overflow || untrimmed_overflow {
+            // Append finished word to current line
+            if line_width > 0 || !trim {
+                line_width += whitespace_width;
+            }
+            line_width += word_width;
+            word_width = 0;
+            whitespace_width = 0;
+        }
+
+        let line_full = line_width >= max_width;
+        let pending_word_overflow =
+            symbol_width > 0 && line_width + whitespace_width + word_width >= max_width;
+
+        if line_full || pending_word_overflow {
+            // Finish current wrapped line
+            count += 1;
+            line_width = 0;
+
+            // With trim: drop whitespace up to end of line (ratatui pops from
+            // front of pending_whitespace; we reset entirely).
+            whitespace_width = 0;
+
+            // Don't count first whitespace toward next word
+            if is_whitespace && whitespace_width == 0 {
+                non_whitespace_previous = false;
+                continue;
+            }
+        }
+
+        if is_whitespace {
+            whitespace_width += symbol_width;
+        } else {
+            word_width += symbol_width;
+        }
+
+        non_whitespace_previous = !is_whitespace;
+    }
+
+    // Remaining content
+    let has_pending = word_width > 0 || whitespace_width > 0 || line_width > 0;
+    // Push remaining text as final line
+    if line_width > 0 || word_width > 0 || (!trim && whitespace_width > 0) {
+        count += 1;
+    } else if !has_pending && count == 0 {
+        // Empty line
+        count = 1;
+    }
+
+    count.max(1)
 }
 
 /// Metadata returned by `render()` for mouse/selection integration.
@@ -434,8 +538,10 @@ fn apply_selection_highlight(lines: &mut Vec<Line>, selection: &ChatSelection) {
 ///
 /// The `ScrollState` determines the viewport position:
 /// - Auto-scroll: shows the newest messages at the bottom. The scroll
-///   offset is computed from the wrapped line count (via `count_wrapped_lines()`)
-///   which accounts for word-wrapping at the terminal width.
+///   offset is computed from the wrapped line count (via
+///   `count_ratatui_wrapped_lines()`) which accounts for word-wrapping
+///   at the terminal width, using the same grapheme-level width
+///   measurement as ratatui's `Paragraph::wrap()`.
 /// - Manual scroll: uses `Paragraph::scroll()` with offset from top
 ///
 /// # Selection
@@ -447,8 +553,9 @@ fn apply_selection_highlight(lines: &mut Vec<Line>, selection: &ChatSelection) {
 ///
 /// **Why compute wrapped lines manually?** `Paragraph::wrap()` expands each
 /// source line into potentially multiple screen rows. We replicate the same
-/// wrap logic in `count_wrapped_lines()` so the scroll offset matches the
-/// actual rendered layout.
+/// wrap logic in `count_ratatui_wrapped_lines()` using grapheme-level width
+/// (`UnicodeWidthStr::width()`) so the scroll offset matches the actual
+/// rendered layout — even for emoji ZWJ sequences, flag emojis, and CJK.
 pub fn render(
     f: &mut Frame,
     area: Rect,
@@ -473,14 +580,12 @@ pub fn render(
         })
         .collect();
 
-    // Apply selection highlight (modifies span styles)
-    apply_selection_highlight(&mut lines, selection);
-
     // Calculate scroll offset from the top of content.
-    let wrapped_total = count_wrapped_lines(
-        &visual_lines.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-        area.width as usize,
-    );
+    // Use grapheme-level wrapping (matching ratatui's WordWrapper) so the
+    // scroll offset is accurate for emoji ZWJ sequences, flag emojis, and
+    // CJK characters. The old char-level `count_wrapped_lines()` undercounted
+    // visual lines for these cases, causing bottom content to disappear.
+    let wrapped_total = count_ratatui_wrapped_lines(&lines, area.width);
     let visible_height = area.height as usize;
     // Clamp manual_offset to valid range [0, max_scroll] before computing
     // effective offset. This prevents "overscroll" accumulation from rapid
@@ -489,6 +594,11 @@ pub fn render(
     // sluggish because each tick only subtracts a small number.
     scroll_state.clamp_offset(wrapped_total, visible_height);
     let scroll_from_top = scroll_state.effective_scroll_from_top(wrapped_total, visible_height);
+
+    // Apply selection highlight AFTER computing scroll offset (modifies
+    // span styles but not content — visual_lines and wrapped_total are
+    // unaffected by styling changes).
+    apply_selection_highlight(&mut lines, selection);
 
     let paragraph = Paragraph::new(lines)
         .block(Block::default().borders(Borders::NONE))
@@ -570,5 +680,91 @@ mod tests {
             ChatMessage::banner("banner".into()).msg_type,
             MessageType::Banner
         );
+    }
+
+    // --- count_ratatui_wrapped_lines tests ---
+
+    #[test]
+    fn test_count_wrapped_short_line() {
+        // Line fits in width — exact same as source lines
+        let lines = vec![Line::from("hello")];
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 80), 1);
+    }
+
+    #[test]
+    fn test_count_wrapped_long_line() {
+        // Line wraps at word boundary
+        let lines = vec![Line::from("hello world foo")];
+        // width=11: "hello world" (11) fits, then "foo" (3)
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 11), 2);
+    }
+
+    #[test]
+    fn test_count_wrapped_multiple_input_lines() {
+        let lines = vec![Line::from("hello"), Line::from("world")];
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 80), 2);
+    }
+
+    #[test]
+    fn test_count_wrapped_empty_line() {
+        // Empty line still counts as 1 visual line
+        let lines = vec![Line::from("")];
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 80), 1);
+    }
+
+    #[test]
+    fn test_count_wrapped_cjk() {
+        // CJK characters are 2 columns wide
+        // "日本語 test" = 6 + 1 + 4 = 11 cols; width=8 → wraps
+        let lines = vec![Line::from("日本語 test")];
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 8), 2);
+    }
+
+    #[test]
+    fn test_count_wrapped_emoji_emoji_presentation() {
+        // ✅ is width 2 (emoji presentation)
+        // "✅ done" = 2 + 1 + 4 = 7 cols; width=5 → wraps to 2 lines
+        let lines = vec![Line::from("✅ done")];
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 5), 2);
+    }
+
+    #[test]
+    fn test_count_wrapped_flag_emoji() {
+        // 🇧🇷 is width 2 (flag emoji = 2 regional indicators).
+        // This is the KEY test — the old char-level count_wrapped_lines
+        // treated each regional indicator as width 0, giving total width 1
+        // (just the space) instead of 7 (2 + 1 + 4). That caused the
+        // scroll offset to undercount and bottom lines to disappear.
+        let lines = vec![Line::from("🇧🇷 flag")];
+        // "🇧🇷 flag" = 2 + 1 + 4 = 7 cols; width=10 → fits (1 line)
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 10), 1);
+        // width=4 → "🇧🇷" (2) fits, " flag" (5) → wraps (2 lines)
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 4), 2);
+    }
+
+    #[test]
+    fn test_count_wrapped_zwj_emoji() {
+        // 👨‍💻 is width 2 (ZWJ sequence)
+        let lines = vec![Line::from("👨‍💻 code")];
+        // "👨‍💻 code" = 2 + 1 + 4 = 7 cols; width=5 → wraps
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 5), 2);
+    }
+
+    #[test]
+    fn test_count_wrapped_zero_width() {
+        // Width 0 — should return number of input lines
+        let lines = vec![Line::from("hello")];
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 0), 1);
+    }
+
+    #[test]
+    fn test_count_wrapped_multi_span_line() {
+        // Line with multiple spans — graphemes are flattened
+        let lines = vec![Line::from(vec![
+            Span::raw("hello "),
+            Span::raw("world foo"),
+        ])];
+        // "hello world foo" = 15 cols; width=11 → "hello world" + "foo" (2 lines)
+        assert_eq!(count_ratatui_wrapped_lines(&lines, 11), 2);
     }
 }

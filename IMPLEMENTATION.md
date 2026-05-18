@@ -4633,6 +4633,36 @@ Changes:
 | `da7ca2e` | Word-wrap input, dynamic height, Alt+Enter newline fallback | ✅ COMPLETED |
 | *(uncommitted)* | Command alias/shortcut removal, autocomplete descriptions, subcommand letter alias removal | ✅ COMPLETED |
 
+**Known Bugs (on `feat/tui-streaming-refinement` branch):**
+
+| Bug | Severity | Status |
+|-----|----------|--------|
+| Scroll viewport discrepancy — lines disappear at TUI bottom | Medium | 📋 Planned (scroll-fix PR) |
+| mermaid-text `sequenceDiagram` byte-slicing panic on emoji | Low | 🛡️ Mitigated (`call_mermaid_safely`) |
+| mermaid-text column misalignment with wide Unicode | Low | 🛡️ Mitigated (`MERMAID_INSTRUCTION` emoji avoidance) |
+
+**Bug 1: Scroll Viewport Discrepancy — Lines Disappear at TUI Bottom**
+
+`count_wrapped_lines()` (our `wrap_line()` using `chars().map(|c| c.width())`) and `ratatui::Paragraph::wrap()` (using `StyledGrapheme.symbol.width()` = `UnicodeWidthStr::width()`) diverge on line count for wide/ambiguous-width characters. When our wrap-undercount produces fewer visual lines than ratatui's actual wrap, the scroll offset (`effective_scroll_from_top`) is too small, and the bottom lines of the chat are pushed below the viewport.
+
+Root causes:
+1. **Emoji with ZWJ sequences** (🇧🇷, 👨‍💻): `UnicodeWidthChar::width()` (char-level) treats regional indicators as width 0 each, giving total 0. `UnicodeWidthStr::width()` (grapheme-level) correctly gives width 2. Result: our wrap undercounts, scroll offset too small, bottom lines vanish.
+2. **Flag emojis** (🇧🇷 = 2 regional indicators): Same as above — each `🇧` and `🇷` is width 0 individually, but the grapheme pair is width 2.
+3. **Trim difference**: Our `wrap_line()` collapses whitespace via `split_whitespace()`. Ratatui's `WordWrapper` with `trim: false` preserves leading/trailing spaces. Result: our wrap produces fewer lines when content has multiple consecutive spaces.
+4. **Oversized grapheme handling**: Ratatui's `WordWrapper` **drops** graphemes wider than `max_line_width`. Our `hard_break_word()` **preserves** them. For emoji (width=2) in narrow terminals (<3 cols), ratatui drops them, we keep them.
+
+Proposed fix: Replace `count_wrapped_lines()` with `count_ratatui_wrapped_lines()` that uses ratatui's own `WordWrapper` to count wrapped lines exactly as `Paragraph::wrap()` would render them. Also update `wrap_line()` and `measure_spans_width()` to use `UnicodeWidthStr::width()` for string-level width instead of `chars().map(|c| c.width()).sum()`.
+
+**Bug 2: mermaid-text `sequenceDiagram` Byte-Slicing Panic on Emoji**
+
+The `mermaid-text` crate v0.56 panics when rendering `sequenceDiagram` labels containing multi-byte emoji like ✅. The error: `end byte index 10 is not a char boundary; it is inside '✅' (bytes 8..11) of 'G-->>R: ✅ Accepted'`. The gantt renderer was fixed in v0.56, but `sequenceDiagram` still uses byte-slicing instead of char-slicing for arrow label parsing.
+
+Mitigation: `call_mermaid_safely()` in `src/markdown/mermaid.rs` catches the panic via `catch_unwind` and suppresses the Rust panic hook (which would call `restore_terminal_on_panic()` and destroy the TUI alternate screen). The `MERMAID_INSTRUCTION` prompt tells the LLM to avoid emojis and wide Unicode in Mermaid labels. Affects only rendering — fallback to raw code block is graceful. Upstream bug report needed.
+
+**Bug 3: mermaid-text Column Misalignment with Wide Unicode**
+
+`mermaid-text` uses `chars().count()` instead of `UnicodeWidthChar::width()` in `draw_tag()` (line 1276) and `box_table::put_str()` advances by 1 per char. This causes column misalignment in rendered diagrams when labels contain emojis or CJK characters. Not fixable on our side — requires upstream fix. Mitigated by `MERMAID_INSTRUCTION` telling the LLM to avoid emojis and wide Unicode in Mermaid labels.
+
 ---
 
 #### Command Alias/Shortcut Removal + Autocomplete Descriptions + Word-Wrap Input
