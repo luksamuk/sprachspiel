@@ -141,7 +141,7 @@ pub async fn handle_command(
         ChatCommand::Retry => handle_retry(state, view).await,
         ChatCommand::Undo => handle_undo(state),
         ChatCommand::Search { query, limit } => handle_search(state, query, limit).await,
-        ChatCommand::Reindex => handle_reindex(state).await,
+        ChatCommand::Reindex { confirmed } => handle_reindex_cmd(state, confirmed).await,
         ChatCommand::Retrieval => {
             state.session.retrieval_enabled = !state.session.retrieval_enabled;
             handle_retrieval_toggled(state, state.session.retrieval_enabled)
@@ -750,10 +750,20 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
     }
 }
 
-/// Handle reindex command (async)
+/// Handle `/reindex` command — requires `--yes` confirmation flag.
 ///
-/// Regenerates embeddings for ALL content in the database.
-pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
+/// Without `--yes`, shows a warning explaining that `/reindex` regenerates
+/// ALL embeddings from scratch. With `--yes`, resets all `has_embedding`
+/// flags, deletes all vec0 embeddings, and regenerates them.
+pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<CommandOutput> {
+    if !confirmed {
+        return vec![
+            CommandOutput::warning("/reindex will regenerate ALL embeddings from scratch."),
+            CommandOutput::warning("   This may take time depending on the amount of content."),
+            CommandOutput::warning("   Use /reindex --yes to confirm."),
+        ];
+    }
+
     let db = match &state.db {
         Some(d) => Arc::clone(d),
         None => {
@@ -762,6 +772,22 @@ pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
             )];
         }
     };
+
+    // Reset all embedding flags and delete vec0 embeddings so that
+    // regenerate_all_embeddings() will re-process every item from scratch.
+    let reset_stats = match db.reset_all_embedding_flags() {
+        Ok(stats) => stats,
+        Err(e) => {
+            return vec![CommandOutput::error(format!(
+                "Failed to reset embedding flags: {e}"
+            ))];
+        }
+    };
+
+    // If there's nothing to re-index, report immediately (no progress needed)
+    if reset_stats.items == 0 && reset_stats.chunks == 0 && reset_stats.facts == 0 {
+        return vec![CommandOutput::info("No content to re-index.")];
+    }
 
     let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
     let embedding_client = Arc::new(embedding_client);
@@ -774,7 +800,7 @@ pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
 
     vec![CommandOutput::ReindexResult(ReindexData {
         regenerated: stats.total_processed(),
-        total: stats.items_processed,
+        total: stats.items_processed + stats.chunks_processed,
         success: true,
         error: None,
     })]

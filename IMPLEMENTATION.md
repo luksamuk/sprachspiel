@@ -4350,6 +4350,8 @@ image = "0.25"              # Removed — only needed for ratatui-image
 | 3.19 | StaticSubcommands ArgCompletion: `/think on|off` and `/tools-output compact|full|hidden` show subcommand completions. `ArgCompletion::StaticSubcommands` variant, `try_static_subcommand_fragment()`, `get_static_subcommands()`, `complete_static_subcommand()` in ChatCompleter. Embedding progress channel wired from RatatuiView through session. | 0.25d | ✅ COMPLETED |
 | 3.20 | Busy-wait fix in TUI event loop: `poll(0ms)` → `poll(SPINNER_TICK_MS)` reduces idle CPU from ~4300 iters/sec (5% CPU) to ~8 iters/sec (near-zero). Revisado para exceção condicional: `poll(0ms)` durante streaming (evita delay em tokens), `poll(120ms)` durante idle (economiza CPU). | 0.1d | ✅ COMPLETED |
 | 3.21 | Flaky spinner tests fix: `serial_test` + `#[serial]` nos 4 testes de `spinner.rs`; retry assertion com `yield_now` (1000x) tolera scheduling delays. Resolve condição de corrida em `ACTIVE_SPINNER` global (`RwLock`) quando testes correm em paralelo. Zero falhas em 20/20 runs stress. | 0.1d | ✅ COMPLETED |
+| 3.22 | Per-message embedding progress: `tokio::spawn` in `session.rs` sends `(0,1)` before spawn and `(1,1)` on completion via `EmbeddingProgressTx`. Startup regeneration sends `(0,total)` initially then `(current,total)` per item. `poll_embedding_progress()` drains channel, keeps latest. 4 unit tests in `app.rs`. | 0.5d | ✅ COMPLETED |
+| 3.23 | `/reindex --yes` confirmation gate + embedding reset bug: `ChatCommand::Reindex { confirmed: bool }` requires `--yes` to prevent accidental regeneration. `Database::reset_all_embedding_flags()` deletes vec0 embeddings (`content_embeddings`, `chunk_embeddings_v2`, `fact_embeddings`) and resets `has_embedding=0` so `regenerate_all_embeddings()` re-processes everything. Previously `/reindex` returned "0 of 0" because `get_content_items_for_reindex()` only queries `WHERE has_embedding=0` (already-indexed items were skipped). Also fixed `ReindexData.total` to show `items_processed + chunks_processed` instead of just `items_processed`. `ResetStats` struct reports items/chunks/facts reset counts. | 0.5d | ✅ COMPLETED |
 | **Total** | | **~24.45d** | |
 
 **Deferred items (usability feature creep):**
@@ -4362,7 +4364,7 @@ not abandoned.
 | Item | Description | Rationale |
 |------|-------------|-----------|
 | Shift+Enter multiline rendering | Shift+Enter inserts newline (works), but terminal compatibility varies. Some terminals don't distinguish Shift+Enter from Enter. May need Ctrl+Enter for newline or Enter=submit/Ctrl+Enter=newline. Needs careful UX planning. | Terminal compatibility concern; may need alternative keybinding |
-| Background embedding progress per-message | Channel infrastructure exists (`mpsc::UnboundedSender` via `App::with_embedding_channel()`), but `session.rs` `tokio::spawn` doesn't report progress per chunk yet. Individual message embedding is fast, so low priority. | Infrastructure wired; per-message reporting can be added incrementally |
+| Background embedding progress per-message | ~~Channel infrastructure exists~~ → **Implemented in 3.22**: `tokio::spawn` sends `(0,1)` before and `(1,1)` after. Per-message progress visible in modeline ⚙ during async embedding. Startup and `/reindex` progress also wired (3.23). | ~~Low priority~~ → ✅ COMPLETED |
 
 
 **Key architectural change: async event loop**

@@ -394,12 +394,12 @@ pub struct SearchData {
     pub formatted: String,
 }
 
-/// Data for reindex result (`/reindex`).
+/// Data for reindex result (`/reindex --yes`).
 #[derive(Debug, Clone)]
 pub struct ReindexData {
-    /// Number of embeddings regenerated
+    /// Number of embeddings successfully regenerated
     pub regenerated: usize,
-    /// Total items processed
+    /// Total items + chunks to re-index (includes both content_items and content_chunks)
     pub total: usize,
     /// Whether reindexing succeeded
     pub success: bool,

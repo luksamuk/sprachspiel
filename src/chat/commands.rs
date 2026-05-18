@@ -85,8 +85,8 @@ pub enum ChatCommand {
     Undo,
     /// Search conversation history
     Search { query: String, limit: usize },
-    /// Reindex embeddings for all content
-    Reindex,
+    /// Reindex embeddings for all content (requires --yes to confirm)
+    Reindex { confirmed: bool },
     /// Toggle retrieval mode
     Retrieval,
     /// Prune old facts using decay cycle
@@ -1045,7 +1045,13 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
             let limit: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10);
             ChatCommand::Search { query, limit }
         }
-        "reindex" => ChatCommand::Reindex,
+        "reindex" => {
+            let confirmed = args.trim() == "--yes";
+            if !confirmed && !args.trim().is_empty() && args.trim() != "--yes" {
+                return Some(Err("Usage: /reindex [--yes]".to_string()));
+            }
+            ChatCommand::Reindex { confirmed }
+        }
         "retrieval" => ChatCommand::Retrieval,
         "fact" => {
             let subcmd_parts: Vec<&str> = args.splitn(2, ' ').collect();
@@ -1262,7 +1268,7 @@ pub fn format_help() -> String {
   /info            Show current session information
   /context         Show context metrics and token usage
   /search <query>  Search current conversation (keyword + semantic)
-  /reindex         Regenerate embeddings for all content
+  /reindex [--yes]  Regenerate embeddings for all content (requires --yes)
   /retrieval       Toggle semantic retrieval from conversation history
 
 Factual Memory:
@@ -2142,5 +2148,32 @@ mod tests {
                 correction_text: None,
             }))
         ));
+    }
+
+    // --- /reindex tests ---
+
+    #[test]
+    fn test_parse_reindex_no_args() {
+        let cmd = parse_command("/reindex").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Reindex { confirmed: false }));
+    }
+
+    #[test]
+    fn test_parse_reindex_with_yes() {
+        let cmd = parse_command("/reindex --yes").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Reindex { confirmed: true }));
+    }
+
+    #[test]
+    fn test_parse_reindex_invalid_flag() {
+        let result = parse_command("/reindex --no");
+        assert!(result.is_some());
+        assert!(result.unwrap().is_err());
+    }
+
+    #[test]
+    fn test_parse_reindex_trailing_space() {
+        let cmd = parse_command("/reindex ").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Reindex { confirmed: false }));
     }
 }

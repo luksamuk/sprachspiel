@@ -441,6 +441,68 @@ impl Database {
             rows.collect::<Result<Vec<_>, _>>()
         })
     }
+}
+
+/// Statistics returned by [`Database::reset_all_embedding_flags`].
+///
+/// Contains the number of rows affected in each table so the caller can
+/// report how many items will be re-indexed.
+#[derive(Debug, Clone, Copy)]
+pub struct ResetStats {
+    /// Number of content_items rows reset (`has_embedding` changed from 1 to 0).
+    pub items: usize,
+    /// Number of content_chunks rows reset.
+    pub chunks: usize,
+    /// Number of facts rows reset (active facts only, excludes invalidated).
+    pub facts: usize,
+}
+
+impl Database {
+    /// Reset all embedding flags and delete all vector embeddings.
+    ///
+    /// This is the core operation for `/reindex --yes` — it clears every
+    /// embedding from the vec0 tables (`content_embeddings`, `chunk_embeddings_v2`,
+    /// `fact_embeddings`) and resets `has_embedding = 0` across all content
+    /// tables so that [`regenerate_all_embeddings`] and the recovery pipelines
+    /// will re-process every item from scratch.
+    ///
+    /// # Execution order
+    ///
+    /// 1. `DELETE FROM content_embeddings` — remove item-level vec0 embeddings
+    /// 2. `DELETE FROM chunk_embeddings_v2` — remove chunk-level vec0 embeddings
+    /// 3. `DELETE FROM fact_embeddings` — remove fact-level vec0 embeddings
+    /// 4. `UPDATE content_items SET has_embedding = 0` — mark items for re-indexing
+    /// 5. `UPDATE content_chunks SET has_embedding = 0` — mark chunks for re-indexing
+    /// 6. `UPDATE facts SET has_embedding = 0 WHERE invalidated_at IS NULL` — mark active facts
+    ///
+    /// Deletes must happen before the flag updates so that concurrent readers
+    /// never see `has_embedding = 1` with missing vec0 rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the SQL statements fail (e.g., locked DB).
+    pub fn reset_all_embedding_flags(&self) -> Result<ResetStats> {
+        self.with_connection(|conn| {
+            // --- Delete all vec0 embeddings first (before resetting flags) ---
+            conn.execute("DELETE FROM content_embeddings", [])?;
+            conn.execute("DELETE FROM chunk_embeddings_v2", [])?;
+            conn.execute("DELETE FROM fact_embeddings", [])?;
+
+            // --- Reset has_embedding flags ---
+            let items: usize = conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
+            let chunks: usize = conn.execute("UPDATE content_chunks SET has_embedding = 0", [])?;
+            let facts: usize = conn.execute(
+                "UPDATE facts SET has_embedding = 0 WHERE invalidated_at IS NULL",
+                [],
+            )?;
+
+            Ok(ResetStats {
+                items,
+                chunks,
+                facts,
+            })
+        })
+    }
 
     /// Update content item embedding after generation
     ///
