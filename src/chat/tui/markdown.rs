@@ -17,7 +17,7 @@
 //! Three themes map from the existing `DisplaySettings.skin` config:
 //! - `dark`: Catppuccin Mocha (dark terminal backgrounds)
 //! - `light`: Catppuccin Latte (light terminal backgrounds)
-//! - `mono`: Monochrome with subtle Catppuccin tints (bold/italic preserved)
+//! - `mono`: Monochrome (no colors, bold/italic/REVERSED for code blocks)
 //!
 //! # API
 //!
@@ -47,8 +47,6 @@ use super::wrap::wrap_line;
 // Mocha (dark flavor) — used by DarkStyleSheet
 const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244); // #cdd6f4
 const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68); // #313244
-const MOCHA_SURFACE1: Color = Color::Rgb(69, 71, 90); // #45475a
-const MOCHA_SUBTEXT1: Color = Color::Rgb(186, 194, 222); // #bac2de
 
 // Latte (light flavor) — used by LightStyleSheet
 const LATTE_TEXT: Color = Color::Rgb(76, 79, 105); // #4c4f69
@@ -174,7 +172,7 @@ impl StyleSheet for LightStyleSheet {
     }
 }
 
-/// Monochrome theme stylesheet (subtle Catppuccin tints, primarily bold/italic)
+/// Monochrome theme stylesheet (no colors, only bold/italic/underline/dim)
 #[derive(Clone, Copy)]
 struct MonoStyleSheet;
 
@@ -186,13 +184,11 @@ impl StyleSheet for MonoStyleSheet {
         }
     }
 
-    // Catppuccin Mocha: Subtext1 on Surface1 with bold — works on
-    // color terminals with subtle tints; falls back to bold on mono
+    // Monochrome code: REVERSED (inverted fg/bg) for visual distinction
+    // without any color. Inline code and code blocks appear as inverted text
+    // without Catppuccin RGB colors.
     fn code(&self) -> Style {
-        Style::default()
-            .fg(MOCHA_SUBTEXT1)
-            .bg(MOCHA_SURFACE1)
-            .add_modifier(Modifier::BOLD)
+        Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)
     }
 
     fn link(&self) -> Style {
@@ -982,33 +978,45 @@ fn render_table_box(content: &str, max_width: usize, theme: MarkdownTheme) -> Ve
 /// Used for both streaming and completed content. Markdown rendering
 /// is called on every render frame during streaming (like Thinking blocks)
 /// and once for completed messages.
-/// Post-process rendered markdown to apply code block background colors
-/// and extend them to the right edge of the chat area.
+/// Post-process rendered markdown to apply code block background colors,
+/// adjust foreground colors for readability, and extend backgrounds to the
+/// right edge of the chat area.
 ///
 /// `tui-markdown` with the `highlight-code` feature uses syntect for syntax
 /// highlighting (theme: `base16-ocean.dark`), which sets foreground colors
 /// per token but never sets background colors. This function:
 ///
-/// 1. Applies the Catppuccin background color (`Line.style.bg`) to all lines
-///    inside fenced code blocks, including the opening and closing fence lines.
-/// 2. Adds trailing padding (styled spaces) to extend the background to the
-///    right edge of the chat area, so code blocks appear as solid colored
-///    rectangles rather than text with background only behind characters.
+/// 1. Applies theme-appropriate backgrounds to all lines inside fenced code
+///    blocks, including the opening and closing fence lines.
+///    - Dark: Catppuccin Mocha Surface0 background
+///    - Light: Catppuccin Latte Surface0 background
+///    - Mono: No background color — uses `Modifier::REVERSED` instead for
+///      true monochrome distinction (inverted fg/bg by the terminal)
+/// 2. For Light and Mono themes, overrides syntect foreground colors inside
+///    code blocks — `base16-ocean.dark` produces light colors designed for
+///    dark backgrounds that are unreadable on light surfaces. Light theme
+///    replaces all Span fg with `LATTE_TEXT`; Mono theme strips all colors
+///    (fg and bg on Spans), leaving only `Modifier`s.
+/// 3. Adds trailing padding (styled spaces) to extend the background to the
+///    right edge of the chat area (Dark/Light only), so code blocks appear as
+///    solid colored rectangles. Mono theme does not add padding since it uses
+///    `REVERSED` instead of background colors.
 ///
-/// The background is applied via `Line.style.bg`, which acts as a fallback
-/// for `Span`s that don't set their own background — syntect's token colors
-/// are preserved while our Catppuccin background fills any gaps. Trailing
-/// padding is stripped via `trim_end()` when building `visual_lines` for
-/// clipboard copy, so the pasted text stays clean.
+/// Clipboard copies are protected: `visual_lines` uses `trim_end()` to strip
+/// trailing padding whitespace while preserving code content.
 fn apply_code_block_background(
     lines: &mut [Line<'static>],
     theme: MarkdownTheme,
     max_width: usize,
 ) {
+    // Catppuccin background color for Dark and Light themes.
+    // Mono uses REVERSED modifier instead of background color.
     let bg_color = match theme {
         MarkdownTheme::Dark => MOCHA_SURFACE0,
         MarkdownTheme::Light => LATTE_SURFACE0,
-        MarkdownTheme::Mono => MOCHA_SURFACE1,
+        // Mono is handled with REVERSED modifier, bg_color is never used.
+        // A placeholder color is needed because the match must be exhaustive.
+        MarkdownTheme::Mono => Color::Reset,
     };
 
     let mut in_code_block = false;
@@ -1024,20 +1032,84 @@ fn apply_code_block_background(
         if is_fence && !in_code_block {
             // Opening fence — start of code block
             in_code_block = true;
-            line.style = line.style.patch(Style::default().bg(bg_color));
+            match theme {
+                MarkdownTheme::Dark | MarkdownTheme::Light => {
+                    line.style = line.style.patch(Style::default().bg(bg_color));
+                }
+                MarkdownTheme::Mono => {
+                    // Mono: use REVERSED for visual distinction, no bg color
+                    line.style = line
+                        .style
+                        .patch(Style::default().add_modifier(Modifier::REVERSED));
+                }
+            }
         } else if is_fence && in_code_block {
             // Closing fence — end of code block
-            line.style = line.style.patch(Style::default().bg(bg_color));
+            match theme {
+                MarkdownTheme::Dark | MarkdownTheme::Light => {
+                    line.style = line.style.patch(Style::default().bg(bg_color));
+                }
+                MarkdownTheme::Mono => {
+                    line.style = line
+                        .style
+                        .patch(Style::default().add_modifier(Modifier::REVERSED));
+                }
+            }
             in_code_block = false;
         } else if in_code_block {
             // Content line inside code block
-            line.style = line.style.patch(Style::default().bg(bg_color));
+            match theme {
+                MarkdownTheme::Dark | MarkdownTheme::Light => {
+                    line.style = line.style.patch(Style::default().bg(bg_color));
+                }
+                MarkdownTheme::Mono => {
+                    line.style = line
+                        .style
+                        .patch(Style::default().add_modifier(Modifier::REVERSED));
+                }
+            }
+        }
+
+        // For Light and Mono themes, override syntect foreground colors
+        // inside code blocks (including fences). base16-ocean.dark produces
+        // light colors meant for dark backgrounds that are unreadable on
+        // Latte Surface0 or invisible with REVERSED modifier.
+        if in_code_block || is_fence {
+            match theme {
+                MarkdownTheme::Light => {
+                    // Replace all Span fg with LATTE_TEXT for readability.
+                    // The syntect token colors are designed for dark bg and
+                    // have poor contrast on Latte Surface0 (#ccd0da).
+                    for span in line.spans.iter_mut() {
+                        if span.style.fg.is_some() {
+                            span.style.fg = Some(LATTE_TEXT);
+                        }
+                    }
+                }
+                MarkdownTheme::Mono => {
+                    // Strip all colors from Spans, keeping only modifiers
+                    // (bold, etc.). Mono theme is truly monochrome — no RGB
+                    // colors anywhere, including code blocks. REVERSED
+                    // already provides visual distinction via inversion.
+                    for span in line.spans.iter_mut() {
+                        span.style.fg = None;
+                        span.style.bg = None;
+                    }
+                    // Also strip colors from Line.style for mono consistency
+                    line.style.fg = None;
+                    line.style.bg = None;
+                }
+                MarkdownTheme::Dark => {
+                    // Dark theme: keep syntect colors as-is
+                }
+            }
         }
 
         // Extend background to the right edge with trailing padding.
-        // This makes code blocks appear as solid colored rectangles rather
-        // than text with background only behind characters.
-        if in_code_block || is_fence {
+        // For Dark/Light themes, this makes code blocks appear as solid
+        // colored rectangles. For Mono, REVERSED already inverts the full
+        // line, so padding is not needed.
+        if (in_code_block || is_fence) && !matches!(theme, MarkdownTheme::Mono) {
             let current_width: usize = line
                 .spans
                 .iter()
@@ -1336,36 +1408,28 @@ mod tests {
     }
 
     #[test]
-    fn test_mono_code_style_has_catppuccin_tint_and_bold() {
+    fn test_mono_code_style_is_reversed_bold() {
+        // Mono theme uses REVERSED (inverted fg/bg by terminal) instead of
+        // background colors — truly monochrome with no RGB colors.
         let style = MonoStyleSheet.code();
-        assert_eq!(
-            style.fg,
-            Some(MOCHA_SUBTEXT1),
-            "Mono code fg should be Catppuccin Mocha Subtext1"
-        );
-        assert_eq!(
-            style.bg,
-            Some(MOCHA_SURFACE1),
-            "Mono code bg should be Catppuccin Mocha Surface1"
-        );
+        assert_eq!(style.fg, None, "Mono code fg should be None (no color)");
+        assert_eq!(style.bg, None, "Mono code bg should be None (no color)");
         assert!(
             style.add_modifier.contains(Modifier::BOLD),
             "Mono code should have BOLD modifier"
+        );
+        assert!(
+            style.add_modifier.contains(Modifier::REVERSED),
+            "Mono code should have REVERSED modifier"
         );
     }
 
     #[test]
     fn test_render_code_block_has_background() {
-        // Verify that rendered code blocks have non-default background
-        // in all themes (Catppuccin palette colors are RGB, not default).
-        // tui-markdown with highlight-code produces syntax-highlighted spans
-        // but never sets bg; our post-processing applies Catppuccin bg.
+        // Verify that rendered code blocks have visual distinction
+        // in all themes. Dark/Light use background colors; Mono uses REVERSED.
         let code_md = "```rust\nfn main() {}\n```";
-        for theme in [
-            MarkdownTheme::Dark,
-            MarkdownTheme::Light,
-            MarkdownTheme::Mono,
-        ] {
+        for theme in [MarkdownTheme::Dark, MarkdownTheme::Light] {
             let text = render_markdown(code_md, theme, 80);
             let has_bg = text.lines.iter().any(|line| {
                 if line.style.bg.is_some() {
@@ -1379,18 +1443,26 @@ mod tests {
                 theme
             );
         }
+        // Mono: check for REVERSED modifier instead of background color
+        let mono_text = render_markdown(code_md, MarkdownTheme::Mono, 80);
+        let has_reversed = mono_text
+            .lines
+            .iter()
+            .any(|line| line.style.add_modifier.contains(Modifier::REVERSED));
+        assert!(
+            has_reversed,
+            "Expected code block lines with REVERSED modifier for Mono theme, but none found"
+        );
     }
 
     #[test]
     fn test_code_block_background_matches_theme() {
-        // Verify the specific Catppuccin background color is applied per theme.
-        // The opening fence line ("```rust") should have Line.style.bg set to
-        // the theme's code block background.
+        // Verify the specific Catppuccin background color is applied per theme
+        // for Dark and Light. Mono uses REVERSED modifier instead of bg color.
         let code_md = "```rust\nfn main() {}\n```";
         let expected_bg = [
             (MarkdownTheme::Dark, MOCHA_SURFACE0),
             (MarkdownTheme::Light, LATTE_SURFACE0),
-            (MarkdownTheme::Mono, MOCHA_SURFACE1),
         ];
         for (theme, bg) in expected_bg {
             let text = render_markdown(code_md, theme, 80);
@@ -1416,15 +1488,40 @@ mod tests {
     }
 
     #[test]
+    fn test_code_block_mono_uses_reversed() {
+        // Mono theme uses REVERSED modifier instead of background color
+        // for code blocks — truly monochrome with no RGB colors.
+        let code_md = "```rust\nfn main() {}\n```";
+        let text = render_markdown(code_md, MarkdownTheme::Mono, 80);
+        let first_fence = text
+            .lines
+            .iter()
+            .find(|line| {
+                line.spans
+                    .first()
+                    .map(|span| span.content.starts_with("```"))
+                    .unwrap_or(false)
+            })
+            .expect("should find opening fence line");
+        assert!(
+            first_fence.style.add_modifier.contains(Modifier::REVERSED),
+            "Mono code block should have REVERSED modifier, got {:?}",
+            first_fence.style
+        );
+        assert_eq!(
+            first_fence.style.bg, None,
+            "Mono code block should have no bg color, got {:?}",
+            first_fence.style.bg
+        );
+    }
+
+    #[test]
     fn test_inline_code_has_catppuccin_style() {
         // Inline code uses StyleSheet::code() directly (not highlight-code).
-        // Verify that inline code has both fg and bg set.
+        // Dark/Light: verify both fg and bg are set (Catppuccin colors).
+        // Mono: verify REVERSED and BOLD modifiers, no colors.
         let inline_md = "Use `println!` to print";
-        for theme in [
-            MarkdownTheme::Dark,
-            MarkdownTheme::Light,
-            MarkdownTheme::Mono,
-        ] {
+        for theme in [MarkdownTheme::Dark, MarkdownTheme::Light] {
             let text = render_markdown(inline_md, theme, 80);
             let has_code_style = text.lines.iter().any(|line| {
                 line.spans.iter().any(|span| {
@@ -1439,19 +1536,65 @@ mod tests {
                 theme
             );
         }
+        // Mono: verify REVERSED and BOLD modifiers, no RGB colors
+        let mono_text = render_markdown(inline_md, MarkdownTheme::Mono, 80);
+        let has_mono_style = mono_text.lines.iter().any(|line| {
+            line.spans.iter().any(|span| {
+                span.content.contains("println!")
+                    && span.style.add_modifier.contains(Modifier::REVERSED)
+                    && span.style.add_modifier.contains(Modifier::BOLD)
+                    && span.style.fg.is_none()
+                    && span.style.bg.is_none()
+            })
+        });
+        assert!(
+            has_mono_style,
+            "Mono inline code should have REVERSED+BOLD modifiers and no colors"
+        );
+    }
+
+    #[test]
+    fn test_mono_code_block_no_rgb_colors() {
+        // Verify that Mono theme code blocks contain no RGB colors
+        // whatsoever — truly monochrome with only REVERSED modifier.
+        let code_md = "```rust\nfn main() {}\n```";
+        let text = render_markdown(code_md, MarkdownTheme::Mono, 80);
+        for line in &text.lines {
+            // Line.style should have no fg/bg colors
+            assert_eq!(
+                line.style.fg, None,
+                "Mono Line.style should have no fg color, got {:?}",
+                line.style.fg
+            );
+            assert_eq!(
+                line.style.bg, None,
+                "Mono Line.style should have no bg color, got {:?}",
+                line.style.bg
+            );
+            // Span styles should have no fg/bg colors
+            for span in &line.spans {
+                assert_eq!(
+                    span.style.fg, None,
+                    "Mono Span should have no fg color, got {:?} in content {:?}",
+                    span.style.fg, span.content
+                );
+                assert_eq!(
+                    span.style.bg, None,
+                    "Mono Span should have no bg color, got {:?} in content {:?}",
+                    span.style.bg, span.content
+                );
+            }
+        }
     }
 
     #[test]
     fn test_code_block_right_edge_padding() {
-        // Verify that code block lines have trailing padding extending
-        // the background to the right edge of the chat area.
+        // Verify that Dark/Light code block lines have trailing padding extending
+        // the background to the right edge. Mono uses REVERSED instead of
+        // background colors and does not add trailing padding.
         let code_md = "```rust\nfn main() {}\n```";
         let max_width = 80;
-        for theme in [
-            MarkdownTheme::Dark,
-            MarkdownTheme::Light,
-            MarkdownTheme::Mono,
-        ] {
+        for theme in [MarkdownTheme::Dark, MarkdownTheme::Light] {
             let text = render_markdown(code_md, theme, max_width);
             // All lines inside the code block should have total width == max_width
             // (content width + padding width)
