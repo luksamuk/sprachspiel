@@ -755,6 +755,9 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 /// Without `--yes`, shows a warning explaining that `/reindex` regenerates
 /// ALL embeddings from scratch. With `--yes`, resets all `has_embedding`
 /// flags, deletes all vec0 embeddings, and regenerates them.
+///
+/// Prevents concurrent execution: if a `/reindex --yes` is already running,
+/// returns a warning instead of starting a second one.
 pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<CommandOutput> {
     if !confirmed {
         return vec![
@@ -762,6 +765,17 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
             CommandOutput::warning("   This may take time depending on the amount of content."),
             CommandOutput::warning("   Use /reindex --yes to confirm."),
         ];
+    }
+
+    // Prevent concurrent reindex — another /reindex may be running
+    if state
+        .session
+        .is_reindexing
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return vec![CommandOutput::warning(
+            "Embedding reindex is already in progress. Please wait for it to finish.",
+        )];
     }
 
     let db = match &state.db {
@@ -773,11 +787,22 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         }
     };
 
+    // Set reindexing flag to prevent concurrent execution
+    state
+        .session
+        .is_reindexing
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+
     // Reset all embedding flags and delete vec0 embeddings so that
     // regenerate_all_embeddings() will re-process every item from scratch.
     let reset_stats = match db.reset_all_embedding_flags() {
         Ok(stats) => stats,
         Err(e) => {
+            // Clear reindexing flag on error so the user can retry
+            state
+                .session
+                .is_reindexing
+                .store(false, std::sync::atomic::Ordering::Relaxed);
             return vec![CommandOutput::error(format!(
                 "Failed to reset embedding flags: {e}"
             ))];
@@ -785,7 +810,11 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
     };
 
     // If there's nothing to re-index, report immediately (no progress needed)
-    if reset_stats.items == 0 && reset_stats.chunks == 0 && reset_stats.facts == 0 {
+    if reset_stats.items == 0 && reset_stats.facts == 0 {
+        state
+            .session
+            .is_reindexing
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         return vec![CommandOutput::info("No content to re-index.")];
     }
 
@@ -797,6 +826,12 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
     let stats =
         crate::embeddings::regenerate_all_embeddings(&db, &embedding_client, true, progress_tx)
             .await;
+
+    // Clear reindexing flag — regeneration is complete
+    state
+        .session
+        .is_reindexing
+        .store(false, std::sync::atomic::Ordering::Relaxed);
 
     vec![CommandOutput::ReindexResult(ReindexData {
         regenerated: stats.total_processed(),

@@ -451,8 +451,11 @@ impl Database {
 pub struct ResetStats {
     /// Number of content_items rows reset (`has_embedding` changed from 1 to 0).
     pub items: usize,
-    /// Number of content_chunks rows reset.
-    pub chunks: usize,
+    /// Number of content_chunks rows deleted (chunks are derived data
+    /// and will be re-created by `regenerate_all_embeddings`).
+    #[allow(dead_code)]
+    // Available for logging/diagnostics; chunks are re-created during regeneration
+    pub chunks_deleted: usize,
     /// Number of facts rows reset (active facts only, excludes invalidated).
     pub facts: usize,
 }
@@ -462,17 +465,26 @@ impl Database {
     ///
     /// This is the core operation for `/reindex --yes` — it clears every
     /// embedding from the vec0 tables (`content_embeddings`, `chunk_embeddings_v2`,
-    /// `fact_embeddings`) and resets `has_embedding = 0` across all content
-    /// tables so that [`regenerate_all_embeddings`] and the recovery pipelines
-    /// will re-process every item from scratch.
+    /// `fact_embeddings`), deletes all `content_chunks` rows (chunks are derived
+    /// data that will be re-created by `regenerate_all_embeddings`), and resets
+    /// `has_embedding = 0` across remaining content tables so that everything
+    /// will be re-processed from scratch.
+    ///
+    /// # Why delete chunks instead of resetting their flags?
+    ///
+    /// Content chunks are derived from `content_items` via `chunk_text_with_config()`.
+    /// If we only reset `has_embedding = 0` on existing chunks, `regenerate_all_embeddings`
+    /// would insert *new* chunks for long items (because `insert_content_chunk` doesn't
+    /// check for duplicates), creating duplicate entries. Deleting all chunks ensures
+    /// a clean slate where regeneration re-creates exactly the right chunks.
     ///
     /// # Execution order
     ///
     /// 1. `DELETE FROM content_embeddings` — remove item-level vec0 embeddings
     /// 2. `DELETE FROM chunk_embeddings_v2` — remove chunk-level vec0 embeddings
     /// 3. `DELETE FROM fact_embeddings` — remove fact-level vec0 embeddings
-    /// 4. `UPDATE content_items SET has_embedding = 0` — mark items for re-indexing
-    /// 5. `UPDATE content_chunks SET has_embedding = 0` — mark chunks for re-indexing
+    /// 4. `DELETE FROM content_chunks` — remove derived chunk rows (will be re-created)
+    /// 5. `UPDATE content_items SET has_embedding = 0` — mark items for re-indexing
     /// 6. `UPDATE facts SET has_embedding = 0 WHERE invalidated_at IS NULL` — mark active facts
     ///
     /// Deletes must happen before the flag updates so that concurrent readers
@@ -488,9 +500,11 @@ impl Database {
             conn.execute("DELETE FROM chunk_embeddings_v2", [])?;
             conn.execute("DELETE FROM fact_embeddings", [])?;
 
+            // --- Delete all content_chunks (derived data, will be re-created) ---
+            let chunks_deleted: usize = conn.execute("DELETE FROM content_chunks", [])?;
+
             // --- Reset has_embedding flags ---
             let items: usize = conn.execute("UPDATE content_items SET has_embedding = 0", [])?;
-            let chunks: usize = conn.execute("UPDATE content_chunks SET has_embedding = 0", [])?;
             let facts: usize = conn.execute(
                 "UPDATE facts SET has_embedding = 0 WHERE invalidated_at IS NULL",
                 [],
@@ -498,7 +512,7 @@ impl Database {
 
             Ok(ResetStats {
                 items,
-                chunks,
+                chunks_deleted,
                 facts,
             })
         })

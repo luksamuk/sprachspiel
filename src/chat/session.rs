@@ -125,6 +125,10 @@ pub struct ChatSession {
     /// Background embedding tasks send (current, total) tuples to update the status bar.
     #[serde(skip)]
     pub embedding_tx: Option<crate::chat::app::EmbeddingProgressTx>,
+    /// Whether a `/reindex --yes` is currently running.
+    /// Prevents concurrent reindex operations which would conflict on the database.
+    #[serde(skip)]
+    pub is_reindexing: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// An active skill loaded via /skill \<name\> command
@@ -208,6 +212,7 @@ impl ChatSession {
             last_retrieval_time: None,
             active_skill: None,
             embedding_tx: None,
+            is_reindexing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -269,6 +274,7 @@ impl ChatSession {
             last_retrieval_time: None,
             active_skill: None,
             embedding_tx: None,
+            is_reindexing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }
 
