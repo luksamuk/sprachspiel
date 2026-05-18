@@ -175,17 +175,61 @@ mod tests {
 
     #[test]
     fn test_render_mermaid_non_ascii_labels_no_panic() {
-        // mermaid-text has a byte-slicing bug in gantt/task diagrams with
-        // non-ASCII characters (e.g., "Chat básico" — the 'á' spans bytes
-        // 6-8, but the crate slices at byte 7). Verify we catch the panic
-        // and fall back to code block instead of crashing the process.
+        // mermaid-text 0.56 fixed the byte-slicing bug that caused panics on
+        // non-ASCII labels in gantt/task diagrams (e.g., "Chat básico" where
+        // 'á' spans multiple bytes). call_mermaid_safely provides an additional
+        // safety net: even if a future crate version reintroduces a panic, the
+        // TUI alternate screen is preserved.
         let src = "gantt\ntitle Test\nsection Phase 1\nChat básico        :a1, 2024-01-01, 1d";
         let output = render_mermaid_rich(src, 80);
-        // Either it renders successfully, or we get a code block fallback.
+        // Either it renders successfully (0.56+), or we get a code block fallback.
         // Either way, it MUST NOT panic.
         assert!(
             !output.is_empty(),
             "Non-ASCII gantt labels should not produce empty output"
         );
+    }
+
+    // ── Unicode rendering tests ────────────────────────────────────────
+
+    #[test]
+    fn test_flowchart_with_flag_emoji() {
+        // Flag emojis use regional indicator symbols (multi-byte)
+        let src = "graph LR\n    A[\"🇧🇷 Brasil\"] --> B[\"Zürich\"]";
+        let output = render_mermaid_rich(src, 100);
+        assert!(!output.is_empty(), "Should not produce empty output");
+    }
+
+    #[test]
+    fn test_flowchart_with_zwj_emoji() {
+        // ZWJ sequences like 👨‍💻 (man + ZWJ + laptop)
+        let src = "graph LR\n    A[\"👨‍💻 Dev\"] --> B[\"🤖 Bot\"]";
+        let output = render_mermaid_rich(src, 100);
+        assert!(!output.is_empty(), "Should not produce empty output");
+    }
+
+    #[test]
+    fn test_gantt_with_accented_chars() {
+        // Accented characters in gantt task names — the original byte-slicing case
+        let src = "gantt\ntitle Test\nsection Phase 1\nChat básico :a1, 2024-01-01, 1d";
+        let output = render_mermaid_rich(src, 100);
+        assert!(!output.is_empty(), "Should not produce empty output");
+    }
+
+    #[test]
+    fn test_sequence_with_emoji() {
+        // Sequence diagrams with emoji in participant names
+        let src = "sequenceDiagram\n    participant M as Dev\n    participant R as Bot\n    M->>R: Commit: ação";
+        let output = render_mermaid_rich(src, 100);
+        // Sequence might not be supported or might fail — just verify no panic
+        assert!(!output.is_empty(), "Should not produce empty output");
+    }
+
+    #[test]
+    fn test_flowchart_with_complex_unicode() {
+        // Complex flowchart with various unicode characters
+        let src = "graph LR\n    A[\"Café ☕\"] --> B[\"Crème brûlée 🍮\"] --> C[\"Résumé über schön ✨\"]";
+        let output = render_mermaid_rich(src, 120);
+        assert!(!output.is_empty(), "Should not produce empty output");
     }
 }
