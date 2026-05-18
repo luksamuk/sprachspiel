@@ -232,6 +232,11 @@ pub struct App {
     /// Channel receiver for asynchronous system messages from background tasks
     /// (e.g., reindex completion notification).
     async_message_rx: mpsc::UnboundedReceiver<String>,
+    /// Cached count of visual (wrapped) lines in the textarea input.
+    /// Updated after each render cycle; used to calculate input height before
+    /// the textarea has been rendered with the correct viewport width.
+    /// Value 0 means "not yet calculated" — fall back to logical line count.
+    cached_input_screen_lines: usize,
 }
 
 /// Pick a random spinner preset from rattles (same logic as `spinner.rs`).
@@ -305,6 +310,10 @@ impl App {
         textarea.set_line_number_style(ratatui::style::Style::default());
         textarea.set_cursor_line_style(ratatui::style::Style::default());
         textarea.set_tab_length(4);
+        // Enable word-wrap so long lines fold at word boundaries (with glyph
+        // fallback for words wider than the viewport). This makes the input
+        // area purely vertical-scroll, eliminating horizontal scroll.
+        textarea.set_wrap_mode(ratatui_textarea::WrapMode::WordOrGlyph);
 
         // Channel for embedding progress updates
         let (embedding_tx, embedding_progress_rx) = mpsc::unbounded_channel();
@@ -333,6 +342,7 @@ impl App {
             block_finalized: false,
             embedding_progress_rx,
             async_message_rx,
+            cached_input_screen_lines: 0,
         };
 
         (app, embedding_tx, async_message_tx)
@@ -1080,6 +1090,17 @@ impl App {
                 None
             }
 
+            // Alt+Enter — newline (fallback for terminals that don't
+            // distinguish Shift+Enter from Enter, e.g. most Linux terminals)
+            crossterm::event::KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::ALT,
+                ..
+            } => {
+                self.textarea.insert_newline();
+                None
+            }
+
             // Ctrl+Y — yank (paste from textarea kill-ring)
             // Kill-ring is populated by Ctrl+W (delete word), Ctrl+K (delete
             // to EOL), and Ctrl+X (cut selection). This is standard Emacs
@@ -1753,9 +1774,17 @@ impl App {
         terminal.draw(|f| {
             let size = f.area();
 
-            // Input line height adapts to multi-line content.
-            // Cap at 10 lines to prevent the input from consuming the entire screen.
-            let input_height = self.textarea.lines().len().min(10) as u16;
+            // Input line height adapts to multi-line content with word-wrap.
+            // Use cached screen lines (populated after the first render) or
+            // fall back to logical line count for the initial frame.
+            let screen_lines = if self.cached_input_screen_lines > 0 {
+                self.cached_input_screen_lines
+            } else {
+                self.textarea.lines().len().max(1)
+            };
+            // Cap input at 1/3 of total height, minimum 3 lines.
+            let max_input_lines = (size.height as usize / 3).max(3);
+            let input_height = (screen_lines.min(max_input_lines) as u16).max(1);
 
             // Layout: chat area (flexible) | status bar (2 lines) | input line (dynamic)
             let chunks = Layout::vertical([
@@ -1784,14 +1813,15 @@ impl App {
             // Render status bar
             super::tui::components::status_bar::render(f, chunks[1], &self.status_bar);
 
-            // Render input line
-            super::tui::components::input_line::render(
+            // Render input line and get the number of wrapped visual lines
+            let rendered_lines = super::tui::components::input_line::render(
                 f,
                 chunks[2],
                 &self.textarea,
                 self.input_disabled,
                 self.disabled_reason.as_deref(),
             );
+            self.cached_input_screen_lines = rendered_lines.max(1);
 
             // Render completion menu overlay (above the status bar)
             // This is drawn LAST so it floats on top of other widgets
