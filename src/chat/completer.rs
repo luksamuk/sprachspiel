@@ -3,9 +3,12 @@
 //! Provides slash command and model name completion. When the user presses
 //! Tab, the completer tries to:
 //!
-//! 1. Complete slash commands (e.g., `/h` → `/help`, `/mod` → `/model`)
+//! 1. Complete slash commands (e.g., `/he` → `/help`, `/mod` → `/model`)
 //! 2. Complete slash command arguments (e.g., `/model l` → `/model llama3.1`)
 //! 3. Cycle through multiple matches on repeated Tab presses
+//!
+//! Descriptions are shown in the completion menu, even for single prefix
+//! matches, so the user can see what each command does before confirming.
 //!
 //! # Architecture
 //!
@@ -19,12 +22,10 @@
 
 /// Slash commands available for tab completion.
 ///
-/// Each entry maps a command trigger (with `/` prefix) to a `ChatCommand`
-/// variant and a short description for the completion menu.
-///
-/// Subcommands are included with their parent prefix (e.g., `/fact add`,
-/// `/note list`). Two-letter shortcuts are also listed so they complete
-/// correctly (e.g., `/q`, `/n`, `/h`).
+/// Each entry maps a command trigger (with `/` prefix) to a description
+/// for the completion menu. Only canonical command names are listed —
+/// no shortcuts or aliases. The parser still accepts `/exit` as a
+/// synonym for `/quit`, but it is not shown in completions.
 #[derive(Debug)]
 struct SlashCommand {
     /// The full command string including `/` prefix
@@ -52,17 +53,12 @@ enum ArgCompletion {
 
 /// Slash commands for tab completion.
 ///
+/// Only canonical names are listed (no shortcuts or aliases).
 /// Entries are listed in the same order as `/help` output so users get
-/// a predictable completion experience. Shortcuts are listed after their
-/// full forms.
+/// a predictable completion experience.
 const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         trigger: "/quit",
-        description: "Exit the chat session",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/exit",
         description: "Exit the chat session",
         arg_type: ArgCompletion::None,
     },
@@ -163,7 +159,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         trigger: "/reindex",
-        description: "Regenerate all embeddings",
+        description: "Regenerate all embeddings (requires --yes)",
         arg_type: ArgCompletion::None,
     },
     SlashCommand {
@@ -351,227 +347,6 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Toggle debug mode",
         arg_type: ArgCompletion::None,
     },
-    // Shortcuts
-    SlashCommand {
-        trigger: "/q",
-        description: "Shortcut: /quit",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/n",
-        description: "Shortcut: /new",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/h",
-        description: "Shortcut: /help",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/m",
-        description: "Shortcut: /model",
-        arg_type: ArgCompletion::ModelName,
-    },
-    SlashCommand {
-        trigger: "/s",
-        description: "Shortcut: /system",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/l",
-        description: "Shortcut: /load",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/t",
-        description: "Shortcut: /think",
-        arg_type: ArgCompletion::StaticSubcommands,
-    },
-    SlashCommand {
-        trigger: "/e",
-        description: "Shortcut: /export",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/ls",
-        description: "Shortcut: /list",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/i",
-        description: "Shortcut: /info",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/r",
-        description: "Shortcut: /retry",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/u",
-        description: "Shortcut: /undo",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/ctx",
-        description: "Shortcut: /context",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/to",
-        description: "Shortcut: /tools-output",
-        arg_type: ArgCompletion::StaticSubcommands,
-    },
-    SlashCommand {
-        trigger: "/f",
-        description: "Shortcut: /search",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/sk",
-        description: "Shortcut: /skill",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/fb",
-        description: "Shortcut: /feedback",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/fg",
-        description: "Shortcut: /feedback good",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/fp",
-        description: "Shortcut: /fact prune",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/fa",
-        description: "Shortcut: /fact add",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/fl",
-        description: "Shortcut: /fact list",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/fr",
-        description: "Shortcut: /fact remove",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/fs",
-        description: "Shortcut: /fact search",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/no",
-        description: "Shortcut: /note",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/na",
-        description: "Shortcut: /note add",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/nl",
-        description: "Shortcut: /note list",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/ns",
-        description: "Shortcut: /note show",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/nd",
-        description: "Shortcut: /note delete",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/di",
-        description: "Shortcut: /doc import",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/dl",
-        description: "Shortcut: /doc list",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/ds",
-        description: "Shortcut: /doc show",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/dd",
-        description: "Shortcut: /doc delete",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/ta",
-        description: "Shortcut: /todo add",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/tl",
-        description: "Shortcut: /todo list",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/tu",
-        description: "Shortcut: /todo update",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/tg",
-        description: "Shortcut: /todo get",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/te",
-        description: "Shortcut: /todo edit",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/td",
-        description: "Shortcut: /todo delete",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/tcd",
-        description: "Shortcut: /todo clear-done",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/tca",
-        description: "Shortcut: /todo clear-all",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/tr",
-        description: "Shortcut: /translate",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/sum",
-        description: "Shortcut: /summarize",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/cp",
-        description: "Shortcut: /content prune",
-        arg_type: ArgCompletion::None,
-    },
-    SlashCommand {
-        trigger: "/sys",
-        description: "Shortcut: /system",
-        arg_type: ArgCompletion::None,
-    },
 ];
 
 /// The result of a tab completion attempt.
@@ -705,8 +480,8 @@ impl ChatCompleter {
     /// Maps command triggers to their static subcommand lists.
     fn get_static_subcommands(trigger: &str) -> Vec<&'static str> {
         match trigger {
-            "/think" | "/t" => vec!["on", "off"],
-            "/tools-output" | "/to" => vec!["compact", "full", "hidden"],
+            "/think" => vec!["on", "off"],
+            "/tools-output" => vec!["compact", "full", "hidden"],
             _ => vec![],
         }
     }
@@ -764,18 +539,28 @@ impl ChatCompleter {
             0 => CompletionResult::None,
             1 => {
                 let cmd = matches[0];
-                // For single-character commands like /q, /n, /h — add trailing space
-                // For multi-word commands like /fact add — add trailing space
-                // For single-word commands like /model — add trailing space
-                let replacement = format!("{} ", cmd.trigger);
-                CompletionResult::Single {
-                    cursor_pos: replacement.len(),
-                    replacement,
+                // If the fragment exactly matches a command (e.g., user typed
+                // "/help" and pressed Tab), complete with a trailing space.
+                // If the fragment is a prefix (e.g., "/he" matching "/help"),
+                // show a single-item menu so the user sees the description.
+                if fragment == cmd.trigger {
+                    let replacement = format!("{} ", cmd.trigger);
+                    CompletionResult::Single {
+                        cursor_pos: replacement.len(),
+                        replacement,
+                    }
+                } else {
+                    // Prefix match — show as single-item menu with description
+                    CompletionResult::Multiple {
+                        matches: vec![cmd.trigger.to_string()],
+                        descriptions: vec![cmd.description.to_string()],
+                        cycle_index: 0,
+                    }
                 }
             }
             _ => {
                 // If the fragment exactly matches one of the commands,
-                // prefer exact match (e.g., "/n" matches both "/n" and "/new")
+                // If the fragment exactly matches one of the commands,
                 // But only if the exact match is shorter or equal.
                 let exact_match = matches.iter().find(|cmd| cmd.trigger == fragment);
                 if let Some(exact) = exact_match {
@@ -927,22 +712,38 @@ mod tests {
     }
 
     #[test]
-    fn test_complete_slash_command_exact_shortcut() {
+    fn test_complete_slash_command_prefix_shows_description() {
         let mut completer = make_completer();
-        // "/h" matches /help and /h (shortcut).
-        // Exact match "/h" is found first — completes to "/h ".
-        let result = completer.complete("/h", 2);
+        // "/he" matches "/help" as a prefix — shows description menu
+        let result = completer.complete("/he", 3);
+        match result {
+            CompletionResult::Multiple {
+                matches,
+                descriptions,
+                ..
+            } => {
+                assert_eq!(matches.len(), 1);
+                assert_eq!(matches[0], "/help");
+                assert_eq!(descriptions[0], "Show available commands");
+            }
+            _ => panic!(
+                "Expected Multiple completion for prefix match, got {:?}",
+                result
+            ),
+        }
+
+        // Exact match "/help" completes with trailing space
+        let result = completer.complete("/help", 5);
         match result {
             CompletionResult::Single {
                 replacement,
                 cursor_pos,
             } => {
-                // /h is an exact match shortcut
-                assert_eq!(replacement, "/h ");
-                assert_eq!(cursor_pos, 3);
+                assert_eq!(replacement, "/help ");
+                assert_eq!(cursor_pos, 6);
             }
             _ => panic!(
-                "Expected Single completion for exact shortcut, got {:?}",
+                "Expected Single completion for exact match, got {:?}",
                 result
             ),
         }

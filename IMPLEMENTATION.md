@@ -4625,6 +4625,56 @@ Changes:
 | 9 | First-round pre-tool duplication — `StreamBlockDone` handler no-op (zone finalized by `ToolCallStarted`) | ✅ COMPLETED |
 | 10 | Thinking block visual refinement — `🧠 Thinking` header + `│` left border + Markdown rendering + `wrap_styled_line()` | ✅ COMPLETED |
 
+**Post-PR3 Completions (on `feat/tui-streaming-refinement` branch):**
+
+| Commit | Description | Status |
+|--------|-------------|--------|
+| `b0311f0` | `/reindex --yes` confirmation gate, duplicate chunk deletion, async message channel | ✅ COMPLETED |
+| `da7ca2e` | Word-wrap input, dynamic height, Alt+Enter newline fallback | ✅ COMPLETED |
+| *(uncommitted)* | Command alias/shortcut removal, autocomplete descriptions, subcommand letter alias removal | ✅ COMPLETED |
+
+---
+
+#### Command Alias/Shortcut Removal + Autocomplete Descriptions + Word-Wrap Input
+
+**Status:** ✅ COMPLETED (on `feat/tui-streaming-refinement` branch)
+
+**Goal:** Three UX improvements for the TUI chat:
+1. Remove ~40 command shortcuts/aliases (only `/quit` and `/exit` remain as synonyms)
+2. Show descriptions in autocomplete for single prefix matches (e.g., `/he` → `/help — Show available commands`)
+3. Word-wrap input with dynamic height (33% max, 3-line minimum)
+
+**Implementation:**
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Shortcut removal | Removed ~40 single/two-letter shortcuts from `SLASH_COMMANDS` in `completer.rs` | ✅ Done |
+| `/quit` + `/exit` synonym pair | Only synonym pair kept; parser maps `/exit` → `/quit` | ✅ Done |
+| Subcommand letter aliases | Removed letter aliases from `parse_note_add()`, `parse_note_subcommand()` | ✅ Done |
+| `format_help()` update | Removed shortcuts section from `/help` output | ✅ Done |
+| Prefix description | `complete_slash_command()` returns `CompletionResult::Multiple` with 1 item+description for prefix matches | ✅ Done |
+| Word-wrap input | `wrap_line()` from `wrap.rs` shared with chat_area; dynamic height max 33%, min 3 lines | ✅ Done |
+| Alt+Enter fallback | `Alt+Enter` inserts newline when Shift+Enter isn't supported by terminal | ✅ Done |
+| Tests updated | Rewrote `test_complete_slash_command_exact_shortcut` → `test_complete_slash_command_prefix_shows_description` | ✅ Done |
+| Documentation | `doc/src/commands/chat.md` alias tables updated, CHANGELOG entries added | ✅ Done |
+
+**Key Files Modified:**
+- `src/chat/completer.rs` — `SLASH_COMMANDS` shortcuts removed; `complete_slash_command()` descriptions on prefix match; `ArgCompletion::StaticSubcommands`, `get_static_subcommands()`, `complete_static_subcommand()`
+- `src/chat/commands.rs` — Simplified `parse_command()`; removed `map_*_shortcut()` functions; removed subcommand letter aliases; `format_help()` shortcuts section removed; `get_static_subcommands()` shortcuts `/t`, `/to` removed
+- `src/chat/app.rs` — `cached_input_screen_lines`, `WrapMode::WordOrGlyph`, Alt+Enter handler
+- `src/chat/tui/components/input_line.rs` — Rewritten with `wrap_line()`, `SelectionRange`, `cursor_visual_position()`
+- `src/chat/tui/wrap.rs` — Shared `wrap_line()` function
+- `doc/src/commands/chat.md` — All aliases removed from tables
+- `doc/src/CHANGELOG.md` — Entries for all three features
+
+**Design Decisions:**
+- `/quit` and `/exit` are the ONLY synonymous pair kept (user preference)
+- All other aliases removed: single-letter shortcuts, two-letter shortcuts, subcommand letter aliases
+- Autocomplete shows descriptions even for single prefix matches via `CompletionResult::Multiple`
+- Input word-wrap uses `wrap_line()` from `wrap.rs` (shared with chat_area)
+- Input max height: 33% of terminal, minimum 3 lines
+- `Alt+Enter` added as newline fallback for terminals that don't support `Shift+Enter`
+
 ---
 
 #### PR 4: Final Cleanup — Remove TerminalView + ANSI Artifacts (~4-5 days) — #148
