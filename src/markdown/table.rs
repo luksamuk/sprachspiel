@@ -55,13 +55,16 @@ pub const BD_BR: &str = "┘";
 
 // ── Table detection ─────────────────────────────────────────────────
 
-/// A segment of markdown content — either a regular block or a table.
+/// A segment of markdown content — regular text, a table, or a Mermaid block.
 #[derive(Debug)]
 pub enum ContentSegment {
     /// Regular markdown content (rendered via tui-markdown or standalone)
     Markdown(String),
     /// Table block (rendered with box-drawing borders)
     Table(String),
+    /// Mermaid diagram block (rendered as Unicode box-drawing text)
+    #[cfg(feature = "mermaid")]
+    Mermaid(String),
 }
 
 /// Check if a line looks like a table row (starts and ends with `|`).
@@ -75,23 +78,71 @@ pub fn is_table_separator(line: &str) -> bool {
     parse_separator_line(line).is_some()
 }
 
-/// Detect markdown table blocks in content and split into segments.
+/// Detect markdown table blocks and Mermaid blocks in content and split into segments.
 ///
-/// Tables inside fenced code blocks are NOT detected as tables.
-pub fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
+/// Tables and Mermaid diagrams inside fenced code blocks are NOT detected as
+/// special segments — they remain as regular Markdown content. Only top-level
+/// table rows following a separator and top-level ` ```mermaid ` blocks are
+/// extracted.
+pub fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
     let mut segments = Vec::new();
     let mut current_markdown = String::new();
     let mut in_code_block = false;
+    #[cfg(feature = "mermaid")]
+    let mut in_mermaid_block = false;
+    #[cfg(feature = "mermaid")]
+    let mut mermaid_content = String::new();
     let mut lines = content.lines().peekable();
 
     while let Some(line) = lines.next() {
         let trimmed = line.trim();
 
-        // Track fenced code blocks — tables inside them are NOT tables
+        // Track fenced code blocks
         if trimmed.starts_with("```") {
-            in_code_block = !in_code_block;
+            let lang = trimmed.trim_start_matches('`').trim();
+
+            #[cfg(feature = "mermaid")]
+            if in_mermaid_block {
+                // End of Mermaid block
+                in_mermaid_block = false;
+                segments.push(ContentSegment::Mermaid(mermaid_content.clone()));
+                mermaid_content.clear();
+                continue;
+            }
+
+            if in_code_block {
+                // End of a regular code block — emit as markdown
+                in_code_block = false;
+                current_markdown.push_str(line);
+                current_markdown.push('\n');
+                continue;
+            }
+
+            // Starting a new code block — check if it's Mermaid
+            #[cfg(feature = "mermaid")]
+            if lang.starts_with("mermaid") {
+                // Flush accumulated markdown
+                if !current_markdown.is_empty() {
+                    segments.push(ContentSegment::Markdown(std::mem::take(
+                        &mut current_markdown,
+                    )));
+                }
+                in_mermaid_block = true;
+                continue;
+            }
+
+            // Start of a regular code block
+            in_code_block = true;
             current_markdown.push_str(line);
             current_markdown.push('\n');
+            continue;
+        }
+
+        // Inside a Mermaid block — collect content
+        #[cfg(feature = "mermaid")]
+        if in_mermaid_block {
+            mermaid_content.push_str(line);
+            mermaid_content.push('\n');
             continue;
         }
 
@@ -148,7 +199,17 @@ pub fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
         }
     }
 
-    // Flush remaining markdown
+    // Flush remaining content
+    #[cfg(feature = "mermaid")]
+    if in_mermaid_block && !mermaid_content.is_empty() {
+        segments.push(ContentSegment::Mermaid(mermaid_content));
+    }
+    #[cfg(not(feature = "mermaid"))]
+    if !current_markdown.is_empty() {
+        segments.push(ContentSegment::Markdown(current_markdown));
+    }
+    // When mermaid feature is active, also flush non-mermaid markdown
+    #[cfg(feature = "mermaid")]
     if !current_markdown.is_empty() {
         segments.push(ContentSegment::Markdown(current_markdown));
     }
@@ -159,6 +220,13 @@ pub fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
     }
 
     segments
+}
+
+/// Backward-compatible alias — delegates to [`extract_content_segments`].
+#[allow(dead_code)] // Compatibility alias, may be used externally
+#[deprecated(since = "0.44.0", note = "Use extract_content_segments instead")]
+pub fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
+    extract_content_segments(content)
 }
 
 // ── Separator parsing ───────────────────────────────────────────────

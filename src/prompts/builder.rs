@@ -356,7 +356,16 @@ pub fn build_system_prompt(config: PromptConfig) -> String {
         prompt.push_str("You receive: Full message content with navigation fields\n");
     }
 
-    // 4d. Context status (if status provided and needs compaction)
+    // 4d. Mermaid diagram rendering instruction (if feature enabled)
+    #[cfg(feature = "mermaid")]
+    {
+        if !matches!(config.prompt_type, PromptType::Summarize) {
+            prompt.push('\n');
+            prompt.push_str(super::base::MERMAID_INSTRUCTION);
+        }
+    }
+
+    // 4e. Context status (if status provided and needs compaction)
     // Injected before examples so LLM is aware of context pressure
     if let Some(ref status) = config.context_status
         && status.needs_compaction()

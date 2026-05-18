@@ -179,6 +179,21 @@ Next step: {next_step}
 Continue naturally from where you left off. Do not repeat completed work.
 </continuation_prompt>"#;
 
+/// Mermaid diagram rendering instruction
+///
+/// Injected into system prompts when the `mermaid` feature is compiled.
+/// Instructs the LLM to use ```mermaid code blocks for diagrams,
+/// which will be rendered as Unicode box-drawing art in the terminal.
+#[cfg(feature = "mermaid")]
+pub const MERMAID_INSTRUCTION: &str = r#"### MERMAID DIAGRAMS
+
+When describing diagrams, flows, or relationships, use ```mermaid code blocks:
+- Supported types: flowchart, sequenceDiagram, classDiagram, stateDiagram, gantt, pie
+- Use Mermaid syntax inside the code block (e.g., ```mermaid\ngraph LR; A --> B\n```)
+- Keep diagrams simple — prefer clarity over complexity
+- You may also use regular markdown tables and lists for structured data
+"#;
+
 /// Inter-tool compaction continuation prompt
 ///
 /// Used when context compaction interrupts multi-tool execution.

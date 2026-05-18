@@ -215,37 +215,76 @@ impl StyleSheet for MonoStyleSheet {
 // detecting table blocks and rendering them with box-drawing borders,
 // Unicode-aware column alignment, cell word-wrapping, and responsive width.
 
-/// A segment of markdown content — either a regular block or a table.
+/// A segment of markdown content — regular text, a table, or a Mermaid diagram.
 #[derive(Debug)]
 enum ContentSegment {
     /// Regular markdown content (rendered via tui-markdown)
     Markdown(String),
     /// Table block (rendered with box-drawing borders)
     Table(String),
+    /// Mermaid diagram block (rendered as Unicode box-drawing text)
+    #[cfg(feature = "mermaid")]
+    Mermaid(String),
 }
 
-/// Detect markdown table blocks in content and split into segments.
+/// Detect markdown table blocks and Mermaid blocks in content and split into segments.
 ///
-/// A markdown table is detected by:
-/// 1. A line starting and ending with `|`
-/// 2. Followed by a separator line (`|---|---|` or `|:---:|`)
-/// 3. Followed by data rows starting and ending with `|`
-///
-/// Tables inside fenced code blocks are NOT detected as tables.
-fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
+/// Tables and Mermaid diagrams inside fenced code blocks are NOT detected as
+/// special segments — they remain as regular Markdown content.
+fn extract_content_segments(content: &str) -> Vec<ContentSegment> {
     let mut segments = Vec::new();
     let mut current_markdown = String::new();
     let mut in_code_block = false;
+    #[cfg(feature = "mermaid")]
+    let mut in_mermaid_block = false;
+    #[cfg(feature = "mermaid")]
+    let mut mermaid_content = String::new();
     let mut lines = content.lines().peekable();
 
     while let Some(line) = lines.next() {
         let trimmed = line.trim();
 
-        // Track fenced code blocks — tables inside them are NOT tables
+        // Track fenced code blocks
         if trimmed.starts_with("```") {
-            in_code_block = !in_code_block;
+            let lang = trimmed.trim_start_matches('`').trim();
+
+            #[cfg(feature = "mermaid")]
+            if in_mermaid_block {
+                in_mermaid_block = false;
+                segments.push(ContentSegment::Mermaid(mermaid_content.clone()));
+                mermaid_content.clear();
+                continue;
+            }
+
+            if in_code_block {
+                in_code_block = false;
+                current_markdown.push_str(line);
+                current_markdown.push('\n');
+                continue;
+            }
+
+            // Starting a new code block — check if it's Mermaid
+            #[cfg(feature = "mermaid")]
+            if lang.starts_with("mermaid") {
+                if !current_markdown.is_empty() {
+                    segments.push(ContentSegment::Markdown(std::mem::take(
+                        &mut current_markdown,
+                    )));
+                }
+                in_mermaid_block = true;
+                continue;
+            }
+
+            in_code_block = true;
             current_markdown.push_str(line);
             current_markdown.push('\n');
+            continue;
+        }
+
+        #[cfg(feature = "mermaid")]
+        if in_mermaid_block {
+            mermaid_content.push_str(line);
+            mermaid_content.push('\n');
             continue;
         }
 
@@ -276,8 +315,6 @@ fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
             table_block.push('\n');
 
             // Consume the remaining table lines (separator + data rows)
-            // Cannot use `for` loop because we break conditionally and need
-            // the non-table line for the markdown accumulator.
             #[allow(clippy::while_let_on_iterator)] // Conditional break + line recovery
             while let Some(table_line) = lines.next() {
                 let table_trimmed = table_line.trim();
@@ -285,12 +322,9 @@ fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
                     table_block.push_str(table_line);
                     table_block.push('\n');
                 } else if table_trimmed.is_empty() {
-                    // Blank line after table — include it in the table block
-                    // to preserve visual spacing
                     table_block.push('\n');
                     break;
                 } else {
-                    // Non-table line — push back conceptually by adding to markdown
                     current_markdown.push_str(table_line);
                     current_markdown.push('\n');
                     break;
@@ -304,12 +338,15 @@ fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
         }
     }
 
-    // Flush remaining markdown
+    // Flush remaining content
+    #[cfg(feature = "mermaid")]
+    if in_mermaid_block && !mermaid_content.is_empty() {
+        segments.push(ContentSegment::Mermaid(mermaid_content));
+    }
     if !current_markdown.is_empty() {
         segments.push(ContentSegment::Markdown(current_markdown));
     }
 
-    // If we only have one markdown segment, return early (common case)
     if segments.len() == 1 {
         return segments;
     }
@@ -317,7 +354,7 @@ fn extract_table_segments(content: &str) -> Vec<ContentSegment> {
     segments
 }
 
-/// Check if a line looks like a table row (starts and ends with `|`)
+/// Check if a line looks like a table row (starts and ends with `|`).
 fn is_table_row(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.starts_with('|') && trimmed.ends_with('|') && trimmed.len() > 2
@@ -1130,15 +1167,15 @@ fn apply_code_block_background(
 }
 
 pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) -> Text<'static> {
-    // Fast path: if no table structure detected, use tui-markdown directly
-    if !content_contains_table(content) {
+    // Fast path: if no table or Mermaid structure detected, use tui-markdown directly
+    if !content_contains_special_blocks(content) {
         let mut text = render_markdown_inner_owned(content, theme);
         apply_code_block_background(&mut text.lines, theme, max_width);
         return text;
     }
 
-    // Slow path: extract table segments and render hybrid
-    let segments = extract_table_segments(content);
+    // Slow path: extract segments and render hybrid
+    let segments = extract_content_segments(content);
     let mut all_lines: Vec<Line<'static>> = Vec::new();
 
     for segment in segments {
@@ -1153,25 +1190,40 @@ pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) ->
                 let table_lines = render_table_box(&table, max_width, theme);
                 all_lines.extend(table_lines);
             }
+            #[cfg(feature = "mermaid")]
+            ContentSegment::Mermaid(mermaid_source) => {
+                let mermaid_lines = render_mermaid_tui(&mermaid_source, max_width, theme);
+                all_lines.extend(mermaid_lines);
+            }
         }
     }
 
     Text::from(all_lines)
 }
 
-/// Quick check: does the content contain a table-like structure?
+/// Quick check: does the content contain a table or Mermaid block?
 ///
-/// Returns true if any line starts and ends with `|` AND is followed
-/// by a separator-like line. This avoids the overhead of segment
-/// extraction for the common case of no tables.
-fn content_contains_table(content: &str) -> bool {
+/// Returns true if content has a table-like structure or a ` ```mermaid ` block.
+/// This avoids the overhead of segment extraction for the common case of no
+/// special blocks.
+fn content_contains_special_blocks(content: &str) -> bool {
     let mut in_code_block = false;
     let mut lines = content.lines().peekable();
 
     while let Some(line) = lines.next() {
         let trimmed = line.trim();
         if trimmed.starts_with("```") {
-            in_code_block = !in_code_block;
+            let lang = trimmed.trim_start_matches('`').trim();
+            if in_code_block {
+                in_code_block = false;
+            } else {
+                // Check for Mermaid block before marking as code block
+                #[cfg(feature = "mermaid")]
+                if lang.starts_with("mermaid") {
+                    return true;
+                }
+                in_code_block = true;
+            }
             continue;
         }
         if in_code_block {
@@ -1189,19 +1241,79 @@ fn content_contains_table(content: &str) -> bool {
     false
 }
 
+/// Backward-compatible alias for `content_contains_special_blocks`.
+#[deprecated(since = "0.44.0", note = "Use content_contains_special_blocks instead")]
+#[allow(dead_code)] // Kept for backward compatibility with tests
+fn content_contains_table(content: &str) -> bool {
+    content_contains_special_blocks(content)
+}
+
+// ── Mermaid diagram rendering (TUI) ──────────────────────────────────
+
+/// Render a Mermaid diagram as styled ratatui `Line`s for the TUI.
+///
+/// Uses the `mermaid-text` crate to produce Unicode box-drawing text,
+/// then converts each line to a ratatui `Line` with theme-aware styling.
+///
+/// Falls back to rendering the Mermaid source as a code block on parse errors.
+#[cfg(feature = "mermaid")]
+fn render_mermaid_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> Vec<Line<'static>> {
+    let effective_width = max_width.clamp(40, 200);
+    let border_style = table_style_border(theme);
+    let text_style = table_style_cell(theme);
+
+    match mermaid_text::render_with_width(source.trim(), Some(effective_width)) {
+        Ok(rendered) => rendered
+            .lines()
+            .map(|line| {
+                if looks_like_diagram_line(line) {
+                    Line::from(Span::styled(line.to_string(), border_style))
+                } else {
+                    Line::from(Span::styled(line.to_string(), text_style))
+                }
+            })
+            .collect(),
+        Err(_) => {
+            // Fallback: render as a code block with "mermaid" language tag
+            let code_style = table_style_cell(theme);
+            let mut lines = Vec::new();
+            lines.push(Line::from(Span::styled(
+                "```mermaid".to_string(),
+                code_style,
+            )));
+            for line in source.lines() {
+                lines.push(Line::from(Span::styled(line.to_string(), code_style)));
+            }
+            lines.push(Line::from(Span::styled("```".to_string(), code_style)));
+            lines
+        }
+    }
+}
+
+/// Check if a line contains box-drawing characters (diagram line vs text label).
+#[cfg(feature = "mermaid")]
+fn looks_like_diagram_line(line: &str) -> bool {
+    const BOX_CHARS: &[char] = &[
+        '─', '│', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼', '╭', '╮', '╰', '╯', '►', '◂', '▾',
+        '▴', '▸', '◀', '▶', '▲', '▼', '━', '┃', '┏', '┓', '┗', '┛', '┣', '┫', '┳', '┻', '╋',
+    ];
+    line.chars().any(|c| BOX_CHARS.contains(&c))
+}
+
 /// Replace markdown table blocks in content with a placeholder string.
 ///
 /// Used by `show_recent_context` to avoid rendering pipe characters and
 /// separator lines from tables in the single-line recent context display.
 /// Each table block is replaced with `(...)` to indicate omitted tabular
 /// content. Tables inside fenced code blocks are left intact.
+/// Mermaid blocks are also collapsed to `(...)`.
 pub fn collapse_tables(content: &str) -> String {
-    // Fast path: no table structure at all
-    if !content_contains_table(content) {
+    // Fast path: no special block structure at all
+    if !content_contains_special_blocks(content) {
         return content.to_string();
     }
 
-    let segments = extract_table_segments(content);
+    let segments = extract_content_segments(content);
     let mut result = String::new();
 
     for segment in segments {
@@ -1211,6 +1323,14 @@ pub fn collapse_tables(content: &str) -> String {
             }
             ContentSegment::Table(_) => {
                 // Replace the entire table block with a placeholder
+                if !result.is_empty() && !result.ends_with(' ') && !result.ends_with('\n') {
+                    result.push(' ');
+                }
+                result.push_str("(...) ");
+            }
+            #[cfg(feature = "mermaid")]
+            ContentSegment::Mermaid(_) => {
+                // Replace Mermaid blocks with a placeholder too
                 if !result.is_empty() && !result.ends_with(' ') && !result.ends_with('\n') {
                     result.push(' ');
                 }
@@ -1792,18 +1912,20 @@ mod tests {
     #[test]
     fn test_extract_table_segments_no_table() {
         let content = "Hello world\n\nThis is a paragraph.";
-        let segments = extract_table_segments(content);
+        let segments = extract_content_segments(content);
         assert_eq!(segments.len(), 1);
         match &segments[0] {
             ContentSegment::Markdown(md) => assert!(md.contains("Hello world")),
             ContentSegment::Table(_) => panic!("Expected Markdown segment"),
+            #[cfg(feature = "mermaid")]
+            ContentSegment::Mermaid(_) => panic!("Expected Markdown segment"),
         }
     }
 
     #[test]
     fn test_extract_table_segments_simple_table() {
         let content = "| Name | Value |\n|------|-------|\n| Foo  | 42    |";
-        let segments = extract_table_segments(content);
+        let segments = extract_content_segments(content);
         assert_eq!(segments.len(), 1);
         match &segments[0] {
             ContentSegment::Table(table) => {
@@ -1811,13 +1933,15 @@ mod tests {
                 assert!(table.contains("| Foo  | 42    |"));
             }
             ContentSegment::Markdown(_) => panic!("Expected Table segment"),
+            #[cfg(feature = "mermaid")]
+            ContentSegment::Mermaid(_) => panic!("Expected Table segment"),
         }
     }
 
     #[test]
     fn test_extract_table_segments_mixed_content() {
         let content = "Here is some text:\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nMore text.";
-        let segments = extract_table_segments(content);
+        let segments = extract_content_segments(content);
         assert_eq!(segments.len(), 3); // markdown, table, markdown
         match &segments[0] {
             ContentSegment::Markdown(md) => assert!(md.contains("Here is some text")),
@@ -1839,7 +1963,7 @@ mod tests {
     #[test]
     fn test_extract_table_segments_table_in_code_block() {
         let content = "```\n| A | B |\n|---|---|\n| 1 | 2 |\n```\n\nAfter.";
-        let segments = extract_table_segments(content);
+        let segments = extract_content_segments(content);
         assert_eq!(segments.len(), 1);
         match &segments[0] {
             ContentSegment::Markdown(md) => {
@@ -1847,6 +1971,52 @@ mod tests {
                 assert!(md.contains("```"));
             }
             ContentSegment::Table(_) => panic!("Table inside code block should not be detected"),
+            #[cfg(feature = "mermaid")]
+            ContentSegment::Mermaid(_) => panic!("Table inside code block should be Markdown"),
+        }
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_extract_mermaid_block() {
+        let content = "Before\n\n```mermaid\ngraph LR\n  A --> B\n```\n\nAfter";
+        let segments = extract_content_segments(content);
+        assert_eq!(
+            segments.len(),
+            3,
+            "Expected 3 segments: markdown, mermaid, markdown"
+        );
+        match &segments[0] {
+            ContentSegment::Markdown(md) => assert!(md.contains("Before")),
+            _ => panic!("Expected Markdown first"),
+        }
+        match &segments[1] {
+            ContentSegment::Mermaid(mermaid) => {
+                assert!(mermaid.contains("graph LR"));
+                assert!(mermaid.contains("A --> B"));
+            }
+            _ => panic!("Expected Mermaid second"),
+        }
+        match &segments[2] {
+            ContentSegment::Markdown(md) => assert!(md.contains("After")),
+            _ => panic!("Expected Markdown third"),
+        }
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_mermaid_not_in_code_block() {
+        // A ```java block containing the word "mermaid" should NOT be detected as mermaid
+        let content = "```java\nmermaid.init();\n```\n\nAfter";
+        let segments = extract_content_segments(content);
+        assert_eq!(
+            segments.len(),
+            1,
+            "Java code block should not be detected as Mermaid"
+        );
+        match &segments[0] {
+            ContentSegment::Markdown(md) => assert!(md.contains("mermaid.init()")),
+            _ => panic!("Expected Markdown segment"),
         }
     }
 

@@ -10,9 +10,9 @@ name = "sprach"
 path = "src/main.rs"
 
 [features]
-default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools"]
-all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "sandbox"]
-all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools"]
+default = ["weather-tools", "file-tools", "calc-tools", "serper-tools", "system-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid"]
+all-tools = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid", "sandbox"]
+all-tools-no-sandbox = ["pokemon-tools", "weather-tools", "search-tools", "file-tools", "calc-tools", "finance-tools", "serper-tools", "system-tools", "led-tools", "skills-tools", "document-tools", "subagent-tools", "mermaid"]
 pokemon-tools = []
 weather-tools = []
 # html2md is also in ollama-rs, but we need direct access for search_builtin
@@ -35,6 +35,8 @@ document-tools = []
 subagent-tools = []
 # Landlock sandbox for Linux (kernel 5.13+)
 sandbox = ["dep:landlock"]
+# Mermaid diagram rendering (Unicode box-drawing text, pure Rust)
+mermaid = ["dep:mermaid-text"]
 
 [dependencies]
 base64 = "0.22.1"
@@ -85,6 +87,9 @@ toml = "0.8"
 urlencoding = "2.1"
 walkdir = "2.5"
 unicode-width = "0.2.2"
+# Mermaid diagram rendering as Unicode box-drawing text (pure Rust, no browser)
+# Optional — enabled by the "mermaid" feature flag
+mermaid-text = { version = "0.56", optional = true }
 # Database for semantic search
 rusqlite = { version = "0.32", features = ["bundled"] }
 sqlite-vec = "0.1"

@@ -14,7 +14,7 @@
 #![expect(clippy::print_stdout)] // Standalone markdown renderer output
 
 use super::table::{
-    ContentSegment, extract_table_segments, render_table_box_string, render_table_plain,
+    ContentSegment, extract_content_segments, render_table_box_string, render_table_plain,
 };
 
 /// Default terminal width when detection fails.
@@ -29,11 +29,11 @@ fn terminal_width() -> usize {
 
 /// Render markdown content to a string with monochrome formatting.
 ///
-/// Rich mode: ANSI bold for headings, box-drawing tables, indented code blocks.
+/// Rich mode: ANSI bold for headings, box-drawing tables, Mermaid diagrams.
 /// Tables use the same responsive column-width algorithm as the TUI renderer.
 pub fn render_markdown(content: &str, width: usize) -> String {
     let mut output = String::new();
-    let segments = extract_table_segments(content);
+    let segments = extract_content_segments(content);
 
     for segment in segments {
         match segment {
@@ -47,6 +47,11 @@ pub fn render_markdown(content: &str, width: usize) -> String {
                     output.push('\n');
                 }
             }
+            #[cfg(feature = "mermaid")]
+            ContentSegment::Mermaid(mermaid_source) => {
+                let rendered = super::mermaid::render_mermaid_rich(&mermaid_source, width);
+                output.push_str(&rendered);
+            }
         }
     }
 
@@ -54,9 +59,12 @@ pub fn render_markdown(content: &str, width: usize) -> String {
 }
 
 /// Render markdown content in plain text mode (no ANSI codes, pipe-delimited tables).
+///
+/// Mermaid blocks are emitted as raw ` ```mermaid ` code blocks, deferring
+/// rendering responsibility to the consumer (ACP integration).
 pub fn render_markdown_plain(content: &str, width: usize) -> String {
     let mut output = String::new();
-    let segments = extract_table_segments(content);
+    let segments = extract_content_segments(content);
 
     for segment in segments {
         match segment {
@@ -69,6 +77,11 @@ pub fn render_markdown_plain(content: &str, width: usize) -> String {
                     output.push_str(&line);
                     output.push('\n');
                 }
+            }
+            #[cfg(feature = "mermaid")]
+            ContentSegment::Mermaid(mermaid_source) => {
+                let rendered = super::mermaid::render_mermaid_plain(&mermaid_source);
+                output.push_str(&rendered);
             }
         }
     }
@@ -414,5 +427,33 @@ mod tests {
         // Should not panic even if terminal detection fails
         let width = terminal_width();
         assert!(width > 0);
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_render_markdown_mermaid_rich() {
+        let input = "Before\n\n```mermaid\ngraph LR; A --> B\n```\n\nAfter";
+        let output = render_markdown(input, 80);
+        // Rich mode should render the Mermaid block (contain box-drawing or label)
+        assert!(
+            output.contains("A") && output.contains("B"),
+            "Rich render should contain diagram labels"
+        );
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_render_markdown_mermaid_plain() {
+        let input = "Before\n\n```mermaid\ngraph LR; A --> B\n```\n\nAfter";
+        let output = render_markdown_plain(input, 80);
+        // Plain mode should emit raw mermaid code block
+        assert!(
+            output.contains("```mermaid"),
+            "Plain render should contain mermaid fence"
+        );
+        assert!(
+            output.contains("A --> B"),
+            "Plain render should contain original source"
+        );
     }
 }
