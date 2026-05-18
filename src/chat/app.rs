@@ -99,6 +99,27 @@ impl ScrollState {
         }
     }
 
+    /// Clamp `manual_offset` to the valid range `[0, max_scroll]`.
+    ///
+    /// Called during rendering when `total_lines` and `visible_height` are
+    /// known. Prevents "overscroll" accumulation from rapid mouse wheel
+    /// scrolling — without this, `scroll_up()` can grow `manual_offset`
+    /// well beyond `max_scroll`, causing sluggish response when scrolling
+    /// back down because every `scroll_down(MOUSE_SCROLL_LINES)` only
+    /// subtracts 3 from a huge offset.
+    pub fn clamp_offset(&mut self, total_lines: usize, visible_height: usize) {
+        if total_lines <= visible_height {
+            // Content fits in the viewport — no scroll needed
+            self.manual_offset = 0;
+            self.auto_scroll = true;
+            return;
+        }
+        let max_scroll = total_lines.saturating_sub(visible_height) as u16;
+        if self.manual_offset > max_scroll {
+            self.manual_offset = max_scroll;
+        }
+    }
+
     /// Scroll to the top (oldest messages)
     pub fn scroll_to_top(&mut self) {
         self.auto_scroll = false;
@@ -1719,7 +1740,7 @@ impl App {
                 f,
                 chunks[0],
                 &self.messages,
-                &self.scroll,
+                &mut self.scroll,
                 self.theme,
                 &self.chat_selection,
             );
@@ -2409,5 +2430,140 @@ mod tests {
         assert_eq!(app.messages[2].content, "Boa noite");
         assert_eq!(app.messages[3].msg_type, MessageType::Tool);
         assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+    }
+
+    // ── ScrollState tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_scroll_state_default() {
+        let state = ScrollState::default();
+        assert!(state.auto_scroll, "Default should be auto-scroll");
+        assert_eq!(state.manual_offset, 0, "Default offset should be 0");
+    }
+
+    #[test]
+    fn test_scroll_up_increments_offset() {
+        let mut state = ScrollState::new();
+        state.scroll_up(5);
+        assert!(!state.auto_scroll, "Scrolling up disables auto-scroll");
+        assert_eq!(state.manual_offset, 5);
+        state.scroll_up(3);
+        assert_eq!(state.manual_offset, 8, "Scroll up accumulates offset");
+    }
+
+    #[test]
+    fn test_scroll_down_decrements_offset() {
+        let mut state = ScrollState::new();
+        state.scroll_up(10);
+        assert_eq!(state.manual_offset, 10);
+        state.scroll_down(3);
+        assert_eq!(state.manual_offset, 7);
+        state.scroll_down(7);
+        assert_eq!(state.manual_offset, 0, "Scroll down clamps at 0");
+        assert!(
+            state.auto_scroll,
+            "Reaching offset 0 re-enables auto-scroll"
+        );
+    }
+
+    #[test]
+    fn test_scroll_down_does_not_re_enable_auto_scroll_before_bottom() {
+        let mut state = ScrollState::new();
+        state.scroll_up(10);
+        state.scroll_down(3);
+        assert_eq!(
+            state.manual_offset, 7,
+            "Offset decreases but doesn't reach 0"
+        );
+        assert!(
+            !state.auto_scroll,
+            "Auto-scroll should NOT re-enable until offset reaches 0"
+        );
+    }
+
+    #[test]
+    fn test_clamp_offset_reduces_overscroll() {
+        let mut state = ScrollState::new();
+        // Simulate rapid mouse wheel scrolling: 100 lines of offset
+        // but content only allows 50 lines of scrolling
+        state.scroll_up(100);
+        assert_eq!(state.manual_offset, 100);
+
+        // Content: 200 lines total, viewport: 150 lines → max_scroll = 50
+        state.clamp_offset(200, 150);
+        assert_eq!(
+            state.manual_offset, 50,
+            "Clamp should reduce overscroll to max_scroll"
+        );
+        assert!(
+            !state.auto_scroll,
+            "Auto-scroll should remain disabled after clamping"
+        );
+    }
+
+    #[test]
+    fn test_clamp_offset_no_change_when_in_range() {
+        let mut state = ScrollState::new();
+        state.scroll_up(30);
+        // Content: 200 lines, viewport: 150 → max_scroll = 50
+        state.clamp_offset(200, 150);
+        assert_eq!(
+            state.manual_offset, 30,
+            "Clamp should not change offset when within range"
+        );
+    }
+
+    #[test]
+    fn test_clamp_offset_resets_when_content_fits_viewport() {
+        let mut state = ScrollState::new();
+        state.scroll_up(50);
+        assert!(!state.auto_scroll);
+
+        // Content: 100 lines, viewport: 120 → content fits, no scroll needed
+        state.clamp_offset(100, 120);
+        assert_eq!(state.manual_offset, 0, "Offset should reset to 0");
+        assert!(
+            state.auto_scroll,
+            "Auto-scroll should re-enable when content fits viewport"
+        );
+    }
+
+    #[test]
+    fn test_effective_scroll_from_top_auto_scroll() {
+        let state = ScrollState::new();
+        // 200 lines, 150 visible → max_scroll = 50
+        let result = state.effective_scroll_from_top(200, 150);
+        assert_eq!(result, 50, "Auto-scroll should show bottom of content");
+    }
+
+    #[test]
+    fn test_effective_scroll_from_top_manual_scroll() {
+        let mut state = ScrollState::new();
+        state.scroll_up(30);
+        // 200 lines, 150 visible → max_scroll = 50
+        // from_top = max_scroll - manual_offset = 50 - 30 = 20
+        let result = state.effective_scroll_from_top(200, 150);
+        assert_eq!(result, 20, "Manual scroll should offset from bottom");
+    }
+
+    #[test]
+    fn test_scroll_overscroll_bug_scenario() {
+        // Reproduces the bug: rapid scroll up causes manual_offset to
+        // accumulate beyond max_scroll, making scroll_down feel sluggish.
+        // With clamp_offset called during render, the offset is clamped.
+        let mut state = ScrollState::new();
+
+        // User scrolls up rapidly (e.g., 30 mouse wheel events × 3 = 90)
+        state.scroll_up(90);
+        assert_eq!(state.manual_offset, 90);
+
+        // Content: 200 lines, viewport: 150 → max_scroll = 50
+        // clamp_offset reduces 90 → 50
+        state.clamp_offset(200, 150);
+        assert_eq!(state.manual_offset, 50, "Overscroll clamped to max_scroll");
+
+        // Now scroll_down works immediately (3 lines at a time)
+        state.scroll_down(3);
+        assert_eq!(state.manual_offset, 47, "Scroll down responds immediately");
     }
 }

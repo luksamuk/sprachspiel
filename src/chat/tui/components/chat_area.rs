@@ -454,7 +454,7 @@ pub fn render(
     f: &mut Frame,
     area: Rect,
     messages: &[ChatMessage],
-    scroll_state: &ScrollState,
+    scroll_state: &mut ScrollState,
     theme: MarkdownTheme,
     selection: &ChatSelection,
 ) -> RenderMetadata {
@@ -483,6 +483,12 @@ pub fn render(
         area.width as usize,
     );
     let visible_height = area.height as usize;
+    // Clamp manual_offset to valid range [0, max_scroll] before computing
+    // effective offset. This prevents "overscroll" accumulation from rapid
+    // mouse wheel scrolling — without clamping, scroll_up() can grow
+    // manual_offset well beyond max_scroll, making scroll_down() feel
+    // sluggish because each tick only subtracts a small number.
+    scroll_state.clamp_offset(wrapped_total, visible_height);
     let scroll_from_top = scroll_state.effective_scroll_from_top(wrapped_total, visible_height);
 
     let paragraph = Paragraph::new(lines)

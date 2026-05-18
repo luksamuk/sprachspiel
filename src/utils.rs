@@ -331,6 +331,32 @@ pub fn truncate_visual_width(s: &str, max_width: usize) -> String {
     result
 }
 
+/// Truncate a string at the first newline, appending ellipsis if truncated.
+///
+/// Used for recent context display where multi-line messages should collapse
+/// to a single line with "…" at the newline position, rather than merging
+/// lines with spaces.
+///
+/// # Examples
+/// ```
+/// use sprachspiel::utils::truncate_at_first_newline;
+/// assert_eq!(truncate_at_first_newline("Hello\nWorld"), "Hello…");
+/// assert_eq!(truncate_at_first_newline("No newline"), "No newline");
+/// assert_eq!(truncate_at_first_newline("\nStarts with newline"), "…");
+/// ```
+pub fn truncate_at_first_newline(s: &str) -> String {
+    if let Some(pos) = s.find('\n') {
+        let before = &s[..pos];
+        if before.is_empty() {
+            "…".to_string()
+        } else {
+            format!("{before}…")
+        }
+    } else {
+        s.to_string()
+    }
+}
+
 /// Truncate a string to fit within a token budget.
 ///
 /// Used for emergency truncation of tool results when context is near overflow.
@@ -603,6 +629,30 @@ mod tests {
 
         // Empty string
         assert_eq!(truncate_visual_width("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_at_first_newline_basic() {
+        // No newline — return as-is
+        assert_eq!(truncate_at_first_newline("Hello world"), "Hello world");
+
+        // Single newline — truncate with ellipsis
+        assert_eq!(truncate_at_first_newline("Hello\nWorld"), "Hello…");
+
+        // Multiple newlines — truncate at first
+        assert_eq!(
+            truncate_at_first_newline("Line 1\nLine 2\nLine 3"),
+            "Line 1…"
+        );
+
+        // Starts with newline — just ellipsis
+        assert_eq!(truncate_at_first_newline("\nStarts with newline"), "…");
+
+        // Empty string
+        assert_eq!(truncate_at_first_newline(""), "");
+
+        // Only newline
+        assert_eq!(truncate_at_first_newline("\n"), "…");
     }
 
     #[test]

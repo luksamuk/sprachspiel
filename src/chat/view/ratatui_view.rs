@@ -465,14 +465,16 @@ impl RatatuiView {
         let mut lines = vec![header];
 
         for (user_msg, asst_msg) in exchanges {
-            let user_content = strip_thinking_tags(&user_msg.content).replace('\n', " ");
+            let user_content =
+                crate::utils::truncate_at_first_newline(&strip_thinking_tags(&user_msg.content));
             let truncated_user =
                 crate::utils::truncate_visual_width(&user_content, user_content_width);
             lines.push(format!("  {}: {}", user_label, truncated_user));
 
             if let Some(asst) = asst_msg {
-                let asst_content =
-                    collapse_tables(&strip_thinking_tags(&asst.content)).replace('\n', " ");
+                let asst_content = crate::utils::truncate_at_first_newline(&collapse_tables(
+                    &strip_thinking_tags(&asst.content),
+                ));
                 let truncated_asst =
                     crate::utils::truncate_visual_width(&asst_content, assistant_content_width);
                 lines.push(format!("  {}: {}", assistant_label, truncated_asst));

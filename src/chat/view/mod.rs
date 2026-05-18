@@ -1117,16 +1117,16 @@ mod tests {
 
     #[test]
     fn test_recent_context_info_newlines_collapsed() {
-        // Verify that when newlines are replaced with spaces before creating
-        // RecentMessage (as done in show_recent_context), each message
+        // Verify that when newlines are truncated at the first newline (as done
+        // by truncate_at_first_newline in show_recent_context), each message
         // displays on a single line in the context summary.
         let info = RecentContextInfo {
             total_messages: 4,
             exchanges: vec![(
                 RecentMessage {
                     role_label: "👤 User".to_string(),
-                    // Content already has newlines replaced with spaces
-                    // (this happens in show_recent_context before truncate_str)
+                    // Content already has newlines truncated at the first one
+                    // (this happens in show_recent_context via truncate_at_first_newline)
                     content: "Hello world how are you?".to_string(),
                 },
                 Some(RecentMessage {
@@ -1141,7 +1141,7 @@ mod tests {
         // Each message should be on a single line after its role label
         for line in output.lines() {
             // Lines with role labels should not contain embedded \n
-            // (they are already single lines since \n was replaced before)
+            // (they are already single lines since \n was truncated before)
             // We just verify the output contains the content as expected
             if line.contains("👤") {
                 assert!(line.contains("Hello world how are you?"));
@@ -1152,6 +1152,32 @@ mod tests {
                 assert!(!line.contains("\n"));
             }
         }
+    }
+
+    #[test]
+    fn test_truncate_at_first_newline_basic() {
+        use crate::utils::truncate_at_first_newline;
+
+        // No newline — return as-is
+        assert_eq!(truncate_at_first_newline("Hello world"), "Hello world");
+
+        // Single newline — truncate with ellipsis
+        assert_eq!(truncate_at_first_newline("Hello\nWorld"), "Hello…");
+
+        // Multiple newlines — truncate at first
+        assert_eq!(
+            truncate_at_first_newline("Line 1\nLine 2\nLine 3"),
+            "Line 1…"
+        );
+
+        // Starts with newline — just ellipsis
+        assert_eq!(truncate_at_first_newline("\nStarts with newline"), "…");
+
+        // Empty string
+        assert_eq!(truncate_at_first_newline(""), "");
+
+        // Only newline
+        assert_eq!(truncate_at_first_newline("\n"), "…");
     }
 
     // ── ViewEventReceiver::drain_into_llm_channel tests ────────────

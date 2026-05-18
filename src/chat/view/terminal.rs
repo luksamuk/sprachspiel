@@ -333,11 +333,15 @@ impl TerminalView {
             .map(|(user_msg, asst_msg)| {
                 let user = RecentMessage {
                     role_label: format_role_label("user"),
-                    content: strip_thinking_tags(&user_msg.content).replace('\n', " "),
+                    content: crate::utils::truncate_at_first_newline(&strip_thinking_tags(
+                        &user_msg.content,
+                    )),
                 };
                 let assistant = asst_msg.map(|a| RecentMessage {
                     role_label: format_role_label("assistant"),
-                    content: collapse_tables(&strip_thinking_tags(&a.content)).replace('\n', " "),
+                    content: crate::utils::truncate_at_first_newline(&collapse_tables(
+                        &strip_thinking_tags(&a.content),
+                    )),
                 });
                 (user, assistant)
             })
