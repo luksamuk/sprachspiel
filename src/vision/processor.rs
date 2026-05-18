@@ -86,6 +86,11 @@ impl VisionProcessor {
                     file: file.to_string_lossy().to_string(),
                     error: e,
                 })?;
+            log::debug!(
+                "Loaded image: {} ({} bytes base64)",
+                file.display(),
+                base64.len()
+            );
             images.push(Image::from_base64(base64));
         }
         Ok(images)

@@ -493,6 +493,22 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
             )
         });
 
+    // Check if the model supports vision capabilities (required for OCR).
+    // OCR requires the model to see images — without vision it cannot perform OCR.
+    let ollama = settings.ollama_client();
+    let capabilities =
+        crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
+    if !capabilities.vision {
+        // For OCR, the model MUST support vision — warn and proceed anyway
+        // since some cloud models report incorrect capabilities
+        eprintln!(
+            "⚠ Warning: Model '{}' may not support vision capabilities. \
+             OCR requires image understanding. Proceeding anyway...",
+            model_id
+        );
+        eprintln!("  If OCR fails, try: edit config.toml → [model.ocr] model = \"glm-ocr:bf16\"");
+    }
+
     log::debug!("Debug Mode - OCR Configuration:");
     log::debug!("==========================");
     log::debug!("Model ID:          {}", model_id);
@@ -504,7 +520,6 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
     log::debug!("Executing OCR with logging enabled...");
 
     let processor = OcrProcessor::new();
-    let ollama = settings.ollama_client();
 
     let prompt_override = if is_glm_ocr_model(&model_id) {
         None
@@ -692,6 +707,28 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 
     let output_flags = OutputFlags::resolve(cli.plain);
 
+    // Check if the model supports vision capabilities.
+    // If the user explicitly chose a model (-m), warn but continue.
+    // If the model was auto-selected (no -m), error with suggestions.
+    let ollama = settings.ollama_client();
+    let capabilities =
+        crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
+    if !capabilities.vision {
+        let user_chose_model = cli.model.is_some() || args.model.is_some();
+        if user_chose_model {
+            eprintln!(
+                "⚠ Warning: Model '{}' may not support vision. \
+                 The model might not see the images. Proceeding anyway...",
+                model_id
+            );
+            eprintln!("  If the model cannot see images, try: -m qwen3.5:4b");
+        } else {
+            return Err(
+                crate::vision::error::VisionError::NoVisionCapability { model: model_id }.into(),
+            );
+        }
+    }
+
     log::debug!("Debug Mode - Vision Configuration:");
     log::debug!("==========================");
     log::debug!("Model:             {}", model_id);
@@ -706,7 +743,6 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
     let model_options = model_config
         .build_model_options()
         .num_predict(args.max_tokens as i32);
-    let ollama = settings.ollama_client();
     let processor = VisionProcessor::new();
 
     match processor
