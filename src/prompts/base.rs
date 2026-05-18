@@ -182,8 +182,15 @@ Continue naturally from where you left off. Do not repeat completed work.
 /// Mermaid diagram rendering instruction
 ///
 /// Injected into system prompts when the `mermaid` feature is compiled.
+///
 /// Instructs the LLM to use ```mermaid code blocks for diagrams,
 /// which will be rendered as Unicode box-drawing art in the terminal.
+///
+/// Includes specific guidance to avoid emojis and wide Unicode characters
+/// in labels, because the terminal renderer calculates column widths
+/// incorrectly for multi-byte characters (causing misaligned boxes)
+/// and some characters (e.g., ✅, 👨‍💻) trigger a byte-slicing bug in the
+/// rendering library that causes the diagram to fall back to raw source.
 #[cfg(feature = "mermaid")]
 pub const MERMAID_INSTRUCTION: &str = r#"### MERMAID DIAGRAMS
 
@@ -191,6 +198,10 @@ When describing diagrams, flows, or relationships, use ```mermaid code blocks:
 - Supported types: flowchart, sequenceDiagram, classDiagram, stateDiagram, gantt, pie
 - Use Mermaid syntax inside the code block (e.g., ```mermaid\ngraph LR; A --> B\n```)
 - Keep diagrams simple — prefer clarity over complexity
+- Use plain text labels: write "Success" not "✅ Success", "User" not "👤 User"
+- Avoid emojis, flag symbols, and ZWJ sequences in labels — they misalign columns and cause rendering failures
+- Accented Latin characters (á, ü, ç) and Greek letters are fine; avoid CJK, emoji, and symbols in labels
+- Keep labels concise to fit within 80–120 column terminals
 - You may also use regular markdown tables and lists for structured data
 "#;
 
