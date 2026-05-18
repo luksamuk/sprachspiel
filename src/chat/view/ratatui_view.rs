@@ -19,8 +19,8 @@
 //! App::render(&mut terminal)
 //! ```
 //!
-//! Non-chat subcommands (query, translate, OCR, summarize) continue using
-//! `TerminalView` with termimad + println. Only the interactive REPL uses
+//! Non-chat subcommands (query, translate, OCR, summarize) use the
+//! standalone monochrome markdown renderer. Only the interactive REPL uses
 //! `RatatuiView`.
 
 use crate::chat::command_output::{

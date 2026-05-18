@@ -161,9 +161,6 @@ async fn main() -> AppResult<()> {
     let verbosity = crate::logging::Verbosity::resolve(cli.quiet, cli.verbose, config_verbosity);
     crate::logging::init(verbosity);
 
-    // Initialize markdown skin with user configuration
-    markdown::init_markdown_skin(&settings.display.skin);
-
     // Initialize tool call display flag from configuration
     crate::debug_tools::set_show_tool_calls(settings.display.show_tool_calls);
 
@@ -297,7 +294,7 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     let translated = response.message.content.trim();
 
     if output_flags.plain {
-        println!("{}", translated);
+        markdown::print_markdown_plain(translated);
     } else {
         markdown::print_markdown(translated);
     }
@@ -605,7 +602,7 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
     match processor.summarize(&args, &text, &model_id, settings).await {
         Ok(summary) => {
             if output_flags.plain {
-                println!("{}", summary);
+                markdown::print_markdown_plain(&summary);
             } else {
                 markdown::print_markdown(&summary);
             }
@@ -720,7 +717,7 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
             if args.json {
                 print_vision_results(&result, true);
             } else if output_flags.plain {
-                println!("{}", result.content);
+                markdown::print_markdown_plain(&result.content);
             } else {
                 markdown::print_markdown(&result.content);
             }

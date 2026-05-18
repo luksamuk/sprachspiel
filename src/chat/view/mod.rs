@@ -10,7 +10,7 @@
 //!     ↓ uses
 //! ChatView (trait)
 //!     ↓ implemented by
-//! TerminalView (current) ─── TuiView (future)
+//! RatatuiView (TUI chat) ─── standalone renderer (query/translate/summarize)
 //! ```
 //!
 //! NOTE: The `ChatView` trait is intentionally kept for future TUI implementation.
@@ -70,10 +70,8 @@ pub(crate) const EXTENDED_MIND_ART: [&str; 14] = [
 // IMPORTANT: Review and remove any dead code after TUI is implemented.
 
 mod ratatui_view;
-mod terminal;
 
 pub use ratatui_view::RatatuiView;
-pub use terminal::TerminalView;
 
 // Re-export TokenMetrics from core for consumers of this module
 pub use crate::chat::core::TokenMetrics;
@@ -225,19 +223,18 @@ pub fn create_view_event_channel() -> (ViewEventSender, ViewEventReceiver) {
 /// Abstraction for output rendering in the chat REPL
 ///
 /// This trait enables the REPL to work with different output backends:
-/// - `TerminalView`: Current implementation using println!/eprintln!
-/// - `TuiView`: Future implementation for ratatui.rs TUI
+/// - `RatatuiView`: TUI implementation using ratatui widgets
+/// - Standalone renderer: For non-chat subcommands (query, translate, etc.)
 ///
 /// **Note:** This trait is part of the TUI migration architecture (see AGENTS.md).
-/// It provides the abstraction layer for switching between terminal output and
-/// future TUI rendering. Currently used via TerminalView in repl.rs.
+/// It provides the abstraction layer for the TUI chat view.
 ///
 /// # Example
 ///
 /// ```ignore
 /// use chat::view::ChatView;
 ///
-/// let mut view = TerminalView::new();
+/// let mut view = RatatuiView::new();
 /// view.show_welcome(&session, &model_config, &capabilities);
 /// view.show_assistant_response(&content, thinking, &metrics);
 /// view.show_error("Something went wrong");
@@ -311,7 +308,7 @@ pub trait ChatView: Send {
     /// Display markdown content
     ///
     /// Renders markdown text using the appropriate renderer for the view.
-    /// TerminalView uses termimad; RatatuiView will use tui-markdown.
+    /// RatatuiView uses tui-markdown via ratatui widgets.
     ///
     /// Used for:
     /// - Compact summary display
@@ -322,7 +319,7 @@ pub trait ChatView: Send {
     /// Display thinking content (dimmed, with 🧠 Thinking header and │ border)
     ///
     /// Renders the model's internal reasoning before the main response.
-    /// TerminalView renders this in dim/light gray with optional markdown.
+    /// RatatuiView renders this with dim styling and optional markdown.
     ///
     /// # Arguments
     ///
@@ -332,16 +329,14 @@ pub trait ChatView: Send {
     /// Display the help line hint after startup messages
     ///
     /// Shows "Type /help for commands, /quit to exit" centered.
-    /// TerminalView renders with DIM formatting; RatatuiView will
-    /// render as a centered text paragraph in the chat area.
+    /// RatatuiView renders as a centered text paragraph in the chat area.
     fn show_help_line(&mut self);
 
     /// Clear the continuation prompt line
     ///
     /// Clears the current line (used when continuation tag is detected
     /// to remove the old response before showing the new one).
-    /// TerminalView uses ANSI escape `\x1B[2K\r`; RatatuiView will
-    /// simply trigger a full widget redraw.
+    /// RatatuiView triggers a full widget redraw.
     fn clear_continuation_line(&mut self);
 
     /// Display a command output result
@@ -373,8 +368,7 @@ pub trait ChatView: Send {
     /// Whether progress spinners should be suppressed.
     ///
     /// Returns `true` for TUI views that manage their own progress indication
-    /// (e.g., a built-in spinner in the status bar). TerminalView returns
-    /// `false` because it relies on indicatif spinners for visual feedback.
+    /// (e.g., a built-in spinner in the status bar).
     ///
     /// When `true`, `create_spinner()` returns a hidden (no-op) spinner and
     /// `finish_spinner` is a no-op, preventing ANSI escape sequence corruption

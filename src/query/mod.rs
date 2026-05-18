@@ -2,8 +2,7 @@
 //!
 //! Consolidates common logic for query, legacy query, and chat message handling.
 
-#![expect(clippy::print_stdout)] // Query mode output
-#![expect(clippy::print_stderr)] // Query mode output
+#![expect(clippy::print_stderr)] // Query mode error output
 mod context;
 mod coordinator;
 mod executor;
@@ -93,7 +92,7 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
                     let cleaned = strip_thinking_tags(&content);
                     if !cleaned.trim().is_empty() {
                         if use_plain {
-                            println!("{}", cleaned);
+                            markdown::print_markdown_plain(&cleaned);
                         } else {
                             markdown::print_markdown(&cleaned);
                         }
@@ -200,7 +199,7 @@ pub fn display_result(result: &QueryResult, use_think: bool, use_plain: bool) {
     let content = strip_thinking_tags(&result.content);
 
     if use_plain {
-        println!("{}", content);
+        markdown::print_markdown_plain(&content);
     } else {
         markdown::print_markdown(&content);
     }

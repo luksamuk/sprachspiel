@@ -6,20 +6,13 @@
 //!
 //! - `extract_thinking()` — Pure data extraction (no I/O). Returns the extracted
 //!   thinking content without rendering. Use this when a `ChatView` is available.
-//! - `display_thinking()` — Legacy function that extracts AND renders to stderr.
+//! - `display_thinking()` — Standalone function that extracts AND renders to stderr.
+//!   Uses the standalone monochrome markdown renderer.
 //!   Use only in contexts without `ChatView` (e.g., query mode).
-//!
-//! # Migration Note (W6-PR1)
-//!
-//! `display_thinking()` is retained only for `query/mod.rs` (non-REPL query mode).
-//! The coordinator callback in `setup_coordinator` now uses `ViewEventSender`
-//! to send events through a channel, which are drained into `ChatView` after
-//! the coordinator call completes. No direct print calls remain in the chat path.
 
-#![expect(clippy::print_stderr)] // Legacy display_thinking() for query mode (non-REPL)
+#![expect(clippy::print_stderr)] // display_thinking() prints to stderr
 
 use regex::Regex;
-use unicode_width::UnicodeWidthChar;
 
 /// ANSI color for thinking text (light gray) — used by display_thinking() only
 const THINKING_COLOR: &str = "\x1B[37m";
@@ -147,17 +140,15 @@ pub fn extract_thinking(content: &str, thinking_field: Option<&String>) -> Optio
     })
 }
 
-/// Display thinking content to stderr with light gray color and optional markdown.
+/// Display thinking content to stderr with 🧠 header and │ border.
 ///
-/// **Legacy function** — prefer `extract_thinking()` + `ChatView::show_thinking()`.
-///
-/// This function is retained for contexts where no `ChatView` is available,
-/// such as the coordinator event callback in `setup_coordinator()`.
+/// **Standalone function** — uses the monochrome markdown renderer.
+/// For contexts without `ChatView` (query mode).
 ///
 /// # Arguments
 /// * `content` - The full response content
 /// * `thinking_field` - Optional thinking field from API response
-/// * `render_markdown` - Whether to render as markdown
+/// * `render_markdown` - Whether to render as markdown (tables, headings, etc.)
 ///
 /// # Returns
 /// The extracted thinking content (if any), for potential further use
@@ -178,21 +169,21 @@ pub fn display_thinking(
     if let Some(ref thinking) = thinking_content {
         eprintln!("{DIM_STYLE}{THINKING_COLOR}🧠 Thinking{RESET}");
 
-        // Use fixed chat width (80 columns) for consistent rendering
-        let terminal_width = crate::markdown::CHAT_TERMINAL_WIDTH;
+        let terminal_width = crossterm::terminal::size()
+            .map(|(cols, _)| cols as usize)
+            .unwrap_or(80);
         let wrap_width = terminal_width.saturating_sub(THINKING_BORDER_WIDTH);
 
         if render_markdown {
-            // Use MadSkin with proper wrapping
-            let skin = termimad::MadSkin::default();
-            let wrapped = skin.text(thinking, Some(wrap_width));
-            for line in wrapped.to_string().lines() {
+            // Use standalone markdown renderer for table/headings support
+            let rendered = crate::markdown::standalone::render_markdown(thinking, wrap_width);
+            for line in rendered.lines() {
                 eprintln!("{DIM_STYLE}{THINKING_COLOR}{THINKING_BORDER}{RESET}{line}");
             }
         } else {
-            // Manual word wrap for plain text
-            let wrapped = wrap_text(thinking, wrap_width);
-            for line in wrapped.lines() {
+            // Plain mode: render without ANSI but preserve table structure (pipe-delimited)
+            let rendered = crate::markdown::standalone::render_markdown_plain(thinking, wrap_width);
+            for line in rendered.lines() {
                 eprintln!("{DIM_STYLE}{THINKING_COLOR}{THINKING_BORDER}{RESET}{line}");
             }
         }
@@ -200,59 +191,6 @@ pub fn display_thinking(
     }
 
     thinking_content
-}
-
-/// Wrap plain text to a given width, breaking at word boundaries
-fn wrap_text(text: &str, width: usize) -> String {
-    if width < 10 {
-        return text.to_string();
-    }
-
-    // Preserve paragraph breaks (double newlines in original)
-    let paragraphs: Vec<&str> = text.split("\n\n").collect();
-    if paragraphs.len() > 1 {
-        return paragraphs
-            .iter()
-            .map(|p| wrap_single_paragraph(p, width))
-            .collect::<Vec<_>>()
-            .join("\n\n");
-    }
-
-    wrap_single_paragraph(text, width)
-}
-
-/// Wrap a single paragraph (no internal double newlines)
-fn wrap_single_paragraph(text: &str, width: usize) -> String {
-    if width < 10 {
-        return text.to_string();
-    }
-
-    let mut lines = Vec::new();
-    let mut current_line = String::new();
-    let mut current_len = 0;
-
-    for word in text.split_whitespace() {
-        let word_len = word.chars().map(|c| c.width().unwrap_or(0)).sum::<usize>();
-
-        if current_len == 0 {
-            current_line.push_str(word);
-            current_len = word_len;
-        } else if current_len + 1 + word_len <= width {
-            current_line.push(' ');
-            current_line.push_str(word);
-            current_len += 1 + word_len;
-        } else {
-            lines.push(current_line);
-            current_line = word.to_string();
-            current_len = word_len;
-        }
-    }
-
-    if !current_line.is_empty() {
-        lines.push(current_line);
-    }
-
-    lines.join("\n")
 }
 
 #[cfg(test)]

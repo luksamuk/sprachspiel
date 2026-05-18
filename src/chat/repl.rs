@@ -3,10 +3,12 @@
 //! Handles session initialization, model detection, and delegates to
 //! the TUI event loop (`repl_tui`) for interactive chat.
 //!
-//! The terminal REPL loop (rustyline + termimad) has been replaced by
-//! the ratatui-based TUI in PR2. This module now handles pre-TUI setup
+//! The terminal REPL loop (rustyline) has been replaced by the ratatui-based
+//! TUI in PR2. This module now handles pre-TUI setup
 //! only (database, session, model detection) and then calls
 //! `run_chat_repl_tui()` for the interactive loop.
+
+#![expect(clippy::print_stderr)] // Pre-TUI session warnings/errors to stderr
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,7 +25,6 @@ use super::core::{send_message, send_message_stream};
 use super::llm_event::LlmEvent;
 use super::session::{ChatSession, MessageRole};
 use super::view::ChatView;
-use super::view::TerminalView;
 
 use crate::facts::db::DecayStats;
 use crate::facts::extract::extract_and_insert_facts;
@@ -78,8 +79,7 @@ fn init_chat_database(
              Use --anonymous for anonymous mode without database persistence.",
             storage_path.display()
         );
-        let mut view = TerminalView::new();
-        view.show_error(&error_msg);
+        eprintln!("\x1B[31m{}\x1B[0m", error_msg);
         Some(error_msg)
     } else {
         None
@@ -478,8 +478,6 @@ fn create_session(
         };
     }
 
-    let mut view = TerminalView::new();
-
     if let Some(session_name) = &args.load {
         if let Some(db_ref) = db {
             match ChatSession::load_sqlite(db_ref, session_name) {
@@ -494,8 +492,11 @@ fn create_session(
                     };
                 }
                 Err(e) => {
-                    view.show_warning(&format!("Could not load session '{}': {}", session_name, e));
-                    view.show_system("Starting new session...");
+                    eprintln!(
+                        "\x1B[33m⚠️ Could not load session '{}': {}\x1B[0m",
+                        session_name, e
+                    );
+                    eprintln!("Starting new session...");
                     let mut new_session = ChatSession::new(
                         model_override.unwrap_or(default_model).to_string(),
                         project_id.clone(),
@@ -535,16 +536,19 @@ fn create_session(
                     };
                 }
                 Err(e) => {
-                    view.show_warning(&format!("Could not load session '{}': {}", last_id, e));
-                    view.show_system("Starting new session...");
+                    eprintln!(
+                        "\x1B[33m⚠️ Could not load session '{}': {}\x1B[0m",
+                        last_id, e
+                    );
+                    eprintln!("Starting new session...");
                 }
             },
             Ok(None) => {
                 // No sessions exist - create new session (not persisted yet)
             }
             Err(e) => {
-                view.show_warning(&format!("Could not query sessions: {}", e));
-                view.show_system("Starting new session...");
+                eprintln!("\x1B[33m⚠️ Could not query sessions: {}\x1B[0m", e);
+                eprintln!("Starting new session...");
             }
         }
     }
@@ -561,51 +565,53 @@ fn create_session(
 }
 
 /// Validate and set the model for a session.
+///
+/// Prints warnings/errors to stderr before the TUI takes over the terminal.
 fn resolve_session_model(
     session: &mut ChatSession,
     model_override: Option<&str>,
     default_model: &str,
-    view: &mut dyn ChatView,
 ) -> bool {
     if let Some(model) = model_override {
         if crate::user_models::is_model_valid(model) {
             session.set_model(model.to_string());
             return true;
         }
-        view.show_error(&format!(
-            "Unknown model '{}'. Use --list to see available models.",
+        eprintln!(
+            "\x1B[31mUnknown model '{}'. Use --list to see available models.\x1B[0m",
             model
-        ));
+        );
         return false;
     }
 
     if !crate::user_models::is_model_valid(&session.model) {
-        view.show_warning(&format!(
-            "Saved model '{}' no longer exists. Using default '{}'.",
+        eprintln!(
+            "\x1B[33m⚠️ Saved model '{}' no longer exists. Using default '{}'.\x1B[0m",
             session.model, default_model
-        ));
+        );
         session.set_model(default_model.to_string());
     }
     true
 }
 
 /// Determine thinking mode from CLI flags, config, and model capabilities.
+///
+/// Prints warnings to stderr before the TUI takes over the terminal.
 fn resolve_thinking_mode(
     cli_think: bool,
     config_thinking: bool,
     model_config: &ModelConfig,
     capabilities: &ModelCapabilities,
-    view: &mut dyn ChatView,
 ) -> bool {
     let cli_think_flag = cli_think;
     let model_default_thinking = model_config.thinking;
 
     if cli_think_flag {
         if !capabilities.thinking {
-            view.show_warning(&format!(
-                "Model '{}' does not support think mode. Ignoring -t/--think flag.",
+            eprintln!(
+                "\x1B[33m⚠️ Model '{}' does not support think mode. Ignoring -t/--think flag.\x1B[0m",
                 model_config.model_id
-            ));
+            );
             return false;
         }
         return true;
@@ -613,10 +619,10 @@ fn resolve_thinking_mode(
 
     let requested_thinking = config_thinking || model_default_thinking;
     if requested_thinking && !capabilities.thinking {
-        view.show_warning(&format!(
-            "Model '{}' does not support think mode. Disabled for this session.",
+        eprintln!(
+            "\x1B[33m⚠️ Model '{}' does not support think mode. Disabled for this session.\x1B[0m",
             model_config.model_id
-        ));
+        );
         return false;
     }
     requested_thinking
@@ -664,9 +670,8 @@ pub async fn run_chat_repl(
     if !args.anonymous && db.is_none() {
         if db_error.is_some() {
             // Error already printed in init_database
-            let mut view = TerminalView::new();
-            view.show_error("Cannot start chat session without database.");
-            view.show_system("Either fix the database issue or use --anonymous mode.");
+            eprintln!("\x1B[31mCannot start chat session without database.\x1B[0m");
+            eprintln!("Either fix the database issue or use --anonymous mode.");
         }
         return Ok(());
     }
@@ -682,11 +687,8 @@ pub async fn run_chat_repl(
     let ignore_agents = cli_ignore_agents || args.ignore_agents;
 
     // Validate and set model
-    {
-        let mut temp_view = TerminalView::new();
-        if !resolve_session_model(&mut session, model_override, default_model, &mut temp_view) {
-            return Ok(());
-        }
+    if !resolve_session_model(&mut session, model_override, default_model) {
+        return Ok(());
     }
 
     let current_model_name = session.model.clone();
@@ -700,21 +702,13 @@ pub async fn run_chat_repl(
     // 3. Chat-specific config (model.chat.thinking)
     // 4. Global config (model.thinking)
     // 5. Model default (from models.toml or built-in config)
-    //
-    // Note: Warnings from resolve_thinking_mode are shown via TerminalView
-    // before entering TUI mode. They appear briefly on stdout before the
-    // TUI takes over the terminal.
     let cli_think_flag = cli_think || args.think;
-    let think_enabled = {
-        let mut temp_view = TerminalView::new();
-        resolve_thinking_mode(
-            cli_think_flag,
-            config_thinking,
-            &model_config,
-            &capabilities,
-            &mut temp_view,
-        )
-    };
+    let think_enabled = resolve_thinking_mode(
+        cli_think_flag,
+        config_thinking,
+        &model_config,
+        &capabilities,
+    );
 
     // Tools mode priority: CLI -> config -> default
     let cli_tools_flag = cli_tools || args.tools;

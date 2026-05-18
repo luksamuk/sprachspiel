@@ -3,7 +3,7 @@
 //! This module provides ratatui `Style` and `Color` mappings that
 //! correspond to the ANSI color codes used in `view/mod.rs::colors`.
 //! The ANSI module is kept for non-chat subcommands (query, translate,
-//! OCR, summarize) which still use termimad+println.
+//! OCR, summarize) which use the standalone monochrome markdown renderer.
 
 use ratatui::style::{Color, Modifier, Style};
 
