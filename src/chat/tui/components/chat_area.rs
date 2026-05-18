@@ -32,7 +32,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
-use super::super::markdown::{MarkdownTheme, render_markdown};
+use super::super::markdown::{MarkdownTheme, render_markdown, render_markdown_streaming};
 use super::super::styles;
 use super::super::wrap::{wrap_line, wrap_styled_line};
 use super::chat_selection::{ChatSelection, selection_style};
@@ -246,8 +246,8 @@ fn build_lines(
                 if !lines.is_empty() {
                     lines.push(Line::raw(String::new()));
                 }
-                // Render markdown incrementally during streaming (same as Thinking blocks)
-                let rendered = render_markdown(&msg.content, theme, available_width);
+                // Streaming mode: Mermaid blocks shown as code blocks (deferred rendering)
+                let rendered = render_markdown_streaming(&msg.content, theme, available_width);
                 lines.extend(rendered.lines);
             }
             MessageType::Thinking => {
@@ -260,10 +260,9 @@ fn build_lines(
                     "🧠 Thinking",
                     styles::thinking_header_style(),
                 )));
-                // Render thinking content as markdown, with │ left border.
-                // Content width is reduced by the border prefix width.
+                // Streaming mode: Mermaid blocks shown as code blocks (deferred rendering)
                 let content_width = available_width.saturating_sub(THINKING_BORDER_WIDTH);
-                let rendered = render_markdown(&msg.content, theme, content_width);
+                let rendered = render_markdown_streaming(&msg.content, theme, content_width);
                 let border_span =
                     Span::styled(THINKING_BORDER_PREFIX, styles::thinking_border_style());
                 for render_line in rendered.lines {

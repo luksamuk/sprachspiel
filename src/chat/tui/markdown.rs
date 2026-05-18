@@ -1166,7 +1166,45 @@ fn apply_code_block_background(
     }
 }
 
+/// Render markdown for final output — Mermaid blocks rendered as diagrams.
+///
+/// Use this for completed messages (`Assistant`, `Tool`) where Mermaid
+/// diagrams should be rendered as Unicode box-drawing art. During streaming,
+/// use [`render_markdown_streaming`] instead to avoid rendering incomplete
+/// diagrams on every frame.
 pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) -> Text<'static> {
+    render_markdown_impl(content, theme, max_width, true)
+}
+
+/// Render markdown during streaming — Mermaid blocks shown as code blocks.
+///
+/// During LLM streaming (`AssistantStreaming`, `Thinking`), Mermaid blocks
+/// may be incomplete (missing closing fence) or have source that panics the
+/// `mermaid-text` crate (non-ASCII labels in gantt/task diagrams). Rendering
+/// them as diagrams on every frame wastes CPU and produces visual noise.
+///
+/// This function treats ` ```mermaid ` blocks as regular code blocks (syntax-
+/// highlighted by `tui-markdown`), deferring diagram rendering to the final
+/// [`render_markdown`] call when the message is complete.
+pub fn render_markdown_streaming(
+    content: &str,
+    theme: MarkdownTheme,
+    max_width: usize,
+) -> Text<'static> {
+    render_markdown_impl(content, theme, max_width, false)
+}
+
+/// Internal implementation shared between streaming and final rendering.
+///
+/// When `render_mermaid` is true, `ContentSegment::Mermaid` blocks are rendered
+/// as Unicode box-drawing diagrams via `mermaid-text`. When false, they are
+/// treated as regular markdown code blocks (syntax-highlighted by `tui-markdown`).
+fn render_markdown_impl(
+    content: &str,
+    theme: MarkdownTheme,
+    max_width: usize,
+    render_mermaid: bool,
+) -> Text<'static> {
     // Fast path: if no table or Mermaid structure detected, use tui-markdown directly
     if !content_contains_special_blocks(content) {
         let mut text = render_markdown_inner_owned(content, theme);
@@ -1192,8 +1230,17 @@ pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) ->
             }
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(mermaid_source) => {
-                let mermaid_lines = render_mermaid_tui(&mermaid_source, max_width, theme);
-                all_lines.extend(mermaid_lines);
+                if render_mermaid {
+                    let mermaid_lines = render_mermaid_tui(&mermaid_source, max_width, theme);
+                    all_lines.extend(mermaid_lines);
+                } else {
+                    // Streaming mode: treat as regular code block
+                    let code_md = format!("```mermaid\n{}```", mermaid_source);
+                    let rendered = render_markdown_inner_owned(&code_md, theme);
+                    let mut rendered_lines = rendered.lines;
+                    apply_code_block_background(&mut rendered_lines, theme, max_width);
+                    all_lines.extend(rendered_lines);
+                }
             }
         }
     }
@@ -2046,6 +2093,44 @@ mod tests {
             ContentSegment::Markdown(md) => assert!(md.contains("mermaid.init()")),
             _ => panic!("Expected Markdown segment"),
         }
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_streaming_mermaid_as_code_block() {
+        // During streaming, Mermaid blocks should be rendered as regular code blocks
+        // (syntax-highlighted by tui-markdown), not as diagrams.
+        let content = "Before\n\n```mermaid\ngraph LR; A --> B\n```\n\nAfter";
+        let text = render_markdown_streaming(content, MarkdownTheme::Dark, 80);
+
+        // Streaming mode should NOT call mermaid-text renderer.
+        // Instead, the content should appear as a code block with "mermaid" text.
+        let rendered_str = text.to_string();
+        assert!(
+            rendered_str.contains("mermaid"),
+            "Streaming should show mermaid as code block with text 'mermaid'"
+        );
+        assert!(
+            rendered_str.contains("A") && rendered_str.contains("B"),
+            "Streaming should preserve Mermaid source labels as text"
+        );
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_final_mermaid_rendered_as_diagram() {
+        // Final mode (non-streaming) should render Mermaid as a diagram.
+        let content = "Before\n\n```mermaid\ngraph LR; A --> B\n```\n\nAfter";
+        let text = render_markdown(content, MarkdownTheme::Dark, 80);
+
+        // Final mode should call mermaid-text renderer (box-drawing or fallback).
+        // The key difference from streaming: in streaming, it's a code block;
+        // in final, it's rendered diagram text.
+        let rendered_str = text.to_string();
+        assert!(
+            rendered_str.contains("A") && rendered_str.contains("B"),
+            "Final should contain diagram labels"
+        );
     }
 
     // ── Table parsing tests ───────────────────────────────────────

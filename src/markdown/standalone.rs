@@ -31,7 +31,32 @@ fn terminal_width() -> usize {
 ///
 /// Rich mode: ANSI bold for headings, box-drawing tables, Mermaid diagrams.
 /// Tables use the same responsive column-width algorithm as the TUI renderer.
+///
+/// Use this for completed messages where Mermaid diagrams should be rendered.
+/// During streaming, use [`render_markdown_streaming`] instead.
 pub fn render_markdown(content: &str, width: usize) -> String {
+    render_segments(content, width, true)
+}
+
+/// Render markdown during streaming — Mermaid blocks shown as code blocks.
+///
+/// During LLM streaming, Mermaid blocks may be incomplete (missing closing
+/// fence) or have source that panics the `mermaid-text` crate (non-ASCII
+/// labels). Rendering them as diagrams on every frame wastes CPU and produces
+/// visual noise. This function treats Mermaid blocks as regular code blocks.
+///
+/// Currently unused in standalone mode (terminal path is single-shot, not
+/// streaming), but provided for API symmetry with the TUI rendering path.
+#[allow(dead_code)] // API symmetry with TUI; will be used if terminal gets streaming
+pub fn render_markdown_streaming(content: &str, width: usize) -> String {
+    render_segments(content, width, false)
+}
+
+/// Internal implementation shared between streaming and final rendering.
+///
+/// When `render_mermaid` is true, Mermaid blocks are rendered as Unicode
+/// box-drawing diagrams. When false, they are treated as regular code blocks.
+fn render_segments(content: &str, width: usize, render_mermaid: bool) -> String {
     let mut output = String::new();
     let segments = extract_content_segments(content);
 
@@ -49,8 +74,15 @@ pub fn render_markdown(content: &str, width: usize) -> String {
             }
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(mermaid_source) => {
-                let rendered = super::mermaid::render_mermaid_rich(&mermaid_source, width);
-                output.push_str(&rendered);
+                if render_mermaid {
+                    let rendered = super::mermaid::render_mermaid_rich(&mermaid_source, width);
+                    output.push_str(&rendered);
+                } else {
+                    // Streaming mode: treat as regular code block
+                    output.push_str("```mermaid\n");
+                    output.push_str(&mermaid_source);
+                    output.push_str("```\n");
+                }
             }
         }
     }
@@ -455,5 +487,24 @@ mod tests {
             output.contains("A --> B"),
             "Plain render should contain original source"
         );
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_streaming_mermaid_as_code_block() {
+        // During streaming, Mermaid blocks should be shown as code blocks, not diagrams
+        let input = "Before\n\n```mermaid\ngraph LR; A --> B\n```\n\nAfter";
+        let output = render_markdown_streaming(input, 80);
+        // Streaming mode should emit mermaid source as a code block
+        assert!(
+            output.contains("```mermaid"),
+            "Streaming should contain mermaid fence"
+        );
+        assert!(
+            output.contains("A --> B"),
+            "Streaming should contain original source"
+        );
+        // It should NOT contain box-drawing diagram output (no rendered Mermaid)
+        // The output should look like regular markdown with a code block
     }
 }
