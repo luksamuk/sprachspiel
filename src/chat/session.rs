@@ -125,6 +125,11 @@ pub struct ChatSession {
     /// Background embedding tasks send (current, total) tuples to update the status bar.
     #[serde(skip)]
     pub embedding_tx: Option<crate::chat::app::EmbeddingProgressTx>,
+    /// Channel sender for async system messages from background tasks.
+    /// Background tasks (e.g., /reindex) send completion messages
+    /// that appear in the TUI chat area.
+    #[serde(skip)]
+    pub async_message_tx: Option<crate::chat::app::AsyncMessageTx>,
     /// Whether a `/reindex --yes` is currently running.
     /// Prevents concurrent reindex operations which would conflict on the database.
     #[serde(skip)]
@@ -212,6 +217,7 @@ impl ChatSession {
             last_retrieval_time: None,
             active_skill: None,
             embedding_tx: None,
+            async_message_tx: None,
             is_reindexing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -274,6 +280,7 @@ impl ChatSession {
             last_retrieval_time: None,
             active_skill: None,
             embedding_tx: None,
+            async_message_tx: None,
             is_reindexing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }

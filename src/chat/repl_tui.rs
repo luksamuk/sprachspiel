@@ -81,6 +81,9 @@ pub async fn run_chat_repl_tui(
     // Wire embedding progress channel to session for per-message progress reporting
     state.session.embedding_tx = Some(view.embedding_tx());
 
+    // Wire async message channel to session for background task notifications
+    state.session.async_message_tx = Some(view.async_message_tx());
+
     // ── Startup Messages ─────────────────────────────────────────────
     // All startup messages are rendered through the TUI view so they
     // appear in the chat area (not as terminal prints).
@@ -524,6 +527,7 @@ pub async fn run_chat_repl_tui(
 
         // Re-render after each event or tick
         view.app_mut().poll_embedding_progress();
+        view.app_mut().poll_async_messages();
         view.render();
     }
 }

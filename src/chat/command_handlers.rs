@@ -754,7 +754,8 @@ pub async fn handle_search(state: &ReplState, query: String, limit: usize) -> Ve
 ///
 /// Without `--yes`, shows a warning explaining that `/reindex` regenerates
 /// ALL embeddings from scratch. With `--yes`, resets all `has_embedding`
-/// flags, deletes all vec0 embeddings, and regenerates them.
+/// flags, deletes all vec0 embeddings, and spawns a background task to
+/// regenerate them (the TUI stays responsive during regeneration).
 ///
 /// Prevents concurrent execution: if a `/reindex --yes` is already running,
 /// returns a warning instead of starting a second one.
@@ -787,58 +788,94 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
         }
     };
 
-    // Set reindexing flag to prevent concurrent execution
-    state
-        .session
-        .is_reindexing
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-
     // Reset all embedding flags and delete vec0 embeddings so that
     // regenerate_all_embeddings() will re-process every item from scratch.
+    // This is done synchronously because it's fast (just SQL statements).
     let reset_stats = match db.reset_all_embedding_flags() {
         Ok(stats) => stats,
         Err(e) => {
-            // Clear reindexing flag on error so the user can retry
-            state
-                .session
-                .is_reindexing
-                .store(false, std::sync::atomic::Ordering::Relaxed);
             return vec![CommandOutput::error(format!(
                 "Failed to reset embedding flags: {e}"
             ))];
         }
     };
 
-    // If there's nothing to re-index, report immediately (no progress needed)
+    // If there's nothing to re-index, report immediately
     if reset_stats.items == 0 && reset_stats.facts == 0 {
-        state
-            .session
-            .is_reindexing
-            .store(false, std::sync::atomic::Ordering::Relaxed);
         return vec![CommandOutput::info("No content to re-index.")];
     }
 
     let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
     let embedding_client = Arc::new(embedding_client);
-
-    // Pass the embedding progress channel so /reindex shows progress in the TUI
     let progress_tx = state.session.embedding_tx.clone();
-    let stats =
-        crate::embeddings::regenerate_all_embeddings(&db, &embedding_client, true, progress_tx)
+
+    // TUI mode: spawn in background so the UI stays responsive.
+    // The completion message arrives via the async_message channel
+    // and is displayed by poll_async_messages() in the event loop.
+    // Terminal mode: run synchronously and return the result directly.
+    let async_message_tx = state.session.async_message_tx.clone();
+    if async_message_tx.is_some() {
+        // --- TUI mode: background execution ---
+        state
+            .session
+            .is_reindexing
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let is_reindexing = state.session.is_reindexing.clone();
+        tokio::spawn(async move {
+            let result = crate::embeddings::regenerate_all_embeddings(
+                &db,
+                &embedding_client,
+                true,
+                progress_tx,
+            )
             .await;
 
-    // Clear reindexing flag — regeneration is complete
-    state
-        .session
-        .is_reindexing
-        .store(false, std::sync::atomic::Ordering::Relaxed);
+            // Build completion message
+            let msg = if result.has_errors() {
+                format!(
+                    "✓ Reindexed {} of {} embeddings. {} failed — will be retried on next startup.",
+                    result.total_processed(),
+                    result.items_processed + result.chunks_processed,
+                    result.total_failed()
+                )
+            } else {
+                format!(
+                    "✓ Reindexed {} of {} embeddings.",
+                    result.total_processed(),
+                    result.items_processed + result.chunks_processed
+                )
+            };
 
-    vec![CommandOutput::ReindexResult(ReindexData {
-        regenerated: stats.total_processed(),
-        total: stats.items_processed + stats.chunks_processed,
-        success: true,
-        error: None,
-    })]
+            // Send completion message to the TUI chat area
+            if let Some(tx) = async_message_tx.as_ref() {
+                let _ = tx.send(msg);
+            }
+
+            // Clear reindexing flag
+            is_reindexing.store(false, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        vec![CommandOutput::info(
+            "Reindexing started in the background. Progress shown in status bar (⚙).",
+        )]
+    } else {
+        // --- Terminal mode: synchronous execution ---
+        let stats = crate::embeddings::regenerate_all_embeddings(
+            &db,
+            &embedding_client,
+            false,
+            progress_tx,
+        )
+        .await;
+
+        vec![CommandOutput::ReindexResult(ReindexData {
+            regenerated: stats.total_processed(),
+            total: stats.items_processed + stats.chunks_processed,
+            success: true,
+            error: None,
+        })]
+    }
 }
 
 /// Handle compact command (async)

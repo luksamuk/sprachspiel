@@ -58,6 +58,8 @@ pub struct RatatuiView {
     restored: bool,
     /// Sender for embedding progress updates (cloned by background tasks)
     embedding_tx: crate::chat::app::EmbeddingProgressTx,
+    /// Sender for async system messages from background tasks (cloned by /reindex etc.)
+    async_message_tx: crate::chat::app::AsyncMessageTx,
 }
 
 impl RatatuiView {
@@ -80,7 +82,7 @@ impl RatatuiView {
             default_panic_hook(info);
         }));
 
-        let (app, embedding_tx) = App::with_embedding_channel(theme, model_names);
+        let (app, embedding_tx, async_message_tx) = App::with_embedding_channel(theme, model_names);
 
         // Set up tool call callback: route debug_tools output to the chat area
         // instead of raw stderr (which would corrupt the TUI alternate screen).
@@ -101,6 +103,7 @@ impl RatatuiView {
             tool_call_rx,
             restored: false,
             embedding_tx,
+            async_message_tx,
         }
     }
 
@@ -122,6 +125,14 @@ impl RatatuiView {
     /// as `(current, total)` tuples that appear in the status bar.
     pub fn embedding_tx(&self) -> crate::chat::app::EmbeddingProgressTx {
         self.embedding_tx.clone()
+    }
+
+    /// Get a clone of the async message sender.
+    ///
+    /// Background tasks (e.g., /reindex) can use this to send system
+    /// messages that appear in the chat area when the operation completes.
+    pub fn async_message_tx(&self) -> crate::chat::app::AsyncMessageTx {
+        self.async_message_tx.clone()
     }
 
     /// Get a mutable reference to the terminal.

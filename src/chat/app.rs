@@ -38,6 +38,12 @@ use super::tui::markdown::MarkdownTheme;
 /// indicator (⚙ current/total) during embedding generation.
 pub type EmbeddingProgressTx = mpsc::UnboundedSender<(usize, usize)>;
 
+/// Type alias for async system message channel sender.
+///
+/// Background tasks (e.g., /reindex) send system message strings to be
+/// displayed in the TUI chat area when the operation completes.
+pub type AsyncMessageTx = mpsc::UnboundedSender<String>;
+
 /// Processing state of the LLM
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmState {
@@ -223,6 +229,9 @@ pub struct App {
     /// Channel receiver for embedding progress updates from background tasks.
     /// Each message is (current, total) — current embeddings generated out of total.
     embedding_progress_rx: mpsc::UnboundedReceiver<(usize, usize)>,
+    /// Channel receiver for asynchronous system messages from background tasks
+    /// (e.g., reindex completion notification).
+    async_message_rx: mpsc::UnboundedReceiver<String>,
 }
 
 /// Pick a random spinner preset from rattles (same logic as `spinner.rs`).
@@ -283,12 +292,12 @@ fn random_tui_spinner_frames() -> Vec<&'static str> {
 impl App {
     /// Create a new App with an embedding progress sender for background tasks.
     ///
-    /// Returns the App and an `EmbeddingProgressTx` that background embedding tasks
-    /// can use to report progress as `(current, total)` tuples.
+    /// Returns the App, an `EmbeddingProgressTx` for progress updates, and an
+    /// `AsyncMessageTx` for async system messages from background tasks.
     pub fn with_embedding_channel(
         theme: MarkdownTheme,
         model_names: Vec<String>,
-    ) -> (Self, EmbeddingProgressTx) {
+    ) -> (Self, EmbeddingProgressTx, AsyncMessageTx) {
         let completer = ChatCompleter::new(model_names.clone());
 
         // Create textarea with custom styling: no line numbers, no cursor line highlight
@@ -299,6 +308,9 @@ impl App {
 
         // Channel for embedding progress updates
         let (embedding_tx, embedding_progress_rx) = mpsc::unbounded_channel();
+
+        // Channel for async system messages (e.g., reindex completion)
+        let (async_message_tx, async_message_rx) = mpsc::unbounded_channel();
 
         let app = Self {
             messages: Vec::new(),
@@ -320,9 +332,10 @@ impl App {
             spinner_frame: 0,
             block_finalized: false,
             embedding_progress_rx,
+            async_message_rx,
         };
 
-        (app, embedding_tx)
+        (app, embedding_tx, async_message_tx)
     }
 
     /// Add a message to the chat area and auto-scroll to bottom
@@ -756,6 +769,17 @@ impl App {
     /// Clear the embedding progress indicator.
     pub fn clear_embedding_progress(&mut self) {
         self.status_bar.embedding_progress = None;
+    }
+
+    /// Poll for async system messages from background tasks.
+    ///
+    /// Background tasks (e.g., /reindex) send system message strings through
+    /// the `async_message_rx` channel. This method drains the channel and
+    /// adds each message to the chat area as a system message.
+    pub fn poll_async_messages(&mut self) {
+        while let Ok(msg) = self.async_message_rx.try_recv() {
+            self.add_message(ChatMessage::system(msg));
+        }
     }
 
     /// Advance the spinner frame.
@@ -1816,7 +1840,7 @@ mod tests {
 
     /// Create a minimal App for testing streaming message operations.
     fn test_app() -> App {
-        let (app, _embedding_tx) =
+        let (app, _embedding_tx, _async_message_tx) =
             App::with_embedding_channel(MarkdownTheme::Dark, vec!["test-model".to_string()]);
         app
     }
@@ -2577,7 +2601,7 @@ mod tests {
 
     #[test]
     fn test_poll_embedding_progress_receives_progress() {
-        let (mut app, tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
 
         // Send progress update (3 of 10 items processed)
         let _ = tx.send((3, 10));
@@ -2593,7 +2617,7 @@ mod tests {
 
     #[test]
     fn test_poll_embedding_progress_completion_clears_indicator() {
-        let (mut app, tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
 
         // Send completion (10 of 10 items processed)
         let _ = tx.send((10, 10));
@@ -2608,7 +2632,7 @@ mod tests {
 
     #[test]
     fn test_poll_embedding_progress_drains_multiple() {
-        let (mut app, tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+        let (mut app, tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
 
         // Send multiple progress updates — poll keeps only the latest
         let _ = tx.send((1, 10));
@@ -2626,7 +2650,7 @@ mod tests {
 
     #[test]
     fn test_poll_embedding_progress_no_messages_keeps_state() {
-        let (mut app, _tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+        let (mut app, _tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
 
         // No messages sent — state should remain default (None)
         app.poll_embedding_progress();
