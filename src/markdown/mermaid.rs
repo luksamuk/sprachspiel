@@ -2,7 +2,7 @@
 //!
 //! Uses the `mermaid-text` crate for pure-Rust rendering — no browser,
 //! no image protocols, no external tools. Falls back to raw code block
-//! on parse errors.
+//! on parse errors or panics.
 //!
 //! Two rendering modes:
 //! - **Rich** (default): Unicode box-drawing characters with responsive width
@@ -13,17 +13,39 @@
 ///
 /// Uses `mermaid_text::render_with_width()` for responsive output that
 /// adapts to the terminal width. Falls back to an indented code block
-/// on parse errors (invalid Mermaid syntax).
+/// on parse errors or panics (the crate has known UTF-8 boundary bugs
+/// with non-ASCII labels in gantt/task diagrams).
 ///
 /// # Arguments
 /// * `source` - The Mermaid diagram source (content between ` ```mermaid ` fences)
 /// * `width` - Terminal width for responsive rendering
 pub fn render_mermaid_rich(source: &str, width: usize) -> String {
     let effective_width = width.clamp(40, 200);
-    match mermaid_text::render_with_width(source.trim(), Some(effective_width)) {
-        Ok(rendered) => format!("{rendered}\n"),
-        Err(e) => {
+    let trimmed = source.trim();
+
+    // mermaid-text can panic on non-ASCII characters in labels (byte-slicing
+    // bug in gantt/task parsers). Wrap in catch_unwind to protect the process.
+    let result = std::panic::catch_unwind(|| {
+        mermaid_text::render_with_width(trimmed, Some(effective_width))
+    });
+
+    match result {
+        Ok(Ok(rendered)) => format!("{rendered}\n"),
+        Ok(Err(e)) => {
             log::warn!("Mermaid parse error, falling back to code block: {e}");
+            format!("```mermaid\n{source}```\n")
+        }
+        Err(panic_info) => {
+            // The crate panicked (likely UTF-8 boundary bug). Extract message
+            // if possible, log it, and fall back gracefully.
+            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            log::warn!("Mermaid crate panicked, falling back to code block: {msg}");
             format!("```mermaid\n{source}```\n")
         }
     }
@@ -107,6 +129,22 @@ mod tests {
         assert!(
             !output.is_empty(),
             "Should produce some output even on error"
+        );
+    }
+
+    #[test]
+    fn test_render_mermaid_non_ascii_labels_no_panic() {
+        // mermaid-text has a byte-slicing bug in gantt/task diagrams with
+        // non-ASCII characters (e.g., "Chat básico" — the 'á' spans bytes
+        // 6-8, but the crate slices at byte 7). Verify we catch the panic
+        // and fall back to code block instead of crashing the process.
+        let src = "gantt\ntitle Test\nsection Phase 1\nChat básico        :a1, 2024-01-01, 1d";
+        let output = render_mermaid_rich(src, 80);
+        // Either it renders successfully, or we get a code block fallback.
+        // Either way, it MUST NOT panic.
+        assert!(
+            !output.is_empty(),
+            "Non-ASCII gantt labels should not produce empty output"
         );
     }
 }

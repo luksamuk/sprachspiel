@@ -1255,39 +1255,67 @@ fn content_contains_table(content: &str) -> bool {
 /// Uses the `mermaid-text` crate to produce Unicode box-drawing text,
 /// then converts each line to a ratatui `Line` with theme-aware styling.
 ///
-/// Falls back to rendering the Mermaid source as a code block on parse errors.
+/// Falls back to rendering the Mermaid source as a code block on parse
+/// errors or panics (the crate has known UTF-8 boundary bugs with
+/// non-ASCII labels in gantt/task diagrams).
 #[cfg(feature = "mermaid")]
 fn render_mermaid_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> Vec<Line<'static>> {
     let effective_width = max_width.clamp(40, 200);
     let border_style = table_style_border(theme);
     let text_style = table_style_cell(theme);
+    let trimmed = source.trim();
 
-    match mermaid_text::render_with_width(source.trim(), Some(effective_width)) {
-        Ok(rendered) => rendered
-            .lines()
-            .map(|line| {
-                if looks_like_diagram_line(line) {
-                    Line::from(Span::styled(line.to_string(), border_style))
-                } else {
-                    Line::from(Span::styled(line.to_string(), text_style))
-                }
-            })
-            .collect(),
-        Err(_) => {
-            // Fallback: render as a code block with "mermaid" language tag
-            let code_style = table_style_cell(theme);
-            let mut lines = Vec::new();
-            lines.push(Line::from(Span::styled(
-                "```mermaid".to_string(),
-                code_style,
-            )));
-            for line in source.lines() {
-                lines.push(Line::from(Span::styled(line.to_string(), code_style)));
-            }
-            lines.push(Line::from(Span::styled("```".to_string(), code_style)));
-            lines
+    // mermaid-text can panic on non-ASCII characters in labels (byte-slicing
+    // bug in gantt/task parsers). Wrap in catch_unwind to protect the process.
+    let result = std::panic::catch_unwind(|| {
+        mermaid_text::render_with_width(trimmed, Some(effective_width))
+    });
+
+    let rendered = match result {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => {
+            log::warn!("Mermaid parse error in TUI, falling back to code block: {e}");
+            return fallback_mermaid_code_block(source, theme);
         }
+        Err(panic_info) => {
+            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            log::warn!("Mermaid crate panicked in TUI, falling back to code block: {msg}");
+            return fallback_mermaid_code_block(source, theme);
+        }
+    };
+
+    rendered
+        .lines()
+        .map(|line| {
+            if looks_like_diagram_line(line) {
+                Line::from(Span::styled(line.to_string(), border_style))
+            } else {
+                Line::from(Span::styled(line.to_string(), text_style))
+            }
+        })
+        .collect()
+}
+
+/// Fallback for Mermaid rendering failures: emit as a styled code block.
+#[cfg(feature = "mermaid")]
+fn fallback_mermaid_code_block(source: &str, theme: MarkdownTheme) -> Vec<Line<'static>> {
+    let code_style = table_style_cell(theme);
+    let mut lines = Vec::new();
+    lines.push(Line::from(Span::styled(
+        "```mermaid".to_string(),
+        code_style,
+    )));
+    for line in source.lines() {
+        lines.push(Line::from(Span::styled(line.to_string(), code_style)));
     }
+    lines.push(Line::from(Span::styled("```".to_string(), code_style)));
+    lines
 }
 
 /// Check if a line contains box-drawing characters (diagram line vs text label).
