@@ -55,6 +55,7 @@ pub(crate) async fn flush_pending_embeddings(
     db: Arc<crate::db::Database>,
     client: Arc<crate::embeddings::EmbeddingClient>,
     quiet: bool,
+    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
 ) {
     // Check for pending items
     let pending_items = match db.get_content_items_for_reindex() {
@@ -72,7 +73,7 @@ pub(crate) async fn flush_pending_embeddings(
     }
 
     // Complete pending embeddings
-    let _ = recover_missing_embeddings_with_progress(&db, &client, quiet).await;
+    let _ = recover_missing_embeddings_with_progress(&db, &client, quiet, progress_tx).await;
 }
 
 /// Handle a chat command in the REPL loop.
@@ -225,7 +226,14 @@ async fn handle_quit(
         // Flush pending embeddings before exit.
         // In TUI mode, suppress output to avoid corrupting the alternate screen buffer.
         if let (Some(db), Some(client)) = (&state.db, &state.embedding_client) {
-            flush_pending_embeddings(Arc::clone(db), Arc::clone(client), suppress_spinner).await;
+            let progress_tx = state.session.embedding_tx.clone();
+            flush_pending_embeddings(
+                Arc::clone(db),
+                Arc::clone(client),
+                suppress_spinner,
+                progress_tx,
+            )
+            .await;
             // Flush pending fact embeddings
             crate::facts::recovery::flush_pending_fact_embeddings(db, client).await;
         }
@@ -758,7 +766,11 @@ pub async fn handle_reindex(state: &mut ReplState) -> Vec<CommandOutput> {
     let embedding_client = crate::embeddings::EmbeddingClient::new(state.ollama.clone());
     let embedding_client = Arc::new(embedding_client);
 
-    let stats = crate::embeddings::regenerate_all_embeddings(&db, &embedding_client, true).await;
+    // Pass the embedding progress channel so /reindex shows progress in the TUI
+    let progress_tx = state.session.embedding_tx.clone();
+    let stats =
+        crate::embeddings::regenerate_all_embeddings(&db, &embedding_client, true, progress_tx)
+            .await;
 
     vec![CommandOutput::ReindexResult(ReindexData {
         regenerated: stats.total_processed(),

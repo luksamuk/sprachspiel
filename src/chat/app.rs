@@ -32,6 +32,12 @@ use super::tui::components::completion_menu::CompletionMenuState;
 use super::tui::components::status_bar::StatusBarState;
 use super::tui::markdown::MarkdownTheme;
 
+/// Type alias for embedding progress channel sender.
+///
+/// Sends `(current, total)` tuples to update the TUI status bar progress
+/// indicator (⚙ current/total) during embedding generation.
+pub type EmbeddingProgressTx = mpsc::UnboundedSender<(usize, usize)>;
+
 /// Processing state of the LLM
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmState {
@@ -277,12 +283,12 @@ fn random_tui_spinner_frames() -> Vec<&'static str> {
 impl App {
     /// Create a new App with an embedding progress sender for background tasks.
     ///
-    /// Returns the App and an `UnboundedSender` that background embedding tasks
+    /// Returns the App and an `EmbeddingProgressTx` that background embedding tasks
     /// can use to report progress as `(current, total)` tuples.
     pub fn with_embedding_channel(
         theme: MarkdownTheme,
         model_names: Vec<String>,
-    ) -> (Self, mpsc::UnboundedSender<(usize, usize)>) {
+    ) -> (Self, EmbeddingProgressTx) {
         let completer = ChatCompleter::new(model_names.clone());
 
         // Create textarea with custom styling: no line numbers, no cursor line highlight
@@ -2565,5 +2571,70 @@ mod tests {
         // Now scroll_down works immediately (3 lines at a time)
         state.scroll_down(3);
         assert_eq!(state.manual_offset, 47, "Scroll down responds immediately");
+    }
+
+    // ── poll_embedding_progress tests ──────────────────────────────────
+
+    #[test]
+    fn test_poll_embedding_progress_receives_progress() {
+        let (mut app, tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Send progress update (3 of 10 items processed)
+        let _ = tx.send((3, 10));
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress,
+            Some((3, 10)),
+            "Should show progress 3/10"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_completion_clears_indicator() {
+        let (mut app, tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Send completion (10 of 10 items processed)
+        let _ = tx.send((10, 10));
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress, None,
+            "Completion (current >= total) should clear indicator"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_drains_multiple() {
+        let (mut app, tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Send multiple progress updates — poll keeps only the latest
+        let _ = tx.send((1, 10));
+        let _ = tx.send((5, 10));
+        let _ = tx.send((8, 10));
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress,
+            Some((8, 10)),
+            "Should keep latest progress update"
+        );
+    }
+
+    #[test]
+    fn test_poll_embedding_progress_no_messages_keeps_state() {
+        let (mut app, _tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // No messages sent — state should remain default (None)
+        app.poll_embedding_progress();
+
+        let state = app.status_bar();
+        assert_eq!(
+            state.embedding_progress, None,
+            "No messages should keep embedding_progress as None"
+        );
     }
 }

@@ -87,6 +87,7 @@ pub async fn regenerate_all_embeddings(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
     quiet: bool,
+    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
 ) -> RegenerationStats {
     // Note: V2 orphan chunks are cleaned by recover_missing_embeddings(), not here.
     // We don't clean ALL chunks because items with successful embeddings have has_embedding=1.
@@ -166,6 +167,11 @@ pub async fn regenerate_all_embeddings(
         );
     }
 
+    // Report initial progress (0 of total) so the status bar shows total count
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((0, total));
+    }
+
     // Setup progress bar (hidden in quiet mode to avoid corrupting TUI alternate screen)
     let progress = if quiet {
         ProgressBar::hidden()
@@ -187,12 +193,22 @@ pub async fn regenerate_all_embeddings(
         chunks_failed: 0,
     };
 
+    // Report embedding progress to the TUI status bar.
+    // Sends (current_processed, total) where total is the combined count
+    // of items and chunks to process.
+    let report_progress = |processed: usize, total: usize| {
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send((processed, total));
+        }
+    };
+
     // Process content items
     for (item_id, content_type, content) in &items {
         // Skip if content is empty or too short
         if content.trim().is_empty() || content.len() < 10 {
             stats.items_failed += 1;
             progress.inc(1);
+            report_progress(progress.position() as usize, total);
             continue;
         }
 
@@ -325,6 +341,7 @@ pub async fn regenerate_all_embeddings(
         }
 
         progress.inc(1);
+        report_progress(progress.position() as usize, total);
     }
 
     // Process content chunks
@@ -333,6 +350,7 @@ pub async fn regenerate_all_embeddings(
         if content.trim().is_empty() {
             stats.chunks_failed += 1;
             progress.inc(1);
+            report_progress(progress.position() as usize, total);
             continue;
         }
 
@@ -359,6 +377,7 @@ pub async fn regenerate_all_embeddings(
                 // Chunk has no parent item - shouldn't happen
                 stats.chunks_failed += 1;
                 progress.inc(1);
+                report_progress(progress.position() as usize, total);
                 continue;
             }
         };
@@ -445,9 +464,16 @@ pub async fn regenerate_all_embeddings(
         }
 
         progress.inc(1);
+        report_progress(progress.position() as usize, total);
     }
 
     progress.finish_and_clear();
+
+    // Signal completion to the TUI status bar (progress = total means done)
+    // poll_embedding_progress() clears the indicator when current >= total.
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((total, total));
+    }
 
     // Report any failures
     if stats.total_failed() > 0 {

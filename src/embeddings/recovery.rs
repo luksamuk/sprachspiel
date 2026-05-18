@@ -58,6 +58,7 @@ pub async fn recover_missing_embeddings(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
     quiet: bool,
+    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
 ) -> usize {
     // Clean up V2 orphan chunks (those with wrong item_id mapping)
     let orphan_deleted = match db.with_connection(|conn| {
@@ -119,7 +120,13 @@ pub async fn recover_missing_embeddings(
         println!("Recovering {} missing embedding(s)...", total_missing);
     }
 
+    // Report initial progress so the status bar shows total count
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((0, total_missing));
+    }
+
     let mut recovered = 0;
+    let mut processed = 0usize;
     let now = Utc::now();
 
     // Generate embeddings for content items (and their chunks)
@@ -239,6 +246,10 @@ pub async fn recover_missing_embeddings(
                 }
             }
         }
+        processed += 1;
+        if let Some(ref tx) = progress_tx {
+            let _ = tx.send((processed, total_missing));
+        }
     }
 
     // Process chunks that were created during this recovery (long items being processed)
@@ -319,7 +330,16 @@ pub async fn recover_missing_embeddings(
                     }
                 }
             }
+            processed += 1;
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.send((processed, total_missing));
+            }
         }
+    }
+
+    // Signal completion to the TUI status bar
+    if let Some(ref tx) = progress_tx {
+        let _ = tx.send((total_missing, total_missing));
     }
 
     if recovered > 0 && !quiet {
@@ -338,10 +358,12 @@ pub async fn recover_missing_embeddings(
 /// * `db` - Database connection
 /// * `embedding_client` - Embedding client for generating embeddings
 /// * `quiet` - When `true`, suppresses terminal output and uses hidden progress bar (TUI mode)
+/// * `progress_tx` - Optional channel sender for TUI progress updates
 pub async fn recover_missing_embeddings_with_progress(
     db: &Arc<Database>,
     embedding_client: &Arc<EmbeddingClient>,
     quiet: bool,
+    progress_tx: Option<crate::chat::app::EmbeddingProgressTx>,
 ) -> usize {
     // Get counts first
     let items = match db.get_content_items_for_reindex() {
@@ -380,7 +402,7 @@ pub async fn recover_missing_embeddings_with_progress(
     };
 
     // Call the main recovery function but with progress tracking
-    let result = recover_missing_embeddings(db, embedding_client, quiet).await;
+    let result = recover_missing_embeddings(db, embedding_client, quiet, progress_tx).await;
 
     progress.finish_and_clear();
 

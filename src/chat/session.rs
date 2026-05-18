@@ -7,7 +7,6 @@ use ollama_rs::generation::chat::ChatMessage;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::mpsc;
 
 use super::todo_state::TodoState;
 use crate::consts::roles::{ROLE_ASSISTANT, ROLE_USER};
@@ -125,7 +124,7 @@ pub struct ChatSession {
     /// Channel sender for embedding progress updates.
     /// Background embedding tasks send (current, total) tuples to update the status bar.
     #[serde(skip)]
-    pub embedding_tx: Option<mpsc::UnboundedSender<(usize, usize)>>,
+    pub embedding_tx: Option<crate::chat::app::EmbeddingProgressTx>,
 }
 
 /// An active skill loaded via /skill \<name\> command
@@ -369,6 +368,7 @@ impl ChatSession {
                         let timestamp = now;
                         let content = content.clone();
                         let project_id = self.project_id.clone();
+                        let progress_tx = self.embedding_tx.clone();
 
                         // Check if chunking needed and insert chunks synchronously
                         let chunk_data = if crate::embeddings::needs_chunking(&content) {
@@ -397,6 +397,10 @@ impl ChatSession {
                         };
 
                         // Generate embeddings asynchronously (can be interrupted, will be recovered)
+                        // Report progress to TUI status bar: (0,1) = starting
+                        if let Some(ref tx) = progress_tx {
+                            let _ = tx.send((0, 1));
+                        }
                         tokio::spawn(async move {
                             if !chunk_data.is_empty() {
                                 for (chunk_id, content) in chunk_data {
@@ -435,6 +439,10 @@ impl ChatSession {
                                     DEFAULT_CONTEXT_LENGTH,
                                 )
                                 .await;
+                            }
+                            // Signal completion to the TUI status bar
+                            if let Some(ref tx) = progress_tx {
+                                let _ = tx.send((1, 1));
                             }
                         });
                     }
@@ -508,6 +516,7 @@ impl ChatSession {
                         let timestamp = now;
                         let content = content.clone();
                         let project_id = self.project_id.clone();
+                        let progress_tx = self.embedding_tx.clone();
 
                         // Check if chunking needed and insert chunks synchronously
                         let chunk_data = if crate::embeddings::needs_chunking(&content) {
@@ -536,6 +545,10 @@ impl ChatSession {
                         };
 
                         // Generate embeddings asynchronously (can be interrupted, will be recovered)
+                        // Report progress to TUI status bar: (0,1) = starting
+                        if let Some(ref tx) = progress_tx {
+                            let _ = tx.send((0, 1));
+                        }
                         tokio::spawn(async move {
                             if !chunk_data.is_empty() {
                                 for (chunk_id, content) in chunk_data {
@@ -574,6 +587,10 @@ impl ChatSession {
                                     DEFAULT_CONTEXT_LENGTH,
                                 )
                                 .await;
+                            }
+                            // Signal completion to the TUI status bar
+                            if let Some(ref tx) = progress_tx {
+                                let _ = tx.send((1, 1));
                             }
                         });
                     }
@@ -648,7 +665,12 @@ impl ChatSession {
                     let timestamp = now;
                     let content_clone = full_content.clone();
                     let project_id = self.project_id.clone();
+                    let progress_tx = self.embedding_tx.clone();
 
+                    // Report progress to TUI status bar: (0,1) = starting
+                    if let Some(ref tx) = progress_tx {
+                        let _ = tx.send((0, 1));
+                    }
                     tokio::spawn(async move {
                         if crate::embeddings::needs_chunking(&content_clone) {
                             let chunks = crate::embeddings::chunk_text(&content_clone);
@@ -693,6 +715,10 @@ impl ChatSession {
                             let _ =
                                 embed_item_with_fallback(ctx, &db, &client, DEFAULT_CONTEXT_LENGTH)
                                     .await;
+                        }
+                        // Signal completion to the TUI status bar
+                        if let Some(ref tx) = progress_tx {
+                            let _ = tx.send((1, 1));
                         }
                     });
                 }

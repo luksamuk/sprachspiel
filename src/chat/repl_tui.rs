@@ -146,8 +146,12 @@ pub async fn run_chat_repl_tui(
         view.app_mut().set_embedding_progress(0, 1);
         view.render();
 
+        // Embedding progress channel — reports current/total to the TUI status bar
+        let tx = Some(view.embedding_tx());
+
         // Regenerate embeddings if needed (after schema migration)
-        let stats = crate::embeddings::regenerate_all_embeddings(db_ref, client, true).await;
+        let stats =
+            crate::embeddings::regenerate_all_embeddings(db_ref, client, true, tx.clone()).await;
         if stats.total_processed() > 0 {
             view.show_system(&format!(
                 "Regenerated {} embedding(s) ({} items, {} chunks)",
@@ -164,7 +168,8 @@ pub async fn run_chat_repl_tui(
         }
 
         // Recover any missing embeddings from previous session
-        let recovered = crate::embeddings::recover_missing_embeddings(db_ref, client, true).await;
+        let recovered =
+            crate::embeddings::recover_missing_embeddings(db_ref, client, true, tx.clone()).await;
         if recovered > 0 {
             view.show_system(&format!("Recovered {} missing embedding(s)", recovered));
         }
@@ -380,10 +385,12 @@ pub async fn run_chat_repl_tui(
                                         if let (Some(db), Some(client)) =
                                             (&state.db, &state.embedding_client)
                                         {
+                                            let progress_tx = state.session.embedding_tx.clone();
                                             command_handlers::flush_pending_embeddings(
                                                 Arc::clone(db),
                                                 Arc::clone(client),
                                                 true, // suppress_spinner — avoid corrupting alternate screen
+                                                progress_tx,
                                             )
                                             .await;
                                             crate::facts::recovery::flush_pending_fact_embeddings(

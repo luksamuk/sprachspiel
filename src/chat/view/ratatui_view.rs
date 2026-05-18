@@ -57,7 +57,7 @@ pub struct RatatuiView {
     tool_call_rx: std::sync::mpsc::Receiver<String>,
     restored: bool,
     /// Sender for embedding progress updates (cloned by background tasks)
-    embedding_tx: tokio::sync::mpsc::UnboundedSender<(usize, usize)>,
+    embedding_tx: crate::chat::app::EmbeddingProgressTx,
 }
 
 impl RatatuiView {
@@ -119,8 +119,8 @@ impl RatatuiView {
     /// Get a clone of the embedding progress sender.
     ///
     /// Background embedding tasks can use this to report progress
-    /// as `(current, total)` tuples.
-    pub fn embedding_tx(&self) -> tokio::sync::mpsc::UnboundedSender<(usize, usize)> {
+    /// as `(current, total)` tuples that appear in the status bar.
+    pub fn embedding_tx(&self) -> crate::chat::app::EmbeddingProgressTx {
         self.embedding_tx.clone()
     }
 
