@@ -199,8 +199,11 @@ fn content_has_table(content: &str) -> bool {
 /// handles emoji ZWJ sequences (🇧🇷 width 2, not 0), flag emojis, and
 /// combining characters.
 ///
-/// Returns at least `lines.len()` (every input Line produces at least one
-/// visual line, even if empty).
+/// Count the number of visual lines after ratatui word-wrapping.
+///
+/// Used only in tests — production code uses `wrap_visual_lines()` which
+/// returns the actual wrapped strings plus a source-line map.
+#[cfg(test)]
 fn count_ratatui_wrapped_lines(lines: &[Line<'_>], max_width: u16) -> usize {
     if max_width < 1 {
         return lines.len();
@@ -223,8 +226,8 @@ fn count_ratatui_wrapped_lines(lines: &[Line<'_>], max_width: u16) -> usize {
 /// Word-wrap a sequence of grapheme strings and return the number of visual
 /// lines produced. Mirrors ratatui 0.29 `WordWrapper::process_input()`.
 ///
-/// With `trim = false`, leading/trailing whitespace is preserved on each
-/// wrapped line (matching `Wrap { trim: false }`).
+/// Used only in tests — production code uses `wrap_line_graphemes()`.
+#[cfg(test)]
 fn count_word_wrapped_graphemes(graphemes: &[&str], max_width: usize, trim: bool) -> usize {
     if max_width == 0 {
         return 1;
@@ -304,16 +307,105 @@ fn count_word_wrapped_graphemes(graphemes: &[&str], max_width: usize, trim: bool
     count.max(1)
 }
 
-/// Metadata returned by `render()` for mouse/selection integration.
+/// Build wrapped visual lines and a source-line mapping.
+///
+/// For each source `Line`, word-wrap its text content at `max_width` and
+/// produce one `String` per display row. Also produce a parallel `Vec<usize>`
+/// mapping each display row back to its source line index.
+///
+/// This aligns `visual_lines` indices with `scroll_from_top` (both in
+/// display-row space), fixing the mouse offset bug where wrapped lines
+/// caused coordinate mismatch between mouse positions and content.
+fn wrap_visual_lines(lines: &[Line<'_>], max_width: u16) -> (Vec<String>, Vec<usize>) {
+    let max_width = max_width.max(1) as usize;
+    let mut visual_lines = Vec::new();
+    let mut source_line_map = Vec::new();
+
+    for (source_idx, line) in lines.iter().enumerate() {
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let trimmed = text.trim_end();
+
+        if trimmed.is_empty() {
+            // Empty line — still produces one display row
+            visual_lines.push(String::new());
+            source_line_map.push(source_idx);
+        } else {
+            // Word-wrap this line and produce one entry per display row
+            let graphemes: Vec<&str> = trimmed.graphemes(true).collect();
+            let wrapped = wrap_line_graphemes(&graphemes, max_width);
+            for wrapped_line in wrapped {
+                visual_lines.push(wrapped_line);
+                source_line_map.push(source_idx);
+            }
+        }
+    }
+
+    (visual_lines, source_line_map)
+}
+
+/// Word-wrap a line (given as grapheme slices) at `max_width`.
+///
+/// Returns a `Vec<String>` where each entry is one display row.
+/// Mirrors ratatui's `Wrap { trim: false }` wrapping behavior.
+fn wrap_line_graphemes(graphemes: &[&str], max_width: usize) -> Vec<String> {
+    if max_width == 0 || graphemes.is_empty() {
+        return vec![String::new()];
+    }
+
+    let mut rows = Vec::new();
+    let mut current_width = 0usize;
+    let mut current_line = String::new();
+
+    for grapheme in graphemes {
+        let gw = grapheme.width();
+
+        // Skip graphemes wider than max_width (ratatui drops them)
+        if gw > max_width {
+            continue;
+        }
+
+        if current_width + gw > max_width && !current_line.is_empty() {
+            // Word wrap — start a new display row
+            rows.push(current_line.trim_end().to_string());
+            current_line.clear();
+            current_width = 0;
+        }
+
+        current_line.push_str(grapheme);
+        current_width += gw;
+    }
+
+    // Push remaining content as final display row
+    if !current_line.is_empty() {
+        rows.push(current_line.trim_end().to_string());
+    } else if rows.is_empty() {
+        // Edge case: all content was wider than max_width
+        rows.push(String::new());
+    }
+
+    rows
+}
 ///
 /// Contains the visual line strings (after word-wrap) and the scroll
 /// offset, which are needed for mapping mouse positions to content
 /// and extracting selected text.
+/// Metadata returned by `render()` for use in mouse mapping and text selection.
+///
+/// **Visual lines** are in display-row space (one entry per wrapped display row),
+/// making them directly indexable by `local_row + scroll_from_top`.
+///
+/// **Source line map** maps each display row to the original source `Line` index,
+/// enabling selection highlight to find the correct `Line` for a given display row.
 pub struct RenderMetadata {
-    /// Flat list of visual line strings (after word-wrap), in render order
+    /// Flat list of visual line strings (one per wrapped display row), in render order.
+    /// Each entry corresponds to exactly one display row, so index alignment
+    /// with scroll offset is correct for mouse mapping.
     pub visual_lines: Vec<String>,
-    /// Scroll offset from the top of content (in visual lines)
+    /// Scroll offset from the top of content (in display rows = visual_lines indices)
     pub scroll_from_top: u16,
+    /// Maps each display row index to the source line index in `lines`.
+    /// Used by selection highlight to find the correct `Line` for a given display row.
+    pub source_line_map: Vec<usize>,
 }
 
 /// Build the styled `Line` vector from messages (shared between render and tests).
@@ -484,31 +576,61 @@ fn build_lines(
 /// Apply selection highlight to a vector of `Line`s.
 ///
 /// Modifies the style of spans that fall within the selection range.
-/// The selection is in visual-line coordinates: (line_index, char_offset).
-/// Each Line's text is flattened to compute character ranges.
-fn apply_selection_highlight(lines: &mut Vec<Line>, selection: &ChatSelection) {
-    if !selection.is_active() {
+/// The selection is in display-row coordinates: (display_row, char_offset).
+/// The `source_line_map` converts display row indices to source line indices
+/// so the highlight is applied to the correct `Line` objects.
+fn apply_selection_highlight(
+    lines: &mut [Line<'_>],
+    selection: &ChatSelection,
+    source_line_map: &[usize],
+) {
+    if !selection.is_active() || source_line_map.is_empty() || lines.is_empty() {
         return;
     }
 
-    let (start_line, start_col) = selection.selection_start();
-    let (end_line, end_col) = selection.selection_end();
+    let (start_display, start_col) = selection.selection_start();
+    let (end_display, end_col) = selection.selection_end();
 
-    for (line_idx, line) in lines.iter_mut().enumerate() {
-        if line_idx < start_line || line_idx > end_line {
+    // Clamp display row coordinates to valid range
+    let start_display = start_display.min(source_line_map.len().saturating_sub(1));
+    let end_display = end_display.min(source_line_map.len().saturating_sub(1));
+
+    if start_display > end_display {
+        return;
+    }
+
+    // Convert display rows to source line indices
+    let start_source = source_line_map[start_display];
+    let end_source = source_line_map[end_display];
+
+    // For each source line in the selection range, compute highlight columns
+    // based on which display rows of this source line are selected.
+    for (source_idx, line) in lines.iter_mut().enumerate() {
+        if source_idx < start_source || source_idx > end_source {
             continue;
         }
 
-        // Calculate the character range to highlight on this line
-        let line_start_col = if line_idx == start_line { start_col } else { 0 };
-        let line_end_col = if line_idx == end_line {
-            end_col
+        // Determine the char range to highlight on this source line.
+        // If this is the start source line, use start_col.
+        // If this is the end source line, use end_col.
+        // Otherwise, highlight the entire line.
+        let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let line_len = line_text.chars().count();
+
+        // For wrapped source lines, a display-row start/end column only applies
+        // to the first/last display row of that source line. We approximate:
+        // - start_col applies when source_idx == start_source
+        // - end_col applies when source_idx == end_source
+        // - full line highlighted for intermediate source lines
+        let line_start_col = if source_idx == start_source {
+            start_col.min(line_len)
         } else {
-            // Highlight to end of line
-            line.spans
-                .iter()
-                .map(|s| s.content.chars().count())
-                .sum::<usize>()
+            0
+        };
+        let line_end_col = if source_idx == end_source {
+            end_col.min(line_len)
+        } else {
+            line_len
         };
 
         if line_start_col >= line_end_col {
@@ -601,25 +723,17 @@ pub fn render(
     let available_width = area.width as usize;
     let mut lines = build_lines(messages, theme, style_enabled, available_width);
 
-    // Build visual_lines BEFORE applying selection highlight (plain text for extraction).
-    // Trim trailing whitespace from each line so that code block padding (styled
-    // spaces that extend the background to the right edge) does not pollute
-    // clipboard copies. Code content whitespace is preserved since only the
-    // right edge is stripped.
-    let visual_lines: Vec<String> = lines
-        .iter()
-        .map(|line| {
-            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            text.trim_end().to_string()
-        })
-        .collect();
+    // Build wrapped visual_lines in display-row space (one entry per wrapped line)
+    // and a source_line_map that maps each display row to its source line index.
+    // This aligns visual_lines indices with scroll_from_top (also in display-row space),
+    // fixing the mouse offset bug where wrapped lines caused coordinate mismatch.
+    let (visual_lines, source_line_map) = wrap_visual_lines(&lines, area.width);
 
     // Calculate scroll offset from the top of content.
     // Use grapheme-level wrapping (matching ratatui's WordWrapper) so the
     // scroll offset is accurate for emoji ZWJ sequences, flag emojis, and
-    // CJK characters. The old char-level `count_wrapped_lines()` undercounted
-    // visual lines for these cases, causing bottom content to disappear.
-    let wrapped_total = count_ratatui_wrapped_lines(&lines, area.width);
+    // CJK characters.
+    let wrapped_total = visual_lines.len();
     let visible_height = area.height as usize;
     // Clamp manual_offset to valid range [0, max_scroll] before computing
     // effective offset. This prevents "overscroll" accumulation from rapid
@@ -631,8 +745,9 @@ pub fn render(
 
     // Apply selection highlight AFTER computing scroll offset (modifies
     // span styles but not content — visual_lines and wrapped_total are
-    // unaffected by styling changes).
-    apply_selection_highlight(&mut lines, selection);
+    // unaffected by styling changes). Use source_line_map to convert
+    // display-row selection coordinates to source-line indices.
+    apply_selection_highlight(&mut lines, selection, &source_line_map);
 
     let paragraph = Paragraph::new(lines)
         .block(Block::default().borders(Borders::NONE))
@@ -644,6 +759,7 @@ pub fn render(
     RenderMetadata {
         visual_lines,
         scroll_from_top,
+        source_line_map,
     }
 }
 
@@ -800,5 +916,182 @@ mod tests {
         ])];
         // "hello world foo" = 15 cols; width=11 → "hello world" + "foo" (2 lines)
         assert_eq!(count_ratatui_wrapped_lines(&lines, 11), 2);
+    }
+
+    // --- wrap_visual_lines tests ---
+
+    #[test]
+    fn test_wrap_visual_lines_short_line() {
+        // Line fits in width — one display row per source line
+        let lines = vec![Line::from("hello")];
+        let (visual, map) = wrap_visual_lines(&lines, 80);
+        assert_eq!(visual, vec!["hello"]);
+        assert_eq!(map, vec![0]);
+    }
+
+    #[test]
+    fn test_wrap_visual_lines_long_line_wraps() {
+        // Line that wraps produces multiple display rows mapping to same source
+        let lines = vec![Line::from("hello world foo")];
+        // width=11: "hello world" (11) + "foo" (3) = 2 display rows
+        let (visual, map) = wrap_visual_lines(&lines, 11);
+        assert_eq!(visual.len(), 2);
+        assert_eq!(map, vec![0, 0]); // Both display rows map to source line 0
+    }
+
+    #[test]
+    fn test_wrap_visual_lines_multiple_source_lines() {
+        // Two short lines, no wrapping
+        let lines = vec![Line::from("hello"), Line::from("world")];
+        let (visual, map) = wrap_visual_lines(&lines, 80);
+        assert_eq!(visual, vec!["hello", "world"]);
+        assert_eq!(map, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_wrap_visual_lines_empty_line() {
+        // Empty line produces one display row
+        let lines = vec![Line::from("")];
+        let (visual, map) = wrap_visual_lines(&lines, 80);
+        assert_eq!(visual, vec![""]);
+        assert_eq!(map, vec![0]);
+    }
+
+    #[test]
+    fn test_wrap_visual_lines_mixed_wrap_and_no_wrap() {
+        // First line wraps, second line doesn't
+        let lines = vec![
+            Line::from("hello world foo bar baz"), // wraps at width 12
+            Line::from("short"),                   // doesn't wrap
+        ];
+        let (visual, map) = wrap_visual_lines(&lines, 12);
+        // Source 0 wraps, source 1 doesn't
+        assert!(
+            visual.len() > 2,
+            "Should have more display rows than source lines"
+        );
+        // All display rows for source 0 should map to 0, source 1 maps to 1
+        let source0_count = map.iter().filter(|&&m| m == 0).count();
+        let source1_count = map.iter().filter(|&&m| m == 1).count();
+        assert!(
+            source0_count > 1,
+            "Source line 0 should span multiple display rows"
+        );
+        assert_eq!(
+            source1_count, 1,
+            "Source line 1 spans exactly one display row"
+        );
+    }
+
+    #[test]
+    fn test_wrap_visual_lines_cjk() {
+        // CJK characters are 2 columns wide
+        let lines = vec![Line::from("日本語 test")];
+        let (visual, map) = wrap_visual_lines(&lines, 8);
+        // "日本語 test" = 6 + 1 + 4 = 11 cols at width 8 → wraps
+        assert!(visual.len() > 1, "CJK text should wrap at width 8");
+        assert!(
+            map.iter().all(|&m| m == 0),
+            "All display rows map to source 0"
+        );
+    }
+
+    #[test]
+    fn test_wrap_visual_lines_multi_span() {
+        // Line with multiple spans — text is flattened before wrapping
+        let lines = vec![Line::from(vec![
+            Span::raw("hello "),
+            Span::raw("world foo"),
+        ])];
+        let (visual, map) = wrap_visual_lines(&lines, 11);
+        // "hello world foo" = 15 cols at width 11 → "hello world" + "foo"
+        assert_eq!(visual.len(), 2);
+        assert_eq!(map, vec![0, 0]);
+    }
+
+    #[test]
+    fn test_wrap_visual_lines_zero_width() {
+        // Width 0 clamped to width 1 — each character gets its own display row
+        let lines = vec![Line::from("hello")];
+        let (visual, map) = wrap_visual_lines(&lines, 0);
+        // With max_width=1, "hello" wraps to 5 rows (one char each)
+        // This matches ratatui behavior which also doesn't support width 0
+        assert_eq!(visual.len(), 5);
+        assert!(map.iter().all(|&m| m == 0));
+    }
+
+    // --- apply_selection_highlight with source_line_map tests ---
+
+    #[test]
+    fn test_selection_highlight_single_line_no_wrap() {
+        // Simple selection on a single line, no wrapping
+        let mut lines = vec![Line::from("hello world")];
+        let map = vec![0_usize]; // One display row, maps to source 0
+        let mut selection = ChatSelection::new();
+        // Select "world" (cols 6-11) on display row 0
+        selection.begin(0, 6);
+        selection.extend(0, 11);
+        selection.finish(0, 11);
+        apply_selection_highlight(&mut lines, &selection, &map);
+        // Line should still have content — just styled differently
+        let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "hello world");
+    }
+
+    #[test]
+    fn test_selection_highlight_wrapped_line_maps_correctly() {
+        // A line that wraps: display rows 0 and 1 both map to source line 0
+        // Selection across both display rows should highlight the whole source line
+        let mut lines = vec![Line::from("hello world foo")];
+        let map = vec![0_usize, 0_usize]; // Two display rows, both source 0
+        let mut selection = ChatSelection::new();
+        // Select from display row 0 col 0 to display row 1 col 3
+        selection.begin(0, 0);
+        selection.extend(1, 3);
+        selection.finish(1, 3);
+        apply_selection_highlight(&mut lines, &selection, &map);
+        // Source line 0 is fully selected (start=0, end=entire line)
+        let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "hello world foo");
+    }
+
+    #[test]
+    fn test_selection_highlight_across_multiple_source_lines() {
+        // Two source lines, selection spans both
+        let mut lines = vec![Line::from("first line"), Line::from("second line")];
+        let map = vec![0_usize, 1_usize]; // One display row per source
+        let mut selection = ChatSelection::new();
+        // Select from source 0 col 6 to source 1 col 6
+        selection.begin(0, 6);
+        selection.extend(1, 6);
+        selection.finish(1, 6);
+        apply_selection_highlight(&mut lines, &selection, &map);
+        let text0: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        let text1: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text0, "first line");
+        assert_eq!(text1, "second line");
+    }
+
+    #[test]
+    fn test_selection_highlight_empty_map_no_panic() {
+        let mut lines = vec![Line::from("hello")];
+        let map: Vec<usize> = vec![];
+        let mut selection = ChatSelection::new();
+        selection.begin(0, 0);
+        selection.extend(0, 5);
+        selection.finish(0, 5);
+        // Should not panic
+        apply_selection_highlight(&mut lines, &selection, &map);
+    }
+
+    #[test]
+    fn test_selection_highlight_no_selection_no_change() {
+        let mut lines = vec![Line::from("hello")];
+        let map = vec![0_usize];
+        let selection = ChatSelection::new();
+        // No selection active
+        apply_selection_highlight(&mut lines, &selection, &map);
+        let text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "hello");
     }
 }

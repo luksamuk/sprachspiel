@@ -4642,12 +4642,16 @@ Changes:
 | *(uncommitted)* | Remove `prompt` param from `spawn_ocr_agent`, update system prompt | ✅ COMPLETED |
 | *(uncommitted)* | Fix tool message ordering regression (append during ToolCall state) | ✅ COMPLETED |
 | *(uncommitted)* | Tool call indicators rendered bright (not dim), tool results stay dim | ✅ COMPLETED |
+| *(uncommitted)* | P0: Fix mouse selection offset with wrapped lines (`wrap_visual_lines` + `source_line_map`) | ✅ COMPLETED |
+| *(uncommitted)* | P1: Filter empty tool parameter values from display (`display_tool_call`, `log_tool_call`) | ✅ COMPLETED |
 
 **Known Bugs (on `feat/tui-streaming-refinement` branch):**
 
 | Bug | Severity | Status |
 |-----|----------|--------|
 | ~~Scroll viewport discrepancy — lines disappear at TUI bottom~~ | ~~Medium~~ | ✅ Fixed (`18030f0` grapheme-level width) |
+| ~~Mouse selection offset with wrapped lines~~ | ~~High~~ | ✅ Fixed (`wrap_visual_lines` + `source_line_map`) |
+| ~~Tool output verbosity (empty params like `head=`)~~ | ~~Low~~ | ✅ Fixed (`display_tool_call` empty-value filter) |
 | mermaid-text `sequenceDiagram` byte-slicing panic on emoji | Low | 🛡️ Mitigated (`call_mermaid_safely` + width truncation) |
 | mermaid-text column misalignment with wide Unicode | Low | 🛡️ Mitigated (`MERMAID_INSTRUCTION` emoji avoidance) |
 
@@ -4668,6 +4672,16 @@ Proposed fix: Replace `count_wrapped_lines()` with `count_ratatui_wrapped_lines(
 The `mermaid-text` crate v0.56 panics when rendering `sequenceDiagram` labels containing multi-byte emoji like ✅. The error: `end byte index 10 is not a char boundary; it is inside '✅' (bytes 8..11) of 'G-->>R: ✅ Accepted'`. The gantt renderer was fixed in v0.56, but `sequenceDiagram` still uses byte-slicing instead of char-slicing for arrow label parsing.
 
 Mitigation: `call_mermaid_safely()` in `src/markdown/mermaid.rs` catches the panic via `catch_unwind` and suppresses the Rust panic hook (which would call `restore_terminal_on_panic()` and destroy the TUI alternate screen). The `MERMAID_INSTRUCTION` prompt tells the LLM to avoid emojis and wide Unicode in Mermaid labels. Affects only rendering — fallback to raw code block is graceful. Upstream bug report needed.
+
+**Bug 3: Mouse Selection Offset with Wrapped Lines (P0)**
+
+When lines in the chat area wrap (long lines spanning multiple display rows), mouse click/drag selection was misaligned from the actual content position. Root cause: `visual_lines_cache` had one entry per source `Line`, but `scroll_from_top` was in display-row space. When a line wraps, one source `Line` produces N display rows, causing indices to diverge. Selection coordinates from `mouse_to_visual_pos()` are in display-row space (matching `scroll_from_top`), but the old `apply_selection_highlight()` indexed into `lines[]` using display-row indices, which were off by the accumulated wrap offset.
+
+Fix: `wrap_visual_lines()` expands each source `Line` into one or more display-row strings (matching ratatui's `Wrap { trim: false }`), producing a `source_line_map: Vec<usize>` that maps each display row back to its source line. `apply_selection_highlight()` now takes `source_line_map` and converts display-row selection coordinates to source-line indices before highlighting. `App.source_line_map_cache` stored alongside `visual_lines_cache` for potential future use in text extraction. `count_ratatui_wrapped_lines()` and `count_word_wrapped_graphemes()` gated with `#[cfg(test)]` (superseded by `wrap_visual_lines()` in production). 13 new tests.
+
+**Bug 4: Tool Output Verbosity — Empty Parameter Values (P1)**
+
+Tool call indicators like `⚡ run_cmd(head=, tail=, command="ls")` showed empty parameter values as `key=` which was visually noisy and confusing. Fix: `display_tool_call()` compact format now omits parameters where the value is empty string (`head=` → entire `head=, ` suppressed). `log_tool_call()` verbose/trace mode skips detail lines for empty values. Added `test_display_tool_call_filters_empty_values` test.
 
 Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines that overflow the terminal. These are now truncated with `…` ellipsis via `truncate_visual_width()` in both `render_mermaid_tui()` (TUI) and `render_mermaid_rich()` (standalone).
 

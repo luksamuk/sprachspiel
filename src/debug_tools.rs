@@ -137,6 +137,10 @@ pub fn toggle_debug() -> crate::logging::Verbosity {
 /// Display a tool call in compact single-line format.
 ///
 /// Shows `🔧 name(k=v, k=v)` in DIM gray, fitting within 80 columns.
+/// Empty-string values are omitted from the compact display to reduce
+/// visual noise (e.g., `🔧 run_command(command_line=ls)` instead of
+/// `🔧 run_command(command_line=ls, head=, tail=, timeout_seconds=)`).
+///
 /// This is **always** called — the decision to show/hide is made by
 /// [`should_show_tool_calls()`] which checks both Quiet mode and the
 /// `show_tool_calls` configuration flag.
@@ -148,10 +152,11 @@ fn display_tool_call(tool_name: &str, args: &[(String, String)]) {
         return;
     }
 
-    // Build key=value pairs with truncated values
+    // Build key=value pairs with truncated values, filtering out empty values
     let max_arg_value = 30;
     let args_str: Vec<String> = args
         .iter()
+        .filter(|(_, v)| !v.is_empty())
         .map(|(k, v)| {
             let v_display = crate::utils::truncate_chars(v, max_arg_value);
             format!("{}={}", k, v_display)
@@ -196,12 +201,15 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
     // Always display compact format — UI display, not logging
     display_tool_call(tool_name, args);
 
-    // In Verbose/Trace mode, show additional detail lines
+    // In Verbose/Trace mode, show additional detail lines (skip empty values)
     if log::log_enabled!(log::Level::Debug) {
         // Check if TUI callback is set — if so, route detail lines through it too
         let has_tui_callback = TUI_CALLBACK.lock().ok().is_some_and(|g| g.is_some());
 
         for (key, value) in args {
+            if value.is_empty() {
+                continue;
+            }
             let display_value = crate::utils::truncate_chars(value, 77);
             let detail_line = format!("  {key}: {display_value}");
 
@@ -398,5 +406,55 @@ mod tests {
         // Clean up
         drop(guard);
         set_tui_callback(None);
+    }
+
+    #[test]
+    fn test_display_tool_call_filters_empty_values() {
+        // Empty values should be filtered out of the compact format
+        let args = vec![
+            ("command_line".to_string(), "ls -la".to_string()),
+            ("head".to_string(), String::new()),
+            ("tail".to_string(), String::new()),
+            ("timeout_seconds".to_string(), String::new()),
+        ];
+        let prefix = format!("🔧 run_command(");
+        let suffix = ")";
+        let prefix_len = prefix.chars().count();
+        let suffix_len = suffix.chars().count();
+        let content_budget = MAX_LINE_WIDTH.saturating_sub(prefix_len + suffix_len);
+
+        let args_str: Vec<String> = args
+            .iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| {
+                let v_display = crate::utils::truncate_chars(v, 30);
+                format!("{}={}", k, v_display)
+            })
+            .collect();
+        let args_line = args_str.join(", ");
+        let display_args = crate::utils::truncate_chars(&args_line, content_budget);
+        let line = format!("{prefix}{display_args}{suffix}");
+
+        // Only command_line should appear — empty values filtered out
+        assert!(
+            line.contains("command_line="),
+            "Should contain command_line: {}",
+            line
+        );
+        assert!(
+            !line.contains("head="),
+            "Should not contain empty head=: {}",
+            line
+        );
+        assert!(
+            !line.contains("tail="),
+            "Should not contain empty tail=: {}",
+            line
+        );
+        assert!(
+            !line.contains("timeout_seconds="),
+            "Should not contain empty timeout_seconds=: {}",
+            line
+        );
     }
 }

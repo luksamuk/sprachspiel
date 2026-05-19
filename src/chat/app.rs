@@ -202,6 +202,9 @@ pub struct App {
     /// Updated during each render cycle by `chat_area::render()`.
     /// Used for selection text extraction and mouse position mapping.
     visual_lines_cache: Vec<String>,
+    /// Maps each display row in visual_lines_cache to its source line index.
+    /// Used by selection highlight to map display-row coordinates to source lines.
+    source_line_map_cache: Vec<usize>,
     /// Cache of scroll offset from top (updated during each render cycle).
     /// Used for mapping mouse positions to visual line coordinates.
     scroll_from_top_cache: u16,
@@ -336,6 +339,7 @@ impl App {
             completion_menu: CompletionMenuState::new(),
             chat_selection: ChatSelection::new(),
             visual_lines_cache: Vec::new(),
+            source_line_map_cache: Vec::new(),
             scroll_from_top_cache: 0,
             chat_area_rect_cache: ratatui::layout::Rect::default(),
             status_bar: StatusBarState::new(String::new(), 0, 0, 0, false, false),
@@ -1823,9 +1827,10 @@ impl App {
                 &self.chat_selection,
             );
 
-            // Cache visual lines, scroll offset, and chat area rect for
+            // Cache visual lines, scroll offset, source line map, and chat area rect for
             // mouse/selection integration (updated every render cycle)
             self.visual_lines_cache = meta.visual_lines;
+            self.source_line_map_cache = meta.source_line_map;
             self.scroll_from_top_cache = meta.scroll_from_top;
             self.chat_area_rect_cache = chunks[0];
 
