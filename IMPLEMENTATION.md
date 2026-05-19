@@ -4182,9 +4182,11 @@ All content paths in `RatatuiView` that pass through `ChatMessage::system()` are
 
 **Bug 2: Tool Call Output Corrupts TUI Alternate Screen**
 
-`display_tool_call()` and `log_tool_result()` in `debug_tools.rs` write to `eprintln!()`. In TUI mode, the terminal uses ratatui's alternate screen buffer, so raw stderr output corrupts the display — tool call text appears as garbage over the TUI.
+`display_tool_call()` and `log_tool_result()` in `debug_tools.rs` write to `eprintln!()`. In TUI mode, the terminal uses ratatui's alternate screen buffer, so raw stderr output corrupts the display — tool call text appears as garbage over the TUI. Additionally, tool visual indicators (📝, 💾, ⚡, 📄, 👍, 📖) in `src/tools/` used `suspend_for_print(|| { eprintln!(...) })` which also bypasses the TUI callback.
 
-**Fix:** Global `TUI_CALLBACK` pattern in `debug_tools.rs`. When the TUI starts, `RatatuiView::new()` creates an `mpsc::channel` and registers a callback (`Arc<dyn Fn(&str) + Sync + Send>`). `display_tool_call()` and `log_tool_result()` check `TUI_CALLBACK` and route through it when set, sending formatted lines as `ChatMessage::system()` via the channel. `RatatuiView::render()` drains the channel each frame. On exit, `RatatuiView::restore()` clears the callback.
+**Fix (Phase 1 — `TUI_CALLBACK` for debug_tools):** Global `TUI_CALLBACK` pattern in `debug_tools.rs`. When the TUI starts, `RatatuiView::new()` creates an `mpsc::channel` and registers a callback (`Arc<dyn Fn(&str) + Sync + Send>`). `display_tool_call()` and `log_tool_result()` check `TUI_CALLBACK` and route through it when set, sending formatted lines as `ChatMessage::system()` via the channel. `RatatuiView::render()` drains the channel each frame. On exit, `RatatuiView::restore()` clears the callback.
+
+**Fix (Phase 2 — `tui_aware_print` for all tool indicators):** Added `tui_aware_print()` to `debug_tools.rs` — a single function that checks `TUI_CALLBACK` and routes through it (TUI mode) or falls back to `suspend_for_print` with `TOOL_DIM` styling (terminal mode). Replaced all 17 `suspend_for_print(|| { eprintln!("{TOOL_DIM}...{RESET}", ...) })` calls in tools (notes, facts, documents, run_cmd, feedback, skills) and 6 raw `eprintln!` calls (sandbox warnings + importance adjustment) with `tui_aware_print()`. Removed `#![expect(clippy::print_stderr)]` from all tool files since they no longer use `eprintln!` directly.
 
 **Native Ratatui Banner: Braille Art with ANSI Parsing**
 

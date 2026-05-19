@@ -4,13 +4,11 @@
 //! as good, bad, or provide corrections. Feedback is weighted at 30% of user
 //! feedback (configurable via `llm_feedback_weight`) and adjusts message importance.
 
-#![expect(clippy::print_stderr)] // Tool feedback output
 use std::str::FromStr;
 
 use crate::db::feedback_ops::insert_feedback_signal;
-use crate::debug_tools::{RESET, TOOL_DIM, log_tool_call, log_tool_result};
+use crate::debug_tools::{log_tool_call, log_tool_result, tui_aware_print};
 use crate::feedback::types::{FeedbackSignalType, FeedbackSource};
-use crate::spinner::suspend_for_print;
 use crate::tools::context::{get_db, get_settings};
 
 /// Submit feedback on a message from the LLM's perspective.
@@ -184,10 +182,10 @@ pub async fn feedback_submit(
         && let Err(e) = db.adjust_importance(item_id_parsed, importance_delta)
     {
         // Log warning but don't fail — the feedback signal was still recorded
-        eprintln!(
+        tui_aware_print(&format!(
             "Warning: Failed to adjust importance for item {}: {}",
             item_id_parsed, e
-        );
+        ));
     }
 
     // Visual indicator for feedback submission
@@ -196,14 +194,12 @@ pub async fn feedback_submit(
         FeedbackSignalType::Bad => "👎",
         FeedbackSignalType::Correction => "✎",
     };
-    suspend_for_print(|| {
-        eprintln!(
-            "{TOOL_DIM}{} feedback submitted (msg:{}, weight: {:.0}%){RESET}",
-            emoji,
-            item_id_parsed,
-            llm_weight * 100.0
-        );
-    });
+    tui_aware_print(&format!(
+        "{} feedback submitted (msg:{}, weight: {:.0}%)",
+        emoji,
+        item_id_parsed,
+        llm_weight * 100.0
+    ));
 
     // Build success message
     let signal_label = match parsed_signal {

@@ -91,6 +91,31 @@ pub fn set_show_tool_calls(enabled: bool) {
     SHOW_TOOL_CALLS.store(enabled, Ordering::Relaxed);
 }
 
+/// Print a tool visual indicator through the TUI callback (TUI mode) or
+/// `suspend_for_print` (terminal mode).
+///
+/// Tool indicators like ⚡, 📝, 💾, etc. must use this function instead of
+/// `suspend_for_print(|| { eprintln!(...) })` directly. In TUI mode
+/// (ratatui alternate screen), raw `eprintln!` bypasses the TUI callback
+/// and corrupts the status bar. This function routes through [`TUI_CALLBACK`]
+/// when available, falling back to `suspend_for_print` in terminal mode.
+///
+/// The line is printed with [`TOOL_DIM`] + [`RESET`] styling in terminal mode.
+/// In TUI mode, styling is handled by the chat view layer.
+pub fn tui_aware_print(line: &str) {
+    // Route through TUI callback if set (TUI mode)
+    if let Ok(guard) = TUI_CALLBACK.lock()
+        && let Some(callback) = guard.as_ref()
+    {
+        callback(line);
+        return;
+    }
+    // Terminal mode: print to stderr with ANSI styling
+    suspend_for_print(|| {
+        eprintln!("{TOOL_DIM}{line}{RESET}");
+    });
+}
+
 /// Query whether tool calls should be displayed.
 ///
 /// Returns `false` in Quiet mode regardless of the flag value.
@@ -330,5 +355,48 @@ mod tests {
             result,
             result.chars().count()
         );
+    }
+
+    #[test]
+    fn test_tui_aware_print_without_callback_prints_to_stderr() {
+        // Without TUI callback set, tui_aware_print falls back to
+        // suspend_for_print. We verify it doesn't panic.
+        // Note: we can't reliably assert TUI_CALLBACK state in parallel tests,
+        // so we just verify the function executes without panicking.
+        tui_aware_print("test indicator line");
+    }
+
+    #[test]
+    fn test_tui_aware_print_routes_through_callback() {
+        use std::sync::Arc;
+
+        // Clear any previous callback (in case of parallel test contamination)
+        set_tui_callback(None);
+
+        // Set up a callback that captures lines
+        let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = Arc::clone(&captured);
+        let callback = Arc::new(move |line: &str| {
+            if let Ok(mut guard) = captured_clone.lock() {
+                guard.push(line.to_string());
+            }
+        }) as std::sync::Arc<dyn Fn(&str) + Sync + Send>;
+
+        set_tui_callback(Some(callback));
+
+        // tui_aware_print should route through the callback, not stderr
+        tui_aware_print("⚡ test command");
+        tui_aware_print("📝 note #42");
+        tui_aware_print("💾 fact #5");
+
+        let guard = captured.lock().unwrap();
+        assert_eq!(guard.len(), 3);
+        assert_eq!(guard[0], "⚡ test command");
+        assert_eq!(guard[1], "📝 note #42");
+        assert_eq!(guard[2], "💾 fact #5");
+
+        // Clean up
+        drop(guard);
+        set_tui_callback(None);
     }
 }
