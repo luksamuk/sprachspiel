@@ -386,34 +386,64 @@ fn build_lines(
                 lines.push(Line::raw(String::new()));
             }
             MessageType::Tool => {
-                // Render tool output as markdown with dim style overlay.
-                // Tool output may contain code blocks, lists, tables — render
-                // them properly while keeping visual distinction from assistant
-                // content by applying dim modifier over all styles.
-                let rendered = render_markdown(&msg.content, theme, style_enabled, available_width);
-                let dim_style = styles::dim();
-                for render_line in rendered.lines {
-                    // Propagate Line.style to each Span before applying dim overlay.
-                    // tui-markdown renders headings as Line { spans: [Span::raw(...)],
-                    // style: heading_style } where heading_style carries color, bold,
-                    // and underline. Line.style acts as fallback for Spans with
-                    // Style::default(). We must merge it into each Span explicitly
-                    // before discarding the Line (since Line::from() loses Line.style).
-                    let base_style = render_line.style;
-                    let dimmed_spans: Vec<Span<'_>> = render_line
-                        .spans
-                        .into_iter()
-                        .map(|span| {
-                            // Merge: Line.style (heading/formatting fallback)
-                            //   → span.style (inline style override)
-                            //   → dim_style (dim overlay)
-                            Span::styled(
-                                span.content,
-                                base_style.patch(span.style).patch(dim_style),
-                            )
-                        })
-                        .collect();
-                    lines.push(Line::from(dimmed_spans));
+                // Tool messages come in two flavors:
+                // 1. Call indicators (🔧 name(args), ⚡ cmd, 📝 note, etc.) — these
+                //    show WHAT the tool is doing and should be VISIBLE (not dimmed).
+                // 2. Result lines (✓ Result:, 📤 name result:) — these are the
+                //    tool's output and should be DIMMED to distinguish from the
+                //    assistant's own content.
+                //
+                // Tool call indicators start with emoji prefixes like 🔧⚡📝💾📄⏭🗑📖.
+                // Tool results start with ✓ or 📤. We render the entire message as
+                // either visible or dim based on the first line's prefix.
+                let is_call_indicator = msg.content.starts_with('🔧')
+                    || msg.content.starts_with('⚡')
+                    || msg.content.starts_with('📝')
+                    || msg.content.starts_with('💾')
+                    || msg.content.starts_with('📄')
+                    || msg.content.starts_with('⏭')
+                    || msg.content.starts_with('🗑')
+                    || msg.content.starts_with('📖')
+                    || msg.content.starts_with('⚡')
+                    || msg.content.starts_with('👍')
+                    || msg.content.starts_with('👎')
+                    || msg.content.starts_with('✎');
+
+                if is_call_indicator {
+                    // Tool call indicator — render as normal (visible) markdown.
+                    // No dim overlay so the user can clearly see what the tool is doing.
+                    let rendered =
+                        render_markdown(&msg.content, theme, style_enabled, available_width);
+                    for render_line in rendered.lines {
+                        let base_style = render_line.style;
+                        let spans: Vec<Span<'_>> = render_line
+                            .spans
+                            .into_iter()
+                            .map(|span| Span::styled(span.content, base_style.patch(span.style)))
+                            .collect();
+                        lines.push(Line::from(spans));
+                    }
+                } else {
+                    // Tool result — render as dimmed markdown for visual distinction
+                    // from assistant content. The result is informative but not the
+                    // primary content the user is reading.
+                    let rendered =
+                        render_markdown(&msg.content, theme, style_enabled, available_width);
+                    let dim_style = styles::dim();
+                    for render_line in rendered.lines {
+                        let base_style = render_line.style;
+                        let dimmed_spans: Vec<Span<'_>> = render_line
+                            .spans
+                            .into_iter()
+                            .map(|span| {
+                                Span::styled(
+                                    span.content,
+                                    base_style.patch(span.style).patch(dim_style),
+                                )
+                            })
+                            .collect();
+                        lines.push(Line::from(dimmed_spans));
+                    }
                 }
             }
             MessageType::System => {

@@ -32,12 +32,12 @@ use std::path::PathBuf;
 /// with OCR capability). Best for: tables, formulas, scanned documents,
 /// and structured text extraction.
 ///
-/// # Arguments
-/// * `prompt` - **Required.** What to extract or describe.
-///   - "Extract all text from this image"
-///   - "Extract the table structure"
-///   - "Extract the mathematical formula"
+/// OCR extracts text automatically based on the selected mode. It does NOT
+/// accept custom prompts — use the `ocr_mode` parameter to control what
+/// type of content to extract. For custom image analysis, use
+/// `spawn_vision_agent` instead.
 ///
+/// # Arguments
 /// * `file_path` - **Required.** Path to the image file.
 ///   - Supports PNG, JPG, JPEG, WebP, GIF
 ///   - Supports `~` home directory expansion
@@ -53,13 +53,12 @@ use std::path::PathBuf;
 ///
 /// # Example
 /// ```ignore
-/// spawn_ocr_agent("Extract all text from this image", "/tmp/document.png", None)
-/// spawn_ocr_agent("Extract table structure", "/tmp/table.png", Some("table"))
-/// spawn_ocr_agent("Extract the formula", "/tmp/formula.png", Some("formula"))
+/// spawn_ocr_agent("/tmp/document.png", None)
+/// spawn_ocr_agent("/tmp/table.png", Some("table"))
+/// spawn_ocr_agent("/tmp/formula.png", Some("formula"))
 /// ```
 #[ollama_rs::function]
 pub async fn spawn_ocr_agent(
-    prompt: String,
     file_path: String,
     ocr_mode: Option<String>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -69,14 +68,6 @@ pub async fn spawn_ocr_agent(
     log_tool_call(
         "spawn_ocr_agent",
         &[
-            ("prompt".to_string(), {
-                let truncated: String = prompt.chars().take(80).collect();
-                if prompt.chars().count() > 80 {
-                    format!("{}...", truncated)
-                } else {
-                    truncated
-                }
-            }),
             ("file_path".to_string(), file_path.clone()),
             (
                 "ocr_mode".to_string(),
@@ -127,7 +118,10 @@ pub async fn spawn_ocr_agent(
     }
 
     let runner = SubagentRunner::new(ollama, config);
-    let result = match runner.run(SubagentType::Ocr, prompt, validated_paths).await {
+    let result = match runner
+        .run(SubagentType::Ocr, String::new(), validated_paths)
+        .await
+    {
         Ok(output) => output,
         Err(e) => {
             let err = format!("Error: OCR agent execution failed: {}", e);

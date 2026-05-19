@@ -4637,6 +4637,11 @@ Changes:
 | *(uncommitted)* | Mermaid width truncation (`…` ellipsis for lines exceeding terminal width) | ✅ COMPLETED |
 | *(uncommitted)* | `/togglestyle` command — toggle Mermaid/source view, syntax highlighting, table format | ✅ COMPLETED |
 | *(uncommitted)* | Status bar style indicator (🎨 on / 📄 off) | ✅ COMPLETED |
+| *(uncommitted)* | `tui_aware_print()` — route tool indicators through TUI callback | ✅ COMPLETED |
+| *(uncommitted)* | Remove sub-agent output truncation, increase vision max_tokens to 8192 | ✅ COMPLETED |
+| *(uncommitted)* | Remove `prompt` param from `spawn_ocr_agent`, update system prompt | ✅ COMPLETED |
+| *(uncommitted)* | Fix tool message ordering regression (append during ToolCall state) | ✅ COMPLETED |
+| *(uncommitted)* | Tool call indicators rendered bright (not dim), tool results stay dim | ✅ COMPLETED |
 
 **Known Bugs (on `feat/tui-streaming-refinement` branch):**
 

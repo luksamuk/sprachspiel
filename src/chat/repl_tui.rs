@@ -530,14 +530,23 @@ pub async fn run_chat_repl_tui(
         }
 
         // Drain tool messages from the global callback and insert them
-        // in the correct position (before streaming zone when LLM is active).
-        // This must happen before render() so messages appear in order.
+        // in the correct position.
+        //
+        // During Streaming/Thinking: insert before the streaming zone so tool
+        // messages appear above the still-forming response.
+        //
+        // During ToolCall/Idle: append at the end. During ToolCall, any
+        // prior AssistantStreaming has been finalized and Thinking blocks are
+        // pre-tool reasoning — tool messages must come AFTER them, not before.
         for msg in view.drain_tool_messages() {
-            if view.app().llm_state() != LlmState::Idle {
-                view.app_mut()
-                    .insert_before_streaming_zone(ChatMessage::tool(msg));
-            } else {
-                view.app_mut().add_message(ChatMessage::tool(msg));
+            match view.app().llm_state() {
+                LlmState::Streaming | LlmState::Thinking => {
+                    view.app_mut()
+                        .insert_before_streaming_zone(ChatMessage::tool(msg));
+                }
+                LlmState::ToolCall | LlmState::Idle => {
+                    view.app_mut().add_message(ChatMessage::tool(msg));
+                }
             }
         }
 
