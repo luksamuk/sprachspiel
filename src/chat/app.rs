@@ -214,6 +214,11 @@ pub struct App {
     llm_state: LlmState,
     /// Markdown rendering theme
     theme: MarkdownTheme,
+    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// highlighting, box-drawing tables). When false, Mermaid blocks
+    /// show as source code blocks, code blocks have fg colors stripped,
+    /// and tables are rendered as pipe-delimited text.
+    style_enabled: bool,
     /// Scroll state for the chat area
     scroll: ScrollState,
     /// Spinner animation frames (random rattles preset)
@@ -336,6 +341,7 @@ impl App {
             status_bar: StatusBarState::new(String::new(), 0, 0, 0, false, false),
             llm_state: LlmState::Idle,
             theme,
+            style_enabled: true,
             scroll: ScrollState::new(),
             spinner_frames: random_tui_spinner_frames(),
             spinner_frame: 0,
@@ -667,6 +673,18 @@ impl App {
     /// `show_context_warning()`.
     pub fn status_bar(&self) -> &StatusBarState {
         &self.status_bar
+    }
+
+    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// highlighting, box-drawing tables).
+    pub fn style_enabled(&self) -> bool {
+        self.style_enabled
+    }
+
+    /// Toggle style rendering on/off and update the status bar indicator.
+    pub fn toggle_style(&mut self) {
+        self.style_enabled = !self.style_enabled;
+        self.status_bar.style_enabled = self.style_enabled;
     }
 
     /// Scroll to the bottom of the chat (newest messages).
@@ -1801,6 +1819,7 @@ impl App {
                 &self.messages,
                 &mut self.scroll,
                 self.theme,
+                self.style_enabled,
                 &self.chat_selection,
             );
 
@@ -2689,6 +2708,40 @@ mod tests {
         assert_eq!(
             state.embedding_progress, None,
             "No messages should keep embedding_progress as None"
+        );
+    }
+
+    #[test]
+    fn test_toggle_style_flips_state() {
+        let (mut app, _tx, _async_tx) = App::with_embedding_channel(MarkdownTheme::Dark, vec![]);
+
+        // Default: style enabled
+        assert!(app.style_enabled(), "Style should be enabled by default");
+        assert!(
+            app.status_bar().style_enabled,
+            "Status bar should reflect style enabled"
+        );
+
+        // Toggle off
+        app.toggle_style();
+        assert!(
+            !app.style_enabled(),
+            "Style should be disabled after toggle"
+        );
+        assert!(
+            !app.status_bar().style_enabled,
+            "Status bar should reflect style disabled"
+        );
+
+        // Toggle back on
+        app.toggle_style();
+        assert!(
+            app.style_enabled(),
+            "Style should be enabled after second toggle"
+        );
+        assert!(
+            app.status_bar().style_enabled,
+            "Status bar should reflect style enabled again"
         );
     }
 }

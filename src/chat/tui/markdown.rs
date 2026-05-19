@@ -21,7 +21,7 @@
 //!
 //! # API
 //!
-//! - `render_markdown(content, theme, max_width)` → `Text<'static>` — Full markdown rendering
+//! - `render_markdown(content, theme, style_enabled, max_width)` → `Text<'static>` — Full markdown rendering
 //! - `MarkdownTheme` — Theme enum with `from_config()` and stylesheet selection
 
 // Table rendering inspired by ratatui-markdown (MIT OR Apache-2.0)
@@ -1017,6 +1017,100 @@ fn render_table_box(content: &str, max_width: usize, theme: MarkdownTheme) -> Ve
     lines
 }
 
+/// Render a plain table (pipe-delimited, no box-drawing) for style-off mode.
+///
+/// Tables are rendered as simple `| col1 | col2 |` with alignment indicators
+/// (`:---`, `---:`, `:---:`) in the separator row. No box-drawing characters,
+/// no styled borders — just plain text `Line`s with `Style::default()`.
+///
+/// This mirrors `render_table_plain()` in `src/markdown/table.rs` but returns
+/// `Vec<Line<'static>>` for the TUI render chain instead of `Vec<String>`.
+fn render_table_plain_lines(content: &str) -> Vec<Line<'static>> {
+    let table = parse_table_rows(content);
+    if table.headers.is_empty() {
+        return Vec::new();
+    }
+
+    let col_count = table.headers.len();
+
+    // Use natural column widths (no wrapping) — same as --plain mode
+    let natural_widths: Vec<usize> = (0..col_count)
+        .map(|c| {
+            let hw = visual_width(&table.headers[c]);
+            let rw = table
+                .rows
+                .iter()
+                .filter_map(|r| r.get(c).map(|cell| visual_width(cell)))
+                .max()
+                .unwrap_or(0);
+            hw.max(rw)
+        })
+        .collect();
+
+    let mut lines = Vec::new();
+
+    // Header row: | col1 | col2 |
+    let mut header_line = String::from("| ");
+    for (i, header) in table.headers.iter().enumerate() {
+        let width = natural_widths[i];
+        let align = table.aligns.get(i).copied().unwrap_or(ColumnAlign::Left);
+        let (left, content, right) = align_cell_text(header, width, align);
+        header_line.push_str(&left);
+        header_line.push_str(&content);
+        header_line.push_str(&right);
+        if i < col_count - 1 {
+            header_line.push_str(" | ");
+        }
+    }
+    header_line.push_str(" |");
+    lines.push(Line::raw(header_line));
+
+    // Separator row: |:-----|-----:|
+    let mut sep_line = String::from("| ");
+    for (i, _) in natural_widths.iter().enumerate() {
+        let align = table.aligns.get(i).copied().unwrap_or(ColumnAlign::Left);
+        let prefix = if matches!(align, ColumnAlign::Center | ColumnAlign::Left) {
+            ":"
+        } else {
+            ""
+        };
+        let suffix = if matches!(align, ColumnAlign::Center | ColumnAlign::Right) {
+            ":"
+        } else {
+            ""
+        };
+        let total = natural_widths[i].saturating_sub(prefix.len() + suffix.len());
+        sep_line.push_str(prefix);
+        sep_line.push_str(&"-".repeat(total.max(1)));
+        sep_line.push_str(suffix);
+        if i < col_count - 1 {
+            sep_line.push_str(" | ");
+        }
+    }
+    sep_line.push_str(" |");
+    lines.push(Line::raw(sep_line));
+
+    // Data rows
+    for row in &table.rows {
+        let mut row_line = String::from("| ");
+        for (i, cell) in row.iter().enumerate() {
+            let width = natural_widths.get(i).copied().unwrap_or(cell.len());
+            let align = table.aligns.get(i).copied().unwrap_or(ColumnAlign::Left);
+            let (left, content, right) = align_cell_text(cell, width, align);
+            row_line.push_str(&left);
+            row_line.push_str(&content);
+            row_line.push_str(&right);
+            if i < col_count - 1 {
+                row_line.push_str(" | ");
+            }
+        }
+        row_line.push_str(" |");
+        lines.push(Line::raw(row_line));
+    }
+
+    lines
+}
+
 /// Render markdown content to a ratatui `Text`.
 ///
 /// Applies the given theme's stylesheet for styling. Table blocks are
@@ -1052,10 +1146,17 @@ fn render_table_box(content: &str, max_width: usize, theme: MarkdownTheme) -> Ve
 ///
 /// Clipboard copies are protected: `visual_lines` uses `trim_end()` to strip
 /// trailing padding whitespace while preserving code content.
+///
+/// When `style_enabled` is false, syntax highlighting (syntect fg colors) is
+/// stripped from code block content — all Span fg colors inside code blocks
+/// are cleared, leaving the terminal's default fg. The background color and
+/// right-edge padding are applied normally. This gives "plain text inside a
+/// colored block" — the user asked to see "the code underneath".
 fn apply_code_block_background(
     lines: &mut [Line<'static>],
     theme: MarkdownTheme,
     max_width: usize,
+    style_enabled: bool,
 ) {
     let bg_color = match theme {
         MarkdownTheme::Dark => MOCHA_SURFACE0,
@@ -1142,19 +1243,30 @@ fn apply_code_block_background(
         // syntax highlighting), otherwise those Spans inherit the terminal's
         // default fg which may be light/invisible on the light background.
         if in_code_block || is_fence {
-            match theme {
-                MarkdownTheme::Light => {
-                    for span in line.spans.iter_mut() {
-                        span.style.fg = Some(LATTE_TEXT);
+            // When style rendering is disabled, strip syntect fg colors from
+            // code block content. The user asked to "see the code underneath"
+            // — plain text inside the colored background block. Background
+            // and right-edge padding are preserved. Skip the theme-specific
+            // fg overrides below (LATTE_TEXT overrides would fight the strip).
+            if !style_enabled {
+                for span in line.spans.iter_mut() {
+                    span.style.fg = None;
+                }
+            } else {
+                match theme {
+                    MarkdownTheme::Light => {
+                        for span in line.spans.iter_mut() {
+                            span.style.fg = Some(LATTE_TEXT);
+                        }
                     }
-                }
-                MarkdownTheme::Mono => {
-                    // Already stripped above in the per-branch blocks.
-                    // This match arm is here for completeness; Mono color
-                    // stripping is done in each branch above.
-                }
-                MarkdownTheme::Dark => {
-                    // Dark theme: keep syntect colors as-is
+                    MarkdownTheme::Mono => {
+                        // Already stripped above in the per-branch blocks.
+                        // This match arm is here for completeness; Mono color
+                        // stripping is done in each branch above.
+                    }
+                    MarkdownTheme::Dark => {
+                        // Dark theme: keep syntect colors as-is
+                    }
                 }
             }
         }
@@ -1185,8 +1297,13 @@ fn apply_code_block_background(
 /// diagrams should be rendered as Unicode box-drawing art. During streaming,
 /// use [`render_markdown_streaming`] instead to avoid rendering incomplete
 /// diagrams on every frame.
-pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) -> Text<'static> {
-    render_markdown_impl(content, theme, max_width, true)
+pub fn render_markdown(
+    content: &str,
+    theme: MarkdownTheme,
+    style_enabled: bool,
+    max_width: usize,
+) -> Text<'static> {
+    render_markdown_impl(content, theme, max_width, true, style_enabled)
 }
 
 /// Render markdown during streaming — Mermaid blocks shown as code blocks.
@@ -1199,29 +1316,41 @@ pub fn render_markdown(content: &str, theme: MarkdownTheme, max_width: usize) ->
 /// This function treats ` ```mermaid ` blocks as regular code blocks (syntax-
 /// highlighted by `tui-markdown`), deferring diagram rendering to the final
 /// [`render_markdown`] call when the message is complete.
+///
+/// When `style_enabled` is false, Mermaid is always shown as source code
+/// (regardless of streaming state), syntax highlighting is stripped from
+/// code blocks, and tables use pipe-delimited plain format.
 pub fn render_markdown_streaming(
     content: &str,
     theme: MarkdownTheme,
+    style_enabled: bool,
     max_width: usize,
 ) -> Text<'static> {
-    render_markdown_impl(content, theme, max_width, false)
+    render_markdown_impl(content, theme, max_width, false, style_enabled)
 }
 
 /// Internal implementation shared between streaming and final rendering.
 ///
-/// When `render_mermaid` is true, `ContentSegment::Mermaid` blocks are rendered
-/// as Unicode box-drawing diagrams via `mermaid-text`. When false, they are
-/// treated as regular markdown code blocks (syntax-highlighted by `tui-markdown`).
+/// When `render_mermaid` is true **and** `style_enabled` is true,
+/// `ContentSegment::Mermaid` blocks are rendered as Unicode box-drawing
+/// diagrams via `mermaid-text`. Otherwise they are treated as regular
+/// markdown code blocks.
+///
+/// When `style_enabled` is false:
+/// - Mermaid blocks are always shown as source code blocks
+/// - Tables use pipe-delimited plain format instead of box-drawing
+/// - Code block syntax highlighting (syntect fg colors) is stripped
 fn render_markdown_impl(
     content: &str,
     theme: MarkdownTheme,
     max_width: usize,
     render_mermaid: bool,
+    style_enabled: bool,
 ) -> Text<'static> {
     // Fast path: if no table or Mermaid structure detected, use tui-markdown directly
     if !content_contains_special_blocks(content) {
         let mut text = render_markdown_inner_owned(content, theme);
-        apply_code_block_background(&mut text.lines, theme, max_width);
+        apply_code_block_background(&mut text.lines, theme, max_width, style_enabled);
         return text;
     }
 
@@ -1234,24 +1363,34 @@ fn render_markdown_impl(
             ContentSegment::Markdown(md) => {
                 let rendered = render_markdown_inner_owned(&md, theme);
                 let mut rendered_lines = rendered.lines;
-                apply_code_block_background(&mut rendered_lines, theme, max_width);
+                apply_code_block_background(&mut rendered_lines, theme, max_width, style_enabled);
                 all_lines.extend(rendered_lines);
             }
             ContentSegment::Table(table) => {
-                let table_lines = render_table_box(&table, max_width, theme);
-                all_lines.extend(table_lines);
+                if style_enabled {
+                    let table_lines = render_table_box(&table, max_width, theme);
+                    all_lines.extend(table_lines);
+                } else {
+                    let table_lines = render_table_plain_lines(&table);
+                    all_lines.extend(table_lines);
+                }
             }
             #[cfg(feature = "mermaid")]
             ContentSegment::Mermaid(mermaid_source) => {
-                if render_mermaid {
+                if render_mermaid && style_enabled {
                     let mermaid_lines = render_mermaid_tui(&mermaid_source, max_width, theme);
                     all_lines.extend(mermaid_lines);
                 } else {
-                    // Streaming mode: treat as regular code block
+                    // Style disabled or streaming mode: treat as regular code block
                     let code_md = format!("```mermaid\n{}```", mermaid_source);
                     let rendered = render_markdown_inner_owned(&code_md, theme);
                     let mut rendered_lines = rendered.lines;
-                    apply_code_block_background(&mut rendered_lines, theme, max_width);
+                    apply_code_block_background(
+                        &mut rendered_lines,
+                        theme,
+                        max_width,
+                        style_enabled,
+                    );
                     all_lines.extend(rendered_lines);
                 }
             }
@@ -1348,7 +1487,17 @@ fn render_mermaid_tui(source: &str, max_width: usize, theme: MarkdownTheme) -> V
 
     rendered
         .lines()
-        .map(|line| Line::from(Span::styled(line.to_string(), style)))
+        .map(|line| {
+            let truncated = crate::utils::truncate_visual_width(line, effective_width);
+            if truncated.len() != line.len() {
+                log::debug!(
+                    "Mermaid line truncated: {} cols > {} budget",
+                    UnicodeWidthStr::width(line),
+                    effective_width
+                );
+            }
+            Line::from(Span::styled(truncated, style))
+        })
         .collect()
 }
 
@@ -1469,7 +1618,7 @@ mod tests {
 
     #[test]
     fn test_render_markdown_dark() {
-        let text = render_markdown("# Hello", MarkdownTheme::Dark, 80);
+        let text = render_markdown("# Hello", MarkdownTheme::Dark, true, 80);
         assert!(!text.lines.is_empty());
     }
 
@@ -1531,6 +1680,7 @@ mod tests {
         let text = render_markdown(
             "# Heading 1\n\n## Heading 2\n\n### Heading 3",
             MarkdownTheme::Dark,
+            true,
             80,
         );
 
@@ -1553,13 +1703,13 @@ mod tests {
 
     #[test]
     fn test_render_markdown_light() {
-        let text = render_markdown("# Hello", MarkdownTheme::Light, 80);
+        let text = render_markdown("# Hello", MarkdownTheme::Light, true, 80);
         assert!(!text.lines.is_empty());
     }
 
     #[test]
     fn test_render_markdown_mono() {
-        let text = render_markdown("# Hello", MarkdownTheme::Mono, 80);
+        let text = render_markdown("# Hello", MarkdownTheme::Mono, true, 80);
         assert!(!text.lines.is_empty());
     }
 
@@ -1619,7 +1769,7 @@ mod tests {
         // modifier only (no REVERSED, no background).
         let code_md = "```rust\nfn main() {}\n```";
         for theme in [MarkdownTheme::Dark, MarkdownTheme::Light] {
-            let text = render_markdown(code_md, theme, 80);
+            let text = render_markdown(code_md, theme, true, 80);
             let has_bg = text.lines.iter().any(|line| {
                 if line.style.bg.is_some() {
                     return true;
@@ -1633,7 +1783,7 @@ mod tests {
             );
         }
         // Mono: check for BOLD modifier instead of background color or REVERSED
-        let mono_text = render_markdown(code_md, MarkdownTheme::Mono, 80);
+        let mono_text = render_markdown(code_md, MarkdownTheme::Mono, true, 80);
         let has_bold = mono_text
             .lines
             .iter()
@@ -1654,7 +1804,7 @@ mod tests {
             (MarkdownTheme::Light, LATTE_SURFACE0),
         ];
         for (theme, bg) in expected_bg {
-            let text = render_markdown(code_md, theme, 80);
+            let text = render_markdown(code_md, theme, true, 80);
             let first_fence = text
                 .lines
                 .iter()
@@ -1681,7 +1831,7 @@ mod tests {
         // Mono theme uses BOLD modifier only (no REVERSED, no bg color)
         // for code blocks — truly monochrome with no RGB colors.
         let code_md = "```rust\nfn main() {}\n```";
-        let text = render_markdown(code_md, MarkdownTheme::Mono, 80);
+        let text = render_markdown(code_md, MarkdownTheme::Mono, true, 80);
         let first_fence = text
             .lines
             .iter()
@@ -1716,7 +1866,7 @@ mod tests {
         // Mono: verify BOLD modifier only, no colors, no REVERSED.
         let inline_md = "Use `println!` to print";
         for theme in [MarkdownTheme::Dark, MarkdownTheme::Light] {
-            let text = render_markdown(inline_md, theme, 80);
+            let text = render_markdown(inline_md, theme, true, 80);
             let has_code_style = text.lines.iter().any(|line| {
                 line.spans.iter().any(|span| {
                     span.content.contains("println!")
@@ -1731,7 +1881,7 @@ mod tests {
             );
         }
         // Mono: verify BOLD modifier only, no RGB colors, no REVERSED
-        let mono_text = render_markdown(inline_md, MarkdownTheme::Mono, 80);
+        let mono_text = render_markdown(inline_md, MarkdownTheme::Mono, true, 80);
         let has_mono_style = mono_text.lines.iter().any(|line| {
             line.spans.iter().any(|span| {
                 span.content.contains("println!")
@@ -1752,7 +1902,7 @@ mod tests {
         // Verify that Mono theme code blocks contain no RGB colors
         // whatsoever — truly monochrome with only BOLD modifier.
         let code_md = "```rust\nfn main() {}\n```";
-        let text = render_markdown(code_md, MarkdownTheme::Mono, 80);
+        let text = render_markdown(code_md, MarkdownTheme::Mono, true, 80);
         for line in &text.lines {
             // Line.style should have no fg/bg colors
             assert_eq!(
@@ -1789,7 +1939,7 @@ mod tests {
         let code_md = "```rust\nfn main() {}\n```";
         let max_width = 80;
         for theme in [MarkdownTheme::Dark, MarkdownTheme::Light] {
-            let text = render_markdown(code_md, theme, max_width);
+            let text = render_markdown(code_md, theme, true, max_width);
             // All lines inside the code block should have total width == max_width
             // (content width + padding width)
             let mut found_code_line = false;
@@ -1830,7 +1980,7 @@ mod tests {
         // (so the background covers the full line, not just empty space).
         let code_md = "```rust\nfn main() {\n    \n}\n```";
         let max_width = 60;
-        let text = render_markdown(code_md, MarkdownTheme::Dark, max_width);
+        let text = render_markdown(code_md, MarkdownTheme::Dark, true, max_width);
         // Find the empty line (original content "    " — 4 spaces)
         // It should be padded to max_width total
         let empty_line = text.lines.iter().find(|line| {
@@ -1867,7 +2017,7 @@ mod tests {
         let long_line = "x".repeat(100);
         let code_md = format!("```rust\n{}\n```", long_line);
         let max_width = 80;
-        let text = render_markdown(&code_md, MarkdownTheme::Dark, max_width);
+        let text = render_markdown(&code_md, MarkdownTheme::Dark, true, max_width);
         // The long line should NOT have trailing padding (it's already > max_width)
         let long_line_entry = text.lines.iter().find(|line| {
             line.spans
@@ -2091,7 +2241,7 @@ mod tests {
         // During streaming, Mermaid blocks should be rendered as regular code blocks
         // (syntax-highlighted by tui-markdown), not as diagrams.
         let content = "Before\n\n```mermaid\ngraph LR; A --> B\n```\n\nAfter";
-        let text = render_markdown_streaming(content, MarkdownTheme::Dark, 80);
+        let text = render_markdown_streaming(content, MarkdownTheme::Dark, true, 80);
 
         // Streaming mode should NOT call mermaid-text renderer.
         // Instead, the content should appear as a code block with "mermaid" text.
@@ -2111,7 +2261,7 @@ mod tests {
     fn test_final_mermaid_rendered_as_diagram() {
         // Final mode (non-streaming) should render Mermaid as a diagram.
         let content = "Before\n\n```mermaid\ngraph LR; A --> B\n```\n\nAfter";
-        let text = render_markdown(content, MarkdownTheme::Dark, 80);
+        let text = render_markdown(content, MarkdownTheme::Dark, true, 80);
 
         // Final mode should call mermaid-text renderer (box-drawing or fallback).
         // The key difference from streaming: in streaming, it's a code block;
@@ -2121,6 +2271,63 @@ mod tests {
             rendered_str.contains("A") && rendered_str.contains("B"),
             "Final should contain diagram labels"
         );
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_mermaid_lines_truncated_to_width() {
+        // Verify that Mermaid lines exceeding max_width are truncated with …
+        let content = "```mermaid\ngraph LR; A[VeryLongLabelThatExceedsWidth] --> B\n```";
+        // Use a narrow width to force truncation
+        let text = render_markdown(content, MarkdownTheme::Dark, true, 40);
+        let rendered_str = text.to_string();
+        // Should contain the label (partially) or ellipsis indicator
+        // Not all mermaid-text layouts overflow, so check that the output
+        // is at least valid (no panics on truncation)
+        assert!(
+            !rendered_str.is_empty(),
+            "Mermaid rendering should produce output"
+        );
+        // Verify no line exceeds 40 columns (grapheme-level)
+        for line in &text.lines {
+            let line_width: usize = line
+                .spans
+                .iter()
+                .map(|s| unicode_width::UnicodeWidthStr::width(s.content.as_ref()))
+                .sum();
+            assert!(
+                line_width <= 40,
+                "Mermaid line width {} exceeds max 40",
+                line_width
+            );
+        }
+    }
+
+    #[cfg(feature = "mermaid")]
+    #[test]
+    fn test_style_disabled_mermaid_shows_source() {
+        // Style disabled: Mermaid blocks should appear as source code blocks
+        let content = "```mermaid\ngraph LR; A --> B\n```";
+        let text_on = render_markdown(content, MarkdownTheme::Dark, true, 80);
+        let text_off = render_markdown(content, MarkdownTheme::Dark, false, 80);
+
+        // Style on: mermaid-text renders the diagram (box-drawing chars)
+        let on_str = text_on.to_string();
+        let off_str = text_off.to_string();
+
+        // Style off should show the raw mermaid source as a code block
+        assert!(
+            off_str.contains("mermaid"),
+            "Style-off should show 'mermaid' as code block language identifier"
+        );
+        // The content should contain the graph source text
+        assert!(
+            off_str.contains("graph LR"),
+            "Style-off should show raw mermaid source"
+        );
+        // Both should produce output
+        assert!(!on_str.is_empty());
+        assert!(!off_str.is_empty());
     }
 
     // ── Table parsing tests ───────────────────────────────────────
@@ -2530,7 +2737,7 @@ mod tests {
     #[test]
     fn test_render_markdown_table_not_dropped() {
         let content = "# Results\n\n| Name | Value |\n|------|-------|\n| Foo  | 42    |\n\nDone.";
-        let text = render_markdown(content, MarkdownTheme::Dark, 80);
+        let text = render_markdown(content, MarkdownTheme::Dark, true, 80);
         let rendered_str: String = text
             .lines
             .iter()
@@ -2554,7 +2761,7 @@ mod tests {
     #[test]
     fn test_render_markdown_table_has_borders() {
         let content = "| Name | Value |\n|------|-------|\n| Foo  | 42    |";
-        let text = render_markdown(content, MarkdownTheme::Dark, 80);
+        let text = render_markdown(content, MarkdownTheme::Dark, true, 80);
         let rendered_str: String = text
             .lines
             .iter()
@@ -2644,5 +2851,140 @@ mod tests {
         let collapsed = collapse_tables(content);
         let count = collapsed.matches("(...)").count();
         assert_eq!(count, 2, "Two tables should produce two (...) placeholders");
+    }
+
+    // ── Style toggle (style_enabled) tests ──────────────────────────
+
+    #[test]
+    fn test_render_table_plain_lines_basic() {
+        let content = "| Name | Value |\n|------|-------|\n| Foo  | 42    |";
+        let lines = render_table_plain_lines(content);
+        // Plain format: header + separator + 1 data row = 3 lines
+        assert_eq!(lines.len(), 3, "Plain table should have 3 lines");
+        let text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect::<Vec<&str>>()
+            .join("");
+        assert!(text.contains("Name"), "Header 'Name' should appear");
+        assert!(text.contains("Foo"), "Data 'Foo' should appear");
+        assert!(text.contains("42"), "Data '42' should appear");
+        // Pipe-delimited format
+        assert!(text.contains('|'), "Should use pipe delimiters");
+        // Separator row has dashes
+        assert!(
+            lines[1].spans.iter().any(|s| s.content.contains('-')),
+            "Separator line should contain dashes"
+        );
+    }
+
+    #[test]
+    fn test_render_table_plain_lines_alignment_indicators() {
+        let content =
+            "| Left | Center | Right |\n|:-----|:------:|------:|\n| A    | B      | C     |";
+        let lines = render_table_plain_lines(content);
+        let sep_text: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        // Left-aligned: ":---"
+        assert!(
+            sep_text.contains(':'),
+            "Separator should show alignment colons"
+        );
+    }
+
+    #[test]
+    fn test_render_table_plain_lines_empty_table() {
+        let content = "Not a table at all";
+        let lines = render_table_plain_lines(content);
+        assert!(
+            lines.is_empty(),
+            "Non-table content should produce empty lines"
+        );
+    }
+
+    #[test]
+    fn test_style_disabled_strips_code_highlight() {
+        let code_md = "```rust\nfn main() {}\n```";
+        let text_on = render_markdown(code_md, MarkdownTheme::Dark, true, 80);
+        let text_off = render_markdown(code_md, MarkdownTheme::Dark, false, 80);
+
+        // Both should have same number of lines (background is applied either way)
+        assert_eq!(text_on.lines.len(), text_off.lines.len());
+
+        // With style on, syntect may apply fg colors to code content spans.
+        // With style off, all fg colors inside code block should be None.
+        let _in_code_block_on = has_any_colored_code_span(&text_on.lines);
+        let in_code_block_off = has_any_colored_code_span(&text_off.lines);
+
+        // When style is off, no code spans should have fg colors
+        assert!(
+            !in_code_block_off,
+            "Style-off should strip all code block fg colors"
+        );
+        // Note: in_code_block_on may also be true or false depending on syntect
+        // output for trivial code; the important thing is off=always clean
+    }
+
+    #[test]
+    fn test_style_disabled_uses_plain_tables() {
+        let content = "| A | B |\n|---|---|\n| 1 | 2 |";
+        let text_on = render_markdown(content, MarkdownTheme::Dark, true, 80);
+        let text_off = render_markdown(content, MarkdownTheme::Dark, false, 80);
+
+        // Style on: box-drawing borders (contains ┌ or ┼)
+        let on_text: String = text_on
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect::<Vec<&str>>()
+            .join("");
+        assert!(
+            on_text.contains('┌') || on_text.contains('┼') || on_text.contains('─'),
+            "Style-on table should contain box-drawing characters"
+        );
+
+        // Style off: pipe-delimited (no box-drawing)
+        let off_text: String = text_off
+            .lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect::<Vec<&str>>()
+            .join("");
+        assert!(
+            !off_text.contains('┌') && !off_text.contains('┼'),
+            "Style-off table should not contain box-drawing characters"
+        );
+        assert!(
+            off_text.contains('|'),
+            "Style-off table should use pipe delimiters"
+        );
+    }
+
+    /// Helper: check if any span inside a code block (between ``` fences)
+    /// has a non-None fg color.
+    fn has_any_colored_code_span(lines: &[Line<'_>]) -> bool {
+        let mut in_code = false;
+        for line in lines {
+            let is_fence = line
+                .spans
+                .first()
+                .map(|s| s.content.starts_with("```"))
+                .unwrap_or(false);
+            if is_fence && !in_code {
+                in_code = true;
+                continue;
+            }
+            if is_fence && in_code {
+                in_code = false;
+                continue;
+            }
+            if in_code {
+                for span in &line.spans {
+                    if span.style.fg.is_some() {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }

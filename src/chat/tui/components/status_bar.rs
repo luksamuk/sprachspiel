@@ -28,6 +28,10 @@ pub struct StatusBarState {
     pub think_enabled: bool,
     /// Whether tools are active
     pub tools_enabled: bool,
+    /// Whether style rendering is enabled (mermaid diagrams, syntax
+    /// highlighting, box-drawing tables). Shown as 🎨 (on) or 📄 (off)
+    /// in the status bar indicator row.
+    pub style_enabled: bool,
     /// Spinner character (if animating, e.g., "⠋")
     pub spinner: Option<String>,
     /// Status label (e.g., "Thinking...", "Running tool...")
@@ -53,6 +57,7 @@ impl StatusBarState {
             percent,
             think_enabled,
             tools_enabled,
+            style_enabled: true,
             spinner: None,
             status_label: None,
             embedding_progress: None,
@@ -151,6 +156,14 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
     }
     if state.tools_enabled {
         spans.push(Span::raw("🔧"));
+    }
+    // Style rendering indicator — always visible (option B) so users
+    // discover the /togglestyle command. 🎨 means styled (diagrams,
+    // syntax highlighting, box-drawing tables), 📄 means source/raw.
+    if state.style_enabled {
+        spans.push(Span::raw("🎨"));
+    } else {
+        spans.push(Span::raw("📄"));
     }
 
     // Embedding progress — shown after indicators with separator

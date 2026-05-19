@@ -4632,13 +4632,16 @@ Changes:
 | `b0311f0` | `/reindex --yes` confirmation gate, duplicate chunk deletion, async message channel | ✅ COMPLETED |
 | `da7ca2e` | Word-wrap input, dynamic height, Alt+Enter newline fallback | ✅ COMPLETED |
 | *(uncommitted)* | Command alias/shortcut removal, autocomplete descriptions, subcommand letter alias removal | ✅ COMPLETED |
+| *(uncommitted)* | Mermaid width truncation (`…` ellipsis for lines exceeding terminal width) | ✅ COMPLETED |
+| *(uncommitted)* | `/togglestyle` command — toggle Mermaid/source view, syntax highlighting, table format | ✅ COMPLETED |
+| *(uncommitted)* | Status bar style indicator (🎨 on / 📄 off) | ✅ COMPLETED |
 
 **Known Bugs (on `feat/tui-streaming-refinement` branch):**
 
 | Bug | Severity | Status |
 |-----|----------|--------|
-| Scroll viewport discrepancy — lines disappear at TUI bottom | Medium | 📋 Planned (scroll-fix PR) |
-| mermaid-text `sequenceDiagram` byte-slicing panic on emoji | Low | 🛡️ Mitigated (`call_mermaid_safely`) |
+| ~~Scroll viewport discrepancy — lines disappear at TUI bottom~~ | ~~Medium~~ | ✅ Fixed (`18030f0` grapheme-level width) |
+| mermaid-text `sequenceDiagram` byte-slicing panic on emoji | Low | 🛡️ Mitigated (`call_mermaid_safely` + width truncation) |
 | mermaid-text column misalignment with wide Unicode | Low | 🛡️ Mitigated (`MERMAID_INSTRUCTION` emoji avoidance) |
 
 **Bug 1: Scroll Viewport Discrepancy — Lines Disappear at TUI Bottom**
@@ -4659,9 +4662,46 @@ The `mermaid-text` crate v0.56 panics when rendering `sequenceDiagram` labels co
 
 Mitigation: `call_mermaid_safely()` in `src/markdown/mermaid.rs` catches the panic via `catch_unwind` and suppresses the Rust panic hook (which would call `restore_terminal_on_panic()` and destroy the TUI alternate screen). The `MERMAID_INSTRUCTION` prompt tells the LLM to avoid emojis and wide Unicode in Mermaid labels. Affects only rendering — fallback to raw code block is graceful. Upstream bug report needed.
 
+Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines that overflow the terminal. These are now truncated with `…` ellipsis via `truncate_visual_width()` in both `render_mermaid_tui()` (TUI) and `render_mermaid_rich()` (standalone).
+
 **Bug 3: mermaid-text Column Misalignment with Wide Unicode**
 
 `mermaid-text` uses `chars().count()` instead of `UnicodeWidthChar::width()` in `draw_tag()` (line 1276) and `box_table::put_str()` advances by 1 per char. This causes column misalignment in rendered diagrams when labels contain emojis or CJK characters. Not fixable on our side — requires upstream fix. Mitigated by `MERMAID_INSTRUCTION` telling the LLM to avoid emojis and wide Unicode in Mermaid labels.
+
+---
+
+#### Mermaid Width Truncation + `/togglestyle` Command
+
+**Status:** ✅ COMPLETED (on `feat/tui-streaming-refinement` branch)
+
+**Goal:** Two UX features for the TUI chat:
+1. **Mermaid width truncation**: Lines exceeding `max_width` (especially `sequenceDiagram` which ignores `max_width`) are truncated with `…` ellipsis at the end. Uses `truncate_visual_width()` (already in `src/utils.rs`) for grapheme-level accuracy.
+2. **`/togglestyle` command**: Single boolean toggle — "want to see the code underneath". When style rendering is off:
+   - Mermaid blocks show as source code blocks (no diagram rendering)
+   - Code block syntax highlighting (syntect fg colors) is stripped — plain text with Catppuccin background preserved
+   - Tables use pipe-delimited plain format (`| col1 | col2 |`) instead of box-drawing borders (┌─┐)
+   - Status bar shows 📄 indicator (🎨 when style is on)
+
+**Files changed:**
+- `src/chat/tui/markdown.rs` — `render_mermaid_tui()` truncation, `apply_code_block_background()` style_enabled gate, `render_table_plain_lines()` pipe-delimited tables, `render_markdown_impl()` mermaid/table/code branches
+- `src/markdown/mermaid.rs` — `render_mermaid_rich()` standalone truncation
+- `src/chat/app.rs` — `style_enabled` field, `toggle_style()` method
+- `src/chat/tui/components/chat_area.rs` — `render()` and `build_lines()` accept `style_enabled`
+- `src/chat/tui/components/status_bar.rs` — `style_enabled` field + 🎨/📄 indicator
+- `src/chat/commands.rs` — `ChatCommand::ToggleStyle` variant
+- `src/chat/command_handlers.rs` — ToggleStyle match arm (placeholder for exhaustiveness)
+- `src/chat/repl_tui.rs` — ToggleStyle handled directly (needs App access for `toggle_style()`)
+- `src/chat/completer.rs` — `/togglestyle` tab completion entry
+
+**Tests added:**
+- `test_render_table_plain_lines_basic` — simple 2-column table → 3 lines
+- `test_render_table_plain_lines_alignment_indicators` — `:---`, `:---:`, `---:` colons
+- `test_render_table_plain_lines_empty_table` — invalid table → empty
+- `test_style_disabled_strips_code_highlight` — fg colors stripped when off
+- `test_style_disabled_uses_plain_tables` — no box-drawing when off
+- `test_mermaid_lines_truncated_to_width` — no line exceeds max_width
+- `test_style_disabled_mermaid_shows_source` — raw source block when off
+- `test_toggle_style_flips_state` — App.toggle_style() + status bar sync
 
 ---
 

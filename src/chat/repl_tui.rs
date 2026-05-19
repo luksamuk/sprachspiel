@@ -331,6 +331,22 @@ pub async fn run_chat_repl_tui(
                                                     continue;
                                                 }
 
+                                                // Handle toggle style specially (needs App access)
+                                                if let ChatCommand::ToggleStyle = &cmd {
+                                                    let app = view.app_mut();
+                                                    app.toggle_style();
+                                                    let label = if app.style_enabled() {
+                                                        "on"
+                                                    } else {
+                                                        "off"
+                                                    };
+                                                    let output = CommandOutput::Info(
+                                                        format!("Style rendering: {label}"),
+                                                    );
+                                                    view.show_command_outputs(&[output]);
+                                                    continue;
+                                                }
+
                                                 // Handle other commands
                                                 let mut dummy_input =
                                                     super::input::CrosstermInput::default();

@@ -98,6 +98,11 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         arg_type: ArgCompletion::None,
     },
     SlashCommand {
+        trigger: "/togglestyle",
+        description: "Toggle style rendering (mermaid/source, syntax highlight, table format)",
+        arg_type: ArgCompletion::None,
+    },
+    SlashCommand {
         trigger: "/tools-output",
         description: "Set tool output level (compact|full|hidden)",
         arg_type: ArgCompletion::StaticSubcommands,

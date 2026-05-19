@@ -71,6 +71,8 @@ pub enum ChatCommand {
     Think,
     /// Toggle tools
     Tools,
+    /// Toggle style rendering (mermaid diagrams, syntax highlighting, table format)
+    ToggleStyle,
     /// Compact conversation history
     Compact,
     /// Set tool output level
@@ -975,6 +977,7 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         "think" => ChatCommand::Think,
         "debug" => ChatCommand::Debug,
         "tools" => ChatCommand::Tools,
+        "togglestyle" => ChatCommand::ToggleStyle,
         "compact" => ChatCommand::Compact,
         "tools-output" => {
             if args.is_empty() {
@@ -1160,6 +1163,7 @@ pub fn format_help() -> String {
   /system <text>   Change the system prompt
   /think           Toggle think mode
   /tools           Toggle tools
+  /togglestyle     Toggle style rendering (mermaid/source, syntax highlighting, table format)
   /tools-output    Set tool output level (compact|full|hidden)
   /compact         Compact conversation history (summarize)
   /retry           Retry last message (regenerate response)

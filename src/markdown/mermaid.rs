@@ -80,7 +80,18 @@ pub fn render_mermaid_rich(source: &str, width: usize) -> String {
         call_mermaid_safely(|| mermaid_text::render_with_width(trimmed, Some(effective_width)));
 
     match result {
-        Ok(Ok(rendered)) => format!("{rendered}\n"),
+        Ok(Ok(rendered)) => {
+            // Truncate lines exceeding effective_width with ellipsis.
+            // mermaid-text sequenceDiagram ignores max_width, producing lines
+            // that overflow the terminal. Truncation preserves layout while
+            // indicating the line was cut.
+            let truncated: String = rendered
+                .lines()
+                .map(|line| crate::utils::truncate_visual_width(line, effective_width))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("{truncated}\n")
+        }
         Ok(Err(e)) => {
             log::warn!("Mermaid parse error, falling back to code block: {e}");
             format!("```mermaid\n{source}```\n")

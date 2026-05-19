@@ -210,6 +210,14 @@ pub async fn handle_command(
             correction_text,
         } => handle_feedback(state, signal_type, item_id, correction_text),
         ChatCommand::ContentPrune => handle_content_prune(state),
+        // ToggleStyle is handled directly in repl_tui.rs (needs App access).
+        // This arm exists for match exhaustiveness; it is never reached
+        // from the TUI because the command is intercepted before dispatch.
+        ChatCommand::ToggleStyle => {
+            vec![CommandOutput::Info(
+                "Style rendering: (no change)".to_string(),
+            )]
+        }
     }
 }
 

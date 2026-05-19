@@ -323,6 +323,7 @@ pub struct RenderMetadata {
 fn build_lines(
     messages: &[ChatMessage],
     theme: MarkdownTheme,
+    style_enabled: bool,
     available_width: usize,
 ) -> Vec<Line<'_>> {
     let mut lines: Vec<Line> = Vec::new();
@@ -342,7 +343,7 @@ fn build_lines(
                     lines.push(Line::raw(String::new()));
                 }
                 // No prefix — markdown rendered
-                let rendered = render_markdown(&msg.content, theme, available_width);
+                let rendered = render_markdown(&msg.content, theme, style_enabled, available_width);
                 lines.extend(rendered.lines);
             }
             MessageType::AssistantStreaming => {
@@ -351,7 +352,8 @@ fn build_lines(
                     lines.push(Line::raw(String::new()));
                 }
                 // Streaming mode: Mermaid blocks shown as code blocks (deferred rendering)
-                let rendered = render_markdown_streaming(&msg.content, theme, available_width);
+                let rendered =
+                    render_markdown_streaming(&msg.content, theme, style_enabled, available_width);
                 lines.extend(rendered.lines);
             }
             MessageType::Thinking => {
@@ -366,7 +368,8 @@ fn build_lines(
                 )));
                 // Streaming mode: Mermaid blocks shown as code blocks (deferred rendering)
                 let content_width = available_width.saturating_sub(THINKING_BORDER_WIDTH);
-                let rendered = render_markdown_streaming(&msg.content, theme, content_width);
+                let rendered =
+                    render_markdown_streaming(&msg.content, theme, style_enabled, content_width);
                 let border_span =
                     Span::styled(THINKING_BORDER_PREFIX, styles::thinking_border_style());
                 for render_line in rendered.lines {
@@ -387,7 +390,7 @@ fn build_lines(
                 // Tool output may contain code blocks, lists, tables — render
                 // them properly while keeping visual distinction from assistant
                 // content by applying dim modifier over all styles.
-                let rendered = render_markdown(&msg.content, theme, available_width);
+                let rendered = render_markdown(&msg.content, theme, style_enabled, available_width);
                 let dim_style = styles::dim();
                 for render_line in rendered.lines {
                     // Propagate Line.style to each Span before applying dim overlay.
@@ -562,10 +565,11 @@ pub fn render(
     messages: &[ChatMessage],
     scroll_state: &mut ScrollState,
     theme: MarkdownTheme,
+    style_enabled: bool,
     selection: &ChatSelection,
 ) -> RenderMetadata {
     let available_width = area.width as usize;
-    let mut lines = build_lines(messages, theme, available_width);
+    let mut lines = build_lines(messages, theme, style_enabled, available_width);
 
     // Build visual_lines BEFORE applying selection highlight (plain text for extraction).
     // Trim trailing whitespace from each line so that code block padding (styled

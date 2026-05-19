@@ -94,6 +94,7 @@ The `/session` command provides an alternative syntax for session management:
 | `/think` | Toggle think mode on/off |
 | `/tools` | Toggle tools on/off |
 | `/tools-output <level>` | Set tool output verbosity: compact, full, hidden |
+| `/togglestyle` | Toggle style rendering (Mermaid diagrams, syntax highlighting, table format) |
 
 ### Conversation
 
@@ -586,6 +587,11 @@ The prompt shows active modes with emojis:
 - `lfm🧠>` - Think mode enabled
 - `lfm🔧>` - Tools enabled
 - `lfm🧠🔧>` - Both think and tools enabled
+
+The status bar shows additional indicators:
+
+- 🎨 - Style rendering enabled (Mermaid diagrams, syntax highlighting, box-drawing tables)
+- 📄 - Style rendering disabled (raw source view, plain text code blocks, pipe-delimited tables)
 
 ## Tab Completion
 
