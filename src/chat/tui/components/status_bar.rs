@@ -158,7 +158,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &StatusBarState) {
         spans.push(Span::raw("🔧"));
     }
     // Style rendering indicator — always visible (option B) so users
-    // discover the /togglestyle command. 🎨 means styled (diagrams,
+    // discover the /toggle-style command. 🎨 means styled (diagrams,
     // syntax highlighting, box-drawing tables), 📄 means source/raw.
     if state.style_enabled {
         spans.push(Span::raw("🎨"));

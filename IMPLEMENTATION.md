@@ -4633,6 +4633,10 @@ Changes:
 |--------|-------------|--------|
 | `b0311f0` | `/reindex --yes` confirmation gate, duplicate chunk deletion, async message channel | ✅ COMPLETED |
 | `da7ca2e` | Word-wrap input, dynamic height, Alt+Enter newline fallback | ✅ COMPLETED |
+| `02ea1ed` | Fix duplicate sections in CHANGELOG (6 versions); tool detail lines to log::debug only | ✅ COMPLETED |
+| `48411ab` | InterToolText thinking field; cancel_token for Ctrl+C tool-loop interruption | ✅ COMPLETED |
+| `6b2cf90` | Drain tool messages after state transitions — fixes tool-before-thinking ordering | ✅ COMPLETED |
+| `bcf1cdd` | `/toggle-style` rename; `↳` indent on compact tool results | ✅ COMPLETED |
 | *(uncommitted)* | Command alias/shortcut removal, autocomplete descriptions, subcommand letter alias removal | ✅ COMPLETED |
 | *(uncommitted)* | Mermaid width truncation (`…` ellipsis for lines exceeding terminal width) | ✅ COMPLETED |
 | *(uncommitted)* | `/togglestyle` command — toggle Mermaid/source view, syntax highlighting, table format | ✅ COMPLETED |
@@ -4691,17 +4695,18 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 
 ---
 
-#### Mermaid Width Truncation + `/togglestyle` Command
+#### Mermaid Width Truncation + `/toggle-style` Command
 
 **Status:** ✅ COMPLETED (on `feat/tui-streaming-refinement` branch)
 
 **Goal:** Two UX features for the TUI chat:
 1. **Mermaid width truncation**: Lines exceeding `max_width` (especially `sequenceDiagram` which ignores `max_width`) are truncated with `…` ellipsis at the end. Uses `truncate_visual_width()` (already in `src/utils.rs`) for grapheme-level accuracy.
-2. **`/togglestyle` command**: Single boolean toggle — "want to see the code underneath". When style rendering is off:
+2. **`/toggle-style` command** (previously `/togglestyle`): Single boolean toggle — "want to see the code underneath". When style rendering is off:
    - Mermaid blocks show as source code blocks (no diagram rendering)
    - Code block syntax highlighting (syntect fg colors) is stripped — plain text with Catppuccin background preserved
    - Tables use pipe-delimited plain format (`| col1 | col2 |`) instead of box-drawing borders (┌─┐)
    - Status bar shows 📄 indicator (🎨 when style is on)
+   - Old `/togglestyle` still accepted for backward compatibility
 
 **Files changed:**
 - `src/chat/tui/markdown.rs` — `render_mermaid_tui()` truncation, `apply_code_block_background()` style_enabled gate, `render_table_plain_lines()` pipe-delimited tables, `render_markdown_impl()` mermaid/table/code branches

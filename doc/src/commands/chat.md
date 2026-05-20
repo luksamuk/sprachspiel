@@ -94,7 +94,7 @@ The `/session` command provides an alternative syntax for session management:
 | `/think` | Toggle think mode on/off |
 | `/tools` | Toggle tools on/off |
 | `/tools-output <level>` | Set tool output verbosity: compact, full, hidden |
-| `/togglestyle` | Toggle style rendering (Mermaid diagrams, syntax highlighting, table format) |
+| `/toggle-style` | Toggle style rendering (Mermaid diagrams, syntax highlighting, table format) |
 
 ### Conversation
 
