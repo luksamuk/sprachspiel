@@ -43,6 +43,7 @@ All notable changes to Sprachspiel will be documented in this file.
 - **Tool call indicators rendered bright, results dim** — `MessageType::Tool` messages starting with call/indicator prefixes (🔧⚡📝💾📄⏭🗑📖👍👎✎) are now rendered in normal style (no DIM overlay), making tool actions clearly visible. Tool results (✓ Result:, 📤 name result:) remain dimmed for visual hierarchy.
 - **Fix mouse selection offset with wrapped lines** — Mouse click/drag selection was misaligned from the actual content position when lines wrapped (long lines that span multiple display rows). Root cause: `visual_lines_cache` had one entry per source `Line` but `scroll_from_top` was in display-row space, causing index divergence whenever lines wrapped. Fix: `wrap_visual_lines()` expands each source `Line` into one or more display-row strings (matching ratatui's `Wrap { trim: false }`), and `source_line_map: Vec<usize>` maps each display row back to its source line. `apply_selection_highlight()` uses this map to convert display-row selection coordinates to source-line indices for correct span highlighting. `App.source_line_map_cache` stored alongside `visual_lines_cache` for future use in text extraction. Gated `count_ratatui_wrapped_lines()` and `count_word_wrapped_graphemes()` with `#[cfg(test)]` (superseded by `wrap_visual_lines()` in production). 13 new tests for wrap logic and selection highlighting.
 - **Filter empty tool parameter values from display** — `display_tool_call()` now omits empty-string parameter values from the compact format (`head=` suppressed → just `head` omitted entirely, not `key=`). `log_tool_call()` skips empty-value detail lines in verbose/trace mode. This removes visual noise from tool indicators like `⚡ run_cmd(head=, tail=, command="ls")` → `⚡ run_cmd(command="ls")`.
+- **Fix tool call detail lines leaking into TUI chat area** — When TUI mode is active, `set_tui_mode(true)` boosts `log::set_max_level()` to `Debug` so the log file captures useful diagnostics. This caused `log_tool_call()`'s verbose detail lines (`tool: pdfinfo`, `command: ls`) to pass the `log::log_enabled!(Debug)` check and leak into the TUI callback, appearing as extra lines between the compact tool indicator and the result. Fix: detail lines now go to `log::debug!()` (the log file) instead of the TUI callback. Only the compact `display_tool_call()` format routes through `TUI_CALLBACK`.
 - **Background reindex execution in TUI** — `/reindex --yes` no longer freezes the TUI. Regeneration runs in a `tokio::spawn` background task, keeping the event loop responsive. Progress shown as `⚙ current/total` in the status bar. Completion message arrives via `AsyncMessageTx` channel and `App::poll_async_messages()`, rendered as a system message in the chat area. Terminal mode runs synchronously with a progress bar. Architecture: `App::with_embedding_channel()` returns `(App, EmbeddingProgressTx, AsyncMessageTx)`, `RatatuiView` stores both senders, `ChatSession.async_message_tx: Option<AsyncMessageTx>`, `handle_reindex_cmd` branches on `async_message_tx.is_some()` for TUI (background) vs terminal (synchronous) execution.
 - **Static subcommand completion** — `/think on|off` and `/tools-output compact|full|hidden` (and their shortcuts `/t`, `/to`) now show argument completions. `ArgCompletion::StaticSubcommands` variant with `try_static_subcommand_fragment()`, `get_static_subcommands()`, and `complete_static_subcommand()` in `ChatCompleter`. Removed `#[allow(dead_code)]` from `StaticSubcommands` variant.
 - **W6-PR2: Responsive Chat Rebuild — Ratatui + CrosstermInput (Issue #146)** — Replace println+ANSI rendering with Ratatui for responsive chat at any terminal width. Replace rustyline with CrosstermInput (incompatible with ratatui raw mode). App event loop with crossterm key events (100ms poll for spinner). RatatuiView implements all 18 ChatView methods + all CommandOutput variants. TUI components: ChatMessage enum, StatusBarState with braille spinner, InputState with unicode cursor. MarkdownTheme (Dark/Light/Mono) from DisplaySettings.skin. WelcomeInfo and RecentContextInfo rendered as chat messages. Status bar with model name, token progress bar, and emoji indicators. Session save/restore on Ctrl+D and /quit. run_chat_repl() delegates all interactive display to run_chat_repl_tui() via RatatuiView. Non-chat subcommands continue using TerminalView (termimad+indicatif). Streaming: markdown rendered incrementally during LLM response (ChatMessage::assistant_streaming), then re-rendered on completion (ChatMessage::assistant_markdown). Spinner animation deferred to PR3 (await blocks render loop).
@@ -75,17 +76,6 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [0.43.0] - 2026-05-11
 
-### Changed
-
-- **Function extraction — reduce long functions (Issue #129)** — Refactor the worst `too_many_lines` violations. Three functions were genuinely extracted into smaller pieces: `run_migrations`/`apply_migrations` (484→~35 lines), `generate_all_tool_prompts`/`build_tool_context` (409→~40 lines), `dedup_new_fact`/`deduplicate_and_insert` (339→~20 lines dispatcher + extracted layer functions). Two dispatch tables (`handle_command` 304 lines, `parse_command` 278 lines) were annotated with `#[allow(clippy::too_many_lines)]` with justification: each arm is trivial routing/parsing, and reducing below 100 would require ~30 wrapper functions that add ceremony without reducing complexity. Inline handler logic was still extracted (7 new `handle_*` functions: `handle_quit`, `handle_forget_cmd`, `handle_save_cmd`, `handle_load_cmd`, `handle_debug_toggle`, `handle_skill_cmd`, `handle_skill_list_cmd`). Two parser functions (`parse_note_add`, `parse_note_subcommand`) also received `#[allow]` as state-machine and dispatch-table patterns respectively.
-
-- **Unwrap/expect/panic triage (Issue #128)** — Systematic audit of all `unwrap()`, `expect()`, and `panic!` sites in production code. Library code now propagates errors with `?` and `map_err()` instead of panicking. CLI entry points retain justified `#[expect]` annotations with reasoning comments. `panic!` in library code replaced with `return Err(...)`. Removes ~54 crash-risk sites from non-CLI code paths.
-
-### Changed
-
-- **Renamed from ask-ai to Sprachspiel** (Issue #126) — Complete project rename. Binary: `ask-ai` → `sprachspiel`. Config directory: `~/.config/ask-ai/` → `~/.config/sprachspiel/`. Data directory: `~/.local/share/ask-ai/` → `~/.local/share/sprachspiel/`. Database: `ask-ai.db` → `sprachspiel.db`. Project directory: `.ask-ai/` → `.sprachspiel/`. All source references, documentation, scripts, Makefile, and man page updated. Welcome banner regenerated with "SPRACHSPIEL" in gold/cyan. Internal Rust modules renamed `ask_ai::` → `sprachspiel::`. DB migration chain: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (no fallback, no legacy constants).
-- **Documentation cleanup (Phase 12)** — Final rename pass: fixed manpage refs (`sprach.1` not `sprachspiel.1`), updated all remaining `ask-ai`/`Ask-AI`/`ask_ai::` references in docs and IMPLEMENTATION.md, replaced `#[ask_ai::tool]` with `#[sprachspiel::tool]`, renamed proc-macro crate from `ask-ai-tool-derive` to `sprachspiel-tool-derive`, updated `book.toml` title and doc site banner, fixed `ASK_AI_DEBUG` env var to `RUST_LOG`, updated all GitHub URLs from `ask-ai-rs` to `sprachspiel`, updated GitHub Pages URL, updated launch reel, updated skill files, replaced `sprachspiel-rs` with `sprachspiel` in project naming.
-
 ### Added
 
 - **Visual indicators for tool actions** — Tools now show succinct one-line emoji indicators in DIM gray when they complete important actions, providing immediate visual feedback alongside the existing `🔧 name(args)` tool call display. Indicators: 📖 (`skill_view`), 📄 (`import_document`), 📝 (`note_add`/`note_edit`), 🗑️ (`note_delete`), 👍👎✎ (`feedback_submit`), 💾/⏭ (`fact_add` stored/skipped), ⚡ (`run_command` executing). All indicators use the shared `TOOL_DIM`/`RESET` ANSI constants from `debug_tools.rs` and `suspend_for_print()` for spinner compatibility. Hidden in Quiet mode.
@@ -99,42 +89,6 @@ All notable changes to Sprachspiel will be documented in this file.
 - **SF4: Logging Overhaul (Issue #110)** — Replaced `env_logger` with custom `MultiLogger` implementing `log::Log` for dual output: colored stderr + file (`~/.local/share/sprachspiel/sprachspiel.log`). Terminal default raised from `info` to `warn` — only warnings/errors shown by default. `-v` enables debug, `-vv` enables trace. File always receives `warn+` (trace mode: `info+`). Log rotation at 5 MB with 1 backup. Data sensitivity audit: added `truncate_for_log()` helper, truncated PII leakage in 3 locations (message content, fact content). Verbosity alias `"info"` removed (Normal now = warn), added `"warn"` alias.
 
 - **SF5: Agent Spawning Tools (Issue #111)** — Replaced generic `spawn_subagent` tool with 4 dedicated spawning tools: `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`. Each tool has only its relevant parameters (e.g., `ocr_mode` only on OCR agent), improving LLM docstring clarity and eliminating irrelevant optional parameters. Removed `spawn_document_agent` — the LLM already has `run_command` + spawning tools and follows the `document-processing` skill, making a limited document subagent redundant. Removed direct PDF/EPUB import from `import_document` — PDFs/EPUBs must be extracted to text via `run_command("pdftotext")` first, then imported as TXT/MD/ORG. Removed `--pages` flag, PDF pipeline code, checkpoint system, and `PdfConversionError`/`PdfSupport` error types from vision tool. Updated `document-processing.md` skill to reference new tool names and LLM-orchestrated two-phase pipeline (Phase 1: `pdftotext`, Phase 2: `pdftoppm` → `spawn_ocr_agent`/`spawn_vision_agent`).
-
-### Fixed
-
-- **`/doc show` now renders markdown content in 80 columns** — Previously, `/doc show` used `println!()` to dump raw document content, meaning `.md` files showed `#`, `**`, `*` etc. as literal text instead of rendered headings, bold, and italic. It also ignored the 80-column chat terminal width, causing long lines to overflow. Now uses `print_markdown_chat()` — the same renderer as `/note show` — which formats markdown properly and wraps at the `CHAT_TERMINAL_WIDTH` (80 columns). Header also rebuilt as markdown with `## Document #N`, `**Title:**`, `**File:**` labels for consistent styling.
-
-- **Bug ADR-E4: PT identity facts stored in first person** — `translate_pt_to_en()` generated first-person English for PT identity patterns (e.g., "Meu nome é Ana" → "My name is Ana" instead of "User's name is Ana"). This violated ADR-E4 (all facts stored in third person). Fixed by changing PT identity outputs in `translate_pt_to_en()` to third person: "Meu nome é Ana" → "User's name is Ana", "Eu moro em São Paulo" → "User lives in São Paulo", etc. Now consistent with EN identity normalization ("My name is Ana" → "User's name is Ana").
-
-- **Bug S42.4/S43.1 (smoke test #3): Layer 3.5 semantic contradiction detection (reordered)** — "User prefers dark mode" and "User prefers light mode" coexisted because: (1) Layer 2 `find_normalized_fact()` didn't match them ("prefer dark mode" ≠ "prefer light mode"), so they passed through; (2) FTS5 BM25 tokenizes "prefers" ≠ "prefer" (no lemmatization), so low scores; (3) Layer 3.5 cosine = 0.77 < 0.90 threshold. Fixed by: **(a)** lowering `SEMANTIC_SEARCH_THRESHOLD` from 0.90 to 0.70 (measured gap: all contradictions sit ≥0.77, different topics ≤0.60), **(b)** moving Layer 3.5 BEFORE Layer 3 (FTS5 BM25) so it runs when Layer 2 misses, **(c)** adding triple-based disambiguation inside the semantic block: `extract_fact_triple()` distinguishes contradictions (same predicate, different object → Update) from duplicates (same triple → Skip) from related facts (different predicate → fall through), **(d)** keeping `is_contradiction()` as polarity fallback for like/hate pairs that triples miss, **(e)** removing dead Layer 2.5 code that was nested inside Layer 2's `if !matches.is_empty()` (by definition, contradictory facts have different normalized strings, so the block was unreachable). Identity facts ("name is Lucas" → "name is Maria", cosine 0.875) are covered automatically since they classify as `Category::Preference`.
-
-- **Bug S42.4 race condition: async embedding missing on Layer 3.5 search** — When fact #2 was auto-extracted, fact #1's embedding might not yet exist in `fact_embeddings` because it was generated via fire-and-forget `tokio::spawn`. Layer 3.5's `search_facts_semantic()` found no results → contradictions were missed. Fixed by making embedding generation **synchronous** (await, not fire-and-forget) in both `insert_new_fact()` (auto-extraction path) and `handle_fact_add()` (`/fact add` path). After DB insert, the embedding is now generated and stored before returning, guaranteeing it's available for the next fact's Layer 3.5 search. If Ollama is offline, `has_embedding` stays 0 and recovery generates on next startup. Also changed Layer 3.5 gate from `Category::Preference` to `extract_fact_triple().is_some()` (more precise, covers both preference and identity triples).
-
-- **Bug #3: sqlite-vec L2 vs cosine metric mismatch (ROOT CAUSE of S42.4 failure)** — `search_facts_semantic()` in `facts/db.rs` computed `similarity = 1.0 - distance`, which is only correct for cosine distance. But sqlite-vec's `vec0` virtual table uses **L2 (Euclidean) distance** by default when `distance_metric=cosine` is not specified. All 3 vec0 tables (`fact_embeddings`, `content_embeddings`, `chunk_embeddings_v2`) in `schema.rs` lacked the `distance_metric=cosine` parameter (fixed in schema v12). For L2-normalized vectors, the correct conversion is `cosine_similarity = 1.0 - (L2_distance² / 2.0)`, derived from `‖a−b‖² = 2(1 − cos(a,b))`. The broken formula caused ALL fact similarity scores to be ~0.25–0.35 too low — the effective 0.70 threshold actually required cosine > 0.955, making Layer 3.5 completely non-functional. The same bug existed in `content/db.rs` for content and chunk semantic search. Empirically verified: "prefers dark mode" vs "prefers light mode" scored **0.6304** (broken) vs **0.9317** (correct). Fixed in `facts/db.rs:446`, `content/db.rs:706`, `content/db.rs:774`. Also fixed comparison direction: `content/db.rs:790` changed from `<` to `>` (highest cosine wins, not lowest L2). *Discovered by Hermes Agent.*
-
-- **Schema v12: `distance_metric=cosine` + ascending sort fix** — Two improvements to the semantic search pipeline: (1) Added `distance_metric=cosine` to all 3 vec0 table definitions in `schema.rs`, eliminating the application-level L2→cosine conversion (`1.0 - L2²/2` → `1.0 - distance`). Schema v11→v12 migration drops and recreates vec0 tables, resets `has_embedding` flags for startup recovery. (2) Fixed ascending sort bug in `search_content_semantic()` — results were sorted ascending by score (least similar first), then truncated. This inverted RRF ranking: the least similar semantic result received the highest RRF weight. Changed to descending sort (most similar first) to ensure rank 1 = best match.
-
-- **Bug #4: Missing replacement fact insertion in `/fact add` contradiction paths** — In `command_handlers.rs`, after detecting a contradiction (both triple-based and `is_contradiction()` polarity paths) and deleting the old fact, `return;` exited the entire function without inserting the new replacement fact. The old fact was deleted and the new one was lost. Fixed by replacing bare `return;` with explicit `Fact::new()` + `db.insert_fact()` + synchronous embedding generation in both paths. The auto-extraction path in `extract.rs` was not affected (it calls `insert_new_fact()` which handles the insert). *Discovered by Hermes Agent.*
-
-- **Bug #5: Accumulative predicates false positives** — `FactTriple::contradicts()` treated ALL same-predicate pairs as contradictions, so "User likes Python" vs "User likes Rust" was incorrectly flagged as a contradiction. Fixed with two-tier logic: **exclusive predicates** (`prefers`, `name is`, `lives in`) → any different object = contradiction; **accumulative predicates** (`likes`, `loves`, `hates`, `uses`) → only contradiction if objects share content words (`object_word_overlap()` > 0.3). "likes dark mode" vs "likes light mode" shares "mode" → contradiction. "likes Python" vs "likes Rust" shares nothing → coexist. Added polarity flip detection (`likes X` vs `hates X` → always contradiction). Centralized classification constants `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES`, `STOP_WORDS` in `lang.rs` with enforcement test `test_all_predicates_classified`. *Discovered by Hermes Agent.*
-
-- **`is_contradiction()` now handles third-person forms** — Added "likes ", "loves ", "enjoys ", "hates " to `contains_preference_like()`/`contains_preference_hate()`, and "doesn't "/"don't " to `has_opposite_negation()`. Previously only first-person forms ("like ", "hate ", "not ") were recognized, so stored facts in third person ("User likes X" vs "User hates X") were missed by the polarity fallback.
-
-- **Bug #1 (smoke test #2): Adverb modifier normalization** — Added regex-based adverb+verb expansion in `normalize_to_storage_format()`. Previously, patterns like "I really like X", "I always prefer X", "I never want X" were not normalized because `normalize_replacements()` only covered the fixed list `"I usually prefer X"` etc. New `normalize_adverb_verb()` function handles EN adverbs (really, usually, always, never, generally, mostly, definitely, absolutely, personally, often, sometimes, quite, particularly, especially, strongly) with all verbs (prefer, like, love, hate, dislike, want, find, use), plus PT adverbs (sempre, nunca, geralmente, definitivamente, absolutamente, pessoalmente, frequentemente, às vezes, bastante, particularmente, especialmente) with PT verbs (prefiro, adoro, detesto, odeio, quero, gosto de). Also handles negation: "I usually don't like X" → "User usually doesn't like X". Falls through to no-change if pattern doesn't match.
-
-- **Bug #2 (smoke test #2): Layer 2 verb lemmatization** — `normalize_for_comparison()` now lemmatizes third-person verbs to base form after stripping the subject: "prefers dark mode" → "prefer dark mode" (not "prefers dark mode"). This ensures Layer 2 dedup catches "I prefer dark mode" and "User prefers dark mode" as equivalent. Added `VERB_LEMMAS` constant and `lemmatize_verb()` function with both explicit verb lemma map (prefers→prefer, likes→like, etc.) and generic trailing-'s' stripping (works→work, speaks→speak) while avoiding over-stripping (class→clas is prevented by 'ss' guard).
-
-- **Bug #3 (smoke test #2): `/fact add` CLI parity with LLM tool** — The `/fact add` CLI command was missing 3 features that `fact_add` LLM tool and auto-extraction had: (1) `normalize_to_storage_format()` — raw user input was stored without ADR-E4 third-person normalization, (2) Layer 1+2 dedup — only FTS5 (Layer 3) was used, (3) `generate_fact_embedding()` — facts were stored without embeddings, causing permanent `has_embedding=0` until startup recovery. Now `/fact add` calls `normalize_to_storage_format()`, checks Layer 1 (exact match) and Layer 2 (normalized match) before FTS5, performs Layer 3.5 semantic contradiction detection when embedding client is available, and eagerly generates embeddings after insertion. Function changed from synchronous `fn` to `async fn` to support embedding generation.
-
-- **Bug #4 (smoke test #2): Layer 3.5 testability documentation** — Added SMOKE_TEST.md sections 21.14 and 21.15 documenting how to test Layer 3.5 via auto-extraction using the `/tools` toggle to disable LLM tool calls, forcing contradiction detection to occur through the auto-extraction path rather than proactive `fact_add` calls.
-
-- **Bug #1: Third-person normalization now applied at storage time (ADR-E4 revised)** — All facts are now stored in third person ("User prefers X"), not just rendered in third person. Previously, English first-person facts like "I prefer dark mode" were stored as-is, causing inconsistency with PT→EN facts that were stored as "User prefers X". New `normalize_to_storage_format()` function in `src/facts/lang.rs` merges PT→EN translation with EN first-person→third-person normalization. `normalize_to_third_person()` in `src/facts/prompt.rs` remains as defense-in-depth for legacy data.
-
-- **Bug #3: Contradiction detection via semantic embeddings (Layer 3.5)** — "I prefer dark mode" vs "I prefer light mode" now correctly resolves as a contradiction. Added Layer 3.5 to both `extract.rs` auto-extraction and `fact_tools.rs` `fact_add`: when FTS5 doesn't find conflicts and the candidate is a preference, generate an embedding and search `fact_embeddings` via `search_facts_semantic()` (cosine ≥ 0.90). Contradictions are resolved by replacing the old fact; duplicates are skipped. Requires embedding client availability; gracefully skips if unavailable.
-
-- **Bug #4: Embedding serialization and timeout** — Added `Semaphore(1)` and 30-second timeout to `EmbeddingClient::embed()`. Previously, multiple concurrent `tokio::spawn` fire-and-forget tasks could overwhelm Ollama, causing silent embedding failures (`has_embedding = 0`). Now all embedding requests are serialized through the client, preventing model loading conflicts and timeouts. **Additionally**, embedding generation is now **synchronous** (await, not fire-and-forget) in both `insert_new_fact()` and `handle_fact_add()`, eliminating the race condition where a subsequent fact's Layer 3.5 search couldn't find the previous fact's embedding. Added `EmbeddingError::Timeout` variant. Also added post-recovery verification in `facts/recovery.rs` that logs a warning if facts still lack embeddings after startup recovery.
-
-### Added
 
 - **SF1: Colored user prompt** — User input now displays with `BOLD_CYAN` on `>>>` and `CYAN` on the text after pressing Enter, matching the User role label style in context display. The `colors` module in `view/mod.rs` was made public for cross-module reuse.
 
@@ -172,30 +126,6 @@ All notable changes to Sprachspiel will be documented in this file.
 
 - SMOKE_TEST.md sections 21.14 and 21.15 — Test procedures for `/fact add` CLI dedup parity and `/tools` toggle for Layer 3.5 testing.
 
-### Changed
-
-- **ADR-E4 revised (again)** — PT identity facts now correctly stored in third person. "Meu nome é Ana" → "User's name is Ana" (was "My name is Ana"). "Eu moro em São Paulo" → "User lives in São Paulo" (was "I live in São Paulo"). All PT identity patterns in `translate_pt_to_en()` now output `User *` instead of `I *`/`My *`. Previously, these early-returned from Stage 1 before Stage 2 (`normalize_replacements()`) could apply the EN first→third person conversion.
-
-- **ADR-E4 revised** — Third-person normalization is now applied at storage time (via `normalize_to_storage_format()`), not just at render time. Render-time normalization in `prompt.rs` remains as defense-in-depth.
-
-- `extract_and_insert_facts()` is now `async` — accepts optional `embedding_client` parameter for Layer 3.5.
-
-- `translate_pt_to_en()` now also normalizes English first-person input to third-person — `"I prefer dark mode"` → `"User prefers dark mode"`. This function is the core of `normalize_to_storage_format()`. English passthrough (`"I prefer dark mode"` → `"I prefer dark mode"`) is no longer the default behavior.
-
-- `try_auto_extract_facts()` in `repl.rs` is now `async` — awaits `extract_and_insert_facts()` to support Layer 3.5 embedding generation.
-
-- `handle_fact_add()` in `command_handlers.rs` is now `async` — supports Layer 3.5 embedding generation and contradiction detection.
-
-- `normalize_for_comparison()` in `lang.rs` now lemmatizes third-person verbs after stripping subject — "prefers dark mode" → "prefer dark mode" matches "prefer dark mode" for Layer 2 dedup.
-
-- `translate_pt_to_en()` now attempts regex-based adverb+verb expansion after static prefix lists fail — "I really like X" → "User really likes X", "Eu sempre prefiro X" → "User always prefers X".
-
-### Deferred
-
-- **Bug #2: PT noun translation** — Nouns after the translated prefix (e.g., "respostas curtas" → "short responses") remain in original language. This is an intentional limitation of heuristic translation. Full PT→EN noun translation will be handled by LLM-mode (issue #106, M2 milestone).
-
- ### Added
-
 - **Auto Fact Extraction (P6.1 — autoDream-lite)** - Automatic fact extraction from conversation content after each response (Issue #73)
   - Post-response heuristic extraction of preferences and facts from user messages
   - FTS5 deduplication against existing facts before insertion
@@ -220,12 +150,13 @@ All notable changes to Sprachspiel will be documented in this file.
   - Soft-delete pruning (`pruned` column) preserves conversation chain integrity
   - `[feedback]` config section in config.toml with all canonical fields
   - 9 Architecture Decision Records (ADR-001 through ADR-009)
+
 - **Specialized Agent Architecture** - One-shot subagents for OCR, Vision, Translation, Summarization (Issue #12)
   - 4 dedicated spawning tools: `spawn_ocr_agent`, `spawn_vision_agent`, `spawn_translate_agent`, `spawn_summarize_agent`
   - `/ocr`, `/vision`, `/translate`, `/summarize` chat commands - Direct user access to subagents
   - Feature flag: `subagent-tools` (default enabled)
 
- - **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
+- **Model-aware OCR prompt selection** - Vision models configured as `[model.ocr]` now use descriptive, restricted prompts instead of GLM-OCR prefixes
   - `OcrMode::into_descriptive_prompt()` returns mode-specific restricted prompts for vision models (Text/Table/Figure/Formula)
   - `is_glm_ocr_model()` utility for detecting GLM-OCR models vs. vision models
   - `parse_ocr_mode()` convenience function for parsing OCR mode from LLM string parameters
@@ -246,10 +177,69 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ### Changed
 
-- OCR prompts now adapt to configured model: GLM-OCR uses rigid prefixes, vision models use descriptive prompts with no-commentary restriction
-- Removed dead `OCR_SYSTEM_PROMPT` constant (was silently ignored by `/api/generate` API)
+- **Function extraction — reduce long functions (Issue #129)** — Refactor the worst `too_many_lines` violations. Three functions were genuinely extracted into smaller pieces: `run_migrations`/`apply_migrations` (484→~35 lines), `generate_all_tool_prompts`/`build_tool_context` (409→~40 lines), `dedup_new_fact`/`deduplicate_and_insert` (339→~20 lines dispatcher + extracted layer functions). Two dispatch tables (`handle_command` 304 lines, `parse_command` 278 lines) were annotated with `#[allow(clippy::too_many_lines)]` with justification: each arm is trivial routing/parsing, and reducing below 100 would require ~30 wrapper functions that add ceremony without reducing complexity. Inline handler logic was still extracted (7 new `handle_*` functions: `handle_quit`, `handle_forget_cmd`, `handle_save_cmd`, `handle_load_cmd`, `handle_debug_toggle`, `handle_skill_cmd`, `handle_skill_list_cmd`). Two parser functions (`parse_note_add`, `parse_note_subcommand`) also received `#[allow]` as state-machine and dispatch-table patterns respectively.
+
+- **Unwrap/expect/panic triage (Issue #128)** — Systematic audit of all `unwrap()`, `expect()`, and `panic!` sites in production code. Library code now propagates errors with `?` and `map_err()` instead of panicking. CLI entry points retain justified `#[expect]` annotations with reasoning comments. `panic!` in library code replaced with `return Err(...)`. Removes ~54 crash-risk sites from non-CLI code paths.
+
+- **Renamed from ask-ai to Sprachspiel** (Issue #126) — Complete project rename. Binary: `ask-ai` → `sprachspiel`. Config directory: `~/.config/ask-ai/` → `~/.config/sprachspiel/`. Data directory: `~/.local/share/ask-ai/` → `~/.local/share/sprachspiel/`. Database: `ask-ai.db` → `sprachspiel.db`. Project directory: `.ask-ai/` → `.sprachspiel/`. All source references, documentation, scripts, Makefile, and man page updated. Welcome banner regenerated with "SPRACHSPIEL" in gold/cyan. Internal Rust modules renamed `ask_ai::` → `sprachspiel::`. DB migration chain: `embeddings.db` → `sprachspiel.db` and `ask-ai.db` → `sprachspiel.db` (no fallback, no legacy constants).
+
+- **Documentation cleanup (Phase 12)** — Final rename pass: fixed manpage refs (`sprach.1` not `sprachspiel.1`), updated all remaining `ask-ai`/`Ask-AI`/`ask_ai::` references in docs and IMPLEMENTATION.md, replaced `#[ask_ai::tool]` with `#[sprachspiel::tool]`, renamed proc-macro crate from `ask-ai-tool-derive` to `sprachspiel-tool-derive`, updated `book.toml` title and doc site banner, fixed `ASK_AI_DEBUG` env var to `RUST_LOG`, updated all GitHub URLs from `ask-ai-rs` to `sprachspiel`, updated GitHub Pages URL, updated launch reel, updated skill files, replaced `sprachspiel-rs` with `sprachspiel` in project naming.
+
+- **ADR-E4 revised (again)** — PT identity facts now correctly stored in third person. "Meu nome é Ana" → "User's name is Ana" (was "My name is Ana"). "Eu moro em São Paulo" → "User lives in São Paulo" (was "I live in São Paulo"). All PT identity patterns in `translate_pt_to_en()` now output `User *` instead of `I *`/`My *`. Previously, these early-returned from Stage 1 before Stage 2 (`normalize_replacements()`) could apply the EN first→third person conversion.
+
+- **ADR-E4 revised** — Third-person normalization is now applied at storage time (via `normalize_to_storage_format()`), not just at render time. Render-time normalization in `prompt.rs` remains as defense-in-depth.
+
+- `extract_and_insert_facts()` is now `async` — accepts optional `embedding_client` parameter for Layer 3.5.
+
+- `translate_pt_to_en()` now also normalizes English first-person input to third-person — `"I prefer dark mode"` → `"User prefers dark mode"`. This function is the core of `normalize_to_storage_format()`. English passthrough (`"I prefer dark mode"` → `"I prefer dark mode"`) is no longer the default behavior.
+
+- `try_auto_extract_facts()` in `repl.rs` is now `async` — awaits `extract_and_insert_facts()` to support Layer 3.5 embedding generation.
+
+- `handle_fact_add()` in `command_handlers.rs` is now `async` — supports Layer 3.5 embedding generation and contradiction detection.
+
+- `normalize_for_comparison()` in `lang.rs` now lemmatizes third-person verbs after stripping subject — "prefers dark mode" → "prefer dark mode" matches "prefer dark mode" for Layer 2 dedup.
+
+- `translate_pt_to_en()` now attempts regex-based adverb+verb expansion after static prefix lists fail — "I really like X" → "User really likes X", "Eu sempre prefiro X" → "User always prefers X".
+
+- OCR prompts now adapt to configured model: GLM-OCR uses rigid prefixes, vision models use descriptive prompts with no-commentary restriction.
+
+- Removed dead `OCR_SYSTEM_PROMPT` constant (was silently ignored by `/api/generate` API).
+
+- Removed module-level `#![allow(dead_code)]` from `security.rs` and `subagent.rs`.
 
 ### Fixed
+
+- **`/doc show` now renders markdown content in 80 columns** — Previously, `/doc show` used `println!()` to dump raw document content, meaning `.md` files showed `#`, `**`, `*` etc. as literal text instead of rendered headings, bold, and italic. It also ignored the 80-column chat terminal width, causing long lines to overflow. Now uses `print_markdown_chat()` — the same renderer as `/note show` — which formats markdown properly and wraps at the `CHAT_TERMINAL_WIDTH` (80 columns). Header also rebuilt as markdown with `## Document #N`, `**Title:**`, `**File:**` labels for consistent styling.
+
+- **Bug ADR-E4: PT identity facts stored in first person** — `translate_pt_to_en()` generated first-person English for PT identity patterns (e.g., "Meu nome é Ana" → "My name is Ana" instead of "User's name is Ana"). This violated ADR-E4 (all facts stored in third person). Fixed by changing PT identity outputs in `translate_pt_to_en()` to third person: "Meu nome é Ana" → "User's name is Ana", "Eu moro em São Paulo" → "User lives in São Paulo", etc. Now consistent with EN identity normalization ("My name is Ana" → "User's name is Ana").
+
+- **Bug S42.4/S43.1 (smoke test #3): Layer 3.5 semantic contradiction detection (reordered)** — "User prefers dark mode" and "User prefers light mode" coexisted because: (1) Layer 2 `find_normalized_fact()` didn't match them ("prefer dark mode" ≠ "prefer light mode"), so they passed through; (2) FTS5 BM25 tokenizes "prefers" ≠ "prefer" (no lemmatization), so low scores; (3) Layer 3.5 cosine = 0.77 < 0.90 threshold. Fixed by: **(a)** lowering `SEMANTIC_SEARCH_THRESHOLD` from 0.90 to 0.70 (measured gap: all contradictions sit ≥0.77, different topics ≤0.60), **(b)** moving Layer 3.5 BEFORE Layer 3 (FTS5 BM25) so it runs when Layer 2 misses, **(c)** adding triple-based disambiguation inside the semantic block: `extract_fact_triple()` distinguishes contradictions (same predicate, different object → Update) from duplicates (same triple → Skip) from related facts (different predicate → fall through), **(d)** keeping `is_contradiction()` as polarity fallback for like/hate pairs that triples miss, **(e)** removing dead Layer 2.5 code that was nested inside Layer 2's `if !matches.is_empty()` (by definition, contradictory facts have different normalized strings, so the block was unreachable). Identity facts ("name is Lucas" → "name is Maria", cosine 0.875) are covered automatically since they classify as `Category::Preference`.
+
+- **Bug S42.4 race condition: async embedding missing on Layer 3.5 search** — When fact #2 was auto-extracted, fact #1's embedding might not yet exist in `fact_embeddings` because it was generated via fire-and-forget `tokio::spawn`. Layer 3.5's `search_facts_semantic()` found no results → contradictions were missed. Fixed by making embedding generation **synchronous** (await, not fire-and-forget) in both `insert_new_fact()` (auto-extraction path) and `handle_fact_add()` (`/fact add` path). After DB insert, the embedding is now generated and stored before returning, guaranteeing it's available for the next fact's Layer 3.5 search. If Ollama is offline, `has_embedding` stays 0 and recovery generates on next startup. Also changed Layer 3.5 gate from `Category::Preference` to `extract_fact_triple().is_some()` (more precise, covers both preference and identity triples).
+
+- **Bug #3: sqlite-vec L2 vs cosine metric mismatch (ROOT CAUSE of S42.4 failure)** — `search_facts_semantic()` in `facts/db.rs` computed `similarity = 1.0 - distance`, which is only correct for cosine distance. But sqlite-vec's `vec0` virtual table uses **L2 (Euclidean) distance** by default when `distance_metric=cosine` is not specified. All 3 vec0 tables (`fact_embeddings`, `content_embeddings`, `chunk_embeddings_v2`) in `schema.rs` lacked the `distance_metric=cosine` parameter (fixed in schema v12). For L2-normalized vectors, the correct conversion is `cosine_similarity = 1.0 - (L2_distance² / 2.0)`, derived from `‖a−b‖² = 2(1 − cos(a,b))`. The broken formula caused ALL fact similarity scores to be ~0.25–0.35 too low — the effective 0.70 threshold actually required cosine > 0.955, making Layer 3.5 completely non-functional. The same bug existed in `content/db.rs` for content and chunk semantic search. Empirically verified: "prefers dark mode" vs "prefers light mode" scored **0.6304** (broken) vs **0.9317** (correct). Fixed in `facts/db.rs:446`, `content/db.rs:706`, `content/db.rs:774`. Also fixed comparison direction: `content/db.rs:790` changed from `<` to `>` (highest cosine wins, not lowest L2). *Discovered by Hermes Agent.*
+
+- **Schema v12: `distance_metric=cosine` + ascending sort fix** — Two improvements to the semantic search pipeline: (1) Added `distance_metric=cosine` to all 3 vec0 table definitions in `schema.rs`, eliminating the application-level L2→cosine conversion (`1.0 - L2²/2` → `1.0 - distance`). Schema v11→v12 migration drops and recreates vec0 tables, resets `has_embedding` flags for startup recovery. (2) Fixed ascending sort bug in `search_content_semantic()` — results were sorted ascending by score (least similar first), then truncated. This inverted RRF ranking: the least similar semantic result received the highest RRF weight. Changed to descending sort (most similar first) to ensure rank 1 = best match.
+
+- **Bug #4: Missing replacement fact insertion in `/fact add` contradiction paths** — In `command_handlers.rs`, after detecting a contradiction (both triple-based and `is_contradiction()` polarity paths) and deleting the old fact, `return;` exited the entire function without inserting the new replacement fact. The old fact was deleted and the new one was lost. Fixed by replacing bare `return;` with explicit `Fact::new()` + `db.insert_fact()` + synchronous embedding generation in both paths. The auto-extraction path in `extract.rs` was not affected (it calls `insert_new_fact()` which handles the insert). *Discovered by Hermes Agent.*
+
+- **Bug #5: Accumulative predicates false positives** — `FactTriple::contradicts()` treated ALL same-predicate pairs as contradictions, so "User likes Python" vs "User likes Rust" was incorrectly flagged as a contradiction. Fixed with two-tier logic: **exclusive predicates** (`prefers`, `name is`, `lives in`) → any different object = contradiction; **accumulative predicates** (`likes`, `loves`, `hates`, `uses`) → only contradiction if objects share content words (`object_word_overlap()` > 0.3). "likes dark mode" vs "likes light mode" shares "mode" → contradiction. "likes Python" vs "likes Rust" shares nothing → coexist. Added polarity flip detection (`likes X` vs `hates X` → always contradiction). Centralized classification constants `EXCLUSIVE_PREDICATES`, `POSITIVE_PREDICATES`, `NEGATIVE_PREDICATES`, `STOP_WORDS` in `lang.rs` with enforcement test `test_all_predicates_classified`. *Discovered by Hermes Agent.*
+
+- **`is_contradiction()` now handles third-person forms** — Added "likes ", "loves ", "enjoys ", "hates " to `contains_preference_like()`/`contains_preference_hate()`, and "doesn't "/"don't " to `has_opposite_negation()`. Previously only first-person forms ("like ", "hate ", "not ") were recognized, so stored facts in third person ("User likes X" vs "User hates X") were missed by the polarity fallback.
+
+- **Bug #1 (smoke test #2): Adverb modifier normalization** — Added regex-based adverb+verb expansion in `normalize_to_storage_format()`. Previously, patterns like "I really like X", "I always prefer X", "I never want X" were not normalized because `normalize_replacements()` only covered the fixed list `"I usually prefer X"` etc. New `normalize_adverb_verb()` function handles EN adverbs (really, usually, always, never, generally, mostly, definitely, absolutely, personally, often, sometimes, quite, particularly, especially, strongly) with all verbs (prefer, like, love, hate, dislike, want, find, use), plus PT adverbs (sempre, nunca, geralmente, definitivamente, absolutamente, pessoalmente, frequentemente, às vezes, bastante, particularmente, especialmente) with PT verbs (prefiro, adoro, detesto, odeio, quero, gosto de). Also handles negation: "I usually don't like X" → "User usually doesn't like X". Falls through to no-change if pattern doesn't match.
+
+- **Bug #2 (smoke test #2): Layer 2 verb lemmatization** — `normalize_for_comparison()` now lemmatizes third-person verbs to base form after stripping the subject: "prefers dark mode" → "prefer dark mode" (not "prefers dark mode"). This ensures Layer 2 dedup catches "I prefer dark mode" and "User prefers dark mode" as equivalent. Added `VERB_LEMMAS` constant and `lemmatize_verb()` function with both explicit verb lemma map (prefers→prefer, likes→like, etc.) and generic trailing-'s' stripping (works→work, speaks→speak) while avoiding over-stripping (class→clas is prevented by 'ss' guard).
+
+- **Bug #3 (smoke test #2): `/fact add` CLI parity with LLM tool** — The `/fact add` CLI command was missing 3 features that `fact_add` LLM tool and auto-extraction had: (1) `normalize_to_storage_format()` — raw user input was stored without ADR-E4 third-person normalization, (2) Layer 1+2 dedup — only FTS5 (Layer 3) was used, (3) `generate_fact_embedding()` — facts were stored without embeddings, causing permanent `has_embedding=0` until startup recovery. Now `/fact add` calls `normalize_to_storage_format()`, checks Layer 1 (exact match) and Layer 2 (normalized match) before FTS5, performs Layer 3.5 semantic contradiction detection when embedding client is available, and eagerly generates embeddings after insertion. Function changed from synchronous `fn` to `async fn` to support embedding generation.
+
+- **Bug #4 (smoke test #2): Layer 3.5 testability documentation** — Added SMOKE_TEST.md sections 21.14 and 21.15 documenting how to test Layer 3.5 via auto-extraction using the `/tools` toggle to disable LLM tool calls, forcing contradiction detection to occur through the auto-extraction path rather than proactive `fact_add` calls.
+
+- **Bug #1: Third-person normalization now applied at storage time (ADR-E4 revised)** — All facts are now stored in third person ("User prefers X"), not just rendered in third person. Previously, English first-person facts like "I prefer dark mode" were stored as-is, causing inconsistency with PT→EN facts that were stored as "User prefers X". New `normalize_to_storage_format()` function in `src/facts/lang.rs` merges PT→EN translation with EN first-person→third-person normalization. `normalize_to_third_person()` in `src/facts/prompt.rs` remains as defense-in-depth for legacy data.
+
+- **Bug #3: Contradiction detection via semantic embeddings (Layer 3.5)** — "I prefer dark mode" vs "I prefer light mode" now correctly resolves as a contradiction. Added Layer 3.5 to both `extract.rs` auto-extraction and `fact_tools.rs` `fact_add`: when FTS5 doesn't find conflicts and the candidate is a preference, generate an embedding and search `fact_embeddings` via `search_facts_semantic()` (cosine ≥ 0.90). Contradictions are resolved by replacing the old fact; duplicates are skipped. Requires embedding client availability; gracefully skips if unavailable.
+
+- **Bug #4: Embedding serialization and timeout** — Added `Semaphore(1)` and 30-second timeout to `EmbeddingClient::embed()`. Previously, multiple concurrent `tokio::spawn` fire-and-forget tasks could overwhelm Ollama, causing silent embedding failures (`has_embedding = 0`). Now all embedding requests are serialized through the client, preventing model loading conflicts and timeouts. **Additionally**, embedding generation is now **synchronous** (await, not fire-and-forget) in both `insert_new_fact()` and `handle_fact_add()`, eliminating the race condition where a subsequent fact's Layer 3.5 search couldn't find the previous fact's embedding. Added `EmbeddingError::Timeout` variant. Also added post-recovery verification in `facts/recovery.rs` that logs a warning if facts still lack embeddings after startup recovery.
 
 - **Embeddings fail on startup when input exceeds context window** (Issue #40)
   - Proactive context length check in `EmbeddingClient::embed()` before API call — returns `ContextExceeded` early
@@ -260,20 +250,25 @@ All notable changes to Sprachspiel will be documented in this file.
   - Fixed `has_embedding=1` marking logic — only marks item when ALL chunks verified complete
   - Increased embedding safety margins: `CONTEXT_SAFETY_MARGIN` 10%→20%, `EMBEDDING_PREFIX_TOKENS` 20→30, `DEFAULT_CHUNK_PERCENT` 90%→80%, `DEFAULT_PREFIX_MARGIN` 30→40
   - Added detailed documentation explaining why token estimation is used (ollama-rs v0.3.4 ignores `prompt_eval_count`) and referencing Issue #103 for future exact token count support
+
 - Fixed double "Error:" prefix in subagent security blocklist messages
+
 - Fixed broken markdown tables in command documentation (ocr, vision, translate, summarize, query, chat)
+
 - Fixed stale default feature flags in skills-system-design.md
+
 - Fixed `led-tools` missing checkmark in README.md features table
 
-### Changed
+### Deferred
 
-- Removed module-level `#![allow(dead_code)]` from `security.rs` and `subagent.rs`
+- **Bug #2: PT noun translation** — Nouns after the translated prefix (e.g., "respostas curtas" → "short responses") remain in original language. This is an intentional limitation of heuristic translation. Full PT→EN noun translation will be handled by LLM-mode (issue #106, M2 milestone).
 
 ### Removed
 
 - Removed dead code from subagent module: `uses_chat_api()`, `tool_whitelist` field, builder methods (`with_tool_whitelist`, `with_max_output_chars`, `with_model_options`), `settings` field on SubagentRunner, and `run_generate()` method (YAGNI)
 - Removed `ARCHITECTURE.md` and `ask-ai-architecture.html` (obsolete draft files)
 - Removed `MANUAL-TEST-SUBAGENT-SECURITY.md` (consolidated into unified test script)
+
 ## [0.40.0] - 2026-04-17
 
 ### Added
@@ -722,30 +717,6 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [0.37.2] - 2026-03-22
 
-### Fixed
-
-- **Embedding Fallback for Oversized Content (Complete Rewrite)** - Fixed PRIMARY KEY constraint violation
-  - **Bug Discovered:** Previous `embed_with_fallback()` returned multiple embeddings for same chunk_id, causing database constraint violations
-  - **Bug Discovered:** `has_embedding` was marked as 1 even when embeddings failed, preventing recovery
-  - **New Design:** Function now manages chunk creation atomically with transaction support
-  - **New module:** `src/embeddings/fallback.rs` with `EmbedContext` and `EmbedItemContext` structs
-  - **Two functions:** `embed_chunk_with_fallback()` for existing chunks, `embed_item_with_fallback()` for new items
-  - **Atomic transactions:** Chunks are created and embeddings saved in single transaction
-  - **Protection limits:** `MAX_FALLBACK_DIVISIONS=4`, `MAX_CHUNKS_PER_ITEM=64`, `MIN_CHUNK_TOKENS=32`
-  - **Panics on misconfiguration:** Prevents database explosion from bad configs
-  - **Removed:** Old `embed_with_fallback()` that returned `Vec<Vec<f32>>`
-  - **Simplified:** `client.rs` now has simple `embed()` that returns error on context exceeded
-  - **Fixed:** Recovery embeddings now visible with `println!` instead of `log_debug!`
-
-### Changed
-
-- **Startup Output Reorder** - Improved visual flow for chat startup
-  - ASCII art banner now appears first, before any other output
-  - Session resume and regeneration messages appear after banner
-  - "Type /help for commands, /quit to exit" now appears at the end, after all startup messages
-  - Sandbox status strings now lowercase for consistency with other status fields
-  - "not compiled" sandbox status shortened to avoid exceeding column 80
-
 ### Added
 
 - **Status Bar Above Prompt** - Dynamic status bar showing context information
@@ -794,7 +765,41 @@ All notable changes to Sprachspiel will be documented in this file.
     - `INTER_TOOL_MIN = 512` tokens
     - `EMERGENCY_MIN = 256` tokens
 
+### Changed
+
+- **Startup Output Reorder** - Improved visual flow for chat startup
+  - ASCII art banner now appears first, before any other output
+  - Session resume and regeneration messages appear after banner
+  - "Type /help for commands, /quit to exit" now appears at the end, after all startup messages
+  - Sandbox status strings now lowercase for consistency with other status fields
+  - "not compiled" sandbox status shortened to avoid exceeding column 80
+
+- **Compaction Thresholds** - Adjusted to prevent overflow loops
+  - Added `COMPACTION_BUFFER` (15,000 tokens) - reserve space before overflow
+  - Added `MAX_SUMMARY_TOKENS` (3,000 tokens) - hard limit on summary size
+  - Compaction now triggers when context reaches `context_window - COMPACTION_BUFFER`
+  - Summary is automatically truncated if it exceeds `MAX_SUMMARY_TOKENS`
+
+- **Compaction Summary Template** - Restructured for better context preservation
+  - Old: Generic markdown with Key Topics, Decisions, Technical Details, Action Items
+  - New: Structured template with Goal, Instructions, Progress (Completed/Pending), Discoveries, Relevant Files
+  - Inspired by OpenCode's compaction template for better context continuation
+  - Explicit token limit warning in prompt to prevent oversized summaries
+
 ### Fixed
+
+- **Embedding Fallback for Oversized Content (Complete Rewrite)** - Fixed PRIMARY KEY constraint violation
+  - **Bug Discovered:** Previous `embed_with_fallback()` returned multiple embeddings for same chunk_id, causing database constraint violations
+  - **Bug Discovered:** `has_embedding` was marked as 1 even when embeddings failed, preventing recovery
+  - **New Design:** Function now manages chunk creation atomically with transaction support
+  - **New module:** `src/embeddings/fallback.rs` with `EmbedContext` and `EmbedItemContext` structs
+  - **Two functions:** `embed_chunk_with_fallback()` for existing chunks, `embed_item_with_fallback()` for new items
+  - **Atomic transactions:** Chunks are created and embeddings saved in single transaction
+  - **Protection limits:** `MAX_FALLBACK_DIVISIONS=4`, `MAX_CHUNKS_PER_ITEM=64`, `MIN_CHUNK_TOKENS=32`
+  - **Panics on misconfiguration:** Prevents database explosion from bad configs
+  - **Removed:** Old `embed_with_fallback()` that returned `Vec<Vec<f32>>`
+  - **Simplified:** `client.rs` now has simple `embed()` that returns error on context exceeded
+  - **Fixed:** Recovery embeddings now visible with `println!` instead of `log_debug!`
 
 - **CRITICAL: Multiple Token Calculation Bugs** - Fixed three separate double-counting bugs
 
@@ -852,20 +857,6 @@ All notable changes to Sprachspiel will be documented in this file.
   - Simplified `!x.is_none()` to `x.is_some()`
   - Added `#[allow(clippy::too_many_arguments)]` for functions that need many args
 
-### Changed
-
-- **Compaction Thresholds** - Adjusted to prevent overflow loops
-  - Added `COMPACTION_BUFFER` (15,000 tokens) - reserve space before overflow
-  - Added `MAX_SUMMARY_TOKENS` (3,000 tokens) - hard limit on summary size
-  - Compaction now triggers when context reaches `context_window - COMPACTION_BUFFER`
-  - Summary is automatically truncated if it exceeds `MAX_SUMMARY_TOKENS`
-
-- **Compaction Summary Template** - Restructured for better context preservation
-  - Old: Generic markdown with Key Topics, Decisions, Technical Details, Action Items
-  - New: Structured template with Goal, Instructions, Progress (Completed/Pending), Discoveries, Relevant Files
-  - Inspired by OpenCode's compaction template for better context continuation
-  - Explicit token limit warning in prompt to prevent oversized summaries
-
 ### Removed
 
 - **Dead Code Cleanup** - Removed unused code from `context_overflow.rs`
@@ -891,25 +882,6 @@ All notable changes to Sprachspiel will be documented in this file.
   - `🧠` = think mode active
   - `🔧` = tools active
   - Example: `model🧠🔧>` instead of `model[t][T]>`
-
-### Changed
-
-- **`/clear` renamed to `/new`** - Command now starts a new conversation session
-  - Previous behavior: Cleared in-memory messages but reloaded from database on restart
-  - New behavior: Creates new session ID, clears all session state
-  - Previous conversations remain searchable via `/search` and `remember()`
-  - `/new` generates session ID: `session-{timestamp}`
-  - Alias: `/n`
-
-- **`/load` Auto-save** - Automatically saves current session before loading another
-  - If current session has messages, it's saved before switching
-  - Prevents accidental loss of conversation when switching sessions
-
-- **Session Auto-Load** - Automatically loads the most recent session on startup
-  - Sessions are ordered by `updated_at DESC` to find the most recent
-  - If no sessions exist, starts a fresh session in memory
-
-### Added
 
 - **`/session` Command Group** - Unified session management interface
   - `/session new` - Same as `/new`
@@ -946,8 +918,6 @@ All notable changes to Sprachspiel will be documented in this file.
   - Kept: `new()`, `max_chars()`, `overlap_chars()`, `min_chunk_chars()` (all production)
 
 - **YAGNI Variable Removal** - Removed unused `chunks_failed_before` variable in regenerate.rs
-
-### Added
 
 - **Notes System** - Persistent notes with semantic search
   - User commands: `/note add`, `/note list`, `/note show`, `/note edit`, `/note delete`, `/note search`
@@ -1015,6 +985,21 @@ All notable changes to Sprachspiel will be documented in this file.
   - Aborts gracefully on Ollama connection errors with recovery instructions
 
 ### Changed
+
+- **`/clear` renamed to `/new`** - Command now starts a new conversation session
+  - Previous behavior: Cleared in-memory messages but reloaded from database on restart
+  - New behavior: Creates new session ID, clears all session state
+  - Previous conversations remain searchable via `/search` and `remember()`
+  - `/new` generates session ID: `session-{timestamp}`
+  - Alias: `/n`
+
+- **`/load` Auto-save** - Automatically saves current session before loading another
+  - If current session has messages, it's saved before switching
+  - Prevents accidental loss of conversation when switching sessions
+
+- **Session Auto-Load** - Automatically loads the most recent session on startup
+  - Sessions are ordered by `updated_at DESC` to find the most recent
+  - If no sessions exist, starts a fresh session in memory
 
 - **Query Pattern Refactoring** - Dynamic SQL WHERE clause construction
   - Created `WhereBuilder` utility for parameterized queries
@@ -1418,21 +1403,6 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
 
 ## [0.27.1] - 2026-03-09
 
-### Fixed
-
-- **Token Count Bug** - Fixed incorrect token calculation in `/context` display
-  - `history_real_tokens()` now uses the LAST cumulative `prompt_tokens` value (Ollama's `prompt_eval_count`)
-  - Previous code incorrectly SUMMED all `prompt_tokens` values, causing ~184K tokens when actual was ~22K
-  - `check_context_overflow()` now correctly handles fallback path (includes tools estimate)
-  - Context status simplified to "OK", "MODERATE", "CRITICAL" (removed confusing "auto-compact triggered")
-
-### Fixed
-
-- **Token Persistence** - Added `prompt_tokens` column to messages table
-  - Messages now store `prompt_eval_count` from Ollama responses
-  - Token counts persist across sessions
-  - `/context` shows accurate token usage on startup
-
 ### Added
 
 - **Automatic JSON Migration** - One-time automatic migration on startup
@@ -1448,6 +1418,29 @@ See the [SOUL.md documentation](./soul.md) for complete examples and best practi
   - `/save` and `/load` now use SQLite exclusively
   - Removed `/migrate` command (automatic migration replaces it)
   - `/restore <id>` imported from JSON as disaster recovery option
+  - **`should_force_retrieve()` logic rewritten**
+    - Old: Only triggered when session.messages.is_empty()
+    - New: Triggers when DB count > session count (after /clear with new messages)
+    - Also triggers when session is empty AND has compacted_summary
+
+### Fixed
+
+- **Token Count Bug** - Fixed incorrect token calculation in `/context` display
+  - `history_real_tokens()` now uses the LAST cumulative `prompt_tokens` value (Ollama's `prompt_eval_count`)
+  - Previous code incorrectly SUMMED all `prompt_tokens` values, causing ~184K tokens when actual was ~22K
+  - `check_context_overflow()` now correctly handles fallback path (includes tools estimate)
+  - Context status simplified to "OK", "MODERATE", "CRITICAL" (removed confusing "auto-compact triggered")
+
+- **Token Persistence** - Added `prompt_tokens` column to messages table
+  - Messages now store `prompt_eval_count` from Ollama responses
+  - Token counts persist across sessions
+  - `/context` shows accurate token usage on startup
+
+- **CRITICAL: Retrieval after /clear now works!**
+  - Bug: `should_force_retrieve()` checked if session was empty, but user already added 1+ messages
+  - Fix: Compare DB message count vs session message count
+  - If DB has more messages than session, retrieval is forced
+  - This correctly handles: `/clear` → user asks question → retrieval happens
 
 ### Removed
 
@@ -2036,13 +2029,10 @@ After v0.22.7, semantic retrieval was working correctly (session ID stable, mess
   - `chat/repl.rs`: chat responses
   - `retrieval/search.rs`: search results
   - `thinking.rs`: Keeps its own skin (unaffected by global skin)
-
-### Technical
-
-- Added `markdown::init_markdown_skin()` call at startup
-- Created `markdown::print_markdown()` as replacement for `termimad::print_text()`
-- Added `markdown::get_markdown_skin()` for custom rendering needs
-- All modules now use `markdown::print_markdown()` instead of `print_text()`
+  - **`should_force_retrieve()` logic rewritten**
+    - Old: Only triggered when session.messages.is_empty()
+    - New: Triggers when DB count > session count (after /clear with new messages)
+    - Also triggers when session is empty AND has compacted_summary
 
 ### Fixed
 
@@ -2051,18 +2041,6 @@ After v0.22.7, semantic retrieval was working correctly (session ID stable, mess
   - Fix: Compare DB message count vs session message count
   - If DB has more messages than session, retrieval is forced
   - This correctly handles: `/clear` → user asks question → retrieval happens
-
-### Changed
-
-- **`should_force_retrieve()` logic rewritten**
-  - Old: Only triggered when session.messages.is_empty()
-  - New: Triggers when DB count > session count (after /clear with new messages)
-  - Also triggers when session is empty AND has compacted_summary
-
-### Technical
-
-- Added test `test_should_force_retrieve_after_clear_with_new_messages`
-- `MIN_RETRIEVAL_FORCE_COUNT` now deprecated (kept with `#[allow(dead_code)]`)
 
 ## [0.22.6] - 2026-03-03
 
@@ -2693,19 +2671,17 @@ Added 3 new LED tool examples to demonstrate:
   - Added `resolve_model_config()` and `resolve_think_mode()` to `user_models.rs`
   - Added `SpinnerGuard` RAII pattern to `spinner.rs`
 
-### Removed
-
-- **Dead Code** - Removed unused code and false-positive `#[allow(dead_code)]`
-  - Removed `OutputFormat` enum and unused methods from `ocr/cli.rs`
-  - Removed false `#[allow(dead_code)]` from `NamedApiResource.url` and `Settings::blacklist_set()`
-
-### Fixed
-
 - **Chat Mode CLI Flags** - Model and flags from CLI now work correctly
   - `ask chat -m <model>` now properly sets the initial model
   - `ask chat -t` now enables think mode from CLI
   - `ask chat --tools` now enables tools from CLI
   - `ask chat --ignore-agents` now ignores AGENTS.md from CLI
+
+### Removed
+
+- **Dead Code** - Removed unused code and false-positive `#[allow(dead_code)]`
+  - Removed `OutputFormat` enum and unused methods from `ocr/cli.rs`
+  - Removed false `#[allow(dead_code)]` from `NamedApiResource.url` and `Settings::blacklist_set()`
 
 ## [0.14.2] - 2026-02-22
 

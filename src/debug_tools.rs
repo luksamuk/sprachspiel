@@ -201,29 +201,21 @@ pub fn log_tool_call(tool_name: &str, args: &[(String, String)]) {
     // Always display compact format — UI display, not logging
     display_tool_call(tool_name, args);
 
-    // In Verbose/Trace mode, show additional detail lines (skip empty values)
+    // In Verbose/Trace mode, log additional detail lines to the log file.
+    // These detail lines are DIAGNOSTIC, not UI — they should NOT appear in
+    // the TUI chat area. When TUI mode is active, the global max level is
+    // boosted to Debug (so the log file captures diagnostics), which would
+    // cause these lines to leak into the TUI callback and clutter the chat
+    // display. The compact format from display_tool_call() is sufficient for
+    // the user; verbose details belong in the log file.
     if log::log_enabled!(log::Level::Debug) {
-        // Check if TUI callback is set — if so, route detail lines through it too
-        let has_tui_callback = TUI_CALLBACK.lock().ok().is_some_and(|g| g.is_some());
-
         for (key, value) in args {
             if value.is_empty() {
                 continue;
             }
             let display_value = crate::utils::truncate_chars(value, 77);
             let detail_line = format!("  {key}: {display_value}");
-
-            if has_tui_callback {
-                if let Ok(guard) = TUI_CALLBACK.lock()
-                    && let Some(callback) = guard.as_ref()
-                {
-                    callback(&detail_line);
-                }
-            } else {
-                suspend_for_print(|| {
-                    eprintln!("{TOOL_DIM}{detail_line}{RESET}");
-                });
-            }
+            log::debug!("{}", detail_line);
         }
     }
 }
