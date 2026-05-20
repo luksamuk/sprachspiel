@@ -749,13 +749,94 @@ Predicates are classified by their **exclusivity** — whether having one value 
 const MAX_FACT_CONTENT_SIZE: usize = 500;  // characters
 
 fn validate_fact_content(content: &str) -> Result<(), String> {
-    if content.len() > MAX_FACT_CONTENT_SIZE {
-        return Err(format!(
-            "Fact content exceeds {} characters (got {})",
-            MAX_FACT_CONTENT_SIZE,
-            content.len()
-        ));
-    }
+     if content.len() > MAX_FACT_CONTENT_SIZE {
+         return Err(format!(
+             "Fact content exceeds {} characters (got {})",
+             MAX_FACT_CONTENT_SIZE,
+             content.len()
+         ));
+     }
+
+     // Must end on valid char boundary
+     if !content.is_char_boundary(content.len()) {
+         return Err("Fact content has invalid unicode".to_string());
+     }
+
+     Ok(())
+ }
+
+ /// Truncate facts section to MAX_TOTAL_FACTS_CHARS (2200) with Unicode-safe truncation.
+ fn truncate_facts_section(section: &str) -> String {
+     if section.len() <= MAX_TOTAL_FACTS_CHARS {
+         section.to_string()
+     } else {
+         // Truncate at valid char boundary
+         let mut end = MAX_TOTAL_FACTS_CHARS;
+         while end > 0 && !section.is_char_boundary(end) {
+             end -= 1;
+         }
+         format!("{}...", &section[..end])
+     }
+ }
+
+ /// Build facts section for prompt injection.
+ fn build_facts_section(facts: &[Fact]) -> String {
+     if facts.is_empty() {
+         return String::new();
+     }
+
+     let mut section = String::from("## User Facts\n\n");
+
+     // Group by scope and category
+     let global_prefs: Vec<_> = facts.iter()
+         .filter(|f| f.scope == Scope::Global && f.category == Category::Preference)
+         .collect();
+     let project_prefs: Vec<_> = facts.iter()
+         .filter(|f| f.scope == Scope::Project && f.category == Category::Preference)
+         .collect();
+     let global_facts: Vec<_> = facts.iter()
+         .filter(|f| f.scope == Scope::Global && f.category == Category::Fact)
+         .collect();
+     let project_facts: Vec<_> = facts.iter()
+         .filter(|f| f.scope == Scope::Project && f.category == Category::Fact)
+         .collect();
+
+     // Add sections in priority order
+     if !global_prefs.is_empty() {
+         section.push_str("### Global Preferences\n");
+         for fact in &global_prefs {
+             section.push_str(&format!("- {}\n", fact.content));
+         }
+         section.push('\n');
+     }
+
+     if !project_prefs.is_empty() {
+         section.push_str("### Project Preferences\n");
+         for fact in &project_prefs {
+             section.push_str(&format!("- {}\n", fact.content));
+         }
+         section.push('\n');
+     }
+
+     if !global_facts.is_empty() {
+         section.push_str("### Global Facts\n");
+         for fact in &global_facts {
+             section.push_str(&format!("- {}\n", fact.content));
+         }
+         section.push('\n');
+     }
+
+     if !project_facts.is_empty() {
+         section.push_str("### Project Facts\n");
+         for fact in &project_facts {
+             section.push_str(&format!("- {}\n", fact.content));
+         }
+         section.push('\n');
+     }
+
+     // Truncate if over limit
+     truncate_facts_section(&section)
+ }
     
     // Must end on valid char boundary
     if !content.is_char_boundary(content.len()) {
@@ -960,17 +1041,17 @@ if let Some(facts) = &self.facts {
 ### Phase 0.5: Decay & Prune (0.5 day) ✅ DONE
 
 - Startup decay run in `src/chat/repl.rs` after database initialization
-- `/fact prune` command (shortcut `/fp`) for manual decay trigger
+  - `/fact prune` command for manual decay trigger
 - Decay statistics logged in debug mode
 - `CommandResult::FactPrune` and `ChatCommand::FactPrune` added
 - `handle_fact_prune()` handler in `command_handlers.rs`
 
 ### Phase 0.6: User Commands (0.5 day) ✅ DONE
 
-- `/fact add <content> [--global]` - Add fact (shortcut `/fa`)
-- `/fact list [--global]` - List facts (shortcut `/fl`)
-- `/fact remove <id>` - Remove fact (shortcut `/fr`)
-- `/fact search <query> [--global] [limit]` - Search facts (shortcut `/fs`)
+  - `/fact add <content> [--global]` - Add fact
+  - `/fact list [--global]` - List facts
+  - `/fact remove <id>` - Remove fact
+  - `/fact search <query> [--global] [limit]` - Search facts
 - Handlers in `command_handlers.rs`
 - Command routing in `repl.rs`
 

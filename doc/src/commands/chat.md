@@ -95,6 +95,7 @@ The `/session` command provides an alternative syntax for session management:
 | `/tools` | Toggle tools on/off |
 | `/tools-output <level>` | Set tool output verbosity: compact, full, hidden |
 | `/toggle-style` | Toggle style rendering (Mermaid diagrams, syntax highlighting, table format) |
+| `/debug` | Toggle debug verbosity (Normal ↔ Trace) |
 
 ### Conversation
 
@@ -112,6 +113,8 @@ The `/session` command provides an alternative syntax for session management:
 |---------|-------------|
 | `/context` | Show context metrics, token usage, and memory stats |
 | `/search <query>` | Search conversation history (semantic search) |
+| `/reindex [--yes]` | Regenerate all embeddings from scratch (requires `--yes`) |
+| `/retrieval <query>` | Test retrieval pipeline (debugging) |
 
 ### Feedback
 
@@ -699,26 +702,6 @@ Export sessions for backup or transfer:
 ```
 
 **Note**: JSON export is for backup purposes. Sessions are stored in SQLite and don't need manual export.
-~/.local/share/sprachspiel/
-├── chat_history.txt           # Readline history
-└── conversations/
-    └── github.com/
-        └── user/
-            └── repo/
-                ├── default.json        # Default session for project
-                ├── bugfix-auth.json    # Named sessions
-                └── feature-x.json
-```
-
-### Project Identification
-
-1. **Git repository with remote**: Uses normalized git remote URL
-   - `git@github.com:user/repo.git` → `github.com/user/repo`
-   - `https://github.com/user/repo.git` → `github.com/user/repo`
-
-2. **Git repository without remote**: Uses folder name
-
-3. **Not a git repository**: Uses current folder name
 
 ### Session File Format
 

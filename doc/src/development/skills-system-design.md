@@ -1150,18 +1150,18 @@ When chat multi-mode is implemented (allowing Translate mode within chat session
 
 1. **Translate-then-Detect approach:**
    - Detect skill content language
-   - If not English, translate using existing `ask translate` infrastructure
-   - Apply English sanitization to translated content
-   - Log original language + translation for audit
+    - If not English, translate using existing `sprach translate` infrastructure
+    - Apply English sanitization to translated content
+    - Log original language + translation for audit
 
-2. **Alternative: ML-based multilingual detection:**
-   - Fine-tune XLM-RoBERTa on prompt injection dataset
-   - Deploy as pre-filter before skill loading
-   - Higher accuracy but requires ML infrastructure
+ 2. **Alternative: ML-based multilingual detection:**
+    - Fine-tune XLM-RoBERTa on prompt injection dataset
+    - Deploy as pre-filter before skill loading
+    - Higher accuracy but requires ML infrastructure
 
-**Implementation Dependency:**
-- Requires: Specialized Agent Architecture (P4 in roadmap)
-- Existing: `ask translate` subcommand with `translategemma` model
+ **Implementation Dependency:**
+ - Requires: Specialized Agent Architecture (P4 in roadmap)
+ - Existing: `sprach translate` subcommand with `translategemma` model
 
 **References:**
 - [Multilingual Prompt Injection Bypasses (HackerNoon)](https://hackernoon.com/multilingual-prompt-injection-exposes-gaps-in-llm-safety-nets)

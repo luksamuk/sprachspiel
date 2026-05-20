@@ -6,7 +6,6 @@ The `vision` command analyzes and describes images using vision models. Unlike O
 
 ```bash
 sprach [GLOBAL OPTIONS] vision <FILE>... [-- <PROMPT>]
-sprach [GLOBAL OPTIONS] v <FILE>... [-- <PROMPT>]
 ```
 
 ## Description
@@ -20,6 +19,8 @@ Vision provides general image understanding capabilities. It can describe images
 | `FILE` | One or more image files to analyze |
 | `PROMPT` | Optional custom prompt (overrides modes) |
 
+| Option | Description |
+|--------|-------------|
 | `-v` | Verbose logging |
 | `-vv` | Trace logging |
 | `--help` | Show help |
@@ -57,8 +58,6 @@ These options are specific to the vision subcommand:
 # Describe an image
 sprach vision photo.png
 
-# Using alias
-sprach v screenshot.jpg
 ```
 
 ### Detailed Analysis

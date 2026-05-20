@@ -1099,7 +1099,7 @@ todo_clear_all()             // Clear all tasks
 
 **Files Modified:**
 - `Cargo.toml` — Updated dependencies
-- `src/main.rs` — Removed `-d/--debug` flag,简化 `-v`/`-vv` flags
+- `src/main.rs` — Removed `-d/--debug` flag, simplified `-v`/`-vv` flags
 - `src/lib.rs` — Added `pub mod logging`
 - `src/chat/cli.rs` — Updated verbosity flags
 - `src/chat/repl.rs` — Quiet mode handling, removed debug banners
@@ -3725,8 +3725,6 @@ Modified truncation handling across three files:
 
 **Related:** Issue #40 (canonical), Issue #39 (duplicate, closed), PR #102, Issue #103 (future: exact token counts via reqwest)
 
-**Related:** Issue #39
-
 ---
 
 ## 🔵 LOW PRIORITY: Extended Features
@@ -3822,8 +3820,6 @@ Features planned for future releases:
 **Estimated effort:** Phase 1: 2-3 hours | Phase 2: TBD
 
 **Reference:** `doc/src/development/skills-system-design.md` → Future Considerations
-
-**Related:** Issue #14
 
 **Related:** Issue #14
 
@@ -4350,8 +4346,8 @@ image = "0.25"              # Removed — only needed for ratatui-image
 | 3.17 | Completion menu fixes: Enter confirms and submits line (not stuck), Ctrl+C/Ctrl+Shift+C/V dismiss menu, auto-complete never replaces text (only shows/hides). | 0.25d | ✅ COMPLETED |
 | 3.18 | Embedding progress indicator: StatusBarState.embedding_progress field shows ⚙ current/total in status bar. mpsc::UnboundedChannel wired through App::with_embedding_channel() and RatatuiView::embedding_tx(). Startup indexing shows indicator during regeneration/recovery. | 0.5d | ✅ COMPLETED |
 | 3.19 | StaticSubcommands ArgCompletion: `/think on|off` and `/tools-output compact|full|hidden` show subcommand completions. `ArgCompletion::StaticSubcommands` variant, `try_static_subcommand_fragment()`, `get_static_subcommands()`, `complete_static_subcommand()` in ChatCompleter. Embedding progress channel wired from RatatuiView through session. | 0.25d | ✅ COMPLETED |
-| 3.20 | Busy-wait fix in TUI event loop: `poll(0ms)` → `poll(SPINNER_TICK_MS)` reduces idle CPU from ~4300 iters/sec (5% CPU) to ~8 iters/sec (near-zero). Revisado para exceção condicional: `poll(0ms)` durante streaming (evita delay em tokens), `poll(120ms)` durante idle (economiza CPU). | 0.1d | ✅ COMPLETED |
-| 3.21 | Flaky spinner tests fix: `serial_test` + `#[serial]` nos 4 testes de `spinner.rs`; retry assertion com `yield_now` (1000x) tolera scheduling delays. Resolve condição de corrida em `ACTIVE_SPINNER` global (`RwLock`) quando testes correm em paralelo. Zero falhas em 20/20 runs stress. | 0.1d | ✅ COMPLETED |
+| 3.20 | Busy-wait fix in TUI event loop: `poll(0ms)` → `poll(SPINNER_TICK_MS)` reduces idle CPU from ~4300 iters/sec (5% CPU) to ~8 iters/sec (near-zero). Revised for conditional exception: `poll(0ms)` during streaming (avoids token delay), `poll(120ms)` during idle (saves CPU). | 0.1d | ✅ COMPLETED |
+| 3.21 | Flaky spinner tests fix: `serial_test` + `#[serial]` in the 4 tests of `spinner.rs`; retry assertion with `yield_now` (1000x) tolerates scheduling delays. Resolves race condition in `ACTIVE_SPINNER` global (`RwLock`) when tests run in parallel. Zero failures in 20/20 stress runs. | 0.1d | ✅ COMPLETED |
 | 3.22 | Per-message embedding progress: `tokio::spawn` in `session.rs` sends `(0,1)` before spawn and `(1,1)` on completion via `EmbeddingProgressTx`. Startup regeneration sends `(0,total)` initially then `(current,total)` per item. `poll_embedding_progress()` drains channel, keeps latest. 4 unit tests in `app.rs`. | 0.5d | ✅ COMPLETED |
 | 3.23 | `/reindex --yes` confirmation gate + embedding reset bug: `ChatCommand::Reindex { confirmed: bool }` requires `--yes` to prevent accidental regeneration. `Database::reset_all_embedding_flags()` deletes vec0 embeddings (`content_embeddings`, `chunk_embeddings_v2`, `fact_embeddings`) AND all `content_chunks` rows (which are derived data that would otherwise be duplicated), then resets `has_embedding=0` so `regenerate_all_embeddings()` re-processes everything. Previously `/reindex` returned "0 of 0" because `get_content_items_for_reindex()` only queries `WHERE has_embedding=0`. Also fixed duplicate chunk bug where count grew on repeated `/reindex --yes` (131→156→181) because `insert_content_chunk()` doesn't check for duplicates. Also fixed `ReindexData.total` to show `items_processed + chunks_processed`. `ResetStats` struct reports items/chunks_deleted/facts. Concurrent reindex guard: `ChatSession.is_reindexing: Arc<AtomicBool>`. Background execution: TUI mode uses `tokio::spawn` so the event loop stays responsive. `App::async_message_rx: mpsc::UnboundedReceiver<String>` and `poll_async_messages()` deliver the completion message to the chat area. Terminal mode runs synchronously with `quiet=false` progress bar. | 0.75d | ✅ COMPLETED |
 | **Total** | | **~24.45d** | |
@@ -4639,7 +4635,7 @@ Changes:
 | `bcf1cdd` | `/toggle-style` rename; `↳` indent on compact tool results | ✅ COMPLETED |
 | *(uncommitted)* | Command alias/shortcut removal, autocomplete descriptions, subcommand letter alias removal | ✅ COMPLETED |
 | *(uncommitted)* | Mermaid width truncation (`…` ellipsis for lines exceeding terminal width) | ✅ COMPLETED |
-| *(uncommitted)* | `/togglestyle` command — toggle Mermaid/source view, syntax highlighting, table format | ✅ COMPLETED |
+| *(uncommitted)* | `/toggle-style` command — toggle Mermaid/source view, syntax highlighting, table format | ✅ COMPLETED |
 | *(uncommitted)* | Status bar style indicator (🎨 on / 📄 off) | ✅ COMPLETED |
 | *(uncommitted)* | `tui_aware_print()` — route tool indicators through TUI callback | ✅ COMPLETED |
 | *(uncommitted)* | Remove sub-agent output truncation, increase vision max_tokens to 8192 | ✅ COMPLETED |
@@ -4717,7 +4713,7 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 - `src/chat/commands.rs` — `ChatCommand::ToggleStyle` variant
 - `src/chat/command_handlers.rs` — ToggleStyle match arm (placeholder for exhaustiveness)
 - `src/chat/repl_tui.rs` — ToggleStyle handled directly (needs App access for `toggle_style()`)
-- `src/chat/completer.rs` — `/togglestyle` tab completion entry
+- `src/chat/completer.rs` — `/toggle-style` tab completion entry (with `/togglestyle` backward-compatible alias)
 
 **Tests added:**
 - `test_render_table_plain_lines_basic` — simple 2-column table → 3 lines

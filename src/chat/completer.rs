@@ -613,7 +613,7 @@ impl ChatCompleter {
     /// Finds all model names that start with the given fragment.
     /// Single matches and common prefix matches get a trailing space.
     /// The `cmd_trigger` prefix is used to build the replacement text,
-    /// supporting both `/model` and shortcuts like `/m`.
+    /// supporting `/model` and other slash commands.
     fn complete_model(&mut self, cmd_trigger: &str, fragment: &str) -> CompletionResult {
         let matches: Vec<&str> = self
             .model_names
@@ -817,7 +817,7 @@ mod tests {
     #[test]
     fn test_complete_slash_command_multiple_prefix() {
         let mut completer = make_completer();
-        // "/to" matches /todo, /todo add, /todo list, etc., and /tools, /tools-output, /to shortcut
+        // "/to" matches /todo, /todo add, /todo list, etc., and /tools, /tools-output
         // Common prefix is "/to" or longer — let's test cycling
         let result = completer.complete("/to", 3);
         // Should extend to "/todo " (common prefix is "todo") or cycle

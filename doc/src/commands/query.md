@@ -7,7 +7,6 @@ The `query` command is the default mode of Sprachspiel. It sends your question o
 ```bash
 sprach [GLOBAL OPTIONS] query [QUERY]
 sprach [GLOBAL OPTIONS] [QUERY]
-sprach [GLOBAL OPTIONS] q [QUERY]
 ```
 
 ## Description
@@ -41,6 +40,8 @@ This is **read-only** - query mode does not persist new messages.
 
 These options must be placed **before** the `query` subcommand:
 
+| Option | Description |
+|--------|-------------|
 | `-v` | Verbose logging |
 | `-vv` | Trace logging |
 | `--help` | Show help |
@@ -64,9 +65,8 @@ The `-p` flag selects different system prompts:
 # Simple question
 sprach "What is the capital of France?"
 
-# Equivalent explicit forms
+# Equivalent explicit form
 sprach query "What is the capital of France?"
-sprach q "What is the capital of France?"
 ```
 
 ### Model Selection

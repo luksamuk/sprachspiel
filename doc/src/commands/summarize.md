@@ -6,14 +6,13 @@ The `summarize` command creates concise summaries of text with customizable styl
 
 ```bash
 sprach [GLOBAL OPTIONS] summarize [TEXT]
-sprach [GLOBAL OPTIONS] sum [TEXT]
 ```
 
 ## Description
 
 Create summaries of long documents, articles, or any text. The summarize command:
 
-- Uses the Llama 3.2 model by default (optimized for summarization)
+- Uses the qwen3.5:4b model by default (optimized for summarization)
 - Supports multiple output formats (paragraph, bullets, both)
 - Offers style presets for different contexts
 - Accepts input from arguments or stdin
@@ -25,6 +24,8 @@ Create summaries of long documents, articles, or any text. The summarize command
 |----------|-------------|
 | `TEXT` | Text to summarize. Reads from stdin if not provided. |
 
+| Option | Description |
+|--------|-------------|
 | `-v` | Verbose logging |
 | `-vv` | Trace logging |
 | `--help` | Show help |
@@ -63,9 +64,6 @@ These options are specific to the summarize subcommand:
 ```bash
 # Summarize text directly
 sprach summarize "Long text to summarize..."
-
-# Using alias
-sprach sum "Long text to summarize..."
 
 # From stdin
 echo "Long text..." | sprach summarize

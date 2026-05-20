@@ -2526,7 +2526,7 @@ pub fn handle_note_search(
                 ))];
             }
 
-            // TODO: Phase 3.5 — migrate to structured NoteSearchData
+            // TODO(issue: memory-architecture): Phase 3.5 — migrate to structured NoteSearchData
             // For now, format as text output
             let mut output = format!("Search results for \"{}\" ({}):\n", query, scope_str);
             for result in &results {

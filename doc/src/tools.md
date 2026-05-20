@@ -561,13 +561,13 @@ Example: fact_remove(id="fact:42")
 
 Users can also manage facts via chat commands:
 
-| Command | Shortcut | Description |
-|---------|----------|-------------|
-| `/fact add <text> [--global]` | `/fa` | Add fact |
-| `/fact list [--global]` | `/fl` | List facts |
-| `/fact search <query>` | `/fs` | Search facts |
-| `/fact remove <id>` | `/fr` | Remove fact |
-| `/fact prune` | `/fp` | Run decay manually |
+| Command | Description |
+|---------|-------------|
+| `/fact add <text> [--global]` | Add fact |
+| `/fact list [--global]` | List facts |
+| `/fact search <query>` | Search facts |
+| `/fact remove <id>` | Remove fact |
+| `/fact prune` | Run decay manually |
 
 **Decay:**
 - Preferences: 180-day half-life
@@ -604,13 +604,13 @@ Example: note_add(content="Meeting notes from standup...", title="Standup 2024-0
 
 Users can also manage notes via chat commands:
 
-| Command | Shortcut | Description |
-|---------|----------|-------------|
-| `/note add <text> [--global]` | `/na` | Add a note |
-| `/note list [--global]` | `/nl` | List notes |
-| `/note show <id>` | `/ns` | Show note content (accepts #N, note:N, or N) |
-| `/note edit <id> [--title TITLE] [--content TEXT]` | `/ne` | Edit a note |
-| `/note delete <id>` | `/nd` | Delete a note |
+| Command | Description |
+|---------|-------------|
+| `/note add <text> [--global]` | Add a note |
+| `/note list [--global]` | List notes |
+| `/note show <id>` | Show note content (accepts #N, note:N, or N) |
+| `/note edit <id> [--title TITLE] [--content TEXT]` | Edit a note |
+| `/note delete <id>` | Delete a note |
 
 ### note_edit
 
@@ -714,13 +714,13 @@ Example: todo_clear_all()
 
 Users can also manage todos via chat commands:
 
-| Command | Shortcut | Description |
-|---------|----------|-------------|
-| `/todo add <description>` | `/ta` | Add task |
-| `/todo list` | `/tl` | List tasks |
-| `/todo update <id> <status>` | `/tu` | Update task status |
-| `/todo clear-done` | `/tcd` | Clear completed tasks |
-| `/todo clear-all` | `/tca` | Clear all tasks |
+| Command | Description |
+|---------|-------------|
+| `/todo add <description>` | Add task |
+| `/todo list` | List tasks |
+| `/todo update <id> <status>` | Update task status |
+| `/todo clear-done` | Clear completed tasks |
+| `/todo clear-all` | Clear all tasks |
 
 **Behavior:**
 - Todo state is persisted per session
@@ -1109,12 +1109,12 @@ remember(query="authentication implementation")
 
 **User Commands:**
 
-| Command | Shortcut | Description |
-|---------|----------|-------------|
-| `/doc import <path> [--global] [--nowait]` | `/di` | Import a document (TXT, MD, ORG only) |
-| `/doc list [--global]` | `/dl` | List imported documents |
-| `/doc show <id>` | `/ds` | Show document content as markdown (accepts #N, doc:N, or N) |
-| `/doc delete <id>` | `/dd` | Delete a document (accepts #N, doc:N, or N) |
+| Command | Description |
+|---------|-------------|
+| `/doc import <path> [--global] [--nowait]` | Import a document (TXT, MD, ORG only) |
+| `/doc list [--global]` | List imported documents |
+| `/doc show <id>` | Show document content as markdown (accepts #N, doc:N, or N) |
+| `/doc delete <id>` | Delete a document (accepts #N, doc:N, or N) |
 
 **ID Formats:**
 
