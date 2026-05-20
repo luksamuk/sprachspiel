@@ -147,6 +147,7 @@ pub fn setup_coordinator(
     real_history_tokens: Option<usize>,
     view_event_sender: super::view::ViewEventSender,
     llm_tx: Option<tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>>,
+    cancel_token: Option<tokio_util::sync::CancellationToken>,
 ) -> CustomCoordinator<Vec<ChatMessage>> {
     let coordinator = crate::query::ChatContext {
         ollama,
@@ -178,12 +179,20 @@ pub fn setup_coordinator(
                     // was NOT already streamed. In the streaming path (chat_stream
                     // → process_response with already_streamed=true), tokens
                     // are displayed in real time via StreamToken.
-                    // In the non-streaming path (process_next via send_chat_messages),
+                    // In the non-streaming path (process_next via send_chat_commands),
                     // tokens are not shown until here — emit InterToolText
                     // so the user sees inter-tool text before tool calls.
+                    //
+                    // Include thinking so that pre-tool reasoning appears
+                    // BEFORE the tool call indicators, not after them.
+                    // Without this, thinking from process_next() rounds would
+                    // only arrive via ViewAction (drain_into_llm_channel) AFTER
+                    // chat_stream() returns, causing tool calls to appear
+                    // above thinking blocks.
                     if !already_streamed {
                         let _ = tx.try_send(super::llm_event::LlmEvent::InterToolText {
-                            content,
+                            content: content.clone(),
+                            thinking: thinking.clone(),
                             metrics: None,
                         });
                     }
@@ -220,6 +229,11 @@ pub fn setup_coordinator(
     });
 
     let mut coordinator = coordinator;
+
+    // Set cancellation token for interrupting tool execution mid-loop
+    if let Some(ct) = cancel_token {
+        coordinator = coordinator.cancel_token(ct);
+    }
 
     // Set real token count for accurate overflow detection
     if let Some(tokens) = real_history_tokens {
@@ -495,6 +509,7 @@ pub async fn send_message(
         Some(real_history_tokens),
         view_event_sender,
         None,
+        None,
     );
 
     // Prepare messages with retrieval and continuation
@@ -696,6 +711,10 @@ pub async fn send_message_stream(
     // Create view event channel for coordinator callback
     let (view_event_sender, view_event_receiver) = super::view::create_view_event_channel();
 
+    // Clone the cancel_token so both the coordinator (tool loop cancellation)
+    // and chat_stream() (stream cancellation) can check the same token.
+    let coordinator_cancel = cancel_token.clone();
+
     let mut coordinator = setup_coordinator(
         ollama.clone(),
         model_config,
@@ -707,6 +726,7 @@ pub async fn send_message_stream(
         Some(real_history_tokens),
         view_event_sender,
         Some(llm_tx.clone()),
+        coordinator_cancel,
     );
 
     // Prepare messages with retrieval and continuation

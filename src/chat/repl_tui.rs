@@ -504,10 +504,19 @@ pub async fn run_chat_repl_tui(
                         cancel_token = None;
                         llm_rx = None;
                     }
-                    LlmEvent::InterToolText { content, .. } => {
+                    LlmEvent::InterToolText { content, thinking, .. } => {
                         // Inter-tool block arrived from process_next().
-                        // Display immediately as a stable block before tools.
-                        view.app_mut().add_message(ChatMessage::assistant_markdown(content));
+                        // Display immediately as stable blocks before tools.
+                        // Insert thinking BEFORE content so pre-tool
+                        // reasoning appears above tool call indicators.
+                        if let Some(thinking_content) = thinking {
+                            view.app_mut()
+                                .insert_before_streaming_zone(ChatMessage::thinking(thinking_content));
+                        }
+                        if !content.trim().is_empty() {
+                            view.app_mut()
+                                .insert_before_streaming_zone(ChatMessage::assistant_markdown(content));
+                        }
                         view.app_mut().set_llm_state(LlmState::ToolCall);
                     }
                     LlmEvent::ToolCallStarted => {

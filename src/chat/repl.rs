@@ -315,6 +315,15 @@ pub async fn handle_user_message_stream(
             }
             Err(e) => {
                 let error_str = e.to_string();
+
+                // Cancellation from tool loop (Ctrl+C during multi-tool execution)
+                // is user-initiated — don't show an error message, just stop.
+                // The Ctrl+C handler in the event loop already showed "Cancelled."
+                if error_str == super::custom_coordinator::CANCELLED_BY_USER {
+                    log::debug!("LLM task cancelled during tool execution");
+                    break;
+                }
+
                 match handle_overflow_error(state, &error_str, view).await {
                     OverflowHandleResult::NotOverflow => {
                         view.show_error(&format_tool_error(&error_str));

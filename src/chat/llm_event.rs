@@ -107,6 +107,8 @@ pub enum LlmEvent {
     InterToolText {
         /// Markdown response content (may contain thinking tags)
         content: String,
+        /// Thinking content from the pre-tool block (non-streaming rounds)
+        thinking: Option<String>,
         /// Token metrics from the response (if available)
         metrics: Option<TokenMetrics>,
     },
@@ -168,9 +170,11 @@ impl std::fmt::Debug for LlmEvent {
                 .finish_non_exhaustive(),
             Self::InterToolText {
                 content: _,
+                thinking,
                 metrics,
             } => f
                 .debug_struct("InterToolText")
+                .field("thinking", &thinking.is_some())
                 .field("metrics", metrics)
                 .finish_non_exhaustive(),
             Self::Error(msg) => f.debug_tuple("Error").field(msg).finish(),

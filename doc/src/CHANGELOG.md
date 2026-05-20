@@ -4,6 +4,11 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Inter-tool thinking appears before tool call indicators in non-streaming rounds** — `LlmEvent::InterToolText` now carries a `thinking: Option<String>` field. In non-streaming tool rounds (`process_next()` after the first streaming round), pre-tool reasoning is inserted before tool call indicators via `insert_before_streaming_zone()`, preventing the thinking block from appearing after tool calls. The `on_event` callback in `setup_coordinator()` forwards both `content` and `thinking` directly to the LLM event channel (not the ViewEvent batch path), bypassing `ViewEventReceiver::drain_into_llm_channel()` which would otherwise delay thinking until after `chat_stream()` returns.
+- **Ctrl+C interrupts multi-tool execution loop** — `CancellationToken` is now threaded through `CustomCoordinator` via the `cancel_token` builder method. The coordinator checks `self.cancel_token.is_cancelled()` at the start of each tool call in the execution loop and also in `process_next()` before making the next Ollama request. When cancelled, returns `CANCELLED_BY_USER` error. `handle_user_message_stream` intercepts this error and silently breaks the loop (the event loop already shows "Cancelled."), instead of displaying it as an error message. The `CANCELLED_BY_USER` string is centralized as a `pub const` in `custom_coordinator.rs` to avoid duplicates.
+
 ### Added
 
 - **Vision capability check for `sprach vision` and `sprach ocr`** — Both subcommands now validate that the selected model supports vision before processing images. If the model lacks vision capability: (1) `vision`: when the model was auto-selected (no `-m` flag), prints an error with suggested vision-capable models and exits; when the user explicitly chose the model via `-m`, prints a warning and proceeds anyway. (2) `ocr`: prints a warning and proceeds (cloud models may not report capabilities correctly). Uses `ModelCapabilities::detect_or_default()` (async, queries Ollama `/api/show`) which is already used in the chat REPL. `VisionError::NoVisionCapability` variant with actionable error message listing `qwen3.5:4b`, `moondream:1.8b`, `minicpm-v:8b`, and `qwen3.5:cloud`.

@@ -6,6 +6,10 @@
 //! - Full control over tool execution flow
 //! - Inter-tool context overflow detection
 
+/// Error string returned when the user cancels tool execution (Ctrl+C).
+/// Checked by the caller (`handle_user_message_stream`) to suppress error display.
+pub const CANCELLED_BY_USER: &str = "CANCELLED_BY_USER";
+
 use std::{collections::HashMap, future::Future, pin::Pin};
 
 use ollama_rs::re_exports::serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -294,6 +298,10 @@ pub struct CustomCoordinator<C: ChatHistory> {
     /// Ephemeral messages (not persisted to history)
     /// Used for continuation prompts after context compaction
     ephemeral_messages: Vec<ChatMessage>,
+    /// Cancellation token for aborting tool execution mid-loop.
+    /// When cancelled, the tool loop stops after the current tool finishes
+    /// and returns an error that the caller interprets as user cancellation.
+    cancel_token: Option<tokio_util::sync::CancellationToken>,
 }
 
 impl<C: ChatHistory> CustomCoordinator<C> {
@@ -317,6 +325,7 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             pre_tool_content: String::new(),
             pre_tool_thinking: None,
             ephemeral_messages: Vec::new(),
+            cancel_token: None,
         }
     }
 
@@ -594,6 +603,16 @@ impl<C: ChatHistory> CustomCoordinator<C> {
     /// Used for continuation prompts after context compaction.
     pub fn push_ephemeral(&mut self, message: ChatMessage) {
         self.ephemeral_messages.push(message);
+    }
+
+    /// Set the cancellation token for tool loop interruption.
+    ///
+    /// When the token is cancelled, the tool execution loop stops after
+    /// the current tool finishes and returns an error. The caller
+    /// (event loop) interprets this as user-initiated cancellation.
+    pub fn cancel_token(mut self, token: tokio_util::sync::CancellationToken) -> Self {
+        self.cancel_token = Some(token);
+        self
     }
 
     /// Emit an event if callback is set
@@ -932,6 +951,22 @@ impl<C: ChatHistory> CustomCoordinator<C> {
             let mut tools_executed = Vec::new();
 
             for call in resp.message.tool_calls.clone() {
+                // Check for user cancellation before each tool call.
+                // When Ctrl+C is pressed during multi-tool execution,
+                // the cancel token is set and we stop the loop after
+                // the current tool finishes — not between tokens.
+                if let Some(ref ct) = self.cancel_token
+                    && ct.is_cancelled()
+                {
+                    log::debug!(
+                        "Tool loop cancelled by user after {} tools",
+                        tools_executed.len()
+                    );
+                    return Err(ollama_rs::error::OllamaError::Other(
+                        CANCELLED_BY_USER.to_string(),
+                    ));
+                }
+
                 let tool_name = call.function.name.clone();
                 let args = call.function.arguments.clone();
 
@@ -1037,6 +1072,16 @@ impl<C: ChatHistory> CustomCoordinator<C> {
 
     /// Process next response after tool calls
     async fn process_next(&mut self) -> ollama_rs::error::Result<ChatMessageResponse> {
+        // Check for user cancellation before making next request
+        if let Some(ref ct) = self.cancel_token
+            && ct.is_cancelled()
+        {
+            log::debug!("process_next cancelled by user");
+            return Err(ollama_rs::error::OllamaError::Other(
+                CANCELLED_BY_USER.to_string(),
+            ));
+        }
+
         // Check context overflow before sending to Ollama
         if let (Some(ctx_window), Some(prompt)) = (self.context_window, &self.system_prompt) {
             let history_tokens = estimate_chat_messages_tokens(&self.history.messages());
