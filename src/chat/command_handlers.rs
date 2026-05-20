@@ -13,7 +13,7 @@
 //!     ↓ consumed by
 //! ChatView::show_command_outputs()
 //!     ↓ implemented by
-//! TerminalView (current) ─── RatatuiView (future, #146)
+//! RatatuiView (TUI chat) ─── standalone renderer (query/translate/summarize/OCR)
 //! ```
 //!
 //! # Handler Pattern

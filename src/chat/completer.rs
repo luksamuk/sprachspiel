@@ -403,6 +403,7 @@ impl ChatCompleter {
     }
 
     /// Update the model names list (e.g., after a model switch or refresh).
+    #[allow(dead_code)] // Will be called from model switch event handler
     pub fn set_model_names(&mut self, names: Vec<String>) {
         self.model_names = names;
     }

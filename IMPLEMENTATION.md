@@ -4777,39 +4777,36 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 4.1 | Remove `TerminalView` (println-based implementation) | 📋 |
-| 4.2 | Remove all hardcoded `\x1B[` ANSI escape codes from chat modules | 📋 |
-| 4.3 | Remove `CHAT_TERMINAL_WIDTH = 80` constant — width is now dynamic | 📋 |
-| 4.4 | Remove `build_status_bar()` and `build_clear_code()` from `repl.rs` | 📋 |
-| 4.5 | Simplify `run_chat_repl()` → direct `App::run()` call | 📋 |
-| 4.6 | Update `src/spinner.rs` — chat mode uses rattatui widget exclusively | 📋 |
-| 4.7 | Clean up `src/chat/view/mod.rs` — remove ANSI-only helpers, update `ChatView` trait | 📋 |
-| 4.8 | Update `src/markdown.rs` — ratatui path for chat, termimad path for non-chat | 📋 |
-| 4.9 | Documentation: CHANGELOG, architecture, roadmap | 📋 |
-| 4.10 | Test on Linux, macOS, Termux at various terminal widths | 📋 |
+| 4.1 | Remove `TerminalView` (println-based implementation) | ✅ COMPLETED (PR2) |
+| 4.2 | Remove `RustylineInput` and `rustyline` dependency | ✅ COMPLETED (PR2) |
+| 4.3 | Remove hardcoded `\x1B[` ANSI escape codes from chat modules | 🔨 PARTIAL — `repl.rs` still has `eprintln!` with ANSI for pre-TUI init errors; `view/mod.rs` ANSI codes serve non-chat pipe-safe output |
+| 4.4 | Remove `CHAT_TERMINAL_WIDTH = 80` constant — width is now dynamic | ✅ COMPLETED (PR3) |
+| 4.5 | Remove `build_status_bar()` and `build_clear_code()` from `repl.rs` | ✅ COMPLETED (PR3) |
+| 4.6 | Simplify `run_chat_repl()` → direct `App::run()` call | 🔨 PARTIAL — `repl.rs` handles pre-TUI setup then delegates to `repl_tui` |
+| 4.7 | Clean up `src/chat/view/mod.rs` — remove stale TUI migration comments, update `ChatView` trait docs | ✅ COMPLETED (PR3) — ANSI helpers in `view/mod.rs` serve pipe-safe non-chat output (banner, status bar, context) |
+| 4.8 | Remove `termimad` dependency — replaced by standalone renderer | ✅ COMPLETED (PR3) |
+| 4.9 | Remove YAGNI `#[allow(dead_code)]` methods from `App` (Hefesto review) | ✅ COMPLETED (PR3) — removed `messages()`, `textarea()`, `input_state()`, `input_state_mut()`, `scroll_state()`, `update_model_names()`; removed obsolete `llm_state()` annotation |
+| 4.10 | Update `src/spinner.rs` — chat mode uses rattatui widget exclusively | 📋 NOT STARTED |
+| 4.11 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
+| 4.12 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
 
 **Dependencies Removed:**
-- `rustyline = "14"` — already removed in PR2
+- `rustyline = "14"` — removed in PR2
+- `termimad = "0.34"` — removed in PR3, replaced by standalone renderer (`src/markdown/standalone.rs`)
 
 **Dependencies Kept:**
-- `termimad = "0.34"` — query/translate/summarize/ocr (non-chat)
-- `indicatif = "0.17"` — subcommand spinners (non-chat)
-- `rattles = "0.2"` — animation frames (chat status bar widget + non-chat spinners)
+- `indicatif = "0.17"` — non-chat subcommand spinners (query, translate, summarize, OCR)
+- `rattles = "0.2"` — animation frames (chat status bar widget)
 
-**Files to Remove:**
-- `src/chat/view/terminal.rs` — Replaced by RatatuiView (already in PR2)
+**Files Removed (in PR2/PR3):**
+- `src/chat/view/terminal.rs` — replaced by RatatuiView
+- `src/chat/input/rustyline.rs` — replaced by CrosstermInput
 
-**Files to Modify:**
-- `Cargo.toml` — Verify rustyline removed, deps correct
-- `src/chat/mod.rs` — Remove terminal view module
-- `src/chat/input/mod.rs` — Remove rustyline module
-- `src/chat/view/mod.rs` — Remove TerminalView, remove ANSI-only helpers
-- `src/chat/repl.rs` — Simplify to App::run() directly
-- `src/spinner.rs` — Chat = rattatui widget, non-chat = indicatif (conditional)
-- `src/markdown.rs` — Dual path: ratatui for chat, termimad for non-chat
-- `CHANGELOG.md` — Document change
-
-**Checkpoint:** Only ratatui rendering mode exists for chat. Non-chat subcommands (query, translate, OCR, summarize) still use termimad and indicatif. Clean codebase with no hardcoded widths or ANSI escapes in chat modules.
+**Remaining Work (PR4):**
+- Clean up `repl.rs` pre-TUI error ANSI codes (minor — errors are pre-alternate-screen)
+- Simplify `run_chat_repl()` setup flow
+- Update `src/spinner.rs` for clean chat/non-chat split
+- Documentation update
 
 ---
 

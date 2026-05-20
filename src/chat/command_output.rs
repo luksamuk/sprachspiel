@@ -14,13 +14,13 @@
 //!     ↓ consumed by
 //! ChatView::show_command_outputs()
 //!     ↓ implemented by
-//! TerminalView (current) ─── RatatuiView (future, #146)
+//! RatatuiView (TUI chat) ─── standalone renderer (query/translate/summarize/OCR)
 //! ```
 //!
 //! # Design Principles
 //!
 //! - **Data carries semantics, not styling.** No ANSI codes in CommandOutput data.
-//!   The view layer applies styling (TerminalView uses ANSI, RatatuiView uses ratatui Styles).
+//!   The view layer applies styling (RatatuiView uses ratatui Styles, standalone renderer uses ANSI for pipe-safe output).
 //! - **Compound results use Vec, not nesting.** `handle_command()` returns
 //!   `Vec<CommandOutput>` — no `Compound` variant that creates arbitrary nesting.
 //! - **Structured data for complex displays.** List commands return typed structs

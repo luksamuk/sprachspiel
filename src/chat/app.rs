@@ -585,58 +585,39 @@ impl App {
         self.scroll.reset_to_bottom();
     }
 
-    /// Get the messages in the chat area
-    #[allow(dead_code)] // PR3: Will be used for scroll/pagination features
-    pub fn messages(&self) -> &[ChatMessage] {
-        &self.messages
-    }
-
-    /// Get a reference to the textarea
-    #[allow(dead_code)] // Public API for external state queries
-    pub fn textarea(&self) -> &TextArea<'static> {
-        &self.textarea
-    }
-
     /// Get a mutable reference to the textarea
-    #[allow(dead_code)] // Public API for external state mutation
+    #[allow(dead_code)] // Public API — called from repl_tui.rs via app_mut().textarea_mut()
     pub fn textarea_mut(&mut self) -> &mut TextArea<'static> {
         &mut self.textarea
     }
 
     /// Whether input is disabled (during LLM processing)
-    #[allow(dead_code)] // Public API for external state queries
+    #[allow(dead_code)] // Public API — accessible for external state queries
     pub fn input_disabled(&self) -> bool {
         self.input_disabled
     }
 
     /// Get the disabled reason text
-    #[allow(dead_code)] // Public API for external state queries
+    #[allow(dead_code)] // Public API — accessible for external state queries
     pub fn disabled_reason(&self) -> Option<&str> {
         self.disabled_reason.as_deref()
     }
 
     /// Get a reference to the completion menu state
-    #[allow(dead_code)] // Public API for external state queries
+    #[allow(dead_code)] // Public API — accessible for external state queries
     pub fn completion_menu(&self) -> &CompletionMenuState {
         &self.completion_menu
     }
 
     /// Get a mutable reference to the completion menu state
-    #[allow(dead_code)] // Public API for external state mutation
+    #[allow(dead_code)] // Public API — accessible for external state mutation
     pub fn completion_menu_mut(&mut self) -> &mut CompletionMenuState {
         &mut self.completion_menu
     }
 
     /// Get the current LLM state
-    #[allow(dead_code)] // PR3: Will be used for state-dependent UI rendering
     pub fn llm_state(&self) -> LlmState {
         self.llm_state
-    }
-
-    /// Get the current scroll state
-    #[allow(dead_code)] // Public API for external scroll queries
-    pub fn scroll_state(&self) -> &ScrollState {
-        &self.scroll
     }
 
     /// Get a mutable reference to the scroll state
@@ -1773,14 +1754,6 @@ impl App {
         // If byte_offset is past the end, move to bottom
         self.textarea
             .move_cursor(ratatui_textarea::CursorMove::Bottom);
-    }
-
-    /// Update model names in the completer (e.g., after a model switch).
-    ///
-    /// Called when the model list changes to keep tab completion current.
-    #[allow(dead_code)] // Will be used after model switch in event loop
-    pub fn update_model_names(&mut self, model_names: Vec<String>) {
-        self.completer.set_model_names(model_names);
     }
 
     /// Save history to file

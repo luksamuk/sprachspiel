@@ -1,7 +1,8 @@
 //! View abstraction layer for chat REPL
 //!
-//! This module provides the `ChatView` trait for abstracting output rendering,
-//! enabling future migration from terminal output to alternative rendering (e.g., TUI).
+//! This module provides the `ChatView` trait and shared rendering infrastructure
+//! for the chat REPL. The TUI implementation (`RatatuiView`) is the primary view,
+//! while the standalone renderer provides pipe-safe output for non-chat subcommands.
 //!
 //! # Architecture
 //!
@@ -10,19 +11,20 @@
 //!     ↓ uses
 //! ChatView (trait)
 //!     ↓ implemented by
-//! RatatuiView (TUI chat) ─── standalone renderer (query/translate/summarize)
+//! RatatuiView (TUI chat) ─── standalone renderer (query/translate/summarize/OCR)
 //! ```
 //!
-//! NOTE: The `ChatView` trait is intentionally kept for future TUI implementation.
-//! See AGENTS.md "TUI Preparation Code Policy" for details.
+//! ANSI color codes and banner art in this module are used by non-chat subcommands
+//! (query, translate, summarize, OCR) that output directly to stdout/pipe.
+//! The TUI chat mode uses `RatatuiView` which renders via ratatui widgets.
 
 #![expect(dead_code)]
 
 /// Number of lines in the status bar (divisor, content, divisor)
-/// Used by ANSI clear codes in repl.rs to remove status bar before user input
+/// Used by the standalone renderer for pre-TUI status display.
 pub const STATUS_BAR_LINES: usize = 3;
 
-// ANSI color codes for banner styling
+// ANSI color codes for banner and status bar styling (pipe-safe non-chat output)
 pub mod colors {
     pub const CYAN: &str = "\x1B[36m";
     pub const YELLOW: &str = "\x1B[33m";
@@ -61,13 +63,6 @@ pub(crate) const EXTENDED_MIND_ART: [&str; 14] = [
     "⠀\x1B[38;2;232;209;100m⣾\x1B[38;2;252;251;199m⣿\x1B[38;2;228;195;87m⣷\x1B[38;2;235;216;127m⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\x1B[38;2;248;233;130m⠈\x1B[38;2;240;211;129m⢻\x1B[38;2;252;252;200m⣿\x1B[38;2;244;227;100m⡿⠀\x1B[0m",
     "⠀\x1B[38;2;255;246;131m⠈\x1B[38;2;237;216;107m⠛\x1B[38;2;250;223;60m⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\x1B[38;2;232;195;38m⠉\x1B[38;2;193;136;0m⠁⠀\x1B[0m",
 ];
-
-// TUI Migration
-// When implementing ratatui.rs TUI:
-// - Add methods to trait for new rendering needs
-// - Implement `TuiView` struct in `src/chat/view/tui.rs`
-// - Update `repl.rs` to use the new implementation
-// IMPORTANT: Review and remove any dead code after TUI is implemented.
 
 mod ratatui_view;
 
