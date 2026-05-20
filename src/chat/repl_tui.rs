@@ -476,6 +476,9 @@ pub async fn run_chat_repl_tui(
                         // no AssistantStreaming exists (already converted).
                         view.app_mut().block_finalized = true;
                         view.set_llm_state(LlmState::ToolCall);
+                        // Drain any tool messages that arrived while we were
+                        // transitioning state, inserting after all stable content.
+                        drain_and_add_tool_messages(&mut view);
                     }
                     LlmEvent::StreamDone {
                         content,
@@ -490,17 +493,20 @@ pub async fn run_chat_repl_tui(
                         state.session = *session;
                         view.update_status_tokens(used_tokens, max_tokens, percent);
                         view.set_llm_state(LlmState::Idle);
+                        drain_and_add_tool_messages(&mut view);
                         cancel_token = None;
                         llm_rx = None;
                     }
                     LlmEvent::Error(error) => {
                         view.app_mut().add_message(ChatMessage::error(error));
                         view.set_llm_state(LlmState::Idle);
+                        drain_and_add_tool_messages(&mut view);
                         cancel_token = None;
                         llm_rx = None;
                     }
                     LlmEvent::Cancelled => {
                         // LLM was cancelled — already handled by Ctrl+C branch
+                        drain_and_add_tool_messages(&mut view);
                         cancel_token = None;
                         llm_rx = None;
                     }
@@ -518,11 +524,16 @@ pub async fn run_chat_repl_tui(
                                 .insert_before_streaming_zone(ChatMessage::assistant_markdown(content));
                         }
                         view.app_mut().set_llm_state(LlmState::ToolCall);
+                        // Drain any tool messages that arrived for this round.
+                        drain_and_add_tool_messages(&mut view);
                     }
                     LlmEvent::ToolCallStarted => {
                         // Tool calls detected — finalize streaming and transition
                         view.app_mut().finalize_streaming_zone_as_is();
                         view.set_llm_state(LlmState::ToolCall);
+                        // Drain any tool messages that arrived before this event
+                        // was fully processed (e.g., after a timer tick).
+                        drain_and_add_tool_messages(&mut view);
                     }
                 }
             }
@@ -539,30 +550,28 @@ pub async fn run_chat_repl_tui(
         }
 
         // Drain tool messages from the global callback and insert them
-        // in the correct position.
+        // at the end of the message list.
         //
-        // During Streaming/Thinking: insert before the streaming zone so tool
-        // messages appear above the still-forming response.
-        //
-        // During ToolCall/Idle: append at the end. During ToolCall, any
-        // prior AssistantStreaming has been finalized and Thinking blocks are
-        // pre-tool reasoning — tool messages must come AFTER them, not before.
-        for msg in view.drain_tool_messages() {
-            match view.app().llm_state() {
-                LlmState::Streaming | LlmState::Thinking => {
-                    view.app_mut()
-                        .insert_before_streaming_zone(ChatMessage::tool(msg));
-                }
-                LlmState::ToolCall | LlmState::Idle => {
-                    view.app_mut().add_message(ChatMessage::tool(msg));
-                }
-            }
-        }
+        // Tool messages are already drained during key events (ToolCallStarted,
+        // StreamBlockDone, InterToolText, Complete, Error, Cancelled) to ensure
+        // correct ordering. This catch-all at the end of the loop handles any
+        // remaining messages that arrived during idle spins (e.g., spinner ticks).
+        drain_and_add_tool_messages(&mut view);
 
         // Re-render after each event or tick
         view.app_mut().poll_embedding_progress();
         view.app_mut().poll_async_messages();
         view.render();
+    }
+}
+
+/// Drain any pending tool messages and append them at the end.
+///
+/// This helper centralizes the insertion logic so tool messages always
+/// appear after all LLM messages and before any further rendering.
+fn drain_and_add_tool_messages(view: &mut RatatuiView) {
+    for msg in view.drain_tool_messages() {
+        view.app_mut().add_message(ChatMessage::tool(msg));
     }
 }
 
