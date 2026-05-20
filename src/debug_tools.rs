@@ -234,7 +234,13 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
     // Trace mode: full result (up to 500 chars)
     if log::max_level() == log::LevelFilter::Trace {
         let display_result = format_result(result, 500);
-        let line = format!("📤 {tool_name} result: {display_result}");
+        let line = if has_tui_callback {
+            // In TUI mode, indent with two spaces + └ so the result line
+            // sits neatly under the 🔧 tool call indicator (emoji is 2-col).
+            format!("  ↳ 📤 {tool_name} result: {display_result}")
+        } else {
+            format!("📤 {tool_name} result: {display_result}")
+        };
 
         if has_tui_callback {
             if let Ok(guard) = TUI_CALLBACK.lock()
@@ -250,7 +256,13 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
     } else if log::log_enabled!(log::Level::Debug) {
         // Verbose mode: truncated preview (~100 chars)
         let preview = crate::utils::truncate_chars(result, 100);
-        let line = format!("✓ Result: {}", preview.replace('\n', " "));
+        let line = if has_tui_callback {
+            // In TUI mode, indent with two spaces + └ so the result line
+            // sits neatly under the 🔧 tool call indicator (emoji is 2-col).
+            format!("  ↳ ✓ Result: {}", preview.replace('\n', " "))
+        } else {
+            format!("✓ Result: {}", preview.replace('\n', " "))
+        };
 
         if has_tui_callback {
             if let Ok(guard) = TUI_CALLBACK.lock()
