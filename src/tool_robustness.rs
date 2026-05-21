@@ -202,9 +202,21 @@ mod tests {
     #[test]
     fn test_format_error_plain_error_prefix() {
         // Plain mode: "Error:" prefix without ANSI red
-        crate::debug_tools::set_plain_mode(true);
+        // Use a guard to ensure safe global state reset even on panic
+        struct PlainModeGuard;
+        impl PlainModeGuard {
+            fn new() -> Self {
+                crate::debug_tools::set_plain_mode(true);
+                Self
+            }
+        }
+        impl Drop for PlainModeGuard {
+            fn drop(&mut self) {
+                crate::debug_tools::set_plain_mode(false);
+            }
+        }
+        let _guard = PlainModeGuard::new();
         let result = format_error_with_status("server error occurred");
-        crate::debug_tools::set_plain_mode(false); // reset
         assert!(
             result.starts_with("Error:"),
             "Plain mode should have plain 'Error:' prefix, got: {result}"
@@ -218,9 +230,21 @@ mod tests {
     #[test]
     fn test_format_tool_error_no_ansi_in_plain() {
         // format_tool_error (public API) should not produce ANSI in plain mode
-        crate::debug_tools::set_plain_mode(true);
+        // Use a guard to ensure safe global state reset even on panic
+        struct PlainModeGuard;
+        impl PlainModeGuard {
+            fn new() -> Self {
+                crate::debug_tools::set_plain_mode(true);
+                Self
+            }
+        }
+        impl Drop for PlainModeGuard {
+            fn drop(&mut self) {
+                crate::debug_tools::set_plain_mode(false);
+            }
+        }
+        let _guard = PlainModeGuard::new();
         let result = format_tool_error(r#"{"error":"status 400 Bad Request"}"#);
-        crate::debug_tools::set_plain_mode(false); // reset
         assert!(
             !result.contains("\x1B["),
             "format_tool_error in plain mode should not contain ANSI, got: {result}"
