@@ -249,3 +249,49 @@ pub enum ViewAction {
     /// `ChatView::show_command_output(output)`
     ShowCommandOutput(CommandOutput),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compact_stream_token_debug_format() {
+        let event = LlmEvent::CompactStreamToken("hello world".to_string());
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("CompactStreamToken"));
+        assert!(debug.contains("11")); // length of "hello world"
+    }
+
+    #[test]
+    fn test_compact_stream_done_debug_format() {
+        let event = LlmEvent::CompactStreamDone {
+            summary: "Test summary".to_string(),
+            range: Some((5, 20)),
+        };
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("CompactStreamDone"));
+        assert!(debug.contains("summary_len"));
+        assert!(debug.contains("range"));
+    }
+
+    #[test]
+    fn test_compact_stream_done_without_range() {
+        let event = LlmEvent::CompactStreamDone {
+            summary: "Full summary".to_string(),
+            range: None,
+        };
+        let debug = format!("{:?}", event);
+        assert!(debug.contains("CompactStreamDone"));
+        assert!(debug.contains("None")); // range is None
+    }
+
+    #[test]
+    fn test_compact_stream_token_long_string() {
+        let long_token = "x".repeat(500);
+        let event = LlmEvent::CompactStreamToken(long_token);
+        let debug = format!("{:?}", event);
+        // Debug should show length, not the full token
+        assert!(debug.contains("500"));
+        assert!(debug.len() < 100); // Truncated in debug output
+    }
+}

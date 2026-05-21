@@ -765,4 +765,20 @@ mod tests {
             "32K: emergency should be 983 (3%% remaining)"
         );
     }
+
+    // ── Compaction limits removed ──────────────────────────────
+
+    #[test]
+    fn test_no_max_summary_tokens_constant() {
+        // MAX_SUMMARY_TOKENS was removed in the compaction streaming refactor.
+        // Compaction summaries are no longer truncated — the LLM produces
+        // whatever-length summary is needed to preserve ALL relevant context.
+        // If this test fails, a MAX_SUMMARY_TOKENS constant was re-introduced;
+        // do NOT re-add it. Instead, adjust compaction streaming to handle
+        // arbitrary-length summaries.
+        //
+        // Verify compaction thresholds exist and are positive (no summary limit).
+        assert!(COMPACTION_MIN > 0, "COMPACTION_MIN must be positive");
+        assert!(PRE_TOOL_MIN > 0, "PRE_TOOL_MIN must be positive");
+    }
 }

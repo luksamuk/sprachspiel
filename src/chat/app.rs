@@ -2813,4 +2813,35 @@ mod tests {
             "Status bar should reflect style enabled again"
         );
     }
+
+    // ── LlmState::Compacting tests ─────────────────────────────
+
+    #[test]
+    fn test_llm_state_compacting_disables_input() {
+        let mut app = test_app();
+        app.set_llm_state(LlmState::Compacting);
+        assert_eq!(app.llm_state(), LlmState::Compacting);
+        // Input should be disabled during compaction
+        assert!(
+            app.disabled_reason.is_some(),
+            "Input should be disabled during compaction"
+        );
+        assert!(
+            app.disabled_reason.as_ref().unwrap().contains("Compacting"),
+            "Disabled reason should mention 'Compacting', got: {:?}",
+            app.disabled_reason
+        );
+    }
+
+    #[test]
+    fn test_llm_state_compacting_spinner_label() {
+        let mut app = test_app();
+        app.set_llm_state(LlmState::Compacting);
+        // Status bar should show "Compacting..."
+        assert_eq!(
+            app.status_bar.status_label,
+            Some("Compacting...".to_string()),
+            "Status label should be 'Compacting...'"
+        );
+    }
 }

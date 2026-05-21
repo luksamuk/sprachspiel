@@ -214,3 +214,50 @@ Remember:
 - Previous tool results are preserved in the conversation summary
 - You can reference results from tools executed before compaction
 - Continue from where you left off, or summarize results if complete"#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compaction_prompt_no_token_limit() {
+        // After the Fase 1 refactor, COMPACTION_PROMPT must NOT contain
+        // any token or character limits on the summary.
+        let lower = COMPACTION_PROMPT.to_lowercase();
+        assert!(
+            !lower.contains("3000 tokens"),
+            "COMPACTION_PROMPT still contains old '3000 tokens' limit"
+        );
+        assert!(
+            !lower.contains("max") || lower.contains("maximum compaction"),
+            "COMPACTION_PROMPT should not contain arbitrary 'max' limits"
+        );
+    }
+
+    #[test]
+    fn test_compaction_prompt_preserves_all_context() {
+        // The prompt must instruct the LLM to preserve ALL relevant context
+        assert!(
+            COMPACTION_PROMPT.contains("Preserve ALL"),
+            "COMPACTION_PROMPT must instruct to preserve ALL relevant context"
+        );
+    }
+
+    #[test]
+    fn test_compaction_prompt_has_structure() {
+        // The prompt must have a clear structure for the LLM to follow
+        assert!(COMPACTION_PROMPT.contains("## Goal"));
+        assert!(COMPACTION_PROMPT.contains("## Instructions"));
+        assert!(COMPACTION_PROMPT.contains("## Progress"));
+        assert!(COMPACTION_PROMPT.contains("## Discoveries"));
+        assert!(COMPACTION_PROMPT.contains("## Relevant Files"));
+    }
+
+    #[test]
+    fn test_compaction_prompt_uses_markdown() {
+        assert!(
+            COMPACTION_PROMPT.contains("MARKDOWN") || COMPACTION_PROMPT.contains("Markdown"),
+            "COMPACTION_PROMPT must specify Markdown format"
+        );
+    }
+}
