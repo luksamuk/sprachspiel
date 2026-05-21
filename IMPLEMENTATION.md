@@ -4808,6 +4808,31 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 - Update `src/spinner.rs` for clean chat/non-chat split
 - Documentation update
 
+**Significant Issues from PR3 Testing (deferred to PR4):**
+
+| # | Issue | Severity | Source | Fix |
+|---|-------|----------|--------|-----|
+| 6 | 🧠 indicator stays in status bar when `/think` toggles off | 🟡 Medium | Test #2 | Call `update_status_model()` after `/think` command in `repl_tui.rs` event loop |
+| 12 | `/togglestyle` alias should not exist | 🟡 Medium | Test #23/#36 | Remove `"togglestyle" => ChatCommand::ToggleStyle` from `commands.rs:982` |
+| 5 | `/think on` toggles instead of explicitly enabling | 🟡 Low | Test #2 | Add explicit `/think on`/`/think off` commands, or document toggle behavior |
+| 7 | `/compact` freezes TUI — no async progress | 🟡 Medium | Test #31 | Run compaction with spinner, same as streaming/thinking |
+| 8 | `/compact` output not streamed | 🟡 Low | Test #31 | Stream compact output like regular messages |
+| 9 | `/compact` output appears truncated/sparse | 🟡 Low | Test #31 | Verify no output truncation in compact results |
+| 13 | Embedding hang on exit (several seconds, no visual cue) | 🟡 Low | Test #1 | Show "Saving embeddings..." message or async flush |
+| 14 | Home/End keys don't work in Kitty terminal | 🟡 Low | Test #3 | Add Kitty key mappings (`^[OH`/`^[OF`) or document limitation |
+| 17 | Multi-line input loses newlines on submit | 🟡 Medium | Test #8 | Fix textarea `submit()` to preserve `\n` characters |
+| 18 | Bracketed paste loses newlines (Ctrl+V from external clipboard) | 🟡 Low | Test #12 | Investigate crossterm/Kitty clipboard protocol |
+| 20 | Diagram rendering CPU creep (5-7% with multiple mermaid in scrollback) | 🟡 Low | Test #29 | Cache rendered diagrams, skip re-rendering off-screen content |
+| 23 | Mono theme preserves colors in prompt/thinking | 🟡 Low | Test #4 | Strip all colors except bold/underline in mono theme |
+
+**Blockers found in PR3 testing (must fix before merge — tracked in PR3 branch):**
+
+| # | Issue | Severity | Source | Fix |
+|---|-------|----------|--------|-----|
+| 1 | Plain mode (`--plain`) outputs ANSI codes (not pipe-safe) | 🔴 High | Test #18/#30 | Add `use_plain` parameter to `display_thinking()`, strip all ANSI when plain |
+| 2 | Vision proceeds despite no-capability warning | 🔴 High | Test #24 | Abort vision/OCR when model lacks capability, add `--force` for override |
+| 3 | Multi-tool inter-tool text appears after all tools instead of interleaved | 🔴 High | Test #26 | Investigate `InterToolText` event timing in `custom_coordinator.rs` vs tool message drain |
+
 ---
 
 #### Revised Overall Migration Map
