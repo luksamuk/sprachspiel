@@ -350,6 +350,32 @@ pub async fn run_chat_repl_tui(
                                                     continue;
                                                 }
 
+                                                // Handle /compact specially — spawn background task
+                                                // to avoid freezing the TUI during compaction.
+                                                if let ChatCommand::Compact = &cmd {
+                                                    if state.session.messages.is_empty() {
+                                                        view.show_command_outputs(&[
+            CommandOutput::info("No messages to compact."),
+                                                        ]);
+                                                    } else {
+                                                        let msg_count =
+                                                            state.session.messages.len();
+                                                        view.show_command_outputs(&[
+            CommandOutput::progress(format!(
+                "Compacting {} messages...",
+                msg_count
+            )),
+                                                        ]);
+                                                        view.set_llm_state(LlmState::Compacting);
+                                                        spawn_compact_task(
+                                                            state,
+                                                            &mut llm_tx,
+                                                            &mut llm_rx,
+                                                        );
+                                                    }
+                                                    continue;
+                                                }
+
                                                 // Handle other commands
                                                 let mut dummy_input =
                                                     super::input::CrosstermInput::default();
@@ -407,14 +433,23 @@ pub async fn run_chat_repl_tui(
                                     spawn_llm_task(&line, state, &mut llm_tx, &mut llm_rx, &mut cancel_token);
                                 }
                                 Some(InputResult::Interrupted) => {
-                                    // Ctrl+C — cancel running LLM or ignore
+                                    // Ctrl+C — cancel running LLM task
                                     if let Some(token) = cancel_token.take() {
                                         token.cancel();
                                         view.app_mut().add_message(
                                             ChatMessage::system("Cancelled.".to_string()),
                                         );
                                         view.set_llm_state(LlmState::Idle);
+                                        llm_tx = None;
                                         llm_rx = None;
+                                    } else if view.app_mut().llm_state() == LlmState::Compacting {
+                                        // Compaction is not cancellable — ignore Ctrl+C
+                                        view.app_mut().add_message(
+                                            ChatMessage::system(
+                                                "Compaction in progress, please wait..."
+                                                    .to_string(),
+                                            ),
+                                        );
                                     }
                                 }
                                 Some(InputResult::Eof) => {
@@ -518,6 +553,7 @@ pub async fn run_chat_repl_tui(
                         view.set_llm_state(LlmState::Idle);
                         drain_and_add_tool_messages(&mut view);
                         cancel_token = None;
+                        llm_tx = None;
                         llm_rx = None;
                     }
                     LlmEvent::Error(error) => {
@@ -525,12 +561,14 @@ pub async fn run_chat_repl_tui(
                         view.set_llm_state(LlmState::Idle);
                         drain_and_add_tool_messages(&mut view);
                         cancel_token = None;
+                        llm_tx = None;
                         llm_rx = None;
                     }
                     LlmEvent::Cancelled => {
                         // LLM was cancelled — already handled by Ctrl+C branch
                         drain_and_add_tool_messages(&mut view);
                         cancel_token = None;
+                        llm_tx = None;
                         llm_rx = None;
                     }
                     LlmEvent::InterToolText { content, thinking, .. } => {
@@ -596,6 +634,7 @@ pub async fn run_chat_repl_tui(
 
                         view.set_llm_state(LlmState::Idle);
                         cancel_token = None;
+                        llm_tx = None;
                         llm_rx = None;
                     }
                 }
@@ -727,6 +766,51 @@ fn spawn_llm_task(
                 percent,
             })
             .await;
+    });
+}
+
+/// Spawn a compaction task in the background with streaming summary display.
+///
+/// Analogous to `spawn_llm_task` but for `/compact`. Creates a dedicated
+/// `llm_tx`/`llm_rx` channel pair. The background task calls
+/// `compact_conversation()` which streams `CompactStreamToken` events.
+/// On completion, sends `CompactStreamDone` with the summary and range
+/// (or `Error` on failure). The event loop handles finalization.
+///
+/// Unlike LLM tasks, compaction is NOT cancellable — Ctrl+C is ignored.
+fn spawn_compact_task(
+    state: &mut ReplState,
+    llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
+    llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
+) {
+    // Create channels for compaction events
+    let (task_llm_tx, new_llm_rx) = tokio::sync::mpsc::channel(LLM_VIEW_CHANNEL_CAPACITY);
+    *llm_tx = Some(task_llm_tx.clone());
+    *llm_rx = Some(new_llm_rx);
+
+    // Clone the state for the compaction task
+    let task_state = state.clone();
+
+    tokio::spawn(async move {
+        match super::core::compact_conversation(
+            &task_state.ollama,
+            &task_state.model_config,
+            &task_state.session,
+            &task_state.settings,
+            task_state.agents_md.as_deref(),
+            task_llm_tx.clone(),
+        )
+        .await
+        {
+            Ok((summary, range)) => {
+                let _ = task_llm_tx
+                    .send(LlmEvent::CompactStreamDone { summary, range })
+                    .await;
+            }
+            Err(e) => {
+                let _ = task_llm_tx.send(LlmEvent::Error(e.to_string())).await;
+            }
+        }
     });
 }
 

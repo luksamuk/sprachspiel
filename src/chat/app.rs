@@ -54,7 +54,6 @@ pub enum LlmState {
     /// Streaming — response coming in, input disabled
     Streaming,
     /// Compacting — conversation compaction in progress
-    #[allow(dead_code)] // Used by spawn_compact_task (Fase 7)
     Compacting,
     /// Running a tool call
     ToolCall,

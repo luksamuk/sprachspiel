@@ -139,7 +139,6 @@ pub enum LlmEvent {
     /// that were summarized. The event loop should finalize the
     /// streaming zone, update the session, save to database, and
     /// show the compact result.
-    #[allow(dead_code)] // Used by spawn_compact_task (Fase 7)
     CompactStreamDone {
         /// The full compacted summary text
         summary: String,
