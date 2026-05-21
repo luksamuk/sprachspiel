@@ -479,15 +479,38 @@ impl App {
     /// streaming content down.
     ///
     /// If there is no streaming zone (all messages are stable), this
-    /// falls back to appending at the end via `add_message()`.
+    /// finds the boundary before any trailing Tool messages and inserts
+    /// before them. This ensures inter-tool text (from `InterToolText`
+    /// events) appears in the correct position — after pre-tool content
+    /// and before subsequent tool calls — rather than appended after
+    /// all existing tool messages.
+    ///
+    /// Fallback: if there are no trailing tool messages either, appends
+    /// at the end via `add_message()`.
     pub fn insert_before_streaming_zone(&mut self, message: ChatMessage) {
         let zone_start = self.streaming_zone_start();
         if zone_start < self.messages.len() {
             // There's a streaming zone — insert before it
             self.messages.insert(zone_start, message);
         } else {
-            // No streaming zone — just append
-            self.messages.push(message);
+            // No streaming zone — find the boundary before trailing
+            // Tool messages. Inter-tool text (from InterToolText events)
+            // must appear BEFORE tool messages, not after them.
+            let tool_boundary = self
+                .messages
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, m)| m.msg_type != MessageType::Tool)
+                .map(|(i, _)| i + 1)
+                .unwrap_or(0);
+            if tool_boundary < self.messages.len() {
+                // There are trailing tool messages — insert before them
+                self.messages.insert(tool_boundary, message);
+            } else {
+                // No trailing tool messages — just append
+                self.messages.push(message);
+            }
         }
         self.scroll.reset_to_bottom();
     }
@@ -2206,18 +2229,75 @@ mod tests {
 
     #[test]
     fn test_insert_before_streaming_zone_no_zone() {
-        // When there's no streaming zone, insert_before should append
+        // When there's no streaming zone and no trailing tools, append
         let mut app = test_app();
 
         app.add_message(ChatMessage::user("Hello".to_string()));
 
-        // No streaming zone — insert_before_streaming_zone should append
+        // No streaming zone, no trailing tools — append
         app.insert_before_streaming_zone(ChatMessage::tool("Tool msg".to_string()));
 
         assert_eq!(app.messages.len(), 2);
         assert_eq!(app.messages[0].msg_type, MessageType::User);
         assert_eq!(app.messages[1].msg_type, MessageType::Tool);
         assert_eq!(app.messages[1].content, "Tool msg");
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_no_zone_trailing_tools() {
+        // When there's no streaming zone but there ARE trailing tool messages,
+        // insert BEFORE them. This is the InterToolText ordering fix:
+        // inter-tool text must appear BETWEEN tool rounds, not after them.
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("What's the weather?".to_string()));
+        app.add_message(ChatMessage::assistant_markdown("Let me check".to_string()));
+        // Trailing tool messages from round 1 (already drained)
+        app.add_message(ChatMessage::tool("🔧 weather()".to_string()));
+        app.add_message(ChatMessage::tool("Sunny, 22°C".to_string()));
+
+        // InterToolText arrives — should insert BEFORE tool messages
+        app.insert_before_streaming_zone(ChatMessage::assistant_markdown(
+            "Now let me calculate:".to_string(),
+        ));
+
+        assert_eq!(app.messages.len(), 5);
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Let me check");
+        // Inter-tool text inserted BEFORE tool messages
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[2].content, "Now let me calculate:");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
+        assert_eq!(app.messages[4].msg_type, MessageType::Tool);
+    }
+
+    #[test]
+    fn test_insert_before_streaming_zone_mixed_trailing() {
+        // Trailing messages: Assistant, Tool, Tool, Tool
+        // Insert should go BEFORE the Tool messages, after the Assistant
+        let mut app = test_app();
+
+        app.add_message(ChatMessage::user("Question".to_string()));
+        app.add_message(ChatMessage::assistant_markdown("Pre-tool text".to_string()));
+        app.add_message(ChatMessage::tool("🔧 tool1()".to_string()));
+        app.add_message(ChatMessage::tool("result1".to_string()));
+        app.add_message(ChatMessage::tool("🔧 tool2()".to_string()));
+        app.add_message(ChatMessage::tool("result2".to_string()));
+
+        // InterToolText arrives — insert before first trailing tool
+        app.insert_before_streaming_zone(ChatMessage::assistant_markdown(
+            "Between tools:".to_string(),
+        ));
+
+        assert_eq!(app.messages.len(), 7);
+        // Order: User, Assistant "Pre-tool", Assistant "Between tools", Tool, Tool, Tool, Tool
+        assert_eq!(app.messages[0].msg_type, MessageType::User);
+        assert_eq!(app.messages[1].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[1].content, "Pre-tool text");
+        assert_eq!(app.messages[2].msg_type, MessageType::Assistant);
+        assert_eq!(app.messages[2].content, "Between tools:");
+        assert_eq!(app.messages[3].msg_type, MessageType::Tool);
     }
 
     #[test]

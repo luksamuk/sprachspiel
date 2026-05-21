@@ -119,7 +119,7 @@ async fn execute_retry_loop(
 
                     if attempts == 1 {
                         crate::spinner::finish_spinner(spinner.clone());
-                        eprintln!("\x1B[90m  Retrying after error...\x1B[0m");
+                        eprintln!("  Retrying after error...");
                     }
 
                     continue;

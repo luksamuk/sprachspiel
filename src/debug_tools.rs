@@ -61,6 +61,12 @@ const MAX_LINE_WIDTH: usize = 74;
 /// In Quiet mode, this flag is overridden — tool calls are never shown.
 static SHOW_TOOL_CALLS: AtomicBool = AtomicBool::new(true);
 
+/// Global flag controlling plain mode (no ANSI codes in tool indicators).
+///
+/// Set from query/translate/summarize subcommands when `--plain` is active.
+/// In plain mode, tool call indicators omit ANSI styling for pipe-safe output.
+static PLAIN_MODE: AtomicBool = AtomicBool::new(false);
+
 /// Global callback for TUI mode tool call display.
 ///
 /// When set, `display_tool_call` invokes this callback with the formatted
@@ -91,6 +97,18 @@ pub fn set_show_tool_calls(enabled: bool) {
     SHOW_TOOL_CALLS.store(enabled, Ordering::Relaxed);
 }
 
+/// Set plain mode for tool indicators (no ANSI codes).
+///
+/// Called from subcommands with `--plain` flag to ensure pipe-safe output.
+pub fn set_plain_mode(enabled: bool) {
+    PLAIN_MODE.store(enabled, Ordering::Relaxed);
+}
+
+/// Check if plain mode is active (no ANSI codes in tool indicators).
+pub fn is_plain_mode() -> bool {
+    PLAIN_MODE.load(Ordering::Relaxed)
+}
+
 /// Print a tool visual indicator through the TUI callback (TUI mode) or
 /// `suspend_for_print` (terminal mode).
 ///
@@ -102,6 +120,7 @@ pub fn set_show_tool_calls(enabled: bool) {
 ///
 /// The line is printed with [`TOOL_DIM`] + [`RESET`] styling in terminal mode.
 /// In TUI mode, styling is handled by the chat view layer.
+/// In plain mode, no ANSI styling is applied for pipe-safe output.
 pub fn tui_aware_print(line: &str) {
     // Route through TUI callback if set (TUI mode)
     if let Ok(guard) = TUI_CALLBACK.lock()
@@ -110,10 +129,16 @@ pub fn tui_aware_print(line: &str) {
         callback(line);
         return;
     }
-    // Terminal mode: print to stderr with ANSI styling
-    suspend_for_print(|| {
-        eprintln!("{TOOL_DIM}{line}{RESET}");
-    });
+    // Terminal mode: print to stderr with ANSI styling (unless plain mode)
+    if PLAIN_MODE.load(Ordering::Relaxed) {
+        suspend_for_print(|| {
+            eprintln!("{line}");
+        });
+    } else {
+        suspend_for_print(|| {
+            eprintln!("{TOOL_DIM}{line}{RESET}");
+        });
+    }
 }
 
 /// Query whether tool calls should be displayed.
@@ -182,10 +207,16 @@ fn display_tool_call(tool_name: &str, args: &[(String, String)]) {
         return;
     }
 
-    // Terminal mode: print to stderr with ANSI styling
-    suspend_for_print(|| {
-        eprintln!("{TOOL_DIM}{line}{RESET}");
-    });
+    // Terminal mode: print to stderr with ANSI styling (unless plain mode)
+    if PLAIN_MODE.load(Ordering::Relaxed) {
+        suspend_for_print(|| {
+            eprintln!("{line}");
+        });
+    } else {
+        suspend_for_print(|| {
+            eprintln!("{TOOL_DIM}{line}{RESET}");
+        });
+    }
 }
 
 /// Log a tool call with its arguments.
@@ -248,6 +279,10 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
             {
                 callback(&line);
             }
+        } else if PLAIN_MODE.load(Ordering::Relaxed) {
+            suspend_for_print(|| {
+                eprintln!("{line}");
+            });
         } else {
             suspend_for_print(|| {
                 eprintln!("{TOOL_DIM}{line}{RESET}");
@@ -270,6 +305,10 @@ pub fn log_tool_result(tool_name: &str, result: &str) {
             {
                 callback(&line);
             }
+        } else if PLAIN_MODE.load(Ordering::Relaxed) {
+            suspend_for_print(|| {
+                eprintln!("{line}");
+            });
         } else {
             suspend_for_print(|| {
                 eprintln!("{TOOL_DIM}{line}{RESET}");
@@ -460,5 +499,33 @@ mod tests {
             "Should not contain empty timeout_seconds=: {}",
             line
         );
+    }
+
+    #[test]
+    fn test_plain_mode_flag() {
+        // Default: plain mode off
+        assert!(!PLAIN_MODE.load(Ordering::Relaxed));
+
+        // Enable
+        set_plain_mode(true);
+        assert!(is_plain_mode());
+
+        // Disable
+        set_plain_mode(false);
+        assert!(!is_plain_mode());
+    }
+
+    #[test]
+    fn test_display_tool_call_plain_mode_no_ansi() {
+        // In plain mode, display_tool_call should not emit ANSI codes
+        set_plain_mode(true);
+        set_tui_callback(None); // Ensure terminal mode (no callback)
+        // This test verifies the function doesn't panic and routes correctly.
+        // We can't easily capture stderr in unit tests, but we verify the
+        // plain mode path exists and executes.
+        display_tool_call("test_tool", &[("key".to_string(), "value".to_string())]);
+
+        // Restore
+        set_plain_mode(false);
     }
 }

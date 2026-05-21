@@ -102,6 +102,43 @@ fn try_format_ollama_error(error: &str) -> Option<String> {
 }
 
 fn format_error_with_status(msg: &str) -> String {
+    // In plain mode, strip ANSI codes for pipe-safe output
+    if crate::debug_tools::is_plain_mode() {
+        return format_error_plain(msg);
+    }
+
+    format_error_with_ansi(msg)
+}
+
+/// Format error without any ANSI codes (for plain mode / pipe-safe output).
+fn format_error_plain(msg: &str) -> String {
+    let status_patterns = [
+        ("status 400", "400 Bad Request"),
+        ("status 404", "404 Not Found"),
+        ("status 500", "500 Internal Server Error"),
+        ("code 400", "400 Bad Request"),
+        ("code 404", "404 Not Found"),
+        ("code 500", "500 Internal Server Error"),
+    ];
+
+    let mut formatted = msg.to_string();
+
+    for (pattern, status_text) in status_patterns {
+        if formatted.to_lowercase().contains(pattern) {
+            formatted = formatted.replace(pattern, status_text);
+            formatted = formatted.replace(&pattern.to_uppercase(), status_text);
+        }
+    }
+
+    if formatted.contains("error") || formatted.contains("Error") || formatted.contains("ERROR") {
+        format!("Error: {}", formatted)
+    } else {
+        formatted
+    }
+}
+
+/// Format error with ANSI color codes (for terminal mode).
+fn format_error_with_ansi(msg: &str) -> String {
     // Check for status codes and format them in red
     let status_patterns = [
         ("status 400", "400 Bad Request"),
@@ -128,5 +165,65 @@ fn format_error_with_status(msg: &str) -> String {
         format!("\x1B[31mError:\x1B[0m {}", formatted)
     } else {
         formatted
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_error_plain_no_ansi() {
+        // Plain mode: no ANSI codes in output
+        crate::debug_tools::set_plain_mode(true);
+        let result = format_error_with_status("connection error: status 404 not found");
+        crate::debug_tools::set_plain_mode(false); // reset
+        assert!(
+            !result.contains("\x1B["),
+            "Plain mode should not contain ANSI codes, got: {result}"
+        );
+        assert!(
+            result.contains("404 Not Found"),
+            "Plain mode should contain readable status text, got: {result}"
+        );
+    }
+
+    #[test]
+    fn test_format_error_ansi_contains_codes() {
+        // Non-plain mode: should contain ANSI codes
+        crate::debug_tools::set_plain_mode(false);
+        let result = format_error_with_status("connection error: status 404 not found");
+        assert!(
+            result.contains("\x1B["),
+            "Terminal mode should contain ANSI codes, got: {result}"
+        );
+    }
+
+    #[test]
+    fn test_format_error_plain_error_prefix() {
+        // Plain mode: "Error:" prefix without ANSI red
+        crate::debug_tools::set_plain_mode(true);
+        let result = format_error_with_status("server error occurred");
+        crate::debug_tools::set_plain_mode(false); // reset
+        assert!(
+            result.starts_with("Error:"),
+            "Plain mode should have plain 'Error:' prefix, got: {result}"
+        );
+        assert!(
+            !result.contains("\x1B["),
+            "Plain mode should not contain ANSI codes, got: {result}"
+        );
+    }
+
+    #[test]
+    fn test_format_tool_error_no_ansi_in_plain() {
+        // format_tool_error (public API) should not produce ANSI in plain mode
+        crate::debug_tools::set_plain_mode(true);
+        let result = format_tool_error(r#"{"error":"status 400 Bad Request"}"#);
+        crate::debug_tools::set_plain_mode(false); // reset
+        assert!(
+            !result.contains("\x1B["),
+            "format_tool_error in plain mode should not contain ANSI, got: {result}"
+        );
     }
 }

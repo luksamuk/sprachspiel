@@ -86,7 +86,7 @@ pub fn handle_chat_event(event: ChatEvent, use_think: bool, use_plain: bool) {
         } => {
             suspend_for_print(|| {
                 if use_think {
-                    display_thinking(&content, thinking.as_ref(), !use_plain);
+                    display_thinking(&content, thinking.as_ref(), !use_plain, use_plain);
                 }
                 if !content.trim().is_empty() {
                     let cleaned = strip_thinking_tags(&content);
@@ -193,7 +193,12 @@ pub fn display_result(result: &QueryResult, use_think: bool, use_plain: bool) {
     use crate::chat::{display_thinking, strip_thinking_tags};
 
     if use_think {
-        display_thinking(&result.content, result.thinking.as_ref(), !use_plain);
+        display_thinking(
+            &result.content,
+            result.thinking.as_ref(),
+            !use_plain,
+            use_plain,
+        );
     }
 
     let content = strip_thinking_tags(&result.content);
@@ -242,6 +247,10 @@ pub async fn run_query(
         eprintln!("Error: No query provided. Use positional argument or pipe input.");
         std::process::exit(1);
     }
+
+    // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output).
+    // Must be set before any tool call display occurs.
+    crate::debug_tools::set_plain_mode(plain.unwrap_or(false));
 
     let ctx = QueryContextBuilder::new()
         .cli_model(cli_model.map(|s| s.to_string()))
@@ -310,7 +319,13 @@ pub async fn run_query(
             log::debug!("❌ Tool execution failed (RAW):\n{:#?}", e);
             if !log::log_enabled!(log::Level::Debug) {
                 let error_msg = format_tool_error(&e);
-                eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+                // Strip ANSI codes in plain mode for pipe-safe output
+                if ctx.output_flags.plain {
+                    let clean = crate::utils::strip_ansi_codes(&error_msg);
+                    eprintln!("\n❌ Tool execution failed: {}\n", clean);
+                } else {
+                    eprintln!("\n❌ Tool execution failed: {}\n", error_msg);
+                }
             }
             return Err(e.into());
         }

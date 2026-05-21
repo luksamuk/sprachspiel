@@ -129,6 +129,10 @@ struct Cli {
     /// Custom database path (overrides default ~/.local/share/sprachspiel/sprachspiel.db)
     #[arg(long, value_name = "PATH")]
     db: Option<String>,
+
+    /// Force vision/OCR execution even if model lacks detected capability
+    #[arg(long)]
+    force: bool,
 }
 
 #[tokio::main]
@@ -192,6 +196,9 @@ async fn handle_translate(args: TranslateArgs, cli: &Cli, settings: &Settings) -
     }
 
     let output_flags = OutputFlags::resolve(cli.plain);
+
+    // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output)
+    crate::debug_tools::set_plain_mode(output_flags.plain);
 
     log::debug!("Debug Mode - Translation Configuration:");
     log::debug!("==========================");
@@ -494,19 +501,22 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
         });
 
     // Check if the model supports vision capabilities (required for OCR).
-    // OCR requires the model to see images — without vision it cannot perform OCR.
+    // Abort unless the user passes --force to override the capability check.
     let ollama = settings.ollama_client();
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
     if !capabilities.vision {
-        // For OCR, the model MUST support vision — warn and proceed anyway
-        // since some cloud models report incorrect capabilities
-        eprintln!(
-            "⚠ Warning: Model '{}' may not support vision capabilities. \
-             OCR requires image understanding. Proceeding anyway...",
-            model_id
-        );
-        eprintln!("  If OCR fails, try: edit config.toml → [model.ocr] model = \"glm-ocr:bf16\"");
+        if _cli.force {
+            eprintln!(
+                "⚠ Warning: Model '{}' may not support vision capabilities. \
+                 Proceeding anyway due to --force flag...",
+                model_id
+            );
+        } else {
+            return Err(
+                crate::vision::error::VisionError::NoVisionCapability { model: model_id }.into(),
+            );
+        }
     }
 
     log::debug!("Debug Mode - OCR Configuration:");
@@ -587,6 +597,9 @@ async fn handle_summarize(args: SummarizeArgs, cli: &Cli, settings: &Settings) -
     };
 
     let output_flags = OutputFlags::resolve(cli.plain);
+
+    // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output)
+    crate::debug_tools::set_plain_mode(output_flags.plain);
 
     log::debug!("Debug Mode - Summarize Configuration:");
     log::debug!("==========================");
@@ -707,21 +720,21 @@ async fn handle_vision(args: VisionArgs, cli: &Cli, settings: &Settings) -> AppR
 
     let output_flags = OutputFlags::resolve(cli.plain);
 
+    // Set plain mode for tool indicators (strips ANSI codes for pipe-safe output)
+    crate::debug_tools::set_plain_mode(output_flags.plain);
+
     // Check if the model supports vision capabilities.
-    // If the user explicitly chose a model (-m), warn but continue.
-    // If the model was auto-selected (no -m), error with suggestions.
+    // Abort unless the user passes --force to override the capability check.
     let ollama = settings.ollama_client();
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
     if !capabilities.vision {
-        let user_chose_model = cli.model.is_some() || args.model.is_some();
-        if user_chose_model {
+        if cli.force {
             eprintln!(
                 "⚠ Warning: Model '{}' may not support vision. \
-                 The model might not see the images. Proceeding anyway...",
+                 Proceeding anyway due to --force flag...",
                 model_id
             );
-            eprintln!("  If the model cannot see images, try: -m qwen3.5:4b");
         } else {
             return Err(
                 crate::vision::error::VisionError::NoVisionCapability { model: model_id }.into(),

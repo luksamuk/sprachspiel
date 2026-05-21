@@ -20,9 +20,11 @@ const THINKING_COLOR: &str = "\x1B[37m";
 const DIM_STYLE: &str = "\x1B[2m";
 /// ANSI reset — used by display_thinking() only
 const RESET: &str = "\x1B[0m";
-/// Left border for thinking block content — used by display_thinking() only
+/// Left border for thinking block content (rich mode)
 const THINKING_BORDER: &str = "│ ";
-/// Visual width of the thinking border prefix — used by display_thinking() only
+/// Left border for thinking block content (plain mode, no ANSI, pipe-safe)
+const PLAIN_THINKING_BORDER: &str = "| ";
+/// Visual width of the thinking border prefix (shared by both modes)
 const THINKING_BORDER_WIDTH: usize = 2;
 
 /// Processed thinking content
@@ -149,6 +151,7 @@ pub fn extract_thinking(content: &str, thinking_field: Option<&String>) -> Optio
 /// * `content` - The full response content
 /// * `thinking_field` - Optional thinking field from API response
 /// * `render_markdown` - Whether to render as markdown (tables, headings, etc.)
+/// * `use_plain` - If true, output plain text with no ANSI codes (for `--plain` / pipe-safe output)
 ///
 /// # Returns
 /// The extracted thinking content (if any), for potential further use
@@ -156,6 +159,7 @@ pub fn display_thinking(
     content: &str,
     thinking_field: Option<&String>,
     render_markdown: bool,
+    use_plain: bool,
 ) -> Option<String> {
     // In quiet mode (Error level only), suppress thinking display
     if !log::log_enabled!(log::Level::Info) {
@@ -167,21 +171,28 @@ pub fn display_thinking(
     let thinking_content = extract_thinking(content, thinking_field);
 
     if let Some(ref thinking) = thinking_content {
-        eprintln!("{DIM_STYLE}{THINKING_COLOR}🧠 Thinking{RESET}");
-
         let terminal_width = crossterm::terminal::size()
             .map(|(cols, _)| cols as usize)
             .unwrap_or(80);
         let wrap_width = terminal_width.saturating_sub(THINKING_BORDER_WIDTH);
 
-        if render_markdown {
-            // Use standalone markdown renderer for table/headings support
+        if use_plain {
+            // Plain mode: no ANSI codes, pipe-safe output
+            eprintln!("[Thinking]");
+            let rendered = crate::markdown::standalone::render_markdown_plain(thinking, wrap_width);
+            for line in rendered.lines() {
+                eprintln!("{PLAIN_THINKING_BORDER}{line}");
+            }
+        } else if render_markdown {
+            // Rich mode with markdown rendering
+            eprintln!("{DIM_STYLE}{THINKING_COLOR}🧠 Thinking{RESET}");
             let rendered = crate::markdown::standalone::render_markdown(thinking, wrap_width);
             for line in rendered.lines() {
                 eprintln!("{DIM_STYLE}{THINKING_COLOR}{THINKING_BORDER}{RESET}{line}");
             }
         } else {
-            // Plain mode: render without ANSI but preserve table structure (pipe-delimited)
+            // Rich mode without markdown rendering
+            eprintln!("{DIM_STYLE}{THINKING_COLOR}🧠 Thinking{RESET}");
             let rendered = crate::markdown::standalone::render_markdown_plain(thinking, wrap_width);
             for line in rendered.lines() {
                 eprintln!("{DIM_STYLE}{THINKING_COLOR}{THINKING_BORDER}{RESET}{line}");
