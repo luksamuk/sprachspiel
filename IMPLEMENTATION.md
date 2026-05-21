@@ -4815,9 +4815,9 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 6 | 🧠 indicator stays in status bar when `/think` toggles off | 🟡 Medium | Test #2 | Call `update_status_model()` after `/think` command in `repl_tui.rs` event loop |
 | 12 | `/togglestyle` alias should not exist | 🟡 Medium | Test #23/#36 | Remove `"togglestyle" => ChatCommand::ToggleStyle` from `commands.rs:982` |
 | 5 | `/think on` toggles instead of explicitly enabling | 🟡 Low | Test #2 | Add explicit `/think on`/`/think off` commands, or document toggle behavior |
-| 7 | `/compact` freezes TUI — no async progress | 🟡 Medium | Test #31 | Run compaction with spinner, same as streaming/thinking |
-| 8 | `/compact` output not streamed | 🟡 Low | Test #31 | Stream compact output like regular messages |
-| 9 | `/compact` output appears truncated/sparse | 🟡 Low | Test #31 | Verify no output truncation in compact results |
+| 7 | `/compact` freezes TUI — no async progress | ✅ **FIXED** | Test #31 | `spawn_compact_task()` runs compaction in background tokio task; `LlmState::Compacting` state; Ctrl+C ignored during compaction |
+| 8 | `/compact` output not streamed | ✅ **FIXED** | Test #31 | `LlmEvent::CompactStreamToken/Done` events stream summary tokens in real time |
+| 9 | `/compact` output appears truncated/sparse | ✅ **FIXED** | Test #31 | `MAX_SUMMARY_TOKENS` removed; `COMPACTION_PROMPT` rewritten to preserve ALL context |
 | 13 | Embedding hang on exit (several seconds, no visual cue) | 🟡 Low | Test #1 | Show "Saving embeddings..." message or async flush |
 | 14 | Home/End keys don't work in Kitty terminal | 🟡 Low | Test #3 | Add Kitty key mappings (`^[OH`/`^[OF`) or document limitation |
 | 17 | Multi-line input loses newlines on submit | 🟡 Medium | Test #8 | Fix textarea `submit()` to preserve `\n` characters |
