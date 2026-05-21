@@ -47,7 +47,7 @@ enum ArgCompletion {
     None,
     /// Model name(s) as arguments (e.g., /model llama3.1)
     ModelName,
-    /// Static subcommands only (e.g., /think on|off)
+    /// Static subcommands for slash commands (e.g., /think on|off)
     StaticSubcommands,
 }
 
@@ -89,7 +89,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         trigger: "/think",
-        description: "Toggle think mode",
+        description: "Toggle or set think mode (on|off)",
         arg_type: ArgCompletion::StaticSubcommands,
     },
     SlashCommand {

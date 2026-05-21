@@ -125,10 +125,16 @@ pub async fn handle_command(
             );
             vec![CommandOutput::ContextInfo(ContextData { formatted: info })]
         }
-        ChatCommand::Think => {
-            state.session.think = !state.session.think;
-            vec![handle_think_toggled(state, state.session.think)]
-        }
+        ChatCommand::Think { enabled } => match enabled {
+            Some(on) => {
+                state.session.think = on;
+                vec![handle_think_toggled(state, on)]
+            }
+            None => {
+                state.session.think = !state.session.think;
+                vec![handle_think_toggled(state, state.session.think)]
+            }
+        },
         ChatCommand::Tools => {
             state.session.tools = !state.session.tools;
             vec![handle_tools_toggled(state, state.session.tools)]

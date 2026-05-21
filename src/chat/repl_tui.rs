@@ -376,36 +376,51 @@ pub async fn run_chat_repl_tui(
                                                     continue;
                                                 }
 
-                                                // Handle other commands
-                                                let mut dummy_input =
-                                                    super::input::CrosstermInput::default();
-                                                // For commands that need llm_tx (e.g., /compact,
-                                                // /retry), create a channel or reuse existing.
-                                                let cmd_llm_tx = if let Some(tx) = llm_tx.as_ref() {
-                                                    tx.clone()
-                                                } else {
-                                                    let (tx, rx) = tokio::sync::mpsc::channel(
-                                                        LLM_VIEW_CHANNEL_CAPACITY,
-                                                    );
-                                                    // Store the receiver so events are drained
-                                                    if llm_rx.is_none() {
-                                                        llm_rx = Some(rx);
-                                                    } else {
-                                                        // If we already have an active
-                                                        // llm_rx, just drop the new receiver
-                                                        // (events will still be sent via tx)
-                                                        drop(rx);
-                                                    }
-                                                    tx
-                                                };
-                                                let outputs = command_handlers::handle_command(
-                                                    cmd,
-                                                    state,
-                                                    &mut dummy_input,
-                                                    &mut view as &mut dyn ChatView,
-                                                    cmd_llm_tx,
-                                                )
-                                                .await;
+                                                 // Handle other commands
+                                                 let mut dummy_input =
+                                                     super::input::CrosstermInput::default();
+                                                 // For commands that need llm_tx (e.g., /compact,
+                                                 // /retry), create a channel or reuse existing.
+                                                 // Track whether we had an active LLM task before
+                                                 // the command, so we don't leak a stale channel.
+                                                 let had_llm_task = llm_tx.is_some();
+                                                 let cmd_llm_tx = if let Some(tx) = llm_tx.as_ref() {
+                                                     tx.clone()
+                                                 } else {
+                                                     // No active LLM task — create a temporary
+                                                     // channel for the command. After the command
+                                                     // returns, we MUST clear llm_rx to avoid
+                                                     // busy-waiting (has_llm_task = true with 0ms
+                                                     // poll timeout).
+                                                     let (tx, rx) = tokio::sync::mpsc::channel(
+                                                         LLM_VIEW_CHANNEL_CAPACITY,
+                                                     );
+                                                     llm_rx = Some(rx);
+                                                     tx
+                                                 };
+                                                 let outputs = command_handlers::handle_command(
+                                                     cmd,
+                                                     state,
+                                                     &mut dummy_input,
+                                                     &mut view as &mut dyn ChatView,
+                                                     cmd_llm_tx,
+                                                 )
+                                                 .await;
+
+                                                 // If there was no active LLM task before
+                                                 // the command and none was spawned during it
+                                                 // (e.g., /help, /context), clear the temporary
+                                                 // channel to prevent busy-waiting with 0ms poll.
+                                                 if !had_llm_task && llm_tx.is_some() {
+                                                     // A command (e.g., /compact) spawned a task
+                                                     // and set llm_tx — keep the channel alive
+                                                     // so we receive streaming events.
+                                                 } else if !had_llm_task {
+                                                     // No task was running before, and no task
+                                                     // was spawned — clear the temp channel.
+                                                     llm_tx = None;
+                                                     llm_rx = None;
+                                                 }
 
                                                 view.show_command_outputs(&outputs);
 

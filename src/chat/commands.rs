@@ -67,8 +67,8 @@ pub enum ChatCommand {
     Info,
     /// Show context metrics and token usage
     Context,
-    /// Toggle think mode
-    Think,
+    /// Toggle or set think mode (None = toggle, Some(true) = on, Some(false) = off)
+    Think { enabled: Option<bool> },
     /// Toggle tools
     Tools,
     /// Toggle style rendering (mermaid diagrams, syntax highlighting, table format)
@@ -974,7 +974,14 @@ pub fn parse_command(input: &str) -> Option<Result<ChatCommand, String>> {
         "list" => ChatCommand::List,
         "info" => ChatCommand::Info,
         "context" => ChatCommand::Context,
-        "think" => ChatCommand::Think,
+        "think" => {
+            let enabled = match args.trim() {
+                "on" | "true" | "1" => Some(true),
+                "off" | "false" | "0" => Some(false),
+                _ => None, // toggle
+            };
+            ChatCommand::Think { enabled }
+        }
         "debug" => ChatCommand::Debug,
         "tools" => ChatCommand::Tools,
         "toggle-style" => ChatCommand::ToggleStyle,
@@ -1163,7 +1170,7 @@ pub fn format_help() -> String {
   /help            Show this help message
   /model <name>    Switch to a different model
   /system <text>   Change the system prompt
-  /think           Toggle think mode
+   /think [on|off]  Toggle or set think mode
   /tools           Toggle tools
   /toggle-style     Toggle style rendering (mermaid/source, syntax highlighting, table format)
   /tools-output    Set tool output level (compact|full|hidden)
@@ -1918,5 +1925,65 @@ mod tests {
     fn test_parse_reindex_trailing_space() {
         let cmd = parse_command("/reindex ").unwrap().unwrap();
         assert!(matches!(cmd, ChatCommand::Reindex { confirmed: false }));
+    }
+
+    // --- /think tests ---
+
+    #[test]
+    fn test_parse_think_toggle() {
+        // /think with no args toggles
+        let cmd = parse_command("/think").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Think { enabled: None }));
+    }
+
+    #[test]
+    fn test_parse_think_on() {
+        let cmd = parse_command("/think on").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::Think {
+                enabled: Some(true)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_off() {
+        let cmd = parse_command("/think off").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::Think {
+                enabled: Some(false)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_true() {
+        let cmd = parse_command("/think true").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::Think {
+                enabled: Some(true)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_false() {
+        let cmd = parse_command("/think false").unwrap().unwrap();
+        assert!(matches!(
+            cmd,
+            ChatCommand::Think {
+                enabled: Some(false)
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_with_garbage_toggles() {
+        // Unknown arg like "maybe" falls back to toggle
+        let cmd = parse_command("/think maybe").unwrap().unwrap();
+        assert!(matches!(cmd, ChatCommand::Think { enabled: None }));
     }
 }
