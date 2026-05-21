@@ -172,12 +172,15 @@ fn format_error_with_ansi(msg: &str) -> String {
 mod tests {
     use super::*;
 
+    // Shared RAII guard that restores plain mode on drop.
+    // Defined in debug_tools but re-imported here for convenience.
+    use crate::debug_tools::PlainModeGuard;
+
     #[test]
     fn test_format_error_plain_no_ansi() {
         // Plain mode: no ANSI codes in output
-        crate::debug_tools::set_plain_mode(true);
+        let _guard = PlainModeGuard::new();
         let result = format_error_with_status("connection error: status 404 not found");
-        crate::debug_tools::set_plain_mode(false); // reset
         assert!(
             !result.contains("\x1B["),
             "Plain mode should not contain ANSI codes, got: {result}"
@@ -202,19 +205,6 @@ mod tests {
     #[test]
     fn test_format_error_plain_error_prefix() {
         // Plain mode: "Error:" prefix without ANSI red
-        // Use a guard to ensure safe global state reset even on panic
-        struct PlainModeGuard;
-        impl PlainModeGuard {
-            fn new() -> Self {
-                crate::debug_tools::set_plain_mode(true);
-                Self
-            }
-        }
-        impl Drop for PlainModeGuard {
-            fn drop(&mut self) {
-                crate::debug_tools::set_plain_mode(false);
-            }
-        }
         let _guard = PlainModeGuard::new();
         let result = format_error_with_status("server error occurred");
         assert!(
@@ -230,19 +220,6 @@ mod tests {
     #[test]
     fn test_format_tool_error_no_ansi_in_plain() {
         // format_tool_error (public API) should not produce ANSI in plain mode
-        // Use a guard to ensure safe global state reset even on panic
-        struct PlainModeGuard;
-        impl PlainModeGuard {
-            fn new() -> Self {
-                crate::debug_tools::set_plain_mode(true);
-                Self
-            }
-        }
-        impl Drop for PlainModeGuard {
-            fn drop(&mut self) {
-                crate::debug_tools::set_plain_mode(false);
-            }
-        }
         let _guard = PlainModeGuard::new();
         let result = format_tool_error(r#"{"error":"status 400 Bad Request"}"#);
         assert!(

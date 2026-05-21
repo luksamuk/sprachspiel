@@ -2844,4 +2844,17 @@ mod tests {
             "Status label should be 'Compacting...'"
         );
     }
+
+    #[test]
+    fn test_random_tui_spinner_frames_returns_non_empty() {
+        // The spinner seed is time-based, so we can't assert determinism
+        // without refactoring. This test verifies the function returns
+        // a valid (non-empty) spinner frame list and doesn't panic.
+        let frames = super::random_tui_spinner_frames();
+        assert!(!frames.is_empty(), "Spinner frames must not be empty");
+        assert!(
+            frames.iter().all(|f| !f.is_empty()),
+            "Each frame must be a non-empty string"
+        );
+    }
 }

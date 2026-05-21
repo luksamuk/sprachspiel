@@ -128,13 +128,19 @@ continue naturally from the checkpoint without repeating completed work.
 ///
 /// Used when summarizing old messages during context overflow.
 /// Produces structured markdown summaries with explicit token limit.
+/// Compaction prompt for summarizing conversation history.
 ///
-/// Design inspiration: OpenCode's compaction template for context preservation.
-/// Key differences from previous template:
-/// - Explicit token limit (3,000 tokens max)
-/// - Structured sections for better context continuation
-/// - Negative constraints to prevent verbose output
-/// - Maximum item counts per section for brevity
+/// **No token or character limits are imposed on the summary.** The LLM
+/// controls summary length based on context complexity — short conversations
+/// yield short summaries, long conversations yield detailed ones. Do NOT
+/// re-introduce `MAX_SUMMARY_TOKENS`, `MAX_SUMMARY_CHARS`, or any other
+/// limit constant; the compaction streaming architecture relies on the LLM
+/// producing an unbounded summary that streams token-by-token via
+/// `LlmEvent::CompactStreamToken`.
+///
+/// Previous versions truncated summaries at 3000 tokens, but this caused
+/// context loss in long conversations. The current prompt explicitly
+/// instructs "Preserve ALL relevant context".
 pub const COMPACTION_PROMPT: &str = r#"Summarize the following conversation in MARKDOWN format.
 Preserve ALL relevant context needed to continue the conversation effectively.
 

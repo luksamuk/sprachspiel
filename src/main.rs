@@ -473,7 +473,7 @@ fn get_query_legacy(cli: &Cli) -> AppResult<String> {
     Ok(input.trim().to_string())
 }
 
-async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult<()> {
+async fn handle_ocr(args: OcrArgs, cli: &Cli, settings: &Settings) -> AppResult<()> {
     if let Err(e) = args.validate() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
@@ -506,7 +506,7 @@ async fn handle_ocr(args: OcrArgs, _cli: &Cli, settings: &Settings) -> AppResult
     let capabilities =
         crate::capabilities::ModelCapabilities::detect_or_default(&ollama, &model_id).await;
     if !capabilities.vision {
-        if _cli.force {
+        if cli.force {
             eprintln!(
                 "⚠ Warning: Model '{}' may not support vision capabilities. \
                  Proceeding anyway due to --force flag...",

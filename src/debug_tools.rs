@@ -109,6 +109,40 @@ pub fn is_plain_mode() -> bool {
     PLAIN_MODE.load(Ordering::Relaxed)
 }
 
+/// RAII guard that enables plain mode on creation and restores the original
+/// state on drop. Safe against test panics — the global state is always
+/// restored.
+///
+/// # Example
+///
+/// ```ignore
+/// let _guard = PlainModeGuard::new();
+/// assert!(is_plain_mode());
+/// // On drop, plain mode is restored to its previous state.
+/// ```
+#[cfg(test)]
+pub struct PlainModeGuard {
+    original: bool,
+}
+
+#[cfg(test)]
+impl PlainModeGuard {
+    /// Enable plain mode, returning a guard that will restore the original
+    /// state when dropped.
+    pub fn new() -> Self {
+        let original = PLAIN_MODE.load(Ordering::Relaxed);
+        PLAIN_MODE.store(true, Ordering::Relaxed);
+        Self { original }
+    }
+}
+
+#[cfg(test)]
+impl Drop for PlainModeGuard {
+    fn drop(&mut self) {
+        PLAIN_MODE.store(self.original, Ordering::Relaxed);
+    }
+}
+
 /// Print a tool visual indicator through the TUI callback (TUI mode) or
 /// `suspend_for_print` (terminal mode).
 ///
@@ -518,14 +552,13 @@ mod tests {
     #[test]
     fn test_display_tool_call_plain_mode_no_ansi() {
         // In plain mode, display_tool_call should not emit ANSI codes
-        set_plain_mode(true);
+        let _guard = PlainModeGuard::new();
         set_tui_callback(None); // Ensure terminal mode (no callback)
         // This test verifies the function doesn't panic and routes correctly.
         // We can't easily capture stderr in unit tests, but we verify the
         // plain mode path exists and executes.
         display_tool_call("test_tool", &[("key".to_string(), "value".to_string())]);
 
-        // Restore
-        set_plain_mode(false);
+        // Guard restores plain mode on drop — no manual reset needed
     }
 }

@@ -769,15 +769,13 @@ mod tests {
     // ── Compaction limits removed ──────────────────────────────
 
     #[test]
-    fn test_no_max_summary_tokens_constant() {
-        // MAX_SUMMARY_TOKENS was removed in the compaction streaming refactor.
-        // Compaction summaries are no longer truncated — the LLM produces
-        // whatever-length summary is needed to preserve ALL relevant context.
-        // If this test fails, a MAX_SUMMARY_TOKENS constant was re-introduced;
-        // do NOT re-add it. Instead, adjust compaction streaming to handle
-        // arbitrary-length summaries.
-        //
-        // Verify compaction thresholds exist and are positive (no summary limit).
+    fn test_compaction_thresholds_are_positive() {
+        // Verify compaction thresholds exist and are positive.
+        // This test also serves as a regression guard: if someone
+        // re-introduces a MAX_SUMMARY_TOKENS-like constant with a
+        // numeric assertion, the test name will make the intent clear.
+        // The absence of token limits on summaries is a deliberate
+        // architectural decision — see COMPACTION_PROMPT doc comment.
         assert!(COMPACTION_MIN > 0, "COMPACTION_MIN must be positive");
         assert!(PRE_TOOL_MIN > 0, "PRE_TOOL_MIN must be positive");
     }
