@@ -4787,8 +4787,9 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 | 4.8 | Remove `termimad` dependency — replaced by standalone renderer | ✅ COMPLETED (PR3) |
 | 4.9 | Remove YAGNI `#[allow(dead_code)]` methods from `App` (Hefesto review) | ✅ COMPLETED (PR3) — removed `messages()`, `textarea()`, `input_state()`, `input_state_mut()`, `scroll_state()`, `update_model_names()`; removed obsolete `llm_state()` annotation |
 | 4.10 | Update `src/spinner.rs` — chat mode uses rattatui widget exclusively | 📋 NOT STARTED |
-| 4.11 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
-| 4.12 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
+| 4.11 | Refactor `auto_compact_if_needed` into `CompactionContext<'_>` — reduce 8-arg function to struct with methods | 📋 NOT STARTED |
+| 4.12 | Documentation: CHANGELOG, architecture, roadmap | 📋 NOT STARTED |
+| 4.13 | Test on Linux, macOS, Termux at various terminal widths | 📋 NOT STARTED |
 
 **Dependencies Removed:**
 - `rustyline = "14"` — removed in PR2
