@@ -14,6 +14,7 @@
 //! ```
 
 use super::core::{SendMessageResult, TokenMetrics, auto_compact_if_needed, send_message};
+use super::llm_event::LlmEvent;
 use super::repl_state::ReplState;
 use super::view::ChatView;
 use crate::context_overflow::{
@@ -60,6 +61,7 @@ pub async fn process_send_result(
     result: SendMessageResult,
     user_message_id: Option<i64>,
     view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) -> ProcessResult {
     // Save pre-tool content before final response
     if let Some(pre_content) = &result.pre_tool_content {
@@ -74,7 +76,7 @@ pub async fn process_send_result(
     // Handle continuation if LLM paused for compaction
     let (final_response, final_metrics, context_window, _system_prompt) =
         if result.continuation_needed.is_some() {
-            match handle_continuation(state, result, view).await {
+            match handle_continuation(state, result, view, llm_tx.clone()).await {
                 Ok(cont_result) => (
                     cont_result.response,
                     cont_result.metrics,
@@ -116,6 +118,7 @@ pub async fn process_send_result(
         state.agents_md.as_deref(),
         context_window,
         view,
+        llm_tx,
     )
     .await;
 
@@ -145,6 +148,7 @@ pub async fn check_and_compact_before_tool(
     system_prompt: &str,
     context_window: usize,
     view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) {
     // First check if we need actual compaction (88% threshold)
     if needs_buffered_compaction(&state.session, context_window) {
@@ -170,6 +174,7 @@ pub async fn check_and_compact_before_tool(
             state.agents_md.as_deref(),
             context_window,
             view,
+            llm_tx,
         )
         .await;
     } else if needs_pre_tool_compaction(&state.session, context_window) {
@@ -231,6 +236,7 @@ pub async fn handle_continuation(
     state: &mut ReplState,
     initial_result: SendMessageResult,
     view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) -> AppResult<ContinuationResult> {
     let mut final_response = initial_result.response.clone();
     let mut final_metrics = initial_result.metrics.clone();
@@ -258,6 +264,7 @@ pub async fn handle_continuation(
         state.agents_md.as_deref(),
         continuation_context_window,
         view,
+        llm_tx.clone(),
     )
     .await;
 
@@ -313,6 +320,7 @@ pub async fn handle_continuation(
                     state.agents_md.as_deref(),
                     cont_result.context_window,
                     view,
+                    llm_tx.clone(),
                 )
                 .await;
 
@@ -403,9 +411,10 @@ pub async fn handle_overflow_error(
     state: &mut ReplState,
     error_str: &str,
     view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) -> OverflowHandleResult {
     if is_inter_tool_compaction_error(error_str) {
-        return handle_inter_tool_compaction_error(state, error_str, view).await;
+        return handle_inter_tool_compaction_error(state, error_str, view, llm_tx).await;
     }
 
     if !error_str.contains("Context overflow during tool execution") {
@@ -426,6 +435,7 @@ pub async fn handle_overflow_error(
         state.agents_md.as_deref(),
         state.model_config.num_ctx as usize,
         view,
+        llm_tx,
     )
     .await;
 
@@ -450,6 +460,7 @@ async fn handle_inter_tool_compaction_error(
     state: &mut ReplState,
     error_str: &str,
     view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) -> OverflowHandleResult {
     let Some((tokens_used, context_window, tools_executed)) =
         parse_inter_tool_compaction_error(error_str)
@@ -486,6 +497,7 @@ async fn handle_inter_tool_compaction_error(
         state.agents_md.as_deref(),
         context_window,
         view,
+        llm_tx,
     )
     .await;
 

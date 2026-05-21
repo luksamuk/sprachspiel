@@ -46,12 +46,6 @@ pub const EMERGENCY_MIN: usize = 256;
 /// Increased from 500 to 2000 based on typical response lengths.
 pub const RESPONSE_MARGIN: usize = 2_000;
 
-/// Maximum tokens for compacted summary
-/// Prevents summary from becoming large enough to cause overflow again.
-/// Based on research: 10-15% of original content, capped for safety.
-/// For 368 messages (~18K tokens original), 3K is ~17% - aggressive but safe.
-pub const MAX_SUMMARY_TOKENS: usize = 3_000;
-
 /// Default number of first messages to keep during compaction
 pub const DEFAULT_KEEP_FIRST: usize = 5;
 

@@ -53,6 +53,9 @@ pub enum LlmState {
     Thinking,
     /// Streaming — response coming in, input disabled
     Streaming,
+    /// Compacting — conversation compaction in progress
+    #[allow(dead_code)] // Used by spawn_compact_task (Fase 7)
+    Compacting,
     /// Running a tool call
     ToolCall,
 }
@@ -737,6 +740,15 @@ impl App {
                 let frame = self.spinner_frames.first().unwrap_or(&"⠋");
                 self.status_bar.spinner = Some(frame.to_string());
                 self.status_bar.status_label = Some("Streaming...".to_string());
+            }
+            LlmState::Compacting => {
+                self.input_disabled = true;
+                self.disabled_reason = Some("Compacting...".to_string());
+                self.spinner_frames = random_tui_spinner_frames();
+                self.spinner_frame = 0;
+                let frame = self.spinner_frames.first().unwrap_or(&"⠋");
+                self.status_bar.spinner = Some(frame.to_string());
+                self.status_bar.status_label = Some("Compacting...".to_string());
             }
             LlmState::ToolCall => {
                 self.input_disabled = true;

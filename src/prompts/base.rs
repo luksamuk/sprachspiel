@@ -135,36 +135,33 @@ continue naturally from the checkpoint without repeating completed work.
 /// - Structured sections for better context continuation
 /// - Negative constraints to prevent verbose output
 /// - Maximum item counts per section for brevity
-pub const COMPACTION_PROMPT: &str = r#"Summarize the following conversation CONCISELY in MARKDOWN format.
-
-CRITICAL: The output MUST NOT exceed 3000 tokens. Be extremely concise.
+pub const COMPACTION_PROMPT: &str = r#"Summarize the following conversation in MARKDOWN format.
+Preserve ALL relevant context needed to continue the conversation effectively.
 
 Use this structure:
 
 ## Goal
-[1-2 sentences: What is the user trying to accomplish?]
+[What is the user trying to accomplish?]
 
 ## Instructions
-- [Important user constraints and preferences, max 3 items]
+[Important user constraints and preferences]
 
 ## Progress
-**Completed:** [Work done, max 5 items]
-**Pending:** [Work remaining, max 3 items]
+**Completed:** [Work done so far]
+**Pending:** [Work remaining]
 
 ## Discoveries
-[Key insights learned, max 3 items]
+[Key insights, decisions, and important context learned during the conversation]
 
 ## Relevant Files
-- [Files read/edited/concerned, max 5 items]
-- Root path: [Project root if relevant]
+- [Files read, edited, or concerned — include root path if relevant]
 
 DO NOT include:
 - Full message transcripts
 - Repeated information
 - Conversational filler
-- Technical implementation details (unless critical)
 
-Focus on ESSENTIAL context for continuing the conversation."#;
+Preserve enough detail so another assistant could seamlessly continue this work."#;
 
 /// Template for continuation prompts
 ///

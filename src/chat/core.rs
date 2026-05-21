@@ -29,9 +29,7 @@ use std::sync::Arc;
 use ollama_rs::generation::chat::ChatMessage;
 
 use crate::config::ModelConfig;
-use crate::context_overflow::{
-    MAX_SUMMARY_TOKENS, check_context_overflow, needs_buffered_compaction,
-};
+use crate::context_overflow::{check_context_overflow, needs_buffered_compaction};
 use crate::facts::prompt::build_facts_section;
 use crate::prompts::builder::{
     PromptConfig, PromptType, build_compaction_prompt, build_continuation_prompt,
@@ -40,10 +38,8 @@ use crate::prompts::builder::{
 use crate::retrieval::{RetrievalConfig, build_context, update_retrieval_time};
 use crate::settings::Settings;
 use crate::spinner::finish_spinner;
-use crate::tokens::estimate_tokens;
 use crate::tools::context::{with_full_context, with_tool_context};
 use crate::tools::{get_available_tool_names, register_tools};
-use crate::utils::truncate_to_budget;
 
 use super::coordinator::{
     MAX_RETRIES, classify_ollama_error, format_recovery_message, is_ollama_error_recoverable,
@@ -926,6 +922,7 @@ pub async fn send_message_stream(
 /// Uses buffer-based approach (15K tokens remaining) for predictable overflow prevention.
 ///
 /// All output rendering is delegated to the provided `ChatView`.
+#[allow(clippy::too_many_arguments)] // Compaction needs many contextual inputs; refactor would obscure intent
 pub async fn auto_compact_if_needed(
     ollama: &ollama_rs::Ollama,
     model_config: &ModelConfig,
@@ -934,6 +931,7 @@ pub async fn auto_compact_if_needed(
     agents_md: Option<&str>,
     context_window: usize,
     view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) {
     // Use buffer-based compaction trigger (more predictable than percentages)
     // Compacts when there are only COMPACTION_BUFFER tokens remaining
@@ -952,20 +950,19 @@ pub async fn auto_compact_if_needed(
         (context_window.saturating_sub(real_tokens)) / 1000
     ));
 
-    // Attempt auto-compaction
-    let suppress_spinner = view.suppress_progress_spinner();
+    // Attempt auto-compaction with streaming
     match compact_conversation(
         ollama,
         model_config,
         session,
         settings,
         agents_md,
-        suppress_spinner,
+        llm_tx.clone(),
     )
     .await
     {
         Ok((summary, range)) => {
-            session.set_compacted_summary_with_range(summary, range);
+            session.set_compacted_summary_with_range(summary.clone(), range);
 
             // Get compacted count
             let (first_preserved, last_preserved_start) =
@@ -990,11 +987,15 @@ pub async fn auto_compact_if_needed(
     }
 }
 
-/// Compact conversation by summarizing old messages
+/// Compact conversation by summarizing old messages with streaming.
 ///
-/// When `suppress_spinner` is `true`, no indicatif progress spinner is created.
-/// This is the case for TUI mode where the view has its own progress indication
-/// and indicatif would corrupt the alternate screen buffer with ANSI escapes.
+/// Uses `coordinator.chat_stream()` to stream summary tokens in real time
+/// through the `llm_tx` channel. The TUI event loop receives
+/// `LlmEvent::CompactStreamToken` and `LlmEvent::CompactStreamDone`
+/// events, rendering the summary as it arrives.
+///
+/// No token/character limits are imposed on the summary. The LLM is
+/// instructed to preserve all relevant context via the `COMPACTION_PROMPT`.
 #[allow(clippy::too_many_arguments)]
 pub async fn compact_conversation(
     ollama: &ollama_rs::Ollama,
@@ -1002,7 +1003,7 @@ pub async fn compact_conversation(
     session: &ChatSession,
     _settings: &Settings,
     _agents_md: Option<&str>,
-    suppress_spinner: bool,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) -> AppResult<(String, Option<(usize, usize)>)> {
     use crate::context_overflow::get_compaction_range_default;
 
@@ -1062,26 +1063,26 @@ pub async fn compact_conversation(
         ChatMessage::user(compact_prompt),
     ];
 
-    let spinner = crate::spinner::create_spinner_suppressed("Compacting...", suppress_spinner);
-    let result = coordinator.chat(messages).await;
-    finish_spinner(spinner);
+    // Stream summary tokens through the LlmEvent channel
+    let llm_tx_token = llm_tx.clone();
+    let result = coordinator
+        .chat_stream(
+            messages,
+            move |token| {
+                let _ = llm_tx_token.try_send(LlmEvent::CompactStreamToken(token));
+            },
+            |_thinking_token| {
+                // Thinking tokens from compaction are not displayed in the chat area.
+                // Compaction is an internal operation — the user only sees the summary.
+            },
+            || {},
+            None,
+        )
+        .await;
 
     match result {
         Ok(response) => {
             let summary = strip_thinking_tags(&response.message.content);
-
-            // Truncate summary if it exceeds MAX_SUMMARY_TOKENS
-            // This prevents infinite compaction loops caused by oversized summaries
-            let summary = if estimate_tokens(&summary) > MAX_SUMMARY_TOKENS {
-                log::warn!(
-                    "Summary exceeds {} tokens, truncating...",
-                    MAX_SUMMARY_TOKENS
-                );
-                truncate_to_budget(&summary, MAX_SUMMARY_TOKENS)
-            } else {
-                summary
-            };
-
             Ok((summary, range))
         }
         Err(e) => Err(format!("Failed to compact: {}", e).into()),

@@ -89,6 +89,7 @@ pub async fn handle_command(
     state: &mut ReplState,
     input: &mut (dyn super::input::InputBackend + Send),
     view: &mut dyn super::view::ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>,
 ) -> Vec<CommandOutput> {
     match cmd {
         ChatCommand::Quit => handle_quit(state, input, view.suppress_progress_spinner()).await,
@@ -132,13 +133,13 @@ pub async fn handle_command(
             state.session.tools = !state.session.tools;
             vec![handle_tools_toggled(state, state.session.tools)]
         }
-        ChatCommand::Compact => handle_compact(state, view).await,
+        ChatCommand::Compact => handle_compact(state, view, llm_tx).await,
         ChatCommand::ToolsOutput { level } => {
             state.session.tool_output_level = level;
             vec![handle_tool_output_changed(level)]
         }
         ChatCommand::Debug => handle_debug_toggle(),
-        ChatCommand::Retry => handle_retry(state, view).await,
+        ChatCommand::Retry => handle_retry(state, view, llm_tx).await,
         ChatCommand::Undo => handle_undo(state),
         ChatCommand::Search { query, limit } => handle_search(state, query, limit).await,
         ChatCommand::Reindex { confirmed } => handle_reindex_cmd(state, confirmed).await,
@@ -894,7 +895,8 @@ pub async fn handle_reindex_cmd(state: &mut ReplState, confirmed: bool) -> Vec<C
 /// spinners should be suppressed (TUI mode) or shown (terminal mode).
 pub async fn handle_compact(
     state: &mut ReplState,
-    view: &mut dyn super::view::ChatView,
+    _view: &mut dyn super::view::ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>,
 ) -> Vec<CommandOutput> {
     if state.session.messages.is_empty() {
         return vec![CommandOutput::info("No messages to compact.")];
@@ -907,17 +909,13 @@ pub async fn handle_compact(
         msg_count
     ))];
 
-    // In TUI mode, suppress indicatif spinners to avoid corrupting the
-    // alternate screen buffer. In terminal mode, show them normally.
-    let suppress_spinner = view.suppress_progress_spinner();
-
     match super::core::compact_conversation(
         &state.ollama,
         &state.model_config,
         &state.session,
         &state.settings,
         state.agents_md.as_deref(),
-        suppress_spinner,
+        llm_tx,
     )
     .await
     {
@@ -975,6 +973,7 @@ pub async fn handle_compact(
 pub async fn handle_retry(
     state: &mut ReplState,
     view: &mut dyn super::view::ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<super::llm_event::LlmEvent>,
 ) -> Vec<CommandOutput> {
     use crate::tool_robustness::format_tool_error;
 
@@ -1038,6 +1037,7 @@ pub async fn handle_retry(
                     state.agents_md.as_deref(),
                     result.context_window,
                     view,
+                    llm_tx.clone(),
                 )
                 .await;
 

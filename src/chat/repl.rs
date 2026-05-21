@@ -151,6 +151,7 @@ pub async fn handle_user_message(
     line: &str,
     state: &mut super::repl_state::ReplState,
     view: &mut dyn ChatView,
+    llm_tx: tokio::sync::mpsc::Sender<LlmEvent>,
 ) {
     let user_message_id = state.session.add_user_message(line.to_string());
     if !state.session.anonymous
@@ -161,7 +162,14 @@ pub async fn handle_user_message(
 
     let context_window = state.model_config.num_ctx as usize;
     let system_prompt_for_check = build_pre_tool_prompt(state);
-    check_and_compact_before_tool(state, &system_prompt_for_check, context_window, view).await;
+    check_and_compact_before_tool(
+        state,
+        &system_prompt_for_check,
+        context_window,
+        view,
+        llm_tx.clone(),
+    )
+    .await;
 
     let think_enabled = state.session.think;
     let mut compaction_cycles = 0;
@@ -187,7 +195,9 @@ pub async fn handle_user_message(
         .await
         {
             Ok(result) => {
-                match process_send_result(state, result, user_message_id, view).await {
+                match process_send_result(state, result, user_message_id, view, llm_tx.clone())
+                    .await
+                {
                     ProcessResult::Success => {
                         // Auto-extract facts from recent user messages (autoDream-lite)
                         try_auto_extract_facts(state, view).await;
@@ -200,7 +210,7 @@ pub async fn handle_user_message(
             }
             Err(e) => {
                 let error_str = e.to_string();
-                match handle_overflow_error(state, &error_str, view).await {
+                match handle_overflow_error(state, &error_str, view, llm_tx.clone()).await {
                     OverflowHandleResult::NotOverflow => {
                         view.show_error(&format_tool_error(&error_str));
                         break;
@@ -274,7 +284,14 @@ pub async fn handle_user_message_stream(
 
     let context_window = state.model_config.num_ctx as usize;
     let system_prompt_for_check = build_pre_tool_prompt(state);
-    check_and_compact_before_tool(state, &system_prompt_for_check, context_window, view).await;
+    check_and_compact_before_tool(
+        state,
+        &system_prompt_for_check,
+        context_window,
+        view,
+        llm_tx.clone(),
+    )
+    .await;
 
     let think_enabled = state.session.think;
     let mut compaction_cycles = 0;
@@ -302,7 +319,9 @@ pub async fn handle_user_message_stream(
         .await
         {
             Ok(result) => {
-                match process_send_result(state, result, user_message_id, view).await {
+                match process_send_result(state, result, user_message_id, view, llm_tx.clone())
+                    .await
+                {
                     ProcessResult::Success => {
                         // Auto-extract facts from recent user messages (autoDream-lite)
                         try_auto_extract_facts(state, view).await;
@@ -324,7 +343,7 @@ pub async fn handle_user_message_stream(
                     break;
                 }
 
-                match handle_overflow_error(state, &error_str, view).await {
+                match handle_overflow_error(state, &error_str, view, llm_tx.clone()).await {
                     OverflowHandleResult::NotOverflow => {
                         view.show_error(&format_tool_error(&error_str));
                         break;

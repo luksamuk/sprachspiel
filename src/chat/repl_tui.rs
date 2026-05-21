@@ -233,6 +233,9 @@ pub async fn run_chat_repl_tui(
     // ── LLM task state ────────────────────────────────────────────────
     // Cancellation token for the running LLM task (if any)
     let mut cancel_token: Option<CancellationToken> = None;
+    // Sender for LLM events — available in the event loop for command handlers
+    // that need to trigger compaction streaming (e.g., /compact, /retry).
+    let mut llm_tx: Option<tokio::sync::mpsc::Sender<LlmEvent>> = None;
     // Receiver for LLM events (view actions + completion/error)
     let mut llm_rx: Option<tokio::sync::mpsc::Receiver<LlmEvent>> = None;
 
@@ -350,11 +353,31 @@ pub async fn run_chat_repl_tui(
                                                 // Handle other commands
                                                 let mut dummy_input =
                                                     super::input::CrosstermInput::default();
+                                                // For commands that need llm_tx (e.g., /compact,
+                                                // /retry), create a channel or reuse existing.
+                                                let cmd_llm_tx = if let Some(tx) = llm_tx.as_ref() {
+                                                    tx.clone()
+                                                } else {
+                                                    let (tx, rx) = tokio::sync::mpsc::channel(
+                                                        LLM_VIEW_CHANNEL_CAPACITY,
+                                                    );
+                                                    // Store the receiver so events are drained
+                                                    if llm_rx.is_none() {
+                                                        llm_rx = Some(rx);
+                                                    } else {
+                                                        // If we already have an active
+                                                        // llm_rx, just drop the new receiver
+                                                        // (events will still be sent via tx)
+                                                        drop(rx);
+                                                    }
+                                                    tx
+                                                };
                                                 let outputs = command_handlers::handle_command(
                                                     cmd,
                                                     state,
                                                     &mut dummy_input,
                                                     &mut view as &mut dyn ChatView,
+                                                    cmd_llm_tx,
                                                 )
                                                 .await;
 
@@ -381,7 +404,7 @@ pub async fn run_chat_repl_tui(
 
                                     // Send as user message to LLM (non-blocking)
                                     view.set_llm_state(LlmState::Thinking);
-                                    spawn_llm_task(&line, state, &mut llm_rx, &mut cancel_token);
+                                    spawn_llm_task(&line, state, &mut llm_tx, &mut llm_rx, &mut cancel_token);
                                 }
                                 Some(InputResult::Interrupted) => {
                                     // Ctrl+C — cancel running LLM or ignore
@@ -535,6 +558,46 @@ pub async fn run_chat_repl_tui(
                         // was fully processed (e.g., after a timer tick).
                         drain_and_add_tool_messages(&mut view);
                     }
+                    LlmEvent::CompactStreamToken(token) => {
+                        // Compaction is streaming — display as assistant streaming
+                        view.stream_token(&token);
+                    }
+                    LlmEvent::CompactStreamDone { summary, range } => {
+                        // Compaction finished — apply the summary to the session
+                        let first_preserved = range.map(|(f, _)| f).unwrap_or(0);
+                        let last_preserved_start = range
+                            .map(|(_, l)| l)
+                            .unwrap_or(state.session.messages.len());
+                        let compacted_count = last_preserved_start - first_preserved;
+
+                        state
+                            .session
+                            .set_compacted_summary_with_range(summary.clone(), range);
+
+                        view.stream_done(
+                            &format!("--- Compaction Summary ---\n{}\n---------------", summary),
+                            None,
+                            None,
+                        );
+
+                        if compacted_count > 0 {
+                            view.app_mut().add_message(ChatMessage::system(format!(
+                                "Compacted {} messages.",
+                                compacted_count
+                            )));
+                        }
+
+                        if !state.session.anonymous {
+                            let _ = state.session.save_sqlite();
+                            if let Some(db) = state.session.db.as_ref() {
+                                let _ = db.clear_conversation_prompt_tokens(&state.session.id);
+                            }
+                        }
+
+                        view.set_llm_state(LlmState::Idle);
+                        cancel_token = None;
+                        llm_rx = None;
+                    }
                 }
             }
 
@@ -588,11 +651,13 @@ fn drain_and_add_tool_messages(view: &mut RatatuiView) {
 fn spawn_llm_task(
     line: &str,
     state: &mut ReplState,
+    llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
     llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
     cancel_token: &mut Option<CancellationToken>,
 ) {
     // Create channels for LLM events
-    let (llm_tx, new_llm_rx) = tokio::sync::mpsc::channel(LLM_VIEW_CHANNEL_CAPACITY);
+    let (task_llm_tx, new_llm_rx) = tokio::sync::mpsc::channel(LLM_VIEW_CHANNEL_CAPACITY);
+    *llm_tx = Some(task_llm_tx.clone());
     *llm_rx = Some(new_llm_rx);
 
     // Create cancellation token
@@ -604,15 +669,11 @@ fn spawn_llm_task(
 
     // Forward view actions from the ChannelView sender to the LLM event sender.
     // This runs in a small forwarding task.
-    let llm_tx_clone = llm_tx.clone();
+    let forward_tx = task_llm_tx.clone();
     tokio::spawn(async move {
         let mut rx = view_rx;
         while let Some(action) = rx.recv().await {
-            if llm_tx_clone
-                .send(LlmEvent::ViewAction(action))
-                .await
-                .is_err()
-            {
+            if forward_tx.send(LlmEvent::ViewAction(action)).await.is_err() {
                 break; // Event loop dropped
             }
         }
@@ -629,7 +690,7 @@ fn spawn_llm_task(
     tokio::spawn(async move {
         // Check for cancellation before starting
         if token.is_cancelled() {
-            let _ = llm_tx.send(LlmEvent::Cancelled).await;
+            let _ = task_llm_tx.send(LlmEvent::Cancelled).await;
             return;
         }
 
@@ -638,14 +699,14 @@ fn spawn_llm_task(
             &line_owned,
             &mut task_state,
             &mut channel_view as &mut dyn ChatView,
-            llm_tx.clone(),
+            task_llm_tx.clone(),
             token.clone(),
         )
         .await;
 
         // Check if cancelled after the call
         if token.is_cancelled() {
-            let _ = llm_tx.send(LlmEvent::Cancelled).await;
+            let _ = task_llm_tx.send(LlmEvent::Cancelled).await;
             return;
         }
 
@@ -658,7 +719,7 @@ fn spawn_llm_task(
             0
         };
 
-        let _ = llm_tx
+        let _ = task_llm_tx
             .send(LlmEvent::Complete {
                 session: Box::new(task_state.session),
                 used_tokens,

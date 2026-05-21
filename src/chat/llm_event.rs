@@ -125,6 +125,27 @@ pub enum LlmEvent {
     /// The event loop should transition the LLM state to `ToolCall`
     /// so the status bar shows "Running tool..." with a fresh spinner.
     ToolCallStarted,
+
+    /// A streaming token chunk from compaction.
+    ///
+    /// Display as `AssistantStreaming` in the chat area, just like
+    /// `StreamToken` but from a compaction LLM call rather than a
+    /// regular user message.
+    CompactStreamToken(String),
+
+    /// Compaction streaming completed.
+    ///
+    /// Contains the full compacted summary and the range of messages
+    /// that were summarized. The event loop should finalize the
+    /// streaming zone, update the session, save to database, and
+    /// show the compact result.
+    #[allow(dead_code)] // Used by spawn_compact_task (Fase 7)
+    CompactStreamDone {
+        /// The full compacted summary text
+        summary: String,
+        /// Range of compacted messages: (first_preserved, last_preserved_start)
+        range: Option<(usize, usize)>,
+    },
 }
 
 impl std::fmt::Debug for LlmEvent {
@@ -180,6 +201,15 @@ impl std::fmt::Debug for LlmEvent {
             Self::Error(msg) => f.debug_tuple("Error").field(msg).finish(),
             Self::Cancelled => write!(f, "Cancelled"),
             Self::ToolCallStarted => write!(f, "ToolCallStarted"),
+            Self::CompactStreamToken(token) => f
+                .debug_tuple("CompactStreamToken")
+                .field(&token.len())
+                .finish(),
+            Self::CompactStreamDone { summary, range } => f
+                .debug_struct("CompactStreamDone")
+                .field("summary_len", &summary.len())
+                .field("range", &range)
+                .finish_non_exhaustive(),
         }
     }
 }
