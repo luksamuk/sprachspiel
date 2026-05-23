@@ -352,19 +352,28 @@ pub async fn run_chat_repl_tui(
 
                                                 // Handle /compact specially — spawn background task
                                                 // to avoid freezing the TUI during compaction.
+                                                // Guard: refuse to compact while an LLM task is
+                                                // already running, as spawn_compact_task replaces
+                                                // the channel unconditionally.
                                                 if let ChatCommand::Compact = &cmd {
-                                                    if state.session.messages.is_empty() {
+                                                    if llm_tx.is_some() {
                                                         view.show_command_outputs(&[
-            CommandOutput::info("No messages to compact."),
+                                                            CommandOutput::info(
+                                                                "Cannot compact while LLM is busy. Wait for the current response to finish.",
+                                                            ),
+                                                        ]);
+                                                    } else if state.session.messages.is_empty() {
+                                                        view.show_command_outputs(&[
+                                                            CommandOutput::info("No messages to compact."),
                                                         ]);
                                                     } else {
                                                         let msg_count =
                                                             state.session.messages.len();
                                                         view.show_command_outputs(&[
-            CommandOutput::progress(format!(
-                "Compacting {} messages...",
-                msg_count
-            )),
+                                                            CommandOutput::progress(format!(
+                                                                "Compacting {} messages...",
+                                                                msg_count
+                                                            )),
                                                         ]);
                                                         view.set_llm_state(LlmState::Compacting);
                                                         spawn_compact_task(
@@ -798,6 +807,12 @@ fn spawn_compact_task(
     llm_tx: &mut Option<tokio::sync::mpsc::Sender<LlmEvent>>,
     llm_rx: &mut Option<tokio::sync::mpsc::Receiver<LlmEvent>>,
 ) {
+    // Precondition: must not be called while an LLM task is already running,
+    // as this would clobber the active channel. Callers must guard against this.
+    debug_assert!(
+        llm_tx.is_none(),
+        "spawn_compact_task called while LLM task is already running — channel would be clobbered"
+    );
     // Create channels for compaction events
     let (task_llm_tx, new_llm_rx) = tokio::sync::mpsc::channel(LLM_VIEW_CHANNEL_CAPACITY);
     *llm_tx = Some(task_llm_tx.clone());
