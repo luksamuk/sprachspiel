@@ -4768,7 +4768,11 @@ Additional mitigation: `sequenceDiagram` ignores `max_width`, producing lines th
 
 ---
 
-#### PR 4: Final Cleanup — Remove TerminalView + ANSI Artifacts (~4-5 days) — #148
+#### PR 4: Final Transition — Remove Rustyline, Make Ratatui Default (~4-5 days) — #148
+
+**Status:** 🔄 IN PROGRESS
+**Branch:** `refactor/w6-pr4-final-transition`
+**Depends on:** W6-PR3 (#147) — merged ✅
 
 **Goal:** Remove TerminalView, hardcoded ANSI escapes, CHAT_TERMINAL_WIDTH = 80, and rustyline-related code. Ratatui is the only chat rendering mode.
 

@@ -4,7 +4,15 @@ All notable changes to Sprachspiel will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **W6-PR4: Final Transition — Remove Rustyline, Make Ratatui Default** — Completes the Responsive Chat Rebuild (W6) by cleaning up legacy code from the pre-TUI era. Ratatui is now the only chat rendering mode. Remaining ANSI escape codes in `repl.rs` pre-TUI init path cleaned up. `run_chat_repl()` simplified to delegate directly to `App::run()`. `src/spinner.rs` updated for clean chat/non-chat split (chat uses ratatui widget exclusively, non-chat subcommands use indicatif). `auto_compact_if_needed()` refactored into `CompactionContext<'_>` struct with methods, reducing the 8-argument function to a structured, testable unit. `run_app_loop()` decomposed from ~629 lines into an `EventLoopState` struct with extracted `handle_crossterm_event()`, `handle_llm_event()`, and `handle_key_line()` named async methods. Provider-agnostic strings audit — remaining "Ollama" references in user-facing strings replaced with "embedding service" or backend-agnostic phrasing. (Issue #148)
+
 ### Fixed
+
+- **🧠 indicator stays in status bar after `/think` toggle off** — Status bar model info now refreshes via `update_status_model()` after the `/think` command is processed in the TUI event loop, ensuring the 🧠 indicator appears/disappears immediately.
+- **Multi-line input loses newlines on submit** — Textarea `submit()` now preserves `\n` characters across the submit boundary, so multi-line input (Shift+Enter) is sent correctly to the LLM.
+- **Embedding hang on exit** — Exit now shows "Saving embeddings..." message before awaiting embedding flush, providing visual feedback instead of silent hang.
 
 - **Plain mode ANSI leak** — `display_thinking()`, tool error formatting, and retry messages now respect plain mode (`--plain`). Plain mode uses `[Thinking]` header with `|` border, no ANSI/emoji. `debug_tools::PLAIN_MODE` atomic flag is set from subcommands and checked by `tui_aware_print()`, `display_tool_call()`, `log_tool_result()`, and `tool_robustness::format_error_with_status()`. Subcommand output is pipe-safe (zero ANSI codes on stdout and stderr).
 - **Vision/OCR abort without capability** — `sprach vision` and `sprach ocr` now abort with `VisionError::NoVisionCapability` unless `--force` flag is passed. Previously, vision proceeded silently on models without vision capability, producing garbage output. `--force` replaces the old behavior where vision proceeded when the model was explicitly chosen via `-m`.
